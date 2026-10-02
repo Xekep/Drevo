@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import json
 import re
 import shutil
 import stat
@@ -16,6 +17,11 @@ from pathlib import Path
 
 BACKUP_NAME = re.compile(r"media-\d{8}T\d{6}Z\.tar\.gz\Z")
 ARCHIVE_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9-]{2,63}\Z")
+FILE_NAME = re.compile(r"[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|tif|pdf)\Z")
+REFERENCE_SOURCES = frozenset({
+    "person", "photo", "history", "upload_grant", "image_metadata", "document",
+    "restore_stage_image", "restore_stage_document",
+})
 DISK_RESERVE = 8 * 1024**3
 
 
@@ -26,6 +32,61 @@ class RestoreResult:
     checksum_seconds: float
     restore_seconds: float
     ready_seconds: float
+    references_checked: int = 0
+
+
+def read_references(
+    manifest: Path, legacy_archive_id: str | None
+) -> dict[tuple[str, ...], int | None]:
+    if not stat.S_ISREG(manifest.lstat().st_mode):
+        raise ValueError("Reference manifest is not a regular file")
+    archives: set[str] = set()
+    references: list[tuple[str, str, int | None]] = []
+    with manifest.open("r", encoding="utf-8") as source:
+        for number, line in enumerate(source, 1):
+            try:
+                row = json.loads(line)
+            except (json.JSONDecodeError, UnicodeError) as error:
+                raise ValueError(f"Invalid reference manifest line {number}") from error
+            if not isinstance(row, dict) or not isinstance(row.get("archive_id"), str) \
+                    or not ARCHIVE_ID.fullmatch(row["archive_id"]):
+                raise ValueError(f"Invalid archive ID on manifest line {number}")
+            archive_id = row["archive_id"]
+            if row.get("kind") == "archive":
+                if set(row) != {"kind", "archive_id"}:
+                    raise ValueError(f"Invalid archive row on manifest line {number}")
+                if archive_id in archives:
+                    raise ValueError(f"Duplicate archive on manifest line {number}")
+                archives.add(archive_id)
+                continue
+            size = row.get("known_bytes")
+            if set(row) != {"kind", "archive_id", "name", "source", "known_bytes"} \
+                    or row.get("kind") != "ref" or not isinstance(row.get("name"), str) \
+                    or not FILE_NAME.fullmatch(row["name"]) \
+                    or not isinstance(row.get("source"), str) \
+                    or row["source"] not in REFERENCE_SOURCES \
+                    or (size is not None and (type(size) is not int or size <= 0)):
+                raise ValueError(f"Invalid media reference on manifest line {number}")
+            references.append((archive_id, row["name"], size))
+    if legacy_archive_id is None:
+        if len(archives) != 1:
+            raise ValueError("Specify the legacy archive ID for a multi-archive restore")
+        legacy_archive_id = next(iter(archives))
+    if legacy_archive_id not in archives:
+        raise ValueError("Legacy archive ID is absent from restored database")
+
+    expected: dict[tuple[str, ...], int | None] = {}
+    for archive_id, name, size in references:
+        if archive_id not in archives:
+            raise ValueError("Media reference belongs to an unknown archive")
+        parts = ("uploads", name) if archive_id == legacy_archive_id else (
+            "archives", archive_id, "uploads", name,
+        )
+        previous = expected.get(parts)
+        if previous is not None and size is not None and previous != size:
+            raise ValueError("Conflicting sizes in restored database")
+        expected[parts] = size if size is not None else previous
+    return expected
 
 
 def member_parts(member: tarfile.TarInfo) -> tuple[str, ...]:
@@ -61,9 +122,16 @@ def member_parts(member: tarfile.TarInfo) -> tuple[str, ...]:
 
 
 def verify_archive(
-    archive: Path, scratch_parent: Path, reserve_bytes: int = DISK_RESERVE
+    archive: Path, scratch_parent: Path, reserve_bytes: int = DISK_RESERVE,
+    reference_manifest: Path | None = None, legacy_archive_id: str | None = None,
 ) -> RestoreResult:
     started = time.monotonic()
+    if legacy_archive_id is not None and reference_manifest is None:
+        raise ValueError("Legacy archive ID requires a reference manifest")
+    expected = (
+        read_references(reference_manifest, legacy_archive_id)
+        if reference_manifest is not None else None
+    )
     if not BACKUP_NAME.fullmatch(archive.name):
         raise ValueError("Invalid media backup name")
     sidecar = archive.with_name(archive.name + ".sha256")
@@ -100,6 +168,7 @@ def verify_archive(
         ) as temporary:
             root = Path(temporary)
             seen: set[tuple[str, ...]] = set()
+            extracted: dict[tuple[str, ...], int] = {}
             files = 0
             total_bytes = 0
             has_legacy_uploads = False
@@ -143,12 +212,24 @@ def verify_archive(
                             restored_digest.update(block)
                     if restored_digest.digest() != archived_digest.digest():
                         raise ValueError(f"Restored media differs from archive: {member.name!r}")
+                    extracted[parts] = copied
             if not has_legacy_uploads or files == 0:
                 raise ValueError("Media backup has no legacy uploads root or no files")
+            if expected is not None:
+                missing = sum(1 for parts in expected if parts not in extracted)
+                wrong_size = sum(
+                    1 for parts, size in expected.items()
+                    if size is not None and parts in extracted and extracted[parts] != size
+                )
+                if missing or wrong_size:
+                    raise ValueError(
+                        f"Restored database/media mismatch: missing={missing} "
+                        f"wrong_size={wrong_size}"
+                    )
             restore_seconds = time.monotonic() - restore_started
     return RestoreResult(
         files, total_bytes, checksum_seconds, restore_seconds,
-        time.monotonic() - started,
+        time.monotonic() - started, len(expected) if expected is not None else 0,
     )
 
 
@@ -156,9 +237,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
     parser.add_argument("--scratch-parent", type=Path, default=Path("/var/tmp"))
+    parser.add_argument("--reference-manifest", type=Path)
+    parser.add_argument("--legacy-archive-id")
     arguments = parser.parse_args()
     try:
-        result = verify_archive(arguments.archive, arguments.scratch_parent)
+        result = verify_archive(
+            arguments.archive, arguments.scratch_parent,
+            reference_manifest=arguments.reference_manifest,
+            legacy_archive_id=arguments.legacy_archive_id,
+        )
     except (OSError, ValueError, tarfile.TarError) as error:
         print(f"Media restore verification failed: {error}", file=sys.stderr)
         return 1
@@ -169,6 +256,11 @@ def main() -> int:
         f"restore_seconds={result.restore_seconds:.3f} "
         f"ready_seconds={result.ready_seconds:.3f}"
     )
+    if arguments.reference_manifest is not None:
+        print(
+            f"RESTORE_PAIR_VERIFIED media={arguments.archive.name} "
+            f"references={result.references_checked} files={result.files}"
+        )
     return 0
 
 

@@ -7,6 +7,18 @@ umask 077
 [[ "$(id -un)" == postgres ]] || { echo 'Run as postgres' >&2; exit 2; }
 [[ -d /var/lib/pgbackrest ]] || { echo 'Repository missing' >&2; exit 2; }
 expected_database="${1:-}"
+(( $# == 1 || $# == 2 )) || { echo 'Expected database and optional pair manifest path' >&2; exit 2; }
+manifest_path="${2:-}"
+if [[ -n "$manifest_path" ]]; then
+  [[ "$manifest_path" =~ ^/var/tmp/drevo-restore-pair\.[a-zA-Z0-9]+/pg/refs\.jsonl$ ]] || {
+    echo 'Unexpected pair manifest path' >&2
+    exit 2
+  }
+  [[ ! -e "$manifest_path" && ! -L "$manifest_path" ]] || {
+    echo 'Pair manifest already exists' >&2
+    exit 2
+  }
+fi
 exec 9>/var/lib/postgresql/drevo-physical-restore.lock
 flock -n 9 || { echo 'Another physical restore rehearsal is running' >&2; exit 2; }
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -79,6 +91,12 @@ archive_state="$(psql -XAtq -v ON_ERROR_STOP=1 -h "$socket_dir" -p 55433 -d "$da
   exit 1
 }
 ready_at="$(date +%s)"
+if [[ -n "$manifest_path" ]]; then
+  # Only archive IDs, normalized file names, source kinds and known sizes are
+  # exported; the query reads the isolated restored cluster, never production.
+  ( set -C; psql -XqAt -v ON_ERROR_STOP=1 -h "$socket_dir" -p 55433 \
+      -d "$database" -f "$script_dir/media-filesystem-refs.sql" > "$manifest_path" )
+fi
 printf 'PHYSICAL_RESTORE_VERIFIED database=%s archives=%s revision=%s restore_seconds=%s ready_seconds=%s\n' \
   "$database" "${archive_state%%|*}" "${archive_state#*|}" \
   "$(( restored_at - started_at ))" "$(( ready_at - started_at ))"

@@ -20,6 +20,8 @@ for command in pgbackrest python3 flock runuser; do
   command -v "$command" >/dev/null || { echo "Missing $command" >&2; exit 2; }
 done
 install -m 755 "$script_dir/restore-pgbackrest-physical.sh" /usr/local/sbin/restore-pgbackrest-physical.sh
+install -m 755 "$script_dir/verify-media-archive.py" /usr/local/sbin/verify-media-archive.py
+install -m 644 "$script_dir/media-filesystem-refs.sql" /usr/local/sbin/media-filesystem-refs.sql
 install -m 755 "$script_dir/verify-physical-restore.sh" /usr/local/sbin/drevo-pgbackrest-restore-check
 install -m 755 "$script_dir/restore-preflight.py" /usr/local/sbin/restore-preflight.py
 install -m 755 "$script_dir/run-restore-rehearsal.sh" /usr/local/sbin/drevo-run-restore-rehearsal

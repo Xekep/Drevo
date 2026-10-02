@@ -1,6 +1,8 @@
 import hashlib
 import importlib.util
 import io
+import json
+from contextlib import redirect_stdout
 import subprocess
 import sys
 import tarfile
@@ -33,6 +35,111 @@ class MediaRestoreTests(unittest.TestCase):
 
     def verify(self):
         return verifier.verify_archive(self.backup, self.root, reserve_bytes=0)
+
+    def pair_archive(self):
+        with tarfile.open(self.backup, "w:gz") as media:
+            for name in ("uploads", "archives", "archives/tree-b",
+                         "archives/tree-b/uploads"):
+                directory = tarfile.TarInfo(name)
+                directory.type = tarfile.DIRTYPE
+                media.addfile(directory)
+            for name, data in (
+                ("uploads/one.jpg", b"abc"),
+                ("archives/tree-b/uploads/two.pdf", b"file"),
+                ("uploads/older.png", b"retained history"),
+            ):
+                entry = tarfile.TarInfo(name)
+                entry.size = len(data)
+                media.addfile(entry, io.BytesIO(data))
+        self.seal()
+
+    def pair_manifest(self, *rows):
+        path = self.root / "restored-refs.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        return path
+
+    def test_pair_matches_references_in_legacy_and_private_archive(self):
+        self.pair_archive()
+        manifest = self.pair_manifest(
+            {"kind": "archive", "archive_id": "tree-a"},
+            {"kind": "archive", "archive_id": "tree-b"},
+            {"kind": "ref", "archive_id": "tree-a", "name": "one.jpg",
+             "source": "person", "known_bytes": None},
+            {"kind": "ref", "archive_id": "tree-a", "name": "one.jpg",
+             "source": "image_metadata", "known_bytes": 3},
+            {"kind": "ref", "archive_id": "tree-b", "name": "two.pdf",
+             "source": "document", "known_bytes": 4},
+        )
+        result = verifier.verify_archive(
+            self.backup, self.root, reserve_bytes=0,
+            reference_manifest=manifest, legacy_archive_id="tree-a",
+        )
+        self.assertEqual(result.references_checked, 2)
+        self.assertEqual(result.files, 3)  # Extra older original is allowed.
+        self.assertEqual(list(self.root.glob("drevo-media-restore.*")), [])
+
+    def test_pair_rejects_missing_and_wrong_size_and_cleans_temp(self):
+        self.pair_archive()
+        manifest = self.pair_manifest(
+            {"kind": "archive", "archive_id": "tree-a"},
+            {"kind": "archive", "archive_id": "tree-b"},
+            {"kind": "ref", "archive_id": "tree-a", "name": "missing.jpg",
+             "source": "photo", "known_bytes": None},
+            {"kind": "ref", "archive_id": "tree-b", "name": "two.pdf",
+             "source": "document", "known_bytes": 5},
+        )
+        with self.assertRaisesRegex(ValueError, "missing=1 wrong_size=1"):
+            verifier.verify_archive(
+                self.backup, self.root, reserve_bytes=0,
+                reference_manifest=manifest, legacy_archive_id="tree-a",
+            )
+        self.assertEqual(list(self.root.glob("drevo-media-restore.*")), [])
+
+    def test_pair_infers_legacy_id_only_for_single_archive(self):
+        self.pair_archive()
+        manifest = self.pair_manifest(
+            {"kind": "archive", "archive_id": "tree-a"},
+            {"kind": "ref", "archive_id": "tree-a", "name": "one.jpg",
+             "source": "person", "known_bytes": None},
+        )
+        result = verifier.verify_archive(
+            self.backup, self.root, reserve_bytes=0, reference_manifest=manifest,
+        )
+        self.assertEqual(result.references_checked, 1)
+
+        actual_verify = verifier.verify_archive
+        output = io.StringIO()
+        with patch.object(sys, "argv", [str(MODULE_PATH), str(self.backup),
+                                        "--scratch-parent", str(self.root),
+                                        "--reference-manifest", str(manifest)]), \
+             patch.object(verifier, "verify_archive", side_effect=lambda archive, scratch, **options:
+                          actual_verify(archive, scratch, reserve_bytes=0, **options)), \
+             redirect_stdout(output):
+            self.assertEqual(verifier.main(), 0)
+        self.assertIn("RESTORE_PAIR_VERIFIED media=media-20261002T042000Z.tar.gz references=1",
+                      output.getvalue())
+
+    def test_pair_manifest_rejects_personal_fields_and_ambiguous_archive(self):
+        self.pair_archive()
+        manifest = self.pair_manifest(
+            {"kind": "archive", "archive_id": "tree-a"},
+            {"kind": "archive", "archive_id": "tree-b"},
+            {"kind": "ref", "archive_id": "tree-a", "name": "one.jpg",
+             "source": "person", "known_bytes": None, "person_name": "not allowed"},
+        )
+        with self.assertRaisesRegex(ValueError, "Invalid media reference"):
+            verifier.verify_archive(
+                self.backup, self.root, reserve_bytes=0,
+                reference_manifest=manifest, legacy_archive_id="tree-a",
+            )
+        manifest = self.pair_manifest(
+            {"kind": "archive", "archive_id": "tree-a"},
+            {"kind": "archive", "archive_id": "tree-b"},
+        )
+        with self.assertRaisesRegex(ValueError, "Specify the legacy archive ID"):
+            verifier.verify_archive(
+                self.backup, self.root, reserve_bytes=0, reference_manifest=manifest,
+            )
 
     def test_restore_checks_saved_snapshot_after_live_media_changes(self):
         live = self.root / "live"
