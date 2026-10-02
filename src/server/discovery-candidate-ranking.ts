@@ -2,7 +2,6 @@ export type PublishedCandidate = {
   name: string; birthSurname?: string; birthYear?: string; deathYear?: string;
   birthPlace?: string; deathPlace?: string;
 };
-export type PublishedRelative = { kind: "parent" | "child" | "spouse"; name: string };
 
 const words = (value: string) =>
   value.toLocaleLowerCase("ru-RU").replaceAll("ё", "е").match(/[\p{L}\p{N}]+/gu) || [];
@@ -35,15 +34,6 @@ export function candidatePlaceQueries(person: PublishedCandidate) {
     from: String(Math.max(1, Number(year) - 2)).padStart(4, "0"),
     to: String(Math.min(9999, Number(year) + 2)).padStart(4, "0") }));
 }
-/** Only names from the opt-in relative projection may become lookup terms. */
-export function candidateRelativeQuery(relatives: PublishedRelative[]): string | null {
-  const terms = relatives.slice(0, 24).map(({ name }) => {
-    const person = nameParts({ name });
-    return person.given.length >= 2 && person.surnames[0]?.length >= 2
-      ? `(${person.given} & ${person.surnames[0]})` : null;
-  }).filter((term): term is string => Boolean(term));
-  return terms.length ? [...new Set(terms)].join(" | ") : null;
-}
 function editDistance(left: string, right: string, maximum: number): number {
   if (Math.abs(left.length - right.length) > maximum) return maximum + 1;
   let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
@@ -62,14 +52,6 @@ function similar(left: string, right: string) {
   const minimum = Math.min(left.length, right.length);
   return minimum >= 4 && editDistance(left, right, minimum >= 7 ? 2 : 1) <= (minimum >= 7 ? 2 : 1);
 }
-function relativeMatch(source: PublishedRelative[], candidate: PublishedRelative[]) {
-  return source.some((left) => candidate.some((right) => {
-    if (left.kind !== right.kind) return false;
-    const a = nameParts({ name: left.name });
-    const b = nameParts({ name: right.name });
-    return Boolean(a.given && a.given === b.given && a.surnames[0] === b.surnames[0]);
-  }));
-}
 const placePrefixes = new Set(["г", "город", "с", "село", "д", "деревня", "п", "поселок", "поселение", "станица", "хутор"]);
 const regions = new Set(["область", "обл", "край", "район", "республика", "губерния", "уезд", "округ", "волость", "провинция"]);
 const countries = new Set(["россия", "рф", "ссср", "империя", "пруссия", "польша", "казахстан", "украина"]);
@@ -84,12 +66,10 @@ function localityWords(value: string) {
 }
 export function candidateEvidence(
   source: PublishedCandidate, candidate: PublishedCandidate,
-  sourceRelatives: PublishedRelative[] = [], candidateRelatives: PublishedRelative[] = [],
 ) {
   const a = nameParts(source), b = nameParts(candidate);
   const givenMatches = Boolean(a.given && b.given && similar(a.given, b.given));
   const surnameMatches = a.surnames.some((left) => b.surnames.some((right) => similar(left,right)));
-  const relativesMatch = relativeMatch(sourceRelatives,candidateRelatives);
   const birthDifference = source.birthYear && candidate.birthYear
     ? Math.abs(Number(source.birthYear) - Number(candidate.birthYear)) : null;
   const placeOverlap = (["birthPlace","deathPlace"] as const).some((field) => {
@@ -98,8 +78,7 @@ export function candidateEvidence(
   });
   // A shared relative name alone is insufficient evidence of personal identity.
   if (!(givenMatches && surnameMatches) &&
-      !(givenMatches && birthDifference !== null && birthDifference <= 2 && placeOverlap) &&
-      !(relativesMatch && givenMatches && (birthDifference !== null && birthDifference <= 2 || placeOverlap)))
+      !(givenMatches && birthDifference !== null && birthDifference <= 2 && placeOverlap))
     return null;
   const reasons: string[] = [], conflicts: string[] = [];
   let score = 0;
@@ -115,7 +94,6 @@ export function candidateEvidence(
     if (!surnameMatches) conflicts.push("Указанные фамилии различаются");
     score += 1;
   }
-  if (relativesMatch) { reasons.push("Совпадает опубликованный близкий родственник"); score += 2; }
   for (const [field, label] of [
     ["birthYear", "Год рождения"], ["deathYear", "Год смерти"],
   ] as const) {
