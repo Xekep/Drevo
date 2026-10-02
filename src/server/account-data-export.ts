@@ -229,6 +229,7 @@ export function accountDataExport(db: StoreDatabase) {
             await client.query("SELECT set_config('drevo.account_id',$1,true)", [accountId]);
             const archiveIds = [...new Set(scopes.map((scope) => scope.archiveId))].sort();
             for (const archiveId of archiveIds) {
+              await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
               const archive = await client.query(
                 "SELECT id FROM archives WHERE id=$1 FOR SHARE NOWAIT", [archiveId],
               );
@@ -243,14 +244,19 @@ export function accountDataExport(db: StoreDatabase) {
               return "session-expired";
             if (!(await client.query("SELECT 1 FROM accounts WHERE id=$1", [accountId])).rowCount)
               return "session-expired";
-            const memberships = await client.query(
-              `SELECT m.archive_id,m.role,m.tree_access,m.person_id,m.approved,a.revision
-               FROM archive_memberships m JOIN archives a ON a.id=m.archive_id
-               WHERE m.user_id=$1 AND m.archive_id=ANY($2::text[])
-               ORDER BY m.archive_id FOR SHARE OF m,a NOWAIT`,
-              [accountId, archiveIds],
-            );
-            if (!scopesStillVisible(scopes, memberships.rows))
+            const membershipRows: Array<Record<string, unknown>> = [];
+            for (const archiveId of archiveIds) {
+              await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
+              const membership = await client.query(
+                `SELECT m.archive_id,m.role,m.tree_access,m.person_id,m.approved,a.revision
+                 FROM archive_memberships m JOIN archives a ON a.id=m.archive_id
+                 WHERE m.user_id=$1 AND m.archive_id=$2
+                 FOR SHARE OF m,a NOWAIT`,
+                [accountId, archiveId],
+              );
+              membershipRows.push(...membership.rows);
+            }
+            if (!scopesStillVisible(scopes, membershipRows))
               return "access-changed";
             await deliver();
             return "sent";
