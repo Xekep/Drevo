@@ -265,6 +265,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     "_DREVO_MEDIA",
     "_DREVO_TWIN",
     "_DREVO_CLAIM",
+    "_DREVO_ALTERNATIVE",
     "_DREVO_UNION_STAGE",
     "_DREVO_EVENT_ID",
     "_DREVO_DOCUMENT_PAGE",
@@ -568,6 +569,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     };
   }
   const people: Person[] = individuals.map((n) => {
+    const personSourceNodes = children(n, "SOUR");
+    const personCitations = sources(n);
     const names = children(n, "NAME");
     const nameSurname = (name: Node) =>
       (value(name, "SURN") || /\/(.*?)\//.exec(name.value)?.[1] || "").trim();
@@ -668,7 +671,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             birthName, "_DREVO_BIRTH_SURNAME_CONFIDENCE") }
         : {}),
       sources: [
-        ...sources(n),
+        ...personCitations,
         ...birthSources.general,
         ...deathSources.general,
       ],
@@ -724,7 +727,13 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           if (Object.hasOwn(extra, key))
             Object.assign(p, { [key]: extra[key] });
         if (Object.hasOwn(extra, "sources"))
-          restoreCitationMedia(p.sources, sources(n), "человека");
+          restoreCitationMedia(p.sources, personCitations.filter((_source, index) =>
+            !value(personSourceNodes[index], "_DREVO_ALTERNATIVE")), "человека");
+        for (const alternative of p.factAlternatives || [])
+          restoreCitationMedia(alternative.sources,
+            personCitations.filter((_source, index) =>
+              value(personSourceNodes[index], "_DREVO_ALTERNATIVE") === alternative.id),
+            `альтернативного значения ${alternative.id}`);
         if (Object.hasOwn(extra, "events")) {
           const eventNodes = n.children.filter((node) =>
             (Object.hasOwn(eventTags, node.tag) || ["BIRT", "DEAT"].includes(node.tag)) &&
@@ -1126,6 +1135,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
   };
   for (const person of people) {
     retain(person.sources);
+    for (const alternative of person.factAlternatives || [])
+      retain(alternative.sources);
     retain(person.birthDateClaim?.sources);
     retain(person.deathDateClaim?.sources);
     retain(person.birthPlaceClaim?.sources);
@@ -1332,11 +1343,13 @@ export function exportGedcom(
   const documentMedia = new Map(media.flatMap((item, index) =>
     item.document ? [[item.id, `@M${index + 1}@`] as const] : []));
   function citation(level: number, source: Source,
-    claim?: "BIRTH_DATE" | "DEATH_DATE" | "BIRTH_PLACE" | "DEATH_PLACE" | "OCCUPATION" | "BIRTH_SURNAME" | "EVENT_DATE" | "EVENT_PLACE") {
+    claim?: "BIRTH_DATE" | "DEATH_DATE" | "BIRTH_PLACE" | "DEATH_PLACE" | "OCCUPATION" | "BIRTH_SURNAME" | "EVENT_DATE" | "EVENT_PLACE",
+    alternativeId?: string) {
     sourceRecords.push(source);
     emit(level, "SOUR", `@S${sourceRecords.length}@`, true);
     if (source.reference) emit(level + 1, "PAGE", source.reference);
     if (claim) emit(level + 1, "_DREVO_CLAIM", claim);
+    if (alternativeId) emit(level + 1, "_DREVO_ALTERNATIVE", alternativeId);
     const object = source.documentId
       ? documentMedia.get(source.documentId) : undefined;
     if (options.media && source.documentId && !object)
@@ -1385,6 +1398,7 @@ export function exportGedcom(
       "_DREVO_MEDIA",
       "_DREVO_TWIN",
       "_DREVO_CLAIM",
+      "_DREVO_ALTERNATIVE",
       "_DREVO_DOCUMENT_PAGE",
       ...CLAIM_CONFIDENCE_TAGS,
       "_DREVO_UNION_STAGE",
@@ -1469,6 +1483,9 @@ export function exportGedcom(
       emitOccupationClaim();
     }
     for (const source of p.sources) citation(1, source);
+    for (const alternative of p.factAlternatives || [])
+      for (const source of alternative.sources)
+        citation(1, source, undefined, alternative.id);
     for (const original of p.events || []) {
       const kind =
         original.gedcomTag === "BIRT"
