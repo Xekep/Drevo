@@ -6523,10 +6523,16 @@ try {
   changedSurname.people[0].maidenName = "Петрова";
   assert.equal((await postPlaceChanges(placeStored.family, changedSurname, placeStored.revision)).status, 400);
   assert.equal((await app.archive.read()).family.people[0].maidenName, "Иванова");
+  const unionFixture = await app.archive.read();
+  const unionWithPeer = structuredClone(unionFixture.family);
+  unionWithPeer.people.push({ id: "pg-union-identity-peer", createdBy: "owner",
+    name: "Peer", surname: "Fixture", patronymic: "", sex: "u", birth: "",
+    birthPlace: "", parents: [], spouses: [], generation: 1, column: 0, sources: [] });
+  await app.archive.write(unionWithPeer, unionFixture.revision);
   const unionBefore = await app.archive.read();
   const unionWithEvidence = structuredClone(unionBefore.family);
-  const unionPeople = unionBefore.family.people.slice(0, 3).map((person) => person.id);
-  assert.equal(unionPeople.length, 3, "the PG fixture has three current participants");
+  const unionPeople = [unionBefore.family.people[0].id, unionBefore.family.people[1].id,
+    "pg-union-identity-peer"];
   unionWithEvidence.unions = [...(unionWithEvidence.unions || []), {
     id: "pg-union-source-identity", participants: [unionPeople[0], unionPeople[1]],
     type: "marriage" as const, createdBy: "owner", note: "Keep this note",
@@ -6559,6 +6565,10 @@ try {
   const withoutTestUnion = structuredClone(unionUpdated.family);
   withoutTestUnion.unions = withoutTestUnion.unions!.filter((union) => union.id !== "pg-union-source-identity");
   assert.equal((await postPlaceChanges(unionUpdated.family, withoutTestUnion, unionUpdated.revision)).status, 200);
+  const withoutPeer = await app.archive.read();
+  const restoredPeople = structuredClone(withoutPeer.family);
+  restoredPeople.people = restoredPeople.people.filter((person) => person.id !== "pg-union-identity-peer");
+  await app.archive.write(restoredPeople, withoutPeer.revision);
   // Keep the restore concurrency checks in their own archive: later fixtures
   // include cards by other authors, which cannot be replaced by this actor.
   const guardedArchiveId = "restore-guard-test";
