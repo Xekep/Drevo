@@ -38,13 +38,15 @@ export function accountDataExportHttp(
     const delivery = await exporter.deliverWithCurrentSession(
       session.accountId,
       session.tokenHash,
-      prepared.commentScopes,
+      prepared.accessScopes,
       () => { send(200, prepared.download, true, json); },
     );
     if (delivery === "session-expired")
       return send(401, { error: "Сеанс завершён. Войдите снова" });
     if (delivery === "access-changed")
       return send(409, { error: "Доступ к дереву изменился. Повторите экспорт" });
+    if (delivery === "access-busy")
+      return send(409, { error: "Права доступа меняются. Повторите экспорт" });
     return true;
   };
 }
