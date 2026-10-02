@@ -268,9 +268,41 @@ export function faceDescriptorsHttp({
             error: "Слишком много образцов для интерактивного сравнения",
           });
         const match = closestMatch(descriptor, rows, model);
-        if (!(await accountAiAccess(archive.db, currentActor.id, auth.local)))
-          return json(res, 403, { error: "Распознавание лиц недоступно этому аккаунту" });
-        return json(res, 200, { match });
+        // Matching can outlive an archive membership or scope change. Hold the
+        // membership and tier through delivery, as other AI results do.
+        const delivered = await archive.db.transaction(async () => {
+          const latest = await auth.currentUser(req);
+          if (!latest?.approved || latest.id !== currentActor.id ||
+              latest.role !== currentActor.role ||
+              latest.personId !== currentActor.personId ||
+              latest.treeAccess !== currentActor.treeAccess ||
+              !(await auth.canEdit(req))) return false;
+          if (archive.db.kind === "postgres" && !auth.local) {
+            const session = await auth.accountSession(req);
+            if (!session || session.accountId !== latest.id) return false;
+            const lockedSession = await archive.db.prepare("", `SELECT user_id,expires_at
+              FROM account_sessions WHERE token_hash=? FOR SHARE SKIP LOCKED`)
+              .get(session.tokenHash);
+            if (lockedSession?.user_id !== latest.id ||
+                Number(lockedSession.expires_at) <= Date.now()) return false;
+            const membership = await archive.db.prepare("", `SELECT role,approved,person_id,tree_access
+              FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
+              .get(archive.db.archiveId || "", latest.id);
+            if (!membership?.approved || membership.role !== latest.role ||
+                (membership.person_id || "") !== (latest.personId || "") ||
+                membership.tree_access !== (latest.treeAccess || "all")) return false;
+          }
+          if (match && isScopedUser(latest) &&
+              !visiblePersonIds((await archive.read()).family, latest).has(match.personId))
+            return false;
+          if (!(await accountAiAccess(archive.db, latest.id, auth.local, true)))
+            return false;
+          json(res, 200, { match });
+          return true;
+        });
+        if (!delivered)
+          return json(res, 403, { error: "Доступ к распознаванию лиц изменился" });
+        return true;
       }
       const sample = parseDescriptor(body);
       const actor = (await auth.currentUser(req))!;
