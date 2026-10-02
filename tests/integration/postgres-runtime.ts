@@ -1847,7 +1847,7 @@ try {
         body: JSON.stringify({ message: "Создай PDF отчёт о семье" }),
       });
       await Promise.race([toolCatalogStarted, runningTools.then(async (response) => {
-        throw new Error(`AI tools stopped before the catalogue: ${response.status} ${await response.text()}`);
+        throw new Error(`AI tools stopped before the catalogue: ${response.status} ${await response.clone().text()}`);
       }),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("First AI tool did not start")), 15_000))]);
       await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
