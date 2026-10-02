@@ -4002,6 +4002,9 @@ try {
     headers,
   });
   const linkedPublicBody = await linkedPublicCard.json();
+  assert.equal(linkedPublicCard.status, 200);
+  assert.equal(linkedPublicBody.linkedCards.length, 2,
+    "unchanged confirmed links survive the final discovery snapshot");
   assert.doesNotMatch(JSON.stringify(linkedPublicBody), /Совпадают семейные записи/,
     "the proposal note is visible to participant admins, not global discovery readers");
   assert.deepEqual(linkedPublicBody.linkedCards.map((person: { archiveId: string; id: string }) =>

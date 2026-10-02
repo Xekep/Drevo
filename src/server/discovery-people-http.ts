@@ -84,9 +84,15 @@ export function discoveryPeopleHttp(
       ) other ON true
       WHERE chosen.publication_version=? AND chosen.row_version=?`).all(
       archiveId,personId,publicationVersion,rowVersion);
-    const cards = rows.flatMap((row) => row.linked_card &&
-      typeof row.linked_card === "object"
-      ? [listedPerson(row.linked_card as DiscoveryRow)] : []);
+    const cards = rows.flatMap((row) => {
+      if (!row.linked_card) return [];
+      // The PostgreSQL store intentionally leaves jsonb as text for callers.
+      const linked: unknown = typeof row.linked_card === "string"
+        ? JSON.parse(row.linked_card) : row.linked_card;
+      if (!linked || typeof linked !== "object" || Array.isArray(linked))
+        throw new Error("Invalid linked discovery card projection");
+      return [listedPerson(linked as DiscoveryRow)];
+    });
     return rows.length ? { person: listedPerson(rows[0]), cards: cards.slice(0,50),
       truncated: cards.length > 50 } : null;
   };
