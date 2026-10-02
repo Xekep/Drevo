@@ -647,6 +647,33 @@ test("gaps distinguish crossings of separate branches, preserving shared family 
   );
 });
 
+test("large portrait layouts preserve the legacy geometry when generation ranks are supplied directly", async () => {
+  const people = randomFamily(1, 5);
+  assert.ok(people.length > 300);
+  const before = structuredClone(people);
+  const engine = new ELK({ algorithms: ["layered"] });
+  let directCalls = 0;
+  const direct = await calculateUnions(people, (graph) => {
+    assert.equal(graph.layoutOptions!["elk.partitioning.activate"], "false");
+    assert.equal(graph.layoutOptions!["elk.layered.layering.strategy"], "INTERACTIVE");
+    directCalls++;
+    return engine.layout(graph);
+  }, false, [], treeNodeSize());
+  const legacy = await calculateUnions(people, (graph) => {
+    graph.layoutOptions!["elk.partitioning.activate"] = "true";
+    graph.layoutOptions!["elk.layered.layering.strategy"] = "NETWORK_SIMPLEX";
+    for (const node of graph.children!) {
+      delete node.x;
+      delete node.y;
+    }
+    return engine.layout(graph);
+  }, false, [], treeNodeSize());
+  assert.ok(directCalls > 0);
+  assert.deepEqual(direct, legacy);
+  assert.deepEqual(people, before);
+  verify(people, direct);
+});
+
 test("ten thousand generations remain bounded in recursion and retain every child", async () => {
   const people = Array.from({ length: 10000 }, (_, i) =>
     person(`deep-${i}`, i ? [`deep-${i - 1}`] : []),

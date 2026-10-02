@@ -6,7 +6,7 @@
 // DREVO_LAYOUT_ANCESTOR_SCAN=1 checks movement when adding a founder's parent.
 // DREVO_LAYOUT_LARGE=1 adds two generations; DREVO_LAYOUT_LIMIT caps scans.
 // DREVO_LAYOUT_SCALE_SCAN=1 measures geometry with production card dimensions.
-// DREVO_LAYOUT_CASE selects a scale fixture (1-10) in scale mode.
+// DREVO_LAYOUT_CASE selects a scale fixture (1-12, or opt-in 13: 1820 / 14: 2750 people).
 // DREVO_LAYOUT_SEED_ONLY=1 measures only the first ELK candidate in scale mode.
 // DREVO_LAYOUT_THOROUGHNESS=4 compares an ELK sweep budget in scale mode.
 // DREVO_LAYOUT_MAX_ELK_CALLS=2 bounds candidate calls during a scale comparison.
@@ -14,6 +14,11 @@
 // DREVO_LAYOUT_DISABLE_PAIR_FLIP=1 benchmarks the prior couple order.
 // DREVO_LAYOUT_PRODUCTION_SCAN=1 measures one production layout per fixture.
 // DREVO_ELK_BUNDLE can point to a local elkjs bundle without installed dependencies.
+// DREVO_LAYOUT_ELK_OPTIONS is a JSON object of scalar ELK option overrides.
+// Example: {"elk.layered.considerModelOrder.strategy":"NONE"}.
+// DREVO_LAYOUT_GENERATION_MODE=partition|preset selects an explicit scale/prod comparison.
+// DREVO_LAYOUT_TRACE=1 includes each ELK input/result trace in scale output.
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { unionGeometry } from "../src/domain/union-layout.ts";
@@ -36,6 +41,24 @@ import {
 const { default: ELK } = await import(
   process.env.DREVO_ELK_BUNDLE || "elkjs/lib/elk.bundled.js"
 );
+const optionOverrides = (() => {
+  if (!process.env.DREVO_LAYOUT_ELK_OPTIONS) return {};
+  const value = JSON.parse(process.env.DREVO_LAYOUT_ELK_OPTIONS);
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("DREVO_LAYOUT_ELK_OPTIONS must be a JSON object");
+  for (const [key, option] of Object.entries(value))
+    if (!key || !["string", "number", "boolean"].includes(typeof option) ||
+        (typeof option === "number" && !Number.isFinite(option)))
+      throw new Error(`Invalid scalar ELK option override: ${key}`);
+  return Object.fromEntries(Object.entries(value).map(([key, value]) => [key, String(value)]));
+})();
+const generationMode = process.env.DREVO_LAYOUT_GENERATION_MODE || "production";
+if (!["production", "partition", "preset"].includes(generationMode))
+  throw new Error("DREVO_LAYOUT_GENERATION_MODE must be production, partition or preset");
+if (generationMode === "partition" && !process.env.DREVO_LAYOUT_SCALE_SCAN && !process.env.DREVO_LAYOUT_PRODUCTION_SCAN)
+  throw new Error("Partition baseline is restricted to fresh scale/production scans");
+const presetGenerationLayers = generationMode === "preset"
+  ? (await import("../src/domain/union-layers.ts")).presetGenerationLayers : undefined;
 
 const seeds = [1, 15, 20, 12, 4, 8];
 const demo = JSON.parse(
@@ -180,48 +203,60 @@ function orderedGraph(graph, influence) {
   };
 }
 
-function quality(geometry) {
+function quality(geometry, people) {
   const { width: cardWidth, height: cardHeight } = geometry.nodeSize || {
     width: TREE_NODE_WIDTH,
     height: TREE_NODE_HEIGHT,
   };
-  const positions = geometry.positions.map(([, point]) => point);
-  const left = Math.min(...positions.map((point) => point.x));
-  const right = Math.max(...positions.map((point) => point.x)) + cardWidth;
-  const top = Math.min(...positions.map((point) => point.y));
-  const bottom = Math.max(...positions.map((point) => point.y)) + cardHeight;
+  const finitePoint = (point) => Number.isFinite(point.x) && Number.isFinite(point.y);
+  const allPositions = geometry.positions.map(([, point]) => point);
+  // Invalid coordinates must be reported before they can enter an unbounded spatial query.
+  const positions = allPositions.filter(finitePoint);
+  const left = positions.length ? Math.min(...positions.map((point) => point.x)) : 0;
+  const right = positions.length ? Math.max(...positions.map((point) => point.x)) + cardWidth : 0;
+  const top = positions.length ? Math.min(...positions.map((point) => point.y)) : 0;
+  const bottom = positions.length ? Math.max(...positions.map((point) => point.y)) + cardHeight : 0;
   const cards = new Spatial();
-  for (const point of positions)
-    cards.add({
+  let cardOverlaps = 0;
+  for (const point of positions) {
+    const card = {
       left: point.x,
       right: point.x + cardWidth,
       top: point.y,
       bottom: point.y + cardHeight,
-    });
-  const routes = [
+    };
+    cardOverlaps += cards.query(card).filter((other) =>
+      card.left < other.right && card.right > other.left &&
+      card.top < other.bottom && card.bottom > other.top).length;
+    cards.add(card);
+  }
+  const allRoutes = [
     ...(geometry.branches || []).map((branch) => ({
       group: branch.union,
       route: branch.route,
     })),
     ...(geometry.routes || []).map(([id, route]) => ({ group: id, route })),
   ];
-  let cardHits = 0;
+  const routes = allRoutes.filter(({ route }) => route.points.every(finitePoint));
+  const validBranches = (geometry.branches || []).filter((branch) => branch.route.points.every(finitePoint));
+  let cardHits = 0, diagonalSegments = 0;
   for (const { route } of routes)
     for (let index = 1; index < route.points.length; index++) {
       const a = route.points[index - 1];
       const b = route.points[index];
+      if (a.x !== b.x && a.y !== b.y) diagonalSegments++;
       cardHits += cards
         .query(bounds(a, b))
         .filter((card) => segmentHitsBox(a, b, card)).length;
     }
   const routing = routingQuality(routes);
-  const branchContacts = routingQuality((geometry.branches || []).map((branch) => ({
+  const branchContacts = routingQuality(validBranches.map((branch) => ({
     group: branch.union,
     route: branch.route,
   }))).contacts;
   const segments = new Spatial();
   let rawContacts = 0;
-  for (const branch of geometry.branches || []) {
+  for (const branch of validBranches) {
     const points = branch.route.points;
     for (let index = 1; index < points.length; index++) {
       const a = points[index - 1];
@@ -237,17 +272,103 @@ function quality(geometry) {
       segments.add({ ...box, a, b, union: branch.union });
     }
   }
+  const relationKey = ({ type, from, to }) => JSON.stringify(type === "spouse"
+    ? [type, ...[from, to].sort()] : [type, from, to]);
+  const coveredRelations = new Set((geometry.branches || []).flatMap((branch) =>
+    branch.relations.map(relationKey)));
+  const parents = new Set(people.flatMap((person) => person.parents.map((from) =>
+    relationKey({ type: "parent", from, to: person.id }))));
+  const spouses = new Set(people.flatMap((person) => person.spouses.map((to) =>
+    relationKey({ type: "spouse", from: person.id, to }))));
+  const coveredPeople = new Set((geometry.occurrences || []).map((item) => item.personId));
   return {
     contacts: routing.contacts,
     branchContacts,
     rawContacts,
     crossings: routing.crossings,
     cardHits,
+    cardOverlaps,
+    diagonalSegments,
+    nonFinitePositions: allPositions.length - positions.length,
+    nonFiniteRoutePoints: allRoutes.reduce((count, { route }) => count + route.points.filter((point) => !finitePoint(point)).length, 0),
+    missingPeople: people.filter((person) => !coveredPeople.has(person.id)).length,
+    missingParentRelations: [...parents].filter((key) => !coveredRelations.has(key)).length,
+    missingSpouseRelations: [...spouses].filter((key) => !coveredRelations.has(key)).length,
     length: routing.length,
     bends: routing.bends,
     width: Math.round(right - left),
     height: Math.round(bottom - top),
   };
+}
+
+/** Estimate partition expansion within the components ELK actually separates. */
+function graphTrace(graph) {
+  const nodes = graph.children || [], edges = graph.edges || [];
+  const owners = new Map(nodes.map((node) => [node.id, node.id]));
+  const byPort = new Map(nodes.flatMap((node) =>
+    (node.ports || []).map((port) => [port.id, node.id])));
+  const owner = (id) => byPort.get(id) || id;
+  const find = (id) => {
+    let root = id;
+    while (owners.get(root) !== root) root = owners.get(root);
+    while (id !== root) { const next = owners.get(id); owners.set(id, root); id = next; }
+    return root;
+  };
+  for (const edge of edges)
+    for (const source of edge.sources || [])
+      for (const target of edge.targets || [])
+        if (owners.has(owner(source)) && owners.has(owner(target)))
+          owners.set(find(owner(target)), find(owner(source)));
+  const components = new Map(), ranks = new Map();
+  for (const node of nodes) {
+    const key = graph.layoutOptions?.["elk.separateConnectedComponents"] === "false" ? "all" : find(node.id);
+    const list = components.get(key) || [];
+    list.push(node); components.set(key, list);
+    const rank = Number(node.layoutOptions?.["elk.partitioning.partition"]);
+    if (Number.isInteger(rank)) ranks.set(rank, (ranks.get(rank) || 0) + 1);
+  }
+  let partitionDummyPairEstimate = 0;
+  if (graph.layoutOptions?.["elk.partitioning.activate"] === "true")
+    for (const members of components.values()) {
+      const counts = new Map();
+      for (const node of members) {
+        const rank = Number(node.layoutOptions?.["elk.partitioning.partition"]);
+        if (Number.isInteger(rank)) counts.set(rank, (counts.get(rank) || 0) + 1);
+      }
+      const ordered = [...counts].sort((a, b) => a[0] - b[0]);
+      for (let index = 1; index < ordered.length; index++)
+        partitionDummyPairEstimate += ordered[index - 1][1] * ordered[index][1];
+    }
+  return {
+    components,
+    inputNodes: nodes.length, inputEdges: edges.length,
+    inputPorts: byPort.size,
+    componentsCount: components.size,
+    rankWidths: [...ranks].sort((a, b) => a[0] - b[0]),
+    partitionDummyPairEstimate,
+  };
+}
+
+function rankValidity(result, components) {
+  const actual = new Map((result.children || []).map((node) => [node.id, node]));
+  let missingElkNodes = 0, nonFiniteElkPositions = 0, sameRankYViolations = 0, rankOrderViolations = 0;
+  for (const members of components.values()) {
+    const rows = new Map();
+    for (const node of members) {
+      const placed = actual.get(node.id);
+      if (!placed) { missingElkNodes++; continue; }
+      if (!Number.isFinite(placed.x) || !Number.isFinite(placed.y)) { nonFiniteElkPositions++; continue; }
+      const rank = Number(node.layoutOptions?.["elk.partitioning.partition"]);
+      const row = rows.get(rank) || [];
+      row.push(placed.y); rows.set(rank, row);
+    }
+    const ordered = [...rows].sort((a, b) => a[0] - b[0]);
+    for (const [, ys] of ordered)
+      sameRankYViolations += ys.filter((y) => Math.abs(y - ys[0]) > 1e-6).length;
+    for (let index = 1; index < ordered.length; index++)
+      if (Math.min(...ordered[index][1]) <= Math.max(...ordered[index - 1][1])) rankOrderViolations++;
+  }
+  return { missingElkNodes, nonFiniteElkPositions, sameRankYViolations, rankOrderViolations };
 }
 
 async function measure(people, selectedSeed, influence, thoroughness, disableCompact = false, interactiveFrom, previousGeometry, size, skipPairFlip = false) {
@@ -289,36 +410,81 @@ async function measure(people, selectedSeed, influence, thoroughness, disableCom
             "elk.layered.thoroughness": String(thoroughness),
           },
         };
-    const finalGraph = interactiveFrom ? fromSketchUnionGraph(tuned, interactiveFrom) || tuned : tuned;
+    let finalGraph = interactiveFrom ? fromSketchUnionGraph(tuned, interactiveFrom) || tuned : tuned;
+    if (generationMode === "partition") {
+      if (previousGeometry || interactiveFrom) throw new Error("Partition baseline cannot erase previous geometry hints");
+      finalGraph = {
+        ...finalGraph,
+        children: (finalGraph.children || []).map((entry) => {
+          const node = { ...entry, layoutOptions: { ...entry.layoutOptions } };
+          delete node.x; delete node.y; delete node.layoutOptions["elk.position"];
+          return node;
+        }),
+        layoutOptions: { ...finalGraph.layoutOptions,
+          "elk.partitioning.activate": "true",
+          "elk.layered.layering.strategy": "NETWORK_SIMPLEX" },
+      };
+    } else if (presetGenerationLayers) finalGraph = presetGenerationLayers(finalGraph);
+    if (Object.keys(optionOverrides).length)
+      finalGraph = { ...finalGraph, layoutOptions: { ...finalGraph.layoutOptions, ...optionOverrides } };
+    const { components, ...inputTrace } = graphTrace(finalGraph);
+    const inputOptions = { ...finalGraph.layoutOptions };
     const started = performance.now();
+    let elapsed;
     try {
       const result = await engine.layout(finalGraph);
+      elapsed = performance.now() - started;
       completedSeeds.add(seed);
       trace.push({
-        seed: finalGraph.layoutOptions?.["elk.randomSeed"],
-        strategy: finalGraph.layoutOptions?.["elk.layered.layering.strategy"] || "default",
-        bound: finalGraph.layoutOptions?.["elk.layered.layering.minWidth.upperBoundOnWidth"],
+        ...inputTrace,
+        options: inputOptions,
+        seed: inputOptions["elk.randomSeed"],
+        strategy: inputOptions["elk.layered.layering.strategy"] || "default",
+        bound: inputOptions["elk.layered.layering.minWidth.upperBoundOnWidth"],
         width: Math.round(result.width || 0),
         height: Math.round(result.height || 0),
+        ...rankValidity(result, components),
+        ms: Math.round(elapsed),
       });
       return result;
+    } catch (error) {
+      elapsed ??= performance.now() - started;
+      trace.push({ ...inputTrace, options: inputOptions,
+        ms: Math.round(elapsed), error: String(error) });
+      throw error;
     } finally {
       elkCalls++;
-      elkMs += performance.now() - started;
+      elkMs += elapsed ?? performance.now() - started;
     }
   };
   const started = performance.now();
-  const geometry = await unionGeometry(people, layout, false, [], size, previousGeometry);
+  let geometry, layoutCompleted;
+  try {
+    geometry = await unionGeometry(people, layout, false, [], size, previousGeometry);
+    layoutCompleted = performance.now();
+  } finally {
+    // Bundled ELK uses an in-process FakeWorker without a terminate method.
+    if (typeof engine.worker?.worker?.terminate === "function")
+      await engine.terminateWorker();
+  }
+  const qualityStarted = performance.now();
+  const measuredQuality = quality(geometry, people);
+  const qualityCompleted = performance.now();
   const result = {
     seed: thoroughness !== undefined
       ? `thoroughness ${thoroughness}`
       : influence === undefined
         ? selectedSeed ?? "production"
         : `median ${influence}`,
-    ...quality(geometry),
+    ...measuredQuality,
     elkCalls,
     elkMs: Math.round(elkMs),
-    totalMs: Math.round(performance.now() - started),
+    layoutMs: Math.round(layoutCompleted - started),
+    qualityMs: Math.round(qualityCompleted - qualityStarted),
+    // Harness wall time includes quality checks and engine disposal. Constructor/module import is excluded.
+    totalMs: Math.round(qualityCompleted - started),
+    generationMode,
+    geometrySha256: createHash("sha256").update(JSON.stringify(geometry)).digest("hex"),
   };
   Object.defineProperty(result, "geometry", { value: geometry });
   Object.defineProperty(result, "trace", { value: trace });
@@ -425,7 +591,15 @@ if (process.env.DREVO_LAYOUT_PRODUCTION_SCAN) {
     console.log(JSON.stringify({ seed, people: people.length,
       contacts: result.contacts, crossings: result.crossings,
       cardHits: result.cardHits, width: result.width,
-      elkCalls: result.elkCalls, totalMs: result.totalMs }));
+      elkCalls: result.elkCalls, elkMs: result.elkMs, layoutMs: result.layoutMs,
+      qualityMs: result.qualityMs, totalMs: result.totalMs,
+      cardOverlaps: result.cardOverlaps, nonFinitePositions: result.nonFinitePositions,
+      nonFiniteRoutePoints: result.nonFiniteRoutePoints,
+      missingPeople: result.missingPeople,
+      missingParentRelations: result.missingParentRelations,
+      missingSpouseRelations: result.missingSpouseRelations,
+      generationMode: result.generationMode, geometrySha256: result.geometrySha256,
+      ...(process.env.DREVO_LAYOUT_TRACE ? { trace: result.trace } : {}) }));
   }
 } else if (process.env.DREVO_LAYOUT_PAIR_SCAN) {
   const limit = Number(process.env.DREVO_LAYOUT_LIMIT || 24);
@@ -446,8 +620,10 @@ if (process.env.DREVO_LAYOUT_PRODUCTION_SCAN) {
       beforeMs: base.totalMs, afterMs: trial.totalMs }));
   }
 } else if (process.env.DREVO_LAYOUT_SCALE_SCAN) {
-  const fixtures = [[1, 2], [1, 4], [1, 5], [1, 6], [1, 7], [5, 9], [1, 8], [2, 6], [3, 6], [4, 7], [10, 9], [8, 9]];
+  const fixtures = [[1, 2], [1, 4], [1, 5], [1, 6], [1, 7], [5, 9], [1, 8], [2, 6], [3, 6], [4, 7], [10, 9], [8, 9], [1, 9], [1, 10]];
   for (const [index, [seed, generations]] of fixtures.entries()) {
+    // Do not add multi-thousand-person work to existing scans without an explicit case.
+    if (index >= 12 && !process.env.DREVO_LAYOUT_CASE) continue;
     if (process.env.DREVO_LAYOUT_CASE && Number(process.env.DREVO_LAYOUT_CASE) !== index + 1) continue;
     const people = randomFamily(seed, generations);
     const selectedSeed = process.env.DREVO_LAYOUT_SEED_ONLY ? 1 : undefined;
@@ -456,42 +632,36 @@ if (process.env.DREVO_LAYOUT_PRODUCTION_SCAN) {
       ? Number(process.env.DREVO_LAYOUT_THOROUGHNESS) : undefined;
     const result = await measure(people, selectedSeed, undefined, thoroughness, false, undefined, undefined, treeNodeSize(), skipPairFlip);
     const geometry = result.geometry;
-    const covered = new Set((geometry.occurrences || []).map((item) => item.personId));
-    const positions = geometry.positions.map(([, point]) => point);
-    const { width: cardWidth, height: cardHeight } = geometry.nodeSize || treeNodeSize();
-    let cardOverlaps = 0;
-    for (let i = 0; i < positions.length; i++)
-      for (let j = 0; j < i; j++)
-        if (Math.abs(positions[i].x - positions[j].x) < cardWidth &&
-            Math.abs(positions[i].y - positions[j].y) < cardHeight)
-          cardOverlaps++;
-    const routes = [
-      ...(geometry.branches || []).map((branch) => branch.route),
-      ...(geometry.routes || []).map(([, route]) => route),
-    ];
-    const diagonalSegments = routes.reduce((count, route) => count +
-      route.points.slice(1).filter((point, index) => {
-        const previous = route.points[index];
-        return point.x !== previous.x && point.y !== previous.y;
-      }).length, 0);
     console.log(JSON.stringify({
+      case: index + 1,
       people: people.length,
       seed,
       generations,
       occurrences: geometry.positions.length,
-      missingPeople: people.filter((person) => !covered.has(person.id)).length,
-      cardOverlaps,
-      diagonalSegments,
+      missingPeople: result.missingPeople,
+      missingParentRelations: result.missingParentRelations,
+      missingSpouseRelations: result.missingSpouseRelations,
+      nonFinitePositions: result.nonFinitePositions,
+      nonFiniteRoutePoints: result.nonFiniteRoutePoints,
+      cardOverlaps: result.cardOverlaps,
+      diagonalSegments: result.diagonalSegments,
       branches: geometry.branches?.length || 0,
       contacts: result.contacts,
       branchContacts: result.branchContacts,
       crossings: result.crossings,
+      length: Math.round(result.length),
+      bends: result.bends,
       cardHits: result.cardHits,
       width: result.width,
       height: result.height,
       elkCalls: result.elkCalls,
       elkMs: result.elkMs,
       totalMs: result.totalMs,
+      layoutMs: result.layoutMs,
+      qualityMs: result.qualityMs,
+      generationMode: result.generationMode,
+      geometrySha256: result.geometrySha256,
+      ...(process.env.DREVO_LAYOUT_TRACE ? { trace: result.trace } : {}),
     }));
   }
 } else if (process.env.DREVO_LAYOUT_COMPONENT_SCAN || process.env.DREVO_LAYOUT_ANCESTOR_SCAN) {
