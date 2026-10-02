@@ -1,0 +1,10 @@
+[Unit]
+Description=Monthly Drevo PostgreSQL physical restore rehearsal
+
+[Timer]
+OnCalendar=*-*-01 06:30:00 UTC
+RandomizedDelaySec=30m
+Unit=drevo-pgbackrest-restore-check.service
+
+[Install]
+WantedBy=timers.target

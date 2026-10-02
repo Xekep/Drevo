@@ -1,0 +1,10 @@
+[Unit]
+Description=Rehearse Drevo PostgreSQL physical restore into an isolated cluster
+After=postgresql.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=2h
+Nice=10
+IOSchedulingClass=idle
+ExecStart=/usr/local/sbin/drevo-run-restore-rehearsal

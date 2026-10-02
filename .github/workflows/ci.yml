@@ -136,6 +136,10 @@ jobs:
       - run: bash -n ops/fetch-award-images.sh
       - run: bash -n ops/postgres/verify-restore.sh
       - run: bash -n ops/postgres/verify-physical-restore.sh
+      - run: bash -n ops/postgres/run-restore-rehearsal.sh
+      - run: bash -n ops/postgres/setup-restore-rehearsal.sh
+      - run: python3 -B -m unittest discover -s tests -p 'test_restore_preflight.py'
+      - run: systemd-analyze calendar '*-*-01 06:30:00 UTC'
       - run: bash -n ops/postgres/setup-local-backup.sh
       - run: bash -n ops/postgres/local-backup.sh
       - run: bash -n ops/postgres/local-backup-health.sh
