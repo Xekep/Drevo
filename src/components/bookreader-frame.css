@@ -202,3 +202,9 @@ br-leaf-edges:not(.br-mode-2up__leafs--flipping) {
   }
   .BRtoolbarRight { min-width: 0; }
 }
+@media (max-width: 370px) {
+  .BRtoolbarbuttons { flex-wrap: wrap; }
+  .BRtoolbar .BRtoolbarLeft,
+  .BRtoolbar .BRtoolbarRight { flex: 1 0 100%; }
+  .BRtoolbar .BRtoolbarLeft { padding-right: 0; }
+}

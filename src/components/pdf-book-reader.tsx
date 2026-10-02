@@ -150,6 +150,9 @@ export function PdfBookReader({
         setReaderReady(true);
       } else if (message.type === "loaded") {
         setLoading(false);
+      } else if (message.type === "toolbar-height") {
+        if (Number.isFinite(message.height) && message.height >= 0 && message.height <= 240)
+          dialog.current?.style.setProperty("--reader-toolbar-height", `${message.height}px`);
       } else if (message.type === "outline") {
         setOutline(message.items);
       } else if (message.type === "selection") {
