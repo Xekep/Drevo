@@ -4777,6 +4777,11 @@ try {
     await fetch(securedBase + "/a/other-archive/media/same.png", { headers: ownerHeaders }).then((r) => r.text()),
     "secondary",
   );
+  assert.equal(
+    (await fetch(securedBase + "/a/other-archive/media/same.png", { headers: otherOnlyHeaders })).status,
+    404,
+    "a revoked member cannot read media through a warmed selected archive",
+  );
   assert.equal((await fetch(otherBase + "/media/same.png", { headers })).status, 401);
   // Discovery reads a global projection, never another archive's private graph.
   assert.equal(

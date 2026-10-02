@@ -56,6 +56,19 @@ export function publicSharingHttp({
           ? media.open(person.photo)
           : null;
       if (!file) return json(404, { error: "Портрет не найден" });
+      const selectedPhoto = person && person.photo;
+      const portraitAccess = async () => {
+        const currentShare = await shares.get(token);
+        if (!currentShare) return 410;
+        const { family: currentFamily } = await archive.read();
+        return currentShare.personIds.includes(id) &&
+          currentFamily.people.some(
+            (candidate) =>
+              candidate.id === id && candidate.photo === selectedPhoto,
+          )
+          ? 200
+          : 404;
+      };
 
       if (file.type !== "image/gif") {
         try {
@@ -63,8 +76,11 @@ export function publicSharingHttp({
             { path: file.path, cacheKey: file.name },
             url.searchParams.get("variant") === "tiny" ? "tiny" : "thumb",
           );
-          if (!(await shares.get(token)))
-            return json(410, { error: "Срок ссылки истёк" });
+          const access = await portraitAccess();
+          if (access !== 200)
+            return json(access, {
+              error: access === 410 ? "Срок ссылки истёк" : "Портрет не найден",
+            });
           res.writeHead(200, {
             "Content-Type": "image/webp",
             "Content-Length": String(bytes.length),
@@ -85,9 +101,12 @@ export function publicSharingHttp({
           await handle.close();
           return json(404, { error: "Портрет не найден" });
         }
-        if (!(await shares.get(token))) {
+        const access = await portraitAccess();
+        if (access !== 200) {
           await handle.close();
-          return json(410, { error: "Срок ссылки истёк" });
+          return json(access, {
+            error: access === 410 ? "Срок ссылки истёк" : "Портрет не найден",
+          });
         }
         res.writeHead(200, {
           "Content-Type": file.type,
