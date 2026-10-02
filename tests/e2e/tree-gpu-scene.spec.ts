@@ -328,6 +328,15 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
       portraitGate = null;
       releasePortraits();
     }
+    await expect.poll(async () => ({
+      renderer: await root.getAttribute("data-renderer"),
+      fallback: await root.getAttribute("data-gpu-fallback"),
+      canvasCount: await page.locator(".tree-gpu-scene").count(),
+    }), { timeout: 15_000 }).toEqual({
+      renderer: "webgl2",
+      fallback: null,
+      canvasCount: 1,
+    });
     await expect(tree).toBeVisible();
     await expect(canvas).toHaveAttribute("data-gpu-draws", /\d+/);
     const resourcesBeforeSelection = await page.evaluate(
