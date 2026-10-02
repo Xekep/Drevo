@@ -713,6 +713,53 @@ test("Agelong XML keeps people, relationships, coordinates and events through GE
   );
 });
 
+test("Agelong XML attaches former-spouse divorce to the right marriage regardless of event order", () => {
+  const input = `<agelongtree><persons>
+    <person id="a" fn="Anna" sn="Example"/><person id="b" fn="Boris" sn="Example"/>
+    <person id="c" fn="Clara" sn="Example"/>
+    </persons><events>
+    <event id="divorce" type="Развод" date="1930"><persons><person id="a" role="Бывшая жена"/><person id="b" role="Бывший муж"/></persons></event>
+    <event id="other" type="Свадьба" date="1925"><persons><person id="b" role="Муж"/><person id="c" role="Жена"/></persons></event>
+    <event id="marriage" type="Свадьба" date="1920"><persons><person id="a" role="Жена"/><person id="b" role="Муж"/></persons></event>
+    </events></agelongtree>`;
+  const imported = importAgelongXml(input, "divorce");
+  assert.equal(imported.family.unions?.length, 2);
+  const former = imported.family.unions?.find((union) => union.divorce);
+  assert.deepEqual(former?.participants.sort(), ["divorce-p1", "divorce-p2"]);
+  assert.equal(former?.formation?.date, "1920");
+  assert.equal(former?.divorce?.date, "1930");
+  assert.ok(imported.family.people[0].events?.some((event) => event.type === "divorce"));
+  const restored = importGedcom(exportGedcom(imported.family, { version: "7.0" }), "restored");
+  assert.equal(restored.family.unions?.find((union) => union.divorce)?.divorce?.date, "1930");
+  assert.equal(restored.family.unions?.find((union) => union.divorce)?.formation?.date, "1920");
+  assert.notEqual(importAgelongXml(input, "another").family.unions?.[0].id, imported.family.unions?.[0].id);
+});
+
+test("Agelong XML reports ambiguous divorces rather than selecting a marriage", () => {
+  const input = `<agelongtree><persons><person id="a" fn="Anna" sn="Example"/>
+    <person id="b" fn="Boris" sn="Example"/></persons><events>
+    <event id="one" type="Свадьба"><persons><person id="a" role="Жена"/><person id="b" role="Муж"/></persons></event>
+    <event id="two" type="Свадьба"><persons><person id="a" role="Жена"/><person id="b" role="Муж"/></persons></event>
+    <event id="divorce" type="Развод"><persons><person id="a" role="Бывшая жена"/><person id="b" role="Бывший муж"/></persons></event>
+    </events></agelongtree>`;
+  const imported = importAgelongXml(input, "ambiguous");
+  assert.equal(imported.family.unions?.length, 3);
+  assert.ok(imported.warnings.some((warning) => warning.includes("Развод divorce сохранён отдельным союзом: у пары несколько возможных союзов")));
+});
+
+test("Agelong XML reports a divorce with no compatible marriage and keeps it separate", () => {
+  const input = `<agelongtree><persons><person id="a" fn="Anna" sn="Example"/>
+    <person id="b" fn="Boris" sn="Example"/></persons><events>
+    <event id="divorce" type="Развод" date="1930"><persons><person id="a" role="Бывшая жена"/><person id="b" role="Бывший муж"/></persons></event>
+    <event id="later" type="Свадьба" date="1940"><persons><person id="a" role="Жена"/><person id="b" role="Муж"/></persons></event>
+    </events></agelongtree>`;
+  const imported = importAgelongXml(input, "unmatched");
+  assert.equal(imported.family.unions?.length, 2);
+  assert.equal(imported.family.unions?.find((union) => union.divorce)?.formation, undefined);
+  assert.equal(imported.family.unions?.find((union) => union.formation)?.divorce, undefined);
+  assert.ok(imported.warnings.some((warning) => warning.includes("Развод divorce сохранён отдельным союзом: подходящий брак не найден")));
+});
+
 test("Agelong XML retains cited sources and custom values while disclosing lost structure", () => {
   const input = `<agelongtree><persons>
     <person id="p" fn="Анна" sn="Примерова" nickname="Нюра" fav="1">
