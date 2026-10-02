@@ -70,6 +70,8 @@ test("production static streams SPA routes, files and shared page", async () => 
       "/a/family-one/tree",
       "/a/family-one/people/sample-id",
       "/a/family-one/account",
+      "/admin/matches",
+      "/a/family-one/admin/matches",
       `/discover/person/family-one/${encodeURIComponent("family:человек.1")}`,
     ]) {
       const response = await fetch(app.base + path);

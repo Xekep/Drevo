@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  adminMatchesPath,
   archiveDocumentAt,
   archiveDocumentPath,
   archivePaths,
@@ -19,6 +20,8 @@ test("all archive sections have stable exact URLs shared by browser and server",
   }
   assert.equal(archivePaths.list, "/people");
   assert.equal(archivePaths.gallery, "/photos");
+  assert.equal(archiveViewAt(adminMatchesPath), "admin");
+  assert.equal(archiveViewAt(`/a/family-one${adminMatchesPath}`), "admin");
   for (const path of [
     "/admin-secret",
     "/api/family",

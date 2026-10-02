@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
+import { adminMatchesPath } from "../domain/archive-routes.ts";
 
 type Person = { archiveId: string; id: string; name: string;
   relation: "parent" | "child" | "spouse"; birthYear?: string; deathYear?: string;
@@ -39,7 +40,7 @@ export function DiscoveryLinkedBranchPerson({ archiveId, matchId, personId }: {
       document.removeEventListener("visibilitychange", recheck); };
   }, [endpoint]);
   return <main className="public-people-page">
-    <a href={`/a/${encodeURIComponent(archiveId)}/admin`}>← К сопоставлениям</a>
+    <a href={`/a/${encodeURIComponent(archiveId)}${adminMatchesPath}`}>← К сопоставлениям</a>
     <h1>Разрешённая карточка другого архива</h1>
     <p>Показаны только опубликованные сведения выбранного прямого родственника. Просмотр требует действующего разрешения владельцев обоих архивов.</p>
     {busy && <p role="status">Проверяем доступ…</p>}
