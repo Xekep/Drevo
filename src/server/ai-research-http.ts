@@ -868,7 +868,10 @@ export function aiResearchHttp({
         throw new DOMException("Доступ к ИИ отключён", "AbortError");
       }
       const assertAnswerDelivery = async () => {
-        if (await canDeliverAiData(req, chat.accessScope, user.id)) return;
+        controller.signal.throwIfAborted();
+        const allowed = await canDeliverAiData(req, chat.accessScope, user.id);
+        controller.signal.throwIfAborted();
+        if (allowed) return;
         accessRevoked = true;
         controller.abort();
         throw new DOMException("Доступ к ИИ отключён", "AbortError");
