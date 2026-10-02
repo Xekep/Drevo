@@ -7824,7 +7824,7 @@ try {
     guardedApp.archive.write = originalRestoreWrite;
     await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
   }
-  await verifyPlatformAiOrphanSweep(live!.db, client, source);
+  await verifyPlatformAiOrphanSweep(app!.archive.db, client, source);
   console.log("runtime_http_and_backup_ok");
 } finally {
   await restoreGuardApp?.close();
