@@ -1,0 +1,158 @@
+{
+  "method": "Unmodified raw acceptance reports. Full report collector omitted the adapter hash; the diagnostic records it. Runtime source unchanged between both acceptance runs and diagnostic; only benchmark metadata correction committed afterward.",
+  "acceptanceCommit": "09dd963fe1fc49af2f2bc981a0e298d93b070460",
+  "diagnosticCommit": "e5cc4b3e37ef67b03868bc781151f1ab53f2c33f",
+  "verifiedSourceCount": 24,
+  "verified": [
+    {
+      "file": "src/components/tree/tree-canvas.tsx",
+      "expected": "ea23057f93a8ea38623ac30a4bbb139735f1f7c361d04e67c8d6a7a9c61e90b5",
+      "mobile": "ea23057f93a8ea38623ac30a4bbb139735f1f7c361d04e67c8d6a7a9c61e90b5",
+      "actual": "ea23057f93a8ea38623ac30a4bbb139735f1f7c361d04e67c8d6a7a9c61e90b5"
+    },
+    {
+      "file": "src/components/tree/tree-render-family.ts",
+      "expected": "fd7f199437f88aa940a1c713acdfef70979cea0cd6e5670796d133872f5b304c",
+      "mobile": "fd7f199437f88aa940a1c713acdfef70979cea0cd6e5670796d133872f5b304c",
+      "actual": "fd7f199437f88aa940a1c713acdfef70979cea0cd6e5670796d133872f5b304c"
+    },
+    {
+      "file": "src/domain/archive-projection.ts",
+      "expected": "649f5fcc9e81cc97d8468feded0746e9ce0128ac381d2ba8f82d6dd2fab86a4f",
+      "mobile": "649f5fcc9e81cc97d8468feded0746e9ce0128ac381d2ba8f82d6dd2fab86a4f",
+      "actual": "649f5fcc9e81cc97d8468feded0746e9ce0128ac381d2ba8f82d6dd2fab86a4f"
+    },
+    {
+      "file": "src/components/tree/tree-camera-fit.ts",
+      "expected": "07ff4c243b3eb7af6dd90b66cd11c443b3de4f735ed5dbbead74d76be4fdb47c",
+      "mobile": "07ff4c243b3eb7af6dd90b66cd11c443b3de4f735ed5dbbead74d76be4fdb47c",
+      "actual": "07ff4c243b3eb7af6dd90b66cd11c443b3de4f735ed5dbbead74d76be4fdb47c"
+    },
+    {
+      "file": "src/components/tree/use-tree-camera-state.ts",
+      "expected": "01d360e3215633abf183949e2586c0e18355f3f91183316f856893987e99b8fb",
+      "mobile": "01d360e3215633abf183949e2586c0e18355f3f91183316f856893987e99b8fb",
+      "actual": "01d360e3215633abf183949e2586c0e18355f3f91183316f856893987e99b8fb"
+    },
+    {
+      "file": "src/components/tree/tree-camera-tools.tsx",
+      "expected": "706d390098a734bdf388e0e6b391c166750cba569fa6b041b78b0a6e64a94107",
+      "mobile": "706d390098a734bdf388e0e6b391c166750cba569fa6b041b78b0a6e64a94107",
+      "actual": "706d390098a734bdf388e0e6b391c166750cba569fa6b041b78b0a6e64a94107"
+    },
+    {
+      "file": "src/components/tree/use-long-press.ts",
+      "expected": "c8e97d5037cf5eda3a177e1559793c785adfb29e58163a075ef5333481ec0f72",
+      "mobile": "c8e97d5037cf5eda3a177e1559793c785adfb29e58163a075ef5333481ec0f72",
+      "actual": "c8e97d5037cf5eda3a177e1559793c785adfb29e58163a075ef5333481ec0f72"
+    },
+    {
+      "file": "src/components/tree/person-node.tsx",
+      "expected": "468504c2b84edbeb12df4ffeeb330f4cad329a07680ee27bd270091230dfc308",
+      "mobile": "468504c2b84edbeb12df4ffeeb330f4cad329a07680ee27bd270091230dfc308",
+      "actual": "468504c2b84edbeb12df4ffeeb330f4cad329a07680ee27bd270091230dfc308"
+    },
+    {
+      "file": "src/components/tree/tree-node-model.ts",
+      "expected": "27a86167ce59e0e601ecf9109ab5a2a9f13bd247295c1d84afcacc5813f1d400",
+      "mobile": "27a86167ce59e0e601ecf9109ab5a2a9f13bd247295c1d84afcacc5813f1d400",
+      "actual": "27a86167ce59e0e601ecf9109ab5a2a9f13bd247295c1d84afcacc5813f1d400"
+    },
+    {
+      "file": "src/components/tree/tree-growth.ts",
+      "expected": "eaab547e7884b5af76a965de0211edda459ec889c9a00ac86d6bba6d6e8b8c95",
+      "mobile": "eaab547e7884b5af76a965de0211edda459ec889c9a00ac86d6bba6d6e8b8c95",
+      "actual": "eaab547e7884b5af76a965de0211edda459ec889c9a00ac86d6bba6d6e8b8c95"
+    },
+    {
+      "file": "src/components/research-assistant.tsx",
+      "expected": "d692b52f7aa221b60812032d122fc554ab5cb313e517d394f3935df66ddb83ad",
+      "mobile": "d692b52f7aa221b60812032d122fc554ab5cb313e517d394f3935df66ddb83ad",
+      "actual": "d692b52f7aa221b60812032d122fc554ab5cb313e517d394f3935df66ddb83ad"
+    },
+    {
+      "file": "src/components/tree/gpu-scene.ts",
+      "expected": "37a1da6e1aed192d10d3fd24ce22bbacb017b067bf90229399376ca81935a957",
+      "mobile": "37a1da6e1aed192d10d3fd24ce22bbacb017b067bf90229399376ca81935a957",
+      "actual": "37a1da6e1aed192d10d3fd24ce22bbacb017b067bf90229399376ca81935a957"
+    },
+    {
+      "file": "src/components/tree/tree-gpu-scene.tsx",
+      "expected": "101d4028e47b1ba37f5150d438f452c47ef6f50ac6cc06373dfd8148296c559c",
+      "mobile": "101d4028e47b1ba37f5150d438f452c47ef6f50ac6cc06373dfd8148296c559c",
+      "actual": "101d4028e47b1ba37f5150d438f452c47ef6f50ac6cc06373dfd8148296c559c"
+    },
+    {
+      "file": "src/components/tree/distant-portraits.tsx",
+      "expected": "838dd23d477476c61da395028a06db502f8ff867038cd9bbff57958ffd8d54e3",
+      "mobile": "838dd23d477476c61da395028a06db502f8ff867038cd9bbff57958ffd8d54e3",
+      "actual": "838dd23d477476c61da395028a06db502f8ff867038cd9bbff57958ffd8d54e3"
+    },
+    {
+      "file": "src/components/tree/use-tree-layout.ts",
+      "expected": "e09962f2e7b06f69bf85b5513f9e857f7a84e7b2bbdfe46754783fc2b9695636",
+      "mobile": "e09962f2e7b06f69bf85b5513f9e857f7a84e7b2bbdfe46754783fc2b9695636",
+      "actual": "e09962f2e7b06f69bf85b5513f9e857f7a84e7b2bbdfe46754783fc2b9695636"
+    },
+    {
+      "file": "src/components/tree/layout-cache.ts",
+      "expected": "5ad80c8ed9af2c87dbd13a3a166bc5a23fc9fe63fd7f50de08b0c7fae5e91e57",
+      "mobile": "5ad80c8ed9af2c87dbd13a3a166bc5a23fc9fe63fd7f50de08b0c7fae5e91e57",
+      "actual": "5ad80c8ed9af2c87dbd13a3a166bc5a23fc9fe63fd7f50de08b0c7fae5e91e57"
+    },
+    {
+      "file": "src/components/tree/layout-storage.ts",
+      "expected": "8780a5eb05b91d50eeb03bed7d2695fbdad9444681f9cb90d5e8e3065981ff81",
+      "mobile": "8780a5eb05b91d50eeb03bed7d2695fbdad9444681f9cb90d5e8e3065981ff81",
+      "actual": "8780a5eb05b91d50eeb03bed7d2695fbdad9444681f9cb90d5e8e3065981ff81"
+    },
+    {
+      "file": "src/domain/union-layout.ts",
+      "expected": "119a89c1b2f9f2cd17edaf62da3e5e2806c00f7d37ac1ff84d53020c5bb4eacd",
+      "mobile": "119a89c1b2f9f2cd17edaf62da3e5e2806c00f7d37ac1ff84d53020c5bb4eacd",
+      "actual": "119a89c1b2f9f2cd17edaf62da3e5e2806c00f7d37ac1ff84d53020c5bb4eacd"
+    },
+    {
+      "file": "src/domain/index.ts",
+      "expected": "a17bc7165b24a4ad8237bff88cdf727d503a5f17fdc49039483e70b696370458",
+      "mobile": "a17bc7165b24a4ad8237bff88cdf727d503a5f17fdc49039483e70b696370458",
+      "actual": "a17bc7165b24a4ad8237bff88cdf727d503a5f17fdc49039483e70b696370458"
+    },
+    {
+      "file": "src/components/tree/person-relation-label.ts",
+      "expected": "95bb364dfe8ae94350c7a1e65f0e239ba58f7a38841f64c8d4a980e05d36dcfa",
+      "mobile": "95bb364dfe8ae94350c7a1e65f0e239ba58f7a38841f64c8d4a980e05d36dcfa",
+      "actual": "95bb364dfe8ae94350c7a1e65f0e239ba58f7a38841f64c8d4a980e05d36dcfa"
+    },
+    {
+      "file": "src/domain/kinship-analysis.ts",
+      "expected": "96ef3ba83adda7f8f0dd4f52d0256da9016dbc7f05973a675d30e4c91e3984f2",
+      "mobile": "96ef3ba83adda7f8f0dd4f52d0256da9016dbc7f05973a675d30e4c91e3984f2",
+      "actual": "96ef3ba83adda7f8f0dd4f52d0256da9016dbc7f05973a675d30e4c91e3984f2"
+    },
+    {
+      "file": "src/domain/kinship-index.ts",
+      "expected": "033fb3441bce6737a1c6f410759614c19e169fbdac7eac9f7d9d7ab20ba219f0",
+      "mobile": "033fb3441bce6737a1c6f410759614c19e169fbdac7eac9f7d9d7ab20ba219f0",
+      "actual": "033fb3441bce6737a1c6f410759614c19e169fbdac7eac9f7d9d7ab20ba219f0"
+    },
+    {
+      "file": "src/domain/kinship.ts",
+      "expected": "931613daf32723d0b0737888802cc256d533a04af6bd4cb2ed8ce1c38d9bd77d",
+      "mobile": "931613daf32723d0b0737888802cc256d533a04af6bd4cb2ed8ce1c38d9bd77d",
+      "actual": "931613daf32723d0b0737888802cc256d533a04af6bd4cb2ed8ce1c38d9bd77d"
+    },
+    {
+      "file": "package-lock.json",
+      "expected": "d9761c619236fcc67fa7375bd01974fb262e3867d8e9c9e75314f0bd6137cf34",
+      "mobile": "d9761c619236fcc67fa7375bd01974fb262e3867d8e9c9e75314f0bd6137cf34",
+      "actual": "d9761c619236fcc67fa7375bd01974fb262e3867d8e9c9e75314f0bd6137cf34"
+    }
+  ],
+  "edgeAdapter": {
+    "file": "src/components/tree/tree-edge-adapter.ts",
+    "actual": "3aa5741ae0ace267c362561fdc9d337cb32be5cc6d10d69ecf50143272636715",
+    "diagnostic": "3aa5741ae0ace267c362561fdc9d337cb32be5cc6d10d69ecf50143272636715"
+  },
+  "changedRuntimeFiles": []
+}
