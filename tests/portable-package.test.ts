@@ -345,6 +345,45 @@ test("Drevo exports and imports a media manifest larger than the former 8 KiB ca
   }
 });
 
+test("Drevo export rejects an original changed after manifest hashing", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "drevo-portable-changing-original-"));
+  const output = new PassThrough();
+  output.resume();
+  try {
+    const original = Buffer.from("%PDF-1.4\nversion1\n%%EOF");
+    const changed = Buffer.from("%PDF-1.4\nversion2\n%%EOF");
+    assert.equal(original.length, changed.length);
+    await writeFile(join(dir, "record.pdf"), original);
+    const snapshot: PortableSnapshot = {
+      family: { title: "Tree", description: "", demo: false, people: [] },
+      documents: [{ id: "11111111-1111-4111-8111-111111111111", title: "Record",
+        fileName: "record.pdf", createdAt: "2026-10-01T00:00:00Z", uploadedBy: "owner",
+        documentType: "", documentDate: "", place: "", description: "",
+        provenance: "", annotations: [], personIds: [] }],
+      comments: [],
+    };
+    let checked = false;
+    await assert.rejects(writePortablePackage(output, dir, snapshot, async () => {
+      checked = true;
+      await writeFile(join(dir, "record.pdf"), changed);
+    }), /оригинал изменился/i);
+    assert.equal(checked, true, "the replacement happens after the manifest hash");
+    await writeFile(join(dir, "record.pdf"), original);
+    const removedOutput = new PassThrough();
+    removedOutput.resume();
+    try {
+      await assert.rejects(writePortablePackage(removedOutput, dir, snapshot, async () => {
+        await rm(join(dir, "record.pdf"));
+      }), /ENOENT/);
+    } finally {
+      removedOutput.destroy();
+    }
+  } finally {
+    output.destroy();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Drevo rejects an export exceeding the importer's ZIP entry cap before sending it", async () => {
   const snapshot: PortableSnapshot = {
     family: {
