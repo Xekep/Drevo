@@ -1330,6 +1330,21 @@ try {
     `${base}/api/documents/${afterDocuments.items[0].id}/annotations`,
   ).then((r) => r.json());
   assert.equal(restoredAnnotations.items[0].text, "Важная запись");
+  const annotationEditPath = `${base}/api/documents/${afterDocuments.items[0].id}/annotations/${restoredAnnotations.items[0].id}`;
+  assert.equal(restoredAnnotations.items[0].canEdit, true);
+  const editedAnnotation = await fetch(annotationEditPath, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expected: "Важная запись", text: "Уточнённая запись" }),
+  });
+  assert.equal(editedAnnotation.status, 200, await editedAnnotation.clone().text());
+  assert.deepEqual((await editedAnnotation.json()).items[0], {
+    ...restoredAnnotations.items[0], text: "Уточнённая запись",
+  });
+  const staleAnnotation = await fetch(annotationEditPath, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expected: "Важная запись", text: "Устаревшая запись" }),
+  });
+  assert.equal(staleAnnotation.status, 409);
   assert.deepEqual(
     Buffer.from(
       await (await fetch(base + afterDocuments.items[0].url)).arrayBuffer(),
@@ -7337,7 +7352,7 @@ try {
     assert.equal(returnedAnnotations.status, 200);
     const annotationItems = (await returnedAnnotations.json()).items as Array<{ id: string; authorId: string; authorName: string; canDelete: boolean }>;
     assert.deepEqual(annotationItems.find((item) => item.id === formerAnnotationId),
-      { ...formerAnnotation, authorId: "deleted-account", authorName: "Удалённый участник", canDelete: true },
+      { ...formerAnnotation, authorId: "deleted-account", authorName: "Удалённый участник", canDelete: true, canEdit: false },
     "researcher moderation leaves the predecessor's author identity anonymized");
     await client.query("UPDATE archive_memberships SET role='relative' WHERE archive_id='runtime-test' AND user_id='former-member'");
     const returnedRelativeAnnotations = await fetch(securedBase + annotationPath, { headers: returnedHeaders })

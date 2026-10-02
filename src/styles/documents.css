@@ -288,11 +288,15 @@
   color: #94a196;
   font-size: 11px;
 }
+.pdf-book-comments-list article:has(.pdf-book-comment-edit) > button:first-child {
+  padding-right: 74px;
+}
 .pdf-book-comments-list article span {
   overflow-wrap: anywhere;
   font-size: 12px;
   line-height: 1.5;
 }
+.pdf-book-comment-edit,
 .pdf-book-comment-delete {
   position: absolute;
   top: 10px;
@@ -306,6 +310,10 @@
   color: #a8b1a9;
   cursor: pointer;
 }
+.pdf-book-comment-edit { right: 42px; }
+.pdf-book-comment-edit[hidden] { display: none; }
+.pdf-book-comment-edit:disabled,
+.pdf-book-comment-delete:disabled { opacity: .4; cursor: default; }
 .pdf-book-comment-form {
   display: grid;
   gap: 8px;

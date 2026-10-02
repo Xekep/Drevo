@@ -10,6 +10,7 @@ export type DocumentAnnotation = {
   authorName: string;
   createdAt: string;
   canDelete?: boolean;
+  canEdit?: boolean;
 };
 
 export type AnnotationSelection = Pick<

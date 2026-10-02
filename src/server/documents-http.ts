@@ -732,6 +732,11 @@ export function documentsHttp({
       ) => actor?.approved === true && (
         actor.role === "researcher" || owns(actor, { createdBy: authorId })
       );
+      const canEditAnnotation = (
+        actor: Awaited<ReturnType<typeof auth.currentUser>>,
+        authorId: string,
+      ) => actor?.approved === true && actor.id === authorId &&
+        ["admin", "researcher", "relative"].includes(actor.role);
       const visibleItems = (
         items: DocumentAnnotation[],
         actor: Awaited<ReturnType<typeof auth.currentUser>>,
@@ -739,6 +744,7 @@ export function documentsHttp({
         items.map((item) => ({
           ...item,
           canDelete: canDeleteAnnotation(actor, item.authorId),
+          canEdit: canEditAnnotation(actor, item.authorId),
         }));
       if (req.method === "GET" && !annotations[2]) {
         const actor = await auth.currentUser(req);
@@ -753,6 +759,7 @@ export function documentsHttp({
       if (!(await auth.canEdit(req)))
         return json(res, 403, { error: "Нет прав на комментарии" });
       let selection: AnnotationSelection | undefined;
+      let edit: { expected: string; text: string } | undefined;
       if (req.method === "POST" && !annotations[2]) {
         let body: unknown;
         try {
@@ -767,6 +774,19 @@ export function documentsHttp({
             error: "Выделите фрагмент и введите комментарий",
           });
         selection = body;
+      } else if (req.method === "PATCH" && annotations[2]) {
+        if (req.headers["content-type"]?.split(";")[0] !== "application/json")
+          return json(res, 415, { error: "Ожидается JSON" });
+        let body: Record<string, unknown>;
+        try {
+          body = await readJsonBody(req, 32768) as Record<string, unknown>;
+        } catch {
+          return json(res, 400, { error: "Некорректный комментарий" });
+        }
+        if (!body || typeof body.expected !== "string" || body.expected.length > 2000 ||
+          typeof body.text !== "string" || !body.text.trim() || body.text.trim().length > 2000)
+          return json(res, 400, { error: "Введите комментарий до 2000 символов" });
+        edit = { expected: body.expected, text: body.text.trim() };
       } else if (req.method !== "DELETE" || !annotations[2])
         return json(res, 405, { error: "Метод не поддерживается" });
       const result = await db.transaction(async () => {
@@ -806,12 +826,22 @@ export function documentsHttp({
         } else {
           const index = items.findIndex((item) => item.id === annotations[2]);
           if (index < 0) return { status: 404, error: "Комментарий не найден" };
-          if (!canDeleteAnnotation(latest, items[index].authorId))
-            return {
-              status: 403,
-              error: "Удалить комментарий может его автор, исследователь или администратор",
-            };
-          items.splice(index, 1);
+          if (req.method === "PATCH") {
+            if (!canEditAnnotation(latest, items[index].authorId))
+              return { status: 403, error: "Изменить комментарий может только его автор" };
+            if (!edit)
+              return { status: 400, error: "Некорректный комментарий" };
+            if (items[index].text !== edit.expected)
+              return { status: 409, error: "Комментарий уже изменён. Отмените правку и откройте редактор заново.", current: items[index].text };
+            items[index] = { ...items[index], text: edit.text };
+          } else {
+            if (!canDeleteAnnotation(latest, items[index].authorId))
+              return {
+                status: 403,
+                error: "Удалить комментарий может его автор, исследователь или администратор",
+              };
+            items.splice(index, 1);
+          }
           status = 200;
         }
         await db
@@ -825,7 +855,9 @@ export function documentsHttp({
             action:
               status === 201
                 ? "Добавлен комментарий к документу"
-                : "Удалён комментарий к документу",
+                : req.method === "PATCH"
+                  ? "Изменён комментарий к документу"
+                  : "Удалён комментарий к документу",
             entity: "document",
             entityId: row.id,
             label: row.title,
@@ -837,7 +869,10 @@ export function documentsHttp({
         return { status, items };
       });
       return "error" in result
-        ? json(res, result.status, { error: result.error })
+        ? json(res, result.status, {
+            error: result.error,
+            ...("current" in result ? { current: result.current } : {}),
+          })
         : json(res, result.status, {
             items: visibleItems(result.items, await auth.currentUser(req)),
           });
