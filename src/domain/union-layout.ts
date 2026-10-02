@@ -19,7 +19,7 @@ import type { FamilyLink } from "./types.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
-import { routingQuality } from "./routing-quality.ts";
+import { routingContactScore, routingQuality } from "./routing-quality.ts";
 import { coupleBlocksWithContactedAncestry, invertedCoupleBlocks, locallyReverseCouples } from "./local-couple-order.ts";
 import {
   adjacentFamilyBlocks,
@@ -613,6 +613,29 @@ function geometryRoutingQuality(geometry: TreeGeometry) {
   ]);
 }
 
+/** Кэш живёт один расчёт; готовые геометрии кандидатов больше не изменяются. */
+export function createGeometryContactScorer() {
+  const scores = new WeakMap<TreeGeometry, ReturnType<typeof routingContactScore>>();
+  const score = (geometry: TreeGeometry) => {
+    let result = scores.get(geometry);
+    if (!result) {
+      result = routingContactScore((geometry.branches || []).map((branch) => ({
+        group: branch.union, route: branch.route,
+      })));
+      scores.set(geometry, result);
+    }
+    return result;
+  };
+  return {
+    contacts: (geometry: TreeGeometry) => geometry.routes?.length
+      ? branchContactCounts(geometry.branches || [])
+      : score(geometry).contacts,
+    quality: (geometry: TreeGeometry) => geometry.routes?.length
+      ? geometryRoutingQuality(geometry)
+      : score(geometry).quality,
+  };
+}
+
 /** Сравниваем видимые маршруты после ELK и уплотнения полос поколений. */
 export async function unionGeometry(
   people: LayoutPerson[],
@@ -624,13 +647,14 @@ export async function unionGeometry(
   largeDecross = true,
 ): Promise<TreeGeometry> {
   const { width: W, height: H } = size;
+  const { contacts: geometryContacts, quality: geometryQuality } = createGeometryContactScorer();
   const initialProfile = people.length > 900 && largeDecross ? "greedy" : undefined;
   let best = await geometryForSeed(
     people, layout, reverse, links, 1, size, false, undefined, undefined, initialProfile,
   );
   let bestSeed = 1;
-  let contacts = branchContactCounts(best.branches || []);
-  let profileQuality = initialProfile && geometryRoutingQuality(best);
+  let contacts = geometryContacts(best);
+  let profileQuality = initialProfile && geometryQuality(best);
   let profileCardContacts = initialProfile ? routeCardContacts(best, W, H) : 0;
   let profileOverlaps = initialProfile ? cardOverlapCount(best, W, H) : 0;
   const seedCandidates = previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE
@@ -695,7 +719,7 @@ export async function unionGeometry(
         initial.width * initial.height * 1.5
     )
       continue;
-    const next = branchContactCounts(candidate.branches || []);
+    const next = geometryContacts(candidate);
     if (seedCandidates.length) seedCandidates.push({ geometry: candidate, contacts: next });
     if (
       next.distinct < contacts.distinct ||
@@ -704,7 +728,7 @@ export async function unionGeometry(
       // Разные профили сравниваем по всем видимым линиям, включая дополнительные
       // отношения. Уменьшение семейных контактов не должно портить эти маршруты.
       if (profileQuality) {
-        const quality = geometryRoutingQuality(candidate);
+        const quality = geometryQuality(candidate);
         if (quality.contacts > profileQuality.contacts ||
             quality.crossings > profileQuality.crossings ||
             quality.length > profileQuality.length * 1.15 ||
@@ -751,8 +775,8 @@ export async function unionGeometry(
             Math.max(axisDisplacement(previous, best, "y"), 32) + 64
         ) continue;
         const currentSize = extent(best), nextSize = extent(item.geometry);
-        const currentRoutes = geometryRoutingQuality(best);
-        const nextRoutes = geometryRoutingQuality(item.geometry);
+        const currentRoutes = geometryQuality(best);
+        const nextRoutes = geometryQuality(item.geometry);
         if (
           nextRoutes.contacts > currentRoutes.contacts + delta ||
           nextRoutes.crossings > currentRoutes.crossings + delta ||
@@ -774,9 +798,9 @@ export async function unionGeometry(
         const candidate = await geometryForSeed(
           people, layout, reverse, links, 1, size, false, previous,
         );
-        const next = branchContactCounts(candidate.branches || []);
-        const currentRoutes = geometryRoutingQuality(best);
-        const nextRoutes = geometryRoutingQuality(candidate);
+        const next = geometryContacts(candidate);
+        const currentRoutes = geometryQuality(best);
+        const nextRoutes = geometryQuality(candidate);
         const oldSize = extent(previous);
         const currentSize = extent(best);
         const nextSize = extent(candidate);
@@ -812,11 +836,11 @@ export async function unionGeometry(
         const candidate = await geometryForSeed(
           people, layout, reverse, links, bestSeed, size, false, undefined, flipped,
         );
-        const next = branchContactCounts(candidate.branches || []);
+        const next = geometryContacts(candidate);
         const candidateExtent = extent(candidate);
         const bestExtent = extent(best);
-        const currentRoutes = geometryRoutingQuality(best);
-        const nextRoutes = geometryRoutingQuality(candidate);
+        const currentRoutes = geometryQuality(best);
+        const nextRoutes = geometryQuality(candidate);
         if (next.distinct < contacts.distinct &&
             nextRoutes.crossings <= currentRoutes.crossings &&
             nextRoutes.length <= currentRoutes.length * 1.15 &&
@@ -836,7 +860,7 @@ export async function unionGeometry(
   if (people.length <= 1200 && contacts.distinct) {
     // Keep ELK block coordinates; reject each local spouse swap unless its rerouted
     // ancestry improves the complete visible routes.
-    let currentRoutes = geometryRoutingQuality(best);
+    let currentRoutes = geometryQuality(best);
     let cardContacts = routeCardContacts(best, W, H);
     let currentPositions = new Map(best.positions);
     const priorPositions = previous && new Map(previous.positions);
@@ -854,9 +878,9 @@ export async function unionGeometry(
       }
       const candidate = locallyReverseCouples(best, people, links, size, new Set([id]));
       if (!candidate) continue;
-      const next = branchContactCounts(candidate.branches || []);
+      const next = geometryContacts(candidate);
       if (next.distinct > contacts.distinct) continue;
-      const nextRoutes = geometryRoutingQuality(candidate);
+      const nextRoutes = geometryQuality(candidate);
       if ((next.distinct === contacts.distinct &&
            nextRoutes.crossings >= currentRoutes.crossings) ||
           nextRoutes.contacts > currentRoutes.contacts ||
@@ -885,7 +909,7 @@ export async function unionGeometry(
         (scores.get(a) || 0) - (scores.get(b) || 0))
       .slice(0, people.length > 900 ? 50 : 200);
     let adjacent = new Set(adjacentFamilyBlocks(best, size).map(pairKey));
-    let currentRoutes = geometryRoutingQuality(best);
+    let currentRoutes = geometryQuality(best);
     const originalLength = currentRoutes.length;
     let cardContacts = routeCardContacts(best, W, H);
     let cardOverlaps = cardOverlapCount(best, W, H);
@@ -893,9 +917,9 @@ export async function unionGeometry(
       if (!adjacent.has(pairKey([left, right]))) continue;
       const candidate = locallySwapFamilyBlocks(best, left, right, people, links, size);
       if (!candidate) continue;
-      const next = branchContactCounts(candidate.branches || []);
+      const next = geometryContacts(candidate);
       if (next.distinct >= contacts.distinct) continue;
-      const nextRoutes = geometryRoutingQuality(candidate);
+      const nextRoutes = geometryQuality(candidate);
       if (nextRoutes.contacts > currentRoutes.contacts ||
           nextRoutes.crossings > currentRoutes.crossings ||
           nextRoutes.length > currentRoutes.length * 1.01 ||
