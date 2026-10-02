@@ -404,6 +404,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const filterToken = props.assistantFilter?.token;
   useEffect(() => {
     if (filterToken) {
+      // An explicit projection replaces the intro, including a zero-card
+      // result that has no animation frame to release the input lock.
+      setGrowing(false);
+      setIntroCameraFinished(true);
       showAllBranches();
       setFanAnchor(null);
     }
