@@ -24,7 +24,7 @@ import { backupCoordinator } from "../../src/server/backup-coordinator.ts";
 import { databaseBackupHttp } from "../../src/server/database-backup-http.ts";
 import { createAuth } from "../../src/server/auth.ts";
 import { openArchive } from "../../src/server/database.ts";
-import { userStore } from "../../src/server/users.ts";
+import { assertCurrentArchiveActor, ForbiddenError, userStore } from "../../src/server/users.ts";
 import { settingsStore } from "../../src/server/settings.ts";
 import {
   aiSettingsStore,
@@ -2158,6 +2158,43 @@ try {
   }).then((response) => response.json());
   assert.equal(archiveAdminSession.user.role, "admin");
   assert.equal(archiveAdminSession.user.platformAdmin, false);
+  const shareBeforeRevocation = await app.archive.read();
+  const shareCountBefore = Number((await app.archive.db.prepare("", `SELECT count(*)::int AS count
+    FROM share_links`).get())?.count);
+  const shareAuditBefore = Number((await app.archive.db.prepare("", `SELECT count(*)::int AS count
+    FROM archive_audit_entries WHERE entity='share'`).get())?.count);
+  const originalShareArchiveRead = app.archive.read;
+  let downgradeBeforeShareInsert = true;
+  app.archive.read = async () => {
+    const snapshot = await originalShareArchiveRead();
+    if (downgradeBeforeShareInsert) {
+      downgradeBeforeShareInsert = false;
+      await client.query(`UPDATE archive_memberships SET role='reader'
+        WHERE archive_id='runtime-test' AND user_id='vk:42'`);
+    }
+    return snapshot;
+  };
+  try {
+    const staleAdminShare = await fetch(securedBase + "/api/shares", {
+      method: "POST",
+      headers: { ...archiveAdminHeaders, "If-Match": String(shareBeforeRevocation.revision) },
+      body: JSON.stringify({ title: "Revoked administrator share", anchorId: "person-a",
+        personIds: ["person-a"], durationHours: 1 }),
+    });
+    assert.equal(staleAdminShare.status, 403,
+      "a role downgrade after the HTTP recheck cannot issue a bearer share");
+    assert.equal((await staleAdminShare.json()).path, undefined,
+      "a denied share response cannot expose a token");
+    assert.equal(Number((await app.archive.db.prepare("", `SELECT count(*)::int AS count
+      FROM share_links`).get())?.count), shareCountBefore);
+    assert.equal(Number((await app.archive.db.prepare("", `SELECT count(*)::int AS count
+      FROM archive_audit_entries WHERE entity='share'`).get())?.count), shareAuditBefore,
+    "the failed share transaction does not write an audit event");
+  } finally {
+    app.archive.read = originalShareArchiveRead;
+    await client.query(`UPDATE archive_memberships SET role='admin'
+      WHERE archive_id='runtime-test' AND user_id='vk:42'`);
+  }
   const exportAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
     process.env.PUBLIC_ORIGIN);
   for (const [path, options, revoke] of [
@@ -2572,8 +2609,33 @@ try {
     const selectedAdmin = await fetch(securedBase + "/a/other-archive/api/session", {
       headers: archiveAdminHeaders,
     }).then((response) => response.json());
+    assert.equal(selectedAdmin.user.id, "vk:42");
     assert.equal(selectedAdmin.user.role, "admin");
+    assert.equal(selectedAdmin.user.approved, true);
     assert.equal(selectedAdmin.user.platformAdmin, false);
+    const crossArchiveAdmin = selectedAdmin.user;
+    await client.query(`UPDATE archive_memberships SET role='reader'
+      WHERE archive_id='runtime-test' AND user_id='vk:42'`);
+    try {
+      await app.archive.db.transaction(async () => {
+        const scope = await app!.archive.db.prepare("", `SELECT
+          current_setting('drevo.archive_id',true) AS archive_id`).get();
+        assert.equal(scope?.archive_id, "runtime-test",
+          "the actor from other-archive is checked in runtime-test's own connection");
+        await app!.archive.db.prepare("", `SELECT set_config('drevo.account_id',?,true)`)
+          .get("vk:42");
+        const memberships = await app!.archive.db.prepare("", `SELECT archive_id,role
+          FROM archive_memberships WHERE user_id=? ORDER BY archive_id`).all("vk:42");
+        assert.deepEqual(memberships.map((row) => [row.archive_id,row.role]),
+          [["other-archive","admin"],["runtime-test","reader"]],
+          "account-level RLS can expose both memberships in the same transaction");
+        await assert.rejects(assertCurrentArchiveActor(app!.archive.db, crossArchiveAdmin),
+          ForbiddenError, "another archive's admin row cannot authorize this archive");
+      });
+    } finally {
+      await client.query(`UPDATE archive_memberships SET role='admin'
+        WHERE archive_id='runtime-test' AND user_id='vk:42'`);
+    }
     for (const path of ["/api/backups", "/api/backup", "/api/backup/full",
       "/api/backups/settings"])
       assert.equal((await fetch(securedBase + "/a/other-archive" + path, {
