@@ -218,6 +218,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT 1 AS present FROM pg_policies WHERE schemaname=current_schema() AND tablename='discovery_branch_grants' AND policyname='discovery_branch_grants_read' AND qual LIKE '%expires_at%'",
       "064_discovery_branch_grant_read_expiry.sql",
     ],
+    [
+      "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='discovery_branch_members' AND column_name='via_person_id' AND EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('discovery_branch_members') AND conname='discovery_branch_members_via_fkey')",
+      "073_discovery_branch_second_generation.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     await db.transaction(async () => {
