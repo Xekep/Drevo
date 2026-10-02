@@ -230,13 +230,29 @@ test("comment deletion needs confirmation and Escape keeps the reader open", asy
       name: "Подтвердить удаление комментария на странице 1",
       exact: true,
     });
+  // Keep the author line close to wrapping, as fonts differ between platforms.
+  const sidebarWidth = await first.locator("small").evaluate(async (node) => {
+    await document.fonts.ready;
+    const context = document.createElement("canvas").getContext("2d")!;
+    context.font = getComputedStyle(node).font;
+    return (
+      Math.ceil(context.measureText(node.textContent || "").width) + 18 + 79
+    );
+  });
+  await reader.locator(".pdf-book-sidebar").evaluate((node, width) => {
+    (node as HTMLElement).style.width = `${width}px`;
+    (node as HTMLElement).style.flexBasis = `${width}px`;
+  }, sidebarWidth);
+  const nextButtonY = (await remove(last).boundingBox())!.y;
   await remove(first).click();
   await expect(confirm(first)).toHaveText("Удалить?");
+  expect((await remove(last).boundingBox())!.y).toBe(nextButtonY);
   expect((await (await page.request.get(path)).json()).items).toHaveLength(2);
   expect(deleted).toEqual([]);
   await confirm(first).press("Escape");
   await expect(reader).toBeVisible();
   await expect(remove(first)).toBeVisible();
+  expect((await remove(last).boundingBox())!.y).toBe(nextButtonY);
   await remove(first).dblclick();
   await expect(confirm(first)).toBeVisible();
   expect(deleted).toEqual([]);

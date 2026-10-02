@@ -338,7 +338,7 @@
 .pdf-book-comments-list article:has(.pdf-book-comment-delete.is-confirming) .pdf-book-comment-edit {
   visibility: hidden;
 }
-.pdf-book-comments-list article:has(.pdf-book-comment-delete.is-confirming) > button:first-child {
+.pdf-book-comments-list article:has(.pdf-book-comment-delete) > button:first-child {
   padding-right: 84px;
 }
 .pdf-book-comment-edit:disabled,
