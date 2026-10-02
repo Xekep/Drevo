@@ -787,6 +787,67 @@ test("clicking a document mark opens comments, selects its entry and scrolls pas
   await expect(mark).toBeFocused();
 });
 
+test("document comments can be edited, canceled and recover from a conflicting tab", async ({ page }, info) => {
+  const title = `Comment editing ${info.project.name} ${info.retry}`;
+  const upload = await page.request.post("/api/documents", {
+    headers: { "Content-Type": "application/pdf", "X-Document-Metadata": encodeURIComponent(JSON.stringify({ title, personIds: [] })) },
+    data: await samplePdf(2),
+  });
+  expect(upload.status()).toBe(201);
+  const { id } = await upload.json();
+  const path = `/api/documents/${id}/annotations`;
+  const created = await page.request.post(path, { data: {
+    page: 1, x: 0.1, y: 0.1, width: 0.3, height: 0.1, text: "Original comment",
+  } });
+  expect(created.status()).toBe(201);
+  const original = (await created.json()).items[0];
+  await page.goto("/documents");
+  const documentCard = page.locator(".document-item").filter({ hasText: title });
+  await documentCard.click();
+  const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
+  const book = reader.frameLocator("iframe.pdf-book-frame");
+  await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();
+  await book.getByRole("button", { name: "Комментарии" }).click();
+  const card = reader.locator(".pdf-book-comments-list article").first();
+  const edit = card.getByRole("button", { name: "Изменить комментарий на странице 1" });
+  const text = card.getByRole("textbox", { name: "Изменить комментарий" });
+  await edit.click();
+  await expect(text).toBeFocused();
+  await text.fill("Canceled draft");
+  await card.getByRole("button", { name: "Отмена", exact: true }).click();
+  await expect(card.getByText("Original comment", { exact: true })).toBeVisible();
+  await expect(edit).toBeFocused();
+  await edit.click();
+  await text.fill("Edited comment");
+  await card.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect(card.getByText("Edited comment", { exact: true })).toBeVisible();
+  await expect(edit).toBeFocused();
+  const saved = (await (await page.request.get(path)).json()).items[0];
+  expect(saved).toEqual({ ...original, text: "Edited comment" });
+  await edit.click();
+  await text.fill("My draft from the first tab");
+  const secondTab = await page.request.patch(`${path}/${original.id}`, {
+    data: { expected: "Edited comment", text: "Changed in another tab" },
+  });
+  expect(secondTab.status()).toBe(200);
+  await card.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect(card.getByRole("alert")).toContainText("Комментарий уже изменён");
+  await expect(text).toHaveValue("My draft from the first tab");
+  await card.screenshot({ path: info.outputPath("comment-edit-conflict.png") });
+  await card.getByRole("button", { name: "Отмена", exact: true }).click();
+  await expect(card.getByText("Changed in another tab", { exact: true })).toBeVisible();
+  await edit.click();
+  await expect(text).toHaveValue("Changed in another tab");
+  await text.press("Escape");
+  await expect(reader).toBeVisible();
+  await expect(text).toHaveCount(0);
+  await expect(edit).toBeFocused();
+  await book.getByRole("button", { name: "Закрыть документ" }).click();
+  await documentCard.click();
+  await book.getByRole("button", { name: "Комментарии" }).click();
+  await expect(card.getByText("Changed in another tab", { exact: true })).toBeVisible();
+});
+
 test("BookReader opens a document longer than 300 pages", async ({
   page,
 }, info) => {

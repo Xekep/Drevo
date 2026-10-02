@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { MessageSquarePlus, Trash2 } from "lucide-react";
+import { MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
 import type { ReaderCommand, ReaderEvent } from "./bookreader-frame-messages";
 import type { ListedDocument } from "./documents-catalog";
 import { documentFileTypeFromMime } from "../shared/document-file.ts";
@@ -31,6 +31,8 @@ export function PdfBookReader({
   const dialog = useRef<HTMLElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const commentsList = useRef<HTMLDivElement>(null);
+  const editTrigger = useRef<HTMLButtonElement | null>(null);
+  const editText = useRef<HTMLTextAreaElement | null>(null);
   const closeLatest = useRef(onClose);
   const editLatest = useRef(onEdit);
   const magnifierLatest = useRef(false);
@@ -49,9 +51,17 @@ export function PdfBookReader({
   const [annotating, setAnnotating] = useState(annotateOnOpen);
   const [selection, setSelection] = useState<AnnotationSelection | null>(null);
   const [comment, setComment] = useState("");
+  const [editing, setEditing] = useState<{ id: string; expected: string; text: string } | null>(null);
+  const [editError, setEditError] = useState("");
   const [saving, setSaving] = useState(false);
   const [activeAnnotation, setActiveAnnotation] = useState("");
   const [hoveredAnnotation, setHoveredAnnotation] = useState("");
+
+  const editingId = editing?.id;
+  useEffect(() => {
+    if (editingId) editText.current?.focus();
+    else editTrigger.current?.focus();
+  }, [editingId]);
 
   useEffect(() => {
     closeLatest.current = onClose;
@@ -321,7 +331,42 @@ export function PdfBookReader({
     }
   };
 
+  const saveEditedAnnotation = async () => {
+    if (!editing || !editing.text.trim() || saving) return;
+    setSaving(true);
+    setEditError("");
+    try {
+      const response = await archiveFetch(
+        `/api/documents/${entry.id}/annotations/${editing.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expected: editing.expected, text: editing.text.trim() }),
+        },
+      );
+      const result = (await response.json()) as {
+        items?: DocumentAnnotation[];
+        error?: string;
+        current?: string;
+      };
+      const current = result.current;
+      if (response.status === 409 && typeof current === "string")
+        setAnnotations((items) => items.map((item) => item.id === editing.id
+          ? { ...item, text: current } : item));
+      if (!response.ok || !result.items)
+        throw new Error(result.error || "Не удалось изменить комментарий");
+      setAnnotations(result.items);
+      setEditing(null);
+    } catch (reason) {
+      setEditError(reason instanceof Error ? reason.message : "Не удалось изменить комментарий");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const removeAnnotation = async (id: string) => {
+    if (saving) return;
+    setSaving(true);
     setAnnotationError("");
     try {
       const response = await archiveFetch(
@@ -342,6 +387,8 @@ export function PdfBookReader({
           ? reason.message
           : "Не удалось удалить комментарий",
       );
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -472,6 +519,7 @@ export function PdfBookReader({
                 {mayAnnotate && !loading && !error && (
                   <button
                     type="button"
+                    disabled={saving || !!editing}
                     className={
                       "pdf-book-add-comment" + (annotating ? " is-active" : "")
                     }
@@ -577,12 +625,33 @@ export function PdfBookReader({
                         <small>
                           Страница {item.page} · {item.authorName}
                         </small>
-                        <span>{item.text}</span>
+                        {editing?.id !== item.id && <span>{item.text}</span>}
                       </button>
+                      {item.canEdit && (
+                        <button
+                          type="button"
+                          className="pdf-book-comment-edit"
+                          hidden={editing?.id === item.id}
+                          aria-label={"Изменить комментарий на странице " + item.page}
+                          disabled={saving || !!editing}
+                          onClick={(event) => {
+                            editTrigger.current = event.currentTarget;
+                            setEditing({ id: item.id, expected: item.text, text: item.text });
+                            setEditError("");
+                            setActiveAnnotation(item.id);
+                            setAnnotating(false);
+                            setSelection(null);
+                            setComment("");
+                          }}
+                        >
+                          <Pencil size={15} />
+                        </button>
+                      )}
                       {item.canDelete && (
                         <button
                           type="button"
                           className="pdf-book-comment-delete"
+                          disabled={saving || !!editing}
                           aria-label={
                             "Удалить комментарий на странице " + item.page
                           }
@@ -590,6 +659,41 @@ export function PdfBookReader({
                         >
                           <Trash2 size={15} />
                         </button>
+                      )}
+                      {editing?.id === item.id && (
+                        <form className="pdf-book-comment-form" onSubmit={(event) => {
+                          event.preventDefault();
+                          void saveEditedAnnotation();
+                        }}>
+                          <label htmlFor="pdf-comment-edit">Изменить комментарий</label>
+                          <textarea
+                            id="pdf-comment-edit"
+                            ref={editText}
+                            maxLength={2000}
+                            disabled={saving}
+                            value={editing.text}
+                            onChange={(event) => setEditing({ ...editing, text: event.target.value })}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Escape") return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              if (!saving) {
+                                setEditing(null);
+                                setEditError("");
+                              }
+                            }}
+                          />
+                          {editError && <p role="alert" className="pdf-book-comments-error">{editError}</p>}
+                          <div>
+                            <button type="submit" disabled={saving || !editing.text.trim() || editing.text.trim() === editing.expected}>
+                              {saving ? "Сохраняем…" : "Сохранить"}
+                            </button>
+                            <button type="button" disabled={saving} onClick={() => {
+                              setEditing(null);
+                              setEditError("");
+                            }}>Отмена</button>
+                          </div>
+                        </form>
                       )}
                     </article>
                   ))}
