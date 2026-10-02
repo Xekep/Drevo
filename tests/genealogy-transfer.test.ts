@@ -1329,6 +1329,60 @@ test("legacy UTF-16 decodes, version 7 rejects non-UTF8 and unsupported encoding
   );
 });
 
+test("GEDCOM and GEDZIP retain cited documents for alternative fact values", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "drevo-alternative-citations-"));
+  const documentId = "11111111-1111-4111-8111-111111111111";
+  const family = seed();
+  family.people[0].birth = "1880";
+  family.people[0].birthPlace = "Москва";
+  family.people[0].sources = [{ title: "Метрическая запись", type: "archive",
+    reference: "л. 4", documentId, documentPage: 2 }];
+  family.people[0].factAlternatives = [
+    { id: "birth-variant", field: "birth", value: "1881", sources: [{
+      title: "Метрическая запись", type: "archive", reference: "л. 4",
+      documentId, documentPage: 4,
+    }] },
+    { id: "place-variant", field: "birthPlace", value: "Тула", sources: [{
+      title: "Метрическая запись", type: "archive", reference: "л. 9",
+      documentId, documentPage: 9,
+    }] },
+  ];
+  const media = [{ id: documentId, file: "documents/record.pdf", title: "Метрическая запись",
+    mime: "application/pdf", personIds: [], portraitIds: [],
+    document: { documentType: "record", documentDate: "", place: "",
+      description: "", provenance: "" } }];
+  try {
+    for (const version of ["5.5.1", "7.0"] as const) {
+      const parsed = importGedcom(exportGedcom(family, { version, media }), `alternative-${version}`);
+      assert.deepEqual(parsed.citationMedia?.map(({ page }) => page), [2, 4, 9]);
+      assert.equal(parsed.family.people[0].sources.length, 1);
+      assert.deepEqual([parsed.family.people[0].sources[0],
+        ...parsed.family.people[0].factAlternatives!.flatMap((item) => item.sources)],
+      parsed.citationMedia?.map(({ source }) => source));
+    }
+    const uploads = join(dir, "uploads");
+    const stage = join(dir, "stage");
+    await mkdir(uploads);
+    await mkdir(stage);
+    const bytes = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF");
+    await writeFile(join(uploads, "record.pdf"), bytes);
+    const path = join(dir, "alternative.gdz");
+    await writeGenealogyPackage(path, uploads, family, media);
+    const restored = await prepareGenealogyImport(path, stage, "alternative-package");
+    assert.equal(restored.files.length, 1, "one original shared by two citations");
+    const importedId = restored.files[0].documentId;
+    assert.ok(importedId && importedId !== documentId);
+    assert.deepEqual(restored.family.people[0].sources.map((source) =>
+      [source.documentId, source.documentPage]), [[importedId, 2]]);
+    assert.deepEqual(restored.family.people[0].factAlternatives?.map((item) =>
+      item.sources.map((source) => [source.documentId, source.documentPage])),
+    [[[importedId, 4]], [[importedId, 9]]]);
+    assert.deepEqual(await readFile(join(stage, restored.files[0].name)), bytes);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("visible GEDZIP restores documents cited by retained people, events, claims and unions only", async () => {
   const dir = await mkdtemp(join(tmpdir(), "drevo-visible-citations-"));
   const dbPath = join(dir, "archive.sqlite");
