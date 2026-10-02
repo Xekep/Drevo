@@ -2195,6 +2195,11 @@ try {
     let holdWriteStatusModels = false;
     let holdSettingsWrite = false;
     let settingsWriteCompleted = false;
+    let holdModelBody = false;
+    let notifyModelBody!: () => void;
+    let releaseModelBody!: () => void;
+    const modelBodyStarted = new Promise<void>((resolve) => { notifyModelBody = resolve; });
+    const modelBodyGate = new Promise<void>((resolve) => { releaseModelBody = resolve; });
     let adminResponseCalls = 0;
     let adminModelCalls = 0;
     const actualAiSettings = await aiSettingsStore(app.archive.db);
@@ -2257,6 +2262,14 @@ try {
       },
     });
     const guardedAdminServer = createServer((req, res) => {
+      if (holdModelBody && req.url === "/api/admin/ai/models") {
+        const originalIterator = req[Symbol.asyncIterator].bind(req);
+        req[Symbol.asyncIterator] = async function* () {
+          notifyModelBody();
+          await modelBodyGate;
+          yield* originalIterator();
+        };
+      }
       void guardedAdminAi(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
         .catch((error) => { res.destroy(error); });
     });
@@ -2300,6 +2313,22 @@ try {
         "a downgraded admin cannot receive models fetched before the downgrade");
       assert.doesNotMatch(await modelResponse.text(), /hidden-after-downgrade/);
       await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      holdModelBody = true;
+      const callsBeforeRoleChange = adminModelCalls;
+      const modelRequest = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai/models`, {
+        method: "POST", headers: ownerHeaders,
+        body: JSON.stringify({ folderId: "folder-1", apiKey: "test-key" }),
+      });
+      await Promise.race([modelBodyStarted,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Admin AI model request body did not start")), 15_000))]);
+      await client.query("UPDATE archive_memberships SET role='researcher' WHERE archive_id='runtime-test' AND user_id='owner'");
+      releaseModelBody();
+      assert.equal((await modelRequest).status, 403,
+        "a demoted archive admin cannot query the external model catalogue after waiting for the request body");
+      assert.equal(adminModelCalls, callsBeforeRoleChange,
+        "a demoted archive admin must not start model discovery");
+      await client.query("UPDATE archive_memberships SET role='admin' WHERE archive_id='runtime-test' AND user_id='owner'");
+      holdModelBody = false;
       holdSettingsModels = true;
       const loadingSettings = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai`, {
         headers: ownerHeaders,
@@ -2374,6 +2403,8 @@ try {
       releaseSettingsRead();
       releaseSettingsWrite();
       releaseWriteStatusModels();
+      releaseModelBody();
+      await client.query("UPDATE archive_memberships SET role='admin' WHERE archive_id='runtime-test' AND user_id='owner'");
       await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
       await new Promise<void>((resolve) => guardedAdminServer.close(() => resolve()));
     }
