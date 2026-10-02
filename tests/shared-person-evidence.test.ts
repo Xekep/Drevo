@@ -63,6 +63,9 @@ test("public projection retains exact person evidence while hiding documents and
   Object.assign(original.people[0].factAlternatives![0], { archiveOnly: "private-person-alternative" });
   Object.assign(original.people[0].events![0].alternatives![0],
     { archiveOnly: "private-event-alternative" });
+  Object.assign(original.people[0].events![0], { archiveOnly: "private-event",
+    location: { place: "Москва", lat: 55.75, lon: 37.62, label: "Центр",
+      archiveOnly: "private-location" } });
   Object.assign(original.people[0].birthDateClaim!.sources[0],
     { archiveOnly: "private-source", url: "https://example.org/record", note: "page 3",
       repository: { name: "Archive", callNumber: "A-1", website: "https://example.org",
@@ -79,6 +82,8 @@ test("public projection retains exact person evidence while hiding documents and
   assert.equal(projected.people[0].factAlternatives?.[0].value, "1881");
   assert.equal(projected.people[0].factAlternatives?.[0].sources[0].title, "Другая дата");
   assert.equal(projected.people[0].events?.[0].dateClaim?.sources[0].title, "Дата переезда");
+  assert.deepEqual(projected.people[0].events?.[0].location,
+    { place: "Москва", lat: 55.75, lon: 37.62, label: "Центр" });
   assert.equal(projected.people[0].events?.[0].alternatives?.[0].value, "1902");
   assert.equal(projected.people[0].events?.[0].alternatives?.[0].confidence, "conflicting");
   assert.equal(projected.people[0].events?.[0].alternatives?.[0].sources[0].title,
@@ -88,12 +93,40 @@ test("public projection retains exact person evidence while hiding documents and
     assert.equal(projected.people[0][key]?.sources.length, 1);
   assert.ok(!JSON.stringify(projected).includes(documentId));
   for (const marker of ["private-claim", "private-person-alternative",
-    "private-event-alternative", "private-source", "private-repository"])
+    "private-event-alternative", "private-event", "private-location",
+    "private-source", "private-repository"])
     assert.ok(!JSON.stringify(projected).includes(marker), marker);
   assert.ok(!JSON.stringify(projected).includes("Скрыт"));
   assert.equal(original.people[0].factAlternatives?.[0].sources[0].documentId, documentId);
   assert.equal(original.people[0].events?.[0].alternatives?.[0].sources[0].documentId, documentId);
   assert.doesNotThrow(() => validateFamily(projected));
+});
+
+test("public awards and union milestones retain known fields without runtime extras", () => {
+  const original = family(true);
+  original.people[0].awards = [{ id: "medal", name: "За службу", year: "1945",
+    source: { title: "Наградной лист", url: "https://example.org/award" } }];
+  Object.assign(original.people[0].awards[0], { archiveOnly: "private-award" });
+  Object.assign(original.people[0].awards[0].source!, { archiveOnly: "private-award-source" });
+  original.unions = [{ id: "union", participants: ["visible", "hidden"], type: "marriage",
+    note: "записано", sources: [source("Союз", true)],
+    formation: { date: "1900", dateText: "около 1900", place: "Москва",
+      sources: [source("Брак", true)] },
+    ongoing: { date: "1901", sources: [source("Вместе")] } }];
+  Object.assign(original.unions[0], { archiveOnly: "private-union" });
+  Object.assign(original.unions[0].formation!, { archiveOnly: "private-milestone" });
+  const projected = sharedFamily(original, { ...share,
+    personIds: ["visible", "hidden"] }, "token");
+  assert.deepEqual(projected.people[0].awards?.[0].source,
+    { title: "Наградной лист", url: "https://example.org/award" });
+  assert.equal(projected.unions?.[0].note, "записано");
+  assert.equal(projected.unions?.[0].formation?.dateText, "около 1900");
+  assert.equal(projected.unions?.[0].formation?.sources?.[0].title, "Брак");
+  assert.equal(projected.unions?.[0].ongoing?.date, "1901");
+  const publicJson = JSON.stringify(projected);
+  for (const marker of ["private-award", "private-award-source", "private-union",
+    "private-milestone", documentId])
+    assert.ok(!publicJson.includes(marker), marker);
 });
 
 test("person evidence remains attributed after GEDCOM transfer into a shared fragment", () => {

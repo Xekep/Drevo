@@ -1,4 +1,4 @@
-import type { Family, PersonValueClaim, Source } from "./types.ts";
+import type { Family, PersonValueClaim, Source, UnionMilestone } from "./types.ts";
 const publicSource = (source: Source): Source => ({
   title: source.title,
   type: source.type,
@@ -17,6 +17,9 @@ const publicSource = (source: Source): Source => ({
 const publicClaim = (claim?: PersonValueClaim): PersonValueClaim | undefined =>
   claim && { value: claim.value, sources: claim.sources.map(publicSource),
     ...(claim.confidence !== undefined ? { confidence: claim.confidence } : {}) };
+const publicMilestone = (milestone?: UnionMilestone): UnionMilestone | undefined =>
+  milestone && { date: milestone.date, dateText: milestone.dateText,
+    place: milestone.place, sources: milestone.sources?.map(publicSource) };
 export type ShareLink = {
   id: string;
   title: string;
@@ -69,9 +72,27 @@ export function sharedFamily(
           ...(alternative.confidence !== undefined ? { confidence: alternative.confidence } : {}),
         })),
         biography: p.biography,
-        awards: p.awards,
+        awards: p.awards?.map((award) => ({
+          id: award.id,
+          name: award.name,
+          awardDefinitionId: award.awardDefinitionId,
+          degreeId: award.degreeId,
+          year: award.year,
+          source: award.source && { title: award.source.title, url: award.source.url },
+        })),
         events: p.events?.map((event) => ({
-          ...event,
+          id: event.id,
+          gedcomTag: event.gedcomTag,
+          type: event.type,
+          title: event.title,
+          date: event.date,
+          endDate: event.endDate,
+          dateText: event.dateText,
+          place: event.place,
+          location: event.location && { place: event.location.place,
+            lat: event.location.lat, lon: event.location.lon,
+            ...(event.location.label !== undefined ? { label: event.location.label } : {}) },
+          description: event.description,
           sources: event.sources?.map(publicSource),
           dateClaim: event.dateClaim && { value: event.dateClaim.value,
             ...(event.dateClaim.confidence ? { confidence: event.dateClaim.confidence } : {}),
@@ -102,13 +123,15 @@ export function sharedFamily(
     unions: (family.unions || [])
       .filter((union) => union.participants.every((id) => ids.has(id)))
       .map((union) => ({
-        ...union,
-        createdBy: undefined,
+        id: union.id,
+        participants: [union.participants[0], union.participants[1]],
+        type: union.type,
+        note: union.note,
         sources: union.sources?.map(publicSource),
-        formation: union.formation && { ...union.formation, sources: union.formation.sources?.map(publicSource) },
-        ending: union.ending && { ...union.ending, sources: union.ending.sources?.map(publicSource) },
-        divorce: union.divorce && { ...union.divorce, sources: union.divorce.sources?.map(publicSource) },
-        ongoing: union.ongoing && { ...union.ongoing, sources: union.ongoing.sources?.map(publicSource) },
+        formation: publicMilestone(union.formation),
+        ending: publicMilestone(union.ending),
+        divorce: publicMilestone(union.divorce),
+        ongoing: publicMilestone(union.ongoing),
       })),
   };
 }
