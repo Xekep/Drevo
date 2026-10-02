@@ -30,7 +30,8 @@ test("standalone archive opens people, photos, documents and places without a se
         spouses: [],
         generation: 1,
         column: 0,
-        sources: [],
+        sources: [{ title: "Метрическая книга", type: "архив", reference: "л. 7",
+          url: `media/${pdf}#page=7` }],
         photo: `media/${photo}`,
       },
       {
@@ -102,6 +103,8 @@ test("standalone archive opens people, photos, documents and places without a se
     await expect(
       page.getByRole("heading", { name: "Тестова Анна" }),
     ).toBeVisible();
+    await expect(page.getByRole("link", { name: "Открыть оригинал" }))
+      .toHaveAttribute("href", `media/${pdf}#page=7`);
     await page.getByRole("button", { name: "Фото", exact: true }).click();
     await expect(
       page.getByRole("heading", { name: "Семейный снимок" }),

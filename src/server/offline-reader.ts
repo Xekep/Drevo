@@ -55,11 +55,11 @@ let active="people",page=0,selected=null;
 const name=p=>[p.surname,p.name,p.patronymic].filter(Boolean).join(" ")||"Имя не указано";
 const el=(tag,text,cls)=>{const item=document.createElement(tag);if(text!==undefined)item.textContent=String(text);if(cls)item.className=cls;return item};
 const clear=node=>node.replaceChildren();
-const safeFile=value=>typeof value==="string"&&new RegExp("^media/[a-f0-9-]{36}[.](?:jpg|png|webp|gif|tif|pdf)$").test(value)?value:null;
+const safeFile=value=>typeof value==="string"&&new RegExp("^media/[a-f0-9-]{36}[.](?:jpg|png|webp|gif|tif|pdf)(?:[?#].*)?$").test(value)?value:null;
 const showPerson=id=>{active="people";selected=id;page=0;search.value="";render()};
 const heading=(text,parent=detail)=>parent.append(el("h3",text));
 const relation=(label,ids)=>{const entries=[...new Set(ids)].filter(id=>peopleById.has(id));if(!entries.length)return;heading(label);const wrap=el("div",undefined,"relations");for(const id of entries){const button=el("button",name(peopleById.get(id)),"relative");button.type="button";button.onclick=()=>showPerson(id);wrap.append(button)}detail.append(wrap)};
-const source=(item,parent=detail)=>{const line=el("div",[item.title,item.reference,item.url,item.note].filter(Boolean).join(" · "),"source");parent.append(line)};
+const source=(item,parent=detail)=>{const line=el("div",[item.title,item.reference,item.note].filter(Boolean).join(" · "),"source"),file=safeFile(item.url);if(file){const link=el("a","Открыть оригинал","document-link");link.href=file;link.target="_blank";link.rel="noopener";if(line.textContent)line.append(" · ");line.append(link)}else if(item.url)line.append((line.textContent?" · ":"")+item.url);parent.append(line)};
 const places=()=>{const counts=new Map();const add=(place,id)=>{if(!place)return;const key=place.trim();if(!key)return;const row=counts.get(key)||{title:key,ids:new Set()};if(id)row.ids.add(id);counts.set(key,row)};for(const p of people){add(p.birthPlace,p.id);add(p.deathPlace,p.id);for(const event of p.events||[])add(event.place,p.id)}for(const photo of family.photos||[])add(photo.place,null);return [...counts.values()].sort((a,b)=>a.title.localeCompare(b.title,"ru"))};
 const items=()=>active==="people"?people.map(p=>({id:p.id,title:name(p),value:p})):active==="photos"?(family.photos||[]).map(p=>({id:p.id,title:p.title,value:p})):active==="documents"?data.documents.map(p=>({id:p.id,title:p.title,value:p})):places().map(p=>({id:p.title,title:p.title,value:p}));
 function renderDetail(item){clear(detail);if(!item){detail.append(el("p","Выберите запись слева.","muted"));return}const p=item.value;if(active==="people"){
