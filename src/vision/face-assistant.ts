@@ -27,15 +27,31 @@ export async function faceRecognitionAvailable(signal?: AbortSignal) {
   const status = (await response.json()) as { enabled?: boolean };
   return status.enabled === true;
 }
+
+/** Recheck the tier at the actual browser inference boundary after model/image waits. */
+async function assertFaceRecognitionAvailable(signal?: AbortSignal) {
+  if (signal?.aborted || !(await faceRecognitionAvailable(signal)) || signal?.aborted)
+    throw new DOMException("Face recognition access changed", "AbortError");
+}
+
+export async function detectFacesWithCurrentAccess<T>(
+  infer: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  await assertFaceRecognitionAvailable(signal);
+  return infer();
+}
 const MODEL_URI = "/models/human-3.3.6";
 let engine:
   | Promise<InstanceType<(typeof import("@vladmandic/human"))["Human"]>>
   | undefined;
 const cache = new Map<string, Promise<FaceSample[]>>();
 async function loadApi() {
+  await assertFaceRecognitionAvailable();
   if (!engine)
     engine = (async () => {
       const { Human } = await import("@vladmandic/human");
+      await assertFaceRecognitionAvailable();
       const human = new Human({
         modelBasePath: MODEL_URI,
         cacheModels: true,
@@ -100,7 +116,7 @@ async function detect(
     const canvas = imageCanvas(image, precise ? 1800 : 1200);
     if (human.config.face.detector)
       human.config.face.detector.minConfidence = precise ? 0.3 : 0.45;
-    const result = await human.detect(canvas);
+    const result = await detectFacesWithCurrentAccess(() => human.detect(canvas));
     if (!precise && !result.face.length)
       onProgress("Лица не найдены — попробуйте точный режим…");
     return result.face
@@ -194,6 +210,7 @@ export async function suggestFaces(
   onProgress(precise ? "Ищем лица в точном режиме…" : "Ищем лица на снимке…");
   const faces = await detect(photo.url, precise, onProgress);
   check();
+  await assertFaceRecognitionAvailable(signal);
   const newFaces = faces.filter(
     (face) => !photo.tags.some((tag) => containsFace(tag, face.box)),
   );
@@ -208,5 +225,6 @@ export async function suggestFaces(
       match: await matchFaceDescriptor(face.descriptor, signal),
     });
   }
+  await assertFaceRecognitionAvailable(signal);
   return suggestions;
 }
