@@ -91,6 +91,16 @@
 .document-delete { right: 14px; color: #8b7169; }
 .document-delete:hover { background: #f8ece8; color: #963f31; }
 .document-delete:disabled { opacity: .45; cursor: default; }
+.document-delete.is-confirming {
+  width: 76px;
+  border-color: #b77d70;
+  background: #f8ece8;
+  color: #963f31;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+}
+.document-item-row:has(.document-delete.is-confirming) .document-edit { visibility: hidden; }
 .document-item-icon { display: grid; place-items: center; flex: 0 0 54px; height: 62px; border-radius: 11px; background: #edf4ea; color: #527b5a; }
 .document-item-text { display: grid; min-width: 0; gap: 10px; }
 .document-item-text strong { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 16px; line-height: 1.35; }
@@ -315,6 +325,22 @@
 }
 .pdf-book-comment-edit { right: 42px; }
 .pdf-book-comment-edit[hidden] { display: none; }
+.pdf-book-comment-delete.is-confirming {
+  width: 64px;
+  border: 1px solid rgb(245 181 168 / 45%);
+  border-radius: 2px;
+  background: #352724;
+  color: #f5b5a8;
+  font: inherit;
+  font-size: 11px;
+}
+.pdf-book-comment-delete.is-confirming span { font: inherit; cursor: inherit; }
+.pdf-book-comments-list article:has(.pdf-book-comment-delete.is-confirming) .pdf-book-comment-edit {
+  visibility: hidden;
+}
+.pdf-book-comments-list article:has(.pdf-book-comment-delete) > button:first-child {
+  padding-right: 84px;
+}
 .pdf-book-comment-edit:disabled,
 .pdf-book-comment-delete:disabled { opacity: .4; cursor: default; }
 .pdf-book-comment-form {

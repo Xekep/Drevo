@@ -14,7 +14,6 @@ import {
   Pencil,
   Plus,
   Search,
-  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -24,6 +23,7 @@ import {
   type DocumentPerson,
 } from "./document-people-picker";
 import { PdfBookReader } from "./pdf-book-reader";
+import { ConfirmDeleteButton } from "./confirm-delete-button";
 import { DocumentDetailsFields } from "./document-details-fields";
 import { DocumentRelationsFields } from "./document-relations-fields";
 import { fullName, type Person } from "../domain";
@@ -468,13 +468,7 @@ export function DocumentsCatalog({
   }, [documents, personFilter]);
 
   const remove = async (entry: ListedDocument) => {
-    if (
-      deleting ||
-      !window.confirm(
-        `Удалить документ «${entry.title}»? Файл и его привязки к людям будут удалены из архива.`,
-      )
-    )
-      return;
+    if (deleting) return;
     setDeleting(entry.id);
     setDeleteError("");
     try {
@@ -806,16 +800,13 @@ export function DocumentsCatalog({
                     </button>
                   )}
                   {mayEdit && document.canDelete && (
-                    <button
-                      type="button"
+                    <ConfirmDeleteButton
                       className="document-delete"
-                      aria-label={`Удалить документ «${document.title}»`}
-                      title="Удалить документ"
-                      disabled={deleting !== null}
-                      onClick={() => void remove(document)}
-                    >
-                      <Trash2 size={17} />
-                    </button>
+                      label={`Удалить документ «${document.title}»`}
+                      confirmationLabel={`Подтвердить удаление документа «${document.title}»`}
+                      disabled={deleting !== null || !!activeSelected || !!editing || uploadOpen}
+                      onConfirm={() => void remove(document)}
+                    />
                   )}
                 </div>
               ))}

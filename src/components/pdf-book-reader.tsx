@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
+import { MessageSquarePlus, Pencil } from "lucide-react";
+import { ConfirmDeleteButton } from "./confirm-delete-button";
 import type { ReaderCommand, ReaderEvent } from "./bookreader-frame-messages";
 import type { ListedDocument } from "./documents-catalog";
 import { documentFileTypeFromMime } from "../shared/document-file.ts";
@@ -653,17 +654,13 @@ export function PdfBookReader({
                         </button>
                       )}
                       {item.canDelete && (
-                        <button
-                          type="button"
+                        <ConfirmDeleteButton
                           className="pdf-book-comment-delete"
-                          disabled={saving || !!editing}
-                          aria-label={
-                            "Удалить комментарий на странице " + item.page
-                          }
-                          onClick={() => void removeAnnotation(item.id)}
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                          disabled={saving || !!editing || !commentsOpen}
+                          label={"Удалить комментарий на странице " + item.page}
+                          confirmationLabel={"Подтвердить удаление комментария на странице " + item.page}
+                          onConfirm={() => void removeAnnotation(item.id)}
+                        />
                       )}
                       {editing?.id === item.id && (
                         <form className="pdf-book-comment-form" onSubmit={(event) => {

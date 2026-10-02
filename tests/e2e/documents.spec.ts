@@ -616,10 +616,10 @@ test("участник загружает PDF и читает страницы �
   }
   await book.getByRole("button", { name: "Закрыть документ" }).click();
   await expect(reader).toBeHidden();
-  page.once("dialog", (dialog) => dialog.accept());
   await page
     .getByRole("button", { name: `Удалить документ «${title}»`, exact: true })
     .click();
+  await page.getByRole("button", { name: `Подтвердить удаление документа «${title}»`, exact: true }).click();
   await expect(item).toHaveCount(0);
   expect(
     await page.evaluate(
@@ -687,10 +687,10 @@ for (const variant of ["one-page", "landscape", "damaged"] as const) {
         .frameLocator("iframe.pdf-book-frame")
         .getByRole("button", { name: "Закрыть документ" })
         .click();
-    page.once("dialog", (dialog) => dialog.accept());
     await page
       .getByRole("button", { name: `Удалить документ «${title}»` })
       .click();
+    await page.getByRole("button", { name: `Подтвердить удаление документа «${title}»` }).click();
     await expect(reader).toBeHidden();
     expect((await page.request.get(`/api/documents/${id}/file`)).status()).toBe(
       404,
