@@ -4977,6 +4977,60 @@ try {
   assert.equal((await specialDetail.json()).person.id, specialId);
   const discoveryAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
     process.env.PUBLIC_ORIGIN);
+  let searchReached!: () => void, resumeSearch!: () => void;
+  const searchReady = new Promise<void>((resolve) => { searchReached = resolve; });
+  const searchGate = new Promise<void>((resolve) => { resumeSearch = resolve; });
+  const searchEndpoint = discoveryPeopleHttp(app.archive.db, discoveryAuth, undefined,
+    async () => { searchReached(); await searchGate; });
+  const searchServer = createServer((req, res) => {
+    void searchEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => searchServer.listen(0, "127.0.0.1", resolve));
+  const searchPort = (searchServer.address() as { port: number }).port;
+  const pausedSearch = fetch(`http://127.0.0.1:${searchPort}/api/discovery/people?q=Особый`,
+    { headers: { ...headers, "X-Real-IP": "198.51.100.227" } });
+  let withdrawal: Promise<Response> | undefined;
+  try {
+    await Promise.race([
+      searchReady,
+      pausedSearch.then(() => { throw new Error("Discovery search sent before the delivery barrier"); }),
+      new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => reject(new Error("Discovery search did not reach the delivery barrier")), 30_000);
+        timer.unref();
+      }),
+    ]);
+    let withdrawalFinished = false;
+    withdrawal = fetch(specialAdminUrl, { method: "DELETE", headers: archiveAdminHeaders })
+      .then((response) => { withdrawalFinished = true; return response; });
+    let withdrawalWaiting = false;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
+        WHERE datname=current_database() AND pid<>pg_backend_pid()
+          AND wait_event_type='Lock' AND query LIKE 'DELETE FROM published_people%'`);
+      if (waiting.rowCount) { withdrawalWaiting = true; break; }
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+    assert.equal(withdrawalWaiting, true,
+      "publication withdrawal must wait on the search response's row lock");
+    assert.equal(withdrawalFinished, false,
+      "withdrawal waits while the selected search row is held for delivery");
+    resumeSearch();
+    const searched = await pausedSearch;
+    assert.equal(searched.status, 200);
+    assert.deepEqual((await searched.json()).results.map((person: { id: string }) => person.id),
+      [specialId], "the earlier search finishes before publication withdrawal");
+    assert.equal((await withdrawal).status, 200);
+    assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people?q=Особый", {
+      headers,
+    })).json()).results, [], "a later search cannot deliver the withdrawn card");
+  } finally {
+    resumeSearch();
+    await pausedSearch.catch(() => {});
+    await withdrawal?.catch(() => {});
+    await new Promise<void>((resolve) => searchServer.close(() => resolve()));
+  }
+  assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: archiveAdminHeaders })).status, 200);
   const pausedDiscoveryDetail = async (change: () => Promise<void>) => {
     let reached!: () => void, resume!: () => void;
     const ready = new Promise<void>((resolve) => { reached = resolve; });

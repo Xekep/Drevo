@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { finished } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
@@ -49,6 +50,7 @@ export function discoveryPeopleHttp(
   db: StoreDatabase,
   auth: Awaited<ReturnType<typeof createAuth>>,
   beforeDetailLookup?: () => Promise<void>,
+  beforeSearchDelivery?: () => Promise<void>,
 ) {
   const limiter = createSharedRequestLimiter(db, "discovery-people", { windowMs: 60_000, limit: 60 });
   const json = (res: ServerResponse, status: number, value: unknown) => {
@@ -133,20 +135,35 @@ export function discoveryPeopleHttp(
       return json(res, 400, { error: "Некорректный архив для исключения" });
     const cursor = readCursor(url.searchParams.get("cursor"));
     if (!cursor) return json(res, 400, { error: "Некорректная страница поиска" });
-    const rows = await db.prepare("", `SELECT archive_id,person_id,name,birth_surname,birth_year,death_year,
-             birth_place,death_place,publication_version
+    if (!db.postgresTransaction)
+      throw new Error("PostgreSQL discovery search requires transactions");
+    return await db.postgresTransaction(async (client) => {
+      // The selected page, including its overflow row, stays published until
+      // this response is flushed. A concurrent withdrawal waits on these row
+      // locks, so publication and delivery have one observable order.
+      const { rows } = await client.query(`SELECT archive_id,person_id,name,birth_surname,birth_year,
+             death_year,birth_place,death_place,publication_version
         FROM discovery_people
-       WHERE search_vector @@ to_tsquery('simple', ?)
-         AND archive_id<>?
-         AND (name,archive_id,person_id) > (?,?,?)
-       ORDER BY name,archive_id,person_id LIMIT 31`).all(
-      terms, excludeArchiveId, ...cursor,
-    );
-    const items = rows.slice(0, 30).map(listedPerson);
-    const last = rows.length > 30 ? items.at(-1) : undefined;
-    const nextCursor = last
-      ? Buffer.from(JSON.stringify([last.name,last.archiveId,last.id])).toString("base64url")
-      : null;
-    return json(res, 200, { results: items, nextCursor });
+       WHERE search_vector @@ to_tsquery('simple', $1)
+         AND archive_id<>$2
+         AND (name,archive_id,person_id) > ($3,$4,$5)
+       ORDER BY name,archive_id,person_id LIMIT 31 FOR SHARE`,
+      [terms,excludeArchiveId,...cursor]);
+      await beforeSearchDelivery?.();
+      const items = rows.slice(0, 30).map(listedPerson);
+      const last = rows.length > 30 ? items.at(-1) : undefined;
+      const nextCursor = last
+        ? Buffer.from(JSON.stringify([last.name,last.archiveId,last.id])).toString("base64url")
+        : null;
+      const delivered = finished(res, { cleanup: true });
+      // Do not let a stalled client hold publication rows indefinitely.
+      const timeout = setTimeout(() => res.destroy(), 5_000);
+      timeout.unref();
+      try {
+        json(res, 200, { results: items, nextCursor });
+        await delivered;
+      } finally { clearTimeout(timeout); }
+      return true;
+    });
   };
 }
