@@ -69,6 +69,13 @@ export function publishedPeopleHttp({
   publicOrigin?: string;
 }) {
   const limiter = createSharedRequestLimiter(archive.db, "published-people", { windowMs: 60_000, limit: 60 });
+  const isOwner = async (userId: string, lock = false) => {
+    const db = archive.db;
+    if (db.kind !== "postgres") return true;
+    if (!db.archiveId) return false;
+    return !!await db.prepare("", `SELECT 1 FROM archive_owners
+      WHERE archive_id=? AND user_id=? ${lock ? "FOR SHARE" : ""}`).get(db.archiveId, userId);
+  };
   async function reviewSelection(action: "publish" | "unpublish", ids: string[],
     fields: PublicationFields | null, userId: string) {
     const snapshot = await archive.read();
@@ -124,8 +131,9 @@ export function publishedPeopleHttp({
       return json(res, 401, {
         error: "Войдите, чтобы искать опубликованных людей",
       });
-    if ((admin || batch || batchPreview) && (user.role !== "admin" || user.approved !== true))
-      return json(res, 403, { error: "Публикация доступна администратору" });
+    if ((admin || batch || batchPreview) &&
+        (user.role !== "admin" || user.approved !== true || !await isOwner(user.id)))
+      return json(res, 403, { error: "Публикация доступна владельцу дерева" });
     if (
       !admin && !batch && !batchPreview &&
       !(await limiter.allow(
@@ -153,7 +161,8 @@ export function publishedPeopleHttp({
         return json(res, 400, { error: "Некорректный список людей или выбор полей" });
       const result = await archive.db.transaction(async () => {
         const freshUser = await auth.currentUser(req);
-        if (freshUser?.role !== "admin" || freshUser.approved !== true || freshUser.id !== user.id)
+        if (freshUser?.role !== "admin" || freshUser.approved !== true ||
+            freshUser.id !== user.id || !await isOwner(freshUser.id))
           return { status: "forbidden" as const };
         const review = await reviewSelection(action, ids, fields, freshUser.id);
         return review ? { status: "ok" as const, review } : { status: "conflict" as const };
@@ -182,7 +191,8 @@ export function publishedPeopleHttp({
         return json(res, 400, { error: "Сначала проверьте список публикации" });
       const result = await archive.db.transaction(async () => {
         const freshUser = await auth.currentUser(req);
-        if (freshUser?.role !== "admin" || freshUser.approved !== true || freshUser.id !== user.id)
+        if (freshUser?.role !== "admin" || freshUser.approved !== true ||
+            freshUser.id !== user.id || !await isOwner(freshUser.id, true))
           return "forbidden";
         const action = req.method === "POST" ? "publish" : "unpublish";
         const review = await reviewSelection(action, ids, fields, freshUser.id);
@@ -250,7 +260,8 @@ export function publishedPeopleHttp({
           return json(res, 400, { error: "Некорректный выбор полей публикации" });
         const result = await archive.db.transaction(async () => {
           const freshUser = await auth.currentUser(req);
-          if (freshUser?.role !== "admin" || freshUser.approved !== true || freshUser.id !== user.id)
+          if (freshUser?.role !== "admin" || freshUser.approved !== true ||
+              freshUser.id !== user.id || !await isOwner(freshUser.id, true))
             return { status: "forbidden" as const };
           const freshPerson = (await archive.read()).family.people.find((entry) => entry.id === personId);
           if (!freshPerson) return { status: "missing" as const };

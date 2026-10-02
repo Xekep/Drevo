@@ -4275,13 +4275,20 @@ try {
     (await fetch(securedBase + "/api/discovery/people?q=Исправленный", { headers })).status,
     503,
   );
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+    VALUES('other-archive','vk:42','admin',true,'all') ON CONFLICT (archive_id,user_id)
+    DO UPDATE SET role='admin',approved=true,tree_access='all'`);
+  await client.query(`INSERT INTO archive_owners(archive_id,user_id)
+    VALUES('other-archive','vk:42') ON CONFLICT (archive_id) DO UPDATE SET user_id='vk:42'`);
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   const otherPublication = publishedPeopleStore(otherApp.archive.db);
   const livingDiscovery = await otherApp.archive.read();
   assert.notEqual(livingDiscovery.family.people[0].deceased, true);
   assert.equal(Boolean(livingDiscovery.family.people[0].death), false);
   await otherPublication.publish("person-a", "owner");
   assert.equal(
-    (await fetch(otherBase + "/api/admin/published-people/person-a", { headers: ownerHeaders })
+    (await fetch(otherBase + "/api/admin/published-people/person-a", { headers: archiveAdminHeaders })
       .then((response) => response.json())).archiveId,
     "other-archive",
   );
@@ -4310,7 +4317,7 @@ try {
   })).status, 401, "a member of a different archive cannot preview this publication batch");
   const batchPreviewUrl = otherBase + "/api/admin/published-people/batch/preview";
   const oldBatchPreview = await fetch(batchPreviewUrl, {
-    method: "POST", headers: ownerHeaders,
+    method: "POST", headers: archiveAdminHeaders,
     body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
   });
   assert.equal(oldBatchPreview.status, 200);
@@ -4318,19 +4325,19 @@ try {
   const beforeBatchRevision = await otherApp.archive.read();
   await otherApp.archive.write(beforeBatchRevision.family, beforeBatchRevision.revision);
   assert.equal((await fetch(otherBase + "/api/admin/published-people/batch", {
-    method: "POST", headers: ownerHeaders,
+    method: "POST", headers: archiveAdminHeaders,
     body: JSON.stringify({ personIds: ["person-a"], fields: selectedDiscoveryFields,
       revision: oldReview.revision, reviewToken: oldReview.reviewToken }),
   })).status, 409, "a PostgreSQL revision change invalidates an old publication review");
   const batchReview = await fetch(batchPreviewUrl, {
-    method: "POST", headers: ownerHeaders,
+    method: "POST", headers: archiveAdminHeaders,
     body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
   });
   assert.equal(batchReview.status, 200);
   const reviewedPublication = await batchReview.json();
   assert.equal(reviewedPublication.people[0].person.birthSurname, "ПоискРождения");
   assert.equal((await fetch(otherBase + "/api/admin/published-people/batch", {
-    method: "POST", headers: ownerHeaders,
+    method: "POST", headers: archiveAdminHeaders,
     body: JSON.stringify({ personIds: ["person-a"], fields: selectedDiscoveryFields,
       revision: reviewedPublication.revision, reviewToken: reviewedPublication.reviewToken }),
   })).status, 200);
@@ -4341,7 +4348,7 @@ try {
     "RLS hides the other archive's publication row from this archive");
   }, true);
   assert.deepEqual((await (await fetch(otherBase + "/api/admin/published-people/batch?id=person-a", {
-    headers: ownerHeaders,
+    headers: archiveAdminHeaders,
   })).json()).fields["person-a"], selectedDiscoveryFields);
   await app.archive.db.prepare("", "UPDATE discovery_index_state SET ready=true WHERE singleton=true").run();
   const found = await fetch(securedBase + "/api/discovery/people?q=Исправленный", { headers });
@@ -4375,7 +4382,7 @@ try {
     "a reader cannot publish a card through an encoded ID");
   assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers })).status, 401,
     "another archive cannot publish the encoded ID");
-  assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: ownerHeaders })).status, 200);
+  assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: archiveAdminHeaders })).status, 200);
   const specialSearch = await fetch(securedBase + "/api/discovery/people?q=Особый", { headers });
   assert.equal(specialSearch.status, 200);
   assert.deepEqual((await specialSearch.json()).results.map((person: { id: string }) => person.id), [specialId]);
@@ -4421,15 +4428,15 @@ try {
     "an unchanged published card is still delivered after the lookup barrier");
   assert.deepEqual((await unchangedDetail.json()).linkedCards, []);
   assert.equal((await pausedDiscoveryDetail(async () => {
-    assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: ownerHeaders })).status, 200);
+    assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: archiveAdminHeaders })).status, 200);
   })).status, 404, "revocation between projection reads cannot deliver the old card");
-  assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: ownerHeaders,
+  assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: archiveAdminHeaders,
     body: JSON.stringify({ fields: selectedDiscoveryFields }) })).status, 200);
   assert.equal((await fetch(specialDiscoveryUrl, { headers }).then((response) => response.json()))
     .person.birthSurname, "ПоискРождения");
   assert.equal((await pausedDiscoveryDetail(async () => {
-    assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: ownerHeaders })).status, 200);
-    assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: ownerHeaders })).status, 200);
+    assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: archiveAdminHeaders })).status, 200);
+    assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: archiveAdminHeaders })).status, 200);
   })).status, 404,
   "republication with narrower fields cannot deliver a card from the previous publication");
   const narrowedDetail = await fetch(specialDiscoveryUrl, { headers });
@@ -4439,17 +4446,17 @@ try {
     headers: ownerHeaders,
   })).status, 200, "the archive-local published card decodes the same ID");
   assert.equal((await fetch(otherBase + `/api/admin/published-people/batch?id=${specialSegment}`, {
-    headers: ownerHeaders,
+    headers: archiveAdminHeaders,
   })).status, 200, "batch status accepts a URL-encoded published ID");
   assert.equal((await fetch(otherBase + "/api/admin/published-people/batch/preview", {
-    method: "POST", headers: ownerHeaders,
+    method: "POST", headers: archiveAdminHeaders,
     body: JSON.stringify({ action: "unpublish", personIds: [specialId] }),
   })).status, 200, "batch preview accepts the same ID without changing publication");
   for (const invalid of ["family%2Fperson.1", "family%5Cperson.1", "family%252Fperson.1", "family%00person.1", "bad%"])
     assert.equal((await fetch(securedBase + `/api/discovery/people/other-archive/${invalid}`, {
       headers,
     })).status, 404, "unsafe encoded segments cannot reach another card");
-  assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: ownerHeaders })).status, 200);
+  assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: archiveAdminHeaders })).status, 200);
   assert.equal((await fetch(specialDiscoveryUrl, { headers })).status, 404,
     "revoking publication immediately closes the formerly addressable card");
   assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people?q=Особый", {
@@ -4577,6 +4584,38 @@ try {
   await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   await app.archive.db.prepare("", `UPDATE archive_memberships SET role='admin'
     WHERE archive_id='runtime-test' AND user_id='vk:42'`).run();
+  const ownerPublication = publishedPeopleStore(app.archive.db);
+  const publicationBeforeAdmin = await ownerPublication.getFields("person-a");
+  assert.ok(publicationBeforeAdmin, "the owner has published the card before an invited admin tries to revoke it");
+  const publicationPath = "/api/admin/published-people/person-a";
+  assert.equal((await fetch(securedBase + publicationPath, {
+    method: "DELETE", headers: archiveAdminHeaders,
+  })).status, 403, "an invited admin cannot revoke the owner's selective publication");
+  assert.equal((await fetch(securedBase + publicationPath, {
+    method: "PUT", headers: archiveAdminHeaders,
+    body: JSON.stringify({ fields: selectedDiscoveryFields }),
+  })).status, 403, "an invited admin cannot change the owner's published fields");
+  assert.equal((await fetch(securedBase + publicationPath, { headers: archiveAdminHeaders })).status,
+    403, "an invited admin cannot inspect unpublished field choices");
+  const publicationBatchPath = "/api/admin/published-people/batch";
+  assert.equal((await fetch(securedBase + publicationBatchPath + "?id=person-a", {
+    headers: archiveAdminHeaders,
+  })).status, 403, "an invited admin cannot inspect the owner's publication batch");
+  for (const action of ["publish", "unpublish"] as const) {
+    assert.equal((await fetch(securedBase + publicationBatchPath + "/preview", {
+      method: "POST", headers: archiveAdminHeaders,
+      body: JSON.stringify({ action, personIds: ["person-a"], fields: selectedDiscoveryFields }),
+    })).status, 403, "an invited admin cannot prepare a publication change");
+    assert.equal((await fetch(securedBase + publicationBatchPath, {
+      method: action === "publish" ? "POST" : "DELETE", headers: archiveAdminHeaders,
+      body: JSON.stringify({ personIds: ["person-a"], fields: selectedDiscoveryFields,
+        revision: (await app.archive.read()).revision, reviewToken: "0".repeat(64) }),
+    })).status, 403, "an invited admin cannot apply a publication change");
+  }
+  assert.deepEqual(await ownerPublication.getFields("person-a"), publicationBeforeAdmin,
+    "the owner's selective publication survives unauthorized admin requests");
+  assert.equal((await fetch(securedBase + publicationPath, { headers: ownerHeaders })).status, 200,
+    "the actual owner can still review the published card");
   assert.equal((await fetch(securedBase + "/api/discovery/matches", {
     headers: archiveAdminHeaders,
   })).status, 403, "an invited archive admin cannot read owners' match reasons");
