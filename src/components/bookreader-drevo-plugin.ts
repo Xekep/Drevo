@@ -34,7 +34,12 @@ type PageLayer = {
 
 export function makeDrevoPlugin(
   emit: (event: ReaderEvent) => void,
-  options: { downloadUrl: string; downloadName: string; canEdit: boolean; fitSinglePage: boolean },
+  options: {
+    downloadUrl: string;
+    downloadName: string;
+    canEdit: boolean;
+    fitSinglePage: boolean;
+  },
 ) {
   return class DrevoPlugin extends BookReaderPlugin {
     declare br: BookReaderInstance;
@@ -143,7 +148,8 @@ export function makeDrevoPlugin(
         const { widthInches, heightInches } = pageContainer.page;
         // BookReader queues its first-render scale after mounting the mode.
         // Run after that task; subsequent zoom uses the native scale as usual.
-        setTimeout(() => {
+        let fittedScale: number | undefined;
+        const fit = () => {
           if (!onePage.isConnected) return;
           const pixels = onePage.coordSpace.worldUnitsToRenderedPixels;
           const padding = 2 * onePage.SPACING_IN;
@@ -157,7 +163,20 @@ export function makeDrevoPlugin(
             onePage.clientWidth / pixels(widthInches + padding),
             height / pixels(heightInches + padding),
           );
-          if (Number.isFinite(scale) && scale > 0) onePage.scale = scale;
+          if (Number.isFinite(scale) && scale > 0) {
+            onePage.scale = scale;
+            fittedScale = scale;
+          }
+        };
+        setTimeout(() => {
+          fit();
+          this.br.bind("resize", () => {
+            if (
+              fittedScale !== undefined &&
+              Math.abs(onePage.scale - fittedScale) < 1e-6
+            )
+              fit();
+          });
         });
       }
       const container = pageContainer.$container[0];

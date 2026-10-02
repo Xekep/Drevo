@@ -191,10 +191,19 @@ for (const scan of [
     await expect(async () => checkFit()).toPass();
     if (scan.format === "png")
       await reader.screenshot({ path: info.outputPath("tall-scan-fit.png") });
+    const initialViewport = page.viewportSize()!;
+    await page.setViewportSize({ width: initialViewport.height, height: initialViewport.width });
+    await expect(async () => checkFit()).toPass();
+    await page.setViewportSize(initialViewport);
+    await expect(async () => checkFit()).toPass();
     if (info.project.name === "desktop") {
       const originalWidth = (await image.boundingBox())!.width;
       await book.locator(".BRicon.zoom_in:visible").first().click();
       await expect.poll(async () => (await image.boundingBox())!.width).toBeGreaterThan(originalWidth * 1.05);
+      const zoomedWidth = (await image.boundingBox())!.width;
+      await page.setViewportSize({ ...initialViewport, height: initialViewport.height - 120 });
+      await expect.poll(async () => (await image.boundingBox())!.width).toBeCloseTo(zoomedWidth, 1);
+      await page.setViewportSize(initialViewport);
       await book.locator(".BRicon.zoom_out:visible").first().click();
       await expect(async () => checkFit()).toPass();
     }
