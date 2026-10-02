@@ -24,6 +24,7 @@ import { importGedcom, exportGedcom } from "../domain/gedcom.ts";
 import { importAgelongXml } from "../domain/agelong-xml.ts";
 import {
   familyMedia,
+  localCitationMediaUrl,
   TRANSFER_FILE_LIMIT,
   TRANSFER_TEXT_LIMIT,
   TRANSFER_PACKAGE_LIMIT,
@@ -35,6 +36,7 @@ import type { Family } from "../domain/types.ts";
 import { validateFamily } from "../domain/validation.ts";
 import { documentImageExtension, tiffDocumentPages } from "./document-images.ts";
 import { decodeAnsel } from "../domain/ansel.ts";
+import { allCitations } from "./source-catalog-store.ts";
 
 export type StagedMedia = {
   name: string;
@@ -234,6 +236,7 @@ export async function prepareGenealogyImport(
   const result: PreparedImport = { ...parsed, files: [] };
   const loaded = new Map<string, StagedMedia>();
   const importedDocuments = new Map<string, string>();
+  const importedOriginals = new Map<string, string>();
   let embeddedTotal = 0;
   for (const item of parsed.media) {
     let source: string | undefined;
@@ -318,15 +321,16 @@ export async function prepareGenealogyImport(
         size: data.length,
         title: item.title,
         personIds: [],
-        documentId: extension === "pdf" || extension === "tif" || document ? id : undefined,
-        document: extension === "pdf" || extension === "tif" || document ? document : undefined,
+        documentId: !item.citationOnly && (extension === "pdf" || extension === "tif" || document) ? id : undefined,
+        document: !item.citationOnly && (extension === "pdf" || extension === "tif" || document) ? document : undefined,
       };
       loaded.set(sourceKey, stored);
       result.files.push(stored);
     }
     stored.personIds = [...new Set([...stored.personIds, ...item.personIds])];
+    importedOriginals.set(item.id, stored.name);
     if (stored.documentId) importedDocuments.set(item.id, stored.documentId);
-    if (!stored.documentId) {
+    if (!stored.documentId && !item.citationOnly) {
       const url = `/media/${stored.name}`;
       const tags = item.photo?.tags.length
         ? item.photo.tags
@@ -352,6 +356,15 @@ export async function prepareGenealogyImport(
     }
   }
   for (const link of parsed.citationMedia || []) {
+    if (link.inlineUrlSuffix !== undefined) {
+      const name = importedOriginals.get(link.mediaId);
+      if (name) link.source.url = `/media/${name}${link.inlineUrlSuffix}`;
+      else {
+        delete link.source.url;
+        result.warnings.push("Оригинал источника не загружен; локальная ссылка цитаты не восстановлена.");
+      }
+      continue;
+    }
     const documentId = importedDocuments.get(link.mediaId);
     if (documentId) {
       link.source.documentId = documentId;
@@ -414,7 +427,36 @@ export async function exportMedia(
           ? { pages: JSON.parse(String(row.pages)) } : {}),
       },
     });
+  const citationFiles = new Set<string>();
+  for (const source of allCitations(family)) {
+    const local = source.url && localCitationMediaUrl(source.url);
+    if (!local || citationFiles.has(local.file)) continue;
+    const name = local.file.slice(7);
+    const owned = await db.prepare(
+      "SELECT 1 FROM media_originals WHERE url=? UNION SELECT 1 FROM documents WHERE file_name=? LIMIT 1",
+      "SELECT 1 FROM media_originals WHERE url=? UNION SELECT 1 FROM documents WHERE file_name=? LIMIT 1",
+    ).get(local.file, name);
+    if (!owned) throw new Error("Оригинал источника не принадлежит выбранному архиву");
+    citationFiles.add(local.file);
+    media.push({
+      id: `citation-${citationFiles.size}`,
+      file: local.file,
+      title: source.title || "Источник",
+      personIds: [], portraitIds: [], citationOnly: true,
+    });
+  }
   return media;
+}
+
+export async function assertCitationOriginalsAvailable(uploads: string, media: TransferMedia[]) {
+  for (const item of media) {
+    if (!item.citationOnly) continue;
+    const local = localCitationMediaUrl(item.file);
+    if (!local) throw new Error("Некорректный путь оригинала источника");
+    const original = await lstat(join(uploads, local.file.slice(7))).catch(() => null);
+    if (!original?.isFile() || original.isSymbolicLink())
+      throw new Error("Оригинал источника отсутствует в хранилище Drevo");
+  }
 }
 
 async function preparePackage(
@@ -440,7 +482,11 @@ async function preparePackage(
     const source = join(uploads, match[1]);
     item.file = name;
     if (used.has(name)) continue;
-    const info = await lstat(source);
+    const info = item.citationOnly
+      ? await lstat(source).catch(() => {
+        throw new Error("Оригинал источника отсутствует в хранилище Drevo");
+      })
+      : await lstat(source);
     if (!info.isFile() || info.isSymbolicLink())
       throw new Error(`Оригинал «${item.title}» не является обычным файлом`);
     size += info.size;

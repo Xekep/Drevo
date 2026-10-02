@@ -18,6 +18,7 @@ import { parseDocumentDetails } from "../shared/document-details.ts";
 import { parseDocumentEventLinks, parseDocumentPages } from "../shared/document-links.ts";
 import {
   familyMedia,
+  localCitationMediaUrl,
   TRANSFER_TEXT_LIMIT,
   type GenealogyImport,
   type GedcomVersion,
@@ -270,6 +271,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     "_DREVO_UNION_STAGE",
     "_DREVO_EVENT_ID",
     "_DREVO_DOCUMENT_PAGE",
+    "_DREVO_INLINE_MEDIA",
     "_DREVO_CATALOG_LINK_LOST",
     ...CLAIM_CONFIDENCE_TAGS,
     "_MAIDEN",
@@ -333,8 +335,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       })
       .join("\n\n");
   };
-  const citationObjects: Array<{ source: Source; object: Node; page?: number }> = [];
-  const citationObjectBySource = new Map<Source, (typeof citationObjects)[number]>();
+  const citationObjects: Array<{ source: Source; object: Node; page?: number; inlineUrlSuffix?: string }> = [];
+  const citationObjectBySource = new Map<Source, Array<(typeof citationObjects)[number]>>();
   const usedRepositories = new Set<string>();
   const sources = (n: Node): Source[] =>
     children(n, "SOUR").map((s) => {
@@ -445,10 +447,13 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         url: /^https?:\/\//i.test(url) && safeUrl(url) ? url : undefined,
       };
       const objects = children(s, "OBJE");
-      if (objects.length > 1)
+      const inlineRef = value(s, "_DREVO_INLINE_MEDIA");
+      const inlineUrl = inlineRef && localCitationMediaUrl(url);
+      if (inlineRef && (!inlineUrl || !objects.some((object) => object.value === inlineRef)))
+        throw new Error("Некорректная ссылка на оригинал цитаты GEDCOM");
+      if (objects.length > 1 && !inlineRef)
         warnings.add("У цитаты несколько файлов; перенесён только первый документ.");
-      if (objects.length) {
-        const ref = objects[0];
+      for (const ref of inlineRef ? objects : objects.slice(0, 1)) {
         const object = ref.pointer ? records.get(ref.value) : ref;
         if (!object || object.tag !== "OBJE")
           throw new Error(`Не найдено медиа цитаты ${ref.value}`);
@@ -456,9 +461,13 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         const page = rawPage ? Number(rawPage) : undefined;
         if (page !== undefined && (!Number.isInteger(page) || page < 1 || page > 2000))
           throw new Error("Некорректная страница документа цитаты GEDCOM");
-        const pending = { source, object, page };
+        const pending = { source, object, page,
+          ...(ref.value === inlineRef && inlineUrl ? { inlineUrlSuffix: inlineUrl.suffix } : {}),
+        };
         citationObjects.push(pending);
-        citationObjectBySource.set(source, pending);
+        const linked = citationObjectBySource.get(source) || [];
+        linked.push(pending);
+        citationObjectBySource.set(source, linked);
       }
       return source;
     });
@@ -493,7 +502,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       const pending = citationObjectBySource.get(candidate);
       if (!pending) continue;
       if (target[index].title === candidate.title && target[index].reference === candidate.reference)
-        pending.source = target[index];
+        for (const item of pending) item.source = target[index];
       else warnings.add(`Ссылка на документ ${context} не сопоставлена с цитатой; проверьте GEDCOM.`);
     }
   };
@@ -1115,6 +1124,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       if (extension) {
         try {
           const extra = JSON.parse(extension);
+          item.citationOnly = extra.citationOnly === true;
           item.photo = {
             description: extra.description,
             year: extra.year,
@@ -1194,19 +1204,19 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
   for (const link of links) retain(link.sources);
   const citationMedia: NonNullable<GenealogyImport["citationMedia"]> = [];
   const citedImages = new Set<string>();
-  for (const { source, object, page } of citationObjects) {
+  for (const { source, object, page, inlineUrlSuffix } of citationObjects) {
     if (!retainedCitations.has(source)) continue;
     const files = readObject(object);
     if (files.length > 1)
       warnings.add("У медиа цитаты несколько файлов; перенесён только первый документ.");
     const item = files[0];
     if (!item) continue;
-    if (!item.document) {
+    if (!item.document && inlineUrlSuffix === undefined) {
       citedImages.add(item.id);
       item.document = { documentType: "", documentDate: "", place: "",
         description: "", provenance: "" };
     }
-    citationMedia.push({ source, mediaId: item.id, page });
+    citationMedia.push({ source, mediaId: item.id, page, ...(inlineUrlSuffix === undefined ? {} : { inlineUrlSuffix }) });
   }
   const attachMedia = (node: Node, personIds: string[]) => {
     for (const ref of children(node, "OBJE")) {
@@ -1389,6 +1399,9 @@ export function exportGedcom(
   const sourceRecords: Source[] = [];
   const documentMedia = new Map(media.flatMap((item, index) =>
     item.document ? [[item.id, `@M${index + 1}@`] as const] : []));
+  const citationMedia = new Map(media.flatMap((item, index) =>
+    item.citationOnly ? [[item.file.startsWith("media/") ? `/${item.file}` : item.file,
+      `@M${index + 1}@`] as const] : []));
   function citation(level: number, source: Source,
     claim?: "BIRTH_DATE" | "DEATH_DATE" | "BIRTH_PLACE" | "DEATH_PLACE" | "OCCUPATION" | "BIRTH_SURNAME" | "EVENT_DATE" | "EVENT_PLACE",
     alternativeId?: string) {
@@ -1405,6 +1418,16 @@ export function exportGedcom(
       emit(level + 1, "OBJE", object, true);
       if (source.documentPage)
         emit(level + 1, "_DREVO_DOCUMENT_PAGE", String(source.documentPage));
+    }
+    const local = source.url && localCitationMediaUrl(source.url);
+    if (local) {
+      const inline = citationMedia.get(local.file);
+      if (options.media && !inline)
+        throw new Error("Оригинал источника отсутствует в экспорте GEDCOM");
+      if (inline) {
+        emit(level + 1, "OBJE", inline, true);
+        emit(level + 1, "_DREVO_INLINE_MEDIA", inline, true);
+      }
     }
   }
   function emitPlace(
@@ -1837,6 +1860,7 @@ export function exportGedcom(
           personId: ids.get(tag.personId),
         })),
         portraitIds: item.portraitIds.map((id) => ids.get(id)),
+        citationOnly: item.citationOnly || undefined,
         document: item.document && {
           ...item.document,
           ...(item.document.eventLinks ? {

@@ -16,6 +16,8 @@ export type TransferMedia = {
   >;
   document?: DocumentDetails & { eventLinks?: DocumentEventLink[]; pages?: DocumentPage[] };
   embedded?: string;
+  /** Drevo-only original referenced by an inline citation URL. */
+  citationOnly?: boolean;
 };
 export type GenealogyImport = {
   family: Family;
@@ -23,7 +25,7 @@ export type GenealogyImport = {
   warnings: string[];
   media: TransferMedia[];
   /** Temporary import-only pointers; never persisted in Family. */
-  citationMedia?: Array<{ source: Source; mediaId: string; page?: number }>;
+  citationMedia?: Array<{ source: Source; mediaId: string; page?: number; inlineUrlSuffix?: string }>;
 };
 export type GedcomVersion = "5.5.1" | "7.0";
 export type GenealogyExportFormat = "gedcom551" | "gedcom7" | "gedzip7";
@@ -34,6 +36,13 @@ export const TRANSFER_TEXT_LIMIT = 32 * 1024 * 1024;
 export const TRANSFER_PACKAGE_LIMIT = 512 * 1024 * 1024;
 export const TRANSFER_XML_LIMIT = 256 * 1024 * 1024;
 export const TRANSFER_FILE_LIMIT = 20 * 1024 * 1024;
+
+export function localCitationMediaUrl(url: string) {
+  if (!url.startsWith("/media/")) return null;
+  const match = /^(\/media\/[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|tif|pdf))([?#][^\s]*)?$/.exec(url);
+  if (!match) throw new Error("Некорректный путь оригинала источника");
+  return { file: match[1], suffix: match[2] || "" };
+}
 
 export function familyMedia(family: Family): TransferMedia[] {
   const media: TransferMedia[] = (family.photos || []).map((photo) => ({
