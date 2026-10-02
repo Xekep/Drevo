@@ -6,7 +6,12 @@ import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import {
   emailCredentials,
   InvalidEmailCredential,
+  StaleOAuthSession,
 } from "../../src/server/email-credentials.ts";
+import {
+  newSessionToken,
+  sessionTokenHash,
+} from "../../src/server/session-token.ts";
 import { postgresEmailRateLimit } from "../../src/server/postgres-email-rate-limit.ts";
 import { issuePostgresEmailSessionInTransaction } from "../../src/server/postgres-sessions.ts";
 import { emailAuthHttp } from "../../src/server/email-auth-http.ts";
@@ -148,18 +153,177 @@ export async function verifyEmailAccounts(
     ),
     [account.archiveId],
   );
-  await accounts.requestLink("owner", {
-    email: "linked@example.org",
-    password: "a separate strong password",
-  });
+  const oauthSession = sessionTokenHash(newSessionToken());
+  await client.query(
+    "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2)",
+    [oauthSession, Date.now() + 60 * 60 * 1000],
+  );
+  await assert.rejects(
+    accounts.requestLink(
+      "owner",
+      {
+        email: "unverified-link@example.org",
+        password: "a separate strong password",
+      },
+      oauthSession,
+    ),
+    StaleOAuthSession,
+    "an ordinary session without fresh OAuth proof cannot link email",
+  );
+  await client.query(
+    "INSERT INTO account_oauth_session_proofs(token_hash,provider,authenticated_at) VALUES($1,'yandex',$2)",
+    [oauthSession, Date.now() - 11 * 60 * 1000],
+  );
+  await assert.rejects(
+    accounts.requestLink(
+      "owner",
+      {
+        email: "unverified-link@example.org",
+        password: "a separate strong password",
+      },
+      oauthSession,
+    ),
+    StaleOAuthSession,
+    "a session older than ten minutes cannot link email",
+  );
+  await client.query(
+    "UPDATE account_oauth_session_proofs SET authenticated_at=$2 WHERE token_hash=$1",
+    [oauthSession, Date.now()],
+  );
+  await assert.rejects(
+    accounts.requestLink(
+      "owner",
+      {
+        email: "unverified-link@example.org",
+        password: "a separate strong password",
+      },
+      sessionTokenHash(newSessionToken()),
+    ),
+    StaleOAuthSession,
+    "a revoked or unrelated OAuth session cannot request an email link",
+  );
+  await accounts.requestLink(
+    "owner",
+    {
+      email: "linked@example.org",
+      password: "a separate strong password",
+    },
+    oauthSession,
+  );
   const linkToken = sent[2].text.match(/#email-link=([A-Za-z0-9_-]{43})/)?.[1];
   assert.ok(linkToken);
   await assert.rejects(
-    accounts.verifyLink(account.accountId, linkToken),
-    InvalidEmailCredential,
+    accounts.verifyLink(account.accountId, linkToken, oauthSession),
+    StaleOAuthSession,
     "the verified mailbox alone cannot attach a login to another account",
   );
-  await accounts.verifyLink("owner", linkToken);
+  await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [
+    oauthSession,
+  ]);
+  await assert.rejects(
+    accounts.verifyLink("owner", linkToken, oauthSession),
+    StaleOAuthSession,
+    "revoking the OAuth session after the HTTP check must block completion",
+  );
+  assert.equal(
+    (
+      await client.query(
+        "SELECT count(*)::int AS n FROM account_email_credentials WHERE email='linked@example.org'",
+      )
+    ).rows[0].n,
+    0,
+  );
+  const renewedOAuthSession = sessionTokenHash(newSessionToken());
+  await client.query(
+    "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2)",
+    [renewedOAuthSession, Date.now() + 60 * 60 * 1000],
+  );
+  await client.query(
+    "INSERT INTO account_oauth_session_proofs(token_hash,provider,authenticated_at) VALUES($1,'yandex',$2)",
+    [renewedOAuthSession, Date.now()],
+  );
+  let releaseLink!: () => void;
+  let linkLocked!: () => void;
+  const heldLink = new Promise<void>((resolve) => {
+    releaseLink = resolve;
+  });
+  const acquiredLinkLock = new Promise<void>((resolve) => {
+    linkLocked = resolve;
+  });
+  const blockingDb: StoreDatabase = {
+    ...db,
+    postgresTransaction: <T>(
+      work: (transaction: pg.PoolClient) => Promise<T>,
+    ) =>
+      db.postgresTransaction!(async (transaction) => {
+        const guarded = new Proxy(transaction, {
+          get(target, property, receiver) {
+            if (property !== "query")
+              return Reflect.get(target, property, receiver);
+            return (async (sql: string, params?: unknown[]) => {
+              const result = await target.query(sql, params);
+              if (sql.includes("FOR SHARE OF s,p")) {
+                linkLocked();
+                await heldLink;
+              }
+              return result;
+            }) as pg.PoolClient["query"];
+          },
+        });
+        return work(guarded);
+      }),
+  };
+  const blockingAccounts = emailCredentials(
+    blockingDb,
+    async () => {},
+    "https://mydrevo.org",
+  );
+  const completingLink = blockingAccounts.verifyLink(
+    "owner",
+    linkToken,
+    renewedOAuthSession,
+  );
+  let lockTimeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      acquiredLinkLock,
+      completingLink.then(() => {
+        throw new Error("Link completed before holding the OAuth session lock");
+      }),
+      new Promise<never>((_, reject) => {
+        lockTimeout = setTimeout(
+          () =>
+            reject(new Error("Timed out waiting for the OAuth session lock")),
+          10_000,
+        );
+      }),
+    ]);
+  } catch (error) {
+    releaseLink();
+    throw error;
+  } finally {
+    if (lockTimeout) clearTimeout(lockTimeout);
+  }
+  const revokingSession = client.query(
+    "DELETE FROM account_sessions WHERE token_hash=$1",
+    [renewedOAuthSession],
+  );
+  try {
+    assert.equal(
+      await Promise.race([
+        revokingSession.then(() => "revoked"),
+        new Promise<string>((resolve) =>
+          setTimeout(() => resolve("waiting"), 75),
+        ),
+      ]),
+      "waiting",
+      "revocation must wait for the in-flight credential transaction",
+    );
+  } finally {
+    releaseLink();
+  }
+  await completingLink;
+  await revokingSession;
   assert.equal(
     (
       await accounts.login({
@@ -170,8 +334,8 @@ export async function verifyEmailAccounts(
     "runtime-test",
   );
   await assert.rejects(
-    accounts.verifyLink("owner", linkToken),
-    InvalidEmailCredential,
+    accounts.verifyLink("owner", linkToken, renewedOAuthSession),
+    StaleOAuthSession,
   );
   assert.deepEqual(
     (
@@ -196,7 +360,9 @@ export async function verifyEmailAccounts(
     name: "Concurrent registration",
     password: "a sufficiently long password",
   });
-  const raceToken = sent.at(-1)?.text.match(/#email-verify=([A-Za-z0-9_-]{43})/)?.[1];
+  const raceToken = sent
+    .at(-1)
+    ?.text.match(/#email-verify=([A-Za-z0-9_-]{43})/)?.[1];
   assert.ok(raceToken);
   raceClock += 61_000;
   const concurrent = await Promise.allSettled([
@@ -279,7 +445,10 @@ export async function verifyEmailAccounts(
     );
     const request = {
       method: "POST",
-      headers: { "content-type": "application/json", origin: "https://mydrevo.org" },
+      headers: {
+        "content-type": "application/json",
+        origin: "https://mydrevo.org",
+      },
       socket: { remoteAddress: "127.0.0.1" },
       async *[Symbol.asyncIterator]() {
         yield body;
@@ -288,8 +457,12 @@ export async function verifyEmailAccounts(
     let status = 0;
     let payload = "";
     const response = {
-      writeHead(code: number) { status = code; },
-      end(value: string) { payload = value; },
+      writeHead(code: number) {
+        status = code;
+      },
+      end(value: string) {
+        payload = value;
+      },
     } as unknown as ServerResponse;
     assert.equal(
       await endpoint.handle(
