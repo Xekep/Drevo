@@ -579,9 +579,42 @@ export function importAgelongXml(
           `Событие ${ref.attrs.id} отсутствует в XML; ссылка не перенесена.`,
         );
   const documents = index(many(one(root, "documents"), "document"));
+  const eventDocumentLinks = new Map<string, Array<{ personId: string; eventId: string }>>();
+  const unlinkedEventDocuments = new Set<string>();
+  for (const [eventId, eventNode] of events) {
+    for (const ref of many(one(eventNode, "documents"), "document")) {
+      const document = documents.get(ref.attrs.id);
+      if (!document) {
+        warnings.add(`Документ ${ref.attrs.id || "без ID"} события ${eventId} отсутствует в XML.`);
+        unlinkedEventDocuments.add(eventId);
+        continue;
+      }
+      // Image documents may also be portraits/gallery photos. Converting them
+      // into catalog documents here would silently remove those associations.
+      if (!/\.(?:pdf|tiff?)$/i.test(document.attrs.path || "")) {
+        unlinkedEventDocuments.add(eventId);
+        continue;
+      }
+      const links = eventDocumentLinks.get(ref.attrs.id) || [];
+      let matched = false;
+      for (const participant of many(one(eventNode, "persons"), "person")) {
+        const person = resolvePerson(participant.attrs.id);
+        const event = person.events?.find((item) => item.id === `${namespace}-e${eventId}`);
+        if (!event) continue;
+        matched = true;
+        if (!links.some((link) => link.personId === person.id && link.eventId === event.id)) {
+          if (links.length < 100) links.push({ personId: person.id, eventId: event.id });
+          else unlinkedEventDocuments.add(eventId);
+        }
+      }
+      if (matched) eventDocumentLinks.set(ref.attrs.id, links);
+      else unlinkedEventDocuments.add(eventId);
+    }
+  }
   const media: TransferMedia[] = [...documents].map(([id, n]) => {
     const personIds = new Set<string>(),
       portraitIds: string[] = [];
+    const eventLinks = eventDocumentLinks.get(id) || [];
     for (const person of nodes)
       for (const ref of many(one(person, "documents"), "document"))
         if (ref.attrs.id === id) {
@@ -592,6 +625,7 @@ export function importAgelongXml(
     for (const detail of many(one(n, "details"), "detail"))
       for (const ref of many(detail, "person"))
         personIds.add(resolvePerson(ref.attrs.id).id);
+    for (const link of eventLinks) personIds.add(link.personId);
     return {
       id: `${namespace}-m${id}`,
       file: (n.attrs.path || "").replace(/\\/g, "/"),
@@ -599,6 +633,10 @@ export function importAgelongXml(
       personIds: [...personIds],
       portraitIds,
       embedded: textOf(n, "data") || textOf(n, "base64") || undefined,
+      ...(eventLinks.length ? { document: {
+        documentType: "", documentDate: "", place: "", description: "", provenance: "",
+        eventLinks,
+      } } : {}),
       photo: {
         description: addNotes(textOf(n, "comment") || undefined, [
           ...extraAttributes(n, ["id", "path", "title"], "document", warnings),
@@ -665,12 +703,9 @@ export function importAgelongXml(
     warnings.add(
       `Ссылки на источники для мест (${sourcedPlaces}) не перенесены.`,
     );
-  const eventDocuments = [...events.values()].filter(
-    (event) => one(event, "documents")?.children.length,
-  ).length;
-  if (eventDocuments)
+  if (unlinkedEventDocuments.size)
     warnings.add(
-      `Текущий XML-импортёр не переносит связи документов с ${eventDocuments} событиями.`,
+      `Текущий XML-импортёр не переносит связи некоторых документов с ${unlinkedEventDocuments.size} событиями.`,
     );
   const documentSources = [...documents.values()].filter(
     (document) => one(document, "sources")?.children.length,
