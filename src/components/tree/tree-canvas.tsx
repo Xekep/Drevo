@@ -1041,12 +1041,18 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     return renderedEdges.filter((edge) => !overlays.has(edge.id));
   }, [renderedEdges, gpuOverlayEdges]);
   const gpuActions = useMemo(() => ({ ...actions, gpu: gpuActive }), [actions, gpuActive]);
-  const gpuOverlayIds = useMemo(() => {
-    const ids = new Set([gpuHovered, gpuFocused]);
+  const gpuPinnedOverlayIds = useMemo(() => {
+    const ids = new Set([gpuFocused]);
     for (const node of nodes.filter((node) => node.selected).slice(0, 24)) ids.add(node.id);
     for (const edge of gpuOverlayEdges) { ids.add(edge.source); ids.add(edge.target); }
     return ids;
-  }, [nodes, gpuHovered, gpuFocused, gpuOverlayEdges]);
+  }, [nodes, gpuFocused, gpuOverlayEdges]);
+  const gpuOverlayIds = useMemo(() => {
+    // Hovering a node already shown for selection/focus must not replace the
+    // React Flow nodes: their measured handle bounds are needed immediately on mousedown.
+    if (!gpuHovered || gpuPinnedOverlayIds.has(gpuHovered)) return gpuPinnedOverlayIds;
+    return new Set([...gpuPinnedOverlayIds, gpuHovered]);
+  }, [gpuPinnedOverlayIds, gpuHovered]);
   const distantOverlayIds = useMemo(() => {
     const ids = new Set<string>();
     for (const edge of gpuOverlayEdges) { ids.add(edge.source); ids.add(edge.target); }
