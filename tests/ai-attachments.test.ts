@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import sharp from "sharp";
-import { validateAttachments } from "../src/server/ai-attachments.ts";
+import { aiAttachmentStore, validateAttachments } from "../src/server/ai-attachments.ts";
 import {
   attachmentSelectionError,
   AI_ATTACHMENT_BYTES,
@@ -22,6 +22,21 @@ const capabilities = { photoAnalysis: true, codeInterpreter: true };
 const input = (name: string, content: string | Buffer) => ({
   name,
   data: Buffer.from(content).toString("base64"),
+});
+
+test("attachment orphan pruning ignores a missing root but reports filesystem errors", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "drevo-attachment-prune-"));
+  const chats = {} as ReturnType<typeof aiChatStore>;
+  try {
+    const uploads = join(directory, "uploads");
+    await aiAttachmentStore(uploads, chats).prune();
+    mkdirSync(uploads);
+    writeFileSync(join(uploads, "ai-chat-files"), "not a directory");
+    await assert.rejects(aiAttachmentStore(uploads, chats).prune(),
+      (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOTDIR");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("attachments validate bytes, extensions, UTF-8, roles and limits on the server", async () => {
