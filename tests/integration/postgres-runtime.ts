@@ -18,6 +18,7 @@ import { openPromise } from "yauzl";
 import {
   newSessionToken,
   sessionTokenHash,
+  SESSION_MAX_AGE,
 } from "../../src/server/session-token.ts";
 import { openPostgresDatabase } from "../../src/server/store-database.ts";
 import { initializePostgresRuntimeSchema } from "../../src/server/postgres-runtime-schema.ts";
@@ -7625,6 +7626,34 @@ try {
       ).status,
       200,
     );
+    // Keep the session outside the normal HTTP renewal window; the blocker
+    // must be encountered by the archive mutation's lock-order guard.
+    await client.query("UPDATE account_sessions SET expires_at=$2 WHERE token_hash=$1",
+      [sessionTokenHash(newOwnerToken), Date.now() + SESSION_MAX_AGE * 1000]);
+    const deletingRecipient = new pg.Client();
+    await deletingRecipient.connect();
+    try {
+      await deletingRecipient.query("BEGIN");
+      assert.equal((await deletingRecipient.query(
+        "SELECT token_hash FROM account_sessions WHERE token_hash=$1 FOR UPDATE",
+        [sessionTokenHash(newOwnerToken)],
+      )).rowCount, 1);
+      const busyAcceptance = await fetch(oauthBase + ownerTransferPath + "/accept", {
+        method: "POST",
+        headers: transferTargetHeaders,
+      });
+      assert.equal(busyAcceptance.status, 409,
+        "a session held by account deletion must not deadlock with archive-locked acceptance");
+      assert.match(await busyAcceptance.text(), /Сеанс занят/);
+      await deletingRecipient.query("SELECT set_config('drevo.archive_id',$1,true)",
+        [personalArchiveId]);
+      assert.equal((await deletingRecipient.query(
+        "SELECT id FROM archives WHERE id=$1 FOR UPDATE NOWAIT", [personalArchiveId],
+      )).rowCount, 1, "the failed acceptance releases its archive lock");
+    } finally {
+      await deletingRecipient.query("ROLLBACK");
+      await deletingRecipient.end();
+    }
     const incomingTransfer = await fetch(oauthBase + ownerTransferPath, {
       headers: transferTargetHeaders,
     }).then((response) => response.json());
