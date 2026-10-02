@@ -61,6 +61,7 @@ import { mcpUsageStore } from "../../src/server/mcp-usage.ts";
 import { adminMcpHttp } from "../../src/server/admin-mcp-http.ts";
 import { sharesStore } from "../../src/server/shares.ts";
 import { adminSharingHttp } from "../../src/server/admin-sharing-http.ts";
+import { archiveInvitationsHttp } from "../../src/server/archive-invitations-http.ts";
 import { publicShareAccess } from "../../src/server/public-share-access.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { publishedPeopleStore } from "../../src/server/published-people.ts";
@@ -1629,9 +1630,10 @@ try {
   );
   await client.query("UPDATE archive_memberships SET role='relative' WHERE archive_id='runtime-test' AND user_id='owner'");
   try {
+    const staleAuth = { currentUser: async () => staleShareAdmin } as unknown as Awaited<ReturnType<typeof createAuth>>;
     const handler = adminSharingHttp({
       archive: app.archive,
-      auth: { currentUser: async () => staleShareAdmin } as unknown as Awaited<ReturnType<typeof createAuth>>,
+      auth: staleAuth,
       shares: sharesStore(app.archive.db),
       audit: auditStore(app.archive.db),
       publicOrigin: process.env.PUBLIC_ORIGIN,
@@ -1642,6 +1644,16 @@ try {
       writeHead(code: number) { status = code; },
       end() {},
     } as unknown as import("node:http").ServerResponse;
+    const getRequest = { method: "GET", headers: {} } as unknown as import("node:http").IncomingMessage;
+    assert.equal(await handler(getRequest, response,
+      new URL("https://mydrevo.org/api/shares")), true);
+    assert.equal(status, 403, "the former owner cannot list share metadata after transfer");
+    status = 0;
+    const invitationHandler = archiveInvitationsHttp(app.archive.db, staleAuth, process.env.PUBLIC_ORIGIN);
+    assert.equal(await invitationHandler(getRequest, response,
+      new URL("https://mydrevo.org/api/invitations")), true);
+    assert.equal(status, 403, "the former owner cannot list invitations after transfer");
+    status = 0;
     assert.equal(await handler(request, response,
       new URL(`https://mydrevo.org/api/shares/${staleShareId}`)), true);
     assert.equal(status, 403, "the former owner cannot revoke a share after losing admin rights");
