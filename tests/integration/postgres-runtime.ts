@@ -1851,9 +1851,17 @@ try {
     assert.doesNotMatch(raw, /secret-hash-sentinel|password_hash|token_hash|drevo_session/);
     const exported = JSON.parse(raw);
     assert.equal(exported.format, "drevo-account-data");
-    assert.equal(exported.version, 2);
+    assert.equal(exported.version, 3);
     assert.equal(exported.account.id, index % 2 ? "reader" : "owner");
     assert.equal(exported.account.verifiedEmail, index % 2 ? "reader-export@example.invalid" : null);
+    assert.equal(exported.account.identities.some((identity: { provider: string; subject: string }) =>
+      identity.provider === "vk" && identity.subject === "42"), false,
+    "another account's linked provider subject must not appear in the download");
+    if (index % 2)
+      assert.deepEqual(exported.account.identities,
+        [{ provider: "email", subject: "reader-export@example.invalid" },
+          { provider: "yandex", subject: "reader" }],
+      "the account download includes only the reader's linked login identifiers");
     assert.deepEqual(exported.archives.map((item: { id: string }) => item.id), ["runtime-test"]);
     assert.equal(exported.archives[0].role, index % 2 ? "reader" : "admin");
     assert.equal(exported.archives[0].owned, index % 2 === 0);

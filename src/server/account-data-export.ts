@@ -49,7 +49,7 @@ export function accountDataExport(db: StoreDatabase) {
         const methods = await db
           .prepare(
             "",
-            "SELECT provider FROM account_identities WHERE account_id=? ORDER BY provider",
+            "SELECT provider,subject FROM account_identities WHERE account_id=? ORDER BY provider",
           )
           .all(accountId);
         const email = await db
@@ -172,7 +172,7 @@ export function accountDataExport(db: StoreDatabase) {
         }
         return { accessScopes, download: {
           format: "drevo-account-data",
-          version: 2,
+          version: 3,
           exportedAt: new Date().toISOString(),
           account: {
             id: String(profile.id),
@@ -185,6 +185,10 @@ export function accountDataExport(db: StoreDatabase) {
             providers: methods
               .map((row) => String(row.provider))
               .filter((provider) => ["email", "vk", "yandex"].includes(provider)),
+            identities: methods.map((row) => ({
+              provider: String(row.provider),
+              subject: String(row.subject),
+            })),
             verifiedEmail: email ? String(email.email) : null,
           },
           archives,
