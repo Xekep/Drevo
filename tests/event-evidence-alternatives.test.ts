@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { exportGedcom, importGedcom } from "../src/domain/gedcom.ts";
 import { analyzeArchiveCoverage, qualityCategory } from "../src/domain/archive-coverage.ts";
 import { generationReport } from "../src/domain/generation-report.ts";
+import { collectPersonSources } from "../src/domain/person-sources.ts";
 import { sharedFamily } from "../src/domain/shared-family.ts";
 import { validateFamily } from "../src/domain/validation.ts";
 import { authorizeArchive } from "../src/server/permissions.ts";
@@ -64,6 +65,9 @@ test("competing event records stay separate in card, quality view, GEDCOM and sh
   assert.equal(qualityCategory(warning!), "contradiction");
   assert.deepEqual(warning?.sourceTitles, ["Перепись", "Адресная книга", "Письмо"]);
   assert.match(generationReport(original, new Set(["p1"])), /Другая дата события.*1902/);
+  const sources = collectPersonSources(original.people[0]);
+  assert.equal(sources.find((item) => item.title === "Письмо")?.origin,
+    "Другое место события: Тула");
   const shareInput = structuredClone(original);
   shareInput.people[0].events![0].alternatives![0].sources[0].documentId =
     "11111111-1111-4111-8111-111111111111";
@@ -96,6 +100,23 @@ test("competing event records stay separate in card, quality view, GEDCOM and sh
       sourceTitles: item.sources.map((source) => source.title),
     })));
     assert.ok(!standalone.sources?.length);
+  }
+});
+
+test("malformed GEDCOM event alternatives warn and leave the event importable", () => {
+  const normal = exportGedcom(family(), { version: "7.0" })
+    .replace(/^1 _DREVO .+\r\n/m, "");
+  const cases = [
+    normal.replace('"value":"1902"', '"value":"не дата"'),
+    normal.replace('"id":"date-1902"', '"id":"$bad"'),
+    normal.replace('"id":"place-tula"', '"id":"date-1902"'),
+  ];
+  for (const [index, gedcom] of cases.entries()) {
+    assert.notEqual(gedcom, normal);
+    const parsed = importGedcom(gedcom, `malformed-${index}`);
+    assert.ok(parsed.warnings.some((warning) =>
+      warning.includes("Повреждённый альтернативный вариант события")));
+    assert.equal(parsed.family.people[0].events?.[0].alternatives?.length, 1);
   }
 });
 

@@ -13,7 +13,7 @@ import type {
 import { EXTRA_LINK_TYPES } from "./types.ts";
 import { isClaimConfidence } from "./claim-confidence.ts";
 import { validDate, fullName, safeUrl } from "./dates.ts";
-import { validateFamily } from "./validation.ts";
+import { validateFamily, validEventAlternatives } from "./validation.ts";
 import { claimableEventDate, EVENT_NAMES } from "./person-events.ts";
 import { parseDocumentDetails } from "../shared/document-details.ts";
 import { parseDocumentEventLinks, parseDocumentPages } from "../shared/document-links.ts";
@@ -547,7 +547,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       eventDate && value(sourceNodes[index], "_DREVO_CLAIM") === "EVENT_DATE");
     const placeSources = parsedSources.filter((_source, index) =>
       place?.trim() && value(sourceNodes[index], "_DREVO_CLAIM") === "EVENT_PLACE");
-    const alternatives = children(n, "_DREVO_EVENT_ALTERNATIVE").flatMap((node) => {
+    const alternatives: NonNullable<PersonEvent["alternatives"]> = [];
+    for (const node of children(n, "_DREVO_EVENT_ALTERNATIVE")) {
       try {
         const data = JSON.parse(node.value) as { id?: unknown; field?: unknown;
           value?: unknown; confidence?: unknown };
@@ -558,14 +559,18 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         const citations = parsedSources.filter((_source, index) =>
           value(sourceNodes[index], "_DREVO_ALTERNATIVE") === data.id);
         if (!citations.length) throw new Error("uncited event alternative");
-        return [{ id: data.id, field: data.field as "date" | "place",
+        const alternative = { id: data.id, field: data.field as "date" | "place",
           value: data.value, sources: citations,
-          ...(data.confidence ? { confidence: data.confidence as ClaimConfidence } : {}) }];
+          ...(data.confidence ? { confidence: data.confidence as ClaimConfidence } : {}) };
+        if (!validEventAlternatives({ date: date || start || undefined,
+          endDate: start && end ? end : undefined, dateText, place,
+          alternatives: [...alternatives, alternative] }))
+          throw new Error("invalid event alternative");
+        alternatives.push(alternative);
       } catch {
         warnings.add("Повреждённый альтернативный вариант события не перенесён.");
-        return [];
       }
-    });
+    }
     if (!eventDate && sourceNodes.some((source) =>
       value(source, "_DREVO_CLAIM") === "EVENT_DATE"))
       warnings.add("Источник даты события без одиночной распознанной даты сохранён как общий источник события.");

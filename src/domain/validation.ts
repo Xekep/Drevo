@@ -1,4 +1,4 @@
-import { EXTRA_LINK_TYPES, type Family, type Source } from "./types.ts";
+import { EXTRA_LINK_TYPES, type Family, type PersonEvent, type Source } from "./types.ts";
 import { isClaimConfidence } from "./claim-confidence.ts";
 import { validDate, dateBound, safeUrl } from "./dates.ts";
 import { claimableEventDate, validateEvents } from "./person-events.ts";
@@ -53,7 +53,8 @@ function validFactAlternatives(person: Family["people"][number]): boolean {
   }
   return true;
 }
-function validEventAlternatives(event: NonNullable<Family["people"][number]["events"]>[number]): boolean {
+export function validEventAlternatives(event: Pick<PersonEvent,
+  "date" | "endDate" | "dateText" | "place" | "alternatives">): boolean {
   if (event.alternatives === undefined) return true;
   if (!Array.isArray(event.alternatives) || event.alternatives.length > 40) return false;
   const ids = new Set<string>(), values = new Set<string>();
