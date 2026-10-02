@@ -5004,13 +5004,16 @@ try {
   assert.ok(relativeHint?.reasons.includes("Совпадает опубликованный близкий родственник"));
   assert.doesNotMatch(JSON.stringify(relativeHint), /Пётр|Орлов|closed-relative/,
     "candidate evidence contains no relative names or private card identifiers");
-  const candidateDelivery = async (change: () => Promise<void>) => {
+  const candidateDelivery = async (change: () => Promise<void>,
+    barrier: "delivery" | "relatives" = "delivery") => {
     let reached!: () => void, resume!: () => void;
     const ready = new Promise<void>((resolve) => { reached = resolve; });
     const gate = new Promise<void>((resolve) => { resume = resolve; });
+    const pause = async () => { reached(); await gate; };
     const endpoint = discoveryMatchesHttp({ archive: app!.archive, auth: discoveryAuth,
       publicOrigin: process.env.PUBLIC_ORIGIN,
-      beforeCandidateDelivery: async () => { reached(); await gate; } });
+      beforeCandidateRelatives: barrier === "relatives" ? pause : undefined,
+      beforeCandidateDelivery: barrier === "delivery" ? pause : undefined });
     const server = createServer((req, res) => {
       void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
         .catch((error) => { res.destroy(error); });
@@ -5040,7 +5043,10 @@ try {
   };
   const unchangedCandidates = await candidateDelivery(async () => {});
   assert.equal(unchangedCandidates.status, 200);
-  assert.ok((await unchangedCandidates.json()).candidates.some((item: { id: string }) =>
+  const unchangedPage = await unchangedCandidates.json();
+  assert.equal(unchangedPage.truncated, false);
+  assert.equal(unchangedPage.nextCursor, null);
+  assert.ok(unchangedPage.candidates.some((item: { id: string }) =>
     item.id === "relative-only"), "unchanged published candidates remain available");
   const revokedCandidateDelivery = await candidateDelivery(async () => {
     await otherPublication.unpublish("relative-only");
@@ -5049,6 +5055,16 @@ try {
     "withdrawing a candidate after ranking prevents delivery of its old card");
   assert.equal((await revokedCandidateDelivery.json()).candidates, undefined);
   await otherPublication.publish("relative-only", "owner");
+  const revokedDuringLookup = await candidateDelivery(async () => {
+    await otherPublication.unpublish(parent.id);
+  }, "relatives");
+  assert.equal(revokedDuringLookup.status, 409,
+    "a relative withdrawn between indexed paging and evidence lookup invalidates the page");
+  const stalePage = await revokedDuringLookup.json();
+  assert.equal(stalePage.candidates, undefined);
+  assert.equal(stalePage.truncated, undefined,
+    "the stale indexed page cannot reveal even an outdated pagination count");
+  await otherPublication.publish(parent.id, "owner");
   const revokedRelativeDelivery = await candidateDelivery(async () => {
     await otherPublication.unpublish(parent.id);
   });

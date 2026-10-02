@@ -123,10 +123,12 @@ function candidateCursor(value: string | null): [string,string,string] | null {
   } catch { return null; }
 }
 
-export function discoveryMatchesHttp({ archive, auth, publicOrigin, beforeCandidateDelivery }: {
+export function discoveryMatchesHttp({ archive, auth, publicOrigin,
+  beforeCandidateRelatives, beforeCandidateDelivery }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
+  beforeCandidateRelatives?: () => Promise<void>;
   beforeCandidateDelivery?: () => Promise<void>;
 }) {
   const db = archive.db;
@@ -304,7 +306,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin, beforeCandid
         lookupArgs.push(archiveId,relativeTerms);
       }
       // Each branch starts with a GIN index. Only opt-in projections are read.
-      const rows = await db.prepare("", `WITH candidate_keys AS (${branches.join(" UNION ")})
+      const candidateSql = `WITH candidate_keys AS (${branches.join(" UNION ")})
         SELECT d.archive_id,d.person_id,d.name,d.birth_surname,
           d.birth_year,d.death_year,d.birth_place,d.death_place,
           d.publication_version::text AS publication_version,d.xmin::text AS row_version
@@ -324,8 +326,11 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin, beforeCandid
                 AND m.right_archive_id=d.archive_id AND m.right_person_id=d.person_id)
               OR (m.right_archive_id=? AND m.right_person_id=?
                 AND m.left_archive_id=d.archive_id AND m.left_person_id=d.person_id)))
-        ORDER BY d.name,d.archive_id,d.person_id LIMIT ${candidatePageSize + 1}`)
-        .all(...lookupArgs,archiveId,...after,archiveId,archiveId,sourceId,archiveId,sourceId,archiveId,sourceId);
+        ORDER BY d.name,d.archive_id,d.person_id LIMIT ${candidatePageSize + 1}`;
+      const candidateArgs = [...lookupArgs,archiveId,...after,archiveId,archiveId,sourceId,
+        archiveId,sourceId,archiveId,sourceId];
+      const rows = await db.prepare("", candidateSql).all(...candidateArgs);
+      await beforeCandidateRelatives?.();
       const page = rows.slice(0, candidatePageSize);
       const relativesByPerson = new Map<string, PublishedRelative[]>();
       let relativeRows: Row[] = [];
@@ -385,8 +390,10 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin, beforeCandid
           relative_name: String(row.relative_name),
         })),
       ];
-      // One MVCC snapshot checks every selected publication and the complete top-24
-      // relative set used for ranking. A withdrawn or changed card cannot be delivered.
+      const expectedPage = rows.map((row) => ({ archive_id: String(row.archive_id),
+        person_id: String(row.person_id) }));
+      // One MVCC snapshot checks the indexed page (including its overflow row),
+      // selected publications and the complete top-24 relatives used for ranking.
       const current = await db.prepare("", `WITH expected_people AS (
           SELECT * FROM jsonb_to_recordset(?::jsonb) AS e(
             archive_id text,person_id text,publication_version text,row_version text)
@@ -395,6 +402,9 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin, beforeCandid
         ), expected_relatives AS (
           SELECT * FROM jsonb_to_recordset(?::jsonb) AS e(
             archive_id text,person_id text,relative_person_id text,kind text,relative_name text)
+        ), expected_page AS (
+          SELECT * FROM jsonb_to_recordset(?::jsonb) AS e(archive_id text,person_id text)
+        ), current_page AS (${candidateSql}
         ), current_relatives AS (
           SELECT f.archive_id,f.person_id,r.relative_person_id,r.kind,r.relative_name
           FROM expected_focals f
@@ -408,12 +418,17 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin, beforeCandid
             ON d.archive_id=e.archive_id AND d.person_id=e.person_id
             AND d.publication_version::text=e.publication_version
             AND d.xmin::text=e.row_version) AS people_count,
+          (SELECT count(*) FROM current_page c JOIN expected_page e
+            ON c.archive_id=e.archive_id AND c.person_id=e.person_id) AS page_count,
+          (SELECT count(*) FROM current_page) AS current_page_count,
           NOT EXISTS (SELECT * FROM expected_relatives EXCEPT SELECT * FROM current_relatives)
             AND NOT EXISTS (SELECT * FROM current_relatives EXCEPT SELECT * FROM expected_relatives)
             AS relatives_current`)
         .get(JSON.stringify(expectedPeople),JSON.stringify(expectedFocals),
-          JSON.stringify(expectedRelatives));
+          JSON.stringify(expectedRelatives),JSON.stringify(expectedPage),...candidateArgs);
       if (Number(current?.people_count) !== expectedPeople.length ||
+          Number(current?.page_count) !== expectedPage.length ||
+          Number(current?.current_page_count) !== expectedPage.length ||
           current?.relatives_current !== true)
         return json(res, 409, { error: "Опубликованные карточки изменились. Обновите подсказки." });
       return json(res, 200, { candidates: ranked, truncated: nextCursor !== null, nextCursor });
