@@ -7,8 +7,20 @@ import type {
 } from "../shared/document-annotations";
 
 type PageContainer = {
-  page?: { index: number; width: number; height: number };
+  page?: {
+    index: number;
+    width: number;
+    height: number;
+    widthInches: number;
+    heightInches: number;
+  };
   $container: { 0: HTMLElement };
+};
+
+type OnePageView = HTMLElement & {
+  scale: number;
+  SPACING_IN: number;
+  coordSpace: { worldUnitsToRenderedPixels(inches: number): number };
 };
 
 type PageLayer = {
@@ -22,7 +34,12 @@ type PageLayer = {
 
 export function makeDrevoPlugin(
   emit: (event: ReaderEvent) => void,
-  options: { downloadUrl: string; downloadName: string; canEdit: boolean },
+  options: {
+    downloadUrl: string;
+    downloadName: string;
+    canEdit: boolean;
+    fitSinglePage: boolean;
+  },
 ) {
   return class DrevoPlugin extends BookReaderPlugin {
     declare br: BookReaderInstance;
@@ -36,6 +53,7 @@ export function makeDrevoPlugin(
     private selection: AnnotationSelection | null = null;
     private annotating = false;
     private magnifier = false;
+    private fittedOnePage = false;
 
     init() {
       const sizeEdgeLabel = (event: MouseEvent) => {
@@ -124,6 +142,48 @@ export function makeDrevoPlugin(
 
     _configurePageContainer(pageContainer: PageContainer) {
       if (!pageContainer.page || this.br.mode === this.br.constModeThumb) return;
+      const onePage = document.querySelector<OnePageView>("br-mode-1up");
+      if (options.fitSinglePage && onePage && !this.fittedOnePage) {
+        this.fittedOnePage = true;
+        const { widthInches, heightInches } = pageContainer.page;
+        // BookReader queues its first-render scale after mounting the mode.
+        // Run after that task; subsequent zoom uses the native scale as usual.
+        let fittedScale: number | undefined;
+        const fit = () => {
+          if (!onePage.isConnected) return;
+          const pixels = onePage.coordSpace.worldUnitsToRenderedPixels;
+          const padding = 2 * onePage.SPACING_IN;
+          const bounds = onePage.getBoundingClientRect();
+          const footer = document.querySelector(".BRfooter")?.getBoundingClientRect();
+          const height = Math.min(
+            onePage.clientHeight,
+            footer?.height ? footer.top - bounds.top : onePage.clientHeight,
+          );
+          const scale = Math.min(
+            onePage.clientWidth / pixels(widthInches + padding),
+            height / pixels(heightInches + padding),
+          );
+          if (Number.isFinite(scale) && scale > 0) {
+            onePage.scale = scale;
+            fittedScale = scale;
+          }
+        };
+        setTimeout(() => {
+          fit();
+          let fullscreenChanged = false;
+          this.br.bind("fullscreenToggled", () => { fullscreenChanged = true; });
+          this.br.bind("resize", () => {
+            if (
+              fullscreenChanged ||
+              (fittedScale !== undefined && Math.abs(onePage.scale - fittedScale) < 1e-6)
+            ) {
+              fullscreenChanged = false;
+              // Fullscreen also sets the native default scale after resize.
+              queueMicrotask(fit);
+            }
+          });
+        });
+      }
       const container = pageContainer.$container[0];
       const overlay = document.createElement("div");
       overlay.className = "drevo-page-layer";

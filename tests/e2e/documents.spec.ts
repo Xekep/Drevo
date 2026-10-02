@@ -143,6 +143,80 @@ test(`скан ${format} открывается в ридере и по пост
 });
 }
 
+for (const scan of [
+  { format: "png", width: 800, height: 4800 },
+  { format: "jpeg", width: 4800, height: 800 },
+  { format: "webp", width: 3000, height: 3000 },
+  { format: "gif", width: 180, height: 240 },
+] as const) {
+  test(`скан ${scan.format} целиком помещается при открытии без ручного зума`, async ({ page }, info) => {
+    const title = `Fit ${scan.format} ${info.project.name} ${info.retry}`;
+    const buffer = await sharp({ create: {
+      width: scan.width, height: scan.height, channels: 3, background: "#e2decf",
+    } })[scan.format]().toBuffer();
+    const upload = await page.request.post("/api/documents", {
+      headers: {
+        "Content-Type": `image/${scan.format}`,
+        "X-Document-Metadata": encodeURIComponent(JSON.stringify({ title, personIds: [] })),
+      },
+      data: buffer,
+    });
+    expect(upload.status()).toBe(201);
+    const { id } = await upload.json();
+    await page.goto(`/documents/${id}`);
+    const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
+    const book = reader.frameLocator("iframe.pdf-book-frame");
+    const image = book.locator('.BRpage-visible[data-index="0"] img.BRpageimage');
+    await expect(image).toBeVisible();
+    await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBe(scan.width);
+    const checkFit = async () => {
+      const bounds = await image.evaluate((node) => {
+        const page = node.getBoundingClientRect();
+        const viewport = node.closest("br-mode-1up")!.getBoundingClientRect();
+        const footer = node.ownerDocument.querySelector(".BRfooter")?.getBoundingClientRect();
+        const bottom = Math.min(viewport.bottom, footer?.height ? footer.top : viewport.bottom);
+        return {
+          fits: page.left >= viewport.left - 1 && page.top >= viewport.top - 1 &&
+            page.right <= viewport.right + 1 && page.bottom <= bottom + 1,
+          fill: Math.max(page.width / viewport.width, page.height / (bottom - viewport.top)),
+          ratio: page.width / page.height,
+          page: { left: page.left, top: page.top, right: page.right, bottom: page.bottom },
+          viewport: { left: viewport.left, top: viewport.top, right: viewport.right, bottom },
+        };
+      });
+      expect(bounds.fits, JSON.stringify(bounds)).toBe(true);
+      expect(bounds.fill, JSON.stringify(bounds)).toBeGreaterThan(0.75);
+      expect(bounds.ratio).toBeCloseTo(scan.width / scan.height, 3);
+    };
+    await expect(async () => checkFit()).toPass();
+    if (scan.format === "png")
+      await reader.screenshot({ path: info.outputPath("tall-scan-fit.png") });
+    const initialViewport = page.viewportSize()!;
+    await page.setViewportSize({ width: initialViewport.height, height: initialViewport.width });
+    await expect(async () => checkFit()).toPass();
+    await page.setViewportSize(initialViewport);
+    await expect(async () => checkFit()).toPass();
+    await book.locator(".BRicon.full:visible").first().click();
+    await expect(async () => checkFit()).toPass();
+    await book.locator(".BRicon.full:visible").first().click();
+    await expect(async () => checkFit()).toPass();
+    if (info.project.name === "desktop") {
+      const originalWidth = (await image.boundingBox())!.width;
+      await book.locator(".BRicon.zoom_in:visible").first().click();
+      await expect.poll(async () => (await image.boundingBox())!.width).toBeGreaterThan(originalWidth * 1.05);
+      const zoomedWidth = (await image.boundingBox())!.width;
+      await page.setViewportSize({ ...initialViewport, height: initialViewport.height - 120 });
+      await expect.poll(async () => (await image.boundingBox())!.width).toBeCloseTo(zoomedWidth, 1);
+      await page.setViewportSize(initialViewport);
+      await book.locator(".BRicon.zoom_out:visible").first().click();
+      await expect(async () => checkFit()).toPass();
+    }
+    await page.reload();
+    await expect(image).toBeVisible();
+    await expect(async () => checkFit()).toPass();
+  });
+}
+
 test("верхний поиск находит PDF и открывает постоянную ссылку", async ({
   page,
 }, testInfo) => {

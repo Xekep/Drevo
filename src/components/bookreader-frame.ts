@@ -267,6 +267,7 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
         downloadUrl: command.url,
         downloadName: command.downloadName,
         canEdit: command.canEdit,
+        fitSinglePage: pageCount === 1,
       }),
     );
     const initial = Math.min(
