@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { DiscoveryLinkedCardShare } from "./discovery-linked-card-share.tsx";
 import { DiscoveryBranchShare } from "./discovery-branch-share.tsx";
@@ -76,6 +76,8 @@ export function DiscoveryMatchesAdmin() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [matchesLoading, setMatchesLoading] = useState(true);
   const [matchesReload, setMatchesReload] = useState(0);
+  const matchesRequest = useRef<AbortController | null>(null);
+  const matchesGeneration = useRef(0);
   const [deferredMatches, setDeferredMatches] = useState<Set<string>>(() => new Set());
   const [cursor, setCursor] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -89,6 +91,8 @@ export function DiscoveryMatchesAdmin() {
     const recheck = () => {
       if (document.visibilityState !== "visible") return;
       // A publication or link may have been revoked in another tab while this list was open.
+      matchesGeneration.current++;
+      matchesRequest.current?.abort();
       setMatches([]);
       setMatchesLoading(true);
       setMatchesReload((value) => value + 1);
@@ -186,18 +190,26 @@ export function DiscoveryMatchesAdmin() {
 
   useEffect(() => {
     const controller = new AbortController();
+    const generation = matchesGeneration.current;
+    matchesRequest.current = controller;
     archiveFetch(`${endpoint}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, {
       signal: controller.signal, cache: "no-store",
     }).then(async (response) => {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Не удалось загрузить сопоставления");
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || generation !== matchesGeneration.current) return;
       setArchiveId(body.archiveId);
       setMatches(body.matches);
       setNextCursor(body.nextCursor);
-    }).catch((reason) => { if (!controller.signal.aborted) setError(reason.message); })
-      .finally(() => { if (!controller.signal.aborted) setMatchesLoading(false); });
-    return () => controller.abort();
+    }).catch((reason) => {
+      if (!controller.signal.aborted && generation === matchesGeneration.current) setError(reason.message);
+    }).finally(() => {
+      if (!controller.signal.aborted && generation === matchesGeneration.current) setMatchesLoading(false);
+    });
+    return () => {
+      controller.abort();
+      if (matchesRequest.current === controller) matchesRequest.current = null;
+    };
   }, [cursor, reload, matchesReload]);
 
   async function send() {
