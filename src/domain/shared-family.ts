@@ -1,10 +1,12 @@
-import type { Family, Source } from "./types.ts";
+import type { Family, PersonValueClaim, Source } from "./types.ts";
 const publicSource = (source: Source): Source => {
   const copy = { ...source };
   delete copy.documentId;
   delete copy.documentPage;
   return copy;
 };
+const publicClaim = (claim?: PersonValueClaim): PersonValueClaim | undefined =>
+  claim && { ...claim, sources: claim.sources.map(publicSource) };
 export type ShareLink = {
   id: string;
   title: string;
@@ -38,13 +40,22 @@ export function sharedFamily(
         patronymic: p.patronymic,
         sex: p.sex,
         birth: p.birth,
+        birthDateClaim: publicClaim(p.birthDateClaim),
         death: p.death,
+        deathDateClaim: publicClaim(p.deathDateClaim),
         deceased: p.deceased,
         needsReview: p.needsReview,
         birthPlace: p.birthPlace,
+        birthPlaceClaim: publicClaim(p.birthPlaceClaim),
         deathPlace: p.deathPlace,
+        deathPlaceClaim: publicClaim(p.deathPlaceClaim),
         maidenName: p.maidenName,
+        maidenNameClaim: publicClaim(p.maidenNameClaim),
         occupation: p.occupation,
+        occupationClaim: publicClaim(p.occupationClaim),
+        factAlternatives: p.factAlternatives?.map((alternative) => ({
+          ...alternative, sources: alternative.sources.map(publicSource),
+        })),
         biography: p.biography,
         awards: p.awards,
         events: p.events?.map((event) => ({
