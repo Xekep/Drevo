@@ -61,6 +61,31 @@ export async function verifyPortablePreviewGlobalCap(client: pg.Client, director
     assert.equal(arrived, ids.length, "all archive owners reached the admission barrier");
     assert.deepEqual(responses.map((response) => response.status).sort(), [200, 200, 409],
       "three archive-local previews must share a two-slot platform cap");
+    assert.equal((await client.query(
+      "SELECT count(*)::int AS n FROM platform_portable_preview_slots",
+    )).rows[0].n, 2);
+    const released = responses.findIndex((response) => response.status === 200);
+    const token = (await responses[released].json() as { token: string }).token;
+    const stageExpiry = (await routes[released].archive.db.prepare("",
+      "SELECT expires_at FROM workflow_stages WHERE token=?").get(token))?.expires_at;
+    assert.equal(Number((await client.query(
+      "SELECT expires_at FROM platform_portable_preview_slots WHERE token=$1", [token],
+    )).rows[0]?.expires_at), stageExpiry,
+    "the ready stage and its platform slot must expire together");
+    await routes[released].archive.db.prepare("", "DELETE FROM workflow_stages WHERE token=?")
+      .run(token);
+    assert.equal((await client.query(
+      "SELECT count(*)::int AS n FROM platform_portable_preview_slots",
+    )).rows[0].n, 1, "removing a stage releases its platform slot");
+    const denied = responses.findIndex((response) => response.status === 409);
+    const retryBase = routes[denied].base;
+    const retry = await fetch(`${retryBase}/api/drevo/preview`, {
+      method: "POST", headers: { Origin: retryBase, "X-Drevo-Import": "1" }, body: bytes,
+    });
+    assert.equal(retry.status, 200, "a released slot can be claimed by another archive");
+    assert.equal((await client.query(
+      "SELECT count(*)::int AS n FROM platform_portable_preview_slots",
+    )).rows[0].n, 2);
   } finally {
     clearTimeout(timeout);
     release();
@@ -78,4 +103,7 @@ export async function verifyPortablePreviewGlobalCap(client: pg.Client, director
     await client.query("SELECT set_config('drevo.archive_id',$1,false)", [previousArchive]);
     rmSync(fixture, { recursive: true, force: true });
   }
+  assert.equal((await client.query(
+    "SELECT count(*)::int AS n FROM platform_portable_preview_slots",
+  )).rows[0].n, 0, "archive removal releases all remaining preview slots");
 }
