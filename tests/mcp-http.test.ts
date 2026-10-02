@@ -161,6 +161,7 @@ test("admin-issued MCP token exposes only granted read-only tools", async () => 
       (tool: { name: string }) => tool.name,
     );
     assert.ok(names.includes("search_people"));
+    assert.ok(names.includes("query_people"));
     assert.ok(names.includes("get_ancestors"));
     assert.equal(names.includes("find_inconsistencies"), false);
     assert.equal(names.includes("get_sources"), false);
@@ -350,6 +351,21 @@ test("MCP token bound to a common-ancestors user sees only that projection", asy
 
     const hidden = await callSearch("СкрытыйЧеловек", 102);
     assert.deepEqual(hidden.result.structuredContent.people, []);
+
+    const query = async (criteria: Record<string, unknown>) => fetch(base + "/mcp", {
+      method: "POST", headers,
+      body: JSON.stringify({ jsonrpc: "2.0", id: 104, method: "tools/call",
+        params: { name: "query_people", arguments: { criteria, limit: 0 } } }),
+    }).then((response) => response.json());
+    const scopedCount = await query({ birthYearTo: 1940 });
+    assert.equal(scopedCount.result.structuredContent.total, 2);
+    assert.equal(scopedCount.result.structuredContent.totalPeople, 2);
+    assert.deepEqual(scopedCount.result.structuredContent.people, []);
+    const hiddenCount = await query({ surname: "СкрытыйЧеловек" });
+    assert.equal(hiddenCount.result.structuredContent.total, 0);
+    const hiddenAnchor = await query({ relativeOf: "mcp-hidden", relation: "children" });
+    assert.equal(hiddenAnchor.result.isError, true);
+    assert.match(hiddenAnchor.result.content[0].text, /не найден в доступном архиве/);
 
     const admin = await fetch(base + "/api/mcp/tokens").then((response) =>
       response.json(),
