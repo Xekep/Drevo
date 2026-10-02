@@ -304,16 +304,18 @@ export function documentsHttp({
     row: Row,
   ) => {
     if (!(await accessStillCurrent(req, access))) return false;
-    if (!access.scoped) return true;
-    // The graph and document associations can change separately while a file
-    // or rendered TIFF page is being prepared. Check both before responding.
-    if ((await archive.meta()).revision !== access.revision) return false;
+    // Deleting a document removes its catalogue row before unlinking the
+    // original. A request that started before deletion must not stream it.
     const current = (await db.prepare(
       "SELECT * FROM documents WHERE id=?",
       "SELECT * FROM documents WHERE id=?",
     ).get(row.id)) as Row | undefined;
-    return !!current && current.file_name === row.file_name &&
-      canSee(access, current, (await associations([row.id])).get(row.id) || []);
+    if (!current || current.file_name !== row.file_name) return false;
+    if (!access.scoped) return true;
+    // The graph and document associations can change separately while a file
+    // or rendered TIFF page is being prepared. Check both before responding.
+    if ((await archive.meta()).revision !== access.revision) return false;
+    return canSee(access, current, (await associations([row.id])).get(row.id) || []);
   };
 
   return async (
