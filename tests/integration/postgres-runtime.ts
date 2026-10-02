@@ -1882,6 +1882,52 @@ try {
   } finally {
     await new Promise<void>((resolve) => revokedExportServer.close(() => resolve()));
   }
+  const deliveryToken = newSessionToken();
+  const deliveryHash = sessionTokenHash(deliveryToken);
+  await client.query(
+    "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'reader',$2)",
+    [deliveryHash, Date.now() + 60_000],
+  );
+  const deliverySnapshot = await accountDataExport(app.archive.db).read("reader");
+  assert.ok(deliverySnapshot);
+  let reachDelivery!: () => void;
+  let releaseDelivery!: () => void;
+  const deliveryReached = new Promise<void>((resolve) => { reachDelivery = resolve; });
+  const deliveryGate = new Promise<void>((resolve) => { releaseDelivery = resolve; });
+  const delivering = accountDataExport(app.archive.db).deliverWithCurrentSession(
+    "reader", deliveryHash, deliverySnapshot.commentScopes,
+    async () => { reachDelivery(); await deliveryGate; },
+  );
+  const revokingClient = new pg.Client();
+  try {
+    await deliveryReached;
+    await revokingClient.connect();
+    const revokerPid = (await revokingClient.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+    const revocation = revokingClient.query(
+      "DELETE FROM account_sessions WHERE token_hash=$1", [deliveryHash],
+    );
+    let blocked = false;
+    for (let attempt = 0; attempt < 100 && !blocked; attempt++) {
+      const lock = await client.query(
+        "SELECT cardinality(pg_blocking_pids($1)) > 0 AS blocked", [revokerPid],
+      );
+      blocked = lock.rows[0].blocked === true;
+      if (!blocked) await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.equal(blocked, true, "logout waits while the account export is handed off");
+    releaseDelivery();
+    assert.equal(await delivering, "sent");
+    assert.equal((await revocation).rowCount, 1);
+    assert.equal(await accountDataExport(app.archive.db).deliverWithCurrentSession(
+      "reader", deliveryHash, deliverySnapshot.commentScopes, () => {
+        throw new Error("a revoked session must not reach delivery");
+      },
+    ), "session-expired");
+  } finally {
+    releaseDelivery();
+    await delivering.catch(() => {});
+    await revokingClient.end().catch(() => {});
+  }
   const chatToDeleteAfterDowngrade = await aiChatStore(app.archive.db).create("owner", "[]");
   const aiOwner = await (await userStore(app.archive.db)).get("owner");
   assert.ok(aiOwner);

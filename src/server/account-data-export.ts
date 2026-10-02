@@ -13,6 +13,20 @@ type CommentScope = {
   revision: number;
 };
 
+function scopesStillVisible(
+  scopes: CommentScope[],
+  rows: Array<Record<string, unknown>>,
+) {
+  const current = new Map(rows.map((row) => [String(row.archive_id), row]));
+  return scopes.every((scope) => {
+    const row = current.get(scope.archiveId);
+    return row?.approved === true && row.role === scope.role &&
+      row.tree_access === scope.treeAccess &&
+      (row.person_id == null ? null : String(row.person_id)) === scope.personId &&
+      Number(row.revision) === scope.revision;
+  });
+}
+
 /** A consistent snapshot of the account's own profile and archive access. */
 export function accountDataExport(db: StoreDatabase) {
   return {
@@ -184,15 +198,42 @@ export function accountDataExport(db: StoreDatabase) {
         const rows = await db.prepare("", `SELECT m.archive_id,m.role,m.tree_access,
           m.person_id,m.approved,a.revision FROM archive_memberships m
           JOIN archives a ON a.id=m.archive_id WHERE m.user_id=?`).all(accountId);
-        const current = new Map(rows.map((row) => [String(row.archive_id), row]));
-        return scopes.every((scope) => {
-          const row = current.get(scope.archiveId);
-          return row?.approved === true && row.role === scope.role &&
-            row.tree_access === scope.treeAccess &&
-            (row.person_id == null ? null : String(row.person_id)) === scope.personId &&
-            Number(row.revision) === scope.revision;
-        });
+        return scopesStillVisible(scopes, rows);
       }, true);
+    },
+    /** Keep the caller's session locked through the final permission check and
+     * response handoff. A completed logout blocks delivery; a later logout
+     * waits until the response is handed to the HTTP server. */
+    async deliverWithCurrentSession(
+      accountId: string,
+      tokenHash: string,
+      scopes: CommentScope[],
+      deliver: () => void | Promise<void>,
+    ): Promise<"sent" | "session-expired" | "access-changed"> {
+      if (db.kind !== "postgres" || !db.postgresTransaction)
+        return "access-changed";
+      return await db.postgresTransaction(async (client) => {
+        await client.query("SELECT set_config('drevo.account_id',$1,true)", [accountId]);
+        const session = await client.query(
+          `SELECT expires_at FROM account_sessions
+           WHERE token_hash=$1 AND user_id=$2 FOR SHARE`,
+          [tokenHash, accountId],
+        );
+        if (!session.rowCount || Number(session.rows[0].expires_at) <= Date.now())
+          return "session-expired";
+        if (!(await client.query("SELECT 1 FROM accounts WHERE id=$1", [accountId])).rowCount)
+          return "session-expired";
+        const memberships = await client.query(
+          `SELECT m.archive_id,m.role,m.tree_access,m.person_id,m.approved,a.revision
+           FROM archive_memberships m JOIN archives a ON a.id=m.archive_id
+           WHERE m.user_id=$1`,
+          [accountId],
+        );
+        if (!scopesStillVisible(scopes, memberships.rows))
+          return "access-changed";
+        await deliver();
+        return "sent";
+      });
     },
   };
 }
