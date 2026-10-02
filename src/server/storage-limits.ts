@@ -1,4 +1,5 @@
 import type { StoreDatabase } from "./store-database.ts";
+import { postgresMediaReferencesSql } from "./postgres-media-quota.ts";
 import type { Role, ArchiveUser } from "../domain/access.ts";
 import { ROLE_NAMES } from "../domain/access.ts";
 import {
@@ -70,12 +71,17 @@ export async function userStorageBytes(
       COALESCE((SELECT sum(m.size_bytes) FROM media_originals m WHERE m.uploaded_by=? AND (
         EXISTS (SELECT 1 FROM people p WHERE json_extract(p.data,'$.photo')=m.url) OR
         EXISTS (SELECT 1 FROM photos p WHERE json_extract(p.data,'$.url')=m.url) OR
+        EXISTS (SELECT 1 FROM people p,json_tree(p.data) j WHERE j.key='url' AND
+          (j.value=m.url OR j.value LIKE m.url||'#%' OR j.value LIKE m.url||'?%')) OR
+        EXISTS (SELECT 1 FROM family_unions u,json_tree(u.data) j WHERE j.key='url' AND
+          (j.value=m.url OR j.value LIKE m.url||'#%' OR j.value LIKE m.url||'?%')) OR
+        EXISTS (SELECT 1 FROM relations r,json_tree(r.sources) j WHERE j.key='url' AND
+          (j.value=m.url OR j.value LIKE m.url||'#%' OR j.value LIKE m.url||'?%')) OR
         EXISTS (SELECT 1 FROM media_upload_grants g WHERE g.url=m.url AND g.expires_ms>?)
       )),0) + COALESCE((SELECT sum(json_extract(f.value,'$.size')) FROM person_comments c,json_each(c.attachments) f WHERE c.author_id=?),0) AS bytes`,
       `SELECT COALESCE((SELECT sum(file_size) FROM documents WHERE uploaded_by=?),0) +
       COALESCE((SELECT sum(m.size_bytes) FROM media_originals m WHERE m.uploaded_by=? AND (
-        EXISTS (SELECT 1 FROM people p WHERE p.archive_id=m.archive_id AND p.data->>'photo'=m.url) OR
-        EXISTS (SELECT 1 FROM photos p WHERE p.archive_id=m.archive_id AND p.data->>'url'=m.url) OR
+        EXISTS (SELECT 1 FROM (${postgresMediaReferencesSql}) r WHERE r.url=m.url) OR
         EXISTS (SELECT 1 FROM media_upload_grants g WHERE g.archive_id=m.archive_id AND g.url=m.url AND g.expires_ms>?)
       )),0) + COALESCE((SELECT sum((f->>'size')::bigint) FROM person_comments c,jsonb_array_elements(c.attachments) f WHERE c.author_id=?),0) AS bytes`,
     )

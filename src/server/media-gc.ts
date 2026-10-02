@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { mediaPattern } from "./media.ts";
+import { mediaPattern, originalMediaPattern } from "./media.ts";
 import { configuredDatabaseBackend } from "./store-database.ts";
 import { storedDocumentFileType } from "../shared/document-file.ts";
 
@@ -23,6 +23,19 @@ function referencedMedia(db: DatabaseSync, includeBackups = true) {
     if (typeof value.url !== "string") continue;
     const match = mediaPattern.exec(value.url);
     if (match) result.add(match[1]);
+  }
+  // An original may be linked only by a fact citation. Keep it across GC,
+  // including citations in union and family-link evidence.
+  for (const table of ["people", "family_unions", "relations"] as const) {
+    const column = table === "relations" ? "sources" : "data";
+    if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(table)) continue;
+    for (const row of db.prepare(
+      `SELECT j.value AS url FROM ${table} t,json_tree(t.${column}) j WHERE j.key='url' AND j.type='text'`,
+    ).all()) {
+      const url = String(row.url).split(/[?#]/, 1)[0];
+      const match = originalMediaPattern.exec(url);
+      if (match) result.add(match[1]);
+    }
   }
   if (
     db
@@ -48,7 +61,7 @@ function referencedMedia(db: DatabaseSync, includeBackups = true) {
   )
     for (const row of db.prepare("SELECT data FROM history").all()) {
       const matches = String(row.data).matchAll(
-        /\/media\/([a-zA-Z0-9-]+\.(?:jpg|png|webp|gif))/g,
+        /\/media\/([a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|tif|pdf))/g,
       );
       for (const match of matches) result.add(match[1]);
     }

@@ -7,11 +7,15 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 
 export const mediaPattern = /^\/media\/([a-zA-Z0-9-]+\.(jpg|png|webp|gif))$/;
+/** Portable citations may retain originals that are not gallery images. */
+export const originalMediaPattern = /^\/media\/([a-zA-Z0-9-]+\.(jpg|png|webp|gif|tif|pdf))$/;
 const mimeTypes: Record<string, string> = {
   jpg: "image/jpeg",
   png: "image/png",
   webp: "image/webp",
   gif: "image/gif",
+  tif: "image/tiff",
+  pdf: "application/pdf",
 };
 
 export class MediaTooLargeError extends Error {
@@ -47,6 +51,15 @@ export function mediaStore(directory: string) {
     usageWork: Promise<{ files: number; bytes: number }> | undefined;
   const open = (url: string) => {
     const match = mediaPattern.exec(url);
+    if (!match) return null;
+    return {
+      name: match[1],
+      path: resolve(directory, match[1]),
+      type: mimeTypes[match[2]],
+    };
+  };
+  const openOriginal = (url: string) => {
+    const match = originalMediaPattern.exec(url);
     if (!match) return null;
     return {
       name: match[1],
@@ -164,5 +177,6 @@ export function mediaStore(directory: string) {
       }
     },
     open,
+    openOriginal,
   };
 }

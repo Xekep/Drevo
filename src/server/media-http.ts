@@ -8,6 +8,15 @@ import type { settingsStore } from "./settings.ts";
 import type { openArchive } from "./database.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { ownsPendingMedia } from "./media-access.ts";
+import { allCitations } from "./source-catalog-store.ts";
+import type { Family } from "../domain/types.ts";
+
+function citationUrls(family: Family) {
+  return allCitations(family).flatMap((citation) => {
+    const url = citation.url?.split(/[?#]/, 1)[0];
+    return url?.startsWith("/media/") ? [url] : [];
+  });
+}
 
 export function mediaHttp({
   auth,
@@ -49,6 +58,9 @@ export function mediaHttp({
     if (!canRead && !(await visibility.read()).publicAlbums) return false;
     if (!url) return false;
     if (!canRead) {
+      // Public albums expose only regular gallery images, never originals
+      // attached solely as archive evidence.
+      if (!media.open(url)) return false;
       // UUID is an identifier, not permission to view an unpublished upload.
       const settings = await visibility.read();
       return await referenced(url, settings.publicTree);
@@ -56,7 +68,9 @@ export function mediaHttp({
     const user = await auth.currentUser(req);
     if (!user) return false;
     if (await ownsPendingMedia(archive.db, url, user.id)) return true;
-    if (!isScopedUser(user)) return await referenced(url, true);
+    if (!isScopedUser(user))
+      return await referenced(url, true) ||
+        citationUrls((await archive.read()).family).includes(url);
     const key = `${(await archive.meta()).revision}:${user.id}:${user.personId || ""}`;
     if (key !== cachedKey) {
       const scoped = projectFamilyForUser((await archive.read()).family, user);
@@ -68,7 +82,11 @@ export function mediaHttp({
       ]);
       cachedKey = key;
     }
-    return cachedUrls.has(url);
+    if (cachedUrls.has(url)) return true;
+    // Citation edits may happen through the source catalogue without changing
+    // the tree revision. Re-evaluate visibility instead of caching a grant.
+    return citationUrls(projectFamilyForUser((await archive.read()).family, user))
+      .includes(url);
   };
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -89,14 +107,14 @@ export function mediaHttp({
     if (!(await permitted(req, url.pathname)))
       return json(res, 401, { error: "Sign in to view this archive" });
 
-    const file = media.open(url.pathname);
+    const file = media.openOriginal(url.pathname);
     if (!file) return json(res, 404, { error: "Фото не найдено" });
     const requested = url.searchParams.get("variant");
     const variant: ImagePreviewVariant | null =
       requested === "tiny" || requested === "thumb" || requested === "display"
         ? requested : null;
 
-    if (variant && file.type !== "image/gif") {
+    if (variant && media.open(url.pathname) && file.type !== "image/gif") {
       try {
         const bytes = await previewImage(
           { path: file.path, cacheKey: file.name },
@@ -132,6 +150,11 @@ export function mediaHttp({
       res.writeHead(200, {
         "Content-Type": file.type,
         "Content-Length": String(stat.size),
+        ...(file.type === "application/pdf"
+          ? { "Content-Disposition": `inline; filename="${file.name}"` }
+          : file.type === "image/tiff"
+            ? { "Content-Disposition": `attachment; filename="${file.name}"` }
+            : {}),
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-store",
       });
