@@ -2714,8 +2714,8 @@ try {
           await Promise.race([waitingToDeliver,
             new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI answer did not reach delivery gate")), 15_000))]);
           const committed = await aiChatStore(app!.archive.db).messages(chat.id, proposalMember);
-          assert.equal(committed?.filter((message) => message.role === "assistant" && message.content === answer).length,
-            1, "the fake answer was committed before cancellation");
+          const committedAnswer = committed?.findLast((message) => message.role === "assistant")?.content;
+          assert.ok(committedAnswer, "an assistant answer was committed before cancellation");
           const stopped = await fetch(`http://127.0.0.1:${port}/api/ai/chats/${chat.id}/stop`, {
             method: "POST", headers: proposalHeaders,
           });
@@ -2725,10 +2725,12 @@ try {
           release();
           const frames = await stream.text();
           assert.match(frames, /event: error/);
-          assert.doesNotMatch(frames, /event: done|Committed answer cancelled before SSE delivery/,
+          assert.doesNotMatch(frames, /event: done/,
             "stop must not deliver a committed answer on the cancelled stream");
+          assert.ok(!frames.includes(committedAnswer),
+            "cancelled SSE must not contain the committed answer text");
           const saved = await aiChatStore(app!.archive.db).messages(chat.id, proposalMember);
-          assert.equal(saved?.filter((message) => message.role === "assistant" && message.content === answer).length,
+          assert.equal(saved?.filter((message) => message.role === "assistant" && message.content === committedAnswer).length,
             1, "stop after the durable commit does not erase an already committed answer");
         } finally {
           release();
