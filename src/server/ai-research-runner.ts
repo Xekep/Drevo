@@ -51,6 +51,7 @@ import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import type { imagePreviews } from "./image-previews.ts";
 import type { mediaStore } from "./media.ts";
+import { ForbiddenError } from "./users.ts";
 import type { researchCatalogStore } from "./research-catalog.ts";
 import { researchPdf } from "./research-pdf.ts";
 import {
@@ -1521,6 +1522,12 @@ export function createResearchRunner({
             result = { suggestion };
           } else throw new Error("Модель запросила неизвестный инструмент");
         } catch (error) {
+          if (error instanceof ForbiddenError) {
+            // The file store may reject a downgrade after the outer pre-save
+            // check. Reflect that denial through the HTTP access callback.
+            await assertAiAccessBeforeSave();
+            throw error;
+          }
           if (accessCheckFailed || signal.aborted) throw error;
           if (error instanceof WebSearchError) webSearchFailed = true;
           const detail =

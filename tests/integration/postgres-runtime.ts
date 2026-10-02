@@ -1604,7 +1604,7 @@ try {
   const continueInstall = new Promise<void>((resolve) => { releaseInstall = resolve; });
   const stagedStore = generatedResearchFileStore(app.archive.db,
     join(dirname(source), "uploads"), generatedChats,
-    async () => { reachedInstall(); await continueInstall; });
+    { beforeInstall: async () => { reachedInstall(); await continueInstall; } });
   const stagedPath = join(dirname(source), "ai-generated-files", stagedChat.id);
   const stagedSave = stagedStore.save({ ownerId: "owner", chatId: stagedChat.id,
     name: "staged.pdf", contentType: "application/pdf",
@@ -1636,6 +1636,51 @@ try {
     await stagedStore.deleteChat(stagedChat.id).catch(() => {});
     stagedStore.close();
     await generatedChats.delete(stagedChat.id, "owner").catch(() => {});
+  }
+  // Once admission holds the tier lock, revocation must wait for the short
+  // install transaction and then complete without a lock-order deadlock.
+  const lockedChat = await generatedChats.create("owner", JSON.stringify(["admin", "all", ""]));
+  let reachedTierGate!: () => void;
+  let releaseTierGate!: () => void;
+  const atTierGate = new Promise<void>((resolve) => { reachedTierGate = resolve; });
+  const continueTierGate = new Promise<void>((resolve) => { releaseTierGate = resolve; });
+  const lockedStore = generatedResearchFileStore(app.archive.db,
+    join(dirname(source), "uploads"), generatedChats,
+    { afterTierCheck: async () => { reachedTierGate(); await continueTierGate; } });
+  const lockedSave = lockedStore.save({ ownerId: "owner", chatId: lockedChat.id,
+    name: "locked.pdf", contentType: "application/pdf",
+    bytes: Buffer.from("%PDF- admitted before tier downgrade"),
+    expires: Date.now() + 30 * 60_000 }).then(
+    (value) => ({ value }), (error: unknown) => ({ error }));
+  let downgrade: Promise<{ error?: unknown }> | undefined;
+  try {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([atTierGate, new Promise<void>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("Generated file did not acquire tier lock")), 10_000);
+      })]);
+    } finally { clearTimeout(timeout); }
+    downgrade = stagedUsers.setFullAccess((await stagedUsers.get("owner"))!, "owner", false)
+      .then(() => ({}), (error: unknown) => ({ error }));
+    assert.equal(await Promise.race([
+      downgrade.then(() => "revoked"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("waiting"), 100)),
+    ]), "waiting", "tier downgrade waits for the installed file's short transaction");
+    releaseTierGate();
+    const admitted = await lockedSave;
+    if ("error" in admitted) throw admitted.error;
+    assert.ok(admitted.value, "the file admitted before downgrade is installed");
+    const revoked = await downgrade;
+    if (revoked.error) throw revoked.error;
+    assert.equal(await accountAiAccess(app.archive.db, "owner"), false);
+  } finally {
+    releaseTierGate();
+    await lockedSave;
+    await downgrade;
+    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+    await lockedStore.deleteChat(lockedChat.id).catch(() => {});
+    lockedStore.close();
+    await generatedChats.delete(lockedChat.id, "owner").catch(() => {});
   }
   const generatedChat = await generatedChats.create("owner", JSON.stringify(["admin", "all", ""]));
   const generatedBytes = Buffer.from("%PDF- synthetic private report");
