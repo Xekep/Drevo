@@ -105,6 +105,17 @@ try {
       await result.arrayBuffer();
     }
   }
+  // Both processes race for a cold shared preview, exercising the disk cache
+  // publication path rather than only the warm-cache path in the timed loop.
+  const coldPreviews = await Promise.all(bases.map(async (base) => {
+    const response = await fetch(base + photoUrl + "?variant=display");
+    assert.equal(response.status, 200);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    const decoded = await sharp(bytes).raw().toBuffer();
+    assert.ok(decoded.length > 0, "Cold preview must decode fully");
+    return bytes;
+  }));
+  assert.deepEqual(coldPreviews[0], coldPreviews[1]);
   // The two child processes have independent memory. A generated PDF must be
   // downloaded through the other process and disappear after chat deletion.
   const pdfResponse = await fetch(bases[0] + "/api/ai/chat", {
@@ -155,6 +166,7 @@ try {
   );
   results.set("edit", { durations: [], bytes: 0, errors: 0 });
   results.set("ai_mock_turn", { durations: [], bytes: 0, errors: 0 });
+  results.set("backup_job", { durations: [], bytes: 0, errors: 0 });
   const concurrency = 12;
   const until = performance.now() + seconds * 1000;
   let next = 0;
@@ -240,7 +252,51 @@ try {
       metric.durations.push(performance.now() - began);
     }));
   })();
-  const [, writes] = await Promise.all([Promise.all(readers), writer, aiTurns]);
+  const backgroundBackup = (async () => {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const metric = results.get("backup_job")!;
+    const began = performance.now();
+    try {
+      const child = children[0];
+      const outcome = await new Promise<{ state?: string; error?: string; records?: number }>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          child.off("message", received);
+          reject(new Error("Background backup timed out"));
+        }, 60000);
+        const received = (message: unknown) => {
+          if (!message || typeof message !== "object" || !("backup" in message)) return;
+          clearTimeout(timer);
+          child.off("message", received);
+          resolve(message.backup as { state?: string; error?: string; records?: number });
+        };
+        child.on("message", received);
+        child.send("backup");
+      });
+      assert.equal(outcome.state, "succeeded", outcome.error);
+      assert.equal(outcome.records, 1, "Background job must publish one copy");
+      const other = children[1];
+      const remoteCount = await new Promise<number>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          other.off("message", received);
+          reject(new Error("Other backend backup catalog read timed out"));
+        }, 5000);
+        const received = (message: unknown) => {
+          if (!message || typeof message !== "object" || !("backupRecords" in message)) return;
+          clearTimeout(timer);
+          other.off("message", received);
+          resolve(Number(message.backupRecords));
+        };
+        other.on("message", received);
+        other.send("backup-records");
+      });
+      assert.equal(remoteCount, 1, "Other backend must see the background copy");
+    } catch (error) {
+      metric.errors++;
+      console.error("Synthetic background backup failed", error);
+    }
+    metric.durations.push(performance.now() - began);
+  })();
+  const [, writes] = await Promise.all([Promise.all(readers), writer, aiTurns, backgroundBackup]);
   assert.ok(writes > 0, "No edits completed during mixed HTTP load");
   const final = await fetch(bases[1] + "/api/family").then(r => r.json());
   assert.equal(final.family.people.find((person: { id: string }) =>
@@ -264,7 +320,7 @@ try {
     cores: cpus().length, memoryBytes: totalmem(), people: count,
     processes: processMetrics,
     concurrency, durationSeconds: Math.round(elapsedMs / 1000),
-    scope: "isolated local HTTP, synthetic archive and media; two AI turns against an in-process fake with 150 ms provider delay; no external model, network, or background jobs",
+    scope: "isolated local HTTP, synthetic archive and media; cold shared preview and one background managed backup during mixed traffic; two AI turns against an in-process fake with 150 ms provider delay; no external model or network",
   }}));
   for (const [operation, metric] of results) {
     const samples = metric.durations.length;
@@ -273,7 +329,7 @@ try {
       p99Ms: percentile(metric.durations, 0.99), bytesReceived: metric.bytes,
       successfulOpsPerSecond: Math.round(((samples - metric.errors) * 1000) / elapsedMs),
     }));
-    assert.ok(samples > 0 && metric.errors === 0, `${operation}: HTTP errors`);
+    assert.ok(samples > 0 && metric.errors === 0, `${operation}: operation errors`);
   }
 } finally {
   await Promise.all(children.map(child => new Promise<void>(resolve => {
