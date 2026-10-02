@@ -121,7 +121,7 @@ export function createGpuScene(
         if(d<=66.+aa) {
           vec2 photoUv=texCoord;
           vec3 base=tint.rgb;
-          if((mode&1)!=0) { vec3 rgb=texture(atlas,photoUv).rgb; base=vec3(dot(rgb,vec3(.2126,.7152,.0722))); }
+          if((mode&1)!=0) { vec3 rgb=texture(atlas,photoUv).rgb; base=vec3((mode&32)!=0 ? rgb.r : dot(rgb,vec3(.2126,.7152,.0722))); }
           else { vec2 p=(local-.5)*148.;
             if(length(p-vec2(0,-15))<17. || (p.y>8. && length((p-vec2(0,47))/vec2(40,42))<1.)) base=vec3(.51,.61,.54); }
           vec3 ring=(mode&2)!=0 ? vec3(.84,.48,.09) : vec3(1.,.996,.98);
@@ -469,6 +469,7 @@ export function createGpuScene(
     const portraitBatches = new Map<WebGLTexture, Batch & { bytes: number }>();
     return {
       portraits,
+      ready: () => portraits!.ready(),
       interaction(hover: string, focus: string) {
         if (hovered !== hover || focused !== focus) portraitDirty = true;
         hovered = hover;
@@ -515,7 +516,7 @@ export function createGpuScene(
           right: (width - camera.x) / camera.zoom,
           bottom: (height - camera.y) / camera.zoom,
         };
-        const high = camera.zoom > 0.3;
+        const high = portraits!.quality(camera.zoom);
         if (
           !cachedBox ||
           view.left < cachedBox.left ||
@@ -567,7 +568,7 @@ export function createGpuScene(
           const batches = new Map<WebGLTexture, number[]>();
           for (const { node } of visible) {
             const tile = node.data.person.photo
-              ? portraits!.get(node.data.person.photo, camera.zoom)
+              ? portraits!.get(node.data.person.photo)
               : undefined;
             const texture = tile?.texture || fontTexture;
             let data = batches.get(texture);
@@ -597,6 +598,7 @@ export function createGpuScene(
               ...rgb,
               node.data.outsideSpotlight ? 0.3 : node.data.dimmed ? 0.6 : 1,
               (tile ? 1 : 0) |
+                (tile?.gray ? 32 : 0) |
                 (node.data.person.needsReview ? 2 : 0) |
                 (node.selected || node.data.spotlit ? 4 : 0) |
                 (node.id === hovered || node.id === focused ? 8 : 0),
@@ -621,6 +623,7 @@ export function createGpuScene(
           }
         }
         let dynamicBytes = 0;
+        portraits!.prepare();
         for (const [texture, batch] of portraitBatches) {
           dynamicBytes += batch.bytes;
           if (!batch.count) continue;

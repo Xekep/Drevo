@@ -1006,7 +1006,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   const overviewAvailable = nodes.length >= 600 && !growing && !layoutSettling;
   const distantScene = overviewAvailable && distantZoom;
-  const gpuScope = archiveContextAt(window.location.pathname)?.id || window.location.pathname;
+  const gpuScope = typeof window === "undefined" ? "server" :
+    archiveContextAt(window.location.pathname)?.id || window.location.pathname;
   const [gpuReadyScene, setGpuReadyScene] = useState<{ geometry: typeof geometry; scope: string } | null>(null);
   const [gpuFailedScope, setGpuFailedScope] = useState<string | null>(null);
   const [gpuFallbackReason, setGpuFallbackReason] = useState("");
@@ -1739,6 +1740,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         )}
         {gpuEligible && (
           <TreeGpuScene key={gpuScope}
+            visible={gpuActive}
             nodes={nodes} edges={gpuEdges} households={overviewHouseholds} width={canvasWidth} height={canvasHeight}
             hovered={gpuHovered} focused={gpuFocused} relationLabel={actions.relationLabel}
             onReady={gpuReady} onFailure={gpuFailure} />

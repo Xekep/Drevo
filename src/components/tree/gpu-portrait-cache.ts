@@ -2,7 +2,11 @@ import { mediaPreview } from "../../domain/media-preview";
 import { safeUrl } from "../../domain";
 
 type Tile = { slot: number; touched: number };
-export type PortraitTile = { texture: WebGLTexture; uv: number[] };
+export type PortraitTile = {
+  texture: WebGLTexture;
+  uv: number[];
+  gray: boolean;
+};
 const SIZE = 2048;
 
 /** Two fixed pages (32 MiB), no archive-sized decoded-image cache. */
@@ -13,14 +17,16 @@ export class GpuPortraitCache {
     size: number;
     tiles: Map<string, Tile>;
     free: number[];
+    dirty: boolean;
   }[];
   private loading = new Map<string, HTMLImageElement>();
   private failed = new Map<string, number>();
   private wanted: { key: string; photo: string; level: number }[] = [];
   private clock = 0;
   private stopped = false;
+  private highQuality = false;
   private scratch = document.createElement("canvas");
-  readonly bytes = SIZE * SIZE * 4 * 2;
+  readonly bytes = Math.ceil((SIZE * SIZE * 5 * 4) / 3);
 
   constructor(
     private gl: WebGL2RenderingContext,
@@ -31,8 +37,18 @@ export class GpuPortraitCache {
       const texture = gl.createTexture();
       if (!texture) throw new Error("GPU texture allocation failed");
       gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, SIZE, SIZE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texStorage2D(
+        gl.TEXTURE_2D,
+        12,
+        size === 48 ? gl.R8 : gl.RGBA8,
+        SIZE,
+        SIZE,
+      );
+      gl.texParameteri(
+        gl.TEXTURE_2D,
+        gl.TEXTURE_MIN_FILTER,
+        gl.LINEAR_MIPMAP_LINEAR,
+      );
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -43,6 +59,7 @@ export class GpuPortraitCache {
         cell,
         size,
         tiles: new Map<string, Tile>(),
+        dirty: false,
         free: Array.from(
           { length: capacity },
           (_, index) => capacity - index - 1,
@@ -78,6 +95,7 @@ export class GpuPortraitCache {
   }
 
   request(photos: string[], zoom: number) {
+    this.highQuality = this.quality(zoom);
     const unique = [...new Set(photos)];
     // High resolution only for the nearest 49 visible portraits. Tiny tiles stay
     // resident during upgrades; camera motion never blanks an existing portrait.
@@ -86,7 +104,7 @@ export class GpuPortraitCache {
       photo,
       level: 0,
     }));
-    if (zoom > 0.3)
+    if (this.highQuality)
       this.wanted.unshift(
         ...unique.slice(0, 49).map((photo) => ({
           key: `1:${photo}`,
@@ -108,14 +126,36 @@ export class GpuPortraitCache {
     this.pump();
   }
 
-  get(photo: string, zoom: number): PortraitTile | undefined {
-    for (const level of zoom > 0.3 ? [1, 0] : [0]) {
+  quality(zoom: number) {
+    return zoom > 0.34 || (this.highQuality && zoom >= 0.26);
+  }
+
+  ready() {
+    return this.wanted.every(
+      (item) =>
+        this.pages[item.level].tiles.has(item.photo) ||
+        this.failed.has(item.key),
+    );
+  }
+
+  prepare() {
+    for (const page of this.pages)
+      if (page.dirty) {
+        this.gl.bindTexture(this.gl.TEXTURE_2D, page.texture);
+        this.gl.generateMipmap(this.gl.TEXTURE_2D);
+        page.dirty = false;
+      }
+  }
+
+  get(photo: string): PortraitTile | undefined {
+    for (const level of this.highQuality ? [1, 0] : [0]) {
       const page = this.pages[level],
         tile = page.tiles.get(photo);
       if (!tile) continue;
       const columns = Math.floor(SIZE / page.cell);
       return {
         texture: page.texture,
+        gray: level === 0,
         uv: [
           ((tile.slot % columns) * page.cell + 2) / SIZE,
           (Math.floor(tile.slot / columns) * page.cell + 2) / SIZE,
@@ -169,15 +209,37 @@ export class GpuPortraitCache {
           );
           const gl = this.gl;
           gl.bindTexture(gl.TEXTURE_2D, page.texture);
-          gl.texSubImage2D(
-            gl.TEXTURE_2D,
-            0,
-            (slot % columns) * page.cell,
-            Math.floor(slot / columns) * page.cell,
-            gl.RGBA,
-            gl.UNSIGNED_BYTE,
-            this.scratch,
-          );
+          if (item.level === 0) {
+            const rgba = ctx.getImageData(0, 0, page.cell, page.cell).data;
+            const gray = new Uint8Array(page.cell * page.cell);
+            for (let i = 0; i < gray.length; i++)
+              gray[i] = Math.round(
+                rgba[i * 4] * 0.2126 +
+                  rgba[i * 4 + 1] * 0.7152 +
+                  rgba[i * 4 + 2] * 0.0722,
+              );
+            gl.texSubImage2D(
+              gl.TEXTURE_2D,
+              0,
+              (slot % columns) * page.cell,
+              Math.floor(slot / columns) * page.cell,
+              page.cell,
+              page.cell,
+              gl.RED,
+              gl.UNSIGNED_BYTE,
+              gray,
+            );
+          } else
+            gl.texSubImage2D(
+              gl.TEXTURE_2D,
+              0,
+              (slot % columns) * page.cell,
+              Math.floor(slot / columns) * page.cell,
+              gl.RGBA,
+              gl.UNSIGNED_BYTE,
+              this.scratch,
+            );
+          page.dirty = true;
           page.tiles.set(item.photo, { slot, touched: ++this.clock });
           this.redraw();
         } catch {
@@ -190,6 +252,7 @@ export class GpuPortraitCache {
         this.loading.delete(item.key);
         if (this.failed.size >= 2048) this.failed.clear();
         this.failed.set(item.key, Date.now());
+        this.redraw();
         this.pump();
       };
       image.src = mediaPreview(

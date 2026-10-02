@@ -18,6 +18,7 @@ export function TreeGpuScene({
   relationLabel,
   onReady,
   onFailure,
+  visible,
 }: {
   nodes: readonly PersonNodeType[];
   edges: readonly RelationshipEdgeType[];
@@ -29,6 +30,7 @@ export function TreeGpuScene({
   relationLabel: (person: Person) => string;
   onReady: () => void;
   onFailure: (reason: string) => void;
+  visible: boolean;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const store = useStoreApi();
@@ -44,6 +46,7 @@ export function TreeGpuScene({
     let active = true,
       frame = 0,
       ready = false;
+    const started = performance.now();
     const failed = (error?: unknown) => {
       if (active)
         onFailure(
@@ -60,8 +63,14 @@ export function TreeGpuScene({
         const [x, y, zoom] = store.getState().transform;
         scene.current.interaction(current.hovered, current.focused);
         scene.current.draw({ x, y, zoom }, current.width, current.height);
-        if (!ready && current.width > 0 && current.height > 0) {
+        if (
+          !ready &&
+          current.width > 0 &&
+          current.height > 0 &&
+          (scene.current.ready() || performance.now() - started >= 2000)
+        ) {
           ready = true;
+          clearTimeout(handoffTimer);
           onReady();
         }
       } catch (error) {
@@ -72,6 +81,7 @@ export function TreeGpuScene({
       if (active && !frame) frame = requestAnimationFrame(draw);
     };
     schedule.current = requestDraw;
+    const handoffTimer = window.setTimeout(requestDraw, 2000);
     const lost = (event: Event) => {
       event.preventDefault();
       failed();
@@ -100,6 +110,7 @@ export function TreeGpuScene({
     return () => {
       active = false;
       cancelAnimationFrame(frame);
+      clearTimeout(handoffTimer);
       unsubscribe();
       element.removeEventListener("webglcontextlost", lost);
       scene.current?.destroy(true);
@@ -117,5 +128,12 @@ export function TreeGpuScene({
   useEffect(() => {
     schedule.current();
   }, [width, height, hovered, focused]);
-  return <canvas ref={canvas} className="tree-gpu-scene" aria-hidden="true" />;
+  return (
+    <canvas
+      ref={canvas}
+      className="tree-gpu-scene"
+      aria-hidden="true"
+      style={{ visibility: visible ? "visible" : "hidden" }}
+    />
+  );
 }
