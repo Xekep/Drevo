@@ -188,3 +188,28 @@ test("GEDZIP remaps an event-place cited PDF and public share hides its local do
     assert.equal(share.people[0].events![0].placeClaim?.sources[0].documentPage, undefined);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test("BIRT/DEAT event-place markers survive as exact or general evidence", () => {
+  for (const version of ["5.5.1", "7.0"] as const) {
+    const input = [
+      "0 HEAD", "1 GEDC", `2 VERS ${version}`,
+      "0 @I1@ INDI", "1 NAME Анна /Тестова/",
+      "1 BIRT", "2 DATE 1880", "2 PLAC Тула", "2 SOUR @S1@",
+      "3 PAGE л. 4", "3 _DREVO_CLAIM EVENT_PLACE",
+      "1 DEAT", "2 DATE 1940", "2 SOUR @S2@",
+      "3 PAGE л. 5", "3 _DREVO_CLAIM EVENT_PLACE",
+      "0 @S1@ SOUR", "1 TITL Метрическая книга",
+      "0 @S2@ SOUR", "1 TITL Книга смертей", "0 TRLR", "",
+    ].join("\n");
+    const result = importGedcom(input, `birth-death-${version}`);
+    const person = result.family.people[0];
+    const birth = person.events!.find((event) => event.gedcomTag === "BIRT")!;
+    const death = person.events!.find((event) => event.gedcomTag === "DEAT")!;
+    assert.equal(birth.placeClaim?.value, "Тула");
+    assert.equal(birth.placeClaim?.sources[0].reference, "л. 4");
+    assert.equal(person.birthPlaceClaim, undefined);
+    assert.equal(death.placeClaim, undefined);
+    assert.equal(death.sources?.[0].reference, "л. 5");
+    assert.ok(result.warnings.some((warning) => warning.includes("без названия сохранён как общий")));
+  }
+});

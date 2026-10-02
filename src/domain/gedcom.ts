@@ -460,7 +460,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       const marker = value(sourceNodes[index], "_DREVO_CLAIM");
       if (date && marker === `${kind}_DATE`) dateClaimed.push(source);
       else if (place.trim() && marker === `${kind}_PLACE`) placeClaimed.push(source);
-      else if (marker !== "EVENT_PLACE") general.push(source);
+      else if (marker !== "EVENT_PLACE" || !place.trim()) general.push(source);
     });
     if (place.trim()) placeClaimed.push(...placeCitations);
     else if (placeCitations.length) {
