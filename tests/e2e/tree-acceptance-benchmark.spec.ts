@@ -1,7 +1,7 @@
 import { expect, test, type Page, type CDPSession } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
   installTreeAcceptanceProbe,
@@ -22,6 +22,19 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
   const throttle = Number(process.env.DREVO_TREE_ACCEPTANCE_CPU || 1);
   const fixture = randomFamily(5, count === 977 ? 9 : 12);
   expect(fixture.length).toBe(count);
+  const personalReference = process.env.DREVO_TREE_ACCEPTANCE_PERSONAL === "1"
+    ? fixture.at(-1)!.id
+    : null;
+  if (personalReference) {
+    // Local-admin mode has no linked person. Inject only that account field;
+    // the archive, HTTP mutations and media remain the real temporary backend.
+    await page.route("**/api/family?projection=overview", async (route) => {
+      const response = await route.fetch();
+      const data = await response.json();
+      data.user.personId = personalReference;
+      await route.fulfill({ response, json: data });
+    });
+  }
   // The server starts listening before generating the opt-in media fixture.
   await expect
     .poll(
@@ -524,6 +537,7 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
       generations: count === 977 ? 9 : 12,
       people: count,
       synthetic: true,
+      personalReference,
     },
     sourceHashes: Object.fromEntries(
       [
@@ -543,6 +557,10 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
         "src/components/tree/layout-cache.ts",
         "src/components/tree/layout-storage.ts",
         "src/domain/union-layout.ts",
+        "src/domain/index.ts",
+        "src/components/tree/person-relation-label.ts",
+        ...readdirSync("src/domain").filter((file) => /^kinship.*\.ts$/.test(file))
+          .map((file) => `src/domain/${file}`),
         "package-lock.json",
       ].map((file) => [
         file,
@@ -559,7 +577,9 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
       angle: process.env.DREVO_E2E_ANGLE || "default",
     },
     method:
-      "Production application, disposable SQLite/backend JPEG/previews, no response routing. Navigation timestamps are performance.now; resource counts are explicit allocations, not total VRAM. Mobile is Chrome touch emulation, not a physical phone. No GPU eligibility override. One run.",
+      "Production application, disposable SQLite/backend JPEG/previews. " +
+      (personalReference ? "Only user.personId in overview is injected for a linked account; family data and media are not mocked. " : "No response routing. ") +
+      "Navigation timestamps are performance.now; resource counts are explicit allocations, not total VRAM. Mobile is Chrome touch emulation, not a physical phone. No GPU eligibility override. One run.",
     phases,
     retainedHeap: {
       beforeScopeCycles: retainedHeapBefore,

@@ -2,6 +2,11 @@ import type { Person, Relation, KinshipRole, FamilyLink } from "./types.ts";
 import { fullName, plural } from "./dates.ts";
 import { resolvedSex } from "./name-hints.ts";
 import { connectionRoleName } from "./connection-labels.ts";
+import {
+  ancestorPath,
+  prepareKinshipGraph,
+  type KinshipGraph,
+} from "./kinship-index.ts";
 function unspecifiedRole(male: KinshipRole, female: KinshipRole): KinshipRole {
   return {
     term:
@@ -12,17 +17,13 @@ function unspecifiedRole(male: KinshipRole, female: KinshipRole): KinshipRole {
         : `${male.description} / ${female.description}`,
   };
 }
-function ancestors(id: string, map: Map<string, Person>) {
-  const paths = new Map<string, string[]>([[id, [id]]]);
-  const queue = [id];
-  for (let i = 0; i < queue.length; i++)
-    for (const parent of map.get(queue[i])?.parents || []) {
-      if (!paths.has(parent) && map.has(parent)) {
-        paths.set(parent, [...paths.get(queue[i])!, parent]);
-        queue.push(parent);
-      }
-    }
-  return paths;
+function graphPath(previous: Map<string, string>, id: string) {
+  const path = [id];
+  while (previous.has(id)) {
+    id = previous.get(id)!;
+    path.push(id);
+  }
+  return path.reverse();
 }
 function praWord(word: string, count: number) {
   return (count >= 3 ? `пра(${count})` : "пра".repeat(count)) + word;
@@ -416,9 +417,9 @@ export function edgeLabel(from: Person, to: Person, links: FamilyLink[] = []) {
 function analyzeBloodAndMarriage(
   a: Person,
   b: Person,
-  people: Person[],
+  graph: KinshipGraph,
 ): Relation {
-  const map = new Map(people.map((p) => [p.id, p]));
+  const { map } = graph;
   if (a.id === b.id)
     return {
       title: "Один и тот же человек",
@@ -427,27 +428,26 @@ function analyzeBloodAndMarriage(
       common: [],
       kind: "unknown",
     };
-  const ap = ancestors(a.id, map),
-    bp = ancestors(b.id, map);
+  const ap = graph.ancestors(a.id),
+    bp = graph.ancestors(b.id);
   const spouse = a.spouses.includes(b.id) || b.spouses.includes(a.id);
   const common = [...ap.keys()]
     .filter((id) => bp.has(id))
     .sort(
       (x, y) =>
-        ap.get(x)!.length +
-        bp.get(x)!.length -
-        (ap.get(y)!.length + bp.get(y)!.length),
+        ap.get(x)!.distance +
+        bp.get(x)!.distance -
+        (ap.get(y)!.distance + bp.get(y)!.distance),
     );
   if (common.length) {
     // Direct ancestry takes priority even when a pedigree contains multiple paths.
     const nearest = bp.has(a.id) ? a.id : ap.has(b.id) ? b.id : common[0],
-      pa = ap.get(nearest)!,
-      pb = bp.get(nearest)!;
+      pa = ancestorPath(ap, nearest),
+      pb = ancestorPath(bp, nearest);
     const da = pa.length - 1,
       db = pb.length - 1;
     const equivalent = common.filter(
-      (id) =>
-        ap.get(id)!.length === pa.length && bp.get(id)!.length === pb.length,
+      (id) => ap.get(id)!.distance === da && bp.get(id)!.distance === db,
     );
     const path = [...pa, ...pb.slice(0, -1).reverse()];
     const marriageNote = spouse ? " Также в архиве указан их брак." : "";
@@ -529,23 +529,16 @@ function analyzeBloodAndMarriage(
       roles: [familyRole([b, a]), familyRole([a, b])],
     };
   const seen = new Set([a.id]),
-    queue: string[][] = [[a.id]];
+    previous = new Map<string, string>(),
+    queue = [a.id];
   for (let i = 0; i < queue.length; i++) {
-    const path = queue[i],
-      last = map.get(path[path.length - 1])!;
-    const neighbors = new Set([
-      ...last.parents,
-      ...last.spouses,
-      ...people
-        .filter(
-          (p) => p.parents.includes(last.id) || p.spouses.includes(last.id),
-        )
-        .map((p) => p.id),
-    ]);
+    const last = map.get(queue[i])!;
+    const neighbors = graph.neighbors(last.id);
     for (const id of neighbors) {
       if (seen.has(id) || !map.has(id)) continue;
-      const next = [...path, id];
+      previous.set(id, last.id);
       if (id === b.id) {
+        const next = graphPath(previous, id);
         const nodes = next.map((item) => map.get(item)!);
         const roles: [KinshipRole, KinshipRole] = [
           familyRole([...nodes].reverse()),
@@ -583,7 +576,7 @@ function analyzeBloodAndMarriage(
         };
       }
       seen.add(id);
-      queue.push(next);
+      queue.push(id);
     }
   }
   return {
@@ -629,16 +622,25 @@ function specialRole(link: FamilyLink, subject: Person): KinshipRole {
     case "foster_parent":
       return {
         term: forward
-          ? f ? "приёмная мать" : "приёмный отец"
-          : f ? "приёмная дочь" : "приёмный сын",
+          ? f
+            ? "приёмная мать"
+            : "приёмный отец"
+          : f
+            ? "приёмная дочь"
+            : "приёмный сын",
         description: "Указана приёмная семья без записи об усыновлении.",
       };
     case "presumed_parent":
       return {
         term: forward
-          ? f ? "предполагаемая мать" : "предполагаемый отец"
-          : f ? "предполагаемая дочь" : "предполагаемый сын",
-        description: "Гипотеза о родительстве, не подтверждённая как установленный факт.",
+          ? f
+            ? "предполагаемая мать"
+            : "предполагаемый отец"
+          : f
+            ? "предполагаемая дочь"
+            : "предполагаемый сын",
+        description:
+          "Гипотеза о родительстве, не подтверждённая как установленный факт.",
       };
     case "step_parent":
       return {
@@ -697,18 +699,31 @@ function specialRole(link: FamilyLink, subject: Person): KinshipRole {
   }
 }
 
+export function createKinshipBaseAnalyzer(
+  people: Person[],
+  links: FamilyLink[] = [],
+) {
+  const graph = prepareKinshipGraph(people, links);
+  return (a: Person, b: Person) => analyzePreparedKinship(a, b, graph);
+}
+
 export function analyzeKinship(
   a: Person,
   b: Person,
   people: Person[],
   links: FamilyLink[] = [],
 ): Relation {
-  people = people.map((p) =>
-    p.sex === "u" ? { ...p, sex: resolvedSex(p) } : p,
-  );
-  a = people.find((p) => p.id === a.id) || { ...a, sex: resolvedSex(a) };
-  b = people.find((p) => p.id === b.id) || { ...b, sex: resolvedSex(b) };
-  const base = analyzeBloodAndMarriage(a, b, people);
+  return createKinshipBaseAnalyzer(people, links)(a, b);
+}
+
+function analyzePreparedKinship(
+  a: Person,
+  b: Person,
+  graph: KinshipGraph,
+): Relation {
+  a = graph.first.get(a.id) || { ...a, sex: resolvedSex(a) };
+  b = graph.first.get(b.id) || { ...b, sex: resolvedSex(b) };
+  const base = analyzeBloodAndMarriage(a, b, graph);
   if (a.id === b.id) return base;
   const extras: Relation[] = [];
   let recordedStepParent: Relation | undefined;
@@ -727,7 +742,7 @@ export function analyzeKinship(
       common: [],
       kind,
     });
-  for (const link of links)
+  for (const link of graph.touching.get(a.id) || [])
     if (
       (link.from === a.id && link.to === b.id) ||
       (link.from === b.id && link.to === a.id)
@@ -745,19 +760,13 @@ export function analyzeKinship(
       );
       if (link.type === "step_parent") recordedStepParent = extras.at(-1);
     }
-  const godChildren = (id: string) =>
-    links
-      .filter((l) => l.type === "godparent" && l.from === id)
-      .map((l) => l.to);
+  const godChildren = (id: string) => graph.godChildren.get(id) || [];
   const ga = godChildren(a.id),
     gb = godChildren(b.id);
   const commonGodchild =
     ga.find(
-      (id) =>
-        gb.includes(id) ||
-        people.find((p) => p.id === id)?.parents.includes(b.id),
-    ) ||
-    gb.find((id) => people.find((p) => p.id === id)?.parents.includes(a.id));
+      (id) => gb.includes(id) || graph.first.get(id)?.parents.includes(b.id),
+    ) || gb.find((id) => graph.first.get(id)?.parents.includes(a.id));
   if (commonGodchild)
     add(
       "Кумовство",
@@ -770,21 +779,14 @@ export function analyzeKinship(
       "Общая запись о крещении связывает этих людей.",
     );
   const nurses = (p: Person) =>
-    new Set([
-      ...p.parents,
-      ...links
-        .filter((l) => l.type === "nurse" && l.to === p.id)
-        .map((l) => l.from),
-    ]);
+    new Set([...p.parents, ...(graph.nurses.get(p.id) || [])]);
   const na = nurses(a),
     nb = nurses(b);
   const nurse = [...na].find(
     (id) =>
       nb.has(id) &&
-      links.some(
-        (l) =>
-          l.type === "nurse" && l.from === id && [a.id, b.id].includes(l.to),
-      ),
+      ((graph.nurses.get(a.id) || []).includes(id) ||
+        (graph.nurses.get(b.id) || []).includes(id)),
   );
   if (nurse)
     add(
@@ -828,12 +830,18 @@ export function analyzeKinship(
     completeParents(b) &&
     !a.parents.some((id) => b.parents.includes(id))
   ) {
-    const step = links.find(
-      (link) =>
-        link.type === "step_parent" &&
-        ((link.to === a.id && b.parents.includes(link.from)) ||
-          (link.to === b.id && a.parents.includes(link.from))),
-    );
+    const step = [
+      ...(graph.stepParents.get(a.id) || []),
+      ...(graph.stepParents.get(b.id) || []),
+    ]
+      .sort((x, y) => x.order - y.order)
+      .map(({ link }) => link)
+      .find(
+        (link) =>
+          link.type === "step_parent" &&
+          ((link.to === a.id && b.parents.includes(link.from)) ||
+            (link.to === b.id && a.parents.includes(link.from))),
+      );
     if (step) {
       const role = (person: Person): KinshipRole => ({
         term:
@@ -870,36 +878,28 @@ export function analyzeKinship(
     return { ...base, ...(extras.length ? { otherRelations: extras } : {}) };
   if (extras.length) return { ...extras[0], otherRelations: extras.slice(1) };
   // Keep adoption, spiritual and other documented paths visible without claiming blood kinship.
-  const map = new Map(people.map((p) => [p.id, p])),
+  const map = graph.map,
     seen = new Set([a.id]),
-    queue = [[a.id]];
+    previous = new Map<string, string>(),
+    queue = [a.id];
   for (let i = 0; i < queue.length; i++) {
-    const path = queue[i],
-      id = path[path.length - 1],
+    const id = queue[i],
       p = map.get(id)!;
-    const neighbors = new Set([
-      ...p.parents,
-      ...p.spouses,
-      ...people
-        .filter((x) => x.parents.includes(id) || x.spouses.includes(id))
-        .map((x) => x.id),
-      ...links
-        .filter((l) => l.type !== "presumed_parent" && (l.from === id || l.to === id))
-        .map((l) => (l.from === id ? l.to : l.from)),
-    ]);
+    const neighbors = graph.neighbors(p.id, true);
     for (const next of neighbors) {
       if (seen.has(next) || !map.has(next)) continue;
+      previous.set(next, id);
       if (next === b.id)
         return {
           title: "Документированная семейная связь",
           explanation:
             "Цепочка включает усыновление, духовную или другую явно указанную связь. Она не означает кровного родства.",
-          path: [...path, next],
+          path: graphPath(previous, next),
           common: [],
           kind: "family",
         };
       seen.add(next);
-      queue.push([...path, next]);
+      queue.push(next);
     }
   }
   return base;

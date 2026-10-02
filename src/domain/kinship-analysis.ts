@@ -1,5 +1,5 @@
 import { fullName, plural } from "./dates.ts";
-import { analyzeKinship as analyzeKinshipBase } from "./kinship.ts";
+import { createKinshipBaseAnalyzer } from "./kinship.ts";
 import { unionStatus } from "./family-unions.ts";
 import type { FamilyLink, FamilyUnion, Person, Relation } from "./types.ts";
 
@@ -22,14 +22,69 @@ export function analyzeKinship(
   links: FamilyLink[] = [],
   unions: FamilyUnion[] = [],
 ): Relation {
-  const relation = analyzeKinshipBase(a, b, people, links);
+  return createKinshipAnalyzer(people, links, unions)(a, b);
+}
 
-  if (relation.kind === "marriage" && relation.path.length === 2) {
-    const pair = unions.filter(
-      (union) =>
-        union.participants.includes(a.id) && union.participants.includes(b.id),
+/**
+ * Снимок семейного графа; кеш предков ограничен внутри замыкания.
+ * a/b остаются явными аргументами: как у analyzeKinship, их исходный пол
+ * определяет брачную роль, а имена участвуют в объяснении бокового родства.
+ * asOf фиксирует UTC-день снимка; без него статус, как прежде, считается на день вызова.
+ */
+export function createKinshipAnalyzer(
+  people: Person[],
+  links: FamilyLink[] = [],
+  unions: FamilyUnion[] = [],
+  asOf?: string,
+) {
+  const map = new Map(
+    people.map((person) => [
+      person.id,
+      { ...person, parents: [...person.parents], spouses: [...person.spouses] },
+    ]),
+  );
+  const pairUnions = new Map<string, Map<string, FamilyUnion[]>>();
+  for (const union of unions) {
+    const snapshot = {
+      ...union,
+      participants: [...union.participants] as [string, string],
+      formation: union.formation && { ...union.formation },
+      ending: union.ending && { ...union.ending },
+      divorce: union.divorce && { ...union.divorce },
+      ongoing: union.ongoing && { ...union.ongoing },
+    };
+    for (const id of new Set(snapshot.participants)) {
+      const byOther = pairUnions.get(id) || new Map<string, FamilyUnion[]>();
+      for (const other of new Set(snapshot.participants)) {
+        const records = byOther.get(other) || [];
+        records.push(snapshot);
+        byOther.set(other, records);
+      }
+      pairUnions.set(id, byOther);
+    }
+  }
+  const analyze = createKinshipBaseAnalyzer(people, links);
+  return (a: Person, b: Person): Relation =>
+    normalizeKinship(
+      a,
+      b,
+      analyze(a, b),
+      map,
+      pairUnions.get(a.id)?.get(b.id) || [],
+      asOf,
     );
-    const statuses = pair.map((union) => unionStatus(union));
+}
+
+function normalizeKinship(
+  a: Person,
+  b: Person,
+  relation: Relation,
+  map: Map<string, Person>,
+  pair: FamilyUnion[],
+  asOf?: string,
+): Relation {
+  if (relation.kind === "marriage" && relation.path.length === 2) {
+    const statuses = pair.map((union) => unionStatus(union, asOf));
     const status = statuses.includes("current")
       ? "current"
       : statuses.length && statuses.every((item) => item === "former")
@@ -85,7 +140,6 @@ export function analyzeKinship(
   )
     return relation;
 
-  const map = new Map(people.map((person) => [person.id, person]));
   const commonPeople = relation.common
     .map((id) => map.get(id))
     .filter((person): person is Person => Boolean(person));
