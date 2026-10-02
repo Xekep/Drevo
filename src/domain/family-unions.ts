@@ -1,5 +1,6 @@
 import { dateBound, validDate } from "./dates.ts";
 import type { FamilyUnion, Source, UnionMilestone } from "./types.ts";
+import { validSourceRepository } from "./source-repository.ts";
 
 export type UnionStatus = "current" | "former" | "unknown";
 
@@ -44,6 +45,7 @@ const validSources = (sources: Source[] | undefined) =>
         typeof s.reference === "string" &&
         (s.url === undefined || typeof s.url === "string") &&
         (s.note === undefined || typeof s.note === "string") &&
+        validSourceRepository(s) &&
         (s.documentId === undefined ||
           (typeof s.documentId === "string" &&
             /^[a-f0-9-]{36}$/i.test(s.documentId))) &&

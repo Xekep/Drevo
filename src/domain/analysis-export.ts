@@ -67,6 +67,7 @@ export function analysisExport(
         title: s.title,
         type: s.type,
         reference: s.reference,
+        repository: s.repository,
         url: s.url,
         note: s.note,
       })),

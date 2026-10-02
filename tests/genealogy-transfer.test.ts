@@ -490,23 +490,26 @@ for (const version of ["5.5.1", "7.0"] as const)
 0 TRLR`;
     const imported = importGedcom(external, `repository-${version}`);
     const personCitation = imported.family.people[0].sources?.[0];
-    assert.equal(personCitation?.reference, "Ф. 6, оп. 13, д. 104");
-    assert.match(personCitation?.note || "", /Хранилище: ГАСО/);
+    assert.equal(personCitation?.reference, "");
+    assert.deepEqual(personCitation?.repository, {
+      name: "ГАСО", callNumber: "Ф. 6, оп. 13, д. 104",
+      website: "", note: "", linkNote: "",
+    });
     const citation = imported.family.people[0].events?.find((event) =>
       event.gedcomTag === "BIRT")?.sources?.[0];
     assert.equal(citation?.reference, "л. 3");
-    assert.match(citation?.note || "", /ГАСО/);
-    assert.match(citation?.note || "", /Ф\. 6, оп\. 13, д\. 104/);
-    assert.ok(imported.warnings.some((warning) => warning.includes("хранилищ")));
+    assert.deepEqual(citation?.repository, personCitation?.repository);
+    assert.ok(!imported.warnings.some((warning) => warning.includes("структура REPO")));
     assert.ok(!imported.warnings.some((warning) => warning.includes("Запись REPO") && warning.includes("не перенесена")));
     const exported = exportGedcom(imported.family, { version });
+    assert.doesNotMatch(exported, /2 PAGE Ф\. 6, оп\. 13, д\. 104/);
     const restored = importGedcom(exported, `repository-again-${version}`);
     assert.equal(restored.family.people[0].sources?.[0].reference, personCitation?.reference);
-    assert.match(restored.family.people[0].sources?.[0].note || "", /ГАСО/);
-    const note = restored.family.people[0].events?.find((event) =>
-      event.gedcomTag === "BIRT")?.sources?.[0].note || "";
-    assert.match(note, /ГАСО/);
-    assert.match(note, /Ф\. 6, оп\. 13, д\. 104/);
+    assert.deepEqual(restored.family.people[0].sources?.[0].repository, personCitation?.repository);
+    assert.deepEqual(restored.family.people[0].events?.find((event) =>
+      event.gedcomTag === "BIRT")?.sources?.[0].repository, citation?.repository);
+    assert.match(exported, /1 REPO @R\d+@\r?\n2 CALN Ф\. 6, оп\. 13, д\. 104/);
+    assert.match(exported, /0 @R\d+@ REPO\r?\n1 NAME ГАСО/);
   });
 
 for (const version of ["5.5.1", "7.0"] as const)
@@ -546,9 +549,12 @@ for (const version of ["5.5.1", "7.0"] as const)
       "https://archive.example.org/book/104", "https://archive.example.org/book/104",
     ]);
     for (const source of citations || []) {
-      assert.match(source?.note || "", /Сайт хранилища: https:\/\/archive\.example\.org/);
-      assert.match(source?.note || "", /Предварительная запись обязательна/);
-      assert.match(source?.note || "", /Выдаётся в читальном зале/);
+      assert.deepEqual(source?.repository, {
+        name: "ГАСО", callNumber: "Ф. 6, оп. 13, д. 104",
+        website: "https://archive.example.org",
+        note: "Предварительная запись обязательна",
+        linkNote: "Выдаётся в читальном зале",
+      });
     }
     assert.match(citations?.[0]?.note || "", /Запись о рождении/);
     assert.doesNotMatch(citations?.[0]?.note || "", /Запись о смерти/);
@@ -563,11 +569,8 @@ for (const version of ["5.5.1", "7.0"] as const)
     assert.deepEqual(restored?.map((source) => source?.url), [
       "https://archive.example.org/book/104", "https://archive.example.org/book/104",
     ]);
-    for (const source of restored || []) {
-      assert.match(source?.note || "", /Сайт хранилища: https:\/\/archive\.example\.org/);
-      assert.match(source?.note || "", /Предварительная запись обязательна/);
-      assert.match(source?.note || "", /Выдаётся в читальном зале/);
-    }
+    assert.deepEqual(restored?.map((source) => source?.repository),
+      citations?.map((source) => source?.repository));
     assert.match(restored?.[0]?.note || "", /Запись о рождении/);
     assert.doesNotMatch(restored?.[0]?.note || "", /Запись о смерти/);
     assert.match(restored?.[1]?.note || "", /Запись о смерти/);

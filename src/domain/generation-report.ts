@@ -3,6 +3,7 @@ import { householdLevels } from "./household-levels.ts";
 import { EVENT_NAMES } from "./person-events.ts";
 import { CONNECTION_NAMES } from "./mutations.ts";
 import { CLAIM_CONFIDENCE_LABELS } from "./claim-confidence.ts";
+import { repositorySummary } from "./person-sources.ts";
 import type { Family, Person, Source, UnionMilestone } from "./types.ts";
 
 const clean = (value = "") =>
@@ -159,6 +160,7 @@ export function generationReport(
         source.title,
         source.type,
         source.reference,
+        repositorySummary(source),
         source.url,
         source.note,
       ]

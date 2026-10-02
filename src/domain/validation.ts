@@ -3,6 +3,7 @@ import { isClaimConfidence } from "./claim-confidence.ts";
 import { validDate, dateBound, safeUrl } from "./dates.ts";
 import { validateEvents } from "./person-events.ts";
 import { validateUnions } from "./family-unions.ts";
+import { validSourceRepository } from "./source-repository.ts";
 
 function validPersonSource(s: Source): boolean {
   return !!s &&
@@ -11,6 +12,7 @@ function validPersonSource(s: Source): boolean {
     [s.title, s.type, s.reference].every((v) => typeof v === "string") &&
     (s.url === undefined || typeof s.url === "string") &&
     (s.note === undefined || typeof s.note === "string") &&
+    validSourceRepository(s) &&
     (s.documentId === undefined || (typeof s.documentId === "string" &&
       /^[a-f0-9-]{36}$/i.test(s.documentId))) &&
     (s.documentPage === undefined || (!!s.documentId &&

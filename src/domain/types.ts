@@ -6,6 +6,14 @@ export type Source = {
   reference: string;
   url?: string;
   note?: string;
+  /** One named GEDCOM repository. Legacy citations keep only their text fields. */
+  repository?: {
+    name: string;
+    callNumber: string;
+    website: string;
+    note: string;
+    linkNote: string;
+  };
   /** PDF already present in this archive's document catalogue. */
   documentId?: string;
   /** One-based page of the linked PDF. */
