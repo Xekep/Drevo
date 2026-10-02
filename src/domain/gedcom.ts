@@ -1625,6 +1625,19 @@ export function exportGedcom(
     else emit(1, "_DREVO_SPOUSE", "Y");
     for (const id of g.children) emit(1, "CHIL", ids.get(id)!, true);
   }
+  const repositoryRecords: NonNullable<Source["repository"]>[] = [];
+  const repositoryIds = new Map<string, number>();
+  function repositoryId(repository: NonNullable<Source["repository"]>): number {
+    // CALN and linkNote describe this source's link to a repository, not the
+    // repository record itself. They must not split a shared REPO record.
+    const key = JSON.stringify([repository.name, repository.website, repository.note]);
+    let id = repositoryIds.get(key);
+    if (id === undefined) {
+      id = repositoryRecords.push(repository);
+      repositoryIds.set(key, id);
+    }
+    return id;
+  }
   sourceRecords.forEach((s, i) => {
     emit(0, `@S${i + 1}@ SOUR`);
     emit(1, "TITL", s.title);
@@ -1637,17 +1650,16 @@ export function exportGedcom(
     }
     if (s.note) emit(1, "NOTE", s.note);
     if (s.repository) {
-      emit(1, "REPO", `@R${i + 1}@`, true);
+      emit(1, "REPO", `@R${repositoryId(s.repository)}@`, true);
       if (s.repository.callNumber) emit(2, "CALN", s.repository.callNumber);
       if (s.repository.linkNote) emit(2, "NOTE", s.repository.linkNote);
     }
   });
-  sourceRecords.forEach((s, i) => {
-    if (!s.repository) return;
+  repositoryRecords.forEach((repository, i) => {
     emit(0, `@R${i + 1}@ REPO`);
-    emit(1, "NAME", s.repository.name);
-    if (s.repository.website) emit(1, "WWW", s.repository.website);
-    if (s.repository.note) emit(1, "NOTE", s.repository.note);
+    emit(1, "NAME", repository.name);
+    if (repository.website) emit(1, "WWW", repository.website);
+    if (repository.note) emit(1, "NOTE", repository.note);
   });
   media.forEach((item, i) => {
     emit(0, `@M${i + 1}@ OBJE`);

@@ -78,6 +78,51 @@ for (const version of ["5.5.1", "7.0"] as const)
     assert.deepEqual(roundtrip.map((source) => source.note), ["birth entry", "death entry"]);
   });
 
+for (const version of ["5.5.1", "7.0"] as const)
+  test(`GEDCOM ${version} reuses a repository record but keeps each source link distinct`, () => {
+    const family = importGedcom(external(version), `shared-${version}`).family;
+    const [birth, death] = family.people[0].events!
+      .filter((event) => ["BIRT", "DEAT"].includes(event.gedcomTag || ""));
+    birth.sources!.push(
+      { ...birth.sources![0], reference: "leaf 4", url: "https://other.example/book",
+        repository: { ...repository, website: "https://other-repository.example" } },
+      { title: "Legacy source", type: "", reference: "leaf 5",
+        url: "https://legacy.example/book" },
+    );
+    death.sources![0].repository = {
+      ...repository, callNumber: "F.7/1", linkNote: "digital copy",
+    };
+    death.sources!.push({ ...death.sources![0], reference: "leaf 10",
+      repository: { ...repository, note: "different collection" } });
+
+    const exported = exportGedcom(family, { version });
+    const records = [...exported.matchAll(/^0 (@R\d+@) REPO$/gm)];
+    assert.equal(records.length, 3);
+    const links = [...exported.matchAll(/^1 REPO (@R\d+@)\r?$/gm)].map((match) => match[1]);
+    // Birth/death claim citations also reference the first source record.
+    assert.ok(links.filter((link) => link === records[0][1]).length >= 2);
+    assert.equal(links.filter((link) => link === records[1][1]).length, 1);
+    assert.equal(links.filter((link) => link === records[2][1]).length, 1);
+    assert.match(exported, /1 REPO @R1@\r?\n2 CALN F\.6\/13\/104\r?\n2 NOTE reading room only/);
+    assert.match(exported, /1 REPO @R1@\r?\n2 CALN F\.7\/1\r?\n2 NOTE digital copy/);
+    assert.match(exported, /1 NOTE URL: https:\/\/legacy\.example\/book/);
+
+    // Ignore Drevo's private JSON: these fields survive standard GEDCOM links.
+    const standard = exported.replace(/^1 _DREVO .*(?:\r?\n2 (?:CONC|CONT).*)*\r?\n/gm, "");
+    const roundtrip = importGedcom(standard, `shared-roundtrip-${version}`).family.people[0].events!
+      .filter((event) => ["BIRT", "DEAT"].includes(event.gedcomTag || ""));
+    assert.deepEqual(roundtrip.map((event) => event.sources?.map((source) => source.reference)),
+      [["leaf 3", "leaf 4", "leaf 5"], ["leaf 9", "leaf 10"]]);
+    assert.deepEqual(roundtrip.map((event) => event.sources?.map((source) => source.repository)),
+      [[repository, { ...repository, website: "https://other-repository.example" }, undefined],
+        [{ ...repository, callNumber: "F.7/1", linkNote: "digital copy" },
+          { ...repository, note: "different collection" }]]);
+    assert.deepEqual(roundtrip.map((event) => event.sources?.map((source) => source.url)),
+      [["https://source.example/book", "https://other.example/book",
+        "https://legacy.example/book"],
+        ["https://source.example/book", "https://source.example/book"]]);
+  });
+
 test("repository travels through GEDZIP and .drevo without an archive-local catalog ID", async () => {
   const directory = await mkdtemp(join(tmpdir(), "drevo-repository-"));
   try {
@@ -85,17 +130,22 @@ test("repository travels through GEDZIP and .drevo without an archive-local cata
     await mkdir(uploads);
     await mkdir(stage);
     const family = importGedcom(external("7.0"), "repository").family;
+    const secondLink = { ...repository, callNumber: "F.7/1", linkNote: "digital copy" };
+    family.people[0].events![1].sources![0].repository = secondLink;
     const gedzip = join(directory, "repository.gdz");
     await writeGenealogyPackage(gedzip, uploads, family, []);
     const importedZip = await prepareGenealogyImport(gedzip, stage, "zip");
     assert.deepEqual(importedZip.family.people[0].events?.[0].sources?.[0].repository, repository);
+    assert.deepEqual(importedZip.family.people[0].events?.[1].sources?.[0].repository, secondLink);
+    assert.deepEqual(importedZip.family.people[0].events?.map((event) =>
+      event.sources?.[0].reference), ["leaf 3", "leaf 9"]);
     assert.equal(importedZip.family.people[0].events?.[0].sources?.[0].catalogId, undefined);
 
     const portablePath = join(directory, "repository.drevo");
     await writePortablePackage(createWriteStream(portablePath), uploads,
       { family, documents: [], comments: [], sources: [] }, async () => {});
     const portable = await readPortablePackage(portablePath, stage);
-    assert.deepEqual(portable.snapshot.family.people[0].events?.[1].sources?.[0].repository, repository);
+    assert.deepEqual(portable.snapshot.family.people[0].events?.[1].sources?.[0].repository, secondLink);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
