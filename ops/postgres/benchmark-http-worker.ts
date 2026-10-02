@@ -1,4 +1,5 @@
 import { startServer } from "../../src/server/index.ts";
+import { backupCoordinator } from "../../src/server/backup-coordinator.ts";
 
 if (process.env.DATABASE_BACKEND !== "postgres" ||
     !/^drevo_migration_bench_[a-z0-9_]+$/.test(process.env.PGDATABASE || ""))
@@ -48,6 +49,25 @@ process.on("message", (message) => {
   if (message === "metrics")
     process.send?.({ metrics: { pid: process.pid, rssBytes: process.memoryUsage().rss,
       cpu: process.cpuUsage() } });
+  if (message === "backup-records") void app.archive.db.prepare("",
+    "SELECT count(*)::int AS n FROM backup_catalog").get()
+    .then((row) => process.send?.({ backupRecords: Number(row?.n || 0) }));
+  if (message === "backup") void (async () => {
+    const backups = await backupCoordinator(app.archive.db,
+      process.env.DREVO_BENCH_DATA_PATH!, { schedule: false });
+    try {
+      await backups.startCreate();
+      await backups.idle();
+      const status = await backups.status("system");
+      process.send?.({ backup: { state: status.job?.state,
+        error: status.job?.error, records: status.records.length } });
+    } catch (error) {
+      process.send?.({ backup: { state: "failed",
+        error: error instanceof Error ? error.message : String(error) } });
+    } finally {
+      await backups.close();
+    }
+  })();
 });
 
 let closing = false;
