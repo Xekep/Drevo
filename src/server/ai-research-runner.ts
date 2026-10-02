@@ -135,6 +135,7 @@ export function createResearchRunner({
     onStatus,
     signal,
     chatId,
+    assertAiAccess,
     commitSuggestion,
   }: {
     body: Record<string, unknown>;
@@ -149,6 +150,7 @@ export function createResearchRunner({
     onStatus: (text: string) => void;
     signal: AbortSignal;
     chatId: string;
+    assertAiAccess: () => Promise<void>;
     commitSuggestion: typeof suggestions.createFromTool;
   }): Promise<ResearchResult> {
     canPropose = canPropose && runtime.capabilities.proposals;
@@ -634,6 +636,7 @@ export function createResearchRunner({
             : ""),
       }));
     if (!conversationId) {
+      await assertAiAccess();
       conversationId = await responses.createConversation(runtime, signal);
       await chats.setRemote(chatId, conversationId);
       pendingInput.push(...restoreHistory());
@@ -650,7 +653,6 @@ export function createResearchRunner({
     }> = [];
     for (let round = 0; round <= runtime.maxToolIterations; round++) {
       metrics.agentIterations++;
-      recordModelCall(metrics, runtime.modelUri);
       let completion;
       const requestOptions = {
         runtime,
@@ -699,6 +701,8 @@ export function createResearchRunner({
         stream,
       };
       try {
+        await assertAiAccess();
+        recordModelCall(metrics, runtime.modelUri);
         completion = await responses.respond(requestOptions);
       } catch (error) {
         if (
@@ -730,11 +734,13 @@ export function createResearchRunner({
             signal,
             AbortSignal.timeout(60_000),
           ]);
+          await assertAiAccess();
           conversationId = await responses.createConversation(
             runtime,
             recoverySignal,
           );
           await chats.setRemote(chatId, conversationId);
+          await assertAiAccess();
           recordModelCall(metrics, runtime.modelUri);
           completion = await responses.respond({
             ...requestOptions,
@@ -767,6 +773,7 @@ export function createResearchRunner({
           missingYandexConversation(error)
         ) {
           contextRecovered = true;
+          await assertAiAccess();
           conversationId = await responses.createConversation(runtime, signal);
           await chats.setRemote(chatId, conversationId);
           pendingInput.splice(
@@ -814,6 +821,7 @@ export function createResearchRunner({
           throw error;
         }
       }
+      await assertAiAccess();
       const answer: ModelMessage = {
         role: "assistant",
         content: completion.text,
@@ -1341,7 +1349,9 @@ export function createResearchRunner({
               { path: source.path, cacheKey: source.name },
               "ai",
             );
+            await assertAiAccess();
             const visionModel = await vision.modelUri(runtime);
+            await assertAiAccess();
             recordModelCall(metrics, visionModel);
             const visual = await vision.analyze(
               question,
