@@ -17,6 +17,7 @@ import type { Family } from "../domain/types.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import {
   exportMedia,
+  assertCitationOriginalsAvailable,
   prepareGenealogyImport,
   streamGenealogyPackage,
   installTransferFiles,
@@ -241,6 +242,7 @@ export function gedcomHttp(
               exporting = false;
             }
           }
+          await assertCitationOriginalsAvailable(uploads, items);
           const text = exportGedcom(family, {
             version: format === "gedcom551" ? "5.5.1" : "7.0",
             media: items,
