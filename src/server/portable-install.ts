@@ -3,7 +3,8 @@ import { constants, createReadStream } from "node:fs";
 import { copyFile, lstat, rm, readFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import type { readPortablePackage } from "./portable-import.ts";
-import { PortablePackageError } from "./portable-package.ts";
+import { PortablePackageError, portableCitationMedia } from "./portable-package.ts";
+import { allCitations } from "./source-catalog-store.ts";
 import { verifyPortableMediaFile } from "./portable-media-check.ts";
 import { discussionAttachmentStore, prepareCommentFile } from "./discussion-attachments.ts";
 
@@ -68,6 +69,14 @@ export async function installPortableOriginals(
       if (person.photo) person.photo = url(person.photo);
     for (const photo of snapshot.family.photos || [])
       photo.url = url(photo.url);
+    for (const citation of allCitations(snapshot.family)) {
+      const local = citation.url && portableCitationMedia(citation.url);
+      if (!local) continue;
+      const name = remap.get(local.name);
+      if (!name)
+        throw new PortablePackageError("В пакете нет оригинала источника");
+      citation.url = `/media/${name}${local.suffix}`;
+    }
     for (const document of snapshot.documents) {
       const name = remap.get(document.fileName);
       if (!name)

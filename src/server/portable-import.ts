@@ -21,6 +21,7 @@ import {
   PortablePackageError,
   MAX_PORTABLE_ENTRIES,
   MAX_PORTABLE_MANIFEST_BYTES,
+  portableCitationMedia,
   type PortableComment,
   type PortableDocument,
   type PortableManifest,
@@ -350,6 +351,10 @@ export async function readPortablePackage(
       expectedMedia.add(`media/${photo.url.slice(7)}`);
   for (const document of snapshot.documents)
     expectedMedia.add(`media/${document.fileName}`);
+  for (const citation of allCitations(snapshot.family)) {
+    const local = citation.url && portableCitationMedia(citation.url);
+    if (local) expectedMedia.add(`media/${local.name}`);
+  }
   for (const comment of snapshot.comments) {
     for (const attachment of comment.attachments || []) {
       const name = `media/discussion-files/${attachment.id}`;

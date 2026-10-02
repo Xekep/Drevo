@@ -368,6 +368,89 @@ test("Drevo rejects an export exceeding the importer's ZIP entry cap before send
   output.destroy();
 });
 
+test("Drevo rejects a package that omits an original used only by an inline citation", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "drevo-citation-media-"));
+  try {
+    const uploads = join(dir, "uploads");
+    const stage = join(dir, "stage");
+    await mkdir(uploads);
+    await mkdir(stage);
+    const image = await sharp({ create: {
+      width: 1, height: 1, channels: 4, background: "white",
+    } }).png().toBuffer();
+    await writeFile(join(uploads, "evidence.png"), image);
+    const snapshot: PortableSnapshot = {
+      family: { title: "Tree", description: "", demo: false, photos: [], people: [{
+        id: "p1", surname: "Иванов", name: "Пётр", patronymic: "", sex: "m",
+        birth: "", birthPlace: "", parents: [], spouses: [], generation: 1,
+        column: 0, sources: [
+          { title: "Фото", type: "архив", reference: "", url: "/media/evidence.png" },
+          { title: "Оборот фото", type: "архив", reference: "", url: "/media/evidence.png" },
+          { title: "Внешний каталог", type: "архив", reference: "",
+            url: "https://archives.example.org/record/1" },
+        ],
+      }] },
+      documents: [], comments: [],
+    };
+    const path = join(dir, "complete.drevo");
+    await writePortablePackage(createWriteStream(path), uploads, snapshot, async () => {});
+    const zip = await openPromise(path);
+    const files = new Map<string, Buffer>();
+    let mediaEntryCount = 0;
+    try {
+      for await (const entry of zip.eachEntry()) {
+        if (entry.fileName === "media/evidence.png") mediaEntryCount++;
+        const chunks: Buffer[] = [];
+        for await (const chunk of await zip.openReadStreamPromise(entry))
+          chunks.push(Buffer.from(chunk));
+        files.set(entry.fileName, Buffer.concat(chunks));
+      }
+    } finally {
+      zip.close();
+    }
+    assert.equal(mediaEntryCount, 1,
+      "the same original cited twice is stored once");
+    const complete = await readPortablePackage(path, stage);
+    assert.equal(complete.files.get("media/evidence.png")?.sha256, hash(image));
+    assert.equal(complete.snapshot.family.people[0].sources[2].url,
+      "https://archives.example.org/record/1");
+    const unsafeSnapshot = structuredClone(snapshot);
+    unsafeSnapshot.family.people[0].sources[0].url = "/media/../secret.png";
+    const unsafeArchive = Buffer.from(JSON.stringify(unsafeSnapshot));
+    const unsafeManifest = JSON.parse(files.get("manifest.json")!.toString()) as PortableManifest;
+    const archiveEntry = unsafeManifest.entries.find((entry) => entry.path === "archive.json")!;
+    archiveEntry.size = unsafeArchive.length;
+    archiveEntry.sha256 = hash(unsafeArchive);
+    const unsafe = join(dir, "unsafe-citation.drevo");
+    await zipEntries(unsafe, new Map(files)
+      .set("archive.json", unsafeArchive)
+      .set("manifest.json", Buffer.from(JSON.stringify(unsafeManifest))));
+    const unsafeStage = join(dir, "unsafe-stage");
+    await mkdir(unsafeStage);
+    await assert.rejects(readPortablePackage(unsafe, unsafeStage), /Некорректный путь оригинала источника/);
+    const output = new PassThrough();
+    let started = false;
+    let bytes = 0;
+    output.on("data", (chunk: Buffer) => { bytes += chunk.length; });
+    await assert.rejects(writePortablePackage(output, uploads, unsafeSnapshot,
+      async () => { started = true; }), /Некорректный путь оригинала источника/);
+    assert.equal(started, false);
+    assert.equal(bytes, 0);
+    output.destroy();
+    const manifest = JSON.parse(files.get("manifest.json")!.toString()) as PortableManifest;
+    manifest.entries = manifest.entries.filter((entry) => entry.path !== "media/evidence.png");
+    files.set("manifest.json", Buffer.from(JSON.stringify(manifest)));
+    files.delete("media/evidence.png");
+    const missing = join(dir, "missing.drevo");
+    await zipEntries(missing, files);
+    const missingStage = join(dir, "missing-stage");
+    await mkdir(missingStage);
+    await assert.rejects(readPortablePackage(missing, missingStage), /отсутствует оригинал/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Drevo package rejects missing or unsafe originals before writing", async () => {
   const dir = await mkdtemp(join(tmpdir(), "drevo-portable-"));
   try {
