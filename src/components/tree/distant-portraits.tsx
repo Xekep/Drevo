@@ -8,6 +8,7 @@ import type { HouseholdNodeType } from "./household-node.tsx";
 import type { PersonNodeType } from "./person-node";
 import type { RelationshipEdgeType } from "./relationship-edge.tsx";
 import { treeGrowthDuration, type TreeGrowthSchedule } from "./tree-growth.ts";
+import { gpuRoute } from "./gpu-route.ts";
 
 const PORTRAIT_SIZE = 132;
 const PORTRAIT_TOP = 4;
@@ -115,7 +116,16 @@ export function DistantPortraits({
         left: Math.min(box.left, point.x), top: Math.min(box.top, point.y),
         right: Math.max(box.right, point.x), bottom: Math.max(box.bottom, point.y),
       }), { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity });
-      return { edge, bounds, path: path ? new Path2D(path) : null,
+      const segments = growing && path ? gpuRoute(path) : [];
+      const length = segments.reduce((total, segment) =>
+        total + Math.hypot(segment.bx - segment.ax, segment.by - segment.ay), 0);
+      const style = edge.style as (typeof edge.style & {
+        "--tree-growth-delay"?: string;
+        "--tree-growth-edge-duration"?: string;
+      });
+      return { edge, bounds, path: path ? new Path2D(path) : null, segments, length,
+        starts: Number.parseFloat(style?.["--tree-growth-delay"] || "0"),
+        duration: Number.parseFloat(style?.["--tree-growth-edge-duration"] || String(growthDelays.edgeMs)),
         dash: String(edge.style?.strokeDasharray || "")
           .split(/[ ,]+/).map(Number).filter((value) => value > 0) };
     }) : [];
@@ -178,15 +188,40 @@ export function DistantPortraits({
           context.fill();
           context.stroke();
         }
-        for (const { edge, bounds, path, dash } of paths) {
+        let introPartialEdges = 0;
+        let introVisibleEdges = 0;
+        for (const { edge, bounds, path, segments, length, starts, duration, dash } of paths) {
           if (!path || !bounds || !visible(bounds.left, bounds.top,
             bounds.right - bounds.left, bounds.bottom - bounds.top)) continue;
+          const progress = growing ? Math.min(1, Math.max(0,
+            (elapsed - starts) / Math.max(1, duration))) : 1;
+          if (progress <= 0) continue;
+          introVisibleEdges++;
+          if (progress < 1) introPartialEdges++;
           context.strokeStyle = String(edge.style?.stroke || "#58775a");
           context.lineWidth = Math.max(Number(edge.style?.strokeWidth) || 1.6, 0.4 / zoom);
           context.setLineDash(dash);
-          context.stroke(path);
+          if (growing) {
+            let remaining = length * progress;
+            context.beginPath();
+            for (const segment of segments) {
+              if (remaining <= 0) break;
+              const segmentLength = Math.hypot(segment.bx - segment.ax, segment.by - segment.ay);
+              const fraction = Math.min(1, remaining / segmentLength);
+              if (!segment.distance) context.moveTo(segment.ax, segment.ay);
+              context.lineTo(segment.ax + (segment.bx - segment.ax) * fraction,
+                segment.ay + (segment.by - segment.ay) * fraction);
+              remaining -= segmentLength;
+            }
+            context.stroke();
+          } else context.stroke(path);
         }
         context.setLineDash([]);
+        if (growing) {
+          canvas.dataset.introPartialEdges = String(introPartialEdges);
+          canvas.dataset.introVisibleEdges = String(introVisibleEdges);
+        }
+        let introVisibleNodes = 0;
         for (const node of nodes) {
           const x = node.position.x, y = node.position.y;
           const cardWidth = node.width || PORTRAIT_SIZE + 16;
@@ -196,6 +231,7 @@ export function DistantPortraits({
           const delay = growthDelays.get(person.id) || 0;
           const opacity = growing ? Math.min(1, Math.max(0, (elapsed - delay) / growthDelays.revealMs)) : 1;
           if (opacity <= 0) continue;
+          introVisibleNodes++;
           context.globalAlpha = node.data.dimmed ? opacity * 0.28 : opacity;
           const centerX = x + cardWidth / 2;
           const centerY = y + PORTRAIT_TOP + PORTRAIT_SIZE / 2;
@@ -229,6 +265,7 @@ export function DistantPortraits({
         context.globalAlpha = 1;
         canvas.dataset.sceneNodes = String(nodes.length);
         canvas.dataset.sceneEdges = String(edges.length);
+        if (growing) canvas.dataset.introVisibleNodes = String(introVisibleNodes);
       } else {
         for (const node of nodes) {
           const url = tinyPortraitUrl(node.data.person.photo);

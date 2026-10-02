@@ -113,7 +113,7 @@ function milliseconds(value: number) {
  * Новый супруг появляется после соединяющей его линии. Декоративное
  * движение карточки продолжается во время роста исходящих линий.
  */
-export function treeGrowthDelays(people: LayoutPerson[]): TreeGrowthSchedule {
+export function treeGrowthDelays(people: LayoutPerson[], minimumBudget = 0): TreeGrowthSchedule {
   const levels = generationLevels(people);
   const generations = new Map<number, LayoutPerson[]>();
   for (const person of people) {
@@ -177,7 +177,7 @@ export function treeGrowthDelays(people: LayoutPerson[]): TreeGrowthSchedule {
     TREE_GROWTH_NODE_MS,
     TREE_GROWTH_REVEAL_MS + TREE_GROWTH_EDGE_MS + TREE_GROWTH_LABEL_MS,
   );
-  const scale = Math.min(1, treeGrowthBudget(people.length) / (last + tail));
+  const scale = Math.min(1, Math.max(treeGrowthBudget(people.length), minimumBudget) / (last + tail));
   return Object.assign(
     new Map([...rawDelays].map(([id, delay]) => [id, delay * scale])),
     {

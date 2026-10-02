@@ -522,9 +522,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         : focus,
     [focus, spotlightNodes],
   );
+  const progressiveIntroRequested = growing && renderVisible.size >= 2500 &&
+    distantZoom && !extraVisible && !activeFanAnchor && mode !== "timeline";
   const growthDelays = useMemo(
-    () => treeGrowthDelays(family.people),
-    [family.people],
+    () => treeGrowthDelays(family.people, progressiveIntroRequested ? 2200 : 0),
+    [family.people, progressiveIntroRequested],
   );
   const growthCanvasStyle = useMemo(
     () => treeGrowthCanvasStyle(growthDelays),
@@ -1006,6 +1008,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   const overviewAvailable = nodes.length >= 600 && !growing && !layoutSettling;
   const distantScene = overviewAvailable && distantZoom;
+  // Use the existing distant canvas scene for large introductions instead of
+  // mounting hundreds of SVG edge wrappers during the short growth sequence.
+  const progressiveCanvasIntro = progressiveIntroRequested && nodes.length >= 2500;
   const gpuScope = typeof window === "undefined" ? "server" :
     archiveContextAt(window.location.pathname)?.id || window.location.pathname;
   const [gpuReadyScene, setGpuReadyScene] = useState<{ geometry: typeof geometry; scope: string } | null>(null);
@@ -1038,6 +1043,16 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     for (const edge of gpuOverlayEdges) { ids.add(edge.source); ids.add(edge.target); }
     return ids;
   }, [nodes, gpuHovered, gpuFocused, gpuOverlayEdges]);
+  const distantOverlayIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const edge of gpuOverlayEdges) { ids.add(edge.source); ids.add(edge.target); }
+    return ids;
+  }, [gpuOverlayEdges]);
+  const distantOverlayEdgeIds = useMemo(() =>
+    new Set(gpuOverlayEdges.map((edge) => edge.id)), [gpuOverlayEdges]);
+  const canvasEdges = useMemo(() => distantScene
+    ? displayEdges.filter((edge) => !distantOverlayEdgeIds.has(edge.id))
+    : displayEdges, [displayEdges, distantScene, distantOverlayEdgeIds]);
   const gpuHitIndex = useMemo(() => {
     const index = new Spatial<{ left: number; right: number; top: number; bottom: number; node: PersonNodeType }>();
     for (const node of nodes) index.add({ node, left: node.position.x, top: node.position.y,
@@ -1106,14 +1121,20 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     ? renderedNodes.map((node) => node.type === "household" ? ({ ...node, hidden: true }) : ({ ...node,
       hidden: !gpuOverlayIds.has(node.id), className: `${node.className || ""} tree-gpu-node-overlay` }))
     : distantScene
+    ? renderedNodes.map((node) => node.type === "household" ? ({ ...node, hidden: true }) : ({
+      ...node, hidden: !distantOverlayIds.has(node.id),
+      className: `${node.className || ""} tree-gpu-node-overlay`,
+    }))
+    : progressiveCanvasIntro
     ? renderedNodes.map((node) => ({ ...node, hidden: true }))
-    : renderedNodes, [renderedNodes, distantScene, gpuActive, gpuOverlayIds]);
-  const flowEdges = useMemo(() => gpuActive ? gpuOverlayEdges : distantScene
+    : renderedNodes, [renderedNodes, distantScene, progressiveCanvasIntro,
+      gpuActive, gpuOverlayIds, distantOverlayIds]);
+  const flowEdges = useMemo(() => gpuActive ? gpuOverlayEdges : distantScene ? gpuOverlayEdges : progressiveCanvasIntro
     // Hidden EdgeWrappers still subscribe to every camera update and resolve
     // their handles. Canvas owns these routes; React Flow only needs the nodes
     // (with dimensions intact) for fitView and person camera targets.
     ? []
-    : renderedEdges, [renderedEdges, distantScene, gpuActive, gpuOverlayEdges]);
+    : renderedEdges, [renderedEdges, distantScene, progressiveCanvasIntro, gpuActive, gpuOverlayEdges]);
   const overviewHouseholds = useMemo(() => displayNodes.filter(
     (node): node is HouseholdNodeType => node.type === "household",
   ), [displayNodes]);
@@ -1216,7 +1237,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       const portraitsReady = Array.from(portraits).every((image) => image.complete);
       // React Flow measures nodes before rendering their edges. Give both a
       // shared animation start, or a late edge may follow its descendant card.
-      const mounted =
+      const mounted = progressiveCanvasIntro
+        ? !!element.querySelector(".tree-distant-portraits")
+        :
         displayNodes.length <= 2000
           ? mountedNodes >= displayNodes.length &&
             mountedEdges >= displayEdges.length
@@ -1241,6 +1264,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     growthStarted,
     displayNodes.length,
     displayEdges.length,
+    progressiveCanvasIntro,
   ]);
   const connect = useCallback(
     (c: FlowConnection) => {
@@ -1305,6 +1329,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         data-renderer={gpuActive ? "webgl2" : "react-flow"}
         data-gpu-scene-match={gpuReadyScene?.geometry === geometry && gpuReadyScene?.scope === gpuScope ? "true" : "false"}
         data-gpu-fallback={gpuFailedScope === gpuScope ? gpuFallbackReason || undefined : undefined}
+        data-distant-overlay={distantScene && gpuOverlayEdges.length > 0 || undefined}
         role={gpuActive ? "application" : undefined}
         onPointerMoveCapture={(event) => {
           gpuLongPress.handlers.onPointerMove(event);
@@ -1435,6 +1460,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               className="tree-extra-toggle"
               aria-label="Доп. связи"
               aria-pressed={extraVisible}
+              disabled={growthLocked || layoutBusy}
               onClick={() => setExtraVisible((v) => !v)}
               title="Крёстные, усыновление, опека и другие дополнительные связи"
             >
@@ -1754,8 +1780,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             people={family.people}
             nodes={nodes}
             households={overviewHouseholds}
-            edges={displayEdges}
-            fullScene={overviewAvailable}
+            edges={canvasEdges}
+            fullScene={overviewAvailable || progressiveCanvasIntro}
             width={canvasWidth}
             height={canvasHeight}
             growing={growing}
