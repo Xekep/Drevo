@@ -9,9 +9,10 @@ const bundle = readdirSync(join(dist, "assets")).find(
   (p) => p.startsWith("layout.worker-") && p.endsWith(".js"),
 );
 
-test("production worker retains large prescribed generations and every relation in both directions", { timeout: 40000 }, async () => {
+for (const familyCount of [60, 160])
+test(`production worker retains ${1 + familyCount * 6} people and every relation in both directions`, { timeout: 40000 }, async () => {
   const data = [{ id: "founder", birth: "1900", parents: [], spouses: [] }];
-  for (let index = 0; index < 60; index++) {
+  for (let index = 0; index < familyCount; index++) {
     const child = `child-${index}`, spouse = `spouse-${index}`;
     data.push(
       { id: child, birth: "1930", parents: ["founder"], spouses: [spouse] },
@@ -20,7 +21,7 @@ test("production worker retains large prescribed generations and every relation 
     for (let offset = 0; offset < 4; offset++)
       data.push({ id: `grandchild-${index}-${offset}`, birth: "1960", parents: [child, spouse], spouses: [] });
   }
-  assert.equal(data.length, 361);
+  assert.equal(data.length, 1 + familyCount * 6);
   const original = structuredClone(data), worker = productionWorker();
   try {
     for (const reverse of [false, true]) {
@@ -29,7 +30,7 @@ test("production worker retains large prescribed generations and every relation 
       assert.equal(geometry.reverse, reverse);
       assert.equal(geometry.positions.length, data.length);
       assert.deepEqual(new Set(geometry.occurrences.map((entry) => entry.personId)), new Set(data.map((entry) => entry.id)));
-      assert.equal(geometry.branches.filter((branch) => branch.id.startsWith("child:")).length, 300);
+      assert.equal(geometry.branches.filter((branch) => branch.id.startsWith("child:")).length, familyCount * 5);
       const relations = new Set(geometry.branches.flatMap((branch) => branch.relations.map(({ type, from, to }) =>
         JSON.stringify(type === "spouse" ? [type, ...[from, to].sort()] : [type, from, to]))));
       const expected = new Set(data.flatMap((person) => [

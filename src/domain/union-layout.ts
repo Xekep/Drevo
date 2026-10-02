@@ -56,6 +56,7 @@ export type UnionBlock = {
   height: number;
 };
 type Unit = UnionGroup;
+type LargeDecrossProfile = "greedy" | "sweep";
 const unionId = (ids: string[]) => `union:${JSON.stringify([...ids].sort())}`;
 
 /** Один союз — одна точная пара. Общий супруг не объединяет разные союзы. */
@@ -92,6 +93,7 @@ async function geometryForSeed(
   sift = false,
   sketch?: Pick<TreeGeometry, "positions" | "occurrences">,
   flippedPairs?: ReadonlySet<string>,
+  profile?: LargeDecrossProfile,
 ): Promise<TreeGeometry> {
   if (!people.length)
     return {
@@ -356,6 +358,13 @@ async function geometryForSeed(
       "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
       "elk.layered.thoroughness": people.length > 900 ? "1" : "12",
       "elk.separateConnectedComponents": "true",
+      ...(profile ? {
+        "elk.layered.considerModelOrder.strategy": "NONE",
+        "elk.layered.thoroughness": profile === "greedy" ? "1" : "12",
+        "elk.layered.crossingMinimization.greedySwitch.activationThreshold":
+          profile === "greedy" ? "0" : "40",
+        "elk.layered.crossingMinimization.greedySwitch.type": "TWO_SIDED",
+      } : {}),
     },
   };
   const hinted = sketch && fromSketchUnionGraph(baseGraph, sketch, reverse);
@@ -612,11 +621,18 @@ export async function unionGeometry(
   links: Pick<FamilyLink, "type" | "from" | "to">[] = [],
   size: TreeNodeSize = { width: TREE_NODE_WIDTH, height: TREE_NODE_HEIGHT },
   previous?: TreeGeometry,
+  largeDecross = true,
 ): Promise<TreeGeometry> {
   const { width: W, height: H } = size;
-  let best = await geometryForSeed(people, layout, reverse, links, 1, size);
+  const initialProfile = people.length > 900 && largeDecross ? "greedy" : undefined;
+  let best = await geometryForSeed(
+    people, layout, reverse, links, 1, size, false, undefined, undefined, initialProfile,
+  );
   let bestSeed = 1;
   let contacts = branchContactCounts(best.branches || []);
+  let profileQuality = initialProfile && geometryRoutingQuality(best);
+  let profileCardContacts = initialProfile ? routeCardContacts(best, W, H) : 0;
+  let profileOverlaps = initialProfile ? cardOverlapCount(best, W, H) : 0;
   const seedCandidates = previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE
     ? [{ geometry: best, contacts }]
     : [];
@@ -644,7 +660,16 @@ export async function unionGeometry(
         : people.length <= 2000
           ? [15]
           : [];
-  for (const seed of seeds) {
+  const candidates: { seed: number; profile?: LargeDecrossProfile }[] = seeds.map(
+    (seed) => ({ seed, profile: initialProfile }),
+  );
+  // На больших графах сравниваем дешёвый greedy и независимые layer sweeps.
+  // Ни один профиль не выигрывает на всех семейных структурах.
+  if (initialProfile && contacts.distinct)
+    candidates.push(...(people.length <= 2000 ? [1, 15] : [1]).map(
+      (seed) => ({ seed, profile: "sweep" as const }),
+    ));
+  for (const { seed, profile } of candidates) {
     let candidate: TreeGeometry;
     try {
       candidate = await geometryForSeed(
@@ -655,6 +680,9 @@ export async function unionGeometry(
         seed,
         size,
         people.length <= 100 && seed === 8,
+        undefined,
+        undefined,
+        profile,
       );
     } catch {
       continue;
@@ -673,6 +701,21 @@ export async function unionGeometry(
       next.distinct < contacts.distinct ||
       (next.distinct === contacts.distinct && next.segments < contacts.segments)
     ) {
+      // Разные профили сравниваем по всем видимым линиям, включая дополнительные
+      // отношения. Уменьшение семейных контактов не должно портить эти маршруты.
+      if (profileQuality) {
+        const quality = geometryRoutingQuality(candidate);
+        if (quality.contacts > profileQuality.contacts ||
+            quality.crossings > profileQuality.crossings ||
+            quality.length > profileQuality.length * 1.15 ||
+            quality.bends > profileQuality.bends * 1.15 + 2) continue;
+        const cardContacts = routeCardContacts(candidate, W, H);
+        const overlaps = cardOverlapCount(candidate, W, H);
+        if (cardContacts > profileCardContacts || overlaps > profileOverlaps) continue;
+        profileQuality = quality;
+        profileCardContacts = cardContacts;
+        profileOverlaps = overlaps;
+      }
       best = candidate;
       bestSeed = seed;
       contacts = next;
