@@ -18,9 +18,11 @@ import { postgresEmailRateLimit } from "./postgres-email-rate-limit.ts";
 type EmailSender = (to: string, subject: string, text: string) => Promise<void>;
 
 function configuredSender(): EmailSender | null {
-  const { SMTP_HOST, SMTP_FROM, SMTP_USER, SMTP_PASSWORD } = process.env;
-  const port = Number(process.env.SMTP_PORT || 587);
-  if (!SMTP_HOST || !SMTP_FROM || !SMTP_USER || !SMTP_PASSWORD) return null;
+  const { SMTP_HOST, SMTP_PORT, SMTP_FROM, SMTP_USER, SMTP_PASSWORD } =
+    process.env;
+  if (!SMTP_HOST || !SMTP_PORT || !SMTP_FROM || !SMTP_USER || !SMTP_PASSWORD)
+    return null;
+  const port = Number(SMTP_PORT);
   if (
     !/^[A-Za-z0-9.-]{1,253}$/.test(SMTP_HOST) ||
     !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(SMTP_FROM) ||

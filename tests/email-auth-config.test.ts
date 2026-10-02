@@ -6,6 +6,7 @@ import { emailAuthHttp } from "../src/server/email-auth-http.ts";
 test("email auth stays off until explicitly enabled and a sender is present", () => {
   const previous = process.env.EMAIL_AUTH_ENABLED;
   const smtpHost = process.env.SMTP_HOST;
+  const smtpPort = process.env.SMTP_PORT;
   const smtpFrom = process.env.SMTP_FROM;
   const smtpUser = process.env.SMTP_USER;
   const smtpPassword = process.env.SMTP_PASSWORD;
@@ -18,6 +19,7 @@ test("email auth stays off until explicitly enabled and a sender is present", ()
   try {
     delete process.env.EMAIL_AUTH_ENABLED;
     process.env.SMTP_HOST = "invalid host";
+    process.env.SMTP_PORT = "587";
     process.env.SMTP_FROM = "mail@example.org";
     process.env.SMTP_USER = "user";
     process.env.SMTP_PASSWORD = "password";
@@ -37,10 +39,24 @@ test("email auth stays off until explicitly enabled and a sender is present", ()
       emailAuthHttp(db, auth, "https://example.org", sender).enabled,
       true,
     );
+    process.env.SMTP_HOST = "mail.example.org";
+    assert.equal(emailAuthHttp(db, auth, "https://example.org").enabled, true);
+    delete process.env.SMTP_PORT;
+    assert.equal(
+      emailAuthHttp(db, auth, "https://example.org").enabled,
+      false,
+      "an implicit SMTP port must not unlock email registration",
+    );
+    process.env.SMTP_PORT = "invalid";
+    assert.throws(
+      () => emailAuthHttp(db, auth, "https://example.org"),
+      /Некорректная конфигурация SMTP/,
+    );
   } finally {
     for (const [key, value] of Object.entries({
       EMAIL_AUTH_ENABLED: previous,
       SMTP_HOST: smtpHost,
+      SMTP_PORT: smtpPort,
       SMTP_FROM: smtpFrom,
       SMTP_USER: smtpUser,
       SMTP_PASSWORD: smtpPassword,
