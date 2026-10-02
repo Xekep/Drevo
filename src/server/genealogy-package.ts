@@ -297,13 +297,29 @@ export async function prepareGenealogyImport(
       const id = randomUUID(),
         name = `${id}.${extension}`;
       await copyFile(source, join(directory, name), constants.COPYFILE_EXCL);
+      let document = item.document;
+      if (xml && extension !== "pdf" && extension !== "tif" && document) {
+        if (document.eventLinks?.length)
+          result.warnings.push(`Файл «${item.title}» оказался изображением: связь с событием не перенесена, портрет и фото сохранены.`);
+        document = undefined;
+      }
+      if (xml && (extension === "pdf" || extension === "tif")) {
+        const description = document?.description || item.photo?.description || "";
+        if (description.length > 1000)
+          result.warnings.push(`Описание документа «${item.title}» сокращено до 1000 символов; сохраните исходный XML.`);
+        const shortDescription = description.slice(0, 1000).replace(/[\uD800-\uDBFF]$/, "");
+        document = {
+          documentType: "", documentDate: "", place: "", provenance: "", ...document,
+          description: shortDescription,
+        };
+      }
       stored = {
         name,
         size: data.length,
         title: item.title,
         personIds: [],
-        documentId: extension === "pdf" || extension === "tif" || item.document ? id : undefined,
-        document: extension === "pdf" || extension === "tif" || item.document ? item.document : undefined,
+        documentId: extension === "pdf" || extension === "tif" || document ? id : undefined,
+        document: extension === "pdf" || extension === "tif" || document ? document : undefined,
       };
       loaded.set(sourceKey, stored);
       result.files.push(stored);

@@ -789,6 +789,75 @@ test("Agelong XML retains an event's PDF attachment as a linked document", async
   assert.ok(portrait.warnings.some((warning) => warning.includes("не переносит связи некоторых документов")));
 });
 
+test("Agelong XML preserves a PDF document comment through ZIP staging", async () => {
+  const xml = `<agelongtree><persons><person id="p" fn="Anna" sn="Example">
+    <documents><document id="letter"/></documents></person></persons>
+    <documents><document id="letter" path="archive.xml.files/letter.pdf" title="Family letter" custom="box 4">
+      <comment>Handwritten note on the reverse</comment></document></documents></agelongtree>`;
+  const directory = await mkdtemp(join(tmpdir(), "drevo-xml-document-comment-"));
+  try {
+    const archive = join(directory, "archive.zip");
+    const stage = join(directory, "stage");
+    await mkdir(stage);
+    await zipFile(archive, [
+      ["family.xml", Buffer.from(xml)],
+      ["archive.xml.files/letter.pdf", Buffer.from("%PDF-1.4\nletter-original")],
+    ]);
+    const prepared = await prepareGenealogyImport(archive, stage, "xml-comment");
+    assert.equal(prepared.files.length, 1);
+    assert.ok(prepared.files[0].documentId);
+    assert.equal(prepared.files[0].document?.description,
+      "Handwritten note on the reverse\ncustom: box 4");
+    assert.deepEqual(prepared.files[0].personIds, ["xml-comment-p1"]);
+    const longXml = xml
+      .replace('path="archive.xml.files/letter.pdf" ', "")
+      .replace("Handwritten note on the reverse", "x".repeat(1100))
+      .replace("</comment>", `</comment><data>${Buffer.from("%PDF-1.4\nembedded").toString("base64")}</data>`);
+    const embeddedPath = join(directory, "embedded.xml");
+    const embeddedStage = join(directory, "embedded-stage");
+    await writeFile(embeddedPath, longXml);
+    await mkdir(embeddedStage);
+    const embedded = await prepareGenealogyImport(embeddedPath, embeddedStage, "xml-embedded-comment");
+    assert.equal(embedded.files[0].document?.description.length, 1000);
+    assert.ok(embedded.warnings.some((warning) => warning.includes("сокращено до 1000 символов")));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+  const image = importAgelongXml(
+    xml.replace("archive.xml.files/letter.pdf", "archive.xml.files/letter.png"),
+    "xml-image-comment",
+  );
+  assert.equal(image.media[0].document, undefined);
+  assert.match(image.media[0].photo?.description || "", /Handwritten note on the reverse/);
+});
+
+test("Agelong XML keeps a mislabeled event image as a portrait after checking its bytes", async () => {
+  const xml = `<agelongtree><persons><person id="p" fn="Anna" sn="Example">
+    <documents><document id="scan" ismain="1"/></documents></person></persons>
+    <events><event id="school" type="Education"><persons><person id="p" role="Student"/></persons>
+      <documents><document id="scan"/></documents></event></events>
+    <documents><document id="scan" path="archive.xml.files/scan.pdf" title="Mislabeled scan"/></documents>
+    </agelongtree>`;
+  const directory = await mkdtemp(join(tmpdir(), "drevo-xml-mislabeled-image-"));
+  try {
+    const archive = join(directory, "archive.zip");
+    const stage = join(directory, "stage");
+    await mkdir(stage);
+    const image = await sharp({ create: { width: 1, height: 1, channels: 3, background: "red" } }).png().toBuffer();
+    await zipFile(archive, [
+      ["family.xml", Buffer.from(xml)],
+      ["archive.xml.files/scan.pdf", image],
+    ]);
+    const prepared = await prepareGenealogyImport(archive, stage, "xml-mislabeled");
+    assert.equal(prepared.files[0].documentId, undefined);
+    assert.equal(prepared.family.photos?.length, 1);
+    assert.equal(prepared.family.people[0].photo, prepared.family.photos?.[0].url);
+    assert.ok(prepared.warnings.some((warning) => warning.includes("связь с событием не перенесена")));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 async function zipFile(path: string, entries: [string, Buffer][]) {
   const zip = new ZipFile(),
     writing = pipeline(zip.outputStream, createWriteStream(path));
