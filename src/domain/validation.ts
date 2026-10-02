@@ -1,7 +1,7 @@
 import { EXTRA_LINK_TYPES, type Family, type Source } from "./types.ts";
 import { isClaimConfidence } from "./claim-confidence.ts";
 import { validDate, dateBound, safeUrl } from "./dates.ts";
-import { validateEvents } from "./person-events.ts";
+import { claimableEventDate, validateEvents } from "./person-events.ts";
 import { validateUnions } from "./family-unions.ts";
 import { validSourceRepository } from "./source-repository.ts";
 
@@ -106,6 +106,10 @@ export function validateFamily(value: unknown): Family {
       if (!validValueClaim(event.placeClaim, event.place) ||
         event.placeClaim && "confidence" in event.placeClaim)
         throw new Error("Источник места события относится к другому значению; снимите связь перед изменением места");
+    for (const event of p.events || [])
+      if (!validValueClaim(event.dateClaim, claimableEventDate(event)) ||
+        event.dateClaim && "confidence" in event.dateClaim)
+        throw new Error("Источник даты события относится к другому значению; снимите связь перед изменением даты");
     if (!validValueClaim(p.birthDateClaim, p.birth))
       throw new Error("Источник даты рождения относится к другому значению; снимите связь перед изменением даты");
     if (!validValueClaim(p.deathDateClaim, p.death))

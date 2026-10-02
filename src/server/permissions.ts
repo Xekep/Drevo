@@ -18,6 +18,7 @@ function catalogCitationSlots(family: Family) {
       add(["person", person.id, claim], person[claim]?.sources);
     for (const event of person.events || []) {
       add(["person", person.id, "event", event.id], event.sources);
+      add(["person", person.id, "event", event.id, "dateClaim"], event.dateClaim?.sources);
       add(["person", person.id, "event", event.id, "placeClaim"], event.placeClaim?.sources);
     }
   }

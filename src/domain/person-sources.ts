@@ -77,6 +77,8 @@ export function collectPersonSources(person: Person): PersonSourceEntry[] {
   }
 
   for (const event of person.events || []) {
+    for (const source of event.dateClaim?.sources || [])
+      add(source, `Дата события: ${event.title?.trim() || event.type}`);
     for (const source of event.placeClaim?.sources || [])
       add(source, `Место события: ${event.title?.trim() || event.type}`);
     for (const source of event.sources || []) {

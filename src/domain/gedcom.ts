@@ -13,7 +13,7 @@ import { EXTRA_LINK_TYPES } from "./types.ts";
 import { isClaimConfidence } from "./claim-confidence.ts";
 import { validDate, fullName, safeUrl } from "./dates.ts";
 import { validateFamily } from "./validation.ts";
-import { EVENT_NAMES } from "./person-events.ts";
+import { claimableEventDate, EVENT_NAMES } from "./person-events.ts";
 import { parseDocumentDetails } from "../shared/document-details.ts";
 import {
   familyMedia,
@@ -455,12 +455,15 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     const placeNode = child(node, "PLAC");
     const placeCitations = placeNode ? sources(placeNode) : [];
     const sourceNodes = children(node, "SOUR");
+    const eventDate = claimableEventDate({ date,
+      dateText: value(child(node, "DATE") || node, "PHRASE") || undefined });
     const dateClaimed: Source[] = [], placeClaimed: Source[] = [], general: Source[] = [];
     citations.forEach((source, index) => {
       const marker = value(sourceNodes[index], "_DREVO_CLAIM");
       if (date && marker === `${kind}_DATE`) dateClaimed.push(source);
       else if (place.trim() && marker === `${kind}_PLACE`) placeClaimed.push(source);
-      else if (marker !== "EVENT_PLACE" || !place.trim()) general.push(source);
+      else if ((marker !== "EVENT_PLACE" || !place.trim()) &&
+        (marker !== "EVENT_DATE" || !eventDate)) general.push(source);
     });
     if (place.trim()) placeClaimed.push(...placeCitations);
     else if (placeCitations.length) {
@@ -520,10 +523,18 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         "Приблизительные даты, старый стиль и нестандартные календари сохранены в исходной формулировке, без подстановки точных дат.",
       );
     const place = value(n, "PLAC") || undefined;
+    const dateText = raw && !date && !(start && end) ? raw : phrase || undefined;
+    const eventDate = claimableEventDate({ date: date || start || undefined,
+      endDate: start && end ? end : undefined, dateText });
     const parsedSources = sources(n);
     const sourceNodes = children(n, "SOUR");
+    const dateSources = parsedSources.filter((_source, index) =>
+      eventDate && value(sourceNodes[index], "_DREVO_CLAIM") === "EVENT_DATE");
     const placeSources = parsedSources.filter((_source, index) =>
       place?.trim() && value(sourceNodes[index], "_DREVO_CLAIM") === "EVENT_PLACE");
+    if (!eventDate && sourceNodes.some((source) =>
+      value(source, "_DREVO_CLAIM") === "EVENT_DATE"))
+      warnings.add("Источник даты события без одиночной распознанной даты сохранён как общий источник события.");
     if (!place?.trim() && sourceNodes.some((source) =>
       value(source, "_DREVO_CLAIM") === "EVENT_PLACE"))
       warnings.add("Источник места события без названия сохранён как общий источник события.");
@@ -537,12 +548,14 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         undefined,
       date: date || start || undefined,
       endDate: start && end ? end : undefined,
-      dateText: raw && !date && !(start && end) ? raw : phrase || undefined,
+      dateText,
+      ...(dateSources.length ? { dateClaim: { value: eventDate!, sources: dateSources } } : {}),
       place,
       ...(placeSources.length ? { placeClaim: { value: place!, sources: placeSources } } : {}),
       location: placeLocation(n),
       description: notes(n) || undefined,
-      sources: parsedSources.filter((source) => !placeSources.includes(source)),
+      sources: parsedSources.filter((source) =>
+        !dateSources.includes(source) && !placeSources.includes(source)),
     };
   }
   const people: Person[] = individuals.map((n) => {
@@ -674,6 +687,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         stripArchiveSourceIds(extra.sources);
         for (const item of extra.events || []) {
           stripArchiveSourceIds(item.sources);
+          stripArchiveSourceIds(item.dateClaim?.sources);
           stripArchiveSourceIds(item.placeClaim?.sources);
         }
         for (const key of [
@@ -713,13 +727,20 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
                 .filter((source) => !value(source, "_DREVO_CLAIM"));
               restoreCitationMedia(item.sources,
                 sources({ ...node, children: general }), `события ${item.id}`);
+              if (item.dateClaim?.sources?.length) {
+                const dateSources = children(node, "SOUR").filter((source) =>
+                  value(source, "_DREVO_CLAIM") === "EVENT_DATE");
+                restoreCitationMedia(item.dateClaim.sources,
+                  sources({ ...node, children: dateSources }), `даты события ${item.id}`);
+              }
               if (item.placeClaim?.sources?.length) {
                 const placeSources = children(node, "SOUR").filter((source) =>
                   value(source, "_DREVO_CLAIM") === "EVENT_PLACE");
                 restoreCitationMedia(item.placeClaim.sources,
                   sources({ ...node, children: placeSources }), `места события ${item.id}`);
               }
-            } else if ((item.sources?.length || item.placeClaim?.sources?.length) &&
+            } else if ((item.sources?.length || item.dateClaim?.sources?.length ||
+              item.placeClaim?.sources?.length) &&
               (!uniqueTarget || matched.length > 1 || n.children.some((node) =>
                 children(node, "SOUR").some((source) => children(source, "OBJE").length))))
               warnings.add(`Событие ${item.id} не сопоставлено однозначно; связь с документом не перенесена.`);
@@ -1101,6 +1122,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     retain(person.maidenNameClaim?.sources);
     for (const event of person.events || []) {
       retain(event.sources);
+      retain(event.dateClaim?.sources);
       retain(event.placeClaim?.sources);
     }
   }
@@ -1298,7 +1320,7 @@ export function exportGedcom(
   const documentMedia = new Map(media.flatMap((item, index) =>
     item.document ? [[item.id, `@M${index + 1}@`] as const] : []));
   function citation(level: number, source: Source,
-    claim?: "BIRTH_DATE" | "DEATH_DATE" | "BIRTH_PLACE" | "DEATH_PLACE" | "OCCUPATION" | "BIRTH_SURNAME" | "EVENT_PLACE") {
+    claim?: "BIRTH_DATE" | "DEATH_DATE" | "BIRTH_PLACE" | "DEATH_PLACE" | "OCCUPATION" | "BIRTH_SURNAME" | "EVENT_DATE" | "EVENT_PLACE") {
     sourceRecords.push(source);
     emit(level, "SOUR", `@S${sourceRecords.length}@`, true);
     if (source.reference) emit(level + 1, "PAGE", source.reference);
@@ -1528,6 +1550,7 @@ export function exportGedcom(
       emitPlace(2, e.place, e.location);
       if (e.description) emit(2, "NOTE", e.description);
       for (const source of e.sources || []) citation(2, source);
+      for (const source of e.dateClaim?.sources || []) citation(2, source, "EVENT_DATE");
       for (const source of e.placeClaim?.sources || []) citation(2, source, "EVENT_PLACE");
       if (original === matchingOccupationEvent) emitOccupationClaim();
       if (kind && !eventClaimsEmitted[kind]) emitEventClaims(kind);
@@ -1585,6 +1608,11 @@ export function exportGedcom(
     }
     for (const event of portableExtra.events || []) {
       for (const source of event.sources || []) {
+        delete source.catalogId;
+        delete source.documentId;
+        delete source.documentPage;
+      }
+      for (const source of event.dateClaim?.sources || []) {
         delete source.catalogId;
         delete source.documentId;
         delete source.documentPage;

@@ -136,7 +136,8 @@ function listedDocument(
         title: source.title, reference: source.reference,
         page: source.documentPage })),
     ...(person.events || []).flatMap((event) => [
-      ...(event.sources || []), ...(event.placeClaim?.sources || []),
+      ...(event.sources || []), ...(event.dateClaim?.sources || []),
+      ...(event.placeClaim?.sources || []),
     ]
       .filter((source) => source.documentId === row.id)
       .map((source) => ({ personId: person.id, personName: fullName(person),

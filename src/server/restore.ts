@@ -794,6 +794,8 @@ export function restoreStore(
             if (person[key]) person[key]!.sources = remapCitations(person[key]!.sources);
           for (const event of person.events || []) {
             if (event.sources) event.sources = remapCitations(event.sources);
+            if (event.dateClaim)
+              event.dateClaim.sources = remapCitations(event.dateClaim.sources);
             if (event.placeClaim)
               event.placeClaim.sources = remapCitations(event.placeClaim.sources);
           }
