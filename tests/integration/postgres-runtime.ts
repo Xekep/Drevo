@@ -5023,7 +5023,7 @@ try {
   for (let index = 0; index < 49; index++) {
     const id = `branch-extra-child-${index}`;
     fullPreviewFamily.people.push({ ...structuredClone(fullPreviewFamily.people[0]), id,
-      name: `Дополнительный ребёнок ${index}`, birth: "1970", deceased: true,
+      name: `Дополнительный ребёнок ${index}`, birth: "2010", deceased: true,
       parents: ["person-a"], spouses: [], generation: 2 });
   }
   await app.archive.write(fullPreviewFamily, beforeFullPreview.revision);
