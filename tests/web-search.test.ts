@@ -8,6 +8,7 @@ import { researchCatalogStore } from "../src/server/research-catalog.ts";
 import { aiSettingsStore, publicAiStatus } from "../src/server/ai-settings.ts";
 import {
   createWebSearchService,
+  WebSearchError,
   type WebSearchProvider,
   type WebSearchRequest,
   type WebSearchSource,
@@ -288,6 +289,25 @@ test("Yandex sends documented filters using existing client, parses citations wi
     { type: "web_search", search_context_size: "medium" },
   ]);
   assert.ok(!JSON.stringify(response).includes(runtime.apiKey));
+});
+
+test("Yandex web search stops before the provider call after AI access is revoked", async () => {
+  const controller = new AbortController();
+  let providerCalls = 0;
+  const provider = yandexWebSearchProvider({
+    runtime,
+    client: yandexResponsesClient(async () => {
+      providerCalls++;
+      return Response.json(payload);
+    }),
+    assertAiAccess: async () => {
+      controller.abort(new DOMException("Доступ к ИИ отключён", "AbortError"));
+      throw controller.signal.reason;
+    },
+  });
+  await assert.rejects(provider.search({ ...request, signal: controller.signal }),
+    (error: unknown) => error instanceof WebSearchError && error.code === "WEB_SEARCH_CANCELLED");
+  assert.equal(providerCalls, 0);
 });
 
 test("incomplete search is distinct from no results and retains charged tokens", async () => {

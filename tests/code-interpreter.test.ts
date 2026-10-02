@@ -80,6 +80,71 @@ test("Code Interpreter receives selected chat files and deletes remote uploads",
   assert.ok(deleted.some((url) => url.endsWith("/files/chat-input")));
   assert.doesNotMatch(JSON.stringify(result), /secret-api-key/);
 });
+
+test("Code Interpreter stops after a tier change during data upload", async () => {
+  const controller = new AbortController();
+  let allowed = true;
+  let modelCalls = 0;
+  let cleanupCalls = 0;
+  const client = yandexResponsesClient(async (url, init) => {
+    if (init?.method === "DELETE") {
+      cleanupCalls++;
+      return Response.json({ deleted: true });
+    }
+    if (String(url).endsWith("/files")) {
+      allowed = false;
+      return Response.json({ id: "uploaded-before-downgrade" });
+    }
+    modelCalls++;
+    return Response.json(success());
+  });
+  await assert.rejects(runCodeInterpreter({
+    client,
+    runtime,
+    family,
+    input: { task: "Посчитай рождения", fields: ["birth"] },
+    signal: controller.signal,
+    assertAiAccess: async () => {
+      if (allowed) return;
+      controller.abort(new DOMException("Доступ к ИИ отключён", "AbortError"));
+      throw controller.signal.reason;
+    },
+    onCall: () => {},
+    onUsage: () => {},
+    allowPdf: true,
+  }), { name: "AbortError" });
+  assert.equal(modelCalls, 0, "the calculation model is never called after downgrade");
+  assert.equal(cleanupCalls, 1, "an already-uploaded file is still deleted");
+});
+
+test("a failed access recheck before result download is not reduced to a file warning", async () => {
+  let checks = 0;
+  let downloads = 0;
+  const client = yandexResponsesClient(async (url, init) => {
+    if (init?.method === "DELETE") return Response.json({ deleted: true });
+    if (String(url).endsWith("/files")) return Response.json({ id: "file-input" });
+    if (String(url).endsWith("/content")) {
+      downloads++;
+      return new Response("year,count\n1900,2");
+    }
+    return Response.json(success());
+  });
+  await assert.rejects(runCodeInterpreter({
+    client,
+    runtime,
+    family,
+    input: { task: "Посчитай рождения", fields: ["birth"] },
+    signal: new AbortController().signal,
+    assertAiAccess: async () => {
+      if (++checks === 3) throw new Error("access recheck failed");
+    },
+    onCall: () => {},
+    onUsage: () => {},
+    allowPdf: true,
+  }), /access recheck failed/);
+  assert.equal(checks, 3);
+  assert.equal(downloads, 0);
+});
 const success = () => ({
   status: "completed",
   usage: { input_tokens: 23, output_tokens: 45 },

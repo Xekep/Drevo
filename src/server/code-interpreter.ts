@@ -96,6 +96,7 @@ export async function runCodeInterpreter(options: {
   family: Family;
   input: unknown;
   signal: AbortSignal;
+  assertAiAccess?: () => Promise<void>;
   onCall: () => void;
   onUsage: (input: number, output: number) => void;
   timeoutMs?: number;
@@ -112,6 +113,15 @@ export async function runCodeInterpreter(options: {
   let errorType = "",
     rowCount = 0,
     fileCount = 0;
+  let accessCheckFailed = false;
+  const assertAiAccess = async () => {
+    try {
+      await options.assertAiAccess?.();
+    } catch (error) {
+      accessCheckFailed = true;
+      throw error;
+    }
+  };
   try {
     const args = options.input as Record<string, unknown>;
     if (
@@ -151,15 +161,18 @@ export async function runCodeInterpreter(options: {
     let fileId: string | undefined;
     signal.throwIfAborted();
     if (data.fields.length) {
+      await assertAiAccess();
       fileId = await client.uploadCalculationData(runtime, serialized, signal);
       cleanup.add(fileId);
     }
     const attachmentIds: string[] = [];
     for (const attachment of options.attachments || []) {
+      await assertAiAccess();
       const id = await client.uploadInputFile(runtime, attachment, signal);
       attachmentIds.push(id);
       cleanup.add(id);
     }
+    await assertAiAccess();
     options.onCall();
     const raw = (await client.codeInterpreter({
       runtime,
@@ -240,6 +253,7 @@ export async function runCodeInterpreter(options: {
         continue;
       }
       try {
+        await assertAiAccess();
         const bytes = await client.downloadCalculationFile(
           runtime,
           item.file_id!,
@@ -248,7 +262,8 @@ export async function runCodeInterpreter(options: {
         );
         totalBytes += bytes.length;
         files.push({ name, bytes, contentType });
-      } catch {
+      } catch (error) {
+        if (accessCheckFailed) throw error;
         signal.throwIfAborted();
         warnings.push(
           `Не удалось получить файл ${name}. Не обещайте его наличие во вложениях.`,
@@ -264,6 +279,7 @@ export async function runCodeInterpreter(options: {
       files,
     };
   } catch (error) {
+    if (accessCheckFailed) throw error;
     if (options.signal.aborted) throw options.signal.reason;
     errorType = signal.aborted
       ? "CALCULATION_TIMEOUT"

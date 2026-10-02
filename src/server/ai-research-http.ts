@@ -188,12 +188,13 @@ export function aiResearchHttp({
     chats,
     generatedFiles,
     attachments,
-    webSearch: (runtime, metrics) =>
+    webSearch: (runtime, metrics, assertAiAccess) =>
       runtime.webSearchEnabled && runtime.webSearchProvider === "yandex"
         ? createWebSearchService({
             provider: yandexWebSearchProvider({
               client: responses,
               runtime,
+              assertAiAccess,
               onCall: () => recordModelCall(metrics, runtime.modelUri),
               onUsage: (usage) =>
                 recordModelTokens(

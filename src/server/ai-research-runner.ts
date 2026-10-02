@@ -116,6 +116,7 @@ export function createResearchRunner({
   webSearch?: (
     runtime: Awaited<ReturnType<typeof aiRuntimeConfig>>,
     metrics: ResearchMetrics,
+    assertAiAccess: () => Promise<void>,
   ) => ReturnType<typeof createWebSearchService> | undefined;
   chats: ReturnType<typeof aiChatStore>;
   generatedFiles: ReturnType<typeof generatedResearchFileStore>;
@@ -154,7 +155,7 @@ export function createResearchRunner({
     commitSuggestion: typeof suggestions.createFromTool;
   }): Promise<ResearchResult> {
     canPropose = canPropose && runtime.capabilities.proposals;
-    const search = webSearch?.(runtime, metrics);
+    const search = webSearch?.(runtime, metrics, assertAiAccess);
     const searchTool = search
       ? webSearchTool(
           await search.categories(),
@@ -1267,6 +1268,7 @@ export function createResearchRunner({
               family,
               input: toolArgs,
               signal,
+              assertAiAccess,
               allowPdf: runtime.capabilities.pdf,
               attachments: attachmentContext.files,
               onCall: () => recordModelCall(metrics, runtime.modelUri),

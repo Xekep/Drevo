@@ -2086,6 +2086,82 @@ try {
           await handler.close();
         }
       }
+      {
+        const previousInterpreter = (await client.query(
+          "SELECT code_interpreter_enabled FROM ai_settings WHERE id=1",
+        )).rows[0].code_interpreter_enabled;
+        await client.query("UPDATE ai_settings SET code_interpreter_enabled=1 WHERE id=1");
+        let calculationCalls = 0;
+        let uploads = 0;
+        const adapted = adaptLegacyAiFake(async (url, init) => {
+          if (String(url).endsWith("/models"))
+            return Response.json({ data: [{ id: "gpt://folder-1/yandexgpt/rc", owned_by: "Yandex" }] });
+          const request = JSON.parse(String(init?.body));
+          if (request.messages.some((item: { role: string }) => item.role === "tool"))
+            return Response.json({ choices: [{ message: { role: "assistant", content: "Расчёт завершён" } }] });
+          assert.ok(request.tools.some((item: { function: { name: string } }) =>
+            item.function.name === "run_code_interpreter"));
+          return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{
+            id: "calculation-tier-race", type: "function",
+            function: { name: "run_code_interpreter", arguments: JSON.stringify({
+              task: "Посчитай людей по годам рождения", fields: ["birth"],
+            }) },
+          }] } }] });
+        });
+        const fake: typeof fetch = async (url, init) => {
+          if (String(url).endsWith("/files") && init?.method === "POST") {
+            uploads++;
+            await client.query("UPDATE account_tiers SET full_access=false WHERE account_id=$1", [proposalMember]);
+            return Response.json({ id: "uploaded-before-tier-change" });
+          }
+          if (String(url).includes("/files/") && init?.method === "DELETE")
+            return Response.json({ deleted: true });
+          if (String(url).endsWith("/responses") &&
+            JSON.parse(String(init?.body)).tools?.some((tool: { type: string }) => tool.type === "code_interpreter")) {
+            calculationCalls++;
+            return Response.json({ status: "completed", output: [] });
+          }
+          return adapted(url, init);
+        };
+        const handler = aiResearchHttp({
+          archive: app!.archive,
+          auth: await createAuth(await userStore(app!.archive.db), app!.archive.db,
+            process.env.PUBLIC_ORIGIN),
+          suggestions: researchSuggestionStore(app!.archive.db),
+          aiSettings: await aiSettingsStore(app!.archive.db),
+          usage: aiUsageStore(app!.archive.db),
+          media: mediaStore(join(dirname(source), "uploads")),
+          previewImage: imagePreviews(join(dirname(source), "previews")),
+          researchCatalog: researchCatalogStore(app!.archive.db),
+          publicOrigin: process.env.PUBLIC_ORIGIN, fetcher: fake,
+        });
+        const server = createServer((req, res) => {
+          void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+            .catch((error) => { res.destroy(error); });
+        });
+        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const oldChats = new Set((await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))
+          .rows.map((row) => row.id as string));
+        try {
+          const port = (server.address() as { port: number }).port;
+          const response = await fetch(`http://127.0.0.1:${port}/api/ai/chat`, {
+            method: "POST", headers: proposalHeaders,
+            body: JSON.stringify({ message: "Построй график рождений" }),
+          });
+          assert.equal(response.status, 403, await response.text());
+          assert.equal(uploads, 1, "the tier changes after a real provider upload");
+          assert.equal(calculationCalls, 0,
+            "the Code Interpreter model is not called after tier downgrade");
+        } finally {
+          await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
+          await client.query("UPDATE ai_settings SET code_interpreter_enabled=$1 WHERE id=1", [previousInterpreter]);
+          const newChats = (await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))
+            .rows.map((row) => row.id as string).filter((id) => !oldChats.has(id));
+          for (const chatId of newChats) await aiChatStore(app!.archive.db).delete(chatId, proposalMember);
+          await new Promise<void>((resolve) => server.close(() => resolve()));
+          await handler.close();
+        }
+      }
       await runDeferredAnswer("session-revoked", async () => {
         await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(proposalToken)]);
       }, async () => {
