@@ -1859,8 +1859,9 @@ try {
     "another account's linked provider subject must not appear in the download");
     if (index % 2)
       assert.deepEqual(exported.account.identities,
-        [{ provider: "email", subject: "reader-export@example.invalid" }],
-      "the account download includes the reader's own linked login identifier");
+        [{ provider: "email", subject: "reader-export@example.invalid" },
+          { provider: "yandex", subject: "reader" }],
+      "the account download includes only the reader's linked login identifiers");
     assert.deepEqual(exported.archives.map((item: { id: string }) => item.id), ["runtime-test"]);
     assert.equal(exported.archives[0].role, index % 2 ? "reader" : "admin");
     assert.equal(exported.archives[0].owned, index % 2 === 0);
