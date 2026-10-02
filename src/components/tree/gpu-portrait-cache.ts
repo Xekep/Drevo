@@ -9,7 +9,7 @@ export type PortraitTile = {
 };
 const SIZE = 2048;
 
-/** Two fixed pages (32 MiB), no archive-sized decoded-image cache. */
+/** Two fixed pages within a 32 MiB budget, no archive-sized decoded-image cache. */
 export class GpuPortraitCache {
   private pages: {
     texture: WebGLTexture;

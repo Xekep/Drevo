@@ -4,7 +4,15 @@ import { profileTreeRenderer } from "./tree-render-profile";
 import sharp from "sharp";
 import { renderPortraits } from "./render-portraits";
 
-test.use({ trace: "off" });
+test.use({
+  trace: "off",
+  launchOptions: {
+    args: ["--enable-unsafe-swiftshader"],
+    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
+      : {}),
+  },
+});
 test("large GPU tree keeps one camera, sparse controls and a working context-loss fallback", async ({
   page,
 }, testInfo) => {
