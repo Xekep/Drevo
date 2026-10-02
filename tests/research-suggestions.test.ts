@@ -142,6 +142,13 @@ test("AI person update stays pending until a human accepts it", async () => {
       { method: "POST" },
     );
     assert.equal(accepted.status, 200);
+    assert.equal((await accepted.json()).suggestion.status, "accepted");
+    const acceptedRevision = (await app.archive.read()).revision;
+    assert.equal((await fetch(
+      base + "/api/research/suggestions/" + encodeURIComponent(queue.suggestions[0].id) + "/accept",
+      { method: "POST" },
+    )).status, 409);
+    assert.equal((await app.archive.read()).revision, acceptedRevision);
 
     const after = (await app.archive.read()).family.people.find(
       (person) => person.id === "anna-suggestion-test",

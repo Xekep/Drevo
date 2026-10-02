@@ -10,6 +10,7 @@ import {
   type Source,
 } from "../domain/index.ts";
 import { authorizeArchive } from "./permissions.ts";
+import { ConflictError } from "./archive-errors.ts";
 
 const PERSON_UPDATE_FIELDS = [
   "surname",
@@ -740,8 +741,8 @@ export function researchSuggestionStore(db: StoreDatabase) {
       const suggestion = await this.get(actor, id);
       if (!suggestion) throw new Error("Предложение не найдено");
       if (suggestion.status !== "pending")
-        throw new Error("Предложение уже обработано");
-      await db
+        throw new ConflictError("Предложение уже обработано");
+      const updated = await db
         .prepare(
           `UPDATE research_suggestions
          SET status=?,reviewed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),reviewed_by=?
@@ -749,6 +750,8 @@ export function researchSuggestionStore(db: StoreDatabase) {
           "UPDATE research_suggestions\n         SET status=?,reviewed_at=to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),reviewed_by=?\n         WHERE id=? AND status='pending'",
         )
         .run(status, actor.id, id);
+      if (updated.changes !== 1)
+        throw new ConflictError("Предложение уже обработано");
       return (await this.get(actor, id))!;
     },
   };

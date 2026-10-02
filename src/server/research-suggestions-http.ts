@@ -4,7 +4,7 @@ import { fullName } from "../domain/dates.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import {
   applyResearchSuggestion,
-  type researchSuggestionStore,
+  researchSuggestionStore,
 } from "./research-suggestions.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
@@ -100,7 +100,8 @@ export function researchSuggestionsHttp({
       const suggestion = await suggestions.get(actor, id);
       if (!suggestion) throw new Error("Предложение не найдено");
       if (suggestion.status !== "pending")
-        throw new Error("Предложение уже обработано");
+        throw new ConflictError("Предложение уже обработано");
+      let accepted = suggestion;
       const current = await archive.read(),
         next = applyResearchSuggestion(current.family, suggestion),
         saved = await archive.write(
@@ -116,14 +117,17 @@ export function researchSuggestionsHttp({
             // the suggestion, so it cannot commit after access was revoked.
             if (!(await accountAiAccess(db, actor.id, auth.local, true)))
               throw new ForbiddenError("ИИ-функции больше недоступны этому аккаунту");
+            accepted = await researchSuggestionStore(db).mark(actor, id, "accepted");
           },
         );
-      await suggestions.mark(actor, id, "accepted");
       return json(res, 200, {
-        suggestion: await suggestions.get(actor, id),
+        suggestion: accepted,
         revision: saved.revision,
       });
     } catch (error) {
+      // PostgreSQL failures are server errors, never user validation errors.
+      // In particular, a failed status write must not expose SQL diagnostics.
+      if (typeof (error as { code?: unknown })?.code === "string") throw error;
       const status =
         error instanceof ConflictError
           ? 409

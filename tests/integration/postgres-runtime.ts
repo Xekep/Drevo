@@ -63,6 +63,7 @@ import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgr
 import { verifyEmailAccounts } from "./postgres-email.ts";
 import { verifyAccountSessionManagement } from "./postgres-account-sessions.ts";
 import { verifyPostgresCommentEdits } from "./postgres-comment-edits.ts";
+import { verifyAtomicSuggestionAcceptance } from "./postgres-suggestion-accept.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
 import { restoreStore } from "../../src/server/restore.ts";
@@ -1969,6 +1970,7 @@ try {
     await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
     await client.query("DELETE FROM research_suggestions WHERE id=$1", [pendingSuggestion.id]);
   }
+  await verifyAtomicSuggestionAcceptance(app.archive, client, securedBase, ownerHeaders);
   assert.equal(await accountAiAccess(app.archive.db, "vk:42"), true);
   const aiAccessDb = app.archive.db;
   await assert.rejects(accountAiAccess(aiAccessDb, "vk:42", false, true),
