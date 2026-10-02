@@ -6989,6 +6989,17 @@ try {
       mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
       writeFileSync(path, "private AI file bytes", { mode: 0o600 });
     }
+    const formerChatId = randomUUID();
+    const formerChatFiles = [
+      join(dirname(source), "uploads", "ai-chat-files", formerChatId, randomUUID()),
+      join(dirname(source), "ai-generated-files", formerChatId, randomUUID()),
+    ];
+    for (const path of formerChatFiles) {
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+      writeFileSync(path, "former archive orphan", { mode: 0o600 });
+    }
+    const formerExpired = new Date(Date.now() - 25 * 60 * 60_000);
+    await utimes(dirname(formerChatFiles[0]), formerExpired, formerExpired);
     await client.query(
       "INSERT INTO archive_audit_entries(archive_id,id,at,actor_id,actor_name,action,entity,entity_id,label,details) VALUES($1,987654,$2,'deleting-account','Delete me','update','archive',$1,'Test','[]'::jsonb)",
       [recreatedId, new Date().toISOString()],
@@ -7207,6 +7218,16 @@ try {
       "startup/periodic orphan pruning removes files after a missed post-commit cleanup");
     assert.deepEqual(retainedChatFiles.map((path) => existsSync(path)), [true, true],
       "orphan pruning preserves another member's live chat files");
+    assert.deepEqual(formerChatFiles.map((path) => existsSync(path)), [true, true],
+      "deletion cannot identify orphan folders from an archive left earlier");
+    const formerChats = aiChatStore(app.archive.db);
+    await aiAttachmentStore(join(dirname(source), "uploads"), formerChats).prune();
+    const formerGenerated = generatedResearchFileStore(app.archive.db,
+      join(dirname(source), "uploads"), formerChats);
+    await formerGenerated.prune();
+    formerGenerated.close();
+    assert.deepEqual(formerChatFiles.map((path) => existsSync(path)), [false, false],
+      "an active former archive eventually removes orphan files without an account membership");
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_invitations WHERE created_by='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_owner_transfers WHERE to_user_id='deleting-account'")).rows[0].n, 0);
     assert.deepEqual((await client.query("SELECT actor_id,actor_name FROM archive_audit_entries WHERE archive_id=$1 AND id=987654", [recreatedId])).rows[0],
