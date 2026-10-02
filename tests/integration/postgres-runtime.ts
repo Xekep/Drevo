@@ -3348,6 +3348,55 @@ try {
   {
     const tokenStore = mcpTokenStore(app.archive.db);
     const issued = await tokenStore.issue(owner, {
+      name: "MCP queued tier regression", scopes: ["tree:read"],
+    });
+    const usageStore = mcpUsageStore(app.archive.db);
+    let notify!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => { notify = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const endpoint = mcpHttp({ archive: app.archive, tokens: tokenStore,
+      usage: { ...usageStore,
+        begin: async (...args: Parameters<typeof usageStore.begin>) => {
+          const auditRun = await usageStore.begin(...args);
+          notify();
+          await gate;
+          return auditRun;
+        } },
+      publicOrigin: process.env.PUBLIC_ORIGIN });
+    const server = createServer((req, res) => {
+      void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const port = (server.address() as { port: number }).port;
+      const listing = fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: "POST", headers: {
+          Origin: process.env.PUBLIC_ORIGIN!,
+          Authorization: `Bearer ${issued.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 12, method: "tools/list" }),
+      });
+      await Promise.race([entered,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("MCP listing did not reach audit queue")), 15_000))]);
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      release();
+      const response = await listing;
+      const body = await response.text();
+      assert.equal(response.status, 403,
+        `a downgraded account cannot receive MCP tools after the audit queue: ${body}`);
+      assert.doesNotMatch(body, /search_people|tools"/);
+    } finally {
+      release();
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+  {
+    const tokenStore = mcpTokenStore(app.archive.db);
+    const issued = await tokenStore.issue(owner, {
       name: "MCP delayed revoke regression", scopes: ["tree:read"],
     });
     let authenticationCount = 0;

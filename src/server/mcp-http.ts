@@ -224,6 +224,12 @@ export function mcpHttp({
         auditError || res.statusCode >= 400 ? "error" : "ok",
       );
     });
+    // Usage recording can wait behind other database work after the earlier
+    // tier check. Never publish even the tool catalogue from that stale grant.
+    if (!(await hasAiAccess())) {
+      auditError = true;
+      return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
+    }
 
     if (request.method === "server/discover")
       return json(
