@@ -50,6 +50,17 @@ function addNotes(
   return [current, ...notes].filter(Boolean).join("\n") || undefined;
 }
 
+function hasUnmodeledFullNameText(fullname: string, parts: string[]): boolean {
+  let remaining = fullname.trim();
+  for (const part of parts.filter(Boolean).map((part) => part.trim())
+    .sort((a, b) => b.length - a.length)) {
+    const index = remaining.indexOf(part);
+    if (index !== -1)
+      remaining = remaining.slice(0, index) + remaining.slice(index + part.length);
+  }
+  return /[\p{L}\p{N}]/u.test(remaining);
+}
+
 function extraChildren(
   node: XmlNode,
   known: string[],
@@ -376,6 +387,12 @@ export function importAgelongXml(
         "parentageComplete",
       ] as const)
         if (Object.hasOwn(data, key)) Object.assign(p, { [key]: data[key] });
+    }
+    if (a.fullname && hasUnmodeledFullNameText(a.fullname, [a.sn, a.fn, a.mn, a.msn])) {
+      p.biography = addNotes(p.biography, [`Полное имя из XML: ${a.fullname}`]);
+      warnings.add(
+        "Поле person.fullname содержит дополнительный текст: полное имя сохранено в биографии, структура дополнительных частей имени не перенесена.",
+      );
     }
     const known = [
       "id",
