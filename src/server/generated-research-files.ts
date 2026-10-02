@@ -13,6 +13,8 @@ const MAX_GENERATED_FILES_BYTES = 64 * 1024 * 1024;
 const FILE_RETENTION_MS = 60 * 60_000;
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
+export class GeneratedFileAccessError extends ForbiddenError {}
+
 export type GeneratedResearchFileMeta = {
   name: string;
   url: string;
@@ -177,7 +179,7 @@ export function generatedResearchFileStore(
             await db.transaction(async () => {
               const trustedLocal = file.ownerId === "local" && !process.env.PUBLIC_ORIGIN;
               if (!(await accountAiAccess(db, file.ownerId, trustedLocal, true)))
-                throw new ForbiddenError("Доступ к ИИ отозван");
+                throw new GeneratedFileAccessError("Доступ к ИИ отозван");
               await afterTierCheck?.();
               await rename(staged, installed);
               renamed = true;

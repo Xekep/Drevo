@@ -37,7 +37,7 @@ import {
   CODE_INTERPRETER_TOOL,
   runCodeInterpreter,
 } from "./code-interpreter.ts";
-import type { generatedResearchFileStore } from "./generated-research-files.ts";
+import { GeneratedFileAccessError, type generatedResearchFileStore } from "./generated-research-files.ts";
 import {
   executeResearchTool,
   RESEARCH_TOOL_DEFINITIONS,
@@ -51,7 +51,6 @@ import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import type { imagePreviews } from "./image-previews.ts";
 import type { mediaStore } from "./media.ts";
-import { ForbiddenError } from "./users.ts";
 import type { researchCatalogStore } from "./research-catalog.ts";
 import { researchPdf } from "./research-pdf.ts";
 import {
@@ -1522,7 +1521,7 @@ export function createResearchRunner({
             result = { suggestion };
           } else throw new Error("Модель запросила неизвестный инструмент");
         } catch (error) {
-          if (error instanceof ForbiddenError) {
+          if (error instanceof GeneratedFileAccessError) {
             // The file store may reject a downgrade after the outer pre-save
             // check. Reflect that denial through the HTTP access callback.
             await assertAiAccessBeforeSave();
