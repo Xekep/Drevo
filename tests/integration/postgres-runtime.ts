@@ -1954,6 +1954,8 @@ try {
     const revisionPid = (await revisionWriter.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
     await membershipWriter.query("BEGIN");
     await revisionWriter.query("BEGIN");
+    await membershipWriter.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+    await revisionWriter.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
     const changeMembership = membershipWriter.query(
       "UPDATE archive_memberships SET role=role WHERE archive_id='runtime-test' AND user_id='reader'",
     );
