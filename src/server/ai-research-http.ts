@@ -671,18 +671,32 @@ export function aiResearchHttp({
         });
       }
       if (savedAttachments.length) await beforeAttachmentCommit?.();
-      await chats.append(
-        chat.id,
-        "user",
-        message,
-        selectedPerson
-          ? { hidden: true }
-          : {
-              ...(savedAttachments.length
-                ? { attachments: savedAttachments }
-                : {}),
-            },
-      );
+      // File writes can outlive the tier check above. Admit the input message
+      // only while the current access rows are locked; a failed admission
+      // removes the staged attachments below.
+      const accepted = await archive.db.transaction(async () => {
+        if (!(await canDeliverAiData(req, chat.accessScope, user.id, true)))
+          return false;
+        await chats.append(
+          chat.id,
+          "user",
+          message,
+          selectedPerson
+            ? { hidden: true }
+            : {
+                ...(savedAttachments.length
+                  ? { attachments: savedAttachments }
+                  : {}),
+              },
+        );
+        return true;
+      });
+      if (!accepted) {
+        await attachments.removeFiles(savedAttachments);
+        savedAttachments = [];
+        await chats.release(chat.id, lockToken);
+        return json(res, 403, { error: "Доступ к ИИ отключён" });
+      }
       appended = true;
       usageRun = await usage.begin(user.id, runtime.model);
       if (closing) throw new Error("Сервер перезапускается");
