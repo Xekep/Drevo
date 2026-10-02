@@ -1,0 +1,561 @@
+{
+  "commit": "d170214efed25b2da478afc75c54d700f66be020",
+  "people": 3313,
+  "personalReference": "level-11-363-3",
+  "throttle": 4,
+  "isMobile": false,
+  "profilePan": false,
+  "gpu": {
+    "devices": [
+      {
+        "vendorId": 4318,
+        "deviceId": 7041,
+        "subSysId": 2241335363,
+        "revision": 161,
+        "vendorString": "",
+        "deviceString": "NVIDIA GeForce GTX 1070",
+        "driverVendor": "NVIDIA",
+        "driverVersion": "32.0.15.7247"
+      },
+      {
+        "vendorId": 5140,
+        "deviceId": 140,
+        "subSysId": 0,
+        "revision": 0,
+        "vendorString": "",
+        "deviceString": "Microsoft Basic Render Driver",
+        "driverVendor": "",
+        "driverVersion": "10.0.19041.4355"
+      }
+    ],
+    "auxAttributes": {
+      "amdSwitchable": false,
+      "bgra8OverlaySupport": "NONE",
+      "canSupportThreadedTextureMailbox": false,
+      "directComposition": false,
+      "directMLFeatureLevel": "Not supported",
+      "directRenderingVersion": "",
+      "displayType": "ANGLE_VULKAN",
+      "dx12FeatureLevel": "Not supported",
+      "glExtensions": "GL_AMD_performance_monitor GL_ANGLE_base_vertex_base_instance_shader_builtin GL_ANGLE_blob_cache GL_ANGLE_client_arrays GL_ANGLE_copy_texture_3d GL_ANGLE_depth_texture GL_ANGLE_framebuffer_blit GL_ANGLE_framebuffer_multisample GL_ANGLE_get_image GL_ANGLE_get_serialized_context_string GL_ANGLE_get_tex_level_parameter GL_ANGLE_instanced_arrays GL_ANGLE_logic_op GL_ANGLE_memory_object_flags GL_ANGLE_memory_size GL_ANGLE_multi_draw GL_ANGLE_pack_reverse_row_order GL_ANGLE_polygon_mode GL_ANGLE_program_binary_readiness_query GL_ANGLE_program_cache_control GL_ANGLE_read_only_depth_stencil_feedback_loops GL_ANGLE_relaxed_vertex_attribute_type GL_ANGLE_renderability_validation GL_ANGLE_request_extension GL_ANGLE_rgbx_internal_format GL_ANGLE_robust_client_memory GL_ANGLE_robust_fragment_shader_output GL_ANGLE_shader_pixel_local_storage GL_ANGLE_shader_pixel_local_storage_coherent GL_ANGLE_stencil_texturing GL_ANGLE_texture_compression_dxt3 GL_ANGLE_texture_compression_dxt5 GL_ANGLE_texture_multisample GL_ANGLE_texture_usage GL_ANGLE_translated_shader_source GL_ANGLE_vulkan_image GL_ANGLE_yuv_internal_format GL_ARM_rgba8 GL_ARM_shader_framebuffer_fetch GL_CHROMIUM_bind_generates_resource GL_CHROMIUM_bind_uniform_location GL_CHROMIUM_copy_compressed_texture GL_CHROMIUM_copy_texture GL_CHROMIUM_lose_context GL_EXT_EGL_image_array GL_EXT_EGL_image_external_wrap_modes GL_EXT_EGL_image_storage GL_EXT_base_instance GL_EXT_blend_func_extended GL_EXT_blend_minmax GL_EXT_buffer_storage GL_EXT_clear_texture GL_EXT_clip_control GL_EXT_color_buffer_float GL_EXT_color_buffer_half_float GL_EXT_compressed_ETC1_RGB8_sub_texture GL_EXT_conservative_depth GL_EXT_copy_image GL_EXT_debug_label GL_EXT_debug_marker GL_EXT_depth_clamp GL_EXT_discard_framebuffer GL_EXT_disjoint_timer_query GL_EXT_draw_buffers GL_EXT_draw_buffers_indexed GL_EXT_draw_elements_base_vertex GL_EXT_float_blend GL_EXT_frag_depth GL_EXT_instanced_arrays GL_EXT_map_buffer_range GL_EXT_memory_object GL_EXT_multisample_compatibility GL_EXT_occlusion_query_boolean GL_EXT_polygon_offset_clamp GL_EXT_read_format_bgra GL_EXT_render_snorm GL_EXT_robustness GL_EXT_sRGB GL_EXT_sRGB_write_control GL_EXT_semaphore GL_EXT_separate_shader_objects GL_EXT_shader_framebuffer_fetch GL_EXT_shader_framebuffer_fetch_non_coherent GL_EXT_shader_non_constant_global_initializers GL_EXT_shader_texture_lod GL_EXT_shadow_samplers GL_EXT_texture_border_clamp GL_EXT_texture_compression_bptc GL_EXT_texture_compression_dxt1 GL_EXT_texture_compression_rgtc GL_EXT_texture_compression_s3tc_srgb GL_EXT_texture_filter_anisotropic GL_EXT_texture_format_BGRA8888 GL_EXT_texture_lod_bias GL_EXT_texture_mirror_clamp_to_edge GL_EXT_texture_norm16 GL_EXT_texture_rg GL_EXT_texture_sRGB_R8 GL_EXT_texture_sRGB_decode GL_EXT_texture_shadow_lod GL_EXT_texture_storage GL_EXT_texture_type_2_10_10_10_REV GL_EXT_unpack_subimage GL_KHR_blend_equation_advanced GL_KHR_blend_equation_advanced_coherent GL_KHR_debug GL_KHR_robustness GL_NV_fence GL_NV_framebuffer_blit GL_NV_pack_subimage GL_NV_pixel_buffer_object GL_NV_polygon_mode GL_NV_read_depth GL_NV_read_depth_stencil GL_NV_read_stencil GL_NV_shader_noperspective_interpolation GL_OES_EGL_image GL_OES_EGL_image_external GL_OES_EGL_image_external_essl3 GL_OES_EGL_sync GL_OES_compressed_ETC1_RGB8_texture GL_OES_compressed_paletted_texture GL_OES_copy_image GL_OES_depth24 GL_OES_depth32 GL_OES_depth_texture GL_OES_depth_texture_cube_map GL_OES_draw_buffers_indexed GL_OES_draw_elements_base_vertex GL_OES_element_index_uint GL_OES_fbo_render_mipmap GL_OES_get_program_binary GL_OES_mapbuffer GL_OES_packed_depth_stencil GL_OES_required_internalformat GL_OES_rgb8_rgba8 GL_OES_sample_shading GL_OES_sample_variables GL_OES_shader_multisample_interpolation GL_OES_standard_derivatives GL_OES_surfaceless_context GL_OES_texture_3D GL_OES_texture_border_clamp GL_OES_texture_float GL_OES_texture_float_linear GL_OES_texture_half_float GL_OES_texture_half_float_linear GL_OES_texture_npot GL_OES_texture_stencil8 GL_OES_texture_storage_multisample_2d_array GL_OES_vertex_array_object GL_OES_vertex_half_float GL_OES_vertex_type_10_10_10_2 GL_OVR_multiview GL_OVR_multiview2 GL_QCOM_texture_lod_bias ",
+      "glImplementationParts": "(gl=egl-angle,angle=vulkan)",
+      "glRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA-572.47.0.0)",
+      "glResetNotificationStrategy": 33362,
+      "glVendor": "Google Inc. (NVIDIA)",
+      "glVersion": "OpenGL ES 3.0 (ANGLE 2.1.28853 git hash: 170484eea03a)",
+      "glWsExtensions": "EGL_EXT_create_context_robustness EGL_ANGLE_surface_orientation EGL_KHR_create_context EGL_KHR_image EGL_KHR_image_base EGL_EXT_image_gl_colorspace EGL_KHR_gl_colorspace EGL_KHR_gl_texture_2D_image EGL_KHR_gl_texture_cubemap_image EGL_KHR_gl_texture_3D_image EGL_KHR_gl_renderbuffer_image EGL_KHR_get_all_proc_addresses EGL_KHR_fence_sync EGL_KHR_wait_sync EGL_ANGLE_create_context_webgl_compatibility EGL_CHROMIUM_create_context_bind_generates_resource EGL_KHR_swap_buffers_with_damage EGL_EXT_pixel_format_float EGL_KHR_surfaceless_context EGL_ANGLE_display_texture_share_group EGL_ANGLE_display_semaphore_share_group EGL_ANGLE_create_context_client_arrays EGL_ANGLE_program_cache_control EGL_ANGLE_robust_resource_initialization EGL_ANGLE_create_context_extensions_enabled EGL_ANDROID_blob_cache EGL_ANDROID_recordable EGL_ANGLE_create_context_backwards_compatible EGL_KHR_no_config_context EGL_IMG_context_priority EGL_KHR_create_context_no_error EGL_KHR_reusable_sync EGL_EXT_buffer_age EGL_ANGLE_create_surface_swap_interval EGL_ANGLE_vulkan_image EGL_KHR_partial_update EGL_ANGLE_global_fence_sync EGL_ANGLE_memory_usage_report ",
+      "glWsVendor": "Google Inc. (NVIDIA)",
+      "glWsVersion": "1.5 (ANGLE 2.1.28853 git hash: 170484eea03a)",
+      "inProcessGpu": false,
+      "initializationTime": 0.271091,
+      "isAsan": false,
+      "isClangCoverage": false,
+      "jpegDecodeAcceleratorSupported": false,
+      "maxMsaaSamples": "8",
+      "nv12OverlaySupport": "NONE",
+      "optimus": false,
+      "p010OverlaySupport": "NONE",
+      "passthroughCmdDecoder": true,
+      "pixelShaderVersion": "3.00",
+      "processCrashCount": 0,
+      "rgb10a2OverlaySupport": "NONE",
+      "sandboxed": false,
+      "skiaBackendType": "GaneshGL",
+      "subpixelFontRendering": true,
+      "supportsD3dSharedImages": false,
+      "supportsDirectML": false,
+      "supportsDx12": false,
+      "supportsOverlays": false,
+      "supportsVulkan": false,
+      "targetCpuBits": 64,
+      "vertexShaderVersion": "3.00",
+      "visibilityCallbackCallCount": 0,
+      "vulkanVersion": "Not supported",
+      "yuy2OverlaySupport": "NONE"
+    },
+    "featureStatus": {
+      "2d_canvas": "enabled",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "enabled",
+      "multiple_raster_threads": "enabled_on",
+      "opengl": "enabled_on",
+      "rasterization": "unavailable_off",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "disabled_off",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "enabled",
+      "video_encode": "enabled",
+      "webgl": "enabled",
+      "webgpu": "enabled",
+      "webnn": "disabled_off"
+    },
+    "driverBugWorkarounds": [
+      "disable_d3d11_vp9_ksvc_decoding",
+      "disable_d3d12_av1_encoding",
+      "disable_d3d12_h264_encoding",
+      "disable_d3d12_video_encoder",
+      "disable_dcomp_texture",
+      "disable_nv12_upload",
+      "enable_webgl_timer_query_extensions",
+      "exit_on_context_lost",
+      "disabled_extension_GL_KHR_blend_equation_advanced",
+      "disabled_extension_GL_KHR_blend_equation_advanced_coherent"
+    ],
+    "videoDecoding": [],
+    "videoEncoding": []
+  },
+  "phases": [
+    {
+      "before": {
+        "phase": "early-before",
+        "requests": [],
+        "firstGpuAt": 13852.200000047684,
+        "firstPortraitUploadAt": 13914.400000095367,
+        "portraitUploads": 26,
+        "programCreations": 2,
+        "resources": {
+          "textures": 3,
+          "buffers": 6,
+          "programs": 2
+        },
+        "frames": {
+          "count": 73,
+          "p95Ms": 733.9000000000001,
+          "maxMs": 4286.800000000001,
+          "over50Ms": 41
+        },
+        "longTasks": [
+          {
+            "startTime": 633.9000000953674,
+            "duration": 59
+          },
+          {
+            "startTime": 696.9000000953674,
+            "duration": 353
+          },
+          {
+            "startTime": 1101,
+            "duration": 142
+          },
+          {
+            "startTime": 1280.5,
+            "duration": 110
+          },
+          {
+            "startTime": 1395,
+            "duration": 726
+          },
+          {
+            "startTime": 2136.8000000715256,
+            "duration": 934
+          },
+          {
+            "startTime": 3180,
+            "duration": 94
+          },
+          {
+            "startTime": 3329.9000000953674,
+            "duration": 339
+          },
+          {
+            "startTime": 3671.8000000715256,
+            "duration": 50
+          },
+          {
+            "startTime": 3771,
+            "duration": 80
+          },
+          {
+            "startTime": 3945.4000000953674,
+            "duration": 52
+          },
+          {
+            "startTime": 4047.5,
+            "duration": 330
+          },
+          {
+            "startTime": 4470.900000095367,
+            "duration": 73
+          },
+          {
+            "startTime": 4673.800000071526,
+            "duration": 431
+          },
+          {
+            "startTime": 5367.900000095367,
+            "duration": 320
+          },
+          {
+            "startTime": 5765.700000047684,
+            "duration": 80
+          },
+          {
+            "startTime": 6125.200000047684,
+            "duration": 369
+          },
+          {
+            "startTime": 6580,
+            "duration": 83
+          },
+          {
+            "startTime": 6918.100000023842,
+            "duration": 387
+          },
+          {
+            "startTime": 7344.400000095367,
+            "duration": 59
+          },
+          {
+            "startTime": 7416,
+            "duration": 105
+          },
+          {
+            "startTime": 7551.800000071526,
+            "duration": 52
+          },
+          {
+            "startTime": 7649.700000047684,
+            "duration": 95
+          },
+          {
+            "startTime": 7785,
+            "duration": 339
+          },
+          {
+            "startTime": 8126.700000047684,
+            "duration": 625
+          },
+          {
+            "startTime": 8888,
+            "duration": 327
+          },
+          {
+            "startTime": 9221.600000023842,
+            "duration": 4223
+          },
+          {
+            "startTime": 13521.400000095367,
+            "duration": 330
+          },
+          {
+            "startTime": 14105.800000071526,
+            "duration": 373
+          },
+          {
+            "startTime": 14480,
+            "duration": 59
+          },
+          {
+            "startTime": 14599.200000047684,
+            "duration": 55
+          },
+          {
+            "startTime": 14727.300000071526,
+            "duration": 289
+          },
+          {
+            "startTime": 15450.400000095367,
+            "duration": 368
+          }
+        ],
+        "now": 15831.300000071526,
+        "renderer": "webgl2",
+        "nodes": 3313,
+        "textureBytes": 33554433,
+        "bufferBytes": 14982708,
+        "labelBytes": 7686540,
+        "labelCpuBytes": 18596640,
+        "buildReason": "mount",
+        "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+        "labelLod": 2,
+        "dom": 252,
+        "mountedCards": 0,
+        "mountedEdges": 0,
+        "zoom": 0.55,
+        "mediaRequests": 790,
+        "pendingMedia": 0,
+        "peakPendingMedia": 28,
+        "mediaFailures": 0,
+        "previews": {
+          "thumb": {
+            "responses": 58,
+            "bytes": 1533588,
+            "jpeg": 0
+          },
+          "tiny": {
+            "responses": 732,
+            "bytes": 118296,
+            "jpeg": 0
+          }
+        },
+        "heapBytes": 82233608,
+        "scriptMs": 8530.149
+      },
+      "after": {
+        "phase": "early-pan",
+        "requests": [],
+        "firstGpuAt": 13852.200000047684,
+        "firstPortraitUploadAt": 13914.400000095367,
+        "portraitUploads": 26,
+        "programCreations": 2,
+        "resources": {
+          "textures": 3,
+          "buffers": 6,
+          "programs": 2
+        },
+        "frames": {
+          "count": 131,
+          "p95Ms": 333.6999999999971,
+          "maxMs": 417,
+          "over50Ms": 12
+        },
+        "longTasks": [
+          {
+            "startTime": 15972.900000095367,
+            "duration": 373
+          },
+          {
+            "startTime": 16450.800000071526,
+            "duration": 326
+          },
+          {
+            "startTime": 16923.300000071526,
+            "duration": 336
+          },
+          {
+            "startTime": 17372.300000071526,
+            "duration": 367
+          },
+          {
+            "startTime": 17764,
+            "duration": 298
+          },
+          {
+            "startTime": 18062.700000047684,
+            "duration": 78
+          },
+          {
+            "startTime": 18163.100000023842,
+            "duration": 282
+          },
+          {
+            "startTime": 18445.700000047684,
+            "duration": 67
+          },
+          {
+            "startTime": 18535.400000095367,
+            "duration": 285
+          },
+          {
+            "startTime": 18820.700000047684,
+            "duration": 68
+          },
+          {
+            "startTime": 18908.400000095367,
+            "duration": 51
+          },
+          {
+            "startTime": 18960.400000095367,
+            "duration": 292
+          },
+          {
+            "startTime": 19253.300000071526,
+            "duration": 81
+          }
+        ],
+        "now": 21183,
+        "renderer": "webgl2",
+        "nodes": 3313,
+        "textureBytes": 33554433,
+        "bufferBytes": 14982648,
+        "labelBytes": 7686540,
+        "labelCpuBytes": 18596640,
+        "buildReason": "mount",
+        "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+        "labelLod": 2,
+        "dom": 255,
+        "mountedCards": 0,
+        "mountedEdges": 0,
+        "zoom": 0.55,
+        "mediaRequests": 790,
+        "pendingMedia": 0,
+        "peakPendingMedia": 28,
+        "mediaFailures": 0,
+        "previews": {
+          "thumb": {
+            "responses": 58,
+            "bytes": 1533588,
+            "jpeg": 0
+          },
+          "tiny": {
+            "responses": 732,
+            "bytes": 118296,
+            "jpeg": 0
+          }
+        },
+        "heapBytes": 189511768,
+        "scriptMs": 12161.411
+      }
+    },
+    {
+      "before": {
+        "phase": "settled-before",
+        "requests": [],
+        "firstGpuAt": 13852.200000047684,
+        "firstPortraitUploadAt": 13914.400000095367,
+        "portraitUploads": 26,
+        "programCreations": 2,
+        "resources": {
+          "textures": 3,
+          "buffers": 6,
+          "programs": 2
+        },
+        "frames": {
+          "count": 223,
+          "p95Ms": 83.30000000000291,
+          "maxMs": 417,
+          "over50Ms": 12
+        },
+        "longTasks": [
+          {
+            "startTime": 15972.900000095367,
+            "duration": 373
+          },
+          {
+            "startTime": 16450.800000071526,
+            "duration": 326
+          },
+          {
+            "startTime": 16923.300000071526,
+            "duration": 336
+          },
+          {
+            "startTime": 17372.300000071526,
+            "duration": 367
+          },
+          {
+            "startTime": 17764,
+            "duration": 298
+          },
+          {
+            "startTime": 18062.700000047684,
+            "duration": 78
+          },
+          {
+            "startTime": 18163.100000023842,
+            "duration": 282
+          },
+          {
+            "startTime": 18445.700000047684,
+            "duration": 67
+          },
+          {
+            "startTime": 18535.400000095367,
+            "duration": 285
+          },
+          {
+            "startTime": 18820.700000047684,
+            "duration": 68
+          },
+          {
+            "startTime": 18908.400000095367,
+            "duration": 51
+          },
+          {
+            "startTime": 18960.400000095367,
+            "duration": 292
+          },
+          {
+            "startTime": 19253.300000071526,
+            "duration": 81
+          }
+        ],
+        "now": 22717,
+        "renderer": "webgl2",
+        "nodes": 3313,
+        "textureBytes": 33554433,
+        "bufferBytes": 14982648,
+        "labelBytes": 7686540,
+        "labelCpuBytes": 18596640,
+        "buildReason": "mount",
+        "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+        "labelLod": 2,
+        "dom": 255,
+        "mountedCards": 0,
+        "mountedEdges": 0,
+        "zoom": 0.55,
+        "mediaRequests": 790,
+        "pendingMedia": 0,
+        "peakPendingMedia": 28,
+        "mediaFailures": 0,
+        "previews": {
+          "thumb": {
+            "responses": 58,
+            "bytes": 1533588,
+            "jpeg": 0
+          },
+          "tiny": {
+            "responses": 732,
+            "bytes": 118296,
+            "jpeg": 0
+          }
+        },
+        "heapBytes": 189625476,
+        "scriptMs": 12171.644
+      },
+      "after": {
+        "phase": "settled-pan",
+        "requests": [],
+        "firstGpuAt": 13852.200000047684,
+        "firstPortraitUploadAt": 13914.400000095367,
+        "portraitUploads": 26,
+        "programCreations": 2,
+        "resources": {
+          "textures": 3,
+          "buffers": 6,
+          "programs": 2
+        },
+        "frames": {
+          "count": 121,
+          "p95Ms": 16.799999999999272,
+          "maxMs": 16.80000000000291,
+          "over50Ms": 0
+        },
+        "longTasks": [],
+        "now": 24766.5,
+        "renderer": "webgl2",
+        "nodes": 3313,
+        "textureBytes": 33554433,
+        "bufferBytes": 14982648,
+        "labelBytes": 7686540,
+        "labelCpuBytes": 18596640,
+        "buildReason": "mount",
+        "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+        "labelLod": 2,
+        "dom": 255,
+        "mountedCards": 0,
+        "mountedEdges": 0,
+        "zoom": 0.55,
+        "mediaRequests": 790,
+        "pendingMedia": 0,
+        "peakPendingMedia": 28,
+        "mediaFailures": 0,
+        "previews": {
+          "thumb": {
+            "responses": 58,
+            "bytes": 1533588,
+            "jpeg": 0
+          },
+          "tiny": {
+            "responses": 732,
+            "bytes": 118296,
+            "jpeg": 0
+          }
+        },
+        "heapBytes": 187587740,
+        "scriptMs": 12594.962000000001
+      }
+    }
+  ],
+  "method": "Separate pan diagnostic with real backend/media; only user.personId injected. Early interval follows persistent reload, settled waits for archive-loading-details hidden and media idle. Profiled intervals are not speed benchmarks."
+}

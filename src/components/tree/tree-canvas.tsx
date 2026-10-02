@@ -77,6 +77,7 @@ import { ArchiveSummary } from "../archive-summary";
 import { relativeAtHandle } from "../../domain/tree-interactions";
 import { buildTreeEdges } from "./tree-edge-adapter";
 import { buildTreeNodeModel } from "./tree-node-model";
+import { treeRenderFamilyKey } from "./tree-render-family";
 import { TreeCameraTools } from "./tree-camera-tools";
 import { fitTreeNodes, type TreeFitOptions } from "./tree-camera-fit";
 import { TreeEdgeChoices } from "./tree-edge-choices";
@@ -234,6 +235,19 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     onConnect,
     focus,
   } = props;
+  // Detail pages hydrate the live archive without changing its visible graph.
+  // Retain render inputs until a graph/card field changes.
+  const renderFamilyKey = useMemo(
+    () => treeRenderFamilyKey(family),
+    [family],
+  );
+  const renderFamily = useMemo(() => JSON.parse(renderFamilyKey) as Family, [renderFamilyKey]);
+  const currentPeople = useMemo(() => new Map(family.people.map((person) => [person.id, person])), [family.people]);
+  // Comparing two people can return fresh arrays for an unchanged kinship path.
+  const highlightedKey = JSON.stringify(props.highlighted);
+  const highlighted = useMemo(() => JSON.parse(highlightedKey) as string[], [highlightedKey]);
+  const spotlightKey = JSON.stringify(props.spotlight || []);
+  const spotlight = useMemo(() => JSON.parse(spotlightKey) as string[], [spotlightKey]);
   const [mode, setMode] = useState<TreeMode>("generations");
   const layoutMode: TreeMode = mode === "timeline" ? "generations" : mode;
   const [fanAnchor, setFanAnchor] = useState<string | null>(null);
@@ -394,9 +408,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     };
   }, [edgeChoices.length]);
   const familyView = useFamilyView(
-    family,
+    renderFamily,
     selected,
-    props.highlighted,
+    highlighted,
     focus,
     props.preview,
   );
@@ -434,11 +448,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const generationRange = useMemo(
     () => props.generationLimits
       ? generationScope(
-          familyNeighbors({ people: family.people, links: family.links }),
+          familyNeighbors({ people: renderFamily.people, links: renderFamily.links }),
           props.generationLimits,
         )
       : null,
-    [family.people, family.links, props.generationLimits],
+    [renderFamily.people, renderFamily.links, props.generationLimits],
   );
   const generationVisible = useMemo(() => {
     if (!generationRange) return familyView.visible;
@@ -447,11 +461,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const visible = useMemo(() => {
     if (!props.assistantFilter) return generationVisible;
     if ("excludeNeedsReview" in props.assistantFilter)
-      return withoutReviewPeople(family.people, generationVisible);
+      return withoutReviewPeople(renderFamily.people, generationVisible);
     return new Set(
       props.assistantFilter.ids.filter((id) => generationVisible.has(id)),
     );
-  }, [family.people, generationVisible, props.assistantFilter]);
+  }, [renderFamily.people, generationVisible, props.assistantFilter]);
   const timelinePeople = useMemo(
     () => family.people.filter((person) => visible.has(person.id)),
     [family.people, visible],
@@ -472,7 +486,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   useCtrlWheelZoom(container, flow, !cameraLocked && !activeFanAnchor && mode !== "timeline");
   const { geometry, renderVisible, ready, problem, layoutBusy, layoutKey } =
     useTreeLayout(
-      family,
+      renderFamily,
       visible,
       layoutMode,
       reverse,
@@ -531,8 +545,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const progressiveIntroRequested = growing && renderVisible.size >= 500 &&
     (distantZoom || !initialCameraReady) && !extraVisible && !activeFanAnchor && mode !== "timeline";
   const growthInputKey = useMemo(
-    () => treeGrowthInputKey(family.people),
-    [family.people],
+    () => treeGrowthInputKey(renderFamily.people),
+    [renderFamily.people],
   );
   const growthPeople = useMemo(
     () => JSON.parse(growthInputKey) as LayoutPerson[],
@@ -552,7 +566,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const nodeModel = useMemo(
     () =>
       buildTreeNodeModel({
-        family,
+        family: renderFamily,
         geometry,
         mode: layoutMode,
         visible: renderVisible,
@@ -563,14 +577,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         hidden: familyView.hidden,
         expanded: familyView.expanded,
         query: props.query,
-        spotlight: new Set(props.spotlight || []),
+        spotlight: new Set(spotlight),
         spotlightOccurrences: spotlightNodes
           ? new Set(spotlightNodes)
           : undefined,
         growthDelays,
       }),
     [
-      family,
+      renderFamily,
       geometry,
       layoutMode,
       renderVisible,
@@ -582,7 +596,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       familyView.hidden,
       familyView.expanded,
       props.query,
-      props.spotlight,
+      spotlight,
       spotlightNodes,
       growthDelays,
     ],
@@ -874,8 +888,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   ]);
   const kinshipDay = new Date().toISOString().slice(0, 10);
   const labelKey = useMemo(() => user?.personId ? kinshipLabelKey(
-    family.people, family.links || [], family.unions || [], kinshipDay, gpuScope,
-  ) : "", [family.people, family.links, family.unions, kinshipDay, gpuScope, user?.personId]);
+    renderFamily.people, renderFamily.links || [], renderFamily.unions || [], kinshipDay, gpuScope,
+  ) : "", [renderFamily.people, renderFamily.links, renderFamily.unions, kinshipDay, gpuScope, user?.personId]);
   const relationLabel = useMemo(() => {
     if (!user?.id) return () => "";
     if (!user.personId) return () => "Нет привязки к древу";
@@ -931,11 +945,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       props.publicationUpdate,
     ],
   );
-  const connections = useMemo(() => archiveConnections(family), [family]);
+  const connections = useMemo(() => archiveConnections(renderFamily), [renderFamily]);
   const displayEdges = useMemo<RelationshipEdgeType[]>(
     () =>
       buildTreeEdges({
-        family,
+        family: renderFamily,
         user,
         mode: layoutMode,
         geometry,
@@ -944,7 +958,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         positions,
         occurrencePeople,
         peopleMap,
-        highlighted: props.highlighted,
+        highlighted,
         selectedEdge: props.selectedEdge,
         canEdit: props.canEdit,
         busy: props.busy,
@@ -955,7 +969,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         growthDelays,
       }),
     [
-      family,
+      renderFamily,
       user,
       layoutMode,
       geometry,
@@ -964,7 +978,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       positions,
       occurrencePeople,
       peopleMap,
-      props.highlighted,
+      highlighted,
       props.selectedEdge,
       props.canEdit,
       props.busy,
@@ -1079,12 +1093,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   }, [renderedEdges, gpuOverlayEdges]);
   const gpuActions = useMemo(() => ({
     ...actions,
+    currentPeople,
     gpu: gpuActive,
     // React Flow first mounts at zoom 1, before fitView. Fetching portraits
     // there would request every thumb and delay hydration/the GPU handoff.
     deferPortraits: !initialCameraReady || (renderedNodes.length >= 500 &&
       (layoutSettling || layoutBusy || (gpuEligible && !gpuActive))),
-  }), [actions, gpuActive, initialCameraReady, renderedNodes.length, layoutSettling, layoutBusy, gpuEligible]);
+  }), [actions, currentPeople, gpuActive, initialCameraReady, renderedNodes.length, layoutSettling, layoutBusy, gpuEligible]);
   const gpuPinnedOverlayIds = useMemo(() => {
     const ids = new Set([gpuFocused]);
     for (const node of nodes.filter((node) => node.selected).slice(0, 24)) ids.add(node.id);

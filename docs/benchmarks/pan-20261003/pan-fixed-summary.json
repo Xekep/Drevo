@@ -1,0 +1,438 @@
+{
+  "purpose": "Saved diagnostic profile analysis only; no performance claim or additional runs",
+  "commit": "a9991994c72304933b887afe5ad98210f854d779",
+  "profileFile": "C:/Users/Xekep/Documents/Codex/drevo-render-tests/pan-fixed-early-pan.cpuprofile",
+  "profileSha256": "d322b38b2a225bc3d84b9ec6a3636fdbdfc053a754a2ae89290ef80ea138a679",
+  "durationMs": 3252.068,
+  "sampleCount": 1776,
+  "weightedDurationMs": 3251.536000000001,
+  "fixture": {
+    "people": 3313,
+    "reference": "level-11-363-3",
+    "cpuThrottle": 4,
+    "mobile": false
+  },
+  "sourceHashesVerified": [
+    {
+      "file": "src/components/tree/tree-canvas.tsx",
+      "sha256": "ceacb88143dd6e774acf808560b0dd4a7ae3deeb1bbb5b7066b158354bb94674",
+      "expected": "ceacb88143dd6e774acf808560b0dd4a7ae3deeb1bbb5b7066b158354bb94674",
+      "matched": true
+    },
+    {
+      "file": "src/components/tree/tree-render-family.ts",
+      "sha256": "fd7f199437f88aa940a1c713acdfef70979cea0cd6e5670796d133872f5b304c",
+      "expected": "fd7f199437f88aa940a1c713acdfef70979cea0cd6e5670796d133872f5b304c",
+      "matched": true
+    },
+    {
+      "file": "src/components/tree/person-node.tsx",
+      "sha256": "468504c2b84edbeb12df4ffeeb330f4cad329a07680ee27bd270091230dfc308",
+      "expected": "468504c2b84edbeb12df4ffeeb330f4cad329a07680ee27bd270091230dfc308",
+      "matched": true
+    },
+    {
+      "file": "src/components/tree/tree-node-model.ts",
+      "sha256": "27a86167ce59e0e601ecf9109ab5a2a9f13bd247295c1d84afcacc5813f1d400",
+      "expected": "27a86167ce59e0e601ecf9109ab5a2a9f13bd247295c1d84afcacc5813f1d400",
+      "matched": true
+    },
+    {
+      "file": "src/components/tree/tree-edge-adapter.ts",
+      "sha256": "9e7eb9815b59bf403a35613989cafec85b7216a6db507507b4e97468410eb357",
+      "expected": "9e7eb9815b59bf403a35613989cafec85b7216a6db507507b4e97468410eb357",
+      "matched": true
+    },
+    {
+      "file": "src/domain/archive-projection.ts",
+      "sha256": "649f5fcc9e81cc97d8468feded0746e9ce0128ac381d2ba8f82d6dd2fab86a4f",
+      "expected": "649f5fcc9e81cc97d8468feded0746e9ce0128ac381d2ba8f82d6dd2fab86a4f",
+      "matched": true
+    }
+  ],
+  "distChunks": [
+    {
+      "file": "tree-export-dialog-GDH6llDZ.js",
+      "bytes": 253048,
+      "sha256": "d7c429b3dffa281147e223cfd8775b77ed29c397441ba3d651fb2702810413d3"
+    },
+    {
+      "file": "gpu-scene-DcX6fxZG.js",
+      "bytes": 14018,
+      "sha256": "5e719240cfb3c43ff5bc2d9820a03186d147a2ed2276ab9bc5f9b744bc342424"
+    },
+    {
+      "file": "esm-Cb3lGruy.js",
+      "bytes": 47390,
+      "sha256": "162fd0025fd67ada8948cbf70cb52cfc0532f55df1324b1857f5e08eb5617a24"
+    },
+    {
+      "file": "mutations-BhQmaZ_P.js",
+      "bytes": 19090,
+      "sha256": "39c2d96a09c1d34d0eed876a5bb81023085206436e8ab932a7091b2d39adfa5e"
+    },
+    {
+      "file": "archive-summary-K-TzhHyd.js",
+      "bytes": 770,
+      "sha256": "0d8ffc65102e585fcca75a355920829f32fdb97d724ee3a2404e92c7c24ee6f6"
+    },
+    {
+      "file": "App-BfUZb6hQ.js",
+      "bytes": 158076,
+      "sha256": "55ac1759d696b044d2fa4a27eaf5b1d14d36b48361032f7625bc4930a64370d7"
+    }
+  ],
+  "mapping": "Exact current dist filename/hash and sampled line/column + function-start matched with source",
+  "mappedFunctions": [
+    {
+      "meaning": "treeRenderFamilyKey",
+      "functionName": "Gc",
+      "bundle": "tree-export-dialog-GDH6llDZ.js",
+      "bundleSha256": "d7c429b3dffa281147e223cfd8775b77ed29c397441ba3d651fb2702810413d3",
+      "line": 14,
+      "column": 10963,
+      "snippet": "(e){return JSON.stringify(Bn(e))}var Kc=.55;function qc(e,t,n){let r=Math.min(e,t);return n?r<430?.12:.16:r<700?.16:r<1e3?.2:.24}function Jc({flow:e,fitTree:t,geometry:n,nodeCount:r,mode:i,reverse:a,ready:o,focusReady:s,f",
+      "source": "src/components/tree/tree-render-family.ts",
+      "sourceLine": 5,
+      "sourceSha256": "fd7f199437f88aa940a1c713acdfef70979cea0cd6e5670796d133872f5b304c",
+      "selfMs": 54.150000000000006,
+      "inclusiveMs": 68.15,
+      "sampleFirstMs": 583.0589999999999,
+      "sampleLastMs": 897.652999999999,
+      "baselineEarlyInclusiveMs": null
+    },
+    {
+      "meaning": "archiveOverview",
+      "functionName": "Bn",
+      "bundle": "tree-export-dialog-GDH6llDZ.js",
+      "bundleSha256": "d7c429b3dffa281147e223cfd8775b77ed29c397441ba3d651fb2702810413d3",
+      "line": 2,
+      "column": 14533,
+      "snippet": "(e){return{...e,photos:[],people:e.people.map(e=>{let t={...e,sources:[]};return delete t.biography,delete t.awards,delete t.occupation,delete t.occupationClaim,delete t.maidenNameClaim,delete t.events,t})}}var Vn=`drevo:",
+      "source": "src/domain/archive-projection.ts",
+      "sourceLine": 18,
+      "sourceSha256": "649f5fcc9e81cc97d8468feded0746e9ce0128ac381d2ba8f82d6dd2fab86a4f",
+      "selfMs": 9.994,
+      "inclusiveMs": 14,
+      "sampleFirstMs": 583.0589999999999,
+      "sampleLastMs": 881.615999999999,
+      "baselineEarlyInclusiveMs": null
+    },
+    {
+      "meaning": "buildTreeEdges",
+      "functionName": "Hc",
+      "bundle": "tree-export-dialog-GDH6llDZ.js",
+      "bundleSha256": "d7c429b3dffa281147e223cfd8775b77ed29c397441ba3d651fb2702810413d3",
+      "line": 14,
+      "column": 5118,
+      "snippet": "({family:e,user:t,mode:n,geometry:r,connections:i,visible:a,positions:o,occurrencePeople:s,peopleMap:c,highlighted:l,selectedEdge:u,canEdit:d,busy:f,extraVisible:p,preview:m,onEdge:h,onChoices:g,growthDelays:_}){let v=new",
+      "source": "src/components/tree/tree-edge-adapter.ts",
+      "sourceLine": 95,
+      "sourceSha256": "9e7eb9815b59bf403a35613989cafec85b7216a6db507507b4e97468410eb357",
+      "selfMs": 12.387,
+      "inclusiveMs": 142.58499999999998,
+      "sampleFirstMs": 906.1989999999989,
+      "sampleLastMs": 1054.8349999999996,
+      "baselineEarlyInclusiveMs": 975.5120000000003
+    },
+    {
+      "meaning": "family branch edge construction",
+      "functionName": "(anonymous)",
+      "bundle": "tree-export-dialog-GDH6llDZ.js",
+      "bundleSha256": "d7c429b3dffa281147e223cfd8775b77ed29c397441ba3d651fb2702810413d3",
+      "line": 14,
+      "column": 7104,
+      "snippet": "e=>{let t=e.relations.filter(e=>a.has(e.from)&&a.has(e.to)).map(e=>w.get(yn(e))).filter(e=>!!e);if(!t.length)return[];let n=t[0],r=t.some(e=>e.key===u),i=t.some(e=>Bc(l,e)),o=()=>t.length===1?h(n):g(t);return[{id:e.id,sou",
+      "source": "src/components/tree/tree-edge-adapter.ts",
+      "sourceLine": 249,
+      "sourceSha256": "9e7eb9815b59bf403a35613989cafec85b7216a6db507507b4e97468410eb357",
+      "selfMs": 20.826999999999998,
+      "inclusiveMs": 107.20699999999997,
+      "sampleFirstMs": 918.2519999999989,
+      "sampleLastMs": 1036.4689999999991,
+      "baselineEarlyInclusiveMs": 722.3289999999998
+    },
+    {
+      "meaning": "buildTreeNodeModel",
+      "functionName": null,
+      "bundle": "tree-export-dialog-GDH6llDZ.js",
+      "bundleSha256": "d7c429b3dffa281147e223cfd8775b77ed29c397441ba3d651fb2702810413d3",
+      "line": 14,
+      "column": 8658,
+      "snippet": "({family:e,geometry:t,mode:n,visible:r,selected:i,collapsed:a,root:o,hidden:s,expanded:c,query:l,spotlight:u,spotlightOccurrences:d,growthDelays:f}){let p=new Map;for(let t of e.people)for(let e of t.parents)p.set(e,(p.ge",
+      "source": "src/components/tree/tree-node-model.ts",
+      "sourceLine": 46,
+      "sourceSha256": "27a86167ce59e0e601ecf9109ab5a2a9f13bd247295c1d84afcacc5813f1d400",
+      "selfMs": 0,
+      "inclusiveMs": 0,
+      "sampleFirstMs": null,
+      "sampleLastMs": null,
+      "baselineEarlyInclusiveMs": 316.7669999999999
+    },
+    {
+      "meaning": "archiveConnections",
+      "functionName": null,
+      "bundle": "tree-export-dialog-GDH6llDZ.js",
+      "bundleSha256": "d7c429b3dffa281147e223cfd8775b77ed29c397441ba3d651fb2702810413d3",
+      "line": 2,
+      "column": 8197,
+      "snippet": "(e){let t=new Map;function n(e){let n=yn(e);t.set(n,{...e,key:n})}for(let t of e.people){for(let e of t.parents)n({from:e,to:t.id,type:`parent`});for(let e of t.spouses){let[r,i]=[t.id,e].sort();n({from:r,to:i,type:`spous",
+      "source": "src/domain/connections.ts",
+      "sourceLine": 28,
+      "sourceSha256": "9481de3d28bdab47c3c30a0be89cda25139a31cc872cbc56e88462894e99dc31",
+      "selfMs": 0,
+      "inclusiveMs": 0,
+      "sampleFirstMs": null,
+      "sampleLastMs": null,
+      "baselineEarlyInclusiveMs": 198.48
+    },
+    {
+      "meaning": "GPU semantic update",
+      "functionName": "update",
+      "bundle": "gpu-scene-DcX6fxZG.js",
+      "bundleSha256": "5e719240cfb3c43ff5bc2d9820a03186d147a2ed2276ab9bc5f9b744bc342424",
+      "line": 57,
+      "column": 4444,
+      "snippet": "(e,t,r,o){let s=e=>(u.dataset.gpuUpdateReason=e,!1);if(w||J.length!==e.length||f.length!==t.length||p.length!==r.length)return s(`membership`);for(let t=0;t<J.length;t++){let n=J[t],r=e[t],c=V.get(n.id);if(n.id!==r.id||n.",
+      "source": "src/components/tree/gpu-scene.ts",
+      "sourceLine": 501,
+      "sourceSha256": "37a1da6e1aed192d10d3fd24ce22bbacb017b067bf90229399376ca81935a957",
+      "selfMs": 19.139,
+      "inclusiveMs": 40.29600000000001,
+      "sampleFirstMs": 1164.4069999999997,
+      "sampleLastMs": 1212.619,
+      "baselineEarlyInclusiveMs": 168.27100000000004
+    },
+    {
+      "meaning": "GPU draw",
+      "functionName": "draw",
+      "bundle": "gpu-scene-DcX6fxZG.js",
+      "bundleSha256": "5e719240cfb3c43ff5bc2d9820a03186d147a2ed2276ab9bc5f9b744bc342424",
+      "line": 57,
+      "column": 5873,
+      "snippet": "(e,t,n){if(w||t<=0||n<=0)return;let r=Math.min(window.devicePixelRatio||1,2,Math.sqrt(25e5/(t*n)),te/Math.max(t,n)),i=Math.max(1,Math.round(t*r)),a=Math.max(1,Math.round(n*r));(u.width!==i||u.height!==a)&&(u.width=i,u.hei",
+      "source": "src/components/tree/gpu-scene.ts",
+      "sourceLine": 587,
+      "sourceSha256": "37a1da6e1aed192d10d3fd24ce22bbacb017b067bf90229399376ca81935a957",
+      "selfMs": 24.784,
+      "inclusiveMs": 55.571000000000005,
+      "sampleFirstMs": 1276.2129999999997,
+      "sampleLastMs": 3123.337999999999,
+      "baselineEarlyInclusiveMs": 58.64499999999999
+    },
+    {
+      "meaning": "React Flow adoptUserNodes",
+      "functionName": "pt",
+      "bundle": "esm-Cb3lGruy.js",
+      "bundleSha256": "162fd0025fd67ada8948cbf70cb52cfc0532f55df1324b1857f5e08eb5617a24",
+      "line": 1,
+      "column": 21386,
+      "snippet": "(e,t,n,r={}){let i=lt(ct,r),a={i:0},o=new Map(t),s=i?.elevateNodesOnSelect&&!ft(i.zIndexMode)?at:0,c=e.length>0,l=!1;t.clear(),n.clear();for(let u of e){let e=o.get(u.id);if(i.checkEquality&&u===e?.internals.userNode)t.se",
+      "source": "node_modules/@xyflow/system/dist/esm/index.mjs",
+      "sourceLine": 1671,
+      "sourceSha256": "564b53001cc042fbeec586de724df62d218105bd350a70e206d0c6b232ed76f8",
+      "selfMs": 26.866,
+      "inclusiveMs": 36.964,
+      "sampleFirstMs": 1102.998,
+      "sampleLastMs": 1142.1449999999998,
+      "baselineEarlyInclusiveMs": 124.74499999999999
+    },
+    {
+      "meaning": "validateFamily",
+      "functionName": "y",
+      "bundle": "mutations-BhQmaZ_P.js",
+      "bundleSha256": "39c2d96a09c1d34d0eed876a5bb81023085206436e8ab932a7091b2d39adfa5e",
+      "line": 1,
+      "column": 6448,
+      "snippet": "(e){if(!e||typeof e!=`object`)throw Error(`Некорректный формат архива`);let n=e;if(typeof n.title!=`string`||typeof n.description!=`string`||typeof n.demo!=`boolean`||!Array.isArray(n.people)||n.people.length>1e4)throw Er",
+      "source": "src/domain/validation.ts",
+      "sourceLine": 56,
+      "sourceSha256": "3fbbd77f660f50dc4d5a8ed07f285cc8b8cfe226909015dc0f6e522079495189",
+      "selfMs": 25.14,
+      "inclusiveMs": 52.05400000000001,
+      "sampleFirstMs": 786.2809999999994,
+      "sampleLastMs": 863.5599999999988,
+      "baselineEarlyInclusiveMs": null
+    },
+    {
+      "meaning": "archiveCoverage",
+      "functionName": "n",
+      "bundle": "archive-summary-K-TzhHyd.js",
+      "bundleSha256": "0d8ffc65102e585fcca75a355920829f32fdb97d724ee3a2404e92c7c24ee6f6",
+      "line": 1,
+      "column": 58,
+      "snippet": "(t){let n=new Set(t.map(e=>e.id)),r=new Map,i=new Map,a=new Map,o=[],s,c,l=0;for(let l of t){let t=[...new Set(l.parents.filter(e=>n.has(e)))];r.set(l.id,t.length),a.set(l.id,1),t.length||o.push(l.id);for(let e of t){let ",
+      "source": "src/domain/archive-coverage.ts",
+      "sourceLine": 5,
+      "sourceSha256": "240432cec90314339a78b043dd75bff18443741a0f4eb205b0a1f0fb46d1cba6",
+      "selfMs": 37.954,
+      "inclusiveMs": 37.954,
+      "sampleFirstMs": 613.1759999999999,
+      "sampleLastMs": 1075.5949999999996,
+      "baselineEarlyInclusiveMs": 84.945
+    }
+  ],
+  "loaderStack": [
+    {
+      "fn": "y",
+      "file": "mutations-BhQmaZ_P.js",
+      "line": 1,
+      "column": 6448,
+      "snippet": "(e){if(!e||typeof e!=`object`)throw Error(`Некорректный формат архива`);let n=e;if(typeof n.title!=`string`||typeof n.description!=`string`||typeof n."
+    },
+    {
+      "fn": "o",
+      "file": "App-BfUZb6hQ.js",
+      "line": 2,
+      "column": 9773,
+      "snippet": "(){try{let i=await l(`/api/family?projection=overview`,{signal:e.signal,cache:`no-store`}),o=i.headers.get(`content-type`)?.includes(`application/json"
+    }
+  ],
+  "observations": [
+    {
+      "phase": "early-pan",
+      "detailsLoadingBefore": true,
+      "detailsLoadingAfter": false,
+      "p95Ms": 50,
+      "longTasks": 6,
+      "maxLongTaskMs": 214,
+      "programCreations": [
+        2,
+        2
+      ],
+      "portraitUploads": [
+        26,
+        26
+      ],
+      "mediaRequests": [
+        895,
+        895
+      ]
+    },
+    {
+      "phase": "settled-pan",
+      "detailsLoadingBefore": false,
+      "detailsLoadingAfter": false,
+      "p95Ms": 16.799999999999272,
+      "longTasks": 0,
+      "maxLongTaskMs": 0,
+      "programCreations": [
+        2,
+        2
+      ],
+      "portraitUploads": [
+        26,
+        26
+      ],
+      "mediaRequests": [
+        895,
+        895
+      ]
+    }
+  ],
+  "topSelfFrames": [
+    {
+      "functionName": "(idle)",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "selfMs": 1164.8129999999996,
+      "inclusiveMs": 1164.8129999999996
+    },
+    {
+      "functionName": "(program)",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "selfMs": 999.9250000000006,
+      "inclusiveMs": 999.9250000000006
+    },
+    {
+      "functionName": "Gc",
+      "url": "http://127.0.0.1:4194/assets/tree-export-dialog-GDH6llDZ.js",
+      "line": 14,
+      "column": 10963,
+      "selfMs": 54.150000000000006,
+      "inclusiveMs": 68.15
+    },
+    {
+      "functionName": "(garbage collector)",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "selfMs": 45.21699999999999,
+      "inclusiveMs": 45.21699999999999
+    },
+    {
+      "functionName": "jr",
+      "url": "http://127.0.0.1:4194/assets/tree-export-dialog-GDH6llDZ.js",
+      "line": 2,
+      "column": 27068,
+      "selfMs": 38.704,
+      "inclusiveMs": 38.704
+    },
+    {
+      "functionName": "n",
+      "url": "http://127.0.0.1:4194/assets/archive-summary-K-TzhHyd.js",
+      "line": 1,
+      "column": 58,
+      "selfMs": 37.954,
+      "inclusiveMs": 37.954
+    },
+    {
+      "functionName": "a",
+      "url": "http://127.0.0.1:4194/assets/dates-H3myDfrx.js",
+      "line": 1,
+      "column": 1048,
+      "selfMs": 27.688999999999997,
+      "inclusiveMs": 27.688999999999997
+    },
+    {
+      "functionName": "pt",
+      "url": "http://127.0.0.1:4194/assets/esm-Cb3lGruy.js",
+      "line": 1,
+      "column": 21386,
+      "selfMs": 26.866,
+      "inclusiveMs": 36.964
+    },
+    {
+      "functionName": "ee",
+      "url": "http://127.0.0.1:4194/assets/esm-Cb3lGruy.js",
+      "line": 1,
+      "column": 7522,
+      "selfMs": 26.865,
+      "inclusiveMs": 26.865
+    },
+    {
+      "functionName": "y",
+      "url": "http://127.0.0.1:4194/assets/mutations-BhQmaZ_P.js",
+      "line": 1,
+      "column": 6448,
+      "selfMs": 25.14,
+      "inclusiveMs": 52.05400000000001
+    },
+    {
+      "functionName": "draw",
+      "url": "http://127.0.0.1:4194/assets/gpu-scene-DcX6fxZG.js",
+      "line": 57,
+      "column": 5873,
+      "selfMs": 24.784,
+      "inclusiveMs": 55.571000000000005
+    },
+    {
+      "functionName": "e",
+      "url": "http://127.0.0.1:4194/assets/tree-export-dialog-GDH6llDZ.js",
+      "line": 2,
+      "column": 23699,
+      "selfMs": 24.348999999999997,
+      "inclusiveMs": 100.78600000000002
+    }
+  ],
+  "inference": {
+    "confirmed": "Early interval transitions from detailsLoading=true to=false. validateFamily52.054ms samples descend directly from useArchive loader; finalization runs in the profiled interval. Stable snapshots eliminate sampled archiveConnections and node-model rebuilding; one sampled displayEdges/GPU.update path remains.",
+    "canEdit": "useArchive finalization setsFamily/CanEdit/User/Preferences together. TreeCanvas displayEdges memo still depends on user and props.canEdit/busy. With stable renderFamily, one final displayEdges reconstruction is consistent with canEdit false->true and/or new user identity. CPU profile does not record memo dependency values, so canEdit exclusively is not proven.",
+    "residual": "treeRenderFamilyKey68.15ms, final validateFamily52.054ms, archiveCoverage37.954ms; buildTreeEdges142.585ms (branch107.207 nested), GPU.update40.296ms, React Flow adoptUserNodes36.964ms. Repeated hydration whole-model work absent. Six early long tasks max214ms remain.",
+    "next": "If another iteration is authorized, separate edge geometry/text templates from live editable metadata and callbacks, so canEdit/user identity can refresh only reconnectability/action bindings. Retain live permission checks, source ownership and editor availability; no deferred/stale rights. Snapshot key serialization and archiveCoverage remain independent finalization costs.",
+    "caveats": "Nested inclusive timings not additive. Baseline and fixed sampled windows differ (5834.859 versus3252.068ms) and profiles add overhead. Comparing sampled work documents attribution, not a latency improvement. No exact long-task-to-function mapping because CDP profile timestamps and page long-task clock lack recorded calibration. Native/async driver work not captured."
+  }
+}
