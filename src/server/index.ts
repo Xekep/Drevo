@@ -39,6 +39,7 @@ import { accountSelfDeletionHttp } from "./account-self-deletion-http.ts";
 import { archiveOwnerTransferHttp } from "./archive-owner-transfer-http.ts";
 import { archiveDeletionHttp } from "./archive-deletion-http.ts";
 import { cleanupDeletedArchiveDirectories } from "./archive-deletion-files.ts";
+import { sweepPlatformAiOrphans } from "./platform-ai-orphan-sweep.ts";
 import { discoveryPeopleHttp } from "./discovery-people-http.ts";
 import { accountInvitationsHttp } from "./account-invitations-http.ts";
 import { archiveRoutePool } from "./archive-route-pool.ts";
@@ -110,6 +111,23 @@ export async function startServer(
     ? setInterval(() => void cleanupDeletedArchives(), 60 * 60_000)
     : null;
   archiveCleanupTimer?.unref();
+  let aiSweepPromise: Promise<void> | null = null;
+  const sweepInactiveAiFiles = !archiveId && archive.db.kind === "postgres"
+    ? () => {
+        if (aiSweepPromise) return;
+        aiSweepPromise = sweepPlatformAiOrphans(archive.db, configuredPath)
+          .then(() => undefined)
+          .catch((error) => console.error("ai_orphan_sweep_failed", "platform", error))
+          .finally(() => { aiSweepPromise = null; });
+      }
+    : null;
+  // Filesystem pruning is intentionally outside request handling and startup's
+  // critical path. A failed pass is retried on the next hourly run.
+  sweepInactiveAiFiles?.();
+  const aiSweepTimer = sweepInactiveAiFiles
+    ? setInterval(sweepInactiveAiFiles, 60 * 60_000)
+    : null;
+  aiSweepTimer?.unref();
   await removeStarterFamily(archive);
 
   const media = mediaStore(resolve(dirname(dbPath), "uploads"));
@@ -405,6 +423,7 @@ export async function startServer(
     handle,
     close: async () => {
       if (archiveCleanupTimer) clearInterval(archiveCleanupTimer);
+      if (aiSweepTimer) clearInterval(aiSweepTimer);
       await vite?.close();
       const closed = new Promise<void>((done) => server.close(() => done()));
       server.closeIdleConnections();
@@ -420,6 +439,7 @@ export async function startServer(
       await gedcom.close();
       await portableImport.close();
       geocoding.close();
+      await aiSweepPromise;
       await archive.close();
     },
   };

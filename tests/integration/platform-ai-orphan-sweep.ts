@@ -17,6 +17,7 @@ export async function verifyPlatformAiOrphanSweep(
   const orphanId = randomUUID();
   const liveId = randomUUID();
   const youngId = randomUUID();
+  const retryId = randomUUID();
   const old = new Date(Date.now() - 25 * 60 * 60_000);
   const files = (chatId: string) => [
     join(archiveDir, "uploads", "ai-chat-files", chatId, randomUUID()),
@@ -25,6 +26,7 @@ export async function verifyPlatformAiOrphanSweep(
   const orphan = files(orphanId);
   const live = files(liveId);
   const young = files(youngId);
+  const retry = files(retryId);
   const create = async (path: string, aged: boolean) => {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     writeFileSync(path, "private AI bytes", { mode: 0o600 });
@@ -53,6 +55,10 @@ export async function verifyPlatformAiOrphanSweep(
     );
     for (const path of [...orphan, ...live]) await create(path, true);
     for (const path of young) await create(path, false);
+    for (const path of retry) await create(path, true);
+    const unexpected = join(dirname(retry[1]), "unexpected");
+    await create(unexpected, true);
+    await utimes(dirname(retry[1]), old, old);
     const errors: Array<{ archiveId: string; error: unknown }> = [];
     await sweepPlatformAiOrphans(db, databasePath, {
       onError: (id, error) => errors.push({ archiveId: id, error }),
@@ -63,7 +69,18 @@ export async function verifyPlatformAiOrphanSweep(
       "platform sweep preserves a live chat in the selected archive");
     assert.deepEqual(young.map((path) => existsSync(path)), [true, true],
       "platform sweep preserves young folders despite missing chat rows");
-    assert.equal(errors.length, 0);
+    assert.deepEqual(retry.map((path) => existsSync(path)), [false, true],
+      "an unsafe entry leaves its generated folder for a later retry");
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0]?.archiveId, archiveId);
+    rmSync(unexpected);
+    await utimes(dirname(retry[1]), old, old);
+    const retried = await sweepPlatformAiOrphans(db, databasePath, {
+      onError: (id, error) => errors.push({ archiveId: id, error }),
+    });
+    assert.equal(existsSync(retry[1]), false,
+      "a later pass removes the orphan after its filesystem error is repaired");
+    assert.equal(retried.errors, 0);
   } finally {
     await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
     await client.query("DELETE FROM ai_chats WHERE id=$1", [orphanId]);
