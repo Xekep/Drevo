@@ -19,7 +19,7 @@ test("spike: 3000 person canvas intro paints progressive edges", async ({ page }
       data.family.people[1512].spouses = ["growth-1500"];
       data.family.people[1512].birth = "1712-01-01";
       data.family.links = [{ id: "spike-godparent", from: "growth-1500",
-        to: "growth-1501", type: "godparent" }];
+        to: "growth-1513", type: "godparent" }];
     }
     data.family.photos = [];
     data.partial = false;
@@ -112,13 +112,14 @@ test("spike: 3000 person canvas intro paints progressive edges", async ({ page }
     .toBeGreaterThanOrEqual(2500);
   if (process.env.DREVO_SPIKE_RELATIONS) {
     expect(Math.max(...samples.map((sample) => sample.sceneEdges))).toBeGreaterThan(2750);
-    console.log("RELATION_DOM", JSON.stringify(await root.evaluate((element) => ({
+    await expect(page.locator(".tree-extra-toggle")).toHaveAttribute("aria-pressed", "false");
+    await page.locator(".tree-extra-toggle").click();
+    await expect(page.locator(".tree-extra-toggle")).toHaveAttribute("aria-pressed", "true");
+    console.log("RELATION_AFTER_TOGGLE", JSON.stringify(await root.evaluate((element) => ({
       viewport: element.querySelector(".react-flow__viewport")?.getAttribute("style"),
-      edges: [...element.querySelectorAll(".react-flow__edge")].map((edge) => ({
-        id: edge.getAttribute("data-id"), className: edge.getAttribute("class") })).slice(0, 15),
-      nodes: [...element.querySelectorAll(".react-flow__node")].map((node) => ({
-        id: node.getAttribute("data-id"), hidden: node.getAttribute("class") })).slice(0, 15),
+      extraEdges: element.querySelectorAll(".relationship-godparent").length,
       labels: element.querySelectorAll(".tree-grow-edge-label").length,
+      gpuEdges: element.querySelector(".tree-gpu-scene")?.getAttribute("data-scene-edges"),
     }))));
     await expect(page.locator(".relationship-godparent")).toHaveCount(1);
     await expect(page.locator(".tree-grow-edge-label")).not.toHaveCount(0);
