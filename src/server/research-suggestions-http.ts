@@ -56,27 +56,36 @@ export function researchSuggestionsHttp({
           person,
         ]),
       );
-      return json(res, 200, {
-        suggestions: (await suggestions.list(actor)).map((suggestion) => ({
-          ...suggestion,
-          personName:
-            suggestion.kind === "person_create"
-              ? fullName(suggestion.payload.person)
-              : people.has(suggestion.personId)
-                ? fullName(people.get(suggestion.personId)!)
+      const listed = (await suggestions.list(actor)).map((suggestion) => ({
+        ...suggestion,
+        personName:
+          suggestion.kind === "person_create"
+            ? fullName(suggestion.payload.person)
+            : people.has(suggestion.personId)
+              ? fullName(people.get(suggestion.personId)!)
+              : "Удалённая карточка",
+        ...(suggestion.kind === "relation"
+          ? {
+              fromName: people.has(suggestion.payload.fromPersonId)
+                ? fullName(people.get(suggestion.payload.fromPersonId)!)
                 : "Удалённая карточка",
-          ...(suggestion.kind === "relation"
-            ? {
-                fromName: people.has(suggestion.payload.fromPersonId)
-                  ? fullName(people.get(suggestion.payload.fromPersonId)!)
-                  : "Удалённая карточка",
-                toName: people.has(suggestion.payload.toPersonId)
-                  ? fullName(people.get(suggestion.payload.toPersonId)!)
-                  : "Удалённая карточка",
-              }
-            : {}),
-        })),
-      });
+              toName: people.has(suggestion.payload.toPersonId)
+                ? fullName(people.get(suggestion.payload.toPersonId)!)
+                : "Удалённая карточка",
+            }
+          : {}),
+      }));
+      // The list can wait on storage after the first tier check. Never
+      // deliver stored AI proposals after the account or owner is downgraded.
+      const current = await auth.currentUser(req);
+      if (
+        !current ||
+        current.id !== actor.id ||
+        !(await auth.canEdit(req)) ||
+        !(await accountAiAccess(archive.db, actor.id, auth.local))
+      )
+        return json(res, 403, { error: "Доступ к предложениям изменился" });
+      return json(res, 200, { suggestions: listed });
     }
 
     if (req.method !== "POST")
