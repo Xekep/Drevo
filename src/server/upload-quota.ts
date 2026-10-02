@@ -76,10 +76,9 @@ export function uploadQuota(
               coalesce((SELECT sum(file_size) FROM documents),0)+coalesce((SELECT sum((f->>'size')::bigint) FROM person_comments c,jsonb_array_elements(c.attachments) f),0) AS bytes`,
           )
           .get())!;
-        const currentImages =
-          typeof images === "function" ? await images() : images;
-        // Count this archive's files before the global lock, then serialize
-        // the physical free-space check across archives on the same volume.
+        // The file scan and the free-space check must observe the state after
+        // acquiring the shared lock. A scan taken while waiting for another
+        // process could miss originals that it has just finished uploading.
         if (db.kind === "postgres") {
           await db
             .prepare("", "SELECT pg_advisory_xact_lock(?)")
@@ -91,6 +90,8 @@ export function uploadQuota(
             )
             .run(time);
         }
+        const currentImages =
+          typeof images === "function" ? await images() : images;
         const currentFreeBytes =
           typeof freeBytes === "function" ? await freeBytes() : freeBytes;
         const platformPending =

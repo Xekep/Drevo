@@ -78,7 +78,7 @@ import { uploadQuota, UploadQuotaError } from "../../src/server/upload-quota.ts"
 import { archiveChanges } from "../../src/domain/changes.ts";
 import { sourceCatalogStore } from "../../src/server/source-catalog-store.ts";
 import { sourceCitation } from "../../src/shared/source-catalog.ts";
-import { reservePlatformDisk } from "../../src/server/platform-disk-reservation.ts";
+import { PLATFORM_DISK_LOCK, reservePlatformDisk } from "../../src/server/platform-disk-reservation.ts";
 import { registerMediaUpload } from "../../src/server/media-access.ts";
 import type { Family } from "../../src/domain/types.ts";
 import { planAdditions } from "../../src/domain/additions-import.ts";
@@ -540,6 +540,34 @@ try {
     await (await (reservations[0].status === "rejected" ?
       firstUpload.acquire("first-uploader", 70, 100) :
       otherUpload.acquire("other-uploader", 70, 100)))();
+
+    // The archive's physical-file scan must occur after the shared lock is
+    // granted. A second process can finish writing originals while this
+    // reservation waits for that lock.
+    let imageFiles = 0;
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock($1)", [PLATFORM_DISK_LOCK]);
+    const waitingUpload = uploadQuota(live.db, {
+      ...diskOptions, files: 20_000,
+    }).acquire("late-original-uploader", 1, 100, async () => ({
+      files: imageFiles, bytes: 0,
+    }));
+    try {
+      let waiting = false;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        waiting = Number((await client.query(`SELECT count(*)::int AS n FROM pg_locks
+          WHERE locktype='advisory' AND NOT granted`)).rows[0].n) > 0;
+        if (waiting) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.equal(waiting, true, "the upload reaches the shared lock");
+      imageFiles = 20_000;
+    } finally {
+      await client.query("COMMIT");
+    }
+    await assert.rejects(waitingUpload,
+      (error) => error instanceof UploadQuotaError && error.status === 507,
+      "an original added while waiting must count toward the technical file limit");
 
     let uploadClock = Date.now();
     const longUpload = uploadQuota(live.db, {
