@@ -309,8 +309,9 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
   );
   if (ids.has(undefined))
     throw new Error("У человека отсутствует идентификатор GEDCOM");
-  const notes = (n: Node, exclude?: string) =>
-    n.children
+  const notes = (n: Node, exclude?: string) => {
+    let skippedFallback = false;
+    return n.children
       .filter((c) => c.tag === "NOTE" || c.tag === "SNOTE")
       .map((s) => {
         if (!s.pointer) return s.value;
@@ -319,8 +320,16 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           throw new Error(`Не найдена заметка ${s.value}`);
         return record.value;
       })
-      .filter((text) => text && text !== exclude)
+      .filter((text) => {
+        if (!text) return false;
+        if (exclude && text === exclude && !skippedFallback) {
+          skippedFallback = true;
+          return false;
+        }
+        return true;
+      })
       .join("\n\n");
+  };
   const citationObjects: Array<{ source: Source; object: Node; page?: number }> = [];
   const citationObjectBySource = new Map<Source, (typeof citationObjects)[number]>();
   const usedRepositories = new Set<string>();
