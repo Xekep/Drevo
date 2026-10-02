@@ -523,7 +523,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     [focus, spotlightNodes],
   );
   const progressiveIntroRequested = growing && renderVisible.size >= 2500 &&
-    distantZoom && !activeFanAnchor && mode !== "timeline";
+    distantZoom && !extraVisible && !activeFanAnchor && mode !== "timeline";
   const growthDelays = useMemo(
     () => treeGrowthDelays(family.people, progressiveIntroRequested ? 2200 : 0),
     [family.people, progressiveIntroRequested],
@@ -1443,6 +1443,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               className="tree-extra-toggle"
               aria-label="Доп. связи"
               aria-pressed={extraVisible}
+              disabled={growthLocked || layoutBusy}
               onClick={() => setExtraVisible((v) => !v)}
               title="Крёстные, усыновление, опека и другие дополнительные связи"
             >

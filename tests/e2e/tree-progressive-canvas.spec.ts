@@ -161,6 +161,8 @@ test("additional relation labels return after the large intro", async ({ page },
   await routeLargeFamily(page, true);
   await page.goto("/tree");
   const root = page.locator(".tree-canvas");
+  await expect(root).toHaveClass(/is-grow/, { timeout: 15_000 });
+  await expect(page.locator(".tree-extra-toggle")).toBeDisabled();
   await expect(root).toHaveAttribute("data-renderer", "webgl2", { timeout: 30_000 });
   await expect(page.locator(".tree-extra-toggle")).toHaveAttribute("aria-pressed", "false");
   await page.locator(".tree-extra-toggle").click();
