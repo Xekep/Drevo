@@ -1006,6 +1006,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   const overviewAvailable = nodes.length >= 600 && !growing && !layoutSettling;
   const distantScene = overviewAvailable && distantZoom;
+  // Spike: render a large, distant intro on canvas instead of mounting SVG
+  // wrappers for every visible edge while the growth animation runs.
+  const progressiveCanvasIntro = growing && nodes.length >= 2500 && distantZoom &&
+    !activeFanAnchor && mode !== "timeline";
   const gpuScope = typeof window === "undefined" ? "server" :
     archiveContextAt(window.location.pathname)?.id || window.location.pathname;
   const [gpuReadyScene, setGpuReadyScene] = useState<{ geometry: typeof geometry; scope: string } | null>(null);
@@ -1105,15 +1109,15 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const flowNodes = useMemo(() => gpuActive
     ? renderedNodes.map((node) => node.type === "household" ? ({ ...node, hidden: true }) : ({ ...node,
       hidden: !gpuOverlayIds.has(node.id), className: `${node.className || ""} tree-gpu-node-overlay` }))
-    : distantScene
+    : distantScene || progressiveCanvasIntro
     ? renderedNodes.map((node) => ({ ...node, hidden: true }))
-    : renderedNodes, [renderedNodes, distantScene, gpuActive, gpuOverlayIds]);
-  const flowEdges = useMemo(() => gpuActive ? gpuOverlayEdges : distantScene
+    : renderedNodes, [renderedNodes, distantScene, progressiveCanvasIntro, gpuActive, gpuOverlayIds]);
+  const flowEdges = useMemo(() => gpuActive ? gpuOverlayEdges : distantScene || progressiveCanvasIntro
     // Hidden EdgeWrappers still subscribe to every camera update and resolve
     // their handles. Canvas owns these routes; React Flow only needs the nodes
     // (with dimensions intact) for fitView and person camera targets.
     ? []
-    : renderedEdges, [renderedEdges, distantScene, gpuActive, gpuOverlayEdges]);
+    : renderedEdges, [renderedEdges, distantScene, progressiveCanvasIntro, gpuActive, gpuOverlayEdges]);
   const overviewHouseholds = useMemo(() => displayNodes.filter(
     (node): node is HouseholdNodeType => node.type === "household",
   ), [displayNodes]);
@@ -1216,7 +1220,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       const portraitsReady = Array.from(portraits).every((image) => image.complete);
       // React Flow measures nodes before rendering their edges. Give both a
       // shared animation start, or a late edge may follow its descendant card.
-      const mounted =
+      const mounted = progressiveCanvasIntro
+        ? !!element.querySelector(".tree-distant-portraits")
+        :
         displayNodes.length <= 2000
           ? mountedNodes >= displayNodes.length &&
             mountedEdges >= displayEdges.length
@@ -1241,6 +1247,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     growthStarted,
     displayNodes.length,
     displayEdges.length,
+    progressiveCanvasIntro,
   ]);
   const connect = useCallback(
     (c: FlowConnection) => {
@@ -1755,7 +1762,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             nodes={nodes}
             households={overviewHouseholds}
             edges={displayEdges}
-            fullScene={overviewAvailable}
+            fullScene={overviewAvailable || progressiveCanvasIntro}
             width={canvasWidth}
             height={canvasHeight}
             growing={growing}

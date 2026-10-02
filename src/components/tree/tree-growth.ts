@@ -14,7 +14,8 @@ export const TREE_LAYOUT_TRANSITION_MS = 440;
 
 /** Large archives finish their introduction sooner, including cards and labels. */
 export function treeGrowthBudget(personCount: number) {
-  return Math.max(600, 4_000 * Math.sqrt(25 / Math.max(25, personCount)));
+  return Math.max(personCount >= 2500 ? 2200 : 600,
+    4_000 * Math.sqrt(25 / Math.max(25, personCount)));
 }
 
 type GrowthStyle = CSSProperties & {
