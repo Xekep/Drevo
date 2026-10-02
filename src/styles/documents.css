@@ -283,6 +283,8 @@
   text-align: left;
   font: inherit;
   cursor: pointer;
+  user-select: text;
+  -webkit-user-select: text;
 }
 .pdf-book-comments-list article small {
   color: #94a196;
@@ -292,6 +294,7 @@
   padding-right: 74px;
 }
 .pdf-book-comments-list article span {
+  cursor: text;
   overflow-wrap: anywhere;
   font-size: 12px;
   line-height: 1.5;

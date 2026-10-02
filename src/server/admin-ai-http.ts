@@ -96,6 +96,12 @@ export function adminAiHttp({
     const adminId = (await auth.currentUser(req))!.id;
     if (!(await accountAiAccess(db, adminId, auth.local)))
       return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
+    const stillAdmin = async () => {
+      const current = await auth.currentUser(req);
+      return current?.id === adminId && current.approved === true &&
+        current.role === "admin" &&
+        (await accountAiAccess(db, adminId, auth.local));
+    };
 
     if (path === "/api/admin/ai" && req.method === "GET") {
       const status = await statusValue(req, adminId);
@@ -153,8 +159,8 @@ export function adminAiHttp({
           return json(res, 400, { error: "Укажите корректный Folder ID" });
         if (!apiKey)
           return json(res, 400, { error: "Сначала укажите API-ключ" });
-        if (!(await accountAiAccess(db, adminId, auth.local)))
-          return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
+        if (!(await stillAdmin()))
+          return json(res, 403, { error: "Доступ отозван" });
         const models = await fetchAiStudioModels({
           baseUrl: runtime.baseUrl,
           apiKey,
@@ -163,8 +169,8 @@ export function adminAiHttp({
         });
         // Model discovery may finish after the account or archive owner is
         // downgraded. Do not deliver the completed list in that case.
-        if (!(await accountAiAccess(db, adminId, auth.local)))
-          return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
+        if (!(await stillAdmin()))
+          return json(res, 403, { error: "Доступ отозван" });
         return json(res, 200, { models });
       } catch (error) {
         return json(res, error instanceof RangeError ? 413 : 502, {
@@ -189,8 +195,8 @@ export function adminAiHttp({
           error:
             "AI Studio не настроена: задайте API-ключ и Folder ID в админке или в окружении сервера",
         });
-      if (!(await accountAiAccess(db, adminId, auth.local)))
-        return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
+      if (!(await stillAdmin()))
+        return json(res, 403, { error: "Доступ отозван" });
       try {
         const client = yandexResponsesClient(fetcher);
         const conversationId = await client.createConversation(runtime);
@@ -198,8 +204,8 @@ export function adminAiHttp({
         let compactionAvailable = false;
         try {
           // Creating the remote conversation can outlive a tier downgrade.
-          if (!(await accountAiAccess(db, adminId, auth.local)))
-            return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
+          if (!(await stillAdmin()))
+            return json(res, 403, { error: "Доступ отозван" });
           const result = await client.respond({
             runtime,
             conversationId,
@@ -220,13 +226,15 @@ export function adminAiHttp({
           });
           answer = result.text;
           compactionAvailable = result.compactionAvailable;
-          if (!(await accountAiAccess(db, adminId, auth.local)))
-            return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
+          if (!(await stillAdmin()))
+            return json(res, 403, { error: "Доступ отозван" });
         } finally {
           void client
             .deleteConversation(runtime, conversationId)
             .catch(() => {});
         }
+        if (!(await stillAdmin()))
+          return json(res, 403, { error: "Доступ отозван" });
         return json(res, 200, {
           ok: true,
           model: runtime.model,
