@@ -44,6 +44,26 @@ export async function createAuth(
     "DELETE FROM auth_sessions WHERE user_id=? AND token_hash<>?",
     "DELETE FROM account_sessions WHERE user_id=? AND token_hash<>?",
   );
+  const revokeOthersWithCurrent =
+    db.kind === "postgres"
+      ? db.prepare(
+          "",
+          // The caller check and deletion share one statement snapshot. A
+          // completed revoke between sessionFor() and this statement fails
+          // closed, without cross-locking two simultaneous bulk revocations.
+          `WITH current_session AS MATERIALIZED (
+             SELECT 1 FROM account_sessions
+              WHERE user_id=? AND token_hash=? AND expires_at>?
+           ), revoked AS (
+             DELETE FROM account_sessions
+              WHERE user_id=? AND token_hash<>?
+                AND EXISTS (SELECT 1 FROM current_session)
+              RETURNING 1
+           )
+           SELECT (SELECT count(*) FROM current_session) AS active,
+                  (SELECT count(*) FROM revoked) AS revoked`,
+        )
+      : null;
   const platformAdmin =
     db.kind === "postgres"
       ? db.prepare(
@@ -344,6 +364,18 @@ export async function createAuth(
         (db.kind !== "postgres" && !(await users.get(session.userId)))
       )
         return null;
+      if (revokeOthersWithCurrent) {
+        const result = await revokeOthersWithCurrent.get(
+          session.userId,
+          session.tokenHash,
+          Date.now(),
+          session.userId,
+          session.tokenHash,
+        );
+        return Number(result?.active) === 1
+          ? Number(result?.revoked || 0)
+          : null;
+      }
       return Number(
         (await revokeOthers.run(session.userId, session.tokenHash)).changes,
       );
