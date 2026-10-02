@@ -2,6 +2,7 @@ import { analyzeArchiveWarnings } from "./archive-quality.ts";
 import { fullName } from "./dates.ts";
 import { familyNeighbors } from "./family-neighborhood.ts";
 import { lineageReport } from "./lineage-report.ts";
+import { repositorySummary } from "./person-sources.ts";
 import type { Family, Person, PersonEvent, Source } from "./types.ts";
 
 export type ArchiveReportKind =
@@ -19,7 +20,7 @@ const life = (person: Person) =>
     .filter(Boolean)
     .join(" — ");
 const sourceLine = (source: Source) =>
-  [source.title, source.reference, source.url, source.note]
+  [source.title, source.reference, repositorySummary(source), source.url, source.note]
     .filter(Boolean)
     .join(" · ");
 const eventTitle = (event: PersonEvent) =>

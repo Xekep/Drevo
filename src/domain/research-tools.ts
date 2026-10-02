@@ -9,6 +9,7 @@ import {
 import { analyzeKinship } from "./kinship-analysis.ts";
 import { findPossibleDuplicates } from "./duplicate-analysis.ts";
 import { archiveConnections } from "./connections.ts";
+import { repositorySummary } from "./person-sources.ts";
 import type { Family, Person } from "./types.ts";
 
 const graphRelationLabels: Record<string, string> = {
@@ -1676,7 +1677,7 @@ export function executeResearchTool(
           });
       for (const source of person.sources)
         if (
-          contains([source.title, source.type, source.reference, source.note])
+          contains([source.title, source.type, source.reference, repositorySummary(source), source.note])
         )
           matches.push({
             kind: "source",

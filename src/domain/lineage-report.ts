@@ -1,5 +1,6 @@
 import { fullName } from "./dates.ts";
 import { familyNeighbors } from "./family-neighborhood.ts";
+import { repositorySummary } from "./person-sources.ts";
 import type { Family } from "./types.ts";
 
 export type LineageDirection = "ancestors" | "descendants";
@@ -60,7 +61,7 @@ export function lineageReport(
       if (parents.length) lines.push(`   Родители: ${parents.join(", ")}`);
       for (const source of person.sources)
         lines.push(
-          `   Источник: ${[source.title, source.reference, source.url]
+          `   Источник: ${[source.title, source.reference, repositorySummary(source), source.url]
             .filter(Boolean)
             .join(" · ")}`,
         );

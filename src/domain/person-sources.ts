@@ -4,11 +4,25 @@ export type PersonSourceEntry = Source & {
   origin?: string;
 };
 
+export function repositorySummary(source: Source): string {
+  const repository = source.repository;
+  if (!repository) return "";
+  return [
+    `Хранилище: ${repository.name}`,
+    repository.callNumber && `Шифр: ${repository.callNumber}`,
+    repository.website && `Сайт: ${repository.website}`,
+    repository.note && `Примечание хранилища: ${repository.note}`,
+    repository.linkNote && `Примечание о хранении: ${repository.linkNote}`,
+  ].filter(Boolean).join(" · ");
+}
+
 function normalized(value?: string) {
   return (value || "").trim().toLocaleLowerCase("ru-RU").replace(/\s+/g, " ");
 }
 
 function sourceKey(source: Source) {
+  if (source.repository)
+    return `repository:${JSON.stringify(source.repository)}|${normalized(source.title)}|${normalized(source.reference)}`;
   if (source.documentId) return `document:${source.documentId}:${source.documentPage || 1}`;
   const url = normalized(source.url);
   if (url) return `url:${url}`;

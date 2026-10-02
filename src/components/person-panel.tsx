@@ -27,7 +27,7 @@ import {
   type PersonValueClaim,
   CLAIM_CONFIDENCE_LABELS,
 } from "../domain";
-import { collectPersonSources } from "../domain/person-sources.ts";
+import { collectPersonSources, repositorySummary } from "../domain/person-sources.ts";
 import { PortraitPlaceholder } from "./portrait-placeholder";
 import { PersonAwards } from "./person-awards";
 import { PersonEvents } from "./person-events";
@@ -481,9 +481,9 @@ export function PersonPanel({
                   </div>
                   <h3>{s.title}</h3>
                   {s.reference && <p>{s.reference}</p>}
-                  {(s.origin || s.note) && (
+                  {(s.origin || s.note || s.repository) && (
                     <small>
-                      {[s.origin, s.note].filter(Boolean).join(" · ")}
+                      {[s.origin, repositorySummary(s), s.note].filter(Boolean).join(" · ")}
                     </small>
                   )}
                   {safeUrl(s.url) ? (

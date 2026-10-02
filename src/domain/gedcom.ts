@@ -370,21 +370,37 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           "Дополнительные сведения цитаты GEDCOM сохранены в примечании источника, а не в отдельных полях.",
         );
       const repositoryNames: string[] = [], callNumbers: string[] = [], repositoryDetails: string[] = [];
-      for (const link of record ? children(record, "REPO") : []) {
+      const repositoryLinks = record ? children(record, "REPO") : [];
+      let structuredRepository: Source["repository"];
+      for (const link of repositoryLinks) {
         const repository = link.pointer ? records.get(link.value) : undefined;
+        const names = repository ? children(repository, "NAME").filter((name) => name.value) : [];
+        const calls = children(link, "CALN").filter((call) => call.value);
+        const websites = repository ? children(repository, "WWW").filter((site) => site.value) : [];
+        const repositoryNote = repository?.tag === "REPO" ? notes(repository) : "";
+        const linkNote = notes(link);
+        if (repositoryLinks.length === 1 && repository?.tag === "REPO" &&
+          names.length === 1 && calls.length <= 1 && websites.length <= 1) {
+          usedRepositories.add(link.value);
+          structuredRepository = {
+            name: names[0].value,
+            callNumber: calls[0]?.value || "",
+            website: websites[0]?.value || "",
+            note: repositoryNote,
+            linkNote,
+          };
+          continue;
+        }
         if (repository?.tag === "REPO") {
           usedRepositories.add(link.value);
-          const name = value(repository, "NAME");
-          if (name) repositoryNames.push(`Хранилище: ${name}`);
-          for (const website of children(repository, "WWW"))
+          for (const name of names) repositoryNames.push(`Хранилище: ${name.value}`);
+          for (const website of websites)
             if (website.value) repositoryDetails.push(`Сайт хранилища: ${website.value}`);
-          const repositoryNote = notes(repository);
           if (repositoryNote) repositoryDetails.push(`Примечание хранилища: ${repositoryNote}`);
         } else if (link.pointer)
           warnings.add(`Хранилище ${link.value} для источника GEDCOM не найдено.`);
-        for (const call of children(link, "CALN"))
+        for (const call of calls)
           if (call.value) callNumbers.push(call.value);
-        const linkNote = notes(link);
         if (linkNote) repositoryDetails.push(`Примечание о хранении: ${linkNote}`);
       }
       const page = value(s, "PAGE");
@@ -395,7 +411,9 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           ? value(record, "TITL") || value(record, "ABBR") || "Источник"
           : s.value,
         type: value(s, "_TYPE") || (record ? value(record, "_TYPE") : ""),
-        reference: page || callNumbers[0] || "",
+        // PAGE locates this citation; CALN locates the source at its repository.
+        reference: page || (structuredRepository ? "" : callNumbers[0] || ""),
+        ...(structuredRepository ? { repository: structuredRepository } : {}),
         note:
           [
             record && notes(record, url ? `URL: ${url}` : undefined),
@@ -1618,6 +1636,18 @@ export function exportGedcom(
       emit(1, "NOTE", `URL: ${s.url}`);
     }
     if (s.note) emit(1, "NOTE", s.note);
+    if (s.repository) {
+      emit(1, "REPO", `@R${i + 1}@`, true);
+      if (s.repository.callNumber) emit(2, "CALN", s.repository.callNumber);
+      if (s.repository.linkNote) emit(2, "NOTE", s.repository.linkNote);
+    }
+  });
+  sourceRecords.forEach((s, i) => {
+    if (!s.repository) return;
+    emit(0, `@R${i + 1}@ REPO`);
+    emit(1, "NAME", s.repository.name);
+    if (s.repository.website) emit(1, "WWW", s.repository.website);
+    if (s.repository.note) emit(1, "NOTE", s.repository.note);
   });
   media.forEach((item, i) => {
     emit(0, `@M${i + 1}@ OBJE`);

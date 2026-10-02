@@ -1,5 +1,6 @@
 import type { PersonEvent } from "./types.ts";
 import { validDate, dateBound, safeUrl } from "./dates.ts";
+import { validSourceRepository } from "./source-repository.ts";
 export const EVENT_NAMES: Record<PersonEvent["type"], string> = {
   residence: "Проживание",
   move: "Переезд",
@@ -76,6 +77,7 @@ export function validateEvents(events: unknown): void {
           !s ||
           (s.catalogId !== undefined && (typeof s.catalogId !== "string" ||
             !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(s.catalogId))) ||
+          !validSourceRepository(s) ||
           ![s.title, s.type, s.reference].every(
             (v) => typeof v === "string" && v.length <= 5000,
           ) ||
