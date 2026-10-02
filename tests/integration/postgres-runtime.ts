@@ -1826,7 +1826,7 @@ try {
           return Response.json({ id: "tool-tier-conversation" });
         if (String(url).endsWith("/responses"))
           return Response.json({ id: "tool-tier-response", status: "completed", output: [
-            { type: "function_call", call_id: "resources", name: "research_resources",
+            { type: "function_call", call_id: "resources", name: "find_research_resources",
               arguments: JSON.stringify({ query: "семейная история" }) },
             { type: "function_call", call_id: "pdf", name: "create_pdf",
               arguments: JSON.stringify({ title: "Семейный отчёт", content: "# Семейный отчёт\nТест" }) },
@@ -1846,7 +1846,9 @@ try {
         method: "POST", headers: ownerHeaders,
         body: JSON.stringify({ message: "Создай PDF отчёт о семье" }),
       });
-      await Promise.race([toolCatalogStarted,
+      await Promise.race([toolCatalogStarted, runningTools.then(async (response) => {
+        throw new Error(`AI tools stopped before the catalogue: ${response.status} ${await response.text()}`);
+      }),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("First AI tool did not start")), 15_000))]);
       await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
       releaseToolCatalog();
