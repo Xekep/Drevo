@@ -1154,6 +1154,14 @@ export function createResearchRunner({
         let result: unknown,
           toolArgs: unknown = {};
         let accessCheckFailed = false;
+        const assertAiAccessBeforeSave = async () => {
+          try {
+            await assertAiAccess();
+          } catch (error) {
+            accessCheckFailed = true;
+            throw error;
+          }
+        };
         try {
           toolArgs = JSON.parse(call.function.arguments || "{}");
           if (!allowedToolNames.has(call.function.name))
@@ -1284,6 +1292,8 @@ export function createResearchRunner({
             });
             const links: Array<{ name: string; url: string }> = [];
             for (const file of calculation.files) {
+              // Provider cleanup can finish after the account is downgraded.
+              await assertAiAccessBeforeSave();
               const saved = await generatedFiles.save({
                 ...file,
                 ownerId: user.id,
@@ -1319,12 +1329,7 @@ export function createResearchRunner({
                 graphInPdfRequested ? archiveGraph(family) : undefined,
               ),
               name = researchPdfFilename(title);
-            try {
-              await assertAiAccess();
-            } catch (error) {
-              accessCheckFailed = true;
-              throw error;
-            }
+            await assertAiAccessBeforeSave();
             const saved = await generatedFiles.save({
               ownerId: user.id,
               chatId,
