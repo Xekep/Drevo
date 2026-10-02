@@ -168,3 +168,20 @@ test("additional relation labels return after the large intro", async ({ page },
   await expect(page.locator(".relationship-godparent")).toHaveCount(1);
   await expect(page.locator(".tree-grow-edge-label")).not.toHaveCount(0);
 });
+
+test("small tree keeps its branch transitions after the intro", async ({ page }) => {
+  await page.goto("/tree");
+  const root = page.locator(".tree-canvas");
+  await expect(root).not.toHaveClass(/is-grow/, { timeout: 5_000 });
+  await expect(root).not.toHaveAttribute("data-renderer", "webgl2");
+  const parent = page.getByTestId("rf__node-e2e-child");
+  const descendant = page.getByTestId("rf__node-e2e-grandchild");
+  await expect(descendant).toBeVisible();
+  for (let repeat = 0; repeat < 2; repeat++) {
+    await parent.locator(".flow-collapse").click();
+    await expect(descendant).toHaveCount(0);
+    await parent.locator(".flow-collapse").click();
+    await expect(descendant).toBeVisible();
+    await expect(root).not.toHaveAttribute("data-renderer", "webgl2");
+  }
+});

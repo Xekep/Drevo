@@ -522,7 +522,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         : focus,
     [focus, spotlightNodes],
   );
-  const progressiveIntroRequested = growing && family.people.length >= 2500 &&
+  const progressiveIntroRequested = growing && renderVisible.size >= 2500 &&
     distantZoom && !activeFanAnchor && mode !== "timeline";
   const growthDelays = useMemo(
     () => treeGrowthDelays(family.people, progressiveIntroRequested ? 2200 : 0),
