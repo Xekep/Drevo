@@ -104,6 +104,7 @@ export default function App() {
     user?.role === "admin" ? user.id : null,
     archiveContextAt(window.location.pathname)?.id || "",
     archive.local,
+    Boolean(family) && !archive.loadingDetails,
   );
   const save = useCallback<typeof archive.save>(
     (data) => {

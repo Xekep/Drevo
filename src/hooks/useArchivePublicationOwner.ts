@@ -3,14 +3,19 @@ import { archiveFetch } from "../data/archive-fetch.ts";
 
 export type PublicationOwnership = "checking" | "owner" | "other" | "unavailable";
 
-export function useArchivePublicationOwner(userId: string | null, archiveId: string, local: boolean): PublicationOwnership {
-  const key = `${userId || ""}\0${archiveId}\0${local}`;
+export function useArchivePublicationOwner(
+  userId: string | null,
+  archiveId: string,
+  local: boolean,
+  ready: boolean,
+): PublicationOwnership {
+  const key = `${userId || ""}\0${archiveId}\0${local}\0${ready}`;
   const [result, setResult] = useState<{ key: string; status: PublicationOwnership }>({
     key: "", status: "checking",
   });
 
   useEffect(() => {
-    if (!userId || local) return;
+    if (!userId || !ready || local) return;
     const controller = new AbortController();
     void archiveFetch("/api/account/archives", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
@@ -28,9 +33,10 @@ export function useArchivePublicationOwner(userId: string | null, archiveId: str
         if (!controller.signal.aborted) setResult({ key, status: "unavailable" });
       });
     return () => controller.abort();
-  }, [userId, archiveId, local, key]);
+  }, [userId, archiveId, local, ready, key]);
 
   if (!userId) return "other";
+  if (!ready) return "checking";
   if (local) return "owner";
   return result.key === key ? result.status : "checking";
 }

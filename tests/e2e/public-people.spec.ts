@@ -334,3 +334,14 @@ test("archive owner retains publication controls in a multi-archive account view
   await page.goto("/tree");
   await expect(page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-privacy")).toBeVisible();
 });
+
+test("local archive never probes account ownership while the overview is loading", async ({ page }) => {
+  let directoryCalls = 0;
+  await page.route((url) => url.pathname === "/api/account/archives", (route) => {
+    directoryCalls += 1;
+    return route.fulfill({ status: 401, json: { error: "Аккаунт не найден" } });
+  });
+  await page.goto("/tree");
+  await expect(page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-privacy")).toBeVisible();
+  expect(directoryCalls).toBe(0);
+});
