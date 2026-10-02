@@ -44,6 +44,7 @@ export function FamilyUnionsPanel({
 }) {
   const [draft, setDraft] = useState<FamilyUnion | null>(null);
   const [error, setError] = useState("");
+  const [sourcesReset, setSourcesReset] = useState(false);
   const unions = (family.unions || []).filter((union) =>
     participants.every((id) => union.participants.includes(id)),
   );
@@ -57,6 +58,10 @@ export function FamilyUnionsPanel({
       people.every((person) => person?.createdBy === user.id));
   const mayEdit = (union: FamilyUnion) =>
     mayCreate && (user?.role === "admin" || union.createdBy === user?.id);
+  const original = (family.unions || []).find((union) => union.id === draft?.id);
+  const saveIdentityFirst = !!original && !!draft && original.type !== draft.type &&
+    [original.sources, original.formation?.sources, original.ending?.sources,
+      original.divorce?.sources, original.ongoing?.sources].some((sources) => sources?.length);
   const patch = (value: Partial<FamilyUnion>) =>
     setDraft((old) => old && { ...old, ...value });
   const milestone = (
@@ -90,6 +95,7 @@ export function FamilyUnionsPanel({
       if (!remove) next.push(draft);
       await save({ ...family, unions: next });
       setDraft(null);
+      setSourcesReset(false);
       onSaved();
     } catch (cause) {
       setError((cause as Error).message);
@@ -129,7 +135,7 @@ export function FamilyUnionsPanel({
             <button
               type="button"
               disabled={busy}
-              onClick={() => setDraft(structuredClone(union))}
+              onClick={() => { setSourcesReset(false); setDraft(structuredClone(union)); }}
             >
               Изменить союз
             </button>
@@ -141,7 +147,7 @@ export function FamilyUnionsPanel({
         <button
           type="button"
           disabled={busy}
-          onClick={() => setDraft(empty(participants))}
+          onClick={() => { setSourcesReset(false); setDraft(empty(participants)); }}
         >
           Добавить союз
         </button>
@@ -162,15 +168,24 @@ export function FamilyUnionsPanel({
             Тип союза
             <select
               value={draft.type}
-              onChange={(event) =>
+              onChange={(event) => {
+                const type = event.target.value as FamilyUnion["type"];
+                if (type === draft.type) return;
+                const hadSources = [draft.sources, draft.formation?.sources,
+                  draft.ending?.sources, draft.divorce?.sources,
+                  draft.ongoing?.sources].some((sources) => sources?.length);
+                setSourcesReset((previous) => previous || hadSources);
                 patch({
-                  type: event.target.value as FamilyUnion["type"],
-                  divorce:
-                    event.target.value === "marriage"
-                      ? draft.divorce
-                      : undefined,
-                })
-              }
+                  type,
+                  sources: undefined,
+                  formation: draft.formation && { ...draft.formation, sources: undefined },
+                  ending: draft.ending && { ...draft.ending, sources: undefined },
+                  divorce: type === "marriage" && draft.divorce
+                    ? { ...draft.divorce, sources: undefined }
+                    : undefined,
+                  ongoing: draft.ongoing && { ...draft.ongoing, sources: undefined },
+                });
+              }}
             >
               {Object.entries(names).map(([value, label]) => (
                 <option key={value} value={value}>
@@ -179,6 +194,12 @@ export function FamilyUnionsPanel({
               ))}
             </select>
           </label>
+          {sourcesReset && <p role="status">
+            Прежние источники союза и его этапов сняты при смене типа.
+            {saveIdentityFirst
+              ? " Сохраните новый тип, затем при необходимости добавьте источники заново."
+              : " При необходимости добавьте подходящие источники заново."}
+          </p>}
           {(["formation", "ending", "divorce", "ongoing"] as const)
             .filter((key) => key !== "divorce" || draft.type === "marriage")
             .map((key) => (
@@ -238,6 +259,7 @@ export function FamilyUnionsPanel({
                 </label>
                 {(key === "ending" && draft.divorce) || (key === "divorce" && draft.ending)
                   ? <small>Источники можно добавить после выбора этого этапа вместо другого завершения союза.</small>
+                  : saveIdentityFirst ? <p>Сначала сохраните новый тип союза, затем добавьте источники этапа.</p>
                   : <details className="union-milestone-sources">
                       <summary>Источники этапа ({draft[key]?.sources?.length || 0})</summary>
                       <UnionSourcesEditor sources={draft[key]?.sources || []}
@@ -255,9 +277,10 @@ export function FamilyUnionsPanel({
           </label>
           <fieldset>
             <legend>Источники союза</legend>
-            <UnionSourcesEditor sources={draft.sources || []}
-              isAdmin={user?.role === "admin"}
-              onChange={(sources) => patch({ sources })} />
+            {saveIdentityFirst ? <p>Сначала сохраните новый тип союза, затем добавьте источники.</p>
+              : <UnionSourcesEditor sources={draft.sources || []}
+                isAdmin={user?.role === "admin"}
+                onChange={(sources) => patch({ sources })} />}
           </fieldset>
           {error && (
             <p role="alert" className="form-error">
@@ -267,7 +290,7 @@ export function FamilyUnionsPanel({
           <button className="primary-action" disabled={busy}>
             Сохранить союз
           </button>
-          <button type="button" disabled={busy} onClick={() => setDraft(null)}>
+          <button type="button" disabled={busy} onClick={() => { setDraft(null); setSourcesReset(false); }}>
             Отмена
           </button>
           {unions.some((union) => union.id === draft.id) && (

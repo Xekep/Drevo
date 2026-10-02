@@ -76,6 +76,19 @@ export function authorizeArchive(
       link.sources?.length)
       throw new ForbiddenError("При смене участников или типа связи снимите прежние источники");
   }
+  const previousUnions = new Map((current.unions || []).map((union) => [union.id, union]));
+  for (const union of next.unions || []) {
+    const old = previousUnions.get(union.id);
+    if (!old || (old.type === union.type &&
+      old.participants.every((id) => union.participants.includes(id)))) continue;
+    const oldSources = [old.sources, old.formation?.sources, old.ending?.sources,
+      old.divorce?.sources, old.ongoing?.sources];
+    const newSources = [union.sources, union.formation?.sources, union.ending?.sources,
+      union.divorce?.sources, union.ongoing?.sources];
+    if (oldSources.some((sources) => sources?.length) &&
+      newSources.some((sources) => sources?.length))
+      throw new ForbiddenError("При смене участников или типа союза снимите прежние источники союза и его этапов");
+  }
   if (user.role !== "admin" && user.role !== "researcher") {
     const previous = new Map(current.people.map((person) => [person.id, person]));
     for (const person of next.people)

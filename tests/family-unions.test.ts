@@ -5,6 +5,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openArchive } from "../src/server/database.ts";
+import { sourceCatalogStore } from "../src/server/source-catalog-store.ts";
+import { sourceCitation } from "../src/shared/source-catalog.ts";
+import { authorizeArchive } from "../src/server/permissions.ts";
 import { startServer } from "../src/server/index.ts";
 import { ARCHIVE_SCHEMA_VERSION } from "../src/server/schema.ts";
 import { importGedcom, exportGedcom } from "../src/domain/gedcom.ts";
@@ -246,6 +249,79 @@ test("HTTP delta endpoint accepts union changes and returns the saved record", a
     assert.equal(response.status, 200);
     assert.deepEqual((await response.json()).family.unions, unions());
     assert.deepEqual((await app.archive.read()).family.unions, unions());
+  } finally {
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("changing a union's identity requires removing inline and catalog citations", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-union-identity-"));
+  const app = await startServer(0, join(dir, "archive.sqlite"), true);
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const catalog = { id: "union-identity-record", title: "Акт брака", type: "архив",
+      author: "", institution: "", archive: "", fond: "", opis: "", delo: "",
+      sheet: "", reference: "", url: "", accessedAt: "", description: "",
+      documentIds: [] };
+    await sourceCatalogStore(app.archive.db).insert(catalog);
+    const initial = await app.archive.read();
+    const seeded = family();
+    seeded.unions = [{ ...unions()[0], createdBy: "owner",
+      formation: { ...unions()[0].formation, sources: [sourceCitation(catalog)] } }];
+    const saved = await app.archive.write(seeded, initial.revision);
+    const put = (next: Family, revision: number) => fetch(`${base}/api/family`, {
+      method: "PUT", headers: { Origin: base, "Content-Type": "application/json",
+        "If-Match": String(revision) }, body: JSON.stringify(next),
+    });
+    const changedType = structuredClone(saved.family);
+    changedType.unions![0].type = "partnership";
+    changedType.unions![0].divorce = undefined;
+    const rejectedType = await put(changedType, saved.revision);
+    assert.equal(rejectedType.status, 403);
+    assert.match((await rejectedType.json()).error, /снимите прежние источники/);
+    const onlyCatalog = structuredClone(changedType);
+    onlyCatalog.unions![0].sources = undefined;
+    assert.equal((await put(onlyCatalog, saved.revision)).status, 403);
+    const onlyInline = structuredClone(changedType);
+    onlyInline.unions![0].formation!.sources = undefined;
+    assert.equal((await put(onlyInline, saved.revision)).status, 403);
+    const changedPeople = structuredClone(saved.family);
+    changedPeople.unions![0].participants = ["a", "c"];
+    assert.equal((await put(changedPeople, saved.revision)).status, 403);
+    assert.equal((await app.archive.read()).revision, saved.revision);
+    assert.equal((await app.archive.read()).family.unions![0].type, "marriage");
+
+    const relative = { id: "owner", name: "Owner", role: "relative" as const,
+      createdAt: "2026-01-01" };
+    assert.throws(() => authorizeArchive(changedType, saved.family, relative),
+      /снимите прежние источники/);
+    const noteOnly = structuredClone(saved.family);
+    noteOnly.unions![0].note = "Уточнённое примечание";
+    assert.equal(authorizeArchive(noteOnly, saved.family, { ...relative, role: "admin" })
+      .unions![0].formation?.sources?.[0].catalogId, catalog.id,
+    "editing another field keeps its valid citations");
+    const cleared = structuredClone(changedType);
+    cleared.unions![0].sources = undefined;
+    cleared.unions![0].formation!.sources = undefined;
+    cleared.unions![0].note = "Новый тип, старое примечание";
+    const accepted = await put(cleared, saved.revision);
+    assert.equal(accepted.status, 200, await accepted.text());
+    const updated = await app.archive.read();
+    assert.equal(updated.family.unions![0].type, "partnership");
+    assert.equal(updated.family.unions![0].formation?.dateText, "около 1920 года");
+    assert.equal(updated.family.unions![0].note, "Новый тип, старое примечание");
+    assert.equal(updated.family.unions![0].sources, undefined);
+    assert.equal(updated.family.unions![0].formation?.sources, undefined);
+
+    const legacy = structuredClone(updated.family);
+    legacy.unions![0].participants = ["a", "c"];
+    assert.equal((await put(legacy, updated.revision)).status, 200,
+      "unions without sources remain editable");
+    const rearranged = await app.archive.read();
+    rearranged.family.unions![0].participants = ["c", "a"];
+    assert.equal((await put(rearranged.family, rearranged.revision)).status, 200,
+      "participant order does not change the union identity");
   } finally {
     await app.close();
     rmSync(dir, { recursive: true, force: true });

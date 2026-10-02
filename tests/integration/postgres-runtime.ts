@@ -6523,6 +6523,40 @@ try {
   changedSurname.people[0].maidenName = "Петрова";
   assert.equal((await postPlaceChanges(placeStored.family, changedSurname, placeStored.revision)).status, 400);
   assert.equal((await app.archive.read()).family.people[0].maidenName, "Иванова");
+  const unionBefore = await app.archive.read();
+  const unionWithEvidence = structuredClone(unionBefore.family);
+  unionWithEvidence.unions = [...(unionWithEvidence.unions || []), {
+    id: "pg-union-source-identity", participants: ["person-a", "former-union-peer"],
+    type: "marriage" as const, createdBy: "owner", note: "Keep this note",
+    sources: [{ title: "Семейная запись", type: "архив", reference: "л. 2" }],
+    formation: { date: "1900", sources: [sourceCitation(placeSource)] },
+  }];
+  const seededUnion = await postPlaceChanges(unionBefore.family, unionWithEvidence, unionBefore.revision);
+  assert.equal(seededUnion.status, 200, await seededUnion.text());
+  const unionSaved = await app.archive.read();
+  const unionIndex = unionSaved.family.unions!.findIndex((union) => union.id === "pg-union-source-identity");
+  assert.equal(unionSaved.family.unions![unionIndex].formation?.sources?.[0].catalogId, placeSource.id);
+  const shiftedUnionType = structuredClone(unionSaved.family);
+  shiftedUnionType.unions![unionIndex].type = "partnership";
+  assert.equal((await postPlaceChanges(unionSaved.family, shiftedUnionType, unionSaved.revision)).status, 403);
+  const shiftedParticipants = structuredClone(unionSaved.family);
+  shiftedParticipants.unions![unionIndex].participants = ["person-a", "own"];
+  assert.equal((await postPlaceChanges(unionSaved.family, shiftedParticipants, unionSaved.revision)).status, 403);
+  assert.equal((await app.archive.read()).revision, unionSaved.revision);
+  const unlinkedUnion = structuredClone(shiftedUnionType);
+  unlinkedUnion.unions![unionIndex].sources = undefined;
+  unlinkedUnion.unions![unionIndex].formation!.sources = undefined;
+  const acceptedUnion = await postPlaceChanges(unionSaved.family, unlinkedUnion, unionSaved.revision);
+  assert.equal(acceptedUnion.status, 200, await acceptedUnion.text());
+  const unionUpdated = await app.archive.read();
+  assert.equal(unionUpdated.family.unions![unionIndex].type, "partnership");
+  assert.equal(unionUpdated.family.unions![unionIndex].note, "Keep this note");
+  assert.equal(unionUpdated.family.unions![unionIndex].formation?.date, "1900");
+  assert.equal((await app.archive.db.prepare("", "SELECT data->>'type' AS type, data->'formation'->'sources' AS sources FROM family_unions WHERE id=?")
+    .get("pg-union-source-identity"))?.type, "partnership");
+  const withoutTestUnion = structuredClone(unionUpdated.family);
+  withoutTestUnion.unions = withoutTestUnion.unions!.filter((union) => union.id !== "pg-union-source-identity");
+  assert.equal((await postPlaceChanges(unionUpdated.family, withoutTestUnion, unionUpdated.revision)).status, 200);
   // Keep the restore concurrency checks in their own archive: later fixtures
   // include cards by other authors, which cannot be replaced by this actor.
   const guardedArchiveId = "restore-guard-test";

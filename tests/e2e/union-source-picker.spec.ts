@@ -136,3 +136,50 @@ test("источник противоположного этапа не стир
   await panel.getByRole("button", { name: "Сохранить союз" }).click();
   expect(readFamily().unions!.find((union) => union.id === secondId)!.ending!.sources![0].catalogId).toBe(source.id);
 });
+
+test("смена типа союза явно снимает старые источники и позволяет добавить новые после сохранения", async ({ page }) => {
+  const id = crypto.randomUUID();
+  const oldSource = { title: "Акт брака", type: "архив", reference: "л. 2" };
+  const readFamily = await isolatedFamily(page, [{
+    id, participants: ["e2e-child", "e2e-spouse"], type: "marriage",
+    note: "Семейная история", sources: [oldSource],
+    formation: { date: "1900", place: "Тула", sources: [oldSource] },
+  }]);
+  await page.goto("/tree");
+  const openPanel = async () => {
+    await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/);
+    const edge = page.getByRole("group", { name: "Тестов Пётр Иванович — Тестова Елена Сергеевна" });
+    await edge.focus();
+    await edge.press("Enter");
+    return page.getByRole("region", { name: "Семейные союзы" });
+  };
+  let panel = await openPanel();
+  await panel.locator(".event-card").filter({ hasText: "1900" })
+    .getByRole("button", { name: "Изменить союз" }).click();
+  await panel.getByLabel("Тип союза").selectOption("partnership");
+  await expect(panel.getByRole("status")).toContainText("Прежние источники союза и его этапов сняты");
+  await expect(panel.getByRole("group", { name: "Источники союза" })).toContainText(
+    "Сначала сохраните новый тип союза");
+  await panel.getByRole("button", { name: "Сохранить союз" }).click();
+  const changed = readFamily().unions!.find((union) => union.id === id)!;
+  expect(changed.type).toBe("partnership");
+  expect(changed.sources).toBeUndefined();
+  expect(changed.formation?.sources).toBeUndefined();
+  expect(changed.formation?.date).toBe("1900");
+  expect(changed.formation?.place).toBe("Тула");
+  expect(changed.note).toBe("Семейная история");
+
+  panel = await openPanel();
+  await panel.locator(".event-card").filter({ hasText: "1900" })
+    .getByRole("button", { name: "Изменить союз" }).click();
+  const sources = panel.getByRole("group", { name: "Источники союза" });
+  await sources.getByRole("button", { name: "Добавить источник вручную" }).click();
+  const inline = sources.locator(".union-inline-citation");
+  await inline.getByLabel("Название").fill("Запись о партнёрстве");
+  await inline.getByLabel("Тип").fill("архив");
+  await inline.getByLabel("Ссылка в источнике").fill("л. 5");
+  await panel.getByRole("button", { name: "Сохранить союз" }).click();
+  expect(readFamily().unions!.find((union) => union.id === id)!.sources?.[0].title)
+    .toBe("Запись о партнёрстве");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+});
