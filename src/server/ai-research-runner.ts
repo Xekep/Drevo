@@ -1139,6 +1139,8 @@ export function createResearchRunner({
 
       for (const call of calls) {
         signal.throwIfAborted();
+        // A preceding tool can wait for I/O while the account tier changes.
+        await assertAiAccess();
         // Reading the clock is not evidence of an archive lookup.
         if (call.function.name !== CURRENT_TIME_TOOL.name) executedTools++;
         metrics.toolCallCount++;

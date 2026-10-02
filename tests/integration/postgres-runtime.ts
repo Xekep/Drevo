@@ -1855,7 +1855,9 @@ try {
       const blockedTools = await runningTools;
       assert.equal(blockedTools.status, 403, await blockedTools.clone().text());
       const generatedRoot = join(toolFilesRoot, "ai-generated-files");
-      assert.equal(existsSync(generatedRoot) ? readdirSync(generatedRoot, { recursive: true }).length : 0,
+      assert.equal(existsSync(generatedRoot)
+        ? readdirSync(generatedRoot, { recursive: true, withFileTypes: true })
+          .filter((entry) => entry.isFile()).length : 0,
         0, "downgrade between AI tools cannot create a PDF for a basic account");
     } finally {
       releaseToolCatalog();
