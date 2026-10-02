@@ -2165,6 +2165,10 @@ try {
     let releaseAdminConversation!: () => void;
     const adminConversationStarted = new Promise<void>((resolve) => { notifyAdminConversation = resolve; });
     const adminConversationGate = new Promise<void>((resolve) => { releaseAdminConversation = resolve; });
+    let notifyRoleConversation!: () => void;
+    let releaseRoleConversation!: () => void;
+    const roleConversationStarted = new Promise<void>((resolve) => { notifyRoleConversation = resolve; });
+    const roleConversationGate = new Promise<void>((resolve) => { releaseRoleConversation = resolve; });
     let notifyAdminResponse!: () => void;
     let releaseAdminResponse!: () => void;
     const adminResponseStarted = new Promise<void>((resolve) => { notifyAdminResponse = resolve; });
@@ -2190,6 +2194,7 @@ try {
     const settingsWriteStarted = new Promise<void>((resolve) => { notifySettingsWrite = resolve; });
     const settingsWriteGate = new Promise<void>((resolve) => { releaseSettingsWrite = resolve; });
     let holdAdminResponse = false;
+    let holdRoleConversation = false;
     let holdSettingsModels = false;
     let holdSettingsRead = false;
     let holdWriteStatusModels = false;
@@ -2234,6 +2239,10 @@ try {
         if (path.endsWith("/conversations") && init?.method === "POST") {
           notifyAdminConversation();
           await adminConversationGate;
+          if (holdRoleConversation) {
+            notifyRoleConversation();
+            await roleConversationGate;
+          }
           return Response.json({ id: "admin-tier-test", object: "conversation" });
         }
         if (path.endsWith("/responses")) {
@@ -2329,6 +2338,21 @@ try {
         "a demoted archive admin must not start model discovery");
       await client.query("UPDATE archive_memberships SET role='admin' WHERE archive_id='runtime-test' AND user_id='owner'");
       holdModelBody = false;
+      holdRoleConversation = true;
+      const responsesBeforeRoleChange = adminResponseCalls;
+      const roleChecking = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai/test`, {
+        method: "POST", headers: ownerHeaders,
+      });
+      await Promise.race([roleConversationStarted,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Admin AI role test conversation did not start")), 15_000))]);
+      await client.query("UPDATE archive_memberships SET role='researcher' WHERE archive_id='runtime-test' AND user_id='owner'");
+      releaseRoleConversation();
+      assert.equal((await roleChecking).status, 403,
+        "a demoted archive admin cannot run the connection-check model after conversation creation");
+      assert.equal(adminResponseCalls, responsesBeforeRoleChange,
+        "the connection-check model must not run after admin role revocation");
+      await client.query("UPDATE archive_memberships SET role='admin' WHERE archive_id='runtime-test' AND user_id='owner'");
+      holdRoleConversation = false;
       holdSettingsModels = true;
       const loadingSettings = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai`, {
         headers: ownerHeaders,
@@ -2397,6 +2421,7 @@ try {
       assert.doesNotMatch(await hiddenWriteStatus.text(), /hidden-after-downgrade/);
     } finally {
       releaseAdminConversation();
+      releaseRoleConversation();
       releaseAdminResponse();
       releaseAdminModels();
       releaseSettingsModels();
