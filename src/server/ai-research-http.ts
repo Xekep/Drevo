@@ -771,6 +771,14 @@ export function aiResearchHttp({
         },
         signal: controller.signal,
         chatId: chat.id,
+        assertAiAccess: async () => {
+          if (controller.signal.aborted)
+            throw new DOMException("Ответ остановлен", "AbortError");
+          if (await canDeliverAiData(req, chat.accessScope, user.id)) return;
+          accessRevoked = true;
+          controller.abort();
+          throw new DOMException("Доступ к ИИ отключён", "AbortError");
+        },
         commitSuggestion: async (name, _actor, family, revision, args) =>
           archive.db.transaction(async () => {
             const latest = await auth.currentUser(req);

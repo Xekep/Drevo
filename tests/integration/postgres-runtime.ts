@@ -2029,6 +2029,63 @@ try {
       }, async () => {
         await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
       }, false);
+      {
+        let modelCalls = 0;
+        const forbiddenAnswer = "Answer from a model called after downgrade";
+        const fake = adaptLegacyAiFake(async (url) => {
+          if (String(url).endsWith("/models"))
+            return Response.json({ data: [{ id: "gpt://folder-1/yandexgpt/rc", owned_by: "Yandex" }] });
+          modelCalls++;
+          if (modelCalls > 1)
+            return Response.json({ choices: [{ message: { role: "assistant", content: forbiddenAnswer } }] });
+          // The first provider response asks for another model round after the tier changes.
+          await client.query("UPDATE account_tiers SET full_access=false WHERE account_id=$1", [proposalMember]);
+          return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{
+            id: "time-after-downgrade", type: "function",
+            function: { name: "get_current_time", arguments: "{}" },
+          }] } }] });
+        });
+        const handler = aiResearchHttp({
+          archive: app!.archive,
+          auth: await createAuth(await userStore(app!.archive.db), app!.archive.db,
+            process.env.PUBLIC_ORIGIN),
+          suggestions: researchSuggestionStore(app!.archive.db),
+          aiSettings: await aiSettingsStore(app!.archive.db),
+          usage: aiUsageStore(app!.archive.db),
+          media: mediaStore(join(dirname(source), "uploads")),
+          previewImage: imagePreviews(join(dirname(source), "previews")),
+          researchCatalog: researchCatalogStore(app!.archive.db),
+          publicOrigin: process.env.PUBLIC_ORIGIN, fetcher: fake,
+        });
+        const server = createServer((req, res) => {
+          void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+            .catch((error) => { res.destroy(error); });
+        });
+        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const oldChats = new Set((await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))
+          .rows.map((row) => row.id as string));
+        try {
+          const port = (server.address() as { port: number }).port;
+          const response = await fetch(`http://127.0.0.1:${port}/api/ai/chat`, {
+            method: "POST", headers: proposalHeaders,
+            body: JSON.stringify({ message: "Который сейчас час?" }),
+          });
+          const body = await response.text();
+          assert.equal(response.status, 403, body);
+          assert.equal(modelCalls, 1,
+            "a downgraded account cannot start the next provider round");
+          assert.doesNotMatch(body, /Answer from a model called after downgrade/);
+          assert.equal((await client.query("SELECT count(*)::int AS n FROM ai_chat_messages WHERE content=$1",
+            [forbiddenAnswer])).rows[0].n, 0);
+        } finally {
+          await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
+          const newChats = (await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))
+            .rows.map((row) => row.id as string).filter((id) => !oldChats.has(id));
+          for (const chatId of newChats) await aiChatStore(app!.archive.db).delete(chatId, proposalMember);
+          await new Promise<void>((resolve) => server.close(() => resolve()));
+          await handler.close();
+        }
+      }
       await runDeferredAnswer("session-revoked", async () => {
         await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(proposalToken)]);
       }, async () => {
