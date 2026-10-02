@@ -1,5 +1,5 @@
 import type { StoreDatabase } from "./store-database.ts";
-import { postgresMediaReferencesSql } from "./postgres-media-quota.ts";
+import { postgresMediaReferencesSql } from "./media-reference-sql.ts";
 import type { Role, ArchiveUser } from "../domain/access.ts";
 import { ROLE_NAMES } from "../domain/access.ts";
 import {
