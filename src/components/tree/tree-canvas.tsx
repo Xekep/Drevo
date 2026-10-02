@@ -522,9 +522,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         : focus,
     [focus, spotlightNodes],
   );
+  const progressiveIntroRequested = growing && family.people.length >= 2500 &&
+    distantZoom && !activeFanAnchor && mode !== "timeline";
   const growthDelays = useMemo(
-    () => treeGrowthDelays(family.people),
-    [family.people],
+    () => treeGrowthDelays(family.people, progressiveIntroRequested ? 2200 : 0),
+    [family.people, progressiveIntroRequested],
   );
   const growthCanvasStyle = useMemo(
     () => treeGrowthCanvasStyle(growthDelays),
@@ -1006,10 +1008,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   const overviewAvailable = nodes.length >= 600 && !growing && !layoutSettling;
   const distantScene = overviewAvailable && distantZoom;
-  // Spike: render a large, distant intro on canvas instead of mounting SVG
-  // wrappers for every visible edge while the growth animation runs.
-  const progressiveCanvasIntro = growing && nodes.length >= 2500 && distantZoom &&
-    !activeFanAnchor && mode !== "timeline";
+  // Use the existing distant canvas scene for large introductions instead of
+  // mounting hundreds of SVG edge wrappers during the short growth sequence.
+  const progressiveCanvasIntro = progressiveIntroRequested && nodes.length >= 2500;
   const gpuScope = typeof window === "undefined" ? "server" :
     archiveContextAt(window.location.pathname)?.id || window.location.pathname;
   const [gpuReadyScene, setGpuReadyScene] = useState<{ geometry: typeof geometry; scope: string } | null>(null);
