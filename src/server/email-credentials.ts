@@ -92,6 +92,20 @@ export function emailCredentials(
     throw new Error("Регистрация по почте требует PostgreSQL.");
   const transact = db.postgresTransaction;
 
+  async function lockAccountForEmailLink(
+    client: pg.PoolClient,
+    accountId: string,
+  ) {
+    // Serialize competing link requests and confirmations for one account.
+    // Lock the account before session/pending rows, matching account deletion.
+    const account = await client.query(
+      "SELECT 1 FROM accounts WHERE id=$1 FOR UPDATE",
+      [accountId],
+    );
+    if (!account.rowCount)
+      throw new InvalidEmailCredential("Аккаунт недоступен.");
+  }
+
   async function requireRecentOAuthSession(
     client: pg.PoolClient,
     accountId: string,
@@ -392,18 +406,11 @@ export function emailCredentials(
       const time = now();
       await transact((client) => cleanup(client, time));
       const queued = await transact(async (client) => {
+        await lockAccountForEmailLink(client, accountId);
         await requireRecentOAuthSession(client, accountId, sessionTokenHash);
         await client.query("SELECT pg_advisory_xact_lock(2407,hashtext($1))", [
           email,
         ]);
-        if (
-          !(
-            await client.query("SELECT 1 FROM accounts WHERE id=$1", [
-              accountId,
-            ])
-          ).rowCount
-        )
-          throw new InvalidEmailCredential("Аккаунт недоступен.");
         if (
           (
             await client.query(
@@ -482,6 +489,7 @@ export function emailCredentials(
           "Ссылка подтверждения недействительна.",
         );
       await transact(async (client) => {
+        await lockAccountForEmailLink(client, accountId);
         await requireRecentOAuthSession(client, accountId, sessionTokenHash);
         const found = await client.query<{ email: string; account_id: string }>(
           "SELECT email,account_id FROM pending_email_links WHERE token_hash=$1",

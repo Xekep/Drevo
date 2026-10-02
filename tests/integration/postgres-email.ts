@@ -368,7 +368,9 @@ export async function verifyEmailAccounts(
   const linkRaceSent: string[] = [];
   const raceBase = emailCredentials(
     db,
-    async (_to, _subject, text) => { linkRaceSent.push(text); },
+    async (_to, _subject, text) => {
+      linkRaceSent.push(text);
+    },
     "https://mydrevo.org",
   );
   await raceBase.requestLink(
@@ -376,22 +378,35 @@ export async function verifyEmailAccounts(
     { email: "first-link@example.org", password: "first strong password" },
     linkRaceSession,
   );
-  const firstLinkToken = linkRaceSent[0]?.match(/#email-link=([A-Za-z0-9_-]{43})/)?.[1];
+  const firstLinkToken = linkRaceSent[0]?.match(
+    /#email-link=([A-Za-z0-9_-]{43})/,
+  )?.[1];
   assert.ok(firstLinkToken);
   let releaseVerifiedRow!: () => void;
   let verifiedRowLocked!: () => void;
-  const holdVerifiedRow = new Promise<void>((resolve) => { releaseVerifiedRow = resolve; });
-  const verifiedRow = new Promise<void>((resolve) => { verifiedRowLocked = resolve; });
+  const holdVerifiedRow = new Promise<void>((resolve) => {
+    releaseVerifiedRow = resolve;
+  });
+  const verifiedRow = new Promise<void>((resolve) => {
+    verifiedRowLocked = resolve;
+  });
   const heldDb: StoreDatabase = {
     ...db,
-    postgresTransaction: <T>(work: (transaction: pg.PoolClient) => Promise<T>) =>
+    postgresTransaction: <T>(
+      work: (transaction: pg.PoolClient) => Promise<T>,
+    ) =>
       db.postgresTransaction!(async (transaction) => {
         const guarded = new Proxy(transaction, {
           get(target, property, receiver) {
-            if (property !== "query") return Reflect.get(target, property, receiver);
+            if (property !== "query")
+              return Reflect.get(target, property, receiver);
             return (async (sql: string, params?: unknown[]) => {
               const result = await target.query(sql, params);
-              if (sql.includes("FROM pending_email_links WHERE account_id=$1 AND token_hash=$2 FOR UPDATE")) {
+              if (
+                sql.includes(
+                  "FROM pending_email_links WHERE account_id=$1 AND token_hash=$2 FOR UPDATE",
+                )
+              ) {
                 verifiedRowLocked();
                 await holdVerifiedRow;
               }
@@ -402,21 +417,33 @@ export async function verifyEmailAccounts(
         return work(guarded);
       }),
   };
-  const completingFirstLink = emailCredentials(heldDb, async () => {}, "https://mydrevo.org")
-    .verifyLink("email-link-race", firstLinkToken, linkRaceSession);
+  const completingFirstLink = emailCredentials(
+    heldDb,
+    async () => {},
+    "https://mydrevo.org",
+  ).verifyLink("email-link-race", firstLinkToken, linkRaceSession);
   await verifiedRow;
   let secondCheckedCredential!: () => void;
-  const secondCredentialCheck = new Promise<void>((resolve) => { secondCheckedCredential = resolve; });
+  const secondCredentialCheck = new Promise<void>((resolve) => {
+    secondCheckedCredential = resolve;
+  });
   const observingDb: StoreDatabase = {
     ...db,
-    postgresTransaction: <T>(work: (transaction: pg.PoolClient) => Promise<T>) =>
+    postgresTransaction: <T>(
+      work: (transaction: pg.PoolClient) => Promise<T>,
+    ) =>
       db.postgresTransaction!(async (transaction) => {
         const guarded = new Proxy(transaction, {
           get(target, property, receiver) {
-            if (property !== "query") return Reflect.get(target, property, receiver);
+            if (property !== "query")
+              return Reflect.get(target, property, receiver);
             return (async (sql: string, params?: unknown[]) => {
               const result = await target.query(sql, params);
-              if (sql.includes("SELECT 1 FROM account_email_credentials WHERE account_id=$1"))
+              if (
+                sql.includes(
+                  "SELECT 1 FROM account_email_credentials WHERE account_id=$1",
+                )
+              )
                 secondCheckedCredential();
               return result;
             }) as pg.PoolClient["query"];
@@ -427,7 +454,9 @@ export async function verifyEmailAccounts(
   };
   const secondLink = emailCredentials(
     observingDb,
-    async (_to, _subject, text) => { linkRaceSent.push(text); },
+    async (_to, _subject, text) => {
+      linkRaceSent.push(text);
+    },
     "https://mydrevo.org",
   ).requestLink(
     "email-link-race",
@@ -444,10 +473,19 @@ export async function verifyEmailAccounts(
   }
   await completingFirstLink;
   await assert.rejects(secondLink, InvalidEmailCredential);
-  assert.equal(linkRaceSent.length, 1, "a stale second email link must not be sent");
-  assert.equal((await client.query(
-    "SELECT count(*)::int AS n FROM pending_email_links WHERE account_id='email-link-race'",
-  )).rows[0].n, 0);
+  assert.equal(
+    linkRaceSent.length,
+    1,
+    "a stale second email link must not be sent",
+  );
+  assert.equal(
+    (
+      await client.query(
+        "SELECT count(*)::int AS n FROM pending_email_links WHERE account_id='email-link-race'",
+      )
+    ).rows[0].n,
+    0,
+  );
 
   let raceClock = Date.now();
   const raceAccounts = emailCredentials(
