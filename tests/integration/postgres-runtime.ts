@@ -60,6 +60,7 @@ import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
 import { mcpUsageStore } from "../../src/server/mcp-usage.ts";
 import { adminMcpHttp } from "../../src/server/admin-mcp-http.ts";
 import { sharesStore } from "../../src/server/shares.ts";
+import { adminSharingHttp } from "../../src/server/admin-sharing-http.ts";
 import { publicShareAccess } from "../../src/server/public-share-access.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { publishedPeopleStore } from "../../src/server/published-people.ts";
@@ -1614,6 +1615,42 @@ try {
     app.archive.db, join(dirname(source), "uploads"), generatedChats,
   );
   const stagedUsers = await userStore(app.archive.db);
+  // The HTTP permission snapshot can precede an ownership transfer. Revoke
+  // must reject the former admin after that transfer commits.
+  const staleShareAdmin = await stagedUsers.get("owner");
+  assert.equal(staleShareAdmin?.role, "admin");
+  const staleShareId = randomUUID();
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  await client.query(
+    `INSERT INTO share_links(id,token_hash,title,anchor_id,person_ids,created_at,expires_at,created_by,created_name)
+     VALUES($1,$2,'Former owner link','person-a','["person-a"]'::jsonb,$3,$4,'owner','Owner')`,
+    [staleShareId, createHash("sha256").update(staleShareId).digest("hex"),
+      new Date().toISOString(), new Date(Date.now() + 60_000).toISOString()],
+  );
+  await client.query("UPDATE archive_memberships SET role='relative' WHERE archive_id='runtime-test' AND user_id='owner'");
+  try {
+    const handler = adminSharingHttp({
+      archive: app.archive,
+      auth: { currentUser: async () => staleShareAdmin } as unknown as Awaited<ReturnType<typeof createAuth>>,
+      shares: sharesStore(app.archive.db),
+      audit: auditStore(app.archive.db),
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+    });
+    let status = 0;
+    const request = { method: "DELETE", headers: { origin: process.env.PUBLIC_ORIGIN } } as unknown as import("node:http").IncomingMessage;
+    const response = {
+      writeHead(code: number) { status = code; },
+      end() {},
+    } as unknown as import("node:http").ServerResponse;
+    assert.equal(await handler(request, response,
+      new URL(`https://mydrevo.org/api/shares/${staleShareId}`)), true);
+    assert.equal(status, 403, "the former owner cannot revoke a share after losing admin rights");
+    assert.equal((await client.query("SELECT revoked_at FROM share_links WHERE id=$1", [staleShareId]))
+      .rows[0]?.revoked_at, null);
+  } finally {
+    await client.query("UPDATE archive_memberships SET role='admin' WHERE archive_id='runtime-test' AND user_id='owner'");
+    await client.query("DELETE FROM share_links WHERE id=$1", [staleShareId]);
+  }
   // A downgrade can commit while a generated file is staged but not installed.
   // The tier decision must be made under a lock at the install boundary.
   const stagedChat = await generatedChats.create("owner", JSON.stringify(["admin", "all", ""]));
