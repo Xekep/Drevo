@@ -533,6 +533,15 @@ export async function verifyEmailAccounts(
     email: "new.person@example.org",
     password: "a new long safe password",
   });
+  const expectedRevoked = Number(
+    (
+      await client.query(
+        "SELECT count(*)::int AS n FROM account_sessions WHERE user_id=$1 AND token_hash<>$2",
+        [account.accountId, currentHash],
+      )
+    ).rows[0].n,
+  );
+  assert.ok(expectedRevoked >= 1);
   assert.equal(
     await accounts.changePassword(
       account.accountId,
@@ -540,7 +549,7 @@ export async function verifyEmailAccounts(
       "a new long safe password",
       "changed strong password one",
     ),
-    1,
+    expectedRevoked,
   );
   assert.deepEqual(
     (
