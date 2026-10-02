@@ -195,7 +195,7 @@ export function portableImportHttp(
     const inserted = await db
       .prepare(
         "INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data) SELECT ?,'drevo',?,?,?,? WHERE (SELECT count(*) FROM workflow_stages WHERE kind='drevo')<2 ON CONFLICT(kind,actor_id) DO NOTHING",
-        "INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data) SELECT ?,'drevo',?,?,?,? WHERE (SELECT count(*) FROM workflow_stages WHERE kind='drevo')<2 ON CONFLICT(kind,actor_id) DO NOTHING",
+        "INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data) SELECT ?,'drevo',?,?,?,? WHERE (SELECT count(*) FROM workflow_stages WHERE kind='drevo')<2 ON CONFLICT(archive_id,kind,actor_id) DO NOTHING",
       )
       .run(
         token,
