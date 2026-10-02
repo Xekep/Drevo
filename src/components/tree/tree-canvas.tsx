@@ -1043,6 +1043,16 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     for (const edge of gpuOverlayEdges) { ids.add(edge.source); ids.add(edge.target); }
     return ids;
   }, [nodes, gpuHovered, gpuFocused, gpuOverlayEdges]);
+  const distantOverlayIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const edge of gpuOverlayEdges) { ids.add(edge.source); ids.add(edge.target); }
+    return ids;
+  }, [gpuOverlayEdges]);
+  const distantOverlayEdgeIds = useMemo(() =>
+    new Set(gpuOverlayEdges.map((edge) => edge.id)), [gpuOverlayEdges]);
+  const canvasEdges = useMemo(() => distantScene
+    ? displayEdges.filter((edge) => !distantOverlayEdgeIds.has(edge.id))
+    : displayEdges, [displayEdges, distantScene, distantOverlayEdgeIds]);
   const gpuHitIndex = useMemo(() => {
     const index = new Spatial<{ left: number; right: number; top: number; bottom: number; node: PersonNodeType }>();
     for (const node of nodes) index.add({ node, left: node.position.x, top: node.position.y,
@@ -1110,10 +1120,16 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const flowNodes = useMemo(() => gpuActive
     ? renderedNodes.map((node) => node.type === "household" ? ({ ...node, hidden: true }) : ({ ...node,
       hidden: !gpuOverlayIds.has(node.id), className: `${node.className || ""} tree-gpu-node-overlay` }))
-    : distantScene || progressiveCanvasIntro
+    : distantScene
+    ? renderedNodes.map((node) => node.type === "household" ? ({ ...node, hidden: true }) : ({
+      ...node, hidden: !distantOverlayIds.has(node.id),
+      className: `${node.className || ""} tree-gpu-node-overlay`,
+    }))
+    : progressiveCanvasIntro
     ? renderedNodes.map((node) => ({ ...node, hidden: true }))
-    : renderedNodes, [renderedNodes, distantScene, progressiveCanvasIntro, gpuActive, gpuOverlayIds]);
-  const flowEdges = useMemo(() => gpuActive ? gpuOverlayEdges : distantScene || progressiveCanvasIntro
+    : renderedNodes, [renderedNodes, distantScene, progressiveCanvasIntro,
+      gpuActive, gpuOverlayIds, distantOverlayIds]);
+  const flowEdges = useMemo(() => gpuActive ? gpuOverlayEdges : distantScene ? gpuOverlayEdges : progressiveCanvasIntro
     // Hidden EdgeWrappers still subscribe to every camera update and resolve
     // their handles. Canvas owns these routes; React Flow only needs the nodes
     // (with dimensions intact) for fitView and person camera targets.
@@ -1313,6 +1329,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         data-renderer={gpuActive ? "webgl2" : "react-flow"}
         data-gpu-scene-match={gpuReadyScene?.geometry === geometry && gpuReadyScene?.scope === gpuScope ? "true" : "false"}
         data-gpu-fallback={gpuFailedScope === gpuScope ? gpuFallbackReason || undefined : undefined}
+        data-distant-overlay={distantScene && gpuOverlayEdges.length > 0 || undefined}
         role={gpuActive ? "application" : undefined}
         onPointerMoveCapture={(event) => {
           gpuLongPress.handlers.onPointerMove(event);
@@ -1763,7 +1780,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             people={family.people}
             nodes={nodes}
             households={overviewHouseholds}
-            edges={displayEdges}
+            edges={canvasEdges}
             fullScene={overviewAvailable || progressiveCanvasIntro}
             width={canvasWidth}
             height={canvasHeight}

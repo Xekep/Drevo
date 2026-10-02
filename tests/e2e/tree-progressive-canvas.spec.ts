@@ -27,7 +27,15 @@ async function routeLargeFamily(page: Page, withRelations = false) {
   });
 }
 
-test("3000 person canvas intro reveals cards and lines before GPU handoff", async ({ page }) => {
+async function awaitLargeOverview(page: Page) {
+  const root = page.locator(".tree-canvas");
+  await expect(root).not.toHaveClass(/is-grow/, { timeout: 30_000 });
+  await expect.poll(async () => (await root.getAttribute("data-renderer")) === "webgl2" ||
+    !!(await root.getAttribute("data-gpu-fallback")), { timeout: 30_000 }).toBe(true);
+  return (await root.getAttribute("data-renderer")) === "webgl2" ? "webgl2" : "fallback";
+}
+
+test("3000 person canvas intro survives GPU handoff or canvas fallback", async ({ page }) => {
   test.setTimeout(60_000);
   await routeLargeFamily(page);
   await page.addInitScript(() => {
@@ -74,14 +82,14 @@ test("3000 person canvas intro reveals cards and lines before GPU handoff", asyn
         if (contentShown) handoff.push({ at: Math.round(performance.now()),
           canvas: canvasVisible, gpu: gpuVisible });
       }
-      if (!root || root.getAttribute("data-renderer") !== "webgl2")
+      if (!root || (root.getAttribute("data-renderer") !== "webgl2" &&
+        !root.getAttribute("data-gpu-fallback")))
         requestAnimationFrame(sample);
     };
     requestAnimationFrame(sample);
   });
   await page.goto("/tree");
-  const root = page.locator(".tree-canvas");
-  await expect(root).toHaveAttribute("data-renderer", "webgl2", { timeout: 30_000 });
+  const renderer = await awaitLargeOverview(page);
   const samples = await page.evaluate(() =>
     (window as typeof window & { __canvasIntroSamples: Array<{
       at: number; partial: number; edges: number; nodes: number;
@@ -118,11 +126,18 @@ test("3000 person canvas intro reveals cards and lines before GPU handoff", asyn
   }
   expect(phases.slice(0, 6)).toEqual(["card", "line", "card", "line", "card", "line"]);
   expect(handoff.filter((frame) => !frame.canvas && !frame.gpu)).toEqual([]);
-  await expect(page.locator(".tree-gpu-scene")).toBeVisible();
-  expect(Number(await page.locator(".tree-gpu-scene").getAttribute("data-scene-edges")))
-    .toBeGreaterThanOrEqual(2500);
+  if (renderer === "webgl2") {
+    await expect(page.locator(".tree-gpu-scene")).toBeVisible();
+    expect(Number(await page.locator(".tree-gpu-scene").getAttribute("data-scene-edges")))
+      .toBeGreaterThanOrEqual(2500);
+  } else {
+    await expect(page.locator(".tree-distant-portraits")).toBeVisible();
+    expect(Number(await page.locator(".tree-distant-portraits").getAttribute("data-scene-edges")))
+      .toBeGreaterThanOrEqual(2500);
+  }
   console.log("CANVAS_INTRO_PROFILE", JSON.stringify({
     project: test.info().project.name,
+    renderer,
     firstVisible: visible.find((sample) => sample.nodes > 0 || sample.edges > 0)?.at,
     started: states.find((state) => state.className.includes("is-growing"))?.at,
     gpuReady: states.find((state) => state.renderer === "webgl2")?.at,
@@ -152,7 +167,7 @@ test("large intro retains the camera input lock", async ({ page }, testInfo) => 
   await page.mouse.click(800, 400);
   expect(await viewport.getAttribute("style")).toBe(before);
   expect(page.url()).toMatch(/\/tree$/);
-  await expect(root).toHaveAttribute("data-renderer", "webgl2", { timeout: 30_000 });
+  await awaitLargeOverview(page);
 });
 
 test("additional relation labels return after the large intro", async ({ page }, testInfo) => {
@@ -163,10 +178,34 @@ test("additional relation labels return after the large intro", async ({ page },
   const root = page.locator(".tree-canvas");
   await expect(root).toHaveClass(/is-grow/, { timeout: 15_000 });
   await expect(page.locator(".tree-extra-toggle")).toBeDisabled();
-  await expect(root).toHaveAttribute("data-renderer", "webgl2", { timeout: 30_000 });
+  await awaitLargeOverview(page);
   await expect(page.locator(".tree-extra-toggle")).toHaveAttribute("aria-pressed", "false");
   await page.locator(".tree-extra-toggle").click();
   await expect(page.locator(".tree-extra-toggle")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".relationship-godparent")).toHaveCount(1);
+  await expect(page.locator(".tree-grow-edge-label")).not.toHaveCount(0);
+});
+
+test("software fallback keeps distant relation labels above the canvas", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  test.setTimeout(60_000);
+  await page.addInitScript(() => {
+    const getContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, ...args) {
+      if (args[0] === "webgl2") return null;
+      return Reflect.apply(getContext, this, args);
+    } as typeof getContext;
+  });
+  await routeLargeFamily(page, true);
+  await page.goto("/tree");
+  expect(await awaitLargeOverview(page)).toBe("fallback");
+  const canvas = page.locator(".tree-distant-portraits");
+  await expect(canvas).toBeVisible();
+  await expect(canvas).toHaveAttribute("data-scene-edges", /\d+/);
+  const canvasEdges = await canvas.getAttribute("data-scene-edges");
+  await page.locator(".tree-extra-toggle").click();
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("data-distant-overlay", "true");
+  await expect(canvas).toHaveAttribute("data-scene-edges", canvasEdges!);
   await expect(page.locator(".relationship-godparent")).toHaveCount(1);
   await expect(page.locator(".tree-grow-edge-label")).not.toHaveCount(0);
 });

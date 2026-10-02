@@ -2263,6 +2263,7 @@
   z-index: 1;
 }
 .tree-canvas[data-renderer="webgl2"] .react-flow__viewport { z-index: 2; }
+.tree-canvas[data-distant-overlay="true"] .react-flow__viewport { z-index: 3; }
 .tree-gpu-node-overlay .person-avatar,
 .tree-gpu-node-overlay .portrait-card-info { visibility: hidden; }
 .tree-gpu-node-overlay .flow-person-content { background: transparent; }
