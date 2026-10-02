@@ -106,8 +106,8 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  const get = (path: string) => fetch(base + path, {
-    headers: { Cookie: `drevo_session=${tokens.relative}` },
+  const get = (path: string, token = tokens.relative) => fetch(base + path, {
+    headers: { Cookie: `drevo_session=${token}` },
   });
 
   const unchanged = await get("/api/export.json");
@@ -115,13 +115,13 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
   assert.equal((await unchanged.json()).people.some((person: { id: string }) =>
     person.id === "father"), true, "unchanged scoped access still returns an ancestor");
 
-  async function race(path: string, update: () => Promise<unknown>) {
+  async function race(path: string, update: () => Promise<unknown>, token = tokens.relative) {
     let reached!: () => void;
     let resume!: () => void;
     const readReached = new Promise<void>((resolve) => { reached = resolve; });
     const readGate = new Promise<void>((resolve) => { resume = resolve; });
     pauseRead = { reached, wait: readGate };
-    const pending = get(path);
+    const pending = get(path, token);
     let timer!: ReturnType<typeof setTimeout>;
     try {
       const timeout = new Promise<never>((_, reject) => {
@@ -135,6 +135,17 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
     }
     return await pending;
   }
+
+  const staleAdminExport = await race("/api/export.json", async () => {
+    await second.query(`UPDATE people SET data=jsonb_set(data,'{name}',
+      '"Replaced Name"'::jsonb) WHERE archive_id='tree-a' AND id='father'`);
+    await second.query("UPDATE archives SET revision=revision+1 WHERE id='tree-a'");
+  }, tokens.admin);
+  assert.equal(staleAdminExport.status, 409);
+  assert.doesNotMatch(await staleAdminExport.text(), /father/);
+  const freshAdminExport = await get("/api/export.json", tokens.admin);
+  assert.equal(freshAdminExport.status, 200);
+  assert.match(await freshAdminExport.text(), /Replaced Name/);
 
   const revoked = await race("/api/export.json", () => second.query(`UPDATE archive_memberships
     SET approved=false WHERE archive_id='tree-a' AND user_id='relative'`));

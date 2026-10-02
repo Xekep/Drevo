@@ -114,13 +114,15 @@ export function archiveQueryHttp({
       access = await visibility.read();
     const memberCanRead = visitor?.approved === true;
     const scoped = isScopedUser(visitor);
-    const startRevision = scoped
+    // An unscoped export must not release people removed after its snapshot.
+    const stableRevision = scoped || path === "/api/export" || path === "/api/export.json";
+    const startRevision = stableRevision
       ? Number((await revisionQuery.get())?.revision)
       : null;
     const canDeliver = async () => await archive.db.transaction(async () => {
       const current = await auth.currentUser(req);
       const settings = await visibility.read();
-      const revisionCurrent = !scoped ||
+      const revisionCurrent = !stableRevision ||
         (Number.isSafeInteger(startRevision) &&
           Number((await revisionQuery.get())?.revision) === startRevision);
       return revisionCurrent &&
