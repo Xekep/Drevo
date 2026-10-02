@@ -14,10 +14,12 @@ import { treeExportPeople } from "../domain/tree-export-selection.ts";
 import type { Family } from "../domain/types.ts";
 import { offlineReaderHtml, type OfflineDocument } from "./offline-reader.ts";
 import { documentFileTypeFromName, storedDocumentFileType } from "../shared/document-file.ts";
+import { allCitations } from "./source-catalog-store.ts";
 
 export type OfflineScope =
   "all" | "family" | "ancestors" | "descendants" | "blood";
 const filePattern = /^\/media\/([a-f0-9-]{36}\.(?:jpg|png|webp|gif))$/;
+const citationFilePattern = /^\/?media\/([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\.(?:jpg|png|webp|gif|tif|pdf))([?#].*)?$/;
 const maxPackageBytes = 1024 * 1024 * 1024;
 
 function withoutCreator<T extends { createdBy?: string }>(
@@ -35,6 +37,19 @@ function relativeImage(url: string) {
       "В архиве есть фотография без доступного оригинала в локальном хранилище.",
     );
   return `media/${name}`;
+}
+
+function citationOriginal(url: string) {
+  if (!url.startsWith("/media/") && !url.startsWith("media/")) return null;
+  const match = citationFilePattern.exec(url);
+  if (!match) throw new Error("Некорректный путь оригинала источника.");
+  return { path: `media/${match[1]}`, suffix: match[2] || "" };
+}
+
+function relativeCitationUrl(url: string) {
+  if (!url.startsWith("/media/")) return url;
+  const original = citationOriginal(url)!;
+  return original.path + original.suffix;
 }
 
 /** Select from an already-authorized projection, then remove references outside the export. */
@@ -76,7 +91,7 @@ export function offlineFamily(
       url: relativeImage(photo.url),
       tags: photo.tags.filter((tag) => ids.has(tag.personId)),
     }));
-  return {
+  const result: Family = {
     title: family.title,
     description: family.description,
     demo: family.demo,
@@ -89,6 +104,12 @@ export function offlineFamily(
       .filter((union) => union.participants.every((id) => ids.has(id)))
       .map(withoutCreator),
   };
+  // A citation can be the only reference to an original. Rewrite the copied
+  // projection, leaving the live archive's URLs untouched.
+  const portable = structuredClone(result);
+  for (const citation of allCitations(portable))
+    if (citation.url) citation.url = relativeCitationUrl(citation.url);
+  return portable;
 }
 
 export function offlineDocuments(
@@ -165,6 +186,10 @@ export async function writeOfflinePackage(
     if (person.photo) mediaPaths.add(person.photo);
   for (const photo of family.photos || []) mediaPaths.add(photo.url);
   for (const document of documents) mediaPaths.add(document.file);
+  for (const citation of allCitations(family)) {
+    const original = citationOriginal(citation.url || "");
+    if (original) mediaPaths.add(original.path);
+  }
   const originals: Array<{
     name: string;
     path: string;
