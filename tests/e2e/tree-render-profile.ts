@@ -30,6 +30,9 @@ export async function profileTreeRenderer(page: Page, testInfo: TestInfo) {
       edges: document.querySelectorAll(".react-flow__edge").length,
       dom: document.querySelectorAll("*").length,
       pendingImages: [...document.images].filter((image) => !image.complete).length,
+      renderer: document.querySelector<HTMLElement>(".tree-canvas")?.dataset.renderer,
+      gpuTextureBytes: Number(document.querySelector<HTMLElement>(".tree-gpu-scene")?.dataset.gpuTextureBytes || 0),
+      gpuBufferBytes: Number(document.querySelector<HTMLElement>(".tree-gpu-scene")?.dataset.gpuBufferBytes || 0),
     }));
     for (const gesture of ["idle", "pan", "zoom"] as const) {
       if (cpuProfile) {

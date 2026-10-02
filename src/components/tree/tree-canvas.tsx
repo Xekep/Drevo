@@ -50,6 +50,10 @@ import { mediaPreview } from "../../domain/media-preview.ts";
 import { familyNeighbors, withoutReviewPeople } from "../../domain/family-neighborhood.ts";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
 import { DistantPortraits } from "./distant-portraits";
+import { TreeGpuScene } from "./tree-gpu-scene";
+import { GpuPortraitCache } from "./gpu-portrait-cache";
+import { Spatial } from "../../domain/edge-routing";
+import { useLongPress } from "./use-long-press";
 import { hitDistantScene } from "./distant-scene-hit";
 import { useMiddlePersonAnchor } from "./use-middle-person-anchor";
 import { personRelationLabel } from "./person-relation-label";
@@ -1002,6 +1006,60 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   const overviewAvailable = nodes.length >= 600 && !growing && !layoutSettling;
   const distantScene = overviewAvailable && distantZoom;
+  const gpuScope = archiveContextAt(window.location.pathname)?.id || window.location.pathname;
+  const [gpuReadyScene, setGpuReadyScene] = useState<{ geometry: typeof geometry; scope: string } | null>(null);
+  const [gpuFailedScope, setGpuFailedScope] = useState<string | null>(null);
+  const [gpuFallbackReason, setGpuFallbackReason] = useState("");
+  const [gpuHovered, setGpuHovered] = useState("");
+  const [gpuFocused, setGpuFocused] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const gpuOverlayEdges = useMemo(() => renderedEdges.filter((edge) => edge.selected ||
+    !["parent", "spouse"].includes(edge.data?.connection.type || "")), [renderedEdges]);
+  const gpuEligible = nodes.length >= 500 && !growing && !layoutSettling && !layoutBusy &&
+    !activeFanAnchor && mode !== "timeline" && !connecting && gpuFailedScope !== gpuScope &&
+    gpuOverlayEdges.length <= 64 && nodes.every((node) => GpuPortraitCache.supported(node.data.person.photo));
+  const gpuActive = gpuEligible && gpuReadyScene?.geometry === geometry && gpuReadyScene?.scope === gpuScope;
+  const gpuReady = useCallback(() => setGpuReadyScene({ geometry, scope: gpuScope }), [geometry, gpuScope]);
+  const gpuFailure = useCallback((reason: string) => {
+    setGpuFailedScope(gpuScope); setGpuReadyScene(null); setGpuFallbackReason(reason);
+  }, [gpuScope]);
+  const gpuEdges = useMemo(() => {
+    const overlays = new Set(gpuOverlayEdges.map((edge) => edge.id));
+    return renderedEdges.filter((edge) => !overlays.has(edge.id));
+  }, [renderedEdges, gpuOverlayEdges]);
+  const gpuActions = useMemo(() => ({ ...actions, gpu: gpuActive }), [actions, gpuActive]);
+  const gpuOverlayIds = useMemo(() => {
+    const ids = new Set([gpuHovered, gpuFocused]);
+    for (const node of nodes.filter((node) => node.selected).slice(0, 24)) ids.add(node.id);
+    for (const edge of gpuOverlayEdges) { ids.add(edge.source); ids.add(edge.target); }
+    return ids;
+  }, [nodes, gpuHovered, gpuFocused, gpuOverlayEdges]);
+  const gpuHitIndex = useMemo(() => {
+    const index = new Spatial<{ left: number; right: number; top: number; bottom: number; node: PersonNodeType }>();
+    for (const node of nodes) index.add({ node, left: node.position.x, top: node.position.y,
+      right: node.position.x + (node.width || 220), bottom: node.position.y + (node.height || 264) });
+    return index;
+  }, [nodes]);
+  const gpuPersonAt = (clientX: number, clientY: number) => {
+    const bounds = container.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const camera = flow.getViewport(), x = (clientX - bounds.left - camera.x) / camera.zoom,
+      y = (clientY - bounds.top - camera.y) / camera.zoom;
+    return gpuHitIndex.query({ left: x, right: x, top: y, bottom: y })
+      .sort((a, b) => Math.hypot((a.left + a.right) / 2 - x, (a.top + a.bottom) / 2 - y) -
+        Math.hypot((b.left + b.right) / 2 - x, (b.top + b.bottom) / 2 - y))[0]?.node;
+  };
+  const gpuPressPerson = useRef("");
+  const gpuLongPress = useLongPress<HTMLDivElement>(() => {
+    if (gpuPressPerson.current) actions.selectOnly(gpuPressPerson.current);
+  });
+  useEffect(() => {
+    if (!gpuActive || !gpuFocused) return;
+    const frame = requestAnimationFrame(() => container.current?.querySelector<HTMLButtonElement>(
+      `.react-flow__node[data-id="${CSS.escape(gpuFocused)}"] .flow-person-content`,
+    )?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [gpuFocused, gpuActive]);
   const [anchorNotice, setAnchorNotice] = useState("");
   useEffect(() => {
     if (!anchorNotice) return;
@@ -1016,7 +1074,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       const content = target.closest(".flow-person-content, .timeline-person");
       if (content)
         return content.closest("[data-person-id]")?.getAttribute("data-person-id") ?? null;
-      if (!distantScene || !target.closest(".react-flow__pane")) return null;
+      if (!(distantScene || gpuActive) || !target.closest(".react-flow__pane")) return null;
       const bounds = container.current?.getBoundingClientRect();
       return bounds
         ? hitDistantScene(nodes, displayEdges, flow.getViewport(), {
@@ -1040,15 +1098,18 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         .finally(() => { savingAnchor.current = false; });
     },
   );
-  const flowNodes = useMemo(() => distantScene
+  const flowNodes = useMemo(() => gpuActive
+    ? renderedNodes.map((node) => node.type === "household" ? ({ ...node, hidden: true }) : ({ ...node,
+      hidden: !gpuOverlayIds.has(node.id), className: `${node.className || ""} tree-gpu-node-overlay` }))
+    : distantScene
     ? renderedNodes.map((node) => ({ ...node, hidden: true }))
-    : renderedNodes, [renderedNodes, distantScene]);
-  const flowEdges = useMemo(() => distantScene
+    : renderedNodes, [renderedNodes, distantScene, gpuActive, gpuOverlayIds]);
+  const flowEdges = useMemo(() => gpuActive ? gpuOverlayEdges : distantScene
     // Hidden EdgeWrappers still subscribe to every camera update and resolve
     // their handles. Canvas owns these routes; React Flow only needs the nodes
     // (with dimensions intact) for fitView and person camera targets.
     ? []
-    : renderedEdges, [renderedEdges, distantScene]);
+    : renderedEdges, [renderedEdges, distantScene, gpuActive, gpuOverlayEdges]);
   const overviewHouseholds = useMemo(() => displayNodes.filter(
     (node): node is HouseholdNodeType => node.type === "household",
   ), [displayNodes]);
@@ -1232,19 +1293,74 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     </button>
   );
   return (
-    <TreeActions.Provider value={actions}>
+    <TreeActions.Provider value={gpuActions}>
       <div
         ref={container}
         className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} has-portrait-cards ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
+        data-renderer={gpuActive ? "webgl2" : "react-flow"}
+        data-gpu-fallback={gpuFailedScope === gpuScope ? gpuFallbackReason || undefined : undefined}
+        role={gpuActive ? "application" : undefined}
+        onPointerMoveCapture={(event) => {
+          gpuLongPress.handlers.onPointerMove(event);
+          if (!gpuActive || event.pointerType === "touch") return;
+          const target = event.target as Element;
+          const native = target.closest(".react-flow__node-person")?.getAttribute("data-id");
+          const id = native || (target.closest(".react-flow__pane") && !event.buttons
+            ? gpuPersonAt(event.clientX, event.clientY)?.id : "") || "";
+          setGpuHovered((current) => current === id ? current : id);
+        }}
+        onPointerLeave={() => setGpuHovered("")}
+        onPointerUpCapture={gpuLongPress.handlers.onPointerUp}
+        onPointerCancelCapture={gpuLongPress.handlers.onPointerCancel}
+        onLostPointerCapture={gpuLongPress.handlers.onLostPointerCapture}
+        onFocusCapture={(event) => {
+          const target = event.target as Element;
+          const id = target.closest(".react-flow__node-person")?.getAttribute("data-id");
+          if (gpuActive && id) setGpuFocused(id);
+        }}
+        onKeyDown={(event) => {
+          if (!gpuActive || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].includes(event.key)) return;
+          const target = event.target as HTMLElement;
+          if (target !== container.current && !target.classList.contains("flow-person-content")) return;
+          const camera = flow.getViewport();
+          const cx = (canvasWidth / 2 - camera.x) / camera.zoom, cy = (canvasHeight / 2 - camera.y) / camera.zoom;
+          const current = nodes.find((node) => node.id === gpuFocused) || [...nodes].sort((a, b) =>
+            Math.hypot(a.position.x - cx, a.position.y - cy) - Math.hypot(b.position.x - cx, b.position.y - cy))[0];
+          if (!current) return;
+          event.preventDefault(); event.stopPropagation();
+          if (event.key === "Enter" || event.key === " ") { actions.choose(current.data.person.id, event.shiftKey); return; }
+          const dx = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
+          const dy = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+          const score = (node: PersonNodeType) => {
+            const x = node.position.x - current.position.x, y = node.position.y - current.position.y;
+            return x * dx + y * dy > 1 ? Math.hypot(x, y) + Math.abs(x * dy - y * dx) * 2 : Infinity;
+          };
+          const next = nodes.filter((node) => node.id !== current.id && Number.isFinite(score(node)))
+            .sort((a, b) => score(a) - score(b))[0] || current;
+          setGpuFocused(next.id);
+          setManualCameraOverride(true);
+          void flow.setCenter(next.position.x + (next.width || 220) / 2,
+            next.position.y + (next.height || 264) / 2,
+            { zoom: Math.min(1, Math.max(PERSON_FOCUS_ZOOM, camera.zoom)), duration: 0 });
+        }}
         onPointerDownCapture={(event) => {
+          if (gpuActive && (event.target as Element).closest(".react-flow__pane")) {
+            gpuPressPerson.current = gpuPersonAt(event.clientX, event.clientY)?.data.person.id || "";
+            if (gpuPressPerson.current) gpuLongPress.handlers.onPointerDown(event);
+          }
           edgePan.onPointerDownCapture(event);
           middleAnchor.onPointerDownCapture(event);
         }}
         onMouseDownCapture={middleAnchor.onMouseDownCapture}
         onAuxClickCapture={middleAnchor.onAuxClickCapture}
-        onClickCapture={edgePan.onClickCapture}
-        tabIndex={-1}
+        onClickCapture={(event) => {
+          edgePan.onClickCapture(event);
+          if (gpuLongPress.suppressClick.current) {
+            gpuLongPress.suppressClick.current = false; event.preventDefault(); event.stopPropagation();
+          }
+        }}
+        tabIndex={gpuActive ? 0 : -1}
         aria-busy={growthPreparing || growthActive}
         onContextMenu={(event) => {
           if (growthActive || layoutBusy) {
@@ -1252,6 +1368,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             return;
           }
           const target = event.target as Element;
+          if (gpuActive && gpuPersonAt(event.clientX, event.clientY)) { event.preventDefault(); return; }
           if (target.closest(".flow-person")) {
             event.preventDefault();
             return;
@@ -1465,8 +1582,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           connectionMode={ConnectionMode.Loose}
+          onConnectStart={() => setConnecting(true)}
           onConnect={connect}
           onConnectEnd={(event, state) => {
+            setConnecting(false);
             if (
               !props.canEdit ||
               props.allowDragConnect === false ||
@@ -1508,11 +1627,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 sources: edge.data.connection.sources,
               });
           }}
+          onReconnectStart={() => setConnecting(true)}
+          onReconnectEnd={() => setConnecting(false)}
           onEdgeClick={(_, e) => {
             if (e.data) e.data.onSelect(e.data.connection);
           }}
           onPaneClick={(event) => {
-            if (distantScene) {
+            if (distantScene || gpuActive) {
               const bounds = container.current?.getBoundingClientRect();
               const hit = bounds && hitDistantScene(nodes, displayEdges,
                 flow.getViewport(), {
@@ -1570,7 +1691,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           // Culling uses final coordinates, not the CSS-interpolated position.
           // Keep nodes mounted while they move, even across the viewport edge.
           onlyRenderVisibleElements={
-            distantScene || (
+            gpuActive || distantScene || (
               !layoutSettling && (!growing || displayNodes.length > 500) &&
               !(distantZoom && displayNodes.length <= 2000)
             )
@@ -1616,7 +1737,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           )}
         </ReactFlow>
         )}
-        {!activeFanAnchor && (
+        {gpuEligible && (
+          <TreeGpuScene key={gpuScope}
+            nodes={nodes} edges={gpuEdges} households={overviewHouseholds} width={canvasWidth} height={canvasHeight}
+            hovered={gpuHovered} focused={gpuFocused} relationLabel={actions.relationLabel}
+            onReady={gpuReady} onFailure={gpuFailure} />
+        )}
+        {!activeFanAnchor && !gpuActive && (
           <DistantPortraits
             people={family.people}
             nodes={nodes}
