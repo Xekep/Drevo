@@ -579,6 +579,27 @@ export function importAgelongXml(
           `Событие ${ref.attrs.id} отсутствует в XML; ссылка не перенесена.`,
         );
   const documents = index(many(one(root, "documents"), "document"));
+  const familyDocuments = new Map<string, Set<string>>();
+  const linkFamilyDocument = (documentId: string, familyId: string) => {
+    if (!documents.has(documentId)) {
+      warnings.add(`Документ ${documentId || "без ID"} рода ${familyId || "без ID"} отсутствует в XML.`);
+      return;
+    }
+    if (!families.has(familyId)) {
+      warnings.add(`Род ${familyId || "без ID"} для документа ${documentId} отсутствует в XML; связь не перенесена.`);
+      return;
+    }
+    const refs = familyDocuments.get(documentId) || new Set<string>();
+    refs.add(familyId);
+    familyDocuments.set(documentId, refs);
+  };
+  for (const [familyId, family] of families)
+    for (const ref of many(one(family, "documents"), "document"))
+      linkFamilyDocument(ref.attrs.id, familyId);
+  for (const [documentId, document] of documents)
+    for (const detail of many(one(document, "details"), "detail"))
+      for (const ref of many(detail, "family"))
+        linkFamilyDocument(documentId, ref.attrs.id);
   const eventDocumentLinks = new Map<string, Array<{ personId: string; eventId: string }>>();
   const unlinkedEventDocuments = new Set<string>();
   for (const [eventId, eventNode] of events) {
@@ -639,6 +660,9 @@ export function importAgelongXml(
       } } : {}),
       photo: {
         description: addNotes(textOf(n, "comment") || undefined, [
+          ...[...(familyDocuments.get(id) || [])].map((familyId) =>
+            `Род в «Древе Жизни»: ${families.get(familyId)!.attrs.name || `ID ${familyId}`}`,
+          ),
           ...extraAttributes(n, ["id", "path", "title"], "document", warnings),
           ...extraChildren(
             n,
@@ -674,7 +698,11 @@ export function importAgelongXml(
     );
   if (families.size)
     warnings.add(
-      `Раздел families (${families.size} родов): структура, дополнительные свойства и документы родов не переносятся. Названия привязанных родов сохранены в биографиях.`,
+      `Раздел families (${families.size} родов): структура и дополнительные свойства не переносятся. Названия привязанных родов сохранены в биографиях.`,
+    );
+  if (familyDocuments.size)
+    warnings.add(
+      `Связи ${familyDocuments.size} документов с родами сохранены текстом в описаниях файлов; отдельной связи с родом в Drevo нет.`,
     );
   const placeList = [...places.values()];
   const datedPlaces = placeList.filter((place) => place.attrs.date).length;

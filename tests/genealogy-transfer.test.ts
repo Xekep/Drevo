@@ -740,8 +740,51 @@ test("Agelong XML retains cited sources and custom values while disclosing lost 
   assert.match(event.description!, /salary: 10/);
   assert.equal(event.sources?.[0].title, "Архивная книга");
   assert.ok(result.warnings.some((warning) => warning.includes("Источники без ссылок на людей или события (1)")));
-  assert.ok(result.warnings.some((warning) => warning.includes("структура, дополнительные свойства")));
+  assert.ok(result.warnings.some((warning) => warning.includes("структура и дополнительные свойства")));
   assert.ok(result.warnings.some((warning) => warning.includes("отдельного признака избранного")));
+});
+
+test("Agelong XML preserves a family-only photo's group name through GEDZIP", async () => {
+  const xml = `<agelongtree><persons><person id="p" fn="Anna" sn="Example"/></persons>
+    <documents><document id="d" path="archive.xml.files/group.png" title="Group photo">
+      <details><detail><family id="f"/></detail></details></document></documents>
+    <families><family id="f" name="Example lineage"><documents><document id="d"/></documents></family></families>
+    </agelongtree>`;
+  const directory = await mkdtemp(join(tmpdir(), "drevo-xml-family-photo-"));
+  try {
+    const fromFamilyList = importAgelongXml(
+      xml.replace('<details><detail><family id="f"/></detail></details>', ""),
+      "family-list-only",
+    );
+    assert.equal(fromFamilyList.media[0].photo?.description, "Род в «Древе Жизни»: Example lineage");
+    const image = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: "blue" },
+    }).png().toBuffer();
+    const input = join(directory, "input.zip");
+    await zipFile(input, [
+      ["archive.xml", Buffer.from(xml)],
+      ["archive.xml.files/group.png", image],
+    ]);
+    const stage = join(directory, "stage");
+    await mkdir(stage);
+    const prepared = await prepareGenealogyImport(input, stage, "xml-family-photo");
+    assert.equal(prepared.files.length, 1);
+    assert.deepEqual(prepared.files[0].personIds, []);
+    assert.equal(prepared.family.photos?.[0].description, "Род в «Древе Жизни»: Example lineage");
+    assert.deepEqual(prepared.family.photos?.[0].tags, []);
+    assert.ok(prepared.warnings.some((warning) => warning.includes("Связи 1 документов с родами сохранены текстом")));
+
+    const exported = join(directory, "roundtrip.gdz");
+    await writeGenealogyPackage(exported, stage, prepared.family, familyMedia(prepared.family));
+    const restoredStage = join(directory, "restored");
+    await mkdir(restoredStage);
+    const restored = await prepareGenealogyImport(exported, restoredStage, "gedzip-family-photo");
+    assert.equal(restored.family.photos?.[0].description, "Род в «Древе Жизни»: Example lineage");
+    assert.deepEqual(restored.family.photos?.[0].tags, []);
+    assert.equal(restored.files.length, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("Agelong XML retains an event's PDF attachment as a linked document", async () => {
