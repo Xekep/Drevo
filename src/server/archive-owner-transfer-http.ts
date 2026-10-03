@@ -1,7 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { finished } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
 import { archiveOwnerTransfer } from "./archive-owner-transfer.ts";
-import { AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
+import { assertActiveAccountSession, AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
 import { ConflictError } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import type { StoreDatabase } from "./store-database.ts";
@@ -69,16 +70,23 @@ export function archiveOwnerTransferHttp(
       return respond(400, {
         error: "Откройте передачу владения в личном кабинете",
       });
+    const deliverRead = (read: () => Promise<unknown>) => db.transaction(async () => {
+      // The transaction locks the archive before checking the session with
+      // NOWAIT. Keep both locks through response finish, so ownership,
+      // membership, or logout cannot invalidate a prepared result.
+      await assertActiveAccountSession(db, actor.id, session.tokenHash);
+      const value = await read();
+      respond(200, value);
+      await finished(res);
+      return true;
+    });
     try {
       if (path.endsWith("/candidates") && req.method === "GET")
-        return respond(
-          200,
-          await transfer.candidates(actor, url.searchParams.get("q") || ""),
-        );
+        return await deliverRead(() => transfer.candidates(actor, url.searchParams.get("q") || ""));
       if (path.endsWith("/accept") && req.method === "POST")
         return respond(200, await transfer.accept(actor, session.tokenHash));
       if (path === "/api/account/owner-transfer" && req.method === "GET")
-        return respond(200, await transfer.status(actor));
+        return await deliverRead(() => transfer.status(actor));
       if (path === "/api/account/owner-transfer" && req.method === "POST")
         return respond(
           200,
@@ -88,6 +96,10 @@ export function archiveOwnerTransferHttp(
         return respond(200, await transfer.cancel(actor, session.tokenHash));
       return respond(405, { error: "Неподдерживаемый метод" });
     } catch (error) {
+      if (res.headersSent || res.destroyed) {
+        res.destroy(error as Error);
+        return true;
+      }
       const status =
         error instanceof SyntaxError
           ? 400
