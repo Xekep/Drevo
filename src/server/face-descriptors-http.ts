@@ -180,6 +180,32 @@ export function faceDescriptorsHttp({
   // A single photo is matched sequentially, so this budget still covers
   // unusually large group photos without letting one account monopolize CPU.
   const matchLimiter = createSharedRequestLimiter(archive.db, "face-match", { windowMs: 60_000, limit: 120 });
+  const currentWriter = async (req: IncomingMessage, original: { id: string; role: string; personId?: string; treeAccess?: string }) => {
+    const latest = await auth.currentUser(req);
+    if (!latest?.approved || latest.id !== original.id ||
+        latest.role !== original.role ||
+        latest.personId !== original.personId ||
+        latest.treeAccess !== original.treeAccess ||
+        !(await auth.canEdit(req))) return null;
+    if (archive.db.kind === "postgres" && !auth.local) {
+      const session = await auth.accountSession(req);
+      if (!session || session.accountId !== latest.id) return null;
+      const lockedSession = await archive.db.prepare("", `SELECT user_id,expires_at
+        FROM account_sessions WHERE token_hash=? FOR SHARE SKIP LOCKED`)
+        .get(session.tokenHash);
+      if (lockedSession?.user_id !== latest.id ||
+          Number(lockedSession.expires_at) <= Date.now()) return null;
+      const membership = await archive.db.prepare("", `SELECT role,approved,person_id,tree_access
+        FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
+        .get(archive.db.archiveId || "", latest.id);
+      if (!membership?.approved || membership.role !== latest.role ||
+          (membership.person_id || "") !== (latest.personId || "") ||
+          membership.tree_access !== (latest.treeAccess || "all")) return null;
+    }
+    if (!(await accountAiAccess(archive.db, latest.id, auth.local, true)))
+      return null;
+    return latest;
+  };
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (url.pathname === "/api/faces/status") {
       if (req.method !== "GET")
@@ -271,31 +297,10 @@ export function faceDescriptorsHttp({
         // Matching can outlive an archive membership or scope change. Hold the
         // membership and tier through delivery, as other AI results do.
         const delivered = await archive.db.transaction(async () => {
-          const latest = await auth.currentUser(req);
-          if (!latest?.approved || latest.id !== currentActor.id ||
-              latest.role !== currentActor.role ||
-              latest.personId !== currentActor.personId ||
-              latest.treeAccess !== currentActor.treeAccess ||
-              !(await auth.canEdit(req))) return false;
-          if (archive.db.kind === "postgres" && !auth.local) {
-            const session = await auth.accountSession(req);
-            if (!session || session.accountId !== latest.id) return false;
-            const lockedSession = await archive.db.prepare("", `SELECT user_id,expires_at
-              FROM account_sessions WHERE token_hash=? FOR SHARE SKIP LOCKED`)
-              .get(session.tokenHash);
-            if (lockedSession?.user_id !== latest.id ||
-                Number(lockedSession.expires_at) <= Date.now()) return false;
-            const membership = await archive.db.prepare("", `SELECT role,approved,person_id,tree_access
-              FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
-              .get(archive.db.archiveId || "", latest.id);
-            if (!membership?.approved || membership.role !== latest.role ||
-                (membership.person_id || "") !== (latest.personId || "") ||
-                membership.tree_access !== (latest.treeAccess || "all")) return false;
-          }
+          const latest = await currentWriter(req, currentActor);
+          if (!latest) return false;
           if (match && isScopedUser(latest) &&
               !visiblePersonIds((await archive.read()).family, latest).has(match.personId))
-            return false;
-          if (!(await accountAiAccess(archive.db, latest.id, auth.local, true)))
             return false;
           json(res, 200, { match });
           return true;
@@ -326,14 +331,14 @@ export function faceDescriptorsHttp({
         : null;
       const source = await archive.db
         .prepare(
-          `SELECT photo_tags.id AS tag_id, photos.data AS photo
+          `SELECT photo_tags.id AS tag_id, photo_tags.data AS tag, photos.data AS photo
              FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id
             WHERE photos.id=?
               AND photo_tags.person_id=?
               AND (? IS NULL OR photo_tags.id=?)
             ORDER BY photo_tags.rowid DESC
             LIMIT 1`,
-          "SELECT photo_tags.id AS tag_id, photos.data AS photo\n             FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id\n            WHERE photos.id=?\n              AND photo_tags.person_id=?\n              AND (? IS NULL OR photo_tags.id=?)\n            ORDER BY photo_tags.ordinal DESC\n            LIMIT 1",
+          "SELECT photo_tags.id AS tag_id, photo_tags.data AS tag, photos.data AS photo\n             FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id\n            WHERE photos.id=?\n              AND photo_tags.person_id=?\n              AND (? IS NULL OR photo_tags.id=?)\n            ORDER BY photo_tags.ordinal DESC\n            LIMIT 1",
         )
         .get(
           sample.sourcePhotoId,
@@ -349,32 +354,36 @@ export function faceDescriptorsHttp({
       const photo = JSON.parse(String(source.photo)) as { createdBy?: string };
       if (actor.role !== "admin" && photo.createdBy !== actor.id)
         return json(res, 403, { error: "Нет доступа к исходной фотографии" });
-      const count = Number(
-        (await archive.db
-          .prepare(
-            `SELECT count(*) AS n
-               FROM face_descriptors
-              WHERE person_id=?
-                AND model=?
-                AND (source_tag_id IS NULL OR source_tag_id<>?)`,
-            "SELECT count(*) AS n\n               FROM face_descriptors\n              WHERE person_id=?\n                AND model=?\n                AND (source_tag_id IS NULL OR source_tag_id<>?)",
-          )
-          .get(sample.personId, sample.model, sourceTagRowId))!.n,
-      );
-      if (count >= 20)
-        return json(res, 409, {
-          error: "Для этого человека уже сохранено максимальное число образцов",
-        });
       const saved = await archive.db.transaction(async () => {
-        const currentActor = await auth.currentUser(req);
-        if (!currentActor || !(await auth.canEdit(req)) ||
-            !(await accountAiAccess(archive.db, currentActor.id, auth.local, true)))
-          return false;
+        const currentActor = await currentWriter(req, actor);
+        if (!currentActor) return "access";
         if (isScopedUser(currentActor) &&
             !visiblePersonIds((await archive.read()).family, currentActor).has(sample.personId))
-          return false;
-        if (currentActor.role !== "admin" && photo.createdBy !== currentActor.id)
-          return false;
+          return "access";
+        // Serialize concurrent saves for the same person before enforcing the
+        // sample limit. Also refuse a tag that changed while the browser was
+        // computing its descriptor.
+        const person = await archive.db.prepare(
+          "SELECT id FROM people WHERE id=?",
+          "SELECT id FROM people WHERE id=? FOR UPDATE",
+        ).get(sample.personId);
+        if (!person) return "source";
+        const currentSource = await archive.db.prepare(
+          `SELECT photo_tags.data AS tag, photos.data AS photo FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id
+            WHERE photos.id=? AND photo_tags.person_id=? AND photo_tags.id=?`,
+          `SELECT photo_tags.data AS tag, photos.data AS photo FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id
+            WHERE photos.id=? AND photo_tags.person_id=? AND photo_tags.id=? FOR SHARE OF photos,photo_tags`,
+        ).get(sample.sourcePhotoId, sample.personId, sourceTagRowId);
+        if (!currentSource || JSON.stringify(currentSource.tag) !== JSON.stringify(source.tag))
+          return "source";
+        const currentPhoto = JSON.parse(String(currentSource.photo)) as { createdBy?: string };
+        if (currentActor.role !== "admin" && currentPhoto.createdBy !== currentActor.id)
+          return "access";
+        const count = Number((await archive.db.prepare(
+          `SELECT count(*) AS n FROM face_descriptors WHERE person_id=? AND model=?
+            AND (source_tag_id IS NULL OR source_tag_id<>?)`,
+        ).get(sample.personId, sample.model, sourceTagRowId))!.n);
+        if (count >= 20) return "limit";
         await archive.db
           .prepare(
             "DELETE FROM face_descriptors WHERE source_tag_id=? AND model=?",
@@ -392,14 +401,16 @@ export function faceDescriptorsHttp({
             sample.id,
             sample.personId,
             JSON.stringify(sample.descriptor),
-            actor.id,
+            currentActor.id,
             sample.sourcePhotoId,
             sourceTagRowId,
             sample.model,
           );
-        return true;
+        return "saved";
       });
-      if (!saved) return json(res, 403, { error: "Доступ к распознаванию лиц изменился" });
+      if (saved === "access") return json(res, 403, { error: "Доступ к распознаванию лиц изменился" });
+      if (saved === "source") return json(res, 409, { error: "Отметка на фото изменилась. Повторите распознавание" });
+      if (saved === "limit") return json(res, 409, { error: "Для этого человека уже сохранено максимальное число образцов" });
       return json(res, 201, { ok: true });
     } catch (error) {
       if (isInfrastructureError(error)) throw error;
