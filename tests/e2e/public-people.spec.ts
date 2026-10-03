@@ -208,6 +208,34 @@ test("privacy eye opens with one tap on mobile", async ({ page, isMobile }) => {
   await expect(privacy).toHaveAttribute("data-publication-state", /hidden|published/);
 });
 
+test("a saved publication change asks for refresh when access changes before reply", async ({ page, isMobile }) => {
+  test.skip(isMobile, "The desktop privacy dialog covers this response contract");
+  const path = "/api/admin/published-people/e2e-memorial-person";
+  let writes = 0;
+  await page.route((url) => url.pathname === path, (route) => {
+    if (route.request().method() === "PUT") {
+      writes++;
+      return route.fulfill({ json: { saved: true, refreshRequired: true } });
+    }
+    return route.fulfill({ json: {
+      published: false, publishable: true, fields: {
+        birthSurname: false, birthYear: false, deathYear: false,
+        birthPlace: false, deathPlace: false,
+      }, person: { name: "Тестов Иван" },
+    } });
+  });
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
+  const card = page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-person");
+  await card.hover();
+  await card.locator(".flow-privacy").click();
+  const dialog = page.getByRole("dialog", { name: "Публикация человека в поиске" });
+  await dialog.getByRole("button", { name: "Опубликовать в поиске" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Изменение сохранено");
+  await expect(dialog.getByRole("button", { name: "Опубликовать в поиске" })).toHaveCount(0);
+  expect(writes).toBe(1);
+});
+
 test("publication admin refreshes an automatically revoked status on focus", async ({ page }) => {
   let published = true;
   await page.route((url) => url.pathname === "/api/admin/published-people/batch", (route) =>

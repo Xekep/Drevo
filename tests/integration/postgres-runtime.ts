@@ -5990,6 +5990,20 @@ try {
     };
     const pausedBatchFields = await publicationBatchBarrier("fields");
     const pausedBatchPreview = await publicationBatchBarrier("preview");
+    let scalarReached!: () => void, releaseScalar!: () => void;
+    const scalarReady = new Promise<void>((resolve) => { scalarReached = resolve; });
+    const scalarGate = new Promise<void>((resolve) => { releaseScalar = resolve; });
+    const scalarEndpoint = publishedPeopleHttp({ archive: app!.archive, auth: detailAuth,
+      store: publishedPeopleStore(app!.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeAdminMutationFinalLock: async () => { scalarReached(); await scalarGate; } });
+    const scalarServer = createServer((req, res) => {
+      void scalarEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => scalarServer.listen(0, "127.0.0.1", resolve));
+    const scalarPort = (scalarServer.address() as { port: number }).port;
+    const pausedScalar = fetch(`http://127.0.0.1:${scalarPort}` +
+      "/api/admin/published-people/person-a", { method: "DELETE", headers: ownerHeaders });
     let adminReached!: () => void, releaseAdmin!: () => void;
     const adminReady = new Promise<void>((resolve) => { adminReached = resolve; });
     const adminGate = new Promise<void>((resolve) => { releaseAdmin = resolve; });
@@ -6025,6 +6039,11 @@ try {
         new Promise<never>((_, reject) => setTimeout(() =>
           reject(new Error("Publication batch did not reach both barriers")), 30_000)),
       ]);
+      await Promise.race([scalarReady,
+        pausedScalar.then(() => { throw new Error("Scalar publication mutation sent before barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Scalar publication mutation did not reach post-commit barrier")), 30_000)),
+      ]);
       const acceptedTransfer = await fetch(securedBase + "/api/account/owner-transfer/accept", {
         method: "POST",
         headers: { ...ownerHeaders, Cookie: `drevo_session=${candidateSuccessorToken}`,
@@ -6035,6 +6054,7 @@ try {
       releaseAdmin();
       pausedBatchFields.release();
       pausedBatchPreview.release();
+      releaseScalar();
       assert.equal((await beforeLock.response).status, 403,
         "a former owner cannot receive a candidate page after HTTP ownership transfer");
       const revokedAdmin = await pausedAdmin;
@@ -6048,16 +6068,30 @@ try {
       assert.deepEqual([revokedBatchFields.status,revokedBatchPreview.status], [403,403],
         "a former owner cannot receive batch fields or a living-card preview");
       assert.equal("fields" in fieldsBody || "people" in previewBody, false);
+      const revokedScalar = await pausedScalar;
+      const scalarBody = await revokedScalar.json();
+      assert.equal(revokedScalar.status, 200,
+        "a committed publication mutation remains acknowledged after ownership transfer");
+      assert.equal(scalarBody.saved, true);
+      assert.equal(scalarBody.refreshRequired, true);
+      assert.equal("person" in scalarBody, false);
+      assert.equal((await fetch(securedBase + "/api/admin/published-people/person-a",
+        { headers: ownerHeaders })).status, 403,
+      "the former owner cannot read the card again after transfer");
     } finally {
       releaseAdmin();
+      releaseScalar();
       await pausedBatchFields.close();
       await pausedBatchPreview.close();
+      await pausedScalar.catch(() => {});
+      await new Promise<void>((resolve) => scalarServer.close(() => resolve()));
       await pausedAdmin.catch(() => {});
       await new Promise<void>((resolve) => adminServer.close(() => resolve()));
       await beforeLock.close();
     }
     console.log("runtime_admin_published_owner_transfer_revocation_ok");
     console.log("runtime_admin_published_batch_owner_transfer_revocation_ok");
+    console.log("runtime_admin_published_mutation_transfer_ack_ok");
     console.log("runtime_discovery_candidate_owner_http_transfer_ok");
     await client.query(`UPDATE archive_owners SET user_id=$1
       WHERE archive_id='runtime-test'`, [candidatePriorOwner]);
@@ -6172,6 +6206,58 @@ try {
       await client.query(`DELETE FROM account_sessions WHERE token_hash=$1`, [batchSessionHash]);
     }
     console.log("runtime_admin_published_batch_session_delivery_revocation_ok");
+    const scalarSessionToken = newSessionToken();
+    const scalarSessionHash = sessionTokenHash(scalarSessionToken);
+    await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
+      VALUES($1,$2,$3)`, [scalarSessionHash,candidatePriorOwner,Date.now() + 600_000]);
+    let committedScalarReached!: () => void, releaseCommittedScalar!: () => void;
+    const committedScalarReady = new Promise<void>((resolve) => { committedScalarReached = resolve; });
+    const committedScalarGate = new Promise<void>((resolve) => { releaseCommittedScalar = resolve; });
+    const committedScalarEndpoint = publishedPeopleHttp({ archive: app!.archive, auth: detailAuth,
+      store: publishedPeopleStore(app!.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeAdminMutationFinalLock: async () => {
+        committedScalarReached();
+        await committedScalarGate;
+      },
+    });
+    const committedScalarServer = createServer((req, res) => {
+      void committedScalarEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => committedScalarServer.listen(0, "127.0.0.1", resolve));
+    const committedScalarPort = (committedScalarServer.address() as { port: number }).port;
+    const scalarSessionHeaders = { ...ownerHeaders, Cookie: `drevo_session=${scalarSessionToken}` };
+    const publishedFields = await publishedPeopleStore(app!.archive.db).getFields(candidateSourceId);
+    assert.ok(publishedFields);
+    const heldScalar = fetch(`http://127.0.0.1:${committedScalarPort}` +
+      `/api/admin/published-people/${candidateSourceId}`, { method: "PUT",
+      headers: scalarSessionHeaders, body: JSON.stringify({ fields: publishedFields }) });
+    try {
+      await Promise.race([committedScalarReady,
+        heldScalar.then(() => { throw new Error("Scalar publication update sent before final barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Scalar publication update did not reach post-commit barrier")), 30_000)),
+      ]);
+      await client.query(`DELETE FROM account_sessions WHERE token_hash=$1`, [scalarSessionHash]);
+      releaseCommittedScalar();
+      const revokedScalarSession = await heldScalar;
+      assert.equal(revokedScalarSession.status, 200,
+        "a committed publication update remains acknowledged after session revocation");
+      const revokedScalarBody = await revokedScalarSession.json();
+      assert.equal(revokedScalarBody.saved, true);
+      assert.equal(revokedScalarBody.refreshRequired, true);
+      assert.equal("person" in revokedScalarBody, false);
+      assert.equal((await fetch(securedBase +
+        `/api/admin/published-people/${candidateSourceId}`,
+      { headers: scalarSessionHeaders })).status, 401,
+      "a revoked session cannot read the updated publication again");
+    } finally {
+      releaseCommittedScalar();
+      await heldScalar.catch(() => {});
+      await new Promise<void>((resolve) => committedScalarServer.close(() => resolve()));
+      await client.query(`DELETE FROM account_sessions WHERE token_hash=$1`, [scalarSessionHash]);
+    }
+    console.log("runtime_admin_published_mutation_session_ack_ok");
     const duringLock = await ownerCandidateBarrier(true, "203.0.113.67");
     let transfer: Promise<unknown> | undefined;
     try {
