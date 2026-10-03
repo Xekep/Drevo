@@ -2232,46 +2232,58 @@ try {
   );
   const membershipWriter = new pg.Client();
   const revisionWriter = new pg.Client();
+  const ownerWriter = new pg.Client();
   try {
     await scopeDeliveryReached;
     await membershipWriter.connect();
     await revisionWriter.connect();
+    await ownerWriter.connect();
     const membershipPid = (await membershipWriter.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
     const revisionPid = (await revisionWriter.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+    const ownerPid = (await ownerWriter.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
     await membershipWriter.query("BEGIN");
     await revisionWriter.query("BEGIN");
+    await ownerWriter.query("BEGIN");
     await membershipWriter.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
     await revisionWriter.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+    await ownerWriter.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
     const changeMembership = membershipWriter.query(
       "UPDATE archive_memberships SET role=role WHERE archive_id='runtime-test' AND user_id='reader'",
     );
     const changeRevision = revisionWriter.query(
       "UPDATE archives SET revision=revision+1 WHERE id='runtime-test'",
     );
-    let bothBlocked = false;
-    for (let attempt = 0; attempt < 100 && !bothBlocked; attempt++) {
+    const lockOwner = ownerWriter.query(
+      "SELECT user_id FROM archive_owners WHERE archive_id='runtime-test' FOR UPDATE",
+    );
+    let allBlocked = false;
+    for (let attempt = 0; attempt < 100 && !allBlocked; attempt++) {
       const locks = await client.query(
         `SELECT cardinality(pg_blocking_pids($1)) > 0 AS membership_blocked,
-                cardinality(pg_blocking_pids($2)) > 0 AS revision_blocked`,
-        [membershipPid, revisionPid],
+                cardinality(pg_blocking_pids($2)) > 0 AS revision_blocked,
+                cardinality(pg_blocking_pids($3)) > 0 AS owner_blocked`,
+        [membershipPid, revisionPid, ownerPid],
       );
-      bothBlocked = locks.rows[0].membership_blocked === true &&
-        locks.rows[0].revision_blocked === true;
-      if (!bothBlocked) await new Promise((resolve) => setTimeout(resolve, 25));
+      allBlocked = locks.rows[0].membership_blocked === true &&
+        locks.rows[0].revision_blocked === true && locks.rows[0].owner_blocked === true;
+      if (!allBlocked) await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    assert.equal(bothBlocked, true,
-      "membership revocation and graph changes wait for the final export handoff");
+    assert.equal(allBlocked, true,
+      "membership, owner, and graph changes wait for the final export handoff");
     releaseScopeDelivery();
     assert.equal(await scopeDelivery, "sent");
     assert.equal((await changeMembership).rowCount, 1);
     assert.equal((await changeRevision).rowCount, 1);
+    assert.equal((await lockOwner).rowCount, 1);
   } finally {
     releaseScopeDelivery();
     await scopeDelivery.catch(() => {});
     await membershipWriter.query("ROLLBACK").catch(() => {});
     await revisionWriter.query("ROLLBACK").catch(() => {});
+    await ownerWriter.query("ROLLBACK").catch(() => {});
     await membershipWriter.end().catch(() => {});
     await revisionWriter.end().catch(() => {});
+    await ownerWriter.end().catch(() => {});
   }
   await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [scopeLockHash]);
   const deletionOrderToken = newSessionToken();
@@ -8992,7 +9004,7 @@ try {
       "INSERT INTO account_tiers(account_id,full_access) VALUES('transfer-target',false)",
     );
     await client.query(
-      "INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access) VALUES($1,'transfer-target','reader',true,'all')",
+      "INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access) VALUES($1,'transfer-target','admin',true,'all')",
       [personalArchiveId],
     );
     const newOwnerToken = newSessionToken();
@@ -9143,7 +9155,7 @@ try {
         })
       ).status,
       403,
-      "a member cannot initiate ownership transfer",
+      "an archive admin who is not owner cannot initiate ownership transfer",
     );
     assert.equal(
       (
@@ -9302,13 +9314,39 @@ try {
       "SELECT count(*)::int AS n FROM archive_owner_transfers WHERE archive_id=$1",
       [personalArchiveId],
     )).rows[0].n, 1, "the pending consent survives both revoked requests");
-    const acceptedOwner = await fetch(
-      oauthBase + ownerTransferPath + "/accept",
-      {
-        method: "POST",
+    const transferExportDb = await openPostgresDatabase(personalArchiveId, source);
+    const transferExportSnapshot = await accountDataExport(transferExportDb).read("transfer-target");
+    assert.ok(transferExportSnapshot);
+    assert.equal(transferExportSnapshot.download.archives.find((archive) => archive.id === personalArchiveId)?.owned,
+      false, "the recipient's account export starts before accepting ownership");
+    assert.equal(transferExportSnapshot.download.archives.find((archive) => archive.id === personalArchiveId)?.role,
+      "admin", "an existing archive admin keeps the same role during acceptance");
+    const transferExportAuth = await createAuth(await userStore(transferExportDb), transferExportDb,
+      process.env.PUBLIC_ORIGIN);
+    let acceptedOwner!: Response;
+    const delayedTransferExport = accountDataExportHttp(transferExportDb, transferExportAuth, async () => {
+      acceptedOwner = await fetch(oauthBase + ownerTransferPath + "/accept", {
+        method: "POST", headers: transferTargetHeaders,
+      });
+    });
+    const transferExportServer = createServer((req, res) => {
+      void delayedTransferExport(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => transferExportServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const exportPort = (transferExportServer.address() as { port: number }).port;
+      const exportAfterTransfer = await fetch(`http://127.0.0.1:${exportPort}/api/account/export`, {
         headers: transferTargetHeaders,
-      },
-    );
+      });
+      assert.equal(exportAfterTransfer.status, 409,
+        "a prepared account export must not report stale ownership after acceptance");
+      assert.doesNotMatch(await exportAfterTransfer.text(), /"owned":false/);
+    } finally {
+      transferExportServer.closeAllConnections();
+      await new Promise<void>((resolve) => transferExportServer.close(() => resolve()));
+      await transferExportDb.close();
+    }
     assert.equal(
       acceptedOwner.status,
       200,

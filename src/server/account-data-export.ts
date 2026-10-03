@@ -17,6 +17,7 @@ type AccessScope = {
   treeAccess: string;
   personId: string | null;
   revision: number;
+  owned: boolean;
   aiChatsExported: boolean;
 };
 
@@ -38,7 +39,7 @@ function scopesStillVisible(
     return row?.approved === scope.approved && row.role === scope.role &&
       row.tree_access === scope.treeAccess &&
       (row.person_id == null ? null : String(row.person_id)) === scope.personId &&
-      Number(row.revision) === scope.revision;
+      Number(row.revision) === scope.revision && row.owned === scope.owned;
   });
 }
 
@@ -133,6 +134,7 @@ export function accountDataExport(db: StoreDatabase) {
               ? null
               : String(membership.person_id),
             revision: Number(archive.revision),
+            owned: membership.owned === true,
             aiChatsExported: false,
           };
           accessScopes.push(accessScope);
@@ -273,7 +275,9 @@ export function accountDataExport(db: StoreDatabase) {
         if (!(await db.prepare("", "SELECT 1 FROM accounts WHERE id=?")
           .get(accountId))) return false;
         const rows = await db.prepare("", `SELECT m.archive_id,m.role,m.tree_access,
-          m.person_id,m.approved,a.revision FROM archive_memberships m
+          m.person_id,m.approved,a.revision,
+          EXISTS(SELECT 1 FROM archive_owners o WHERE o.archive_id=m.archive_id
+            AND o.user_id=m.user_id) AS owned FROM archive_memberships m
           JOIN archives a ON a.id=m.archive_id WHERE m.user_id=?`).all(accountId);
         return scopesStillVisible(scopes, rows);
       }, true);
@@ -319,6 +323,13 @@ export function accountDataExport(db: StoreDatabase) {
             const membershipRows: Array<Record<string, unknown>> = [];
             for (const archiveId of archiveIds) {
               await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
+              // Ownership can change while an already-admin recipient keeps
+              // the same role and tree scope. Lock it with the archive before
+              // validating the prepared account download.
+              const owner = await client.query(
+                "SELECT user_id FROM archive_owners WHERE archive_id=$1 FOR SHARE NOWAIT",
+                [archiveId],
+              );
               const membership = await client.query(
                 `SELECT m.archive_id,m.role,m.tree_access,m.person_id,m.approved,a.revision
                  FROM archive_memberships m JOIN archives a ON a.id=m.archive_id
@@ -326,7 +337,10 @@ export function accountDataExport(db: StoreDatabase) {
                  FOR SHARE OF m,a NOWAIT`,
                 [accountId, archiveId],
               );
-              membershipRows.push(...membership.rows);
+              membershipRows.push(...membership.rows.map((row) => ({
+                ...row,
+                owned: owner.rows[0]?.user_id === accountId,
+              })));
             }
             if (!scopesStillVisible(scopes, membershipRows))
               return "access-changed";
