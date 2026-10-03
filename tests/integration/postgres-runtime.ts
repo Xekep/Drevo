@@ -59,6 +59,7 @@ import { accountSelfDeletionHttp } from "../../src/server/account-self-deletion-
 import { archiveOwnerTransferHttp } from "../../src/server/archive-owner-transfer-http.ts";
 import { archiveDeletionHttp } from "../../src/server/archive-deletion-http.ts";
 import { accountDataExportHttp } from "../../src/server/account-data-export-http.ts";
+import { accountAttachmentExportHttp } from "../../src/server/account-attachment-export-http.ts";
 import { gedcomHttp } from "../../src/server/gedcom-http.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
 import { mcpHttp } from "../../src/server/mcp-http.ts";
@@ -4845,6 +4846,122 @@ try {
     .filter((item: { text: string }) => item.text.startsWith("account-export-probe:"))
     .map((item: { text: string }) => item.text), ["account-export-probe:visible"],
   "a scoped member cannot export their old comment in a now-hidden branch");
+  const attachmentExportStore = discussionAttachmentStore(join(dirname(source), "uploads"));
+  const visibleAttachmentBytes = Buffer.from("reader-owned-visible-attachment");
+  const hiddenAttachmentBytes = Buffer.from("reader-owned-hidden-attachment");
+  const foreignAttachmentBytes = Buffer.from("owner-owned-visible-attachment");
+  const [visibleAttachment] = await attachmentExportStore.save([
+    await prepareCommentFile("visible.txt", visibleAttachmentBytes),
+  ]);
+  const [hiddenAttachment] = await attachmentExportStore.save([
+    await prepareCommentFile("hidden.txt", hiddenAttachmentBytes),
+  ]);
+  const [foreignAttachment] = await attachmentExportStore.save([
+    await prepareCommentFile("foreign.txt", foreignAttachmentBytes),
+  ]);
+  const exportAttachmentRows = await client.query(
+    `INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,attachments)
+     VALUES('person-a','reader','Reader',$1,'account-export-attachment:visible',$2::jsonb),
+           ('account-export-hidden','reader','Reader',$1,'account-export-attachment:hidden',$3::jsonb),
+           ('person-a','owner','Owner',$1,'account-export-attachment:foreign',$4::jsonb)
+     RETURNING id`,
+    [Date.now(), JSON.stringify([visibleAttachment]), JSON.stringify([hiddenAttachment]),
+      JSON.stringify([foreignAttachment])],
+  );
+  const attachmentExportUrl = securedBase + "/api/account/export/attachments";
+  const accountAttachments = await fetch(attachmentExportUrl, { headers });
+  assert.equal(accountAttachments.status, 200,
+    "an invited member can back up their own visible discussion originals");
+  const accountAttachmentZip = join(directory, "reader-account-attachments.zip");
+  writeFileSync(accountAttachmentZip, Buffer.from(await accountAttachments.arrayBuffer()));
+  const attachmentZip = await openPromise(accountAttachmentZip);
+  const attachmentEntries = new Map<string, Buffer>();
+  for await (const entry of attachmentZip.eachEntry()) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of await attachmentZip.openReadStreamPromise(entry))
+      chunks.push(Buffer.from(chunk));
+    attachmentEntries.set(entry.fileName, Buffer.concat(chunks));
+  }
+  const attachmentManifest = JSON.parse(attachmentEntries.get("manifest.json")!.toString()) as {
+    format: string; version: number;
+    attachments: Array<{ archiveId: string; commentId: string; path: string; id: string; name: string; sha256: string }>;
+  };
+  assert.equal(attachmentManifest.format, "drevo-account-attachments");
+  assert.equal(attachmentManifest.version, 1);
+  assert.equal(attachmentManifest.attachments.length, 1,
+    "hidden-branch and other authors' attachments must be excluded");
+  assert.equal(attachmentManifest.attachments[0].archiveId, "runtime-test");
+  assert.equal(attachmentManifest.attachments[0].commentId, String(exportAttachmentRows.rows[0].id));
+  assert.equal(attachmentManifest.attachments[0].id, visibleAttachment.id);
+  assert.equal(attachmentManifest.attachments[0].name, "visible.txt");
+  assert.deepEqual(attachmentEntries.get(attachmentManifest.attachments[0].path), visibleAttachmentBytes);
+  assert.equal(attachmentManifest.attachments[0].sha256,
+    createHash("sha256").update(visibleAttachmentBytes).digest("hex"));
+  assert.equal(attachmentEntries.size, 2);
+  await client.query("UPDATE archive_memberships SET approved=false WHERE user_id='reader'");
+  const revokedAttachmentExport = await fetch(attachmentExportUrl, { headers });
+  assert.notEqual(revokedAttachmentExport.status, 200,
+    "an unapproved member cannot download their former discussion originals");
+  assert.doesNotMatch(await revokedAttachmentExport.text(), /reader-owned-visible-attachment/);
+  await client.query("UPDATE archive_memberships SET approved=true WHERE user_id='reader'");
+  const attachmentExportAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  const raceAttachmentExport = accountAttachmentExportHttp(
+    app.archive.db, attachmentExportAuth,
+    () => join(dirname(source), "uploads"),
+    async () => {
+      await client.query("UPDATE archive_memberships SET approved=false WHERE user_id='reader'");
+    },
+  );
+  const raceAttachmentServer = createServer((req, res) => {
+    void raceAttachmentExport(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => raceAttachmentServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (raceAttachmentServer.address() as { port: number }).port;
+    const changedAttachmentExport = await fetch(
+      `http://127.0.0.1:${port}/api/account/export/attachments`, { headers });
+    assert.equal(changedAttachmentExport.status, 409,
+      "revocation after original preflight must block the ZIP before its first byte");
+    assert.equal(changedAttachmentExport.headers.get("content-type"), "application/json; charset=utf-8");
+    assert.doesNotMatch(await changedAttachmentExport.text(), /reader-owned-visible-attachment/);
+  } finally {
+    await new Promise<void>((resolve) => raceAttachmentServer.close(() => resolve()));
+    await client.query("UPDATE archive_memberships SET approved=true WHERE user_id='reader'");
+  }
+  const detachAttachmentExport = accountAttachmentExportHttp(
+    app.archive.db, attachmentExportAuth,
+    () => join(dirname(source), "uploads"),
+    async () => {
+      await client.query("UPDATE person_comments SET attachments='[]'::jsonb WHERE id=$1",
+        [exportAttachmentRows.rows[0].id]);
+    },
+  );
+  const detachAttachmentServer = createServer((req, res) => {
+    void detachAttachmentExport(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => detachAttachmentServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (detachAttachmentServer.address() as { port: number }).port;
+    const detached = await fetch(`http://127.0.0.1:${port}/api/account/export/attachments`, { headers });
+    assert.equal(detached.status, 409,
+      "detaching a file after ZIP preflight must block delivery of stale bytes");
+    assert.equal(detached.headers.get("content-type"), "application/json; charset=utf-8");
+    await detached.text();
+  } finally {
+    await new Promise<void>((resolve) => detachAttachmentServer.close(() => resolve()));
+    await client.query("UPDATE person_comments SET attachments=$1::jsonb WHERE id=$2",
+      [JSON.stringify([visibleAttachment]), exportAttachmentRows.rows[0].id]);
+  }
+  await attachmentExportStore.remove([visibleAttachment]);
+  const missingAttachmentExport = await fetch(attachmentExportUrl, { headers });
+  assert.equal(missingAttachmentExport.status, 409,
+    "a missing original must fail explicitly before starting the ZIP");
+  assert.equal(missingAttachmentExport.headers.get("content-type"), "application/json; charset=utf-8");
+  await client.query("DELETE FROM person_comments WHERE text LIKE 'account-export-attachment:%'");
+  await attachmentExportStore.remove([visibleAttachment, hiddenAttachment, foreignAttachment]);
   const ownerCommentExport = await fetch(accountExportUrl, { headers: ownerHeaders })
     .then((response) => response.json());
   assert.deepEqual(new Set(ownerCommentExport.archives.map((item: { id: string }) => item.id)),

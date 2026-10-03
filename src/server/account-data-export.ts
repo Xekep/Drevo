@@ -6,6 +6,7 @@ import { commentFilesFromJson } from "./discussion-attachments.ts";
 import type { CommentAttachmentFile } from "../shared/person-discussion.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
 import { aiChatAccessScope } from "./ai-chat-access-scope.ts";
+import type { PoolClient } from "pg";
 
 const MAX_EXPORTED_AI_MESSAGE_BYTES = 16 * 1024 * 1024;
 const MAX_EXPORTED_AI_MESSAGES = 50_000;
@@ -46,7 +47,7 @@ function scopesStillVisible(
 /** A consistent snapshot of the account's own profile and archive access. */
 export function accountDataExport(db: StoreDatabase) {
   return {
-    async read(accountId: string) {
+    async read(accountId: string, includeAiChats = true) {
       if (db.kind !== "postgres") return null;
       return await db.transaction(async () => {
         const profile = await db
@@ -176,7 +177,7 @@ export function accountDataExport(db: StoreDatabase) {
                     ? null
                     : new Date(Number(row.updated_ms)).toISOString(),
               }));
-            if (await accountAiAccess(db, accountId)) {
+            if (includeAiChats && await accountAiAccess(db, accountId)) {
               const scope = aiChatAccessScope(user, family);
               // PostgreSQL counts visible rows and bytes inside this same
               // snapshot before the chat history is materialized in Node.
@@ -292,6 +293,7 @@ export function accountDataExport(db: StoreDatabase) {
       tokenHash: string,
       scopes: AccessScope[],
       deliver: () => void | Promise<void>,
+      validate?: (client: PoolClient) => Promise<boolean>,
     ): Promise<"sent" | "session-expired" | "access-changed" | "access-busy"> {
       if (db.kind !== "postgres" || !db.postgresTransaction)
         return "access-changed";
@@ -360,6 +362,7 @@ export function accountDataExport(db: StoreDatabase) {
                   tier.rows[0]?.owner_full !== true)
                 return "access-changed";
             }
+            if (validate && !(await validate(client))) return "access-changed";
             await deliver();
             return "sent";
           });
