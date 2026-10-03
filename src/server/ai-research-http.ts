@@ -159,6 +159,14 @@ export function aiResearchHttp({
           membership.tree_access !== (current.treeAccess || "all")) return false;
       }
     }
+    if (lockAccess) {
+      // Transactional callers already hold session and membership locks. Keep
+      // the established tier-before-scope order; the tier lock lasts through
+      // the remaining read and write until that transaction commits.
+      return (await auth.canRead(req)) &&
+        (await accountAiAccess(archive.db, current.id, auth.local, true)) &&
+        (await accessScope(current)) === expectedScope;
+    }
     if (!(await auth.canRead(req)) || (await accessScope(current)) !== expectedScope)
       return false;
     // A scoped archive read can wait while the account tier or membership
