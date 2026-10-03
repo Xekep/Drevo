@@ -1900,9 +1900,38 @@ try {
   await client.query(
     "INSERT INTO account_identities(provider,subject,account_id) VALUES('email','reader-export@example.invalid','reader')",
   );
+  const ownerExportChatId = randomUUID();
+  const readerExportChatId = randomUUID();
+  const staleExportChatId = randomUUID();
+  await client.query(
+    `INSERT INTO ai_chats(archive_id,id,user_id,access_scope,yandex_conversation_id)
+     VALUES('runtime-test',$1,'owner',$4,'remote-conversation-secret'),
+           ('runtime-test',$2,'reader',$5,NULL),
+           ('runtime-test',$3,'reader','former-scope',NULL)`,
+    [ownerExportChatId, readerExportChatId, staleExportChatId,
+      JSON.stringify(["admin", "all", ""]), JSON.stringify(["reader", "all", ""])],
+  );
+  await client.query(
+    `INSERT INTO ai_chat_messages(archive_id,chat_id,role,content,data)
+     VALUES('runtime-test',$1,'user','owner-export-chat-text','{}'::jsonb),
+           ('runtime-test',$2,'assistant','reader-export-chat-text',
+             '{"attachments":[{"url":"attachment-private-url"}]}'::jsonb),
+           ('runtime-test',$2,'user','hidden-internal-prompt',
+             '{"hidden":true,"token":"internal-token"}'::jsonb),
+           ('runtime-test',$3,'user','former-scope-secret','{}'::jsonb)`,
+    [ownerExportChatId, readerExportChatId, staleExportChatId],
+  );
+  const readerTierBeforeExport = (await client.query(
+    "SELECT full_access FROM account_tiers WHERE account_id='reader'",
+  )).rows[0].full_access === true;
+  const ownerTierBeforeExport = (await client.query(
+    "SELECT full_access FROM account_tiers WHERE account_id='owner'",
+  )).rows[0].full_access === true;
+  await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
   const accountExportUrl = securedBase + "/api/account/export";
   assert.equal((await fetch(accountExportUrl)).status, 401);
   assert.equal((await fetch(accountExportUrl, { method: "POST", headers: ownerHeaders })).status, 405);
+  try {
   const accountExports = await Promise.all(
     Array.from({ length: 6 }, (_, index) =>
       fetch(accountExportUrl, { headers: index % 2 ? headers : ownerHeaders }),
@@ -1913,10 +1942,10 @@ try {
     assert.match(response.headers.get("content-disposition") || "", /attachment/);
     assert.equal(response.headers.get("cache-control"), "no-store");
     const raw = await response.text();
-    assert.doesNotMatch(raw, /secret-hash-sentinel|password_hash|token_hash|drevo_session/);
+    assert.doesNotMatch(raw, /secret-hash-sentinel|password_hash|token_hash|drevo_session|remote-conversation-secret|attachment-private-url|hidden-internal-prompt|internal-token|former-scope-secret/);
     const exported = JSON.parse(raw);
     assert.equal(exported.format, "drevo-account-data");
-    assert.equal(exported.version, 3);
+    assert.equal(exported.version, 4);
     assert.equal(exported.account.id, index % 2 ? "reader" : "owner");
     assert.equal(exported.account.verifiedEmail, index % 2 ? "reader-export@example.invalid" : null);
     assert.equal(exported.account.identities.some((identity: { provider: string; subject: string }) =>
@@ -1932,6 +1961,30 @@ try {
     assert.equal(exported.archives[0].owned, index % 2 === 0);
     assert.equal(exported.archives[0].preferences?.colorScheme, index % 2 ? undefined : "white");
     assert.deepEqual(exported.archives[0].ownComments, []);
+    const ownAiChats = exported.archives[0].ownAiChats as Array<{ id: string; messages: Array<{ role: string; content: string }> }>;
+    assert.ok(ownAiChats.some((chat) => chat.id === (index % 2 ? readerExportChatId : ownerExportChatId)));
+    assert.equal(ownAiChats.some((chat) => chat.id === (index % 2 ? ownerExportChatId : readerExportChatId)), false,
+      "the account download excludes another account's AI chat");
+    assert.deepEqual(ownAiChats.find((chat) => chat.id === (index % 2 ? readerExportChatId : ownerExportChatId))?.messages
+      .map((message) => ({ role: message.role, content: message.content })),
+    index % 2
+      ? [{ role: "assistant", content: "reader-export-chat-text" }]
+      : [{ role: "user", content: "owner-export-chat-text" }]);
+  }
+  await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='reader'");
+  const basicAccountExport = await fetch(accountExportUrl, { headers }).then((response) => response.text());
+  assert.equal(JSON.parse(basicAccountExport).archives[0].ownAiChats, null);
+  assert.doesNotMatch(basicAccountExport, /reader-export-chat-text/,
+    "downgrading the viewer hides existing AI chat content from account export");
+  await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
+  await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+  const basicOwnerExport = await fetch(accountExportUrl, { headers }).then((response) => response.text());
+  assert.equal(JSON.parse(basicOwnerExport).archives[0].ownAiChats, null);
+  assert.doesNotMatch(basicOwnerExport, /reader-export-chat-text/,
+    "downgrading the archive owner also hides AI chats from account export");
+  } finally {
+    await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='owner'", [ownerTierBeforeExport]);
+    await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='reader'", [readerTierBeforeExport]);
   }
   const revokedExportToken = newSessionToken();
   const revokedExportHash = sessionTokenHash(revokedExportToken);
@@ -1965,6 +2018,36 @@ try {
     assert.doesNotMatch(await response.text(), /reader-export@example.invalid|drevo-account-data/);
   } finally {
     await new Promise<void>((resolve) => revokedExportServer.close(() => resolve()));
+  }
+  await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
+  const tierExportAuth = await createAuth(
+    await userStore(app.archive.db), app.archive.db, process.env.PUBLIC_ORIGIN,
+  );
+  let tierChangedAfterRead = false;
+  const tierExportEndpoint = accountDataExportHttp(
+    app.archive.db, tierExportAuth, async () => {
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='reader'");
+      tierChangedAfterRead = true;
+    },
+  );
+  const tierExportServer = createServer((req, res) => {
+    void tierExportEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => tierExportServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const tierExportPort = (tierExportServer.address() as { port: number }).port;
+    const response = await fetch(
+      `http://127.0.0.1:${tierExportPort}/api/account/export`,
+      { headers },
+    );
+    assert.equal(tierChangedAfterRead, true);
+    assert.equal(response.status, 409,
+      "a tier downgrade after preparing a chat export prevents delivery");
+    assert.doesNotMatch(await response.text(), /reader-export-chat-text/);
+  } finally {
+    await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='reader'", [readerTierBeforeExport]);
+    await new Promise<void>((resolve) => tierExportServer.close(() => resolve()));
   }
   const deliveryToken = newSessionToken();
   const deliveryHash = sessionTokenHash(deliveryToken);

@@ -4,6 +4,8 @@ import type { ArchiveUser } from "../domain/access.ts";
 import { readArchive } from "./database.ts";
 import { commentFilesFromJson } from "./discussion-attachments.ts";
 import type { CommentAttachmentFile } from "../shared/person-discussion.ts";
+import { accountAiAccess } from "./account-ai-access.ts";
+import { aiChatAccessScope } from "./ai-chat-access-scope.ts";
 
 type AccessScope = {
   archiveId: string;
@@ -12,6 +14,7 @@ type AccessScope = {
   treeAccess: string;
   personId: string | null;
   revision: number;
+  aiChatsExported: boolean;
 };
 
 function scopesStillVisible(
@@ -96,13 +99,19 @@ export function accountDataExport(db: StoreDatabase) {
             editedAt: string | null;
             attachments: CommentAttachmentFile[];
           }> | null = null;
+          let ownAiChats: Array<{
+            id: string;
+            createdAt: string;
+            updatedAt: string;
+            messages: Array<{ role: string; content: string; createdAt: string }>;
+          }> | null = null;
           const archive = await db.prepare("", "SELECT revision FROM archives WHERE id=?")
             .get(String(membership.archive_id));
           if (!archive) return null;
           // The download also includes title, role and preferences for an
           // unapproved membership. Recheck every represented archive, even
           // when it has no readable comments.
-          accessScopes.push({
+          const accessScope: AccessScope = {
             archiveId: String(membership.archive_id),
             approved: membership.approved === true,
             role: String(membership.role),
@@ -111,7 +120,9 @@ export function accountDataExport(db: StoreDatabase) {
               ? null
               : String(membership.person_id),
             revision: Number(archive.revision),
-          });
+            aiChatsExported: false,
+          };
+          accessScopes.push(accessScope);
           if (membership.approved === true) {
             const user: ArchiveUser = {
               id: accountId,
@@ -124,9 +135,10 @@ export function accountDataExport(db: StoreDatabase) {
                 ? { personId: String(membership.person_id) }
                 : {}),
             };
-            const visible = isScopedUser(user)
-              ? visiblePersonIds((await readArchive(db)).family, user)
-              : null;
+            const family = isScopedUser(user)
+              ? (await readArchive(db)).family
+              : undefined;
+            const visible = family ? visiblePersonIds(family, user) : null;
             const comments = await db
               .prepare(
                 "",
@@ -149,6 +161,33 @@ export function accountDataExport(db: StoreDatabase) {
                     ? null
                     : new Date(Number(row.updated_ms)).toISOString(),
               }));
+            if (await accountAiAccess(db, accountId)) {
+              const scope = aiChatAccessScope(user, family);
+              const chatRows = await db.prepare("", `SELECT c.id,c.created_at,c.updated_at,
+                m.role,m.content,m.created_at AS message_created_at,m.id AS message_id
+                FROM ai_chats c LEFT JOIN ai_chat_messages m
+                  ON m.archive_id=c.archive_id AND m.chat_id=c.id
+                 AND (m.data->>'hidden') IS DISTINCT FROM 'true'
+                WHERE c.user_id=? AND c.access_scope=?
+                ORDER BY c.created_at,c.id,m.id`).all(accountId, scope);
+              ownAiChats = [];
+              for (const row of chatRows) {
+                if (ownAiChats.at(-1)?.id !== String(row.id))
+                  ownAiChats.push({
+                    id: String(row.id),
+                    createdAt: String(row.created_at),
+                    updatedAt: String(row.updated_at),
+                    messages: [],
+                  });
+                if (row.message_id != null)
+                  ownAiChats.at(-1)!.messages.push({
+                    role: String(row.role),
+                    content: String(row.content),
+                    createdAt: String(row.message_created_at),
+                  });
+              }
+              accessScope.aiChatsExported = ownAiChats.length > 0;
+            }
           }
           archives.push({
             id: String(membership.archive_id),
@@ -158,6 +197,7 @@ export function accountDataExport(db: StoreDatabase) {
             approved: membership.approved === true,
             owned: membership.owned === true,
             ownComments,
+            ownAiChats,
             preferences: saved
               ? {
                   reverseTimeline: !!saved.reverse_timeline,
@@ -172,7 +212,7 @@ export function accountDataExport(db: StoreDatabase) {
         }
         return { accessScopes, download: {
           format: "drevo-account-data",
-          version: 3,
+          version: 4,
           exportedAt: new Date().toISOString(),
           account: {
             id: String(profile.id),
@@ -262,6 +302,22 @@ export function accountDataExport(db: StoreDatabase) {
             }
             if (!scopesStillVisible(scopes, membershipRows))
               return "access-changed";
+            for (const scope of scopes.filter((item) => item.aiChatsExported)) {
+              await client.query("SELECT set_config('drevo.archive_id',$1,true)", [scope.archiveId]);
+              const tier = await client.query(
+                `SELECT viewer.full_access AS viewer_full,
+                        owner_tier.full_access AS owner_full
+                 FROM account_tiers viewer
+                 JOIN archive_owners owner ON owner.archive_id=$2
+                 JOIN account_tiers owner_tier ON owner_tier.account_id=owner.user_id
+                 WHERE viewer.account_id=$1
+                 FOR SHARE OF viewer,owner_tier NOWAIT`,
+                [accountId, scope.archiveId],
+              );
+              if (tier.rows[0]?.viewer_full !== true ||
+                  tier.rows[0]?.owner_full !== true)
+                return "access-changed";
+            }
             await deliver();
             return "sent";
           });
