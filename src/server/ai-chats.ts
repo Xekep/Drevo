@@ -226,13 +226,14 @@ export function aiChatStore(db: StoreDatabase) {
       if (db.inTransaction()) await work();
       else await db.transaction(work);
     },
-    async stopRequested(id: string, token: string) {
-      return !!(await db
+    async turnStatus(id: string, token: string): Promise<"active" | "stopped" | "lost"> {
+      const row = await db
         .prepare(
-          "SELECT 1 AS stopped FROM ai_chats WHERE id=? AND busy_token=? AND stop_token=?",
-          "SELECT 1 AS stopped FROM ai_chats WHERE id=? AND busy_token=? AND stop_token=?",
+          "SELECT stop_token FROM ai_chats WHERE id=? AND busy_token=? AND busy_until>?",
+          "SELECT stop_token FROM ai_chats WHERE id=? AND busy_token=? AND busy_until>?",
         )
-        .get(id, token, token));
+        .get(id, token, Date.now());
+      return !row ? "lost" : row.stop_token === token ? "stopped" : "active";
     },
     async release(id: string, token: string) {
       await db

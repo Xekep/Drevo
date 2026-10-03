@@ -6,6 +6,57 @@ import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
 import { aiChatStore } from "../src/server/ai-chats.ts";
 
+test("a late provider answer cannot commit after another runner acquires the expired lease", { timeout: 10000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-late-answer-"));
+  const values = { YANDEX_AI_API_KEY: "test-key", YANDEX_AI_FOLDER_ID: "folder", YANDEX_AI_MODEL: "model" };
+  const previous = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, values);
+  let enter: () => void = () => {}, release: () => void = () => {};
+  const entered = new Promise<void>((resolve) => { enter = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const app = await startServer(0, join(dir, "archive.sqlite"), true, undefined, async (url, init) => {
+    if (init?.method === "DELETE") return Response.json({ deleted: true });
+    if (String(url).endsWith("/conversations")) return Response.json({ id: "remote" });
+    enter();
+    await gate;
+    return Response.json({ id: "late-response", status: "completed", output: [], output_text: "Поздний ответ" });
+  });
+  let pending: Promise<Response> | undefined;
+  const chats = aiChatStore(app.archive.db);
+  try {
+    const chat = await chats.create("local", JSON.stringify(["admin", "all", ""]));
+    const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+    pending = fetch(`${base}/api/ai/chat`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId: chat.id, message: "Исследуй архив" }),
+    });
+    await Promise.race([entered, pending.then((response) => {
+      throw new Error(`Turn ended before provider: ${response.status}`);
+    })]);
+    await app.archive.db.prepare("UPDATE ai_chats SET busy_until=? WHERE id=?").run(Date.now() - 1, chat.id);
+    const replacement = (await chats.acquire(chat.id))!;
+    assert.ok(replacement);
+    // Release immediately so the final commit guard, not the timer, fences the old turn.
+    release();
+    const response = await pending;
+    assert.equal(response.status, 502);
+    assert.doesNotMatch(await response.text(), /Поздний ответ/);
+    assert.deepEqual((await chats.messages(chat.id, "local"))!.map((message) => message.role), ["user"]);
+    assert.equal(await chats.turnStatus(chat.id, replacement), "active",
+      "cleanup of the old runner must not release the replacement lease");
+    await chats.release(chat.id, replacement);
+  } finally {
+    release();
+    await pending;
+    await app.close();
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 for (const streaming of [false, true]) {
   for (const phase of ["conversations", "responses"] as const) {
     for (const action of ["stop", "delete", "disconnect"] as const) {

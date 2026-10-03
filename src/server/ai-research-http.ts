@@ -905,7 +905,9 @@ export function aiResearchHttp({
       },
       controller = new AbortController();
     const assertTurnRunning = async () => {
-      if (await chats.stopRequested(chat.id, lockToken)) controller.abort();
+      const status = await chats.turnStatus(chat.id, lockToken);
+      if (status === "lost") leaseLost = true;
+      if (status !== "active") controller.abort();
       if (controller.signal.aborted)
         throw new DOMException("Ответ остановлен", "AbortError");
     };
@@ -951,9 +953,10 @@ export function aiResearchHttp({
     const cancellationPoll = setInterval(() => {
       if (stopCheck || controller.signal.aborted) return;
       stopCheck = chats
-        .stopRequested(chat.id, lockToken)
-        .then((stopped) => {
-          if (stopped) controller.abort();
+        .turnStatus(chat.id, lockToken)
+        .then((status) => {
+          if (status === "lost") leaseLost = true;
+          if (status !== "active") controller.abort();
         })
         .catch(() => {
           leaseLost = true;

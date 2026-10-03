@@ -16,9 +16,9 @@ export async function verifyAiTurnCoordination(db: StoreDatabase) {
     const token = (await chats.acquire(chat.id))!;
     assert.ok(token);
     await otherChats.requestStop(chat.id, "another-user");
-    assert.equal(await chats.stopRequested(chat.id, token), false);
+    assert.equal(await chats.turnStatus(chat.id, token), "active");
     await otherChats.requestStop(chat.id, "coordination-user");
-    assert.equal(await chats.stopRequested(chat.id, token), true);
+    assert.equal(await chats.turnStatus(chat.id, token), "stopped");
     assert.equal(
       await otherChats.acquire(chat.id),
       null,
@@ -28,14 +28,22 @@ export async function verifyAiTurnCoordination(db: StoreDatabase) {
     const nextToken = (await otherChats.acquire(chat.id))!;
     assert.ok(nextToken);
     assert.notEqual(nextToken, token);
-    assert.equal(await otherChats.stopRequested(chat.id, nextToken), false);
+    assert.equal(await otherChats.turnStatus(chat.id, nextToken), "active");
+    assert.equal(await chats.turnStatus(chat.id, token), "lost");
     await chats.release(chat.id, token);
     assert.equal(
       await otherChats.isBusy(chat.id),
       true,
       "a late release must not clear a subsequent turn's lease",
     );
+    await db.prepare("", "UPDATE ai_chats SET busy_until=? WHERE id=?").run(Date.now() - 1, chat.id);
+    assert.equal(await otherChats.turnStatus(chat.id, nextToken), "lost",
+      "an expired lease fences the old runner before it can save an answer");
+    const replacement = (await chats.acquire(chat.id))!;
+    assert.ok(replacement);
     await otherChats.release(chat.id, nextToken);
+    assert.equal(await chats.turnStatus(chat.id, replacement), "active");
+    await chats.release(chat.id, replacement);
 
     const stores = [aiUsageStore(db), aiUsageStore(second)];
     const attempts = await Promise.allSettled(
