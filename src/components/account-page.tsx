@@ -110,6 +110,7 @@ type Capacity =
       owned: true;
       fullAccess: boolean;
       people: number;
+      emptyArchive: boolean;
       peopleLimit: number;
       mediaBytes: number | null;
       mediaLimitBytes: number;
@@ -718,7 +719,7 @@ export function AccountPage({
                     capacity.owned &&
                     user.role === "admin" &&
                     user.approved &&
-                    capacity.people === 0 && <PortableImport />}
+                    capacity.emptyArchive && <PortableImport />}
                   {capacity?.available && user.approved && (
                     <AccountOwnerTransfer key={window.location.pathname} />
                   )}

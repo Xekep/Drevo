@@ -783,6 +783,7 @@ try {
     owned: true,
     fullAccess: true,
     people: 1,
+    emptyArchive: false,
     peopleLimit: 150,
     mediaBytes: 0,
     mediaLimitBytes: 500_000_000,
@@ -8335,6 +8336,19 @@ try {
       429,
     );
     const exportArchive = await openArchive(selectedDbPath, family, personalArchiveId);
+    assert.equal((await accountCapacity(exportArchive.db, newAccountSession.user.id)).emptyArchive,
+      true, "the new owner's archive is empty before a portable import");
+    await exportArchive.db.prepare("", "INSERT INTO source_catalog(archive_id,id,data,version) VALUES(current_setting('drevo.archive_id', true),?,?::jsonb,1)")
+      .run("portable-empty-probe", "{}");
+    try {
+      const catalogOnly = await accountCapacity(exportArchive.db, newAccountSession.user.id);
+      assert.equal(catalogOnly.people, 0);
+      assert.equal(catalogOnly.emptyArchive, false,
+        "catalog-only content must hide the owner import affordance");
+    } finally {
+      await exportArchive.db.prepare("", "DELETE FROM source_catalog WHERE id=?")
+        .run("portable-empty-probe");
+    }
     const portableAuth = await createAuth(await userStore(exportArchive.db), exportArchive.db,
       process.env.PUBLIC_ORIGIN);
     let exportReady!: () => void;
