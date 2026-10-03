@@ -414,6 +414,21 @@ test("private package preview and one-time import preserve people, media, docume
         headers: { ...headers, "Content-Type": "application/json" },
         body: JSON.stringify({ token: preview.token, confirm: true }),
       });
+    const replacement = structuredClone(snapshot);
+    replacement.family.people[0].name = "Unpreviewed";
+    const replacementPath = join(dir, "replacement.drevo");
+    await writePortablePackage(createWriteStream(replacementPath), source,
+      replacement, async () => {});
+    const stagedInput = join(target, "staging", "portable", preview.token, "input");
+    await writeFile(stagedInput, await readFile(replacementPath));
+    const swapped = await importRequest();
+    assert.equal(swapped.status, 409,
+      "confirmation must reject a valid package that differs from the preview");
+    assert.match((await swapped.json() as { error: string }).error,
+      /изменился после предпросмотра/);
+    assert.equal((await archive.read()).family.people.length, 0);
+    assert.deepEqual(await readdir(join(target, "uploads")), []);
+    await writeFile(stagedInput, bytes);
     await archive.db.exec(
       "CREATE TRIGGER reject_portable_document BEFORE INSERT ON documents BEGIN SELECT RAISE(ABORT,'reject'); END",
     );
