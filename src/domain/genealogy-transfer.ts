@@ -12,7 +12,7 @@ export type TransferMedia = {
   portraitIds: string[];
   photo?: Pick<
     ArchivePhoto,
-    "description" | "year" | "place" | "event" | "takenAt" | "tags"
+    "createdAt" | "description" | "year" | "place" | "event" | "takenAt" | "tags"
   >;
   document?: DocumentDetails & { eventLinks?: DocumentEventLink[]; pages?: DocumentPage[] };
   embedded?: string;
@@ -54,6 +54,7 @@ export function familyMedia(family: Family): TransferMedia[] {
       .filter((p) => p.photo === photo.url)
       .map((p) => p.id),
     photo: {
+      createdAt: photo.createdAt,
       description: photo.description,
       year: photo.year,
       place: photo.place,

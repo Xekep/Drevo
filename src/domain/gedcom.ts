@@ -1377,6 +1377,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           const extra = JSON.parse(extension);
           item.citationOnly = extra.citationOnly === true;
           item.photo = {
+            createdAt: extra.createdAt,
             description: extra.description,
             year: extra.year,
             place: extra.place,
