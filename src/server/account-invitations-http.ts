@@ -5,6 +5,7 @@ import {
   accountInvitations,
   InvalidInvitationError,
 } from "./archive-invitations.ts";
+import { AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 
 /** The root account session can accept a link without prior archive membership. */
@@ -35,8 +36,8 @@ export function accountInvitationsHttp(
       return json(res, 403, { error: "Недопустимый источник запроса." });
     if (!req.headers["content-type"]?.startsWith("application/json"))
       return json(res, 415, { error: "Ожидается JSON." });
-    const accountId = accept ? await auth.accountId(req) : null;
-    if (accept && !accountId)
+    const session = accept ? await auth.accountSession(req) : null;
+    if (accept && !session)
       return json(res, 401, { error: "Войдите, чтобы принять приглашение." });
     const chunks: Buffer[] = [];
     let size = 0;
@@ -57,10 +58,14 @@ export function accountInvitationsHttp(
         res,
         200,
         accept
-          ? await invitations.accept(input.archiveId, input.token, accountId!)
+          ? await invitations.accept(input.archiveId, input.token, session!.accountId, session!.tokenHash)
           : await invitations.preview(input.archiveId, input.token),
       );
     } catch (error) {
+      if (error instanceof AccountSessionExpired)
+        return json(res, 401, { error: error.message });
+      if (error instanceof AccountSessionBusy)
+        return json(res, 409, { error: error.message });
       if (error instanceof InvalidInvitationError)
         return json(res, 410, { error: error.message });
       if (error instanceof SyntaxError)
