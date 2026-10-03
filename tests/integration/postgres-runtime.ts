@@ -3066,7 +3066,7 @@ try {
           }
           notifyAdminModels();
           await adminModelsGate;
-          return Response.json({ data: [{ id: "gpt://test/hidden-after-downgrade" }] });
+          return Response.json({ data: [{ id: "gpt://test/hidden-after-revocation" }] });
         }
         return Response.json({ deleted: true });
       },
@@ -3091,38 +3091,38 @@ try {
       });
       await Promise.race([adminConversationStarted,
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Admin AI conversation did not start")), 15_000))]);
-      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
       releaseAdminConversation();
       assert.equal((await checking).status, 403,
-        "an admin downgraded during conversation creation cannot run the model");
-      assert.equal(adminResponseCalls, 0, "the model is never called after the downgrade");
-      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+        "an admin revoked during conversation creation cannot run the model");
+      assert.equal(adminResponseCalls, 0, "the model is never called after the revocation");
+      await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
       holdAdminResponse = true;
       const answering = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai/test`, {
         method: "POST", headers: ownerHeaders,
       });
       await Promise.race([adminResponseStarted,
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Admin AI response did not start")), 15_000))]);
-      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
       releaseAdminResponse();
       const hidden = await answering;
       assert.equal(hidden.status, 403,
-        "a downgraded admin cannot receive a completed connection-check answer");
+        "a revoked admin cannot receive a completed connection-check answer");
       assert.doesNotMatch(await hidden.text(), /OK/);
-      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
       const listing = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai/models`, {
         method: "POST", headers: ownerHeaders,
         body: JSON.stringify({ folderId: "folder-1", apiKey: "test-key" }),
       });
       await Promise.race([adminModelsStarted,
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Admin AI model discovery did not start")), 15_000))]);
-      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
       releaseAdminModels();
       const modelResponse = await listing;
       assert.equal(modelResponse.status, 403,
-        "a downgraded admin cannot receive models fetched before the downgrade");
-      assert.doesNotMatch(await modelResponse.text(), /hidden-after-downgrade/);
-      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+        "a revoked admin cannot receive models fetched before the revocation");
+      assert.doesNotMatch(await modelResponse.text(), /hidden-after-revocation/);
+      await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
       holdModelBody = true;
       const callsBeforeRoleChange = adminModelCalls;
       const modelRequest = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai/models`, {
@@ -3131,13 +3131,13 @@ try {
       });
       await Promise.race([modelBodyStarted,
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Admin AI model request body did not start")), 15_000))]);
-      await client.query("UPDATE archive_memberships SET role='researcher' WHERE archive_id='runtime-test' AND user_id='owner'");
+      await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
       releaseModelBody();
       assert.equal((await modelRequest).status, 403,
-        "a demoted archive admin cannot query the external model catalogue after waiting for the request body");
+        "a revoked platform admin cannot query the external model catalogue after waiting for the request body");
       assert.equal(adminModelCalls, callsBeforeRoleChange,
-        "a demoted archive admin must not start model discovery");
-      await client.query("UPDATE archive_memberships SET role='admin' WHERE archive_id='runtime-test' AND user_id='owner'");
+        "a revoked platform admin must not start model discovery");
+      await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
       holdModelBody = false;
       holdRoleConversation = true;
       const responsesBeforeRoleChange = adminResponseCalls;
@@ -3146,13 +3146,13 @@ try {
       });
       await Promise.race([roleConversationStarted,
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Admin AI role test conversation did not start")), 15_000))]);
-      await client.query("UPDATE archive_memberships SET role='researcher' WHERE archive_id='runtime-test' AND user_id='owner'");
+      await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
       releaseRoleConversation();
       assert.equal((await roleChecking).status, 403,
-        "a demoted archive admin cannot run the connection-check model after conversation creation");
+        "a revoked platform admin cannot run the connection-check model after conversation creation");
       assert.equal(adminResponseCalls, responsesBeforeRoleChange,
         "the connection-check model must not run after admin role revocation");
-      await client.query("UPDATE archive_memberships SET role='admin' WHERE archive_id='runtime-test' AND user_id='owner'");
+      await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
       holdRoleConversation = false;
       holdSettingsModels = true;
       const loadingSettings = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai`, {
@@ -3160,14 +3160,14 @@ try {
       });
       await Promise.race([settingsModelsStarted,
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI settings model lookup did not start")), 15_000))]);
-      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
       releaseSettingsModels();
       const hiddenSettings = await loadingSettings;
       assert.equal(hiddenSettings.status, 403,
-        "a downgraded admin cannot receive AI settings after a model lookup");
-      assert.doesNotMatch(await hiddenSettings.text(), /hidden-after-downgrade/);
+        "a revoked admin cannot receive AI settings after a model lookup");
+      assert.doesNotMatch(await hiddenSettings.text(), /hidden-after-revocation/);
       holdSettingsModels = false;
-      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
       holdSettingsRead = true;
       const modelsBeforeSettingsRead = adminModelCalls;
       const readingBeforeCatalog = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai`, {
@@ -3177,15 +3177,15 @@ try {
         throw new Error(`AI settings stopped before reading configuration: ${response.status} ${await response.clone().text()}`);
       }),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI settings read did not start")), 15_000))]);
-      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
       releaseSettingsRead();
       const blockedBeforeCatalog = await readingBeforeCatalog;
       assert.equal(blockedBeforeCatalog.status, 403,
-        "a downgraded admin cannot receive AI settings after configuration loads");
+        "a revoked admin cannot receive AI settings after configuration loads");
       assert.equal(adminModelCalls, modelsBeforeSettingsRead,
-        "a basic account cannot start model discovery after waiting for AI settings");
+        "a revoked platform admin cannot start model discovery after waiting for AI settings");
       holdSettingsRead = false;
-      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
       holdSettingsWrite = true;
       const savingSettings = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai`, {
         method: "PUT", headers: ownerHeaders,
@@ -3193,20 +3193,20 @@ try {
       });
       await Promise.race([settingsWriteStarted,
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI settings write did not start")), 15_000))]);
-      const downgrade = client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
-      const downgradedBeforeWrite = await Promise.race([downgrade.then(() => true),
+      const revocation = client.query("DELETE FROM platform_admins WHERE account_id='owner'");
+      const revokedBeforeWrite = await Promise.race([revocation.then(() => true),
         new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 200))]);
-      assert.equal(downgradedBeforeWrite, false,
-        "tier downgrade waits until the authorized settings write commits");
+      assert.equal(revokedBeforeWrite, false,
+        "platform grant revocation waits until the authorized settings write commits");
       releaseSettingsWrite();
       const savedResponse = await savingSettings;
       assert.ok([200, 403].includes(savedResponse.status),
         `settings write failed: ${await savedResponse.text()}`);
       assert.equal(settingsWriteCompleted, true,
-        "settings persist before a concurrent downgrade can commit");
-      await downgrade;
+        "settings persist before a concurrent revocation can commit");
+      await revocation;
       holdSettingsWrite = false;
-      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
       holdWriteStatusModels = true;
       const waitingForStatus = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai`, {
         method: "PUT", headers: ownerHeaders,
@@ -3214,12 +3214,12 @@ try {
       });
       await Promise.race([writeStatusModelsStarted,
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI settings status lookup did not start")), 15_000))]);
-      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
       releaseWriteStatusModels();
       const hiddenWriteStatus = await waitingForStatus;
       assert.equal(hiddenWriteStatus.status, 403,
-        "a downgraded admin cannot receive the written settings response");
-      assert.doesNotMatch(await hiddenWriteStatus.text(), /hidden-after-downgrade/);
+        "a revoked admin cannot receive the written settings response");
+      assert.doesNotMatch(await hiddenWriteStatus.text(), /hidden-after-revocation/);
     } finally {
       releaseAdminConversation();
       releaseRoleConversation();
@@ -3230,8 +3230,7 @@ try {
       releaseSettingsWrite();
       releaseWriteStatusModels();
       releaseModelBody();
-      await client.query("UPDATE archive_memberships SET role='admin' WHERE archive_id='runtime-test' AND user_id='owner'");
-      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
       await new Promise<void>((resolve) => guardedAdminServer.close(() => resolve()));
     }
 
@@ -4135,7 +4134,8 @@ try {
   assert.equal(
     (await fetch(securedBase + "/api/admin/ai", { headers: ownerHeaders }))
       .status,
-    403,
+    200,
+    "platform settings remain manageable when the archive AI feature tier is basic",
   );
   assert.equal(
     (await fetch(securedBase + "/api/mcp/tokens", { headers: ownerHeaders }))
@@ -4222,6 +4222,18 @@ try {
   )).rows[0].full_access;
   try {
     await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='vk:42'");
+    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+    for (const [path, method, body] of [
+      ["/api/admin/ai", "GET", undefined],
+      ["/api/admin/ai", "PUT", "{}"],
+      ["/api/admin/ai/models", "POST", "{}"],
+      ["/api/admin/ai/test?role=unknown", "POST", undefined],
+    ] as const) {
+      assert.equal((await fetch(securedBase + path, {
+        method, headers: archiveAdminHeaders, body,
+      })).status, 403,
+      `${method} ${path} requires a platform grant even when both accounts have full AI tiers`);
+    }
     await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
     const overview = await fetch(securedBase + "/api/family?projection=overview", {
       headers: archiveAdminHeaders,
@@ -4236,6 +4248,20 @@ try {
     assert.equal((await fetch(securedBase + "/api/admin/ai", {
       headers: archiveAdminHeaders,
     })).status, 403);
+    const settingsBeforeDeniedWrite = await aiSettingsStore(app.archive.db).then((store) => store.read());
+    for (const [path, method, body] of [
+      ["/api/admin/ai", "PUT", JSON.stringify(settingsBeforeDeniedWrite)],
+      ["/api/admin/ai/models", "POST", JSON.stringify({ folderId: "folder-1", apiKey: "test-key" })],
+      ["/api/admin/ai/test", "POST", undefined],
+    ] as const) {
+      assert.equal((await fetch(securedBase + path, {
+        method,
+        headers: archiveAdminHeaders,
+        body,
+      })).status, 403, `${method} ${path} requires the platform grant even for a full-tier tree admin`);
+    }
+    assert.deepEqual(await aiSettingsStore(app.archive.db).then((store) => store.read()),
+      settingsBeforeDeniedWrite, "denied archive administrators cannot change provider settings");
     assert.equal((await fetch(securedBase + "/api/mcp/tokens", {
       headers: archiveAdminHeaders,
     })).status, 403);
