@@ -5584,6 +5584,45 @@ try {
     busyMetadataServer.closeAllConnections();
     await new Promise<void>((resolve) => busyMetadataServer.close(() => resolve()));
   }
+  let releaseUnscopedMetadata!: () => void;
+  let unscopedMetadataReady!: () => void;
+  const unscopedMetadataGate = new Promise<void>((resolve) => { releaseUnscopedMetadata = resolve; });
+  const unscopedMetadataReached = new Promise<void>((resolve) => { unscopedMetadataReady = resolve; });
+  const unscopedMetadataHandler = documentsHttp({
+    archive: app.archive, auth: documentMetadataAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeMetadataDelivery: async () => { unscopedMetadataReady(); await unscopedMetadataGate; },
+  });
+  const unscopedMetadataServer = createServer((req, res) => {
+    void unscopedMetadataHandler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => unscopedMetadataServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const localBase = `http://127.0.0.1:${(unscopedMetadataServer.address() as { port: number }).port}`;
+    const pending = fetch(localBase + "/api/documents?limit=20", { headers: ownerHeaders });
+    await Promise.race([unscopedMetadataReached,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Unscoped metadata barrier missed")), 10_000))]);
+    await client.query("BEGIN");
+    try {
+      await client.query("UPDATE archives SET revision=revision WHERE id='runtime-test'");
+      releaseUnscopedMetadata();
+      const delivered = await Promise.race([pending,
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Unscoped metadata waited for unrelated archive write")), 10_000))]);
+      assert.equal(delivered.status, 200,
+        "an all-access metadata read must not contend with unrelated graph writes");
+      assert.ok((await delivered.json()).items.some((item: { id: string }) =>
+        item.id === scopedDocumentId));
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  } finally {
+    releaseUnscopedMetadata();
+    unscopedMetadataServer.closeAllConnections();
+    await new Promise<void>((resolve) => unscopedMetadataServer.close(() => resolve()));
+  }
   const unreadMetadata = await fetch(securedBase + `/api/documents/${scopedDocumentId}`,
     { headers });
   assert.equal(unreadMetadata.status, 200);

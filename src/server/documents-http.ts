@@ -576,12 +576,15 @@ export function documentsHttp({
     try {
       return await db.postgresTransaction(async (client) => {
         await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
-        // Archive writers acquire this row before membership/document/graph
-        // changes. Other readers can share it until the JSON handoff.
-        const archiveRow = await client.query(
-          "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT", [archiveId],
-        );
-        if (!archiveRow.rowCount) return "denied";
+        // Only a scoped reader relies on a projected graph snapshot. Ordinary
+        // document readers need the membership and selected document rows, not
+        // the archive-wide write lock used by unrelated family edits.
+        const archiveRow = access.scoped
+          ? await client.query(
+            "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT", [archiveId],
+          )
+          : null;
+        if (access.scoped && !archiveRow?.rowCount) return "denied";
         if (!auth.local) {
           await client.query("SELECT set_config('drevo.account_id',$1,true)",
             [session!.accountId]);
@@ -603,7 +606,7 @@ export function documentsHttp({
                 member.tree_access || "all", member.person_id]) !== access.scope)
             return "denied";
         }
-        if (access.scoped && Number(archiveRow.rows[0].revision) !== access.revision)
+        if (access.scoped && Number(archiveRow!.rows[0].revision) !== access.revision)
           return "denied";
         if (rows.length) {
           const documents = await client.query(
