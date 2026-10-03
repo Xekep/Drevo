@@ -457,10 +457,16 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             .join("\n") || undefined,
         url: /^https?:\/\//i.test(url) && safeUrl(url) ? url : undefined,
       };
-      const objects = children(s, "OBJE");
+      const directObjects = children(s, "OBJE");
+      const sourceRecordObjects = record ? children(record, "OBJE") : [];
+      const objects = directObjects.length ? directObjects : sourceRecordObjects;
+      if (sourceRecordObjects.length)
+        warnings.add(directObjects.length
+          ? "Вложение SOURCE_RECORD.OBJE не привязано к цитате с собственным вложением; проверьте исходный GEDCOM."
+          : "Вложение SOURCE_RECORD.OBJE применено к каждой цитате источника; привязка на уровне записи источника не сохраняется отдельно.");
       const inlineRef = value(s, "_DREVO_INLINE_MEDIA");
       const inlineUrl = inlineRef && localCitationMediaUrl(url);
-      if (inlineRef && (!inlineUrl || !objects.some((object) => object.value === inlineRef)))
+      if (inlineRef && (!inlineUrl || !directObjects.some((object) => object.value === inlineRef)))
         throw new Error("Некорректная ссылка на оригинал цитаты GEDCOM");
       if (objects.length > 1 && !inlineRef)
         warnings.add("У цитаты несколько файлов; перенесён только первый документ.");
