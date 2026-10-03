@@ -12,7 +12,10 @@ for (const mode of ["shared", "public"] as const)
     const archive = await (await page.request.get("/api/family")).json();
     const token = "s".repeat(43);
     const writes: string[] = [];
+    const searchRequests: string[] = [];
     page.on("request", (request) => {
+      if (request.url().includes("/api/people/search"))
+        searchRequests.push(request.url());
       if (
         request.url().includes("/api/") &&
         !["GET", "HEAD"].includes(request.method())
@@ -82,7 +85,8 @@ for (const mode of ["shared", "public"] as const)
       .check();
     await dialog
       .getByRole("combobox", { name: "Относительно человека" })
-      .selectOption("e2e-child");
+      .fill("Пётр");
+    await dialog.getByRole("option", { name: /Тестов Пётр Иванович/ }).click();
     await dialog.getByRole("radio", { name: "Вниз: 1", exact: true }).check();
     await dialog
       .getByRole("radio", { name: "Боковые ветви: 0", exact: true })
@@ -128,7 +132,7 @@ for (const mode of ["shared", "public"] as const)
     ).toBeChecked();
     await expect(
       dialog.getByRole("combobox", { name: "Относительно человека" }),
-    ).toHaveValue("e2e-child");
+    ).toHaveValue("Тестов Пётр Иванович");
     await expect(
       page.locator('.flow-person[data-person-id="e2e-sibling"]'),
     ).toHaveCount(0);
@@ -140,6 +144,7 @@ for (const mode of ["shared", "public"] as const)
     );
     await dialog.getByRole("button", { name: "Закрыть" }).click();
     expect(writes).toEqual([]);
+    expect(searchRequests).toEqual([]);
     expect(
       await (await page.request.get("/api/tree-preferences")).json(),
     ).toEqual(before);

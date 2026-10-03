@@ -1,8 +1,8 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { fullName, type Person } from "../domain";
-import type { PersonOption } from "../domain/people-search";
+import { createPeopleSearch, type PersonOption } from "../domain/people-search";
 
 export function PersonSearch({
   value,
@@ -15,6 +15,7 @@ export function PersonSearch({
   inputAriaLabel,
   clearLabel = "Выбрать другого человека",
   excludeId,
+  people,
 }: {
   value: string;
   selected?: Person;
@@ -26,6 +27,8 @@ export function PersonSearch({
   inputAriaLabel?: string;
   clearLabel?: string;
   excludeId?: string;
+  /** Search only this accessible pool, without an authenticated API request. */
+  people?: Person[];
 }) {
   const id = useId();
   const [query, setQuery] = useState(""),
@@ -40,8 +43,15 @@ export function PersonSearch({
       error?: string;
     }>({ query: "", people: [] });
   const needle = query.trim();
+  const localSearch = useMemo(
+    () => (people ? createPeopleSearch(people) : null),
+    [people],
+  );
+  const searchResult = localSearch
+    ? { query: needle, ...localSearch(needle) }
+    : result;
   useEffect(() => {
-    if (!open || disabled || value || needle.length < 2) return;
+    if (localSearch || !open || disabled || value || needle.length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       try {
@@ -70,10 +80,10 @@ export function PersonSearch({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [needle, open, disabled, value, attempt]);
+  }, [needle, open, disabled, value, attempt, localSearch]);
   const options =
-    result.query === needle
-      ? result.people.filter((p) => p.id !== excludeId)
+    searchResult.query === needle
+      ? searchResult.people.filter((p) => p.id !== excludeId)
       : [];
   const visible = open && !value && !disabled;
   function choose(person: PersonOption) {
@@ -89,7 +99,7 @@ export function PersonSearch({
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
           setOpen(false);
-          if (!value && query.trim()) onCancel?.();
+          if (!value && (query.trim() || localSearch)) onCancel?.();
         }
       }}
     >
@@ -132,7 +142,7 @@ export function PersonSearch({
               event.preventDefault();
               event.stopPropagation();
               setOpen(false);
-              if (!value && query.trim()) onCancel?.();
+              if (!value && (query.trim() || localSearch)) onCancel?.();
             }
             if (event.key === "ArrowDown" || event.key === "ArrowUp") {
               event.preventDefault();
@@ -198,16 +208,16 @@ export function PersonSearch({
           <p id={`${id}-status`} role="status">
             {needle.length < 2
               ? "Введите хотя бы две буквы"
-              : result.query !== needle
+              : searchResult.query !== needle
                 ? "Ищем…"
-                : result.error ||
+                : ("error" in searchResult && searchResult.error) ||
                   (!options.length
                     ? "Никого не найдено. Попробуйте другую часть ФИО."
-                    : result.hasMore
+                    : searchResult.hasMore
                       ? "Есть ещё совпадения — уточните запрос"
                       : `Найдено: ${options.length}`)}
           </p>
-          {result.query === needle && result.error && (
+          {!localSearch && result.query === needle && result.error && (
             <button
               type="button"
               onClick={() => {

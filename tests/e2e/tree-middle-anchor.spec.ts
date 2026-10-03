@@ -75,7 +75,7 @@ test("middle click preserves generation depths, while middle drag only pans", as
   await page.getByRole("button", { name: "Настройки древа" }).click();
   await expect(
     page.getByRole("combobox", { name: "Относительно человека" }),
-  ).toHaveValue("e2e-sibling");
+  ).toHaveValue("Тестова Мария Ивановна");
 });
 
 for (const mode of ["shared", "public"] as const) {
@@ -136,7 +136,7 @@ for (const mode of ["shared", "public"] as const) {
     const dialog = page.getByRole("dialog", { name: "Вид древа" });
     await expect(
       dialog.getByRole("combobox", { name: "Относительно человека" }),
-    ).toHaveValue("e2e-child");
+    ).toHaveValue("Тестов Пётр Иванович");
     await expect(
       dialog.getByRole("radio", { name: "Вверх: 3", exact: true }),
     ).toBeChecked();
