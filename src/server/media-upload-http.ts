@@ -88,6 +88,7 @@ export function mediaUploadHttp({
     let file: Awaited<ReturnType<typeof media.addStream>> | undefined;
     let forgetUpload: (() => unknown) | undefined;
     let release: (() => Promise<unknown>) | undefined;
+    let photoCommitted = false;
     try {
       release = await quota.acquire(
         requester.id,
@@ -124,35 +125,43 @@ export function mediaUploadHttp({
 
       const current = (await archive.read()).family,
         fields = photoFields(req);
-      try {
-        const result = await archive.write(
-          {
-            ...current,
-            photos: [
-              ...(current.photos || []),
-              {
-                id: file.id,
-                url: file.url,
-                title: "",
-                ...fields,
-                createdAt: new Date().toISOString(),
-                tags: [],
-              },
-            ],
-          },
-          revision,
-          actor,
-        );
-        return json(res, 201, {
-          ...result,
-          family: projectFamilyForUser(result.family, actor),
-        });
-      } catch (error) {
-        await file.undo();
-        file = undefined;
-        throw error;
-      }
+      const result = await archive.write(
+        {
+          ...current,
+          photos: [
+            ...(current.photos || []),
+            {
+              id: file.id,
+              url: file.url,
+              title: "",
+              ...fields,
+              createdAt: new Date().toISOString(),
+              tags: [],
+            },
+          ],
+        },
+        revision,
+        actor,
+      );
+      photoCommitted = true;
+      return json(res, 201, {
+        ...result,
+        family: projectFamilyForUser(result.family, actor),
+      });
     } catch (error) {
+      // A response/projection failure cannot roll back archive.write. Keep
+      // its original and quota metadata once the graph references the photo.
+      if (photoCommitted) {
+        if (res.destroyed) return true;
+        if (res.headersSent) {
+          res.destroy();
+          return true;
+        }
+        return json(res, 500, {
+          error: "Фото сохранено. Обновите архив.",
+          saved: true,
+        });
+      }
       await forgetUpload?.();
       if (file) await file.undo();
       if (error instanceof UploadQuotaError && error.status === 429)
