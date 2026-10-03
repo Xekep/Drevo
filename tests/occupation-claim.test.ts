@@ -101,6 +101,32 @@ test("GEDCOM 5.5.1/7 and external OCCU.SOUR retain exact occupation evidence", (
   }
 });
 
+test("work event date and place citations do not displace the occupation citation", () => {
+  const archive = family();
+  const person = archive.people[0];
+  person.occupationClaim = { value: "Столяр", sources: [{
+    title: "Книга занятий", type: "архив", reference: "л. 1",
+  }] };
+  person.events = [{ id: "work", type: "work", title: "Столяр", date: "1900",
+    place: "Тула", sources: [{ title: "Общее письмо", type: "письмо", reference: "л. 2" }],
+    dateClaim: { value: "1900", sources: [{
+      title: "Список за 1900 год", type: "архив", reference: "л. 3",
+    }] },
+    placeClaim: { value: "Тула", sources: [{
+      title: "План города", type: "карта", reference: "л. 4",
+    }] },
+  }];
+  for (const version of ["5.5.1", "7.0"] as const) {
+    const parsed = importGedcom(exportGedcom(archive, { version }), `work-${version}`);
+    const restored = parsed.family.people[0];
+    const event = restored.events!.find((item) => item.type === "work")!;
+    assert.equal(restored.occupationClaim?.sources[0].title, "Книга занятий");
+    assert.deepEqual(event.sources?.map((source) => source.title), ["Общее письмо"]);
+    assert.equal(event.dateClaim?.sources[0].title, "Список за 1900 год");
+    assert.equal(event.placeClaim?.sources[0].title, "План города");
+  }
+});
+
 test("GEDZIP remaps an occupation citation document without duplicating a work event", async () => {
   const directory = await mkdtemp(join(tmpdir(), "drevo-occupation-gedzip-"));
   try {
@@ -116,6 +142,13 @@ test("GEDZIP remaps an occupation citation document without duplicating a work e
       documentId, documentPage: 4,
     }] };
     archive.people[0].events = [{ id: "work", type: "work", title: "Столяр",
+      date: "1900", place: "Тула",
+      dateClaim: { value: "1900", sources: [{
+        title: "Дата службы", type: "архив", reference: "л. 9",
+      }] },
+      placeClaim: { value: "Тула", sources: [{
+        title: "Место службы", type: "архив", reference: "л. 10",
+      }] },
       sources: [{ title: "Договор", type: "архив", reference: "л. 8" }] }];
     const path = join(directory, "family.gdz");
     await writeGenealogyPackage(path, uploads, archive, [{
@@ -133,6 +166,8 @@ test("GEDZIP remaps an occupation citation document without duplicating a work e
     assert.notEqual(result.files[0].documentId, documentId);
     assert.deepEqual(await readFile(join(stage, result.files[0].name)), bytes);
     assert.equal(imported.events?.[0].sources?.[0].title, "Договор");
+    assert.equal(imported.events?.[0].dateClaim?.sources[0].reference, "л. 9");
+    assert.equal(imported.events?.[0].placeClaim?.sources[0].reference, "л. 10");
 
     const plain = exportGedcom(archive, { version: "7.0", media: [{
       id: documentId, file: "documents/record.pdf", title: "Цеховая книга",

@@ -546,6 +546,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       item.object === rightMedia[index].object && item.page === rightMedia[index].page &&
       item.inlineUrlSuffix === rightMedia[index].inlineUrlSuffix);
   };
+  const occupationSourcesByNode = new Map<Node, Source[]>();
   let eventId = 0;
   function event(n: Node, fallback?: string): PersonEvent {
     const raw = value(n, "DATE"),
@@ -570,6 +571,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       ? [] : sources(placeNode);
     if (nestedPlaceSources.length)
       warnings.add("Вложенный PLAC.SOUR сохранён как общий источник события; точная привязка к месту не перенесена.");
+    if (n.tag === "OCCU") occupationSourcesByNode.set(n, parsedSources);
     const sourceNodes = children(n, "SOUR");
     const dateSources = parsedSources.filter((_source, index) =>
       eventDate && value(sourceNodes[index], "_DREVO_CLAIM") === "EVENT_DATE");
@@ -683,7 +685,10 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     const occupationNode = child(n, "OCCU");
     const occupation = occupationNode?.value || "";
     const occupationEvent = occupationNode && events[eventNodes.indexOf(occupationNode)];
-    const occupationCitations = occupationEvent?.sources || [];
+    // event() separates date and place claims, so only its raw source list still
+    // aligns with the OCCU.SOUR nodes carrying the occupation marker.
+    const occupationCitations = occupationNode
+      ? occupationSourcesByNode.get(occupationNode) || [] : [];
     const occupationSourceNodes = occupationNode ? children(occupationNode, "SOUR") : [];
     const drevoExtra = value(n, "_DREVO");
     const occupationClaimSources = occupation.trim()
@@ -693,7 +698,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         })
       : [];
     if (occupationEvent && occupationClaimSources.length)
-      occupationEvent.sources = occupationCitations.filter((source) =>
+      occupationEvent.sources = (occupationEvent.sources || []).filter((source) =>
         !occupationClaimSources.includes(source));
     for (const [node, label] of [
       [birth, "Рождение"],
