@@ -12,13 +12,14 @@ type PortraitFrame = {
 };
 type PortraitProbe = { frames: PortraitFrame[]; stop: () => void };
 
-async function preparePortraitTree(page: Page, accountPerson: boolean) {
+async function preparePortraitTree(page: Page, accountPerson: boolean,
+  options: { count?: number; photos?: boolean } = {}) {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
     const seed = data.family.people[0];
-    data.family.people = Array.from({ length: 600 }, (_, index) => ({
+    data.family.people = Array.from({ length: options.count ?? 600 }, (_, index) => ({
       ...seed,
       id: `portrait-layer-${index}`,
       name: `Человек ${index}`,
@@ -26,7 +27,8 @@ async function preparePortraitTree(page: Page, accountPerson: boolean) {
       parents: index % 12 ? [`portrait-layer-${index - 1}`] : [],
       spouses: [],
       sources: [],
-      photo: "/media/portrait-layer.jpg",
+      photo: options.photos === false ? "" : "/media/portrait-layer.jpg",
+      sex: ["m", "f", "u"][index % 3],
     }));
     data.family.links = [];
     data.family.unions = [];
@@ -115,7 +117,8 @@ async function preparePortraitTree(page: Page, accountPerson: boolean) {
       }
       requestAnimationFrame(sample);
     };
-    Object.assign(window, { __portraitLayerProbe: { frames, stop: () => { active = false; } } });
+    Object.assign(window, { __portraitLayerProbe: { frames, geometry: () => geometry,
+      stop: () => { active = false; } } });
     requestAnimationFrame(sample);
   });
 }
@@ -161,6 +164,109 @@ test("decoded tiny portraits stay hidden while the introduction waits for full p
     );
   }
 });
+
+for (const count of [180, 1000]) {
+  test(`zoomed-out ${count}-person tree keeps cameos without portraits`, async ({ page }, testInfo) => {
+    test.setTimeout(60_000);
+    await preparePortraitTree(page, false, { count, photos: false });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const mediaRequests: string[] = [];
+    page.on("request", (request) => {
+      if (/\/(?:media|portrait)\//.test(new URL(request.url()).pathname))
+        mediaRequests.push(request.url());
+    });
+    await page.addInitScript(() => {
+      const draw = CanvasRenderingContext2D.prototype.drawImage;
+      const sources = new Set<HTMLCanvasElement>();
+      CanvasRenderingContext2D.prototype.drawImage = function (image: CanvasImageSource, ...args: number[]) {
+        if (this.canvas.classList.contains("tree-distant-portraits") &&
+          image instanceof HTMLCanvasElement && image.width === 48)
+          sources.add(image);
+        return Reflect.apply(draw, this, [image, ...args]);
+      };
+      Object.assign(window, { __cameoSources: () => sources.size });
+    });
+    await page.goto("/tree");
+    const root = page.locator(".tree-canvas");
+    await expect(root).not.toHaveClass(/is-grow|is-layout-settling/, { timeout: 30_000 });
+    const zoom = () => page.locator(".react-flow__viewport").evaluate((element) =>
+      new DOMMatrix(getComputedStyle(element).transform).a);
+    const zoomBy = async (direction: "in" | "out") => {
+      const before = await zoom();
+      // Exercise the app's zoom handler without Android Chrome's page zoom.
+      await root.evaluate((element, deltaY) => {
+        const box = element.getBoundingClientRect();
+        element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true,
+          ctrlKey: true, deltaY, clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 }));
+      }, direction === "in" ? -100 : 100);
+      if (direction === "in") await expect.poll(zoom).toBeGreaterThan(before);
+      else await expect.poll(zoom).toBeLessThan(before);
+    };
+    for (let index = 0; index < 12 && await zoom() >= 0.18; index++)
+      await zoomBy("out");
+    for (let index = 0; index < 12 && await zoom() < 0.09; index++)
+      await zoomBy("in");
+    await expect.poll(zoom).toBeLessThan(0.18);
+    if (count < 600) {
+      const cameo = page.locator(".flow-person.is-distant .portrait-placeholder");
+      await expect(cameo.first()).toBeAttached();
+      await expect(cameo.first().locator("path")).toHaveCount(1);
+      await expect(cameo.first().locator("ellipse")).toHaveCount(1);
+      await expect(cameo.first().locator("circle")).toHaveCount(0);
+    } else {
+      await expect(root).toHaveAttribute("data-gpu-fallback", "WebGL2 unavailable");
+      await expect.poll(() => page.evaluate(() =>
+        (window as typeof window & { __cameoSources: () => number }).__cameoSources(),
+      )).toBeGreaterThan(0);
+      expect(await page.evaluate(() =>
+        (window as typeof window & { __cameoSources: () => number }).__cameoSources(),
+      )).toBeLessThanOrEqual(3);
+      // Sample the actual composed canvas, not a source tile or a DOM counter.
+      await expect.poll(() => page.evaluate(() => {
+        const state = window as typeof window & { __portraitLayerProbe: {
+          geometry: () => { positions: [string, { x: number; y: number }][];
+            nodeSize: { width: number } } | undefined } };
+        const geometry = state.__portraitLayerProbe.geometry();
+        const root = document.querySelector(".tree-canvas")!;
+        const canvas = root.querySelector<HTMLCanvasElement>(".tree-distant-portraits")!;
+        const context = canvas.getContext("2d")!;
+        const bounds = canvas.getBoundingClientRect();
+        const flow = root.querySelector(".react-flow")!.getBoundingClientRect();
+        const matrix = new DOMMatrix(getComputedStyle(root.querySelector(".react-flow__viewport")!).transform);
+        for (const [, point] of geometry?.positions || []) {
+          const x = flow.x + matrix.e + (point.x + geometry!.nodeSize.width / 2) * matrix.a;
+          const y = flow.y + matrix.f + (point.y + 53.5) * matrix.a;
+          if (x < flow.left + 20 || x > flow.right - 20 || y < flow.top + 100 || y > flow.bottom - 50) continue;
+          const sample = (offset: number) => context.getImageData(
+            Math.floor((x + offset * matrix.a - bounds.x) * canvas.width / bounds.width),
+            Math.floor((y - bounds.y) * canvas.height / bounds.height), 1, 1).data;
+          const head = sample(0), flank = sample(40);
+          if (head[3] > 200 && flank[3] > 200 && flank[0] - head[0] > 12) return true;
+        }
+        return false;
+      })).toBe(true);
+      await zoomBy("out");
+      await zoomBy("in");
+      expect(await page.evaluate(() =>
+        (window as typeof window & { __cameoSources: () => number }).__cameoSources(),
+      )).toBeLessThanOrEqual(3);
+    }
+    for (let index = 0; index < 8 && await zoom() < 0.2; index++) await zoomBy("in");
+    await expect(page.locator(".flow-person:not(.is-distant) .portrait-placeholder circle").first())
+      .toBeAttached();
+    for (let index = 0; index < 8 && await zoom() >= 0.18; index++) await zoomBy("out");
+    if (count < 600)
+      await expect(page.locator(".flow-person.is-distant .portrait-placeholder ellipse").first()).toBeAttached();
+    else expect(await page.evaluate(() =>
+      (window as typeof window & { __cameoSources: () => number }).__cameoSources(),
+    )).toBeLessThanOrEqual(3);
+    expect(mediaRequests).toEqual([]);
+    await page.screenshot({ path: testInfo.outputPath(`cameos-${count}.png`) });
+    await page.evaluate(() =>
+      (window as typeof window & { __portraitLayerProbe: PortraitProbe }).__portraitLayerProbe.stop(),
+    );
+  });
+}
 
 test("timeline removes the distant portrait layer and returning to the tree restores photographs", async ({ page, isMobile }) => {
   test.setTimeout(60_000);

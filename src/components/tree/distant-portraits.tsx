@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useStoreApi } from "@xyflow/react";
-import { safeUrl, type Person } from "../../domain";
+import { resolvedSex, safeUrl, type Person } from "../../domain";
 import { fullName } from "../../domain/dates.ts";
 import { mediaPreview } from "../../domain/media-preview.ts";
 import { roundedRoute } from "../../domain/edge-routing.ts";
@@ -40,6 +40,34 @@ function circularPreview(image: HTMLImageElement) {
   return canvas;
 }
 
+// Three reusable tiny cameos replace flat circles without a per-person SVG or
+// image request. The two shapes match the compact DOM placeholder.
+function placeholderPreview(sex: "f" | "m" | "u") {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = TINY_SIZE;
+  const context = canvas.getContext("2d")!;
+  context.scale(TINY_SIZE / 80, TINY_SIZE / 80);
+  context.beginPath();
+  context.arc(40, 40, 40, 0, Math.PI * 2);
+  context.clip();
+  const colors = sex === "f" ? ["#fff9ee", "#ede4d7", "#a58c78"]
+    : sex === "m" ? ["#fafbf3", "#e4ead9", "#71856b"]
+      : ["#fafbf3", "#e4ead9", "#8a927f"];
+  const background = context.createRadialGradient(32, 20, 0, 32, 20, 80);
+  background.addColorStop(0, colors[0]);
+  background.addColorStop(1, colors[1]);
+  context.fillStyle = background;
+  context.fillRect(0, 0, 80, 80);
+  context.fillStyle = colors[2];
+  context.globalAlpha = 0.23;
+  context.fill(new Path2D("M18 69c1-14 9-22 22-22s21 8 22 22"));
+  context.globalAlpha = 0.35;
+  context.beginPath();
+  context.ellipse(40, 30, 12, 15, 0, 0, Math.PI * 2);
+  context.fill();
+  return canvas;
+}
+
 export function DistantPortraits({
   people,
   nodes,
@@ -66,6 +94,7 @@ export function DistantPortraits({
   const store = useStoreApi();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previews = useRef(new Map<string, HTMLCanvasElement>());
+  const placeholders = useRef<Partial<Record<"f" | "m" | "u", HTMLCanvasElement>>>({});
   const pending = useRef(new Map<string, Promise<void>>());
   const requestDraw = useRef<() => void>(() => {});
   const growthStartedAt = useRef<number | null>(null);
@@ -277,10 +306,10 @@ export function DistantPortraits({
               y + PORTRAIT_TOP, PORTRAIT_SIZE, PORTRAIT_SIZE);
             painted++;
           } else {
-            context.fillStyle = person.sex === "f" ? "#e9d9cd" : "#d9e2d8";
-            context.beginPath();
-            context.arc(centerX, centerY, PORTRAIT_SIZE / 2, 0, Math.PI * 2);
-            context.fill();
+            const sex = resolvedSex(person);
+            const placeholder = placeholders.current[sex] ||= placeholderPreview(sex);
+            context.drawImage(placeholder, centerX - PORTRAIT_SIZE / 2,
+              y + PORTRAIT_TOP, PORTRAIT_SIZE, PORTRAIT_SIZE);
           }
           context.strokeStyle = person.needsReview ? "#d77b18"
             : node.selected || node.data.spotlit ? "#5c8650" : "#fffefa";
