@@ -238,7 +238,7 @@ export function mediaHttp({
     }
     const requested = url.searchParams.get("variant");
     const variant: ImagePreviewVariant | null =
-      requested === "tiny" || requested === "thumb" || requested === "display"
+      requested === "tiny" || requested === "avatar" || requested === "thumb" || requested === "display"
         ? requested : null;
 
     if (variant && media.open(url.pathname) && file.type !== "image/gif") {

@@ -66,6 +66,17 @@ test("photo previews keep expected dimensions and cache variant", async () => {
     assert.equal(tinyPixels[0], tinyPixels[1]);
     assert.equal(tinyPixels[1], tinyPixels[2]);
 
+    const avatar = await preview(original, "avatar");
+    const avatarMeta = await sharp(avatar).metadata();
+    assert.equal(avatarMeta.format, "webp");
+    assert.equal(avatarMeta.width, 128);
+    assert.equal(avatarMeta.height, 96);
+    // A 34px portrait stays sharp at DPR3 and retains colour unlike tiny.
+    assert.ok(avatarMeta.width >= 34 * 3);
+    const avatarPixels = await sharp(avatar).raw().toBuffer();
+    assert.ok(avatarPixels[2] - avatarPixels[0] > 40);
+    assert.deepEqual(await preview(original, "avatar"), avatar);
+
     const thumb = await preview(original, "thumb");
     const thumbMeta = await sharp(thumb).metadata();
     assert.equal(thumbMeta.format, "webp");
@@ -79,8 +90,9 @@ test("photo previews keep expected dimensions and cache variant", async () => {
     assert.equal(aiMeta.height, 1200);
 
     const files = await readdir(directory);
-    assert.equal(files.length, 4);
+    assert.equal(files.length, 5);
     assert.ok(files.some((file) => file.endsWith("-tiny-v3.webp")));
+    assert.ok(files.some((file) => file.endsWith("-avatar-v3.webp")));
     assert.ok(files.some((file) => file.endsWith("-display-v3.webp")));
     assert.ok(files.some((file) => file.endsWith("-thumb-v3.webp")));
     assert.ok(files.some((file) => file.endsWith("-ai-v3.jpg")));

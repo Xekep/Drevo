@@ -8,6 +8,7 @@ import {
   type TreeGeometry,
 } from "../src/domain/index.ts";
 import { buildTreeEdges } from "../src/components/tree/tree-edge-adapter.ts";
+import { routeKey } from "../src/domain/edge-routing.ts";
 
 function person(id: string): Person {
   return {
@@ -95,6 +96,42 @@ function baseInput() {
     growthDelays,
   };
 }
+
+test("covered relation lookup preserves absent/empty coverage and independent extra relations", () => {
+  const cases = [
+    {
+      branches: undefined,
+      coveredRelations: undefined,
+      expected: [parent.key, godparent.key],
+    },
+    { branches: [], coveredRelations: undefined, expected: [godparent.key] },
+    { branches: [], coveredRelations: [], expected: [parent.key, godparent.key] },
+    {
+      branches: [],
+      coveredRelations: [routeKey(parent), routeKey(parent)],
+      expected: [godparent.key],
+    },
+    {
+      branches: undefined,
+      coveredRelations: [routeKey(parent)],
+      expected: [parent.key, godparent.key],
+    },
+    {
+      branches: [],
+      coveredRelations: [routeKey(godparent)],
+      expected: [parent.key],
+    },
+  ];
+  for (const { branches, coveredRelations, expected } of cases) {
+    const input = { ...geometry, branches, coveredRelations };
+    const before = structuredClone(input);
+    const edges = buildTreeEdges({
+      ...baseInput(), geometry: input, extraVisible: true,
+    });
+    assert.deepEqual(edges.map((edge) => edge.id), expected);
+    assert.deepEqual(input, before);
+  }
+});
 
 test("edge adapter preserves handles, highlighting, filters and draft preview", () => {
   const edges = buildTreeEdges(baseInput());

@@ -74,9 +74,10 @@ export function publicSharingHttp({
 
       if (file.type !== "image/gif") {
         try {
+          const requested = url.searchParams.get("variant");
           const bytes = await previewImage(
             { path: file.path, cacheKey: file.name },
-            url.searchParams.get("variant") === "tiny" ? "tiny" : "thumb",
+            requested === "tiny" || requested === "avatar" ? requested : "thumb",
           );
           const access = await portraitAccess();
           if (access !== 200)

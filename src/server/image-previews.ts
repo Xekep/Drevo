@@ -3,11 +3,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-export type ImagePreviewVariant = "tiny" | "thumb" | "display" | "ai";
+export type ImagePreviewVariant = "tiny" | "avatar" | "thumb" | "display" | "ai";
 export type ImagePreviewSource = Buffer | { path: string; cacheKey: string };
 
 export const IMAGE_PREVIEW_SETTINGS = {
   tiny: { maxSize: 48, quality: 45 },
+  avatar: { maxSize: 128, quality: 76 },
   thumb: { maxSize: 400, quality: 76 },
   display: { maxSize: 1600, quality: 82 },
   ai: { maxSize: 1600, quality: 86 },

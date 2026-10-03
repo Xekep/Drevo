@@ -13,7 +13,7 @@ type PortraitFrame = {
 type PortraitProbe = { frames: PortraitFrame[]; stop: () => void };
 
 async function preparePortraitTree(page: Page, accountPerson: boolean,
-  options: { count?: number; photos?: boolean } = {}) {
+  options: { count?: number; photos?: boolean; uniquePhotos?: boolean } = {}) {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
@@ -27,7 +27,8 @@ async function preparePortraitTree(page: Page, accountPerson: boolean,
       parents: index % 12 ? [`portrait-layer-${index - 1}`] : [],
       spouses: [],
       sources: [],
-      photo: options.photos === false ? "" : "/media/portrait-layer.jpg",
+      photo: options.photos === false ? "" : options.uniquePhotos
+        ? `/media/portrait-layer-${index}.jpg` : "/media/portrait-layer.jpg",
       sex: ["m", "f", "u"][index % 3],
     }));
     data.family.links = [];
@@ -165,6 +166,99 @@ test("decoded tiny portraits stay hidden while the introduction waits for full p
   }
 });
 
+test("distant portraits load only the current view and cancel decoded work when chronology replaces it", async ({ page, isMobile }) => {
+  test.setTimeout(60_000);
+  await preparePortraitTree(page, true, { count: 1000, uniquePhotos: true });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => {
+    const state = { previews: 0 };
+    Object.assign(window, { __viewportPortraits: state });
+    const draw = CanvasRenderingContext2D.prototype.drawImage;
+    CanvasRenderingContext2D.prototype.drawImage = function (image: CanvasImageSource, ...args: number[]) {
+      if (this.canvas.width === 48 && image instanceof HTMLImageElement && image.src.includes("variant=tiny"))
+        state.previews++;
+      return Reflect.apply(draw, this, [image, ...args]);
+    };
+  });
+  const images = await renderPortraits(["viewport"]);
+  const tinyRequests: string[] = [];
+  let releasedRequests = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/media/portrait-layer-*.jpg?variant=*", async (route) => {
+    const url = new URL(route.request().url());
+    const tiny = url.searchParams.get("variant") === "tiny";
+    if (tiny) {
+      tinyRequests.push(url.pathname);
+      await gate;
+    }
+    try {
+      await route.fulfill({ contentType: "image/jpeg", body: images.get(tiny ? "viewport-tiny" : "viewport-thumb")! });
+    } catch (error) {
+      // The test deliberately aborts these requests before releasing replies.
+      if (!tiny) throw error;
+    } finally {
+      if (tiny) releasedRequests++;
+    }
+  });
+  try {
+    await page.goto("/tree");
+    const root = page.locator(".tree-canvas");
+    await expect(root).not.toHaveClass(/is-grow|is-layout-settling/, { timeout: 30_000 });
+    const zoom = () => page.locator(".react-flow__viewport").evaluate((element) =>
+      new DOMMatrix(getComputedStyle(element).transform).a);
+    await expect.poll(zoom).toBeGreaterThan(0.18);
+    await expect(page.locator(".flow-person .person-avatar img").first()).toBeAttached();
+    // The personal camera can pass through the fitted overview before settling.
+    // Those cancelled requests belong to that earlier visible area.
+    const initialRequests = tinyRequests.length;
+    expect(initialRequests).toBeLessThan(1000);
+    tinyRequests.length = 0;
+    await root.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true,
+        ctrlKey: true, deltaY: 700, clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 }));
+    });
+    await expect.poll(zoom).toBeLessThan(0.18);
+    await expect.poll(() => tinyRequests.length).toBeGreaterThan(0);
+    // All responses remain pending: the queue must stay bounded and must not
+    // even request the rest of the archive's thousand distinct photographs.
+    expect(tinyRequests.length).toBeLessThanOrEqual(12);
+    expect(await page.evaluate((requested) => {
+      const state = window as typeof window & { __portraitLayerProbe: {
+        geometry: () => { positions: [string, { x: number; y: number }][]; nodeSize: { width: number } } | undefined;
+      } };
+      const geometry = state.__portraitLayerProbe.geometry()!;
+      const positions = new Map(geometry.positions);
+      const flow = document.querySelector<HTMLElement>(".react-flow")!;
+      const matrix = new DOMMatrix(getComputedStyle(document.querySelector(".react-flow__viewport")!).transform);
+      return requested.every((path) => {
+        const id = path.match(/(portrait-layer-\d+)\.jpg$/)![1];
+        const point = positions.get(id)!;
+        const left = matrix.e + (point.x + geometry.nodeSize.width / 2 - 66) * matrix.a;
+        const top = matrix.f + (point.y + 4) * matrix.a;
+        return left + 132 * matrix.a >= -256 && top + 132 * matrix.a >= -256 &&
+          left <= flow.clientWidth + 256 && top <= flow.clientHeight + 256;
+      });
+    }, tinyRequests)).toBe(true);
+    if (isMobile) await page.getByRole("switch", { name: "Древо / Хронология" }).click();
+    else await page.getByRole("button", { name: "Хронология", exact: true }).click();
+    await expect(page.locator(".tree-distant-portrait-clip")).toHaveCount(0);
+    const requested = tinyRequests.length;
+    const before = await page.evaluate(() => (window as typeof window & { __viewportPortraits: { previews: number } }).__viewportPortraits.previews);
+    release();
+    await expect.poll(() => releasedRequests).toBe(initialRequests + requested);
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    expect(tinyRequests).toHaveLength(requested);
+    expect(await page.evaluate(() => (window as typeof window & { __viewportPortraits: { previews: number } }).__viewportPortraits.previews)).toBe(before);
+  } finally {
+    release();
+    await page.evaluate(() =>
+      (window as typeof window & { __portraitLayerProbe?: PortraitProbe }).__portraitLayerProbe?.stop(),
+    );
+  }
+});
+
 for (const count of [180, 1000]) {
   test(`zoomed-out ${count}-person tree keeps cameos without portraits`, async ({ page }, testInfo) => {
     test.setTimeout(60_000);
@@ -274,7 +368,7 @@ test("timeline removes the distant portrait layer and returning to the tree rest
   const images = await renderPortraits(["layer"]);
   await page.route("**/media/portrait-layer.jpg?variant=*", (route) => {
     const variant = new URL(route.request().url()).searchParams.get("variant");
-    return route.fulfill({ contentType: "image/jpeg", body: images.get(`layer-${variant}`)! });
+    return route.fulfill({ contentType: "image/jpeg", body: images.get(`layer-${variant}`) || images.get("layer-thumb")! });
   });
   await page.goto("/tree");
   const root = page.locator(".tree-canvas");

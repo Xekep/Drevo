@@ -57,13 +57,15 @@ export function Avatar({
   person,
   large = false,
   loading = "lazy",
+  preview = "thumb",
 }: {
   person: Person;
   large?: boolean;
   loading?: "eager" | "lazy";
+  preview?: "avatar" | "thumb";
 }) {
   const [failed, setFailed] = useState<string>();
-  const src = mediaPreview(safeUrl(person.photo));
+  const src = mediaPreview(safeUrl(person.photo), preview);
   return (
     <span
       className={`${large ? "profile-avatar" : "person-avatar"} ${resolvedSex(person) === "u" ? "unknown" : resolvedSex(person) === "f" ? "female" : "male"}`}

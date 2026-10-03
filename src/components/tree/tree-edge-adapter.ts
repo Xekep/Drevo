@@ -149,6 +149,9 @@ export function prepareTreeEdges({
   growthDelays,
 }: EdgePreparationInput): PreparedTreeEdges {
   const routes = new Map(geometry?.routes || []);
+  const coveredRelations = geometry?.coveredRelations
+    ? new Set(geometry.coveredRelations)
+    : null;
   const nodeWidth = geometry?.nodeSize?.width ?? TREE_NODE_WIDTH,
     nodeHeight = geometry?.nodeSize?.height ?? TREE_NODE_HEIGHT;
   const cards = extraVisible
@@ -178,8 +181,8 @@ export function prepareTreeEdges({
         positions.has(edge.from) &&
         positions.has(edge.to) &&
         (!geometry?.branches ||
-          (geometry.coveredRelations
-            ? !geometry.coveredRelations.includes(routeKey(edge))
+          (coveredRelations
+            ? !coveredRelations.has(routeKey(edge))
             : !["parent", "spouse"].includes(edge.type))) &&
         (extraVisible || ["parent", "spouse"].includes(edge.type)),
     )

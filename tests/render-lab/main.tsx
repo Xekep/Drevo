@@ -119,7 +119,6 @@ function CurrentRenderer() {
         connectionMode={ConnectionMode.Loose}
       >
         <DistantPortraits
-          people={input.family.people}
           nodes={model.nodes}
           households={model.displayNodes.filter(
             (node) => node.type === "household",

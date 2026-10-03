@@ -6,6 +6,7 @@ import type { RelationshipEdgeType } from "./relationship-edge";
 import type { HouseholdNodeType } from "./household-node";
 import { GpuPortraitCache } from "./gpu-portrait-cache";
 import { gpuRoute } from "./gpu-route";
+import { layoutGpuText } from "./gpu-text-layout";
 
 const MAX_BUFFERS = 24 * 1024 * 1024;
 const FONT_SIZE = 1024;
@@ -305,36 +306,19 @@ export function createGpuScene(
         throw new Error("Native text shaping required");
       const maxWidth = (node.width || 220) - 16,
         scale = size / 64;
-      const measure = (s: string) =>
-        [...s].reduce((sum, c) => sum + glyph(c, bold).advance * scale, 0);
-      const rows: string[] = [];
-      let row = "";
-      for (const letter of [...value]) {
-        if (row && measure(row + letter) > maxWidth) {
-          const space = row.lastIndexOf(" ");
-          if (space > 0) {
-            rows.push(row.slice(0, space));
-            row = row.slice(space + 1) + letter;
-          } else {
-            rows.push(row);
-            row = letter;
-          }
-        } else row += letter;
-      }
-      if (row) rows.push(row);
-      if (rows.length > maxLines) {
-        let last = rows[maxLines - 1];
-        while (last && measure(last + "…") > maxWidth)
-          last = [...last].slice(0, -1).join("");
-        rows[maxLines - 1] = last + "…";
-      }
-      for (const [index, line] of rows.slice(0, maxLines).entries()) {
+      const rows = layoutGpuText(
+        value,
+        maxWidth,
+        maxLines,
+        (letter) => glyph(letter, bold).advance * scale,
+      );
+      for (const [index, line] of rows.entries()) {
         let x =
           node.position.x +
           (alignRight
-            ? (node.width || 220) - 14 - measure(line)
-            : ((node.width || 220) - measure(line)) / 2);
-        for (const letter of [...line]) {
+            ? (node.width || 220) - 14 - line.width
+            : ((node.width || 220) - line.width) / 2);
+        for (const letter of line.value) {
           const g = glyph(letter, bold);
           for (const target of targets)
             target.push(

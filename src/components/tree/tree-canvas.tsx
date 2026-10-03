@@ -1068,7 +1068,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   const overviewAvailable = mode !== "timeline" && !activeFanAnchor &&
     nodes.length >= 600 && !growing && !layoutSettling;
-  const portraitPeople = useMemo(() => nodes.map((node) => node.data.person), [nodes]);
   const distantScene = overviewAvailable && distantZoom;
   // Use the existing distant canvas scene for large introductions instead of
   // mounting hundreds of SVG edge wrappers during the short growth sequence.
@@ -1894,7 +1893,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         )}
         {!activeFanAnchor && mode !== "timeline" && !gpuActive && (
           <DistantPortraits
-            people={portraitPeople}
             nodes={nodes}
             households={overviewHouseholds}
             edges={canvasEdges}
@@ -1904,6 +1902,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             growing={growing}
             growthStarted={growthStarted}
             growthDelays={growthDelays}
+            cameraReady={initialCameraReady}
           />
         )}
         {!activeFanAnchor && (

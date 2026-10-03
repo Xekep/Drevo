@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useStoreApi } from "@xyflow/react";
-import { resolvedSex, safeUrl, type Person } from "../../domain";
+import { resolvedSex, safeUrl } from "../../domain";
 import { fullName } from "../../domain/dates.ts";
 import { mediaPreview } from "../../domain/media-preview.ts";
-import { roundedRoute } from "../../domain/edge-routing.ts";
+import { roundedRoute, Spatial } from "../../domain/edge-routing.ts";
 import type { HouseholdNodeType } from "./household-node.tsx";
 import type { PersonNodeType } from "./person-node";
 import type { RelationshipEdgeType } from "./relationship-edge.tsx";
@@ -14,6 +14,7 @@ const PORTRAIT_SIZE = 132;
 const PORTRAIT_TOP = 4;
 const TINY_SIZE = 48;
 const MAX_PARALLEL_LOADS = 12;
+const RETAINED_PREVIEWS = 1024;
 const OVERSCAN = 256;
 
 function tinyPortraitUrl(photo?: string) {
@@ -69,7 +70,6 @@ function placeholderPreview(sex: "f" | "m" | "u") {
 }
 
 export function DistantPortraits({
-  people,
   nodes,
   households = [],
   edges = [],
@@ -79,8 +79,8 @@ export function DistantPortraits({
   growing,
   growthStarted,
   growthDelays,
+  cameraReady = true,
 }: {
-  people: readonly Person[];
   nodes: readonly PersonNodeType[];
   households?: readonly HouseholdNodeType[];
   edges?: readonly RelationshipEdgeType[];
@@ -90,12 +90,12 @@ export function DistantPortraits({
   growing: boolean;
   growthStarted: boolean;
   growthDelays: TreeGrowthSchedule;
+  cameraReady?: boolean;
 }) {
   const store = useStoreApi();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previews = useRef(new Map<string, HTMLCanvasElement>());
   const placeholders = useRef<Partial<Record<"f" | "m" | "u", HTMLCanvasElement>>>({});
-  const pending = useRef(new Map<string, Promise<void>>());
   const requestDraw = useRef<() => void>(() => {});
   const growthStartedAt = useRef<number | null>(null);
   const pathCache = useRef(new Map<string, {
@@ -103,37 +103,109 @@ export function DistantPortraits({
     segments: ReturnType<typeof gpuRoute> | null;
     length: number;
   }>());
-  const urlKey = useMemo(() => JSON.stringify([...new Set(people.flatMap((person) => {
-    const url = tinyPortraitUrl(person.photo);
-    return url ? [url] : [];
-  }))]), [people]);
-  // Detail pages replace people without changing portraits. Keep the running
-  // loader queue rather than restarting its ready prefix on every page.
-  const urls = useMemo(() => JSON.parse(urlKey) as string[], [urlKey]);
+  // Selection and detail hydration create fresh nodes. Only image URLs and
+  // geometry invalidate the loader's spatial index and running requests.
+  const portraitKey = useMemo(() => JSON.stringify(nodes.flatMap((node) => {
+    const url = tinyPortraitUrl(node.data.person.photo);
+    return url ? [[url, node.position.x + (node.width || PORTRAIT_SIZE + 16) / 2 - PORTRAIT_SIZE / 2,
+      node.position.y + PORTRAIT_TOP]] : [];
+  })), [nodes]);
+  const portraitBounds = useMemo(() => {
+    const bounds = (JSON.parse(portraitKey) as [string, number, number][]).map(([url, x, y]) => ({
+      url, left: x, top: y, right: x + PORTRAIT_SIZE, bottom: y + PORTRAIT_SIZE,
+    }));
+    const index = new Spatial<(typeof bounds)[number]>();
+    for (const item of bounds) index.add(item);
+    return { bounds, index };
+  }, [portraitKey]);
 
   useEffect(() => {
     let active = true;
-    let next = 0;
-    const load = (url: string) => {
-      if (previews.current.has(url)) return Promise.resolve();
-      const existing = pending.current.get(url);
-      if (existing) return existing;
-      const image = new Image();
-      image.src = url;
-      const task = image.decode().then(() => {
-        previews.current.set(url, circularPreview(image));
-        requestDraw.current();
-      }).catch(() => {}).finally(() => pending.current.delete(url));
-      pending.current.set(url, task);
-      return task;
+    let frame = 0;
+    let wanted: string[] = [];
+    let nextWanted = 0;
+    let wantedSet = new Set<string>();
+    const loading = new Map<string, HTMLImageElement>();
+    const failed = new Map<string, number>();
+    const available = new Set(portraitBounds.bounds.map(({ url }) => url));
+    for (const url of previews.current.keys())
+      if (!available.has(url)) previews.current.delete(url);
+    const prune = () => {
+      // Keep every visible face, plus a bounded history for return gestures.
+      // The budget grows only if the viewport itself contains more faces.
+      const limit = Math.max(RETAINED_PREVIEWS, wantedSet.size);
+      for (const url of previews.current.keys()) {
+        if (previews.current.size <= limit) break;
+        if (!wantedSet.has(url)) previews.current.delete(url);
+      }
     };
-    const worker = async () => {
-      while (active && next < urls.length) await load(urls[next++]);
+    const pump = () => {
+      if (!active) return;
+      while (nextWanted < wanted.length && loading.size < MAX_PARALLEL_LOADS) {
+        const url = wanted[nextWanted++];
+        if (previews.current.has(url) || loading.has(url) ||
+            Date.now() - (failed.get(url) ?? -Infinity) < 30_000) continue;
+        const image = new Image();
+        loading.set(url, image);
+        image.src = url;
+        void image.decode().then(() => {
+          // Aborted decodes can resolve late. Never create a detached canvas
+          // after a camera change, projection change or GPU handoff.
+          if (!active || loading.get(url) !== image || !wantedSet.has(url)) return;
+          previews.current.set(url, circularPreview(image));
+          prune();
+          requestDraw.current();
+        }).catch(() => {
+          if (active && loading.get(url) === image) failed.set(url, Date.now());
+        }).finally(() => {
+          if (loading.get(url) === image) loading.delete(url);
+          pump();
+        });
+      }
     };
-    for (let index = 0; index < Math.min(MAX_PARALLEL_LOADS, urls.length); index++)
-      void worker();
-    return () => { active = false; };
-  }, [urls]);
+    const refresh = () => {
+      frame = 0;
+      const [tx, ty, zoom] = store.getState().transform;
+      // During the intro, warm the current camera vicinity without exposing
+      // a completed layer. A settled near view already has native portraits.
+      const visible = cameraReady && width > 0 && height > 0 && (zoom < 0.18 || growing)
+        ? portraitBounds.index.query({
+          left: (-tx - OVERSCAN) / zoom, top: (-ty - OVERSCAN) / zoom,
+          right: (width - tx + OVERSCAN) / zoom, bottom: (height - ty + OVERSCAN) / zoom,
+        }) : [];
+      const cx = (width / 2 - tx) / zoom, cy = (height / 2 - ty) / zoom;
+      visible.sort((a, b) => Math.hypot(a.left - cx, a.top - cy) - Math.hypot(b.left - cx, b.top - cy));
+      wanted = [...new Set(visible.map(({ url }) => url))];
+      nextWanted = 0;
+      wantedSet = new Set(wanted);
+      for (const [url, image] of loading)
+        if (!wantedSet.has(url)) {
+          loading.delete(url);
+          image.src = "";
+        }
+      for (const url of wanted) {
+        const preview = previews.current.get(url);
+        if (preview) {
+          previews.current.delete(url);
+          previews.current.set(url, preview);
+        }
+      }
+      prune();
+      pump();
+    };
+    const unsubscribe = store.subscribe((state, previous) => {
+      if (state.transform !== previous.transform && !frame)
+        frame = requestAnimationFrame(refresh);
+    });
+    refresh();
+    return () => {
+      active = false;
+      unsubscribe();
+      cancelAnimationFrame(frame);
+      for (const image of loading.values()) image.src = "";
+      loading.clear();
+    };
+  }, [store, portraitBounds, width, height, growing, cameraReady]);
 
   useEffect(() => {
     if (!growing || !growthStarted) growthStartedAt.current = null;
