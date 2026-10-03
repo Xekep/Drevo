@@ -89,10 +89,22 @@ export function accountArchiveDirectory(db: StoreDatabase) {
           if (!session.rows[0] || Number(session.rows[0].expires_at) <= Date.now())
             throw new AccountSessionExpired("Сессия завершена. Войдите снова");
           await client.query("SELECT set_config('drevo.account_id',$1,true)", [userId]);
-          // Lock exactly the visible archive and membership rows before
-          // comparing with the pre-serialized response. Revoke/transfer then
-          // waits until the short response is finished.
-          const rows = await client.query(`${membershipSql} FOR SHARE OF m,a`, [userId]);
+          // Account-level SELECT policies expose all memberships, but a
+          // locking SELECT also uses archive-scoped write policies. Lock each
+          // expected archive under its own scope in a stable order, then read
+          // the complete account list without row locking for comparison.
+          for (const archiveId of [...new Set(expected.map((archive) => archive.id))].sort()) {
+            await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
+            const archive = await client.query(
+              "SELECT id FROM archives WHERE id=$1 FOR SHARE NOWAIT", [archiveId]);
+            const membership = await client.query(
+              `SELECT archive_id FROM archive_memberships
+               WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+              [archiveId, userId]);
+            if (!archive.rowCount || !membership.rowCount)
+              throw new AccountArchiveListChanged("Список деревьев изменился. Обновите страницу");
+          }
+          const rows = await client.query(membershipSql, [userId]);
           if (JSON.stringify(mapArchives(rows.rows)) !== JSON.stringify(expected))
             throw new AccountArchiveListChanged("Список деревьев изменился. Обновите страницу");
           await deliver();

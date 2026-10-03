@@ -11,6 +11,7 @@ import { userStore } from "../../src/server/users.ts";
 export async function verifyAccountArchivesReadSessionRevocation(db: StoreDatabase, client: Client) {
   const accountId = "archive-list-revoked-account";
   const archiveId = "runtime-test";
+  const otherArchiveId = "other-archive";
   const origin = "https://archive-list-session.invalid";
   const token = newSessionToken();
   const activeToken = newSessionToken();
@@ -26,6 +27,12 @@ export async function verifyAccountArchivesReadSessionRevocation(db: StoreDataba
     [accountId, new Date().toISOString()]);
   await client.query("INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access) VALUES($1,$2,'reader',true,'all')",
     [archiveId, accountId]);
+  await client.query("SELECT set_config('drevo.archive_id',$1,false)", [otherArchiveId]);
+  await client.query("INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access) VALUES($1,$2,'relative',true,'all')",
+    [otherArchiveId, accountId]);
+  await client.query("INSERT INTO archive_owners(archive_id,user_id) VALUES($1,$2)",
+    [otherArchiveId, accountId]);
+  await client.query("SELECT set_config('drevo.archive_id',$1,false)", [archiveId]);
   await client.query(
     "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$4,$5),($2,$4,$5),($3,$4,$5)",
     [tokenHash, activeHash, abortHash, accountId, Date.now() + 600_000],
@@ -138,8 +145,15 @@ export async function verifyAccountArchivesReadSessionRevocation(db: StoreDataba
   };
   try {
     const current = await list(activeToken);
-    assert.equal(current.status, 200);
-    assert.equal((await current.json()).archives[0]?.id, archiveId);
+    const currentBody = await current.json();
+    assert.equal(current.status, 200,
+      `cross-archive account read must not lose the other tree under final row locks: ${JSON.stringify(currentBody)}`);
+    const currentArchives = currentBody.archives;
+    assert.deepEqual(currentArchives.map((archive: { id: string }) => archive.id),
+      ["other-archive", "runtime-test"]);
+    assert.deepEqual(currentArchives.map((archive: { role: string; current: boolean; owned: boolean }) =>
+      [archive.role, archive.current, archive.owned]),
+    [["relative", false, true], ["reader", true, false]]);
     const stale = list(token);
     await Promise.race([
       authReached,
@@ -177,6 +191,24 @@ export async function verifyAccountArchivesReadSessionRevocation(db: StoreDataba
     assert.doesNotMatch(await changed.text(), /Archive list reader|runtime-test|archives|reader|relative/);
     await client.query("UPDATE archive_memberships SET role='reader' WHERE archive_id=$1 AND user_id=$2",
       [archiveId, accountId]);
+    beforeFinalRead = async () => {
+      await client.query("SELECT set_config('drevo.archive_id',$1,false)", [otherArchiveId]);
+      await client.query("UPDATE archives SET title='Renamed other tree' WHERE id=$1", [otherArchiveId]);
+    };
+    const renamed = await list(activeToken);
+    assert.equal(renamed.status, 409, "a changed title invalidates the prepared list");
+    assert.doesNotMatch(await renamed.text(), /Renamed other tree|Other|archives/);
+    await client.query("UPDATE archives SET title='Other' WHERE id=$1", [otherArchiveId]);
+    beforeFinalRead = async () => {
+      await client.query("DELETE FROM archive_owners WHERE archive_id=$1 AND user_id=$2",
+        [otherArchiveId, accountId]);
+    };
+    const unowned = await list(activeToken);
+    assert.equal(unowned.status, 409, "an owner transfer invalidates the prepared ownership flag");
+    assert.doesNotMatch(await unowned.text(), /Other|archives|relative/);
+    await client.query("INSERT INTO archive_owners(archive_id,user_id) VALUES($1,$2)",
+      [otherArchiveId, accountId]);
+    await client.query("SELECT set_config('drevo.archive_id',$1,false)", [archiveId]);
     pauseDelivery = true;
     const delivering = list(activeToken);
     await Promise.race([
@@ -200,7 +232,8 @@ export async function verifyAccountArchivesReadSessionRevocation(db: StoreDataba
     resumeDelivery();
     const delivered = await delivering;
     assert.equal(delivered.status, 200);
-    assert.equal((await delivered.json()).archives[0]?.id, archiveId);
+    assert.equal((await delivered.json()).archives.some((archive: { id: string }) =>
+      archive.id === archiveId), true);
     assert.equal((await logout).status, 200,
       "HTTP logout waits until archive names finish sending");
     await ownerTransferLock;
@@ -225,6 +258,11 @@ export async function verifyAccountArchivesReadSessionRevocation(db: StoreDataba
       [tokenHash, activeHash, abortHash]);
     await client.query("DELETE FROM archive_memberships WHERE archive_id=$1 AND user_id=$2",
       [archiveId, accountId]);
+    await client.query("SELECT set_config('drevo.archive_id',$1,false)", [otherArchiveId]);
+    await client.query("DELETE FROM archive_owners WHERE archive_id=$1 AND user_id=$2",
+      [otherArchiveId, accountId]);
+    await client.query("DELETE FROM archive_memberships WHERE archive_id=$1 AND user_id=$2",
+      [otherArchiveId, accountId]);
     await client.query("DELETE FROM accounts WHERE id=$1", [accountId]);
     await client.query("SELECT set_config('drevo.archive_id',$1,false)",
       [previousContext.archive_id || ""]);
