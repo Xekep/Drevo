@@ -93,6 +93,8 @@ test("global search opens with an empty input and supports keyboard navigation a
   await input.press("Escape");
   await expect(results).toHaveCount(0);
   await expect(input).toHaveAttribute("aria-expanded", "false");
+  await input.press("Enter");
+  await expect(page).toHaveURL(/\/tree$/);
   await input.fill("И".repeat(99) + "😀");
   await expect(results.getByRole("option")).toHaveAttribute(
     "href",
@@ -109,6 +111,21 @@ test("global search opens with an empty input and supports keyboard navigation a
   await expect(
     page.getByRole("textbox", { name: "ФИО, год или место" }),
   ).toHaveValue("Неттакогочеловека");
+});
+
+test("clearing search does not let Enter activate a hidden global option", async ({
+  page,
+}) => {
+  await page.goto("/tree");
+  const input = page.getByRole("combobox", {
+    name: "Найти человека или документ",
+  });
+  await input.fill("Тестов");
+  await page.getByRole("button", { name: "Очистить поиск" }).click();
+  await expect(input).toHaveValue("");
+  await expect(input).toHaveAttribute("aria-expanded", "false");
+  await input.press("Enter");
+  await expect(page).toHaveURL(/\/tree$/);
 });
 
 test("global search retains native middle-click navigation", async ({
@@ -130,7 +147,7 @@ test("global search retains native middle-click navigation", async ({
   await tab.close();
 });
 
-test("a selected global search stays selected when document results arrive", async ({
+test("an initially selected global search stays selected when documents arrive", async ({
   page,
 }) => {
   let release!: () => void;
@@ -159,9 +176,8 @@ test("a selected global search stays selected when document results arrive", asy
   const input = page.getByRole("combobox", {
     name: "Найти человека или документ",
   });
-  await input.fill("Тестов");
+  await input.fill("Неттакогочеловека");
   await seen;
-  await input.press("ArrowUp");
   const results = page.getByRole("listbox", {
     name: "Найденные люди и документы",
   });
@@ -180,5 +196,5 @@ test("a selected global search stays selected when document results arrive", asy
   await input.press("Enter");
   await expect(
     page.getByRole("textbox", { name: "ФИО, год или место" }),
-  ).toHaveValue("Тестов");
+  ).toHaveValue("Неттакогочеловека");
 });

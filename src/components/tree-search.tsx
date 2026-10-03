@@ -162,9 +162,15 @@ export function TreeSearch({
           setOpen(true);
         }}
         onChange={(e) => {
+          const nextSearch = e.target.value.trim();
+          const hasLocalMatch =
+            !!nextSearch &&
+            (people.some((person) => matchesPerson(person, nextSearch)) ||
+              (documentResults?.query === nextSearch &&
+                documentResults.items.length > 0));
           selectedQuery.current = null;
           onQuery(e.target.value);
-          setActive(0);
+          setActive(globalSearch && !hasLocalMatch ? "global" : 0);
           setOpen(true);
         }}
         onKeyDown={(e) => {
@@ -179,7 +185,7 @@ export function TreeSearch({
               : 0;
             setActive(options[next]?.kind === "global" ? "global" : next);
           }
-          if (e.key === "Enter" && options[activeIndex]) {
+          if (e.key === "Enter" && showResults && options[activeIndex]) {
             e.preventDefault();
             choose(options[activeIndex]);
           }
