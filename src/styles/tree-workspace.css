@@ -1279,7 +1279,8 @@
 .archive-header-actions:empty {
   display: none;
 }
-.archive-nav .nav-about {
+.archive-nav .nav-about,
+.archive-nav .nav-admin {
   order: 4;
   flex: none;
   min-height: 44px;
@@ -1289,8 +1290,12 @@
   background: transparent;
   border-radius: 7px;
 }
+.archive-nav .nav-admin { order: 5; }
 .archive-nav .nav-about:hover,
-.archive-nav .nav-about:focus-visible {
+.archive-nav .nav-about:focus-visible,
+.archive-nav .nav-admin:hover,
+.archive-nav .nav-admin:focus-visible,
+.archive-nav .nav-admin[aria-current="page"] {
   color: #3e604a;
   background: #edf1e6;
 }
@@ -1304,12 +1309,12 @@
 }
 .archive-more {
   display: none;
-  order: 6;
+  order: 7;
   position: relative;
   margin-left: 0;
 }
 .archive-nav .nav-account {
-  order: 5;
+  order: 6;
   flex: none;
   width: 44px;
   height: 44px;
@@ -1602,7 +1607,8 @@
   }
 }
 @media (max-width: 899px) {
-  .archive-nav .nav-about {
+  .archive-nav .nav-about,
+  .archive-nav .nav-admin {
     display: none;
   }
   .archive-nav .nav-about-menu {

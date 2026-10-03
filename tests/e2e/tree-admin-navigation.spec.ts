@@ -28,6 +28,36 @@ async function accountView(page: Page, options: {
   });
 }
 
+test("admin header shortcut follows About and opens the current archive", async ({ page }, info) => {
+  await page.route("**/a/tree-a/api/**", (route) => route.continue({
+    url: route.request().url().replace("/a/tree-a/api/", "/api/"),
+  }));
+  await page.goto("/a/tree-a/tree");
+  const shortcut = page.locator(".nav-admin");
+  await expect(shortcut).toHaveAttribute("href", "/a/tree-a/admin");
+  await expect(shortcut).toHaveText("Админка");
+  if (info.project.name === "mobile") {
+    await expect(shortcut).toBeHidden();
+    await page.getByLabel("Меню проекта").click();
+    await page.getByRole("link", { name: "Управление деревом", exact: true }).click();
+  } else {
+    for (const width of [1280, 1201, 1101, 1024, 900]) {
+      await page.setViewportSize({ width, height: 720 });
+      await expect(shortcut).toBeVisible();
+      const about = (await page.locator(".nav-about").boundingBox())!;
+      const admin = (await shortcut.boundingBox())!;
+      const account = (await page.locator(".nav-account").boundingBox())!;
+      expect(about.x + about.width).toBeLessThanOrEqual(admin.x);
+      expect(admin.x + admin.width).toBeLessThanOrEqual(account.x);
+      expect(account.x + account.width).toBeLessThanOrEqual(width);
+    }
+    await shortcut.click();
+  }
+  await expect(page).toHaveURL(/\/a\/tree-a\/admin$/);
+  await expect(shortcut).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Участники", exact: true })).toBeVisible();
+});
+
 test("basic owner reaches tree management from the gear without platform or AI sections", async ({ page }) => {
   await accountView(page, { fullAccess: false, platformAdmin: false });
   await page.goto("/tree");
