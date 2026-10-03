@@ -12,6 +12,8 @@ import { allCitations } from "./source-catalog-store.ts";
 import type { Family } from "../domain/types.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 
+type MediaAccess = "public" | { user: ArchiveUser; pending: boolean };
+
 function citationUrls(family: Family) {
   return allCitations(family).flatMap((citation) => {
     const url = citation.url?.split(/[?#]/, 1)[0];
@@ -25,12 +27,18 @@ export function mediaHttp({
   previewImage,
   visibility,
   archive,
+  beforeDelivery,
+  beforeLockedDelivery,
 }: {
   auth: Awaited<ReturnType<typeof createAuth>>;
   media: ReturnType<typeof mediaStore>;
   previewImage: ReturnType<typeof imagePreviews>;
   visibility: Awaited<ReturnType<typeof settingsStore>>;
   archive: Awaited<ReturnType<typeof openArchive>>;
+  /** Test seam for a permission change after the last reference read. */
+  beforeDelivery?: () => Promise<void>;
+  /** Test seam for a concurrent edit while final rows are locked. */
+  beforeLockedDelivery?: () => Promise<void>;
 }) {
   let cachedKey = "",
     cachedUrls = new Set<string>();
@@ -54,7 +62,7 @@ export function mediaHttp({
         .get(url))
     );
   };
-  const permitted = async (req: IncomingMessage, url?: string): Promise<ArchiveUser | "public" | null> => {
+  const permitted = async (req: IncomingMessage, url?: string): Promise<MediaAccess | null> => {
     const canRead = await auth.canRead(req);
     if (!canRead && !(await visibility.read()).publicAlbums) return null;
     if (!url) return null;
@@ -68,10 +76,12 @@ export function mediaHttp({
     }
     const user = await auth.currentUser(req);
     if (!user?.approved) return null;
-    if (await ownsPendingMedia(archive.db, url, user.id)) return user;
+    if (await ownsPendingMedia(archive.db, url, user.id))
+      return { user, pending: true };
     if (!isScopedUser(user))
       return (await referenced(url, true) ||
-        citationUrls((await archive.read()).family).includes(url)) ? user : null;
+        citationUrls((await archive.read()).family).includes(url))
+        ? { user, pending: false } : null;
     const key = `${(await archive.meta()).revision}:${user.id}:${user.personId || ""}`;
     if (key !== cachedKey) {
       const scoped = projectFamilyForUser((await archive.read()).family, user);
@@ -83,11 +93,11 @@ export function mediaHttp({
       ]);
       cachedKey = key;
     }
-    if (cachedUrls.has(url)) return user;
+    if (cachedUrls.has(url)) return { user, pending: false };
     // Citation edits may happen through the source catalogue without changing
     // the tree revision. Re-evaluate visibility instead of caching a grant.
     return citationUrls(projectFamilyForUser((await archive.read()).family, user))
-      .includes(url) ? user : null;
+      .includes(url) ? { user, pending: false } : null;
   };
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -102,40 +112,79 @@ export function mediaHttp({
   const deliver = async (
     req: IncomingMessage,
     res: ServerResponse,
-    access: ArchiveUser | "public",
+    access: MediaAccess,
+    url: string,
+    expectedRevision: number,
     start: () => void,
     complete: (signal: AbortSignal) => Promise<void>,
   ) => {
-    if (access !== "public" && !auth.local && archive.db.kind === "postgres") {
-      const session = await auth.accountSession(req);
-      if (!session || session.accountId !== access.id) return denied(res);
+    if (beforeDelivery) await beforeDelivery();
+    if (!auth.local && archive.db.kind === "postgres") {
+      const actor = access === "public" ? null : access.user;
+      const session = actor ? await auth.accountSession(req) : null;
+      if (actor && (!session || session.accountId !== actor.id))
+        return denied(res);
       if (!archive.db.postgresTransaction || !archive.db.archiveId)
         throw new Error("PostgreSQL media delivery requires an archive transaction");
       try {
+        let changed = false;
         const valid = await archive.db.postgresTransaction(async (client) => {
+          // Family and source-catalog writes both bump archive revision.
           // Hold the archive/session/member rows only until the first write.
           // A long original continues as an already-authorized HTTP request.
-          const archived = await client.query("SELECT id FROM archives WHERE id=$1 FOR SHARE", [archive.db.archiveId]);
-          if (!archived.rowCount) return false;
-          const active = await client.query<{ expires_at: string }>(
-            `SELECT expires_at FROM account_sessions
-             WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
-            [session.tokenHash, access.id],
-          );
-          if (!active.rows[0] || Number(active.rows[0].expires_at) <= Date.now()) return false;
-          const member = await client.query<{
-            role: string; approved: boolean; person_id: string | null; tree_access: string;
-          }>(`SELECT role,approved,person_id,tree_access FROM archive_memberships
-              WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
-            [archive.db.archiveId, access.id]);
-          const current = member.rows[0];
-          if (!current?.approved || current.role !== access.role ||
-              (current.person_id || "") !== (access.personId || "") ||
-              current.tree_access !== (access.treeAccess || "all")) return false;
+          const archived = await client.query<{ revision: string }>(
+            "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT", [archive.db.archiveId]);
+          if (!archived.rows[0]) return false;
+          if (Number(archived.rows[0].revision) !== expectedRevision) {
+            changed = true;
+            return false;
+          }
+          if (!actor) {
+            const visible = await client.query<{ public_tree: boolean; public_albums: boolean }>(
+              `SELECT public_tree,public_albums FROM archive_access_settings
+               WHERE archive_id=$1 FOR SHARE NOWAIT`, [archive.db.archiveId]);
+            if (!visible.rows[0]?.public_albums) return false;
+            const reference = await client.query<{ allowed: boolean }>(
+              `SELECT (EXISTS(SELECT 1 FROM photos
+                WHERE archive_id=$1 AND data->>'url'=$2) OR
+                ($3::boolean AND EXISTS(SELECT 1 FROM people
+                WHERE archive_id=$1 AND data->>'photo'=$2))) AS allowed`,
+              [archive.db.archiveId, url, visible.rows[0].public_tree],
+            );
+            if (!reference.rows[0]?.allowed) return false;
+          } else {
+            const active = await client.query<{ expires_at: string }>(
+              `SELECT expires_at FROM account_sessions
+               WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+              [session!.tokenHash, actor.id],
+            );
+            if (!active.rows[0] || Number(active.rows[0].expires_at) <= Date.now()) return false;
+            const member = await client.query<{
+              role: string; approved: boolean; person_id: string | null; tree_access: string;
+            }>(`SELECT role,approved,person_id,tree_access FROM archive_memberships
+                WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+              [archive.db.archiveId, actor.id]);
+            const current = member.rows[0];
+            if (!current?.approved || current.role !== actor.role ||
+                (current.person_id || "") !== (actor.personId || "") ||
+                current.tree_access !== (actor.treeAccess || "all")) return false;
+            if (access !== "public" && access.pending) {
+              const grant = await client.query<{ expires_ms: string }>(
+                `SELECT expires_ms FROM media_upload_grants
+                 WHERE archive_id=$1 AND url=$2 AND user_id=$3 FOR SHARE NOWAIT`,
+                [archive.db.archiveId, url, actor.id],
+              );
+              if (!grant.rows[0] || Number(grant.rows[0].expires_ms) <= Date.now())
+                return false;
+            }
+          }
+          if (beforeLockedDelivery) await beforeLockedDelivery();
           start();
           return true;
         });
-        if (!valid) return denied(res);
+        if (!valid) return changed
+          ? json(res, 409, { error: "Архив изменился. Повторите запрос." })
+          : denied(res);
       } catch (error) {
         if (res.headersSent || res.destroyed) {
           res.destroy();
@@ -190,10 +239,11 @@ export function mediaHttp({
         /* Если превью не удалось получить, отдаём исходный снимок. */
       }
       if (bytes) {
+        const expectedRevision = (await archive.meta()).revision;
         const access = await permitted(req, url.pathname);
         if (!access) return denied(res);
         let delivered!: Promise<void>;
-        return await deliver(req, res, access, () => {
+        return await deliver(req, res, access, url.pathname, expectedRevision, () => {
           delivered = finished(res, { cleanup: true }).catch(() => {});
           res.writeHead(200, {
             "Content-Type": "image/webp",
@@ -215,6 +265,7 @@ export function mediaHttp({
         await handle.close();
         return json(res, 404, { error: "Фото не найдено" });
       }
+      const expectedRevision = (await archive.meta()).revision;
       const access = await permitted(req, url.pathname);
       if (!access) {
         await handle.close();
@@ -230,7 +281,7 @@ export function mediaHttp({
       const opened = handle;
       let delivered!: Promise<void>;
       delivering = true;
-      return await deliver(req, res, access, () => {
+      return await deliver(req, res, access, url.pathname, expectedRevision, () => {
         delivered = finished(res, { cleanup: true }).catch(() => {});
         res.writeHead(200, {
           "Content-Type": file.type,
