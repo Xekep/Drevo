@@ -210,6 +210,52 @@ test("face matching stays server-side and saving still requires confirmation", a
   }
 });
 
+test("a face template is not saved after its photo tag changes during detection", async () => {
+  const archive = await openArchive(":memory:", family);
+  const auth = {
+    canEdit: () => true,
+    currentUser: () => ({ id: "editor", role: "admin", approved: true }),
+  } as unknown as Awaited<ReturnType<typeof createAuth>>;
+  const handler = faceDescriptorsHttp({ archive, auth });
+  const transaction = archive.db.transaction.bind(archive.db);
+  let changed = false;
+  archive.db.transaction = async (work, readOnly) => {
+    if (!changed) {
+      changed = true;
+      await archive.db.prepare("UPDATE photo_tags SET person_id=? WHERE id=?")
+        .run("second", "source-photo:tag-first");
+    }
+    return transaction(work, readOnly);
+  };
+  const server = createServer(async (req, res) => {
+    if (await handler(req, res, new URL(req.url || "/", "http://localhost")))
+      return;
+    res.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/faces/descriptors`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "stale-tag", personId: "first", descriptor: Array(128).fill(0.01),
+        sourcePhotoId: "source-photo", sourceTagId: "tag-first",
+        model: "face-api-1.7.15",
+      }),
+    });
+    assert.equal(response.status, 409);
+    assert.match((await response.json()).error, /Отметка на фото изменилась/);
+    assert.equal((await archive.db.prepare("SELECT count(*) AS n FROM face_descriptors").get())?.n, 0);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    await archive.close();
+  }
+});
+
 test("face descriptors follow corrected tags and disappear with removed tags", async () => {
   const archive = await openArchive(":memory:", family);
   try {
