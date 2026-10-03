@@ -76,6 +76,7 @@ const months = [
   "DEC",
 ];
 const eventTags: Record<string, PersonEvent["type"]> = {
+  ADOP: "other",
   RESI: "residence",
   EMIG: "move",
   IMMI: "move",
@@ -549,6 +550,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
   const occupationSourcesByNode = new Map<Node, Source[]>();
   let eventId = 0;
   function event(n: Node, fallback?: string): PersonEvent {
+    if (n.tag === "ADOP" && child(n, "FAMC"))
+      warnings.add("Привязка события ADOP.FAMC к конкретной приёмной семье не перенесена; событие и родительские связи сохранены отдельно.");
     const raw = value(n, "DATE"),
       date = gedcomDate(raw);
     const phrase = child(n, "DATE") ? value(child(n, "DATE")!, "PHRASE") : "";
@@ -681,7 +684,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     const birthSources = eventClaimSources(birth, parsedBirthDate, parsedBirthPlace, "BIRTH");
     const deathSources = eventClaimSources(death, parsedDeathDate, parsedDeathPlace, "DEATH");
     const eventNodes = n.children.filter((c) => Object.hasOwn(eventTags, c.tag));
-    const events = eventNodes.map((c) => event(c));
+    const events = eventNodes.map((c) => event(c, c.tag === "ADOP" ? "Усыновление" : undefined));
     const occupationNode = child(n, "OCCU");
     const occupation = occupationNode?.value || "";
     const occupationEvent = occupationNode && events[eventNodes.indexOf(occupationNode)];
