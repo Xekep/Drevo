@@ -268,6 +268,7 @@ export function ArchiveHeader({
     <header className="archive-header">
       {navigation}
       <TreeSearch
+        globalSearch
         people={people}
         query={query}
         onQuery={onQuery}

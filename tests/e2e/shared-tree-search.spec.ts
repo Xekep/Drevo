@@ -3,12 +3,13 @@ import { openAdminSection } from "./admin-navigation";
 
 test("share catalog shows the last opening and clears it after revocation", async ({
   page,
+  baseURL,
 }, testInfo) => {
   const title = `Ссылка для проверки посещения · ${testInfo.project.name}`;
   const archive = await (await page.request.get("/api/family")).json();
   const created = await page.request.post("/api/shares", {
     headers: {
-      Origin: "http://127.0.0.1:4173",
+      Origin: baseURL!,
       "If-Match": String(archive.revision),
     },
     data: {
@@ -36,6 +37,7 @@ test("share catalog shows the last opening and clears it after revocation", asyn
 
 test("shared search selects only shared people and disappears after revocation", async ({
   page,
+  baseURL,
   isMobile,
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -43,7 +45,7 @@ test("shared search selects only shared people and disappears after revocation",
   const archive = await (await page.request.get("/api/family")).json();
   const created = await page.request.post("/api/shares", {
     headers: {
-      Origin: "http://127.0.0.1:4173",
+      Origin: baseURL!,
       "If-Match": String(archive.revision),
     },
     data: {
@@ -125,7 +127,7 @@ test("shared search selects only shared people and disappears after revocation",
 
   await search.fill("Тестов");
   const revoked = await page.request.delete(`/api/shares/${share.share.id}`, {
-    headers: { Origin: "http://127.0.0.1:4173" },
+    headers: { Origin: baseURL! },
   });
   expect(revoked.ok()).toBe(true);
   // Returning to the tab uses the existing access revalidation mechanism.

@@ -89,7 +89,8 @@ export function productionStaticHttp(
       return jsonError(res, 404, "Страница не найдена");
     const discovery =
       pathname === "/discover" ||
-      /^\/discover\/search\/[^/]{1,300}$/.test(pathname) ||
+      (/^\/discover\/search\/[^/]{1,1200}$/.test(pathname) &&
+        decoded.slice("/discover/search/".length).length <= 100) ||
       validDiscoveryPerson ||
       linkedBranch;
     const filePath =
