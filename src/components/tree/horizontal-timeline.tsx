@@ -1,5 +1,6 @@
 import {
   Fragment,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -15,6 +16,7 @@ import {
   timelineRowsAtYear,
   type TimelineGroup,
   type TimelineItem,
+  type TimelineRow,
 } from "../../domain/horizontal-timeline";
 import { Avatar } from "../person-panel";
 import { timelineRowWindow } from "../../domain/timeline-window";
@@ -103,6 +105,108 @@ function EventGroup({
     </details>
   );
 }
+
+const TimelinePersonRow = memo(function TimelinePersonRow({
+  row,
+  exiting,
+  selected,
+  year,
+  model,
+  count,
+  position,
+  openEvents,
+  onChoose,
+  changeOpenEvent,
+}: {
+  row: TimelineRow;
+  exiting: boolean;
+  selected: boolean;
+  year: number;
+  model: ReturnType<typeof horizontalTimeline>;
+  count: number;
+  position: number;
+  openEvents: ReadonlySet<string>;
+  onChoose: (id: string, additive?: boolean) => void;
+  changeOpenEvent: (key: string, open: boolean) => void;
+}) {
+  const contentWidth = model.width;
+  const birthYear = row.birthYear ?? year;
+  const lifeWidth = Math.max(
+    4,
+    model.yearX(row.deathYear ?? model.end) - model.yearX(birthYear),
+  );
+  const age = year - birthYear;
+  const status =
+    row.deathYear === year
+      ? "Год смерти"
+      : age > 110 && row.deathYear === null
+        ? "Нет даты смерти"
+        : year === birthYear
+          ? "Год рождения"
+          : `≈ ${age} лет`;
+  return (
+    <div
+      className={`timeline-person-row${selected ? " is-selected" : ""}${exiting ? " is-exiting" : ""}${row.deathYear === null && age > 110 ? " is-uncertain" : ""}`}
+      data-person-id={row.person.id}
+      role="listitem"
+      aria-setsize={count}
+      aria-posinset={position}
+      aria-hidden={exiting || undefined}
+      inert={exiting || undefined}
+    >
+      <button
+        type="button"
+        className="timeline-person"
+        onClick={() => onChoose(row.person.id, false)}
+        aria-label={`Открыть карточку: ${fullName(row.person)}`}
+      >
+        <Avatar person={row.person} />
+        <span>
+          <strong>{row.person.surname || row.person.name}</strong>
+          <span>
+            {row.person.surname
+              ? [row.person.name, row.person.patronymic]
+                  .filter(Boolean)
+                  .join(" ")
+              : row.person.patronymic}
+          </span>
+          <small>{status}</small>
+        </span>
+      </button>
+      <div
+        className="timeline-row-track"
+        style={{
+          width: `calc(${contentWidth}px + var(--timeline-pad) + var(--timeline-pad))`,
+        }}
+      >
+        <div
+          className={`timeline-life${row.deathYear === null ? " is-open" : ""}`}
+          data-start-x={model.yearX(birthYear)}
+          data-life-width={lifeWidth}
+          style={{
+            left: `calc(var(--timeline-pad) + ${model.yearX(birthYear)}px)`,
+            width: lifeWidth,
+          }}
+          title={`${row.person.birth} — ${row.person.death || "дата смерти не указана"}`}
+        />
+        {row.groups
+          .filter((group) => group.year <= year)
+          .map((group) => (
+            <EventGroup
+              key={`${row.person.id}:${group.year}`}
+              group={group}
+              current={group.year === year}
+              onChoose={() => onChoose(row.person.id, false)}
+              open={openEvents.has(`${row.person.id}\u0000${group.year}`)}
+              onOpenChange={(open) =>
+                changeOpenEvent(`${row.person.id}\u0000${group.year}`, open)
+              }
+            />
+          ))}
+      </div>
+    </div>
+  );
+});
 
 export function HorizontalTimeline({
   people,
@@ -854,21 +958,6 @@ export function HorizontalTimeline({
           >
             {mountedIndices.map((index, slot) => {
               const { row, exiting } = renderedRows[index];
-              const birthYear = row.birthYear ?? year;
-              const lifeWidth = Math.max(
-                4,
-                model.yearX(row.deathYear ?? model.end) -
-                  model.yearX(birthYear),
-              );
-              const age = year - birthYear;
-              const status =
-                row.deathYear === year
-                  ? "Год смерти"
-                  : age > 110 && row.deathYear === null
-                    ? "Нет даты смерти"
-                    : year === birthYear
-                      ? "Год рождения"
-                      : `≈ ${age} лет`;
               return (
                 <Fragment key={row.person.id}>
                   {virtualized &&
@@ -884,73 +973,18 @@ export function HorizontalTimeline({
                         }}
                       />
                     )}
-                  <div
-                    className={`timeline-person-row${selected.includes(row.person.id) ? " is-selected" : ""}${exiting ? " is-exiting" : ""}${row.deathYear === null && age > 110 ? " is-uncertain" : ""}`}
-                    data-person-id={row.person.id}
-                    role="listitem"
-                    aria-setsize={visibleRows.length}
-                    aria-posinset={
-                      (rowPositions.get(row.person.id) ?? index) + 1
-                    }
-                    aria-hidden={exiting || undefined}
-                    inert={exiting || undefined}
-                  >
-                    <button
-                      type="button"
-                      className="timeline-person"
-                      onClick={() => onChoose(row.person.id, false)}
-                      aria-label={`Открыть карточку: ${fullName(row.person)}`}
-                    >
-                      <Avatar person={row.person} />
-                      <span>
-                        <strong>{row.person.surname || row.person.name}</strong>
-                        <span>
-                          {row.person.surname
-                            ? [row.person.name, row.person.patronymic]
-                                .filter(Boolean)
-                                .join(" ")
-                            : row.person.patronymic}
-                        </span>
-                        <small>{status}</small>
-                      </span>
-                    </button>
-                    <div
-                      className="timeline-row-track"
-                      style={{
-                        width: `calc(${contentWidth}px + var(--timeline-pad) + var(--timeline-pad))`,
-                      }}
-                    >
-                      <div
-                        className={`timeline-life${row.deathYear === null ? " is-open" : ""}`}
-                        data-start-x={model.yearX(birthYear)}
-                        data-life-width={lifeWidth}
-                        style={{
-                          left: `calc(var(--timeline-pad) + ${model.yearX(birthYear)}px)`,
-                          width: lifeWidth,
-                        }}
-                        title={`${row.person.birth} — ${row.person.death || "дата смерти не указана"}`}
-                      />
-                      {row.groups
-                        .filter((group) => group.year <= year)
-                        .map((group) => (
-                          <EventGroup
-                            key={`${row.person.id}:${group.year}`}
-                            group={group}
-                            current={group.year === year}
-                            onChoose={() => onChoose(row.person.id, false)}
-                            open={openEvents.has(
-                              `${row.person.id}\u0000${group.year}`,
-                            )}
-                            onOpenChange={(open) =>
-                              changeOpenEvent(
-                                `${row.person.id}\u0000${group.year}`,
-                                open,
-                              )
-                            }
-                          />
-                        ))}
-                    </div>
-                  </div>
+                  <TimelinePersonRow
+                    row={row}
+                    exiting={exiting}
+                    selected={selected.includes(row.person.id)}
+                    year={year}
+                    model={model}
+                    count={visibleRows.length}
+                    position={(rowPositions.get(row.person.id) ?? index) + 1}
+                    openEvents={openEvents}
+                    onChoose={onChoose}
+                    changeOpenEvent={changeOpenEvent}
+                  />
                 </Fragment>
               );
             })}
