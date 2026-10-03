@@ -1105,6 +1105,10 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           );
         }
         if (restored) {
+          if (restored.confidence !== undefined && !isClaimConfidence(restored.confidence)) {
+            delete restored.confidence;
+            warnings.add("Некорректная оценка достоверности союза Drevo опущена; проверьте исходный GEDCOM.");
+          }
           restoreUnionCitationMedia(restored.sources, f);
           restoreUnionCitationMedia(restored.formation?.sources,
             f.children.find((node) => node.tag === "MARR") ||

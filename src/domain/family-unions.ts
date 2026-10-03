@@ -94,6 +94,7 @@ export function validateUnions(
       ) ||
       union.participants[0] === union.participants[1] ||
       !["marriage", "civil_union", "partnership"].includes(union.type) ||
+      (union.confidence !== undefined && !isClaimConfidence(union.confidence)) ||
       (union.createdBy !== undefined && typeof union.createdBy !== "string") ||
       (union.note !== undefined &&
         (typeof union.note !== "string" || union.note.length > 10000)) ||

@@ -148,6 +148,8 @@ export type FamilyUnion = {
   createdBy?: string;
   participants: [string, string];
   type: "marriage" | "civil_union" | "partnership";
+  /** Research assessment of the participants and union type, not its milestones. */
+  confidence?: ClaimConfidence;
   formation?: UnionMilestone;
   ending?: UnionMilestone;
   divorce?: UnionMilestone;

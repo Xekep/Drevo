@@ -237,6 +237,7 @@ export function generationReport(
               : "Партнёрство",
           reference(partner),
         );
+        write("Оценка союза", union.confidence && CLAIM_CONFIDENCE_LABELS[union.confidence]);
         write("Заключение союза", milestone(union.formation));
         write("Оценка заключения союза", union.formation?.confidence && CLAIM_CONFIDENCE_LABELS[union.formation.confidence]);
         write("Развод", milestone(union.divorce));

@@ -88,6 +88,8 @@ export function authorizeArchive(
     if (old) {
       const identityChanged = old.type !== union.type ||
         !old.participants.every((id) => union.participants.includes(id));
+      if (identityChanged && old.confidence && union.confidence)
+        throw new ForbiddenError("При изменении союза снимите прежнюю оценку достоверности");
       if (identityChanged &&
         [old.formation, old.ending, old.divorce, old.ongoing].some((stage) => stage?.confidence) &&
         [union.formation, union.ending, union.divorce, union.ongoing]
@@ -117,12 +119,15 @@ export function authorizeArchive(
   if (user.role !== "admin" && user.role !== "researcher") {
     for (const old of current.unions || []) {
       const union = next.unions?.find((item) => item.id === old.id);
-      if (!union && [old.formation, old.ending, old.divorce, old.ongoing]
-        .some((stage) => stage?.confidence))
+      if (!union && (old.confidence ||
+        [old.formation, old.ending, old.divorce, old.ongoing]
+          .some((stage) => stage?.confidence)))
         throw new ForbiddenError("Оценённый союз может удалить только исследователь или администратор");
     }
     for (const union of next.unions || []) {
       const old = previousUnions.get(union.id);
+      if (union.confidence !== old?.confidence)
+        throw new ForbiddenError("Статус достоверности может менять только исследователь или администратор");
       for (const stage of ["formation", "ending", "divorce", "ongoing"] as const)
         if (union[stage]?.confidence !== old?.[stage]?.confidence)
           throw new ForbiddenError("Статус достоверности может менять только исследователь или администратор");
