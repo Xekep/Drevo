@@ -1986,6 +1986,85 @@ try {
     await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='owner'", [ownerTierBeforeExport]);
     await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='reader'", [readerTierBeforeExport]);
   }
+  const oversizedExportChatId = randomUUID();
+  try {
+    await client.query(
+      `INSERT INTO ai_chats(archive_id,id,user_id,access_scope)
+       VALUES('runtime-test',$1,'owner',$2)`,
+      [oversizedExportChatId, JSON.stringify(["admin", "all", ""])],
+    );
+    const oversizedContent = "x".repeat(16 * 1024 * 1024 + 1);
+    await client.query(
+      `INSERT INTO ai_chat_messages(archive_id,chat_id,role,content,data)
+       VALUES('runtime-test',$1,'user',$2,'{"hidden":true}'::jsonb)`,
+      [oversizedExportChatId, oversizedContent],
+    );
+    const hiddenOnlyExport = await fetch(accountExportUrl, { headers: ownerHeaders });
+    assert.equal(hiddenOnlyExport.status, 200,
+      "hidden AI messages do not count toward the visible export limit");
+    assert.equal((await hiddenOnlyExport.text()).includes(oversizedContent), false);
+    await client.query(
+      `INSERT INTO ai_chat_messages(archive_id,chat_id,role,content)
+       VALUES('runtime-test',$1,'user',$2)`,
+      [oversizedExportChatId, oversizedContent],
+    );
+    const oversizedExport = await fetch(accountExportUrl, { headers: ownerHeaders });
+    assert.equal(oversizedExport.status, 413,
+      "the account export rejects visible AI history before materializing an oversized JSON response");
+    const oversizedError = await oversizedExport.json();
+    assert.match(oversizedError.error, /История ИИ слишком велика/);
+    assert.doesNotMatch(JSON.stringify(oversizedError), /\d+ МиБ|x{100}|bytes/i,
+      "the size response does not reveal the content or byte count");
+    const oversizedAuth = await createAuth(
+      await userStore(app.archive.db), app.archive.db, process.env.PUBLIC_ORIGIN,
+    );
+    const revokedOversizedToken = newSessionToken();
+    const revokedOversizedHash = sessionTokenHash(revokedOversizedToken);
+    await client.query(
+      "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2)",
+      [revokedOversizedHash, Date.now() + 60_000],
+    );
+    let revokeOversizedSession = false;
+    const oversizedEndpoint = accountDataExportHttp(app.archive.db, oversizedAuth, async () => {
+      if (revokeOversizedSession)
+        await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [revokedOversizedHash]);
+      else
+        await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+    });
+    const oversizedServer = createServer((req, res) => {
+      void oversizedEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => oversizedServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const oversizedUrl = `http://127.0.0.1:${(oversizedServer.address() as { port: number }).port}/api/account/export`;
+      const tierChanged = await fetch(oversizedUrl, { headers: ownerHeaders });
+      assert.equal(tierChanged.status, 409,
+        "a downgrade after the size preflight cannot reveal the AI history size");
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      revokeOversizedSession = true;
+      const sessionChanged = await fetch(oversizedUrl, {
+        headers: { Cookie: `drevo_session=${revokedOversizedToken}` },
+      });
+      assert.equal(sessionChanged.status, 401,
+        "a revoked session after the size preflight cannot receive the 413 hint");
+    } finally {
+      oversizedServer.closeAllConnections();
+      await new Promise<void>((resolve) => oversizedServer.close(() => resolve()));
+    }
+    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
+    assert.equal((await fetch(accountExportUrl, { headers })).status, 200,
+      "another account's oversized chat cannot block this account's export");
+    await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+    const downgradedExport = await fetch(accountExportUrl, { headers: ownerHeaders });
+    assert.equal(downgradedExport.status, 200,
+      "a downgraded account does not inspect inaccessible AI history");
+    assert.equal((await downgradedExport.json()).archives[0].ownAiChats, null);
+  } finally {
+    await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='owner'", [ownerTierBeforeExport]);
+    await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='reader'", [readerTierBeforeExport]);
+    await client.query("DELETE FROM ai_chats WHERE archive_id='runtime-test' AND id=$1", [oversizedExportChatId]);
+  }
   const revokedExportToken = newSessionToken();
   const revokedExportHash = sessionTokenHash(revokedExportToken);
   await client.query(

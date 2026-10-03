@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
-import { accountDataExport } from "./account-data-export.ts";
+import { accountDataExport, AccountAiHistoryTooLarge } from "./account-data-export.ts";
 import type { StoreDatabase } from "./store-database.ts";
 
 export function accountDataExportHttp(
@@ -31,15 +31,29 @@ export function accountDataExportHttp(
     const session = await auth.accountSession(req);
     if (!session)
       return send(401, { error: "Требуется вход в аккаунт" });
-    const prepared = await exporter.read(session.accountId);
-    if (!prepared) return send(404, { error: "Аккаунт не найден" });
-    const json = JSON.stringify(prepared.download);
+    let prepared: Awaited<ReturnType<typeof exporter.read>> = null;
+    let oversized: AccountAiHistoryTooLarge | null = null;
+    try {
+      prepared = await exporter.read(session.accountId);
+    } catch (error) {
+      if (error instanceof AccountAiHistoryTooLarge) oversized = error;
+      else throw error;
+    }
+    if (!prepared && !oversized) return send(404, { error: "Аккаунт не найден" });
+    const json = prepared ? JSON.stringify(prepared.download) : "";
     await beforeSend?.();
     const delivery = await exporter.deliverWithCurrentSession(
       session.accountId,
       session.tokenHash,
-      prepared.accessScopes,
-      () => { send(200, prepared.download, true, json); },
+      oversized?.accessScopes ?? prepared!.accessScopes,
+      () => {
+        if (oversized)
+          send(413, {
+            error: "История ИИ слишком велика для текущего JSON-экспорта. Для полного экспорта нужна потоковая выдача.",
+          });
+        else
+          send(200, prepared!.download, true, json);
+      },
     );
     if (delivery === "session-expired")
       return send(401, { error: "Сеанс завершён. Войдите снова" });

@@ -7,6 +7,8 @@ import type { CommentAttachmentFile } from "../shared/person-discussion.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
 import { aiChatAccessScope } from "./ai-chat-access-scope.ts";
 
+const MAX_EXPORTED_AI_MESSAGE_BYTES = 16 * 1024 * 1024;
+
 type AccessScope = {
   archiveId: string;
   approved: boolean;
@@ -16,6 +18,14 @@ type AccessScope = {
   revision: number;
   aiChatsExported: boolean;
 };
+
+export class AccountAiHistoryTooLarge extends Error {
+  readonly accessScopes: AccessScope[];
+  constructor(accessScopes: AccessScope[]) {
+    super("AI chat history exceeds the JSON export limit");
+    this.accessScopes = accessScopes;
+  }
+}
 
 function scopesStillVisible(
   scopes: AccessScope[],
@@ -76,6 +86,7 @@ export function accountDataExport(db: StoreDatabase) {
           .all(accountId);
         const archives = [];
         const accessScopes: AccessScope[] = [];
+        let aiMessageBytes = BigInt(0);
         for (const membership of memberships) {
           await db
             .prepare("", "SELECT set_config('drevo.archive_id',?,true)")
@@ -163,6 +174,18 @@ export function accountDataExport(db: StoreDatabase) {
               }));
             if (await accountAiAccess(db, accountId)) {
               const scope = aiChatAccessScope(user, family);
+              // PostgreSQL aggregates the visible content inside this same
+              // snapshot. Do not materialize an unbounded chat history in Node.
+              const size = await db.prepare("", `SELECT COALESCE(SUM(octet_length(m.content)),0) AS bytes
+                FROM ai_chats c JOIN ai_chat_messages m
+                  ON m.archive_id=c.archive_id AND m.chat_id=c.id
+                WHERE c.user_id=? AND c.access_scope=?
+                  AND (m.data->>'hidden') IS DISTINCT FROM 'true'`).get(accountId, scope);
+              aiMessageBytes += BigInt(String(size?.bytes ?? 0));
+              if (aiMessageBytes > BigInt(MAX_EXPORTED_AI_MESSAGE_BYTES)) {
+                accessScope.aiChatsExported = true;
+                throw new AccountAiHistoryTooLarge(accessScopes);
+              }
               const chatRows = await db.prepare("", `SELECT c.id,c.created_at,c.updated_at,
                 m.role,m.content,m.created_at AS message_created_at,m.id AS message_id
                 FROM ai_chats c LEFT JOIN ai_chat_messages m
