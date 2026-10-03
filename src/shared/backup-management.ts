@@ -26,6 +26,8 @@ export type RestorePreview = {
   documents?: number;
   files: number;
   missing: number;
+  currentCommentsLost: number;
+  backupCommentsSkipped: number;
   currentPeople: number;
   currentPhotos: number;
 };
