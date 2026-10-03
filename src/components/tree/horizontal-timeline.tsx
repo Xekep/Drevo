@@ -339,12 +339,10 @@ export function HorizontalTimeline({
             const separator = key.lastIndexOf("\u0000");
             const id = key.slice(0, separator),
               groupYear = Number(key.slice(separator + 1));
+            const row = visibleRows[rowPositions.get(id) ?? -1];
             return (
-              rowPositions.has(id) &&
               groupYear <= year &&
-              model.rows
-                .find((row) => row.person.id === id)
-                ?.groups.some((group) => group.year === groupYear)
+              row?.groups.some((group) => group.year === groupYear)
             );
           }),
         );
@@ -352,7 +350,7 @@ export function HorizontalTimeline({
       });
     }, 0);
     return () => window.clearTimeout(prune);
-  }, [model, rowPositions, year]);
+  }, [rowPositions, visibleRows, year]);
 
   useLayoutEffect(() => {
     rowsRef.current = renderedRows;
