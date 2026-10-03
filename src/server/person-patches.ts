@@ -171,7 +171,7 @@ export async function patchPeople(
           person.id,
         );
       }
-      if (photoChanged) await releaseAttachedMediaGrants(db);
+      if (mediaChanged) await releaseAttachedMediaGrants(db);
       if (mediaChanged)
         await enforcePostgresMediaQuota(db, mediaBytesBefore, measuredAt);
       await db

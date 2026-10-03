@@ -97,24 +97,28 @@ export async function postgresMediaBytes(db: StoreDatabase, now = Date.now()) {
   return Number(used?.bytes || 0);
 }
 
-/** A newly attached file no longer needs its temporary upload grant. Removing
- * the last reference can then free the owner's quota immediately.
+/** A newly attached file no longer needs its temporary upload grant. This
+ * includes citation-only originals: otherwise removing their last citation
+ * would leave the quota occupied until the 24-hour grant expires.
  */
 export async function releaseAttachedMediaGrants(db: StoreDatabase) {
   await db.exec(
     `DELETE FROM media_upload_grants WHERE
       EXISTS (SELECT 1 FROM people p WHERE json_extract(p.data,'$.photo')=media_upload_grants.url)
-      OR EXISTS (SELECT 1 FROM photos p WHERE json_extract(p.data,'$.url')=media_upload_grants.url)`,
-    `DELETE FROM media_upload_grants g
-     WHERE EXISTS (
-       SELECT 1 FROM people p
-       WHERE p.archive_id=g.archive_id
-         AND p.data->>'photo'=g.url
-     ) OR EXISTS (
-       SELECT 1 FROM photos p
-       WHERE p.archive_id=g.archive_id
-         AND p.data->>'url'=g.url
-     )`,
+      OR EXISTS (SELECT 1 FROM photos p WHERE json_extract(p.data,'$.url')=media_upload_grants.url)
+      OR EXISTS (SELECT 1 FROM people p,json_tree(p.data) j WHERE j.key='url'
+        AND (j.value=media_upload_grants.url OR j.value LIKE media_upload_grants.url||'#%'
+          OR j.value LIKE media_upload_grants.url||'?%'))
+      OR EXISTS (SELECT 1 FROM family_unions u,json_tree(u.data) j WHERE j.key='url'
+        AND (j.value=media_upload_grants.url OR j.value LIKE media_upload_grants.url||'#%'
+          OR j.value LIKE media_upload_grants.url||'?%'))
+      OR EXISTS (SELECT 1 FROM relations r,json_tree(r.sources) j WHERE j.key='url'
+        AND (j.value=media_upload_grants.url OR j.value LIKE media_upload_grants.url||'#%'
+          OR j.value LIKE media_upload_grants.url||'?%'))`,
+    `WITH referenced AS (${postgresMediaReferencesSql})
+     DELETE FROM media_upload_grants g
+     WHERE g.archive_id=current_setting('drevo.archive_id', true)
+       AND EXISTS (SELECT 1 FROM referenced r WHERE r.url=g.url)`,
   );
 }
 

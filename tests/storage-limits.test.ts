@@ -131,6 +131,31 @@ test("storage limits count each uploader, reservations, current roles and distin
   }
 });
 
+test("attached citation grants release across people, relations and unions", async () => {
+  const archive = await openArchive(":memory:", {
+    title: "Test", description: "", people: [], demo: false,
+  });
+  const db = archive.db;
+  try {
+    await db.prepare("INSERT INTO users(id,name,role,approved) VALUES('admin','Admin','admin',1)").run();
+    for (const name of ["person", "relation", "union", "pending"])
+      await registerMediaUpload(db, `/media/${name}.jpg`, "admin", 10);
+    await db.prepare("INSERT INTO people(id,data) VALUES('a',?)").run(JSON.stringify({
+      sources: [{ url: "/media/person.jpg#page=1" }],
+    }));
+    await db.prepare("INSERT INTO people(id,data) VALUES('b',?)").run("{}");
+    await db.prepare("INSERT INTO relations(id,source,target,type,sources) VALUES('r','a','b','parent',?)")
+      .run(JSON.stringify([{ url: "/media/relation.jpg?page=2" }]));
+    await db.prepare("INSERT INTO family_unions(id,participant_a,participant_b,data) VALUES('u','a','b',?)")
+      .run(JSON.stringify({ sources: [{ url: "/media/union.jpg" }] }));
+    await db.transaction(() => releaseAttachedMediaGrants(db));
+    const grants = await db.prepare("SELECT url FROM media_upload_grants ORDER BY url").all();
+    assert.deepEqual(grants.map((row) => row.url), ["/media/pending.jpg"]);
+  } finally {
+    await archive.close();
+  }
+});
+
 test("lowering a storage limit still allows attaching an already-counted upload", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-storage-downgrade-"));
   const archive = await openArchive(join(dir, "db.sqlite"), {
