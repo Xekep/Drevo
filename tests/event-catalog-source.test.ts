@@ -147,7 +147,7 @@ test("changing a cited event's identity cannot reuse evidence for a different ev
     assert.throws(() => authorizeArchive(reclassified, before, actor("admin")),
       /снимите прежние источники события/);
     const transition = retypeEvent(before.people[0].events![0], "military");
-    assert.equal(transition.removedEvidence, true);
+    assert.equal(transition.removedDetails, true);
     const clean = structuredClone(before);
     clean.people[0].events![0] = transition.event;
     assert.doesNotThrow(() => authorizeArchive(clean, before, actor("admin")));
@@ -164,9 +164,19 @@ test("changing a cited event's identity cannot reuse evidence for a different ev
     /прежний тип GEDCOM/);
   const transitioned = retypeEvent(imported.people[0].events![0], "military");
   assert.equal(transitioned.event.gedcomTag, undefined);
-  assert.equal(transitioned.removedEvidence, false);
+  assert.equal(transitioned.removedDetails, true);
   staleTag.people[0].events![0] = transitioned.event;
   assert.doesNotThrow(() => authorizeArchive(staleTag, imported, actor("admin")));
+
+  const draft = family().people[0].events![0];
+  draft.sources = [];
+  draft.alternatives = [{ id: "draft-place", field: "place", value: "Казань", sources: [] }];
+  draft.dateClaim = { value: "1901", sources: [], confidence: "probable" };
+  const clearedDraft = retypeEvent(draft, "military");
+  assert.equal(clearedDraft.removedDetails, true,
+    "the editor must warn even when discarded draft values have no citation yet");
+  assert.equal(clearedDraft.event.alternatives, undefined);
+  assert.equal(clearedDraft.event.dateClaim, undefined);
 });
 
 test("non-admin cannot add catalog citations to any person, claim, event, or union slot", () => {

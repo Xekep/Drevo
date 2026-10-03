@@ -27,10 +27,12 @@ export function eventHasEvidence(event: PersonEvent): boolean {
 /** Retyping changes what the event asserts; its old evidence and imported
  * GEDCOM tag cannot describe the new event. The caller must tell the editor. */
 export function retypeEvent(event: PersonEvent, type: PersonEvent["type"]) {
-  if (event.type === type) return { event, removedEvidence: false };
+  if (event.type === type) return { event, removedDetails: false };
+  const removedDetails = eventHasEvidence(event) || !!(event.dateClaim ||
+    event.placeClaim || event.alternatives?.length || event.gedcomTag);
   return { event: { ...event, type, gedcomTag: undefined, sources: undefined,
     dateClaim: undefined, placeClaim: undefined, alternatives: undefined },
-  removedEvidence: eventHasEvidence(event) };
+  removedDetails };
 }
 export function validateEvents(events: unknown): void {
   if (events === undefined) return;

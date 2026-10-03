@@ -109,7 +109,7 @@ test("каталожный источник связывается с событ
   const reopened = page.locator(".life-event-editor").filter({ hasText: "1901" });
   await reopened.locator(":scope > summary").click();
   await reopened.getByLabel("Событие").selectOption("military");
-  await expect(reopened.getByRole("status")).toContainText("Прежние источники события");
+  await expect(reopened.getByRole("status")).toContainText("из черновика сняты данные прежнего события");
   await expect(reopened.locator(".event-source-editor")).toHaveCount(0);
   await expect(reopened.getByRole("button", { name: "Добавить источник", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();

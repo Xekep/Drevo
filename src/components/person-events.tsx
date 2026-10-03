@@ -81,6 +81,7 @@ export function EventsEditor({
   savedEvents?: PersonEvent[];
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [resetEventIds, setResetEventIds] = useState<Set<string>>(() => new Set());
   const update = (id: string, patch: Partial<PersonEvent>) =>
     onChange(
       events.map((event) => (event.id === id ? { ...event, ...patch } : event)),
@@ -133,6 +134,8 @@ export function EventsEditor({
                 disabled={!canAssess && hasAssessment(event)}
                 onChange={(e) => {
                   const changed = retypeEvent(event, e.target.value as PersonEvent["type"]);
+                  if (changed.removedDetails)
+                    setResetEventIds((ids) => new Set(ids).add(event.id));
                   onChange(events.map((item) => item.id === event.id ? changed.event : item));
                 }}
               >
@@ -143,7 +146,7 @@ export function EventsEditor({
                 ))}
               </select>
             </label>
-            {saveTypeFirst(event) && <p role="status">Прежние источники события и его значений сняты при смене типа. Сохраните новый тип, затем добавьте подходящие источники.</p>}
+            {(resetEventIds.has(event.id) || saveTypeFirst(event)) && <p role="status">При смене типа из черновика сняты данные прежнего события: источники, оценки, другие значения или исходный тег GEDCOM. Сохраните новый тип, затем добавьте подходящие данные.</p>}
             {event.type === "other" && (
               <label>
                 Что произошло
