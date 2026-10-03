@@ -46,6 +46,7 @@ import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { aiResearchHttp } from "../../src/server/ai-research-http.ts";
 import { researchPdf } from "../../src/server/research-pdf.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
+import { aiChatAccessScope } from "../../src/server/ai-chat-access-scope.ts";
 import { generatedResearchFileStore } from "../../src/server/generated-research-files.ts";
 import { verifyGeneratedFileGlobalCap } from "./generated-file-cap-test.ts";
 import { verifyPortablePreviewGlobalCap } from "./portable-preview-cap.ts";
@@ -2081,15 +2082,31 @@ try {
     [ownerExportChatId, readerExportChatId, staleExportChatId,
       JSON.stringify(["admin", "all", ""]), JSON.stringify(["reader", "all", ""])],
   );
+  const readerAiAttachmentBytes = Buffer.from("reader-owned-ai-attachment");
+  const chatAttachmentExportStore = aiAttachmentStore(
+    join(dirname(source), "uploads"), aiChatStore(app.archive.db),
+  );
+  const [readerAiAttachment, hiddenAiAttachment] = await chatAttachmentExportStore.save(
+    readerExportChatId, [{
+    name: "research.txt", type: "text/plain", bytes: readerAiAttachmentBytes,
+  }, { name: "hidden.txt", type: "text/plain", bytes: Buffer.from("hidden-ai-original") }]);
+  assert.equal(existsSync(join(dirname(source), "uploads", "ai-chat-files", readerExportChatId,
+    readerAiAttachment.url.split("/").at(-1)!)), true);
+  const [staleAiAttachment] = await chatAttachmentExportStore.save(staleExportChatId,
+    [{ name: "stale.txt", type: "text/plain", bytes: Buffer.from("former-scope-ai-original") }]);
+  const [ownerAiAttachment] = await chatAttachmentExportStore.save(ownerExportChatId,
+    [{ name: "owner.txt", type: "text/plain", bytes: Buffer.from("other-account-ai-original") }]);
   await client.query(
     `INSERT INTO ai_chat_messages(archive_id,chat_id,role,content,data)
-     VALUES('runtime-test',$1,'user','owner-export-chat-text','{}'::jsonb),
-           ('runtime-test',$2,'assistant','reader-export-chat-text',
-             '{"attachments":[{"url":"attachment-private-url"}]}'::jsonb),
-           ('runtime-test',$2,'user','hidden-internal-prompt',
-             '{"hidden":true,"token":"internal-token"}'::jsonb),
-           ('runtime-test',$3,'user','former-scope-secret','{}'::jsonb)`,
-    [ownerExportChatId, readerExportChatId, staleExportChatId],
+     VALUES('runtime-test',$1,'user','owner-export-chat-text',$7::jsonb),
+           ('runtime-test',$2,'assistant','reader-export-chat-text',$4::jsonb),
+           ('runtime-test',$2,'user','hidden-internal-prompt',$5::jsonb),
+           ('runtime-test',$3,'user','former-scope-secret',$6::jsonb)`,
+    [ownerExportChatId, readerExportChatId, staleExportChatId,
+      JSON.stringify({ attachments: [readerAiAttachment] }),
+      JSON.stringify({ hidden: true, token: "internal-token", attachments: [hiddenAiAttachment] }),
+      JSON.stringify({ attachments: [staleAiAttachment] }),
+      JSON.stringify({ attachments: [ownerAiAttachment] })],
   );
   const readerTierBeforeExport = (await client.query(
     "SELECT full_access FROM account_tiers WHERE account_id='reader'",
@@ -2112,10 +2129,12 @@ try {
     assert.match(response.headers.get("content-disposition") || "", /attachment/);
     assert.equal(response.headers.get("cache-control"), "no-store");
     const raw = await response.text();
-    assert.doesNotMatch(raw, /secret-hash-sentinel|password_hash|token_hash|drevo_session|remote-conversation-secret|attachment-private-url|hidden-internal-prompt|internal-token|former-scope-secret/);
+    assert.doesNotMatch(raw, /secret-hash-sentinel|password_hash|token_hash|drevo_session|remote-conversation-secret|hidden-internal-prompt|internal-token|former-scope-secret/);
+    assert.equal(raw.includes(readerAiAttachment.url), false,
+      "the JSON export identifies the message without exposing its internal download path");
     const exported = JSON.parse(raw);
     assert.equal(exported.format, "drevo-account-data");
-    assert.equal(exported.version, 4);
+    assert.equal(exported.version, 5);
     assert.equal(exported.account.id, index % 2 ? "reader" : "owner");
     assert.equal(exported.account.verifiedEmail, index % 2 ? "reader-export@example.invalid" : null);
     assert.equal(exported.account.identities.some((identity: { provider: string; subject: string }) =>
@@ -2131,7 +2150,8 @@ try {
     assert.equal(exported.archives[0].owned, index % 2 === 0);
     assert.equal(exported.archives[0].preferences?.colorScheme, index % 2 ? undefined : "white");
     assert.deepEqual(exported.archives[0].ownComments, []);
-    const ownAiChats = exported.archives[0].ownAiChats as Array<{ id: string; messages: Array<{ role: string; content: string }> }>;
+    const ownAiChats = exported.archives[0].ownAiChats as Array<{ id: string;
+      messages: Array<{ id: string; role: string; content: string }> }>;
     assert.ok(ownAiChats.some((chat) => chat.id === (index % 2 ? readerExportChatId : ownerExportChatId)));
     assert.equal(ownAiChats.some((chat) => chat.id === (index % 2 ? ownerExportChatId : readerExportChatId)), false,
       "the account download excludes another account's AI chat");
@@ -2140,6 +2160,9 @@ try {
     index % 2
       ? [{ role: "assistant", content: "reader-export-chat-text" }]
       : [{ role: "user", content: "owner-export-chat-text" }]);
+    assert.equal(typeof ownAiChats.find((chat) => chat.id === readerExportChatId)?.messages[0]?.id,
+      index % 2 ? "string" : "undefined",
+      "message IDs connect the personal JSON with the attachment ZIP manifest");
   }
   await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='reader'");
   const basicAccountExport = await fetch(accountExportUrl, { headers }).then((response) => response.text());
@@ -5222,6 +5245,11 @@ try {
     .filter((item: { text: string }) => item.text.startsWith("account-export-probe:"))
     .map((item: { text: string }) => item.text), ["account-export-probe:visible"],
   "a scoped member cannot export their old comment in a now-hidden branch");
+  const currentReader = await (await userStore(app.archive.db)).get("reader");
+  assert.ok(currentReader);
+  await client.query("UPDATE ai_chats SET access_scope=$1 WHERE id=$2", [
+    aiChatAccessScope(currentReader, (await app.archive.read()).family), readerExportChatId,
+  ]);
   const attachmentExportStore = discussionAttachmentStore(join(dirname(source), "uploads"));
   const visibleAttachmentBytes = Buffer.from("reader-owned-visible-attachment");
   const hiddenAttachmentBytes = Buffer.from("reader-owned-hidden-attachment");
@@ -5244,10 +5272,17 @@ try {
     [Date.now(), JSON.stringify([visibleAttachment]), JSON.stringify([hiddenAttachment]),
       JSON.stringify([foreignAttachment])],
   );
+  const readerTierBeforeAttachmentExport = (await client.query<{ full_access: boolean }>(
+    "SELECT full_access FROM account_tiers WHERE account_id='reader'",
+  )).rows[0].full_access;
+  assert.equal(existsSync(join(dirname(source), "uploads", "ai-chat-files", readerExportChatId,
+    readerAiAttachment.url.split("/").at(-1)!)), true,
+  "the fixture's AI original remains in the active archive uploads before export");
+  await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
   const attachmentExportUrl = securedBase + "/api/account/export/attachments";
   const accountAttachments = await fetch(attachmentExportUrl, { headers });
   assert.equal(accountAttachments.status, 200,
-    "an invited member can back up their own visible discussion originals");
+    `an invited member can back up their own visible originals: ${await accountAttachments.clone().text()}`);
   const accountAttachmentZip = join(directory, "reader-account-attachments.zip");
   writeFileSync(accountAttachmentZip, Buffer.from(await accountAttachments.arrayBuffer()));
   const attachmentZip = await openPromise(accountAttachmentZip);
@@ -5260,12 +5295,13 @@ try {
   }
   const attachmentManifest = JSON.parse(attachmentEntries.get("manifest.json")!.toString()) as {
     format: string; version: number;
-    attachments: Array<{ archiveId: string; commentId: string; path: string; id: string; name: string; sha256: string }>;
+    attachments: Array<{ archiveId: string; commentId?: string; chatId?: string;
+      messageId?: string; path: string; id: string; name: string; sha256: string }>;
   };
   assert.equal(attachmentManifest.format, "drevo-account-attachments");
-  assert.equal(attachmentManifest.version, 1);
-  assert.equal(attachmentManifest.attachments.length, 1,
-    "hidden-branch and other authors' attachments must be excluded");
+  assert.equal(attachmentManifest.version, 2);
+  assert.equal(attachmentManifest.attachments.length, 2,
+    "the bundle includes the reader's AI original but excludes hidden branches and other authors");
   assert.equal(attachmentManifest.attachments[0].archiveId, "runtime-test");
   assert.equal(attachmentManifest.attachments[0].commentId, String(exportAttachmentRows.rows[0].id));
   assert.equal(attachmentManifest.attachments[0].id, visibleAttachment.id);
@@ -5273,7 +5309,39 @@ try {
   assert.deepEqual(attachmentEntries.get(attachmentManifest.attachments[0].path), visibleAttachmentBytes);
   assert.equal(attachmentManifest.attachments[0].sha256,
     createHash("sha256").update(visibleAttachmentBytes).digest("hex"));
-  assert.equal(attachmentEntries.size, 2);
+  const ownAiEntry = attachmentManifest.attachments.find((item: { chatId?: string }) =>
+    item.chatId === readerExportChatId)!;
+  assert.equal(ownAiEntry.messageId,
+    String((await client.query("SELECT id FROM ai_chat_messages WHERE chat_id=$1 AND content='reader-export-chat-text'",
+      [readerExportChatId])).rows[0].id));
+  assert.equal(ownAiEntry.name, readerAiAttachment.name);
+  assert.deepEqual(attachmentEntries.get(ownAiEntry.path), readerAiAttachmentBytes);
+  assert.equal(ownAiEntry.sha256,
+    createHash("sha256").update(readerAiAttachmentBytes).digest("hex"));
+  assert.doesNotMatch(JSON.stringify(attachmentManifest),
+    /hidden\.txt|stale\.txt|owner\.txt|hidden-internal-prompt|former-scope-secret/);
+  assert.equal(attachmentEntries.size, 3);
+  await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='reader'");
+  try {
+    const basicBundle = await fetch(attachmentExportUrl, { headers });
+    assert.equal(basicBundle.status, 200,
+      "a basic member can still export their discussion original");
+    const basicPath = join(directory, "reader-basic-attachments.zip");
+    writeFileSync(basicPath, Buffer.from(await basicBundle.arrayBuffer()));
+    const basicZip = await openPromise(basicPath);
+    for await (const entry of basicZip.eachEntry()) {
+      if (entry.fileName !== "manifest.json") continue;
+      const chunks: Buffer[] = [];
+      for await (const chunk of await basicZip.openReadStreamPromise(entry))
+        chunks.push(Buffer.from(chunk));
+      const basicManifest = JSON.parse(Buffer.concat(chunks).toString()) as
+        { attachments: Array<{ kind: string }> };
+      assert.deepEqual(basicManifest.attachments.map((item) => item.kind), ["discussion"],
+        "AI originals are excluded after a tier downgrade");
+    }
+  } finally {
+    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
+  }
   await client.query("UPDATE archive_memberships SET approved=false WHERE user_id='reader'");
   const revokedAttachmentExport = await fetch(attachmentExportUrl, { headers });
   assert.notEqual(revokedAttachmentExport.status, 200,
@@ -5306,6 +5374,29 @@ try {
     await new Promise<void>((resolve) => raceAttachmentServer.close(() => resolve()));
     await client.query("UPDATE archive_memberships SET approved=true WHERE user_id='reader'");
   }
+  const tierAttachmentExport = accountAttachmentExportHttp(
+    app.archive.db, attachmentExportAuth,
+    () => join(dirname(source), "uploads"),
+    async () => {
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='reader'");
+    },
+  );
+  const tierAttachmentServer = createServer((req, res) => {
+    void tierAttachmentExport(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => tierAttachmentServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (tierAttachmentServer.address() as { port: number }).port;
+    const response = await fetch(`http://127.0.0.1:${port}/api/account/export/attachments`,
+      { headers });
+    assert.equal(response.status, 409,
+      "a completed AI-tier downgrade before delivery blocks the prepared mixed ZIP");
+    assert.doesNotMatch(await response.text(), /reader-owned-ai-attachment/);
+  } finally {
+    await new Promise<void>((resolve) => tierAttachmentServer.close(() => resolve()));
+    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
+  }
   const detachAttachmentExport = accountAttachmentExportHttp(
     app.archive.db, attachmentExportAuth,
     () => join(dirname(source), "uploads"),
@@ -5330,6 +5421,32 @@ try {
     await new Promise<void>((resolve) => detachAttachmentServer.close(() => resolve()));
     await client.query("UPDATE person_comments SET attachments=$1::jsonb WHERE id=$2",
       [JSON.stringify([visibleAttachment]), exportAttachmentRows.rows[0].id]);
+  }
+  const detachAiExport = accountAttachmentExportHttp(
+    app.archive.db, attachmentExportAuth,
+    () => join(dirname(source), "uploads"),
+    async () => {
+      await client.query("UPDATE ai_chat_messages SET data='{}'::jsonb WHERE chat_id=$1 AND content='reader-export-chat-text'",
+        [readerExportChatId]);
+    },
+  );
+  const detachAiServer = createServer((req, res) => {
+    void detachAiExport(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => detachAiServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (detachAiServer.address() as { port: number }).port;
+    const detached = await fetch(`http://127.0.0.1:${port}/api/account/export/attachments`,
+      { headers });
+    assert.equal(detached.status, 409,
+      "detaching an AI original after ZIP preflight must block delivery");
+    assert.equal(detached.headers.get("content-type"), "application/json; charset=utf-8");
+    await detached.text();
+  } finally {
+    await new Promise<void>((resolve) => detachAiServer.close(() => resolve()));
+    await client.query("UPDATE ai_chat_messages SET data=$1::jsonb WHERE chat_id=$2 AND content='reader-export-chat-text'",
+      [JSON.stringify({ attachments: [readerAiAttachment] }), readerExportChatId]);
   }
   const slowAttachmentBytes = Buffer.alloc(9 * 1024 * 1024, 0x41);
   const [slowAttachment] = await attachmentExportStore.save([
@@ -5417,6 +5534,8 @@ try {
   assert.equal(missingAttachmentExport.headers.get("content-type"), "application/json; charset=utf-8");
   await client.query("DELETE FROM person_comments WHERE text LIKE 'account-export-attachment:%'");
   await attachmentExportStore.remove([visibleAttachment, hiddenAttachment, foreignAttachment, slowAttachment]);
+  await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='reader'",
+    [readerTierBeforeAttachmentExport]);
   const ownerCommentExport = await fetch(accountExportUrl, { headers: ownerHeaders })
     .then((response) => response.json());
   assert.deepEqual(new Set(ownerCommentExport.archives.map((item: { id: string }) => item.id)),

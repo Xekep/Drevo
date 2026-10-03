@@ -49,9 +49,9 @@ export function accountAttachmentExportHttp(
     };
     res.once("close", onClose);
     try {
-    // Skip AI history: its size and entitlement are unrelated to discussion
-    // originals, and the attachment bundle has its own streaming limit.
-    const prepared = await exporter.read(session.accountId, false);
+    // Inventory visible AI originals without materializing chat text. The
+    // attachment bundle has its own count and byte limit.
+    const prepared = await exporter.read(session.accountId, false, true);
     if (!prepared) return send(404, "Аккаунт не найден");
     const readable = prepared.download.archives.filter((archive) => archive.approved);
     if (!readable.length) return send(403, "Нет доступа к обсуждениям архивов");
@@ -63,15 +63,19 @@ export function accountAttachmentExportHttp(
           commentId: comment.id,
           file,
         }))));
-    let bundle;
-    try {
-      bundle = await prepareAccountAttachmentExport(own, uploadsForArchive, controller.signal);
-    } catch (error) {
-      if (error instanceof AccountAttachmentExportTooLarge)
-        return send(413, "Для одного ZIP доступно не более 1000 вложений и 256 МиБ. Скачайте остальные файлы отдельно из обсуждений");
-      if (error instanceof AccountAttachmentExportMissing)
-        return send(409, "Оригинал вложения недоступен. Повторите экспорт после восстановления файла");
-      throw error;
+    const attachments = [...own, ...prepared.aiAttachments];
+    let bundle: Awaited<ReturnType<typeof prepareAccountAttachmentExport>> | null = null;
+    let preflightError = prepared.aiAttachmentError;
+    if (!preflightError) {
+      try {
+        bundle = await prepareAccountAttachmentExport(attachments, uploadsForArchive, controller.signal);
+      } catch (error) {
+        if (error instanceof AccountAttachmentExportTooLarge)
+          preflightError = "too-large";
+        else if (error instanceof AccountAttachmentExportMissing)
+          preflightError = "missing";
+        else throw error;
+      }
     }
     controller.signal.throwIfAborted();
     await beforeSend?.();
@@ -82,6 +86,10 @@ export function accountAttachmentExportHttp(
       prepared.accessScopes,
       async () => {
         controller.signal.throwIfAborted();
+        if (preflightError === "too-large")
+          return void send(413, "Для одного ZIP доступно не более 1000 вложений и 256 МиБ. Данные не изменены");
+        if (preflightError === "missing")
+          return void send(409, "Оригинал вложения недоступен. Повторите экспорт после восстановления файла");
         res.writeHead(200, {
           "Content-Type": "application/zip",
           "Content-Disposition": 'attachment; filename="drevo-account-attachments.zip"',
@@ -90,9 +98,9 @@ export function accountAttachmentExportHttp(
           "Referrer-Policy": "no-referrer",
           "Content-Security-Policy": "default-src 'none'; sandbox",
         });
-        await bundle.writeTo(res, controller.signal);
+        await bundle!.writeTo(res, controller.signal);
       },
-      (client) => ownAttachmentsStillCurrent(client, session.accountId, own),
+      (client) => ownAttachmentsStillCurrent(client, session.accountId, attachments),
     );
     if (delivery === "session-expired") return send(401, "Сеанс завершён. Войдите снова");
     if (delivery === "access-changed") return send(409, "Доступ к дереву изменился. Повторите экспорт");
