@@ -162,6 +162,76 @@ async function expectBounded(timeline: Locator, count: number) {
     .toBe(true);
 }
 
+test("wheel over people scrolls the list, preserves the year and leaves event popovers independent", async ({
+  page,
+}) => {
+  const people = peopleFixture(1000);
+  people[0].events = Array.from({ length: 30 }, (_, index) => ({
+    id: `history-${index}`,
+    type: "work",
+    date: "1970-01-01",
+    title: `Событие ${index}`,
+  }));
+  await fixture(page, people);
+  const timeline = await enterTimeline(page);
+  await year(page, timeline, 2020);
+  await expectBounded(timeline, 1000);
+  const position = () =>
+    timeline.evaluate((element) => ({
+      left: element.scrollLeft,
+      top: element.scrollTop,
+    }));
+  const before = await position();
+  const portrait = row(timeline, "window-000").locator(".person-avatar");
+  const avatar = (await portrait.boundingBox())!;
+  await page.mouse.move(
+    avatar.x + avatar.width / 2,
+    avatar.y + avatar.height / 2,
+  );
+  await page.mouse.wheel(0, 320);
+  await expect
+    .poll(async () => (await position()).top)
+    .toBeGreaterThan(before.top + 40);
+  expect((await position()).left).toBe(before.left);
+  await expect(page.getByLabel("Год в центре хронологии")).toHaveText("2020");
+  await expectBounded(timeline, 1000);
+  // The pointer now sits on another person's nested avatar, not on row 000.
+  await page.mouse.wheel(0, -320);
+  await expect.poll(async () => (await position()).top).toBe(before.top);
+  const text = (await row(timeline, "window-000")
+    .locator(".timeline-person strong")
+    .boundingBox())!;
+  await page.mouse.move(text.x + text.width / 2, text.y + text.height / 2);
+  await page.mouse.wheel(0, 160);
+  await expect
+    .poll(async () => (await position()).top)
+    .toBeGreaterThan(before.top + 20);
+  expect((await position()).left).toBe(before.left);
+  // A deliberate horizontal trackpad gesture on the same rail still moves years.
+  const beforeHorizontal = await position();
+  await page.mouse.wheel(48, 0);
+  await expect
+    .poll(async () => (await position()).left)
+    .toBeGreaterThan(beforeHorizontal.left);
+  expect((await position()).top).toBe(beforeHorizontal.top);
+  await timeline.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await year(page, timeline, 1970);
+  const event = row(timeline, "window-000").locator(".timeline-event.is-group");
+  await event.locator("summary").click();
+  const list = event.locator(".timeline-event-list");
+  await expect(list).toBeVisible();
+  const popoverBefore = await position();
+  const box = (await list.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, 120);
+  await expect
+    .poll(() => list.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  expect(await position()).toEqual(popoverBefore);
+});
+
 test("large chronology bounds mounted rows, preserves the tree camera and finds an off-window person", async ({
   page,
 }) => {

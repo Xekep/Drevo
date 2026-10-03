@@ -1,0 +1,1347 @@
+{
+  "date": "2026-10-03T13:38:56.809Z",
+  "tag": "wheel-audit-before",
+  "commit": "8174bb7246a36e2df678f390cdb75fe9d96816b4",
+  "sourceHashes": {
+    "src/components/tree/horizontal-timeline.tsx": "788e490d1182aceedc89cf15e7d39f4635f2b3ea245d02e46c22a7985c41805e",
+    "src/domain/horizontal-timeline.ts": "bcd9f538cc9fca190fd27082d94b976ef8a95843d8b6fa7b66ed36cc85e358df",
+    "src/styles/timeline.css": "aef86345e9c61ff43ae131da62904e8757b846ff1728ee9f4943cdecb783dfdb",
+    "src/components/tree/tree-canvas.tsx": "c6c1636a49d9f1e4c5c07d0040e60288525b7c95214947de056aaf3a0bfc19ef",
+    "src/styles/tree-workspace.css": "75b194a0306210291ed6fab4307c36e3ce6f9137fecf746b9654c6bbd07e89d4",
+    "src/styles/research-assistant.css": "2dc57ef7772b1823cde775e803d90243290549313b1072f3b00601ae36ee56ba",
+    "src/components/tree/person-relation-label.ts": "bc9d88065779843415427257348fd36e667d1ea272736715266157713ff4da0b",
+    "src/components/tree/tree-render-family.ts": "fd7f199437f88aa940a1c713acdfef70979cea0cd6e5670796d133872f5b304c",
+    "src/components/tree/use-family-view.ts": "0b371210c45a7b17cff443e7f28ee0fff2188a0dd688068844c2a4da6af5baf8",
+    "src/components/person-panel.tsx": "c8c8b75e2a0471ea43b8082e161ed47301163cb0f5e99cdeb9005bf4497581b7",
+    "src/components/tree-search.tsx": "9d034dc0a824eb371895319f83711c8d16ad47b8c52a31e82a7ef83a48a96e84",
+    "src/hooks/useArchive.ts": "6f7064a3353cb1cc8f1c0b86c2c328ab4aac0be1cf86a7b02c1fd4ae266a21ab",
+    "src/hooks/useWorkspaceSelection.ts": "d075561f4ffea46f1d77e04fb0919a6a0784889911a466c3d2e6e0d967e23348",
+    "src/domain/dates.ts": "cc3b7bd6c0b35e7c9386a9c71a5a2d5f60b932eed4e32af003bc94aeb0a89b1f",
+    "src/domain/person-events.ts": "4e7f621f8585c2e18d1de431cb5e391d2811ed50d29c95ed718000bc9e90d42a",
+    "src/domain/archive-projection.ts": "649f5fcc9e81cc97d8468feded0746e9ce0128ac381d2ba8f82d6dd2fab86a4f",
+    "src/App.tsx": "cb5b56d8f67e249bc388fb3b3c4baba34d28b1ab1ebc3ddbcdb1eb72ac99f4ad",
+    "tests/e2e/tree-acceptance-fixture.ts": "8c1414338762c70c88cda81f296e4129e5550c31b955c6efbe479599a98e552a",
+    "tests/e2e/timeline-performance.spec.ts": "5ec0a9016df9ff84015fb63dbe83b103d92365203ba74de55cac4a20c7254291",
+    "package-lock.json": "d9761c619236fcc67fa7375bd01974fb262e3867d8e9c9e75314f0bd6137cf34",
+    "src/domain/timeline-window.ts": "c50309b16135892b39842937e97b1e59726d7fa05728c510fd4ee63c24486a3a"
+  },
+  "buildHashes": {
+    "dist/archive/family-notes.html": "4b33fa2d514cf1fa240f294a1b16651dd59872872653cbb4f860124417d8cc52",
+    "dist/assets/App-BZ7eetnh.js": "b2830cb318cf6f31afa4e4c3bbaa7c1a1adeb5b47b65895ac3e2b7433b32cc9f",
+    "dist/assets/App-D2GCeocH.css": "9fb33f3a164f13a9653f6404850ab220c1f225c201494b551c45c8bf5eb241e5",
+    "dist/assets/BookReader-Bx-6cSQN.js": "42493765b644e866979e075e39a6fcb5d4d8df42aba8b6bc68264e74281a2adc",
+    "dist/assets/abnfDiagram-VCTEODGH-C5P_lPSx.js": "4b621d416bfc761d0119cc5076284c1883aa27c73b9d5bc9443b9201b7819754",
+    "dist/assets/admin-panel-content-BaHlBN_3.js": "1abf81d4bb2ed32dd3633b9d6a1c36f0b79657da29492d9f44d324003e2eb7c9",
+    "dist/assets/admin-panel-content-DLvWqIQF.css": "5f6c5c4bf2dd5352b188a1ee9511a05f76fcbbc13492605e4a3774d355d340f9",
+    "dist/assets/arc-Pry-7G1_.js": "f75eded460da333a370d80955d052d86f7a70552e684709e1b671b5520ddab23",
+    "dist/assets/architecture-7GRP2DOG-BBuD-jlL.js": "0dd02aa0157b2106479ea1e3b6d75dfdf845bfc728efed279e1b12d54dacdf24",
+    "dist/assets/architectureDiagram-5GKGNRK7-DLTXa_3E.js": "7f4322cba5cc32a08b32fee0f14e7761c8ded578b25c8986396e01972297e84c",
+    "dist/assets/archive-editors-content-BESdeHkx.js": "fe515fbebc36b922f35680a81b2e6150fe79a9e28492b4176a44e468ab111099",
+    "dist/assets/archive-editors-content-CtgtwJNN.css": "dea400613d788e83eb89e3c6a60263d7b24d394717b114eeaf8a9f640778ad84",
+    "dist/assets/archive-editors-lqLikDm-.js": "976323867e50e4945e75b6cfb4da97910a97d591e2dffa0ff2e98114d51342db",
+    "dist/assets/archive-links-DBqx-xl9.js": "85fb2b99157cffeab2adedf7ebd64d307e6f3252fc0428bedaab3f2474e6aa3d",
+    "dist/assets/archive-quality-page-D1VR0kUG.js": "5591356551aaf4f31fabc412bd5508015decc8a6aaefe56a416bdcb04cb0a7bc",
+    "dist/assets/archive-routes-CONPpOej.js": "86e3b3b6e150928ef57f8cf36c39a58cdef86289c791bac3c471a43b692fca35",
+    "dist/assets/array-BifhSqXX.js": "63126646dbf611a0cf9e2293a9f636ac3c93c815a8f7d1e97d783151ab8529b9",
+    "dist/assets/arrow-left-DheGpjKy.js": "a8df2bda36a7a9144c3f363de36297af139d382f2a19e9124b13d126c8a823bd",
+    "dist/assets/audit-log-BlZl06ks.js": "d0effd61cb78a2ab32c99dee6f97ee7e5dc6509a20d0c337788df95af987d99d",
+    "dist/assets/blockDiagram-I7D4REHJ-5Lwl27u6.js": "a5db7a4d65251ae14159d1b129d9c30dff98a9ad882109499019cf96a8e713f8",
+    "dist/assets/bookreader-BU0_FgU-.js": "8f96afc606f89b1eb9554366dcc9fcab4413cb907c94a6d3af169a030cf47432",
+    "dist/assets/bookreader-ChLfIugk.css": "e8192f56a2f1c2851ba16f9336a87bdcb9a779e28c4a742214618e2f0f8d16fd",
+    "dist/assets/bookreader-pdf-search-plugin-C-DCSZ1z.js": "98e130693042b0332884aa31427f385b413d800ada6d08a09533c11e57f26b5f",
+    "dist/assets/c4Diagram-7LVT6UL2-C15sIm3m.js": "5bfbd06bbd5ae1099232a51c3a621222e3eb4ce452bd502dac1c2caa2d89aba9",
+    "dist/assets/channel-ZXGifBXX.js": "fbed6130451fbe0e62acacb3c650813a91f25b7c7f276a71ccbe9b4bc0826def",
+    "dist/assets/chart-canvas-rTJj1jp_.js": "e8f86a0ccf8f4acb1bfdb286ab90575d36465ac4563d6240ec9507abc65402f3",
+    "dist/assets/check-Brr5zjVk.js": "54ad891939870283d3cd56977cf190e416dc6d5784c6da64d295b78d6847b2e3",
+    "dist/assets/chunk-2Q5K7J3B-C1jixKkw.js": "675dd6cbaeea3bf091ba6afb397cf4c3debf6b66cc7bee6d115d87fa831e05fc",
+    "dist/assets/chunk-4HAMMTFA-C-aFsbgB.js": "16a471eeed27d239d6a5827ef1da4d102f3e9dabd0564a4844179113c2669301",
+    "dist/assets/chunk-5VM5RSS4-ZNzvKenW.js": "cee7c98f98440b1fbf0548b756d421097642c784547b835515f1124b9cdd4351",
+    "dist/assets/chunk-75Z2AOVW-CJ7LJ0E3.js": "a4411917e28ab74b6db691513890b41c26329c43b139f6cb65048d91693a5dde",
+    "dist/assets/chunk-DU6HZSFF-BAE_lRQZ.js": "a8fa827cbf7bf2bcc125e961cd782c543b73c41f818d7b3bdc365924e755ca94",
+    "dist/assets/chunk-F27PBJKO-DK9vsrT7.js": "fd832657349478283f451a669ac4469c7c4ff4d0d67f701b8ed3019da0b1e9a7",
+    "dist/assets/chunk-FOHPRMQF-DzxwRta7.js": "8a5f3e922154c318d45230e9d0a1bbd5e021a5d567fdf4d238d3b6342c056261",
+    "dist/assets/chunk-GMAD6QVW-DbZ_QH8H.js": "18c2140323499086652e1da5ea333c5ed7a699c4f0848b94dda77b73eeaca5c8",
+    "dist/assets/chunk-GVQU2GXP-95H7W9im.js": "7d5d843ae8354253ee4f610925ee08d31c23f3fd32584bc3cb376f4297a4a5b1",
+    "dist/assets/chunk-IMKFNOWR-CqCcOi4A.js": "5257b8cb1237a7563b7970953447d67fdbb17c6d40bed30aef519159028bc3dd",
+    "dist/assets/chunk-JWPE2WC7-DVXcaiue.js": "11e56beaf2526e7304036d27b4e083ed68ced60066faded0e683115da3dfa099",
+    "dist/assets/chunk-L3NEJ4N5-C1IGHnsD.js": "e499cfcf7eb697d649530c7373455d5ff16864d5676b939cfd75233b2d764016",
+    "dist/assets/chunk-OSK3NFVY-BA1eBODs.js": "f9520b778a5848e29ba9f27a3ff63759774c92dc0d6a496baa17c90b938b02f4",
+    "dist/assets/chunk-P2QGCYS3-B5SfBeFz.js": "c00c484f0a74a8188b3e605ebb9508d60a11bdb52a59396700b17575599ca2e4",
+    "dist/assets/chunk-POPQ4Y6H-DhsBAbKW.js": "3d84225283d1f5c3a12e4f60501e3edc204c0569335d52ad53d6c5a99b5a7396",
+    "dist/assets/chunk-PWAF6VOD-BQ9Pvcec.js": "37abbdcec3deb7ff088cf1f006491ff82433875041f161168ea37f382fb05684",
+    "dist/assets/chunk-SHT3W25Y-DOb6XuQ9.js": "16b533db11b41bb364196aa14c824a4af382016d36982cb8791aed3fc7ffd662",
+    "dist/assets/chunk-SVP7TREG-Dyr0wjNg.js": "3d6459673a253c0d4ca98f0825971b5218ef6a266fcb1c148e670ca903c09ef5",
+    "dist/assets/chunk-TICWLB2K-CKlH5lEq.js": "c16abb27c7b099e0062a86be641f58694f6591c7a75580179207434fa6f98436",
+    "dist/assets/chunk-XXDRQBXY-Bd3Sm03O.js": "b4a3eb2bedf7f33e29301bf1bdb749a1b57a66828a66f71983403662feb69e08",
+    "dist/assets/chunk-Y2CYZVJY-DsF7k-Jl.js": "a74e3669f356ad0d67cc5232f1e0f62ff4544fdb8e7057cf9a5001a0ea6fc2cc",
+    "dist/assets/classDiagram-ZZMXUADV-BuRJWFPF.js": "5736625cd672e56598af4d618c76880bffe12604a5367d08aa29a911c08e0dd8",
+    "dist/assets/classDiagram-v2-VYDZK3BY-BuRJWFPF.js": "5736625cd672e56598af4d618c76880bffe12604a5367d08aa29a911c08e0dd8",
+    "dist/assets/cose-bilkent-JH36ORCC-D9o2lR-b.js": "33af64c7e4ab0eff7731802f5d982bb97b2bf6ebaa8db28b22f3edda31e4ca6e",
+    "dist/assets/cynefin-OW5HDTMX-B-6TQfl3.js": "25ace31fd805f5271efc46e619b1ab623c21b6bf79d0ac125bc5c544edb7a4bc",
+    "dist/assets/cynefinDiagram-5FMLGOSQ-DxQwyPxg.js": "41913d8ab7a4b2198c56a4e8e918dc3a564f43b29789179496d4af70df1b8885",
+    "dist/assets/cytoscape.esm-Yq6u8L66.js": "8f5eb19c60a07917254fd76da05c61f3bd58be3eb50bb185db4208ce62caceb3",
+    "dist/assets/dagre-C-rnJpZF.js": "f114fd495c7ce524c8ec3122bf87fd92687d5a1fb8f9cd3d86c6b358bbcb9500",
+    "dist/assets/dagre-GXQ25YYZ-CzWryFXz.js": "9188cefeb46033e3ecd4a554c5430faa919d5a853a1038d558536010cf8cd509",
+    "dist/assets/dates-DXOXi7sd.js": "e7d44400414047607b461fe9a89d1f259e9c2d85ffe38943fbb290033476dfad",
+    "dist/assets/defaultLocale-BFoDCU3G.js": "098cc4b380fbfa5bf43b3dc6afaa137a43b0df3f079845fc096dca41e38fb341",
+    "dist/assets/diagram-S7CK7UJ4-COJxWtUP.js": "f6cb8797fbd66277b0c063423c202d66c210b93285c037e93c1f0bb180b93b8a",
+    "dist/assets/diagram-UQ7AKVKN-BRULfTj1.js": "ee66244ef5a422bdeb6ebc5861383492a79121653c7be79ad0bfaa9bb20665c0",
+    "dist/assets/diagram-VSXAHHWV-BDvMOZr8.js": "f276f740fe58aba2825ae3a7e5ea0b63017954c1806f91a8e3728f7acc349135",
+    "dist/assets/diagram-VX7I27RA-3t1dfXjY.js": "4d9de213b6ac857d60a1a4fbbf90264fcd266a3e69d5860c1dd9f3d303457dc6",
+    "dist/assets/diagram-Z3DM3KII-DYq73FAP.js": "35c470a37e757f4b7b896beb213903396f09ad87d7a41a2d4c181afe255bb3a1",
+    "dist/assets/discovery-branch-9w4FdIoG.js": "f887db7fac2dfb278fe2f939f05a6af44e1914fd1fb89fa77ddf07285faddfb9",
+    "dist/assets/discovery-linked-branch-person-DNzt3j9u.js": "fa09b465dce3908ff24e25f05879b4890a840b3a83b699856fdd276b32015496",
+    "dist/assets/dist-v5Q1xZ2K.js": "6c5cec80bf8c172970025d53577c70cf4cab9f68a5275674b83118a8c5edf0f2",
+    "dist/assets/document-file-CdDPA0-T.js": "b946389b96f484c1e636e12cbeeb477453cc012a9dcd1f0bc7867acd71e54fd7",
+    "dist/assets/documents-CX3E_ObM.css": "a3a3dea41e9d56a5f462066bf5dcd9cbf33a430ebbe9d8b78d051a43e00dfdc9",
+    "dist/assets/documents-catalog-DleVh1r7.js": "2639c1da07521a167a2b89406d9f2f2d4f16e12d5c99dd5989832c54b0c3b304",
+    "dist/assets/domain-Cy0F8uJq.js": "c5daa188e62e6fa15218b37c8a37a38a0a4a98529475f1dba0c3737592ea9cbc",
+    "dist/assets/download-generation-report-BdCc6zKj.js": "65f9eb9d591254b1a540c41441b4a5e0ecb8210c0de1c1c486f793dba224a814",
+    "dist/assets/ebnfDiagram-PWID7BFC-DCj4Abco.js": "d036107a964b98b466dff2287a0ed5dc1facd4c2e45a8f5081cede5878a7a962",
+    "dist/assets/echarts-runtime-DBMdSS9C.js": "53c1c86f1b93ec3600c8e042a73ce7b63cfd25f2b2bb6f616c4cd92a800c3e29",
+    "dist/assets/edge-routing-D1pAuoOd.js": "d387a75595fcc7aad7f795c697a867c034a406088b239fcb17966ae0d8e5dfe7",
+    "dist/assets/elk-worker.min-B0rP1gRk.js": "5d8ba0553acabc22200c36127f4ef9aff3f84b7d7ccfb5f9b9d6ef6cc664892e",
+    "dist/assets/erDiagram-RLTQ6QDP-h_dGkNBO.js": "b39b65905ae5d376230f9dfcac6442d4e52b24ed04ec038e590440733bbdf0a4",
+    "dist/assets/esm-Cb3lGruy.js": "162fd0025fd67ada8948cbf70cb52cfc0532f55df1324b1857f5e08eb5617a24",
+    "dist/assets/eventmodeling-NTZA5JFV-B9vJYYtH.js": "ffc8ed997a8bc00070d3dd80fcced6746f9c694b6e0b4332bcf0e9a569f3454e",
+    "dist/assets/face-assistant-LdNMc2YD.js": "f37b9db1541a6442f2212913ba08fb9503bd37c2ce22070f0a485dad0993094b",
+    "dist/assets/families-catalog-DkjB9brZ.js": "5f3e327faa9b03bfa41ea1ea60276852e2684b1fe16ff5ae5d368f0989d51b09",
+    "dist/assets/file-text-RUuDcwx7.js": "c0fdd08e5a2c5d340b9002a76a37b492f52c140ae2bf79eb747d136a144bfe01",
+    "dist/assets/flowDiagram-HODETNUW-BIyj85ge.js": "6564dcfbdfd47e7225c30392d4cd10c420740654434db041cec66d964198c531",
+    "dist/assets/gallery-ClFQEn0U.js": "9537c7900754dbd6a3002a67b322c018a94f7aa60ce1cf584b9307aa6172b4a0",
+    "dist/assets/ganttDiagram-EL5Y4UJY-yyjaS-LA.js": "72e7a1f0aa3a8e48ffe0e8f1d166debfd0c1f7c11e71e59aea8efeed52d3712e",
+    "dist/assets/gitGraph-4MIJSDKK-Dd5zdd0S.js": "3bed10a21f2357fb4402422c82b798664b94005e4959437f390b2895f83b992d",
+    "dist/assets/gitGraphDiagram-WWUBYQGX-BstEJo_S.js": "265c11d841e9a46a587dba2dee487cf2e82384e8ab400cef68a56c9384af07a2",
+    "dist/assets/gpu-scene-DSwo6Uc4.js": "3422b154a095f2b7dba96393667461ccb3bd73f5d335dcb0894f4b59b8dc7f35",
+    "dist/assets/graphlib-DS17s2tU.js": "6afce81d54f184820fad5ed0c9fa2dc42acc6e0cd0fd8fbcb0568dafc2cc7ab7",
+    "dist/assets/household-levels-DUqrdpd3.js": "4c8119d5ac5d5a7b593cc2d4c01e43fe42a98d3f3aa483ea50920a6cad131fcc",
+    "dist/assets/html2canvas-Dn6bw578.js": "574ab4dd546005eef9ba3bb3dd9955d71dc71efe16fcb555730ddd00d97c18da",
+    "dist/assets/human.esm-D10UQNG3.js": "b33f70ab055b3e7b4c8f295060384bf9dc8ac739fd03e5a06da464e644cb7d86",
+    "dist/assets/index.es-CHJwzXpE.js": "935e2925f9e61e08903be3e278c00e4d8fe65a07a5c1701fcc31a0e4ae430a7b",
+    "dist/assets/info-A6RAGUB7-wzrrWW_2.js": "38a69103dae3be5e8de00922fed4fdb47406f911c13fabae4d3b5e2562323130",
+    "dist/assets/infoDiagram-27XIBGKW-DKuDWa9L.js": "c55942a92e7b5ca0196d3ab4e02bede60cafa0003ca60cbd46ec48478d6352a6",
+    "dist/assets/init-C-OQMol4.js": "cb5c97a434bb5c3eeb4f6d38072ad7d8e4ac454d14e039a1fb6e8262c5ce82bc",
+    "dist/assets/insights-page-uOmcvfW8.js": "455d0c945d917f170b27772d2a861d792aa8a49d56a4416eaf99fda2670f173b",
+    "dist/assets/ishikawaDiagram-5VMMS53U-BDGsSzP3.js": "8fa921ece66690d48e4d7aa28ee823747a0fb2fbf047cff97cca394bef0cc9a5",
+    "dist/assets/join-archive-Bwcm5ish.js": "7cef24245dce38c69871a16e1081dd29d4d7c2351b0f3627a80b2fed7af1dca9",
+    "dist/assets/join-archive-CCyr2TC6.css": "76e354ec58f6cbde8fe3c3f55d76481d819104d3f46ba9bd4e589360b88ea8db",
+    "dist/assets/journeyDiagram-3NMN7TZE-DdUfZXyQ.js": "265541e82662441e43b03baed33a50fde499c22bd0c09a11a3ca2e00695f0755",
+    "dist/assets/jquery-3-Dp7SDtaV.js": "119c06134449ae92db26f6b4eb4fc37ec5375f8d850203d78a11144832635e45",
+    "dist/assets/kanban-definition-UXKFOSKX-CzHPGTTA.js": "276499e99831e60481450d1729194e6a6064dc8408f331e11557991efb8b0a5a",
+    "dist/assets/katex-DEcVZfaU.css": "e3e391a763650a96600053095451bbaf9daeb554a92c13f14b496d595c502251",
+    "dist/assets/katex.min-DGZ8Bb7P.js": "6ed0f07d0c00b7429080db0a78bc0e831bad1804a8ba30b59e8aa9104c8064d4",
+    "dist/assets/layout.worker-Dm6eKdQo.js": "3c7d5e38ab9cb42de8b74e372f75e998412ffee8822efca1e16729bad6aa95ad",
+    "dist/assets/lib-4KIEzPde.js": "cc0a4777f10c3e08bec37f2a253f379ced4de0cbacfe0989198ec497b7a0fabc",
+    "dist/assets/lib-XSamBX4j.js": "e99e33883476f5a1ba2f7e2a51e6b71f2d1a7398f974a57540cf52f2bb87cdd3",
+    "dist/assets/line-C_9aNKH9.js": "d38c0225c966e72336ff33ca5d9666315c86c00b0671697a261a5b3cb1cc2360",
+    "dist/assets/linear-CFt_L1U_.js": "a1ad5f412d5550054b8b7eecb5aa50c4be79f2e2ceef29dec98bb2ea90eab350",
+    "dist/assets/link-2-DcnsEw5O.js": "e3b4b6a6ea6a8eb652d102127c9ad43de59fe4ee3c4d3abe70239280d0a76cb6",
+    "dist/assets/load-more-B9DGstDD.js": "0131e4809320e3a6eb25e365105313cd41198176f1a95901689f97f9b66068a7",
+    "dist/assets/login-buttons-CfDdluVN.js": "0a8b3b88c07575b831727f67ec201b6e175c50a03df4abeb6424c79498525305",
+    "dist/assets/login-buttons-D7Sr4_-g.css": "6d1280dbc9e07035cd2c1c03173f55fc6526f12f9e6f7bfe3182d58ffc2ff606",
+    "dist/assets/main-QktZq-IZ.css": "c6731dea8f437a5ef5a180f1fc1942a3eb2a1bc6d687536cfea0ab4c6ab5eba7",
+    "dist/assets/main-UtdcUSV4.js": "647e533c1165ffd50fcf05b7cceb86e9db238b2f6e006d5a360a06248d0c1e71",
+    "dist/assets/markdown-answer-DOHplKVc.js": "b373acd00550d0f02c9dbbf540d48795c88186eef581de201fd52ddc40f75e62",
+    "dist/assets/media-preview-CvBz6FiK.js": "8e1f90df30f88c04bf13a317b237f55c1e8059139c373592b31c8a584bd63d62",
+    "dist/assets/mermaid-parser.core-CWQKIG0j.js": "d1e3a6a1608328e737a0da8a22fe7cfd52d1b085dfc450f64fc93cfeb25ad6d4",
+    "dist/assets/mermaid.core-3JnKT9FX.js": "84a4f45d36ba7ffad51f0977ff1ca9de028948b7c84ad7c549a44ca0a98eeffd",
+    "dist/assets/mindmap-definition-YA3MSWOX-BeKHMjqo.js": "8cf49fc352941953f59bf101251d1fa7f11e8aa2563b6acf84b91034bba0aa39",
+    "dist/assets/ordinal-BDEzSJ7C.js": "1a236cf33d69c13da184852fe890a0d5d4083636373cb3ce166537b3e8cc0dcb",
+    "dist/assets/packet-AYTQ26CC-CEjwZnUP.js": "4e449146a75c354acde0758c02552724be35571ae2efc026bb34166dd6938556",
+    "dist/assets/path-fybaL0A-.js": "71b62c60fd6659668995a83955af7c0ffd1bc05496148191841e017441afe36b",
+    "dist/assets/pegDiagram-XKGWAZYB-CSM1GCFC.js": "ef60e5e920416a36f68564856269a3743f605c226574c7658856579f1ec6fdce",
+    "dist/assets/people-catalog-B6YXBFcv.js": "b8ca6da647853b9b3ab3c1ce55feeba3eb2dea16eea6b23837398deca7fcc782",
+    "dist/assets/people-directory-BIj8L-nZ.js": "f1dd2a1fbc0f70d949083a2fbaf268c3a8f1ef15464d2e4590d98257ab6e6da2",
+    "dist/assets/person-discussion-B6XSfPe2.js": "9afb50b0c6e553e5cf1b4906db6182bc84772f4cd5e7cae4a82aa2389d62a3e2",
+    "dist/assets/person-events-Aux48jhr.css": "7318c6f926f080d456c38badd3477555f98d56efe191ec805576eeae7630817f",
+    "dist/assets/person-events-BdLInXFH.js": "0fda67a31d7d0959f89c19a3d1aeec83f0dea72ee3126bb5c86a84c6d1b8f875",
+    "dist/assets/person-full-view-BgAiMHEl.js": "83517c8fbdb2072e3e5dedcc7c5187c2384bbf5e506af1f4616662422eb97569",
+    "dist/assets/person-panel-spSjiP6V.js": "bf1049f583b3bc008c918a686ccad131b0ef9b91ac6d8525423528dc9747f4a2",
+    "dist/assets/person-sources-Mj9leuhX.js": "9a5efe671ec3d4c946ea9f8dc46934752109719b30cf2a4a334a967efd816b98",
+    "dist/assets/photo-metadata-C4LCakY5.js": "fc703751facc8aff2157bcdbea25809f89012cd0fb2e45352fc6143dd26842b8",
+    "dist/assets/photo-upload-BdK-2ETX.js": "bd58712fd0816ad4d8ee4ea01d2980b2dbbe42ab02d96654143708c440fc04dd",
+    "dist/assets/photo-upload-CjdKE6XZ.js": "b1a457b9ec5847cf28876b47373719f8a316d9c3ee168a95a6b4a7f80bd61724",
+    "dist/assets/photo-viewer-tOBUP2i7.js": "67c298e6067f1d60de595b2a417295eeb18e0c15946ac37631c4783cd64696ed",
+    "dist/assets/pie-WAS4IAKB-Bc6NBkJ7.js": "977854a301a611214afdb53350c13e005af10e6f4a85719bf4e41efd9ad1c619",
+    "dist/assets/pieDiagram-E7YTZNPT-BIJcM5Ki.js": "b6df62464c6efb8c7d3ae667a2841b6d35516c4da0bb0c5df21c4206f483d7aa",
+    "dist/assets/place-field-N5YCfXmM.js": "96876cd411964ef60c4cd5b553a7b02448d0e41a5b3da4bff4f2f3af58f336be",
+    "dist/assets/places-map-Dem26rPa.js": "717c795c52be110cfd4860046db79dcc95a4c8e0dc13515f9b60ea2b50fa8564",
+    "dist/assets/places-map-vh-t_kPv.css": "86d3d093fad979e1d185c8a93258f5f124d863fd13ca894c0b9f50bb68b66997",
+    "dist/assets/plus-CFiEJH1A.js": "f6557c942b81726a58923b1f22c48181a830cb9def00c517d8ff8d8f57e3885e",
+    "dist/assets/preload-helper-CqwWvUnY.js": "907e45861b947d1c8db89f8c6638463289665d44e27701a20534bb345370f06c",
+    "dist/assets/public-people-CfVaZ5va.js": "b8de5d90a9d00f24ccaa46fc96bb65da53f3f0ab89b674ee3ceca86caf782153",
+    "dist/assets/purify.es-DmVU2mR8.js": "c5ee06282977e2e295e7bb1c35a1bba0cea6153e16017af33639a02d9766a926",
+    "dist/assets/quadrantDiagram-AXDQQJYC-DotsjmOj.js": "e0e473d9b919bc15d66ae5c35bc7b92beb680b6f7ca4a06bb43e1f4d0415d5bd",
+    "dist/assets/radar-RG4KPBEZ-BRF2Iy4F.js": "718979adafaa0e622e61b444fb4dae2d4ca3055ad8146c0a74c4bdf6bc69cb7d",
+    "dist/assets/railroad-74A4TZTK-CgdQazAW.js": "8364823c3970765f4e1c51944b30a1e2cdfbe8ba033f2419d685c6fca022dd1e",
+    "dist/assets/railroad-abnf-HS5TGJTU-DvpRawdZ.js": "69fe0bee80e57c6dbb196c4d2458ce4405556e25aa7d7f1f405530f63950a20b",
+    "dist/assets/railroad-ebnf-LZEXJU2U-D2k1AYMn.js": "b5fd6c751c9e1b42859450a393903ef4e844e7e880e6ad75ff3422f47ea10041",
+    "dist/assets/railroad-peg-WCYAUIDC-xgfcg3Bn.js": "a7501936b6d112d704393694febd130cbbeed3e6fcebea01f295f1977d2dd0bd",
+    "dist/assets/railroadDiagram-O6MQD6OU-ByAsHgQt.js": "e9d7a382c4bd2e433b85360ae3f30e1fa99e161c2ad428dc900c95c289a7b5eb",
+    "dist/assets/requirementDiagram-BXWQKSXE-fagw89YW.js": "e8d5fb9e7a7cb0d96e9c76a26b84cb4e7ddcdff1f8aa0c93e1bfec263133b702",
+    "dist/assets/research-resources-page-CATo0Ow-.js": "4e004309c79e91c246e431b12e7ea6435286a629d453890dc33fc289cc628df3",
+    "dist/assets/research-resources-page-DCDo9rCz.css": "794e8a2093d08ff8dca44aa8139f36fa72b220cbc812f49d431ccfd2ec08f1c5",
+    "dist/assets/rolldown-runtime-hePW80VL.js": "580ad8c58061a4dde99bde0a56905e382f0568516ee2f5b84dbfb52085709021",
+    "dist/assets/rough.esm-Dy-Kn_BL.js": "ef405c5eaa3316c75428f63ec698e39993bdcc2da358dbc7ebd355d18901f63f",
+    "dist/assets/sankeyDiagram-P5KCCOFB-TpwebKDD.js": "d75ab84a0c7454ad2129b17a3c02db961311ea9d8142fd2c47ec3fb3c38a7cdb",
+    "dist/assets/scan-face-DQQ5JwHr.js": "b0db03ef4e9f8cb01d791d7006fbf29e39f4fdc6210c31f6d84baa0af415d55a",
+    "dist/assets/send-DcNJOE9E.js": "107d7c0b9cc1a2e03e6a94d4e6a3b171138e669a8788377d369245ffe2b954c3",
+    "dist/assets/sequenceDiagram-WJ2MYXX4-BL3MzrSP.js": "aa7f5dc2e91cd154e5615ac47d2598e1dd95829f9af12b471d789d212a77e9f2",
+    "dist/assets/shared-tree-Dfem--8y.js": "7f8fa3d024bd3acb2d93bf726aaf372ea8156b98b7574098f8629b7f93f3c66b",
+    "dist/assets/shield-check-DliMe2Th.js": "2a44683fc151234bee1113993774620276f5cfdbc38c99ce41b1fe1dde11c3fd",
+    "dist/assets/sizeCapture-INFHLROL-B0uUizjq.js": "a72637dd3244cfb0f1b1ef936e53a5c642dbb29bc5de087acc4abbc69f283523",
+    "dist/assets/src-B-DeWB10.js": "e852c8cb4e0f18b47e52481384c8bddecbd866b863e2023826dedb4a38146d27",
+    "dist/assets/src-D6_zRfqR.js": "d8a6fb9096b23c43eae18ce9d4c1582d2911068d4b81e735032be988b89528bc",
+    "dist/assets/stateDiagram-D77RDMKH-BXRW2XF8.js": "d16510b6e9dbbe97c5aae883029bc6236fa05e56f0364aa8e4f96d2d0721a9ad",
+    "dist/assets/stateDiagram-v2-MP3YSRHH-CGuubM-N.js": "440f0353e7dfe8e09545eb2c0de6ba70f0a285e4af9f1c27ec49d91b44d76915",
+    "dist/assets/swimlanes-42K2YHIH-Ci8w2iKi.js": "0be172ee503be938d39bd0690ec7ec4caaacbd7485685e52ea01a02d64a0b608",
+    "dist/assets/swimlanesDiagram-VR7AAH4N--zTB28Ha.js": "996b2f8054d62ddd75d982a76ed58a3f578b7495039560285939fb4b62461872",
+    "dist/assets/timeline-definition-24CTP7MA-pzT6RJXd.js": "9d12c10637d357291d66f9a850f338e7f164d5917139a34f78fcdc7fa03c17ca",
+    "dist/assets/trash-BJDNbzRD.js": "2464b8aafd7903ec8460db1a819d2279f91bbcb29a1546239a79957ca514a1d8",
+    "dist/assets/tree-export-dialog-Ba2Fwiob.css": "85726e07389d37a0035f925c2a594975970241695ebddad0300986288bd61439",
+    "dist/assets/tree-export-dialog-CVgWAvhj.js": "bc5f9c87f49187cf8bcc15a7e2978ee9293bdfb49907753d111c611e0077a907",
+    "dist/assets/tree-export-model-BBvCDdPJ.js": "a7e8898c5e78ec3217960ac05b48a2ab55b7f2ad79be599d5b6463dfa7f70ebc",
+    "dist/assets/tree-pdf-CM_jfVoW.js": "e9bb7361e09b3b55a2c8f5df6deaae45d97aeb173a1df7758372482138cbfba7",
+    "dist/assets/treeView-Q6P3EWNA-6_Tb8k_A.js": "db1af46c4bcddd15e85c730a925294e03cda576b37f3a3cf26c4d088ab0a3530",
+    "dist/assets/treemap-WGGIJYW6-C0xVnEvz.js": "d9c676ff83e84655b0a68507e006cb91a98f7bd166149163def4d2adf8b98362",
+    "dist/assets/triangle-alert-D-S6L3iB.js": "74cfde396b99602564dd2906c1f66aa04e6d16d61a1a22de99bf87d0ac8b0af6",
+    "dist/assets/use-photo-swipe-7EXsjQ5K.js": "3b61f3a2a28cd6e8bb69c0e146f2eed4cbd58fa960b2cbda149705dd5ab7d0e8",
+    "dist/assets/useUnsavedChanges-CVpaZ7-L.js": "eb8935ee2b9e6d0461c263e17f90f1c24358f262b3b271e198c2332788c4da21",
+    "dist/assets/user-round-DR5BOYQs.js": "52629108e11f87d82a11d55d3e115de46d030b932ef7d87d5d8a91550082dfd7",
+    "dist/assets/users-round-Co8m1BWJ.js": "f81dd337f6b0a0d16f828150e4fe93c7fc4c978d405978be31423d67ec850d20",
+    "dist/assets/value-DcGlvoTp.js": "4f35ae716fae5a0004fbcdf389d7e722be176decb2f1150f54ef58ded3c0749c",
+    "dist/assets/vennDiagram-4TSXK5OY-CqZ-2Kge.js": "b62be7ae4766a8dbb2ef1bed28faf082177f5dd3c6912ee164f8b28801b567c0",
+    "dist/assets/wardley-WFR3VGLG-BHYM51vL.js": "a33fba62e0564d8fe316989002df7ba770c68978b6cfbb6987cbefbb563e3268",
+    "dist/assets/wardleyDiagram-VM6X3IG4-CSNJBN62.js": "ae49a9165ce77ebe99c97caf51737cf6e1a0a6749ee5ef8fc08ff605905d564b",
+    "dist/assets/webcomponents-bundle-IOKbOeYR.js": "5238d4f14e2f26fa96496caff7f6a3870eb45f319f04741a794d52f2dfbfd638",
+    "dist/assets/x-IxBceTyt.js": "12e9a15f8afee7a4b8b6619ac4a72e01851945ed622e8756c65d717fec6a1c7d",
+    "dist/assets/xychartDiagram-S5SC5T6Z-DAKHF05V.js": "8a3f0056333689d776371de9195d466353c6693ef77a3154bbdeda9dbe312d87",
+    "dist/bookreader-frame.html": "a3edfdc5047a1cd66fafbeb2c607aabfefce1661039619d05e86d6fa002860dc",
+    "dist/index.html": "0d2f20a19e8b1fcccf6ae6398b50d99070449e209a33b487d543782fffdf4aaa"
+  },
+  "fixture": {
+    "people": 3313,
+    "seed": 5,
+    "generations": 12,
+    "synthetic": true,
+    "dates": "birth=1750+parentDepth*20+(archiveIndex%7), January 1; no recorded deaths",
+    "inputHash": "869995b3ac3ca3232508251cc2381944e0c50eca84161e8652dcf9c0c09a0cf2",
+    "sourcePeopleWithBirth": 3313,
+    "sparseYear": 1750,
+    "sparseEligible": 2,
+    "fullYear": 2020,
+    "fullEligible": 3313,
+    "searchTarget": {
+      "id": "level-11-99-0",
+      "birth": "1996-01-01",
+      "rankAtBirthYear": 3312
+    }
+  },
+  "device": {
+    "browser": "155.0.8059.26",
+    "gpu": [
+      {
+        "vendorId": 4318,
+        "deviceId": 7041,
+        "subSysId": 2241335363,
+        "revision": 161,
+        "vendorString": "",
+        "deviceString": "NVIDIA GeForce GTX 1070",
+        "driverVendor": "NVIDIA",
+        "driverVersion": "32.0.15.7247"
+      },
+      {
+        "vendorId": 5140,
+        "deviceId": 140,
+        "subSysId": 0,
+        "revision": 0,
+        "vendorString": "",
+        "deviceString": "Microsoft Basic Render Driver",
+        "driverVendor": "",
+        "driverVersion": "10.0.19041.4355"
+      }
+    ],
+    "features": {
+      "2d_canvas": "enabled",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "enabled",
+      "multiple_raster_threads": "enabled_on",
+      "opengl": "enabled_on",
+      "rasterization": "enabled",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "disabled_off",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "enabled",
+      "video_encode": "enabled",
+      "webgl": "enabled",
+      "webgpu": "enabled",
+      "webnn": "disabled_off"
+    },
+    "gpuAuxiliary": {
+      "amdSwitchable": false,
+      "bgra8OverlaySupport": "SOFTWARE",
+      "canSupportThreadedTextureMailbox": false,
+      "directComposition": true,
+      "directMLFeatureLevel": "Not supported",
+      "directRenderingVersion": "",
+      "displayType": "ANGLE_D3D11",
+      "dx12FeatureLevel": "Not supported",
+      "glExtensions": "GL_AMD_performance_monitor GL_ANGLE_base_vertex_base_instance_shader_builtin GL_ANGLE_blob_cache GL_ANGLE_client_arrays GL_ANGLE_clip_cull_distance GL_ANGLE_copy_texture_3d GL_ANGLE_depth_texture GL_ANGLE_framebuffer_blit GL_ANGLE_framebuffer_multisample GL_ANGLE_get_serialized_context_string GL_ANGLE_get_tex_level_parameter GL_ANGLE_instanced_arrays GL_ANGLE_memory_size GL_ANGLE_multiview_multisample GL_ANGLE_pack_reverse_row_order GL_ANGLE_polygon_mode GL_ANGLE_program_binary_readiness_query GL_ANGLE_program_cache_control GL_ANGLE_provoking_vertex GL_ANGLE_renderability_validation GL_ANGLE_request_extension GL_ANGLE_robust_client_memory GL_ANGLE_shader_pixel_local_storage GL_ANGLE_shader_pixel_local_storage_coherent GL_ANGLE_stencil_texturing GL_ANGLE_texture_compression_dxt3 GL_ANGLE_texture_compression_dxt5 GL_ANGLE_texture_multisample GL_ANGLE_texture_usage GL_ANGLE_translated_shader_source GL_APPLE_clip_distance GL_ARM_rgba8 GL_CHROMIUM_bind_generates_resource GL_CHROMIUM_bind_uniform_location GL_CHROMIUM_copy_compressed_texture GL_CHROMIUM_copy_texture GL_CHROMIUM_lose_context GL_EXT_EGL_image_external_wrap_modes GL_EXT_base_instance GL_EXT_blend_func_extended GL_EXT_blend_minmax GL_EXT_clip_control GL_EXT_clip_cull_distance GL_EXT_color_buffer_float GL_EXT_color_buffer_half_float GL_EXT_conservative_depth GL_EXT_debug_label GL_EXT_debug_marker GL_EXT_depth_clamp GL_EXT_discard_framebuffer GL_EXT_disjoint_timer_query GL_EXT_draw_buffers GL_EXT_draw_buffers_indexed GL_EXT_draw_elements_base_vertex GL_EXT_float_blend GL_EXT_frag_depth GL_EXT_instanced_arrays GL_EXT_map_buffer_range GL_EXT_occlusion_query_boolean GL_EXT_polygon_offset_clamp GL_EXT_read_format_bgra GL_EXT_render_snorm GL_EXT_robustness GL_EXT_sRGB GL_EXT_shader_texture_lod GL_EXT_texture_border_clamp GL_EXT_texture_compression_bptc GL_EXT_texture_compression_dxt1 GL_EXT_texture_compression_rgtc GL_EXT_texture_compression_s3tc_srgb GL_EXT_texture_filter_anisotropic GL_EXT_texture_format_BGRA8888 GL_EXT_texture_mirror_clamp_to_edge GL_EXT_texture_norm16 GL_EXT_texture_rg GL_EXT_texture_storage GL_EXT_texture_type_2_10_10_10_REV GL_EXT_unpack_subimage GL_KHR_debug GL_KHR_parallel_shader_compile GL_KHR_robustness GL_NV_EGL_stream_consumer_external GL_NV_fence GL_NV_framebuffer_blit GL_NV_pack_subimage GL_NV_pixel_buffer_object GL_NV_shader_noperspective_interpolation GL_OES_EGL_image GL_OES_EGL_image_external GL_OES_EGL_image_external_essl3 GL_OES_depth24 GL_OES_depth32 GL_OES_draw_buffers_indexed GL_OES_draw_elements_base_vertex GL_OES_element_index_uint GL_OES_fbo_render_mipmap GL_OES_get_program_binary GL_OES_mapbuffer GL_OES_packed_depth_stencil GL_OES_required_internalformat GL_OES_rgb8_rgba8 GL_OES_sample_variables GL_OES_shader_multisample_interpolation GL_OES_standard_derivatives GL_OES_surfaceless_context GL_OES_texture_border_clamp GL_OES_texture_float GL_OES_texture_float_linear GL_OES_texture_half_float GL_OES_texture_half_float_linear GL_OES_texture_npot GL_OES_texture_stencil8 GL_OES_texture_storage_multisample_2d_array GL_OES_vertex_array_object GL_OVR_multiview GL_OVR_multiview2 ",
+      "glImplementationParts": "(gl=egl-angle,angle=d3d11)",
+      "glRenderer": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1070 (0x00001B81) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.15.7247)",
+      "glResetNotificationStrategy": 33362,
+      "glVendor": "Google Inc. (NVIDIA)",
+      "glVersion": "OpenGL ES 3.0 (ANGLE 2.1.28853 git hash: 170484eea03a)",
+      "glWsExtensions": "EGL_EXT_create_context_robustness EGL_ANGLE_d3d_share_handle_client_buffer EGL_ANGLE_d3d_texture_client_buffer EGL_ANGLE_surface_d3d_texture_2d_share_handle EGL_ANGLE_query_surface_pointer EGL_ANGLE_window_fixed_size EGL_ANGLE_keyed_mutex EGL_ANGLE_surface_orientation EGL_ANGLE_direct_composition EGL_NV_post_sub_buffer EGL_KHR_create_context EGL_KHR_image EGL_KHR_image_base EGL_KHR_gl_texture_2D_image EGL_KHR_gl_texture_cubemap_image EGL_KHR_gl_renderbuffer_image EGL_KHR_get_all_proc_addresses EGL_KHR_stream EGL_KHR_stream_consumer_gltexture EGL_NV_stream_consumer_gltexture_yuv EGL_ANGLE_stream_producer_d3d_texture EGL_ANGLE_create_context_webgl_compatibility EGL_CHROMIUM_create_context_bind_generates_resource EGL_CHROMIUM_sync_control EGL_EXT_pixel_format_float EGL_KHR_surfaceless_context EGL_ANGLE_display_texture_share_group EGL_ANGLE_display_semaphore_share_group EGL_ANGLE_create_context_client_arrays EGL_ANGLE_program_cache_control EGL_ANGLE_robust_resource_initialization EGL_ANGLE_create_context_extensions_enabled EGL_ANDROID_blob_cache EGL_ANDROID_recordable EGL_ANGLE_image_d3d11_texture EGL_ANGLE_create_context_backwards_compatible EGL_KHR_no_config_context EGL_KHR_create_context_no_error EGL_KHR_reusable_sync EGL_ANGLE_memory_usage_report ",
+      "glWsVendor": "Google Inc. (NVIDIA)",
+      "glWsVersion": "1.5 (ANGLE 2.1.28853 git hash: 170484eea03a)",
+      "inProcessGpu": false,
+      "initializationTime": 0.227078,
+      "isAsan": false,
+      "isClangCoverage": false,
+      "jpegDecodeAcceleratorSupported": false,
+      "maxMsaaSamples": "8",
+      "nv12OverlaySupport": "SOFTWARE",
+      "optimus": false,
+      "p010OverlaySupport": "SOFTWARE",
+      "passthroughCmdDecoder": true,
+      "pixelShaderVersion": "5.0",
+      "processCrashCount": 0,
+      "rgb10a2OverlaySupport": "SOFTWARE",
+      "sandboxed": false,
+      "skiaBackendType": "GaneshGL",
+      "subpixelFontRendering": true,
+      "supportsD3dSharedImages": true,
+      "supportsDirectML": false,
+      "supportsDx12": false,
+      "supportsOverlays": true,
+      "supportsVulkan": false,
+      "targetCpuBits": 64,
+      "vertexShaderVersion": "5.0",
+      "visibilityCallbackCallCount": 0,
+      "vulkanVersion": "Not supported",
+      "yuy2OverlaySupport": "SOFTWARE"
+    },
+    "project": "desktop",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "cpuThrottle": 4,
+    "angle": "default",
+    "node": "v22.14.0",
+    "cpu": "AMD Ryzen 9 5950X 16-Core Processor            ",
+    "logicalCpus": 32,
+    "totalMemoryBytes": 68629217280
+  },
+  "method": "Production build and real disposable SQLite/backend/JPEG previews. No response routing or renderer overrides. Dates are setup HTTP mutations, excluded from measured phases. One run; no millisecond CI gates. Gesture timings include Playwright input/polling and a two-frame boundary; 32ms input pacing is intentional. DOM/rectangles sampled after the timed endpoint. Heap is main-thread JS only; excludes Worker/GPU/browser memory. CPU profiler disabled.",
+  "gestureSamples": {
+    "horizontalPerDirection": 8,
+    "vertical": 16,
+    "pacingMs": 32
+  },
+  "phases": [
+    {
+      "phase": "tree-ready",
+      "measuredMs": null,
+      "ScriptDurationMs": 0,
+      "TaskDurationMs": 0,
+      "LayoutDurationMs": 0,
+      "RecalcStyleDurationMs": 0,
+      "layoutCount": 0,
+      "styleCount": 0,
+      "mainThreadHeapBytes": 63132828,
+      "frames": {
+        "count": 726,
+        "p95Ms": 99.99999999999994,
+        "maxMs": 2735.7000000000007,
+        "over50Ms": 75
+      },
+      "longTasks": [
+        {
+          "startTime": 121,
+          "duration": 119
+        },
+        {
+          "startTime": 245.09999990463257,
+          "duration": 79
+        },
+        {
+          "startTime": 488.1999999284744,
+          "duration": 89
+        },
+        {
+          "startTime": 660.3999999761581,
+          "duration": 81
+        },
+        {
+          "startTime": 838.2999999523163,
+          "duration": 51
+        },
+        {
+          "startTime": 891.5,
+          "duration": 191
+        },
+        {
+          "startTime": 1094,
+          "duration": 932
+        },
+        {
+          "startTime": 2166.5,
+          "duration": 157
+        },
+        {
+          "startTime": 2358.0999999046326,
+          "duration": 95
+        },
+        {
+          "startTime": 2493.7999999523163,
+          "duration": 87
+        },
+        {
+          "startTime": 2607.6999999284744,
+          "duration": 105
+        },
+        {
+          "startTime": 2732,
+          "duration": 95
+        },
+        {
+          "startTime": 2846.6999999284744,
+          "duration": 106
+        },
+        {
+          "startTime": 2985.399999976158,
+          "duration": 118
+        },
+        {
+          "startTime": 3125.2999999523163,
+          "duration": 112
+        },
+        {
+          "startTime": 3259.5,
+          "duration": 82
+        },
+        {
+          "startTime": 3366.7999999523163,
+          "duration": 78
+        },
+        {
+          "startTime": 3462.0999999046326,
+          "duration": 78
+        },
+        {
+          "startTime": 3569.899999976158,
+          "duration": 85
+        },
+        {
+          "startTime": 3681.0999999046326,
+          "duration": 86
+        },
+        {
+          "startTime": 3790.2999999523163,
+          "duration": 92
+        },
+        {
+          "startTime": 3902,
+          "duration": 79
+        },
+        {
+          "startTime": 3998.6999999284744,
+          "duration": 94
+        },
+        {
+          "startTime": 4128.799999952316,
+          "duration": 86
+        },
+        {
+          "startTime": 4231,
+          "duration": 85
+        },
+        {
+          "startTime": 4335,
+          "duration": 89
+        },
+        {
+          "startTime": 4450.699999928474,
+          "duration": 103
+        },
+        {
+          "startTime": 4563.899999976158,
+          "duration": 160
+        },
+        {
+          "startTime": 4726.799999952316,
+          "duration": 110
+        },
+        {
+          "startTime": 9626.699999928474,
+          "duration": 240
+        },
+        {
+          "startTime": 9868.299999952316,
+          "duration": 951
+        },
+        {
+          "startTime": 10833.599999904633,
+          "duration": 528
+        },
+        {
+          "startTime": 11612.199999928474,
+          "duration": 63
+        },
+        {
+          "startTime": 11822.199999928474,
+          "duration": 92
+        },
+        {
+          "startTime": 12361.699999928474,
+          "duration": 51
+        },
+        {
+          "startTime": 12443.699999928474,
+          "duration": 61
+        },
+        {
+          "startTime": 12537.599999904633,
+          "duration": 52
+        },
+        {
+          "startTime": 12612,
+          "duration": 56
+        },
+        {
+          "startTime": 12709.399999976158,
+          "duration": 57
+        },
+        {
+          "startTime": 12792,
+          "duration": 64
+        },
+        {
+          "startTime": 12874.099999904633,
+          "duration": 66
+        },
+        {
+          "startTime": 12966.199999928474,
+          "duration": 74
+        },
+        {
+          "startTime": 13066.899999976158,
+          "duration": 68
+        },
+        {
+          "startTime": 13163.399999976158,
+          "duration": 82
+        },
+        {
+          "startTime": 13286.399999976158,
+          "duration": 75
+        },
+        {
+          "startTime": 13388.099999904633,
+          "duration": 89
+        },
+        {
+          "startTime": 13497.899999976158,
+          "duration": 58
+        },
+        {
+          "startTime": 13581.899999976158,
+          "duration": 62
+        },
+        {
+          "startTime": 13666.199999928474,
+          "duration": 65
+        },
+        {
+          "startTime": 13759.599999904633,
+          "duration": 63
+        },
+        {
+          "startTime": 13858.399999976158,
+          "duration": 75
+        },
+        {
+          "startTime": 13961.5,
+          "duration": 69
+        },
+        {
+          "startTime": 14056.399999976158,
+          "duration": 71
+        },
+        {
+          "startTime": 14148.299999952316,
+          "duration": 383
+        },
+        {
+          "startTime": 14542.199999928474,
+          "duration": 89
+        },
+        {
+          "startTime": 14669.799999952316,
+          "duration": 140
+        },
+        {
+          "startTime": 14826.099999904633,
+          "duration": 78
+        },
+        {
+          "startTime": 14939,
+          "duration": 71
+        },
+        {
+          "startTime": 15036.5,
+          "duration": 72
+        },
+        {
+          "startTime": 15133.899999976158,
+          "duration": 78
+        },
+        {
+          "startTime": 15234.399999976158,
+          "duration": 67
+        },
+        {
+          "startTime": 15324.199999928474,
+          "duration": 65
+        },
+        {
+          "startTime": 15411.099999904633,
+          "duration": 2559
+        },
+        {
+          "startTime": 17979.799999952316,
+          "duration": 141
+        },
+        {
+          "startTime": 18197,
+          "duration": 109
+        },
+        {
+          "startTime": 18429.299999952316,
+          "duration": 64
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1154,
+      "pendingMedia": 0,
+      "peakPendingMedia": 12,
+      "mediaFailures": 0,
+      "eligiblePeopleAtYear": null
+    },
+    {
+      "phase": "enter-sparse-timeline",
+      "measuredMs": 560.8999999761581,
+      "ScriptDurationMs": 163.22899999999942,
+      "TaskDurationMs": 480.7649999999981,
+      "LayoutDurationMs": 83.365,
+      "RecalcStyleDurationMs": 64.54400000000001,
+      "layoutCount": 7,
+      "styleCount": 10,
+      "mainThreadHeapBytes": 71915792,
+      "frames": {
+        "count": 7,
+        "p95Ms": 283.59999999999854,
+        "maxMs": 283.59999999999854,
+        "over50Ms": 2
+      },
+      "longTasks": [
+        {
+          "startTime": 25287.5,
+          "duration": 270
+        },
+        {
+          "startTime": 25592.399999976158,
+          "duration": 62
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1156,
+      "pendingMedia": 0,
+      "peakPendingMedia": 12,
+      "mediaFailures": 0,
+      "year": 1750,
+      "domNodes": 356,
+      "timelineDomNodes": 94,
+      "mountedRows": 2,
+      "mountedActiveRows": 2,
+      "exitingRows": 0,
+      "screenRows": 2,
+      "screenPersonIds": [
+        "f-0",
+        "f-7"
+      ],
+      "mountedEvents": 2,
+      "visiblePortraits": 2,
+      "loadedVisiblePortraits": 2,
+      "summary": "2 человека · 2 события",
+      "scrollLeft": 120,
+      "scrollTop": 0,
+      "scrollHeight": 586,
+      "scrollWidth": 4712,
+      "viewport": {
+        "width": 1280,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 2
+    },
+    {
+      "phase": "sparse-year-settled",
+      "measuredMs": null,
+      "ScriptDurationMs": 0,
+      "TaskDurationMs": 0,
+      "LayoutDurationMs": 0,
+      "RecalcStyleDurationMs": 0,
+      "layoutCount": 0,
+      "styleCount": 0,
+      "mainThreadHeapBytes": 72200260,
+      "frames": {
+        "count": 21,
+        "p95Ms": 183.5,
+        "maxMs": 283.59999999999854,
+        "over50Ms": 3
+      },
+      "longTasks": [
+        {
+          "startTime": 25287.5,
+          "duration": 270
+        },
+        {
+          "startTime": 25592.399999976158,
+          "duration": 62
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1156,
+      "pendingMedia": 0,
+      "peakPendingMedia": 12,
+      "mediaFailures": 0,
+      "year": 1750,
+      "domNodes": 356,
+      "timelineDomNodes": 94,
+      "mountedRows": 2,
+      "mountedActiveRows": 2,
+      "exitingRows": 0,
+      "screenRows": 2,
+      "screenPersonIds": [
+        "f-0",
+        "f-7"
+      ],
+      "mountedEvents": 2,
+      "visiblePortraits": 2,
+      "loadedVisiblePortraits": 2,
+      "summary": "2 человека · 2 события",
+      "scrollLeft": 120,
+      "scrollTop": 0,
+      "scrollHeight": 586,
+      "scrollWidth": 4712,
+      "viewport": {
+        "width": 1280,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 2
+    },
+    {
+      "phase": "jump-year-2020",
+      "measuredMs": 497.7999999523163,
+      "ScriptDurationMs": 60.236999999998986,
+      "TaskDurationMs": 484.21000000000095,
+      "LayoutDurationMs": 23.26599999999998,
+      "RecalcStyleDurationMs": 34.772,
+      "layoutCount": 3,
+      "styleCount": 5,
+      "mainThreadHeapBytes": 74576288,
+      "frames": {
+        "count": 8,
+        "p95Ms": 283.59999999999854,
+        "maxMs": 283.59999999999854,
+        "over50Ms": 2
+      },
+      "longTasks": [
+        {
+          "startTime": 26294.199999928474,
+          "duration": 157
+        },
+        {
+          "startTime": 26452.099999904633,
+          "duration": 62
+        },
+        {
+          "startTime": 26576.5,
+          "duration": 65
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1166,
+      "pendingMedia": 10,
+      "peakPendingMedia": 12,
+      "mediaFailures": 0,
+      "year": 2020,
+      "domNodes": 516,
+      "timelineDomNodes": 254,
+      "mountedRows": 12,
+      "mountedActiveRows": 12,
+      "exitingRows": 0,
+      "screenRows": 8,
+      "screenPersonIds": [
+        "f-0",
+        "f-7",
+        "f-1",
+        "f-8",
+        "f-2",
+        "f-9",
+        "f-10",
+        "f-3"
+      ],
+      "mountedEvents": 12,
+      "visiblePortraits": 8,
+      "loadedVisiblePortraits": 2,
+      "summary": "3313 человек · 0 событий",
+      "scrollLeft": 3360,
+      "scrollTop": 0,
+      "scrollHeight": 212162,
+      "scrollWidth": 4712,
+      "viewport": {
+        "width": 1280,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 3313
+    },
+    {
+      "phase": "full-year-2020-settled",
+      "measuredMs": null,
+      "ScriptDurationMs": 0,
+      "TaskDurationMs": 0,
+      "LayoutDurationMs": 0,
+      "RecalcStyleDurationMs": 0,
+      "layoutCount": 0,
+      "styleCount": 0,
+      "mainThreadHeapBytes": 74639500,
+      "frames": {
+        "count": 84,
+        "p95Ms": 16.80000000000291,
+        "maxMs": 283.59999999999854,
+        "over50Ms": 2
+      },
+      "longTasks": [
+        {
+          "startTime": 26294.199999928474,
+          "duration": 157
+        },
+        {
+          "startTime": 26452.099999904633,
+          "duration": 62
+        },
+        {
+          "startTime": 26576.5,
+          "duration": 65
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1166,
+      "pendingMedia": 0,
+      "peakPendingMedia": 12,
+      "mediaFailures": 0,
+      "year": 2020,
+      "domNodes": 516,
+      "timelineDomNodes": 254,
+      "mountedRows": 12,
+      "mountedActiveRows": 12,
+      "exitingRows": 0,
+      "screenRows": 8,
+      "screenPersonIds": [
+        "f-0",
+        "f-7",
+        "f-1",
+        "f-8",
+        "f-2",
+        "f-9",
+        "f-10",
+        "f-3"
+      ],
+      "mountedEvents": 12,
+      "visiblePortraits": 8,
+      "loadedVisiblePortraits": 8,
+      "summary": "3313 человек · 0 событий",
+      "scrollLeft": 3360,
+      "scrollTop": 0,
+      "scrollHeight": 212162,
+      "scrollWidth": 4712,
+      "viewport": {
+        "width": 1280,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 3313
+    },
+    {
+      "phase": "horizontal-years",
+      "measuredMs": 1208.1000000238419,
+      "ScriptDurationMs": 342.1039999999991,
+      "TaskDurationMs": 1009.0930000000001,
+      "LayoutDurationMs": 51.11499999999997,
+      "RecalcStyleDurationMs": 290.20199999999994,
+      "layoutCount": 40,
+      "styleCount": 44,
+      "mainThreadHeapBytes": 86251200,
+      "frames": {
+        "count": 64,
+        "p95Ms": 33.39999999999782,
+        "maxMs": 33.5,
+        "over50Ms": 0
+      },
+      "longTasks": [],
+      "workerRequests": 1,
+      "mediaRequests": 1166,
+      "pendingMedia": 0,
+      "peakPendingMedia": 12,
+      "mediaFailures": 0,
+      "year": 2020,
+      "domNodes": 516,
+      "timelineDomNodes": 254,
+      "mountedRows": 12,
+      "mountedActiveRows": 12,
+      "exitingRows": 0,
+      "screenRows": 8,
+      "screenPersonIds": [
+        "f-0",
+        "f-7",
+        "f-1",
+        "f-8",
+        "f-2",
+        "f-9",
+        "f-10",
+        "f-3"
+      ],
+      "mountedEvents": 12,
+      "visiblePortraits": 8,
+      "loadedVisiblePortraits": 8,
+      "summary": "3313 человек · 0 событий",
+      "scrollLeft": 3360,
+      "scrollTop": 0,
+      "scrollHeight": 212162,
+      "scrollWidth": 4712,
+      "viewport": {
+        "width": 1280,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 3313
+    },
+    {
+      "phase": "year-scroll-settled",
+      "measuredMs": null,
+      "ScriptDurationMs": 0,
+      "TaskDurationMs": 0,
+      "LayoutDurationMs": 0,
+      "RecalcStyleDurationMs": 0,
+      "layoutCount": 0,
+      "styleCount": 0,
+      "mainThreadHeapBytes": 86309600,
+      "frames": {
+        "count": 86,
+        "p95Ms": 33.39999999999782,
+        "maxMs": 33.5,
+        "over50Ms": 0
+      },
+      "longTasks": [],
+      "workerRequests": 1,
+      "mediaRequests": 1166,
+      "pendingMedia": 0,
+      "peakPendingMedia": 12,
+      "mediaFailures": 0,
+      "year": 2020,
+      "domNodes": 516,
+      "timelineDomNodes": 254,
+      "mountedRows": 12,
+      "mountedActiveRows": 12,
+      "exitingRows": 0,
+      "screenRows": 8,
+      "screenPersonIds": [
+        "f-0",
+        "f-7",
+        "f-1",
+        "f-8",
+        "f-2",
+        "f-9",
+        "f-10",
+        "f-3"
+      ],
+      "mountedEvents": 12,
+      "visiblePortraits": 8,
+      "loadedVisiblePortraits": 8,
+      "summary": "3313 человек · 0 событий",
+      "scrollLeft": 3360,
+      "scrollTop": 0,
+      "scrollHeight": 212162,
+      "scrollWidth": 4712,
+      "viewport": {
+        "width": 1280,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 3313
+    },
+    {
+      "phase": "vertical-people",
+      "measuredMs": 1957.8000000715256,
+      "ScriptDurationMs": 343.05499999999967,
+      "TaskDurationMs": 1863.8239999999976,
+      "LayoutDurationMs": 144.473,
+      "RecalcStyleDurationMs": 701.9309999999998,
+      "layoutCount": 31,
+      "styleCount": 41,
+      "mainThreadHeapBytes": 89969676,
+      "frames": {
+        "count": 46,
+        "p95Ms": 83.40000000000146,
+        "maxMs": 116.70000000000073,
+        "over50Ms": 16
+      },
+      "longTasks": [
+        {
+          "startTime": 29781.399999976158,
+          "duration": 54
+        },
+        {
+          "startTime": 29842.299999952316,
+          "duration": 78
+        },
+        {
+          "startTime": 29920.5,
+          "duration": 60
+        },
+        {
+          "startTime": 29989.799999952316,
+          "duration": 51
+        },
+        {
+          "startTime": 30096,
+          "duration": 74
+        },
+        {
+          "startTime": 30260.199999928474,
+          "duration": 50
+        },
+        {
+          "startTime": 30413.299999952316,
+          "duration": 59
+        },
+        {
+          "startTime": 30557.399999976158,
+          "duration": 58
+        },
+        {
+          "startTime": 30707.599999904633,
+          "duration": 50
+        },
+        {
+          "startTime": 30825,
+          "duration": 55
+        },
+        {
+          "startTime": 30972.699999928474,
+          "duration": 67
+        },
+        {
+          "startTime": 31084.599999904633,
+          "duration": 55
+        },
+        {
+          "startTime": 31143.699999928474,
+          "duration": 70
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1279,
+      "pendingMedia": 65,
+      "peakPendingMedia": 67,
+      "mediaFailures": 0,
+      "year": 2020,
+      "domNodes": 613,
+      "timelineDomNodes": 351,
+      "mountedRows": 18,
+      "mountedActiveRows": 18,
+      "exitingRows": 0,
+      "screenRows": 9,
+      "screenPersonIds": [
+        "level-3-16-0",
+        "level-3-2-0",
+        "level-3-5-1",
+        "level-3-8-0",
+        "level-3-0-0",
+        "level-3-11-0",
+        "level-3-13-1",
+        "level-3-16-1",
+        "level-3-2-1"
+      ],
+      "mountedEvents": 18,
+      "visiblePortraits": 9,
+      "loadedVisiblePortraits": 0,
+      "summary": "3313 человек · 0 событий",
+      "scrollLeft": 3360,
+      "scrollTop": 7504,
+      "scrollHeight": 212162,
+      "scrollWidth": 4712,
+      "viewport": {
+        "width": 1280,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 3313
+    },
+    {
+      "phase": "people-scroll-settled",
+      "measuredMs": null,
+      "ScriptDurationMs": 0,
+      "TaskDurationMs": 0,
+      "LayoutDurationMs": 0,
+      "RecalcStyleDurationMs": 0,
+      "layoutCount": 0,
+      "styleCount": 0,
+      "mainThreadHeapBytes": 90084632,
+      "frames": {
+        "count": 241,
+        "p95Ms": 66.69999999999709,
+        "maxMs": 116.70000000000073,
+        "over50Ms": 16
+      },
+      "longTasks": [
+        {
+          "startTime": 29781.399999976158,
+          "duration": 54
+        },
+        {
+          "startTime": 29842.299999952316,
+          "duration": 78
+        },
+        {
+          "startTime": 29920.5,
+          "duration": 60
+        },
+        {
+          "startTime": 29989.799999952316,
+          "duration": 51
+        },
+        {
+          "startTime": 30096,
+          "duration": 74
+        },
+        {
+          "startTime": 30260.199999928474,
+          "duration": 50
+        },
+        {
+          "startTime": 30413.299999952316,
+          "duration": 59
+        },
+        {
+          "startTime": 30557.399999976158,
+          "duration": 58
+        },
+        {
+          "startTime": 30707.599999904633,
+          "duration": 50
+        },
+        {
+          "startTime": 30825,
+          "duration": 55
+        },
+        {
+          "startTime": 30972.699999928474,
+          "duration": 67
+        },
+        {
+          "startTime": 31084.599999904633,
+          "duration": 55
+        },
+        {
+          "startTime": 31143.699999928474,
+          "duration": 70
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1279,
+      "pendingMedia": 0,
+      "peakPendingMedia": 67,
+      "mediaFailures": 0,
+      "year": 2020,
+      "domNodes": 613,
+      "timelineDomNodes": 351,
+      "mountedRows": 18,
+      "mountedActiveRows": 18,
+      "exitingRows": 0,
+      "screenRows": 9,
+      "screenPersonIds": [
+        "level-3-16-0",
+        "level-3-2-0",
+        "level-3-5-1",
+        "level-3-8-0",
+        "level-3-0-0",
+        "level-3-11-0",
+        "level-3-13-1",
+        "level-3-16-1",
+        "level-3-2-1"
+      ],
+      "mountedEvents": 18,
+      "visiblePortraits": 9,
+      "loadedVisiblePortraits": 9,
+      "summary": "3313 человек · 0 событий",
+      "scrollLeft": 3360,
+      "scrollTop": 7504,
+      "scrollHeight": 212162,
+      "scrollWidth": 4712,
+      "viewport": {
+        "width": 1280,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 3313
+    },
+    {
+      "phase": "search-deep-person",
+      "measuredMs": 2425.5,
+      "ScriptDurationMs": 1259.9450000000002,
+      "TaskDurationMs": 2382.0689999999977,
+      "LayoutDurationMs": 141.28499999999994,
+      "RecalcStyleDurationMs": 211.33100000000016,
+      "layoutCount": 37,
+      "styleCount": 32,
+      "mainThreadHeapBytes": 67262388,
+      "frames": {
+        "count": 31,
+        "p95Ms": 417,
+        "maxMs": 867.3999999999942,
+        "over50Ms": 9
+      },
+      "longTasks": [
+        {
+          "startTime": 35117.799999952316,
+          "duration": 410
+        },
+        {
+          "startTime": 35634.199999928474,
+          "duration": 785
+        },
+        {
+          "startTime": 36421.5,
+          "duration": 93
+        },
+        {
+          "startTime": 36648.299999952316,
+          "duration": 67
+        },
+        {
+          "startTime": 36733.39999997616,
+          "duration": 129
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1297,
+      "pendingMedia": 0,
+      "peakPendingMedia": 67,
+      "mediaFailures": 0,
+      "year": 1996,
+      "domNodes": 691,
+      "timelineDomNodes": 287,
+      "mountedRows": 14,
+      "mountedActiveRows": 14,
+      "exitingRows": 0,
+      "screenRows": 8,
+      "screenPersonIds": [
+        "level-11-87-0",
+        "level-11-89-1",
+        "level-11-9-1",
+        "level-11-91-1",
+        "level-11-93-0",
+        "level-11-95-0",
+        "level-11-97-0",
+        "level-11-99-0"
+      ],
+      "mountedEvents": 14,
+      "visiblePortraits": 8,
+      "loadedVisiblePortraits": 8,
+      "summary": "3313 человек · 160 событий",
+      "scrollLeft": 3072,
+      "scrollTop": 211576,
+      "scrollHeight": 212162,
+      "scrollWidth": 4372,
+      "viewport": {
+        "width": 940,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 3313
+    },
+    {
+      "phase": "deep-person-settled",
+      "measuredMs": null,
+      "ScriptDurationMs": 0,
+      "TaskDurationMs": 0,
+      "LayoutDurationMs": 0,
+      "RecalcStyleDurationMs": 0,
+      "layoutCount": 0,
+      "styleCount": 0,
+      "mainThreadHeapBytes": 67333876,
+      "frames": {
+        "count": 53,
+        "p95Ms": 216.90000000000146,
+        "maxMs": 867.3999999999942,
+        "over50Ms": 9
+      },
+      "longTasks": [
+        {
+          "startTime": 35117.799999952316,
+          "duration": 410
+        },
+        {
+          "startTime": 35634.199999928474,
+          "duration": 785
+        },
+        {
+          "startTime": 36421.5,
+          "duration": 93
+        },
+        {
+          "startTime": 36648.299999952316,
+          "duration": 67
+        },
+        {
+          "startTime": 36733.39999997616,
+          "duration": 129
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1297,
+      "pendingMedia": 0,
+      "peakPendingMedia": 67,
+      "mediaFailures": 0,
+      "year": 1996,
+      "domNodes": 691,
+      "timelineDomNodes": 287,
+      "mountedRows": 14,
+      "mountedActiveRows": 14,
+      "exitingRows": 0,
+      "screenRows": 8,
+      "screenPersonIds": [
+        "level-11-87-0",
+        "level-11-89-1",
+        "level-11-9-1",
+        "level-11-91-1",
+        "level-11-93-0",
+        "level-11-95-0",
+        "level-11-97-0",
+        "level-11-99-0"
+      ],
+      "mountedEvents": 14,
+      "visiblePortraits": 8,
+      "loadedVisiblePortraits": 8,
+      "summary": "3313 человек · 160 событий",
+      "scrollLeft": 3072,
+      "scrollTop": 211576,
+      "scrollHeight": 212162,
+      "scrollWidth": 4372,
+      "viewport": {
+        "width": 940,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 3313
+    }
+  ],
+  "errors": []
+}
