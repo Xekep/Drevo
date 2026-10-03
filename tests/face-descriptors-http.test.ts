@@ -218,12 +218,14 @@ test("a face template is not saved after its photo tag changes during detection"
   } as unknown as Awaited<ReturnType<typeof createAuth>>;
   const handler = faceDescriptorsHttp({ archive, auth });
   const transaction = archive.db.transaction.bind(archive.db);
-  let changed = false;
+  let mutateTag: (() => Promise<unknown>) | null = () =>
+    archive.db.prepare("UPDATE photo_tags SET person_id=? WHERE id=?")
+      .run("second", "source-photo:tag-first");
   archive.db.transaction = async (work, readOnly) => {
-    if (!changed) {
-      changed = true;
-      await archive.db.prepare("UPDATE photo_tags SET person_id=? WHERE id=?")
-        .run("second", "source-photo:tag-first");
+    if (mutateTag) {
+      const mutate = mutateTag;
+      mutateTag = null;
+      await mutate();
     }
     return transaction(work, readOnly);
   };
@@ -236,15 +238,25 @@ test("a face template is not saved after its photo tag changes during detection"
   try {
     const address = server.address();
     assert.ok(address && typeof address !== "string");
-    const response = await fetch(`http://127.0.0.1:${address.port}/api/faces/descriptors`, {
+    const post = (id: string) => fetch(`http://127.0.0.1:${address.port}/api/faces/descriptors`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        id: "stale-tag", personId: "first", descriptor: Array(128).fill(0.01),
+        id, personId: "first", descriptor: Array(128).fill(0.01),
         sourcePhotoId: "source-photo", sourceTagId: "tag-first",
         model: "face-api-1.7.15",
       }),
     });
+    let response = await post("stale-person");
+    assert.equal(response.status, 409);
+    assert.match((await response.json()).error, /Отметка на фото изменилась/);
+    assert.equal((await archive.db.prepare("SELECT count(*) AS n FROM face_descriptors").get())?.n, 0);
+
+    await archive.db.prepare("UPDATE photo_tags SET person_id=? WHERE id=?")
+      .run("first", "source-photo:tag-first");
+    mutateTag = () => archive.db.prepare("UPDATE photo_tags SET data=? WHERE id=?")
+      .run(JSON.stringify({ id: "tag-first", personId: "first", x: 0.4, y: 0, width: 1, height: 1 }), "source-photo:tag-first");
+    response = await post("stale-crop");
     assert.equal(response.status, 409);
     assert.match((await response.json()).error, /Отметка на фото изменилась/);
     assert.equal((await archive.db.prepare("SELECT count(*) AS n FROM face_descriptors").get())?.n, 0);

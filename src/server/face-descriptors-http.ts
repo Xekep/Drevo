@@ -331,14 +331,14 @@ export function faceDescriptorsHttp({
         : null;
       const source = await archive.db
         .prepare(
-          `SELECT photo_tags.id AS tag_id, photos.data AS photo
+          `SELECT photo_tags.id AS tag_id, photo_tags.data AS tag, photos.data AS photo
              FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id
             WHERE photos.id=?
               AND photo_tags.person_id=?
               AND (? IS NULL OR photo_tags.id=?)
             ORDER BY photo_tags.rowid DESC
             LIMIT 1`,
-          "SELECT photo_tags.id AS tag_id, photos.data AS photo\n             FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id\n            WHERE photos.id=?\n              AND photo_tags.person_id=?\n              AND (? IS NULL OR photo_tags.id=?)\n            ORDER BY photo_tags.ordinal DESC\n            LIMIT 1",
+          "SELECT photo_tags.id AS tag_id, photo_tags.data AS tag, photos.data AS photo\n             FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id\n            WHERE photos.id=?\n              AND photo_tags.person_id=?\n              AND (? IS NULL OR photo_tags.id=?)\n            ORDER BY photo_tags.ordinal DESC\n            LIMIT 1",
         )
         .get(
           sample.sourcePhotoId,
@@ -369,12 +369,13 @@ export function faceDescriptorsHttp({
         ).get(sample.personId);
         if (!person) return "source";
         const currentSource = await archive.db.prepare(
-          `SELECT photos.data AS photo FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id
+          `SELECT photo_tags.data AS tag, photos.data AS photo FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id
             WHERE photos.id=? AND photo_tags.person_id=? AND photo_tags.id=?`,
-          `SELECT photos.data AS photo FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id
+          `SELECT photo_tags.data AS tag, photos.data AS photo FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id
             WHERE photos.id=? AND photo_tags.person_id=? AND photo_tags.id=? FOR SHARE OF photos,photo_tags`,
         ).get(sample.sourcePhotoId, sample.personId, sourceTagRowId);
-        if (!currentSource) return "source";
+        if (!currentSource || JSON.stringify(currentSource.tag) !== JSON.stringify(source.tag))
+          return "source";
         const currentPhoto = JSON.parse(String(currentSource.photo)) as { createdBy?: string };
         if (currentActor.role !== "admin" && currentPhoto.createdBy !== currentActor.id)
           return "access";
