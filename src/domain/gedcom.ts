@@ -864,6 +864,24 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         .join("\n\n");
       warnings.add("NAME.NSFX сохранено текстом в биографии; структура суффикса имени не перенесена.");
     }
+    const namePrefixes = names.flatMap((name, index) => {
+      const pieces = name.children.filter((piece) =>
+        ["NPFX", "SPFX"].includes(piece.tag) && piece.value.trim());
+      return pieces.length ? [{ name, index, pieces }] : [];
+    });
+    if (namePrefixes.length) {
+      const details = namePrefixes.flatMap(({ name, index, pieces }) => [
+        `NAME ${index + 1}: ${name.value}`,
+        ...(value(name, "TYPE") ? [`TYPE: ${value(name, "TYPE")}`] : []),
+        ...pieces.map((piece) => `${piece.tag}: ${piece.value.trim()}`),
+      ]);
+      p.biography = [p.biography, `Приставки имени из GEDCOM:\n${details.join("\n")}`]
+        .filter(Boolean)
+        .join("\n\n");
+      const tags = [...new Set(namePrefixes.flatMap(({ pieces }) =>
+        pieces.map((piece) => `NAME.${piece.tag}`)))];
+      warnings.add(`${tags.join(" и ")} сохранены текстом в биографии; структура приставок и их связь с вариантом имени не перенесены.`);
+    }
     for (const c of n.children)
       if (
         ![
