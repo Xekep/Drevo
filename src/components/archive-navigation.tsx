@@ -239,10 +239,10 @@ export function ArchiveNavigation({
               href={scopedArchivePath(archivePaths.admin)}
               aria-current={view === "admin" ? "page" : undefined}
               onClick={(event) => navigate(event, "admin")}
-              title="Админская панель"
+              title="Управление деревом"
             >
               <ShieldCheck size={22} />
-              <span>Админка</span>
+              <span>Управление деревом</span>
             </a>
           )}
           {identity && !local && (

@@ -67,11 +67,16 @@ const ADMIN_SECTIONS = [
     ],
   },
   {
-    label: "ИИ и источники",
+    label: "Источники",
+    items: [
+      { id: "sources", label: "Источники", icon: BookOpen },
+    ],
+  },
+  {
+    label: "ИИ и поиск",
     items: [
       { id: "ai", label: "Yandex AI", icon: Bot },
       { id: "resources", label: "Ресурсы поиска", icon: BookOpen },
-      { id: "sources", label: "Источники", icon: BookOpen },
       { id: "mcp", label: "MCP-токены", icon: KeyRound },
     ],
   },
@@ -80,12 +85,15 @@ const ADMIN_SECTIONS = [
     items: [
       { id: "data", label: "Экспорт и импорт", icon: Download },
       { id: "storage", label: "Хранилище", icon: DatabaseBackup },
-      { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
     ],
   },
   {
     label: "История",
     items: [{ id: "audit", label: "Журнал правок", icon: History }],
+  },
+  {
+    label: "Платформа",
+    items: [{ id: "backups", label: "Резервные копии", icon: DatabaseBackup }],
   },
 ] as const;
 const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
@@ -317,6 +325,7 @@ export function AdminPanel({
   family,
   currentUserId,
   platformAdmin,
+  aiAvailable,
   publicationOwnership,
   onClose,
   onChanged,
@@ -327,6 +336,7 @@ export function AdminPanel({
   family: Family;
   currentUserId: string;
   platformAdmin: boolean;
+  aiAvailable: boolean;
   publicationOwnership: PublicationOwnership;
   onClose: () => void;
   onChanged: () => void;
@@ -334,12 +344,13 @@ export function AdminPanel({
   save: (family: Family) => Promise<Family>;
   canEdit: boolean;
 }) {
-  const [section, setSection] = useState(() =>
-    typeof window !== "undefined" &&
-    ((archiveContextAt(window.location.pathname)?.innerPath || window.location.pathname) === adminMatchesPath ||
+  const [section, setSection] = useState(() => {
+    if (typeof window === "undefined") return "users";
+    return (archiveContextAt(window.location.pathname)?.innerPath || window.location.pathname) === adminMatchesPath ||
       adminMatchTargetAt(window.location.pathname) ||
-      adminMatchSourceAt(window.location.pathname))
-      ? "matches" : "users"),
+      adminMatchSourceAt(window.location.pathname)
+      ? "matches" : new URLSearchParams(window.location.search).get("section") || "users";
+  }),
     [users, setUsers] = useState<ArchiveUser[]>([]),
     [usersTotal, setUsersTotal] = useState(0),
     [usersNext, setUsersNext] = useState<string | null>(null),
@@ -352,12 +363,27 @@ export function AdminPanel({
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
   const [auditActor, setAuditActor] = useState("");
+  const visibleGroups = ADMIN_SECTIONS.map((group) => ({
+    ...group,
+    items: group.items.filter(({ id }) =>
+      id === "backups" ? platformAdmin :
+      id === "ai" || id === "resources" || id === "mcp" ? aiAvailable : true),
+  })).filter((group) => group.items.length > 0);
+  const visibleSection = visibleGroups.some((group) => group.items.some((item) => item.id === section))
+    ? section : "users";
   const selectSection = (next: string) => {
+    if (!visibleGroups.some((group) => group.items.some((item) => item.id === next))) return;
     setSection(next);
     setNotice("");
     const path = scopedArchivePath(next === "matches" ? adminMatchesPath : archivePaths.admin);
-    if (window.location.pathname !== path) window.history.replaceState(window.history.state, "", path);
+    const url = next === "users" || next === "matches" ? path : `${path}?section=${next}`;
+    if (window.location.pathname + window.location.search !== url)
+      window.history.replaceState(window.history.state, "", url);
   };
+  useEffect(() => {
+    if (visibleSection !== section)
+      window.history.replaceState(window.history.state, "", scopedArchivePath(archivePaths.admin));
+  }, [section, visibleSection]);
   useEffect(() => {
     const controller = new AbortController();
     void archiveFetch("/api/settings", { signal: controller.signal })
@@ -430,23 +456,21 @@ export function AdminPanel({
           </span>
           <span>
             <small>DREVO</small>
-            <b>Управление архивом</b>
+            <b>Управление деревом</b>
           </span>
         </div>
         <label className="admin-mobile-section" htmlFor="admin-section-select">
           Раздел
           <select
             id="admin-section-select"
-            value={section}
+            value={visibleSection}
             onChange={(event) => {
               selectSection(event.target.value);
             }}
           >
-            {ADMIN_SECTIONS.map((group) => (
+            {visibleGroups.map((group) => (
               <optgroup key={group.label} label={group.label}>
-                {group.items
-                  .filter(({ id }) => id !== "backups" || platformAdmin)
-                  .map((item) => (
+                {group.items.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.label}
                     </option>
@@ -456,16 +480,14 @@ export function AdminPanel({
           </select>
         </label>
         <nav aria-label="Разделы админки">
-          {ADMIN_SECTIONS.map((group) => (
+          {visibleGroups.map((group) => (
             <div className="admin-nav-group" key={group.label}>
               <span className="admin-nav-label">{group.label}</span>
-              {group.items
-                .filter(({ id }) => id !== "backups" || platformAdmin)
-                .map(({ id, label, icon: Icon }) => (
+              {group.items.map(({ id, label, icon: Icon }) => (
                   <button
                     key={id}
                     type="button"
-                    aria-current={section === id ? "page" : undefined}
+                    aria-current={visibleSection === id ? "page" : undefined}
                     onClick={() => {
                       selectSection(id);
                     }}
@@ -484,14 +506,14 @@ export function AdminPanel({
       </aside>
       <div className="admin-content">
         <header className="admin-page-header">
-          <span className="section-label">УПРАВЛЕНИЕ АРХИВОМ</span>
-          <h1>{ADMIN_INTRO[section].title}</h1>
+          <span className="section-label">{visibleSection === "backups" ? "УПРАВЛЕНИЕ ПЛАТФОРМОЙ" : "УПРАВЛЕНИЕ ДЕРЕВОМ"}</span>
+          <h1>{ADMIN_INTRO[visibleSection].title}</h1>
           {(publicationOwnership === "owner" ||
-            (section !== "publications" && section !== "matches")) &&
-            <p className="admin-subtitle">{ADMIN_INTRO[section].description}</p>}
+            (visibleSection !== "publications" && visibleSection !== "matches")) &&
+            <p className="admin-subtitle">{ADMIN_INTRO[visibleSection].description}</p>}
         </header>
         {!settings && !error && <p role="status">Загружаем настройки…</p>}
-        {settings && section === "users" && (
+        {settings && visibleSection === "users" && (
           <section className="admin-card archive-form">
             <p>
               Новые пользователи ожидают одобрения. Читатель видит закрытый
@@ -612,7 +634,7 @@ export function AdminPanel({
             )}
           </section>
         )}
-        {section === "shares" && (
+        {visibleSection === "shares" && (
           <section className="admin-card archive-form">
             <h2>Название и описание архива</h2>
             <button type="button" disabled={!canEdit} onClick={onSettings}>
@@ -621,7 +643,7 @@ export function AdminPanel({
             {!canEdit && <small>Редактирование доступно с компьютера.</small>}
           </section>
         )}
-        {settings && section === "shares" && (
+        {settings && visibleSection === "shares" && (
           <form
             className="admin-card archive-form"
             onSubmit={async (e) => {
@@ -675,29 +697,29 @@ export function AdminPanel({
             </footer>
           </form>
         )}
-        {section === "ai" && <AiSettingsAdmin />}
-        {section === "storage" && <StorageLimitsAdmin />}
-        {section === "vk" && <VkAuthAdmin />}
-        {section === "resources" && <ResearchResourcesAdmin />}
-        {section === "sources" && <SourceCatalogAdmin family={family} onChanged={onChanged} />}
-        {section === "mcp" && <McpTokenAdmin />}
-        {section === "shares" && <ShareCatalog />}
-        {section === "publications" && (publicationOwnership === "owner"
+        {visibleSection === "ai" && <AiSettingsAdmin />}
+        {visibleSection === "storage" && <StorageLimitsAdmin />}
+        {visibleSection === "vk" && <VkAuthAdmin />}
+        {visibleSection === "resources" && <ResearchResourcesAdmin />}
+        {visibleSection === "sources" && <SourceCatalogAdmin family={family} onChanged={onChanged} />}
+        {visibleSection === "mcp" && <McpTokenAdmin />}
+        {visibleSection === "shares" && <ShareCatalog />}
+        {visibleSection === "publications" && (publicationOwnership === "owner"
           ? <PublicationAdmin family={family} />
           : <section className="admin-card archive-form"><p role="status">{
             publicationOwnership === "checking" ? "Проверяем право на публикацию…"
               : publicationOwnership === "unavailable" ? "Не удалось проверить право на публикацию. Обновите страницу и повторите попытку."
                 : "Публикацией людей управляет владелец дерева."
           }</p></section>)}
-        {section === "matches" && (publicationOwnership === "owner"
+        {visibleSection === "matches" && (publicationOwnership === "owner"
           ? <DiscoveryMatchesAdmin family={family} />
           : <section className="admin-card archive-form"><p role="status">{
             publicationOwnership === "checking" ? "Проверяем право на сопоставление…"
               : publicationOwnership === "unavailable" ? "Не удалось проверить право на сопоставление. Обновите страницу и повторите попытку."
                 : "Связями с другими деревьями управляет владелец дерева."
           }</p></section>)}
-        {section === "invitations" && <InvitationsAdmin />}
-        {section === "audit" && (
+        {visibleSection === "invitations" && <InvitationsAdmin />}
+        {visibleSection === "audit" && (
           <section className="admin-card archive-form">
             <label>
               Кто изменил
@@ -717,10 +739,10 @@ export function AdminPanel({
             <AuditLog key={auditActor} actorId={auditActor || undefined} />
           </section>
         )}
-        {section === "backups" && platformAdmin && (
+        {visibleSection === "backups" && platformAdmin && (
           <BackupAdmin onRestored={onChanged} />
         )}
-        {section === "data" && (
+        {visibleSection === "data" && (
           <section className="admin-card archive-form">
             <GedcomTransfer
               onImported={onChanged}
@@ -729,12 +751,12 @@ export function AdminPanel({
             />
           </section>
         )}
-        {error && section !== "users" && (
+        {error && visibleSection !== "users" && (
           <p role="alert" className="form-error">
             {error}
           </p>
         )}
-        {notice && section !== "users" && (
+        {notice && visibleSection !== "users" && (
           <p className="admin-notice" role="status">
             {notice}
           </p>

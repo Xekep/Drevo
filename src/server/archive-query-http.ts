@@ -18,6 +18,7 @@ import { DEFAULT_TREE_PREFERENCES } from "../domain/tree-preferences.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 import { AccountSessionBusy, AccountSessionExpired, assertActiveAccountSession } from "./account-session-guard.ts";
+import { accountAiAccess } from "./account-ai-access.ts";
 
 export function archiveQueryHttp({
   archive,
@@ -51,6 +52,16 @@ export function archiveQueryHttp({
     const data = await archive.read();
     return { ...data, family: projectFamilyForUser(data.family, user) };
   };
+  const exposedUser = async (
+    req: IncomingMessage,
+    user: Awaited<ReturnType<typeof auth.currentUser>>,
+  ) => user ? {
+    ...user,
+    platformAdmin: await auth.isPlatformAdmin(req),
+    aiAvailable: user.approved === true && user.role === "admin"
+      ? await accountAiAccess(archive.db, user.id, auth.local)
+      : false,
+  } : null;
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -89,9 +100,7 @@ export function archiveQueryHttp({
       ...data,
       canEdit: await auth.canEdit(req),
       local: auth.local,
-      user: user
-        ? { ...user, platformAdmin: await auth.isPlatformAdmin(req) }
-        : null,
+      user: await exposedUser(req, user),
       readTree,
       readPhotos,
       reverseTimeline:
@@ -330,15 +339,12 @@ export function archiveQueryHttp({
           : null;
         const pageToken = `${data.revision}:${Number(readTree)}:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
         const canEdit = await auth.canEdit(req);
-        const platformAdmin = visitor ? await auth.isPlatformAdmin(req) : false;
         return deliverArchiveJson({
           family: data.family,
           revision: data.revision,
           canEdit,
           local: auth.local,
-          user: visitor
-            ? { ...visitor, platformAdmin }
-            : null,
+          user: await exposedUser(req, visitor),
           readTree,
           readPhotos,
           reverseTimeline:
