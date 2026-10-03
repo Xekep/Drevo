@@ -64,6 +64,11 @@ export function PublishPersonDialog({
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
+      if (data.saved === true && data.refreshRequired === true) {
+        setStatus(null);
+        setError("Изменение сохранено, но доступ к архиву мог измениться. Обновите архив.");
+        return;
+      }
       setStatus(data);
       setFields(data.fields);
       onStatus(data.published);

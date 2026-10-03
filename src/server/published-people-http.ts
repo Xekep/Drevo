@@ -68,6 +68,7 @@ export function publishedPeopleHttp({
   beforeSearchDelivery,
   beforeAdminFinalLock,
   beforeAdminBatchFinalLock,
+  beforeAdminMutationFinalLock,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -77,6 +78,7 @@ export function publishedPeopleHttp({
   beforeSearchDelivery?: () => Promise<void>;
   beforeAdminFinalLock?: () => Promise<void>;
   beforeAdminBatchFinalLock?: () => Promise<void>;
+  beforeAdminMutationFinalLock?: () => Promise<void>;
 }) {
   const limiter = createSharedRequestLimiter(archive.db, "published-people", { windowMs: 60_000, limit: 60 });
   const isOwner = async (userId: string, lock = false) => {
@@ -140,9 +142,10 @@ export function publishedPeopleHttp({
       if (!disconnected) throw error;
     } finally { clearTimeout(timeout); }
   };
-  const deliverOwnerBatch = async (req: IncomingMessage, res: ServerResponse,
-    initialUserId: string, value: (userId: string) => Promise<unknown | null>) => {
-    await beforeAdminBatchFinalLock?.();
+  const deliverOwnerPublication = async (req: IncomingMessage, res: ServerResponse,
+    initialUserId: string, value: (userId: string) => Promise<unknown | null>,
+    committedWrite = false) => {
+    await (committedWrite ? beforeAdminMutationFinalLock : beforeAdminBatchFinalLock)?.();
     const status = await archive.db.transaction(async () => {
       const freshUser = await auth.currentUser(req);
       if (!freshUser) return 401;
@@ -169,9 +172,26 @@ export function publishedPeopleHttp({
       if (error instanceof AccountSessionExpired) return 401;
       if (error instanceof AccountSessionBusy ||
           (error as { code?: string }).code === "55P03") return 409;
+      if (committedWrite) {
+        const code = error && typeof error === "object"
+          ? (error as { code?: unknown }).code : undefined;
+        console.error("publication_post_commit_delivery_failed", {
+          name: error instanceof Error ? error.name : "Unknown",
+          code: typeof code === "string" && /^[0-9A-Z]{5}$/.test(code) ? code : undefined,
+        });
+        return 409;
+      }
       throw error;
     });
-    return status === 200 ? true : json(res, status, { error: status === 401
+    if (status === 200) return true;
+    if (committedWrite) {
+      if (res.headersSent || res.destroyed) {
+        res.destroy();
+        return true;
+      }
+      return json(res, 200, { saved: true, refreshRequired: true });
+    }
+    return json(res, status, { error: status === 401
       ? "Сессия завершена. Войдите снова" : status === 403
         ? "Доступ к публикации отозван" : "Данные заняты или изменились. Повторите запрос" });
   };
@@ -219,7 +239,7 @@ export function publishedPeopleHttp({
           (action === "publish" && !fields))
         return json(res, 400, { error: "Некорректный список людей или выбор полей" });
       if (archive.db.kind === "postgres")
-        return deliverOwnerBatch(req, res, user.id, async (userId) =>
+        return deliverOwnerPublication(req, res, user.id, async (userId) =>
           await reviewSelection(action, ids, fields, userId));
       const result = await archive.db.transaction(async () => {
         const freshUser = await auth.currentUser(req);
@@ -238,7 +258,7 @@ export function publishedPeopleHttp({
         const ids = batchIds(url.searchParams.getAll("id"));
         if (!ids) return json(res, 400, { error: "Укажите от 1 до 50 людей" });
         if (archive.db.kind === "postgres")
-          return deliverOwnerBatch(req, res, user.id, async () =>
+          return deliverOwnerPublication(req, res, user.id, async () =>
             ({ fields: Object.fromEntries(await store.fieldsForIds(ids)) }));
         return json(res, 200, { fields: Object.fromEntries(await store.fieldsForIds(ids)) });
       }
@@ -408,6 +428,19 @@ export function publishedPeopleHttp({
         if (result.status === "missing") return json(res, 404, { error: "Человек не найден" });
         if (result.status === "living") return json(res, 400, { error: "Публикация доступна только для умерших людей" });
         currentPerson = result.person;
+        if (archive.db.kind === "postgres")
+          return deliverOwnerPublication(req, res, user.id, async () => {
+            const freshPerson = (await archive.read()).family.people.find((entry) => entry.id === personId);
+            if (!freshPerson) return null;
+            const currentFields = await store.getFields(personId);
+            return {
+              archiveId: archive.db.archiveId,
+              published: Boolean(currentFields),
+              publishable: publishablePerson(freshPerson),
+              fields: currentFields || defaultPublicationFields,
+              person: publicPerson(freshPerson, currentFields || defaultPublicationFields),
+            };
+          }, true);
       } else if (req.method !== "GET") {
         return json(res, 405, { error: "Метод не поддерживается" });
       }
