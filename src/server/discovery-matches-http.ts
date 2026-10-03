@@ -382,10 +382,13 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
           ...fuzzy.surnames.flatMap((value) => [value,value]));
       }
       for (const place of places) {
+        const column = place.field === "birthPlace" ? "birth_place" : "death_place";
         branches.push(`SELECT archive_id,person_id FROM discovery_people
           WHERE archive_id<>? AND search_vector @@ to_tsquery('simple',?)
+            AND to_tsvector('simple', replace(lower(coalesce(${column},'')), 'ё','е'))
+              @@ to_tsquery('simple',?)
             AND birth_year BETWEEN ? AND ?`);
-        lookupArgs.push(archiveId,place.terms,place.from,place.to);
+        lookupArgs.push(archiveId,place.terms,place.locality,place.from,place.to);
       }
       // Each branch starts with a GIN index. Only opt-in projections are read.
       const candidateSql = `WITH candidate_keys AS (${branches.join(" UNION ")})

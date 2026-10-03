@@ -76,7 +76,8 @@ test("partially matching published places are clues, distant places are conflict
 test("published place and year can find a changed surname without guessing identity", () => {
   const source = { name: "Иванова Анна", birthYear: "1900", birthPlace: "г. Москва" };
   assert.deepEqual(candidatePlaceQueries(source),
-    [{ terms: "анна & москва", from: "1898", to: "1902" }]);
+    [{ field: "birthPlace", terms: "анна & москва", locality: "москва",
+      from: "1898", to: "1902" }]);
   const evidence = candidateEvidence(source,
     { name: "Петрова Анна", birthYear: "1901", birthPlace: "Москва" })!;
   assert.ok(evidence.reasons.includes("Место рождения совпадает"));
@@ -88,7 +89,8 @@ test("a shared country or region cannot stand in for a shared settlement", () =>
   const source = { name: "Иванова Анна", birthYear: "1900",
     birthPlace: "Россия, Свердловская область, Нижний Тагил" };
   assert.deepEqual(candidatePlaceQueries(source),
-    [{ terms: "анна & нижний & тагил", from: "1898", to: "1902" }]);
+    [{ field: "birthPlace", terms: "анна & нижний & тагил", locality: "нижний & тагил",
+      from: "1898", to: "1902" }]);
   const unrelated = { name: "Петрова Анна", birthYear: "1901",
     birthPlace: "Россия, Свердловская область, Екатеринбург" };
   assert.equal(candidateEvidence(source,unrelated), null);
@@ -99,19 +101,21 @@ test("a shared country or region cannot stand in for a shared settlement", () =>
   "a death-year clue alone cannot satisfy the changed-surname birth-year evidence");
   assert.deepEqual(candidatePlaceQueries({ name: "Шульц Анна", birthYear: "1900",
     birthPlace: "Россия, Свердловская область", deathPlace: "д. Дубровка, Пермь" }),
-  [{ terms: "анна & дубровка", from: "1898", to: "1902" }]);
+  [{ field: "deathPlace", terms: "анна & дубровка", locality: "дубровка",
+    from: "1898", to: "1902" }]);
 });
 
 test("both published settlements can independently retrieve a changed surname", () => {
   const source = { name: "Иванова Анна", birthYear: "1900",
     birthPlace: "Москва", deathPlace: "Казань" };
   assert.deepEqual(candidatePlaceQueries(source), [
-    { terms: "анна & москва", from: "1898", to: "1902" },
-    { terms: "анна & казань", from: "1898", to: "1902" },
+    { field: "birthPlace", terms: "анна & москва", locality: "москва", from: "1898", to: "1902" },
+    { field: "deathPlace", terms: "анна & казань", locality: "казань", from: "1898", to: "1902" },
   ]);
   assert.ok(candidateEvidence(source,{ name: "Петрова Анна", birthYear: "1901",
     deathPlace: "Казань" })!.reasons.includes("Место смерти совпадает"));
   assert.deepEqual(candidatePlaceQueries({ ...source, deathPlace: "Москва" }),
-    [{ terms: "анна & москва", from: "1898", to: "1902" }],
-  "the same locality needs only one indexed lookup");
+    [{ field: "birthPlace", terms: "анна & москва", locality: "москва", from: "1898", to: "1902" },
+      { field: "deathPlace", terms: "анна & москва", locality: "москва", from: "1898", to: "1902" }],
+  "both opt-in place roles need a lookup even when the settlement is identical");
 });
