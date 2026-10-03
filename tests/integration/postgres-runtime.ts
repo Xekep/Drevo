@@ -5350,7 +5350,10 @@ try {
   const scopedDocumentId = randomUUID();
   const scopedDocumentFile = `${randomUUID()}.pdf`;
   const scopedUploads = join(dirname(source), "uploads");
-  writeFileSync(join(scopedUploads, scopedDocumentFile), "%PDF-1.4\nscoped-document-secret");
+  const scopedDocumentBytes = Buffer.concat([
+    Buffer.from("%PDF-1.4\nscoped-document-secret\n"), Buffer.alloc(128 * 1024, 0x58),
+  ]);
+  writeFileSync(join(scopedUploads, scopedDocumentFile), scopedDocumentBytes);
   await client.query(
     `INSERT INTO relations(id,ordinal,source,target,type)
      VALUES('document-access-parent',(SELECT COALESCE(max(ordinal),0)+1 FROM relations),
@@ -5360,8 +5363,8 @@ try {
   await client.query(
     `INSERT INTO documents(id,ordinal,title,title_search,file_name,file_size,uploaded_by,created_at)
      VALUES($1,(SELECT COALESCE(max(ordinal),0)+1 FROM documents),
-       'Scoped document','scoped document',$2,32,'owner',$3)`,
-    [scopedDocumentId, scopedDocumentFile, new Date().toISOString()],
+       'Scoped document','scoped document',$2,$3,'owner',$4)`,
+    [scopedDocumentId, scopedDocumentFile, scopedDocumentBytes.length, new Date().toISOString()],
   );
   await client.query(
     "INSERT INTO document_people(document_id,person_id) VALUES($1,'account-export-hidden')",
@@ -5372,8 +5375,203 @@ try {
   assert.equal(firstDocumentDownload.status, 200,
     "the scoped reader initially sees a document linked to an ancestor");
   assert.match(await firstDocumentDownload.text(), /scoped-document-secret/);
+  const parallelDocuments = await Promise.race([
+    Promise.all(Array.from({ length: 12 }, async () => {
+      const response = await fetch(securedBase + scopedDocumentPath, { headers });
+      return { status: response.status, bytes: (await response.arrayBuffer()).byteLength };
+    })),
+    new Promise<never>((_, reject) => setTimeout(() =>
+      reject(new Error("Parallel PDF downloads exhausted the PostgreSQL pool")), 10_000)),
+  ]);
+  assert.equal(parallelDocuments.length, 12);
+  assert.ok(parallelDocuments.every((download) =>
+    download.status === 200 && download.bytes === scopedDocumentBytes.length));
   const documentAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
     process.env.PUBLIC_ORIGIN);
+  let releaseDocumentFile!: () => void;
+  let documentFileReady!: () => void;
+  const documentFileGate = new Promise<void>((resolve) => { releaseDocumentFile = resolve; });
+  const documentFileReached = new Promise<void>((resolve) => { documentFileReady = resolve; });
+  const documentDelivery = documentsHttp({
+    archive: app.archive, auth: documentAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeFileDelivery: async () => { documentFileReady(); await documentFileGate; },
+  });
+  const documentDeliveryServer = createServer((req, res) => {
+    void documentDelivery(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => documentDeliveryServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const localBase = `http://127.0.0.1:${(documentDeliveryServer.address() as { port: number }).port}`;
+    const pendingDocument = fetch(localBase + scopedDocumentPath, { headers });
+    await Promise.race([documentFileReached,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("PDF delivery barrier missed")), 10_000))]);
+    const revokedDocumentReader = await fetch(securedBase + "/api/users/reader", {
+      method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }),
+    });
+    assert.equal(revokedDocumentReader.status, 200);
+    releaseDocumentFile();
+    const deliveredDocument = await pendingDocument;
+    assert.equal(deliveredDocument.status, 404,
+      "a completed membership revocation must prevent PDF delivery");
+    assert.doesNotMatch(await deliveredDocument.text(), /scoped-document-secret/);
+    assert.equal((await fetch(localBase + scopedDocumentPath, { headers })).status, 401);
+  } finally {
+    releaseDocumentFile();
+    documentDeliveryServer.closeAllConnections();
+    await new Promise<void>((resolve) => documentDeliveryServer.close(() => resolve()));
+    await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id='reader'");
+  }
+  let releaseLockedDocument!: () => void;
+  let lockedDocumentReady!: () => void;
+  const lockedDocumentGate = new Promise<void>((resolve) => { releaseLockedDocument = resolve; });
+  const lockedDocumentReached = new Promise<void>((resolve) => { lockedDocumentReady = resolve; });
+  const lockedDocumentDelivery = documentsHttp({
+    archive: app.archive, auth: documentAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeLockedFileDelivery: async () => {
+      lockedDocumentReady();
+      await lockedDocumentGate;
+    },
+  });
+  const lockedDocumentServer = createServer((req, res) => {
+    void lockedDocumentDelivery(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => lockedDocumentServer.listen(0, "127.0.0.1", resolve));
+  let pendingDocumentRevoke: Promise<Response> | undefined;
+  try {
+    const localBase = `http://127.0.0.1:${(lockedDocumentServer.address() as { port: number }).port}`;
+    const pendingDocument = fetch(localBase + scopedDocumentPath, { headers });
+    await Promise.race([lockedDocumentReached,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Locked PDF barrier missed")), 10_000))]);
+    pendingDocumentRevoke = fetch(securedBase + "/api/users/reader", {
+      method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }),
+    });
+    assert.equal(await Promise.race([pendingDocumentRevoke.then(() => "completed"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("waiting"), 250))]), "waiting",
+    "membership revocation must wait until the first PDF bytes are handed off");
+    releaseLockedDocument();
+    const deliveredDocument = await pendingDocument;
+    assert.equal(deliveredDocument.status, 200);
+    assert.match(await deliveredDocument.text(), /scoped-document-secret/);
+    assert.equal((await pendingDocumentRevoke).status, 200);
+    assert.equal((await fetch(localBase + scopedDocumentPath, { headers })).status, 401);
+  } finally {
+    releaseLockedDocument();
+    lockedDocumentServer.closeAllConnections();
+    await pendingDocumentRevoke?.catch(() => {});
+    await new Promise<void>((resolve) => lockedDocumentServer.close(() => resolve()));
+    await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id='reader'");
+  }
+  const documentSessionToken = newSessionToken();
+  await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'reader',$2)",
+    [sessionTokenHash(documentSessionToken), Date.now() + 60_000]);
+  const documentSessionHeaders = { ...headers, Cookie: `drevo_session=${documentSessionToken}` };
+  let releaseSessionDocument!: () => void;
+  let sessionDocumentReady!: () => void;
+  const sessionDocumentGate = new Promise<void>((resolve) => { releaseSessionDocument = resolve; });
+  const sessionDocumentReached = new Promise<void>((resolve) => { sessionDocumentReady = resolve; });
+  const sessionDocumentDelivery = documentsHttp({
+    archive: app.archive, auth: documentAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeFileDelivery: async () => { sessionDocumentReady(); await sessionDocumentGate; },
+  });
+  const sessionDocumentServer = createServer((req, res) => {
+    void sessionDocumentDelivery(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => sessionDocumentServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const localBase = `http://127.0.0.1:${(sessionDocumentServer.address() as { port: number }).port}`;
+    const pendingDocument = fetch(localBase + scopedDocumentPath, { headers: documentSessionHeaders });
+    await Promise.race([sessionDocumentReached,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Session PDF barrier missed")), 10_000))]);
+    assert.equal((await fetch(securedBase + "/auth/logout", {
+      method: "POST", headers: documentSessionHeaders,
+    })).status, 200);
+    releaseSessionDocument();
+    const deliveredDocument = await pendingDocument;
+    assert.equal(deliveredDocument.status, 404,
+      "a completed session revocation must prevent PDF delivery");
+    assert.doesNotMatch(await deliveredDocument.text(), /scoped-document-secret/);
+    assert.equal((await fetch(localBase + scopedDocumentPath,
+      { headers: documentSessionHeaders })).status, 401);
+  } finally {
+    releaseSessionDocument();
+    sessionDocumentServer.closeAllConnections();
+    await new Promise<void>((resolve) => sessionDocumentServer.close(() => resolve()));
+    await client.query("DELETE FROM account_sessions WHERE token_hash=$1",
+      [sessionTokenHash(documentSessionToken)]);
+  }
+  let releaseDocumentRemainder!: () => void;
+  let documentRemainderReady!: () => void;
+  const documentRemainderGate = new Promise<void>((resolve) => { releaseDocumentRemainder = resolve; });
+  const documentRemainderReached = new Promise<void>((resolve) => { documentRemainderReady = resolve; });
+  const stalledDocumentDelivery = documentsHttp({
+    archive: app.archive, auth: documentAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeStreamRemainder: async () => { documentRemainderReady(); await documentRemainderGate; },
+  });
+  const stalledDocumentServer = createServer((req, res) => {
+    void stalledDocumentDelivery(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => stalledDocumentServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const localBase = `http://127.0.0.1:${(stalledDocumentServer.address() as { port: number }).port}`;
+    const stalled = fetch(localBase + scopedDocumentPath, { headers })
+      .then((response) => response.arrayBuffer());
+    await Promise.race([documentRemainderReached,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("PDF remainder barrier missed")), 10_000))]);
+    const afterStartRevoke = await fetch(securedBase + "/api/users/reader", {
+      method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }),
+    });
+    assert.equal(afterStartRevoke.status, 200,
+      "a slow PDF remainder must not retain the archive lock or PG connection");
+    assert.equal((await fetch(securedBase + scopedDocumentPath, { headers })).status, 401);
+    releaseDocumentRemainder();
+    assert.equal((await stalled).byteLength, scopedDocumentBytes.length,
+      "a download that began before revocation may finish its remaining bytes");
+  } finally {
+    releaseDocumentRemainder();
+    stalledDocumentServer.closeAllConnections();
+    await new Promise<void>((resolve) => stalledDocumentServer.close(() => resolve()));
+    await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id='reader'");
+  }
+  let releaseAbortedDocument!: () => void;
+  let abortedDocumentReady!: () => void;
+  const abortedDocumentGate = new Promise<void>((resolve) => { releaseAbortedDocument = resolve; });
+  const abortedDocumentReached = new Promise<void>((resolve) => { abortedDocumentReady = resolve; });
+  const abortedDocumentDelivery = documentsHttp({
+    archive: app.archive, auth: documentAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeStreamRemainder: async () => { abortedDocumentReady(); await abortedDocumentGate; },
+  });
+  const abortedDocumentServer = createServer((req, res) => {
+    void abortedDocumentDelivery(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => abortedDocumentServer.listen(0, "127.0.0.1", resolve));
+  const documentAbortController = new AbortController();
+  try {
+    const localBase = `http://127.0.0.1:${(abortedDocumentServer.address() as { port: number }).port}`;
+    const aborted = fetch(localBase + scopedDocumentPath,
+      { headers, signal: documentAbortController.signal }).then((response) => response.arrayBuffer());
+    await Promise.race([abortedDocumentReached,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("PDF abort barrier missed")), 10_000))]);
+    documentAbortController.abort();
+    releaseAbortedDocument();
+    await assert.rejects(aborted, "a disconnected PDF reader must stop receiving bytes");
+    assert.equal((await fetch(securedBase + scopedDocumentPath, { headers })).status, 200);
+  } finally {
+    documentAbortController.abort();
+    releaseAbortedDocument();
+    abortedDocumentServer.closeAllConnections();
+    await new Promise<void>((resolve) => abortedDocumentServer.close(() => resolve()));
+  }
+  console.log("runtime_document_file_delivery_revocation_ok");
   const raceDocumentDownload = async (
     change: () => Promise<void>,
     path = scopedDocumentPath,
@@ -5460,6 +5658,45 @@ try {
   const visibleTiffPages = await fetch(securedBase + scopedTiffPages, { headers });
   assert.equal(visibleTiffPages.status, 200);
   assert.equal((await visibleTiffPages.json()).pages.length, 3);
+  const raceTiffFinalDelivery = async (path: string) => {
+    let release!: () => void;
+    let reached!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const ready = new Promise<void>((resolve) => { reached = resolve; });
+    const handler = documentsHttp({
+      archive: app!.archive, auth: documentAuth, media: mediaStore(scopedUploads),
+      uploadsDirectory: scopedUploads,
+      beforeFileDelivery: async () => { reached(); await gate; },
+    });
+    const server = createServer((req, res) => {
+      void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const localBase = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+      const pending = fetch(localBase + path, { headers });
+      await Promise.race([ready,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("TIFF delivery barrier missed")), 10_000))]);
+      assert.equal((await fetch(securedBase + "/api/users/reader", {
+        method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }),
+      })).status, 200);
+      release();
+      const response = await pending;
+      assert.equal(response.status, 404,
+        "a completed membership revocation must prevent TIFF reader delivery");
+      assert.equal(response.headers.get("content-type"), "application/json; charset=utf-8");
+      await response.text();
+    } finally {
+      release();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id='reader'");
+    }
+  };
+  await raceTiffFinalDelivery(scopedTiffPages);
+  await raceTiffFinalDelivery(`/api/documents/${scopedTiffId}/file?reader=page&page=1`);
+  console.log("runtime_document_reader_delivery_revocation_ok");
   await raceDocumentDownload(async () => {
     await client.query("DELETE FROM document_people WHERE document_id=$1", [scopedTiffId]);
   }, scopedTiffPages);

@@ -11,8 +11,8 @@ import {
 } from "./document-images.ts";
 import sharp from "sharp";
 import { randomUUID } from "node:crypto";
-import { createReadStream, createWriteStream, mkdirSync } from "node:fs";
-import { readFile, rename, stat, statfs, unlink } from "node:fs/promises";
+import { createWriteStream, mkdirSync } from "node:fs";
+import { open, readFile, rename, stat, statfs, unlink } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import { Transform } from "node:stream";
@@ -263,12 +263,18 @@ export function documentsHttp({
   media,
   uploadsDirectory,
   publicOrigin,
+  beforeFileDelivery,
+  beforeLockedFileDelivery,
+  beforeStreamRemainder,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   media: ReturnType<typeof mediaStore>;
   uploadsDirectory: string;
   publicOrigin?: string;
+  beforeFileDelivery?: () => Promise<void>;
+  beforeLockedFileDelivery?: () => Promise<void>;
+  beforeStreamRemainder?: () => Promise<void>;
 }) {
   mkdirSync(uploadsDirectory, { recursive: true });
   const db = archive.db;
@@ -449,6 +455,88 @@ export function documentsHttp({
     // or rendered TIFF page is being prepared. Check both before responding.
     if ((await archive.meta()).revision !== access.revision) return false;
     return canSee(access, current, (await associations([row.id])).get(row.id) || []);
+  };
+  const deliverFile = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    access: Awaited<ReturnType<typeof visible>>,
+    row: Row,
+    send: () => void,
+  ) => {
+    await beforeFileDelivery?.();
+    if (db.kind !== "postgres" || !db.postgresTransaction) {
+      if (!(await canDeliverFile(req, access, row))) return "denied";
+      send();
+      return "sent";
+    }
+    // Resolve an expired session before acquiring the archive lock: sessionFor
+    // may delete it, while account deletion uses the opposite lock order.
+    const session = auth.local ? null : await auth.accountSession(req);
+    if (!auth.local && (!session || session.accountId !== access.userId))
+      return "denied";
+    const archiveId = db.archiveId;
+    if (!archiveId) return "denied";
+    try {
+      return await db.postgresTransaction(async (client) => {
+        await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
+        // Concurrent downloads can share this row. Archive writes take it
+        // FOR UPDATE before graph, membership and document changes.
+        const archiveRow = await client.query(
+          "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT", [archiveId],
+        );
+        if (!archiveRow.rowCount) return "denied";
+        if (!auth.local) {
+          await client.query("SELECT set_config('drevo.account_id',$1,true)",
+            [session!.accountId]);
+          // Account deletion locks the session before the archive. Never wait
+          // for that reverse order while holding the archive row.
+          const activeSession = await client.query(
+            `SELECT expires_at FROM account_sessions WHERE token_hash=$1 AND user_id=$2
+             FOR SHARE NOWAIT`, [session!.tokenHash, session!.accountId],
+          );
+          if (!activeSession.rowCount ||
+              Number(activeSession.rows[0].expires_at) <= Date.now()) return "denied";
+          const membership = await client.query(
+            `SELECT role,approved,tree_access,person_id FROM archive_memberships
+             WHERE archive_id=$1 AND user_id=$2
+             FOR SHARE NOWAIT`, [archiveId, session!.accountId],
+          );
+          const member = membership.rows[0];
+          if (member?.approved !== true ||
+              JSON.stringify([session!.accountId, member.role,
+                member.tree_access || "all", member.person_id]) !== access.scope)
+            return "denied";
+        }
+        const document = await client.query(
+          `SELECT file_name,uploaded_by FROM documents WHERE id=$1 FOR SHARE NOWAIT`,
+          [row.id],
+        );
+        const current = document.rows[0];
+        if (!current || current.file_name !== row.file_name) return "denied";
+        if (access.scoped) {
+          if (Number(archiveRow.rows[0].revision) !== access.revision) return "denied";
+          const links = await client.query(
+            `SELECT person_id FROM document_people WHERE document_id=$1 FOR SHARE NOWAIT`,
+            [row.id],
+          );
+          const linkedIds = links.rows.map((link) => String(link.person_id));
+          if (!linkedIds.some((id) => access.ids.includes(id)) &&
+              (linkedIds.length || current.uploaded_by !== access.userId))
+            return "denied";
+        }
+        await beforeLockedFileDelivery?.();
+        if (res.destroyed) return "sent";
+        // Hand the first bytes to HTTP synchronously while authorization is
+        // held. The rest of a large file may stream after commit, without
+        // keeping archive writes blocked by a slow reader.
+        send();
+        return "sent";
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === "55P03")
+        return "busy";
+      throw error;
+    }
   };
 
   return async (
@@ -1118,6 +1206,15 @@ export function documentsHttp({
           return json(res, 404, { error: "Файл документа не найден" });
         if (!(await canDeliverFile(req, access, row)))
           return json(res, 404, { error: "Документ не найден" });
+        const deliver = async (send: () => void) => {
+          const result = await deliverFile(req, res, access, row, send);
+          if (res.destroyed) return true;
+          if (result === "denied")
+            return json(res, 404, { error: "Документ не найден" });
+          if (result === "busy")
+            return json(res, 409, { error: "Права доступа меняются. Повторите запрос" });
+          return true;
+        };
         const readerView = url.searchParams.get("reader");
         if (readerView) {
           if (fileType.extension !== "tif")
@@ -1126,10 +1223,10 @@ export function documentsHttp({
             });
           if (readerView === "pages") {
             const pages = await tiffDocumentPages(path);
-            if (!(await canDeliverFile(req, access, row)))
-              return json(res, 404, { error: "Документ не найден" });
-            res.setHeader("Cache-Control", "private, no-store");
-            return json(res, 200, { pages });
+            return await deliver(() => {
+              res.setHeader("Cache-Control", "private, no-store");
+              json(res, 200, { pages });
+            });
           }
           const index = Number(url.searchParams.get("page")) - 1;
           if (
@@ -1144,16 +1241,15 @@ export function documentsHttp({
           if (index >= count)
             return json(res, 400, { error: "Некорректная страница TIFF" });
           const bytes = await renderTiff(path, index);
-          if (!(await canDeliverFile(req, access, row)))
-            return json(res, 404, { error: "Документ не найден" });
-          res.writeHead(200, {
-            "Content-Type": "image/webp",
-            "Content-Length": String(bytes.length),
-            "Cache-Control": "private, no-store",
-            "X-Content-Type-Options": "nosniff",
+          return await deliver(() => {
+            res.writeHead(200, {
+              "Content-Type": "image/webp",
+              "Content-Length": String(bytes.length),
+              "Cache-Control": "private, no-store",
+              "X-Content-Type-Options": "nosniff",
+            });
+            res.end(bytes);
           });
-          res.end(bytes);
-          return true;
         }
         const range = req.headers["if-range"]
           ? undefined
@@ -1166,26 +1262,45 @@ export function documentsHttp({
           "Accept-Ranges": "bytes",
         };
         if (range === "unsatisfiable") {
-          res
-            .writeHead(416, {
+          return await deliver(() => {
+            res.writeHead(416, {
               ...headers,
               "Content-Range": `bytes */${info.size}`,
               "Content-Length": "0",
-            })
-            .end();
-          return true;
+            }).end();
+          });
         }
-        res.writeHead(range ? 206 : 200, {
-          ...headers,
-          "Content-Length": String(
-            range ? range.end - range.start + 1 : info.size,
-          ),
-          ...(range
-            ? { "Content-Range": `bytes ${range.start}-${range.end}/${info.size}` }
-            : {}),
-        });
-        await pipeline(createReadStream(path, range), res);
+        const start = range ? range.start : 0;
+        const end = range ? range.end : info.size - 1;
+        const remaining = end - start + 1;
+        const handle = await open(path, "r");
+        try {
+          const first = Buffer.alloc(Math.min(64 * 1024, remaining));
+          const { bytesRead } = await handle.read(first, 0, first.length, start);
+          if (remaining > 0 && bytesRead === 0) throw new Error("Document file changed");
+          const sent = await deliver(() => {
+            res.writeHead(range ? 206 : 200, {
+              ...headers,
+              "Content-Length": String(remaining),
+              ...(range
+                ? { "Content-Range": `bytes ${start}-${end}/${info.size}` }
+                : {}),
+            });
+            if (bytesRead === remaining) res.end(first.subarray(0, bytesRead));
+            else res.write(first.subarray(0, bytesRead));
+          });
+          if (!res.headersSent || res.writableEnded || res.destroyed) return sent;
+          await beforeStreamRemainder?.();
+          if (!res.destroyed)
+            await pipeline(handle.createReadStream({
+              start: start + bytesRead, end, autoClose: false,
+            }), res, { signal: AbortSignal.timeout(120_000) });
+          return sent;
+        } finally {
+          await handle.close();
+        }
       } catch (error) {
+        if (res.destroyed) return true;
         if (!res.headersSent)
           return json(res, 404, { error: "Файл документа не найден" });
         if (!res.destroyed) res.destroy(error as Error);
