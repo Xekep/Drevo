@@ -388,6 +388,27 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         warnings.add(
           "Дополнительные сведения цитаты GEDCOM сохранены в примечании источника, а не в отдельных полях.",
         );
+      const recordData = record && child(record, "DATA");
+      const recordDataNotes = recordData ? notes(recordData) : "";
+      const recordDataDetails = recordData ? [
+        value(recordData, "AGNC")
+          ? `Учреждение, собравшее сведения: ${value(recordData, "AGNC")}` : "",
+        ...children(recordData, "EVEN").map((event) => {
+          const date = child(event, "DATE");
+          return [
+            event.value ? `События в источнике: ${event.value}` : "",
+            date?.value ? `Период сведений: ${date.value}` : "",
+            date && value(date, "PHRASE")
+              ? `Пояснение периода: ${value(date, "PHRASE")}` : "",
+            value(event, "PLAC") ? `Территория сведений: ${value(event, "PLAC")}` : "",
+          ].filter(Boolean).join("; ");
+        }),
+        recordDataNotes ? `Примечание к сведениям источника: ${recordDataNotes}` : "",
+      ].filter(Boolean) : [];
+      if (recordData)
+        warnings.add(recordDataDetails.length
+          ? "Сведения SOURCE_RECORD.DATA сохранены текстом в цитатах; структура DATA и прочие вложенные поля не восстанавливаются."
+          : "SOURCE_RECORD.DATA не содержит переносимых сведений; сохраните исходный GEDCOM.");
       const repositoryNames: string[] = [], callNumbers: string[] = [], repositoryDetails: string[] = [];
       const repositoryLinks = record ? children(record, "REPO") : [];
       let structuredRepository: Source["repository"];
@@ -449,6 +470,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             record && value(record, "PUBL"),
             notes(s),
             ...citationDetails,
+            ...recordDataDetails,
             ...repositoryNames,
             ...callNumbers.slice(page ? 0 : 1).map((call) => `Шифр хранилища: ${call}`),
             ...repositoryDetails,
