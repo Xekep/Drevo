@@ -150,7 +150,7 @@ export function archiveQueryHttp({
     const changed = () => json(res, 409, {
       error: "Архив или доступ к нему изменились. Повторите запрос.",
     });
-    const deliverFamily = async (value: unknown) => {
+    const deliverArchiveJson = async (value: unknown) => {
       if (archive.db.kind !== "postgres")
         return await canDeliver() ? json(res, 200, value) : changed();
       // A large projection is serialized before taking the archive lock.
@@ -219,8 +219,7 @@ export function archiveQueryHttp({
           }),
         ),
       }));
-      if (!(await canDeliver())) return changed();
-      return json(res, 200, { categories });
+      return deliverArchiveJson({ categories });
     }
 
     if (path === "/api/family") {
@@ -279,7 +278,7 @@ export function archiveQueryHttp({
           return json(res, 409, {
             error: "Архив или доступ к нему изменились. Обновите данные.",
           });
-        return deliverFamily(page);
+        return deliverArchiveJson(page);
       }
       if (projection === "overview") {
         const readTree = memberCanRead || access.publicTree,
@@ -328,7 +327,7 @@ export function archiveQueryHttp({
         const pageToken = `${data.revision}:${Number(readTree)}:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
         const canEdit = await auth.canEdit(req);
         const platformAdmin = visitor ? await auth.isPlatformAdmin(req) : false;
-        return deliverFamily({
+        return deliverArchiveJson({
           family: data.family,
           revision: data.revision,
           canEdit,
@@ -351,7 +350,7 @@ export function archiveQueryHttp({
         });
       }
       const prepared = await snapshot(req, visitor, access);
-      return deliverFamily(prepared);
+      return deliverArchiveJson(prepared);
     }
 
     if (path === "/api/export") {
@@ -398,8 +397,7 @@ export function archiveQueryHttp({
           )
         : undefined;
       const matches = await searchPeople(query, visible);
-      if (!(await canDeliver())) return changed();
-      return json(res, 200, matches);
+      return deliverArchiveJson(matches);
     }
 
     if (req.method !== "GET") {

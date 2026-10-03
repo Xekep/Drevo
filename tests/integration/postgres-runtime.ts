@@ -5643,6 +5643,96 @@ try {
     assert.equal((await writeVisibility(false)).status, 200);
   }
   console.log("runtime_archive_query_family_delivery_revocation_ok");
+  const privateSearchPerson = (await otherApp.archive.read()).family.people[0];
+  assert.ok(privateSearchPerson);
+  const privateSearchTerm = privateSearchPerson.name.length >= 2
+    ? privateSearchPerson.name : privateSearchPerson.surname;
+  assert.ok(privateSearchTerm.length >= 2);
+  const privateSearchPath = `/api/people/search?q=${encodeURIComponent(privateSearchTerm)}`;
+  const initialPrivateSearch = await fetch(securedBase + "/a/other-archive" + privateSearchPath,
+    { headers: otherOnlyHeaders });
+  assert.equal(initialPrivateSearch.status, 200);
+  assert.ok((await initialPrivateSearch.json()).people.some(
+    (person: { id: string }) => person.id === privateSearchPerson.id));
+  const raceArchiveQuery = async (path: string, headers: Record<string, string> | undefined,
+    revoke: () => Promise<void>, contains: (body: Record<string, unknown>) => boolean) => {
+    let reached!: () => void, release!: () => void;
+    const ready = new Promise<void>((resolve) => { reached = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const endpoint = archiveQueryHttp({ archive: otherApp!.archive,
+      auth: await createAuth(await userStore(otherApp!.archive.db), otherApp!.archive.db,
+        process.env.PUBLIC_ORIGIN),
+      visibility: await settingsStore(otherApp!.archive.db),
+      treePreferences: treePreferencesStore(otherApp!.archive.db),
+      researchCatalog: researchCatalogStore(otherApp!.archive.db),
+      beforeDelivery: async () => { reached(); await gate; },
+    });
+    const server = createServer((req, res) => {
+      void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    const pending = fetch(`http://127.0.0.1:${port}${path}`, headers ? { headers } : {});
+    try {
+      await Promise.race([ready,
+        pending.then(() => { throw new Error("Archive query sent before access barrier"); }),
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error("Archive query missed access barrier")), 30_000);
+          timer.unref();
+        }),
+      ]);
+      await revoke();
+      release();
+      const response = await pending;
+      const body = await response.json();
+      return { status: response.status, present: contains(body),
+        hasPrivatePayload: "people" in body || "categories" in body };
+    } finally {
+      release();
+      await pending.catch(() => {});
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  };
+  const staleSearch = await raceArchiveQuery(privateSearchPath, otherOnlyHeaders,
+    async () => {
+      const revoke = await fetch(securedBase + "/a/other-archive/api/users/other-only", {
+        method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }),
+      });
+      assert.equal(revoke.status, 200);
+    }, (body) => Array.isArray(body.people) && body.people.some(
+      (person: { id: string }) => person.id === privateSearchPerson.id));
+  assert.equal((await fetch(securedBase + "/a/other-archive" + privateSearchPath,
+    { headers: otherOnlyHeaders })).status, 404);
+  await client.query(`UPDATE archive_memberships SET approved=true
+    WHERE archive_id='other-archive' AND user_id='other-only'`);
+  await client.query(`INSERT INTO research_categories(id,name,sort_order)
+    VALUES('query-revoke-category','Query Revoke Category',999)`);
+  await client.query(`INSERT INTO research_resources(id,category_id,name,url,description,sort_order)
+    VALUES('query-revoke-resource','query-revoke-category','Query Revoke Resource',
+      'https://example.org/query-revoke','synthetic source',999)`);
+  const setPublicTree = async (publicTree: boolean) => {
+    const response = await fetch(securedBase + "/a/other-archive/api/settings", {
+      method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ publicTree, publicAlbums: false, reverseTimeline: false }),
+    });
+    assert.equal(response.status, 200);
+  };
+  await setPublicTree(true);
+  const initialResources = await fetch(otherBase + "/api/research-resources");
+  assert.equal(initialResources.status, 200);
+  assert.ok((await initialResources.json()).categories.some((category: { id: string }) =>
+    category.id === "query-revoke-category"));
+  const staleResources = await raceArchiveQuery("/api/research-resources", undefined,
+    async () => { await setPublicTree(false); },
+    (body) => Array.isArray(body.categories) && body.categories.some(
+      (category: { id: string }) => category.id === "query-revoke-category"));
+  assert.equal((await fetch(otherBase + "/api/research-resources")).status, 401);
+  await client.query(`DELETE FROM research_categories WHERE id='query-revoke-category'`);
+  assert.deepEqual([staleSearch.status, staleSearch.present, staleSearch.hasPrivatePayload,
+    staleResources.status, staleResources.present, staleResources.hasPrivatePayload],
+  [409, false, false, 409, false, false]);
+  console.log("runtime_archive_query_search_resource_revocation_ok");
   assert.equal(
     (await fetch(securedBase + "/a/other-archive/api/health", { headers: otherOnlyHeaders })).status,
     200,
