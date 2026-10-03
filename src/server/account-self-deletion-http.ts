@@ -82,7 +82,10 @@ export function accountSelfDeletionHttp(
           await readConfirmation(req),
           session.tokenHash,
         );
-        await auth.logout(req, res);
+        // Deleting the account already cascades every session in PostgreSQL.
+        // Do not perform a second database write after that irreversible commit:
+        // its failure would report that the account was preserved.
+        auth.clearSessionCookie(res);
         console.log(
           JSON.stringify({
             level: "info",

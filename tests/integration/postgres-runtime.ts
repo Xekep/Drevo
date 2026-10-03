@@ -8438,6 +8438,18 @@ try {
     await client.query("ROLLBACK");
     const commentWriter = new pg.Client();
     await commentWriter.connect();
+    const postCommitDeletion = accountSelfDeletionHttp(deletionDb, {
+      ...deletionAuth,
+      logout: async () => {
+        throw new Error("post-commit session storage is unavailable");
+      },
+    }, true, process.env.PUBLIC_ORIGIN);
+    const postCommitServer = createServer((req, res) => {
+      void postCommitDeletion(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => postCommitServer.listen(0, "127.0.0.1", resolve));
+    const postCommitBase = `http://127.0.0.1:${(postCommitServer.address() as { port: number }).port}`;
     let removedAccount: Response;
     try {
       await commentWriter.query("BEGIN");
@@ -8447,7 +8459,7 @@ try {
         [Date.now()],
       );
       let deletionSettled = false;
-      const deletionRequest = fetch(oauthBase + accountDeletionPath, {
+      const deletionRequest = fetch(postCommitBase + accountDeletionPath, {
         method: "DELETE", headers: deletingHeaders,
         body: JSON.stringify({ accountId: "owner", name: "Delete me", leaveSharedArchives: true, redactComments: true }),
       }).then((response) => { deletionSettled = true; return response; });
@@ -8458,9 +8470,16 @@ try {
     } finally {
       await commentWriter.query("ROLLBACK").catch(() => {});
       await commentWriter.end();
+      postCommitServer.closeAllConnections();
+      await new Promise<void>((resolve) => postCommitServer.close(() => resolve()));
     }
     assert.equal(removedAccount.status, 200,
       removedAccount.status === 200 ? "" : await removedAccount.text());
+    assert.match(removedAccount.headers.get("set-cookie") || "", /drevo_session=;.*Max-Age=0/,
+      "account deletion clears the browser cookie without another database write");
+    assert.equal((await client.query(
+      "SELECT count(*)::int AS n FROM account_sessions WHERE user_id='deleting-account'",
+    )).rows[0].n, 0, "deleting the account revokes every session by cascade");
     await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
     assert.deepEqual((await client.query("SELECT author_id,text FROM person_comments WHERE id=987659")).rows[0],
       { author_id: "deleted-account", text: "Текст удалён по запросу автора" });

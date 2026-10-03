@@ -462,5 +462,8 @@ export async function createAuth(
       await revoke.run(sessionTokenHash(cookie(req)));
       setCookie(res, "", 0);
     },
+    clearSessionCookie(res: ServerResponse) {
+      setCookie(res, "", 0);
+    },
   };
 }
