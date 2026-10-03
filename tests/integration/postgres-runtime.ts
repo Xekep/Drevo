@@ -7891,15 +7891,44 @@ try {
     ).then((response) => response.json());
     assert.ok(
       candidates.some(
-        (candidate: { id: string; eligible: boolean }) =>
-          candidate.id === "transfer-target" && candidate.eligible,
+        (candidate: { id: string; eligible: boolean; reason?: string }) =>
+          candidate.id === "transfer-target" && candidate.eligible &&
+            !candidate.reason,
       ),
     );
     assert.ok(
       candidates.some(
-        (candidate: { id: string; eligible: boolean }) =>
-          candidate.id === vkRegistration.accountId && !candidate.eligible,
+        (candidate: { id: string; eligible: boolean; reason?: string }) =>
+          candidate.id === vkRegistration.accountId && !candidate.eligible &&
+            candidate.reason === "unavailable",
       ),
+    );
+    await client.query("DELETE FROM account_tiers WHERE account_id='transfer-target'");
+    const missingTierCandidates = await fetch(
+      oauthBase + ownerTransferPath + "/candidates",
+      { headers: transferOwnerHeaders },
+    ).then((response) => response.json());
+    assert.ok(
+      missingTierCandidates.some(
+        (candidate: { id: string; eligible: boolean; reason?: string }) =>
+          candidate.id === "transfer-target" && !candidate.eligible &&
+            candidate.reason === "unavailable",
+      ),
+      "a legacy member without an account tier stays visible but cannot receive the tree",
+    );
+    assert.equal(
+      (
+        await fetch(oauthBase + ownerTransferPath, {
+          method: "POST",
+          headers: transferOwnerHeaders,
+          body: JSON.stringify({ targetId: "transfer-target" }),
+        })
+      ).status,
+      409,
+      "a recipient without an account tier cannot receive a proposal",
+    );
+    await client.query(
+      "INSERT INTO account_tiers(account_id,full_access) VALUES('transfer-target',false)",
     );
     assert.equal(
       (
@@ -7939,6 +7968,36 @@ try {
        VALUES($1,'transfer-quota-check',(SELECT COALESCE(max(ordinal),0)+1 FROM documents WHERE archive_id=$1),
          'Quota check','quota check','transfer-quota-check.pdf',500000001,$2,$3)`,
       [personalArchiveId, newAccountSession.user.id, new Date().toISOString()],
+    );
+    const quotaCandidates = await fetch(
+      oauthBase + ownerTransferPath + "/candidates",
+      { headers: transferOwnerHeaders },
+    ).then((response) => response.json());
+    assert.ok(
+      quotaCandidates.some(
+        (candidate: { id: string; eligible: boolean; reason?: string }) =>
+          candidate.id === "transfer-target" && !candidate.eligible &&
+            candidate.reason === "unavailable",
+      ),
+      "the basic recipient is visibly unavailable while the tree exceeds its quota",
+    );
+    await client.query(
+      "UPDATE account_tiers SET full_access=true WHERE account_id='transfer-target'",
+    );
+    const fullCandidates = await fetch(
+      oauthBase + ownerTransferPath + "/candidates",
+      { headers: transferOwnerHeaders },
+    ).then((response) => response.json());
+    assert.ok(
+      fullCandidates.some(
+        (candidate: { id: string; eligible: boolean; reason?: string }) =>
+          candidate.id === "transfer-target" && candidate.eligible &&
+            !candidate.reason,
+      ),
+      "a full recipient remains available for the same oversized tree",
+    );
+    await client.query(
+      "UPDATE account_tiers SET full_access=false WHERE account_id='transfer-target'",
     );
     assert.equal(
       (

@@ -65,6 +65,20 @@ async function ownsAnyArchive(db: StoreDatabase, accountId: string) {
   }
 }
 
+async function basicCapacityError(db: StoreDatabase, currentOwnerId: string) {
+  const capacity = await accountCapacity(db, currentOwnerId);
+  if (!capacity.available || !capacity.owned)
+    return "Не удалось проверить квоту дерева";
+  if (capacity.people > capacity.peopleLimit)
+    return "Дерево превышает лимит 150 человек для базового аккаунта получателя";
+  if (
+    capacity.mediaBytes === null ||
+    capacity.mediaBytes > capacity.mediaLimitBytes
+  )
+    return "Фотографии и документы превышают лимит 500 МБ для базового аккаунта получателя";
+  return null;
+}
+
 async function assertCanOwn(
   db: StoreDatabase,
   currentOwnerId: string,
@@ -87,20 +101,8 @@ async function assertCanOwn(
   if (await ownsAnyArchive(db, targetId))
     throw new ConflictError("Получатель уже владеет другим деревом");
   if (!target.full_access) {
-    const capacity = await accountCapacity(db, currentOwnerId);
-    if (!capacity.available || !capacity.owned)
-      throw new ConflictError("Не удалось проверить квоту дерева");
-    if (capacity.people > capacity.peopleLimit)
-      throw new ConflictError(
-        "Дерево превышает лимит 150 человек для базового аккаунта получателя",
-      );
-    if (
-      capacity.mediaBytes === null ||
-      capacity.mediaBytes > capacity.mediaLimitBytes
-    )
-      throw new ConflictError(
-        "Фотографии и документы превышают лимит 500 МБ для базового аккаунта получателя",
-      );
+    const error = await basicCapacityError(db, currentOwnerId);
+    if (error) throw new ConflictError(error);
   }
   return { name: String(target.name), role: String(target.role) };
 }
@@ -154,8 +156,10 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
         const rows = await db
           .prepare(
             "",
-            `SELECT m.user_id AS id,a.name,m.role
+            `SELECT m.user_id AS id,a.name,m.role,t.full_access,
+                    t.account_id IS NOT NULL AS tier_present
              FROM archive_memberships m JOIN accounts a ON a.id=m.user_id
+             LEFT JOIN account_tiers t ON t.account_id=m.user_id
              WHERE m.archive_id=current_setting('drevo.archive_id', true)
                AND m.approved=true AND m.user_id<>?
                AND (?='' OR position(lower(?) in lower(a.name))>0)
@@ -163,13 +167,21 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
           )
           .all(actor.id, query, query);
         const candidates = [];
-        for (const row of rows)
+        let capacityError: string | null | undefined;
+        for (const row of rows) {
+          const owns = await ownsAnyArchive(db, String(row.id));
+          if (!owns && row.tier_present && !row.full_access && capacityError === undefined)
+            capacityError = await basicCapacityError(db, actor.id);
+          const eligible = !owns && row.tier_present === true &&
+            (row.full_access === true || !capacityError);
           candidates.push({
             id: String(row.id),
             name: String(row.name),
             role: String(row.role),
-            eligible: !(await ownsAnyArchive(db, String(row.id))),
+            eligible,
+            ...(!eligible ? { reason: "unavailable" } : {}),
           });
+        }
         return candidates;
       }, true);
     },
