@@ -21,7 +21,8 @@ import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import type { mediaStore } from "./media.ts";
 import { fullName } from "../domain/index.ts";
-import type { Person } from "../domain/types.ts";
+import { CONNECTION_NAMES } from "../domain/mutations.ts";
+import type { FamilyLink, FamilyUnion, Person, Source } from "../domain/types.ts";
 import {
   parseDocumentEventLinks,
   parseDocumentPages,
@@ -36,7 +37,6 @@ import {
 } from "../shared/document-annotations.ts";
 import { auditStore } from "./audit.ts";
 import { personCitations, sourceCatalogStore, unionCitations } from "./source-catalog-store.ts";
-import type { FamilyUnion } from "../domain/types.ts";
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
 import {
@@ -114,12 +114,116 @@ const editableFields: Array<[keyof DocumentVersion, string]> = [
   ["provenance", "Происхождение"],
 ];
 
+type ReverseSource = {
+  personId: string;
+  personName: string;
+  eventId?: string;
+  eventTitle?: string;
+  title: string;
+  reference: string;
+  page?: number;
+  assertions: string[];
+};
+
+const unionNames: Record<FamilyUnion["type"], string> = {
+  marriage: "Брак", civil_union: "Гражданский союз", partnership: "Партнёрство",
+};
+
+function reverseDocumentSources(
+  documentId: string,
+  people: Person[],
+  unions: FamilyUnion[],
+  links: FamilyLink[],
+): ReverseSource[] {
+  const names = new Map(people.map((person) => [person.id, fullName(person)]));
+  const found = new Map<string, ReverseSource>();
+  const add = (context: string, personId: string, personName: string,
+    source: Source, assertion: string, event?: { id: string; title: string }) => {
+    if (source.documentId !== documentId) return;
+    const key = JSON.stringify([context, source.catalogId, source.title, source.type,
+      source.reference, source.url, source.note, source.documentPage, source.repository]);
+    const existing = found.get(key);
+    if (existing) {
+      if (!existing.assertions.includes(assertion)) existing.assertions.push(assertion);
+      return;
+    }
+    found.set(key, {
+      personId, personName,
+      ...(event ? { eventId: event.id, eventTitle: event.title } : {}),
+      title: source.title, reference: source.reference,
+      ...(source.documentPage ? { page: source.documentPage } : {}),
+      assertions: [assertion],
+    });
+  };
+  for (const person of people) {
+    const name = names.get(person.id)!;
+    const cite = (source: Source, assertion: string,
+      event?: { id: string; title: string }) =>
+      add(`person:${person.id}`, person.id, name, source, assertion, event);
+    for (const source of person.sources) cite(source, "Карточка");
+    for (const [label, claim] of [
+      ["Дата рождения", person.birthDateClaim],
+      ["Дата смерти", person.deathDateClaim],
+      ["Место рождения", person.birthPlaceClaim],
+      ["Место смерти", person.deathPlaceClaim],
+      ["Фамилия при рождении", person.maidenNameClaim],
+      ["Занятие", person.occupationClaim],
+    ] as const)
+      for (const source of claim?.sources || []) cite(source, label);
+    const alternativeNames = {
+      birth: "Другая дата рождения", death: "Другая дата смерти",
+      birthPlace: "Другое место рождения", deathPlace: "Другое место смерти",
+      maidenName: "Другая фамилия при рождении",
+    } as const;
+    for (const alternative of person.factAlternatives || [])
+      for (const source of alternative.sources)
+        cite(source, `${alternativeNames[alternative.field]}: ${alternative.value}`);
+    for (const event of person.events || []) {
+      const title = event.title?.trim() || event.type;
+      const identity = { id: event.id, title };
+      for (const source of event.sources || []) cite(source, `Событие: ${title}`, identity);
+      for (const source of event.dateClaim?.sources || [])
+        cite(source, `Дата события: ${title}`, identity);
+      for (const source of event.placeClaim?.sources || [])
+        cite(source, `Место события: ${title}`, identity);
+      for (const alternative of event.alternatives || [])
+        for (const source of alternative.sources)
+          cite(source, `${alternative.field === "date" ? "Другая дата" : "Другое место"} события: ${alternative.value}`, identity);
+    }
+  }
+  for (const union of unions) {
+    const [first, second] = union.participants;
+    if (!names.has(first) || !names.has(second)) continue;
+    const name = `${names.get(first)} · ${names.get(second)}`;
+    const label = unionNames[union.type];
+    const cite = (source: Source, assertion: string) =>
+      add(`union:${union.id}`, first, name, source, assertion);
+    for (const source of union.sources || []) cite(source, label);
+    for (const [stage, sources] of [
+      ["образование", union.formation?.sources],
+      ["окончание", union.ending?.sources],
+      ["развод", union.divorce?.sources],
+      ["продолжение", union.ongoing?.sources],
+    ] as const)
+      for (const source of sources || []) cite(source, `${label} · ${stage}`);
+  }
+  for (const link of links) {
+    if (!names.has(link.from) || !names.has(link.to)) continue;
+    const name = `${names.get(link.from)} · ${names.get(link.to)}`;
+    for (const source of link.sources || [])
+      add(`link:${link.id}`, link.from, name, source, CONNECTION_NAMES[link.type]);
+  }
+  return [...found.values()];
+}
+
 function listedDocument(
   row: Row,
   linkedIds: string[],
   people: Map<string, string>,
   canDelete: boolean,
   visiblePeople: Person[] = [],
+  visibleUnions: FamilyUnion[] = [],
+  visibleLinks: FamilyLink[] = [],
 ) {
   const eventLinks = (parseDocumentEventLinks(JSON.parse(row.event_links || "[]")) || [])
     .filter((link) => linkedIds.includes(link.personId) &&
@@ -130,22 +234,7 @@ function listedDocument(
       const event = person.events!.find((item) => item.id === link.eventId)!;
       return { ...link, personName: fullName(person), eventTitle: event.title || event.type };
     });
-  const sources = visiblePeople.flatMap((person) => [
-    ...person.sources.filter((source) => source.documentId === row.id)
-      .map((source) => ({ personId: person.id, personName: fullName(person),
-        title: source.title, reference: source.reference,
-        page: source.documentPage })),
-    ...(person.events || []).flatMap((event) => [
-      ...(event.sources || []), ...(event.dateClaim?.sources || []),
-      ...(event.placeClaim?.sources || []),
-      ...(event.alternatives || []).flatMap((alternative) => alternative.sources),
-    ]
-      .filter((source) => source.documentId === row.id)
-      .map((source) => ({ personId: person.id, personName: fullName(person),
-        eventId: event.id, eventTitle: event.title || event.type,
-        title: source.title, reference: source.reference,
-        page: source.documentPage }))),
-  ]);
+  const sources = reverseDocumentSources(row.id, visiblePeople, visibleUnions, visibleLinks);
   return {
     id: row.id,
     title: row.title,
@@ -205,17 +294,18 @@ export function documentsHttp({
     const snapshot = scope && (scoped || includePeople)
       ? await archive.read()
       : null;
-    const people = !snapshot
-      ? []
-      : scoped
-        ? projectFamilyForUser(snapshot.family, user).people
-        : snapshot.family.people;
+    const family = snapshot
+      ? scoped ? projectFamilyForUser(snapshot.family, user) : snapshot.family
+      : null;
+    const people = family?.people || [];
     return {
       userId: user?.id,
       scope,
       scoped,
       revision: snapshot?.revision,
       people,
+      unions: family?.unions || [],
+      links: family?.links || [],
       ids: people.map((person) => person.id),
     };
   };
@@ -231,6 +321,48 @@ export function documentsHttp({
     ).all(JSON.stringify([...new Set(ids)]));
     return rows.map((row) => (typeof row.data === "string"
       ? JSON.parse(row.data) : row.data) as Person);
+  };
+  const citedEntities = async (documentIds: string[]) => {
+    if (!documentIds.length)
+      return { people: [] as Person[], unions: [] as FamilyUnion[], links: [] as FamilyLink[] };
+    // One candidate scan per page (at most 100 document IDs), never one scan
+    // per listed document. The reader checks exact documentId after parsing.
+    const matches = (column: string) => documentIds.map(() => `${column} LIKE ?`).join(" OR ");
+    const patterns = documentIds.map((id) => `%${id}%`);
+    const parse = <T>(value: unknown): T =>
+      (typeof value === "string" ? JSON.parse(value) : value) as T;
+    const people = (await db.prepare(
+      `SELECT data FROM people WHERE ${matches("data")}`,
+      `SELECT data FROM people WHERE ${matches("data::text")}`,
+    ).all(...patterns)).map((row) => parse<Person>(row.data));
+    const unions = (await db.prepare(
+      `SELECT data FROM family_unions WHERE ${matches("data")}`,
+      `SELECT data FROM family_unions WHERE ${matches("data::text")}`,
+    ).all(...patterns)).map((row) => parse<FamilyUnion>(row.data));
+    const links = (await db.prepare(
+      `SELECT id,source,target,type,sources FROM relations WHERE type NOT IN ('parent','spouse') AND (${matches("sources")})`,
+      `SELECT id,source,target,type,sources FROM relations WHERE type NOT IN ('parent','spouse') AND (${matches("sources::text")})`,
+    ).all(...patterns)).map((row) => ({
+      id: String(row.id), from: String(row.source), to: String(row.target),
+      type: row.type as FamilyLink["type"], sources: parse<Source[]>(row.sources),
+    }));
+    return { people, unions, links };
+  };
+  const readerCitations = async (
+    access: Awaited<ReturnType<typeof visible>>,
+    documentIds: string[],
+    linkedIds: string[],
+  ) => {
+    if (access.scoped)
+      return { people: access.people, unions: access.unions, links: access.links };
+    const cited = await citedEntities(documentIds);
+    const names = await linkedPersons([
+      ...linkedIds,
+      ...cited.unions.flatMap((union) => union.participants),
+      ...cited.links.flatMap((link) => [link.from, link.to]),
+    ]);
+    return { ...cited, people: [...new Map([...cited.people, ...names]
+      .map((person) => [person.id, person])).values()] };
   };
   const matchingPersonIds = async (query: string) => {
     const rows = await db.prepare(
@@ -406,7 +538,9 @@ export function documentsHttp({
         )
         .all(...args, limit, offset)) as Row[];
       const links = await associations(rows.map((row) => row.id));
-      const related = access.scoped ? access.people : await linkedPersons([...links.values()].flat());
+      const citations = await readerCitations(access, rows.map((row) => row.id),
+        [...links.values()].flat());
+      const related = citations.people;
       const people = new Map(related.map((person) => [person.id, fullName(person)]));
       const actor = await auth.currentUser(req),
         mayEdit = await auth.canEdit(req);
@@ -421,6 +555,8 @@ export function documentsHttp({
             people,
             mayEdit && owns(actor, { createdBy: row.uploaded_by }),
             related,
+            citations.unions,
+            citations.links,
           ),
         ),
       });
@@ -438,7 +574,8 @@ export function documentsHttp({
       const linkedIds = (await associations([row.id])).get(row.id) || [];
       if (!canSee(access, row, linkedIds))
         return json(res, 404, { error: "Документ не найден" });
-      const related = access.scoped ? access.people : await linkedPersons(linkedIds);
+      const citations = await readerCitations(access, [row.id], linkedIds);
+      const related = citations.people;
       const people = new Map(related.map((person) => [person.id, fullName(person)]));
       const actor = await auth.currentUser(req);
       const mayEdit = await auth.canEdit(req);
@@ -453,6 +590,8 @@ export function documentsHttp({
           people,
           mayEdit && owns(actor, { createdBy: row.uploaded_by }),
           related,
+          citations.unions,
+          citations.links,
         ),
       );
     }

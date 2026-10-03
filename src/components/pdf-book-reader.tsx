@@ -476,7 +476,7 @@ export function PdfBookReader({
                     <button type="button" onClick={() => navigateToPage.current?.(link.page! - 1)}>Стр. {link.page}</button>}</p>
                 ))}</section>}
                 {entry.sources.length > 0 && <section><h3>Источники</h3>{entry.sources.map((source, index) => (
-                  <p key={`${source.personId}:${source.eventId || "card"}:${index}`}>{source.title} · {source.personName}{source.eventTitle ? ` · ${source.eventTitle}` : ""}
+                  <p key={`${source.personId}:${source.eventId || "card"}:${index}`}>{source.title} · {source.personName}{source.assertions.length ? ` · ${source.assertions.join("; ")}` : ""}
                     {source.reference ? ` · ${source.reference}` : ""}{source.page &&
                     <button type="button" onClick={() => navigateToPage.current?.(source.page! - 1)}>Стр. {source.page}</button>}</p>
                 ))}</section>}
