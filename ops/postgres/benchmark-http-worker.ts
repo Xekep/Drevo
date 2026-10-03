@@ -9,8 +9,15 @@ const fakeOrigin = "https://benchmark.invalid";
 let nextResponse = 0;
 const aiFetch: typeof fetch = async (input, init) => {
   const url = new URL(String(input));
-  if (url.origin !== fakeOrigin || init?.method !== "POST")
+  if (url.origin !== fakeOrigin)
     throw new Error("HTTP benchmark blocks external AI requests");
+  if (init?.method === "DELETE" &&
+      /^\/v1\/conversations\/benchmark-conversation-[0-9]+-[0-9]+$/.test(url.pathname)) {
+    process.send?.({ aiDelete: url.pathname });
+    return new Response(null, { status: 204 });
+  }
+  if (init?.method !== "POST")
+    throw new Error("HTTP benchmark blocks unexpected AI request");
   if (url.pathname === "/v1/conversations")
     return Response.json({ id: `benchmark-conversation-${process.pid}-${++nextResponse}` });
   if (url.pathname === "/v1/responses") {
