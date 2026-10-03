@@ -71,6 +71,7 @@ import { publicShareAccess } from "../../src/server/public-share-access.ts";
 import { publicSharingHttp } from "../../src/server/public-sharing-http.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { publishedPeopleStore } from "../../src/server/published-people.ts";
+import { publishedPeopleHttp } from "../../src/server/published-people-http.ts";
 import { discoveryPeopleHttp } from "../../src/server/discovery-people-http.ts";
 import { discoveryCardShareHttp } from "../../src/server/discovery-card-share-http.ts";
 import { discoveryBranchShareHttp } from "../../src/server/discovery-branch-share-http.ts";
@@ -5315,21 +5316,131 @@ try {
     (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
     200,
   );
-  let detailReached!: () => void, releaseDetail!: () => void;
-  const detailReady = new Promise<void>((resolve) => { detailReached = resolve; });
-  const detailGate = new Promise<void>((resolve) => { releaseDetail = resolve; });
-  const detailAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
-    process.env.PUBLIC_ORIGIN);
   const publicationWithdrawalWaiting = async () => {
     for (let attempt = 0; attempt < 60; attempt++) {
       const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
         WHERE datname=current_database() AND pid<>pg_backend_pid()
-          AND wait_event_type='Lock' AND query LIKE 'DELETE FROM published_people%'`);
+          AND wait_event_type='Lock'
+          AND (query ILIKE '%published_people%' OR query ILIKE '%archives%FOR UPDATE%')`);
       if (waiting.rowCount) return true;
       await new Promise<void>((resolve) => setTimeout(resolve, 50));
     }
     return false;
   };
+  let legacyReached!: () => void, releaseLegacy!: () => void;
+  const legacyReady = new Promise<void>((resolve) => { legacyReached = resolve; });
+  const legacyGate = new Promise<void>((resolve) => { releaseLegacy = resolve; });
+  const legacyAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  const legacyEndpoint = publishedPeopleHttp({ archive: otherApp.archive, auth: legacyAuth,
+    store: otherPublication, publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforePublicDelivery: async () => { legacyReached(); await legacyGate; },
+  });
+  const legacyServer = createServer((req, res) => {
+    void legacyEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => legacyServer.listen(0, "127.0.0.1", resolve));
+  const legacyPort = (legacyServer.address() as { port: number }).port;
+  const legacyPath = "/api/published-people/person-a";
+  const pausedLegacy = fetch(`http://127.0.0.1:${legacyPort}${legacyPath}`,
+    { headers: { ...headers, "X-Real-IP": "203.0.113.40" } });
+  let withdrawLegacy: Promise<Response> | undefined;
+  let legacyEarly = "";
+  let legacyDelivered!: Response;
+  try {
+    await Promise.race([legacyReady,
+      pausedLegacy.then((response) => { throw new Error(`Legacy card sent before delivery barrier: ${response.status}`); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Legacy card did not reach delivery barrier")), 30_000)),
+    ]);
+    withdrawLegacy = fetch(otherBase + "/api/admin/published-people/person-a", {
+      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.41" },
+    });
+    assert.equal(await publicationWithdrawalWaiting(), true,
+      "legacy detail delivery holds the publication row");
+    legacyEarly = await Promise.race([
+      withdrawLegacy.then((response) => `completed ${response.status}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+    ]);
+    releaseLegacy();
+    legacyDelivered = await pausedLegacy;
+    assert.equal((await withdrawLegacy).status, 200);
+  } finally {
+    releaseLegacy();
+    await pausedLegacy.catch(() => {});
+    await withdrawLegacy?.catch(() => {});
+    await new Promise<void>((resolve) => legacyServer.close(() => resolve()));
+  }
+  assert.equal(legacyDelivered.status, 200);
+  assert.ok((await legacyDelivered.json()).person.name);
+  assert.equal((await fetch(otherBase + legacyPath, { headers: archiveAdminHeaders })).status, 404);
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+    method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.42" },
+    body: JSON.stringify({ fields: selectedDiscoveryFields }),
+  })).status, 200);
+  assert.equal(legacyEarly, "pending", "legacy detail delivery must serialize with withdrawal");
+  console.log("runtime_legacy_public_detail_delivery_revocation_ok");
+  let legacySearchReached!: () => void, releaseLegacySearch!: () => void;
+  const legacySearchReady = new Promise<void>((resolve) => { legacySearchReached = resolve; });
+  const legacySearchGate = new Promise<void>((resolve) => { releaseLegacySearch = resolve; });
+  const legacySearchEndpoint = publishedPeopleHttp({ archive: otherApp.archive, auth: legacyAuth,
+    store: otherPublication, publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeSearchDelivery: async () => { legacySearchReached(); await legacySearchGate; },
+  });
+  const legacySearchServer = createServer((req, res) => {
+    void legacySearchEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => legacySearchServer.listen(0, "127.0.0.1", resolve));
+  const legacySearchPort = (legacySearchServer.address() as { port: number }).port;
+  const legacySearchPath = "/api/published-people/search?q=Исправленный";
+  const pausedLegacySearch = fetch(`http://127.0.0.1:${legacySearchPort}${legacySearchPath}`,
+    { headers: { ...headers, "X-Real-IP": "203.0.113.50" } });
+  let withdrawLegacySearch: Promise<Response> | undefined;
+  let legacySearchEarly = "";
+  let legacySearchDelivered!: Response;
+  try {
+    await Promise.race([legacySearchReady,
+      pausedLegacySearch.then((response) => { throw new Error(`Legacy search sent before delivery barrier: ${response.status}`); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Legacy search did not reach delivery barrier")), 30_000)),
+    ]);
+    withdrawLegacySearch = fetch(otherBase + "/api/admin/published-people/person-a", {
+      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.51" },
+    });
+    assert.equal(await publicationWithdrawalWaiting(), true,
+      "legacy search delivery holds the publication row");
+    legacySearchEarly = await Promise.race([
+      withdrawLegacySearch.then((response) => `completed ${response.status}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+    ]);
+    releaseLegacySearch();
+    legacySearchDelivered = await pausedLegacySearch;
+    assert.equal((await withdrawLegacySearch).status, 200);
+  } finally {
+    releaseLegacySearch();
+    await pausedLegacySearch.catch(() => {});
+    await withdrawLegacySearch?.catch(() => {});
+    await new Promise<void>((resolve) => legacySearchServer.close(() => resolve()));
+  }
+  assert.equal(legacySearchDelivered.status, 200);
+  assert.ok((await legacySearchDelivered.json()).results.some(
+    (person: { id: string }) => person.id === "person-a"));
+  assert.deepEqual((await fetch(otherBase + legacySearchPath, {
+    headers: archiveAdminHeaders,
+  }).then((response) => response.json())).results, []);
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+    method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.52" },
+    body: JSON.stringify({ fields: selectedDiscoveryFields }),
+  })).status, 200);
+  assert.equal(legacySearchEarly, "pending", "legacy search delivery must serialize with withdrawal");
+  console.log("runtime_legacy_public_search_delivery_revocation_ok");
+  let detailReached!: () => void, releaseDetail!: () => void;
+  const detailReady = new Promise<void>((resolve) => { detailReached = resolve; });
+  const detailGate = new Promise<void>((resolve) => { releaseDetail = resolve; });
+  const detailAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
   const detailEndpoint = discoveryPeopleHttp(app.archive.db, detailAuth, undefined, undefined,
     async () => { detailReached(); await detailGate; });
   const detailServer = createServer((req, res) => {
@@ -5449,6 +5560,70 @@ try {
   assert.ok(!(await afterCandidateRevocation.json()).candidates.some(
     (item: { id: string }) => item.id === candidateTargetId));
   await publishedPeopleStore(otherApp.archive.db).publish(candidateTargetId, "owner");
+  let postReached!: () => void, releasePost!: () => void;
+  const postReady = new Promise<void>((resolve) => { postReached = resolve; });
+  const postGate = new Promise<void>((resolve) => { releasePost = resolve; });
+  const postEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
+    publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeMutationDelivery: async () => { postReached(); await postGate; },
+  });
+  const postServer = createServer((req, res) => {
+    void postEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => postServer.listen(0, "127.0.0.1", resolve));
+  const postPort = (postServer.address() as { port: number }).port;
+  const pausedPost = fetch(`http://127.0.0.1:${postPort}/api/discovery/matches`, {
+    method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.43" },
+    body: JSON.stringify({ sourcePersonId: candidateSourceId,
+      targetArchiveId: "other-archive", targetPersonId: candidateTargetId }),
+  });
+  let withdrawPost: Promise<Response> | undefined;
+  let postEarly = "";
+  let postDelivered!: Response;
+  try {
+    await Promise.race([postReady,
+      pausedPost.then((response) => { throw new Error(`POST sent before delivery barrier: ${response.status}`); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("POST did not reach delivery barrier")), 30_000)),
+    ]);
+    withdrawPost = fetch(otherBase + `/api/admin/published-people/${candidateTargetId}`, {
+      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.44" },
+    });
+    assert.equal(await publicationWithdrawalWaiting(), true,
+      "POST delivery holds the target publication row");
+    postEarly = await Promise.race([
+      withdrawPost.then((response) => `completed ${response.status}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+    ]);
+    releasePost();
+    postDelivered = await pausedPost;
+    assert.equal((await withdrawPost).status, 200);
+  } finally {
+    releasePost();
+    await pausedPost.catch(() => {});
+    await withdrawPost?.catch(() => {});
+    await new Promise<void>((resolve) => postServer.close(() => resolve()));
+  }
+  assert.equal(postDelivered.status, 200);
+  const postedMatch = (await postDelivered.json()).match;
+  assert.ok([postedMatch.left,postedMatch.right].some(
+    (side: { archiveId: string; name?: string }) =>
+      side.archiveId === "other-archive" && side.name));
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.45" },
+  }).then((response) => response.json())).matches.find(
+    (item: { id: string }) => item.id === postedMatch.id).status, "revoked");
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.53" },
+    body: JSON.stringify({ sourcePersonId: candidateSourceId,
+      targetArchiveId: "other-archive", targetPersonId: candidateTargetId }),
+  })).status, 409, "a new match request cannot reuse a withdrawn publication");
+  await app.archive.db.prepare("", "DELETE FROM discovery_match_requests WHERE id=?")
+    .run(postedMatch.id);
+  await publishedPeopleStore(otherApp.archive.db).publish(candidateTargetId, "owner");
+  assert.equal(postEarly, "pending", "POST match response must serialize with withdrawal");
+  console.log("runtime_discovery_match_post_delivery_revocation_ok");
   const candidateMatchRequest = await fetch(securedBase + "/api/discovery/matches", {
     method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.20" },
     body: JSON.stringify({ sourcePersonId: candidateSourceId,
@@ -5521,6 +5696,80 @@ try {
   console.log("runtime_discovery_match_list_delivery_revocation_ok");
   await app.archive.db.prepare("", "DELETE FROM discovery_match_requests WHERE id=?")
     .run(candidateMatchId);
+  const patchSource = await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.46" },
+    body: JSON.stringify({ sourcePersonId: candidateSourceId,
+      targetArchiveId: "other-archive", targetPersonId: "person-a" }),
+  });
+  assert.equal(patchSource.status, 200);
+  const patchMatchId = (await patchSource.json()).match.id as string;
+  let patchReached!: () => void, releasePatch!: () => void;
+  const patchReady = new Promise<void>((resolve) => { patchReached = resolve; });
+  const patchGate = new Promise<void>((resolve) => { releasePatch = resolve; });
+  const patchEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
+    publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeMutationDelivery: async () => { patchReached(); await patchGate; },
+  });
+  const patchServer = createServer((req, res) => {
+    void patchEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => patchServer.listen(0, "127.0.0.1", resolve));
+  const patchPort = (patchServer.address() as { port: number }).port;
+  const pausedPatch = fetch(`http://127.0.0.1:${patchPort}/api/discovery/matches/${patchMatchId}`, {
+    method: "PATCH", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.47" },
+    body: JSON.stringify({ decision: "revoke" }),
+  });
+  let withdrawPatch: Promise<Response> | undefined;
+  let patchEarly = "";
+  let patchDelivered!: Response;
+  try {
+    await Promise.race([patchReady,
+      pausedPatch.then((response) => { throw new Error(`PATCH sent before delivery barrier: ${response.status}`); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("PATCH did not reach delivery barrier")), 30_000)),
+    ]);
+    withdrawPatch = fetch(otherBase + "/api/admin/published-people/person-a", {
+      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.48" },
+    });
+    assert.equal(await publicationWithdrawalWaiting(), true,
+      "PATCH delivery holds the target publication row");
+    patchEarly = await Promise.race([
+      withdrawPatch.then((response) => `completed ${response.status}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+    ]);
+    releasePatch();
+    patchDelivered = await pausedPatch;
+    assert.equal((await withdrawPatch).status, 200);
+  } finally {
+    releasePatch();
+    await pausedPatch.catch(() => {});
+    await withdrawPatch?.catch(() => {});
+    await new Promise<void>((resolve) => patchServer.close(() => resolve()));
+  }
+  assert.equal(patchDelivered.status, 200);
+  const patchedMatch = (await patchDelivered.json()).match;
+  assert.equal(patchedMatch.status, "revoked");
+  assert.ok([patchedMatch.left,patchedMatch.right].some(
+    (side: { archiveId: string; name?: string }) =>
+      side.archiveId === "other-archive" && side.name));
+  const afterPatchWithdrawal = await fetch(securedBase + `/api/discovery/matches/${patchMatchId}`, {
+    method: "PATCH", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.54" },
+    body: JSON.stringify({ decision: "revoke" }),
+  });
+  assert.equal(afterPatchWithdrawal.status, 200);
+  const afterPatchMatch = (await afterPatchWithdrawal.json()).match;
+  assert.equal((afterPatchMatch.left.archiveId === "other-archive"
+    ? afterPatchMatch.left : afterPatchMatch.right).name, undefined,
+  "a repeated PATCH after withdrawal cannot return the unpublished name");
+  await app.archive.db.prepare("", "DELETE FROM discovery_match_requests WHERE id=?")
+    .run(patchMatchId);
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+    method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.49" },
+    body: JSON.stringify({ fields: selectedDiscoveryFields }),
+  })).status, 200);
+  assert.equal(patchEarly, "pending", "PATCH match response must serialize with withdrawal");
+  console.log("runtime_discovery_match_patch_delivery_revocation_ok");
   const revokeIgnoredArchivePath = "/api/discovery/matches/ignored-archives";
   assert.equal((await fetch(securedBase + revokeIgnoredArchivePath, { method: "POST",
     headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.25" },

@@ -128,7 +128,7 @@ function candidateCursor(value: string | null): [string,string,string] | null {
 
 export function discoveryMatchesHttp({ archive, auth, publicOrigin,
   beforeCandidateDelivery, beforeCandidateResponse,
-  beforeMatchListDelivery, beforeIgnoredArchivesDelivery }: {
+  beforeMatchListDelivery, beforeIgnoredArchivesDelivery, beforeMutationDelivery }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
@@ -136,6 +136,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
   beforeCandidateResponse?: () => Promise<void>;
   beforeMatchListDelivery?: () => Promise<void>;
   beforeIgnoredArchivesDelivery?: () => Promise<void>;
+  beforeMutationDelivery?: () => Promise<void>;
 }) {
   const db = archive.db;
   const limiter = createSharedRequestLimiter(db, "discovery-matches", { windowMs: 60_000, limit: 20 });
@@ -192,6 +193,37 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       return json(res, 403, { error: "Сопоставлять людей может владелец дерева" });
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
+    const deliverMutationMatch = (initial: Row) => db.transaction(async () => {
+      if (!await isOwner(user.id,true))
+        return json(res, 403, { error: "Доступ владельца отозван" });
+      // Unpublishing takes the publication row before its trigger changes the
+      // match request. Keep that order, including for a committed mutation.
+      const expected = (["left","right"] as const).flatMap((side) =>
+        initial[`${side}_name`] == null ? [] : [{
+          archive_id: String(initial[`${side}_archive_id`]),
+          person_id: String(initial[`${side}_person_id`]),
+        }]);
+      if (expected.length) {
+        const locked = await db.prepare("", `SELECT d.archive_id,d.person_id
+          FROM discovery_people d JOIN jsonb_to_recordset(?::jsonb)
+            AS e(archive_id text,person_id text)
+            ON e.archive_id=d.archive_id AND e.person_id=d.person_id
+          ORDER BY d.archive_id COLLATE "C",d.person_id COLLATE "C" FOR SHARE OF d`)
+          .all(JSON.stringify(expected));
+        if (locked.length !== expected.length)
+          return json(res, 409, { error: "Публикации изменились. Обновите сопоставление." });
+      }
+      const lockedRequest = await db.prepare("", `SELECT id FROM discovery_match_requests
+        WHERE id=? FOR SHARE`).get(String(initial.id));
+      if (!lockedRequest)
+        return json(res, 409, { error: "Сопоставление изменилось. Обновите список." });
+      const current = await readMatch(String(initial.id));
+      if (!current || JSON.stringify(match(current)) !== JSON.stringify(match(initial)))
+        return json(res, 409, { error: "Сопоставление изменилось. Обновите список." });
+      await beforeMutationDelivery?.();
+      await deliverLocked(res, { match: match(current) });
+      return true;
+    });
 
     if (ignoredArchives) {
       if (req.method === "GET") {
@@ -556,7 +588,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       });
       if (result === undefined)
         return json(res, 403, { error: "Доступ владельца отозван" });
-      return result ? json(res, 200, { match: match(result) })
+      return result ? deliverMutationMatch(result)
         : json(res, 409, { error: "Одна из карточек больше не открыта для поиска" });
     }
     if (detail && req.method === "PATCH") {
@@ -614,7 +646,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         if (decision === "reject") await hideRejectedCandidate(row,archiveId,approved.id);
         return { code: 200, row: await readMatch(detail[1]) };
       });
-      return "row" in result ? json(res, 200, { match: match(result.row!) })
+      return "row" in result ? deliverMutationMatch(result.row!)
         : json(res, result.code, { error: result.error });
     }
     return json(res, 405, { error: "Метод не поддерживается" });
