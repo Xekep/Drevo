@@ -101,7 +101,7 @@ export function createPersonRelationLabels(
     sources: [],
   }));
   const reference = people.find((person) => person.id === referenceId);
-  if (!reference) return () => "Нет привязки к древу";
+  if (!reference) return () => "";
   const analyze = createKinshipAnalyzer(
     people,
     snapshot.links,
@@ -130,7 +130,7 @@ export function personRelationLabel(
   links: FamilyLink[],
   unions: FamilyUnion[] = [],
 ) {
-  if (!reference) return "Нет привязки к древу";
+  if (!reference) return "";
   if (person.id === reference.id) return "Это вы";
   const relation = analyzeKinship(person, reference, people, links, unions);
   return relationLabel(relation);

@@ -410,10 +410,11 @@ test("semantic label key survives detail hydration and covers every kinship inpu
   assert.equal(label(people[1]), expected);
   assert.equal(
     createPersonRelationLabels(key, undefined)(people[1]),
-    "Нет привязки к древу",
+    "",
   );
   assert.equal(
     createPersonRelationLabels(key, "not-recorded")(people[1]),
-    "Нет привязки к древу",
+    "",
   );
+  assert.equal(personRelationLabel(people[1], null, people, links, unions), "");
 });

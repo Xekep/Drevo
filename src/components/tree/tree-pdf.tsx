@@ -241,9 +241,6 @@ async function exportTreeGraphic(
       );
       await target.fonts.ready;
       if (disposed) return;
-      for (const label of target.querySelectorAll(".portrait-card-info small"))
-        if (label.textContent?.trim() === "Нет привязки к древу")
-          label.remove();
       // Freeze measured HTML/SVG for vector serialization. React Flow listeners
       // and further handle measurements are no longer needed.
       const snapshot = target.body.firstElementChild!.cloneNode(true);
