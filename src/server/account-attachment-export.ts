@@ -18,6 +18,15 @@ const readFlags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
 export class AccountAttachmentExportTooLarge extends Error {}
 export class AccountAttachmentExportMissing extends Error {}
 
+function streamOriginalError(error: unknown): Error {
+  if (error instanceof AccountAttachmentExportMissing) return error;
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  if (code === "ENOENT" || code === "ENOTDIR" || code === "ELOOP" ||
+      code === "EACCES" || code === "EPERM")
+    return new AccountAttachmentExportMissing("Discussion original changed during export");
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 export type OwnCommentAttachment = {
   archiveId: string;
   personId: string;
@@ -191,9 +200,9 @@ export async function prepareAccountAttachmentExport(
                   callback(null, source.pipe(checked));
                 } catch (error) {
                   await handle.close();
-                  callback(error, null as unknown as Readable);
+                  callback(streamOriginalError(error), null as unknown as Readable);
                 }
-              })().catch((error) => callback(error, null as unknown as Readable));
+              })().catch((error) => callback(streamOriginalError(error), null as unknown as Readable));
             });
         }
         zip.end();
