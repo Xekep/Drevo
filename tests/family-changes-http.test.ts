@@ -209,3 +209,44 @@ test("family change endpoint saves a small delta, accepts identical retries and 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+for (const kind of ["event", "alternative"] as const) {
+  test(`HTTP rejects a stale unassessed ${kind} citation instead of dropping a newer source`, async () => {
+    const dir = mkdtempSync(join(tmpdir(), "drevo-family-citation-conflict-"));
+    const previousOrigin = process.env.PUBLIC_ORIGIN;
+    delete process.env.PUBLIC_ORIGIN;
+    const app = await startServer(0, join(dir, "drevo.sqlite"), true);
+    const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+    try {
+      const initialFamily = structuredClone(seed);
+      initialFamily.people[0].events = [{ id: "residence", type: "residence", date: "1920",
+        dateClaim: { value: "1920", sources: [{ title: "Register", type: "", reference: "base" }] } }];
+      initialFamily.people[0].factAlternatives = [{ id: "earlier-birth", field: "birth",
+        value: "1949", sources: [{ title: "Register", type: "", reference: "base" }] }];
+      await app.archive.write(initialFamily, (await app.archive.meta()).revision);
+      const initial = await (await fetch(base + "/api/family")).json();
+      const before = validateFamily(initial.family);
+      const server = structuredClone(before), draft = structuredClone(before);
+      const sources = (family: Family) => kind === "event"
+        ? family.people[0].events![0].dateClaim!.sources
+        : family.people[0].factAlternatives![0].sources;
+      sources(server).push({ title: "Register", type: "", reference: "server" });
+      sources(draft).push({ title: "Register", type: "", reference: "draft" });
+      const patch = (changes: ReturnType<typeof archiveChanges>) => fetch(
+        base + "/api/family/changes", {
+          method: "POST", headers: { Origin: base, "Content-Type": "application/json",
+            "If-Match": String(initial.revision) },
+          body: JSON.stringify({ changes }),
+        });
+      assert.equal((await patch(archiveChanges(before, server))).status, 200);
+      assert.equal((await patch(archiveChanges(before, draft))).status, 409);
+      assert.deepEqual(sources((await app.archive.read()).family).map((source) => source.reference),
+        ["base", "server"]);
+    } finally {
+      await app.close();
+      if (previousOrigin === undefined) delete process.env.PUBLIC_ORIGIN;
+      else process.env.PUBLIC_ORIGIN = previousOrigin;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
