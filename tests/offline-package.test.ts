@@ -10,6 +10,7 @@ import type { Family, Person } from "../src/domain/types.ts";
 import type { ArchiveUser } from "../src/domain/access.ts";
 import { projectFamilyForUser } from "../src/domain/tree-access.ts";
 import {
+  detachUnavailableCitationDocuments,
   offlineDocuments,
   offlineFamily,
   writeOfflinePackage,
@@ -129,6 +130,75 @@ test("offline branch removes hidden people, tags, creator IDs, and unrelated doc
     ["visible"],
   );
   assert.equal(documents[0].provenance, "GASO F6 Op13 D104");
+});
+
+test("offline branch carries a visible citation's PDF without exposing other documents", async () => {
+  const cited: Family = {
+    title: "Cited branch", description: "", demo: false,
+    people: [
+      person("root", { sources: [{ title: "Register", type: "document", reference: "page 4", documentId: "cited", documentPage: 4 }] }),
+      person("outside", { sources: [{ title: "Private", type: "document", reference: "page 9", documentId: "private" }] }),
+    ],
+  };
+  const branch = offlineFamily(cited, "family", "root");
+  const selected = offlineDocuments([
+    { id: "cited", title: "Cited PDF", file_name: documentName, created_at: "2026-01-01" },
+    { id: "private", title: "Private PDF", file_name: scannedDocumentName, created_at: "2026-01-01" },
+  ], [
+    { document_id: "cited", person_id: "outside" },
+    { document_id: "private", person_id: "outside" },
+  ], branch, false, { canReadAll: true, userId: "owner" });
+  assert.deepEqual(selected.map((document) => document.id), ["cited"]);
+  assert.deepEqual(selected[0].personIds, []);
+  const directory = await mkdtemp(join(tmpdir(), "drevo-offline-cited-"));
+  try {
+    await writeFile(join(directory, documentName), Buffer.from("%PDF-1.4\nCited"));
+    const destination = join(directory, "archive.zip");
+    await writeOfflinePackage(destination, directory, branch, selected, 1, "family");
+    const zip = await openPromise(destination);
+    const names: string[] = [];
+    for await (const entry of zip.eachEntry()) names.push(entry.fileName);
+    assert.ok(names.includes(`media/${documentName}`));
+    assert.ok(!names.includes(`media/${scannedDocumentName}`));
+
+    const ownUnlinked = offlineDocuments([
+      { id: "cited", title: "Own PDF", file_name: documentName, created_at: "2026-01-01", uploaded_by: "reader" },
+    ], [], branch, false, { canReadAll: false, userId: "reader" });
+    assert.deepEqual(ownUnlinked.map((document) => document.id), ["cited"]);
+
+    const scoped = offlineFamily(cited, "family", "root");
+    const scopedDocuments = offlineDocuments([
+      { id: "cited", title: "Cited PDF", file_name: documentName, created_at: "2026-01-01", uploaded_by: "other" },
+      { id: "private", title: "Private PDF", file_name: scannedDocumentName, created_at: "2026-01-01", uploaded_by: "other" },
+    ], [
+      { document_id: "cited", person_id: "outside" },
+      { document_id: "private", person_id: "outside" },
+    ], scoped, false, { canReadAll: false, userId: "reader" });
+    assert.deepEqual(scopedDocuments, []);
+    assert.equal(detachUnavailableCitationDocuments(scoped, scopedDocuments), true);
+    assert.equal(scoped.people[0].sources[0].documentId, undefined);
+    assert.equal(scoped.people[0].sources[0].documentPage, undefined);
+    assert.equal(scoped.people[0].sources[0].reference, "page 4");
+    const scopedDestination = join(directory, "scoped.zip");
+    const warning = "Некоторые вложенные документы цитат недоступны для этого экспорта; текст цитат сохранён.";
+    await writeOfflinePackage(scopedDestination, directory, scoped, scopedDocuments, 1, "family", [warning]);
+    const scopedZip = await openPromise(scopedDestination);
+    const scopedNames: string[] = [];
+    let manifest: { warnings?: string[] } = {};
+    for await (const entry of scopedZip.eachEntry()) {
+      scopedNames.push(entry.fileName);
+      if (entry.fileName === "manifest.json") {
+        const chunks: Buffer[] = [];
+        for await (const chunk of await scopedZip.openReadStreamPromise(entry)) chunks.push(Buffer.from(chunk));
+        manifest = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      }
+    }
+    assert.deepEqual(manifest.warnings, [warning]);
+    assert.ok(!scopedNames.includes(`media/${documentName}`));
+    assert.ok(!scopedNames.includes(`media/${scannedDocumentName}`));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("offline ZIP contains verified original media and a syntactically valid standalone reader", async () => {

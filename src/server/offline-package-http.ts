@@ -8,6 +8,7 @@ import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import {
+  detachUnavailableCitationDocuments,
   offlineDocuments,
   offlineFamily,
   writeOfflinePackage,
@@ -37,13 +38,14 @@ export function offlinePackageHttp({
   const readDocumentIndex = async () => {
     const rows = (await archive.db
       .prepare(
-        "SELECT id,title,file_name,created_at,document_type,document_date,place,description,provenance,event_links,pages FROM documents ORDER BY id",
-        "SELECT id,title,file_name,created_at,document_type,document_date,place,description,provenance,event_links,pages FROM documents ORDER BY id",
+        "SELECT id,title,file_name,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages FROM documents ORDER BY id",
+        "SELECT id,title,file_name,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages FROM documents ORDER BY id",
       )
       .all()) as Array<{
       id: string;
       title: string;
       file_name: string;
+      uploaded_by: string;
       created_at: string;
       document_type: string;
       document_date: string;
@@ -119,7 +121,9 @@ export function offlinePackageHttp({
           links,
           family,
           scope === "all" && !isScopedUser(actor),
+          { canReadAll: !isScopedUser(actor), userId: actor.id },
         );
+        const omittedDocument = detachUnavailableCitationDocuments(family, documents);
         const path = join(directory, "archive.zip");
         await writeOfflinePackage(
           path,
@@ -128,6 +132,7 @@ export function offlinePackageHttp({
           documents,
           snapshot.revision,
           scope,
+          omittedDocument ? ["Некоторые вложенные документы цитат недоступны для этого экспорта; текст цитат сохранён."] : [],
         );
         const current = await auth.currentUser(req);
         const currentIndex = await readDocumentIndex();
