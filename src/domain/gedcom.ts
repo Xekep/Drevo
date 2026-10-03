@@ -232,6 +232,23 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
   const roots = parse(text),
     header = roots[0],
     warnings = new Set<string>();
+  const headerSource = child(header, "SOUR");
+  let archiveTitle = (headerSource && value(headerSource, "DATA")) || "Импорт GEDCOM";
+  let archiveDescription = value(header, "NOTE");
+  const archiveMetadata = value(header, "_DREVO_ARCHIVE");
+  if (archiveMetadata) {
+    try {
+      const parsed: unknown = JSON.parse(archiveMetadata);
+      if (!parsed || typeof parsed !== "object" ||
+        typeof (parsed as { title?: unknown }).title !== "string" ||
+        typeof (parsed as { description?: unknown }).description !== "string")
+        throw new Error("Invalid archive metadata");
+      archiveTitle = (parsed as { title: string }).title;
+      archiveDescription = (parsed as { description: string }).description;
+    } catch {
+      warnings.add("Метаданные архива Drevo в заголовке GEDCOM повреждены; название и описание взяты из стандартных полей, если они есть.");
+    }
+  }
   const version = child(header, "GEDC")
     ? value(child(header, "GEDC")!, "VERS")
     : "";
@@ -265,6 +282,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       );
   const supportedExtensions = new Set([
     "_DREVO",
+    "_DREVO_ARCHIVE",
     "_DREVO_PARENT",
     "_DREVO_UNMARRIED",
     "_DREVO_MEDIA",
@@ -1500,8 +1518,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
   );
   return {
     family: validateFamily({
-      title: "Импорт GEDCOM",
-      description: "",
+      title: archiveTitle,
+      description: archiveDescription,
       demo: false,
       people,
       links,
@@ -1686,6 +1704,11 @@ export function exportGedcom(
   }
   emit(0, "HEAD");
   emit(1, "SOUR", "DREVO");
+  // Standard header fields remain readable if a receiving program ignores
+  // Drevo extensions. The extension retains values beyond GEDCOM 5.5.1 limits.
+  if (family.title && !/[\r\n]/.test(family.title) &&
+    (modern || [...family.title].length <= 90))
+    emit(2, "DATA", family.title);
   emit(1, "GEDC");
   emit(2, "VERS", modern ? "7.0" : "5.5.1");
   if (!modern) {
@@ -1695,6 +1718,7 @@ export function exportGedcom(
     emit(1, "SCHMA");
     for (const tag of [
       "_DREVO",
+      "_DREVO_ARCHIVE",
       "_DREVO_PARENT",
       "_DREVO_UNMARRIED",
       "_DREVO_SPOUSE",
@@ -1718,6 +1742,11 @@ export function exportGedcom(
         `${tag} https://drevo.kiiko.ru/gedcom/extensions/${tag.slice(1).toLowerCase()}`,
       );
   }
+  if (family.description && (modern || [...family.description].length <= 248))
+    emit(1, "NOTE", family.description);
+  emit(1, "_DREVO_ARCHIVE", JSON.stringify({
+    title: family.title, description: family.description,
+  }));
   emit(1, "SUBM", "@SUB1@", true);
   emit(0, "@SUB1@ SUBM");
   emit(1, "NAME", "Семейный архив Drevo");
