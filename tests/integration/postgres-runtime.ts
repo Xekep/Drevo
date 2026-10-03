@@ -86,6 +86,7 @@ import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgres-yandex-login.ts";
 import { verifyEmailAccounts } from "./postgres-email.ts";
 import { verifyAccountSessionManagement } from "./postgres-account-sessions.ts";
+import { verifyCoreAccountGetRevocation } from "./postgres-core-account-reads.ts";
 import { verifyPostgresCommentEdits } from "./postgres-comment-edits.ts";
 import { verifyAtomicSuggestionAcceptance } from "./postgres-suggestion-accept.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
@@ -1836,6 +1837,7 @@ try {
       WHERE archive_id='runtime-test' AND user_id='reader'`);
   }
   await verifyAccountSessionManagement(app.archive.db, securedBase, ownerHeaders, headers);
+  await verifyCoreAccountGetRevocation(app.archive, client);
   const generatedChats = aiChatStore(app.archive.db);
   const generatedStore = generatedResearchFileStore(
     app.archive.db, join(dirname(source), "uploads"), generatedChats,

@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { finished } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
@@ -21,6 +22,57 @@ export function coreHttp({
     res.end(JSON.stringify(value));
     return true;
   };
+  const signInRequired = (res: ServerResponse) =>
+    json(res, 401, { error: "Требуется вход" });
+  async function accountRead(
+    req: IncomingMessage,
+    res: ServerResponse,
+    value: unknown,
+    expectedAccountId?: string,
+  ) {
+    if (auth.local) return json(res, 200, value);
+    const session = await auth.accountSession(req);
+    if (!session || (expectedAccountId && session.accountId !== expectedAccountId))
+      return signInRequired(res);
+    if (archive.db.kind !== "postgres") return json(res, 200, value);
+    if (!archive.db.postgresTransaction)
+      throw new Error("PostgreSQL account response requires a transaction");
+    try {
+      return await archive.db.postgresTransaction(async (client) => {
+        await client.query("SET LOCAL lock_timeout='5s'");
+        const locked = await client.query<{ expires_at: string }>(
+          `SELECT expires_at FROM account_sessions
+            WHERE token_hash=$1 AND user_id=$2 FOR SHARE`,
+          [session.tokenHash, session.accountId],
+        );
+        if (!locked.rows[0] || Number(locked.rows[0].expires_at) <= Date.now())
+          return signInRequired(res);
+        // Keep the session row locked until the response is handed to HTTP.
+        // A concurrent revoke must complete before this check or wait here.
+        const delivered = finished(res);
+        const timeout = setTimeout(() => res.destroy(), 5_000);
+        timeout.unref();
+        try {
+          json(res, 200, value);
+          await delivered;
+        } catch {
+          res.destroy();
+          await delivered.catch(() => {});
+        } finally {
+          clearTimeout(timeout);
+        }
+        return true;
+      });
+    } catch (error) {
+      if (res.headersSent || res.destroyed) {
+        res.destroy();
+        return true;
+      }
+      if ((error as { code?: string }).code === "55P03")
+        return json(res, 503, { error: "Повторите запрос позже" });
+      throw error;
+    }
+  }
 
   return async (
     req: IncomingMessage,
@@ -40,15 +92,15 @@ export function coreHttp({
     if (path === "/api/account/sessions" && req.method === "GET") {
       const sessions = await auth.sessionSummary(req);
       return sessions
-        ? json(res, 200, sessions)
-        : json(res, 401, { error: "Требуется вход" });
+        ? accountRead(req, res, sessions)
+        : signInRequired(res);
     }
 
     if (path === "/api/account/capacity" && req.method === "GET") {
       const user = await auth.currentUser(req);
       return user
-        ? json(res, 200, await accountCapacity(archive.db, user.id))
-        : json(res, 401, { error: "Требуется вход" });
+        ? accountRead(req, res, await accountCapacity(archive.db, user.id), user.id)
+        : signInRequired(res);
     }
 
     if (
