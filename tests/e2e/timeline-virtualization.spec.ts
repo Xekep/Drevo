@@ -201,14 +201,12 @@ test("large chronology bounds mounted rows, preserves the tree camera and finds 
   );
   await expect
     .poll(() =>
-      page
-        .locator(".react-flow__node")
-        .evaluateAll((nodes) =>
-          nodes.map((node) => ({
-            id: node.getAttribute("data-id"),
-            style: node.getAttribute("style"),
-          })),
-        ),
+      page.locator(".react-flow__node").evaluateAll((nodes) =>
+        nodes.map((node) => ({
+          id: node.getAttribute("data-id"),
+          style: node.getAttribute("style"),
+        })),
+      ),
     )
     .toEqual(geometry);
   expect(
@@ -255,6 +253,7 @@ test("virtual rows retain event details and keyboard focus across unmounts and r
   await fixture(page);
   const timeline = await enterTimeline(page);
   await year(page, timeline, 1970);
+  await expect(timeline.locator(".timeline-event-list")).toHaveCount(0);
   const events = row(timeline, "window-000")
     .locator(".timeline-event")
     .filter({
@@ -283,6 +282,7 @@ test("virtual rows retain event details and keyboard focus across unmounts and r
   await expect(events.locator(".timeline-event-list")).toBeVisible();
   await events.locator("summary").click();
 
+  await expect(events.locator(".timeline-event-list")).toHaveCount(0);
   const first = row(timeline, "window-000").locator(".timeline-person");
   await first.focus();
   await timeline.evaluate((element) => {

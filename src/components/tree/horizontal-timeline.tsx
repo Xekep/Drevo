@@ -91,13 +91,15 @@ function EventGroup({
           "•"
         )}
       </summary>
-      <div className="timeline-event-list">
-        {group.items.map((item) => (
-          <button type="button" key={item.id} onClick={onChoose}>
-            <EventText item={item} />
-          </button>
-        ))}
-      </div>
+      {open && (
+        <div className="timeline-event-list">
+          {group.items.map((item) => (
+            <button type="button" key={item.id} onClick={onChoose}>
+              <EventText item={item} />
+            </button>
+          ))}
+        </div>
+      )}
     </details>
   );
 }

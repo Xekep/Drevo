@@ -96,16 +96,23 @@ export function plural(n: number, one: string, few: string, many: string) {
         ? few
         : many;
 }
+// Fixed locale/precision formatters are reusable; do not allocate one per row.
+const monthDateLabel = new Intl.DateTimeFormat("ru-RU", {
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+const dayDateLabel = new Intl.DateTimeFormat("ru-RU", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
 export function dateLabel(value: string) {
   if (!value) return "";
   if (!validDate(value)) return value;
   if (/^\d{4}$/.test(value)) return `${value} год`;
-  return new Intl.DateTimeFormat("ru-RU", {
-    ...(value.length === 10 ? { day: "numeric" as const } : {}),
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  })
+  return (value.length === 10 ? dayDateLabel : monthDateLabel)
     .format(new Date(dateBound(value, false) + "T12:00:00Z"))
     .replace(" г.", "");
 }

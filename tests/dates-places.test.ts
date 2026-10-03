@@ -120,6 +120,20 @@ test("local date formats preserve precision and reject impossible dates", () => 
     ),
   );
 });
+test("repeated date labels retain each record's precision and untouched date notes", () => {
+  const samples = [
+    ["1980-05-01", "1 мая 1980"],
+    ["1980-05", "май 1980"],
+    ["1980", "1980 год"],
+    ["2000-02-29", "29 февраля 2000"],
+    ["1900-02-29", "1900-02-29"],
+    ["около 1850", "около 1850"],
+    ["", ""],
+  ];
+  for (const order of [samples, samples.toReversed(), samples])
+    for (const [input, expected] of order)
+      assert.equal(dateLabel(input), expected);
+});
 test("places derive only from recorded events and stale coordinates do not follow a renamed place", () => {
   const p = {
     ...person,
