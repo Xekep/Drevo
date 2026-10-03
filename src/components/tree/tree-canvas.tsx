@@ -1182,6 +1182,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     return saveGenerationAnchor(id);
   }, [props.generationLimits, generationRange, currentPeople, saveGenerationAnchor]);
   const focusSelected = async () => {
+    if (selected.length === 1 && props.assistantFilter &&
+        ("excludeNeedsReview" in props.assistantFilter
+          ? currentPeople.get(selected[0])?.needsReview
+          : !props.assistantFilter.ids.includes(selected[0]))) {
+      setAnchorNotice("Человек скрыт фильтром исследования. Снимите фильтр, чтобы перейти к нему");
+      return;
+    }
     if (selected.length === 1 && await reanchorHiddenPerson(selected[0])) return;
     void fitTree({
       ids: selected,

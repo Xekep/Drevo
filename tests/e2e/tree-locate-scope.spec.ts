@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { DEFAULT_TREE_PREFERENCES, type TreePreferences } from "../../src/domain/tree-preferences";
 
-async function limitedTree(page: Page) {
+async function limitedTree(page: Page, assistantFilterIds?: string[]) {
   let preferences: TreePreferences = {
     ...DEFAULT_TREE_PREFERENCES,
     generationLimits: { anchorId: "e2e-child", ancestors: 3, descendants: 1, collateral: 0 },
@@ -21,6 +21,20 @@ async function limitedTree(page: Page) {
     }
     await route.fulfill({ json: preferences });
   });
+  if (assistantFilterIds) {
+    await page.route("**/api/ai/status", (route) =>
+      route.fulfill({ json: { enabled: true, streaming: true } }),
+    );
+    await page.route("**/api/ai/chats", (route) =>
+      route.fulfill({ json: { chats: [] } }),
+    );
+    await page.route("**/api/ai/chat/stream", (route) =>
+      route.fulfill({
+        contentType: "text/event-stream; charset=utf-8",
+        body: `event: done\ndata: ${JSON.stringify({ answer: "Фильтр применён.", references: [], suggestionIds: [], uiActions: [{ type: "filter_people", personIds: assistantFilterIds, label: "Выборка" }], files: [] })}\n\n`,
+      }),
+    );
+  }
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
   await expect(page.locator(".tree-canvas")).toHaveAttribute("data-layout-people", "4");
@@ -96,4 +110,28 @@ test("locating an already visible person moves the camera without saving generat
   await expect(dialog.getByRole("radio", { name: "Вверх: 3", exact: true })).toBeChecked();
   await expect(dialog.getByRole("radio", { name: "Вниз: 1", exact: true })).toBeChecked();
   await expect(dialog.getByRole("radio", { name: "Боковые ветви: 0", exact: true })).toBeChecked();
+});
+
+test("locating a person excluded by the research filter leaves the camera and anchor unchanged", async ({ page, isMobile }) => {
+  test.skip(isMobile, "The desktop camera toolbar owns this action");
+  const { writes } = await limitedTree(page, ["e2e-child"]);
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  const assistant = page.locator(".research-assistant");
+  await assistant.getByRole("textbox").fill("Оставь только одного человека");
+  await assistant.getByRole("button", { name: "Отправить запрос" }).click();
+  await expect(page.locator(".tree-filter-status")).toContainText("Выборка: 1 из");
+  await assistant.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
+  await searchPerson(page, "Мария", /Тестова Мария/);
+  await expect(page.locator('.flow-person[data-person-id="e2e-sibling"]')).toHaveCount(0);
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-layout-settling/);
+  const viewport = page.locator(".react-flow__viewport");
+  const before = await viewport.getAttribute("style");
+
+  await page.getByRole("button", { name: "К выбранному человеку", exact: true }).click();
+  await expect(page.locator(".tree-notice")).toContainText(
+    "Человек скрыт фильтром исследования. Снимите фильтр, чтобы перейти к нему",
+  );
+  await expect(viewport).toHaveAttribute("style", before!);
+  expect(writes).toEqual([]);
+  await expect(page.locator('.flow-person[data-person-id="e2e-sibling"]')).toHaveCount(0);
 });
