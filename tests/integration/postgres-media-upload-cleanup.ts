@@ -51,6 +51,10 @@ test("a response failure after photo commit retains the committed original", asy
   await (await userStore(seed.db, { initialAdminId: "owner" })).register("owner", "Owner");
   await seed.close();
   await importSqliteSnapshot(source, uploads, "media-cleanup-test", client, "owner");
+  assert.equal((await client.query(`SELECT count(*)::int AS n FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name='relations'
+      AND column_name='confidence'`)).rows[0].n, 1,
+  "a fresh SQLite import installs link confidence before the first runtime read");
   process.env.DATABASE_BACKEND = "postgres";
   process.env.ARCHIVE_ID = "media-cleanup-test";
   process.env.PUBLIC_ORIGIN = "https://archive.test";

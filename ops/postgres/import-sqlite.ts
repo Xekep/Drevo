@@ -431,6 +431,9 @@ export async function importSqliteSnapshot(
     await client.query(
       readFileSync(new URL("./060_family_link_sources.sql", import.meta.url), "utf8"),
     );
+    await client.query(
+      readFileSync(new URL("./078_family_link_confidence.sql", import.meta.url), "utf8"),
+    );
     if ((await client.query("SELECT 1 FROM archives LIMIT 1")).rowCount)
       throw new Error(
         "Целевая БД уже содержит архив; повторный импорт запрещён",
