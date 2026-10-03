@@ -39,7 +39,9 @@ export async function detectFacesWithCurrentAccess<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   await assertFaceRecognitionAvailable(signal);
-  return infer();
+  const result = await infer();
+  await assertFaceRecognitionAvailable(signal);
+  return result;
 }
 const MODEL_URI = "/models/human-3.3.6";
 let engine:
@@ -107,7 +109,12 @@ async function detect(
 ): Promise<FaceSample[]> {
   const imageUrl = archiveResourceUrl(url);
   const key = `${precise ? "precise" : "quick"}:${imageUrl}`;
-  if (cache.has(key)) return cache.get(key)!;
+  if (cache.has(key)) {
+    await assertFaceRecognitionAvailable();
+    const result = await cache.get(key)!;
+    await assertFaceRecognitionAvailable();
+    return result;
+  }
   const work = (async () => {
     const human = await loadApi();
     const image = new Image();

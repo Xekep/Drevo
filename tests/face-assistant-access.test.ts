@@ -33,6 +33,17 @@ test("browser inference rechecks access after an earlier full-tier status", asyn
       [{ face: true }],
     );
     assert.equal(inferenceCalls, 1);
+
+    // A completed inference must not release vectors after access is revoked.
+    await assert.rejects(
+      detectFacesWithCurrentAccess(async () => {
+        inferenceCalls++;
+        enabled = false;
+        return [{ descriptor: [0.1] }];
+      }),
+      { name: "AbortError" },
+    );
+    assert.equal(inferenceCalls, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }
