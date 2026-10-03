@@ -5942,12 +5942,37 @@ try {
       body: JSON.stringify({ targetId: "candidate-owner-successor" }),
     });
     assert.equal(proposedTransfer.status, 200, await proposedTransfer.text());
+    assert.equal((await client.query(`SELECT 1 FROM published_people
+      WHERE archive_id='runtime-test' AND person_id='person-a'`)).rowCount, 0,
+    "the admin preview race must use an unpublished card");
+    let adminReached!: () => void, releaseAdmin!: () => void;
+    const adminReady = new Promise<void>((resolve) => { adminReached = resolve; });
+    const adminGate = new Promise<void>((resolve) => { releaseAdmin = resolve; });
+    const adminEndpoint = publishedPeopleHttp({
+      archive: app!.archive,
+      auth: detailAuth, store: publishedPeopleStore(app!.archive.db),
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeAdminFinalLock: async () => { adminReached(); await adminGate; },
+    });
+    const adminServer = createServer((req, res) => {
+      void adminEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => adminServer.listen(0, "127.0.0.1", resolve));
+    const adminPort = (adminServer.address() as { port: number }).port;
+    const pausedAdmin = fetch(`http://127.0.0.1:${adminPort}/api/admin/published-people/person-a`,
+      { headers: ownerHeaders });
     const beforeLock = await ownerCandidateBarrier(false, "203.0.113.66");
     try {
       await Promise.race([beforeLock.ready,
         beforeLock.response.then(() => { throw new Error("Candidate page sent before owner barrier"); }),
         new Promise<never>((_, reject) => setTimeout(() =>
           reject(new Error("Candidate page did not reach owner barrier")), 30_000)),
+      ]);
+      await Promise.race([adminReady,
+        pausedAdmin.then(() => { throw new Error("Admin preview sent before final lock barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Admin preview did not reach final lock barrier")), 30_000)),
       ]);
       const acceptedTransfer = await fetch(securedBase + "/api/account/owner-transfer/accept", {
         method: "POST",
@@ -5956,14 +5981,78 @@ try {
       });
       assert.equal(acceptedTransfer.status, 200, await acceptedTransfer.text());
       beforeLock.release();
+      releaseAdmin();
       assert.equal((await beforeLock.response).status, 403,
         "a former owner cannot receive a candidate page after HTTP ownership transfer");
-    } finally { await beforeLock.close(); }
+      const revokedAdmin = await pausedAdmin;
+      assert.equal(revokedAdmin.status, 403,
+        "a former owner cannot receive an unpublished card after HTTP ownership transfer");
+      assert.equal("person" in await revokedAdmin.json(), false);
+    } finally {
+      releaseAdmin();
+      await pausedAdmin.catch(() => {});
+      await new Promise<void>((resolve) => adminServer.close(() => resolve()));
+      await beforeLock.close();
+    }
+    console.log("runtime_admin_published_owner_transfer_revocation_ok");
     console.log("runtime_discovery_candidate_owner_http_transfer_ok");
     await client.query(`UPDATE archive_owners SET user_id=$1
       WHERE archive_id='runtime-test'`, [candidatePriorOwner]);
     await client.query(`UPDATE archive_memberships SET role=$2
       WHERE archive_id='runtime-test' AND user_id=$1`, [candidatePriorOwner, candidatePriorRole]);
+    const adminSessionToken = newSessionToken();
+    const adminSessionHash = sessionTokenHash(adminSessionToken);
+    await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
+      VALUES($1,$2,$3)`, [adminSessionHash,candidatePriorOwner,Date.now() + 600_000]);
+    let finalAdminReached!: () => void, releaseFinalAdmin!: () => void;
+    const finalAdminReady = new Promise<void>((resolve) => { finalAdminReached = resolve; });
+    const finalAdminGate = new Promise<void>((resolve) => { releaseFinalAdmin = resolve; });
+    const adminStore = publishedPeopleStore(app!.archive.db);
+    const finalAdminEndpoint = publishedPeopleHttp({ archive: app!.archive, auth: detailAuth,
+      store: { ...adminStore, getFields: async (personId: string) => {
+        const fields = await adminStore.getFields(personId);
+        finalAdminReached();
+        await finalAdminGate;
+        return fields;
+      } }, publicOrigin: process.env.PUBLIC_ORIGIN,
+    });
+    const finalAdminServer = createServer((req, res) => {
+      void finalAdminEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => finalAdminServer.listen(0, "127.0.0.1", resolve));
+    const finalAdminPort = (finalAdminServer.address() as { port: number }).port;
+    const adminSessionHeaders = { ...ownerHeaders, Cookie: `drevo_session=${adminSessionToken}` };
+    const heldAdmin = fetch(`http://127.0.0.1:${finalAdminPort}/api/admin/published-people/person-a`,
+      { headers: adminSessionHeaders });
+    let revokeAdminSession: Promise<unknown> | undefined;
+    try {
+      await Promise.race([finalAdminReady,
+        heldAdmin.then(() => { throw new Error("Admin preview sent before final barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Admin preview did not reach final barrier")), 30_000)),
+      ]);
+      revokeAdminSession = client.query(`DELETE FROM account_sessions WHERE token_hash=$1`,
+        [adminSessionHash]);
+      assert.equal(await Promise.race([revokeAdminSession.then(() => "completed"),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300))]), "pending",
+      "session revocation waits until the admin preview finishes delivery");
+      releaseFinalAdmin();
+      const deliveredAdmin = await heldAdmin;
+      assert.equal(deliveredAdmin.status, 200);
+      assert.equal((await deliveredAdmin.json()).published, false);
+      await revokeAdminSession;
+      assert.equal((await fetch(securedBase + "/api/admin/published-people/person-a",
+        { headers: adminSessionHeaders })).status, 401,
+      "the revoked session cannot request another admin preview");
+    } finally {
+      releaseFinalAdmin();
+      await heldAdmin.catch(() => {});
+      await new Promise<void>((resolve) => finalAdminServer.close(() => resolve()));
+      await revokeAdminSession?.catch(() => {});
+      await client.query(`DELETE FROM account_sessions WHERE token_hash=$1`, [adminSessionHash]);
+    }
+    console.log("runtime_admin_published_session_delivery_revocation_ok");
     const duringLock = await ownerCandidateBarrier(true, "203.0.113.67");
     let transfer: Promise<unknown> | undefined;
     try {
