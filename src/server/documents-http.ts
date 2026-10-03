@@ -266,6 +266,8 @@ export function documentsHttp({
   beforeFileDelivery,
   beforeLockedFileDelivery,
   beforeStreamRemainder,
+  beforeMetadataDelivery,
+  beforeLockedMetadataDelivery,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -275,6 +277,8 @@ export function documentsHttp({
   beforeFileDelivery?: () => Promise<void>;
   beforeLockedFileDelivery?: () => Promise<void>;
   beforeStreamRemainder?: () => Promise<void>;
+  beforeMetadataDelivery?: () => Promise<void>;
+  beforeLockedMetadataDelivery?: () => Promise<void>;
 }) {
   mkdirSync(uploadsDirectory, { recursive: true });
   const db = archive.db;
@@ -538,6 +542,109 @@ export function documentsHttp({
       throw error;
     }
   };
+  const deliverMetadata = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    access: Awaited<ReturnType<typeof visible>>,
+    rows: Row[],
+    links: Map<string, string[]>,
+    value: unknown,
+  ) => {
+    // Build the entire bounded page before locking. res.end only hands the
+    // bytes to HTTP; a slow socket does not retain a PostgreSQL connection.
+    const body = JSON.stringify(value);
+    await beforeMetadataDelivery?.();
+    const send = () => {
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "private, no-store",
+      });
+      res.end(body);
+    };
+    if (db.kind !== "postgres" || !db.postgresTransaction) {
+      if (!(await accessStillCurrent(req, access))) return "denied";
+      if (res.destroyed) return "sent";
+      send();
+      return "sent";
+    }
+    // Do not call the pooled auth/store helpers inside postgresTransaction.
+    const session = auth.local ? null : await auth.accountSession(req);
+    if (!auth.local && (!session || session.accountId !== access.userId))
+      return "denied";
+    const archiveId = db.archiveId;
+    if (!archiveId) return "denied";
+    try {
+      return await db.postgresTransaction(async (client) => {
+        await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
+        // Archive writers acquire this row before membership/document/graph
+        // changes. Other readers can share it until the JSON handoff.
+        const archiveRow = await client.query(
+          "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT", [archiveId],
+        );
+        if (!archiveRow.rowCount) return "denied";
+        if (!auth.local) {
+          await client.query("SELECT set_config('drevo.account_id',$1,true)",
+            [session!.accountId]);
+          // Account deletion can lock session before archive; never wait on it.
+          const activeSession = await client.query(
+            `SELECT expires_at FROM account_sessions WHERE token_hash=$1 AND user_id=$2
+             FOR SHARE NOWAIT`, [session!.tokenHash, session!.accountId],
+          );
+          if (!activeSession.rowCount ||
+              Number(activeSession.rows[0].expires_at) <= Date.now()) return "denied";
+          const membership = await client.query(
+            `SELECT role,approved,tree_access,person_id FROM archive_memberships
+             WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+            [archiveId, session!.accountId],
+          );
+          const member = membership.rows[0];
+          if (member?.approved !== true ||
+              JSON.stringify([session!.accountId, member.role,
+                member.tree_access || "all", member.person_id]) !== access.scope)
+            return "denied";
+        }
+        if (access.scoped && Number(archiveRow.rows[0].revision) !== access.revision)
+          return "denied";
+        if (rows.length) {
+          const documents = await client.query(
+            `SELECT id,title,file_name,uploaded_by FROM documents
+             WHERE id=ANY($1::text[]) FOR SHARE NOWAIT`,
+            [rows.map((row) => row.id)],
+          );
+          const current = new Map(documents.rows.map((row) => [String(row.id), row]));
+          if (rows.some((row) => {
+            const found = current.get(row.id);
+            return !found || found.title !== row.title ||
+              found.file_name !== row.file_name || found.uploaded_by !== row.uploaded_by;
+          })) return "denied";
+          if (access.scoped) {
+            const associations = await client.query(
+              `SELECT document_id,person_id FROM document_people
+               WHERE document_id=ANY($1::text[]) ORDER BY document_id,person_id FOR SHARE NOWAIT`,
+              [rows.map((row) => row.id)],
+            );
+            const currentLinks = new Map<string, string[]>();
+            for (const link of associations.rows) {
+              const id = String(link.document_id);
+              currentLinks.set(id, [...(currentLinks.get(id) || []), String(link.person_id)]);
+            }
+            if (rows.some((row) =>
+              JSON.stringify(currentLinks.get(row.id) || []) !==
+                JSON.stringify(links.get(row.id) || []) ||
+              !canSee(access, row, currentLinks.get(row.id) || [])))
+              return "denied";
+          }
+        }
+        await beforeLockedMetadataDelivery?.();
+        if (res.destroyed) return "sent";
+        send();
+        return "sent";
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === "55P03") return "busy";
+      throw error;
+    }
+  };
 
   return async (
     req: IncomingMessage,
@@ -634,7 +741,7 @@ export function documentsHttp({
         mayEdit = await auth.canEdit(req);
       if (!(await accessStillCurrent(req, access)))
         return json(res, 403, { error: "Доступ к документам изменился" });
-      return json(res, 200, {
+      const value = {
         total,
         items: rows.map((row) =>
           listedDocument(
@@ -647,7 +754,13 @@ export function documentsHttp({
             citations.links,
           ),
         ),
-      });
+      };
+      const result = await deliverMetadata(req, res, access, rows, links, value);
+      if (result === "denied")
+        return json(res, 403, { error: "Доступ к документам изменился" });
+      if (result === "busy")
+        return json(res, 409, { error: "Доступ к документам временно занят" });
+      return true;
     }
 
     if (item && req.method === "GET") {
@@ -669,10 +782,7 @@ export function documentsHttp({
       const mayEdit = await auth.canEdit(req);
       if (!(await accessStillCurrent(req, access)))
         return json(res, 404, { error: "Документ не найден" });
-      return json(
-        res,
-        200,
-        listedDocument(
+      const value = listedDocument(
           row,
           linkedIds,
           people,
@@ -680,8 +790,14 @@ export function documentsHttp({
           related,
           citations.unions,
           citations.links,
-        ),
-      );
+        );
+      const result = await deliverMetadata(req, res, access, [row],
+        new Map([[row.id, linkedIds]]), value);
+      if (result === "denied")
+        return json(res, 404, { error: "Документ не найден" });
+      if (result === "busy")
+        return json(res, 409, { error: "Доступ к документу временно занят" });
+      return true;
     }
 
     if (item && req.method === "PATCH") {
