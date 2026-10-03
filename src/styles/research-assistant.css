@@ -108,13 +108,13 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
 @media (min-width: 900px) {
   body:has(.archive-workspace .inspector-dock:not([hidden]))
     .research-assistant:not([style]) {
-    right: calc(clamp(340px, 26vw, 380px) + 36px);
+    right: calc(clamp(340px, 26vw, 380px) + 12px);
   }
   body:has(
       .archive-workspace .inspector-dock[data-editing="true"]:not([hidden])
     )
     .research-assistant:not([style]) {
-    right: calc(clamp(400px, 34vw, 480px) + 36px);
+    right: calc(clamp(400px, 34vw, 480px) + 12px);
   }
 }
 

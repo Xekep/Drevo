@@ -51,6 +51,7 @@ export function discoveryPeopleHttp(
   auth: Awaited<ReturnType<typeof createAuth>>,
   beforeDetailLookup?: () => Promise<void>,
   beforeSearchDelivery?: () => Promise<void>,
+  beforeDetailDelivery?: () => Promise<void>,
 ) {
   const limiter = createSharedRequestLimiter(db, "discovery-people", { windowMs: 60_000, limit: 60 });
   const json = (res: ServerResponse, status: number, value: unknown) => {
@@ -96,6 +97,7 @@ export function discoveryPeopleHttp(
       return [listedPerson(linked as DiscoveryRow)];
     });
     return rows.length ? { person: listedPerson(rows[0]), cards: cards.slice(0,50),
+      selectedCards: cards,
       truncated: cards.length > 50 } : null;
   };
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
@@ -120,11 +122,59 @@ export function discoveryPeopleHttp(
              WHERE archive_id=? AND person_id=?`).get(detail[1], personId);
       if (!row) return json(res, 404, { error: "Человек не найден" });
       await beforeDetailLookup?.();
-      const linked = await linkedPeople(detail[1],personId,
-        String(row.publication_version),String(row.row_version));
-      if (!linked) return json(res, 404, { error: "Человек не найден" });
-      return json(res, 200, { person: linked.person, linkedCards: linked.cards,
-        linkedCardsTruncated: linked.truncated });
+      const result = await db.transaction(async () => {
+        const linked = await linkedPeople(detail[1],personId,
+          String(row.publication_version),String(row.row_version));
+        if (!linked) return 404;
+        const chosen = { archive_id: detail[1], person_id: personId };
+        const expected = [chosen,...linked.selectedCards.map((card) => ({
+          archive_id: card.archiveId, person_id: card.id,
+        }))];
+        // Unpublication locks the published rows before cascading into linked
+        // pairs. Lock every delivered card (including the overflow card) first.
+        const published = await db.prepare("", `SELECT d.archive_id,d.person_id
+          FROM discovery_people d JOIN jsonb_to_recordset(?::jsonb)
+            AS e(archive_id text,person_id text)
+            ON e.archive_id=d.archive_id AND e.person_id=d.person_id
+          ORDER BY d.archive_id COLLATE "C",d.person_id COLLATE "C" FOR SHARE OF d`)
+          .all(JSON.stringify(expected));
+        if (published.length !== expected.length) return 409;
+        const pairs = linked.selectedCards.length ? await db.prepare("", `SELECT p.left_archive_id
+          FROM discovery_linked_pairs p JOIN jsonb_to_recordset(?::jsonb)
+            AS e(archive_id text,person_id text)
+            ON (p.left_archive_id=? AND p.left_person_id=?
+              AND p.right_archive_id=e.archive_id AND p.right_person_id=e.person_id)
+            OR (p.right_archive_id=? AND p.right_person_id=?
+              AND p.left_archive_id=e.archive_id AND p.left_person_id=e.person_id)
+          ORDER BY p.left_archive_id COLLATE "C",p.left_person_id COLLATE "C",
+            p.right_archive_id COLLATE "C",p.right_person_id COLLATE "C" FOR SHARE OF p`)
+          .all(JSON.stringify(expected.slice(1)),detail[1],personId,detail[1],personId) : [];
+        if (pairs.length !== linked.selectedCards.length) return 409;
+        const current = await linkedPeople(detail[1],personId,
+          String(row.publication_version),String(row.row_version));
+        if (!current) return 404;
+        if (current.selectedCards.length !== linked.selectedCards.length ||
+            current.selectedCards.some((card,index) =>
+              card.archiveId !== linked.selectedCards[index].archiveId ||
+              card.id !== linked.selectedCards[index].id)) return 409;
+        await beforeDetailDelivery?.();
+        const delivered = finished(res, { cleanup: true });
+        const timeout = setTimeout(() => res.destroy(), 5_000);
+        timeout.unref();
+        try {
+          json(res, 200, { person: current.person, linkedCards: current.cards,
+            linkedCardsTruncated: current.truncated });
+          await delivered;
+        } catch (error) {
+          const disconnected = res.destroyed;
+          res.destroy();
+          await delivered.catch(() => {});
+          if (!disconnected) throw error;
+        } finally { clearTimeout(timeout); }
+        return 200;
+      });
+      return result === 200 ? true : json(res, result, { error: result === 404
+        ? "Человек не найден" : "Опубликованная карточка изменилась. Обновите её." });
     }
     const query = (url.searchParams.get("q") || "").trim();
     const terms = query.length >= 2 && query.length <= 100 ? searchTerms(query) : null;

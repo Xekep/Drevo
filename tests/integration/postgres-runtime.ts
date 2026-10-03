@@ -5314,6 +5314,284 @@ try {
     (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
     200,
   );
+  let detailReached!: () => void, releaseDetail!: () => void;
+  const detailReady = new Promise<void>((resolve) => { detailReached = resolve; });
+  const detailGate = new Promise<void>((resolve) => { releaseDetail = resolve; });
+  const detailAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  const publicationWithdrawalWaiting = async () => {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
+        WHERE datname=current_database() AND pid<>pg_backend_pid()
+          AND wait_event_type='Lock' AND query LIKE 'DELETE FROM published_people%'`);
+      if (waiting.rowCount) return true;
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+    return false;
+  };
+  const detailEndpoint = discoveryPeopleHttp(app.archive.db, detailAuth, undefined, undefined,
+    async () => { detailReached(); await detailGate; });
+  const detailServer = createServer((req, res) => {
+    void detailEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => detailServer.listen(0, "127.0.0.1", resolve));
+  const detailPort = (detailServer.address() as { port: number }).port;
+  const detailPath = "/api/discovery/people/other-archive/person-a";
+  const pausedDetail = fetch(`http://127.0.0.1:${detailPort}${detailPath}`,
+    { headers: { ...headers, "X-Real-IP": "203.0.113.11" } });
+  let withdrawDetail: Promise<Response> | undefined;
+  try {
+    await Promise.race([detailReady,
+      pausedDetail.then(() => { throw new Error("Discovery detail sent before delivery barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Discovery detail did not reach delivery barrier")), 30_000)),
+    ]);
+    withdrawDetail = fetch(otherBase + "/api/admin/published-people/person-a", {
+      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.12" },
+    });
+    assert.equal(await publicationWithdrawalWaiting(), true,
+      "detail delivery holds the published row against withdrawal");
+    const earlyWithdrawal = await Promise.race([
+      withdrawDetail.then((response) => `completed ${response.status}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+    ]);
+    assert.equal(earlyWithdrawal, "pending",
+      "unpublishing a card waits until its discovery detail finishes delivery");
+    releaseDetail();
+    assert.equal((await pausedDetail).status, 200);
+    assert.equal((await withdrawDetail).status, 200);
+  } finally {
+    releaseDetail();
+    await pausedDetail.catch(() => {});
+    await withdrawDetail?.catch(() => {});
+    await new Promise<void>((resolve) => detailServer.close(() => resolve()));
+  }
+  assert.equal((await fetch(securedBase + detailPath, { headers })).status, 404);
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+    method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.13" },
+    body: JSON.stringify({ fields: selectedDiscoveryFields }),
+  })).status, 200);
+  console.log("runtime_discovery_detail_delivery_revocation_ok");
+  const candidateRootBefore = await app.archive.read();
+  const candidateOtherBefore = await otherApp.archive.read();
+  const candidateRoot = structuredClone(candidateRootBefore.family);
+  const candidateOther = structuredClone(candidateOtherBefore.family);
+  const candidateSourceId = "revoke-candidate-root";
+  const candidateTargetId = "revoke-candidate-other";
+  for (const [family,id] of [[candidateRoot,candidateSourceId],
+    [candidateOther,candidateTargetId]] as const) {
+    family.people.push({ ...structuredClone(family.people[0]), id,
+      surname: "Stone", name: "Anna", patronymic: "", maidenName: undefined,
+      birth: "1900", death: "1970", deceased: true,
+      parents: [], spouses: [], sources: [], generation: 1 });
+  }
+  await app.archive.write(candidateRoot, candidateRootBefore.revision);
+  await otherApp.archive.write(candidateOther, candidateOtherBefore.revision);
+  await publishedPeopleStore(app.archive.db).publish(candidateSourceId, "owner");
+  await publishedPeopleStore(otherApp.archive.db).publish(candidateTargetId, "owner");
+  const revokeCandidatePath = `/api/discovery/matches/candidates?sourcePersonId=${candidateSourceId}`;
+  const candidateBeforeRevoke = await fetch(securedBase + revokeCandidatePath,
+    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.16" } });
+  assert.equal(candidateBeforeRevoke.status, 200);
+  assert.ok((await candidateBeforeRevoke.json()).candidates.some(
+    (item: { id: string }) => item.id === candidateTargetId),
+  "the synthetic published candidate must be present before revocation");
+  let candidateReached!: () => void, releaseCandidate!: () => void;
+  const candidateReady = new Promise<void>((resolve) => { candidateReached = resolve; });
+  const candidateGate = new Promise<void>((resolve) => { releaseCandidate = resolve; });
+  const candidateEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
+    publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeCandidateResponse: async () => { candidateReached(); await candidateGate; },
+  });
+  const candidateServer = createServer((req, res) => {
+    void candidateEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => candidateServer.listen(0, "127.0.0.1", resolve));
+  const candidatePort = (candidateServer.address() as { port: number }).port;
+  const pausedCandidates = fetch(`http://127.0.0.1:${candidatePort}${revokeCandidatePath}`,
+    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.17" } });
+  let withdrawCandidate: Promise<Response> | undefined;
+  try {
+    await Promise.race([candidateReady,
+      pausedCandidates.then(() => { throw new Error("Candidate page sent before delivery barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Candidate page did not reach delivery barrier")), 30_000)),
+    ]);
+    withdrawCandidate = fetch(otherBase + `/api/admin/published-people/${candidateTargetId}`, {
+      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.18" },
+    });
+    assert.equal(await publicationWithdrawalWaiting(), true,
+      "candidate delivery holds the selected published row");
+    const earlyCandidateWithdrawal = await Promise.race([
+      withdrawCandidate.then((response) => `completed ${response.status}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+    ]);
+    assert.equal(earlyCandidateWithdrawal, "pending",
+      "withdrawal waits while the candidate page carries its published card");
+    releaseCandidate();
+    const deliveredCandidates = await pausedCandidates;
+    assert.equal(deliveredCandidates.status, 200);
+    assert.ok((await deliveredCandidates.json()).candidates.some(
+      (item: { id: string }) => item.id === candidateTargetId));
+    assert.equal((await withdrawCandidate).status, 200);
+  } finally {
+    releaseCandidate();
+    await pausedCandidates.catch(() => {});
+    await withdrawCandidate?.catch(() => {});
+    await new Promise<void>((resolve) => candidateServer.close(() => resolve()));
+  }
+  const afterCandidateRevocation = await fetch(securedBase + revokeCandidatePath,
+    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.19" } });
+  assert.equal(afterCandidateRevocation.status, 200);
+  assert.ok(!(await afterCandidateRevocation.json()).candidates.some(
+    (item: { id: string }) => item.id === candidateTargetId));
+  await publishedPeopleStore(otherApp.archive.db).publish(candidateTargetId, "owner");
+  const candidateMatchRequest = await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.20" },
+    body: JSON.stringify({ sourcePersonId: candidateSourceId,
+      targetArchiveId: "other-archive", targetPersonId: candidateTargetId }),
+  });
+  assert.equal(candidateMatchRequest.status, 200);
+  const candidateMatchId = (await candidateMatchRequest.json()).match.id as string;
+  const candidateReview = (await fetch(otherBase + "/api/discovery/matches", {
+    headers: archiveAdminHeaders,
+  }).then((response) => response.json())).matches.find(
+    (item: { id: string }) => item.id === candidateMatchId);
+  assert.ok(candidateReview?.reviewToken);
+  assert.equal((await fetch(otherBase + `/api/discovery/matches/${candidateMatchId}`, {
+    method: "PATCH", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.21" },
+    body: JSON.stringify({ decision: "accept", reviewToken: candidateReview.reviewToken }),
+  })).status, 200);
+  let matchListReached!: () => void, releaseMatchList!: () => void;
+  const matchListReady = new Promise<void>((resolve) => { matchListReached = resolve; });
+  const matchListGate = new Promise<void>((resolve) => { releaseMatchList = resolve; });
+  const matchListEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
+    publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeMatchListDelivery: async () => { matchListReached(); await matchListGate; },
+  });
+  const matchListServer = createServer((req, res) => {
+    void matchListEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => matchListServer.listen(0, "127.0.0.1", resolve));
+  const matchListPort = (matchListServer.address() as { port: number }).port;
+  const pausedMatchList = fetch(`http://127.0.0.1:${matchListPort}/api/discovery/matches`,
+    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.22" } });
+  let withdrawMatchCard: Promise<Response> | undefined;
+  try {
+    await Promise.race([matchListReady,
+      pausedMatchList.then(() => { throw new Error("Match list sent before delivery barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Match list did not reach delivery barrier")), 30_000)),
+    ]);
+    withdrawMatchCard = fetch(otherBase + `/api/admin/published-people/${candidateTargetId}`, {
+      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.23" },
+    });
+    assert.equal(await publicationWithdrawalWaiting(), true,
+      "match-list delivery holds the selected published row");
+    const earlyMatchWithdrawal = await Promise.race([
+      withdrawMatchCard.then((response) => `completed ${response.status}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+    ]);
+    assert.equal(earlyMatchWithdrawal, "pending",
+      "withdrawal waits while the match list carries the published card");
+    releaseMatchList();
+    const deliveredMatches = await pausedMatchList;
+    assert.equal(deliveredMatches.status, 200);
+    assert.ok((await deliveredMatches.json()).matches.some(
+      (item: { id: string; status: string }) =>
+        item.id === candidateMatchId && item.status === "linked"));
+    assert.equal((await withdrawMatchCard).status, 200);
+  } finally {
+    releaseMatchList();
+    await pausedMatchList.catch(() => {});
+    await withdrawMatchCard?.catch(() => {});
+    await new Promise<void>((resolve) => matchListServer.close(() => resolve()));
+  }
+  const afterMatchWithdrawal = (await fetch(securedBase + "/api/discovery/matches", {
+    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.24" },
+  }).then((response) => response.json())).matches.find(
+    (item: { id: string }) => item.id === candidateMatchId);
+  assert.equal(afterMatchWithdrawal.status, "revoked");
+  assert.equal((afterMatchWithdrawal.left.archiveId === "other-archive"
+    ? afterMatchWithdrawal.left : afterMatchWithdrawal.right).name, undefined);
+  console.log("runtime_discovery_match_list_delivery_revocation_ok");
+  await app.archive.db.prepare("", "DELETE FROM discovery_match_requests WHERE id=?")
+    .run(candidateMatchId);
+  const revokeIgnoredArchivePath = "/api/discovery/matches/ignored-archives";
+  assert.equal((await fetch(securedBase + revokeIgnoredArchivePath, { method: "POST",
+    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.25" },
+    body: JSON.stringify({ targetArchiveId: "other-archive", ignored: true }),
+  })).status, 200);
+  const ignoredBeforeRevoke = (await fetch(securedBase + revokeIgnoredArchivePath, {
+    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.26" },
+  }).then((response) => response.json())).archives.find(
+    (item: { archiveId: string }) => item.archiveId === "other-archive");
+  assert.ok(ignoredBeforeRevoke?.exampleName);
+  let ignoredReached!: () => void, releaseIgnored!: () => void;
+  const ignoredReady = new Promise<void>((resolve) => { ignoredReached = resolve; });
+  const ignoredGate = new Promise<void>((resolve) => { releaseIgnored = resolve; });
+  const ignoredEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
+    publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeIgnoredArchivesDelivery: async () => { ignoredReached(); await ignoredGate; },
+  });
+  const ignoredServer = createServer((req, res) => {
+    void ignoredEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => ignoredServer.listen(0, "127.0.0.1", resolve));
+  const ignoredPort = (ignoredServer.address() as { port: number }).port;
+  const pausedIgnored = fetch(`http://127.0.0.1:${ignoredPort}${revokeIgnoredArchivePath}`,
+    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.27" } });
+  let withdrawExample: Promise<Response> | undefined;
+  try {
+    await Promise.race([ignoredReady,
+      pausedIgnored.then(() => { throw new Error("Ignored archive list sent before delivery barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Ignored archive list did not reach delivery barrier")), 30_000)),
+    ]);
+    withdrawExample = fetch(otherBase + "/api/admin/published-people/person-a", {
+      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.28" },
+    });
+    assert.equal(await publicationWithdrawalWaiting(), true,
+      "ignored-archive delivery holds its published example row");
+    const earlyExampleWithdrawal = await Promise.race([
+      withdrawExample.then((response) => `completed ${response.status}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+    ]);
+    assert.equal(earlyExampleWithdrawal, "pending",
+      "withdrawal waits while an ignored archive list carries its example name");
+    releaseIgnored();
+    const deliveredIgnored = await pausedIgnored;
+    assert.equal(deliveredIgnored.status, 200);
+    assert.ok((await deliveredIgnored.json()).archives.some(
+      (item: { exampleName?: string }) => item.exampleName === ignoredBeforeRevoke.exampleName));
+    assert.equal((await withdrawExample).status, 200);
+  } finally {
+    releaseIgnored();
+    await pausedIgnored.catch(() => {});
+    await withdrawExample?.catch(() => {});
+    await new Promise<void>((resolve) => ignoredServer.close(() => resolve()));
+  }
+  const ignoredAfterRevoke = (await fetch(securedBase + revokeIgnoredArchivePath, {
+    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.29" },
+  }).then((response) => response.json())).archives.find(
+    (item: { archiveId: string }) => item.archiveId === "other-archive");
+  assert.equal(ignoredAfterRevoke.exampleName, undefined);
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+    method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.30" },
+    body: JSON.stringify({ fields: selectedDiscoveryFields }),
+  })).status, 200);
+  assert.equal((await fetch(securedBase + revokeIgnoredArchivePath, { method: "POST",
+    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.31" },
+    body: JSON.stringify({ targetArchiveId: "other-archive", ignored: false }),
+  })).status, 200);
+  console.log("runtime_discovery_ignored_example_delivery_revocation_ok");
+  await app.archive.write(candidateRootBefore.family, (await app.archive.read()).revision);
+  await otherApp.archive.write(candidateOtherBefore.family, (await otherApp.archive.read()).revision);
+  console.log("runtime_discovery_candidate_delivery_revocation_ok");
   const beforeLivingEdit = await otherApp.archive.read();
   const livingEdit = structuredClone(beforeLivingEdit.family);
   livingEdit.people[0].deceased = false;
@@ -7616,9 +7894,50 @@ try {
   assert.equal(linkedPublicParent.status, 200);
   assert.equal(linkedPublicParent.headers.get("cache-control"), "private, no-store");
   assert.equal((await linkedPublicParent.json()).linkedCards.length, 1);
-  assert.equal((await fetch(securedBase + revocablePath, {
-    method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "revoke" }),
-  })).status, 200);
+  let linkedReached!: () => void, releaseLinked!: () => void;
+  const linkedReady = new Promise<void>((resolve) => { linkedReached = resolve; });
+  const linkedGate = new Promise<void>((resolve) => { releaseLinked = resolve; });
+  const linkedEndpoint = discoveryPeopleHttp(app.archive.db, discoveryAuth, undefined, undefined,
+    async () => { linkedReached(); await linkedGate; });
+  const linkedServer = createServer((req, res) => {
+    void linkedEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => linkedServer.listen(0, "127.0.0.1", resolve));
+  const linkedPort = (linkedServer.address() as { port: number }).port;
+  const pausedLinked = fetch(`http://127.0.0.1:${linkedPort}${publicParentPath}`,
+    { headers: { ...headers, "X-Real-IP": "203.0.113.14" } });
+  let revokeLinked: Promise<Response> | undefined;
+  try {
+    await Promise.race([linkedReady,
+      pausedLinked.then(() => { throw new Error("Linked discovery detail sent before delivery barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Linked discovery detail did not reach delivery barrier")), 30_000)),
+    ]);
+    revokeLinked = fetch(securedBase + revocablePath, {
+      method: "PATCH", headers: { ...manualHeaders, "X-Real-IP": "203.0.113.15" },
+      body: JSON.stringify({ decision: "revoke" }),
+    });
+    const earlyRevoke = await Promise.race([
+      revokeLinked.then((response) => `completed ${response.status}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+    ]);
+    assert.equal(earlyRevoke, "pending",
+      "unlinking waits until a linked public card finishes delivery");
+    releaseLinked();
+    const deliveredLinked = await pausedLinked;
+    assert.equal(deliveredLinked.status, 200);
+    assert.equal((await deliveredLinked.json()).linkedCards.length, 1);
+    assert.equal((await revokeLinked).status, 200);
+  } finally {
+    releaseLinked();
+    await pausedLinked.catch(() => {});
+    await revokeLinked?.catch(() => {});
+    await new Promise<void>((resolve) => linkedServer.close(() => resolve()));
+  }
+  assert.deepEqual((await fetch(securedBase + publicParentPath, { headers })
+    .then((response) => response.json())).linkedCards, []);
+  console.log("runtime_discovery_linked_detail_revocation_ok");
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
     FROM discovery_linked_card_grants WHERE left_person_id=? AND right_person_id=?`)
     .get(parent.id,parent.id))?.count, 0,
