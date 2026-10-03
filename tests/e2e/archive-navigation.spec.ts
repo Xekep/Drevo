@@ -445,11 +445,20 @@ test("owner can choose a member and propose a transfer in the account cabinet", 
     route.fulfill({
       json: [
         { id: "member", name: "Анна Иванова", role: "reader", eligible: true },
+        {
+          id: "limited",
+          name: "Борис Иванов",
+          role: "reader",
+          eligible: false,
+          reason: "unavailable",
+        },
       ],
     }),
   );
   await page.goto("/account");
   await page.getByRole("button", { name: "Передать владение" }).click();
+  await expect(page.getByRole("button", { name: "Борис Иванов" })).toBeDisabled();
+  await expect(page.getByText(/сейчас не может принять дерево/)).toBeVisible();
   await page.getByRole("button", { name: "Анна Иванова" }).click();
   await page.getByRole("button", { name: "Предложить передачу" }).click();
   await expect(page.getByText("Ожидаем согласия: Анна Иванова")).toBeVisible();
