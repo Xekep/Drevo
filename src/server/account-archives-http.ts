@@ -121,8 +121,9 @@ export function accountArchivesHttp(
             "Content-Type": "application/json; charset=utf-8",
             "Cache-Control": "no-store",
           });
+          const delivered = finished(res, { cleanup: true });
           res.end(body);
-          await finished(res, { cleanup: true });
+          await delivered;
         } finally {
           clearTimeout(timeout);
         }
