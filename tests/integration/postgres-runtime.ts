@@ -1709,6 +1709,55 @@ try {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
   };
+  // A temporary portrait grant must become a permanent citation reference at
+  // attachment time. Removing that last citation must immediately free quota.
+  const citationImage = await sharp({ create: { width: 1, height: 1,
+    channels: 3, background: "white" } }).png().toBuffer();
+  const citationMedia = mediaStore(uploads);
+  const citationFile = await citationMedia.addStream(Readable.from([citationImage]), 1024);
+  const pendingFile = await citationMedia.addStream(Readable.from([citationImage]), 1024);
+  const citationUrl = citationFile.url;
+  const pendingUrl = pendingFile.url;
+  const beforeCitation = await app.archive.read();
+  const mediaBeforeCitation = (await accountCapacity(app.archive.db, "owner")).mediaBytes!;
+  await registerMediaUpload(app.archive.db, citationUrl, "owner", citationFile.size);
+  await registerMediaUpload(app.archive.db, pendingUrl, "owner", pendingFile.size);
+  const withCitation = structuredClone(beforeCitation.family);
+  withCitation.people[0].sources.push({
+    title: "Citation grant release", type: "archive", reference: "page 1",
+    url: `${citationUrl}#page=1`,
+  });
+  const changeCitation = (before: typeof beforeCitation,
+    next: typeof before.family) => fetch(securedBase + "/api/family/changes", {
+    method: "POST",
+    headers: { ...ownerHeaders, "If-Match": String(before.revision) },
+    body: JSON.stringify({ changes: archiveChanges(before.family, next) }),
+  });
+  const attachedCitation = await changeCitation(beforeCitation, withCitation);
+  assert.equal(attachedCitation.status, 200, await attachedCitation.text());
+  assert.equal((await app.archive.db.prepare("", "SELECT count(*) AS n FROM media_upload_grants WHERE url=?")
+    .get(citationUrl))?.n, 0,
+  "attaching a citation releases the temporary upload grant");
+  assert.equal((await app.archive.db.prepare("", "SELECT count(*) AS n FROM media_upload_grants WHERE url=?")
+    .get(pendingUrl))?.n, 1,
+  "an unattached original retains its temporary grant");
+  const afterCitation = await app.archive.read();
+  const withoutCitation = structuredClone(afterCitation.family);
+  withoutCitation.people[0].sources = withoutCitation.people[0].sources.filter(
+    (source) => source.url !== `${citationUrl}#page=1`);
+  const removedCitation = await changeCitation(afterCitation, withoutCitation);
+  assert.equal(removedCitation.status, 200, await removedCitation.text());
+  assert.equal((await accountCapacity(app.archive.db, "owner")).mediaBytes,
+    mediaBeforeCitation + pendingFile.size,
+  "removing the last citation immediately frees its bytes");
+  await app.archive.db.prepare("", "DELETE FROM media_upload_grants WHERE url=?")
+    .run(pendingUrl);
+  await app.archive.db.prepare("", "DELETE FROM media_originals WHERE url=?")
+    .run(citationUrl);
+  await app.archive.db.prepare("", "DELETE FROM media_originals WHERE url=?")
+    .run(pendingUrl);
+  await citationFile.undo();
+  await pendingFile.undo();
   // A scoped AI export awaits archive.read() again while checking its final
   // scope. Downgrading the account during that await must prevent delivery.
   await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
