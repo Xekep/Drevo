@@ -196,27 +196,30 @@ export function backupManagementHttp({
         const body = await readJson(req) as { restoreComments?: unknown };
         if (body?.restoreComments !== undefined && typeof body.restoreComments !== "boolean")
           throw new BackupInputError("Некорректный режим восстановления комментариев.");
-        return json(
-          res,
-          202,
-          await backups.preview(
-            match[1],
+        const inspect = async (file: string, signal: AbortSignal) => {
+          const assertAccess = async () => {
+            if (!(await auth.isPlatformAdmin(req)))
+              throw new BackupInputError("Доступ администратора отозван.");
+          };
+          await assertAccess();
+          return await restores.previewStream(
+            createReadStream(file, { signal }),
             (await auth.currentUser(req))!,
-            async (file, signal) => {
-              const assertAccess = async () => {
-                if (!(await auth.isPlatformAdmin(req)))
-                  throw new BackupInputError("Доступ администратора отозван.");
-              };
-              await assertAccess();
-              return await restores.previewStream(
-                createReadStream(file, { signal }),
-                (await auth.currentUser(req))!,
-                assertAccess,
-                { restoreComments: body?.restoreComments === true },
-              );
-            },
-          ),
-        );
+            assertAccess,
+            { restoreComments: body?.restoreComments === true },
+          );
+        };
+        if (!auth.local && db.kind === "postgres" && db.postgresTransaction) {
+          const session = await auth.accountSession(req);
+          if (!session)
+            return json(res, 401, { error: "Доступ администратора отозван." });
+          const actor = await auth.currentUser(req);
+          if (!actor || actor.id !== session.accountId)
+            return json(res, 403, { error: "Доступ администратора отозван." });
+          return json(res, 202, await backups.preview(match[1], actor, inspect, session));
+        }
+        return json(res, 202, await backups.preview(match[1],
+          (await auth.currentUser(req))!, inspect));
       }
       if (match?.[2] === "download" && req.method === "GET") {
         if (
