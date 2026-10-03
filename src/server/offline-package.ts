@@ -118,6 +118,7 @@ export function offlineDocuments(
     title: string;
     file_name: string;
     created_at: string;
+    uploaded_by?: string;
     document_type?: string;
     document_date?: string;
     place?: string;
@@ -129,6 +130,7 @@ export function offlineDocuments(
   associations: Array<{ document_id: string; person_id: string }>,
   family: Family,
   includeUnlinked: boolean,
+  citedAccess?: { canReadAll: boolean; userId: string },
 ): OfflineDocument[] {
   const visible = new Set(family.people.map((person) => person.id));
   const links = new Map<string, string[]>();
@@ -139,9 +141,13 @@ export function offlineDocuments(
         row.person_id,
       ]);
   const allLinked = new Set(associations.map((row) => row.document_id));
+  const cited = new Set(allCitations(family).flatMap((source) =>
+    source.documentId ? [source.documentId] : []));
   return rows
     .filter(
-      (row) => links.has(row.id) || (includeUnlinked && !allLinked.has(row.id)),
+      (row) => links.has(row.id) || (includeUnlinked && !allLinked.has(row.id)) ||
+        (cited.has(row.id) && !!citedAccess && (citedAccess.canReadAll ||
+          (!allLinked.has(row.id) && row.uploaded_by === citedAccess.userId))),
     )
     .map((row) => {
       if (!storedDocumentFileType(row.file_name))
@@ -166,6 +172,20 @@ export function offlineDocuments(
     });
 }
 
+/** Keep the citation text, but never package a document the current user
+ * cannot download. offlineFamily has already copied the live archive. */
+export function detachUnavailableCitationDocuments(family: Family, documents: OfflineDocument[]) {
+  const included = new Set(documents.map((document) => document.id));
+  let detached = false;
+  for (const citation of allCitations(family)) {
+    if (!citation.documentId || included.has(citation.documentId)) continue;
+    delete citation.documentId;
+    delete citation.documentPage;
+    detached = true;
+  }
+  return detached;
+}
+
 async function checksum(path: string) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
@@ -180,6 +200,7 @@ export async function writeOfflinePackage(
   documents: OfflineDocument[],
   revision: number,
   scope: OfflineScope,
+  warnings: string[] = [],
 ) {
   const mediaPaths = new Set<string>();
   for (const person of family.people)
@@ -250,6 +271,7 @@ export async function writeOfflinePackage(
     createdAt: new Date().toISOString(),
     revision,
     scope,
+    ...(warnings.length ? { warnings } : {}),
     people: family.people.length,
     photos: family.photos?.length || 0,
     documents: documents.length,
