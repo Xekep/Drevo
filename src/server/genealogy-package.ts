@@ -240,7 +240,10 @@ export async function prepareGenealogyImport(
   let embeddedTotal = 0;
   for (const item of parsed.media) {
     let source: string | undefined;
-    const sourceKey = item.embedded ? item.id : item.file;
+    // Multiple OBJE records may point to one ZIP member. A document still
+    // needs its own staged record even when a gallery photo shares its bytes.
+    const sourceKey = item.embedded || item.document || /\.(?:pdf|tif)$/i.test(item.file)
+      ? `object:${item.id}` : `file:${item.file}`;
     let stored = loaded.get(sourceKey);
     if (!stored) {
       if (item.embedded) {
