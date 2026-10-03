@@ -549,6 +549,12 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
   };
   const occupationSourcesByNode = new Map<Node, Source[]>();
   let eventId = 0;
+  const eventAgeText = (n: Node) => children(n, "AGE").flatMap((age) => [
+    ...(age.value ? [`Возраст при событии (AGE): ${age.value}`] : []),
+    ...(value(age, "PHRASE")
+      ? [`Исходная формулировка возраста (AGE.PHRASE): ${value(age, "PHRASE")}`]
+      : []),
+  ]);
   function event(n: Node, fallback?: string): PersonEvent {
     if (n.tag === "ADOP" && child(n, "FAMC"))
       warnings.add("Привязка события ADOP.FAMC к конкретной приёмной семье не перенесена; событие и родительские связи сохранены отдельно.");
@@ -616,6 +622,9 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     for (const source of nestedPlaceSources)
       if (!generalSources.some((existing) => sameCitation(existing, source)))
         generalSources.push(source);
+    const ageText = eventAgeText(n);
+    if (ageText.length)
+      warnings.add("Возраст AGE сохранён текстом в описании события; отдельная структура возраста не перенесена.");
     return {
       id: `${namespace}-e${++eventId}`,
       gedcomTag: n.tag,
@@ -634,7 +643,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         "_DREVO_EVENT_PLACE_CONFIDENCE") } : {}),
       ...(alternatives.length ? { alternatives } : {}),
       location: placeLocation(n),
-      description: notes(n) || undefined,
+      description: [notes(n), ...ageText].filter(Boolean).join("\n") || undefined,
       sources: generalSources,
     };
   }
@@ -707,7 +716,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       [birth, "Рождение"],
       [death, "Уход из жизни"],
     ] as const)
-      if (node && (child(node, "DATE") || notes(node) || sources(node).length)) {
+      if (node && (child(node, "DATE") || notes(node) || sources(node).length ||
+        eventAgeText(node).length)) {
         const parsed = event(node, label);
         if (node === birth) parsed.sources = birthSources.general;
         if (node === death) parsed.sources = deathSources.general;
