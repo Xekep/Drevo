@@ -257,6 +257,11 @@ export function PersonEditor({
           : "m"
         : "u",
     suggestedSex = relationshipSex !== "u" ? relationshipSex : guessSex(draft);
+  const nameParts = nameText.trim().split(/\s+/);
+  const possibleReversedName = nameParts.length === 2 &&
+    guessSex(draft) === "u" &&
+    guessSex({ name: nameParts[0], patronymic: "" }) !== "u" &&
+    guessSex({ name: nameParts[1], patronymic: "" }) === "u";
   const hintDraft = {
     ...draft,
     birth: hintDate(birthText),
@@ -320,6 +325,10 @@ export function PersonEditor({
     setDraft(next);
     if (["name", "surname", "patronymic"].includes(key))
       setNameText(fullName(next));
+  }
+  function updateFullName(value: string) {
+    setNameText(value);
+    setDraft((current) => ({ ...current, ...splitFullName(value) }));
   }
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -579,13 +588,7 @@ export function PersonEditor({
                 placeholder="Иванов Иван Иванович"
                 aria-describedby={`${fieldId}-name-hint ${fieldId}-name-error`}
                 onBlur={() => validateField("name", nameText)}
-                onChange={(e) => {
-                  setNameText(e.target.value);
-                  setDraft((value) => ({
-                    ...value,
-                    ...splitFullName(e.target.value),
-                  }));
-                }}
+                onChange={(e) => updateFullName(e.target.value)}
               />
               <small id={`${fieldId}-name-hint`}>
                 Фамилия, имя, отчество. Отчество необязательно.
@@ -598,6 +601,18 @@ export function PersonEditor({
                 {fieldErrors.name}
               </small>
             </label>
+            {possibleReversedName && (
+              <div className="name-order-hint" role="note">
+                <span>
+                  Возможно, имя и фамилия переставлены. Сейчас фамилия —
+                  «{nameParts[0]}», имя — «{nameParts[1]}».
+                </span>
+                <button type="button" onClick={() =>
+                  updateFullName(`${nameParts[1]} ${nameParts[0]}`)}>
+                  Поменять местами
+                </button>
+              </div>
+            )}
             <label className="name-sex-hint">
               Пол
               <select
