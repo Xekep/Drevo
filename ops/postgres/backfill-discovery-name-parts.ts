@@ -2,7 +2,8 @@
 // statement/transaction, so ordinary edits and publication revocations can
 // proceed between batches. No projection row is inserted by this backfill.
 import pg from "pg";
-import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 export const discoveryNamePartsBatch = `WITH batch AS MATERIALIZED (
   SELECT d.archive_id, d.person_id,
@@ -33,7 +34,7 @@ SELECT (SELECT count(*)::int FROM updated) AS changed,
   (SELECT archive_id FROM batch ORDER BY archive_id DESC,person_id DESC LIMIT 1) AS last_archive_id,
   (SELECT person_id FROM batch ORDER BY archive_id DESC,person_id DESC LIMIT 1) AS last_person_id`;
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   if (process.argv[2] !== "--apply") throw new Error("Use --apply for the opt-in name-parts backfill");
   const client = new pg.Client();
   try {
