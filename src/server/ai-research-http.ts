@@ -63,6 +63,8 @@ export function aiResearchHttp({
   beforeAnswerDelivery,
   beforeGeneratedFileInstall,
   beforeAttachmentCommit,
+  beforeAttachmentDelivery,
+  attachmentDeliveryDeadlineMs = 30_000,
   renderPdf,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
@@ -80,6 +82,8 @@ export function aiResearchHttp({
   beforeAnswerDelivery?: () => Promise<void>;
   beforeGeneratedFileInstall?: () => Promise<void>;
   beforeAttachmentCommit?: () => Promise<void>;
+  beforeAttachmentDelivery?: () => Promise<void>;
+  attachmentDeliveryDeadlineMs?: number;
   renderPdf?: typeof researchPdf;
 }) {
   const chats = aiChatStore(archive.db);
@@ -96,6 +100,7 @@ export function aiResearchHttp({
     string,
     { controller: AbortController; done: Promise<void> }
   >();
+  let activeAttachmentDeliveries = 0;
   async function stopChat(id: string) {
     const run = activeRuns.get(id);
     if (!run) return;
@@ -229,6 +234,104 @@ export function aiResearchHttp({
     return outcome === "sent" || res.headersSent || res.destroyed
       ? true
       : json(res, 403, { error: "Доступ к диалогам изменился" });
+  };
+
+  const deliverAttachment = async (req: IncomingMessage, res: ServerResponse,
+    user: ArchiveUser, chatId: string, expectedScope: string, expectedRevision: number,
+    item: { file: ResearchAttachment; bytes: Buffer }) => {
+    const session = await auth.accountSession(req);
+    if (!session || session.accountId !== user.id)
+      return json(res, 401, { error: "Сессия завершена" });
+    let outcome: "sent" | "session" | "access" | "missing" | "changed";
+    try {
+      outcome = await archive.db.postgresTransaction!(async (client) => {
+        // Keep only access and chat rows locked through the short response.
+        // Archive writes remain available while the buffered file is sent.
+        const activeSession = await client.query<{ expires_at: string }>(
+          `SELECT expires_at FROM account_sessions
+           WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+          [session.tokenHash, user.id],
+        );
+        if (!activeSession.rows[0] || Number(activeSession.rows[0].expires_at) <= Date.now())
+          return "session";
+        const membership = await client.query<{
+          role: string; approved: boolean; person_id: string | null; tree_access: string;
+        }>(
+          `SELECT role,approved,person_id,tree_access FROM archive_memberships
+           WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+          [archive.db.archiveId, user.id],
+        );
+        const member = membership.rows[0];
+        if (!member || !member.approved || member.role !== user.role ||
+            (member.person_id || "") !== (user.personId || "") ||
+            member.tree_access !== (user.treeAccess || "all"))
+          return "access";
+        const owner = await client.query<{ user_id: string }>(
+          `SELECT user_id FROM archive_owners WHERE archive_id=$1 FOR SHARE NOWAIT`,
+          [archive.db.archiveId],
+        );
+        const ownerId = owner.rows[0]?.user_id;
+        if (!ownerId) return "access";
+        const tiers = await client.query<{ account_id: string; full_access: boolean }>(
+          `SELECT account_id,full_access FROM account_tiers
+           WHERE account_id=ANY($1::text[]) ORDER BY account_id FOR SHARE NOWAIT`,
+          [[user.id, ownerId]],
+        );
+        if (![user.id, ownerId].every((id) =>
+          tiers.rows.some((tier) => tier.account_id === id && tier.full_access)))
+          return "access";
+        const currentChat = await client.query<{ access_scope: string }>(
+          `SELECT access_scope FROM ai_chats
+           WHERE archive_id=$1 AND id=$2 AND user_id=$3 FOR SHARE NOWAIT`,
+          [archive.db.archiveId, chatId, user.id],
+        );
+        if (currentChat.rows[0]?.access_scope !== expectedScope) return "missing";
+        if (res.destroyed) return "sent";
+        // Scope fingerprints depend on the visible graph. Hold the archive
+        // only until the first byte is handed off, then release its row lock
+        // while the access and chat locks protect the remaining response.
+        await client.query("SAVEPOINT attachment_handoff");
+        const currentArchive = await client.query<{ revision: number }>(
+          "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT",
+          [archive.db.archiveId],
+        );
+        if (Number(currentArchive.rows[0]?.revision) !== expectedRevision)
+          return "changed";
+        const delivered = finished(res, { cleanup: true });
+        const timeout = setTimeout(() => res.destroy(), attachmentDeliveryDeadlineMs);
+        timeout.unref();
+        try {
+          res.writeHead(200, {
+            "Content-Type": item.file.type,
+            "Content-Length": item.bytes.length,
+            "Content-Disposition": `attachment; filename="attachment"; filename*=UTF-8''${encodeURIComponent(item.file.name)}`,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+          });
+          if (item.bytes.length) res.write(item.bytes.subarray(0, 1));
+          else res.flushHeaders();
+          await client.query("ROLLBACK TO SAVEPOINT attachment_handoff");
+          await client.query("RELEASE SAVEPOINT attachment_handoff");
+          res.end(item.bytes.subarray(1));
+          await delivered;
+        } catch (error) {
+          const disconnected = res.destroyed;
+          res.destroy();
+          await delivered.catch(() => {});
+          if (!disconnected && !res.headersSent) throw error;
+        } finally { clearTimeout(timeout); }
+        return "sent";
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === "55P03")
+        return res.destroyed ? true : json(res, 409, { error: "Доступ занят другим действием" });
+      throw error;
+    }
+    if (outcome === "sent" || res.destroyed) return true;
+    if (outcome === "session") return json(res, 401, { error: "Сессия завершена" });
+    if (outcome === "missing") return json(res, 404, { error: "Вложение не найдено" });
+    if (outcome === "changed") return json(res, 409, { error: "Архив изменился. Повторите скачивание" });
+    return json(res, 403, { error: "Доступ к данным изменился" });
   };
 
   const runResearch = createResearchRunner({
@@ -441,8 +544,19 @@ export function aiResearchHttp({
         .download(chat.id, aiUser.id, path)
         .catch(() => null);
       if (!item) return json(res, 404, { error: "Вложение не найдено" });
+      const deliveryRevision = (await archive.meta()).revision;
       if (!(await canDeliverAiData(req, chat.accessScope)))
         return json(res, 403, { error: "Доступ к данным изменился" });
+      await beforeAttachmentDelivery?.();
+      if (archive.db.kind === "postgres" && !auth.local && archive.db.postgresTransaction) {
+        if (activeAttachmentDeliveries >= 3)
+          return json(res, 429, { error: "Слишком много одновременных скачиваний" });
+        activeAttachmentDeliveries++;
+        try {
+          return await deliverAttachment(req, res, aiUser, chat.id,
+            chat.accessScope, deliveryRevision, item);
+        } finally { activeAttachmentDeliveries--; }
+      }
       res.writeHead(200, {
         "Content-Type": item.file.type,
         "Content-Length": item.bytes.length,
