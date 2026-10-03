@@ -43,6 +43,23 @@ export function adminMatchTargetAt(pathname: string): MatchTarget | null {
   } catch { return null; }
 }
 
+/** Open matching for one card in the selected archive without a name search. */
+export function adminMatchSourcePath(archiveId: string, personId: string) {
+  if (!matchArchiveId.test(archiveId) || !matchPersonId(personId))
+    throw new Error("Invalid match source");
+  return `/a/${archiveId}${adminMatchesPath}/from/${encodeURIComponent(personId)}`;
+}
+
+export function adminMatchSourceAt(pathname: string): string | null {
+  const archive = archiveContextAt(pathname);
+  const match = archive && /^\/admin\/matches\/from\/([^/]{1,1200})$/.exec(archive.innerPath);
+  if (!match) return null;
+  try {
+    const personId = decodeURIComponent(match[1]);
+    return matchPersonId(personId) ? personId : null;
+  } catch { return null; }
+}
+
 export type ArchiveEntity =
   { kind: "person"; id: string } | { kind: "photo"; id: string };
 
@@ -137,6 +154,7 @@ export function archiveViewAt(pathname: string): ArchiveView | null {
   if (path === "/") return "tree";
   if (path === adminMatchesPath) return "admin";
   if (adminMatchTargetAt(pathname)) return "admin";
+  if (adminMatchSourceAt(pathname)) return "admin";
   return (
     (Object.keys(archivePaths) as ArchiveView[]).find(
       (view) => archivePaths[view] === path,

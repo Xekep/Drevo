@@ -8063,7 +8063,98 @@ try {
   assert.equal((await fetch(securedBase + "/api/discovery/matches", {
     method: "POST", headers: ownerHeaders, body: proposedPair,
   })).status, 409, "a private card cannot be used in a cross-archive match");
+  const exactOwnPath = "/api/discovery/matches/own-people?personId=person-a";
+  assert.equal((await fetch(securedBase + exactOwnPath, { headers: ownerHeaders })).status, 404,
+    "the source handoff cannot select an unpublished card");
   await publishedPeopleStore(app.archive.db).publish("person-a", "owner");
+  const exactOwn = await fetch(securedBase + exactOwnPath, { headers: ownerHeaders });
+  assert.equal(exactOwn.status, 200);
+  assert.equal((await fetch(securedBase + exactOwnPath, { headers })).status, 403,
+    "a researcher cannot select a match source for the owner");
+  const exactOwnBody = await exactOwn.json();
+  assert.deepEqual(exactOwnBody.people.map((person: { archiveId: string; id: string }) =>
+    [person.archiveId,person.id]), [["runtime-test","person-a"]]);
+  assert.doesNotMatch(JSON.stringify(exactOwnBody), /biography|sources|parents/,
+    "source handoff returns only consented publication fields");
+  const exactSession = newSessionToken();
+  await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
+    VALUES($1,'owner',$2)`, [sessionTokenHash(exactSession), Date.now() + 600_000]);
+  let exactReached!: () => void, releaseExact!: () => void;
+  const exactReady = new Promise<void>((resolve) => { exactReached = resolve; });
+  const exactGate = new Promise<void>((resolve) => { releaseExact = resolve; });
+  const exactEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
+    publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeOwnPersonAccessLock: async () => { exactReached(); await exactGate; },
+  });
+  const exactServer = createServer((req, res) => {
+    void exactEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => exactServer.listen(0, "127.0.0.1", resolve));
+  const exactPort = (exactServer.address() as { port: number }).port;
+  try {
+    const pendingExact = fetch(`http://127.0.0.1:${exactPort}${exactOwnPath}`, {
+      headers: { ...ownerHeaders, Cookie: `drevo_session=${exactSession}` },
+    });
+    await Promise.race([exactReady, pendingExact.then(() => { throw new Error("Source sent before barrier"); })]);
+    await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(exactSession)]);
+    releaseExact();
+    const denied = await pendingExact;
+    assert.equal(denied.status, 403, "completed logout before final source read denies the card");
+    assert.doesNotMatch(await denied.text(), /Иван|Тестов|birthYear/);
+  } finally {
+    releaseExact();
+    await new Promise<void>((resolve) => exactServer.close(() => resolve()));
+    await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(exactSession)]);
+  }
+  const lockedSourceSession = newSessionToken();
+  await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
+    VALUES($1,'owner',$2)`, [sessionTokenHash(lockedSourceSession), Date.now() + 600_000]);
+  let sourceLocked!: () => void, releaseSource!: () => void;
+  const sourceReady = new Promise<void>((resolve) => { sourceLocked = resolve; });
+  const sourceGate = new Promise<void>((resolve) => { releaseSource = resolve; });
+  const lockedSourceEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
+    publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeOwnPersonResponse: async () => { sourceLocked(); await sourceGate; },
+  });
+  const lockedSourceServer = createServer((req, res) => {
+    void lockedSourceEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => lockedSourceServer.listen(0, "127.0.0.1", resolve));
+  const lockedSourcePort = (lockedSourceServer.address() as { port: number }).port;
+  let sessionWithdrawal: Promise<unknown> | undefined;
+  try {
+    const lockedSourceHeaders = { ...ownerHeaders, Cookie: `drevo_session=${lockedSourceSession}` };
+    const pendingSource = fetch(`http://127.0.0.1:${lockedSourcePort}${exactOwnPath}`,
+      { headers: lockedSourceHeaders });
+    await Promise.race([sourceReady, pendingSource.then(() => { throw new Error("Source sent before lock"); })]);
+    sessionWithdrawal = client.query("DELETE FROM account_sessions WHERE token_hash=$1",
+      [sessionTokenHash(lockedSourceSession)]);
+    assert.equal(await Promise.race([sessionWithdrawal.then(() => "revoked"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("waiting"), 100))]), "waiting",
+    "logout waits while the exact source response holds the session");
+    releaseSource();
+    assert.equal((await pendingSource).status, 200);
+    await sessionWithdrawal;
+    assert.equal((await fetch(`http://127.0.0.1:${lockedSourcePort}${exactOwnPath}`,
+      { headers: lockedSourceHeaders })).status, 401);
+  } finally {
+    releaseSource();
+    await sessionWithdrawal?.catch(() => {});
+    await new Promise<void>((resolve) => lockedSourceServer.close(() => resolve()));
+    await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(lockedSourceSession)]);
+  }
+  assert.equal((await fetch(securedBase +
+    "/api/discovery/matches/own-people?personId=other-person", { headers: ownerHeaders })).status, 404,
+  "an exact lookup never crosses into another archive");
+  await publishedPeopleStore(app.archive.db).unpublish("person-a");
+  assert.equal((await fetch(securedBase + exactOwnPath, { headers: ownerHeaders })).status, 404);
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: ownerHeaders, body: proposedPair,
+  })).status, 409, "withdrawing the selected source before submission denies the request");
+  await publishedPeopleStore(app.archive.db).publish("person-a", "owner");
+  console.log("runtime_discovery_source_handoff_ok");
   assert.equal((await fetch(securedBase + "/api/discovery/matches", {
     method: "POST", headers: ownerHeaders,
     body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",

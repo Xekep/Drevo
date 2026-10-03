@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { DiscoveryLinkedCardShare } from "./discovery-linked-card-share.tsx";
 import { DiscoveryBranchShare } from "./discovery-branch-share.tsx";
-import { adminMatchTargetAt } from "../domain/archive-routes.ts";
+import { adminMatchSourceAt, adminMatchTargetAt } from "../domain/archive-routes.ts";
+import { archiveTargetPath } from "../domain/archive-links.ts";
+import { scopedArchivePath } from "../domain/archive-context.ts";
+import type { Family } from "../domain/types.ts";
+import { PublishPersonDialog } from "./publish-person-dialog.tsx";
 import "../styles/discovery-matches-admin.css";
 
 type Candidate = {
@@ -51,9 +55,15 @@ function CandidateCard({ candidate, ownArchiveId }: { candidate: Candidate; ownA
   </div>;
 }
 
-export function DiscoveryMatchesAdmin() {
+export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
   const [linkedTarget] = useState(() => typeof window === "undefined"
     ? null : adminMatchTargetAt(window.location.pathname));
+  const [linkedSource] = useState(() => typeof window === "undefined"
+    ? null : adminMatchSourceAt(window.location.pathname));
+  const [sourceUnavailable, setSourceUnavailable] = useState(false);
+  const [showPublication, setShowPublication] = useState(false);
+  const [, setPublicationPublished] = useState(false);
+  const [sourceReload, setSourceReload] = useState(0);
   const [archiveId, setArchiveId] = useState("");
   const [ownQuery, setOwnQuery] = useState("");
   const [targetQuery, setTargetQuery] = useState("");
@@ -89,6 +99,38 @@ export function DiscoveryMatchesAdmin() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (!linkedSource) return;
+    const controller = new AbortController();
+    archiveFetch(`${endpoint}/own-people?personId=${encodeURIComponent(linkedSource)}`,
+      { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) {
+          const error = new Error(body.error || "Карточка не опубликована") as Error & { status: number };
+          error.status = response.status;
+          throw error;
+        }
+        const person = body.people?.[0] as Candidate | undefined;
+        if (!person || person.id !== linkedSource || person.archiveId !== body.archiveId)
+          throw new Error("Карточка не опубликована");
+        if (!controller.signal.aborted) {
+          setArchiveId(body.archiveId);
+          setSource(person);
+          setSourceUnavailable(false);
+          setError("");
+        }
+      })
+      .catch((reason) => {
+        if (!controller.signal.aborted) {
+          setSource(null);
+          setSourceUnavailable((reason as { status?: number }).status === 404);
+          setError((reason as Error).message);
+        }
+      });
+    return () => controller.abort();
+  }, [linkedSource, sourceReload]);
 
   useEffect(() => {
     if (!linkedTarget) return;
@@ -326,6 +368,8 @@ export function DiscoveryMatchesAdmin() {
   const visibleMatches = matches.filter((item) => item.status !== "pending" ||
     !deferredMatches.has(`${archiveId}:${item.id}`));
   const deferredCount = matches.length - visibleMatches.length;
+  const linkedSourcePerson = linkedSource
+    ? family.people.find((person) => person.id === linkedSource) : undefined;
 
   return <div className="discovery-matches-admin">
     <section className="admin-card archive-form">
@@ -333,7 +377,7 @@ export function DiscoveryMatchesAdmin() {
       <div className="match-search-grid">
         <div><label>Человек из этого дерева
           <input type="search" value={ownQuery} onChange={(event) => {
-            setOwnQuery(event.target.value); setSource(null); setSuggestions([]);
+            setOwnQuery(event.target.value); setSource(null); setSourceUnavailable(false); setSuggestions([]);
             setSuggestionsBusy(false); setSuggestionsCursor(null); setSuggestionsNextCursor(null);
             setSuggestionsStale(false); setShowIgnored(false);
           }} placeholder="Поиск среди опубликованных" />
@@ -344,6 +388,7 @@ export function DiscoveryMatchesAdmin() {
               aria-pressed={source?.id === person.id}
               onClick={() => {
                 setSource(person);
+                setSourceUnavailable(false);
                 setTarget((current) => linkedTarget && current?.archiveId === linkedTarget.archiveId &&
                   current.id === linkedTarget.personId ? current : null);
                 setSuggestions([]);
@@ -351,7 +396,7 @@ export function DiscoveryMatchesAdmin() {
                 setSuggestionsStale(false); setShowIgnored(false);
                 setSuggestionsReload((value) => value + 1);
               }}>{person.name}<small>{person.birthYear || "?"}–{person.deathYear || "?"}</small></button>)}
-            {!ownPeople.length && <p>Опубликуйте свою карточку в разделе «Можно найти».</p>}
+            {!ownPeople.length && !source && <p>Опубликуйте свою карточку в разделе «Можно найти».</p>}
           </div>
         </div>
         <div><label>Карточка из другого дерева
@@ -373,6 +418,24 @@ export function DiscoveryMatchesAdmin() {
             onClick={() => { setTargetLoading(true); setTargetCursor(targetNextCursor); }}>Показать ещё</button>}
         </div>
       </div>
+      {linkedSource && source?.id === linkedSource && <div className="match-review">
+        <h2>Карточка из вашего дерева</h2>
+        <CandidateCard candidate={source} ownArchiveId={archiveId} />
+        <p>Выберите предложенное совпадение или найдите опубликованную карточку другого дерева вручную.</p>
+      </div>}
+      {linkedSource && sourceUnavailable && (linkedSourcePerson
+        ? <p role="status">Сначала опубликуйте эту карточку в разделе «Можно найти». После публикации вернитесь к сопоставлению.
+          <button type="button" onClick={() => setShowPublication(true)}>Открыть публикацию карточки</button>
+          <a href={scopedArchivePath(archiveTargetPath({ kind: "person", id: linkedSource }))}>Вернуться к человеку</a>
+        </p>
+        : <p role="status">Карточка недоступна в этом дереве.</p>)}
+      {showPublication && linkedSourcePerson &&
+        <PublishPersonDialog person={linkedSourcePerson}
+          onStatus={setPublicationPublished} onClose={() => {
+            setShowPublication(false);
+            setSourceUnavailable(false);
+            setSourceReload((value) => value + 1);
+          }} />}
       {linkedTarget && target && !source && <div className="match-review">
         <h2>Карточка из ссылки</h2>
         <CandidateCard candidate={target} ownArchiveId={archiveId} />

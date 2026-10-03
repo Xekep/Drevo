@@ -38,7 +38,7 @@ import { SourceCatalogAdmin } from "./source-catalog-admin";
 import { PublicationAdmin } from "./publication-admin";
 import type { PublicationOwnership } from "../hooks/useArchivePublicationOwner";
 import { DiscoveryMatchesAdmin } from "./discovery-matches-admin";
-import { adminMatchesPath, adminMatchTargetAt, archivePaths } from "../domain/archive-routes";
+import { adminMatchesPath, adminMatchSourceAt, adminMatchTargetAt, archivePaths } from "../domain/archive-routes";
 import { archiveContextAt, scopedArchivePath } from "../domain/archive-context";
 type Settings = {
   publicTree: boolean;
@@ -337,7 +337,8 @@ export function AdminPanel({
   const [section, setSection] = useState(() =>
     typeof window !== "undefined" &&
     ((archiveContextAt(window.location.pathname)?.innerPath || window.location.pathname) === adminMatchesPath ||
-      adminMatchTargetAt(window.location.pathname))
+      adminMatchTargetAt(window.location.pathname) ||
+      adminMatchSourceAt(window.location.pathname))
       ? "matches" : "users"),
     [users, setUsers] = useState<ArchiveUser[]>([]),
     [usersTotal, setUsersTotal] = useState(0),
@@ -689,7 +690,7 @@ export function AdminPanel({
                 : "Публикацией людей управляет владелец дерева."
           }</p></section>)}
         {section === "matches" && (publicationOwnership === "owner"
-          ? <DiscoveryMatchesAdmin />
+          ? <DiscoveryMatchesAdmin family={family} />
           : <section className="admin-card archive-form"><p role="status">{
             publicationOwnership === "checking" ? "Проверяем право на сопоставление…"
               : publicationOwnership === "unavailable" ? "Не удалось проверить право на сопоставление. Обновите страницу и повторите попытку."

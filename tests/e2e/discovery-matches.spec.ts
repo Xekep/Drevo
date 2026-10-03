@@ -1,6 +1,104 @@
 import { expect, test } from "@playwright/test";
 import { openAdminSection } from "./admin-navigation";
 
+test("a selected tree card opens matching with its exact published source", async ({ page }) => {
+  const own = { archiveId: "tree-a", id: "e2e-memorial-person", name: "Иван Петров" };
+  const target = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
+  let posted = false;
+  await page.route("**/a/tree-a/api/**", (route) => route.continue({
+    url: route.request().url().replace("/a/tree-a/api/", "/api/"),
+  }));
+  await page.route("**/api/account/archives", (route) => route.fulfill({ json: { archives: [
+    { id: "tree-a", title: "Моё дерево", role: "admin", approved: true, owned: true, current: true },
+  ] } }));
+  await page.route("**/api/discovery/matches/own-people?**", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    // The source is deliberately absent from the ordinary first search page.
+    return route.fulfill({ json: { archiveId: "tree-a",
+      people: params.get("personId") === own.id ? [own] : [] } });
+  });
+  await page.route("**/api/discovery/matches/candidates?**", (route) => {
+    expect(new URL(route.request().url()).searchParams.get("sourcePersonId")).toBe(own.id);
+    return route.fulfill({ json: { candidates: [{ ...target, reasons: ["Совпадают имена"], conflicts: [] }],
+      nextCursor: null } });
+  });
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toMatchObject({
+        sourcePersonId: own.id, targetArchiveId: target.archiveId, targetPersonId: target.id,
+      });
+      posted = true;
+      return route.fulfill({ json: { match: { status: "pending" } } });
+    }
+    return route.fulfill({ json: { archiveId: "tree-a", matches: [], nextCursor: null } });
+  });
+  await page.goto("/a/tree-a/tree");
+  await page.getByTestId("rf__node-e2e-memorial-person").click();
+  const handoff = page.getByRole("link", { name: "Найти совпадения в других деревьях" });
+  await expect(handoff).toHaveAttribute("href", "/a/tree-a/admin/matches/from/e2e-memorial-person");
+  await handoff.click();
+  await expect(page).toHaveURL(/\/a\/tree-a\/admin\/matches\/from\/e2e-memorial-person$/);
+  await expect(page.getByRole("heading", { name: "Карточка из вашего дерева" })).toBeVisible();
+  await page.getByRole("button", { name: /Иван Петров.*Совпадают имена/ }).click();
+  await expect(page.getByRole("heading", { name: "Проверьте обе карточки" })).toBeVisible();
+  await page.getByRole("button", { name: "Предложить сопоставление" }).click();
+  await expect(page.getByText("Запрос отправлен. Другая сторона должна подтвердить сопоставление.")).toBeVisible();
+  expect(posted).toBe(true);
+});
+
+test("an unpublished source can be published before matching", async ({ page }) => {
+  const own = { archiveId: "tree-a", id: "e2e-memorial-person", name: "Иван Тестов" };
+  let published = false;
+  await page.route("**/a/tree-a/api/**", (route) => route.continue({
+    url: route.request().url().replace("/a/tree-a/api/", "/api/"),
+  }));
+  await page.route("**/api/discovery/matches/own-people?**", (route) => {
+    const exact = new URL(route.request().url()).searchParams.has("personId");
+    return route.fulfill(exact && !published
+      ? { status: 404, json: { error: "Карточка не опубликована" } }
+      : { json: { archiveId: "tree-a", people: exact ? [own] : [] } });
+  });
+  await page.route("**/api/discovery/matches/candidates?**", (route) =>
+    route.fulfill({ json: { candidates: [], nextCursor: null } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", matches: [], nextCursor: null } }));
+  await page.route("**/api/admin/published-people/e2e-memorial-person", (route) => {
+    if (route.request().method() === "PUT") published = true;
+    return route.fulfill({ json: { archiveId: "tree-a", published, publishable: true,
+      fields: { birthSurname: false, birthYear: false, deathYear: false,
+        birthPlace: false, deathPlace: false }, person: { name: "Иван Тестов" } } });
+  });
+  await page.goto("/a/tree-a/admin/matches/from/e2e-memorial-person");
+  await expect(page.getByRole("heading", { name: "Карточка из вашего дерева" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Открыть публикацию карточки" }).click();
+  await page.getByRole("button", { name: "Опубликовать в поиске" }).click();
+  await page.getByRole("button", { name: "Закрыть", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Карточка из вашего дерева" })).toBeVisible();
+  await expect(page.getByText("Иван Тестов").first()).toBeVisible();
+});
+
+test("a non-owner does not get the cross-tree handoff on a tree card", async ({ page }) => {
+  await page.route("**/a/tree-a/api/**", (route) => route.continue({
+    url: route.request().url().replace("/a/tree-a/api/", "/api/"),
+  }));
+  await page.route((url) => url.pathname === "/a/tree-a/api/family" &&
+    url.searchParams.get("projection") === "overview", async (route) => {
+    const response = await route.fetch({ url: route.request().url().replace("/a/tree-a/api/", "/api/") });
+    const data = await response.json();
+    return route.fulfill({ response, json: { ...data, local: false } });
+  });
+  await page.route("**/api/account/archives", (route) => route.fulfill({ json: { archives: [
+    { id: "tree-a", title: "Чужое дерево", role: "admin", approved: true, owned: false, current: true },
+  ] } }));
+  await page.goto("/a/tree-a/tree");
+  await page.getByTestId("rf__node-e2e-memorial-person").click();
+  await expect(page.getByRole("link", { name: "Найти совпадения в других деревьях" })).toHaveCount(0);
+});
+
 test("a published-card link preselects its exact target for an owning archive", async ({ page }) => {
   const own = { archiveId: "tree-a", id: "person-a", name: "Иван Петров", birthYear: "1900" };
   const target = { archiveId: "tree-b", id: "person-b", name: "Иван Петров", birthYear: "1901" };
