@@ -16,10 +16,15 @@ function nameParts(person: PublishedCandidate) {
   return { given: words(person.givenName ?? given)[0] || "", currentSurnames,
     birthSurnames, surnames: [...currentSurnames, ...birthSurnames] };
 }
-export function candidateNameQuery(person: PublishedCandidate): string | null {
+export function candidateNameRoleQuery(person: PublishedCandidate) {
   const { given, surnames } = nameParts(person);
   const terms = [...new Set(surnames.filter((value) => value.length >= 2))].slice(0, 4);
-  return given.length >= 2 && terms.length ? `${given} & (${terms.join(" | ")})` : null;
+  return given.length >= 2 && terms.length
+    ? { name: `${given} & (${terms.join(" | ")})`, given, surname: terms.join(" | ") }
+    : null;
+}
+export function candidateNameQuery(person: PublishedCandidate): string | null {
+  return candidateNameRoleQuery(person)?.name || null;
 }
 export function candidateFuzzyTerms(person: PublishedCandidate) {
   const { given, surnames } = nameParts(person);
