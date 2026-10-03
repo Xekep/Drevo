@@ -151,10 +151,19 @@ export function mediaUploadHttp({
     } catch (error) {
       // A response/projection failure cannot roll back archive.write. Keep
       // its original and quota metadata once the graph references the photo.
-      if (!photoCommitted) {
-        await forgetUpload?.();
-        if (file) await file.undo();
+      if (photoCommitted) {
+        if (res.destroyed) return true;
+        if (res.headersSent) {
+          res.destroy();
+          return true;
+        }
+        return json(res, 500, {
+          error: "Фото сохранено. Обновите архив.",
+          saved: true,
+        });
       }
+      await forgetUpload?.();
+      if (file) await file.undo();
       if (error instanceof UploadQuotaError && error.status === 429)
         res.setHeader("Retry-After", "60");
       return json(

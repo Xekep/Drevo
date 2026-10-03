@@ -85,7 +85,11 @@ test("a response failure after photo commit retains the committed original", asy
     },
     body: png,
   });
-  assert.equal(response.status, 400);
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), {
+    error: "Фото сохранено. Обновите архив.",
+    saved: true,
+  });
   assert.equal(injected, true);
   const current = await app.archive.read();
   assert.equal(current.family.photos?.length, 1, "the graph commit preceded response delivery");
