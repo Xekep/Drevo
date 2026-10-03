@@ -809,6 +809,8 @@ export function restoreStore(
           for (const key of ["formation", "ending", "divorce", "ongoing"] as const)
             if (union[key]?.sources) union[key]!.sources = remapCitations(union[key]!.sources!);
         }
+        for (const link of family.links || [])
+          if (link.sources) link.sources = remapCitations(link.sources);
         for (const photo of family.photos || []) photo.url = urls.get(photo.url) || photo.url;
         const restoredCatalog = stage.catalogSources.map((source) => ({ ...source,
           documentIds: source.documentIds.map((id) => documentIdMap.get(id)!),
