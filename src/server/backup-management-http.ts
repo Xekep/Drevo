@@ -76,11 +76,41 @@ export function backupManagementHttp({
         const offset = Number(url.searchParams.get("offset") || 0);
         if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000)
           throw new BackupInputError("Некорректная страница.");
-        return json(
-          res,
-          200,
-          await backups.status((await auth.currentUser(req))!.id, offset),
-        );
+        const status = await backups.status((await auth.currentUser(req))!.id, offset);
+        if (!auth.local && db.kind === "postgres" && db.postgresTransaction) {
+          const session = await auth.accountSession(req);
+          if (!session)
+            return json(res, 401, { error: "Доступ администратора отозван." });
+          return await db.postgresTransaction(async (client) => {
+            // Account deletion locks account before session; use the same order.
+            const account = await client.query(
+              "SELECT id FROM accounts WHERE id=$1 FOR SHARE NOWAIT", [session.accountId]);
+            if (!account.rowCount)
+              return json(res, 401, { error: "Доступ администратора отозван." });
+            const active = await client.query<{ expires_at: string }>(
+              `SELECT expires_at FROM account_sessions
+               WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+              [session.tokenHash, session.accountId]);
+            if (!active.rows[0] || Number(active.rows[0].expires_at) <= Date.now())
+              return json(res, 401, { error: "Доступ администратора отозван." });
+            await client.query("SELECT set_config('drevo.account_id',$1,true)",
+              [session.accountId]);
+            const membership = await client.query<{ approved: boolean }>(
+              `SELECT approved FROM archive_memberships
+               WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+              [db.archiveId, session.accountId]);
+            const platformGrant = await client.query(
+              "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
+              [session.accountId]);
+            if (!membership.rows[0]?.approved || !platformGrant.rowCount)
+              return json(res, 403, { error: "Доступ администратора отозван." });
+            return json(res, 200, status);
+          });
+        }
+        if (!(await auth.isPlatformAdmin(req)))
+          return json(res, (await auth.currentUser(req)) ? 403 : 401,
+            { error: "Доступ администратора отозван." });
+        return json(res, 200, status);
       }
       if (path === "/api/backups/settings" && req.method === "PUT") {
         const body = await readJson(req);
