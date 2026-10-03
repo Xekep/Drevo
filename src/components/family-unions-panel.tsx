@@ -6,6 +6,8 @@ import {
   type Family,
   type FamilyUnion,
   type UnionMilestone,
+  type ClaimConfidence,
+  CLAIM_CONFIDENCE_LABELS,
 } from "../domain";
 import { UnionSourcesEditor } from "./union-sources-editor.tsx";
 
@@ -45,6 +47,8 @@ export function FamilyUnionsPanel({
   const [draft, setDraft] = useState<FamilyUnion | null>(null);
   const [error, setError] = useState("");
   const [sourcesReset, setSourcesReset] = useState(false);
+  const [assessmentReset, setAssessmentReset] = useState(false);
+  const canAssess = user?.role === "admin" || user?.role === "researcher";
   const unions = (family.unions || []).filter((union) =>
     participants.every((id) => union.participants.includes(id)),
   );
@@ -62,22 +66,47 @@ export function FamilyUnionsPanel({
   const saveIdentityFirst = !!original && !!draft && original.type !== draft.type &&
     [original.sources, original.formation?.sources, original.ending?.sources,
       original.divorce?.sources, original.ongoing?.sources].some((sources) => sources?.length);
+  const saveAssessmentFirst = !!original && !!draft && original.type !== draft.type &&
+    [original.formation, original.ending, original.divorce, original.ongoing]
+      .some((stage) => stage?.confidence);
+  const saveStageFirst = (key: "formation" | "ending" | "divorce" | "ongoing") => {
+    const before = original?.[key], after = draft?.[key];
+    return !!before?.confidence &&
+      (before.date !== after?.date || before.dateText !== after?.dateText ||
+        before.place !== after?.place);
+  };
+  const stageLocked = (key: "formation" | "ending" | "divorce" | "ongoing") =>
+    !canAssess && (!!draft?.[key]?.confidence ||
+      (key === "ending" && !!draft?.divorce?.confidence) ||
+      (key === "divorce" && !!draft?.ending?.confidence));
   const patch = (value: Partial<FamilyUnion>) =>
     setDraft((old) => old && { ...old, ...value });
   const milestone = (
     key: "formation" | "ending" | "divorce" | "ongoing",
     field: keyof UnionMilestone,
     value: string,
-  ) =>
+  ) => {
+    const changedAssessedValue = field !== "confidence" && !!draft?.[key]?.confidence &&
+      draft[key]?.[field] !== (value || undefined);
+    const replacedAssessedEnding = !!value &&
+      ((key === "ending" && !!draft?.divorce?.confidence) ||
+        (key === "divorce" && !!draft?.ending?.confidence));
+    if (changedAssessedValue || replacedAssessedEnding)
+      setAssessmentReset(true);
     setDraft(
-      (old) =>
-        old && {
+      (old) => {
+        if (!old) return old;
+        return {
           ...old,
           ...(value && key === "ending" ? { divorce: undefined } : {}),
           ...(value && key === "divorce" ? { ending: undefined } : {}),
-          [key]: { ...old[key], [field]: value || undefined },
-        },
+          [key]: { ...old[key], [field]: value || undefined,
+            ...(field !== "confidence" && old[key]?.[field] !== (value || undefined)
+              ? { confidence: undefined } : {}) },
+        };
+      },
     );
+  };
   const milestoneSources = (
     key: "formation" | "ending" | "divorce" | "ongoing",
     sources: UnionMilestone["sources"],
@@ -96,6 +125,7 @@ export function FamilyUnionsPanel({
       await save({ ...family, unions: next });
       setDraft(null);
       setSourcesReset(false);
+      setAssessmentReset(false);
       onSaved();
     } catch (cause) {
       setError((cause as Error).message);
@@ -122,6 +152,10 @@ export function FamilyUnionsPanel({
               "Дата заключения неизвестна"}
             {union.formation?.place ? ` · ${union.formation.place}` : ""}
           </p>
+          {union.formation?.confidence && <p>Оценка заключения: {CLAIM_CONFIDENCE_LABELS[union.formation.confidence]}</p>}
+          {union.divorce?.confidence && <p>Оценка развода: {CLAIM_CONFIDENCE_LABELS[union.divorce.confidence]}</p>}
+          {union.ending?.confidence && <p>Оценка окончания: {CLAIM_CONFIDENCE_LABELS[union.ending.confidence]}</p>}
+          {union.ongoing?.confidence && <p>Оценка продолжения: {CLAIM_CONFIDENCE_LABELS[union.ongoing.confidence]}</p>}
           {(union.divorce || union.ending) && (
             <p>
               {union.divorce ? "Развод" : "Окончание"}:{" "}
@@ -135,7 +169,7 @@ export function FamilyUnionsPanel({
             <button
               type="button"
               disabled={busy}
-              onClick={() => { setSourcesReset(false); setDraft(structuredClone(union)); }}
+              onClick={() => { setSourcesReset(false); setAssessmentReset(false); setDraft(structuredClone(union)); }}
             >
               Изменить союз
             </button>
@@ -147,7 +181,7 @@ export function FamilyUnionsPanel({
         <button
           type="button"
           disabled={busy}
-          onClick={() => { setSourcesReset(false); setDraft(empty(participants)); }}
+          onClick={() => { setSourcesReset(false); setAssessmentReset(false); setDraft(empty(participants)); }}
         >
           Добавить союз
         </button>
@@ -168,6 +202,8 @@ export function FamilyUnionsPanel({
             Тип союза
             <select
               value={draft.type}
+              disabled={!canAssess && [draft.formation, draft.ending, draft.divorce, draft.ongoing]
+                .some((stage) => stage?.confidence)}
               onChange={(event) => {
                 const type = event.target.value as FamilyUnion["type"];
                 if (type === draft.type) return;
@@ -175,15 +211,17 @@ export function FamilyUnionsPanel({
                   draft.ending?.sources, draft.divorce?.sources,
                   draft.ongoing?.sources].some((sources) => sources?.length);
                 setSourcesReset((previous) => previous || hadSources);
+                if ([draft.formation, draft.ending, draft.divorce, draft.ongoing]
+                  .some((stage) => stage?.confidence)) setAssessmentReset(true);
                 patch({
                   type,
                   sources: undefined,
-                  formation: draft.formation && { ...draft.formation, sources: undefined },
-                  ending: draft.ending && { ...draft.ending, sources: undefined },
+                  formation: draft.formation && { ...draft.formation, sources: undefined, confidence: undefined },
+                  ending: draft.ending && { ...draft.ending, sources: undefined, confidence: undefined },
                   divorce: type === "marriage" && draft.divorce
-                    ? { ...draft.divorce, sources: undefined }
+                    ? { ...draft.divorce, sources: undefined, confidence: undefined }
                     : undefined,
-                  ongoing: draft.ongoing && { ...draft.ongoing, sources: undefined },
+                  ongoing: draft.ongoing && { ...draft.ongoing, sources: undefined, confidence: undefined },
                 });
               }}
             >
@@ -200,6 +238,7 @@ export function FamilyUnionsPanel({
               ? " Сохраните новый тип, затем при необходимости добавьте источники заново."
               : " При необходимости добавьте подходящие источники заново."}
           </p>}
+          {assessmentReset && <p role="status">Оценка достоверности прежнего этапа снята. Проверьте новые сведения и оцените их заново.</p>}
           {(["formation", "ending", "divorce", "ongoing"] as const)
             .filter((key) => key !== "divorce" || draft.type === "marriage")
             .map((key) => (
@@ -218,6 +257,7 @@ export function FamilyUnionsPanel({
                   Дата (год, месяц или день)
                   <input
                     value={draft[key]?.date || ""}
+                    disabled={stageLocked(key)}
                     onChange={(event) =>
                       milestone(key, "date", event.target.value)
                     }
@@ -227,6 +267,7 @@ export function FamilyUnionsPanel({
                 {key === "ongoing" && (
                   <button
                     type="button"
+                    disabled={stageLocked("ongoing")}
                     onClick={() =>
                       milestone(
                         "ongoing",
@@ -242,6 +283,7 @@ export function FamilyUnionsPanel({
                   Приблизительная дата
                   <input
                     value={draft[key]?.dateText || ""}
+                    disabled={stageLocked(key)}
                     onChange={(event) =>
                       milestone(key, "dateText", event.target.value)
                     }
@@ -252,11 +294,27 @@ export function FamilyUnionsPanel({
                   Место
                   <input
                     value={draft[key]?.place || ""}
+                    disabled={stageLocked(key)}
                     onChange={(event) =>
                       milestone(key, "place", event.target.value)
                     }
                   />
                 </label>
+                {(key === "ending" && draft.divorce) ||
+                  (key === "divorce" && draft.ending)
+                  ? <small>Оценку можно добавить после выбора этого этапа вместо другого завершения союза.</small>
+                  : saveIdentityFirst || saveAssessmentFirst || saveStageFirst(key)
+                  ? <p>Сначала сохраните изменённый союз, затем оцените этап заново.</p>
+                  : <label>
+                      Статус достоверности этапа
+                      <select value={draft[key]?.confidence || ""} disabled={!canAssess}
+                        onChange={(event) => milestone(key, "confidence",
+                          event.target.value as ClaimConfidence)}>
+                        <option value="">Оценка не задана</option>
+                        {(Object.keys(CLAIM_CONFIDENCE_LABELS) as ClaimConfidence[]).map((status) =>
+                          <option key={status} value={status}>{CLAIM_CONFIDENCE_LABELS[status]}</option>)}
+                      </select>
+                    </label>}
                 {(key === "ending" && draft.divorce) || (key === "divorce" && draft.ending)
                   ? <small>Источники можно добавить после выбора этого этапа вместо другого завершения союза.</small>
                   : saveIdentityFirst ? <p>Сначала сохраните новый тип союза, затем добавьте источники этапа.</p>
@@ -290,7 +348,7 @@ export function FamilyUnionsPanel({
           <button className="primary-action" disabled={busy}>
             Сохранить союз
           </button>
-          <button type="button" disabled={busy} onClick={() => { setDraft(null); setSourcesReset(false); }}>
+          <button type="button" disabled={busy} onClick={() => { setDraft(null); setSourcesReset(false); setAssessmentReset(false); }}>
             Отмена
           </button>
           {unions.some((union) => union.id === draft.id) && (

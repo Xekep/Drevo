@@ -140,6 +140,8 @@ export type UnionMilestone = {
   dateText?: string;
   place?: string;
   sources?: Source[];
+  /** Explicit research assessment of this stage and its recorded date/place. */
+  confidence?: ClaimConfidence;
 };
 export type FamilyUnion = {
   id: string;

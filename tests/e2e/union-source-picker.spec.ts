@@ -63,9 +63,11 @@ test("источник каталога подтверждает союз и е�
   await inline.getByLabel("Тип").fill("устный");
   await inline.getByLabel("Ссылка в источнике").fill("запись беседы");
   const formation = panel.getByRole("group", { name: "Заключение" });
+  await formation.getByLabel("Статус достоверности этапа").selectOption("probable");
   await formation.getByText("Источники этапа (0)").click();
   await choose(formation);
   const divorce = panel.getByRole("group", { name: "Развод" });
+  await divorce.getByLabel("Статус достоверности этапа").selectOption("conflicting");
   await divorce.getByText("Источники этапа (0)").click();
   await choose(divorce);
   await panel.getByRole("button", { name: "Сохранить союз" }).click();
@@ -76,8 +78,46 @@ test("источник каталога подтверждает союз и е�
   expect(union.sources![0].catalogId).toBe(sourceId);
   expect(union.sources![1].title).toBe("Семейное предание");
   expect(union.formation!.sources![0].catalogId).toBe(sourceId);
+  expect(union.formation!.confidence).toBe("probable");
   expect(union.divorce!.sources![0].catalogId).toBe(sourceId);
+  expect(union.divorce!.confidence).toBe("conflicting");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+});
+
+test("уточнение даты этапа снимает его оценку перед сохранением", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  const id = crypto.randomUUID();
+  const readFamily = await isolatedFamily(page, [{
+    id, participants: ["e2e-child", "e2e-spouse"], type: "marriage",
+    formation: { date: "1920", confidence: "confirmed" },
+  }]);
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/);
+  const edge = page.getByRole("group", { name: "Тестов Пётр Иванович — Тестова Елена Сергеевна" });
+  await edge.focus();
+  await edge.press("Enter");
+  const panel = page.getByRole("region", { name: "Семейные союзы" });
+  await panel.locator(".event-card").filter({ hasText: "1920" })
+    .getByRole("button", { name: "Изменить союз" }).click();
+  const formation = panel.getByRole("group", { name: "Заключение" });
+  await expect(formation.getByLabel("Статус достоверности этапа")).toHaveValue("confirmed");
+  await formation.getByLabel("Дата (год, месяц или день)").fill("1921");
+  await expect(formation.getByLabel("Статус достоверности этапа")).toHaveCount(0);
+  await expect(formation).toContainText("Сначала сохраните изменённый союз, затем оцените этап заново");
+  await expect(panel.getByRole("status")).toContainText("Оценка достоверности прежнего этапа снята");
+  await panel.getByRole("button", { name: "Сохранить союз" }).click();
+  const saved = readFamily().unions!.find((union) => union.id === id)!.formation!;
+  expect(saved.date).toBe("1921");
+  expect(saved.confidence).toBeUndefined();
+  await expect(panel).toHaveCount(0);
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/);
+  await edge.focus();
+  await edge.press("Enter");
+  await panel.locator(".event-card").filter({ hasText: "1921" })
+    .getByRole("button", { name: "Изменить союз" }).click();
+  await formation.getByLabel("Статус достоверности этапа").selectOption("probable");
+  await panel.getByRole("button", { name: "Сохранить союз" }).click();
+  expect(readFamily().unions!.find((union) => union.id === id)!.formation!.confidence).toBe("probable");
 });
 
 test("мобильный picker скрывает каталог после потери прав", async ({ page }, info) => {
