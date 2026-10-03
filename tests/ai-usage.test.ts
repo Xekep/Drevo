@@ -3,7 +3,68 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { initializeArchiveSchema } from "../src/server/schema.ts";
-import { aiUsageStore } from "../src/server/ai-usage.ts";
+import { aiUsageStore, AiLimitError } from "../src/server/ai-usage.ts";
+
+test("concurrent AI admission reserves the minute limit before the next turn", async () => {
+  const raw = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(raw);
+    const usage = aiUsageStore(storeDatabase(raw));
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 8 }, () =>
+        usage.admit("same-user", "model", {
+          requestsPerMinute: 1,
+          dailyRequests: 100,
+          dailyTokens: 10000,
+        }),
+      ),
+    );
+    assert.equal(
+      attempts.filter((attempt) => attempt.status === "fulfilled").length,
+      1,
+    );
+    for (const attempt of attempts) {
+      if (attempt.status !== "rejected") continue;
+      assert.ok(attempt.reason instanceof AiLimitError);
+      assert.ok((attempt.reason.retryAfterSeconds ?? 0) > 0);
+    }
+    assert.equal((await usage.summary()).today.requests, 1);
+  } finally {
+    raw.close();
+  }
+});
+
+test("AI admission enforces both archive and user daily budgets and rolls back with input", async () => {
+  const raw = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(raw);
+    const db = storeDatabase(raw),
+      usage = aiUsageStore(db);
+    const limits = { requestsPerMinute: 0, dailyRequests: 2, dailyTokens: 0 };
+    const personal = { ...limits, dailyRequests: 1 };
+    await assert.rejects(
+      db.transaction(async () => {
+        await usage.admit("first", "model", limits, personal);
+        throw new Error("input could not be saved");
+      }),
+      /input could not be saved/,
+    );
+    assert.equal((await usage.summary()).today.requests, 0);
+    await usage.admit("first", "model", limits, personal);
+    await assert.rejects(
+      usage.admit("first", "model", limits, personal),
+      /Ваш дневной лимит/,
+    );
+    await usage.admit("second", "model", limits, personal);
+    await assert.rejects(
+      usage.admit("third", "model", limits, personal),
+      /Дневной лимит/,
+    );
+    assert.equal((await usage.summary()).today.requests, 2);
+  } finally {
+    raw.close();
+  }
+});
 
 test("AI usage keeps input/output tokens split by actual model", async () => {
   const db = new DatabaseSync(":memory:");

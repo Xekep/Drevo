@@ -89,6 +89,7 @@ test("fresh SQLite archive gets current schema version", () => {
     assert.ok(columns(db, "ai_settings").includes("daily_tokens"));
     assert.ok(columns(db, "ai_settings").includes("api_key_ciphertext"));
     assert.ok(columns(db, "ai_settings").includes("folder_id"));
+    assert.ok(columns(db, "ai_chats").includes("stop_token"));
     assert.ok(columns(db, "mcp_tokens").includes("rate_limit_per_minute"));
     assert.ok(columns(db, "mcp_tokens").includes("bound_user_id"));
     assert.ok(columns(db, "face_descriptors").includes("source_tag_id"));
@@ -126,6 +127,41 @@ test("fresh SQLite archive gets current schema version", () => {
       assert.ok(tables.has(table), `missing table ${table}`);
     initializeArchiveSchema(db);
     assert.equal(userVersion(db), ARCHIVE_SCHEMA_VERSION);
+  } finally {
+    db.close();
+  }
+});
+
+test("schema v20 preserves existing AI history and leases", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(db);
+    db.exec(
+      "ALTER TABLE ai_chats DROP COLUMN stop_token; PRAGMA user_version=19;",
+    );
+    db.prepare(
+      `INSERT INTO ai_chats(id,user_id,access_scope,created_at,updated_at,busy_token,busy_until)
+      VALUES('old-chat','old-user','all','2026-10-01','2026-10-01','active-token',12345)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO ai_chat_messages(chat_id,role,content,created_at)
+      VALUES('old-chat','user','Существующий диалог','2026-10-01')`,
+    ).run();
+    initializeArchiveSchema(db);
+    initializeArchiveSchema(db);
+    assert.equal(userVersion(db), ARCHIVE_SCHEMA_VERSION);
+    assert.deepEqual(
+      {
+        ...db
+          .prepare("SELECT busy_token,busy_until,stop_token FROM ai_chats")
+          .get(),
+      },
+      { busy_token: "active-token", busy_until: 12345, stop_token: null },
+    );
+    assert.equal(
+      db.prepare("SELECT content FROM ai_chat_messages").get()!.content,
+      "Существующий диалог",
+    );
   } finally {
     db.close();
   }

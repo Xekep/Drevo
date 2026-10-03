@@ -101,9 +101,15 @@ export function aiResearchHttp({
     { controller: AbortController; done: Promise<void> }
   >();
   let activeAttachmentDeliveries = 0;
-  async function stopChat(id: string) {
+  async function stopChat(id: string, userId: string) {
+    await chats.requestStop(id, userId);
     const run = activeRuns.get(id);
-    if (!run) return;
+    if (!run) {
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline && (await chats.isBusy(id)))
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      return;
+    }
     run.controller.abort();
     // Keep the lease until the runner exits: a stopped turn must not write
     // after deletion or overlap a new turn.
@@ -603,9 +609,8 @@ export function aiResearchHttp({
         if (!isSameOriginRequest(req, publicOrigin))
           return json(res, 403, { error: "Invalid origin" });
         const chat = await chats.read(id, user.id);
-        if (!chat)
-          return json(res, 404, { error: "Диалог не найден" });
-        await stopChat(id);
+        if (!chat) return json(res, 404, { error: "Диалог не найден" });
+        await stopChat(id, user.id);
         return json(res, 200, { busy: !!(await chats.isBusy(id)) });
       }
       if (req.method === "GET") {
@@ -642,7 +647,7 @@ export function aiResearchHttp({
           return json(res, 403, { error: "Invalid origin" });
         const existing = await chats.read(id, user.id);
         if (!existing) return json(res, 404, { error: "Диалог не найден" });
-        await stopChat(id);
+        await stopChat(id, user.id);
         if (await chats.isBusy(id))
           return json(res, 409, {
             error: "Дождитесь завершения ответа перед удалением диалога",
@@ -847,7 +852,13 @@ export function aiResearchHttp({
       // removes the staged attachments below.
       const accepted = await archive.db.transaction(async () => {
         if (!(await canDeliverAiData(req, chat.accessScope, user.id, true)))
-          return false;
+          return null;
+        const admitted = await usage.admit(
+          user.id,
+          runtime.model,
+          runtime.limits,
+          runtime.userLimits ?? undefined,
+        );
         await chats.append(
           chat.id,
           "user",
@@ -860,7 +871,7 @@ export function aiResearchHttp({
                   : {}),
               },
         );
-        return true;
+        return admitted;
       });
       if (!accepted) {
         await attachments.removeFiles(savedAttachments);
@@ -869,11 +880,16 @@ export function aiResearchHttp({
         return json(res, 403, { error: "Доступ к ИИ отключён" });
       }
       appended = true;
-      usageRun = await usage.begin(user.id, runtime.model);
+      usageRun = accepted;
       if (closing) throw new Error("Сервер перезапускается");
     } catch (error) {
       if (!appended) await attachments.removeFiles(savedAttachments);
       await chats.release(chat.id, lockToken);
+      if (error instanceof AiLimitError) {
+        if (error.retryAfterSeconds)
+          res.setHeader("Retry-After", String(error.retryAfterSeconds));
+        return json(res, 429, { error: error.message });
+      }
       throw error;
     }
     const metrics: ResearchMetrics = {
@@ -888,6 +904,11 @@ export function aiResearchHttp({
         models: new Map(),
       },
       controller = new AbortController();
+    const assertTurnRunning = async () => {
+      if (await chats.stopRequested(chat.id, lockToken)) controller.abort();
+      if (controller.signal.aborted)
+        throw new DOMException("Ответ остановлен", "AbortError");
+    };
     let renewing = false;
     let leaseLost = false;
     let accessRevoked = false;
@@ -926,6 +947,23 @@ export function aiResearchHttp({
         });
     }, 20_000);
     lockRenewal.unref();
+    let stopCheck: Promise<void> | undefined;
+    const cancellationPoll = setInterval(() => {
+      if (stopCheck || controller.signal.aborted) return;
+      stopCheck = chats
+        .stopRequested(chat.id, lockToken)
+        .then((stopped) => {
+          if (stopped) controller.abort();
+        })
+        .catch(() => {
+          leaseLost = true;
+          controller.abort();
+        })
+        .finally(() => {
+          stopCheck = undefined;
+        });
+    }, 1000);
+    cancellationPoll.unref();
     let finishRun: () => void = () => {};
     const done = new Promise<void>((resolve) => {
       finishRun = resolve;
@@ -968,8 +1006,7 @@ export function aiResearchHttp({
         signal: controller.signal,
         chatId: chat.id,
         assertAiAccess: async () => {
-          if (controller.signal.aborted)
-            throw new DOMException("Ответ остановлен", "AbortError");
+          await assertTurnRunning();
           if (await canDeliverAiData(req, chat.accessScope, user.id)) return;
           accessRevoked = true;
           controller.abort();
@@ -977,6 +1014,7 @@ export function aiResearchHttp({
         },
         commitSuggestion: async (name, _actor, family, revision, args) =>
           archive.db.transaction(async () => {
+            await assertTurnRunning();
             const latest = await auth.currentUser(req);
             if (controller.signal.aborted || !latest || latest.id !== user.id ||
               !latest.approved || !(await auth.canEdit(req))) {
@@ -1007,6 +1045,7 @@ export function aiResearchHttp({
       if (controller.signal.aborted)
         throw new DOMException("Запрос остановлен", "AbortError");
       const answerSaved = await archive.db.transaction(async () => {
+        await assertTurnRunning();
         if (!(await canDeliverAiData(req, chat.accessScope, user.id, true)))
           return false;
         await chats.append(chat.id, "assistant", result.answer, {
@@ -1039,7 +1078,7 @@ export function aiResearchHttp({
         throw new DOMException("Доступ к ИИ отключён", "AbortError");
       }
       const assertAnswerDelivery = async () => {
-        controller.signal.throwIfAborted();
+        await assertTurnRunning();
         const allowed = await canDeliverAiData(req, chat.accessScope, user.id);
         controller.signal.throwIfAborted();
         if (allowed) return;
@@ -1201,6 +1240,8 @@ export function aiResearchHttp({
       });
     } finally {
       clearInterval(lockRenewal);
+      clearInterval(cancellationPoll);
+      await stopCheck;
       try {
         await chats.release(chat.id, lockToken);
       } finally {
