@@ -424,6 +424,28 @@
 .inspector-dock .profile-head p {
   font-size: 13px;
 }
+@media (min-width: 900px) {
+  .archive-workspace:has(.inspector-dock) .tree-canvas {
+    right: var(--inspector-width, 332px);
+  }
+  .inspector-dock {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 0;
+    border-top: 0;
+    border-right: 0;
+    border-bottom: 0;
+    box-shadow: none;
+  }
+  .inspector-dock > .inspector-heading {
+    padding: 6px 12px;
+    gap: 8px;
+  }
+  .inspector-dock .profile-head {
+    padding-top: 16px;
+  }
+}
 .inspector-dock .profile-content {
   padding: 22px;
 }
