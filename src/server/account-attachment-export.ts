@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { lstat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open } from "node:fs/promises";
 import { join } from "node:path";
 import { Transform, type Readable, type Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -9,9 +9,11 @@ import type { PoolClient } from "pg";
 import { commentFileId, type CommentAttachmentFile } from "../shared/person-discussion.ts";
 import { commentFilesFromJson } from "./discussion-attachments.ts";
 
-const MAX_FILES = 50_000;
-const MAX_BYTES = 12 * 1024 * 1024 * 1024;
+// Keep a single account download bounded while it holds database locks.
+export const MAX_ACCOUNT_ATTACHMENT_FILES = 1_000;
+export const MAX_ACCOUNT_ATTACHMENT_BYTES = 256 * 1024 * 1024;
 const archiveIdPattern = /^[A-Za-z0-9][A-Za-z0-9-]{2,63}$/;
+const readFlags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
 
 export class AccountAttachmentExportTooLarge extends Error {}
 export class AccountAttachmentExportMissing extends Error {}
@@ -63,9 +65,11 @@ type PreparedFile = OwnCommentAttachment & {
   path: string;
   source: string;
   sha256: string;
+  dev: number;
+  ino: number;
 };
 
-async function hashOriginal(source: string, expectedSize: number) {
+async function hashOriginal(source: string, expectedSize: number, signal?: AbortSignal) {
   let info;
   try {
     info = await lstat(source);
@@ -74,20 +78,30 @@ async function hashOriginal(source: string, expectedSize: number) {
   }
   if (!info.isFile() || info.isSymbolicLink() || info.size !== expectedSize)
     throw new AccountAttachmentExportMissing("Discussion original changed");
-  const hash = createHash("sha256");
-  let bytes = 0;
+  let handle;
   try {
-    for await (const chunk of createReadStream(source)) {
+    handle = await open(source, readFlags);
+    const opened = await handle.stat();
+    if (!opened.isFile() || opened.size !== expectedSize ||
+        opened.dev !== info.dev || opened.ino !== info.ino)
+      throw new AccountAttachmentExportMissing("Discussion original changed");
+    const hash = createHash("sha256");
+    let bytes = 0;
+    for await (const chunk of handle.createReadStream({ autoClose: false, signal })) {
       const buffer = chunk as Buffer;
       bytes += buffer.length;
       hash.update(buffer);
     }
-  } catch {
+    if (bytes !== expectedSize)
+      throw new AccountAttachmentExportMissing("Discussion original changed");
+    return { sha256: hash.digest("hex"), dev: opened.dev, ino: opened.ino };
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    if (error instanceof AccountAttachmentExportMissing) throw error;
     throw new AccountAttachmentExportMissing("Discussion original is unreadable");
+  } finally {
+    await handle?.close();
   }
-  if (bytes !== expectedSize)
-    throw new AccountAttachmentExportMissing("Discussion original changed");
-  return hash.digest("hex");
 }
 
 /** Prepare an account-only bundle without retaining file contents in memory.
@@ -96,24 +110,26 @@ async function hashOriginal(source: string, expectedSize: number) {
 export async function prepareAccountAttachmentExport(
   attachments: OwnCommentAttachment[],
   uploadsForArchive: (archiveId: string) => string,
+  signal?: AbortSignal,
 ) {
-  if (attachments.length > MAX_FILES)
+  if (attachments.length > MAX_ACCOUNT_ATTACHMENT_FILES)
     throw new AccountAttachmentExportTooLarge("Too many discussion originals");
   const total = attachments.reduce((sum, attachment) => sum + attachment.file.size, 0);
-  if (!Number.isSafeInteger(total) || total > MAX_BYTES)
+  if (!Number.isSafeInteger(total) || total > MAX_ACCOUNT_ATTACHMENT_BYTES)
     throw new AccountAttachmentExportTooLarge("Discussion originals exceed export limit");
   const files: PreparedFile[] = [];
   for (const attachment of attachments) {
+    signal?.throwIfAborted();
     if (!archiveIdPattern.test(attachment.archiveId) ||
         !commentFileId.test(attachment.file.id))
       throw new AccountAttachmentExportMissing("Invalid discussion original ID");
     const source = join(uploadsForArchive(attachment.archiveId),
       "discussion-files", attachment.file.id);
-    const sha256 = await hashOriginal(source, attachment.file.size);
+    const identity = await hashOriginal(source, attachment.file.size, signal);
     files.push({
       ...attachment,
       source,
-      sha256,
+      ...identity,
       path: `files/${files.length + 1}-${attachment.file.id}`,
     });
   }
@@ -137,9 +153,9 @@ export async function prepareAccountAttachmentExport(
   if (manifestData.length > 24 * 1024 * 1024)
     throw new AccountAttachmentExportTooLarge("Discussion manifest exceeds export limit");
   return {
-    async writeTo(destination: Writable) {
+    async writeTo(destination: Writable, streamSignal?: AbortSignal) {
       const zip = new ZipFile();
-      const output = pipeline(zip.outputStream, destination);
+      const output = pipeline(zip.outputStream, destination, { signal: streamSignal });
       void output.catch(() => {});
       zip.on("error", (error) => (zip.outputStream as Readable).destroy(error));
       try {
@@ -147,25 +163,37 @@ export async function prepareAccountAttachmentExport(
         for (const file of files) {
           zip.addReadStreamLazy(file.path, { compress: false, size: file.file.size },
             (callback) => {
-              const source = createReadStream(file.source);
-              const hash = createHash("sha256");
-              const checked = new Transform({
-                transform(chunk: Buffer, _encoding, done) {
-                  hash.update(chunk);
-                  done(null, chunk);
-                },
-                flush(done) {
-                  done(hash.digest("hex") === file.sha256
-                    ? undefined
-                    : new AccountAttachmentExportMissing("Discussion original changed during export"));
-                },
-              });
-              source.on("error", (error) => checked.destroy(error));
-              checked.on("error", (error) => {
-                source.destroy();
-                zip.emit("error", error);
-              });
-              callback(null, source.pipe(checked));
+              void (async () => {
+                const handle = await open(file.source, readFlags);
+                try {
+                  const info = await handle.stat();
+                  if (!info.isFile() || info.size !== file.file.size ||
+                      info.dev !== file.dev || info.ino !== file.ino)
+                    throw new AccountAttachmentExportMissing("Discussion original changed during export");
+                  const source = handle.createReadStream({ signal: streamSignal });
+                  const hash = createHash("sha256");
+                  const checked = new Transform({
+                    transform(chunk: Buffer, _encoding, done) {
+                      hash.update(chunk);
+                      done(null, chunk);
+                    },
+                    flush(done) {
+                      done(hash.digest("hex") === file.sha256
+                        ? undefined
+                        : new AccountAttachmentExportMissing("Discussion original changed during export"));
+                    },
+                  });
+                  source.on("error", (error) => checked.destroy(error));
+                  checked.on("error", (error) => {
+                    source.destroy();
+                    zip.emit("error", error);
+                  });
+                  callback(null, source.pipe(checked));
+                } catch (error) {
+                  await handle.close();
+                  callback(error, null as unknown as Readable);
+                }
+              })().catch((error) => callback(error, null as unknown as Readable));
             });
         }
         zip.end();

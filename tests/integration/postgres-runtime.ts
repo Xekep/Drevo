@@ -3,7 +3,7 @@ import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { createServer } from "node:http";
+import { createServer, get as httpGet } from "node:http";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
 import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { statfs, symlink, unlink, utimes } from "node:fs/promises";
@@ -4955,13 +4955,92 @@ try {
     await client.query("UPDATE person_comments SET attachments=$1::jsonb WHERE id=$2",
       [JSON.stringify([visibleAttachment]), exportAttachmentRows.rows[0].id]);
   }
+  const slowAttachmentBytes = Buffer.alloc(9 * 1024 * 1024, 0x41);
+  const [slowAttachment] = await attachmentExportStore.save([
+    await prepareCommentFile("large.txt", slowAttachmentBytes),
+  ]);
+  await client.query(
+    `INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,attachments)
+     VALUES('person-a','reader','Reader',$1,'account-export-attachment:slow',$2::jsonb)`,
+    [Date.now(), JSON.stringify([slowAttachment])],
+  );
+  const timedAttachmentExport = accountAttachmentExportHttp(
+    app.archive.db, attachmentExportAuth,
+    () => join(dirname(source), "uploads"), undefined, 750,
+  );
+  const timedAttachmentServer = createServer((req, res) => {
+    // Deterministic slow-client backpressure: send the first ZIP chunk, then
+    // stop draining writes until the server-side deadline aborts the stream.
+    const originalWrite = res.write.bind(res);
+    let writes = 0;
+    res.write = ((...args: Parameters<typeof res.write>) => {
+      if (writes++ > 0) return false;
+      return originalWrite(...args);
+    }) as typeof res.write;
+    void timedAttachmentExport(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => timedAttachmentServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (timedAttachmentServer.address() as { port: number }).port;
+    await new Promise<void>((resolve, reject) => {
+      let abortStalled = () => {};
+      const timer = setTimeout(() => {
+        abortStalled();
+        reject(new Error("stalled account ZIP did not abort"));
+      }, 5_000);
+      const request = httpGet(`http://127.0.0.1:${port}/api/account/export/attachments`,
+        { headers }, (response) => {
+          try { assert.equal(response.statusCode, 200); }
+          catch (error) { clearTimeout(timer); reject(error); response.destroy(); return; }
+          response.pause();
+          response.once("close", () => { clearTimeout(timer); resolve(); });
+        });
+      abortStalled = () => request.destroy();
+      request.on("error", (error) => { clearTimeout(timer); reject(error); });
+    });
+    let released = false;
+    for (let attempt = 0; attempt < 20 && !released; attempt++) {
+      try {
+        await client.query("SELECT id FROM archives WHERE id='runtime-test' FOR UPDATE NOWAIT");
+        released = true;
+      } catch (error) {
+        if ((error as { code?: string }).code !== "55P03") throw error;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+    assert.equal(released, true,
+      "a timed-out slow ZIP client must release its archive lock and PostgreSQL transaction");
+  } finally {
+    await new Promise<void>((resolve) => timedAttachmentServer.close(() => resolve()));
+  }
+  const preHeaderTimeout = accountAttachmentExportHttp(
+    app.archive.db, attachmentExportAuth,
+    () => join(dirname(source), "uploads"),
+    async () => { await new Promise((resolve) => setTimeout(resolve, 150)); }, 50,
+  );
+  const preHeaderServer = createServer((req, res) => {
+    void preHeaderTimeout(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => preHeaderServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (preHeaderServer.address() as { port: number }).port;
+    const timedOut = await fetch(`http://127.0.0.1:${port}/api/account/export/attachments`,
+      { headers });
+    assert.equal(timedOut.status, 503, "an expired export must fail before ZIP headers");
+    assert.equal(timedOut.headers.get("retry-after"), "30");
+    await timedOut.text();
+  } finally {
+    await new Promise<void>((resolve) => preHeaderServer.close(() => resolve()));
+  }
   await attachmentExportStore.remove([visibleAttachment]);
   const missingAttachmentExport = await fetch(attachmentExportUrl, { headers });
   assert.equal(missingAttachmentExport.status, 409,
     "a missing original must fail explicitly before starting the ZIP");
   assert.equal(missingAttachmentExport.headers.get("content-type"), "application/json; charset=utf-8");
   await client.query("DELETE FROM person_comments WHERE text LIKE 'account-export-attachment:%'");
-  await attachmentExportStore.remove([visibleAttachment, hiddenAttachment, foreignAttachment]);
+  await attachmentExportStore.remove([visibleAttachment, hiddenAttachment, foreignAttachment, slowAttachment]);
   const ownerCommentExport = await fetch(accountExportUrl, { headers: ownerHeaders })
     .then((response) => response.json());
   assert.deepEqual(new Set(ownerCommentExport.archives.map((item: { id: string }) => item.id)),
