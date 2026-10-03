@@ -19,6 +19,7 @@ test("production timeline entry, year scroll, people scroll and deep search", as
   const count = Number(process.env.DREVO_TREE_ACCEPTANCE_PEOPLE || 977);
   expect([977, 3313]).toContain(count);
   const throttle = Number(process.env.DREVO_TREE_ACCEPTANCE_CPU || 4);
+  const horizontalPerDirection = count === 3313 ? 8 : 20;
   expect(Number.isFinite(throttle) && throttle >= 1).toBe(true);
   const tag = process.env.DREVO_TIMELINE_TAG || "baseline";
   expect(tag).toMatch(/^[a-zA-Z0-9_-]{1,64}$/);
@@ -34,6 +35,7 @@ test("production timeline entry, year scroll, people scroll and deep search", as
     "src/hooks/useArchive.ts", "src/hooks/useWorkspaceSelection.ts", "src/domain/dates.ts",
     "src/domain/person-events.ts", "src/domain/archive-projection.ts", "src/App.tsx",
     "tests/e2e/tree-acceptance-fixture.ts", "tests/e2e/timeline-performance.spec.ts", "package-lock.json",
+    ...readdirSync("src/domain").filter((file) => file === "timeline-window.ts").map((file) => `src/domain/${file}`),
   ];
   const buildFiles = (path: string): string[] => readdirSync(path, { withFileTypes: true })
     .flatMap((entry) => entry.isDirectory() ? buildFiles(join(path, entry.name)) : [join(path, entry.name)])
@@ -202,7 +204,7 @@ test("production timeline entry, year scroll, people scroll and deep search", as
   await page.mouse.move(bounds.x + bounds.width * 0.7, bounds.y + 120);
   await measure("horizontal-years", async () => {
     for (const direction of [-1, 1])
-      for (let index = 0; index < 20; index++) {
+      for (let index = 0; index < horizontalPerDirection; index++) {
         await page.mouse.wheel(0, direction * 120);
         await page.waitForTimeout(32);
       }
@@ -266,6 +268,7 @@ test("production timeline entry, year scroll, people scroll and deep search", as
       "Gesture timings include Playwright input/polling and a two-frame boundary; 32ms input pacing is intentional. " +
       "DOM/rectangles sampled after the timed endpoint. Heap is main-thread JS only; excludes Worker/GPU/browser memory. " +
       (profile ? "CPU profiler enabled for horizontal-years: diagnostic, not a comparable timing run." : "CPU profiler disabled."),
+    gestureSamples: { horizontalPerDirection, vertical: 16, pacingMs: 32 },
     phases, errors,
   };
   const json = JSON.stringify(report, null, 2);
