@@ -25,6 +25,7 @@ import { initializePostgresRuntimeSchema } from "../../src/server/postgres-runti
 import { backupCoordinator } from "../../src/server/backup-coordinator.ts";
 import { verifyManagedBackupDelivery } from "./postgres-managed-backup-delivery.ts";
 import { verifyManagedBackupStatusDelivery } from "./postgres-managed-backup-status-delivery.ts";
+import { verifyManagedBackupSettingsRevocation } from "./postgres-managed-backup-settings-revocation.ts";
 import { databaseBackupHttp } from "../../src/server/database-backup-http.ts";
 import { createAuth } from "../../src/server/auth.ts";
 import { openArchive } from "../../src/server/database.ts";
@@ -4395,6 +4396,7 @@ try {
     assert.ok(status.records[0]?.id, "managed backup is available for delivery");
     await verifyManagedBackupDelivery(app.archive, manager, source, status.records[0].id, client);
     await verifyManagedBackupStatusDelivery(app.archive, manager, source, status.records[0].id, client);
+    await verifyManagedBackupSettingsRevocation(app.archive, manager, source, client);
   } finally {
     await manager.close();
   }

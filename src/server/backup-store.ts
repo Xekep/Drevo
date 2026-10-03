@@ -1,5 +1,7 @@
 import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser } from "../domain/access.ts";
+import type { AuditDraft } from "../domain/audit.ts";
+import type pg from "pg";
 import type {
   BackupRecord,
   BackupSettings,
@@ -80,33 +82,58 @@ export async function backupStore(db: StoreDatabase, now = Date.now) {
   async function save(value: unknown, actor: ArchiveUser) {
     const checked = validateBackupSettings(value),
       old = await settings();
-    const next =
-      checked.enabled !== old.value.enabled ||
-      checked.intervalHours !== old.value.intervalHours
-        ? now() + checked.intervalHours * hour
-        : old.next;
+    const next = nextRun(checked, old.value, old.next);
     await db
       .prepare(
         "UPDATE backup_settings SET data=?,next_run=? WHERE id=1",
         "UPDATE backup_settings SET data=?,next_run=? WHERE id=1",
       )
       .run(JSON.stringify(checked), next);
-    await audit.record(
-      {
-        action: "Настроены резервные копии",
-        entity: "settings",
-        entityId: "backups",
-        label: "Резервные копии",
-        personIds: [],
-        details: [
-          {
-            field: "Настройки",
-            before: JSON.stringify(old.value),
-            after: JSON.stringify(checked),
-          },
-        ],
-      },
-      actor,
+    await audit.record(settingAudit(old.value, checked), actor);
+    return checked;
+  }
+  function nextRun(checked: BackupSettings, old: BackupSettings, previous: number) {
+    return checked.enabled !== old.enabled ||
+      checked.intervalHours !== old.intervalHours
+        ? now() + checked.intervalHours * hour
+        : previous;
+  }
+  function settingAudit(before: BackupSettings, after: BackupSettings): AuditDraft {
+    return {
+      action: "Настроены резервные копии",
+      entity: "settings",
+      entityId: "backups",
+      label: "Резервные копии",
+      personIds: [],
+      details: [
+        {
+          field: "Настройки",
+          before: JSON.stringify(before),
+          after: JSON.stringify(after),
+        },
+      ],
+    };
+  }
+  async function savePostgres(value: unknown, actor: ArchiveUser, client: pg.PoolClient) {
+    if (db.kind !== "postgres") throw new Error("PostgreSQL is required");
+    const checked = validateBackupSettings(value);
+    const previous = await client.query<{ data: string; next_run: string }>(
+      `SELECT data,next_run FROM backup_settings
+       WHERE archive_id=$1 AND id=1 FOR UPDATE NOWAIT`, [db.archiveId]);
+    if (!previous.rows[0]) throw new Error("Backup settings are unavailable");
+    const old = JSON.parse(String(previous.rows[0].data)) as BackupSettings;
+    const next = nextRun(checked, old, Number(previous.rows[0].next_run));
+    await client.query(
+      "UPDATE backup_settings SET data=$1,next_run=$2 WHERE archive_id=$3 AND id=1",
+      [JSON.stringify(checked), next, db.archiveId]);
+    const draft = settingAudit(old, checked);
+    await client.query(
+      `INSERT INTO archive_audit_entries
+       (archive_id,at,actor_id,actor_name,action,entity,entity_id,label,revision,details)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9)`,
+      [db.archiveId, new Date().toISOString(), actor.id, actor.name,
+        draft.action, draft.entity, draft.entityId, draft.label,
+        JSON.stringify(draft.details)],
     );
     return checked;
   }
@@ -155,6 +182,7 @@ export async function backupStore(db: StoreDatabase, now = Date.now) {
   return {
     settings,
     save,
+    savePostgres,
     record,
     add,
     excess,
