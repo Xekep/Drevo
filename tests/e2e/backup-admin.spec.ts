@@ -44,6 +44,7 @@ test("экспорт отделён от резервных копий; наст
       return route.fulfill({ json: state.settings });
     }
     if (url.pathname.endsWith("/preview")) {
+      expect(request.postDataJSON()).toEqual({ restoreComments: true });
       state.job = {
         id: "preview-job",
         kind: "preview",
@@ -59,6 +60,8 @@ test("экспорт отделён от резервных копий; наст
           missing: 0,
           currentCommentsLost: 2,
           backupCommentsSkipped: 3,
+          canRestoreComments: true,
+          commentsRestoreReason: "",
           currentPeople: 90,
           currentPhotos: 45,
         },
@@ -71,6 +74,7 @@ test("экспорт отделён от резервных копий; наст
     expect(route.request().postDataJSON()).toEqual({
       token: "preview",
       confirm: true,
+      restoreComments: true,
     });
     applied = true;
     await route.fulfill({ json: { backupName: "before-import.sqlite" } });
@@ -141,13 +145,16 @@ test("экспорт отделён от резервных копий; наст
     page.getByRole("button", { name: "Проверить подключение" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Сохранить настройки" }).click();
+  await page.getByLabel("При проверке копии подготовить восстановление комментариев и вложений").check();
   await page.getByRole("button", { name: /Восстановить копию от/ }).click();
   await expect(
     page.getByText("Копия семейного архива", { exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("alert").filter({ hasText:
     "На момент проверки будут удалены комментарии к людям, которых нет в копии: 2" }))
-    .toContainText("Комментарии из копии, которые не будут импортированы вместе с вложениями: 3");
+    .toContainText("При обычном восстановлении будут пропущены комментарии и вложения из копии: 3");
+  await expect(page.getByLabel("Восстановить комментарии и вложения из копии (3)"))
+    .toBeChecked();
   await expect(
     page.getByRole("button", { name: "Восстановить архив", exact: true }),
   ).toBeDisabled();

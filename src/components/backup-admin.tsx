@@ -45,6 +45,7 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [previewJobId, setPreviewJobId] = useState<string | null>(null);
+  const [prepareComments, setPrepareComments] = useState(false);
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
     let active = true,
@@ -358,6 +359,11 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
                       : "Копия проверена. Для замены данных требуется подтверждение.")}
           </p>
         )}
+        <label className="restore-confirm">
+          <input type="checkbox" checked={prepareComments} disabled={running}
+            onChange={(event) => setPrepareComments(event.target.checked)} />
+          При проверке копии подготовить восстановление комментариев и вложений
+        </label>
         <ul className="backup-list" aria-label="Резервные копии">
           {status.records.map((item) => (
             <li key={item.id}>
@@ -389,7 +395,8 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
                 <button
                   type="button"
                   disabled={running}
-                  onClick={() => void act("/" + item.id + "/preview")}
+                  onClick={() => void act("/" + item.id + "/preview",
+                    { restoreComments: prepareComments })}
                   aria-label={"Восстановить копию от " + date(item.createdAt)}
                 >
                   <RotateCcw size={15} aria-hidden="true" />

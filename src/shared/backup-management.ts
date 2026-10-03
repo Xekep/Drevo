@@ -28,6 +28,8 @@ export type RestorePreview = {
   missing: number;
   currentCommentsLost: number;
   backupCommentsSkipped: number;
+  canRestoreComments?: boolean;
+  commentsRestoreReason?: string;
   currentPeople: number;
   currentPhotos: number;
 };
