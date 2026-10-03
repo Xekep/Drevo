@@ -71,6 +71,7 @@ import { adminMcpHttp } from "../../src/server/admin-mcp-http.ts";
 import { sharesStore } from "../../src/server/shares.ts";
 import { adminSharingHttp } from "../../src/server/admin-sharing-http.ts";
 import { archiveInvitationsHttp } from "../../src/server/archive-invitations-http.ts";
+import { archiveQueryHttp } from "../../src/server/archive-query-http.ts";
 import { publicShareAccess } from "../../src/server/public-share-access.ts";
 import { publicSharingHttp } from "../../src/server/public-sharing-http.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
@@ -5383,6 +5384,216 @@ try {
     [sessionTokenHash(otherOnlyToken), Date.now() + 60_000],
   );
   const otherOnlyHeaders = { Cookie: `drevo_session=${otherOnlyToken}` };
+  const privateOtherPersonId = (await otherApp.archive.read()).family.people[0]?.id;
+  assert.ok(privateOtherPersonId, "the selected archive has a private card fixture");
+  const baselineOtherFamily = await fetch(securedBase + "/a/other-archive/api/family",
+    { headers: otherOnlyHeaders });
+  assert.equal(baselineOtherFamily.status, 200);
+  assert.ok((await baselineOtherFamily.json()).family.people.some(
+    (person: { id: string }) => person.id === privateOtherPersonId));
+  const familyBarrierTimeout = (message: string) => new Promise<never>((_, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), 30_000);
+    timer.unref();
+  });
+  for (const projection of ["full", "overview", "page", "session"] as const) {
+    const overviewForPage = projection === "page"
+      ? await fetch(securedBase + "/a/other-archive/api/family?projection=overview",
+        { headers: otherOnlyHeaders }).then((response) => response.json())
+      : null;
+    const familyPath = projection === "full" || projection === "session" ? "/api/family"
+      : projection === "overview" ? "/api/family?projection=overview"
+      : `/api/family?projection=page&collection=people&offset=0&token=${
+        encodeURIComponent(overviewForPage.pageToken)}`;
+  let familyReached!: () => void, releaseFamily!: () => void;
+  const familyReady = new Promise<void>((resolve) => { familyReached = resolve; });
+  const familyGate = new Promise<void>((resolve) => { releaseFamily = resolve; });
+  const familyAuth = await createAuth(await userStore(otherApp.archive.db),
+    otherApp.archive.db, process.env.PUBLIC_ORIGIN);
+  const familyEndpoint = archiveQueryHttp({ archive: otherApp.archive, auth: familyAuth,
+    visibility: await settingsStore(otherApp.archive.db),
+    treePreferences: treePreferencesStore(otherApp.archive.db),
+    researchCatalog: researchCatalogStore(otherApp.archive.db),
+    beforeDelivery: async () => { familyReached(); await familyGate; },
+  });
+  const familyServer = createServer((req, res) => {
+    void familyEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => familyServer.listen(0, "127.0.0.1", resolve));
+  const familyPort = (familyServer.address() as { port: number }).port;
+  const heldFamily = fetch(`http://127.0.0.1:${familyPort}${familyPath}`,
+    { headers: otherOnlyHeaders });
+  try {
+    await Promise.race([familyReady,
+      heldFamily.then(() => { throw new Error("Family response sent before delivery barrier"); }),
+      familyBarrierTimeout("Family response did not reach delivery barrier"),
+    ]);
+    const revokedFamilyMember = projection === "session"
+      ? await fetch(securedBase + "/auth/logout",
+        { method: "POST", headers: otherOnlyHeaders })
+      : await fetch(securedBase + "/a/other-archive/api/users/other-only",
+        { method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }) });
+    assert.equal(revokedFamilyMember.status, 200, await revokedFamilyMember.text());
+    releaseFamily();
+    const familyAfterRevoke = await heldFamily;
+    const familyAfterRevokeBody = await familyAfterRevoke.json();
+    assert.equal(familyAfterRevoke.status, 409,
+      `a revoked member cannot receive a prepared ${projection} family snapshot`);
+    assert.equal("family" in familyAfterRevokeBody, false);
+    assert.equal("items" in familyAfterRevokeBody, false);
+    assert.equal((await fetch(securedBase + "/a/other-archive/api/family",
+      { headers: otherOnlyHeaders })).status, 404,
+    "a new selected-archive request is denied after the approval change");
+    assert.equal((await fetch(securedBase + "/api/family",
+      { headers: ownerHeaders })).status, 200,
+    "revoking one archive member does not close another archive");
+  } finally {
+    releaseFamily();
+    await heldFamily.catch(() => {});
+    await new Promise<void>((resolve) => familyServer.close(() => resolve()));
+    await client.query(`UPDATE archive_memberships SET approved=true
+      WHERE archive_id='other-archive' AND user_id='other-only'`);
+    if (projection === "session")
+      await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
+        VALUES($1,'other-only',$2)`, [sessionTokenHash(otherOnlyToken), Date.now() + 60_000]);
+  }
+  }
+  let lockedFamilyReached!: () => void, releaseLockedFamily!: () => void;
+  const lockedFamilyReady = new Promise<void>((resolve) => { lockedFamilyReached = resolve; });
+  const lockedFamilyGate = new Promise<void>((resolve) => { releaseLockedFamily = resolve; });
+  const lockedFamilyEndpoint = archiveQueryHttp({ archive: otherApp.archive,
+    auth: await createAuth(await userStore(otherApp.archive.db), otherApp.archive.db,
+      process.env.PUBLIC_ORIGIN),
+    visibility: await settingsStore(otherApp.archive.db),
+    treePreferences: treePreferencesStore(otherApp.archive.db),
+    researchCatalog: researchCatalogStore(otherApp.archive.db),
+    beforeLockedDelivery: async () => { lockedFamilyReached(); await lockedFamilyGate; },
+  });
+  const lockedFamilyServer = createServer((req, res) => {
+    void lockedFamilyEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => lockedFamilyServer.listen(0, "127.0.0.1", resolve));
+  const lockedFamilyPort = (lockedFamilyServer.address() as { port: number }).port;
+  const heldLockedFamily = fetch(`http://127.0.0.1:${lockedFamilyPort}/api/family`,
+    { headers: otherOnlyHeaders });
+  let pendingRevoke: Promise<Response> | undefined;
+  try {
+    await Promise.race([lockedFamilyReady,
+      heldLockedFamily.then(() => { throw new Error("Family sent before locked delivery barrier"); }),
+      familyBarrierTimeout("Family did not reach locked delivery barrier"),
+    ]);
+    pendingRevoke = fetch(securedBase + "/a/other-archive/api/users/other-only", {
+      method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }),
+    });
+    assert.equal(await Promise.race([
+      pendingRevoke.then(() => "completed"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("waiting"), 250)),
+    ]), "waiting", "the revoke must wait until the locked family response finishes");
+    releaseLockedFamily();
+    const deliveredBeforeRevoke = await heldLockedFamily;
+    assert.equal(deliveredBeforeRevoke.status, 200);
+    assert.ok((await deliveredBeforeRevoke.json()).family.people.some(
+      (person: { id: string }) => person.id === privateOtherPersonId));
+    const completedRevoke = await pendingRevoke;
+    assert.equal(completedRevoke.status, 200, await completedRevoke.text());
+    assert.equal((await fetch(securedBase + "/a/other-archive/api/family",
+      { headers: otherOnlyHeaders })).status, 404);
+  } finally {
+    releaseLockedFamily();
+    await heldLockedFamily.catch(() => {});
+    await pendingRevoke?.catch(() => {});
+    await new Promise<void>((resolve) => lockedFamilyServer.close(() => resolve()));
+    await client.query(`UPDATE archive_memberships SET approved=true
+      WHERE archive_id='other-archive' AND user_id='other-only'`);
+  }
+  let abortFamilyReached!: () => void, releaseAbortedFamily!: () => void;
+  const abortFamilyReady = new Promise<void>((resolve) => { abortFamilyReached = resolve; });
+  const abortFamilyGate = new Promise<void>((resolve) => { releaseAbortedFamily = resolve; });
+  const abortFamilyEndpoint = archiveQueryHttp({ archive: otherApp.archive,
+    auth: await createAuth(await userStore(otherApp.archive.db), otherApp.archive.db,
+      process.env.PUBLIC_ORIGIN),
+    visibility: await settingsStore(otherApp.archive.db),
+    treePreferences: treePreferencesStore(otherApp.archive.db),
+    researchCatalog: researchCatalogStore(otherApp.archive.db),
+    beforeLockedDelivery: async () => { abortFamilyReached(); await abortFamilyGate; },
+  });
+  const abortFamilyServer = createServer((req, res) => {
+    void abortFamilyEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => abortFamilyServer.listen(0, "127.0.0.1", resolve));
+  const abortFamilyPort = (abortFamilyServer.address() as { port: number }).port;
+  const familyAbort = new AbortController();
+  const abandonedFamily = fetch(`http://127.0.0.1:${abortFamilyPort}/api/family`,
+    { headers: otherOnlyHeaders, signal: familyAbort.signal });
+  const abandonedFamilyOutcome = abandonedFamily.then(() => "sent", () => "aborted");
+  try {
+    await Promise.race([abortFamilyReady,
+      abandonedFamily.then(() => { throw new Error("Family sent before abort barrier"); }),
+      familyBarrierTimeout("Family did not reach abort barrier"),
+    ]);
+    familyAbort.abort();
+    releaseAbortedFamily();
+    assert.equal(await abandonedFamilyOutcome, "aborted");
+    const revokeAfterAbort = await Promise.race([
+      fetch(securedBase + "/a/other-archive/api/users/other-only", { method: "PATCH",
+        headers: ownerHeaders, body: JSON.stringify({ approved: false }) }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Family disconnect did not release archive locks")), 3_000)),
+    ]);
+    assert.equal(revokeAfterAbort.status, 200, await revokeAfterAbort.text());
+  } finally {
+    familyAbort.abort();
+    releaseAbortedFamily();
+    await abandonedFamilyOutcome;
+    await new Promise<void>((resolve) => abortFamilyServer.close(() => resolve()));
+    await client.query(`UPDATE archive_memberships SET approved=true
+      WHERE archive_id='other-archive' AND user_id='other-only'`);
+  }
+  const visibilityUrl = securedBase + "/a/other-archive/api/settings";
+  const writeVisibility = async (publicTree: boolean) => fetch(visibilityUrl, {
+    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ publicTree, publicAlbums: false, reverseTimeline: false }),
+  });
+  assert.equal((await writeVisibility(true)).status, 200);
+  let publicFamilyReached!: () => void, releasePublicFamily!: () => void;
+  const publicFamilyReady = new Promise<void>((resolve) => { publicFamilyReached = resolve; });
+  const publicFamilyGate = new Promise<void>((resolve) => { releasePublicFamily = resolve; });
+  const publicFamilyEndpoint = archiveQueryHttp({ archive: otherApp.archive,
+    auth: await createAuth(await userStore(otherApp.archive.db), otherApp.archive.db,
+      process.env.PUBLIC_ORIGIN),
+    visibility: await settingsStore(otherApp.archive.db),
+    treePreferences: treePreferencesStore(otherApp.archive.db),
+    researchCatalog: researchCatalogStore(otherApp.archive.db),
+    beforeDelivery: async () => { publicFamilyReached(); await publicFamilyGate; },
+  });
+  const publicFamilyServer = createServer((req, res) => {
+    void publicFamilyEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => publicFamilyServer.listen(0, "127.0.0.1", resolve));
+  const publicFamilyPort = (publicFamilyServer.address() as { port: number }).port;
+  const heldPublicFamily = fetch(`http://127.0.0.1:${publicFamilyPort}/api/family`);
+  try {
+    await Promise.race([publicFamilyReady,
+      heldPublicFamily.then(() => { throw new Error("Public family sent before delivery barrier"); }),
+      familyBarrierTimeout("Public family did not reach delivery barrier"),
+    ]);
+    assert.equal((await writeVisibility(false)).status, 200);
+    releasePublicFamily();
+    const deniedPublicFamily = await heldPublicFamily;
+    const deniedPublicBody = await deniedPublicFamily.json();
+    assert.equal(deniedPublicFamily.status, 409);
+    assert.equal("family" in deniedPublicBody, false);
+    assert.equal((await fetch(securedBase + "/a/other-archive/api/family")).status, 404);
+  } finally {
+    releasePublicFamily();
+    await heldPublicFamily.catch(() => {});
+    await new Promise<void>((resolve) => publicFamilyServer.close(() => resolve()));
+    assert.equal((await writeVisibility(false)).status, 200);
+  }
+  console.log("runtime_archive_query_family_delivery_revocation_ok");
   assert.equal(
     (await fetch(securedBase + "/a/other-archive/api/health", { headers: otherOnlyHeaders })).status,
     200,

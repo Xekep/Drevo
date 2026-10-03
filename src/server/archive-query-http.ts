@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { finished } from "node:stream/promises";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import type { settingsStore } from "./settings.ts";
@@ -16,6 +17,7 @@ import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { DEFAULT_TREE_PREFERENCES } from "../domain/tree-preferences.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
+import { AccountSessionBusy, AccountSessionExpired, assertActiveAccountSession } from "./account-session-guard.ts";
 
 export function archiveQueryHttp({
   archive,
@@ -23,12 +25,16 @@ export function archiveQueryHttp({
   visibility,
   treePreferences,
   researchCatalog,
+  beforeDelivery,
+  beforeLockedDelivery,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   visibility: Awaited<ReturnType<typeof settingsStore>>;
   treePreferences: ReturnType<typeof treePreferencesStore>;
   researchCatalog: ReturnType<typeof researchCatalogStore>;
+  beforeDelivery?: () => Promise<void>;
+  beforeLockedDelivery?: () => Promise<void>;
 }) {
   const searchPeople = peopleSearchStore(archive.db);
   const publicSearchLimiter = createSharedRequestLimiter(archive.db, "public-people-search", {
@@ -119,7 +125,7 @@ export function archiveQueryHttp({
     const startRevision = stableRevision
       ? Number((await revisionQuery.get())?.revision)
       : null;
-    const canDeliver = async () => await archive.db.transaction(async () => {
+    const accessStillCurrent = async () => {
       const current = await auth.currentUser(req);
       const settings = await visibility.read();
       const revisionCurrent = !stableRevision ||
@@ -133,10 +139,63 @@ export function archiveQueryHttp({
         current?.treeAccess === visitor?.treeAccess &&
         settings.publicTree === access.publicTree &&
         settings.publicAlbums === access.publicAlbums;
-    }, true);
+    };
+    const canDeliver = async () => {
+      const valid = await archive.db.transaction(async () => {
+        return await accessStillCurrent();
+      }, true);
+      await beforeDelivery?.();
+      return valid;
+    };
     const changed = () => json(res, 409, {
       error: "Архив или доступ к нему изменились. Повторите запрос.",
     });
+    const deliverFamily = async (value: unknown) => {
+      if (archive.db.kind !== "postgres")
+        return await canDeliver() ? json(res, 200, value) : changed();
+      // A large projection is serialized before taking the archive lock.
+      const body = JSON.stringify(value);
+      await beforeDelivery?.();
+      const valid = await archive.db.transaction(async () => {
+        // Archive writes and visibility changes lock this row first. A session
+        // deletion may lock its session first, so do not wait for that row.
+        if (visitor && !auth.local) {
+          const session = await auth.accountSession(req);
+          if (!session || session.accountId !== visitor.id) return false;
+          await assertActiveAccountSession(archive.db, visitor.id, session.tokenHash);
+          const archiveId = archive.db.archiveId;
+          if (!archiveId) return false;
+          const membership = await archive.db.prepare("", `SELECT 1 FROM archive_memberships
+            WHERE archive_id=? AND user_id=? FOR SHARE`).get(archiveId, visitor.id);
+          if (!membership) return false;
+        }
+        if (!await accessStillCurrent()) return false;
+        await beforeLockedDelivery?.();
+        if (res.destroyed) return true;
+        const delivered = finished(res, { cleanup: true });
+        const timeout = setTimeout(() => res.destroy(), 5_000);
+        timeout.unref();
+        try {
+          res.writeHead(200, {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-store",
+          });
+          res.end(body);
+          await delivered;
+        } catch (error) {
+          const disconnected = res.destroyed;
+          res.destroy();
+          await delivered.catch(() => {});
+          if (!disconnected && !res.headersSent) throw error;
+        } finally { clearTimeout(timeout); }
+        return true;
+      }).catch((error) => {
+        if (error instanceof AccountSessionExpired || error instanceof AccountSessionBusy ||
+            (error as { code?: string }).code === "55P03") return false;
+        throw error;
+      });
+      return valid || res.headersSent || res.destroyed ? true : changed();
+    };
 
     if (path === "/api/research-resources") {
       if (!memberCanRead && !access.publicTree)
@@ -220,8 +279,7 @@ export function archiveQueryHttp({
           return json(res, 409, {
             error: "Архив или доступ к нему изменились. Обновите данные.",
           });
-        if (!(await canDeliver())) return changed();
-        return json(res, 200, page);
+        return deliverFamily(page);
       }
       if (projection === "overview") {
         const readTree = memberCanRead || access.publicTree,
@@ -270,8 +328,7 @@ export function archiveQueryHttp({
         const pageToken = `${data.revision}:${Number(readTree)}:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
         const canEdit = await auth.canEdit(req);
         const platformAdmin = visitor ? await auth.isPlatformAdmin(req) : false;
-        if (!(await canDeliver())) return changed();
-        return json(res, 200, {
+        return deliverFamily({
           family: data.family,
           revision: data.revision,
           canEdit,
@@ -294,8 +351,7 @@ export function archiveQueryHttp({
         });
       }
       const prepared = await snapshot(req, visitor, access);
-      if (!(await canDeliver())) return changed();
-      return json(res, 200, prepared);
+      return deliverFamily(prepared);
     }
 
     if (path === "/api/export") {
