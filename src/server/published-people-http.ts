@@ -10,6 +10,7 @@ import { isSameOriginRequest } from "./same-origin.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 import { decodePublicPersonId, publicPersonId } from "./public-person-id.ts";
+import { AccountSessionBusy, AccountSessionExpired, assertActiveAccountSession } from "./account-session-guard.ts";
 import type { Person } from "../domain/types.ts";
 
 function visibleFields(person: Person, fields: PublicationFields): PublicationFields {
@@ -65,6 +66,7 @@ export function publishedPeopleHttp({
   publicOrigin,
   beforePublicDelivery,
   beforeSearchDelivery,
+  beforeAdminFinalLock,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -72,6 +74,7 @@ export function publishedPeopleHttp({
   publicOrigin?: string;
   beforePublicDelivery?: () => Promise<void>;
   beforeSearchDelivery?: () => Promise<void>;
+  beforeAdminFinalLock?: () => Promise<void>;
 }) {
   const limiter = createSharedRequestLimiter(archive.db, "published-people", { windowMs: 60_000, limit: 60 });
   const isOwner = async (userId: string, lock = false) => {
@@ -226,6 +229,50 @@ export function publishedPeopleHttp({
       return result === "ok" ? json(res, 200, { count: ids.length })
         : result === "forbidden" ? json(res, 403, { error: "Доступ к публикации отозван" })
           : json(res, 409, { error: "Список или архив изменился; проверьте публикацию заново" });
+    }
+    if (admin && req.method === "GET" && archive.db.kind === "postgres") {
+      const personId = decodePublicPersonId(admin[1]);
+      if (!personId) return json(res, 404, { error: "Человек не найден" });
+      await beforeAdminFinalLock?.();
+      const status = await archive.db.transaction(async () => {
+        const freshUser = await auth.currentUser(req);
+        if (!freshUser) return 401;
+        if (freshUser.id !== user.id) return 403;
+        if (!auth.local) {
+          const session = await auth.accountSession(req);
+          if (!session || session.accountId !== freshUser.id) return 401;
+          await assertActiveAccountSession(archive.db, freshUser.id, session.tokenHash);
+        }
+        // Transfer and membership writes lock the archive first. Keep that
+        // order, then hold these rows until the response finishes.
+        if (!await isOwner(freshUser.id, true)) return 403;
+        const archiveId = archive.db.archiveId;
+        if (!archiveId) return 403;
+        const membership = await archive.db.prepare("", `SELECT role,approved
+          FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
+          .get(archiveId, freshUser.id);
+        if (membership?.role !== "admin" || membership.approved !== true) return 403;
+        const freshPerson = (await archive.read()).family.people.find((entry) => entry.id === personId);
+        if (!freshPerson) return 404;
+        const fields = await store.getFields(personId);
+        await deliverLocked(res, {
+          archiveId,
+          published: Boolean(fields),
+          publishable: publishablePerson(freshPerson),
+          fields: fields || defaultPublicationFields,
+          person: publicPerson(freshPerson, fields || defaultPublicationFields),
+        });
+        return 200;
+      }).catch((error) => {
+        if (error instanceof AccountSessionExpired) return 401;
+        if (error instanceof AccountSessionBusy ||
+            (error as { code?: string }).code === "55P03") return 409;
+        throw error;
+      });
+      return status === 200 ? true : json(res, status, { error: status === 401
+        ? "Сессия завершена. Войдите снова" : status === 403
+          ? "Доступ к публикации отозван" : status === 404
+            ? "Человек не найден" : "Данные заняты другим действием. Повторите запрос" });
     }
     const snapshot = await archive.read();
     if (search) {
