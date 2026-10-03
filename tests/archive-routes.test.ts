@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   adminMatchTargetAt,
   adminMatchTargetPath,
+  adminMatchSourceAt,
+  adminMatchSourcePath,
   adminMatchesPath,
   archiveDocumentAt,
   archiveDocumentPath,
@@ -51,6 +53,23 @@ test("a published card handoff keeps the exact target in an archive-scoped path"
     "/a/family-one/admin/matches/target/other-tree/person/extra",
   ]) {
     assert.equal(adminMatchTargetAt(invalid), null);
+    assert.equal(archiveViewAt(invalid), null);
+  }
+});
+
+test("a tree card handoff keeps the exact source in an archive-scoped path", () => {
+  const path = adminMatchSourcePath("family-one", "gedcom-Иван 1");
+  assert.equal(path, "/a/family-one/admin/matches/from/gedcom-%D0%98%D0%B2%D0%B0%D0%BD%201");
+  assert.equal(new URL(path, "https://example.test").search, "");
+  assert.equal(adminMatchSourceAt(path), "gedcom-Иван 1");
+  assert.equal(archiveViewAt(path), "admin");
+  for (const invalid of [
+    "/a/family-one/admin/matches/from/%ZZ",
+    "/a/family-one/admin/matches/from/%252F",
+    "/a/family-one/admin/matches/from/..",
+    "/a/family-one/admin/matches/from/person/extra",
+  ]) {
+    assert.equal(adminMatchSourceAt(invalid), null);
     assert.equal(archiveViewAt(invalid), null);
   }
 });

@@ -19,7 +19,7 @@ import {
   type ArchiveTarget,
 } from "./domain/archive-links";
 import { archiveContextAt, scopedArchivePath } from "./domain/archive-context.ts";
-import { archiveDocumentAt, archiveDocumentPath } from "./domain/archive-routes.ts";
+import { adminMatchSourcePath, archiveDocumentAt, archiveDocumentPath } from "./domain/archive-routes.ts";
 import {
   ArchiveNavigation,
   ArchiveHeader,
@@ -985,6 +985,10 @@ export default function App() {
                                 lastUrlTarget.current = targetKey(target);
                                 setView("tree", target);
                               }}
+                              matchPath={user?.approved === true && publicationOwnership === "owner" &&
+                                archiveContextAt(window.location.pathname)
+                                ? adminMatchSourcePath(archiveContextAt(window.location.pathname)!.id, chosen[0].id)
+                                : undefined}
                               onCompare={() => {
                                 clearPersonUrl();
                                 dispatch({ type: "compare" });

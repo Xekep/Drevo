@@ -9,6 +9,8 @@ import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 import { candidateEvidence, candidateFuzzyTerms, candidateNameRoleQuery,
   candidatePlaceQueries } from "./discovery-candidate-ranking.ts";
 import { publicPersonId } from "./public-person-id.ts";
+import { AccountSessionBusy } from "./account-session-guard.ts";
+import { lockDiscoveryOwnerReadAccess } from "./discovery-owner-read-access.ts";
 
 const archivePattern = /^[A-Za-z0-9-]{3,64}$/;
 const matchPattern = /^[a-f0-9-]{36}$/;
@@ -130,7 +132,8 @@ function candidateCursor(value: string | null): [string,string,string] | null {
 
 export function discoveryMatchesHttp({ archive, auth, publicOrigin,
   beforeCandidateDelivery, beforeCandidateResponse,
-  beforeMatchListDelivery, beforeIgnoredArchivesDelivery, beforeMutationDelivery }: {
+  beforeMatchListDelivery, beforeIgnoredArchivesDelivery, beforeMutationDelivery,
+  beforeOwnPersonAccessLock, beforeOwnPersonResponse }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
@@ -139,6 +142,8 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
   beforeMatchListDelivery?: () => Promise<void>;
   beforeIgnoredArchivesDelivery?: () => Promise<void>;
   beforeMutationDelivery?: () => Promise<void>;
+  beforeOwnPersonAccessLock?: () => Promise<void>;
+  beforeOwnPersonResponse?: () => Promise<void>;
 }) {
   const db = archive.db;
   const limiter = createSharedRequestLimiter(db, "discovery-matches", { windowMs: 60_000, limit: 20 });
@@ -505,6 +510,9 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
 
     if (ownPeople) {
       if (req.method !== "GET") return json(res, 405, { error: "Ожидается GET" });
+      const exactId = url.searchParams.get("personId");
+      if (exactId !== null && !publicPersonId(exactId))
+        return json(res, 400, { error: "Некорректная карточка" });
       const query = (url.searchParams.get("q") || "").trim();
       if (query.length > 100) return json(res, 400, { error: "Слишком длинный запрос" });
       const words = query.toLocaleLowerCase("ru-RU").replaceAll("ё", "е").match(/[\p{L}\p{N}]+/gu) || [];
@@ -512,18 +520,39 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       const terms = words.map((word) => `${word}:*`).join(" & ");
       const base = `SELECT archive_id,person_id,name,birth_surname,birth_year,death_year,birth_place,death_place
         FROM discovery_people WHERE archive_id=?`;
-      const rows = terms
-        ? await db.prepare("", `${base} AND search_vector @@ to_tsquery('simple',?)
-            ORDER BY name,person_id LIMIT 30`).all(archiveId,terms)
-        : await db.prepare("", `${base} ORDER BY name,person_id LIMIT 30`).all(archiveId);
-      return json(res, 200, { archiveId, people: rows.map((row) => ({
+      const ownPerson = (row: Row) => ({
         archiveId: String(row.archive_id), id: String(row.person_id), name: String(row.name),
         ...(row.birth_surname ? { birthSurname: String(row.birth_surname) } : {}),
         ...(row.birth_year ? { birthYear: String(row.birth_year) } : {}),
         ...(row.death_year ? { deathYear: String(row.death_year) } : {}),
         ...(row.birth_place ? { birthPlace: String(row.birth_place) } : {}),
         ...(row.death_place ? { deathPlace: String(row.death_place) } : {}),
-      })) });
+      });
+      if (exactId !== null) {
+        const session = await auth.accountSession(req);
+        await beforeOwnPersonAccessLock?.();
+        const result = await db.transaction(async () => {
+          if (!await lockDiscoveryOwnerReadAccess(db, auth.local, session, user) ||
+              !await isOwner(user.id,true)) return 403;
+          const row = await db.prepare("", `${base} AND person_id=? FOR SHARE`).get(archiveId,exactId);
+          if (!row) return 404;
+          await beforeOwnPersonResponse?.();
+          await deliverLocked(res, { archiveId, people: [ownPerson(row)] });
+          return 200;
+        }).catch((error) => {
+          if (error instanceof AccountSessionBusy || (error as { code?: string }).code === "55P03")
+            return 409;
+          throw error;
+        });
+        return result === 200 ? true : json(res, result, { error: result === 403
+          ? "Доступ владельца отозван" : result === 404 ? "Карточка не опубликована"
+            : "Доступ занят. Повторите запрос" });
+      }
+      const rows = terms
+        ? await db.prepare("", `${base} AND search_vector @@ to_tsquery('simple',?)
+            ORDER BY name,person_id LIMIT 30`).all(archiveId,terms)
+        : await db.prepare("", `${base} ORDER BY name,person_id LIMIT 30`).all(archiveId);
+      return json(res, 200, { archiveId, people: rows.map(ownPerson) });
     }
 
     if (collection && req.method === "GET") {

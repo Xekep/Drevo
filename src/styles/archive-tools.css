@@ -413,12 +413,14 @@
   flex-wrap: nowrap;
   min-width: 0;
 }
-.inspector-person-actions button {
+.inspector-person-actions :is(button, a.person-action-icon) {
   flex: 0 0 auto;
   justify-content: center;
+  align-items: center;
+  display: inline-flex;
   min-height: 36px;
 }
-.inspector-person-actions button {
+.inspector-person-actions :is(button, a.person-action-icon) {
   width: 36px;
   padding: 0;
 }
@@ -426,7 +428,7 @@
   background: #e9f0e1;
   border-color: transparent;
 }
-.inspector-dock .inspector-heading .inspector-person-actions button,
+.inspector-dock .inspector-heading .inspector-person-actions :is(button, a.person-action-icon),
 .inspector-dock .inspector-heading > button {
   border: 0;
   border-radius: 8px;
@@ -434,7 +436,7 @@
   box-shadow: none;
   color: #526456;
 }
-.inspector-dock .inspector-heading .inspector-person-actions button:hover,
+.inspector-dock .inspector-heading .inspector-person-actions :is(button, a.person-action-icon):hover,
 .inspector-dock .inspector-heading > button:hover {
   background: #f0f4ee;
 }

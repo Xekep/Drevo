@@ -45,6 +45,7 @@ export function PersonInspector({
   readPhotos,
   onSelect,
   onUrlPerson,
+  matchPath,
   onCompare,
   onEdit,
   onNewRelative,
@@ -62,6 +63,7 @@ export function PersonInspector({
   readPhotos: boolean;
   onSelect: (id: string) => void;
   onUrlPerson?: (id: string) => void;
+  matchPath?: string;
   onCompare: () => void;
   onEdit: () => void;
   onNewRelative: (type: "child" | ConnectionType) => void;
@@ -87,6 +89,9 @@ export function PersonInspector({
           {onUrlPerson && (
             <CopyArchiveLink target={{ kind: "person", id: person.id }} />
           )}
+          {matchPath && <a className="person-action-icon" href={matchPath}
+            aria-label="Найти совпадения в других деревьях"
+            title="Найти совпадения в других деревьях"><Link2 size={16} /></a>}
           {canEdit && owns(user, person) && (
             <button
               onClick={onEdit}
