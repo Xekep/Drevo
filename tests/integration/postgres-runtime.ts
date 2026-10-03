@@ -5252,6 +5252,87 @@ try {
   await client.query("UPDATE ai_chats SET access_scope=$1 WHERE id=$2", [
     aiChatAccessScope(currentReader, (await app.archive.read()).family), readerExportChatId,
   ]);
+  const scopedAiScope = aiChatAccessScope(currentReader, (await app.archive.read()).family);
+  const readerTierBeforeBoundedJson = (await client.query<{ full_access: boolean }>(
+    "SELECT full_access FROM account_tiers WHERE account_id='reader'",
+  )).rows[0].full_access;
+  const escapedChatId = randomUUID();
+  await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
+  await client.query(
+    "INSERT INTO ai_chats(archive_id,id,user_id,access_scope) VALUES('runtime-test',$1,'reader',$2)",
+    [escapedChatId, scopedAiScope],
+  );
+  await client.query(
+    `INSERT INTO ai_chat_messages(archive_id,chat_id,role,content)
+     VALUES('runtime-test',$1,'assistant',repeat(chr(1),5*1024*1024))`, [escapedChatId],
+  );
+  const escapedJsonExport = await fetch(accountExportUrl, { headers });
+  assert.equal(escapedJsonExport.status, 413,
+    "JSON escaping must not turn a permitted raw AI size into an unbounded account response");
+  assert.doesNotMatch(await escapedJsonExport.text(), /former-scope-secret|hidden-internal-prompt/);
+  await client.query("DELETE FROM ai_chats WHERE id=$1", [escapedChatId]);
+  await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='reader'",
+    [readerTierBeforeBoundedJson]);
+  await client.query(
+    `INSERT INTO account_identities(provider,subject,account_id)
+     SELECT 'export-provider-'||n,'export-subject-'||n,'reader'
+       FROM generate_series(1,65) AS n`,
+  );
+  assert.equal((await fetch(accountExportUrl, { headers })).status, 413,
+    "identity metadata also has a preflight limit before JSON materialization");
+  await client.query("DELETE FROM account_identities WHERE account_id='reader' AND provider LIKE 'export-provider-%'");
+
+  await client.query(
+    `INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text)
+     SELECT 'account-export-hidden','reader','Reader',$1,'bounded-hidden:'||n
+       FROM generate_series(1,10001) AS n`, [Date.now()],
+  );
+  const hiddenBulkExport = await fetch(accountExportUrl, { headers });
+  assert.equal(hiddenBulkExport.status, 200,
+    "comments outside the current person scope cannot consume the visible export limit");
+  assert.doesNotMatch(await hiddenBulkExport.text(), /bounded-hidden:/);
+  await client.query(
+    `INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text)
+     SELECT 'person-a','reader','Reader',$1,'bounded-visible:'||n
+       FROM generate_series(1,10001) AS n`, [Date.now()],
+  );
+  const manyCommentsExport = await fetch(accountExportUrl, { headers });
+  assert.equal(manyCommentsExport.status, 413,
+    "visible own comments must be bounded before materializing all rows");
+  assert.doesNotMatch(await manyCommentsExport.text(), /bounded-visible:|bounded-hidden:/);
+  await client.query("DELETE FROM person_comments WHERE text LIKE 'bounded-visible:%'");
+  await client.query(
+    `INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text)
+     SELECT 'person-a','reader','Reader',$1,'bounded-bytes:'||repeat('x',1986)
+       FROM generate_series(1,3800)`, [Date.now()],
+  );
+  const rawBytesExport = await fetch(accountExportUrl, { headers });
+  assert.equal(rawBytesExport.status, 413,
+    "visible comment bytes are bounded even below the comment-count ceiling");
+  assert.doesNotMatch(await rawBytesExport.text(), /bounded-bytes:/);
+  const boundedJsonAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  const revokedBoundedJson = accountDataExportHttp(app.archive.db, boundedJsonAuth, async () => {
+    await client.query("UPDATE archive_memberships SET approved=false WHERE user_id='reader'");
+  });
+  const revokedBoundedJsonServer = createServer((req, res) => {
+    void revokedBoundedJson(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => revokedBoundedJsonServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (revokedBoundedJsonServer.address() as { port: number }).port;
+    const revoked = await fetch(`http://127.0.0.1:${port}/api/account/export`, { headers });
+    assert.equal(revoked.status, 409,
+      "a completed membership revoke hides even the fact that the prior export was oversized");
+    assert.doesNotMatch(await revoked.text(), /bounded-visible:|bounded-hidden:/);
+  } finally {
+    await new Promise<void>((resolve) => revokedBoundedJsonServer.close(() => resolve()));
+    await client.query("UPDATE archive_memberships SET approved=true WHERE user_id='reader'");
+  }
+  await client.query("DELETE FROM person_comments WHERE text LIKE 'bounded-hidden:%' OR text LIKE 'bounded-bytes:%'");
+  assert.equal((await fetch(accountExportUrl, { headers })).status, 200,
+    "a normal account export works after the oversized rows are removed");
   const attachmentExportStore = discussionAttachmentStore(join(dirname(source), "uploads"));
   const visibleAttachmentBytes = Buffer.from("reader-owned-visible-attachment");
   const hiddenAttachmentBytes = Buffer.from("reader-owned-hidden-attachment");
