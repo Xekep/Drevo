@@ -1,7 +1,8 @@
 import { BackupInputError } from "./backup-store.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createReadStream } from "node:fs";
-import { pipeline } from "node:stream/promises";
+import { open } from "node:fs/promises";
+import { finished, pipeline } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
 import {
   BackupBusyError,
@@ -9,6 +10,11 @@ import {
 } from "./backup-coordinator.ts";
 import type { RestoreStore } from "./restore.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
+import type { StoreDatabase } from "./store-database.ts";
+
+const firstChunkBytes = 64 * 1024;
+const downloadIdleTimeoutMs = 60_000;
+const downloadMaxTimeMs = 2 * 60 * 60_000;
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -29,12 +35,18 @@ export function backupManagementHttp({
   backups,
   restores,
   auth,
+  db,
   publicOrigin,
+  beforeDelivery,
+  beforeLockedDelivery,
 }: {
   backups: BackupCoordinator;
   restores: RestoreStore;
   auth: Awaited<ReturnType<typeof createAuth>>;
+  db: StoreDatabase;
   publicOrigin?: string;
+  beforeDelivery?: () => Promise<void>;
+  beforeLockedDelivery?: () => Promise<void>;
 }) {
   let downloading = false;
   const json = (res: ServerResponse, status: number, data: unknown) => {
@@ -138,14 +150,97 @@ export function backupManagementHttp({
           await backups.withFile(match[1], async (file, item) => {
             if (!(await auth.isPlatformAdmin(req)))
               throw new BackupInputError("Доступ администратора отозван.");
-            res.writeHead(200, {
-              "Content-Type": "application/gzip",
-              "Content-Length": String(item.size),
-              "Content-Disposition": 'attachment; filename="' + item.name + '"',
-              "Cache-Control": "no-store",
-              "X-Content-Type-Options": "nosniff",
-            });
-            await pipeline(createReadStream(file), res);
+            const handle = await open(file, "r");
+            const abort = new AbortController();
+            const stop = () => {
+              abort.abort();
+              res.destroy();
+            };
+            let idleTimeout = setTimeout(stop, downloadIdleTimeoutMs);
+            idleTimeout.unref();
+            const progress = () => {
+              clearTimeout(idleTimeout);
+              idleTimeout = setTimeout(stop, downloadIdleTimeoutMs);
+              idleTimeout.unref();
+            };
+            const maxTimeout = setTimeout(stop, downloadMaxTimeMs);
+            maxTimeout.unref();
+            res.on("drain", progress);
+            // A disconnected client can close the response while the final DB check
+            // is still running; attach the completion observer before any write.
+            const delivered = finished(res, { cleanup: true }).catch(() => {});
+            try {
+              const first = Buffer.allocUnsafe(Math.min(firstChunkBytes, item.size));
+              const { bytesRead } = await handle.read(first, 0, first.length, 0);
+              if (!bytesRead)
+                throw new BackupInputError("Резервная копия пуста. Обновите список.");
+              await beforeDelivery?.();
+              const sendFirst = () => {
+                if (res.destroyed) return;
+                res.writeHead(200, {
+                  "Content-Type": "application/gzip",
+                  "Content-Length": String(item.size),
+                  "Content-Disposition": 'attachment; filename="' + item.name + '"',
+                  "Cache-Control": "no-store",
+                  "X-Content-Type-Options": "nosniff",
+                });
+                res.write(first.subarray(0, bytesRead));
+                progress();
+              };
+              if (db.kind === "postgres" && db.postgresTransaction) {
+                const session = await auth.accountSession(req);
+                if (!session)
+                  return json(res, 401, { error: "Доступ администратора отозван." });
+                const delivered = await db.postgresTransaction(async (client) => {
+                  // Match account deletion's account -> session order, then hold
+                  // membership and platform grant through the first body write.
+                  const account = await client.query(
+                    "SELECT id FROM accounts WHERE id=$1 FOR SHARE NOWAIT", [session.accountId]);
+                  if (!account.rowCount)
+                    return json(res, 401, { error: "Доступ администратора отозван." });
+                  const active = await client.query<{ expires_at: string }>(
+                    `SELECT expires_at FROM account_sessions
+                     WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+                    [session.tokenHash, session.accountId]);
+                  if (!active.rows[0] || Number(active.rows[0].expires_at) <= Date.now())
+                    return json(res, 401, { error: "Доступ администратора отозван." });
+                  await client.query("SELECT set_config('drevo.account_id',$1,true)",
+                    [session.accountId]);
+                  const membership = await client.query<{ approved: boolean }>(
+                    `SELECT approved FROM archive_memberships
+                     WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+                    [db.archiveId, session.accountId]);
+                  const platformGrant = await client.query(
+                    "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
+                    [session.accountId]);
+                  if (!membership.rows[0]?.approved || !platformGrant.rowCount)
+                    return json(res, 403, { error: "Доступ администратора отозван." });
+                  await beforeLockedDelivery?.();
+                  sendFirst();
+                  return true;
+                });
+                if (delivered !== true) return;
+              } else {
+                if (!(await auth.isPlatformAdmin(req)))
+                  return json(res, (await auth.currentUser(req)) ? 403 : 401,
+                    { error: "Доступ администратора отозван." });
+                sendFirst();
+              }
+              if (res.destroyed) return;
+              if (bytesRead >= item.size) res.end();
+              else {
+                const stream = handle.createReadStream({ start: bytesRead, autoClose: false,
+                  signal: abort.signal });
+                stream.on("data", progress);
+                await pipeline(stream, res, { signal: abort.signal });
+              }
+              await delivered;
+            } finally {
+              clearTimeout(idleTimeout);
+              clearTimeout(maxTimeout);
+              res.off("drain", progress);
+              await handle.close();
+            }
           });
         } finally {
           downloading = false;
@@ -162,6 +257,8 @@ export function backupManagementHttp({
         return json(res, error instanceof BackupBusyError ? 409 : 400, {
           error: error.message,
         });
+      if ((error as { code?: string }).code === "55P03")
+        return json(res, 409, { error: "Права доступа изменяются. Повторите запрос." });
       throw error;
     }
   };

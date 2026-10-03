@@ -229,6 +229,7 @@ export async function startServer(
     backups,
     restores,
     auth,
+    db: archive.db,
     publicOrigin,
   });
   const handleArchive = await archiveHttp({
