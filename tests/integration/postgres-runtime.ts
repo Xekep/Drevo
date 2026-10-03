@@ -80,6 +80,7 @@ import { verifyAccountSessionManagement } from "./postgres-account-sessions.ts";
 import { verifyPostgresCommentEdits } from "./postgres-comment-edits.ts";
 import { verifyAtomicSuggestionAcceptance } from "./postgres-suggestion-accept.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
+import { discoveryNamePartsBatch } from "../../ops/postgres/backfill-discovery-name-parts.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
 import { restoreStore } from "../../src/server/restore.ts";
 import { startServer } from "../../src/server/index.ts";
@@ -6920,6 +6921,12 @@ try {
       WHERE name_vector @@ to_tsquery('simple','нагрузов & даниил')`);
     assert.match(JSON.stringify(exactPlan.rows), /discovery_people_names/,
       "exact candidate names keep their GIN index path");
+    await client.query(`UPDATE discovery_people SET surname_part=NULL,given_part=NULL
+      WHERE archive_id='other-archive' AND person_id LIKE 'load-%'`);
+    const backfillPlan = await client.query(`EXPLAIN (FORMAT JSON) ${discoveryNamePartsBatch}`,
+      ["other-archive","load-200"]);
+    assert.match(JSON.stringify(backfillPlan.rows), /discovery_people_pkey/,
+      "keyset backfill uses the projection primary key after its cursor");
   } finally {
     await client.query("ROLLBACK");
   }
@@ -7253,6 +7260,76 @@ try {
   await otherApp.archive.write(otherSpecialFamily, otherSpecialBefore.revision);
   await publishedPeopleStore(app.archive.db).publish(specialSourceId, "owner");
   await otherPublication.publish(specialTargetId, "owner");
+  const compoundSourceId = "compound-source";
+  const spacedSourceId = "spaced-source";
+  const compoundTargetId = "compound-target";
+  const spacedTargetId = "spaced-target";
+  const closedTargetId = "closed-compound-target";
+  const compoundSourceBefore = await app.archive.read();
+  const compoundSourceFamily = structuredClone(compoundSourceBefore.family);
+  for (const [id, surname, name] of [
+    [compoundSourceId, "Иванова-Петрова", "Анна"],
+    [spacedSourceId, "Де ла Крус", "Мария"],
+  ]) compoundSourceFamily.people.push({ ...structuredClone(compoundSourceFamily.people[0]),
+    id, surname, name, patronymic: "", birth: "1900", death: "1980",
+    deceased: true, parents: [], spouses: [], column: 55 });
+  await app.archive.write(compoundSourceFamily, compoundSourceBefore.revision);
+  const compoundTargetBefore = await otherApp.archive.read();
+  const compoundTargetFamily = structuredClone(compoundTargetBefore.family);
+  for (const [id, surname, name] of [
+    [compoundTargetId, "Петрова", "Анна"],
+    [spacedTargetId, "Крус", "Мария"],
+    [closedTargetId, "Петрова", "Анна"],
+  ]) compoundTargetFamily.people.push({ ...structuredClone(compoundTargetFamily.people[0]),
+    id, surname, name, patronymic: "", birth: "1900", death: "1980",
+    deceased: true, parents: [], spouses: [], column: 55 });
+  await otherApp.archive.write(compoundTargetFamily, compoundTargetBefore.revision);
+  for (const id of [compoundSourceId,spacedSourceId])
+    await publishedPeopleStore(app.archive.db).publish(id, "owner");
+  for (const id of [compoundTargetId,spacedTargetId]) await otherPublication.publish(id, "owner");
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_people
+    WHERE archive_id='other-archive' AND person_id=$1`, [closedTargetId])).rows[0].count, 0,
+  "the unpublished lookalike never enters the searchable projection");
+  await client.query(`UPDATE discovery_people SET surname_part=NULL,given_part=NULL
+    WHERE archive_id='runtime-test' AND person_id=$1`, [spacedSourceId]);
+  await client.query(`UPDATE discovery_people SET name='Старая видимая запись'
+    WHERE archive_id='runtime-test' AND person_id=$1`, [spacedSourceId]);
+  assert.equal((await client.query(discoveryNamePartsBatch, ["",""])).rows[0].changed, 0,
+    "backfill never exposes components from a card whose projection is stale");
+  await client.query(`UPDATE discovery_people SET name='Де ла Крус Мария'
+    WHERE archive_id='runtime-test' AND person_id=$1`, [spacedSourceId]);
+  assert.ok((await client.query(discoveryNamePartsBatch, ["",""])).rows[0].changed,
+    "a short backfill batch updates an existing consented projection");
+  assert.deepEqual((await client.query(`SELECT surname_part,given_part FROM discovery_people
+    WHERE archive_id='runtime-test' AND person_id=$1`, [spacedSourceId])).rows[0],
+    { surname_part: "Де ла Крус", given_part: "Мария" });
+  const compoundHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.243" };
+  const compoundCandidates = async (sourceId: string) => {
+    const response = await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=" +
+      sourceId, { headers: compoundHeaders });
+    assert.equal(response.status, 200);
+    return (await response.json()).candidates as { id: string; reasons: string[] }[];
+  };
+  assert.ok((await compoundCandidates(compoundSourceId)).some((person) =>
+    person.id === compoundTargetId && person.reasons.includes("Совпадает имя и часть составной фамилии")),
+  "a hyphenated surname finds its published second component");
+  assert.ok((await compoundCandidates(spacedSourceId)).some((person) =>
+    person.id === spacedTargetId && person.reasons.includes("Совпадает имя и часть составной фамилии")),
+  "the backfilled boundary finds a published multiword surname");
+  assert.ok(!(await compoundCandidates(compoundSourceId)).some((person) =>
+    person.id === closedTargetId), "a private lookalike is never suggested");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("unrelated-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM people
+      WHERE id IN (?,?)`).get(compoundSourceId,closedTargetId))?.count, 0,
+    "the added projection fields do not bypass archive RLS on original cards");
+  }, true);
+  await otherPublication.unpublish(compoundTargetId);
+  assert.ok(!(await compoundCandidates(compoundSourceId)).some((person) =>
+    person.id === compoundTargetId), "revocation removes the compound-name suggestion");
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_people
+    WHERE archive_id='other-archive' AND person_id=$1`, [compoundTargetId])).rows[0].count, 0);
+  console.log("runtime_discovery_candidate_name_parts_ok");
   const specialMatchHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.241" };
   const specialRecipientHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.242" };
   const specialCandidateUrl = securedBase + "/api/discovery/matches/candidates?sourcePersonId=" +

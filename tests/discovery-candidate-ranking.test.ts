@@ -18,6 +18,25 @@ test("candidate lookup searches published birth surname and given name", () => {
   assert.equal(candidateEvidence({ name: "Петров Иван" }, { name: "Сидоров Иван" }), null);
 });
 
+test("a hyphenated published surname keeps the given name and both surname components", () => {
+  const published = { name: "Иванова-Петрова Анна", birthYear: "1900" };
+  assert.equal(candidateNameQuery(published), "анна & (иванова | петрова)");
+  assert.deepEqual(candidateFuzzyTerms(published), {
+    given: "анна", surnames: ["иванова", "петрова"],
+  });
+  assert.ok(candidateEvidence(published, { name: "Петрова Анна", birthYear: "1901" }),
+    "the published second surname can support a candidate without exposing private fields");
+});
+
+test("published name components identify a multiword surname without a name dictionary", () => {
+  const published = { name: "Де ла Крус Мария", surname: "Де ла Крус", givenName: "Мария" };
+  assert.equal(candidateNameQuery(published), "мария & (де | ла | крус)");
+  assert.ok(candidateEvidence(published, { name: "Крус Мария" })?.reasons
+    .includes("Совпадает имя и часть составной фамилии"));
+  assert.equal(candidateEvidence({ name: "Де ла Крус Мария" }, { name: "Крус Мария" }), null,
+    "a legacy full name without its components cannot safely locate the boundary");
+});
+
 test("candidate evidence surfaces conflicting years without claiming identity", () => {
   const match = candidateEvidence(
     { name: "Тестов Иван", birthYear: "1890", deathYear: "1950" },

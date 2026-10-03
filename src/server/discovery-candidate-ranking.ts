@@ -1,14 +1,20 @@
 export type PublishedCandidate = {
   name: string; birthSurname?: string; birthYear?: string; deathYear?: string;
   birthPlace?: string; deathPlace?: string;
+  surname?: string; givenName?: string;
 };
 
-const words = (value: string) =>
+const words = (value: string): string[] =>
   value.toLocaleLowerCase("ru-RU").replaceAll("ё", "е").match(/[\p{L}\p{N}]+/gu) || [];
 function nameParts(person: PublishedCandidate) {
-  const name = words(person.name);
-  return { given: name[1] || "", surnames: [name[0], ...words(person.birthSurname || "")]
-    .filter((value): value is string => Boolean(value)) };
+  // The projection carries the boundary for multiword surnames. For older
+  // published rows not yet backfilled, preserve punctuation within the first
+  // surname token instead of mistaking a hyphenated part for the given name.
+  const [surname = "", given = ""] = person.name.trim().split(/\s+/);
+  const currentSurnames = words(person.surname ?? surname);
+  const birthSurnames = words(person.birthSurname || "");
+  return { given: words(person.givenName ?? given)[0] || "", currentSurnames,
+    birthSurnames, surnames: [...currentSurnames, ...birthSurnames] };
 }
 export function candidateNameQuery(person: PublishedCandidate): string | null {
   const { given, surnames } = nameParts(person);
@@ -83,10 +89,14 @@ export function candidateEvidence(
   const reasons: string[] = [], conflicts: string[] = [];
   let score = 0;
   if (givenMatches && surnameMatches) {
-    if (a.given === b.given && a.surnames[0] === b.surnames[0])
+    if (a.given === b.given && a.currentSurnames.length && b.currentSurnames.length &&
+        a.currentSurnames.join(" ") === b.currentSurnames.join(" "))
       reasons.push("Совпадают имя и фамилия");
-    else if (a.given === b.given && a.surnames.some((value) => b.surnames.includes(value)))
+    else if (a.given === b.given && (a.birthSurnames.some((value) => b.surnames.includes(value)) ||
+        b.birthSurnames.some((value) => a.surnames.includes(value))))
       reasons.push("Совпадают имя и фамилия при рождении");
+    else if (a.given === b.given && a.currentSurnames.some((value) => b.currentSurnames.includes(value)))
+      reasons.push("Совпадает имя и часть составной фамилии");
     else reasons.push("Похожи имя и фамилия (возможная опечатка)");
     score += 2;
   } else if (givenMatches) {

@@ -76,6 +76,8 @@ function reviewToken(row: Row): string | null {
 function published(row: Row) {
   return {
     archiveId: String(row.archive_id), id: String(row.person_id), name: String(row.name),
+    ...(row.surname_part != null ? { surname: String(row.surname_part) } : {}),
+    ...(row.given_part != null ? { givenName: String(row.given_part) } : {}),
     ...(row.birth_surname ? { birthSurname: String(row.birth_surname) } : {}),
     ...(row.birth_year ? { birthYear: String(row.birth_year) } : {}),
     ...(row.death_year ? { deathYear: String(row.death_year) } : {}),
@@ -267,7 +269,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       if (!publicPersonId(sourceId)) return json(res, 400, { error: "Выберите опубликованную карточку" });
       const after = candidateCursor(url.searchParams.get("cursor"));
       if (!after) return json(res, 400, { error: "Некорректная страница подсказок" });
-      const columns = `archive_id,person_id,name,birth_surname,birth_year,death_year,birth_place,death_place,
+      const columns = `archive_id,person_id,name,surname_part,given_part,birth_surname,birth_year,death_year,birth_place,death_place,
         publication_version::text AS publication_version,xmin::text AS row_version`;
       const sourceRow = await db.prepare("", `SELECT ${columns} FROM discovery_people
         WHERE archive_id=? AND person_id=?`).get(archiveId,sourceId);
@@ -301,7 +303,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       }
       // Each branch starts with a GIN index. Only opt-in projections are read.
       const candidateSql = `WITH candidate_keys AS (${branches.join(" UNION ")})
-        SELECT d.archive_id,d.person_id,d.name,d.birth_surname,
+        SELECT d.archive_id,d.person_id,d.name,d.surname_part,d.given_part,d.birth_surname,
           d.birth_year,d.death_year,d.birth_place,d.death_place,
           d.publication_version::text AS publication_version,d.xmin::text AS row_version
           FROM discovery_people d
