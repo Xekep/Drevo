@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import type { Family } from "../src/domain/types.ts";
+import { storedDocumentFileType } from "../src/shared/document-file.ts";
 import type { createAuth } from "../src/server/auth.ts";
 import { openArchive } from "../src/server/database.ts";
 import { portableExportHttp } from "../src/server/portable-http.ts";
@@ -23,10 +24,24 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
     width: 4, height: 4, channels: 4, background: "#c39b76",
   } }).png().toBuffer();
   const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF");
+  const legacyJpeg = await sharp({ create: {
+    width: 4, height: 4, channels: 3, background: "#2d7a8f",
+  } }).jpeg().toBuffer();
+  const legacyTiff = await sharp({ create: {
+    width: 4, height: 4, channels: 3, background: "#8f7a2d",
+  } }).tiff().toBuffer();
+  const legacyJpegName = "acdd620b-68f0-40e1-a126-775a293b9316.jpeg";
+  const legacyTiffName = "bba1d591-f6d3-48e5-a3c5-a9553c349a22.tiff";
+  const legacyJpegId = "de9cd757-0a0d-49c6-9644-f84574499c62";
+  const legacyTiffId = "b7d4948e-370f-4dd9-a397-6eb471b2203c";
+  assert.equal(storedDocumentFileType(legacyJpegName)?.mime, "image/jpeg");
+  assert.equal(storedDocumentFileType(legacyTiffName)?.mime, "image/tiff");
   await writeFile(join(sourceRoot, "uploads", "portrait.png"), original);
   await writeFile(join(sourceRoot, "uploads", "gallery.png"), original);
   await writeFile(join(sourceRoot, "uploads", "evidence.png"), original);
   await writeFile(join(sourceRoot, "uploads", "record.pdf"), pdf);
+  await writeFile(join(sourceRoot, "uploads", legacyJpegName), legacyJpeg);
+  await writeFile(join(sourceRoot, "uploads", legacyTiffName), legacyTiff);
   const family = JSON.parse(await readFile(join("tests", "fixtures", "family.json"), "utf8")) as Family;
   const documentId = "36db38fd-f709-44dc-b481-52ef56bf0656";
   const eventId = "residence-record";
@@ -50,6 +65,10 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
   family.people[0].sources.push({
     title: "Семейная фотография", type: "фотография", reference: "оборот",
     url: "/media/evidence.png?download=1#scan",
+  });
+  family.people[1].sources.push({
+    title: "Legacy JPEG register scan", type: "archive", reference: "leaf 12",
+    documentId: legacyJpegId,
   });
   family.photos = [{ id: "gallery-1", url: "/media/gallery.png", title: "Семья",
     takenAt: "1900", place: "Тверь", description: "Подпись на обороте",
@@ -75,10 +94,20 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
     }]), JSON.stringify([{ personId: family.people[0].id, eventId, page: 1 }]),
     JSON.stringify([{ number: 1, description: "Лист 7: о семье" }]),
   );
+  for (const [id, name, size, title] of [
+    [legacyJpegId, legacyJpegName, legacyJpeg.length, "Legacy JPEG scan"],
+    [legacyTiffId, legacyTiffName, legacyTiff.length, "Legacy TIFF scan"],
+  ] as const)
+    await source.db.prepare(`INSERT INTO documents
+      (id,title,title_search,file_name,file_size,uploaded_by,created_at)
+      VALUES(?,?,?,?,?,?,?)`).run(id, title, title.toLowerCase(), name, size,
+      "old-owner", "2026-09-30T00:00:00Z");
   await source.db.prepare("INSERT INTO document_people(document_id,person_id) VALUES(?,?)")
     .run(documentId, family.people[0].id);
   await source.db.prepare("INSERT INTO document_people(document_id,person_id) VALUES(?,?)")
     .run(documentId, family.people[1].id);
+  await source.db.prepare("INSERT INTO document_people(document_id,person_id) VALUES(?,?)")
+    .run(legacyJpegId, family.people[1].id);
   await source.db.prepare("INSERT INTO source_catalog(id,data,version) VALUES(?,?,1)")
     .run("catalog-record", JSON.stringify({ id: "catalog-record", title: "Метрическая книга",
       type: "архив", author: "", institution: "", archive: "Государственный архив",
@@ -142,7 +171,7 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
     assert.deepEqual(normalized, sourceFamily);
     assert.deepEqual(await readFile(join(targetRoot, "uploads", targetFamily.people[0].photo!.slice(7))), original);
     assert.deepEqual(await readFile(join(targetRoot, "uploads", targetFamily.photos![0].url.slice(7))), original);
-    const doc = await target.db.prepare("SELECT title,file_name,document_type,document_date,place,description,provenance,annotations,pages FROM documents").get();
+    const doc = await target.db.prepare("SELECT title,file_name,document_type,document_date,place,description,provenance,annotations,pages FROM documents WHERE id=?").get(documentId);
     assert.equal(doc?.title, "Запись о семье");
     assert.equal(doc?.document_type, "Метрическая книга");
     assert.equal(doc?.document_date, "1900");
@@ -150,16 +179,27 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
     assert.equal(doc?.description, "Семья Соколовых");
     assert.equal(doc?.provenance, "Государственный архив");
     assert.deepEqual(await readFile(join(targetRoot, "uploads", String(doc?.file_name))), pdf);
+    const transferredLegacy = await target.db.prepare(
+      "SELECT id,file_name FROM documents WHERE id IN (?,?) ORDER BY id",
+    ).all(legacyJpegId, legacyTiffId);
+    assert.equal(transferredLegacy.length, 2);
+    const legacyFiles = new Map(transferredLegacy.map((row) => [String(row.id), String(row.file_name)]));
+    assert.deepEqual(await readFile(join(targetRoot, "uploads", legacyFiles.get(legacyJpegId)!)), legacyJpeg);
+    assert.deepEqual(await readFile(join(targetRoot, "uploads", legacyFiles.get(legacyTiffId)!)), legacyTiff);
+    assert.equal(storedDocumentFileType(legacyFiles.get(legacyJpegId)!)?.mime, "image/jpeg");
+    assert.equal(storedDocumentFileType(legacyFiles.get(legacyTiffId)!)?.mime, "image/tiff");
     assert.equal((JSON.parse(String(doc?.annotations)) as Array<{ text: string }>)[0].text, "Строка о рождении");
     assert.equal((JSON.parse(String(doc?.pages)) as Array<{ description: string }>)[0].description, "Лист 7: о семье");
     const documentLinks = await target.db.prepare(
       "SELECT document_id,person_id FROM document_people ORDER BY person_id",
     ).all();
-    assert.deepEqual(documentLinks.map((row) => ({
+    assert.deepEqual(documentLinks.filter((row) => row.document_id === documentId).map((row) => ({
       document_id: row.document_id, person_id: row.person_id,
     })), [family.people[1].id, family.people[0].id].map((person_id) => ({
       document_id: documentId, person_id,
     })));
+    assert.ok(documentLinks.some((row) => row.document_id === legacyJpegId &&
+      row.person_id === family.people[1].id));
     const eventLinks = await target.db.prepare("SELECT event_links FROM documents WHERE id=?").get(documentId);
     assert.deepEqual(JSON.parse(String(eventLinks?.event_links)),
       [{ personId: family.people[0].id, eventId, page: 1 }]);

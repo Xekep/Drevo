@@ -20,6 +20,9 @@ export const MAX_PORTABLE_ENTRIES = 50_000;
 // exceed 8 MiB. Keep a finite bound that can represent every allowed entry.
 export const MAX_PORTABLE_MANIFEST_BYTES = 24 * 1024 * 1024;
 const originalName = /^[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|tif|pdf)$/;
+// Document readers still support these legacy stored extensions. Keep aliases
+// limited to document originals; portrait and citation media use canonical names.
+const documentOriginalName = /^[a-zA-Z0-9-]+\.(?:jpg|jpeg|jfif|png|webp|gif|tif|tiff|pdf)$/;
 
 export class PortablePackageError extends Error {}
 
@@ -98,7 +101,7 @@ function fileNames(snapshot: PortableSnapshot) {
   }
   for (const document of snapshot.documents) {
     if (
-      !originalName.test(document.fileName) ||
+      !documentOriginalName.test(document.fileName) ||
       !documentFileTypeFromName(document.fileName)
     )
       throw new PortablePackageError("Некорректный путь оригинала документа");

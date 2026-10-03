@@ -1,6 +1,6 @@
 import { open } from "node:fs/promises";
-import { extname } from "node:path";
 import sharp from "sharp";
+import { documentFileTypeFromName } from "../shared/document-file.ts";
 import {
   documentImageExtension,
   tiffDocumentPages,
@@ -15,19 +15,19 @@ export async function verifyPortableMediaFile(path: string, name: string) {
   } finally {
     await handle.close();
   }
-  const extension = extname(name).slice(1).toLowerCase();
-  if (extension === "pdf") {
+  const expectedExtension = documentFileTypeFromName(name)?.extension;
+  if (expectedExtension === "pdf") {
     if (header.toString("ascii", 0, 5) !== "%PDF-")
       throw new PortablePackageError("Документ в пакете не является PDF");
     return;
   }
   try {
-    if (documentImageExtension(header) !== extension)
+    if (documentImageExtension(header) !== expectedExtension)
       throw new PortablePackageError(
         "Тип изображения не соответствует расширению",
       );
     await sharp(path, { limitInputPixels: 50_000_000 }).metadata();
-    if (extension === "tif") await tiffDocumentPages(path);
+    if (expectedExtension === "tif") await tiffDocumentPages(path);
   } catch (error) {
     if (error instanceof PortablePackageError) throw error;
     throw new PortablePackageError("Повреждённое изображение в пакете Drevo");
