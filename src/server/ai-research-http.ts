@@ -5,7 +5,6 @@ import type { ResearchAttachment } from "../shared/research-attachments.ts";
 import { generatedResearchFileStore } from "./generated-research-files.ts";
 import { yandexWebSearchProvider } from "./yandex-web-search.ts";
 import { recordModelCall, recordModelTokens } from "./ai-research-support.ts";
-import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ArchiveUser } from "../domain/access.ts";
 import { fullName } from "../domain/dates.ts";
@@ -24,6 +23,7 @@ import { type researchSuggestionStore } from "./research-suggestions.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { YandexResponseError } from "./yandex-responses.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
+import { aiChatAccessScope } from "./ai-chat-access-scope.ts";
 import { researchPdf } from "./research-pdf.ts";
 
 import { createResearchRunner } from "./ai-research-runner.ts";
@@ -115,18 +115,10 @@ export function aiResearchHttp({
   }
   const responses = yandexResponsesClient(fetcher);
   const accessScope = async (user: ArchiveUser) => {
-    const identity = [user.role, user.treeAccess || "all", user.personId || ""];
-    if (!isScopedUser(user)) return JSON.stringify(identity);
-    const visible = projectFamilyForUser((await archive.read()).family, user);
-    const fingerprint = createHash("sha256")
-      .update(
-        JSON.stringify([
-          visible.people.map((person) => person.id).sort(),
-          (visible.photos || []).map((photo) => photo.id).sort(),
-        ]),
-      )
-      .digest("hex");
-    return JSON.stringify([...identity, fingerprint]);
+    return aiChatAccessScope(
+      user,
+      isScopedUser(user) ? (await archive.read()).family : undefined,
+    );
   };
   const canDeliverAiData = async (
     req: IncomingMessage,
