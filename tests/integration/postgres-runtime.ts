@@ -1921,9 +1921,17 @@ try {
            ('runtime-test',$3,'user','former-scope-secret','{}'::jsonb)`,
     [ownerExportChatId, readerExportChatId, staleExportChatId],
   );
+  const readerTierBeforeExport = (await client.query(
+    "SELECT full_access FROM account_tiers WHERE account_id='reader'",
+  )).rows[0].full_access === true;
+  const ownerTierBeforeExport = (await client.query(
+    "SELECT full_access FROM account_tiers WHERE account_id='owner'",
+  )).rows[0].full_access === true;
+  await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
   const accountExportUrl = securedBase + "/api/account/export";
   assert.equal((await fetch(accountExportUrl)).status, 401);
   assert.equal((await fetch(accountExportUrl, { method: "POST", headers: ownerHeaders })).status, 405);
+  try {
   const accountExports = await Promise.all(
     Array.from({ length: 6 }, (_, index) =>
       fetch(accountExportUrl, { headers: index % 2 ? headers : ownerHeaders }),
@@ -1974,7 +1982,10 @@ try {
   assert.equal(JSON.parse(basicOwnerExport).archives[0].ownAiChats, null);
   assert.doesNotMatch(basicOwnerExport, /reader-export-chat-text/,
     "downgrading the archive owner also hides AI chats from account export");
-  await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+  } finally {
+    await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='owner'", [ownerTierBeforeExport]);
+    await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='reader'", [readerTierBeforeExport]);
+  }
   const revokedExportToken = newSessionToken();
   const revokedExportHash = sessionTokenHash(revokedExportToken);
   await client.query(
@@ -2008,6 +2019,7 @@ try {
   } finally {
     await new Promise<void>((resolve) => revokedExportServer.close(() => resolve()));
   }
+  await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
   const tierExportAuth = await createAuth(
     await userStore(app.archive.db), app.archive.db, process.env.PUBLIC_ORIGIN,
   );
@@ -2034,7 +2046,7 @@ try {
       "a tier downgrade after preparing a chat export prevents delivery");
     assert.doesNotMatch(await response.text(), /reader-export-chat-text/);
   } finally {
-    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
+    await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='reader'", [readerTierBeforeExport]);
     await new Promise<void>((resolve) => tierExportServer.close(() => resolve()));
   }
   const deliveryToken = newSessionToken();
