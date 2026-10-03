@@ -388,6 +388,14 @@ export function importAgelongXml(
       ] as const)
         if (Object.hasOwn(data, key)) Object.assign(p, { [key]: data[key] });
     }
+    if (a.lifespan?.trim()) {
+      const note = `Оценка возраста из XML: ${a.lifespan}`;
+      if (!p.biography?.split("\n").includes(note))
+        p.biography = addNotes(p.biography, [note]);
+      warnings.add(
+        "Поле person.lifespan сохранено текстом в биографии; структура оценки возраста и её неопределённость не представлены отдельно в Drevo.",
+      );
+    }
     if (a.fullname && hasUnmodeledFullNameText(a.fullname, [a.sn, a.fn, a.mn, a.msn])) {
       p.biography = addNotes(p.biography, [`Полное имя из XML: ${a.fullname}`]);
       warnings.add(
