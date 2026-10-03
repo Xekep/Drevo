@@ -2,6 +2,7 @@ import { storeDatabase } from "../src/server/store-database.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  mkdirSync,
   mkdtempSync,
   rmSync,
   writeFileSync,
@@ -13,8 +14,9 @@ import { join } from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import { startServer } from "../src/server/index.ts";
+import { openArchive, readArchive } from "../src/server/database.ts";
+import { restoreStore } from "../src/server/restore.ts";
 import { databaseBackupBytes } from "./helpers/database-backup.ts";
-import { readArchive } from "../src/server/database.ts";
 import { userStore } from "../src/server/users.ts";
 import { settingsStore } from "../src/server/settings.ts";
 import type { Family, Person } from "../src/domain/types.ts";
@@ -66,6 +68,53 @@ function tar(name: string, content: Buffer, type = "0", size = content.length) {
     ]),
   );
 }
+test("family import previews a full backup containing private discussion and AI files", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-import-private-"));
+  const databasePath = join(dir, "drevo.sqlite");
+  const archive = await openArchive(databasePath, family);
+  const restores = restoreStore(archive, databasePath);
+  const id = "a5ac420a-5ed9-44ee-a307-8550f6b64708";
+  const admin = { id: "admin", name: "Администратор", role: "admin" as const,
+    createdAt: "2026-01-01T00:00:00.000Z" };
+  try {
+    const backup = await databaseBackupBytes(archive.db);
+    const entry = (name: string, data = Buffer.alloc(0), type = "0") =>
+      gunzipSync(tar(name, data, type)).subarray(0, -1024);
+    const privateBytes = Buffer.from("private attachment");
+    const full = gzipSync(Buffer.concat([
+      entry("drevo.sqlite", backup),
+      entry("uploads/", Buffer.alloc(0), "5"),
+      entry("uploads/discussion-files/", Buffer.alloc(0), "5"),
+      entry(`uploads/discussion-files/${id}`, privateBytes),
+      entry(`uploads/discussion-files/${id}.webp`, privateBytes),
+      entry("uploads/ai-chat-files/", Buffer.alloc(0), "5"),
+      entry(`uploads/ai-chat-files/${id}/`, Buffer.alloc(0), "5"),
+      entry(`uploads/ai-chat-files/${id}/${id}`, privateBytes),
+      Buffer.alloc(1024),
+    ]));
+    const preview = await restores.preview(full, admin);
+    assert.equal(preview.people, 1);
+    const stage = await archive.db.prepare(
+      "SELECT directory FROM workflow_stages WHERE token=?",
+    ).get(preview.token);
+    assert.ok(stage?.directory);
+    assert.equal(readdirSync(join(String(stage.directory), "uploads")).length, 0,
+      "family import must not stage private attachments that it cannot restore");
+    for (const forbidden of [
+      `uploads/discussion-files/${id}/../../escape`,
+      `uploads/ai-chat-files/${id}/../../escape`,
+    ]) {
+      const malformed = gzipSync(Buffer.concat([
+        entry("drevo.sqlite", backup), entry(forbidden, privateBytes), Buffer.alloc(1024),
+      ]));
+      await assert.rejects(restores.preview(malformed, admin), /Недопустимый путь/);
+    }
+  } finally {
+    await restores.close();
+    await archive.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 test("backup preview is read-only; confirmed SQLite import preserves access, snapshots old data and checks revisions", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-import-test-")),
     app = await startServer(0, join(dir, "drevo.sqlite"), true);
@@ -196,6 +245,11 @@ test("full downloaded backup restores portrait, gallery and tags without overwri
   try {
     writeFileSync(join(dir, "uploads", "original.png"), png);
     writeFileSync(join(dir, "uploads", ".unfinished.upload"), "unfinished");
+    const privateId = "a5ac420a-5ed9-44ee-a307-8550f6b64708";
+    mkdirSync(join(dir, "uploads", "discussion-files"));
+    writeFileSync(join(dir, "uploads", "discussion-files", privateId), "discussion");
+    mkdirSync(join(dir, "uploads", "ai-chat-files", privateId), { recursive: true });
+    writeFileSync(join(dir, "uploads", "ai-chat-files", privateId, privateId), "chat");
     await app.archive.write(
       {
         ...family,
@@ -262,10 +316,11 @@ test("full downloaded backup restores portrait, gallery and tags without overwri
       ),
       png,
     );
+    assert.equal(readdirSync(join(dir, "uploads"))
+      .filter((name) => name.endsWith(".png")).length, 2);
     assert.equal(
-      readdirSync(join(dir, "uploads")).filter((name) => !name.startsWith("."))
-        .length,
-      2,
+      readFileSync(join(dir, "uploads", "discussion-files", privateId), "utf8"),
+      "discussion",
     );
   } finally {
     await app.close();
