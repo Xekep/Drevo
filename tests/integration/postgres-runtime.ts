@@ -47,6 +47,7 @@ import { verifyPlatformAiOrphanSweep } from "./platform-ai-orphan-sweep.ts";
 import { verifyOwnerTransferGetRevocation } from "./postgres-owner-transfer-reads.ts";
 import { verifyInvitationAcceptSessionRevocation } from "./postgres-invitation-accept-session.ts";
 import { verifyInvitationPreviewDelivery } from "./postgres-invitation-preview-delivery.ts";
+import { verifyAccountArchiveCreateSessionRevocation } from "./postgres-account-archive-create-session.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
@@ -1003,6 +1004,7 @@ try {
   await verifyOwnerTransferGetRevocation(app.archive.db, client);
   await verifyInvitationAcceptSessionRevocation(app.archive.db, client);
   await verifyInvitationPreviewDelivery(app.archive.db, client);
+  await verifyAccountArchiveCreateSessionRevocation(app.archive.db, client);
   {
     // A revoked session must not receive the deletion plan after its initial
     // HTTP authentication has completed.
