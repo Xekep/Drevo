@@ -11,6 +11,7 @@ import {
 } from "../src/domain/family-neighborhood.ts";
 import { unionGeometry } from "../src/domain/union-layout.ts";
 import { unionTimeline } from "../src/domain/union-timeline.ts";
+import { visibleBranch } from "../src/domain/tree-layout.ts";
 import type { Family, Person } from "../src/domain/types.ts";
 const person = (
   id: string,
@@ -300,4 +301,151 @@ test("protected children in the full view retain both parental pairs when anothe
     ["father", "main", "half-sibling", "mother", "stepmother"].sort(),
   );
   assert.ok(!visible.has("grandfather") && !visible.has("sibling"));
+});
+
+test("collapsing descendants hides their detached partners and in-laws, preserving the boundary couple and unrelated families", () => {
+  const data = archive();
+  data.people.find((p) => p.id === "spouse")!.parents = ["in-law"];
+  data.people.find((p) => p.id === "spouse")!.spouses.push("later-partner");
+  data.people.push(
+    person("in-law"),
+    person("later-partner", [], ["spouse"]),
+    person("other-partner", [], ["outsider"]),
+  );
+  const before = structuredClone(data);
+  assert.deepEqual(
+    [...visibleBranch(data, null, new Set(["father"]))].sort(),
+    [
+      "great",
+      "grandfather",
+      "grandmother",
+      "father",
+      "mother",
+      "stepmother",
+      "outsider",
+      "other-partner",
+    ].sort(),
+  );
+  assert.deepEqual(
+    visibleBranch(data, null, new Set()),
+    new Set(data.people.map((p) => p.id)),
+  );
+  assert.deepEqual(data, before);
+});
+
+test("a hidden descendant's partners stay when another recorded path connects them to the visible tree", () => {
+  const data = archive();
+  data.people.find((p) => p.id === "spouse")!.parents = ["grandfather"];
+  data.links!.push({
+    id: "independent",
+    type: "guardian",
+    from: "great",
+    to: "sibling-spouse",
+  });
+  const visible = visibleBranch(data, null, new Set(["father"]));
+  assert.ok(
+    visible.has("spouse"),
+    "a partner's own visible parent preserves their branch",
+  );
+  assert.ok(
+    visible.has("sibling-spouse"),
+    "an independent recorded relationship preserves their branch",
+  );
+  for (const id of ["main", "sibling", "child", "niece", "godparent"])
+    assert.equal(visible.has(id), false, id);
+});
+
+test("co-parents of hidden children disappear even without a recorded marriage", () => {
+  const data = archive();
+  for (const p of data.people) p.spouses = [];
+  const visible = visibleBranch(data, null, new Set(["main"]));
+  assert.equal(visible.has("child"), false);
+  assert.equal(visible.has("spouse"), false);
+  for (const id of [
+    "main",
+    "father",
+    "mother",
+    "sibling",
+    "sibling-spouse",
+    "niece",
+  ])
+    assert.ok(visible.has(id), id);
+});
+
+test("explicitly protected people keep their attached families and exact parental pairs after a fold", () => {
+  const data = archive();
+  data.people.find((p) => p.id === "spouse")!.parents = ["in-law"];
+  data.people.push(person("in-law"));
+  const protectedSpouse = visibleBranch(data, null, new Set(["father"]), [
+    "spouse",
+    "missing",
+  ]);
+  for (const id of ["spouse", "in-law", "father"])
+    assert.ok(protectedSpouse.has(id), id);
+  assert.equal(protectedSpouse.has("sibling-spouse"), false);
+  assert.equal(protectedSpouse.has("missing"), false);
+  const protectedChild = completeVisibleParents(
+    familyNeighbors(data),
+    visibleBranch(data, null, new Set(["father"]), ["child"]),
+  );
+  for (const id of ["father", "child", "main", "spouse", "in-law"])
+    assert.ok(protectedChild.has(id), id);
+  assert.equal(protectedChild.has("sibling"), false);
+});
+
+test("rooted and blood views remove detached spouses while retaining the collapsed person's own partners", () => {
+  const data = archive();
+  assert.deepEqual(
+    [...visibleBranch(data, "father", new Set(["father"]))].sort(),
+    [
+      "great",
+      "grandfather",
+      "grandmother",
+      "father",
+      "mother",
+      "stepmother",
+    ].sort(),
+  );
+  const blood = bloodRelativesWithPartners(familyNeighbors(data), "father");
+  const branch = visibleBranch(data, null, new Set(["father"]), ["father"]);
+  const visible = new Set([...blood].filter((id) => branch.has(id)));
+  assert.equal(visible.has("spouse"), false);
+  assert.equal(visible.has("sibling-spouse"), false);
+  assert.ok(visible.has("mother") && visible.has("stepmother"));
+});
+
+test("an outer fold hides nested folded couples and reopening restores their previous fold", () => {
+  const data = archive();
+  const collapsed = new Set(["main", "father"]);
+  const outer = visibleBranch(data, null, collapsed);
+  for (const id of ["main", "spouse", "child", "sibling-spouse"])
+    assert.equal(outer.has(id), false, id);
+  assert.ok(outer.has("father") && outer.has("mother"));
+  const inner = visibleBranch(data, null, new Set(["main"]));
+  assert.ok(inner.has("main") && inner.has("spouse"));
+  assert.equal(inner.has("child"), false);
+  const protectedInner = visibleBranch(data, null, collapsed, ["main"]);
+  assert.ok(protectedInner.has("main") && protectedInner.has("spouse"));
+  assert.equal(protectedInner.has("child"), false);
+  assert.deepEqual(collapsed, new Set(["main", "father"]));
+});
+
+test("a thousand-person branch folds and restores without recursion, including malformed ancestry cycles", () => {
+  const people = [person("root"), person("unrelated")];
+  for (let i = 1; i <= 499; i++) {
+    const id = `child-${i}`;
+    people.push(
+      person(id, [i === 1 ? "root" : `child-${i - 1}`], [`partner-${i}`]),
+      person(`partner-${i}`),
+    );
+  }
+  const data = { ...archive(), people, links: [] };
+  for (const parents of [[], ["child-499"]]) {
+    people[0].parents = parents;
+    assert.deepEqual([...visibleBranch(data, null, new Set(["root"]))].sort(), [
+      "root",
+      "unrelated",
+    ]);
+    assert.equal(visibleBranch(data, null, new Set()).size, 1000);
+  }
 });

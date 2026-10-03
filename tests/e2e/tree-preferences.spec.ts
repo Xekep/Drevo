@@ -162,12 +162,18 @@ test("each viewer can switch direction and colors; legacy card variants stay por
   await expect(collapse).toBeVisible();
   await collapse.click();
   await expect(child).toHaveCount(0);
+  await expect(
+    page.locator('.flow-person[data-person-id="e2e-spouse"]'),
+  ).toHaveCount(0);
   await expect(self).toBeVisible();
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-layout-settling|is-growing/,
   );
   await self.getByRole("button", { name: "Развернуть ветвь" }).click();
   await expect(child).toBeVisible();
+  await expect(
+    page.locator('.flow-person[data-person-id="e2e-spouse"]').first(),
+  ).toBeVisible();
   const household = page
     .locator(".flow-household:not(.flow-household--siblings)")
     .first();
