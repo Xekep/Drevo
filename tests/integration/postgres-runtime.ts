@@ -996,6 +996,78 @@ try {
   process.env.DATABASE_BACKEND = "postgres";
   app = await startServer(0, source, true);
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  {
+    // A revoked session must not receive the deletion plan after its initial
+    // HTTP authentication has completed.
+    const accountId = "preview-revoke-account";
+    const token = newSessionToken();
+    const tokenHash = sessionTokenHash(token);
+    const activeToken = newSessionToken();
+    const activeHash = sessionTokenHash(activeToken);
+    await client.query("INSERT INTO accounts(id,name,created_at) VALUES($1,'Private preview name',$2)",
+      [accountId, new Date().toISOString()]);
+    await client.query(
+      `INSERT INTO account_sessions(token_hash,user_id,expires_at)
+       VALUES($1,$3,$4),($2,$3,$4)`,
+      [tokenHash, activeHash, accountId, Date.now() + 600_000],
+    );
+    const origin = "https://preview-revoke.invalid";
+    const previewAuth = await createAuth(await userStore(app.archive.db), app.archive.db, origin);
+    let reachedAuth!: () => void;
+    let resumeAuth!: () => void;
+    const authReached = new Promise<void>((resolve) => { reachedAuth = resolve; });
+    const authGate = new Promise<void>((resolve) => { resumeAuth = resolve; });
+    const previewHandler = accountSelfDeletionHttp(app.archive.db, {
+      ...previewAuth,
+      accountSession: async (req) => {
+        const session = await previewAuth.accountSession(req);
+        if (session?.tokenHash === tokenHash) {
+          reachedAuth();
+          await authGate;
+        }
+        return session;
+      },
+    }, true, origin);
+    const previewServer = createServer((req, res) => {
+      void previewHandler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => previewServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const port = (previewServer.address() as { port: number }).port;
+      const currentPreview = await fetch(`http://127.0.0.1:${port}/api/account/deletion`, {
+        headers: { Cookie: `drevo_session=${activeToken}` },
+      });
+      assert.equal(currentPreview.status, 200);
+      assert.deepEqual(await currentPreview.json(), {
+        name: "Private preview name", ownedArchives: 0, sharedArchives: 0,
+        canRedactComments: true,
+      });
+      const stalePreview = fetch(`http://127.0.0.1:${port}/api/account/deletion`, {
+        headers: { Cookie: `drevo_session=${token}` },
+      });
+      await Promise.race([
+        authReached,
+        stalePreview.then(() => { throw new Error("Deletion preview completed before auth barrier"); }),
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error("Deletion preview missed auth barrier")), 30_000);
+          timer.unref();
+        }),
+      ]);
+      await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [tokenHash]);
+      resumeAuth();
+      const response = await stalePreview;
+      assert.equal(response.status, 401,
+        "revoked session cannot receive a prepared account deletion preview");
+      assert.doesNotMatch(await response.text(), /Private preview name|ownedArchives|sharedArchives/);
+      console.log("account_deletion_preview_revoke_verified");
+    } finally {
+      resumeAuth();
+      previewServer.closeAllConnections();
+      await new Promise<void>((resolve) => previewServer.close(() => resolve()));
+      await client.query("DELETE FROM accounts WHERE id=$1", [accountId]);
+    }
+  }
   for (const path of [
     "/api/health",
     "/api/session",
