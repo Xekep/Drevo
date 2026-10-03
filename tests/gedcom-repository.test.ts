@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createWriteStream } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { exportGedcom, importGedcom } from "../src/domain/gedcom.ts";
@@ -123,19 +123,57 @@ for (const version of ["5.5.1", "7.0"] as const)
         ["https://source.example/book", "https://source.example/book"]]);
   });
 
+for (const version of ["5.5.1", "7.0"] as const)
+  test(`GEDCOM ${version} retains the repository call-number medium without a dedicated model field`, () => {
+    const input = external(version).replace("2 CALN F.6/13/104",
+      `2 CALN F.6/13/104\n3 MEDI ${version === "7.0" ? "OTHER" : "film"}${version === "7.0"
+        ? "\n4 PHRASE archive copy" : ""}`);
+    const imported = importGedcom(input, `medium-${version}`);
+    const source = imported.family.people[0].events?.[0].sources?.[0];
+    assert.match(source?.repository?.linkNote || "",
+      new RegExp(`CALN\\.MEDI: ${version === "7.0" ? "OTHER" : "film"}`));
+    assert.match(repositorySummary(source!), /CALN\.MEDI:/,
+      "the retained medium is visible with the citation's repository");
+    if (version === "7.0")
+      assert.match(source?.repository?.linkNote || "", /CALN\.MEDI\.PHRASE: archive copy/);
+    assert.equal(source?.note, "birth entry");
+    assert.ok(imported.warnings.some((warning) => warning.includes("CALN.MEDI")));
+    const again = importGedcom(exportGedcom(imported.family, { version }),
+      `medium-again-${version}`);
+    assert.match(again.family.people[0].events?.[0].sources?.[0].repository?.linkNote || "",
+      new RegExp(`CALN\\.MEDI: ${version === "7.0" ? "OTHER" : "film"}`));
+
+    const repeated = importGedcom(input.replace("0 @R1@ REPO",
+      `2 CALN F.7/1\n3 MEDI ${version === "7.0" ? "BOOK" : "book"}\n0 @R1@ REPO`),
+    `multiple-media-${version}`);
+    const flattened = repeated.family.people[0].events?.[0].sources?.[0];
+    assert.equal(flattened?.repository, undefined);
+    assert.match(flattened?.note || "", new RegExp(`F\\.6/13/104[^\\n]*CALN\\.MEDI: ${
+      version === "7.0" ? "OTHER" : "film"}`));
+    assert.match(flattened?.note || "", new RegExp(`F\\.7/1[^\\n]*CALN\\.MEDI: ${
+      version === "7.0" ? "BOOK" : "book"}`));
+  });
+
 test("repository travels through GEDZIP and .drevo without an archive-local catalog ID", async () => {
   const directory = await mkdtemp(join(tmpdir(), "drevo-repository-"));
   try {
     const uploads = join(directory, "uploads"), stage = join(directory, "stage");
     await mkdir(uploads);
     await mkdir(stage);
-    const family = importGedcom(external("7.0"), "repository").family;
+    const externalPath = join(directory, "external.ged");
+    await writeFile(externalPath, external("7.0").replace("2 CALN F.6/13/104",
+      "2 CALN F.6/13/104\n3 MEDI FILM"));
+    const prepared = await prepareGenealogyImport(externalPath, stage, "repository");
+    assert.ok(prepared.warnings.some((warning) => warning.includes("CALN.MEDI")));
+    const family = prepared.family;
+    const firstLink = family.people[0].events![0].sources![0].repository;
+    assert.match(firstLink?.linkNote || "", /CALN\.MEDI: FILM/);
     const secondLink = { ...repository, callNumber: "F.7/1", linkNote: "digital copy" };
     family.people[0].events![1].sources![0].repository = secondLink;
     const gedzip = join(directory, "repository.gdz");
     await writeGenealogyPackage(gedzip, uploads, family, []);
     const importedZip = await prepareGenealogyImport(gedzip, stage, "zip");
-    assert.deepEqual(importedZip.family.people[0].events?.[0].sources?.[0].repository, repository);
+    assert.deepEqual(importedZip.family.people[0].events?.[0].sources?.[0].repository, firstLink);
     assert.deepEqual(importedZip.family.people[0].events?.[1].sources?.[0].repository, secondLink);
     assert.deepEqual(importedZip.family.people[0].events?.map((event) =>
       event.sources?.[0].reference), ["leaf 3", "leaf 9"]);
@@ -145,6 +183,7 @@ test("repository travels through GEDZIP and .drevo without an archive-local cata
     await writePortablePackage(createWriteStream(portablePath), uploads,
       { family, documents: [], comments: [], sources: [] }, async () => {});
     const portable = await readPortablePackage(portablePath, stage);
+    assert.deepEqual(portable.snapshot.family.people[0].events?.[0].sources?.[0].repository, firstLink);
     assert.deepEqual(portable.snapshot.family.people[0].events?.[1].sources?.[0].repository, secondLink);
   } finally {
     await rm(directory, { recursive: true, force: true });

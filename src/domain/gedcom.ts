@@ -398,6 +398,13 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         const websites = repository ? children(repository, "WWW").filter((site) => site.value) : [];
         const repositoryNote = repository?.tag === "REPO" ? notes(repository) : "";
         const linkNote = notes(link);
+        const mediaDetails = calls.flatMap((call) => children(call, "MEDI").flatMap((medium) => [
+          ...(medium.value ? [`Шифр ${call.value} — CALN.MEDI: ${medium.value}`] : []),
+          ...(value(medium, "PHRASE")
+            ? [`Шифр ${call.value} — CALN.MEDI.PHRASE: ${value(medium, "PHRASE")}`] : []),
+        ]));
+        if (mediaDetails.length)
+          warnings.add("CALN.MEDI сохранено текстом у хранилища; отдельная структура типа носителя не перенесена.");
         if (repositoryLinks.length === 1 && repository?.tag === "REPO" &&
           names.length === 1 && calls.length <= 1 && websites.length <= 1) {
           usedRepositories.add(link.value);
@@ -406,7 +413,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             callNumber: calls[0]?.value || "",
             website: websites[0]?.value || "",
             note: repositoryNote,
-            linkNote,
+            linkNote: [linkNote, ...mediaDetails].filter(Boolean).join("\n"),
           };
           continue;
         }
@@ -421,6 +428,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         for (const call of calls)
           if (call.value) callNumbers.push(call.value);
         if (linkNote) repositoryDetails.push(`Примечание о хранении: ${linkNote}`);
+        repositoryDetails.push(...mediaDetails);
       }
       const page = value(s, "PAGE");
       if (repositoryNames.length || callNumbers.length || repositoryDetails.length)
