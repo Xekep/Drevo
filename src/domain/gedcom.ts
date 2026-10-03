@@ -551,6 +551,13 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     const eventDate = claimableEventDate({ date: date || start || undefined,
       endDate: start && end ? end : undefined, dateText });
     const parsedSources = sources(n);
+    // BIRT/DEAT PLAC.SOUR is handled by eventClaimSources as an exact
+    // person-place citation. Do not invent that binding for other events.
+    const placeNode = child(n, "PLAC");
+    const nestedPlaceSources = n.tag === "BIRT" || n.tag === "DEAT" || !placeNode
+      ? [] : sources(placeNode);
+    if (nestedPlaceSources.length)
+      warnings.add("Вложенный PLAC.SOUR сохранён как общий источник события; точная привязка к месту не перенесена.");
     const sourceNodes = children(n, "SOUR");
     const dateSources = parsedSources.filter((_source, index) =>
       eventDate && value(sourceNodes[index], "_DREVO_CLAIM") === "EVENT_DATE");
@@ -605,9 +612,12 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       ...(alternatives.length ? { alternatives } : {}),
       location: placeLocation(n),
       description: notes(n) || undefined,
-      sources: parsedSources.filter((source) =>
-        !dateSources.includes(source) && !placeSources.includes(source) &&
-        !alternatives.some((item) => item.sources.includes(source))),
+      sources: [
+        ...parsedSources.filter((source) =>
+          !dateSources.includes(source) && !placeSources.includes(source) &&
+          !alternatives.some((item) => item.sources.includes(source))),
+        ...nestedPlaceSources,
+      ],
     };
   }
   const people: Person[] = individuals.map((n) => {

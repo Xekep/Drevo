@@ -85,3 +85,39 @@ test("a PLAC.SOUR without a place value stays as a general citation", () => {
   assert.equal(result.deathPlaceClaim?.sources[0].reference, "л. 9");
   assert.ok(imported.warnings.some((warning) => warning.includes("Источник места без названия")));
 });
+
+test("nonstandard place citation on a regular event remains with that event", async () => {
+  for (const version of ["5.5.1", "7.0"] as const) {
+    const input = [
+      "0 HEAD", "1 GEDC", `2 VERS ${version}`,
+      "0 @I1@ INDI", "1 NAME Anna /Test/",
+      "1 RESI", "2 DATE 1910", "2 SOUR @S2@", "3 PAGE leaf 1", "2 PLAC Tula",
+      "3 SOUR @S1@", "4 PAGE leaf 3",
+      "0 @S1@ SOUR", "1 TITL Address book",
+      "0 @S2@ SOUR", "1 TITL Event register", "0 TRLR", "",
+    ].join("\n");
+    const imported = importGedcom(input, `event-place-${version}`);
+    const residence = imported.family.people[0].events!.find((event) => event.gedcomTag === "RESI")!;
+    assert.equal(residence.placeClaim, undefined);
+    assert.deepEqual(residence.sources?.map((source) => [source.title, source.reference]),
+      [["Event register", "leaf 1"], ["Address book", "leaf 3"]]);
+    assert.ok(imported.warnings.some((warning) => warning.includes("PLAC.SOUR") &&
+      warning.includes("общий источник события")));
+
+    const directory = await mkdtemp(join(tmpdir(), "drevo-event-place-citation-"));
+    try {
+      const file = join(directory, "places.ged"), stage = join(directory, "stage");
+      await mkdir(stage);
+      await writeFile(file, input);
+      const preview = await prepareGenealogyImport(file, stage, `event-place-${version}`);
+      assert.ok(preview.warnings.some((warning) => warning.includes("PLAC.SOUR")));
+    } finally { await rm(directory, { recursive: true, force: true }); }
+
+    const roundtrip = importGedcom(exportGedcom(imported.family, { version }),
+      `event-place-roundtrip-${version}`);
+    const restored = roundtrip.family.people[0].events!.find((event) => event.gedcomTag === "RESI")!;
+    assert.deepEqual(restored.sources?.map((source) => [source.title, source.reference]),
+      [["Event register", "leaf 1"], ["Address book", "leaf 3"]]);
+    assert.equal(restored.placeClaim, undefined);
+  }
+});
