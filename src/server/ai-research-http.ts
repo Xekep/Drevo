@@ -159,9 +159,17 @@ export function aiResearchHttp({
           membership.tree_access !== (current.treeAccess || "all")) return false;
       }
     }
-    return (await auth.canRead(req)) &&
-      (await accountAiAccess(archive.db, current.id, auth.local, lockAccess)) &&
-      (await accessScope(current)) === expectedScope;
+    if (!(await auth.canRead(req)) || (await accessScope(current)) !== expectedScope)
+      return false;
+    // A scoped archive read can wait while the account tier or membership
+    // changes. Refresh the actor and leave the tier decision as the final await.
+    const latest = await auth.currentUser(req);
+    return !!latest?.approved && latest.id === current.id &&
+      latest.role === current.role &&
+      latest.personId === current.personId &&
+      latest.treeAccess === current.treeAccess &&
+      (await auth.canRead(req)) &&
+      (await accountAiAccess(archive.db, latest.id, auth.local, lockAccess));
   };
   const generatedFiles = generatedResearchFileStore(
     archive.db,
@@ -317,11 +325,11 @@ export function aiResearchHttp({
         return json(res, 404, { error: "Файл не найден или срок ссылки истёк" });
       const name = meta?.name || legacy?.name || "result.bin";
       const contentType = meta?.contentType || legacy?.contentType || "application/octet-stream";
-      if (!(await canDeliverAiData(req, chat.accessScope)))
-        return json(res, 403, { error: "Доступ к данным изменился" });
       const currentChat = await chats.read(chat.id, fileUser.id);
       if (!currentChat || currentChat.accessScope !== chat.accessScope)
         return json(res, 404, { error: "Файл не найден или срок ссылки истёк" });
+      if (!(await canDeliverAiData(req, chat.accessScope)))
+        return json(res, 403, { error: "Доступ к данным изменился" });
       res.writeHead(200, {
         "Content-Type": contentType,
         "Content-Length": bytes.length,
@@ -420,8 +428,7 @@ export function aiResearchHttp({
       if (!currentUser?.approved || currentUser.id !== user.id)
         return json(res, 403, { error: "Доступ к диалогам изменился" });
       const canShowTitles = aiAvailable &&
-        (await accountAiAccess(archive.db, user.id, auth.local)) &&
-        (await accessScope(currentUser)) === scope;
+        (await canDeliverAiData(req, scope, user.id));
       return json(res, 200, {
         chats: canShowTitles
           ? chatsForScope

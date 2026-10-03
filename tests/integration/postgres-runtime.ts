@@ -1625,6 +1625,70 @@ try {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
   };
+  // A scoped AI export awaits archive.read() again while checking its final
+  // scope. Downgrading the account during that await must prevent delivery.
+  await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
+  await client.query(`UPDATE archive_memberships
+    SET tree_access='common_ancestors',person_id='person-a'
+    WHERE archive_id='runtime-test' AND user_id='reader'`);
+  let releaseExportRead!: () => void;
+  let reachedExportRead!: () => void;
+  const atExportRead = new Promise<void>((resolve) => { reachedExportRead = resolve; });
+  const continueExportRead = new Promise<void>((resolve) => { releaseExportRead = resolve; });
+  let exportReads = 0;
+  const exportArchive = {
+    ...app.archive,
+    read: async () => {
+      if (++exportReads === 3) {
+        reachedExportRead();
+        await continueExportRead;
+      }
+      return app!.archive.read();
+    },
+  };
+  const exportAi = aiResearchHttp({
+    archive: exportArchive,
+    auth: await createAuth(await userStore(app.archive.db), app.archive.db,
+      process.env.PUBLIC_ORIGIN),
+    suggestions: researchSuggestionStore(app.archive.db),
+    aiSettings: await aiSettingsStore(app.archive.db),
+    usage: aiUsageStore(app.archive.db),
+    media: mediaStore(join(dirname(source), "uploads")),
+    previewImage: imagePreviews(join(dirname(source), "previews")),
+    researchCatalog: researchCatalogStore(app.archive.db),
+    publicOrigin: process.env.PUBLIC_ORIGIN,
+  });
+  const exportServer = createServer((req, res) => {
+    void exportAi(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => exportServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const exportPort = (exportServer.address() as { port: number }).port;
+    const pendingExport = fetch(`http://127.0.0.1:${exportPort}/api/ai/export/gedcom?format=gedcom7`,
+      { headers });
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([atExportRead, new Promise<void>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("AI export did not reach the final scope read")), 10_000);
+      })]);
+    } finally { clearTimeout(timeout); }
+    await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='reader'");
+    assert.equal(await accountAiAccess(app.archive.db, "reader"), false);
+    releaseExportRead();
+    const response = await pendingExport;
+    assert.equal(response.status, 403,
+      "a tier downgrade during the final scope read must withhold the AI export");
+    assert.doesNotMatch(await response.text(), /Тестов|INDI/);
+  } finally {
+    releaseExportRead();
+    await new Promise<void>((resolve) => exportServer.close(() => resolve()));
+    await exportAi.close();
+    await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='reader'");
+    await client.query(`UPDATE archive_memberships
+      SET tree_access='all',person_id=NULL
+      WHERE archive_id='runtime-test' AND user_id='reader'`);
+  }
   await verifyAccountSessionManagement(app.archive.db, securedBase, ownerHeaders, headers);
   const generatedChats = aiChatStore(app.archive.db);
   const generatedStore = generatedResearchFileStore(
