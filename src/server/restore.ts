@@ -240,14 +240,24 @@ async function unpack(
           if (pax) {
             if (remaining > 65536)
               throw new Error("Слишком большой заголовок TAR");
-          } else if (type === "5" && name === "uploads/" && remaining === 0)
+          } else if (type === "5" && remaining === 0 &&
+            (name === "uploads/" ||
+              /^uploads\/(?:discussion-files|ai-chat-files)\/$/.test(name) ||
+              /^uploads\/ai-chat-files\/[a-f0-9-]{36}\/$/.test(name)))
             name = "";
           else {
             if (type !== "0" && type !== "")
               throw new Error("В бэкапе допустимы только обычные файлы");
+            // A full system backup contains private discussion/AI attachments.
+            // Family import deliberately leaves comments and AI chats alone,
+            // so validate their paths and sizes but do not stage their bytes.
+            const privateAttachment =
+              /^uploads\/discussion-files\/[a-f0-9-]{36}(?:\.webp)?$/.test(name) ||
+              /^uploads\/ai-chat-files\/[a-f0-9-]{36}\/[a-f0-9-]{36}$/.test(name);
             if (
               name !== "drevo.sqlite" &&
               name !== "drevo.sqlite.secrets.key" &&
+              !privateAttachment &&
               !/^uploads\/[a-zA-Z0-9-]+\.(jpg|png|webp|gif|tif|pdf)$/.test(name)
             )
               throw new Error("Недопустимый путь в бэкапе");
@@ -267,8 +277,10 @@ async function unpack(
             if (seen.has(name))
               throw new Error("Повторяющееся имя файла в бэкапе");
             seen.add(name);
-            if (remaining) await reserveBytes(remaining);
-            entryFd = openSync(join(directory, name), "wx", 0o600);
+            if (!privateAttachment) {
+              if (remaining) await reserveBytes(remaining);
+              entryFd = openSync(join(directory, name), "wx", 0o600);
+            }
           }
           if (!remaining) finish();
         }
