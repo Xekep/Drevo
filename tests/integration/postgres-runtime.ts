@@ -73,6 +73,7 @@ import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { publishedPeopleStore } from "../../src/server/published-people.ts";
 import { discoveryPeopleHttp } from "../../src/server/discovery-people-http.ts";
 import { discoveryCardShareHttp } from "../../src/server/discovery-card-share-http.ts";
+import { discoveryBranchShareHttp } from "../../src/server/discovery-branch-share-http.ts";
 import { discoveryMatchesHttp } from "../../src/server/discovery-matches-http.ts";
 import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgres-yandex-login.ts";
@@ -5845,6 +5846,222 @@ try {
     ["archiveId", "id", "relation", "name", "birthYear", "deathYear", "birthPlace", "deathPlace"]
       .includes(key)), "member navigation exposes only the selected scalar projection");
   assert.doesNotMatch(JSON.stringify(selectedBranchPerson), /branch-hidden-b|Закрытая биография ветки|sources|photo/);
+  const branchRevokeWaiting = async () => {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
+        WHERE datname=current_database() AND pid<>pg_backend_pid()
+          AND wait_event_type='Lock' AND query LIKE '%discovery_match_requests m%'
+          AND query LIKE '%FOR UPDATE OF m%'`);
+      if (waiting.rowCount) return true;
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+    return false;
+  };
+  let memberReached!: () => void, releaseMember!: () => void;
+  const memberReady = new Promise<void>((resolve) => { memberReached = resolve; });
+  const memberGate = new Promise<void>((resolve) => { releaseMember = resolve; });
+  const memberEndpoint = discoveryBranchShareHttp({ archive: app.archive,
+    auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeMemberDelivery: async () => { memberReached(); await memberGate; },
+  });
+  const memberServer = createServer((req, res) => {
+    void memberEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => memberServer.listen(0, "127.0.0.1", resolve));
+  const memberPort = (memberServer.address() as { port: number }).port;
+  const pausedMember = fetch(`http://127.0.0.1:${memberPort}${branchPersonPath}`,
+    { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.248" } });
+  let revokeSourceBranch: Promise<Response> | undefined;
+  try {
+    await Promise.race([memberReady,
+      pausedMember.then(() => { throw new Error("Branch member sent before delivery barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Branch member did not reach delivery barrier")), 30_000)),
+    ]);
+    revokeSourceBranch = fetch(otherBase + branchPath, { method: "DELETE",
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.249" } });
+    assert.equal(await branchRevokeWaiting(), true,
+      "source branch revocation reaches the pair lock before member delivery");
+    const earlyRevoke = await Promise.race([
+      revokeSourceBranch.then((response) => `completed ${response.status}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+    ]);
+    assert.equal(earlyRevoke, "pending",
+      "revoking source branch consent waits until the selected member finishes delivery");
+    releaseMember();
+    const deliveredMember = await pausedMember;
+    assert.equal(deliveredMember.status, 200);
+    assert.equal((await deliveredMember.json()).person.id, "branch-parent-b");
+    assert.equal((await revokeSourceBranch).status, 200);
+  } finally {
+    releaseMember();
+    await pausedMember.catch(() => {});
+    await revokeSourceBranch?.catch(() => {});
+    await new Promise<void>((resolve) => memberServer.close(() => resolve()));
+  }
+  assert.equal((await fetch(securedBase + branchPersonPath, {
+    headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.250" },
+  })).status, 404, "the direct member URL closes after source consent is revoked");
+  assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
+    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.251" },
+    body: JSON.stringify({ personIds: ["branch-parent-b"],
+      previewToken: secondBranch.previewToken,
+      recipientArchiveId: "runtime-test", durationDays: 1 }),
+  })).status, 200);
+  console.log("runtime_discovery_branch_member_revocation_ok");
+  let listReached!: () => void, releaseList!: () => void;
+  const listReady = new Promise<void>((resolve) => { listReached = resolve; });
+  const listGate = new Promise<void>((resolve) => { releaseList = resolve; });
+  const listEndpoint = discoveryBranchShareHttp({ archive: app.archive,
+    auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeListDelivery: async () => { listReached(); await listGate; },
+  });
+  const listServer = createServer((req, res) => {
+    void listEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => listServer.listen(0, "127.0.0.1", resolve));
+  const listPort = (listServer.address() as { port: number }).port;
+  const pausedList = fetch(`http://127.0.0.1:${listPort}${branchPath}`,
+    { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.252" } });
+  let revokeListedBranch: Promise<Response> | undefined;
+  try {
+    await Promise.race([listReady,
+      pausedList.then(() => { throw new Error("Branch list sent before delivery barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Branch list did not reach delivery barrier")), 30_000)),
+    ]);
+    revokeListedBranch = fetch(otherBase + branchPath, { method: "DELETE",
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.253" } });
+    assert.equal(await branchRevokeWaiting(), true,
+      "source branch revocation reaches the pair lock before list delivery");
+    const earlyRevoke = await Promise.race([
+      revokeListedBranch.then((response) => `completed ${response.status}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+    ]);
+    assert.equal(earlyRevoke, "pending",
+      "revoking source branch consent waits for a list containing its members");
+    releaseList();
+    const deliveredList = await pausedList;
+    assert.equal(deliveredList.status, 200);
+    assert.deepEqual((await deliveredList.json()).incoming.map((item: { id: string }) => item.id),
+      ["branch-parent-b"]);
+    assert.equal((await revokeListedBranch).status, 200);
+  } finally {
+    releaseList();
+    await pausedList.catch(() => {});
+    await revokeListedBranch?.catch(() => {});
+    await new Promise<void>((resolve) => listServer.close(() => resolve()));
+  }
+  assert.deepEqual((await fetch(securedBase + branchPath, {
+    headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.254" },
+  }).then((response) => response.json())).incoming, [],
+  "a fresh branch list excludes members after source revocation");
+  assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
+    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.255" },
+    body: JSON.stringify({ personIds: ["branch-parent-b"],
+      previewToken: secondBranch.previewToken,
+      recipientArchiveId: "runtime-test", durationDays: 1 }),
+  })).status, 200);
+  console.log("runtime_discovery_branch_list_revocation_ok");
+  let abortMemberReached!: () => void, releaseAbortedMember!: () => void;
+  const abortMemberReady = new Promise<void>((resolve) => { abortMemberReached = resolve; });
+  const abortMemberGate = new Promise<void>((resolve) => { releaseAbortedMember = resolve; });
+  const abortMemberEndpoint = discoveryBranchShareHttp({ archive: app.archive,
+    auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeMemberDelivery: async () => { abortMemberReached(); await abortMemberGate; },
+  });
+  const abortMemberServer = createServer((req, res) => {
+    void abortMemberEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => abortMemberServer.listen(0, "127.0.0.1", resolve));
+  const abortMemberPort = (abortMemberServer.address() as { port: number }).port;
+  const branchAbortController = new AbortController();
+  const abandonedMember = fetch(`http://127.0.0.1:${abortMemberPort}${branchPersonPath}`,
+    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.1" },
+      signal: branchAbortController.signal });
+  const branchAbandonedOutcome = abandonedMember.then(() => "sent", () => "aborted");
+  let revokeAfterAbort: Promise<Response> | undefined;
+  try {
+    await Promise.race([abortMemberReady,
+      abandonedMember.then(() => { throw new Error("Branch member sent before abort barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Branch member did not reach abort barrier")), 30_000)),
+    ]);
+    revokeAfterAbort = fetch(otherBase + branchPath, { method: "DELETE",
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.2" } });
+    assert.equal(await branchRevokeWaiting(), true,
+      "source revocation reaches the pair lock while the member client is connected");
+    branchAbortController.abort();
+    releaseAbortedMember();
+    assert.equal(await branchAbandonedOutcome, "aborted");
+    assert.equal((await Promise.race([revokeAfterAbort,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Disconnect did not release branch locks")), 3_000)),
+    ])).status, 200);
+  } finally {
+    branchAbortController.abort();
+    releaseAbortedMember();
+    await branchAbandonedOutcome;
+    await revokeAfterAbort?.catch(() => {});
+    await new Promise<void>((resolve) => abortMemberServer.close(() => resolve()));
+  }
+  assert.equal((await fetch(securedBase + branchPersonPath, {
+    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.3" },
+  })).status, 404);
+  assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
+    headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.4" },
+    body: JSON.stringify({ personIds: ["branch-parent-b"],
+      previewToken: secondBranch.previewToken,
+      recipientArchiveId: "runtime-test", durationDays: 1 }),
+  })).status, 200);
+  console.log("runtime_discovery_branch_abort_ok");
+  let staleListReached!: () => void, releaseStaleList!: () => void;
+  const staleListReady = new Promise<void>((resolve) => { staleListReached = resolve; });
+  const staleListGate = new Promise<void>((resolve) => { releaseStaleList = resolve; });
+  const staleListEndpoint = discoveryBranchShareHttp({ archive: app.archive,
+    auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeListPublicationLock: async () => { staleListReached(); await staleListGate; },
+  });
+  const staleListServer = createServer((req, res) => {
+    void staleListEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => staleListServer.listen(0, "127.0.0.1", resolve));
+  const staleListPort = (staleListServer.address() as { port: number }).port;
+  const staleList = fetch(`http://127.0.0.1:${staleListPort}${branchPath}`,
+    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.5" } });
+  try {
+    await Promise.race([staleListReady,
+      staleList.then(() => { throw new Error("Branch list sent before publication barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Branch list did not reach publication barrier")), 30_000)),
+    ]);
+    assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.6" },
+      body: JSON.stringify({ personIds: ["branch-parent-b", "branch-grandparent-b"],
+        previewToken: secondBranch.previewToken,
+        recipientArchiveId: "runtime-test", durationDays: 1 }),
+    })).status, 200);
+    releaseStaleList();
+    const staleResponse = await staleList;
+    assert.equal(staleResponse.status, 409);
+    assert.deepEqual(await staleResponse.json(), { error: "Ветка изменилась. Повторите запрос" },
+      "a newly selected source member cannot appear without a held publication lock");
+  } finally {
+    releaseStaleList();
+    await staleList.catch(() => {});
+    await new Promise<void>((resolve) => staleListServer.close(() => resolve()));
+  }
+  assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
+    headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.7" },
+    body: JSON.stringify({ personIds: ["branch-parent-b"],
+      previewToken: secondBranch.previewToken,
+      recipientArchiveId: "runtime-test", durationDays: 1 }),
+  })).status, 200);
+  console.log("runtime_discovery_branch_list_stale_ok");
   assert.equal((await fetch(securedBase + branchPath + "/people/branch-hidden-b", {
     headers: navigationHeaders,
   })).status, 404, "a private adjacent person is indistinguishable from an unavailable member");
