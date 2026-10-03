@@ -208,6 +208,61 @@ test("privacy eye opens with one tap on mobile", async ({ page, isMobile }) => {
   await expect(privacy).toHaveAttribute("data-publication-state", /hidden|published/);
 });
 
+test("owner opts one already published close relation into matching and can revoke it", async ({ page, isMobile }) => {
+  test.skip(isMobile, "Desktop publication dialog covers relation consent");
+  let enabled = false;
+  const path = "/api/discovery/matches/relative-consents";
+  await page.route((url) => url.pathname === "/api/admin/published-people/e2e-memorial-person",
+    (route) => route.fulfill({ json: { archiveId: "tree-a", published: true, publishable: true,
+      fields: { birthSurname: false, birthYear: false, deathYear: false,
+        birthPlace: false, deathPlace: false }, person: { name: "Тестов Иван" } } }));
+  await page.route((url) => url.pathname === path, async (route) => {
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON();
+      expect(body).toMatchObject({ personId: "e2e-memorial-person", relationId: "parent-link" });
+      enabled = body.enabled;
+      return route.fulfill({ json: { saved: true } });
+    }
+    return route.fulfill({ json: { relatives: [{ relationId: "parent-link", personId: "parent",
+      name: "Тестова Мария", kind: "parent", enabled }] } });
+  });
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
+  const card = page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-person");
+  await card.hover();
+  await card.locator(".flow-privacy").click();
+  const checkbox = page.getByRole("dialog", { name: "Публикация человека в поиске" })
+    .getByRole("checkbox", { name: "Родитель: Тестова Мария" });
+  await expect(checkbox).not.toBeChecked();
+  await checkbox.click();
+  await expect(checkbox).toBeChecked();
+  await checkbox.click();
+  await expect(checkbox).not.toBeChecked();
+  expect(enabled).toBe(false);
+});
+
+test("a SQLite publication does not request PostgreSQL-only relative consent", async ({ page, isMobile }) => {
+  test.skip(isMobile, "Desktop publication dialog covers the SQLite boundary");
+  let relativeRequests = 0;
+  await page.route((url) => url.pathname === "/api/discovery/matches/relative-consents", (route) => {
+    relativeRequests++;
+    return route.fulfill({ status: 501, json: { error: "PostgreSQL required" } });
+  });
+  await page.route((url) => url.pathname === "/api/admin/published-people/e2e-memorial-person",
+    (route) => route.fulfill({ json: { archiveId: null, published: true, publishable: true,
+      fields: { birthSurname: false, birthYear: false, deathYear: false,
+        birthPlace: false, deathPlace: false }, person: { name: "Тестов Иван" } } }));
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
+  const card = page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-person");
+  await card.hover();
+  await card.locator(".flow-privacy").click();
+  const dialog = page.getByRole("dialog", { name: "Публикация человека в поиске" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  expect(relativeRequests).toBe(0);
+});
+
 test("a saved publication change asks for refresh when access changes before reply", async ({ page, isMobile }) => {
   test.skip(isMobile, "The desktop privacy dialog covers this response contract");
   const path = "/api/admin/published-people/e2e-memorial-person";

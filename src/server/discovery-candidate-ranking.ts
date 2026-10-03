@@ -3,6 +3,7 @@ export type PublishedCandidate = {
   birthPlace?: string; deathPlace?: string;
   surname?: string; givenName?: string;
 };
+export type PublishedRelative = { kind: "parent" | "child" | "spouse"; name: string };
 
 const words = (value: string): string[] =>
   value.toLocaleLowerCase("ru-RU").replaceAll("ё", "е").match(/[\p{L}\p{N}]+/gu) || [];
@@ -16,6 +17,7 @@ function nameParts(person: PublishedCandidate) {
   return { given: words(person.givenName ?? given)[0] || "", currentSurnames,
     birthSurnames, surnames: [...currentSurnames, ...birthSurnames] };
 }
+export const candidateGivenName = (person: PublishedCandidate) => nameParts(person).given;
 export function candidateNameRoleQuery(person: PublishedCandidate) {
   const { given, surnames } = nameParts(person);
   const terms = [...new Set(surnames.filter((value) => value.length >= 2))].slice(0, 4);
@@ -78,6 +80,7 @@ function localityWords(value: string) {
 }
 export function candidateEvidence(
   source: PublishedCandidate, candidate: PublishedCandidate,
+  sourceRelatives: PublishedRelative[] = [], candidateRelatives: PublishedRelative[] = [],
 ) {
   const a = nameParts(source), b = nameParts(candidate);
   const givenMatches = Boolean(a.given && b.given && similar(a.given, b.given));
@@ -88,9 +91,19 @@ export function candidateEvidence(
     const left = localityWords(source[field] || ""), right = localityWords(candidate[field] || "");
     return left.some((word) => right.includes(word));
   });
-  // A shared relative name alone is insufficient evidence of personal identity.
+  const relativeNames = (relative: PublishedRelative) => words(relative.name).join(" ");
+  const sharedRelativeKinds = (["parent","child","spouse"] as const).filter((kind) => {
+    const left = sourceRelatives.filter((relative) => relative.kind === kind)
+      .map(relativeNames);
+    const right = candidateRelatives.filter((relative) => relative.kind === kind)
+      .map(relativeNames);
+    return left.some((name) => name && right.includes(name));
+  });
+  // A shared relative alone is insufficient; matching given names and close
+  // published birth years may identify a changed-surname candidate.
   if (!(givenMatches && surnameMatches) &&
-      !(givenMatches && birthDifference !== null && birthDifference <= 2 && placeOverlap))
+      !(givenMatches && birthDifference !== null && birthDifference <= 2 &&
+        (placeOverlap || sharedRelativeKinds.length)))
     return null;
   const reasons: string[] = [], conflicts: string[] = [];
   let score = 0;
@@ -129,6 +142,13 @@ export function candidateEvidence(
     else if (left.some((word) => right.includes(word))) {
       reasons.push(`${label} частично совпадает`); score += 1;
     } else conflicts.push(`${label} различается`);
+  }
+  for (const [kind, label] of [["parent", "родителя"], ["child", "ребёнка"],
+    ["spouse", "супруга"]] as const) {
+    if (sharedRelativeKinds.includes(kind)) {
+      reasons.push(`Совпадает опубликованное имя ${label}`);
+      score += 3;
+    }
   }
   return { reasons, conflicts, score: score - conflicts.length };
 }

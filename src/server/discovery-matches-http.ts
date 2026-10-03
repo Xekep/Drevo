@@ -6,7 +6,7 @@ import type { createAuth } from "./auth.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
-import { candidateEvidence, candidateFuzzyTerms, candidateNameRoleQuery,
+import { candidateEvidence, candidateFuzzyTerms, candidateGivenName, candidateNameRoleQuery,
   candidatePlaceQueries } from "./discovery-candidate-ranking.ts";
 import { publicPersonId } from "./public-person-id.ts";
 import { AccountSessionBusy } from "./account-session-guard.ts";
@@ -184,10 +184,11 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
     const collection = url.pathname === "/api/discovery/matches";
     const ownPeople = url.pathname === "/api/discovery/matches/own-people";
     const candidates = url.pathname === "/api/discovery/matches/candidates";
+    const relativeConsents = url.pathname === "/api/discovery/matches/relative-consents";
     const ignoredCandidates = url.pathname === "/api/discovery/matches/ignored";
     const ignoredArchives = url.pathname === "/api/discovery/matches/ignored-archives";
     const detail = /^\/api\/discovery\/matches\/([a-f0-9-]{36})$/.exec(url.pathname);
-    if (!collection && !ownPeople && !candidates && !ignoredCandidates && !ignoredArchives && !detail) return false;
+    if (!collection && !ownPeople && !candidates && !relativeConsents && !ignoredCandidates && !ignoredArchives && !detail) return false;
     if (db.kind !== "postgres" || !db.archiveId)
       return json(res, 501, { error: "Сопоставление деревьев доступно с PostgreSQL" });
     const archiveId = db.archiveId;
@@ -231,6 +232,73 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       await deliverLocked(res, { match: match(current) });
       return true;
     });
+
+    if (relativeConsents) {
+      if (req.method !== "GET" && req.method !== "POST")
+        return json(res, 405, { error: "Ожидается GET или POST" });
+      const body = req.method === "POST" ? await readBody(req) : null;
+      const personId = req.method === "GET" ? url.searchParams.get("personId") : body?.personId;
+      const relationId = body?.relationId;
+      const enabled = body?.enabled;
+      if (typeof personId !== "string" || !publicPersonId(personId) ||
+          (req.method === "POST" && (typeof relationId !== "string" ||
+            !publicPersonId(relationId) || typeof enabled !== "boolean")))
+        return json(res, 400, { error: "Некорректная карточка или связь" });
+      const session = auth.local ? null : await auth.accountSession(req);
+      const relationsSql = `SELECT r.id AS relation_id,other.person_id AS relative_person_id,
+        other.name AS relative_name,CASE WHEN r.type='spouse' THEN 'spouse'
+          WHEN r.source=? THEN 'child' ELSE 'parent' END AS kind,
+        c.relation_id IS NOT NULL AS enabled
+        FROM relations r JOIN discovery_people other ON other.archive_id=r.archive_id
+          AND other.person_id=CASE WHEN r.source=? THEN r.target ELSE r.source END
+        LEFT JOIN discovery_relative_consents c ON c.archive_id=r.archive_id
+          AND c.person_id=? AND c.relation_id=r.id
+        WHERE r.archive_id=? AND r.type IN ('parent','spouse')
+          AND (r.source=? OR r.target=?) ORDER BY r.id`;
+      const args = [personId,personId,personId,archiveId,personId,personId];
+      const result = await db.transaction(async () => {
+        if (!await lockDiscoveryOwnerReadAccess(db,auth.local,session,user) ||
+            !await isOwner(user.id,true)) return { status: 403 };
+        if (!await db.prepare("", `SELECT 1 FROM discovery_people
+          WHERE archive_id=? AND person_id=? ${req.method === "POST" ? "FOR UPDATE" : "FOR SHARE"}`)
+          .get(archiveId,personId))
+          return { status: 404 };
+        if (req.method === "GET") {
+          const rows = await db.prepare("", relationsSql).all(...args);
+          await deliverLocked(res, { relatives: rows.map((row) => ({
+            relationId: String(row.relation_id), personId: String(row.relative_person_id),
+            name: String(row.relative_name), kind: String(row.kind), enabled: row.enabled === true,
+          })) });
+          return { status: 200 };
+        }
+        const eligible = (await db.prepare("", relationsSql).all(...args))
+          .find((row) => row.relation_id === relationId);
+        if (!eligible) return { status: 404 };
+        if (enabled) {
+          await db.prepare("", `INSERT INTO discovery_relative_consents
+            (archive_id,person_id,relation_id,relative_person_id,kind,relative_name)
+            VALUES(?,?,?,?,?,?) ON CONFLICT (archive_id,person_id,relation_id) DO UPDATE SET
+              relative_person_id=excluded.relative_person_id,kind=excluded.kind,
+              relative_name=excluded.relative_name`).run(archiveId,personId,String(relationId),
+                String(eligible.relative_person_id),String(eligible.kind),
+                String(eligible.relative_name));
+        } else {
+          await db.prepare("", `DELETE FROM discovery_relative_consents
+            WHERE archive_id=? AND person_id=? AND relation_id=?`)
+            .run(archiveId,personId,String(relationId));
+        }
+        return { status: 200 };
+      }).catch((error) => {
+        if ((error as { code?: string }).code === "55P03" || error instanceof AccountSessionBusy)
+          return { status: 409 };
+        throw error;
+      });
+      if (result.status === 200) return req.method === "GET" ? true
+        : json(res, 200, { saved: true });
+      return json(res, result.status, { error: result.status === 403
+        ? "Доступ владельца отозван" : result.status === 404
+          ? "Связь или публикация больше не доступны" : "Данные заняты. Повторите запрос" });
+    }
 
     if (ignoredArchives) {
       if (req.method === "GET") {
@@ -363,7 +431,11 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       const exactName = candidateNameRoleQuery(source);
       const fuzzy = candidateFuzzyTerms(source);
       const places = candidatePlaceQueries(source);
-      if (!exactName && !fuzzy && !places.length)
+      const given = candidateGivenName(source);
+      const relativesEnabled = given.length >= 2 && source.birthYear && /^\d{4}$/.test(source.birthYear) &&
+        !!await db.prepare("", `SELECT 1 FROM discovery_relative_consents
+          WHERE archive_id=? AND person_id=? LIMIT 1`).get(archiveId,sourceId);
+      if (!exactName && !fuzzy && !places.length && !relativesEnabled)
         return json(res, 200, { candidates: [], truncated: false, nextCursor: null });
       const showIgnored = url.searchParams.get("ignored") === "1";
       const branches: string[] = [], lookupArgs: string[] = [];
@@ -397,7 +469,26 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
             AND birth_year BETWEEN ? AND ?`);
         lookupArgs.push(archiveId,place.terms,place.locality,place.from,place.to);
       }
-      // Each branch starts with a GIN index. Only opt-in projections are read.
+      if (relativesEnabled) {
+        // The own PK and target (kind,name_key) B-tree index retrieve only
+        // separately consented close relatives. Given name and published
+        // birth-year range keep a common relative from asserting identity.
+        branches.push(`SELECT target.archive_id,target.person_id
+          FROM discovery_relative_consents own
+          JOIN discovery_relative_consents target ON target.kind=own.kind
+            AND target.relative_name_key=own.relative_name_key
+          JOIN discovery_people d ON d.archive_id=target.archive_id
+            AND d.person_id=target.person_id
+          WHERE own.archive_id=? AND own.person_id=? AND target.archive_id<>?
+            AND (replace(lower(coalesce(nullif(d.given_part,''),
+              split_part(d.name,' ',2))), 'ё','е')=? OR d.given_normalized % ?)
+            AND d.birth_year BETWEEN ? AND ?`);
+        lookupArgs.push(archiveId,sourceId,archiveId,given,given,
+          String(Math.max(1,Number(source.birthYear)-2)).padStart(4,"0"),
+          String(Math.min(9999,Number(source.birthYear)+2)).padStart(4,"0"));
+      }
+      // Name/place branches use GIN; consented-relative lookup uses its B-tree.
+      // Every branch reads only opt-in publication projections.
       const candidateSql = (limit: number) => `WITH candidate_keys AS (${branches.join(" UNION ")})
         SELECT d.archive_id,d.person_id,d.name,d.surname_part,d.given_part,d.birth_surname,
           d.birth_year,d.death_year,d.birth_place,d.death_place,
@@ -424,9 +515,28 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       let scanLimit = candidatePageSize;
       let query = candidateSql(scanLimit + 1);
       let rows = await db.prepare("", query).all(...candidateArgs);
+      const relativesFor = async (found: Row[]) => {
+        const people = [sourceRow,...found].map((row) => ({
+          archive_id: String(row.archive_id), person_id: String(row.person_id),
+        }));
+        const signals = await db.prepare("", `SELECT c.archive_id,c.person_id,c.relation_id,
+          c.kind,c.relative_name,c.xmin::text AS row_version
+          FROM discovery_relative_consents c JOIN jsonb_to_recordset(?::jsonb)
+            AS p(archive_id text,person_id text)
+            ON p.archive_id=c.archive_id AND p.person_id=c.person_id
+          ORDER BY c.archive_id COLLATE "C",c.person_id COLLATE "C",
+            c.relation_id COLLATE "C"`).all(JSON.stringify(people));
+        return { people, signals };
+      };
+      let relativeProjection = await relativesFor(rows);
+      const relativesOf = (row: Row) => relativeProjection.signals
+        .filter((signal) => signal.archive_id === row.archive_id &&
+          signal.person_id === row.person_id)
+        .map((signal) => ({ kind: String(signal.kind) as "parent" | "child" | "spouse",
+          name: String(signal.relative_name) }));
       const evaluate = (found: typeof rows, limit: number) => found.slice(0, limit).map((row, index) => {
         const candidate = published(row);
-        const evidence = candidateEvidence(source,candidate);
+        const evidence = candidateEvidence(source,candidate,relativesOf(sourceRow),relativesOf(row));
         return evidence ? { ...candidate, ...evidence, rawIndex: index } : null;
       }).filter((item) => item !== null);
       let scored = evaluate(rows,scanLimit);
@@ -434,6 +544,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         scanLimit = candidateEmptyScanLimit;
         query = candidateSql(scanLimit + 1);
         rows = await db.prepare("", query).all(...candidateArgs);
+        relativeProjection = await relativesFor(rows);
         scored = evaluate(rows,scanLimit);
       }
       const chosen = scored.slice(0,candidatePageSize);
@@ -469,13 +580,27 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
           WHERE archive_id=? AND user_id=? FOR SHARE NOWAIT`).get(archiveId,user.id)) return 403;
         // Withdrawal locks a published row before its projection disappears.
         // Hold the source, page and overflow rows through response completion.
+        // A published relative-name update may lock its row before the focal
+        // consent row; fail fast instead of waiting while holding earlier rows.
         const locked = await db.prepare("", `SELECT d.archive_id,d.person_id
           FROM discovery_people d JOIN jsonb_to_recordset(?::jsonb)
             AS e(archive_id text,person_id text)
             ON e.archive_id=d.archive_id AND e.person_id=d.person_id
-          ORDER BY d.archive_id COLLATE "C",d.person_id COLLATE "C" FOR SHARE OF d`)
+          ORDER BY d.archive_id COLLATE "C",d.person_id COLLATE "C" FOR SHARE OF d NOWAIT`)
           .all(JSON.stringify(expectedPeople));
         if (locked.length !== expectedPeople.length) return 409;
+        // Every consent UPDATE/DELETE takes its focal discovery row FOR UPDATE
+        // in the trigger. The focal rows above stay SHARE-locked through send.
+        const currentRelatives = await db.prepare("", `SELECT c.archive_id,c.person_id,
+          c.relation_id,c.kind,c.relative_name,c.xmin::text AS row_version
+          FROM discovery_relative_consents c JOIN jsonb_to_recordset(?::jsonb)
+            AS p(archive_id text,person_id text)
+            ON p.archive_id=c.archive_id AND p.person_id=c.person_id
+          ORDER BY c.archive_id COLLATE "C",c.person_id COLLATE "C",
+            c.relation_id COLLATE "C"`)
+          .all(JSON.stringify(relativeProjection.people));
+        if (JSON.stringify(currentRelatives) !== JSON.stringify(relativeProjection.signals))
+          return 409;
         // One MVCC snapshot checks the indexed page (including its overflow
         // row) and selected publication versions after the locks are held.
         const current = await db.prepare("", `WITH expected_people AS (

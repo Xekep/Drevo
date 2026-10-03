@@ -35,6 +35,11 @@ BEGIN
   IF to_regclass('discovery_relative_names') IS NOT NULL THEN
     tables := tables || 'discovery_relative_names,';
   END IF;
+  IF to_regclass('discovery_relative_consents') IS NOT NULL THEN
+    EXECUTE 'CREATE TEMP TABLE discovery_relative_consents_backup ON COMMIT DROP
+      AS SELECT * FROM discovery_relative_consents';
+    tables := tables || 'discovery_relative_consents,';
+  END IF;
   EXECUTE 'TRUNCATE ' || tables || 'discovery_people';
 END $$;
 DO $$
@@ -44,6 +49,28 @@ BEGIN
     PERFORM set_config('drevo.archive_id', entry.archive_id, true);
     PERFORM refresh_discovery_person(entry.archive_id, entry.person_id);
   END LOOP;
+END $$;
+-- Recreate only previously consented edges whose two publications and exact
+-- relation still exist. Never infer consent from two published people.
+DO $$
+BEGIN
+  IF to_regclass('discovery_relative_consents') IS NOT NULL THEN
+    EXECUTE $sql$INSERT INTO discovery_relative_consents
+      (archive_id,person_id,relation_id,relative_person_id,kind,relative_name)
+      SELECT b.archive_id,b.person_id,b.relation_id,b.relative_person_id,b.kind,
+        relative.name
+      FROM pg_temp.discovery_relative_consents_backup b
+      JOIN relations r ON r.archive_id=b.archive_id AND r.id=b.relation_id
+      JOIN discovery_people focal ON focal.archive_id=b.archive_id
+        AND focal.person_id=b.person_id
+      JOIN discovery_people relative ON relative.archive_id=b.archive_id
+        AND relative.person_id=b.relative_person_id
+      WHERE r.type IN ('parent','spouse') AND
+        ((r.source=b.person_id AND r.target=b.relative_person_id)
+          OR (r.target=b.person_id AND r.source=b.relative_person_id))
+        AND b.kind=CASE WHEN r.type='spouse' THEN 'spouse'
+          WHEN r.source=b.person_id THEN 'child' ELSE 'parent' END$sql$;
+  END IF;
 END $$;
 -- Backfill the small public link projection after both published endpoints
 -- have been rebuilt. Keep the endpoint unavailable until this commits.
