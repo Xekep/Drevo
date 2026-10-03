@@ -302,6 +302,67 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
   }
 });
 
+test("a legacy JPEG document extension still requires JPEG content after manifest verification", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "drevo-legacy-jpeg-"));
+  try {
+    const uploads = join(dir, "uploads");
+    await mkdir(uploads);
+    const name = "acdd620b-68f0-40e1-a126-775a293b9316.jpeg";
+    const jfifName = "b0fba0ac-3314-4f8d-a580-b8801a940412.jfif";
+    const jpeg = await sharp({ create: {
+      width: 2, height: 2, channels: 3, background: "blue",
+    } }).jpeg().toBuffer();
+    const png = await sharp({ create: {
+      width: 2, height: 2, channels: 4, background: "blue",
+    } }).png().toBuffer();
+    await writeFile(join(uploads, name), jpeg);
+    await writeFile(join(uploads, jfifName), jpeg);
+    const snapshot: PortableSnapshot = {
+      family: { title: "Tree", description: "", demo: false, people: [] },
+      documents: [{ id: "d1", title: "Scan", fileName: name,
+        createdAt: "2026-10-01T00:00:00Z", uploadedBy: "owner",
+        documentType: "", documentDate: "", place: "", description: "",
+        provenance: "", annotations: [], personIds: [] },
+      { id: "d2", title: "Second scan", fileName: jfifName,
+        createdAt: "2026-10-01T00:00:00Z", uploadedBy: "owner",
+        documentType: "", documentDate: "", place: "", description: "",
+        provenance: "", annotations: [], personIds: [] }],
+      comments: [],
+    };
+    const path = join(dir, "valid.drevo");
+    await writePortablePackage(createWriteStream(path), uploads, snapshot, async () => {});
+    const validStage = join(dir, "valid-stage");
+    await mkdir(validStage);
+    const valid = await readPortablePackage(path, validStage);
+    assert.equal(valid.files.get(`media/${name}`)?.sha256, hash(jpeg));
+    assert.equal(valid.files.get(`media/${jfifName}`)?.sha256, hash(jpeg));
+
+    const zip = await openPromise(path);
+    const files = new Map<string, Buffer>();
+    for await (const entry of zip.eachEntry()) {
+      const chunks: Buffer[] = [];
+      for await (const chunk of await zip.openReadStreamPromise(entry))
+        chunks.push(Buffer.from(chunk));
+      files.set(entry.fileName, Buffer.concat(chunks));
+    }
+    zip.close();
+    const manifest = JSON.parse(files.get("manifest.json")!.toString()) as PortableManifest;
+    const mediaEntry = manifest.entries.find((entry) => entry.path === `media/${name}`)!;
+    mediaEntry.size = png.length;
+    mediaEntry.sha256 = hash(png);
+    files.set(`media/${name}`, png);
+    files.set("manifest.json", Buffer.from(JSON.stringify(manifest)));
+    const disguised = join(dir, "disguised.drevo");
+    await zipEntries(disguised, files);
+    const disguisedStage = join(dir, "disguised-stage");
+    await mkdir(disguisedStage);
+    await assert.rejects(readPortablePackage(disguised, disguisedStage),
+      /Тип изображения не соответствует расширению/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Drevo exports and imports a media manifest larger than the former 8 KiB cap", async () => {
   const dir = await mkdtemp(join(tmpdir(), "drevo-portable-manifest-"));
   try {
