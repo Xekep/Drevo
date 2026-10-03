@@ -111,11 +111,12 @@ function recipient(pair: Row, archiveId: string) {
 
 /** Extra details require a separate, revocable grant for exactly one confirmed pair. */
 export function discoveryCardShareHttp({ archive, auth, publicOrigin,
-  beforeCopyPreviewDelivery }: {
+  beforeCopyPreviewDelivery, beforeCardShareDelivery }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
   beforeCopyPreviewDelivery?: () => Promise<void>;
+  beforeCardShareDelivery?: () => Promise<void>;
 }) {
   const db = archive.db;
   const limiter = createSharedRequestLimiter(db, "discovery-card-share", { windowMs: 60_000, limit: 20 });
@@ -129,6 +130,20 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
     res.end(JSON.stringify(value));
     return true;
   };
+  const deliverLocked = async (res: ServerResponse, value: unknown) => {
+    const delivered = finished(res, { cleanup: true });
+    const timeout = setTimeout(() => res.destroy(), 5_000);
+    timeout.unref();
+    try {
+      json(res, 200, value);
+      await delivered;
+    } catch (error) {
+      const disconnected = res.destroyed;
+      res.destroy();
+      await delivered.catch(() => {});
+      if (!disconnected) throw error;
+    } finally { clearTimeout(timeout); }
+  };
   const linkedPair = (id: string, archiveId: string, lock = false) => db.prepare("", `
     SELECT m.left_archive_id,m.left_person_id,m.right_archive_id,m.right_person_id
       FROM discovery_match_requests m
@@ -138,12 +153,12 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
      WHERE m.id=? AND m.status='linked'
        AND (m.left_archive_id=? OR m.right_archive_id=?)
      ${lock ? "FOR UPDATE OF m FOR SHARE OF p" : ""}`).get(id,archiveId,archiveId);
-  const grantsFor = (pair: Row) => db.prepare("", `SELECT grantor_archive_id,fields,
+  const grantFor = (pair: Row, grantorArchiveId: string) => db.prepare("", `SELECT grantor_archive_id,fields,
     granted_by,granted_at::text AS granted_at,expires_at::text AS expires_at
     FROM discovery_linked_card_grants
     WHERE left_archive_id=? AND left_person_id=? AND right_archive_id=? AND right_person_id=?
-      AND (expires_at IS NULL OR expires_at>now())`)
-    .all(...pairArgs(pair));
+      AND grantor_archive_id=? AND (expires_at IS NULL OR expires_at>now()) FOR SHARE`)
+    .get(...pairArgs(pair), grantorArchiveId);
   const copyState = async (matchId: string, archiveId: string, userId: string,
     lock = false) => {
     const owner = await db.prepare("", `SELECT 1 FROM archive_owners
@@ -329,34 +344,52 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
     if (req.method === "GET") {
       const result = await db.transaction(async () => {
         if (!await db.prepare("", `SELECT 1 FROM archive_owners
-          WHERE archive_id=? AND user_id=?`).get(archiveId,user.id))
+          WHERE archive_id=? AND user_id=? FOR SHARE`).get(archiveId,user.id))
           return { forbidden: true };
-        const pair = await linkedPair(detail[1],archiveId);
-        if (!pair) return null;
-        const addressee = recipient(pair, archiveId);
-        const publishedRecipient = await db.prepare("", `SELECT name FROM discovery_people
-          WHERE archive_id=? AND person_id=?`).get(addressee.archiveId,addressee.personId);
-        if (!publishedRecipient) return null;
-        const ownPersonId = String(pair.left_archive_id === archiveId
-          ? pair.left_person_id : pair.right_person_id);
-        const own = await db.prepare("", "SELECT data FROM people WHERE archive_id=? AND id=?")
+        const preliminary = await linkedPair(detail[1],archiveId);
+        if (!preliminary) return null;
+        const addressee = recipient(preliminary, archiveId);
+        const ownPersonId = String(preliminary.left_archive_id === archiveId
+          ? preliminary.left_person_id : preliminary.right_person_id);
+        // Family edits lock people before refreshing the public projection,
+        // and unpublication locks discovery_people before revoking the pair.
+        const own = await db.prepare("", "SELECT data FROM people WHERE archive_id=? AND id=? FOR SHARE")
           .get(archiveId,ownPersonId);
         if (!own) return null;
+        const publishedRecipient = await db.prepare("", `SELECT name FROM discovery_people
+          WHERE archive_id=? AND person_id=? FOR SHARE`)
+          .get(addressee.archiveId,addressee.personId);
+        if (!publishedRecipient) return null;
+        const pair = await linkedPair(detail[1],archiveId,true);
+        if (!pair || pairArgs(pair).some((value,index) =>
+          value !== pairArgs(preliminary)[index])) return null;
         const available = scalarFields(own.data);
-        const grants = await grantsFor(pair);
+        const outgoing = await grantFor(pair, archiveId);
+        // SELECT FOR SHARE applies the grant's UPDATE RLS policy. Lock only
+        // the other owner's addressed grant in its grantor scope.
+        await db.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+          .get(addressee.archiveId);
+        let incoming: Row | undefined;
+        try { incoming = await grantFor(pair, addressee.archiveId); }
+        finally {
+          await db.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+            .get(archiveId);
+        }
         const grant = (row: Row | undefined) => row ? {
           fields: scalarFields(row.fields), grantedAt: String(row.granted_at),
           expiresAt: row.expires_at ? String(row.expires_at) : null,
         } : null;
-        return { available, previewToken: previewToken(available),
+        const payload = { available, previewToken: previewToken(available),
           recipientArchiveId: addressee.archiveId,
           recipientPersonName: String(publishedRecipient.name),
-          outgoing: grant(grants.find((row) => row.grantor_archive_id === archiveId)),
-          incoming: grant(grants.find((row) => row.grantor_archive_id !== archiveId)) };
-      }, true);
+          outgoing: grant(outgoing), incoming: grant(incoming) };
+        await beforeCardShareDelivery?.();
+        await deliverLocked(res, payload);
+        return { delivered: true };
+      });
       if (result && "forbidden" in result)
         return json(res, 403, { error: "Доступно владельцу дерева" });
-      return result ? json(res, 200, result) : json(res, 404, { error: "Связь не найдена" });
+      return result ? true : json(res, 404, { error: "Связь не найдена" });
     }
     if (req.method === "PUT") {
       const body = await readBody(req);

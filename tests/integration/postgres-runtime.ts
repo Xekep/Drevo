@@ -6556,6 +6556,71 @@ try {
   });
   assert.equal(incomingShare.recipientArchiveId, "runtime-test");
   assert.ok(incomingShare.incoming.expiresAt);
+  let shareReached!: () => void, releaseShare!: () => void;
+  const shareReady = new Promise<void>((resolve) => { shareReached = resolve; });
+  const shareGate = new Promise<void>((resolve) => { releaseShare = resolve; });
+  const shareAuth = await createAuth(await userStore(otherApp.archive.db),
+    otherApp.archive.db, process.env.PUBLIC_ORIGIN);
+  const shareEndpoint = discoveryCardShareHttp({ archive: otherApp.archive,
+    auth: shareAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeCardShareDelivery: async () => { shareReached(); await shareGate; },
+  });
+  const shareServer = createServer((req, res) => {
+    void shareEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => shareServer.listen(0, "127.0.0.1", resolve));
+  const sharePort = (shareServer.address() as { port: number }).port;
+  const pausedShare = fetch(`http://127.0.0.1:${sharePort}${cardSharePath}`,
+    { headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.8" } });
+  let revokeSharedCard: Promise<Response> | undefined;
+  try {
+    await Promise.race([shareReady,
+      pausedShare.then(() => { throw new Error("Scalar card share sent before delivery barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Scalar card share did not reach delivery barrier")), 30_000)),
+    ]);
+    revokeSharedCard = fetch(securedBase + cardSharePath, { method: "DELETE",
+      headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.9" },
+    });
+    let revokeWaiting = false;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
+        WHERE datname=current_database() AND pid<>pg_backend_pid()
+          AND wait_event_type='Lock' AND query LIKE '%discovery_match_requests m%'
+          AND query LIKE '%FOR UPDATE OF m%'`);
+      if (waiting.rowCount) { revokeWaiting = true; break; }
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+    assert.equal(revokeWaiting, true,
+      "scalar revocation reaches the pair lock while recipient fields are held for delivery");
+    const earlyRevoke = await Promise.race([
+      revokeSharedCard.then((response) => `completed ${response.status}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+    ]);
+    assert.equal(earlyRevoke, "pending",
+      "revoking scalar consent waits until the incoming fields finish delivery");
+    releaseShare();
+    const delivered = await pausedShare;
+    assert.equal(delivered.status, 200);
+    assert.deepEqual((await delivered.json()).incoming.fields,
+      { occupation: "Архивный исследователь", birthPlace: "Архивный город" });
+    assert.equal((await revokeSharedCard).status, 200);
+  } finally {
+    releaseShare();
+    await pausedShare.catch(() => {});
+    await revokeSharedCard?.catch(() => {});
+    await new Promise<void>((resolve) => shareServer.close(() => resolve()));
+  }
+  assert.equal((await fetch(otherBase + cardSharePath, { headers: archiveAdminHeaders })
+    .then((response) => response.json())).incoming, null);
+  assert.equal((await fetch(securedBase + cardSharePath, { method: "PUT",
+    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.10" },
+    body: JSON.stringify({ fields: ["occupation", "birthPlace"],
+      previewToken: sharePreview.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 7 }),
+  })).status, 200);
+  console.log("runtime_discovery_scalar_card_revocation_ok");
   const initialScalarLife = await matchDb.prepare("", `SELECT
     extract(epoch FROM expires_at-now())/86400 AS days_left
     FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
