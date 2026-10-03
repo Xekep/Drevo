@@ -69,6 +69,12 @@ export function FamilyUnionsPanel({
   const saveAssessmentFirst = !!original && !!draft && original.type !== draft.type &&
     [original.formation, original.ending, original.divorce, original.ongoing]
       .some((stage) => stage?.confidence);
+  const saveStageFirst = (key: "formation" | "ending" | "divorce" | "ongoing") => {
+    const before = original?.[key], after = draft?.[key];
+    return !!before?.confidence &&
+      (before.date !== after?.date || before.dateText !== after?.dateText ||
+        before.place !== after?.place);
+  };
   const stageLocked = (key: "formation" | "ending" | "divorce" | "ongoing") =>
     !canAssess && (!!draft?.[key]?.confidence ||
       (key === "ending" && !!draft?.divorce?.confidence) ||
@@ -297,8 +303,8 @@ export function FamilyUnionsPanel({
                 {(key === "ending" && draft.divorce) ||
                   (key === "divorce" && draft.ending)
                   ? <small>Оценку можно добавить после выбора этого этапа вместо другого завершения союза.</small>
-                  : saveIdentityFirst || saveAssessmentFirst
-                  ? <p>Сначала сохраните новый тип союза, затем оцените этап.</p>
+                  : saveIdentityFirst || saveAssessmentFirst || saveStageFirst(key)
+                  ? <p>Сначала сохраните изменённый союз, затем оцените этап заново.</p>
                   : <label>
                       Статус достоверности этапа
                       <select value={draft[key]?.confidence || ""} disabled={!canAssess}

@@ -102,12 +102,18 @@ test("уточнение даты этапа снимает его оценку 
   const formation = panel.getByRole("group", { name: "Заключение" });
   await expect(formation.getByLabel("Статус достоверности этапа")).toHaveValue("confirmed");
   await formation.getByLabel("Дата (год, месяц или день)").fill("1921");
-  await expect(formation.getByLabel("Статус достоверности этапа")).toHaveValue("");
+  await expect(formation.getByLabel("Статус достоверности этапа")).toHaveCount(0);
+  await expect(formation).toContainText("Сначала сохраните изменённый союз, затем оцените этап заново");
   await expect(panel.getByRole("status")).toContainText("Оценка достоверности прежнего этапа снята");
   await panel.getByRole("button", { name: "Сохранить союз" }).click();
   const saved = readFamily().unions!.find((union) => union.id === id)!.formation!;
   expect(saved.date).toBe("1921");
   expect(saved.confidence).toBeUndefined();
+  await panel.locator(".event-card").filter({ hasText: "1921" })
+    .getByRole("button", { name: "Изменить союз" }).click();
+  await formation.getByLabel("Статус достоверности этапа").selectOption("probable");
+  await panel.getByRole("button", { name: "Сохранить союз" }).click();
+  expect(readFamily().unions!.find((union) => union.id === id)!.formation!.confidence).toBe("probable");
 });
 
 test("мобильный picker скрывает каталог после потери прав", async ({ page }, info) => {
