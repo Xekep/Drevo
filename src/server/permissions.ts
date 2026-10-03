@@ -85,6 +85,25 @@ export function authorizeArchive(
   const previousUnions = new Map((current.unions || []).map((union) => [union.id, union]));
   for (const union of next.unions || []) {
     const old = previousUnions.get(union.id);
+    if (old) {
+      const identityChanged = old.type !== union.type ||
+        !old.participants.every((id) => union.participants.includes(id));
+      if (identityChanged &&
+        [old.formation, old.ending, old.divorce, old.ongoing].some((stage) => stage?.confidence) &&
+        [union.formation, union.ending, union.divorce, union.ongoing]
+          .some((stage) => stage?.confidence))
+        throw new ForbiddenError("При изменении союза снимите прежние оценки достоверности");
+      for (const stage of ["formation", "ending", "divorce", "ongoing"] as const) {
+        const before = old[stage], after = union[stage];
+        if (before?.confidence && after?.confidence &&
+          (identityChanged || before.date !== after.date ||
+            before.dateText !== after.dateText || before.place !== after.place))
+          throw new ForbiddenError("При изменении этапа союза снимите прежнюю оценку достоверности");
+      }
+      if ((old.divorce?.confidence && union.ending?.confidence) ||
+        (old.ending?.confidence && union.divorce?.confidence))
+        throw new ForbiddenError("При смене способа завершения союза снимите прежнюю оценку достоверности");
+    }
     if (!old || (old.type === union.type &&
       old.participants.every((id) => union.participants.includes(id)))) continue;
     const oldSources = [old.sources, old.formation?.sources, old.ending?.sources,
@@ -96,6 +115,18 @@ export function authorizeArchive(
       throw new ForbiddenError("При смене участников или типа союза снимите прежние источники союза и его этапов");
   }
   if (user.role !== "admin" && user.role !== "researcher") {
+    for (const old of current.unions || []) {
+      const union = next.unions?.find((item) => item.id === old.id);
+      if (!union && [old.formation, old.ending, old.divorce, old.ongoing]
+        .some((stage) => stage?.confidence))
+        throw new ForbiddenError("Оценённый союз может удалить только исследователь или администратор");
+    }
+    for (const union of next.unions || []) {
+      const old = previousUnions.get(union.id);
+      for (const stage of ["formation", "ending", "divorce", "ongoing"] as const)
+        if (union[stage]?.confidence !== old?.[stage]?.confidence)
+          throw new ForbiddenError("Статус достоверности может менять только исследователь или администратор");
+    }
     const previous = new Map(current.people.map((person) => [person.id, person]));
     const retained = new Set(next.people.map((person) => person.id));
     for (const person of current.people) {

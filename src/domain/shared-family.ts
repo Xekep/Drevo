@@ -19,7 +19,8 @@ const publicClaim = (claim?: PersonValueClaim): PersonValueClaim | undefined =>
     ...(claim.confidence !== undefined ? { confidence: claim.confidence } : {}) };
 const publicMilestone = (milestone?: UnionMilestone): UnionMilestone | undefined =>
   milestone && { date: milestone.date, dateText: milestone.dateText,
-    place: milestone.place, sources: milestone.sources?.map(publicSource) };
+    place: milestone.place, sources: milestone.sources?.map(publicSource),
+    ...(milestone.confidence !== undefined ? { confidence: milestone.confidence } : {}) };
 export type ShareLink = {
   id: string;
   title: string;

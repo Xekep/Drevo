@@ -238,9 +238,13 @@ export function generationReport(
           reference(partner),
         );
         write("Заключение союза", milestone(union.formation));
+        write("Оценка заключения союза", union.formation?.confidence && CLAIM_CONFIDENCE_LABELS[union.formation.confidence]);
         write("Развод", milestone(union.divorce));
+        write("Оценка развода", union.divorce?.confidence && CLAIM_CONFIDENCE_LABELS[union.divorce.confidence]);
         write("Завершение союза", milestone(union.ending));
+        write("Оценка завершения союза", union.ending?.confidence && CLAIM_CONFIDENCE_LABELS[union.ending.confidence]);
         write("Союз продолжался", milestone(union.ongoing));
+        write("Оценка продолжения союза", union.ongoing?.confidence && CLAIM_CONFIDENCE_LABELS[union.ongoing.confidence]);
         write("Примечание к союзу", union.note);
         sources("Источник союза", [
           ...(union.sources || []),
