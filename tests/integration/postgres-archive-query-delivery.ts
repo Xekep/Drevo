@@ -35,9 +35,9 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
         all: async (...values: unknown[]) => (await first.query(sql, values)).rows,
       };
     },
-    transaction: async <T>(work: () => Promise<T>) => {
+    transaction: async <T>(work: () => Promise<T>, readOnly = false) => {
       if (inTransaction) return await work();
-      await first.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      await first.query(`BEGIN ISOLATION LEVEL REPEATABLE READ ${readOnly ? "READ ONLY" : "READ WRITE"}`);
       inTransaction = true;
       try {
         const result = await work();
@@ -83,6 +83,14 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
   const auth = {
     local: false,
     currentUser,
+    accountSession: async (req: IncomingMessage) => {
+      const token = req.headers.cookie?.split("drevo_session=")[1]?.split(";")[0];
+      if (!token) return null;
+      const tokenHash = sessionTokenHash(token);
+      const row = (await first.query(`SELECT user_id FROM account_sessions
+        WHERE token_hash=$1 AND expires_at>$2`, [tokenHash, Date.now()])).rows[0];
+      return row ? { accountId: String(row.user_id), tokenHash } : null;
+    },
     canRead: async (req: IncomingMessage) => (await currentUser(req))?.approved === true,
     canEdit: async (req: IncomingMessage) => (await currentUser(req))?.approved === true,
     isPlatformAdmin: async () => false,

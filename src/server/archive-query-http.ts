@@ -150,9 +150,12 @@ export function archiveQueryHttp({
     const changed = () => json(res, 409, {
       error: "Архив или доступ к нему изменились. Повторите запрос.",
     });
-    const deliverArchiveJson = async (value: unknown) => {
-      if (archive.db.kind !== "postgres")
-        return await canDeliver() ? json(res, 200, value) : changed();
+    const deliverArchiveJson = async (value: unknown, contentDisposition?: string) => {
+      if (archive.db.kind !== "postgres") {
+        if (!await canDeliver()) return changed();
+        if (contentDisposition) res.setHeader("Content-Disposition", contentDisposition);
+        return json(res, 200, value);
+      }
       // A large projection is serialized before taking the archive lock.
       const body = JSON.stringify(value);
       await beforeDelivery?.();
@@ -179,6 +182,7 @@ export function archiveQueryHttp({
           res.writeHead(200, {
             "Content-Type": "application/json; charset=utf-8",
             "Cache-Control": "no-store",
+            ...(contentDisposition ? { "Content-Disposition": contentDisposition } : {}),
           });
           res.end(body);
           await delivered;
@@ -362,12 +366,8 @@ export function archiveQueryHttp({
       )
         return json(res, 401, { error: "Sign in to view this archive" });
       const prepared = await snapshot(req, visitor, access);
-      if (!(await canDeliver())) return changed();
-      res.setHeader(
-        "Content-Disposition",
-        'attachment; filename="drevo-archive.json"',
-      );
-      return json(res, 200, prepared.family);
+      return deliverArchiveJson(prepared.family,
+        'attachment; filename="drevo-archive.json"');
     }
 
     if (path === "/api/people/search") {
@@ -409,16 +409,8 @@ export function archiveQueryHttp({
     const { family, revision } = isScopedUser(visitor)
       ? await scopedSnapshot(visitor)
       : await archive.read();
-    if (!(await canDeliver())) return changed();
-    if (url.searchParams.get("download") === "1")
-      res.setHeader(
-        "Content-Disposition",
-        'attachment; filename="drevo-family.json"',
-      );
-    return json(
-      res,
-      200,
-      analysisExport(family, revision, new Date().toISOString()),
-    );
+    return deliverArchiveJson(analysisExport(family, revision, new Date().toISOString()),
+      url.searchParams.get("download") === "1"
+        ? 'attachment; filename="drevo-family.json"' : undefined);
   };
 }
