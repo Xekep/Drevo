@@ -6,7 +6,7 @@ import type { createAuth } from "./auth.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
-import { candidateEvidence, candidateFuzzyTerms, candidateNameQuery,
+import { candidateEvidence, candidateFuzzyTerms, candidateNameRoleQuery,
   candidatePlaceQueries } from "./discovery-candidate-ranking.ts";
 import { publicPersonId } from "./public-person-id.ts";
 
@@ -353,17 +353,25 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         WHERE archive_id=? AND person_id=?`).get(archiveId,sourceId);
       if (!sourceRow) return json(res, 404, { error: "Карточка больше не опубликована" });
       const source = published(sourceRow);
-      const terms = candidateNameQuery(source);
+      const exactName = candidateNameRoleQuery(source);
       const fuzzy = candidateFuzzyTerms(source);
       const places = candidatePlaceQueries(source);
-      if (!terms && !fuzzy && !places.length)
+      if (!exactName && !fuzzy && !places.length)
         return json(res, 200, { candidates: [], truncated: false, nextCursor: null });
       const showIgnored = url.searchParams.get("ignored") === "1";
       const branches: string[] = [], lookupArgs: string[] = [];
-      if (terms) {
+      if (exactName) {
+        // The GIN vector ignores name roles. Verify them after its indexed
+        // shortlist so swapped names cannot fill an empty page.
         branches.push(`SELECT archive_id,person_id FROM discovery_people
-          WHERE archive_id<>? AND name_vector @@ to_tsquery('simple',?)`);
-        lookupArgs.push(archiveId,terms);
+          WHERE archive_id<>? AND name_vector @@ to_tsquery('simple',?)
+            AND to_tsvector('simple', replace(lower(coalesce(
+              nullif(given_part,''),split_part(name,' ',2))), 'ё','е'))
+              @@ to_tsquery('simple',?)
+            AND to_tsvector('simple', replace(lower(
+              coalesce(nullif(surname_part,''),split_part(name,' ',1)) || ' ' ||
+              coalesce(birth_surname,'')), 'ё','е')) @@ to_tsquery('simple',?)`);
+        lookupArgs.push(archiveId,exactName.name,exactName.given,exactName.surname);
       }
       if (fuzzy) {
         const surnames = fuzzy.surnames.map(() =>

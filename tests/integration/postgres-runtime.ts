@@ -5509,6 +5509,27 @@ try {
   assert.ok((await candidateBeforeRevoke.json()).candidates.some(
     (item: { id: string }) => item.id === candidateTargetId),
   "the synthetic published candidate must be present before revocation");
+  const beforeSwappedNames = await otherApp.archive.read();
+  const withSwappedNames = structuredClone(beforeSwappedNames.family);
+  const swappedIds = Array.from({ length: 24 }, (_, index) =>
+    `swapped-candidate-${String(index).padStart(2, "0")}`);
+  withSwappedNames.people.push(...swappedIds.map((id, index) => ({
+    ...structuredClone(withSwappedNames.people.find((person) => person.id === candidateTargetId)!),
+    id, surname: index < 12 ? "Anna" : "Other",
+    name: index < 12 ? "Stone" : "Anna Stone",
+  })));
+  const swappedWrite = await otherApp.archive.write(withSwappedNames, beforeSwappedNames.revision);
+  for (const id of swappedIds) await publishedPeopleStore(otherApp.archive.db).publish(id, "owner");
+  const swappedResponse = await fetch(securedBase + revokeCandidatePath,
+    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.61" } });
+  assert.equal(swappedResponse.status, 200);
+  const swappedPage = await swappedResponse.json();
+  assert.ok(swappedPage.candidates.some((item: { id: string }) => item.id === candidateTargetId),
+    "name-role false positives must not hide a genuine candidate behind an empty first page");
+  assert.ok(swappedPage.candidates.every((item: { id: string }) => !swappedIds.includes(item.id)),
+    "name tokens in the wrong published roles are not candidate evidence");
+  await otherApp.archive.write(beforeSwappedNames.family, swappedWrite.revision);
+  console.log("runtime_discovery_candidate_name_roles_ok");
   let candidateReached!: () => void, releaseCandidate!: () => void;
   const candidateReady = new Promise<void>((resolve) => { candidateReached = resolve; });
   const candidateGate = new Promise<void>((resolve) => { releaseCandidate = resolve; });
