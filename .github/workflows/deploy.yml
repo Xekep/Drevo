@@ -109,23 +109,12 @@ jobs:
       name: production
       url: https://mydrevo.org
     steps:
-      - name: Skip a release superseded during verification
-        id: current
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EXPECTED_SHA: ${{ github.sha }}
-        run: |
-          current=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
-          if test "$current" = "$EXPECTED_SHA"; then echo 'deploy=true' >> "$GITHUB_OUTPUT"; fi
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        if: steps.current.outputs.deploy == 'true'
         with:
           name: verified-release
       - name: Extract verified release
-        if: steps.current.outputs.deploy == 'true'
         run: tar -xzf release.tar.gz
       - name: Configure SSH
-        if: steps.current.outputs.deploy == 'true'
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
@@ -134,7 +123,6 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' '[94.232.248.210]:4321 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG2C3d6j+K8FTcK6aoKhH7lTTfBWX2lp1hBFZp+I8nhV' > ~/.ssh/known_hosts
       - name: Upload isolated release
-        if: steps.current.outputs.deploy == 'true'
         env:
           RELEASE_ID: ${{ github.sha }}-${{ github.run_attempt }}
         run: |
@@ -143,7 +131,6 @@ jobs:
             -e 'ssh -p 4321 -o BatchMode=yes -o StrictHostKeyChecking=yes' \
             release/ "deploy@94.232.248.210:/var/www/drevo.kiiko.ru/releases/$RELEASE_ID/"
       - name: Activate and check release
-        if: steps.current.outputs.deploy == 'true'
         env:
           RELEASE_ID: ${{ github.sha }}-${{ github.run_attempt }}
         run: |
