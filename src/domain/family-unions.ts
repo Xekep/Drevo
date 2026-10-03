@@ -1,6 +1,7 @@
 import { dateBound, validDate } from "./dates.ts";
 import type { FamilyUnion, Source, UnionMilestone } from "./types.ts";
 import { validSourceRepository } from "./source-repository.ts";
+import { isClaimConfidence } from "./claim-confidence.ts";
 
 export type UnionStatus = "current" | "former" | "unknown";
 
@@ -67,6 +68,7 @@ function validMilestone(value: UnionMilestone | undefined) {
         (typeof value.dateText === "string" && value.dateText.length <= 500)) &&
       (value.place === undefined ||
         (typeof value.place === "string" && value.place.length <= 1000)) &&
+      (value.confidence === undefined || isClaimConfidence(value.confidence)) &&
       validSources(value.sources))
   );
 }
