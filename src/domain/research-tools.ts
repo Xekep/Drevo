@@ -11,6 +11,8 @@ import { findPossibleDuplicates } from "./duplicate-analysis.ts";
 import { archiveConnections } from "./connections.ts";
 import { repositorySummary } from "./person-sources.ts";
 import type { Family, Person } from "./types.ts";
+import { normalizeResearchText, surnameKeys } from "./research-names.ts";
+import { PEOPLE_FILTER_SCHEMA, queryResearchPeople } from "./research-people-filter.ts";
 
 const graphRelationLabels: Record<string, string> = {
   adoptive_parent: "усыновитель",
@@ -62,24 +64,6 @@ function graphMermaid(
       return [`  ${from} -.->|${label}| ${to}`];
     }),
   ].join("\n");
-}
-
-/** Match grammatical variants against forms actually present in this archive. */
-function surnameKeys(value: string) {
-  const word = normalized(value);
-  const keys = new Set([word]);
-  if (word.length < 5) return keys;
-  if (/(?:овых|евых|иных|ыных|овым|евым|иным|ыным)$/.test(word))
-    keys.add(word.slice(0, -2));
-  if (/(?:ова|ева|ина|ына)$/.test(word)) keys.add(word.slice(0, -1));
-  if (/(?:ская|цкая)$/.test(word)) keys.add(`${word.slice(0, -2)}ий`);
-  if (/(?:ая|яя)$/.test(word))
-    for (const suffix of ["ый", "ий", "ой"])
-      keys.add(`${word.slice(0, -2)}${suffix}`);
-  if (/(?:ов|ев|ин|ын)$/.test(word)) keys.add(`${word}а`);
-  if (/(?:ский|цкий)$/.test(word)) keys.add(`${word.slice(0, -2)}ая`);
-  if (/(?:ый|ий|ой)$/.test(word)) keys.add(`${word.slice(0, -2)}ая`);
-  return keys;
 }
 
 export function surnameGroup(family: Family, surname: string) {
@@ -183,6 +167,18 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
       offset: { type: "integer", minimum: 0, default: 0 },
       limit: { type: "integer", minimum: 1, maximum: 100, default: 100 },
     }),
+  },
+  {
+    name: "query_people",
+    description:
+      "Отобрать и точно посчитать людей по формальным условиям во всём доступном архиве: фамилия (также при рождении), имя, пол, годы рождения/смерти, возраст смерти, места, занятие, наличие дат/источников/фото, события и записанные родственные связи. Все поля действуют как И; allOf — И, anyOf — ИЛИ, noneOf — исключить совпадения. Группы содержат простые условия без вложенных групп. mode=exclude оставляет остальных, включая неизвестные даты. total — точный размер выборки, people — только страница; limit=0 нужен для одного подсчёта. Не перебирай list_people и не считай по странице. Для показа всей выборки вызови control_archive_view/filter_by_criteria с теми же criteria и mode, не собирай ID.",
+    scope: "tree:read",
+    inputSchema: objectSchema({
+      criteria: PEOPLE_FILTER_SCHEMA,
+      mode: { type: "string", enum: ["include", "exclude"], default: "include" },
+      offset: { type: "integer", minimum: 0, maximum: 1_000_000, default: 0 },
+      limit: { type: "integer", minimum: 0, maximum: 100, default: 50 },
+    }, ["criteria"]),
   },
   {
     name: "search_people",
@@ -495,12 +491,7 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
 ];
 
 function normalized(value: string) {
-  return value
-    .normalize("NFKC")
-    .trim()
-    .toLocaleLowerCase("ru")
-    .replaceAll("ё", "е")
-    .replace(/\s+/g, " ");
+  return normalizeResearchText(value);
 }
 
 function searchTokens(value: string) {
@@ -1099,6 +1090,8 @@ export function executeResearchTool(
     rawArgs && typeof rawArgs === "object"
       ? (rawArgs as Record<string, unknown>)
       : {};
+
+  if (name === "query_people") return queryResearchPeople(family, rawArgs);
 
   if (name === "get_distribution_statistics")
     return distributionStatistics(

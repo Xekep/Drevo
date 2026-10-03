@@ -6,6 +6,52 @@ import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
 import type { Person } from "../src/domain/types.ts";
 
+test("a read-only criteria count works in the source-gap tool subset without changing the tree or archive", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "drevo-ai-criteria-count-"));
+  const env = { YANDEX_AI_API_KEY: "test-key", YANDEX_AI_FOLDER_ID: "folder", YANDEX_AI_MODEL: "yandexgpt/rc" };
+  const previous = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, env);
+  let calls = 0;
+  const fake: typeof fetch = async (url, init) => {
+    if (String(url).endsWith("/conversations")) return Response.json({ id: "conv" });
+    const body = JSON.parse(String(init?.body));
+    if (++calls === 1) {
+      assert.ok(body.tools.some((tool: { name: string }) => tool.name === "query_people"));
+      assert.equal(body.tools.some((tool: { name: string }) => tool.name === "control_archive_view"), false);
+      return Response.json({ id: "query", status: "completed", output: [{ type: "function_call", call_id: "count", name: "query_people", arguments: JSON.stringify({ criteria: { sex: "f", hasSources: false, birthYearTo: 1900 }, limit: 0 }) }] });
+    }
+    assert.equal(calls, 2);
+    const count = JSON.parse(body.input[0].output);
+    assert.equal(count.total, 500);
+    assert.equal(count.totalPeople, 501);
+    assert.deepEqual(count.people, []);
+    return Response.json({ id: "answer", status: "completed", output_text: "Найдено 500 женщин без прикреплённых источников." });
+  };
+  const app = await startServer(0, join(directory, "drevo.sqlite"), true, undefined, fake);
+  try {
+    const current = await app.archive.read();
+    await app.archive.write({ ...current.family, people: Array.from({ length: 501 }, (_, index): Person => ({
+      id: `p-${index}`, surname: "Иванова", name: "Анна", patronymic: "", sex: "f", birth: "1900", birthPlace: "", parents: [], spouses: [], generation: 1, column: 0,
+      sources: index === 500 ? [{ title: "Запись", type: "archive", reference: "1" }] : [],
+    })) }, current.revision);
+    const before = await app.archive.read();
+    const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+    const response = await fetch(base + "/api/ai/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "Сколько женщин родилось до 1901 года с отсутствующими источниками?" }) });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.match(result.answer, /500 женщин/);
+    assert.deepEqual(result.uiActions, []);
+    assert.deepEqual(await app.archive.read(), before);
+  } finally {
+    await app.close();
+    for (const key of Object.keys(env)) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("a tree exclusion uses one compact tool call after token recovery, preserves all other people and continues the chat", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-ai-tree-filter-"));
   const env = {
@@ -170,6 +216,7 @@ test("a tree exclusion uses one compact tool call after token recovery, preserve
 });
 
 test("a filter in a batch retains other analysis and sends only counts back to the model", async () => {
+  const criteria = { anyOf: [{ deathAgeBefore: 18 }, { needsReview: true }] };
   const directory = mkdtempSync(join(tmpdir(), "drevo-ai-filter-analysis-"));
   const env = {
     YANDEX_AI_API_KEY: "test-key",
@@ -197,7 +244,7 @@ test("a filter in a batch retains other analysis and sends only counts back to t
             arguments: JSON.stringify({
               action: "filter_by_criteria",
               mode: "exclude",
-              criteria: { deathAgeBefore: 18 },
+              criteria,
             }),
           },
           {
@@ -206,12 +253,18 @@ test("a filter in a batch retains other analysis and sends only counts back to t
             name: "get_archive_insights",
             arguments: "{}",
           },
+          {
+            type: "function_call",
+            call_id: "query",
+            name: "query_people",
+            arguments: JSON.stringify({ criteria, mode: "exclude", limit: 0 }),
+          },
         ],
       });
     assert.equal(calls, 2);
     assert.deepEqual(
       body.input.map((item: { call_id: string }) => item.call_id),
-      ["filter", "analysis"],
+      ["filter", "analysis", "query"],
     );
     const filtered = JSON.parse(body.input[0].output);
     assert.equal(filtered.scheduled, true);
@@ -219,6 +272,12 @@ test("a filter in a batch retains other analysis and sends only counts back to t
     assert.equal(filtered.personIds, undefined);
     assert.equal(filtered.action, undefined);
     assert.ok(JSON.parse(body.input[1].output).completeness);
+    const query = JSON.parse(body.input[2].output);
+    assert.equal(query.countOnly, true);
+    assert.equal(query.totalPeople, JSON.parse(body.input[1].output).totals.people);
+    assert.equal(query.total, filtered.visibleCount);
+    assert.equal(typeof query.total, "number");
+    assert.deepEqual(query.people, []);
     return Response.json({
       id: "done",
       status: "completed",

@@ -186,7 +186,7 @@ export function resourceMarkdown(resource: {
 export const CONTROL_VIEW_TOOL = {
   name: "control_archive_view",
   description:
-    "Управлять интерфейсом только по явной просьбе пользователя. filter_by_criteria применяет условия ко всему доступному древу на сервере, включая выбор или исключение по возрасту смерти; не перечисляй ID и не запрашивай страницы list_people. mode=exclude сохраняет всех, кроме совпавших: живых и людей с неизвестным возрастом смерти тоже. Команда фильтра завершается готовым подтверждением приложения; выполняй её после нужного анализа. focus_people перемещает камеру; filter_surname показывает фамильную группу после get_surname_group; filter_people строит временное древо из отдельных проверенных personIds; hide_review_people скрывает карточки needsReview. open_person и open_photo открывают карточки; zoom_in и zoom_out меняют масштаб.",
+    "Управлять интерфейсом только по явной просьбе пользователя. filter_by_criteria применяет те же criteria и mode, что query_people, ко всему доступному древу на сервере; не перечисляй ID и не запрашивай страницы list_people. Поддерживает поля и группы allOf/anyOf/noneOf. mode=exclude сохраняет всех, кроме совпавших: живых и людей с неизвестным возрастом смерти тоже. Команда фильтра завершается готовым подтверждением приложения; выполняй её после нужного анализа. focus_people перемещает камеру; filter_surname показывает фамильную группу после get_surname_group; filter_people строит временное древо из отдельных проверенных personIds; hide_review_people скрывает карточки needsReview. open_person и open_photo открывают карточки; zoom_in и zoom_out меняют масштаб.",
   inputSchema: {
     type: "object",
     properties: {
@@ -401,6 +401,7 @@ export function researchToolStatus(name: string) {
     get_evidence_coverage: "Сверяю записи с прикреплёнными источниками…",
     find_evidence_gaps: "Ищу записи без прикреплённых источников…",
     search_people: "Ищу людей в архиве…",
+    query_people: "Отбираю и считаю людей по условиям…",
     list_people: "Составляю список людей…",
     get_sources: "Изучаю указанные источники…",
     web_search: "Поиск в интернете…",
