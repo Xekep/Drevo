@@ -459,9 +459,15 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           : "Цитата SOUR @VOID@ без PAGE: создан источник с названием «Источник не указан». При экспорте он станет обычной записью SOUR; исходный @VOID@ не восстанавливается.");
       if (repositoryNames.length || callNumbers.length || repositoryDetails.length)
         warnings.add("Часть сведений о хранилище GEDCOM сохранена текстом; структура REPO не восстанавливается.");
+      const recordTitle = record ? value(record, "TITL") : "";
+      const recordAbbr = record ? value(record, "ABBR") : "";
+      const distinctAbbr = recordTitle && recordAbbr && recordAbbr !== recordTitle
+        ? `Сокращённое название источника (SOURCE_RECORD.ABBR): ${recordAbbr}` : "";
+      if (distinctAbbr)
+        warnings.add("SOURCE_RECORD.ABBR сохранено текстом в цитате; отдельный тег ABBR при экспорте не восстанавливается.");
       const source: Source = {
         title: voidPointer ? page || "Источник не указан" : record
-          ? value(record, "TITL") || value(record, "ABBR") || "Источник"
+          ? recordTitle || recordAbbr || "Источник"
           : s.value,
         type: value(s, "_TYPE") || (record ? value(record, "_TYPE") : ""),
         // PAGE locates this citation; CALN locates the source at its repository.
@@ -473,6 +479,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             record && value(record, "TEXT"),
             record && value(record, "AUTH"),
             record && value(record, "PUBL"),
+            distinctAbbr,
             notes(s),
             ...citationDetails,
             ...recordDataDetails,
