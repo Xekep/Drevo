@@ -72,6 +72,7 @@ import { publicSharingHttp } from "../../src/server/public-sharing-http.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { publishedPeopleStore } from "../../src/server/published-people.ts";
 import { discoveryPeopleHttp } from "../../src/server/discovery-people-http.ts";
+import { discoveryCardShareHttp } from "../../src/server/discovery-card-share-http.ts";
 import { discoveryMatchesHttp } from "../../src/server/discovery-matches-http.ts";
 import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgres-yandex-login.ts";
@@ -6343,6 +6344,122 @@ try {
     FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
       AND left_person_id='person-a' AND right_person_id='person-a'`).get();
   assert.ok(Number(initialScalarLife?.days_left) > 6.99 && Number(initialScalarLife?.days_left) <= 7);
+  let copyPreviewReached!: () => void, releaseCopyPreview!: () => void;
+  const copyPreviewReady = new Promise<void>((resolve) => { copyPreviewReached = resolve; });
+  const copyPreviewGate = new Promise<void>((resolve) => { releaseCopyPreview = resolve; });
+  const copyPreviewAuth = await createAuth(await userStore(otherApp.archive.db),
+    otherApp.archive.db, process.env.PUBLIC_ORIGIN);
+  const copyPreviewEndpoint = discoveryCardShareHttp({ archive: otherApp.archive,
+    auth: copyPreviewAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeCopyPreviewDelivery: async () => { copyPreviewReached(); await copyPreviewGate; },
+  });
+  const copyPreviewServer = createServer((req, res) => {
+    void copyPreviewEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => copyPreviewServer.listen(0, "127.0.0.1", resolve));
+  const copyPreviewPort = (copyPreviewServer.address() as { port: number }).port;
+  const pausedCopyPreview = fetch(`http://127.0.0.1:${copyPreviewPort}${copyPreviewPath}`,
+    { headers: archiveAdminHeaders });
+  let revokeScalarGrant: Promise<Response> | undefined;
+  try {
+    await Promise.race([copyPreviewReady,
+      pausedCopyPreview.then(() => { throw new Error("Copy preview sent before delivery barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Copy preview did not reach delivery barrier")), 30_000)),
+    ]);
+    revokeScalarGrant = fetch(securedBase + cardSharePath, {
+      method: "DELETE", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.244" },
+    });
+    let revokeWaiting = false;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
+        WHERE datname=current_database() AND pid<>pg_backend_pid()
+          AND wait_event_type='Lock' AND query LIKE '%discovery_match_requests m%'
+          AND query LIKE '%FOR UPDATE OF m%'`);
+      if (waiting.rowCount) { revokeWaiting = true; break; }
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+    assert.equal(revokeWaiting, true,
+      "scalar grant revocation reaches the pair lock before delivery completes");
+    const earlyRevoke = await Promise.race([
+      revokeScalarGrant.then((response) => `completed ${response.status}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+    ]);
+    assert.equal(earlyRevoke, "pending",
+      "scalar grant revocation must wait for an in-flight copy preview to finish delivery");
+    releaseCopyPreview();
+    const delivered = await pausedCopyPreview;
+    assert.equal(delivered.status, 200);
+    assert.ok((await delivered.json()).fields.length > 0);
+    assert.equal((await revokeScalarGrant).status, 200);
+  } finally {
+    releaseCopyPreview();
+    await pausedCopyPreview.catch(() => {});
+    await revokeScalarGrant?.catch(() => {});
+    await new Promise<void>((resolve) => copyPreviewServer.close(() => resolve()));
+  }
+  assert.equal((await fetch(otherBase + copyPreviewPath, {
+    headers: archiveAdminHeaders,
+  })).status, 404, "a fresh copy preview closes after scalar grant revocation");
+  assert.equal((await fetch(securedBase + cardSharePath, {
+    method: "PUT", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.245",
+      "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: ["occupation", "birthPlace"],
+      previewToken: sharePreview.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 7 }),
+  })).status, 200);
+  let abortPreviewReached!: () => void, releaseAbortedPreview!: () => void;
+  const abortPreviewReady = new Promise<void>((resolve) => { abortPreviewReached = resolve; });
+  const abortPreviewGate = new Promise<void>((resolve) => { releaseAbortedPreview = resolve; });
+  const abortPreviewEndpoint = discoveryCardShareHttp({ archive: otherApp.archive,
+    auth: copyPreviewAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeCopyPreviewDelivery: async () => { abortPreviewReached(); await abortPreviewGate; },
+  });
+  const abortPreviewServer = createServer((req, res) => {
+    void abortPreviewEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => abortPreviewServer.listen(0, "127.0.0.1", resolve));
+  const abortController = new AbortController();
+  const abortPreviewPort = (abortPreviewServer.address() as { port: number }).port;
+  const abandonedPreview = fetch(`http://127.0.0.1:${abortPreviewPort}${copyPreviewPath}`,
+    { headers: archiveAdminHeaders, signal: abortController.signal });
+  const abandonedOutcome = abandonedPreview.then(() => "sent", () => "aborted");
+  try {
+    await Promise.race([abortPreviewReady,
+      abandonedPreview.then(() => { throw new Error("Copy preview sent before abort barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Copy preview did not reach abort barrier")), 30_000)),
+    ]);
+    abortController.abort();
+    releaseAbortedPreview();
+    assert.equal(await abandonedOutcome, "aborted",
+      "disconnect before delivery cannot receive the scalar snapshot");
+    const revokedAfterAbort = await Promise.race([
+      fetch(securedBase + cardSharePath, { method: "DELETE",
+        headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.246" } }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Disconnect did not release the grant row lock")), 3_000)),
+    ]);
+    assert.equal(revokedAfterAbort.status, 200);
+  } finally {
+    abortController.abort();
+    releaseAbortedPreview();
+    await abandonedOutcome;
+    await new Promise<void>((resolve) => abortPreviewServer.close(() => resolve()));
+  }
+  assert.equal((await fetch(otherBase + copyPreviewPath, {
+    headers: archiveAdminHeaders,
+  })).status, 404, "revocation committed after disconnect closes the next preview");
+  assert.equal((await fetch(securedBase + cardSharePath, {
+    method: "PUT", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.247",
+      "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: ["occupation", "birthPlace"],
+      previewToken: sharePreview.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 7 }),
+  })).status, 200);
+  console.log("runtime_discovery_copy_preview_revocation_ok");
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("unrelated-archive");
     assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count

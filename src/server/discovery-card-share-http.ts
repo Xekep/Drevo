@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { finished } from "node:stream/promises";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
@@ -109,10 +110,12 @@ function recipient(pair: Row, archiveId: string) {
 }
 
 /** Extra details require a separate, revocable grant for exactly one confirmed pair. */
-export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
+export function discoveryCardShareHttp({ archive, auth, publicOrigin,
+  beforeCopyPreviewDelivery }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
+  beforeCopyPreviewDelivery?: () => Promise<void>;
 }) {
   const db = archive.db;
   const limiter = createSharedRequestLimiter(db, "discovery-card-share", { windowMs: 60_000, limit: 20 });
@@ -202,7 +205,9 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
       const archiveId = db.archiveId;
       if (req.method === "GET") {
         const result = await db.transaction(async () => {
-          const state = await copyState(detail[1], archiveId, user.id);
+          // Hold the pair and grant row through response completion so a
+          // concurrent revoke cannot commit before these fields are sent.
+          const state = await copyState(detail[1], archiveId, user.id, true);
           if (state.code !== 200) return state;
           const origins = await db.prepare("", `SELECT field,value,source_archive_id,
             source_person_id,copied_revision,copied_at::text AS copied_at
@@ -211,7 +216,7 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
           const originByField = new Map(origins.map((row) => [String(row.field), row]));
           // Only the current grant's scalar keys are returned. Provenance is
           // local metadata, not a documentary source or a new access grant.
-          return { code: 200 as const,
+          const payload = {
             source: { archiveId: state.sourceArchiveId, personId: state.sourcePersonId },
             target: { archiveId, personId: state.ownPersonId },
             revision: state.revision, reviewToken: state.reviewToken,
@@ -230,12 +235,26 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
                 } } : {}),
               };
             }), quotaImpact: { additionalPeople: 0, additionalMediaBytes: 0 } };
-        }, true);
-        if (result.code === 200) return json(res, 200, {
-          source: result.source, target: result.target, revision: result.revision,
-          reviewToken: result.reviewToken, fields: result.fields,
-          quotaImpact: result.quotaImpact,
+          await beforeCopyPreviewDelivery?.();
+          const delivered = finished(res, { cleanup: true });
+          // A stalled client must not hold the grant and pair locks indefinitely.
+          const timeout = setTimeout(() => res.destroy(), 5_000);
+          timeout.unref();
+          try {
+            json(res, 200, payload);
+            await delivered;
+          } catch (error) {
+            const disconnected = res.destroyed;
+            res.destroy();
+            await delivered.catch(() => {});
+            // The socket is already gone; do not ask the outer HTTP error
+            // handler to attempt another response after a client abort.
+            if (disconnected) return { code: 200 as const };
+            throw error;
+          } finally { clearTimeout(timeout); }
+          return { code: 200 as const };
         });
+        if (result.code === 200) return true;
         return json(res, result.code, { error: result.code === 403
           ? "Доступно владельцу дерева" : "Связь не найдена" });
       }
