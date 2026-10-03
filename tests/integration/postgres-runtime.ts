@@ -8375,6 +8375,124 @@ try {
     ["branch-grandparent-a", "branch-parent-a"]);
   assert.equal(secondGeneration.incoming[0].relation, "grandparent");
   assert.equal(secondGeneration.incoming[0].viaId, "branch-parent-a");
+  const branchLogoutToken = newSessionToken();
+  const branchLogoutHash = sessionTokenHash(branchLogoutToken);
+  await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2)",
+    [branchLogoutHash, Date.now() + 60_000]);
+  let branchLogoutReached!: () => void, releaseBranchLogout!: () => void;
+  const branchLogoutReady = new Promise<void>((resolve) => { branchLogoutReached = resolve; });
+  const branchLogoutGate = new Promise<void>((resolve) => { releaseBranchLogout = resolve; });
+  const branchLogoutEndpoint = discoveryBranchShareHttp({ archive: app.archive,
+    auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeReadAccessLock: async () => { branchLogoutReached(); await branchLogoutGate; },
+  });
+  const branchLogoutServer = createServer((req, res) => {
+    void branchLogoutEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => branchLogoutServer.listen(0, "127.0.0.1", resolve));
+  const branchLogoutPort = (branchLogoutServer.address() as { port: number }).port;
+  const branchAfterLogout = fetch(`http://127.0.0.1:${branchLogoutPort}${branchPath}`,
+    { headers: { ...ownerHeaders, Cookie: `drevo_session=${branchLogoutToken}`,
+      "X-Real-IP": "198.51.100.163" } });
+  try {
+    await Promise.race([branchLogoutReady,
+      branchAfterLogout.then(() => { throw new Error("Branch list sent before logout barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Branch list did not reach logout barrier")), 30_000)),
+    ]);
+    await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [branchLogoutHash]);
+    releaseBranchLogout();
+    const response = await branchAfterLogout;
+    const body = await response.text();
+    assert.equal(response.status, 404, "completed logout closes the linked branch list");
+    assert.equal(/branch-parent-b|branch-grandparent-a/.test(body), false);
+  } finally {
+    releaseBranchLogout();
+    await branchAfterLogout.catch(() => {});
+    await new Promise<void>((resolve) => branchLogoutServer.close(() => resolve()));
+  }
+  let branchApprovalReached!: () => void, releaseBranchApproval!: () => void;
+  const branchApprovalReady = new Promise<void>((resolve) => { branchApprovalReached = resolve; });
+  const branchApprovalGate = new Promise<void>((resolve) => { releaseBranchApproval = resolve; });
+  const branchApprovalEndpoint = discoveryBranchShareHttp({ archive: app.archive,
+    auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeReadAccessLock: async () => { branchApprovalReached(); await branchApprovalGate; },
+  });
+  const branchApprovalServer = createServer((req, res) => {
+    void branchApprovalEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => branchApprovalServer.listen(0, "127.0.0.1", resolve));
+  const branchApprovalPort = (branchApprovalServer.address() as { port: number }).port;
+  const branchAfterDowngrade = fetch(`http://127.0.0.1:${branchApprovalPort}${branchPath}`,
+    { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.165" } });
+  try {
+    await Promise.race([branchApprovalReady,
+      branchAfterDowngrade.then(() => { throw new Error("Branch list sent before approval barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Branch list did not reach approval barrier")), 30_000)),
+    ]);
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    assert.equal((await client.query(`UPDATE archive_memberships SET approved=false
+      WHERE archive_id='runtime-test' AND user_id='owner'`)).rowCount, 1);
+    releaseBranchApproval();
+    const response = await branchAfterDowngrade;
+    const body = await response.text();
+    assert.equal(response.status, 404, "completed approval revoke closes the linked branch list");
+    assert.equal(/branch-parent-b|branch-grandparent-a/.test(body), false);
+  } finally {
+    releaseBranchApproval();
+    await branchAfterDowngrade.catch(() => {});
+    await client.query(`UPDATE archive_memberships SET approved=true
+      WHERE archive_id='runtime-test' AND user_id='owner'`);
+    await new Promise<void>((resolve) => branchApprovalServer.close(() => resolve()));
+  }
+  let branchDeliveryReached!: () => void, releaseBranchDelivery!: () => void;
+  const branchDeliveryReady = new Promise<void>((resolve) => { branchDeliveryReached = resolve; });
+  const branchDeliveryGate = new Promise<void>((resolve) => { releaseBranchDelivery = resolve; });
+  const branchDeliveryEndpoint = discoveryBranchShareHttp({ archive: app.archive,
+    auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeListDelivery: async () => { branchDeliveryReached(); await branchDeliveryGate; },
+  });
+  const branchDeliveryServer = createServer((req, res) => {
+    void branchDeliveryEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => branchDeliveryServer.listen(0, "127.0.0.1", resolve));
+  const branchDeliveryPort = (branchDeliveryServer.address() as { port: number }).port;
+  const branchBeforeDowngrade = fetch(`http://127.0.0.1:${branchDeliveryPort}${branchPath}`,
+    { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.166" } });
+  let revokeBranchApproval: Promise<pg.QueryResult> | undefined;
+  try {
+    await Promise.race([branchDeliveryReady,
+      branchBeforeDowngrade.then(() => { throw new Error("Branch list sent before delivery barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Branch list did not reach delivery barrier")), 30_000)),
+    ]);
+    revokeBranchApproval = client.query(`UPDATE archive_memberships SET approved=false
+      WHERE archive_id='runtime-test' AND user_id='owner'`);
+    assert.equal(await Promise.race([
+      revokeBranchApproval.then(() => "completed"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+    ]), "pending", "approval revocation waits for linked fields to finish delivery");
+    releaseBranchDelivery();
+    const response = await branchBeforeDowngrade;
+    assert.equal(response.status, 200);
+    assert.ok((await response.json()).incoming.length > 0);
+    assert.equal((await revokeBranchApproval).rowCount, 1);
+    const denied = await fetch(securedBase + branchPath,
+      { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.167" } });
+    assert.equal(denied.status, 403, "the next GET sees completed approval revocation");
+  } finally {
+    releaseBranchDelivery();
+    await branchBeforeDowngrade.catch(() => {});
+    await revokeBranchApproval?.catch(() => {});
+    await client.query(`UPDATE archive_memberships SET approved=true
+      WHERE archive_id='runtime-test' AND user_id='owner'`);
+    await new Promise<void>((resolve) => branchDeliveryServer.close(() => resolve()));
+  }
+  console.log("runtime_discovery_branch_owner_read_revocation_ok");
   const ancestorCard = await fetch(otherBase + branchPath + "/people/branch-grandparent-a", {
     headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.233" },
   });
@@ -9112,6 +9230,52 @@ try {
   });
   assert.equal(incomingShare.recipientArchiveId, "runtime-test");
   assert.ok(incomingShare.incoming.expiresAt);
+  const parallelCardReads = await Promise.all(Array.from({ length: 12 }, (_, index) =>
+    fetch(otherBase + cardSharePath, { headers: { ...archiveAdminHeaders,
+      "X-Real-IP": `198.51.100.${170 + index}` } })));
+  assert.ok(parallelCardReads.every((response) => response.status === 200),
+    "parallel linked-card reads do not exhaust the PostgreSQL pool");
+  await Promise.all(parallelCardReads.map((response) => response.arrayBuffer()));
+  const cardLogoutToken = newSessionToken();
+  const cardLogoutHash = sessionTokenHash(cardLogoutToken);
+  await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'vk:42',$2)",
+    [cardLogoutHash, Date.now() + 60_000]);
+  let cardLogoutReached!: () => void, releaseCardLogout!: () => void;
+  const cardLogoutReady = new Promise<void>((resolve) => { cardLogoutReached = resolve; });
+  const cardLogoutGate = new Promise<void>((resolve) => { releaseCardLogout = resolve; });
+  const cardLogoutAuth = await createAuth(await userStore(otherApp.archive.db),
+    otherApp.archive.db, process.env.PUBLIC_ORIGIN);
+  const cardLogoutEndpoint = discoveryCardShareHttp({ archive: otherApp.archive,
+    auth: cardLogoutAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeReadAccessLock: async () => { cardLogoutReached(); await cardLogoutGate; },
+  });
+  const cardLogoutServer = createServer((req, res) => {
+    void cardLogoutEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => cardLogoutServer.listen(0, "127.0.0.1", resolve));
+  const cardLogoutPort = (cardLogoutServer.address() as { port: number }).port;
+  const cardAfterLogout = fetch(`http://127.0.0.1:${cardLogoutPort}${cardSharePath}`,
+    { headers: { ...archiveAdminHeaders, Cookie: `drevo_session=${cardLogoutToken}`,
+      "X-Real-IP": "198.51.100.164" } });
+  try {
+    await Promise.race([cardLogoutReady,
+      cardAfterLogout.then(() => { throw new Error("Linked-card share sent before logout barrier"); }),
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Linked-card share did not reach logout barrier")), 30_000)),
+    ]);
+    await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [cardLogoutHash]);
+    releaseCardLogout();
+    const response = await cardAfterLogout;
+    const body = await response.text();
+    assert.equal(response.status, 403, "completed logout closes the linked-card share");
+    assert.equal(/Архивный исследователь|Архивный город/.test(body), false);
+  } finally {
+    releaseCardLogout();
+    await cardAfterLogout.catch(() => {});
+    await new Promise<void>((resolve) => cardLogoutServer.close(() => resolve()));
+  }
+  console.log("runtime_discovery_card_owner_read_revocation_ok");
   let shareReached!: () => void, releaseShare!: () => void;
   const shareReady = new Promise<void>((resolve) => { shareReached = resolve; });
   const shareGate = new Promise<void>((resolve) => { releaseShare = resolve; });
