@@ -27,7 +27,7 @@ export type BookReaderConstructor = {
     flipSpeed: number;
     imagesBaseURL: string;
     metadata: { label: string; value: string }[];
-    plugins?: { search: { enabled: boolean } };
+    plugins?: { search: { enabled: boolean }; resume: { enabled: boolean } };
     getPageNum(index: number): string;
     getPageURI(index: number): string;
     renderPageURI(image: HTMLImageElement, uri: string): void;

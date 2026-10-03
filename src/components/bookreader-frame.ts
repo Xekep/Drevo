@@ -320,7 +320,12 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
       ui: "full",
       showLogo: false,
       autoResize: true,
-      plugins: { search: { enabled: Boolean(textSearch) } },
+      // Drevo's /page link owns the opening page. IA's resume cookie would
+      // otherwise be shared by all documents at bookreader-frame.html.
+      plugins: {
+        search: { enabled: Boolean(textSearch) },
+        resume: { enabled: false },
+      },
       flipSpeed: matchMedia("(prefers-reduced-motion: reduce)").matches
         ? 1
         : 550,

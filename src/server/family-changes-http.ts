@@ -157,8 +157,9 @@ export function familyChangesHttp({
           );
         }
         const current = await auth.currentUser(req);
+        if (!current)
+          throw new AccountSessionExpired("Сессия завершена. Войдите снова");
         if (
-          !current ||
           !current.approved ||
           current.id !== actor.id ||
           current.role !== actor.role ||

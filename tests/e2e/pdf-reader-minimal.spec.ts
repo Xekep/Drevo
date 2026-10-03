@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { test } from "./fixtures/document-server";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import PDFDocument from "pdfkit";
