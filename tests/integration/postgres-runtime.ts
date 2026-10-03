@@ -8151,7 +8151,7 @@ try {
   await publishedPeopleStore(app.archive.db).unpublish("person-a");
   assert.equal((await fetch(securedBase + exactOwnPath, { headers: ownerHeaders })).status, 404);
   assert.equal((await fetch(securedBase + "/api/discovery/matches", {
-    method: "POST", headers: ownerHeaders, body: proposedPair,
+    method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.248" }, body: proposedPair,
   })).status, 409, "withdrawing the selected source before submission denies the request");
   await publishedPeopleStore(app.archive.db).publish("person-a", "owner");
   console.log("runtime_discovery_source_handoff_ok");
