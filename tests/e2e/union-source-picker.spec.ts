@@ -109,6 +109,10 @@ test("уточнение даты этапа снимает его оценку 
   const saved = readFamily().unions!.find((union) => union.id === id)!.formation!;
   expect(saved.date).toBe("1921");
   expect(saved.confidence).toBeUndefined();
+  await expect(panel).toHaveCount(0);
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/);
+  await edge.focus();
+  await edge.press("Enter");
   await panel.locator(".event-card").filter({ hasText: "1921" })
     .getByRole("button", { name: "Изменить союз" }).click();
   await formation.getByLabel("Статус достоверности этапа").selectOption("probable");
