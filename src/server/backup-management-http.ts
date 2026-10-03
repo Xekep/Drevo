@@ -24,6 +24,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
     if (size > 4096) throw new BackupInputError("Запрос слишком большой.");
     chunks.push(Buffer.from(chunk));
   }
+  if (!size) return {};
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
   } catch {
@@ -145,6 +146,9 @@ export function backupManagementHttp({
         /^\/api\/backups\/([a-f0-9-]{36})\/(preview|download)$/,
       );
       if (match?.[2] === "preview" && req.method === "POST") {
+        const body = await readJson(req) as { restoreComments?: unknown };
+        if (body?.restoreComments !== undefined && typeof body.restoreComments !== "boolean")
+          throw new BackupInputError("Некорректный режим восстановления комментариев.");
         return json(
           res,
           202,
@@ -161,6 +165,7 @@ export function backupManagementHttp({
                 createReadStream(file, { signal }),
                 (await auth.currentUser(req))!,
                 assertAccess,
+                { restoreComments: body?.restoreComments === true },
               );
             },
           ),

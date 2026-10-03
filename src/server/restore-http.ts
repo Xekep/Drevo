@@ -62,7 +62,7 @@ export function restoreHttp({
           const current = await auth.currentUser(req);
           if (!current || !(await auth.isPlatformAdmin(req)))
             throw new ForbiddenError("Доступ администратора отозван");
-        });
+        }, { restoreComments: req.headers["x-drevo-restore-comments"] === "1" });
         return json(res, 200, result);
       }
 
@@ -93,7 +93,10 @@ export function restoreHttp({
             throw new ForbiddenError("Доступ администратора платформы отозван");
         }
       };
-      return json(res, 200, await restores.apply(body.token, actor, assertAccess));
+      if (body.restoreComments !== undefined && typeof body.restoreComments !== "boolean")
+        return json(res, 400, { error: "Некорректный режим восстановления комментариев." });
+      return json(res, 200, await restores.apply(body.token, actor, assertAccess,
+        body.restoreComments === true));
     } catch (error) {
       if (isInfrastructureError(error)) throw error;
       return json(

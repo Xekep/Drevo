@@ -24,6 +24,7 @@ import {
   open as openFile,
   rename,
   rm,
+  rmdir,
   stat,
   statfs,
   unlink,
@@ -51,6 +52,9 @@ import type { ArchiveUser } from "../domain/access.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { parseCatalogSource, type CatalogSource } from "../shared/source-catalog.ts";
 import { allCitations, sourceCatalogStore } from "./source-catalog-store.ts";
+import { sourceComments } from "./restore-comments.ts";
+import { discussionAttachmentStore, prepareCommentFile } from "./discussion-attachments.ts";
+import { readFile } from "node:fs/promises";
 
 const RESTORE_LIMIT = 12 * 1024 * 1024 * 1024;
 const RESERVATION_STEP = 32 * 1024 * 1024;
@@ -133,6 +137,7 @@ async function unpack(
   source: Readable,
   directory: string,
   reserveBytes: (bytes: number) => Promise<void>,
+  selectedDiscussionFiles?: Set<string>,
 ) {
   const stream = source.pipe(createGunzip());
   let pending = Buffer.alloc(0),
@@ -145,7 +150,7 @@ async function unpack(
     entryFd: number | undefined;
   let pax = false,
     nextPath: string | undefined;
-  const seen = new Set<string>();
+  const seen = new Map<string, number>();
 
   function finish() {
     if (entryFd !== undefined) {
@@ -276,9 +281,12 @@ async function unpack(
               throw new Error("Один из файлов бэкапа слишком большой");
             if (seen.has(name))
               throw new Error("Повторяющееся имя файла в бэкапе");
-            seen.add(name);
-            if (!privateAttachment) {
+            seen.set(name, remaining);
+            if ((!selectedDiscussionFiles && !privateAttachment) ||
+              selectedDiscussionFiles?.has(name)) {
               if (remaining) await reserveBytes(remaining);
+              if (selectedDiscussionFiles?.has(name))
+                mkdirSync(join(directory, "uploads", "discussion-files"), { recursive: true });
               entryFd = openSync(join(directory, name), "wx", 0o600);
             }
           }
@@ -291,6 +299,7 @@ async function unpack(
   } finally {
     if (entryFd !== undefined) closeSync(entryFd);
   }
+  return seen;
 }
 
 type Stage = {
@@ -304,6 +313,8 @@ type Stage = {
   documents: StoredDocument[];
   documentFiles: Map<string, string>;
   catalogSources: Array<CatalogSource & { version: number }>;
+  commentsPrepared: boolean;
+  commentOriginals: [string, number][];
 };
 
 type StoredDocument = Partial<DocumentDetails> & {
@@ -340,6 +351,8 @@ export function restoreStore(
       documents?: StoredDocument[];
       documentFiles?: [string, string][];
       catalogSources?: Array<CatalogSource & { version: number }>;
+      commentsPrepared?: boolean;
+      commentOriginals?: [string, number][];
     };
     return {
       directory: String(row.directory),
@@ -352,6 +365,8 @@ export function restoreStore(
       documents: data.documents || [],
       documentFiles: new Map(data.documentFiles || []),
       catalogSources: data.catalogSources || [],
+      commentsPrepared: data.commentsPrepared === true,
+      commentOriginals: data.commentOriginals || [],
     };
   };
   const discard = async (token: string) => {
@@ -390,6 +405,7 @@ export function restoreStore(
     sourceStream: Readable,
     actor: ArchiveUser,
     assertAccess?: () => void | Promise<void>,
+    options: { restoreComments?: boolean } = {},
   ) {
     if (actor.role !== "admin")
       throw new Error("Восстановление доступно администратору");
@@ -433,12 +449,14 @@ export function restoreStore(
       const size = await streamUpload(sourceStream, upload, reserveBytes);
       await assertAccess?.();
       const header = await fileHeader(upload);
+      let tarEntries = new Map<string, number>();
+      let isTar = false;
       if (header.toString("binary") === "SQLite format 3\0") {
         if (size > SQLITE_LIMIT) throw new Error("База больше 512 МБ");
         await rename(upload, join(directory, "drevo.sqlite"));
       } else if (header[0] === 31 && header[1] === 139) {
-        await unpack(createReadStream(upload), directory, reserveBytes);
-        await unlink(upload);
+        tarEntries = await unpack(createReadStream(upload), directory, reserveBytes);
+        isTar = true;
       } else throw new Error("Выберите бэкап Drevo: .sqlite или .tar.gz");
 
       const source = new DatabaseSync(join(directory, "drevo.sqlite"), {
@@ -672,7 +690,7 @@ export function restoreStore(
           missing++;
       }
       const importedPeople = new Set(family.people.map((person) => person.id));
-      const { current, currentCommentsLost } = await archive.db.transaction(async () => {
+      const { current, currentCommentsLost, currentCommentsTotal } = await archive.db.transaction(async () => {
         const current = await readArchive(archive.db);
         const counts = await archive.db.prepare(
           "SELECT person_id,count(*) AS count FROM person_comments GROUP BY person_id",
@@ -682,8 +700,38 @@ export function restoreStore(
           current,
           currentCommentsLost: counts.reduce((sum, row) =>
             sum + (importedPeople.has(String(row.person_id)) ? 0 : Number(row.count)), 0),
+          currentCommentsTotal: counts.reduce((sum, row) => sum + Number(row.count), 0),
         };
       }, true);
+      let commentsRestoreReason = "Выберите восстановление комментариев до проверки копии.";
+      let commentOriginals = new Map<string, number>();
+      if (options.restoreComments) {
+        if (!backupCommentsSkipped)
+          commentsRestoreReason = "В копии нет комментариев для восстановления.";
+        else if (currentCommentsTotal)
+          commentsRestoreReason = "В текущем архиве уже есть комментарии; импорт из копии может создать дубликаты.";
+        else {
+          try {
+            const source = new DatabaseSync(join(directory, "drevo.sqlite"), {
+              readOnly: true, allowExtension: false,
+            });
+            try {
+              source.exec("PRAGMA trusted_schema=OFF; PRAGMA query_only=ON;");
+              commentOriginals = sourceComments(source, importedPeople).originals;
+            } finally { source.close(); }
+            for (const [id, size] of commentOriginals)
+              if (tarEntries.get(`uploads/discussion-files/${id}`) !== size)
+                throw new Error("В копии отсутствует оригинал вложения обсуждения или не совпадает размер.");
+            commentsRestoreReason = "";
+          } catch (error) {
+            commentOriginals.clear();
+            commentsRestoreReason = error instanceof Error ? error.message : "Комментарии копии недоступны для восстановления.";
+          }
+        }
+      }
+      const canRestoreComments = options.restoreComments === true && !commentsRestoreReason;
+      if (isTar && (!canRestoreComments || !commentOriginals.size))
+        await unlink(upload);
       const token = randomUUID();
       const stage: Stage = {
         directory,
@@ -696,6 +744,8 @@ export function restoreStore(
         documents,
         documentFiles,
         catalogSources,
+        commentsPrepared: canRestoreComments,
+        commentOriginals: [...commentOriginals],
       };
       await archive.db
         .prepare(
@@ -715,6 +765,8 @@ export function restoreStore(
             documents,
             documentFiles: [...documentFiles],
             catalogSources,
+            commentsPrepared: canRestoreComments,
+            commentOriginals: [...commentOriginals],
           }),
           directory,
         );
@@ -730,6 +782,8 @@ export function restoreStore(
         missing,
         currentCommentsLost,
         backupCommentsSkipped,
+        canRestoreComments,
+        commentsRestoreReason,
         currentPeople: current.family.people.length,
         currentPhotos: current.family.photos?.length || 0,
       };
@@ -742,10 +796,10 @@ export function restoreStore(
   }
 
   return {
-    async preview(bytes: Buffer, actor: ArchiveUser) {
+    async preview(bytes: Buffer, actor: ArchiveUser, options: { restoreComments?: boolean } = {}) {
       if (!bytes.length || bytes.length > RESTORE_LIMIT)
         throw new Error("Бэкап должен быть не больше 12 ГБ");
-      return await previewStream(Readable.from([bytes]), actor);
+      return await previewStream(Readable.from([bytes]), actor, undefined, options);
     },
     previewStream,
     discard,
@@ -753,6 +807,7 @@ export function restoreStore(
       token: string,
       actor: ArchiveUser,
       assertAccess: (transaction?: StoreDatabase) => Promise<void>,
+      restoreComments = false,
     ) {
       const stage = await readStage(token);
       if (
@@ -762,36 +817,92 @@ export function restoreStore(
         stage.expires < Date.now()
       )
         throw new Error("Проверка бэкапа истекла. Выберите файл повторно.");
-      if ((await archive.read()).revision !== stage.revision)
-        throw new ConflictError(
-          "После проверки бэкапа архив изменился. Проверьте файл повторно перед восстановлением.",
-        );
-      await assertAccess();
-      const backups = join(dirname(dbPath), "backups");
-      mkdirSync(backups, { recursive: true });
       const backupName = `before-import-${Date.now()}-${randomUUID()}.sqlite`;
-      await writeDatabaseBackup(archive.db, join(backups, backupName));
+      try {
+        if ((await archive.read()).revision !== stage.revision)
+          throw new ConflictError(
+            "После проверки бэкапа архив изменился. Проверьте файл повторно перед восстановлением.",
+          );
+        if (restoreComments && !stage.commentsPrepared)
+          throw new ConflictError("Комментарии из копии не были подготовлены к восстановлению; проверьте копию повторно.");
+        if (restoreComments && stage.commentOriginals.length &&
+          !existsSync(join(stage.directory, ".upload")))
+          throw new ConflictError("Подготовленная копия вложений больше недоступна; проверьте копию повторно.");
+        await assertAccess();
+        const backups = join(dirname(dbPath), "backups");
+        mkdirSync(backups, { recursive: true });
+        await writeDatabaseBackup(archive.db, join(backups, backupName));
+      } catch (error) {
+        if (stage.commentOriginals.length)
+          await rm(join(stage.directory, ".upload"), { force: true });
+        throw error;
+      }
       const created: string[] = [],
         urls = new Map<string, string>();
       const restoredOriginals: Array<{ url: string; size: number }> = [];
       const restoredDocuments: StoredDocument[] = [];
       const documentIdMap = new Map<string, string>();
+      const discussionFiles = discussionAttachmentStore(join(dirname(dbPath), "uploads"));
+      const savedDiscussionFiles: Awaited<ReturnType<typeof discussionFiles.save>> = [];
+      let restoredComments: ReturnType<typeof sourceComments>["comments"] = [];
+      const installedDiscussionFiles = new Map<string, (typeof savedDiscussionFiles)[number]>();
       let result: Awaited<ReturnType<typeof archive.write>>;
-      const copySources = [
-        ...stage.files.values(),
-        ...stage.documentFiles.values(),
-      ];
-      const copyBytes = (await Promise.all(copySources.map((path) => stat(path))))
-        .reduce((sum, file) => sum + file.size, 0);
-      if (!Number.isSafeInteger(copyBytes))
-        throw new Error("Некорректный размер файлов восстановления");
-      const copyReservation = copyBytes
-        ? await reservePlatformDisk(archive.db, copyBytes, async () => {
-            const disk = await statfs(dirname(dbPath));
-            return disk.bavail * disk.bsize;
-          })
-        : undefined;
+      let copyReservation: Awaited<ReturnType<typeof reservePlatformDisk>> | undefined;
       try {
+        const copySources = [
+          ...stage.files.values(),
+          ...stage.documentFiles.values(),
+        ];
+        const attachmentBytes = restoreComments
+          ? stage.commentOriginals.reduce((sum, [, size]) => sum + size, 0) : 0;
+        const copyBytes = (await Promise.all(copySources.map((path) => stat(path))))
+          .reduce((sum, file) => sum + file.size, 0) + attachmentBytes * 3;
+        if (!Number.isSafeInteger(copyBytes))
+          throw new Error("Некорректный размер файлов восстановления");
+        copyReservation = copyBytes
+          ? await reservePlatformDisk(archive.db, copyBytes, async () => {
+              const disk = await statfs(dirname(dbPath));
+              return disk.bavail * disk.bsize;
+            })
+          : undefined;
+        if (restoreComments) {
+          const source = new DatabaseSync(join(stage.directory, "drevo.sqlite"), {
+            readOnly: true, allowExtension: false,
+          });
+          try {
+            source.exec("PRAGMA trusted_schema=OFF; PRAGMA query_only=ON;");
+            const loaded = sourceComments(source,
+              new Set(stage.family.people.map((person) => person.id)));
+            if (!loaded.comments.length ||
+              JSON.stringify([...loaded.originals]) !== JSON.stringify(stage.commentOriginals))
+              throw new ConflictError("Комментарии копии изменились после предпросмотра.");
+            restoredComments = loaded.comments;
+          } finally { source.close(); }
+          if (stage.commentOriginals.length) {
+            const selected = new Set(stage.commentOriginals.map(([id]) =>
+              `uploads/discussion-files/${id}`));
+            const entries = await unpack(createReadStream(join(stage.directory, ".upload")),
+              stage.directory, async () => {}, selected);
+            for (const [id, size] of stage.commentOriginals)
+              if (entries.get(`uploads/discussion-files/${id}`) !== size)
+                throw new Error("Оригинал вложения обсуждения отсутствует в копии.");
+          }
+          const metadata = new Map(restoredComments.flatMap((comment) =>
+            comment.attachments.map((file) => [file.id, file] as const)));
+          for (const [id, size] of stage.commentOriginals) {
+            const original = join(stage.directory, "uploads", "discussion-files", id);
+            const info = await stat(original);
+            if (!info.isFile() || info.size !== size)
+              throw new Error("Оригинал вложения обсуждения изменился.");
+            const prepared = await prepareCommentFile(metadata.get(id)!.name,
+              await readFile(original));
+            if (prepared.preview)
+              await copyReservation?.grow(prepared.preview.length);
+            const installed = await discussionFiles.save([prepared]);
+            savedDiscussionFiles.push(...installed);
+            installedDiscussionFiles.set(id, installed[0]);
+          }
+        }
         for (const [url, path] of stage.files) {
           const name = `${randomUUID()}.${imageExtensionFile(path)}`,
             destination = join(dirname(dbPath), "uploads", name);
@@ -905,13 +1016,48 @@ export function restoreStore(
                 throw new Error("Версия источника превышает допустимый предел");
               await sourceCatalogStore(db).insert(source, nextVersion);
             }
+            if (restoreComments) {
+              const authors = new Map<string, string>();
+              const insertComment = db.prepare(
+                "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,updated_ms,attachments) VALUES(?,?,?,?,?,?,?)",
+                "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,updated_ms,attachments) VALUES(?,?,?,?,?,?,?)",
+              );
+              for (const comment of restoredComments) {
+                if (!authors.has(comment.authorId))
+                  authors.set(comment.authorId, `restored:${randomUUID()}`);
+                await insertComment.run(comment.personId, authors.get(comment.authorId)!,
+                  comment.authorName, comment.createdMs, comment.text,
+                  comment.updatedMs, JSON.stringify(comment.attachments.map((file) =>
+                    installedDiscussionFiles.get(file.id)!)));
+              }
+            }
             await enforcePostgresMediaQuota(db);
           },
+          restoreComments ? async (db) => {
+            const current = await db.prepare(
+              "SELECT count(*) AS count FROM person_comments",
+              "SELECT count(*) AS count FROM person_comments",
+            ).get();
+            if (Number(current?.count) !== 0)
+              throw new ConflictError("В архиве уже есть комментарии; импорт из копии может создать дубликаты.");
+          } : undefined,
         );
       } catch (error) {
         await Promise.allSettled(
           created.map((path) => rm(path, { force: true })),
         );
+        await discussionFiles.remove(savedDiscussionFiles);
+        if (savedDiscussionFiles.length)
+          await rmdir(join(dirname(dbPath), "uploads", "discussion-files"))
+            .catch((cleanupError: NodeJS.ErrnoException) => {
+              if (cleanupError.code !== "ENOTEMPTY" && cleanupError.code !== "ENOENT")
+                throw cleanupError;
+            });
+        if (restoreComments) {
+          await rm(join(stage.directory, ".upload"), { force: true });
+          await rm(join(stage.directory, "uploads", "discussion-files"),
+            { recursive: true, force: true });
+        }
         throw error;
       } finally {
         await copyReservation?.release();
