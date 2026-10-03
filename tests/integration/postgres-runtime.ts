@@ -10560,7 +10560,7 @@ try {
     deceased: true, parents: [parent.id], spouses: ["closed-relative"], column: 51 });
   otherWithRelative.people.push({ ...structuredClone(otherPerson),
     id: "name-typo", surname: "Тестав", name: "Иван", deceased: true,
-    parents: [], column: 52 });
+    parents: [parent.id], column: 52 });
   otherWithRelative.people.push({ ...structuredClone(otherPerson),
     id: "place-match", surname: "Петров", name: "Иван", birth: "1991",
     birthPlace: "Россия, Свердловская область, Нижний Тагил", deceased: true,
@@ -10578,6 +10578,12 @@ try {
     parents: [], spouses: ["relative-only"], column: 53 });
   const ownSignalWrite = await app.archive.write(ownWithRelative, ownBeforeSignals.revision);
   await otherApp.archive.write(otherWithRelative, otherBeforeSignals.revision);
+  const relativePath = "/api/discovery/matches/relative-consents";
+  const unpublishedRelative = await fetch(securedBase + relativePath + "?personId=person-a",
+    { headers: ownerHeaders });
+  assert.equal(unpublishedRelative.status, 200);
+  assert.deepEqual((await unpublishedRelative.json()).relatives, [],
+    "the opt-in control does not reveal an unpublished relative's name");
   await otherPublication.publish("relative-only", "owner");
   await otherPublication.publish("name-typo", "owner");
   await otherPublication.publish("place-match", "owner");
@@ -10658,6 +10664,81 @@ try {
     bothPlaceWrite.revision);
   await publishedPeopleStore(app.archive.db).publish(parent.id, "owner");
   await otherPublication.publish(parent.id, "owner");
+  const ownRelative = await fetch(securedBase + relativePath + "?personId=person-a",
+    { headers: ownerHeaders }).then((response) => response.json());
+  const otherRelative = await fetch(otherBase + relativePath + "?personId=name-typo",
+    { headers: recipientHeaders }).then((response) => response.json());
+  const ownRelationId = ownRelative.relatives.find((item: { personId: string }) =>
+    item.personId === parent.id)?.relationId;
+  const otherRelationId = otherRelative.relatives.find((item: { personId: string }) =>
+    item.personId === parent.id)?.relationId;
+  assert.ok(ownRelationId && otherRelationId, "only already published relatives are selectable");
+  const setRelativeConsent = async (base: string, headers: Record<string,string>,
+    personId: string, relationId: string, enabled: boolean) => fetch(base + relativePath, {
+      method: "POST", headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ personId, relationId, enabled }),
+    });
+  assert.equal((await setRelativeConsent(securedBase,ownerHeaders,
+    "person-a",ownRelationId,true)).status, 200);
+  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+    .some((reason) => reason.includes("родителя")), false,
+  "one-sided relation consent does not reveal a shared relative");
+  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+    "name-typo",otherRelationId,true)).status, 200);
+  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+    .some((reason) => reason.includes("родителя")), true,
+  "bilateral explicit relation consent adds explainable evidence");
+  const changedSurnameRelation = await fetch(otherBase + relativePath +
+    "?personId=relative-only", { headers: recipientHeaders }).then((response) => response.json());
+  const changedSurnameRelationId = changedSurnameRelation.relatives.find(
+    (item: { personId: string }) => item.personId === parent.id)?.relationId;
+  assert.ok(changedSurnameRelationId);
+  assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
+    "one-sided consent cannot retrieve a changed-surname candidate");
+  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+    "relative-only",changedSurnameRelationId,true)).status, 200);
+  const changedSurnameHint = (await signalIds()).find((item) => item.id === "relative-only");
+  assert.ok(changedSurnameHint?.reasons.some((reason) => reason.includes("родителя")),
+    "an indexed bilateral relative plus published given name and close year finds a changed surname");
+  assert.ok(changedSurnameHint?.conflicts.includes("Указанные фамилии различаются"));
+  await client.query("BEGIN");
+  try {
+    await client.query("SET LOCAL enable_seqscan=off");
+    const relativePlan = await client.query(`EXPLAIN (FORMAT JSON)
+      SELECT target.person_id FROM discovery_relative_consents own
+      JOIN discovery_relative_consents target ON target.kind=own.kind
+        AND target.relative_name_key=own.relative_name_key
+      WHERE own.archive_id='runtime-test' AND own.person_id='person-a'
+        AND target.archive_id='other-archive'`);
+    assert.match(JSON.stringify(relativePlan.rows), /discovery_relative_consents_lookup/,
+      "the consented-relative shortlist has an executable B-tree lookup");
+  } finally { await client.query("ROLLBACK"); }
+  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+    "relative-only",changedSurnameRelationId,false)).status, 200);
+  assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
+    "revoking that relation removes its sole shortlist path");
+  const originalRelativeName = String((await otherApp.archive.db.prepare("",
+    `SELECT name FROM discovery_people WHERE archive_id=? AND person_id=?`)
+    .get("other-archive",parent.id))?.name);
+  await otherApp.archive.db.prepare("", `UPDATE discovery_people SET name=?
+    WHERE archive_id=? AND person_id=?`).run("Иное имя", "other-archive", parent.id);
+  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+    .some((reason) => reason.includes("родителя")), false,
+  "a published relative's name change incrementally refreshes only its consented clue");
+  await otherApp.archive.db.prepare("", `UPDATE discovery_people SET name=?
+    WHERE archive_id=? AND person_id=?`).run(originalRelativeName, "other-archive", parent.id);
+  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+    .some((reason) => reason.includes("родителя")), true);
+  await runDiscoveryBackfill();
+  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+    .some((reason) => reason.includes("родителя")), true,
+  "the administrative index rebuild preserves only pre-existing relation consent");
+  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+    "name-typo",otherRelationId,false)).status, 200);
+  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+    .some((reason) => reason.includes("родителя")), false,
+  "completed relation revocation removes the evidence immediately");
+  console.log("runtime_discovery_relative_consent_ok");
   const revocableRequest = await fetch(securedBase + "/api/discovery/matches", {
     method: "POST", headers: manualHeaders,
     body: JSON.stringify({ sourcePersonId: parent.id, targetArchiveId: "other-archive",
@@ -10825,6 +10906,15 @@ try {
   assert.equal(unchangedPage.nextCursor, null);
   assert.ok(unchangedPage.candidates.some((item: { id: string }) =>
     item.id === "name-typo"), "unchanged published candidates remain available");
+  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+    "name-typo",otherRelationId,true)).status, 200);
+  const revokedRelativeDelivery = await candidateDelivery(async () => {
+    assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+      "name-typo",otherRelationId,false)).status, 200);
+  });
+  assert.equal(revokedRelativeDelivery.status, 409,
+    "a completed relation-consent withdrawal before delivery cannot leak its evidence");
+  assert.equal((await revokedRelativeDelivery.json()).candidates, undefined);
   const revokedCandidateDelivery = await candidateDelivery(async () => {
     await otherPublication.unpublish("name-typo");
   });
@@ -10842,7 +10932,13 @@ try {
   };
   assert.equal((await publicParentResults()).some((item) =>
     item.archiveId === "other-archive" && item.id === parent.id), true);
+  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+    "name-typo",otherRelationId,true)).status, 200);
   await otherPublication.unpublish(parent.id);
+  assert.equal((await otherApp.archive.db.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_relative_consents WHERE archive_id=? AND person_id=?`)
+    .get("other-archive","name-typo"))?.count, 0,
+  "unpublishing the named relative cascades its separately consented clue");
   assert.equal((await publicParentResults()).some((item) =>
     item.archiveId === "other-archive" && item.id === parent.id), false,
   "a fresh indexed search cannot return a withdrawn publication");
