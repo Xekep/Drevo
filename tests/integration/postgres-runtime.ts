@@ -51,6 +51,7 @@ import { verifyAccountArchiveCreateSessionRevocation } from "./postgres-account-
 import { verifyAccountArchivesReadSessionRevocation } from "./postgres-account-archives-read-session.ts";
 import { verifySessionDelivery } from "./postgres-session-delivery.ts";
 import { verifyAccountExportDelivery } from "./postgres-account-export-delivery.ts";
+import { verifyOfflineExportDelivery } from "./postgres-offline-export-delivery.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
@@ -1010,6 +1011,7 @@ try {
   await verifyInvitationPreviewDelivery(app.archive.db, client);
   await verifyAccountArchiveCreateSessionRevocation(app.archive.db, client);
   await verifyAccountArchivesReadSessionRevocation(app.archive.db, client);
+  await verifyOfflineExportDelivery(app.archive, client, uploads);
   {
     // A revoked session must not receive the deletion plan after its initial
     // HTTP authentication has completed.
