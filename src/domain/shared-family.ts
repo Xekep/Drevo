@@ -127,6 +127,7 @@ export function sharedFamily(
         id: union.id,
         participants: [union.participants[0], union.participants[1]],
         type: union.type,
+        ...(union.confidence !== undefined ? { confidence: union.confidence } : {}),
         note: union.note,
         sources: union.sources?.map(publicSource),
         formation: publicMilestone(union.formation),

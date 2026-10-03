@@ -49,6 +49,7 @@ test("источник каталога подтверждает союз и е�
   const panel = page.getByRole("region", { name: "Семейные союзы" });
   await expect(panel).toBeVisible();
   await panel.getByRole("button", { name: "Добавить союз" }).click();
+  await panel.getByLabel("Статус достоверности союза").selectOption("confirmed");
 
   async function choose(scope: typeof panel) {
     await scope.getByRole("button", { name: "Выбрать из каталога" }).click();
@@ -76,6 +77,7 @@ test("источник каталога подтверждает союз и е�
     item.participants.includes("e2e-child") && item.participants.includes("e2e-spouse") &&
     item.sources?.some((source: { catalogId?: string }) => source.catalogId === sourceId))!;
   expect(union.sources![0].catalogId).toBe(sourceId);
+  expect(union.confidence).toBe("confirmed");
   expect(union.sources![1].title).toBe("Семейное предание");
   expect(union.formation!.sources![0].catalogId).toBe(sourceId);
   expect(union.formation!.confidence).toBe("probable");
@@ -182,7 +184,7 @@ test("смена типа союза явно снимает старые ист
   const oldSource = { title: "Акт брака", type: "архив", reference: "л. 2" };
   const readFamily = await isolatedFamily(page, [{
     id, participants: ["e2e-child", "e2e-spouse"], type: "marriage",
-    note: "Семейная история", sources: [oldSource],
+    note: "Семейная история", sources: [oldSource], confidence: "confirmed",
     formation: { date: "1900", place: "Тула", sources: [oldSource] },
   }]);
   await page.goto("/tree");
@@ -197,13 +199,18 @@ test("смена типа союза явно снимает старые ист
   await panel.locator(".event-card").filter({ hasText: "1900" })
     .getByRole("button", { name: "Изменить союз" }).click();
   await panel.getByLabel("Тип союза").selectOption("partnership");
-  await expect(panel.getByRole("status")).toContainText("Прежние источники союза и его этапов сняты");
+  await expect(panel.getByRole("status").filter({ hasText: "Прежние источники" }))
+    .toContainText("Прежние источники союза и его этапов сняты");
+  await expect(panel.getByRole("status").filter({ hasText: "Оценка прежнего типа союза" }))
+    .toContainText("Оценка прежнего типа союза снята");
+  await expect(panel.getByLabel("Статус достоверности союза")).toHaveCount(0);
   await expect(panel.getByRole("group", { name: "Источники союза" })).toContainText(
     "Сначала сохраните новый тип союза");
   await panel.getByRole("button", { name: "Сохранить союз" }).click();
   const changed = readFamily().unions!.find((union) => union.id === id)!;
   expect(changed.type).toBe("partnership");
   expect(changed.sources).toBeUndefined();
+  expect(changed.confidence).toBeUndefined();
   expect(changed.formation?.sources).toBeUndefined();
   expect(changed.formation?.date).toBe("1900");
   expect(changed.formation?.place).toBe("Тула");
@@ -212,6 +219,7 @@ test("смена типа союза явно снимает старые ист
   panel = await openPanel();
   await panel.locator(".event-card").filter({ hasText: "1900" })
     .getByRole("button", { name: "Изменить союз" }).click();
+  await panel.getByLabel("Статус достоверности союза").selectOption("probable");
   const sources = panel.getByRole("group", { name: "Источники союза" });
   await sources.getByRole("button", { name: "Добавить источник вручную" }).click();
   const inline = sources.locator(".union-inline-citation");
@@ -221,5 +229,7 @@ test("смена типа союза явно снимает старые ист
   await panel.getByRole("button", { name: "Сохранить союз" }).click();
   expect(readFamily().unions!.find((union) => union.id === id)!.sources?.[0].title)
     .toBe("Запись о партнёрстве");
+  expect(readFamily().unions!.find((union) => union.id === id)!.confidence)
+    .toBe("probable");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 });

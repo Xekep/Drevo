@@ -48,6 +48,7 @@ export function FamilyUnionsPanel({
   const [error, setError] = useState("");
   const [sourcesReset, setSourcesReset] = useState(false);
   const [assessmentReset, setAssessmentReset] = useState(false);
+  const [unionAssessmentReset, setUnionAssessmentReset] = useState(false);
   const canAssess = user?.role === "admin" || user?.role === "researcher";
   const unions = (family.unions || []).filter((union) =>
     participants.every((id) => union.participants.includes(id)),
@@ -69,6 +70,8 @@ export function FamilyUnionsPanel({
   const saveAssessmentFirst = !!original && !!draft && original.type !== draft.type &&
     [original.formation, original.ending, original.divorce, original.ongoing]
       .some((stage) => stage?.confidence);
+  const saveUnionAssessmentFirst = !!original?.confidence && !!draft &&
+    original.type !== draft.type;
   const saveStageFirst = (key: "formation" | "ending" | "divorce" | "ongoing") => {
     const before = original?.[key], after = draft?.[key];
     return !!before?.confidence &&
@@ -126,6 +129,7 @@ export function FamilyUnionsPanel({
       setDraft(null);
       setSourcesReset(false);
       setAssessmentReset(false);
+      setUnionAssessmentReset(false);
       onSaved();
     } catch (cause) {
       setError((cause as Error).message);
@@ -146,6 +150,7 @@ export function FamilyUnionsPanel({
           <strong>
             {names[union.type]} · {statusNames[unionStatus(union)]}
           </strong>
+          {union.confidence && <p>Оценка союза: {CLAIM_CONFIDENCE_LABELS[union.confidence]}</p>}
           <p>
             {union.formation?.dateText ||
               union.formation?.date ||
@@ -169,7 +174,7 @@ export function FamilyUnionsPanel({
             <button
               type="button"
               disabled={busy}
-              onClick={() => { setSourcesReset(false); setAssessmentReset(false); setDraft(structuredClone(union)); }}
+              onClick={() => { setSourcesReset(false); setAssessmentReset(false); setUnionAssessmentReset(false); setDraft(structuredClone(union)); }}
             >
               Изменить союз
             </button>
@@ -181,7 +186,7 @@ export function FamilyUnionsPanel({
         <button
           type="button"
           disabled={busy}
-          onClick={() => { setSourcesReset(false); setAssessmentReset(false); setDraft(empty(participants)); }}
+          onClick={() => { setSourcesReset(false); setAssessmentReset(false); setUnionAssessmentReset(false); setDraft(empty(participants)); }}
         >
           Добавить союз
         </button>
@@ -202,8 +207,9 @@ export function FamilyUnionsPanel({
             Тип союза
             <select
               value={draft.type}
-              disabled={!canAssess && [draft.formation, draft.ending, draft.divorce, draft.ongoing]
-                .some((stage) => stage?.confidence)}
+              disabled={!canAssess && (!!draft.confidence ||
+                [draft.formation, draft.ending, draft.divorce, draft.ongoing]
+                  .some((stage) => stage?.confidence))}
               onChange={(event) => {
                 const type = event.target.value as FamilyUnion["type"];
                 if (type === draft.type) return;
@@ -211,10 +217,12 @@ export function FamilyUnionsPanel({
                   draft.ending?.sources, draft.divorce?.sources,
                   draft.ongoing?.sources].some((sources) => sources?.length);
                 setSourcesReset((previous) => previous || hadSources);
+                if (draft.confidence) setUnionAssessmentReset(true);
                 if ([draft.formation, draft.ending, draft.divorce, draft.ongoing]
                   .some((stage) => stage?.confidence)) setAssessmentReset(true);
                 patch({
                   type,
+                  confidence: undefined,
                   sources: undefined,
                   formation: draft.formation && { ...draft.formation, sources: undefined, confidence: undefined },
                   ending: draft.ending && { ...draft.ending, sources: undefined, confidence: undefined },
@@ -232,6 +240,19 @@ export function FamilyUnionsPanel({
               ))}
             </select>
           </label>
+          {saveUnionAssessmentFirst
+            ? <p>Сначала сохраните новый тип союза, затем оцените сам союз заново.</p>
+            : <label>
+                Статус достоверности союза
+                <select value={draft.confidence || ""} disabled={!canAssess}
+                  onChange={(event) => patch({ confidence: event.target.value
+                    ? event.target.value as ClaimConfidence : undefined })}>
+                  <option value="">Оценка не задана</option>
+                  {(Object.keys(CLAIM_CONFIDENCE_LABELS) as ClaimConfidence[]).map((status) =>
+                    <option key={status} value={status}>{CLAIM_CONFIDENCE_LABELS[status]}</option>)}
+                </select>
+              </label>}
+          {unionAssessmentReset && <p role="status">Оценка прежнего типа союза снята. Сохраните новый тип, затем оцените союз заново.</p>}
           {sourcesReset && <p role="status">
             Прежние источники союза и его этапов сняты при смене типа.
             {saveIdentityFirst
@@ -348,7 +369,7 @@ export function FamilyUnionsPanel({
           <button className="primary-action" disabled={busy}>
             Сохранить союз
           </button>
-          <button type="button" disabled={busy} onClick={() => { setDraft(null); setSourcesReset(false); setAssessmentReset(false); }}>
+          <button type="button" disabled={busy} onClick={() => { setDraft(null); setSourcesReset(false); setAssessmentReset(false); setUnionAssessmentReset(false); }}>
             Отмена
           </button>
           {unions.some((union) => union.id === draft.id) && (
