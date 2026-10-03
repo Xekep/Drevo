@@ -18,6 +18,20 @@ export function claimableEventDate(event: Pick<PersonEvent, "date" | "endDate" |
   if (!event.date || event.endDate || event.dateText) return undefined;
   try { return normalizeDateInput(event.date); } catch { return undefined; }
 }
+export function eventHasEvidence(event: PersonEvent): boolean {
+  return [event.sources, event.dateClaim?.sources, event.placeClaim?.sources,
+    ...(event.alternatives || []).map((item) => item.sources)]
+    .some((sources) => !!sources?.length);
+}
+
+/** Retyping changes what the event asserts; its old evidence and imported
+ * GEDCOM tag cannot describe the new event. The caller must tell the editor. */
+export function retypeEvent(event: PersonEvent, type: PersonEvent["type"]) {
+  if (event.type === type) return { event, removedEvidence: false };
+  return { event: { ...event, type, gedcomTag: undefined, sources: undefined,
+    dateClaim: undefined, placeClaim: undefined, alternatives: undefined },
+  removedEvidence: eventHasEvidence(event) };
+}
 export function validateEvents(events: unknown): void {
   if (events === undefined) return;
   if (!Array.isArray(events) || events.length > 200)
