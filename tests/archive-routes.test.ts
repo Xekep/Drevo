@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  adminMatchTargetAt,
+  adminMatchTargetPath,
   adminMatchesPath,
   archiveDocumentAt,
   archiveDocumentPath,
@@ -33,6 +35,24 @@ test("all archive sections have stable exact URLs shared by browser and server",
     "//places",
   ])
     assert.equal(archiveViewAt(path), null);
+});
+
+test("a published card handoff keeps the exact target in an archive-scoped path", () => {
+  const target = { archiveId: "other-tree", personId: "gedcom-Иван 1" };
+  const path = adminMatchTargetPath("family-one", target);
+  assert.equal(path, "/a/family-one/admin/matches/target/other-tree/gedcom-%D0%98%D0%B2%D0%B0%D0%BD%201");
+  assert.equal(new URL(path, "https://example.test").search, "");
+  assert.deepEqual(adminMatchTargetAt(path), target);
+  assert.equal(archiveViewAt(path), "admin");
+  for (const invalid of [
+    "/a/family-one/admin/matches/target/other-tree/%ZZ",
+    "/a/family-one/admin/matches/target/other-tree/%252F",
+    "/a/family-one/admin/matches/target/other-tree/..",
+    "/a/family-one/admin/matches/target/other-tree/person/extra",
+  ]) {
+    assert.equal(adminMatchTargetAt(invalid), null);
+    assert.equal(archiveViewAt(invalid), null);
+  }
 });
 
 test("profile and photo links retain their entity without changing section routes", () => {

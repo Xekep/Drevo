@@ -5314,6 +5314,21 @@ try {
   assert.deepEqual((await otherArchivesOnly.json()).results.map((person: { archiveId: string }) =>
     person.archiveId), ["other-archive"],
   "candidate search must exclude this archive before paginating, not after the client receives a page");
+  const exactLinkedTarget = await fetch(securedBase +
+    "/api/discovery/people/other-archive/person-a", { headers });
+  assert.equal(exactLinkedTarget.status, 200);
+  const handedOffPerson = (await exactLinkedTarget.json()).person as { archiveId: string; id: string };
+  assert.deepEqual([handedOffPerson.archiveId,handedOffPerson.id], ["other-archive", "person-a"],
+  "the handoff resolves the exact published card rather than a namesake search result");
+  await otherPublication.unpublish("person-a");
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: ownerHeaders, body: proposedPair,
+  })).status, 409, "withdrawing the linked target before submission denies the request");
+  assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_match_requests WHERE left_archive_id='other-archive' AND left_person_id='person-a'
+      AND right_archive_id='runtime-test' AND right_person_id='person-a'`).get())?.count, 0,
+  "the stale handoff creates no match request");
+  await otherPublication.publish("person-a", "owner");
   const requestedMatch = await fetch(securedBase + "/api/discovery/matches", {
     method: "POST", headers: ownerHeaders,
     body: proposedPair,

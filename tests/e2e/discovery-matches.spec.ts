@@ -1,6 +1,52 @@
 import { expect, test } from "@playwright/test";
 import { openAdminSection } from "./admin-navigation";
 
+test("a published-card link preselects its exact target for an owning archive", async ({ page }) => {
+  const own = { archiveId: "tree-a", id: "person-a", name: "Иван Петров", birthYear: "1900" };
+  const target = { archiveId: "tree-b", id: "person-b", name: "Иван Петров", birthYear: "1901" };
+  let posted = false;
+  // The SQLite browser fixture has one archive. Reuse it for a scoped route while
+  // supplying the PostgreSQL-only discovery responses explicitly below.
+  await page.route("**/a/tree-a/api/**", (route) => route.continue({
+    url: route.request().url().replace("/a/tree-a/api/", "/api/"),
+  }));
+  await page.route("**/api/discovery/people/tree-b/person-b", (route) =>
+    route.fulfill({ json: { person: target, linkedCards: [] } }));
+  await page.route("**/api/account/archives", (route) => route.fulfill({ json: { archives: [
+    { id: "tree-a", title: "Моё дерево", role: "admin", approved: true, owned: true, current: true },
+    { id: "tree-b", title: "Дерево адресата", role: "admin", approved: true, owned: false, current: false },
+    { id: "tree-c", title: "Чужое дерево", role: "admin", approved: true, owned: false, current: false },
+  ] } }));
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", people: [own] } }));
+  await page.route("**/api/discovery/matches/candidates?**", (route) =>
+    route.fulfill({ json: { candidates: [], nextCursor: null } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toMatchObject({
+        sourcePersonId: own.id, targetArchiveId: target.archiveId, targetPersonId: target.id,
+      });
+      posted = true;
+      return route.fulfill({ json: { match: { status: "pending" } } });
+    }
+    return route.fulfill({ json: { archiveId: "tree-a", matches: [], nextCursor: null } });
+  });
+  await page.goto("/discover/person/tree-b/person-b");
+  const handoff = page.getByRole("link", { name: "Открыть сопоставление в дереве «Моё дерево»" });
+  await expect(handoff).toHaveAttribute("href", "/a/tree-a/admin/matches/target/tree-b/person-b");
+  await expect(page.getByRole("link", { name: /Дерево адресата|Чужое дерево/ })).toHaveCount(0);
+  await handoff.click();
+  await expect(page).toHaveURL(/\/a\/tree-a\/admin\/matches\/target\/tree-b\/person-b$/);
+  await expect(page.getByRole("heading", { name: "Карточка из ссылки" })).toBeVisible();
+  await page.getByRole("button", { name: /Иван Петров.*1900/ }).click();
+  await expect(page.getByRole("heading", { name: "Проверьте обе карточки" })).toBeVisible();
+  await page.getByRole("button", { name: "Предложить сопоставление" }).click();
+  await expect(page.getByText("Запрос отправлен. Другая сторона должна подтвердить сопоставление.")).toBeVisible();
+  expect(posted).toBe(true);
+});
+
 test("archive admin proposes a match using only two published cards", async ({ page }) => {
   const own = { archiveId: "tree-a", id: "family:человек.1", name: "Иван Петров", birthYear: "1900" };
   const target = { archiveId: "tree-b", id: "ветка:person.2", name: "Иван Петров", birthYear: "1901" };
