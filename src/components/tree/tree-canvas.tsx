@@ -891,8 +891,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     renderFamily.people, renderFamily.links || [], renderFamily.unions || [], kinshipDay, gpuScope,
   ) : "", [renderFamily.people, renderFamily.links, renderFamily.unions, kinshipDay, gpuScope, user?.personId]);
   const relationLabel = useMemo(() => {
-    if (!user?.id) return () => "";
-    if (!user.personId) return () => "Нет привязки к древу";
+    if (!user?.id || !user.personId) return () => "";
     return createPersonRelationLabels(labelKey, user?.personId || undefined);
     // Archive, share grant and read policy isolate the retained snapshot/cache.
   }, [labelKey, user?.id, user?.personId]);

@@ -222,7 +222,12 @@ test("each viewer can switch direction and colors; legacy card variants stay por
         '.flow-person[data-person-id="e2e-child"] .portrait-card-info small',
       )
       .first(),
-  ).toHaveText("Нет привязки к древу");
+  ).toHaveCount(0);
+  await expect(child).not.toContainText("Нет привязки к древу");
+  await expect(child.getByRole("button").first()).not.toHaveAttribute(
+    "aria-label",
+    /Нет привязки к древу/,
+  );
   await expect(self).toHaveClass(/is-compact/);
   await expect(
     self.getByRole("button", { name: "Свернуть ветвь" }),
