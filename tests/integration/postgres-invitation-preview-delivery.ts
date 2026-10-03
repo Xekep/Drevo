@@ -172,9 +172,6 @@ export async function verifyInvitationPreviewDelivery(db: StoreDatabase, client:
           timer.unref();
         }),
       ]);
-      // The route's five-second delivery deadline must win over PostgreSQL's
-      // five-second lock timeout on the competing revoke transaction.
-      await new Promise((resolve) => setTimeout(resolve, 500));
       const revocation = invitations.revoke(owner, stalled.id);
       void revocation.catch(() => {});
       assert.equal(await Promise.race([

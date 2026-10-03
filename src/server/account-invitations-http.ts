@@ -59,7 +59,7 @@ export function accountInvitationsHttp(
         // Keep the archive and invitation locks until this small HTTP
         // response has finished, so a completed revoke cannot leak it.
         await invitations.deliverPreview(input.archiveId, input.token, async (value) => {
-          const timeout = setTimeout(() => res.destroy(new Error("Invitation preview timed out")), 5_000);
+          const timeout = setTimeout(() => res.destroy(new Error("Invitation preview timed out")), 4_000);
           timeout.unref();
           try {
             json(res, 200, value);
