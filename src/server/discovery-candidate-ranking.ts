@@ -35,13 +35,14 @@ export function candidatePlaceQueries(person: PublishedCandidate) {
   const given = nameParts(person).given;
   const year = person.birthYear;
   // The changed-surname evidence requires a close birth year even when the
-  // shared settlement is a death place. Probe both opt-in places separately.
+  // shared settlement is a death place. Preserve the opt-in field's role.
   if (given.length < 2 || !year || !/^\d{4}$/.test(year)) return [];
-  const terms = [...new Set([person.birthPlace,person.deathPlace]
-    .map((place) => localityWords(place || "").filter((word) => word.length >= 4))
-    .filter((locality) => locality.length)
-    .map((locality) => `${given} & ${locality.join(" & ")}`))];
-  return terms.map((query) => ({ terms: query,
+  const places = (["birthPlace","deathPlace"] as const).flatMap((field) => {
+    const locality = localityWords(person[field] || "").filter((word) => word.length >= 4);
+    return locality.length ? [{ field, locality: locality.join(" & ") }] : [];
+  });
+  return places.map((place) => ({ field: place.field,
+    terms: `${given} & ${place.locality}`, locality: place.locality,
     from: String(Math.max(1, Number(year) - 2)).padStart(4, "0"),
     to: String(Math.min(9999, Number(year) + 2)).padStart(4, "0") }));
 }

@@ -5530,6 +5530,39 @@ try {
     "name tokens in the wrong published roles are not candidate evidence");
   await otherApp.archive.write(beforeSwappedNames.family, swappedWrite.revision);
   console.log("runtime_discovery_candidate_name_roles_ok");
+  const beforePlacePageRoot = await app.archive.read();
+  const beforePlacePageOther = await otherApp.archive.read();
+  const placePageRoot = structuredClone(beforePlacePageRoot.family);
+  const placePageOther = structuredClone(beforePlacePageOther.family);
+  placePageRoot.people.find((person) => person.id === candidateSourceId)!.birthPlace = "Amberton";
+  const wrongPlaceIds = Array.from({ length: 24 }, (_, index) =>
+    `wrong-place-${String(index).padStart(2, "0")}`);
+  const placeOnlyId = "place-role-valid";
+  placePageOther.people.push(...wrongPlaceIds.map((id) => ({
+    ...structuredClone(placePageOther.people.find((person) => person.id === candidateTargetId)!),
+    id, surname: "Aaa", birthPlace: "Otherburg", deathPlace: "Amberton",
+  })));
+  placePageOther.people.push({
+    ...structuredClone(placePageOther.people.find((person) => person.id === candidateTargetId)!),
+    id: placeOnlyId, surname: "Zed", birthPlace: "Amberton", deathPlace: "Otherburg",
+  });
+  const placeRootWrite = await app.archive.write(placePageRoot, beforePlacePageRoot.revision);
+  const placeOtherWrite = await otherApp.archive.write(placePageOther, beforePlacePageOther.revision);
+  for (const id of wrongPlaceIds) await publishedPeopleStore(otherApp.archive.db).publish(id, "owner");
+  await publishedPeopleStore(otherApp.archive.db).publish(placeOnlyId, "owner");
+  const placePageResponse = await fetch(securedBase + revokeCandidatePath,
+    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.62" } });
+  assert.equal(placePageResponse.status, 200);
+  const placePage = await placePageResponse.json();
+  assert.ok(placePage.candidates.some((item: { id: string }) => item.id === candidateTargetId),
+    "cross-field place matches must not hide an existing candidate past an empty first page");
+  assert.ok(placePage.candidates.some((item: { id: string; reasons: string[] }) =>
+    item.id === placeOnlyId && item.reasons.includes("Место рождения совпадает")),
+  "the same published birth settlement still finds a changed surname");
+  assert.ok(placePage.candidates.every((item: { id: string }) => !wrongPlaceIds.includes(item.id)),
+    "a published death settlement alone does not prove the same birth settlement");
+  await otherApp.archive.write(beforePlacePageOther.family, placeOtherWrite.revision);
+  console.log("runtime_discovery_candidate_place_roles_ok");
   let candidateReached!: () => void, releaseCandidate!: () => void;
   const candidateReady = new Promise<void>((resolve) => { candidateReached = resolve; });
   const candidateGate = new Promise<void>((resolve) => { releaseCandidate = resolve; });
@@ -5580,6 +5613,7 @@ try {
   assert.equal(afterCandidateRevocation.status, 200);
   assert.ok(!(await afterCandidateRevocation.json()).candidates.some(
     (item: { id: string }) => item.id === candidateTargetId));
+  await app.archive.write(beforePlacePageRoot.family, placeRootWrite.revision);
   await publishedPeopleStore(otherApp.archive.db).publish(candidateTargetId, "owner");
   let postReached!: () => void, releasePost!: () => void;
   const postReady = new Promise<void>((resolve) => { postReached = resolve; });
