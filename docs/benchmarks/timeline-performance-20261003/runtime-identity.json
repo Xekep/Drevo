@@ -1,0 +1,34 @@
+{
+  "checkedAt": "2026-10-03T06:48:27.881708+00:00",
+  "runtimeCommit": "3dbe9614d83926c2809d1f6598a63f32a13b2109",
+  "reports": [
+    {
+      "report": "timeline-977-desktop-cpu4-lazy-events.json",
+      "sha256": "984e7e48b2425fe4fde9187fbd530d758403578934f9be2846164cffac836545",
+      "commit": "3dbe9614d83926c2809d1f6598a63f32a13b2109",
+      "sourceCount": 21,
+      "buildCount": 192,
+      "sourceMismatches": [],
+      "buildMismatches": []
+    },
+    {
+      "report": "timeline-3313-desktop-cpu4-lazy-events.json",
+      "sha256": "5e87007fc421fdb2506901414b8f2bb4577ea4a8bebe34b639db4ed7dfa5c48c",
+      "commit": "3dbe9614d83926c2809d1f6598a63f32a13b2109",
+      "sourceCount": 21,
+      "buildCount": 192,
+      "sourceMismatches": [],
+      "buildMismatches": []
+    }
+  ],
+  "baselineReports": [
+    {
+      "report": "timeline-3313-desktop-cpu4-baseline-partial.json",
+      "sha256": "35434007cd835b25880ce8c6ab0fefa4844c19b5662a6796a66efb01426e6cc2"
+    },
+    {
+      "report": "timeline-977-desktop-cpu4-baseline.json",
+      "sha256": "ec992b936cdc490deac8424e7b57620cfd0576a63f48c67111337398e7bf7a97"
+    }
+  ]
+}

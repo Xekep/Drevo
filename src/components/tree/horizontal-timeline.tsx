@@ -1,4 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ChevronLeft, ChevronRight, Sprout, Minus } from "lucide-react";
 import { dateLabel, fullName, type Person } from "../../domain";
 import { counted } from "../../domain/archive-summary";
@@ -7,9 +16,13 @@ import {
   timelineRowsAtYear,
   type TimelineGroup,
   type TimelineItem,
+  type TimelineRow,
 } from "../../domain/horizontal-timeline";
 import { Avatar } from "../person-panel";
+import { timelineRowWindow } from "../../domain/timeline-window";
 import "../../styles/timeline.css";
+
+const VIRTUAL_ROW_THRESHOLD = 32;
 
 const emblems: Record<string, string> = {
   "Российская империя": "/eras/russian-empire.svg",
@@ -49,14 +62,20 @@ function EventGroup({
   group,
   current,
   onChoose,
+  open,
+  onOpenChange,
 }: {
   group: TimelineGroup;
   current: boolean;
   onChoose: () => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const kind = group.items.length === 1 ? group.items[0].kind : "group";
   return (
     <details
+      open={open}
+      onToggle={(event) => onOpenChange(event.currentTarget.open)}
       className={`timeline-event is-${kind}${current ? " is-current" : ""}`}
       style={{ left: `calc(var(--timeline-pad) + ${group.x}px)` }}
     >
@@ -74,16 +93,120 @@ function EventGroup({
           "•"
         )}
       </summary>
-      <div className="timeline-event-list">
-        {group.items.map((item) => (
-          <button type="button" key={item.id} onClick={onChoose}>
-            <EventText item={item} />
-          </button>
-        ))}
-      </div>
+      {open && (
+        <div className="timeline-event-list">
+          {group.items.map((item) => (
+            <button type="button" key={item.id} onClick={onChoose}>
+              <EventText item={item} />
+            </button>
+          ))}
+        </div>
+      )}
     </details>
   );
 }
+
+const TimelinePersonRow = memo(function TimelinePersonRow({
+  row,
+  exiting,
+  selected,
+  year,
+  model,
+  count,
+  position,
+  openEvents,
+  onChoose,
+  changeOpenEvent,
+}: {
+  row: TimelineRow;
+  exiting: boolean;
+  selected: boolean;
+  year: number;
+  model: ReturnType<typeof horizontalTimeline>;
+  count: number;
+  position: number;
+  openEvents: ReadonlySet<string>;
+  onChoose: (id: string, additive?: boolean) => void;
+  changeOpenEvent: (key: string, open: boolean) => void;
+}) {
+  const contentWidth = model.width;
+  const birthYear = row.birthYear ?? year;
+  const lifeWidth = Math.max(
+    4,
+    model.yearX(row.deathYear ?? model.end) - model.yearX(birthYear),
+  );
+  const age = year - birthYear;
+  const status =
+    row.deathYear === year
+      ? "Год смерти"
+      : age > 110 && row.deathYear === null
+        ? "Нет даты смерти"
+        : year === birthYear
+          ? "Год рождения"
+          : `≈ ${age} лет`;
+  return (
+    <div
+      className={`timeline-person-row${selected ? " is-selected" : ""}${exiting ? " is-exiting" : ""}${row.deathYear === null && age > 110 ? " is-uncertain" : ""}`}
+      data-person-id={row.person.id}
+      role="listitem"
+      aria-setsize={count}
+      aria-posinset={position}
+      aria-hidden={exiting || undefined}
+      inert={exiting || undefined}
+    >
+      <button
+        type="button"
+        className="timeline-person"
+        onClick={() => onChoose(row.person.id, false)}
+        aria-label={`Открыть карточку: ${fullName(row.person)}`}
+      >
+        <Avatar person={row.person} />
+        <span>
+          <strong>{row.person.surname || row.person.name}</strong>
+          <span>
+            {row.person.surname
+              ? [row.person.name, row.person.patronymic]
+                  .filter(Boolean)
+                  .join(" ")
+              : row.person.patronymic}
+          </span>
+          <small>{status}</small>
+        </span>
+      </button>
+      <div
+        className="timeline-row-track"
+        style={{
+          width: `calc(${contentWidth}px + var(--timeline-pad) + var(--timeline-pad))`,
+        }}
+      >
+        <div
+          className={`timeline-life${row.deathYear === null ? " is-open" : ""}`}
+          data-start-x={model.yearX(birthYear)}
+          data-life-width={lifeWidth}
+          style={{
+            left: `calc(var(--timeline-pad) + ${model.yearX(birthYear)}px)`,
+            width: lifeWidth,
+          }}
+          title={`${row.person.birth} — ${row.person.death || "дата смерти не указана"}`}
+        />
+        {row.groups
+          .filter((group) => group.year <= year)
+          .map((group) => (
+            <EventGroup
+              key={`${row.person.id}:${group.year}`}
+              group={group}
+              current={group.year === year}
+              onChoose={() => onChoose(row.person.id, false)}
+              open={openEvents.has(`${row.person.id}\u0000${group.year}`)}
+              onOpenChange={(open) =>
+                changeOpenEvent(`${row.person.id}\u0000${group.year}`, open)
+              }
+            />
+          ))}
+      </div>
+    </div>
+  );
+});
 
 export function HorizontalTimeline({
   people,
@@ -110,6 +233,12 @@ export function HorizontalTimeline({
   const initialScrollDone = useRef(false);
   const lastHorizontalFocusToken = useRef<number | null>(null);
   const lastFocusedToken = useRef<number | null>(null);
+  const pendingHorizontalFocus = useRef<{ token: number; left: number } | null>(
+    null,
+  );
+  const [horizontalFocusReady, setHorizontalFocusReady] = useState<
+    number | null
+  >(null);
   const model = useMemo(() => horizontalTimeline(people), [people]);
   const firstYear = model.rows[0]?.birthYear ?? model.start;
   const [year, setYear] = useState(firstYear);
@@ -121,8 +250,104 @@ export function HorizontalTimeline({
   const [renderedRows, setRenderedRows] = useState(() =>
     visibleRows.map((row) => ({ row, exiting: false })),
   );
+  const rowsRef = useRef(renderedRows);
+  const metrics = useRef({ height: 640, rowHeight: 64 });
+  const [view, setView] = useState({ top: 0, height: 640, rowHeight: 64 });
+  const [focusedPerson, setFocusedPerson] = useState<string | null>(null);
+  const focusedPersonRef = useRef<string | null>(null);
+  const [openEvents, setOpenEvents] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const verticalFocusStarted = useRef<number | null>(null);
+  const keyboardTarget = useRef<{ id: string; edge: "first" | "last" } | null>(
+    null,
+  );
+  const scrollAnchor = useRef<{ id: string; offset: number } | null>(null);
+  const [windowed, setWindowed] = useState(
+    model.rows.length > VIRTUAL_ROW_THRESHOLD,
+  );
+  // Once an archive needs a window, keep its fixed grid even at sparse years.
+  // Crossing 32 rows must not replay the entry animation of existing people.
+  const virtualized = windowed || model.rows.length > VIRTUAL_ROW_THRESHOLD;
+  const rowWindow = timelineRowWindow(
+    renderedRows.length,
+    view.top,
+    view.height,
+    view.rowHeight,
+  );
+  const mountedIndices = useMemo(() => {
+    if (!virtualized) return renderedRows.map((_, index) => index);
+    const indices = Array.from(
+      { length: rowWindow.end - rowWindow.start },
+      (_, index) => rowWindow.start + index,
+    );
+    // Keep the element owning keyboard focus connected while it is off screen.
+    const focused = renderedRows.findIndex(
+      ({ row }) => row.person.id === focusedPerson,
+    );
+    if (focused >= 0 && (focused < rowWindow.start || focused >= rowWindow.end))
+      indices.push(focused);
+    return indices.sort((a, b) => a - b);
+  }, [
+    virtualized,
+    renderedRows,
+    rowWindow.start,
+    rowWindow.end,
+    focusedPerson,
+  ]);
+  const rowPositions = useMemo(
+    () => new Map(visibleRows.map((row, index) => [row.person.id, index])),
+    [visibleRows],
+  );
+  const syncViewport = useCallback(() => {
+    const scroll = viewport.current;
+    if (!scroll) return;
+    const { height, rowHeight } = metrics.current;
+    const next = {
+      top: Math.floor(scroll.scrollTop / rowHeight) * rowHeight,
+      height,
+      rowHeight,
+    };
+    setView((previous) =>
+      previous.top === next.top &&
+      previous.height === next.height &&
+      previous.rowHeight === next.rowHeight
+        ? previous
+        : next,
+    );
+  }, []);
+  const captureScrollAnchor = useCallback(() => {
+    const scroll = viewport.current,
+      rows = rowsRef.current;
+    if (!scroll || rows.length <= VIRTUAL_ROW_THRESHOLD) return;
+    const height = metrics.current.rowHeight;
+    const index = Math.min(
+      rows.length - 1,
+      Math.floor(scroll.scrollTop / height),
+    );
+    const row = rows[index];
+    if (row)
+      scrollAnchor.current = {
+        id: row.row.person.id,
+        offset: scroll.scrollTop - 86 - index * height,
+      };
+  }, []);
+  const changeOpenEvent = useCallback((key: string, open: boolean) => {
+    setOpenEvents((previous) => {
+      if (previous.has(key) === open) return previous;
+      const next = new Set(previous);
+      if (open) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
   const contentWidth = model.width;
   const focusId = focus?.ids[0];
+  const focusToken = focus?.token;
+  const cancelFocus = useCallback(() => {
+    pendingHorizontalFocus.current = null;
+    lastFocusedToken.current = lastHorizontalFocusToken.current;
+  }, []);
 
   useLayoutEffect(() => {
     const scroll = viewport.current;
@@ -140,21 +365,52 @@ export function HorizontalTimeline({
         "--timeline-viewport-height",
         `${scroll.clientHeight}px`,
       );
+      const rowHeight =
+        parseFloat(
+          getComputedStyle(scroll).getPropertyValue("--timeline-row-height"),
+        ) || 64;
+      const previousHeight = metrics.current.rowHeight;
+      metrics.current = { height: scroll.clientHeight, rowHeight };
+      if (
+        rowsRef.current.length > VIRTUAL_ROW_THRESHOLD &&
+        previousHeight !== rowHeight
+      )
+        scroll.scrollTop = (scroll.scrollTop * rowHeight) / previousHeight;
+      syncViewport();
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(scroll);
     return () => observer.disconnect();
-  }, []);
+  }, [syncViewport]);
 
   useEffect(() => {
     const ids = new Set(visibleRowIds ? visibleRowIds.split("\u0000") : []);
     const update = window.setTimeout(() => {
+      if (model.rows.length > VIRTUAL_ROW_THRESHOLD) setWindowed(true);
+      captureScrollAnchor();
+      const scroll = viewport.current;
+      const previousRows = rowsRef.current;
+      const previousWindow = timelineRowWindow(
+        previousRows.length,
+        scroll?.scrollTop ?? 0,
+        metrics.current.height,
+        metrics.current.rowHeight,
+      );
+      const retainedIds = new Set(
+        previousRows
+          .filter(
+            ({ row }, index) =>
+              previousRows.length <= VIRTUAL_ROW_THRESHOLD ||
+              (index >= previousWindow.start && index < previousWindow.end) ||
+              row.person.id === focusedPersonRef.current,
+          )
+          .map(({ row }) => row.person.id),
+      );
       setRenderedRows((previous) => {
-        const previousIds = new Set(previous.map(({ row }) => row.person.id));
         const next = model.rows
           .filter(
-            (row) => ids.has(row.person.id) || previousIds.has(row.person.id),
+            (row) => ids.has(row.person.id) || retainedIds.has(row.person.id),
           )
           .map((row) => ({ row, exiting: !ids.has(row.person.id) }));
         return previous.length === next.length &&
@@ -168,13 +424,69 @@ export function HorizontalTimeline({
       });
     }, 0);
     const remove = window.setTimeout(() => {
-      setRenderedRows((current) => current.filter(({ exiting }) => !exiting));
+      captureScrollAnchor();
+      setRenderedRows((current) =>
+        current.some(({ exiting }) => exiting)
+          ? current.filter(({ exiting }) => !exiting)
+          : current,
+      );
     }, 260);
     return () => {
       window.clearTimeout(update);
       window.clearTimeout(remove);
     };
-  }, [model, visibleRowIds]);
+  }, [model, visibleRowIds, captureScrollAnchor]);
+
+  useEffect(() => {
+    const prune = window.setTimeout(() => {
+      setOpenEvents((previous) => {
+        const next = new Set(
+          [...previous].filter((key) => {
+            const separator = key.lastIndexOf("\u0000");
+            const id = key.slice(0, separator),
+              groupYear = Number(key.slice(separator + 1));
+            const row = visibleRows[rowPositions.get(id) ?? -1];
+            return (
+              groupYear <= year &&
+              row?.groups.some((group) => group.year === groupYear)
+            );
+          }),
+        );
+        return next.size === previous.size ? previous : next;
+      });
+    }, 0);
+    return () => window.clearTimeout(prune);
+  }, [rowPositions, visibleRows, year]);
+
+  useLayoutEffect(() => {
+    rowsRef.current = renderedRows;
+    if (
+      focusedPersonRef.current &&
+      !renderedRows.some(
+        ({ row, exiting }) =>
+          row.person.id === focusedPersonRef.current && !exiting,
+      )
+    ) {
+      viewport.current?.focus({ preventScroll: true });
+      focusedPersonRef.current = null;
+      setFocusedPerson(null);
+    }
+    const scroll = viewport.current;
+    const anchor = scrollAnchor.current;
+    scrollAnchor.current = null;
+    if (scroll && anchor && virtualized) {
+      const index = renderedRows.findIndex(
+        ({ row }) => row.person.id === anchor.id,
+      );
+      if (index >= 0) {
+        const top = 86 + index * metrics.current.rowHeight + anchor.offset;
+        // A no-op scrollTop setter would cancel an ongoing smooth focus.
+        if (Math.abs(scroll.scrollTop - top) > 0.5) scroll.scrollTop = top;
+      }
+    }
+    // The browser can clamp scrollTop after a year removes many rows.
+    syncViewport();
+  }, [renderedRows, virtualized, syncViewport]);
 
   useLayoutEffect(() => {
     const scroll = viewport.current;
@@ -189,7 +501,7 @@ export function HorizontalTimeline({
       board.current?.querySelectorAll<HTMLElement>(".timeline-life") || [],
     );
     revealLifelines(lifelines.current, viewport.current?.scrollLeft ?? 0);
-  }, [renderedRows, model]);
+  }, [renderedRows, model, mountedIndices]);
 
   useEffect(() => {
     const scroll = viewport.current;
@@ -206,6 +518,7 @@ export function HorizontalTimeline({
           ? event.deltaX
           : event.deltaY;
       if (!delta) return;
+      cancelFocus();
       event.preventDefault();
       const pixels =
         delta *
@@ -219,7 +532,7 @@ export function HorizontalTimeline({
     };
     scroll.addEventListener("wheel", onWheel, { passive: false });
     return () => scroll.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [cancelFocus]);
 
   useEffect(() => {
     const scroll = viewport.current;
@@ -233,6 +546,12 @@ export function HorizontalTimeline({
         frame = 0;
         const next = model.yearAtX(scroll.scrollLeft);
         label.textContent = String(next);
+        syncViewport();
+        const pending = pendingHorizontalFocus.current;
+        if (pending && Math.abs(scroll.scrollLeft - pending.left) <= 1) {
+          pendingHorizontalFocus.current = null;
+          setHorizontalFocusReady(pending.token);
+        }
         if (scroll.scrollLeft !== previousLeft) {
           previousLeft = scroll.scrollLeft;
           revealLifelines(lifelines.current, previousLeft);
@@ -249,30 +568,87 @@ export function HorizontalTimeline({
       resize.disconnect();
       cancelAnimationFrame(frame);
     };
-  }, [model]);
+  }, [model, syncViewport]);
 
   useEffect(() => {
     const id = focusId;
-    if (!id || focus?.token === lastHorizontalFocusToken.current) return;
+    if (
+      !id ||
+      focusToken === undefined ||
+      focusToken === lastHorizontalFocusToken.current
+    )
+      return;
     const scroll = viewport.current;
     const person = people.find((item) => item.id === id);
     if (!scroll || !person?.birth) return;
-    lastHorizontalFocusToken.current = focus?.token ?? null;
+    lastHorizontalFocusToken.current = focusToken;
+    const left = model.yearX(Number(person.birth.slice(0, 4)));
+    pendingHorizontalFocus.current = { token: focusToken, left };
     scroll.scrollTo({
-      left: model.yearX(Number(person.birth.slice(0, 4))),
+      left,
       behavior: scrollBehavior(),
     });
-  }, [focus?.token, focusId, model, people]);
+    if (Math.abs(scroll.scrollLeft - left) <= 1) {
+      pendingHorizontalFocus.current = null;
+      setHorizontalFocusReady(focusToken);
+    }
+  }, [focusToken, focusId, model, people]);
 
   useEffect(() => {
-    if (!focusId || focus?.token === lastFocusedToken.current) return;
+    if (
+      !focusId ||
+      focusToken === undefined ||
+      focusToken === lastFocusedToken.current
+    )
+      return;
     const scroll = viewport.current;
+    if (!scroll) return;
+    const birthYear = model.rows.find(
+      (row) => row.person.id === focusId,
+    )?.birthYear;
+    if (birthYear === null || birthYear === undefined) return;
+    // Horizontal motion changes the year's row list. Center vertically only
+    // after that list has been applied, otherwise its indices are stale.
+    if (
+      horizontalFocusReady !== focusToken ||
+      year !== birthYear ||
+      renderedRows.some(({ exiting }) => exiting) ||
+      renderedRows.length !== visibleRows.length ||
+      renderedRows.some(({ row }, index) => row !== visibleRows[index])
+    )
+      return;
+    if (virtualized) {
+      const index = renderedRows.findIndex(
+        ({ row, exiting }) => row.person.id === focusId && !exiting,
+      );
+      if (index < 0) return;
+      if (verticalFocusStarted.current !== focusToken) {
+        verticalFocusStarted.current = focusToken;
+        scroll.scrollTo({
+          top: Math.max(
+            0,
+            86 +
+              index * view.rowHeight -
+              scroll.clientHeight / 2 +
+              view.rowHeight / 2,
+          ),
+          behavior: scrollBehavior(),
+        });
+      }
+    }
     const row = Array.from(
       board.current?.querySelectorAll<HTMLElement>(".timeline-person-row") ||
         [],
     ).find((element) => element.dataset.personId === focusId);
-    if (!scroll || !row) return;
-    lastFocusedToken.current = focus?.token ?? null;
+    if (!row) return;
+    if (virtualized) {
+      const bounds = row.getBoundingClientRect(),
+        stage = scroll.getBoundingClientRect();
+      if (bounds.bottom <= stage.top + 86 || bounds.top >= stage.bottom) return;
+      lastFocusedToken.current = focusToken;
+      return;
+    }
+    lastFocusedToken.current = focusToken;
     scroll.scrollTo({
       top: Math.max(
         0,
@@ -280,7 +656,56 @@ export function HorizontalTimeline({
       ),
       behavior: scrollBehavior(),
     });
-  }, [focus?.token, focusId, renderedRows]);
+  }, [
+    focusToken,
+    focusId,
+    horizontalFocusReady,
+    model,
+    year,
+    visibleRows,
+    renderedRows,
+    virtualized,
+    view.rowHeight,
+    mountedIndices,
+  ]);
+
+  useLayoutEffect(() => {
+    const target = keyboardTarget.current;
+    if (!target) return;
+    const row = Array.from(
+      board.current?.querySelectorAll<HTMLElement>(".timeline-person-row") ||
+        [],
+    ).find((element) => element.dataset.personId === target.id);
+    const controls = Array.from(
+      row?.querySelectorAll<HTMLElement>("button, summary") || [],
+    ).filter((element) => element.getClientRects().length);
+    const element = target.edge === "last" ? controls.at(-1) : controls[0];
+    if (element) {
+      element.focus({ preventScroll: true });
+      keyboardTarget.current = null;
+    }
+  }, [mountedIndices]);
+
+  const focusRow = (id: string, edge: "first" | "last" = "first") => {
+    const scroll = viewport.current;
+    const index = renderedRows.findIndex(({ row }) => row.person.id === id);
+    if (!scroll || index < 0) return;
+    cancelFocus();
+    keyboardTarget.current = { id, edge };
+    focusedPersonRef.current = id;
+    setFocusedPerson(id);
+    scroll.scrollTo({
+      top: Math.max(
+        0,
+        86 +
+          index * view.rowHeight -
+          scroll.clientHeight / 2 +
+          view.rowHeight / 2,
+      ),
+      behavior: "instant",
+    });
+    syncViewport();
+  };
 
   const currentEventCount = visibleRows.reduce(
     (total, row) =>
@@ -289,6 +714,7 @@ export function HorizontalTimeline({
     0,
   );
   const stepYear = (delta: number) => {
+    cancelFocus();
     viewport.current?.scrollTo({
       left: model.yearX(
         Math.min(model.end, Math.max(model.start, year + delta)),
@@ -340,8 +766,71 @@ export function HorizontalTimeline({
         role="region"
         aria-label="Горизонтальная хронология людей и событий. Колесо — годы, Shift и колесо — список людей"
         tabIndex={0}
+        data-timeline-people={visibleRows.length}
+        data-timeline-mounted={mountedIndices.length}
+        onFocusCapture={(event) => {
+          const id =
+            (event.target as HTMLElement).closest<HTMLElement>(
+              "[data-person-id]",
+            )?.dataset.personId ?? null;
+          focusedPersonRef.current = id;
+          setFocusedPerson(id);
+        }}
+        onBlurCapture={(event) => {
+          const id =
+            (event.relatedTarget as HTMLElement | null)?.closest?.<HTMLElement>(
+              "[data-person-id]",
+            )?.dataset.personId ?? null;
+          focusedPersonRef.current = id;
+          setFocusedPerson(id);
+        }}
         onKeyDown={(event) => {
+          if (virtualized && event.key === "Tab") {
+            const target = event.target as HTMLElement;
+            const row = target.closest<HTMLElement>(".timeline-person-row");
+            const position = row?.dataset.personId
+              ? rowPositions.get(row.dataset.personId)
+              : undefined;
+            const controls = Array.from(
+              row?.querySelectorAll<HTMLElement>("button, summary") || [],
+            ).filter((element) => element.getClientRects().length);
+            if (
+              position !== undefined &&
+              target === (event.shiftKey ? controls[0] : controls.at(-1))
+            ) {
+              const next = visibleRows[position + (event.shiftKey ? -1 : 1)];
+              if (
+                next &&
+                !mountedIndices.some(
+                  (index) =>
+                    renderedRows[index].row.person.id === next.person.id,
+                )
+              ) {
+                event.preventDefault();
+                focusRow(next.person.id, event.shiftKey ? "last" : "first");
+                return;
+              }
+            }
+          }
+          if (
+            virtualized &&
+            (event.key === "ArrowDown" || event.key === "ArrowUp") &&
+            (event.target as HTMLElement).classList.contains("timeline-person")
+          ) {
+            const id = (event.target as HTMLElement).closest<HTMLElement>(
+              "[data-person-id]",
+            )?.dataset.personId;
+            const position = id ? rowPositions.get(id) : undefined;
+            if (position !== undefined) {
+              event.preventDefault();
+              const next =
+                visibleRows[position + (event.key === "ArrowDown" ? 1 : -1)];
+              if (next) focusRow(next.person.id);
+            }
+            return;
+          }
           if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+            cancelFocus();
             event.preventDefault();
             event.currentTarget.scrollBy({
               left:
@@ -350,6 +839,7 @@ export function HorizontalTimeline({
               behavior: scrollBehavior(),
             });
           } else if (event.key === "Home" || event.key === "End") {
+            cancelFocus();
             event.preventDefault();
             event.currentTarget.scrollTo({
               left: event.key === "Home" ? 0 : model.width,
@@ -379,6 +869,7 @@ export function HorizontalTimeline({
           const dy = event.clientY - current.y;
           if (!current.active && Math.hypot(dx, dy) < 5) return;
           if (!current.active) {
+            cancelFocus();
             current.active = true;
             event.currentTarget.setPointerCapture(event.pointerId);
             event.currentTarget.classList.add("is-dragging");
@@ -460,76 +951,55 @@ export function HorizontalTimeline({
                 В {year} году здесь пока нет людей с известной датой рождения.
               </p>
             )}
-          {renderedRows.map(({ row, exiting }) => {
-            const birthYear = row.birthYear ?? year;
-            const lifeWidth = Math.max(
-              4,
-              model.yearX(row.deathYear ?? model.end) - model.yearX(birthYear),
-            );
-            const age = year - birthYear;
-            const status =
-              row.deathYear === year
-                ? "Год смерти"
-                : age > 110 && row.deathYear === null
-                  ? "Нет даты смерти"
-                  : year === birthYear
-                    ? "Год рождения"
-                    : `≈ ${age} лет`;
-            return (
-              <div
-                key={row.person.id}
-                className={`timeline-person-row${selected.includes(row.person.id) ? " is-selected" : ""}${exiting ? " is-exiting" : ""}${row.deathYear === null && age > 110 ? " is-uncertain" : ""}`}
-                data-person-id={row.person.id}
-              >
-                <button
-                  type="button"
-                  className="timeline-person"
-                  onClick={() => onChoose(row.person.id, false)}
-                  aria-label={`Открыть карточку: ${fullName(row.person)}`}
-                >
-                  <Avatar person={row.person} />
-                  <span>
-                    <strong>{row.person.surname || row.person.name}</strong>
-                    <span>
-                      {row.person.surname
-                        ? [row.person.name, row.person.patronymic]
-                            .filter(Boolean)
-                            .join(" ")
-                        : row.person.patronymic}
-                    </span>
-                    <small>{status}</small>
-                  </span>
-                </button>
-                <div
-                  className="timeline-row-track"
-                  style={{
-                    width: `calc(${contentWidth}px + var(--timeline-pad) + var(--timeline-pad))`,
-                  }}
-                >
-                  <div
-                    className={`timeline-life${row.deathYear === null ? " is-open" : ""}`}
-                    data-start-x={model.yearX(birthYear)}
-                    data-life-width={lifeWidth}
-                    style={{
-                      left: `calc(var(--timeline-pad) + ${model.yearX(birthYear)}px)`,
-                      width: lifeWidth,
-                    }}
-                    title={`${row.person.birth} — ${row.person.death || "дата смерти не указана"}`}
-                  />
-                  {row.groups
-                    .filter((group) => group.year <= year)
-                    .map((group) => (
-                      <EventGroup
-                        key={`${row.person.id}:${group.year}`}
-                        group={group}
-                        current={group.year === year}
-                        onChoose={() => onChoose(row.person.id, false)}
+          <div
+            className={`timeline-rows${virtualized ? " is-virtualized" : ""}`}
+            role="list"
+            aria-label="Люди выбранного года"
+          >
+            {mountedIndices.map((index, slot) => {
+              const { row, exiting } = renderedRows[index];
+              return (
+                <Fragment key={row.person.id}>
+                  {virtualized &&
+                    index > (slot ? mountedIndices[slot - 1] + 1 : 0) && (
+                      <div
+                        className="timeline-row-spacer"
+                        aria-hidden="true"
+                        style={{
+                          height:
+                            (index -
+                              (slot ? mountedIndices[slot - 1] + 1 : 0)) *
+                            view.rowHeight,
+                        }}
                       />
-                    ))}
-                </div>
-              </div>
-            );
-          })}
+                    )}
+                  <TimelinePersonRow
+                    row={row}
+                    exiting={exiting}
+                    selected={selected.includes(row.person.id)}
+                    year={year}
+                    model={model}
+                    count={visibleRows.length}
+                    position={(rowPositions.get(row.person.id) ?? index) + 1}
+                    openEvents={openEvents}
+                    onChoose={onChoose}
+                    changeOpenEvent={changeOpenEvent}
+                  />
+                </Fragment>
+              );
+            })}
+            {virtualized && (
+              <div
+                className="timeline-row-spacer"
+                aria-hidden="true"
+                style={{
+                  height:
+                    (renderedRows.length - (mountedIndices.at(-1) ?? -1) - 1) *
+                    view.rowHeight,
+                }}
+              />
+            )}
+          </div>
           <div className="timeline-era-bar" aria-label="Исторические эпохи">
             <span className="timeline-era-heading">Эпохи</span>
             <div
@@ -547,12 +1017,13 @@ export function HorizontalTimeline({
                     left: `calc(var(--timeline-pad) + ${era.x}px)`,
                     width: era.width,
                   }}
-                  onClick={() =>
+                  onClick={() => {
+                    cancelFocus();
                     viewport.current?.scrollTo({
                       left: era.x + era.width / 2,
                       behavior: scrollBehavior(),
-                    })
-                  }
+                    });
+                  }}
                   title={`${era.name} · ${Math.max(model.start, era.start)}–${Math.min(model.end, era.end)}`}
                 >
                   <strong>{era.short}</strong>

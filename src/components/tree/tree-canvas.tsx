@@ -111,6 +111,8 @@ export type ConnectionDraft = {
   twinKind?: GraphConnection["twinKind"];
   hint?: string;
 };
+const emptyFlowNodes: (PersonNodeType | HouseholdNodeType)[] = [];
+const emptyFlowEdges: RelationshipEdgeType[] = [];
 export type TreeFocus = {
   ids: string[];
   token: number;
@@ -1719,8 +1721,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         ) : (
           <ReactFlow<PersonNodeType | HouseholdNodeType, RelationshipEdgeType>
           proOptions={{ hideAttribution: true }}
-            nodes={flowNodes}
-            edges={flowEdges}
+            nodes={mode === "timeline" ? emptyFlowNodes : flowNodes}
+            edges={mode === "timeline" ? emptyFlowEdges : flowEdges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           connectionMode={ConnectionMode.Loose}
