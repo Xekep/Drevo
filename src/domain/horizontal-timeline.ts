@@ -124,12 +124,16 @@ export function horizontalTimeline(
       person,
       items: personItems(person),
     }));
-  const datedYears = prepared.flatMap(({ items }) =>
-    items.flatMap((item) => (item.year === null ? [] : [item.year])),
-  );
-  const start =
-    Math.floor((Math.min(currentYear - 100, ...datedYears) - 5) / 10) * 10;
-  const end = Math.max(currentYear, ...datedYears);
+  let earliest = currentYear - 100,
+    latest = currentYear;
+  for (const { items } of prepared)
+    for (const item of items) {
+      if (item.year === null) continue;
+      earliest = Math.min(earliest, item.year);
+      latest = Math.max(latest, item.year);
+    }
+  const start = Math.floor((earliest - 5) / 10) * 10;
+  const end = latest;
   const width = (end - start) * YEAR_WIDTH;
   const yearX = (year: number) =>
     (reverse ? end - year : year - start) * YEAR_WIDTH;
@@ -156,7 +160,11 @@ export function horizontalTimeline(
       const undated: TimelineItem[] = [];
       for (const item of items) {
         if (item.year === null) undated.push(item);
-        else byYear.set(item.year, [...(byYear.get(item.year) || []), item]);
+        else {
+          const group = byYear.get(item.year);
+          if (group) group.push(item);
+          else byYear.set(item.year, [item]);
+        }
       }
       const laneEnds: number[] = [];
       const groups = [...byYear]

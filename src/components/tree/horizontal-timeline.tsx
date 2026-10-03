@@ -246,7 +246,10 @@ export function HorizontalTimeline({
     () => timelineRowsAtYear(model.rows, year),
     [model, year],
   );
-  const visibleRowIds = visibleRows.map((row) => row.person.id).join("\u0000");
+  const visibleRowIds = useMemo(
+    () => visibleRows.map((row) => row.person.id).join("\u0000"),
+    [visibleRows],
+  );
   const [renderedRows, setRenderedRows] = useState(() =>
     visibleRows.map((row) => ({ row, exiting: false })),
   );
@@ -275,6 +278,10 @@ export function HorizontalTimeline({
     view.height,
     view.rowHeight,
   );
+  const renderedRowPositions = useMemo(
+    () => new Map(renderedRows.map(({ row }, index) => [row.person.id, index])),
+    [renderedRows],
+  );
   const mountedIndices = useMemo(() => {
     if (!virtualized) return renderedRows.map((_, index) => index);
     const indices = Array.from(
@@ -282,9 +289,10 @@ export function HorizontalTimeline({
       (_, index) => rowWindow.start + index,
     );
     // Keep the element owning keyboard focus connected while it is off screen.
-    const focused = renderedRows.findIndex(
-      ({ row }) => row.person.id === focusedPerson,
-    );
+    const focused =
+      focusedPerson === null
+        ? -1
+        : (renderedRowPositions.get(focusedPerson) ?? -1);
     if (focused >= 0 && (focused < rowWindow.start || focused >= rowWindow.end))
       indices.push(focused);
     return indices.sort((a, b) => a - b);
@@ -294,6 +302,7 @@ export function HorizontalTimeline({
     rowWindow.start,
     rowWindow.end,
     focusedPerson,
+    renderedRowPositions,
   ]);
   const rowPositions = useMemo(
     () => new Map(visibleRows.map((row, index) => [row.person.id, index])),
@@ -520,14 +529,25 @@ export function HorizontalTimeline({
       if (!delta) return;
       cancelFocus();
       event.preventDefault();
+      const overPeople =
+        event.target instanceof Element &&
+        event.target.closest(
+          ".timeline-person, .timeline-axis-title, .timeline-era-heading",
+        );
+      // Keep an explicit horizontal trackpad gesture horizontal on the rail.
+      const vertical =
+        event.shiftKey ||
+        (!!overPeople && Math.abs(event.deltaY) >= Math.abs(event.deltaX));
       const pixels =
         delta *
         (event.deltaMode === 1
           ? 16
           : event.deltaMode === 2
-            ? scroll.clientHeight
+            ? vertical
+              ? scroll.clientHeight
+              : scroll.clientWidth
             : 1);
-      if (event.shiftKey) scroll.scrollTop += pixels;
+      if (vertical) scroll.scrollTop += pixels;
       else scroll.scrollLeft += pixels;
     };
     scroll.addEventListener("wheel", onWheel, { passive: false });
@@ -707,11 +727,15 @@ export function HorizontalTimeline({
     syncViewport();
   };
 
-  const currentEventCount = visibleRows.reduce(
-    (total, row) =>
-      total +
-      (row.groups.find((group) => group.year === year)?.items.length || 0),
-    0,
+  const currentEventCount = useMemo(
+    () =>
+      visibleRows.reduce(
+        (total, row) =>
+          total +
+          (row.groups.find((group) => group.year === year)?.items.length || 0),
+        0,
+      ),
+    [visibleRows, year],
   );
   const stepYear = (delta: number) => {
     cancelFocus();
@@ -764,7 +788,7 @@ export function HorizontalTimeline({
         ref={viewport}
         className="horizontal-timeline"
         role="region"
-        aria-label="Горизонтальная хронология людей и событий. Колесо — годы, Shift и колесо — список людей"
+        aria-label="Горизонтальная хронология людей и событий. Колесо над карточками — список людей, над шкалой — годы. Shift и колесо — список людей"
         tabIndex={0}
         data-timeline-people={visibleRows.length}
         data-timeline-mounted={mountedIndices.length}

@@ -145,3 +145,32 @@ test("historical year reveals births and removes people only after a recorded de
   assert.deepEqual(ids(1951), ["older"]);
   assert.deepEqual(ids(1960), ["older", "later"]);
 });
+
+test("dense chronology preserves bounds and same-year event order beyond the argument limit", () => {
+  const events: NonNullable<Person["events"]> = Array.from(
+    { length: 150 },
+    (_, index) => ({
+      id: `event-${index}`,
+      type: "work",
+      date: index === 0 ? "1880" : index === 149 ? "2032" : "1950",
+    }),
+  );
+  for (const event of events) Object.freeze(event);
+  Object.freeze(events);
+  const people = Array.from({ length: 1000 }, (_, index) =>
+    person(`dense-${index}`, "1900", { events }),
+  );
+  for (const item of people) Object.freeze(item);
+  const model = horizontalTimeline(people, false, 2026);
+  assert.equal(model.start, 1870);
+  assert.equal(model.end, 2032);
+  assert.equal(model.rows.length, 1000);
+  assert.ok(Number.isFinite(model.width));
+  for (const row of model.rows) {
+    const grouped = row.groups.find((group) => group.year === 1950)!;
+    assert.equal(grouped.items.length, 148);
+    assert.equal(grouped.items[0].id, `${row.person.id}:event:event-1`);
+    assert.equal(grouped.items.at(-1)!.id, `${row.person.id}:event:event-148`);
+    assert.equal(row.person.events, events);
+  }
+});
