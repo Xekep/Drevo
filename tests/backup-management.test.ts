@@ -316,6 +316,8 @@ test("restart exposes interrupted job and does not disclose another administrato
       photos: 0,
       files: 0,
       missing: 0,
+      currentCommentsLost: 0,
+      backupCommentsSkipped: 0,
       currentPeople: 0,
       currentPhotos: 0,
     }));

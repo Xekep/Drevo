@@ -68,6 +68,45 @@ function tar(name: string, content: Buffer, type = "0", size = content.length) {
     ]),
   );
 }
+test("restore preview counts cascaded current comments and skipped backup comments", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-restore-comments-"));
+  const removed = { ...p, id: "removed-person", name: "Удаляемый" };
+  const current = await openArchive(join(dir, "current.sqlite"), {
+    ...family, people: [p, removed],
+  });
+  const source = await openArchive(join(dir, "source.sqlite"), family);
+  const restores = restoreStore(current, join(dir, "current.sqlite"));
+  const admin = { id: "admin", name: "Администратор", role: "admin" as const,
+    createdAt: "2026-01-01T00:00:00.000Z" };
+  try {
+    for (const [personId, text] of [
+      [p.id, "retained"], [removed.id, "lost-1"], [removed.id, "lost-2"],
+    ])
+      await current.db.prepare(
+        "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'admin',1000,?)",
+      ).run(personId, text);
+    for (const text of ["source-1", "source-2", "source-3"])
+      await source.db.prepare(
+        "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'admin',1000,?)",
+      ).run(p.id, text);
+    const preview = await restores.preview(await databaseBackupBytes(source.db), admin);
+    assert.equal(preview.currentCommentsLost, 2);
+    assert.equal(preview.backupCommentsSkipped, 3);
+    await current.write(family, (await current.read()).revision);
+    assert.deepEqual((await current.db.prepare("SELECT text FROM person_comments ORDER BY id").all())
+      .map((row) => row.text), ["retained"]);
+
+    await source.db.exec("DROP TABLE person_comments");
+    const legacy = await restores.preview(await databaseBackupBytes(source.db), admin);
+    assert.equal(legacy.currentCommentsLost, 0);
+    assert.equal(legacy.backupCommentsSkipped, 0);
+  } finally {
+    await restores.close();
+    await source.close();
+    await current.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 test("family import previews a full backup containing private discussion and AI files", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-import-private-"));
   const databasePath = join(dir, "drevo.sqlite");

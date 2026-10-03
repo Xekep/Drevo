@@ -11913,6 +11913,17 @@ try {
   const guardedApp = restoreGuardApp;
   const guardedBase = `http://127.0.0.1:${(guardedApp.server.address() as { port: number }).port}`;
   const guardedUploads = join(dirname(guardedApp.archive.db.file), "uploads");
+  const guardBeforeComments = await guardedApp.archive.read();
+  const guardWithRemovedPerson = structuredClone(guardBeforeComments.family);
+  guardWithRemovedPerson.people.push({ ...family.people[0], id: "restore-comment-removed",
+    name: "Removed" });
+  await guardedApp.archive.write(guardWithRemovedPerson, guardBeforeComments.revision);
+  await guardedApp.archive.db.prepare("",
+    "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'owner',1000,?)")
+    .run("person-a", "restore-comment-retained");
+  await guardedApp.archive.db.prepare("",
+    "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'owner',1000,?)")
+    .run("restore-comment-removed", "restore-comment-lost");
   // A platform grant can be revoked while a restore is copying staged media.
   // The final grant check must run inside archive.write's transaction and lock
   // the grant until commit, without holding that lock during file copying.
@@ -11921,7 +11932,13 @@ try {
     method: "POST", headers: securedRestoreHeaders, body: restoreBytes,
   });
   assert.equal(guardedPreviewResponse.status, 200, await guardedPreviewResponse.clone().text());
-  const guardedPreview = await guardedPreviewResponse.json() as { token: string };
+  const guardedPreview = await guardedPreviewResponse.json() as {
+    token: string; currentCommentsLost: number; backupCommentsSkipped: number;
+  };
+  assert.equal(guardedPreview.currentCommentsLost, 1,
+    "PostgreSQL preview counts only comments cascaded from this archive");
+  assert.equal(guardedPreview.backupCommentsSkipped, 0,
+    "the source backup has no comments after its migration fixture is cleared");
   const revisionBeforeRevocation = (await guardedApp.archive.read()).revision;
   const filesBeforeRevocation = readdirSync(guardedUploads).sort();
   const originalRestoreWrite = guardedApp.archive.write;

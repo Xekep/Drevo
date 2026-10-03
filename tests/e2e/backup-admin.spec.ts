@@ -57,6 +57,8 @@ test("экспорт отделён от резервных копий; наст
           documents: 2,
           files: 42,
           missing: 0,
+          currentCommentsLost: 2,
+          backupCommentsSkipped: 3,
           currentPeople: 90,
           currentPhotos: 45,
         },
@@ -143,6 +145,9 @@ test("экспорт отделён от резервных копий; наст
   await expect(
     page.getByText("Копия семейного архива", { exact: true }),
   ).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText:
+    "На момент проверки будут удалены комментарии к людям, которых нет в копии: 2" }))
+    .toContainText("Комментарии из копии, которые не будут импортированы вместе с вложениями: 3");
   await expect(
     page.getByRole("button", { name: "Восстановить архив", exact: true }),
   ).toBeDisabled();

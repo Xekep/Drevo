@@ -448,6 +448,7 @@ export function restoreStore(
       let family: Family,
         faceDescriptors: StoredFaceDescriptor[] = [],
         documents: StoredDocument[] = [],
+        backupCommentsSkipped = 0,
         catalogSources: Array<CatalogSource & { version: number }> = [];
       try {
         source.exec("PRAGMA trusted_schema=OFF; PRAGMA query_only=ON;");
@@ -463,6 +464,12 @@ export function restoreStore(
         family = validateFamily(
           (await readArchive(storeDatabase(source))).family,
         );
+        if (source.prepare(
+          "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='person_comments'",
+        ).get())
+          backupCommentsSkipped = Number(source.prepare(
+            "SELECT count(*) AS count FROM person_comments",
+          ).get()!.count);
         if (
           source
             .prepare(
@@ -664,8 +671,20 @@ export function restoreStore(
         } else if (!existsSync(join(dirname(dbPath), "uploads", match[1])))
           missing++;
       }
-      const token = randomUUID(),
-        current = await archive.read();
+      const importedPeople = new Set(family.people.map((person) => person.id));
+      const { current, currentCommentsLost } = await archive.db.transaction(async () => {
+        const current = await readArchive(archive.db);
+        const counts = await archive.db.prepare(
+          "SELECT person_id,count(*) AS count FROM person_comments GROUP BY person_id",
+          "SELECT person_id,count(*) AS count FROM person_comments GROUP BY person_id",
+        ).all();
+        return {
+          current,
+          currentCommentsLost: counts.reduce((sum, row) =>
+            sum + (importedPeople.has(String(row.person_id)) ? 0 : Number(row.count)), 0),
+        };
+      }, true);
+      const token = randomUUID();
       const stage: Stage = {
         directory,
         family,
@@ -709,6 +728,8 @@ export function restoreStore(
         sources: catalogSources.length,
         files: files.size,
         missing,
+        currentCommentsLost,
+        backupCommentsSkipped,
         currentPeople: current.family.people.length,
         currentPhotos: current.family.photos?.length || 0,
       };

@@ -128,10 +128,16 @@ export function BackupRestore({
             заменой сервер сохранит текущую базу; прежние файлы фото останутся
             для восстановления.
           </p>
-          <p className="restore-warning">
-            Обсуждения удалённых при замене людей исчезнут. Комментарии и
-            вложения обсуждений из бэкапа не импортируются.
-          </p>
+          {((preview.currentCommentsLost || 0) > 0 ||
+            (preview.backupCommentsSkipped || 0) > 0) && (
+            <p className="restore-warning" role="alert">
+              На момент проверки будут удалены комментарии к людям,
+              которых нет в копии:{" "}
+              <b>{preview.currentCommentsLost || 0}</b>. Комментарии из копии,
+              которые не будут импортированы вместе с вложениями:{" "}
+              <b>{preview.backupCommentsSkipped || 0}</b>.
+            </p>
+          )}
           <label className="restore-confirm">
             <input
               type="checkbox"
