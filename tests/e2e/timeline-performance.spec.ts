@@ -30,6 +30,8 @@ test("production timeline entry, year scroll, people scroll and deep search", as
   const sourceFiles = [
     "src/components/tree/horizontal-timeline.tsx", "src/domain/horizontal-timeline.ts",
     "src/styles/timeline.css", "src/components/tree/tree-canvas.tsx",
+    "src/styles/tree-workspace.css", "src/styles/research-assistant.css",
+    "src/components/tree/person-relation-label.ts",
     "src/components/tree/tree-render-family.ts", "src/components/tree/use-family-view.ts",
     "src/components/person-panel.tsx", "src/components/tree-search.tsx",
     "src/hooks/useArchive.ts", "src/hooks/useWorkspaceSelection.ts", "src/domain/dates.ts",
