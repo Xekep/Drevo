@@ -294,6 +294,45 @@ test("a changed published card requires a fresh review before acceptance", async
   await expect(page.getByText("Сопоставлено")).toBeVisible();
 });
 
+test("an incoming owner compares only currently published fields before confirmation", async ({ page }) => {
+  const own = { archiveId: "tree-b", id: "person-b", name: "Иван Петров",
+    birthYear: "1902", birthPlace: "Тула" };
+  const other = { archiveId: "tree-a", id: "person-a", name: "Иван Петров",
+    birthYear: "1900" };
+  let published = true;
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-b", people: [own] } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
+    archiveId: "tree-b", nextCursor: null, matches: [{ id: "match-1", left: published ? other :
+      { archiveId: "tree-a", id: "person-a" }, right: own,
+      initiatedByArchiveId: "tree-a", status: "pending", reviewToken: published ? "review" : undefined,
+      requestedAt: "2026-09-30T00:00:00Z" }],
+  } }));
+  await page.goto("/admin");
+  await openAdminSection(page, "matches", "Связи деревьев");
+  const request = page.locator(".match-request");
+  const comparison = request.getByRole("region", { name: "Сравнение опубликованных полей" });
+  await expect(comparison).toBeVisible();
+  await expect(comparison.locator("dl > div").filter({ hasText: "Имя" }))
+    .toContainText("Текст совпадает");
+  await expect(comparison.locator("dl > div").filter({ hasText: "Год рождения" }))
+    .toContainText("Текст различается");
+  await expect(comparison).toContainText("Ваше дерево: 1902");
+  await expect(comparison).toContainText("Другое дерево: 1900");
+  await expect(comparison.locator("dl > div").filter({ hasText: "Место рождения" }))
+    .toContainText("Недостаточно опубликованных сведений");
+  await expect(comparison).toContainText("Другое дерево: Нет в публикации");
+  await expect(comparison).not.toContainText("дата рождения");
+  published = false;
+  await page.reload();
+  await openAdminSection(page, "matches", "Связи деревьев");
+  await expect(page.locator(".match-request").getByRole("region",
+    { name: "Сравнение опубликованных полей" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Подтвердить" })).toBeDisabled();
+});
+
 test("rejecting a manual match hides only the recipient's candidate until restored", async ({ page }) => {
   const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
   const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };

@@ -8215,6 +8215,25 @@ try {
     .find((person: { archiveId: string }) => person.archiveId === "other-archive")?.name,
     "Тестов Исправленный сосед");
   assert.doesNotMatch(JSON.stringify(matchBody), /biography|sources|parents/);
+  const recipientReview = await fetch(otherBase + "/api/discovery/matches", {
+    headers: archiveAdminHeaders,
+  });
+  assert.equal(recipientReview.status, 200);
+  const reviewedPair = (await recipientReview.json()).matches.find((item: { id: string }) =>
+    item.id === matchBody.match.id);
+  assert.ok(reviewedPair?.reviewToken, "the recipient can review the current published pair");
+  for (const card of [reviewedPair.left, reviewedPair.right]) {
+    const current = await fetch(securedBase + `/api/discovery/people/${card.archiveId}/${card.id}`,
+      { headers: { ...headers, "X-Real-IP": "203.0.113.249" } });
+    assert.equal(current.status, 200);
+    const publishedCard = (await current.json()).person;
+    delete publishedCard.publicationVersion;
+    assert.deepEqual(card, publishedCard,
+      "pair review includes exactly the fields currently consented to on each public card");
+  }
+  assert.doesNotMatch(JSON.stringify(reviewedPair), /biography|sources|parents|media/,
+    "the recipient's comparison cannot include graph or document fields");
+  console.log("runtime_discovery_pair_review_projection_ok");
   assert.deepEqual((await (await fetch(otherBase + "/api/discovery/matches/own-people?q=Исправленный", {
     headers: archiveAdminHeaders,
   })).json()).people.map((person: { id: string }) => person.id), ["person-a"]);

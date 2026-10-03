@@ -55,6 +55,34 @@ function CandidateCard({ candidate, ownArchiveId }: { candidate: Candidate; ownA
   </div>;
 }
 
+const comparedFields = [
+  ["name", "Имя"], ["birthSurname", "Фамилия при рождении"],
+  ["birthYear", "Год рождения"], ["deathYear", "Год смерти"],
+  ["birthPlace", "Место рождения"], ["deathPlace", "Место смерти"],
+] as const;
+
+function PublishedPairComparison({ own, other }: { own: Candidate; other: Candidate }) {
+  // A withdrawn card has no published name. Never compare it with a cached peer.
+  if (!own.name || !other.name) return null;
+  return <section className="match-pair-comparison" aria-label="Сравнение опубликованных полей">
+    <h3>Сравнение опубликованных полей</h3>
+    <p>Совпадение текста не доказывает, что это один человек. Отсутствующее значение
+      может быть не заполнено или не разрешено к публикации.</p>
+    <dl>{comparedFields.filter(([field]) => own[field] || other[field]).map(([field, label]) => {
+      const ownValue = own[field];
+      const otherValue = other[field];
+      const state = !ownValue || !otherValue ? "Недостаточно опубликованных сведений"
+        : ownValue.trim().toLocaleLowerCase("ru-RU") === otherValue.trim().toLocaleLowerCase("ru-RU")
+          ? "Текст совпадает" : "Текст различается";
+      return <div key={field}>
+        <dt>{label} <small>{state}</small></dt>
+        <dd><span>Ваше дерево: {ownValue || "Нет в публикации"}</span>
+          <span>Другое дерево: {otherValue || "Нет в публикации"}</span></dd>
+      </div>;
+    })}</dl>
+  </section>;
+}
+
 export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
   const [linkedTarget] = useState(() => typeof window === "undefined"
     ? null : adminMatchTargetAt(window.location.pathname));
@@ -497,6 +525,7 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
         <h2>Проверьте обе карточки</h2>
         <div className="match-pair"><CandidateCard candidate={source} ownArchiveId={archiveId} />
           <CandidateCard candidate={target} ownArchiveId={archiveId} /></div>
+        <PublishedPairComparison own={source} other={target} />
         <label>Почему это один человек? <small>Необязательно; сообщение увидит другое дерево</small>
           <textarea value={reason} maxLength={500} rows={2} onChange={(event) => setReason(event.target.value)}
             placeholder="Например: совпадают родители и место рождения" />
@@ -514,6 +543,9 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
         <div className="match-request-heading"><strong>{statusLabel[item.status]}</strong><time dateTime={item.requestedAt}>{new Date(item.requestedAt).toLocaleDateString("ru-RU")}</time></div>
         <div className="match-pair"><CandidateCard candidate={item.left} ownArchiveId={archiveId} />
           <CandidateCard candidate={item.right} ownArchiveId={archiveId} /></div>
+        <PublishedPairComparison
+          own={item.left.archiveId === archiveId ? item.left : item.right}
+          other={item.left.archiveId === archiveId ? item.right : item.left} />
         {item.reason && <p className="match-reason">Основание: {item.reason}</p>}
         {item.status === "pending" && item.changedSinceRequest &&
           <p className="match-reason">Опубликованные сведения изменились после запроса. Сверьте обе карточки перед решением.</p>}
