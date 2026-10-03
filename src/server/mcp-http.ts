@@ -95,6 +95,7 @@ export function mcpHttp({
   usage: ReturnType<typeof mcpUsageStore>;
   publicOrigin?: string;
 }) {
+  const pendingAudits = new Set<Promise<void>>();
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -104,7 +105,7 @@ export function mcpHttp({
     return true;
   };
 
-  return async (
+  const handle = async (
     req: IncomingMessage,
     res: ServerResponse,
     url: URL,
@@ -123,9 +124,19 @@ export function mcpHttp({
     }
     let grant = initialGrant;
     const hasAiAccess = async (lockTier = false) =>
-      (await accountAiAccess(archive.db, grant.createdBy, !publicOrigin, lockTier)) &&
+      (await accountAiAccess(
+        archive.db,
+        grant.createdBy,
+        !publicOrigin,
+        lockTier,
+      )) &&
       (!grant.boundUser ||
-        (await accountAiAccess(archive.db, grant.boundUser.id, !publicOrigin, lockTier)));
+        (await accountAiAccess(
+          archive.db,
+          grant.boundUser.id,
+          !publicOrigin,
+          lockTier,
+        )));
     if (!(await hasAiAccess()))
       return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
     if (req.method !== "POST") {
@@ -144,6 +155,8 @@ export function mcpHttp({
       return json(res, 400, error(null, -32700, "Parse error"));
     }
 
+    if (!request || typeof request !== "object" || Array.isArray(request))
+      return json(res, 400, error(null, -32600, "Invalid Request"));
     const id = request.id ?? null;
     if (request.jsonrpc !== "2.0" || typeof request.method !== "string")
       return json(res, 400, error(id, -32600, "Invalid Request"));
@@ -199,8 +212,14 @@ export function mcpHttp({
         request.method === "tools/call" && typeof auditParams.name === "string"
           ? auditParams.name.slice(0, 200)
           : undefined;
+    let auditRun: Awaited<ReturnType<typeof usage.begin>>;
     try {
-      await usage.check(grant.id, grant.rateLimitPerMinute);
+      auditRun = await usage.begin(
+        grant.id,
+        request.method,
+        toolName,
+        grant.rateLimitPerMinute,
+      );
     } catch (reason) {
       if (reason instanceof McpRateLimitError) {
         if (reason.retryAfterSeconds)
@@ -215,15 +234,30 @@ export function mcpHttp({
       }
       throw reason;
     }
-    const auditRun = await usage.begin(grant.id, request.method, toolName);
     let auditError = false;
-    res.once("finish", async () => {
-      await usage.finish(
-        auditRun.id,
-        auditRun.started,
-        auditError || res.statusCode >= 400 ? "error" : "ok",
-      );
+    // Include responses not yet finished in shutdown, and consume storage errors.
+    // EventEmitter does not await an async listener or handle its rejection.
+    let complete!: () => void;
+    const completed = new Promise<void>((resolve) => {
+      complete = resolve;
     });
+    const audit = completed
+      .then(() =>
+        usage.finish(
+          auditRun.id,
+          auditRun.started,
+          auditError || !res.writableFinished || res.statusCode >= 400
+            ? "error"
+            : "ok",
+        ),
+      )
+      .catch((reason: unknown) => {
+        console.error("Не удалось завершить запись журнала MCP", reason);
+      })
+      .finally(() => pendingAudits.delete(audit));
+    pendingAudits.add(audit);
+    res.once("finish", complete);
+    res.once("close", complete);
     // Usage recording can wait behind other database work after the earlier
     // tier check. Never publish even the tool catalogue from that stale grant.
     if (!(await hasAiAccess())) {
@@ -354,12 +388,16 @@ export function mcpHttp({
       }
       try {
         const sourceFamily = (await archive.read()).family;
-        const latestGrant = await tokens.authenticate(req.headers.authorization);
+        const latestGrant = await tokens.authenticate(
+          req.headers.authorization,
+        );
         if (!latestGrant)
           return json(res, 401, { error: "Недействительный MCP-токен" });
         grant = latestGrant;
         if (!(await hasAiAccess()))
-          return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
+          return json(res, 403, {
+            error: "ИИ-функции недоступны этому аккаунту",
+          });
         const family = grant.boundUser
             ? projectFamilyForUser(sourceFamily, grant.boundUser)
             : sourceFamily,
@@ -372,26 +410,50 @@ export function mcpHttp({
         // with token revocation, membership changes and tier downgrade.
         const delivery = await archive.db.transaction(async () => {
           if (grant.boundUser && archive.db.kind === "postgres") {
-            const current = await archive.db.prepare("", `SELECT role,approved,person_id,tree_access
-              FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
+            const current = await archive.db
+              .prepare(
+                "",
+                `SELECT role,approved,person_id,tree_access
+              FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`,
+              )
               .get(archive.db.archiveId || "", grant.boundUser.id);
-            if (!current?.approved || current.role !== grant.boundUser.role ||
+            if (
+              !current?.approved ||
+              current.role !== grant.boundUser.role ||
               (current.person_id || "") !== (grant.boundUser.personId || "") ||
-              current.tree_access !== (grant.boundUser.treeAccess || "all"))
-              return { status: 403, body: { error: "Доступ к участникам архива изменился" } };
+              current.tree_access !== (grant.boundUser.treeAccess || "all")
+            )
+              return {
+                status: 403,
+                body: { error: "Доступ к участникам архива изменился" },
+              };
           }
           if (!(await hasAiAccess(true)))
-            return { status: 403, body: { error: "ИИ-функции недоступны этому аккаунту" } };
-          const finalGrant = await tokens.authenticate(req.headers.authorization, true);
+            return {
+              status: 403,
+              body: { error: "ИИ-функции недоступны этому аккаунту" },
+            };
+          const finalGrant = await tokens.authenticate(
+            req.headers.authorization,
+            true,
+          );
           if (!finalGrant)
-            return { status: 401, body: { error: "Недействительный MCP-токен" } };
-          if (finalGrant.id !== grant.id ||
+            return {
+              status: 401,
+              body: { error: "Недействительный MCP-токен" },
+            };
+          if (
+            finalGrant.id !== grant.id ||
             !finalGrant.scopes.includes(definition.scope) ||
             finalGrant.boundUser?.id !== grant.boundUser?.id ||
             finalGrant.boundUser?.role !== grant.boundUser?.role ||
             finalGrant.boundUser?.personId !== grant.boundUser?.personId ||
-            finalGrant.boundUser?.treeAccess !== grant.boundUser?.treeAccess)
-            return { status: 403, body: { error: "Доступ MCP-токена изменился" } };
+            finalGrant.boundUser?.treeAccess !== grant.boundUser?.treeAccess
+          )
+            return {
+              status: 403,
+              body: { error: "Доступ MCP-токена изменился" },
+            };
           return {
             status: 200,
             body: result(
@@ -449,4 +511,9 @@ export function mcpHttp({
     auditError = true;
     return json(res, modern ? 404 : 200, error(id, -32601, "Method not found"));
   };
+  return Object.assign(handle, {
+    async close() {
+      await Promise.allSettled([...pendingAudits]);
+    },
+  });
 }

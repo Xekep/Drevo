@@ -3,6 +3,7 @@ import { ExternalLink, Search, X } from "lucide-react";
 import type { ResearchDirectoryCategory } from "../shared/research-catalog";
 import { safeUrl } from "../domain";
 import { fetchWithTimeout } from "../data/request-timeout";
+import { archiveFetch } from "../data/archive-fetch";
 import "../styles/research-resources-page.css";
 
 const normalize = (text: string) =>
@@ -18,10 +19,15 @@ export default function ResearchResourcesPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetchWithTimeout("/api/research-resources", {
-      signal: controller.signal,
-      cache: "no-store",
-    })
+    void fetchWithTimeout(
+      "/api/research-resources",
+      {
+        signal: controller.signal,
+        cache: "no-store",
+      },
+      undefined,
+      archiveFetch,
+    )
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok || !Array.isArray(data.categories))

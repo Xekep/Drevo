@@ -15,7 +15,6 @@ import {
   mkdirSync,
   mkdtempSync,
   openSync,
-  readSync,
   rmSync,
   writeSync,
 } from "node:fs";
@@ -36,7 +35,8 @@ import {
   type StoredFaceDescriptor,
 } from "./database.ts";
 import { writeDatabaseBackup } from "./backup.ts";
-import { imageExtension, mediaPattern } from "./media.ts";
+import { mediaPattern, originalMediaPattern } from "./media.ts";
+import { portableCitationMedia } from "./portable-package.ts";
 import { verifyPortableMediaFile } from "./portable-media-check.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
@@ -49,7 +49,10 @@ import {
 import { validateFamily, type Family, type Source } from "../domain/index.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import type { StoreDatabase } from "./store-database.ts";
-import { parseCatalogSource, type CatalogSource } from "../shared/source-catalog.ts";
+import {
+  parseCatalogSource,
+  type CatalogSource,
+} from "../shared/source-catalog.ts";
 import { allCitations, sourceCatalogStore } from "./source-catalog-store.ts";
 
 const RESTORE_LIMIT = 12 * 1024 * 1024 * 1024;
@@ -67,14 +70,19 @@ function removeStage(directory: string, stagingRoot: string) {
 }
 const SQLITE_LIMIT = 512 * 1024 * 1024,
   UNPACKED_LIMIT = 12 * 1024 * 1024 * 1024;
-const references = (family: Family) => [
-  ...new Set(
-    [
-      ...family.people.map((p) => p.photo),
-      ...(family.photos || []).map((p) => p.url),
-    ].filter((url): url is string => !!url && url.startsWith("/media/")),
-  ),
-];
+const references = (family: Family) => {
+  const images = [
+    ...family.people.map((p) => p.photo),
+    ...(family.photos || []).map((p) => p.url),
+  ].filter((url): url is string => !!url && url.startsWith("/media/"));
+  if (images.some((url) => !mediaPattern.test(url)))
+    throw new Error("Недопустимое имя фотографии в базе");
+  const citations = allCitations(family).flatMap((source) => {
+    const local = source.url && portableCitationMedia(source.url);
+    return local ? [`/media/${local.name}`] : [];
+  });
+  return [...new Set([...images, ...citations])];
+};
 
 async function streamUpload(
   source: Readable,
@@ -114,17 +122,6 @@ async function fileHeader(file: string) {
     return header.subarray(0, bytesRead);
   } finally {
     await handle.close();
-  }
-}
-
-function imageExtensionFile(file: string) {
-  const fd = openSync(file, "r");
-  try {
-    const header = Buffer.alloc(16),
-      bytesRead = readSync(fd, header, 0, header.length, 0);
-    return imageExtension(header.subarray(0, bytesRead));
-  } finally {
-    closeSync(fd);
   }
 }
 
@@ -240,10 +237,13 @@ async function unpack(
           if (pax) {
             if (remaining > 65536)
               throw new Error("Слишком большой заголовок TAR");
-          } else if (type === "5" && remaining === 0 &&
+          } else if (
+            type === "5" &&
+            remaining === 0 &&
             (name === "uploads/" ||
               /^uploads\/(?:discussion-files|ai-chat-files)\/$/.test(name) ||
-              /^uploads\/ai-chat-files\/[a-f0-9-]{36}\/$/.test(name)))
+              /^uploads\/ai-chat-files\/[a-f0-9-]{36}\/$/.test(name))
+          )
             name = "";
           else {
             if (type !== "0" && type !== "")
@@ -252,8 +252,12 @@ async function unpack(
             // Family import deliberately leaves comments and AI chats alone,
             // so validate their paths and sizes but do not stage their bytes.
             const privateAttachment =
-              /^uploads\/discussion-files\/[a-f0-9-]{36}(?:\.webp)?$/.test(name) ||
-              /^uploads\/ai-chat-files\/[a-f0-9-]{36}\/[a-f0-9-]{36}$/.test(name);
+              /^uploads\/discussion-files\/[a-f0-9-]{36}(?:\.webp)?$/.test(
+                name,
+              ) ||
+              /^uploads\/ai-chat-files\/[a-f0-9-]{36}\/[a-f0-9-]{36}$/.test(
+                name,
+              );
             if (
               name !== "drevo.sqlite" &&
               name !== "drevo.sqlite.secrets.key" &&
@@ -414,19 +418,22 @@ export function restoreStore(
     const directory = mkdtempSync(join(stagingRoot, "restore-")),
       upload = join(directory, ".upload");
     mkdirSync(join(directory, "uploads"));
-    let reservation: Awaited<ReturnType<typeof reservePlatformDisk>> | undefined;
+    let reservation:
+      Awaited<ReturnType<typeof reservePlatformDisk>> | undefined;
     let neededBytes = 0;
     let reservedBytes = 0;
     const reserveBytes = async (bytes: number) => {
       neededBytes += bytes;
       if (neededBytes <= reservedBytes) return;
-      const target = Math.ceil(neededBytes / RESERVATION_STEP) * RESERVATION_STEP;
+      const target =
+        Math.ceil(neededBytes / RESERVATION_STEP) * RESERVATION_STEP;
       const freeBytes = async () => {
         const disk = await statfs(stagingRoot);
         return disk.bavail * disk.bsize;
       };
       if (reservation) await reservation.grow(target - reservedBytes);
-      else reservation = await reservePlatformDisk(archive.db, target, freeBytes);
+      else
+        reservation = await reservePlatformDisk(archive.db, target, freeBytes);
       reservedBytes = target;
     };
     try {
@@ -464,12 +471,18 @@ export function restoreStore(
         family = validateFamily(
           (await readArchive(storeDatabase(source))).family,
         );
-        if (source.prepare(
-          "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='person_comments'",
-        ).get())
-          backupCommentsSkipped = Number(source.prepare(
-            "SELECT count(*) AS count FROM person_comments",
-          ).get()!.count);
+        if (
+          source
+            .prepare(
+              "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='person_comments'",
+            )
+            .get()
+        )
+          backupCommentsSkipped = Number(
+            source
+              .prepare("SELECT count(*) AS count FROM person_comments")
+              .get()!.count,
+          );
         if (
           source
             .prepare(
@@ -534,30 +547,63 @@ export function restoreStore(
             return document;
           });
         }
-        if (source.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='source_catalog'").get()) {
-          const rows = source.prepare("SELECT id,data,version FROM source_catalog ORDER BY id").all();
-          if (rows.length > 50_000) throw new Error("Слишком много источников в бэкапе");
+        if (
+          source
+            .prepare(
+              "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='source_catalog'",
+            )
+            .get()
+        ) {
+          const rows = source
+            .prepare("SELECT id,data,version FROM source_catalog ORDER BY id")
+            .all();
+          if (rows.length > 50_000)
+            throw new Error("Слишком много источников в бэкапе");
           catalogSources = rows.map((row) => {
             let parsed: CatalogSource | null = null;
-            try { parsed = parseCatalogSource(JSON.parse(String(row.data))); }
-            catch { /* Invalid catalogue data is reported before applying the backup. */ }
+            try {
+              parsed = parseCatalogSource(JSON.parse(String(row.data)));
+            } catch {
+              /* Invalid catalogue data is reported before applying the backup. */
+            }
             const version = Number(row.version);
-            if (!parsed || parsed.id !== row.id || !Number.isSafeInteger(version) ||
-              version < 1 || version > 2_147_483_645)
+            if (
+              !parsed ||
+              parsed.id !== row.id ||
+              !Number.isSafeInteger(version) ||
+              version < 1 ||
+              version > 2_147_483_645
+            )
               throw new Error("Некорректный источник в бэкапе");
             return { ...parsed, version };
           });
         }
         const documentIds = new Set(documents.map((document) => document.id));
         const catalog = new Map(catalogSources.map((item) => [item.id, item]));
-        if (catalogSources.some((item) => item.documentIds.some((id) => !documentIds.has(id))))
-          throw new Error("Источник в бэкапе ссылается на отсутствующий документ");
+        if (
+          catalogSources.some((item) =>
+            item.documentIds.some((id) => !documentIds.has(id)),
+          )
+        )
+          throw new Error(
+            "Источник в бэкапе ссылается на отсутствующий документ",
+          );
         for (const citation of allCitations(family)) {
           if (citation.documentId && !documentIds.has(citation.documentId))
-            throw new Error("Цитата в бэкапе ссылается на отсутствующий документ");
-          if (citation.catalogId && (!catalog.has(citation.catalogId) ||
-            (citation.documentId && !catalog.get(citation.catalogId)!.documentIds.includes(citation.documentId))))
-            throw new Error("Цитата в бэкапе ссылается на отсутствующий источник или документ каталога");
+            throw new Error(
+              "Цитата в бэкапе ссылается на отсутствующий документ",
+            );
+          if (
+            citation.catalogId &&
+            (!catalog.has(citation.catalogId) ||
+              (citation.documentId &&
+                !catalog
+                  .get(citation.catalogId)!
+                  .documentIds.includes(citation.documentId)))
+          )
+            throw new Error(
+              "Цитата в бэкапе ссылается на отсутствующий источник или документ каталога",
+            );
         }
         if (
           source
@@ -658,32 +704,45 @@ export function restoreStore(
         documentFiles.set(document.id, file);
       }
       let missing = 0;
+      const documentNames = new Set(
+        documents.map((document) => document.fileName),
+      );
       for (const url of references(family)) {
-        const match = mediaPattern.exec(url);
-        if (!match) throw new Error("Недопустимое имя фотографии в базе");
+        const match = originalMediaPattern.exec(url);
+        if (!match) throw new Error("Недопустимое имя оригинала в базе");
+        // The document loop already verifies and stages these originals.
+        if (documentNames.has(match[1])) continue;
         const file = join(directory, "uploads", match[1]);
         if (existsSync(file)) {
-          if (imageExtensionFile(file) !== match[2])
-            throw new Error(
-              "Содержимое фотографии не соответствует расширению",
-            );
+          await verifyPortableMediaFile(file, match[1]);
           files.set(url, file);
         } else if (!existsSync(join(dirname(dbPath), "uploads", match[1])))
           missing++;
       }
       const importedPeople = new Set(family.people.map((person) => person.id));
-      const { current, currentCommentsLost } = await archive.db.transaction(async () => {
-        const current = await readArchive(archive.db);
-        const counts = await archive.db.prepare(
-          "SELECT person_id,count(*) AS count FROM person_comments GROUP BY person_id",
-          "SELECT person_id,count(*) AS count FROM person_comments GROUP BY person_id",
-        ).all();
-        return {
-          current,
-          currentCommentsLost: counts.reduce((sum, row) =>
-            sum + (importedPeople.has(String(row.person_id)) ? 0 : Number(row.count)), 0),
-        };
-      }, true);
+      const { current, currentCommentsLost } = await archive.db.transaction(
+        async () => {
+          const current = await readArchive(archive.db);
+          const counts = await archive.db
+            .prepare(
+              "SELECT person_id,count(*) AS count FROM person_comments GROUP BY person_id",
+              "SELECT person_id,count(*) AS count FROM person_comments GROUP BY person_id",
+            )
+            .all();
+          return {
+            current,
+            currentCommentsLost: counts.reduce(
+              (sum, row) =>
+                sum +
+                (importedPeople.has(String(row.person_id))
+                  ? 0
+                  : Number(row.count)),
+              0,
+            ),
+          };
+        },
+        true,
+      );
       const token = randomUUID();
       const stage: Stage = {
         directory,
@@ -781,8 +840,9 @@ export function restoreStore(
         ...stage.files.values(),
         ...stage.documentFiles.values(),
       ];
-      const copyBytes = (await Promise.all(copySources.map((path) => stat(path))))
-        .reduce((sum, file) => sum + file.size, 0);
+      const copyBytes = (
+        await Promise.all(copySources.map((path) => stat(path)))
+      ).reduce((sum, file) => sum + file.size, 0);
       if (!Number.isSafeInteger(copyBytes))
         throw new Error("Некорректный размер файлов восстановления");
       const copyReservation = copyBytes
@@ -793,7 +853,7 @@ export function restoreStore(
         : undefined;
       try {
         for (const [url, path] of stage.files) {
-          const name = `${randomUUID()}.${imageExtensionFile(path)}`,
+          const name = `${randomUUID()}.${originalMediaPattern.exec(url)![2]}`,
             destination = join(dirname(dbPath), "uploads", name);
           await copyFile(path, destination, constants.COPYFILE_EXCL);
           created.push(destination);
@@ -814,17 +874,36 @@ export function restoreStore(
           created.push(destination);
           restoredDocuments.push({ ...document, id, fileName });
           documentIdMap.set(document.id, id);
+          urls.set(`/media/${document.fileName}`, `/media/${fileName}`);
         }
-        const remapCitation = (source: Source): Source => ({ ...source,
-          ...(source.documentId ? { documentId: documentIdMap.get(source.documentId)! } : {}),
-        });
-        const remapCitations = (sources: Source[]) => sources.map(remapCitation);
+        const remapCitation = (source: Source): Source => {
+          const local = source.url && portableCitationMedia(source.url);
+          const remapped = local && urls.get(`/media/${local.name}`);
+          return {
+            ...source,
+            ...(local && remapped ? { url: remapped + local.suffix } : {}),
+            ...(source.documentId
+              ? { documentId: documentIdMap.get(source.documentId)! }
+              : {}),
+          };
+        };
+        const remapCitations = (sources: Source[]) =>
+          sources.map(remapCitation);
         const family = structuredClone(stage.family);
         for (const person of family.people) {
-          if (person.photo) person.photo = urls.get(person.photo) || person.photo;
+          if (person.photo)
+            person.photo = urls.get(person.photo) || person.photo;
           person.sources = remapCitations(person.sources);
-          for (const key of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim", "occupationClaim", "maidenNameClaim"] as const)
-            if (person[key]) person[key]!.sources = remapCitations(person[key]!.sources);
+          for (const key of [
+            "birthDateClaim",
+            "deathDateClaim",
+            "birthPlaceClaim",
+            "deathPlaceClaim",
+            "occupationClaim",
+            "maidenNameClaim",
+          ] as const)
+            if (person[key])
+              person[key]!.sources = remapCitations(person[key]!.sources);
           for (const alternative of person.factAlternatives || [])
             alternative.sources = remapCitations(alternative.sources);
           for (const event of person.events || []) {
@@ -832,20 +911,30 @@ export function restoreStore(
             if (event.dateClaim)
               event.dateClaim.sources = remapCitations(event.dateClaim.sources);
             if (event.placeClaim)
-              event.placeClaim.sources = remapCitations(event.placeClaim.sources);
+              event.placeClaim.sources = remapCitations(
+                event.placeClaim.sources,
+              );
             for (const alternative of event.alternatives || [])
               alternative.sources = remapCitations(alternative.sources);
           }
         }
         for (const union of family.unions || []) {
           if (union.sources) union.sources = remapCitations(union.sources);
-          for (const key of ["formation", "ending", "divorce", "ongoing"] as const)
-            if (union[key]?.sources) union[key]!.sources = remapCitations(union[key]!.sources!);
+          for (const key of [
+            "formation",
+            "ending",
+            "divorce",
+            "ongoing",
+          ] as const)
+            if (union[key]?.sources)
+              union[key]!.sources = remapCitations(union[key]!.sources!);
         }
         for (const link of family.links || [])
           if (link.sources) link.sources = remapCitations(link.sources);
-        for (const photo of family.photos || []) photo.url = urls.get(photo.url) || photo.url;
-        const restoredCatalog = stage.catalogSources.map((source) => ({ ...source,
+        for (const photo of family.photos || [])
+          photo.url = urls.get(photo.url) || photo.url;
+        const restoredCatalog = stage.catalogSources.map((source) => ({
+          ...source,
           documentIds: source.documentIds.map((id) => documentIdMap.get(id)!),
         }));
         result = await archive.write(
@@ -894,13 +983,23 @@ export function restoreStore(
               for (const personId of document.personIds)
                 await link.run(document.id, personId);
             }
-            const currentVersions = new Map((await db.prepare(
-              "SELECT id,version FROM source_catalog",
-              "SELECT id,version FROM source_catalog",
-            ).all()).map((row) => [String(row.id), Number(row.version)]));
-            await db.exec("DELETE FROM source_catalog", "DELETE FROM source_catalog");
+            const currentVersions = new Map(
+              (
+                await db
+                  .prepare(
+                    "SELECT id,version FROM source_catalog",
+                    "SELECT id,version FROM source_catalog",
+                  )
+                  .all()
+              ).map((row) => [String(row.id), Number(row.version)]),
+            );
+            await db.exec(
+              "DELETE FROM source_catalog",
+              "DELETE FROM source_catalog",
+            );
             for (const { version, ...source } of restoredCatalog) {
-              const nextVersion = Math.max(version, currentVersions.get(source.id) || 0) + 1;
+              const nextVersion =
+                Math.max(version, currentVersions.get(source.id) || 0) + 1;
               if (nextVersion > 2_147_483_646)
                 throw new Error("Версия источника превышает допустимый предел");
               await sourceCatalogStore(db).insert(source, nextVersion);

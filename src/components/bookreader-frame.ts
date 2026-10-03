@@ -32,23 +32,27 @@ let pageCount = 0;
 let cleanupDocument: () => void = () => {};
 window.addEventListener("pagehide", () => cleanupDocument(), { once: true });
 
-async function pageDimensions(pdf: PDFDocumentProxy): Promise<ReaderPage[]> {
-  const dimensions = Array<ReaderPage>(pdf.numPages);
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(6, pdf.numPages) }, async () => {
-      while (next < pdf.numPages) {
-        const index = next++;
-        const page = await pdf.getPage(index + 1);
-        const viewport = page.getViewport({ scale: 1 });
-        dimensions[index] = {
-          width: viewport.width,
-          height: viewport.height,
-        };
-      }
-    }),
-  );
-  return dimensions;
+async function pageDimensions(url: string): Promise<ReaderPage[]> {
+  const manifest = new URL(url, location.href);
+  manifest.searchParams.set("reader", "pages");
+  const response = await fetch(manifest, { credentials: "same-origin" });
+  if (!response.ok)
+    throw new Error("Не удалось подготовить размеры страниц PDF");
+  const { pages } = (await response.json()) as { pages: ReaderPage[] };
+  if (
+    !Array.isArray(pages) ||
+    pages.length < 1 ||
+    pages.length > 2000 ||
+    pages.some(
+      (page) =>
+        !Number.isFinite(page.width) ||
+        page.width <= 0 ||
+        !Number.isFinite(page.height) ||
+        page.height <= 0,
+    )
+  )
+    throw new Error("Некорректные размеры страниц PDF");
+  return pages;
 }
 
 function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -103,6 +107,7 @@ async function prepareDocument(
   let readBookmarks: () => void = () => {};
   let textSearch: PdfTextSearch | undefined;
   if (command.mimeType === "application/pdf") {
+    const sizes = pageDimensions(command.url);
     const loadingTask = getDocument({
       url: command.url,
       withCredentials: command.url.startsWith("/"),
@@ -112,12 +117,34 @@ async function prepareDocument(
     cleanupDocument = () => {
       void loadingTask.destroy();
     };
-    const pdf = await loadingTask.promise;
+    const [pdf, manifest] = await Promise.all([loadingTask.promise, sizes]);
     textSearch = new PdfTextSearch(pdf);
     if (pdf.numPages < 1 || pdf.numPages > 2000)
       throw new Error("Документ должен содержать от 1 до 2000 страниц");
     pageCount = pdf.numPages;
-    const urls = new Map<number, string>();
+    const urls = new Map<number, { url: string; bytes: number }>();
+    let cachedBytes = 0;
+    const pruneUrls = (latest: number) => {
+      const used = new Set(
+        Array.from(
+          document.querySelectorAll<HTMLImageElement>("img.BRpageimage"),
+          (image) => image.src,
+        ),
+      );
+      const current = reader?.currentIndex() ?? latest;
+      for (const [index, entry] of urls) {
+        if (urls.size <= 24 && cachedBytes <= 32 * 1024 * 1024) break;
+        if (
+          index === latest ||
+          used.has(entry.url) ||
+          Math.abs(index - current) <= 4
+        )
+          continue;
+        urls.delete(index);
+        cachedBytes -= entry.bytes;
+        URL.revokeObjectURL(entry.url);
+      }
+    };
     const pending = new Map<number, Promise<string>>();
     let disposed = false;
     let activeRenders = 0;
@@ -130,7 +157,11 @@ async function prepareDocument(
     };
     render = (index: number): Promise<string> => {
       const url = urls.get(index);
-      if (url) return Promise.resolve(url);
+      if (url) {
+        urls.delete(index);
+        urls.set(index, url);
+        return Promise.resolve(url.url);
+      }
       const inProgress = pending.get(index);
       if (inProgress) return inProgress;
       const task = (async () => {
@@ -156,7 +187,9 @@ async function prepareDocument(
         page.cleanup();
         if (disposed) throw new Error("Документ закрыт");
         const result = URL.createObjectURL(blob);
-        urls.set(index, result);
+        urls.set(index, { url: result, bytes: blob.size });
+        cachedBytes += blob.size;
+        pruneUrls(index);
         return result;
       })().finally(() => {
         pending.delete(index);
@@ -169,7 +202,9 @@ async function prepareDocument(
     cleanupDocument = () => {
       if (disposed) return;
       disposed = true;
-      for (const url of urls.values()) URL.revokeObjectURL(url);
+      for (const entry of urls.values()) URL.revokeObjectURL(entry.url);
+      urls.clear();
+      cachedBytes = 0;
       void loadingTask.destroy();
     };
     // Keep exact sizes for mixed-format PDFs; render the opening spread in parallel.
@@ -184,9 +219,11 @@ async function prepareDocument(
           ? [initial, initial + 1]
           : [initial - 1, initial];
     [dimensions] = await Promise.all([
-      pageDimensions(pdf),
+      Promise.resolve(manifest),
       Promise.all(spread.filter((index) => index < pageCount).map(render)),
     ]);
+    if (dimensions.length !== pdf.numPages)
+      throw new Error("Число страниц PDF изменилось");
     prefetch = (index: number) => {
       for (const page of [index, index + 1, index + 2, index + 3, index + 4]) {
         if (page >= 0 && page < pageCount)
@@ -315,7 +352,11 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
     const toolbar = document.querySelector<HTMLElement>(".BRtoolbar");
     if (toolbar) {
       const reportToolbarHeight = () =>
-        send({ source, type: "toolbar-height", height: Math.ceil(toolbar.getBoundingClientRect().bottom) });
+        send({
+          source,
+          type: "toolbar-height",
+          height: Math.ceil(toolbar.getBoundingClientRect().bottom),
+        });
       const toolbarObserver = new ResizeObserver(reportToolbarHeight);
       toolbarObserver.observe(toolbar);
       window.addEventListener("resize", reportToolbarHeight);

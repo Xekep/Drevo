@@ -15,39 +15,48 @@ export function mcpUsageStore(db: StoreDatabase) {
     return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   };
 
-  return {
-    async check(tokenId: string, requestsPerMinute: number) {
-      if (requestsPerMinute <= 0) return;
-      const now = Date.now(),
-        since = now - 60_000,
-        row = (await db
-          .prepare(
-            `SELECT count(*) AS n,min(started_ms) AS oldest
+  const check = async (tokenId: string, requestsPerMinute: number) => {
+    if (requestsPerMinute <= 0) return;
+    const now = Date.now(),
+      since = now - 60_000,
+      row = (await db
+        .prepare(
+          `SELECT count(*) AS n,min(started_ms) AS oldest
              FROM mcp_usage WHERE token_id=? AND started_ms>=?`,
-            "SELECT count(*) AS n,min(started_ms) AS oldest\n             FROM mcp_usage WHERE token_id=? AND started_ms>=?",
-          )
-          .get(tokenId, since))!;
-      if (Number(row.n) < requestsPerMinute) return;
-      const oldest = row.oldest ? Number(row.oldest) : now;
-      throw new McpRateLimitError(
-        "Слишком много MCP-запросов. Повторите позже.",
-        Math.max(1, Math.ceil((oldest + 60_000 - now) / 1000)),
-      );
-    },
+          "SELECT count(*) AS n,min(started_ms) AS oldest\n             FROM mcp_usage WHERE token_id=? AND started_ms>=?",
+        )
+        .get(tokenId, since))!;
+    if (Number(row.n) < requestsPerMinute) return;
+    const oldest = row.oldest ? Number(row.oldest) : now;
+    throw new McpRateLimitError(
+      "Слишком много MCP-запросов. Повторите позже.",
+      Math.max(1, Math.ceil((oldest + 60_000 - now) / 1000)),
+    );
+  };
 
-    async begin(tokenId: string, method: string, toolName?: string) {
-      const started = Date.now(),
-        result = await db
-          .prepare(
-            `INSERT INTO mcp_usage(
+  return {
+    check,
+    async begin(
+      tokenId: string,
+      method: string,
+      toolName?: string,
+      requestsPerMinute = 0,
+    ) {
+      return await db.transaction(async () => {
+        await check(tokenId, requestsPerMinute);
+        const started = Date.now(),
+          result = await db
+            .prepare(
+              `INSERT INTO mcp_usage(
               at,started_ms,token_id,method,tool_name,status,latency_ms
             ) VALUES(
               strftime('%Y-%m-%dT%H:%M:%fZ','now'),?,?,?,?, 'error',0
             )`,
-            "INSERT INTO mcp_usage(\n              at,started_ms,token_id,method,tool_name,status,latency_ms\n            ) VALUES(\n              to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),?,?,?,?, 'error',0\n            ) RETURNING id",
-          )
-          .run(started, tokenId, method, toolName || null);
-      return { id: Number(result.lastInsertRowid), started };
+              "INSERT INTO mcp_usage(\n              at,started_ms,token_id,method,tool_name,status,latency_ms\n            ) VALUES(\n              to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),?,?,?,?, 'error',0\n            ) RETURNING id",
+            )
+            .run(started, tokenId, method, toolName || null);
+        return { id: Number(result.lastInsertRowid), started };
+      });
     },
 
     async finish(id: number, started: number, status: "ok" | "error") {

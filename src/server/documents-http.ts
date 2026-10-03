@@ -10,6 +10,7 @@ import {
   tiffDocumentRenderer,
 } from "./document-images.ts";
 import sharp from "sharp";
+import { pdfDocumentPages } from "./document-pdf.ts";
 import { randomUUID } from "node:crypto";
 import { createWriteStream, mkdirSync } from "node:fs";
 import { open, readFile, rename, stat, statfs, unlink } from "node:fs/promises";
@@ -266,6 +267,7 @@ export function documentsHttp({
   beforeFileDelivery,
   beforeLockedFileDelivery,
   beforeStreamRemainder,
+  pdfPages,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -275,11 +277,13 @@ export function documentsHttp({
   beforeFileDelivery?: () => Promise<void>;
   beforeLockedFileDelivery?: () => Promise<void>;
   beforeStreamRemainder?: () => Promise<void>;
+  pdfPages?: ReturnType<typeof pdfDocumentPages>;
 }) {
   mkdirSync(uploadsDirectory, { recursive: true });
   const db = archive.db;
   const quota = uploadQuota(db);
   const renderTiff = tiffDocumentRenderer();
+  const readPdfPages = pdfPages ?? pdfDocumentPages(join(uploadsDirectory, ".reader-cache"));
   const audit = auditStore(db);
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -402,6 +406,16 @@ export function documentsHttp({
       const union = (typeof row.data === "string" ? JSON.parse(row.data) : row.data) as FamilyUnion;
       if (unionCitations(union).some((source) => source.documentId === documentId))
         people.push(...union.participants);
+    }
+    const links = await db.prepare(
+      "SELECT source,target,sources FROM relations WHERE type NOT IN ('parent','spouse') AND sources LIKE ?",
+      "SELECT source,target,sources FROM relations WHERE type NOT IN ('parent','spouse') AND sources::text LIKE ?",
+    ).all(`%${documentId}%`);
+    for (const row of links) {
+      const sources = (typeof row.sources === "string"
+        ? JSON.parse(row.sources) : row.sources) as Source[];
+      if (sources.some((source) => source.documentId === documentId))
+        people.push(String(row.source), String(row.target));
     }
     return [...new Set(people)];
   };
@@ -1217,6 +1231,10 @@ export function documentsHttp({
         };
         const readerView = url.searchParams.get("reader");
         if (readerView) {
+          if (fileType.extension === "pdf" && readerView === "pages") {
+            const pages = await readPdfPages(path);
+            return await deliver(() => { json(res, 200, { pages }); });
+          }
           if (fileType.extension !== "tif")
             return json(res, 400, {
               error: "Постраничный просмотр доступен для TIFF",
@@ -1482,6 +1500,9 @@ export function documentsHttp({
         });
         if (!committed)
           return json(res, 403, { error: "Доступ к документу изменился" });
+        // Prepare once at upload. Older originals fill the same cache on demand.
+        // A damaged or encrypted PDF retains the existing upload behaviour.
+        if (fileType.extension === "pdf") await readPdfPages(target).catch(() => {});
         return json(res, 201, { id });
       } catch (error) {
         if (res.destroyed) return true;

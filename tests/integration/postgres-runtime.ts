@@ -75,6 +75,7 @@ import { gedcomHttp } from "../../src/server/gedcom-http.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
 import { mcpHttp } from "../../src/server/mcp-http.ts";
 import { mcpUsageStore } from "../../src/server/mcp-usage.ts";
+import { verifyFamilyWriteAccess } from "./postgres-family-write-access.ts";
 import { adminMcpHttp } from "../../src/server/admin-mcp-http.ts";
 import { sharesStore } from "../../src/server/shares.ts";
 import { adminSharingHttp } from "../../src/server/admin-sharing-http.ts";
@@ -3907,6 +3908,7 @@ try {
       .then((r) => r.json())).enabled,
     true,
   );
+  await verifyFamilyWriteAccess(app.archive, client);
   const boundToken = await mcpTokenStore(app.archive.db).issue(owner, {
     name: "Проверка уровня",
     scopes: ["tree:read"],

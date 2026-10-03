@@ -28,7 +28,7 @@ export function PdfBookReader({
   mayAnnotate?: boolean;
   annotateOnOpen?: boolean;
 }) {
-  const dialog = useRef<HTMLElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const commentsList = useRef<HTMLDivElement>(null);
   const editTrigger = useRef<HTMLButtonElement | null>(null);
@@ -38,9 +38,9 @@ export function PdfBookReader({
   const navigateToPage = useRef<((index: number) => void) | null>(null);
   const [readerReady, setReaderReady] = useState(false);
   const [outline, setOutline] = useState<OutlineEntry[]>([]);
-  const [sidebarTab, setSidebarTab] = useState<"comments" | "outline" | "links">(
-    "comments",
-  );
+  const [sidebarTab, setSidebarTab] = useState<
+    "comments" | "outline" | "links"
+  >("comments");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [magnifier, setMagnifier] = useState(false);
@@ -50,7 +50,11 @@ export function PdfBookReader({
   const [annotating, setAnnotating] = useState(annotateOnOpen);
   const [selection, setSelection] = useState<AnnotationSelection | null>(null);
   const [comment, setComment] = useState("");
-  const [editing, setEditing] = useState<{ id: string; expected: string; text: string } | null>(null);
+  const [editing, setEditing] = useState<{
+    id: string;
+    expected: string;
+    text: string;
+  } | null>(null);
   const [editError, setEditError] = useState("");
   const [saving, setSaving] = useState(false);
   const [activeAnnotation, setActiveAnnotation] = useState("");
@@ -75,8 +79,11 @@ export function PdfBookReader({
         : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    const modal = dialog.current;
+    modal?.showModal();
     frame.current?.focus();
     return () => {
+      modal?.close();
       document.body.style.overflow = previousOverflow;
       previousFocus?.focus();
     };
@@ -90,30 +97,19 @@ export function PdfBookReader({
       ) {
         event.preventDefault();
         frame.current?.contentWindow?.postMessage(
-          { source: "drevo-bookreader", type: "focus-search" } satisfies ReaderCommand,
+          {
+            source: "drevo-bookreader",
+            type: "focus-search",
+          } satisfies ReaderCommand,
           window.location.origin,
         );
       } else if (event.key === "Escape") {
+        event.preventDefault();
         if (magnifierLatest.current) {
           event.preventDefault();
           magnifierLatest.current = false;
           setMagnifier(false);
         } else closeLatest.current();
-      } else if (event.key === "Tab") {
-        const controls = [
-          ...(dialog.current?.querySelectorAll<HTMLElement>(
-            "a[href], button:not([disabled]), textarea:not([disabled]), iframe",
-          ) || []),
-        ].filter((element) => element.getClientRects().length > 0);
-        const first = controls[0],
-          last = controls.at(-1);
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first?.focus();
-        }
       }
     };
     window.addEventListener("keydown", keydown);
@@ -138,8 +134,11 @@ export function PdfBookReader({
             mimeType: entry.mimeType || "application/pdf",
             initialPage,
             title: entry.title,
-            downloadName: entry.title + "." +
-              (documentFileTypeFromMime(entry.mimeType || "application/pdf")?.extension || "pdf"),
+            downloadName:
+              entry.title +
+              "." +
+              (documentFileTypeFromMime(entry.mimeType || "application/pdf")
+                ?.extension || "pdf"),
             metadata: [
               ["Тип", entry.documentType],
               ["Дата", entry.documentDate],
@@ -156,8 +155,15 @@ export function PdfBookReader({
       } else if (message.type === "loaded") {
         setLoading(false);
       } else if (message.type === "toolbar-height") {
-        if (Number.isFinite(message.height) && message.height >= 0 && message.height <= 240)
-          dialog.current?.style.setProperty("--reader-toolbar-height", `${message.height}px`);
+        if (
+          Number.isFinite(message.height) &&
+          message.height >= 0 &&
+          message.height <= 240
+        )
+          dialog.current?.style.setProperty(
+            "--reader-toolbar-height",
+            `${message.height}px`,
+          );
       } else if (message.type === "outline") {
         setOutline(message.items);
       } else if (message.type === "selection") {
@@ -202,7 +208,8 @@ export function PdfBookReader({
 
   useEffect(() => {
     if (commentsOpen && sidebarTab === "comments" && activeAnnotation)
-      commentsList.current?.querySelector<HTMLElement>("article.is-active")
+      commentsList.current
+        ?.querySelector<HTMLElement>("article.is-active")
         ?.scrollIntoView({ block: "nearest", behavior: "auto" });
   }, [activeAnnotation, commentsOpen, sidebarTab]);
 
@@ -333,7 +340,10 @@ export function PdfBookReader({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ expected: editing.expected, text: editing.text.trim() }),
+          body: JSON.stringify({
+            expected: editing.expected,
+            text: editing.text.trim(),
+          }),
         },
       );
       const result = (await response.json()) as {
@@ -343,14 +353,21 @@ export function PdfBookReader({
       };
       const current = result.current;
       if (response.status === 409 && typeof current === "string")
-        setAnnotations((items) => items.map((item) => item.id === editing.id
-          ? { ...item, text: current } : item));
+        setAnnotations((items) =>
+          items.map((item) =>
+            item.id === editing.id ? { ...item, text: current } : item,
+          ),
+        );
       if (!response.ok || !result.items)
         throw new Error(result.error || "Не удалось изменить комментарий");
       setAnnotations(result.items);
       setEditing(null);
     } catch (reason) {
-      setEditError(reason instanceof Error ? reason.message : "Не удалось изменить комментарий");
+      setEditError(
+        reason instanceof Error
+          ? reason.message
+          : "Не удалось изменить комментарий",
+      );
     } finally {
       setSaving(false);
     }
@@ -392,12 +409,17 @@ export function PdfBookReader({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section
+      <dialog
         ref={dialog}
         className="pdf-book-dialog"
-        role="dialog"
-        aria-modal="true"
         aria-label={"Документ: " + entry.title}
+        onCancel={(event) => {
+          event.preventDefault();
+          if (magnifierLatest.current) {
+            magnifierLatest.current = false;
+            setMagnifier(false);
+          } else closeLatest.current();
+        }}
         onContextMenu={(event) => {
           if (!magnifierLatest.current) return;
           event.preventDefault();
@@ -463,26 +485,88 @@ export function PdfBookReader({
                   Оглавление
                 </button>
               )}
-              {(entry.eventLinks.length > 0 || entry.pages.length > 0 || entry.sources.length > 0) && (
-                <button type="button" className={sidebarTab === "links" ? "is-active" : ""}
-                  onClick={() => { setSidebarTab("links"); setCommentsOpen(true); }}
-                  aria-pressed={sidebarTab === "links"}>Связи</button>
+              {(entry.eventLinks.length > 0 ||
+                entry.pages.length > 0 ||
+                entry.sources.length > 0) && (
+                <button
+                  type="button"
+                  className={sidebarTab === "links" ? "is-active" : ""}
+                  onClick={() => {
+                    setSidebarTab("links");
+                    setCommentsOpen(true);
+                  }}
+                  aria-pressed={sidebarTab === "links"}
+                >
+                  Связи
+                </button>
               )}
             </div>
             {sidebarTab === "links" ? (
               <div className="pdf-book-links">
-                {entry.eventLinks.length > 0 && <section><h3>События</h3>{entry.eventLinks.map((link) => (
-                  <p key={`${link.personId}:${link.eventId}`}>{link.personName} · {link.eventTitle}{link.page &&
-                    <button type="button" onClick={() => navigateToPage.current?.(link.page! - 1)}>Стр. {link.page}</button>}</p>
-                ))}</section>}
-                {entry.sources.length > 0 && <section><h3>Источники</h3>{entry.sources.map((source, index) => (
-                  <p key={`${source.personId}:${source.eventId || "card"}:${index}`}>{source.title} · {source.personName}{source.assertions.length ? ` · ${source.assertions.join("; ")}` : ""}
-                    {source.reference ? ` · ${source.reference}` : ""}{source.page &&
-                    <button type="button" onClick={() => navigateToPage.current?.(source.page! - 1)}>Стр. {source.page}</button>}</p>
-                ))}</section>}
-                {entry.pages.length > 0 && <section><h3>Страницы</h3>{entry.pages.map((page) => (
-                  <p key={page.number}><button type="button" onClick={() => navigateToPage.current?.(page.number - 1)}>Стр. {page.number}</button> {page.description}</p>
-                ))}</section>}
+                {entry.eventLinks.length > 0 && (
+                  <section>
+                    <h3>События</h3>
+                    {entry.eventLinks.map((link) => (
+                      <p key={`${link.personId}:${link.eventId}`}>
+                        {link.personName} · {link.eventTitle}
+                        {link.page && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigateToPage.current?.(link.page! - 1)
+                            }
+                          >
+                            Стр. {link.page}
+                          </button>
+                        )}
+                      </p>
+                    ))}
+                  </section>
+                )}
+                {entry.sources.length > 0 && (
+                  <section>
+                    <h3>Источники</h3>
+                    {entry.sources.map((source, index) => (
+                      <p
+                        key={`${source.personId}:${source.eventId || "card"}:${index}`}
+                      >
+                        {source.title} · {source.personName}
+                        {source.assertions.length
+                          ? ` · ${source.assertions.join("; ")}`
+                          : ""}
+                        {source.reference ? ` · ${source.reference}` : ""}
+                        {source.page && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigateToPage.current?.(source.page! - 1)
+                            }
+                          >
+                            Стр. {source.page}
+                          </button>
+                        )}
+                      </p>
+                    ))}
+                  </section>
+                )}
+                {entry.pages.length > 0 && (
+                  <section>
+                    <h3>Страницы</h3>
+                    {entry.pages.map((page) => (
+                      <p key={page.number}>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            navigateToPage.current?.(page.number - 1)
+                          }
+                        >
+                          Стр. {page.number}
+                        </button>{" "}
+                        {page.description}
+                      </p>
+                    ))}
+                  </section>
+                )}
               </div>
             ) : sidebarTab === "outline" && outline.length > 0 ? (
               <nav
@@ -602,15 +686,29 @@ export function PdfBookReader({
                           setHoveredAnnotation("");
                       }}
                       onClick={(event) => {
-                        if (loading || error || !(event.target instanceof Element)) return;
-                        const control = event.target.closest("a, button, input, textarea, form");
-                        if (control && control !== event.currentTarget.firstElementChild) return;
+                        if (
+                          loading ||
+                          error ||
+                          !(event.target instanceof Element)
+                        )
+                          return;
+                        const control = event.target.closest(
+                          "a, button, input, textarea, form",
+                        );
+                        if (
+                          control &&
+                          control !== event.currentTarget.firstElementChild
+                        )
+                          return;
                         const selected = window.getSelection();
                         if (
-                          event.detail > 0 && selected && !selected.isCollapsed &&
+                          event.detail > 0 &&
+                          selected &&
+                          !selected.isCollapsed &&
                           (event.currentTarget.contains(selected.anchorNode) ||
                             event.currentTarget.contains(selected.focusNode))
-                        ) return;
+                        )
+                          return;
                         navigateToPage.current?.(item.page - 1);
                         setActiveAnnotation(item.id);
                         setAnnotating(false);
@@ -635,11 +733,17 @@ export function PdfBookReader({
                           type="button"
                           className="pdf-book-comment-edit"
                           hidden={editing?.id === item.id}
-                          aria-label={"Изменить комментарий на странице " + item.page}
+                          aria-label={
+                            "Изменить комментарий на странице " + item.page
+                          }
                           disabled={saving || !!editing}
                           onClick={(event) => {
                             editTrigger.current = event.currentTarget;
-                            setEditing({ id: item.id, expected: item.text, text: item.text });
+                            setEditing({
+                              id: item.id,
+                              expected: item.text,
+                              text: item.text,
+                            });
                             setEditError("");
                             setActiveAnnotation(item.id);
                             setAnnotating(false);
@@ -655,23 +759,36 @@ export function PdfBookReader({
                           className="pdf-book-comment-delete"
                           disabled={saving || !!editing || !commentsOpen}
                           label={"Удалить комментарий на странице " + item.page}
-                          confirmationLabel={"Подтвердить удаление комментария на странице " + item.page}
+                          confirmationLabel={
+                            "Подтвердить удаление комментария на странице " +
+                            item.page
+                          }
                           onConfirm={() => void removeAnnotation(item.id)}
                         />
                       )}
                       {editing?.id === item.id && (
-                        <form className="pdf-book-comment-form" onSubmit={(event) => {
-                          event.preventDefault();
-                          void saveEditedAnnotation();
-                        }}>
-                          <label htmlFor="pdf-comment-edit">Изменить комментарий</label>
+                        <form
+                          className="pdf-book-comment-form"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void saveEditedAnnotation();
+                          }}
+                        >
+                          <label htmlFor="pdf-comment-edit">
+                            Изменить комментарий
+                          </label>
                           <textarea
                             id="pdf-comment-edit"
                             ref={editText}
                             maxLength={2000}
                             disabled={saving}
                             value={editing.text}
-                            onChange={(event) => setEditing({ ...editing, text: event.target.value })}
+                            onChange={(event) =>
+                              setEditing({
+                                ...editing,
+                                text: event.target.value,
+                              })
+                            }
                             onKeyDown={(event) => {
                               if (event.key !== "Escape") return;
                               event.preventDefault();
@@ -682,15 +799,32 @@ export function PdfBookReader({
                               }
                             }}
                           />
-                          {editError && <p role="alert" className="pdf-book-comments-error">{editError}</p>}
+                          {editError && (
+                            <p role="alert" className="pdf-book-comments-error">
+                              {editError}
+                            </p>
+                          )}
                           <div>
-                            <button type="submit" disabled={saving || !editing.text.trim() || editing.text.trim() === editing.expected}>
+                            <button
+                              type="submit"
+                              disabled={
+                                saving ||
+                                !editing.text.trim() ||
+                                editing.text.trim() === editing.expected
+                              }
+                            >
                               {saving ? "Сохраняем…" : "Сохранить"}
                             </button>
-                            <button type="button" disabled={saving} onClick={() => {
-                              setEditing(null);
-                              setEditError("");
-                            }}>Отмена</button>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => {
+                                setEditing(null);
+                                setEditError("");
+                              }}
+                            >
+                              Отмена
+                            </button>
                           </div>
                         </form>
                       )}
@@ -701,7 +835,7 @@ export function PdfBookReader({
             )}
           </aside>
         </div>
-      </section>
+      </dialog>
     </div>,
     document.body,
   );

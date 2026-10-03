@@ -38,6 +38,14 @@ export function removeImportedPeople(current: Family, ids: Set<string>) {
       errors.push(
         "Есть дополнительная связь с человеком вне импорта. Сначала удалите или измените эту связь.",
       );
+  for (const union of current.unions || [])
+    if (
+      union.participants.some((id) => ids.has(id)) &&
+      union.participants.some((id) => !ids.has(id))
+    )
+      errors.push(
+        "Есть семейный союз с человеком вне импорта. Сначала разберите этот союз — оставшийся человек не будет изменён.",
+      );
   const photoTags = (current.photos || []).reduce(
     (n, p) => n + p.tags.filter((t) => ids.has(t.personId)).length,
     0,
@@ -45,12 +53,22 @@ export function removeImportedPeople(current: Family, ids: Set<string>) {
   const connections =
     people.reduce((n, p) => n + p.parents.length + p.spouses.length / 2, 0) +
     (current.links || []).filter((l) => ids.has(l.from) || ids.has(l.to))
-      .length;
+      .length +
+    (current.unions || []).filter((union) =>
+      union.participants.some((id) => ids.has(id)),
+    ).length;
   const family = errors.length
     ? current
     : validateFamily({
         ...current,
         people: retained,
+        ...(current.unions
+          ? {
+              unions: current.unions.filter((union) =>
+                union.participants.every((id) => !ids.has(id)),
+              ),
+            }
+          : {}),
         ...(current.links
           ? {
               links: current.links.filter(

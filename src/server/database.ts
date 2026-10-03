@@ -423,8 +423,9 @@ export async function openArchive(
     knownPrevious?: Family,
     faceDescriptors?: StoredFaceDescriptor[],
     afterWrite?: (db: StoreDatabase) => void | Promise<void>,
+    options: { withinTransaction?: boolean } = {},
   ) {
-    return await db.transaction(async () => {
+    const apply = async () => {
       const oldRevision = await checkRevision(expected);
       if (actor) await assertCurrentArchiveActor(db, actor);
       const previous =
@@ -509,7 +510,12 @@ export async function openArchive(
       }
       await finishWrite();
       return { family, revision: expected + 1 };
-    });
+    };
+    if (options.withinTransaction) {
+      if (!db.inTransaction()) throw new Error("Ожидается транзакция архива");
+      return await apply();
+    }
+    return await db.transaction(apply);
   }
 
   async function appendPhoto(
@@ -594,7 +600,8 @@ export async function openArchive(
       changes: Parameters<typeof patchPeople>[1],
       expected: number,
       actor: ArchiveUser,
-    ) => await patchPeople(db, changes, expected, actor),
+      options: Parameters<typeof patchPeople>[4] = {},
+    ) => await patchPeople(db, changes, expected, actor, options),
     async readRevision(revision: number) {
       const current = await read();
       if (revision === current.revision) return current.family;

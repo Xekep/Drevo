@@ -62,9 +62,13 @@
     "yazl": "^3.3.1"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/plugin-proposal-decorators": "^7.29.7",
+    "@babel/plugin-transform-class-properties": "^7.29.7",
     "@eslint/js": "9.39.4",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "4.2.1",
+    "@types/babel__core": "^7.20.5",
     "@types/katex": "^0.16.8",
     "@types/leaflet": "^1.9.21",
     "@types/mdast": "^4.0.4",
@@ -88,5 +92,8 @@
     "typescript-eslint": "8.59.3",
     "vite": "8.2.2"
   },
-  "type": "module"
+  "type": "module",
+  "overrides": {
+    "jquery-ui": "1.14.2"
+  }
 }

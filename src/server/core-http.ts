@@ -4,6 +4,7 @@ import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { accountCapacity } from "./account-capacity.ts";
+import { runtimeReleaseId } from "./runtime-release.ts";
 
 export function coreHttp({
   archive,
@@ -104,6 +105,7 @@ export function coreHttp({
     if (path === "/api/health" && req.method === "GET")
       return json(res, 200, {
         ok: true,
+        releaseId: runtimeReleaseId,
         revision: (await archive.meta()).revision,
       });
 

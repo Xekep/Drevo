@@ -38,6 +38,8 @@ import { aiUsageStore } from "./ai-usage.ts";
 import { researchCatalogStore } from "./research-catalog.ts";
 import { adminResearchResourcesHttp } from "./admin-research-resources-http.ts";
 import { documentsHttp } from "./documents-http.ts";
+import { pdfDocumentPages } from "./document-pdf.ts";
+import { join } from "node:path";
 import { personDiscussionHttp } from "./person-discussion-http.ts";
 import { treePreferencesStore } from "./tree-preferences.ts";
 import { treePreferencesHttp } from "./tree-preferences-http.ts";
@@ -161,12 +163,14 @@ export async function archiveHttp({
     auth,
     uploadsDirectory,
   });
+  const pdfPages = pdfDocumentPages(join(uploadsDirectory, ".reader-cache"));
   const documents = documentsHttp({
     archive,
     auth,
     media,
     uploadsDirectory,
     publicOrigin,
+    pdfPages,
   });
   const personDiscussion = personDiscussionHttp({
     archive,
@@ -228,6 +232,7 @@ export async function archiveHttp({
     previewImage,
     visibility,
     archive,
+    pdfPages,
   });
 
   const handle = async (
@@ -269,6 +274,8 @@ export async function archiveHttp({
     async close() {
       clearInterval(shareCleanupTimer);
       await researchAi.close();
+      await researchMcp.close();
+      await pdfPages.close();
     },
   });
 }

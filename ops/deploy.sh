@@ -6,6 +6,7 @@ release_id=${1:?Release identifier required}
 release="$base/releases/$release_id"
 test -f "$release/dist/index.html"
 test -f "$release/src/server/index.ts"
+test -f "$release/release.json"
 exec 9>"$base/deploy.lock"
 flock -w 120 9
 previous=$(readlink -f "$base/current" || true)
@@ -27,7 +28,7 @@ mv -Tf "$base/current-next" "$base/current"
 healthy=false
 if sudo /usr/local/sbin/drevo-service-restart; then
   for attempt in $(seq 1 30); do
-    if curl --fail --silent --max-time 2 http://127.0.0.1:3107/api/health | python3 -c 'import json,sys; assert json.load(sys.stdin)["ok"] is True' 2>/dev/null; then healthy=true; break; fi
+    if curl --fail --silent --max-time 2 http://127.0.0.1:3107/api/health | python3 -c 'import json,sys; health=json.load(sys.stdin); assert health["ok"] is True and health.get("releaseId")==sys.argv[1]' "$release_id" 2>/dev/null; then healthy=true; break; fi
     sleep 1
   done
 fi
@@ -36,9 +37,11 @@ if test "$healthy" != true; then
     ln -s "$previous" "$base/current-rollback"
     mv -Tf "$base/current-rollback" "$base/current"
     sudo /usr/local/sbin/drevo-service-restart
+    rollback_release_id=""
+    if test -f "$previous/release.json"; then rollback_release_id=$(basename "$previous"); fi
     rollback_healthy=false
     for attempt in $(seq 1 30); do
-      if curl --fail --silent --max-time 2 http://127.0.0.1:3107/api/health | python3 -c 'import json,sys; assert json.load(sys.stdin)["ok"] is True' 2>/dev/null; then rollback_healthy=true; break; fi
+      if curl --fail --silent --max-time 2 http://127.0.0.1:3107/api/health | python3 -c 'import json,sys; health=json.load(sys.stdin); assert health["ok"] is True and (not sys.argv[1] or health.get("releaseId")==sys.argv[1])' "$rollback_release_id" 2>/dev/null; then rollback_healthy=true; break; fi
       sleep 1
     done
     if test "$rollback_healthy" != true; then

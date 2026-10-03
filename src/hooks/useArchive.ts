@@ -202,6 +202,7 @@ export function useArchive() {
       "/api/family",
       { cache: "no-store" },
       RECONCILE_TIMEOUT_MS,
+      archiveFetch,
     );
     if (response.status === 401) {
       setCanEdit(false);
@@ -262,6 +263,7 @@ export function useArchive() {
                 body,
               },
               familyWrite ? WRITE_TIMEOUT_MS : UPLOAD_TIMEOUT_MS,
+              archiveFetch,
             );
           } catch (reason) {
             if (!(reason instanceof RequestTimeoutError)) throw reason;
@@ -290,6 +292,7 @@ export function useArchive() {
                 "/api/family",
                 { cache: "no-store" },
                 RECONCILE_TIMEOUT_MS,
+                archiveFetch,
               );
             } catch (reason) {
               if (reason instanceof RequestTimeoutError)
@@ -416,6 +419,7 @@ export function useArchive() {
               body: file,
             },
             UPLOAD_TIMEOUT_MS,
+            archiveFetch,
           );
         } catch (reason) {
           if (reason instanceof RequestTimeoutError)
