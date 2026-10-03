@@ -882,6 +882,32 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         pieces.map((piece) => `NAME.${piece.tag}`)))];
       warnings.add(`${tags.join(" и ")} сохранены текстом в биографии; структура приставок и их связь с вариантом имени не перенесены.`);
     }
+    const repeatedGivenNames = names.flatMap((name, index) => {
+      const parts = children(name, "GIVN");
+      return parts.length > 1 && parts.slice(1).some((part) => part.value.trim())
+        ? [{ name, index, parts }]
+        : [];
+    });
+    if (repeatedGivenNames.length) {
+      const details = repeatedGivenNames.flatMap(({ name, index, parts }) => [
+        `NAME ${index + 1}: ${name.value}`,
+        ...(value(name, "TYPE") ? [`TYPE: ${value(name, "TYPE")}`] : []),
+        ...parts.flatMap((part, partIndex) => part.value.trim()
+          ? [`NAME.GIVN ${partIndex + 1}: ${part.value}`]
+          : []),
+      ]);
+      p.biography = [p.biography, `Повторные части имени из GEDCOM:\n${details.join("\n")}`]
+        .filter(Boolean)
+        .join("\n\n");
+      const displayedNameSource = p.name !== (given || "Имя неизвестно")
+        ? "метаданных Drevo"
+        : nameNode && value(nameNode, "GIVN")
+          ? "первого GIVN основного NAME"
+          : "строки основного NAME";
+      warnings.add(`NAME.GIVN содержит несколько значений: отображаемое имя взято из ${
+        displayedNameSource
+      }; значения сохранены текстом в биографии, структура отдельных частей и их связь с вариантом имени не перенесены.`);
+    }
     for (const c of n.children)
       if (
         ![
