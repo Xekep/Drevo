@@ -857,6 +857,21 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         throw new Error("Повреждены дополнительные сведения Drevo в GEDCOM");
       }
     }
+    for (const [index, name] of names.entries()) {
+      if (name === birthName) continue;
+      const nameCitations = sources(name);
+      if (!nameCitations.length) continue;
+      const context = [
+        `NAME ${index + 1}: ${name.value}`,
+        ...(value(name, "TYPE") ? [`TYPE: ${value(name, "TYPE")}`] : []),
+      ].join("\n");
+      for (const citation of nameCitations) {
+        citation.note = [citation.note, `Исходное имя GEDCOM:\n${context}`]
+          .filter(Boolean).join("\n");
+        p.sources.push(citation);
+      }
+      warnings.add("NAME.SOUR сохранён как общий источник карточки; точная привязка к варианту имени не перенесена.");
+    }
     if (surnameParts.length > 1) {
       p.surname = slashSurname || surnameParts[0];
       p.biography = [
