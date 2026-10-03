@@ -11,6 +11,7 @@ import {
   existsSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
@@ -18,6 +19,7 @@ import sharp from "sharp";
 import { startServer } from "../src/server/index.ts";
 import { openArchive, readArchive } from "../src/server/database.ts";
 import { restoreStore } from "../src/server/restore.ts";
+import { fullBackup } from "../src/server/full-backup.ts";
 import { sourceComments } from "../src/server/restore-comments.ts";
 import { databaseBackupBytes } from "./helpers/database-backup.ts";
 import { userStore } from "../src/server/users.ts";
@@ -453,6 +455,81 @@ test("opt-in full restore imports discussions with fresh file and author IDs; or
     await assert.rejects(restores.apply(duplicate.token, admin, async () => {}, true),
       /комментари/i);
   } finally {
+    await restores.close();
+    await target.close();
+    await source.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a real full TAR backup restores discussion attachment originals on opt-in", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-full-tar-discussion-"));
+  const sourcePath = join(dir, "source", "archive.sqlite");
+  const targetPath = join(dir, "target", "archive.sqlite");
+  mkdirSync(join(dir, "source", "uploads", "discussion-files"), { recursive: true });
+  mkdirSync(join(dir, "target"), { recursive: true });
+  const source = await openArchive(sourcePath, family);
+  const target = await openArchive(targetPath, family);
+  const restores = restoreStore(target, targetPath);
+  const admin = { id: "admin", name: "Администратор", role: "admin" as const,
+    createdAt: "2026-01-01T00:00:00.000Z" };
+  const originalId = "a5ac420a-5ed9-44ee-a307-8550f6b64708";
+  const original = Buffer.from("A discussion attachment from the real backup producer");
+  const server = createServer((_req, res) => {
+    void fullBackup(source.db, sourcePath, res).catch((error) => {
+      if (res.headersSent) res.destroy(error as Error);
+      else { res.statusCode = 500; res.end(String(error)); }
+    });
+  });
+  try {
+    writeFileSync(join(dir, "source", "uploads", "discussion-files", originalId), original);
+    await source.db.prepare(`INSERT INTO person_comments
+      (person_id,author_id,author_name,created_ms,text,attachments)
+      VALUES(?,?,?,?,?,?)`).run(p.id, "source-user", "Автор копии", 1000,
+      "Комментарий из полной копии", JSON.stringify([{
+        id: originalId, name: "документ.txt", type: "text/plain", size: original.length,
+      }]));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const response = await fetch(`http://127.0.0.1:${address.port}/`);
+    if (response.status !== 200)
+      assert.fail(`Full backup failed with ${response.status}: ${await response.text()}`);
+    const backup = Buffer.from(await response.arrayBuffer());
+    const raw = gunzipSync(backup);
+    let end = raw.length;
+    while (end >= 512 && raw.subarray(end - 512, end).every((byte) => byte === 0))
+      end -= 512;
+    const maliciousEntry = (name: string, type: string) =>
+      gunzipSync(tar(name, Buffer.alloc(0), type)).subarray(0, -1024);
+    for (const [name, type] of [
+      [`uploads/discussion-files/91ab323a-5379-4da9-ae0a-b26fdba865db`, "2"],
+      ["uploads/unexpected/private", "0"],
+    ]) {
+      const altered = gzipSync(Buffer.concat([
+        raw.subarray(0, end), maliciousEntry(name, type), Buffer.alloc(1024),
+      ]));
+      await assert.rejects(restores.preview(altered, admin, { restoreComments: true }),
+        /допустим/i, `the actual full backup must reject ${name}`);
+    }
+    const preview = await restores.preview(backup, admin, { restoreComments: true });
+    assert.equal(preview.canRestoreComments, true);
+    assert.equal(preview.backupCommentsSkipped, 1);
+    await restores.apply(preview.token, admin, async () => {}, true);
+    const rows = await target.db.prepare(
+      "SELECT text,author_id,attachments FROM person_comments WHERE person_id=?",
+    ).all(p.id);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].text, "Комментарий из полной копии");
+    assert.notEqual(rows[0].author_id, "source-user");
+    const restored = JSON.parse(String(rows[0].attachments)) as Array<{ id: string }>;
+    assert.equal(restored.length, 1);
+    assert.notEqual(restored[0].id, originalId);
+    assert.deepEqual(readFileSync(join(dir, "target", "uploads", "discussion-files",
+      restored[0].id)), original);
+  } finally {
+    server.closeAllConnections();
+    if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
     await restores.close();
     await target.close();
     await source.close();
