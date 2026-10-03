@@ -23,6 +23,7 @@ import {
 import { openPostgresDatabase } from "../../src/server/store-database.ts";
 import { initializePostgresRuntimeSchema } from "../../src/server/postgres-runtime-schema.ts";
 import { backupCoordinator } from "../../src/server/backup-coordinator.ts";
+import { verifyManagedBackupDelivery } from "./postgres-managed-backup-delivery.ts";
 import { databaseBackupHttp } from "../../src/server/database-backup-http.ts";
 import { createAuth } from "../../src/server/auth.ts";
 import { openArchive } from "../../src/server/database.ts";
@@ -4390,6 +4391,8 @@ try {
     await manager.idle();
     const status = await manager.status(owner.id);
     assert.equal(status.job?.state, "succeeded", JSON.stringify(status.job));
+    assert.ok(status.records[0]?.id, "managed backup is available for delivery");
+    await verifyManagedBackupDelivery(app.archive, manager, source, status.records[0].id, client);
   } finally {
     await manager.close();
   }
