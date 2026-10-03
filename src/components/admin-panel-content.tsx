@@ -75,7 +75,6 @@ const ADMIN_SECTIONS = [
   {
     label: "ИИ и поиск",
     items: [
-      { id: "ai", label: "Yandex AI", icon: Bot },
       { id: "resources", label: "Ресурсы поиска", icon: BookOpen },
       { id: "mcp", label: "MCP-токены", icon: KeyRound },
     ],
@@ -93,7 +92,10 @@ const ADMIN_SECTIONS = [
   },
   {
     label: "Платформа",
-    items: [{ id: "backups", label: "Резервные копии", icon: DatabaseBackup }],
+    items: [
+      { id: "ai", label: "Yandex AI", icon: Bot },
+      { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
+    ],
   },
 ] as const;
 const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
@@ -366,8 +368,8 @@ export function AdminPanel({
   const visibleGroups = ADMIN_SECTIONS.map((group) => ({
     ...group,
     items: group.items.filter(({ id }) =>
-      id === "backups" ? platformAdmin :
-      id === "ai" || id === "resources" || id === "mcp" ? aiAvailable : true),
+      id === "backups" || id === "ai" ? platformAdmin :
+      id === "resources" || id === "mcp" ? aiAvailable : true),
   })).filter((group) => group.items.length > 0);
   const visibleSection = visibleGroups.some((group) => group.items.some((item) => item.id === section))
     ? section : "users";
@@ -506,7 +508,7 @@ export function AdminPanel({
       </aside>
       <div className="admin-content">
         <header className="admin-page-header">
-          <span className="section-label">{visibleSection === "backups" ? "УПРАВЛЕНИЕ ПЛАТФОРМОЙ" : "УПРАВЛЕНИЕ ДЕРЕВОМ"}</span>
+          <span className="section-label">{visibleSection === "backups" || visibleSection === "ai" ? "УПРАВЛЕНИЕ ПЛАТФОРМОЙ" : "УПРАВЛЕНИЕ ДЕРЕВОМ"}</span>
           <h1>{ADMIN_INTRO[visibleSection].title}</h1>
           {(publicationOwnership === "owner" ||
             (visibleSection !== "publications" && visibleSection !== "matches")) &&

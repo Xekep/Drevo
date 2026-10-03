@@ -11,7 +11,6 @@ import { fetchAiStudioModels, type AiStudioModel } from "./ai-models.ts";
 import { yandexResponsesClient } from "./yandex-responses.ts";
 import { ROLE_NAMES, type Role } from "../domain/access.ts";
 import type { StoreDatabase } from "./store-database.ts";
-import { accountAiAccess } from "./account-ai-access.ts";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -47,12 +46,10 @@ export function adminAiHttp({
     res.end(JSON.stringify(value));
     return true;
   };
-  const statusValue = async (req: IncomingMessage, adminId: string) => {
+  const statusValue = async (req: IncomingMessage) => {
     const runtime = await aiRuntimeConfig(settings);
-    // Loading settings can outlive a downgrade. Check again before querying
-    // the external catalogue, not only before delivering the status.
-    if (!(await auth.isAdmin(req)) ||
-      !(await accountAiAccess(db, adminId, auth.local))) return null;
+    // Loading settings can outlive a platform grant revocation.
+    if (!(await auth.isPlatformAdmin(req))) return null;
     let models: AiStudioModel[] = [];
     let modelsError = "";
     if (runtime.apiKey && runtime.folderId)
@@ -89,24 +86,20 @@ export function adminAiHttp({
       path !== "/api/admin/ai/models"
     )
       return false;
-    if (!(await auth.isAdmin(req)))
+    if (!(await auth.isPlatformAdmin(req)))
       return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: "Только администратор может управлять AI Studio",
       });
     const adminId = (await auth.currentUser(req))!.id;
-    if (!(await accountAiAccess(db, adminId, auth.local)))
-      return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
     const stillAdmin = async () => {
       const current = await auth.currentUser(req);
       return current?.id === adminId && current.approved === true &&
-        current.role === "admin" &&
-        (await accountAiAccess(db, adminId, auth.local));
+        (await auth.isPlatformAdmin(req));
     };
 
     if (path === "/api/admin/ai" && req.method === "GET") {
-      const status = await statusValue(req, adminId);
-      if (!status || !(await auth.isAdmin(req)) ||
-        !(await accountAiAccess(db, adminId, auth.local)))
+      const status = await statusValue(req);
+      if (!status || !(await stillAdmin()))
         return json(res, 403, { error: "Доступ отозван" });
       return json(res, 200, status);
     }
@@ -119,22 +112,24 @@ export function adminAiHttp({
         return json(res, 415, { error: "JSON required" });
       try {
         const body = await readJson(req);
-        if (!(await auth.isAdmin(req)))
+        if (!(await stillAdmin()))
           return json(res, 403, { error: "Доступ отозван" });
         const written = await db.transaction(async () => {
           const current = await auth.currentUser(req);
           if (!current || current.id !== adminId ||
-            !(await auth.isAdmin(req)) ||
-            !(await accountAiAccess(db, adminId, auth.local, true))) return false;
+            !(await auth.isPlatformAdmin(req))) return false;
+          if (!auth.local && db.kind === "postgres") {
+            const grant = await db.prepare("",
+              "SELECT account_id FROM platform_admins WHERE account_id=? FOR SHARE")
+              .get(adminId);
+            if (!grant) return false;
+          }
           await settings.write(body, current);
           return true;
         });
         if (!written) return json(res, 403, { error: "Доступ отозван" });
-        if (!(await accountAiAccess(db, adminId, auth.local)))
-          return json(res, 403, { error: "Доступ отозван" });
-        const status = await statusValue(req, adminId);
-        if (!status || !(await auth.isAdmin(req)) ||
-          !(await accountAiAccess(db, adminId, auth.local)))
+        const status = await statusValue(req);
+        if (!status || !(await stillAdmin()))
           return json(res, 403, { error: "Доступ отозван" });
         return json(res, 200, status);
       } catch (error) {
@@ -167,8 +162,7 @@ export function adminAiHttp({
           folderId,
           fetcher,
         });
-        // Model discovery may finish after the account or archive owner is
-        // downgraded. Do not deliver the completed list in that case.
+        // Model discovery may finish after platform access is revoked.
         if (!(await stillAdmin()))
           return json(res, 403, { error: "Доступ отозван" });
         return json(res, 200, { models });
@@ -203,7 +197,7 @@ export function adminAiHttp({
         let answer = "";
         let compactionAvailable = false;
         try {
-          // Creating the remote conversation can outlive a tier downgrade.
+          // Creating the remote conversation can outlive a platform grant.
           if (!(await stillAdmin()))
             return json(res, 403, { error: "Доступ отозван" });
           const result = await client.respond({
