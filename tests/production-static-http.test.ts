@@ -73,6 +73,7 @@ test("production static streams SPA routes, files and shared page", async () => 
       "/admin/matches",
       "/a/family-one/admin/matches",
       `/discover/person/family-one/${encodeURIComponent("family:человек.1")}`,
+      `/discover/search/${encodeURIComponent("И".repeat(100))}`,
     ]) {
       const response = await fetch(app.base + path);
       assert.equal(response.status, 200);
@@ -83,6 +84,7 @@ test("production static streams SPA routes, files and shared page", async () => 
       assert.equal(response.headers.get("cache-control"), "no-cache");
       assert.equal(await response.text(), html);
     }
+    assert.equal((await fetch(app.base + `/discover/search/${encodeURIComponent("И".repeat(101))}`)).status, 404);
 
     const favicon = await fetch(app.base + "/favicon.svg");
     assert.equal(favicon.status, 200);

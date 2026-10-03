@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { FileText, Search, X } from "lucide-react";
+import { FileText, Globe, Search, X } from "lucide-react";
 import { fullName, years, matchesPerson, type Person } from "../domain";
 import { archiveFetch } from "../data/archive-fetch.ts";
 
@@ -16,16 +16,18 @@ export function TreeSearch({
   onQuery,
   onSelect,
   onSelectDocument,
+  globalSearch = false,
 }: {
   people: Person[];
   query: string;
   onQuery: (query: string) => void;
   onSelect: (id: string) => void;
   onSelectDocument?: (id: string) => void;
+  globalSearch?: boolean;
 }) {
   const id = useId();
   const [open, setOpen] = useState(false),
-    [active, setActive] = useState(0),
+    [active, setActive] = useState<number | "global">(0),
     ref = useRef<HTMLInputElement>(null);
   const selectedQuery = useRef<string | null>(null);
   const [documentResults, setDocumentResults] =
@@ -98,14 +100,37 @@ export function TreeSearch({
     searchDocuments && documentResults?.query === search
       ? documentResults.items
       : [];
-  const options = [
+  const localOptions = [
     ...matches.map((person) => ({ kind: "person" as const, person })),
     ...documents.map((document) => ({ kind: "document" as const, document })),
   ];
-  const activeIndex = options.length ? active % options.length : 0;
+  let globalQuery = "";
+  for (const character of search) {
+    if (globalQuery.length + character.length > 100) break;
+    globalQuery += character;
+  }
+  const globalHref =
+    globalQuery.length >= 2
+      ? `/discover/search/${encodeURIComponent(globalQuery)}`
+      : "/discover";
+  const options = [
+    ...localOptions,
+    ...(globalSearch ? [{ kind: "global" as const, href: globalHref }] : []),
+  ];
+  const showResults = open && (!!search || globalSearch);
+  const activeIndex =
+    active === "global"
+      ? Math.max(
+          0,
+          options.findIndex((option) => option.kind === "global"),
+        )
+      : options.length
+        ? active % options.length
+        : 0;
   const choose = (option: (typeof options)[number]) => {
     selectedQuery.current = query;
     if (option.kind === "person") onSelect(option.person.id);
+    else if (option.kind === "global") window.location.assign(option.href);
     else {
       onSelectDocument?.(option.document.id);
       onQuery("");
@@ -147,12 +172,12 @@ export function TreeSearch({
             e.preventDefault();
             selectedQuery.current = null;
             setOpen(true);
-            setActive((index) =>
-              options.length
-                ? (index + (e.key === "ArrowDown" ? 1 : options.length - 1)) %
-                  options.length
-                : 0,
-            );
+            const next = options.length
+              ? (activeIndex +
+                  (e.key === "ArrowDown" ? 1 : options.length - 1)) %
+                options.length
+              : 0;
+            setActive(options[next]?.kind === "global" ? "global" : next);
           }
           if (e.key === "Enter" && options[activeIndex]) {
             e.preventDefault();
@@ -172,10 +197,10 @@ export function TreeSearch({
         }
         role="combobox"
         aria-autocomplete="list"
-        aria-expanded={open && !!query.trim()}
-        aria-controls={open && query.trim() ? `${id}-options` : undefined}
+        aria-expanded={showResults}
+        aria-controls={showResults ? `${id}-options` : undefined}
         aria-activedescendant={
-          open && options[activeIndex]
+          showResults && options[activeIndex]
             ? `${id}-option-${activeIndex}`
             : undefined
         }
@@ -193,7 +218,7 @@ export function TreeSearch({
           <X size={17} aria-hidden="true" />
         </button>
       )}
-      {open && query.trim() && (
+      {showResults && (
         <div
           className="archive-search-results"
           id={`${id}-options`}
@@ -202,46 +227,69 @@ export function TreeSearch({
             onSelectDocument ? "Найденные люди и документы" : "Найденные люди"
           }
         >
-          {options.map((option, index) => (
-            <button
-              key={
-                option.kind === "person"
-                  ? `person:${option.person.id}`
-                  : `document:${option.document.id}`
-              }
-              id={`${id}-option-${index}`}
-              role="option"
-              aria-selected={activeIndex === index}
-              tabIndex={-1}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => choose(option)}
-            >
-              {option.kind === "person" ? (
-                <>
-                  <b>{fullName(option.person)}</b>
-                  {years(option.person) && (
-                    <small>{years(option.person)}</small>
-                  )}
-                </>
-              ) : (
-                <>
-                  <b>
-                    <FileText size={15} aria-hidden="true" />
-                    {option.document.title}
-                  </b>
-                  <small>Документ</small>
-                </>
-              )}
-            </button>
-          ))}
-          {!options.length && (
+          {!localOptions.length && search && (
             <p role="status">
               {documentPending
                 ? "Ищем документы…"
                 : documentResults?.query === search && documentResults.failed
                   ? "Поиск документов сейчас недоступен"
-                  : onSelectDocument ? "Ничего не нашли" : "Никого не нашли"}
+                  : onSelectDocument
+                    ? "Ничего не нашли"
+                    : "Никого не нашли"}
             </p>
+          )}
+          {options.map((option, index) =>
+            option.kind === "global" ? (
+              <a
+                key="global"
+                href={option.href}
+                className="archive-search-global"
+                id={`${id}-option-${index}`}
+                role="option"
+                aria-selected={activeIndex === index}
+                tabIndex={-1}
+                onMouseDown={(event) => {
+                  if (event.button === 0) event.preventDefault();
+                }}
+              >
+                <b>
+                  <Globe size={15} aria-hidden="true" />
+                  Глобальный поиск
+                </b>
+                <small>Опубликованные люди всех архивов</small>
+              </a>
+            ) : (
+              <button
+                key={
+                  option.kind === "person"
+                    ? `person:${option.person.id}`
+                    : `document:${option.document.id}`
+                }
+                id={`${id}-option-${index}`}
+                role="option"
+                aria-selected={activeIndex === index}
+                tabIndex={-1}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => choose(option)}
+              >
+                {option.kind === "person" ? (
+                  <>
+                    <b>{fullName(option.person)}</b>
+                    {years(option.person) && (
+                      <small>{years(option.person)}</small>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <b>
+                      <FileText size={15} aria-hidden="true" />
+                      {option.document.title}
+                    </b>
+                    <small>Документ</small>
+                  </>
+                )}
+              </button>
+            ),
           )}
         </div>
       )}

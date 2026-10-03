@@ -268,7 +268,7 @@
 .inspector-dock .profile-content {
   padding: 20px;
 }
-.archive-search-results button[aria-selected="true"] {
+.archive-search-results [role="option"][aria-selected="true"] {
   background: #edf4e7;
 }
 .photo-load-status {
