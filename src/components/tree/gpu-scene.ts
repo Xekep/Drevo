@@ -710,7 +710,9 @@ export function createGpuScene(
               10,
               ...rgb,
               node.data.outsideSpotlight ? 0.3 : node.data.dimmed ? 0.6 : 1,
-              (tile ? 1 : 0) |
+              // Glyphs use kind 0. Keep even an ordinary photo-less portrait
+              // in its own range; review/selection must not decide its type.
+              16 | (tile ? 1 : 0) |
                 (tile?.gray ? 32 : 0) |
                 (node.data.person.needsReview ? 2 : 0) |
                 (node.selected || node.data.spotlit ? 4 : 0) |
