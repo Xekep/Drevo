@@ -17,6 +17,12 @@ import type { PoolClient } from "pg";
 
 const MAX_EXPORTED_AI_MESSAGE_BYTES = 16 * 1024 * 1024;
 const MAX_EXPORTED_AI_MESSAGES = 50_000;
+export const MAX_ACCOUNT_JSON_BYTES = 24 * 1024 * 1024;
+const MAX_EXPORTED_COMMENTS = 10_000;
+const MAX_EXPORTED_COMMENT_PREFLIGHT_BYTES = 8 * 1024 * 1024;
+const MAX_EXPORTED_IDENTITIES = 64;
+const MAX_EXPORTED_ARCHIVES = 1_000;
+const MAX_EXPORTED_METADATA_RAW_BYTES = 2 * 1024 * 1024;
 
 type AccessScope = {
   archiveId: string;
@@ -33,6 +39,14 @@ export class AccountAiHistoryTooLarge extends Error {
   readonly accessScopes: AccessScope[];
   constructor(accessScopes: AccessScope[]) {
     super("AI chat history exceeds the JSON export limit");
+    this.accessScopes = accessScopes;
+  }
+}
+
+export class AccountJsonTooLarge extends Error {
+  readonly accessScopes: AccessScope[];
+  constructor(accessScopes: AccessScope[]) {
+    super("Account JSON export exceeds the current limit");
     this.accessScopes = accessScopes;
   }
 }
@@ -69,18 +83,41 @@ export function accountDataExport(db: StoreDatabase) {
         await db
           .prepare("", "SELECT set_config('drevo.account_id',?,true)")
           .get(accountId);
-        const methods = await db
-          .prepare(
-            "",
-            "SELECT provider,subject FROM account_identities WHERE account_id=? ORDER BY provider",
-          )
-          .all(accountId);
         const email = await db
           .prepare(
             "",
             "SELECT email FROM account_email_credentials WHERE account_id=?",
           )
           .get(accountId);
+        // Metadata is small in normal accounts, but neither identities nor
+        // memberships have a lifetime count limit. Reject an oversized JSON
+        // without reading the much larger comment and AI collections.
+        const metadata = includeAiChats ? await db.prepare("", `
+          SELECT (SELECT count(*) FROM account_identities WHERE account_id=?) AS identities,
+            (SELECT COALESCE(sum(octet_length(provider)+octet_length(subject)+96),0)
+               FROM account_identities WHERE account_id=?) AS identity_bytes,
+            (SELECT count(*) FROM archive_memberships WHERE user_id=?) AS memberships,
+            (SELECT COALESCE(sum(octet_length(m.archive_id)+octet_length(a.title)
+                +octet_length(m.role)+octet_length(m.tree_access)
+                +COALESCE(octet_length(m.person_id),0)+512),0)
+               FROM archive_memberships m JOIN archives a ON a.id=m.archive_id
+              WHERE m.user_id=?) AS membership_bytes`).get(
+                accountId, accountId, accountId, accountId)
+          : null;
+        let metadataRawBytes = metadata == null ? 0 :
+          Number(metadata.identity_bytes) + Number(metadata.membership_bytes) +
+          Buffer.byteLength(String(profile.id)) + Buffer.byteLength(String(profile.name)) +
+          Buffer.byteLength(String(email?.email ?? "")) + 512;
+        let jsonTooLarge = metadata != null &&
+          (Number(metadata.identities) > MAX_EXPORTED_IDENTITIES ||
+           Number(metadata.memberships) > MAX_EXPORTED_ARCHIVES ||
+           metadataRawBytes > MAX_EXPORTED_METADATA_RAW_BYTES);
+        const methods = jsonTooLarge ? [] : await db
+          .prepare(
+            "",
+            "SELECT provider,subject FROM account_identities WHERE account_id=? ORDER BY provider",
+          )
+          .all(accountId);
         const memberships = await db
           .prepare(
             "",
@@ -100,18 +137,13 @@ export function accountDataExport(db: StoreDatabase) {
         let aiAttachmentError: "too-large" | "missing" | null = null;
         let aiMessageBytes = BigInt(0);
         let aiMessageCount = BigInt(0);
+        let aiHistoryTooLarge = false;
+        let commentCount = BigInt(0);
+        let commentPreflightBytes = BigInt(0);
         for (const membership of memberships) {
           await db
             .prepare("", "SELECT set_config('drevo.archive_id',?,true)")
             .get(String(membership.archive_id));
-          const saved = await db
-            .prepare(
-              "",
-              `SELECT reverse_timeline,card_variant,color_scheme,generation_limits
-               FROM user_tree_preferences
-               WHERE archive_id=? AND user_id=?`,
-            )
-            .get(String(membership.archive_id), accountId);
           // Export only current text authored by this account in a tree it can
           // still read. A scoped member must not regain hidden branches through
           // the global account download.
@@ -148,6 +180,24 @@ export function accountDataExport(db: StoreDatabase) {
             aiChatsExported: false,
           };
           accessScopes.push(accessScope);
+          if (jsonTooLarge || aiHistoryTooLarge) continue;
+          const saved = await db
+            .prepare(
+              "",
+              `SELECT reverse_timeline,card_variant,color_scheme,generation_limits
+               FROM user_tree_preferences
+               WHERE archive_id=? AND user_id=?`,
+            )
+            .get(String(membership.archive_id), accountId);
+          if (includeAiChats && saved) {
+            metadataRawBytes += Buffer.byteLength(String(saved.generation_limits ?? "")) +
+              Buffer.byteLength(String(saved.card_variant)) +
+              Buffer.byteLength(String(saved.color_scheme)) + 64;
+            if (metadataRawBytes > MAX_EXPORTED_METADATA_RAW_BYTES) {
+              jsonTooLarge = true;
+              continue;
+            }
+          }
           if (membership.approved === true) {
             const user: ArchiveUser = {
               id: accountId,
@@ -164,15 +214,40 @@ export function accountDataExport(db: StoreDatabase) {
               ? (await readArchive(db)).family
               : undefined;
             const visible = family ? visiblePersonIds(family, user) : null;
+            const personFilter = visible
+              ? " AND c.person_id=ANY(ARRAY(SELECT jsonb_array_elements_text(?::jsonb)))"
+              : "";
+            const commentArgs = visible
+              ? [String(membership.archive_id), accountId, JSON.stringify([...visible])]
+              : [String(membership.archive_id), accountId];
+            if (includeAiChats) {
+              // Include attachment metadata and per-row overhead, but do not
+              // treat PostgreSQL bytes as the escaped JSON response size.
+              const size = await db.prepare("", `SELECT count(*) AS comments,
+                  COALESCE(sum(octet_length(c.text)
+                    +COALESCE(octet_length(c.attachments::text),0)
+                    +octet_length(c.person_id)+256),0) AS bytes
+                FROM person_comments c JOIN people p
+                  ON p.archive_id=c.archive_id AND p.id=c.person_id
+                WHERE c.archive_id=? AND c.author_id=?${personFilter}`)
+                .get(...commentArgs);
+              commentCount += BigInt(String(size?.comments ?? 0));
+              commentPreflightBytes += BigInt(String(size?.bytes ?? 0));
+              if (commentCount > BigInt(MAX_EXPORTED_COMMENTS) ||
+                  commentPreflightBytes > BigInt(MAX_EXPORTED_COMMENT_PREFLIGHT_BYTES)) {
+                jsonTooLarge = true;
+                continue;
+              }
+            }
             const comments = await db
               .prepare(
                 "",
                 `SELECT c.id,c.person_id,c.text,c.created_ms,c.updated_ms,c.attachments
                  FROM person_comments c JOIN people p
                    ON p.archive_id=c.archive_id AND p.id=c.person_id
-                 WHERE c.archive_id=? AND c.author_id=? ORDER BY c.id`,
+                 WHERE c.archive_id=? AND c.author_id=?${personFilter} ORDER BY c.id`,
               )
-              .all(String(membership.archive_id), accountId);
+              .all(...commentArgs);
             ownComments = comments
               .filter((row) => !visible || visible.has(String(row.person_id)))
               .map((row) => ({
@@ -247,7 +322,8 @@ export function accountDataExport(db: StoreDatabase) {
                 if (aiMessageBytes > BigInt(MAX_EXPORTED_AI_MESSAGE_BYTES) ||
                     aiMessageCount > BigInt(MAX_EXPORTED_AI_MESSAGES)) {
                   accessScope.aiChatsExported = true;
-                  throw new AccountAiHistoryTooLarge(accessScopes);
+                  aiHistoryTooLarge = true;
+                  continue;
                 }
                 const chatRows = await db.prepare("", `SELECT c.id,c.created_at,c.updated_at,
                   m.role,m.content,m.created_at AS message_created_at,m.id AS message_id
@@ -298,6 +374,8 @@ export function accountDataExport(db: StoreDatabase) {
               : null,
           });
         }
+        if (jsonTooLarge) throw new AccountJsonTooLarge(accessScopes);
+        if (aiHistoryTooLarge) throw new AccountAiHistoryTooLarge(accessScopes);
         return { accessScopes, aiAttachments, aiAttachmentError, download: {
           format: "drevo-account-data",
           version: 5,
