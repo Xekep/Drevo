@@ -66,7 +66,9 @@ export function aiChatStore(db: StoreDatabase) {
         .get(id));
     },
     async allIds() {
-      const rows = await db.prepare("SELECT id FROM ai_chats", "SELECT id FROM ai_chats").all();
+      const rows = await db
+        .prepare("SELECT id FROM ai_chats", "SELECT id FROM ai_chats")
+        .all();
       return new Set(rows.map((row) => String(row.id)));
     },
     async create(userId: string, accessScope: string) {
@@ -170,13 +172,15 @@ export function aiChatStore(db: StoreDatabase) {
         )
         .run(id);
     },
-    async setRemote(id: string, conversationId: string | null) {
+    async setRemote(id: string, conversationId: string | null, token?: string) {
       await db
         .prepare(
-          "UPDATE ai_chats SET yandex_conversation_id=? WHERE id=?",
-          "UPDATE ai_chats SET yandex_conversation_id=? WHERE id=?",
+          "UPDATE ai_chats SET yandex_conversation_id=? WHERE id=?" +
+            (token ? " AND busy_token=?" : ""),
+          "UPDATE ai_chats SET yandex_conversation_id=? WHERE id=?" +
+            (token ? " AND busy_token=?" : ""),
         )
-        .run(conversationId, id);
+        .run(conversationId, id, ...(token ? [token] : []));
     },
     async setActivePeople(id: string, personIds: string[]) {
       await db
@@ -196,9 +200,9 @@ export function aiChatStore(db: StoreDatabase) {
       const token = randomUUID();
       const result = await db
         .prepare(
-          `UPDATE ai_chats SET busy_token=?,busy_until=?
+          `UPDATE ai_chats SET busy_token=?,busy_until=?,stop_token=NULL
            WHERE id=? AND (busy_token IS NULL OR busy_until<?)`,
-          "UPDATE ai_chats SET busy_token=?,busy_until=?\n           WHERE id=? AND (busy_token IS NULL OR busy_until<?)",
+          "UPDATE ai_chats SET busy_token=?,busy_until=?,stop_token=NULL\n           WHERE id=? AND (busy_token IS NULL OR busy_until<?)",
         )
         .run(token, Date.now() + 60_000, id, Date.now());
       return result.changes ? token : null;
@@ -212,11 +216,35 @@ export function aiChatStore(db: StoreDatabase) {
         .run(Date.now() + 60_000, id, token);
       return result.changes === 1;
     },
+    async requestStop(id: string, userId: string) {
+      const work = async () => {
+        await db
+          .prepare(
+            "UPDATE ai_chats SET stop_token=busy_token WHERE id=? AND user_id=? AND busy_token IS NOT NULL AND busy_until>?",
+            "UPDATE ai_chats SET stop_token=busy_token WHERE id=? AND user_id=? AND busy_token IS NOT NULL AND busy_until>?",
+          )
+          .run(id, userId, Date.now());
+      };
+      if (db.inTransaction()) await work();
+      else await db.transaction(work);
+    },
+    async turnStatus(id: string, token: string, lockForCommit = false): Promise<"active" | "stopped" | "lost"> {
+      if (lockForCommit && !db.inTransaction())
+        throw new Error("Фиксация ответа требует транзакции");
+      const row = await db
+        .prepare(
+          "SELECT stop_token FROM ai_chats WHERE id=? AND busy_token=? AND busy_until>?",
+          "SELECT stop_token FROM ai_chats WHERE id=? AND busy_token=? AND busy_until>?" +
+            (lockForCommit ? " FOR UPDATE" : ""),
+        )
+        .get(id, token, Date.now());
+      return !row ? "lost" : row.stop_token === token ? "stopped" : "active";
+    },
     async release(id: string, token: string) {
       await db
         .prepare(
-          "UPDATE ai_chats SET busy_token=NULL,busy_until=NULL WHERE id=? AND busy_token=?",
-          "UPDATE ai_chats SET busy_token=NULL,busy_until=NULL WHERE id=? AND busy_token=?",
+          "UPDATE ai_chats SET busy_token=NULL,busy_until=NULL,stop_token=NULL WHERE id=? AND busy_token=?",
+          "UPDATE ai_chats SET busy_token=NULL,busy_until=NULL,stop_token=NULL WHERE id=? AND busy_token=?",
         )
         .run(id, token);
     },

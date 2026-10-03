@@ -139,6 +139,7 @@ export function createResearchRunner({
     onStatus,
     signal,
     chatId,
+    turnToken,
     assertAiAccess,
     commitSuggestion,
   }: {
@@ -154,6 +155,7 @@ export function createResearchRunner({
     onStatus: (text: string) => void;
     signal: AbortSignal;
     chatId: string;
+    turnToken: string;
     assertAiAccess: () => Promise<void>;
     commitSuggestion: typeof suggestions.createFromTool;
   }): Promise<ResearchResult> {
@@ -386,7 +388,7 @@ export function createResearchRunner({
       selectedPerson?.id,
     );
     if (directRelationship && !availableAttachments.length) {
-      await chats.setRemote(chatId, null);
+      await chats.setRemote(chatId, null, turnToken);
       onDelta(directRelationship.answer);
       return {
         ...directRelationship,
@@ -401,7 +403,7 @@ export function createResearchRunner({
       runtime.capabilities.pdf,
     );
     if (archiveExport && !availableAttachments.length) {
-      await chats.setRemote(chatId, null);
+      await chats.setRemote(chatId, null, turnToken);
       onDelta(archiveExport.answer);
       return {
         ...archiveExport,
@@ -645,7 +647,7 @@ export function createResearchRunner({
     if (!conversationId) {
       await assertAiAccess();
       conversationId = await responses.createConversation(runtime, signal);
-      await chats.setRemote(chatId, conversationId);
+      await chats.setRemote(chatId, conversationId, turnToken);
       pendingInput.push(...restoreHistory());
     }
     pendingInput.push(currentInput);
@@ -746,7 +748,7 @@ export function createResearchRunner({
             runtime,
             recoverySignal,
           );
-          await chats.setRemote(chatId, conversationId);
+          await chats.setRemote(chatId, conversationId, turnToken);
           await assertAiAccess();
           recordModelCall(metrics, runtime.modelUri);
           completion = await responses.respond({
@@ -782,7 +784,7 @@ export function createResearchRunner({
           contextRecovered = true;
           await assertAiAccess();
           conversationId = await responses.createConversation(runtime, signal);
-          await chats.setRemote(chatId, conversationId);
+          await chats.setRemote(chatId, conversationId, turnToken);
           pendingInput.splice(
             0,
             pendingInput.length,
@@ -800,7 +802,7 @@ export function createResearchRunner({
           ) {
             // Keep successful search results even when the following model call
             // fails. Reset only the remote context; the local answer is saved.
-            await chats.setRemote(chatId, null);
+            await chats.setRemote(chatId, null, turnToken);
             console.warn(
               JSON.stringify({
                 event: "ai.web_answer_fallback",
@@ -877,7 +879,7 @@ export function createResearchRunner({
         );
       if (calls.length && round === runtime.maxToolIterations) {
         if (webReferences.size && !createdSuggestionIds.size && !files.length) {
-          await chats.setRemote(chatId, null);
+          await chats.setRemote(chatId, null, turnToken);
           return {
             answer: webPagesToVerify(
               "Поиск завершён, но точный ответ пока не подтверждён. Найденные страницы нужно сверить с нужным архивом и шифром:",
@@ -1450,7 +1452,7 @@ export function createResearchRunner({
               if (calls.length === 1 && !recoveryResults.length) {
                 // A standalone display command needs no synthesis. Avoid a
                 // second reasoning pass and an unmatched remote function call.
-                await chats.setRemote(chatId, null);
+                await chats.setRemote(chatId, null, turnToken);
                 onDelta(answer);
                 return { answer, references: [], suggestionIds: [], uiActions, files: [] };
               }
@@ -1868,7 +1870,7 @@ export function createResearchRunner({
         if (directAnswer) {
           // The remote conversation has an unanswered function call. Rebuild it
           // from the local chat history on the next turn instead of reusing it.
-          await chats.setRemote(chatId, null);
+          await chats.setRemote(chatId, null, turnToken);
           const references: AnswerReference[] = [
             ...webReferences.values(),
             ...[...referencedPeople].slice(0, 250).map((id) => ({

@@ -61,6 +61,7 @@ import { verifyAccountExportDelivery } from "./postgres-account-export-delivery.
 import { verifyOfflineExportDelivery } from "./postgres-offline-export-delivery.ts";
 import { verifyAiAttachmentDelivery } from "./postgres-ai-attachment-delivery.ts";
 import { verifyDiscussionAttachmentDelivery } from "./postgres-discussion-attachment-delivery.ts";
+import { verifyAiTurnCoordination } from "./postgres-ai-turn-coordination.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
@@ -903,6 +904,7 @@ try {
   await assert.rejects(preferences.write("owner", { reverseTimeline: false, generationLimits: { ...generationLimits, collateral: 3 } }), /Некорректные/);
   await preferences.write("owner", { reverseTimeline: false, generationLimits: null });
   assert.equal((await preferences.read("owner")).generationLimits, undefined);
+  await verifyAiTurnCoordination(live.db);
   const chats = aiChatStore(live.db);
   const chat = await chats.create("owner", "all");
   await chats.append(chat.id, "user", "Проверка");
