@@ -24,7 +24,7 @@ export class BackupAccessError extends Error {
     this.status = status;
   }
 }
-export type BackupCheckAccess = { accountId: string; tokenHash: string };
+export type BackupJobAccess = { accountId: string; tokenHash: string };
 export async function backupCoordinator(
   db: StoreDatabase,
   databasePath: string,
@@ -127,7 +127,7 @@ export async function backupCoordinator(
     actor: ArchiveUser | undefined,
     task: () => Promise<Pick<BackupJob, "preview" | "warning"> | void>,
     scheduled = false,
-    checkAccess?: BackupCheckAccess,
+    checkAccess?: BackupJobAccess,
   ) {
     if (closed) throw new BackupBusyError("Сервер завершает работу.");
     if (pending)
@@ -172,7 +172,7 @@ export async function backupCoordinator(
 
       return true;
     });
-    const acquired = checkAccess && kind === "check" && db.kind === "postgres" && db.postgresTransaction
+    const acquired = checkAccess && (kind === "check" || kind === "preview") && db.kind === "postgres" && db.postgresTransaction
       ? await db.postgresTransaction(async (client) => {
           const account = await client.query(
             "SELECT id FROM accounts WHERE id=$1 FOR SHARE NOWAIT", [checkAccess.accountId]);
@@ -327,7 +327,7 @@ export async function backupCoordinator(
     withFile,
     startCreate,
     tick,
-    async check(value: unknown, actor: ArchiveUser, access?: BackupCheckAccess) {
+    async check(value: unknown, actor: ArchiveUser, access?: BackupJobAccess) {
       const config = validateBackupSettings(value);
       if (config.storage !== "remote")
         throw new BackupInputError("Выберите отдельный сервер.");
@@ -337,11 +337,12 @@ export async function backupCoordinator(
       id: string,
       actor: ArchiveUser,
       inspect: (file: string, signal: AbortSignal) => Promise<RestorePreview>,
+      access?: BackupJobAccess,
     ) {
       await record(id);
       return await launch("preview", actor, async () => ({
         preview: await withFile(id, (file) => inspect(file, signal)),
-      }));
+      }), false, access);
     },
     async idle() {
       await pending;
