@@ -31,6 +31,13 @@ export function PdfBookReader({
   const dialog = useRef<HTMLDialogElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const commentsList = useRef<HTMLDivElement>(null);
+  const sidebarSwipe = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    claimed: boolean;
+  } | null>(null);
+  const sidebarIgnoreClickUntil = useRef(0);
   const editTrigger = useRef<HTMLButtonElement | null>(null);
   const editText = useRef<HTMLTextAreaElement | null>(null);
   const closeLatest = useRef(onClose);
@@ -185,6 +192,9 @@ export function PdfBookReader({
         setMagnifier((value) => !value);
       } else if (message.type === "toggle-comments") {
         setCommentsOpen((value) => !value);
+      } else if (message.type === "close-comments") {
+        setCommentsOpen(false);
+        setHoveredAnnotation("");
       } else if (message.type === "close") {
         closeLatest.current();
       } else if (message.type === "error") {
@@ -465,6 +475,95 @@ export function PdfBookReader({
           <aside
             className={"pdf-book-sidebar" + (commentsOpen ? " is-open" : "")}
             aria-label="Комментарии и оглавление"
+            onPointerDownCapture={(event) => {
+              sidebarSwipe.current = null;
+              sidebarIgnoreClickUntil.current = 0;
+              if (
+                !event.isPrimary ||
+                event.pointerType !== "touch" ||
+                !window.matchMedia("(max-width: 820px)").matches ||
+                !(event.target instanceof Element) ||
+                event.target.closest(
+                  "input, textarea, select, [contenteditable=true]",
+                )
+              )
+                return;
+              const selected = window.getSelection();
+              if (
+                selected &&
+                !selected.isCollapsed &&
+                (event.currentTarget.contains(selected.anchorNode) ||
+                  event.currentTarget.contains(selected.focusNode))
+              )
+                return;
+              sidebarSwipe.current = {
+                id: event.pointerId,
+                x: event.clientX,
+                y: event.clientY,
+                claimed: false,
+              };
+            }}
+            onPointerMoveCapture={(event) => {
+              const swipe = sidebarSwipe.current;
+              if (!swipe || swipe.id !== event.pointerId) return;
+              const selected = window.getSelection();
+              if (
+                selected &&
+                !selected.isCollapsed &&
+                (event.currentTarget.contains(selected.anchorNode) ||
+                  event.currentTarget.contains(selected.focusNode))
+              ) {
+                sidebarSwipe.current = null;
+                return;
+              }
+              const dx = event.clientX - swipe.x,
+                dy = event.clientY - swipe.y;
+              if (
+                !swipe.claimed &&
+                Math.abs(dy) > 12 &&
+                Math.abs(dy) >= Math.abs(dx)
+              ) {
+                sidebarSwipe.current = null;
+              } else if (!swipe.claimed && dx > 12 && dx > Math.abs(dy) * 1.5) {
+                swipe.claimed = true;
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }
+            }}
+            onPointerUpCapture={(event) => {
+              const swipe = sidebarSwipe.current;
+              sidebarSwipe.current = null;
+              if (!swipe || swipe.id !== event.pointerId || !swipe.claimed)
+                return;
+              sidebarIgnoreClickUntil.current = Date.now() + 500;
+              event.preventDefault();
+              if (event.currentTarget.hasPointerCapture(event.pointerId))
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              const dx = event.clientX - swipe.x,
+                dy = event.clientY - swipe.y;
+              if (dx >= 60 && dx > Math.abs(dy) * 1.5) {
+                setCommentsOpen(false);
+                setHoveredAnnotation("");
+              }
+            }}
+            onPointerCancelCapture={() => {
+              sidebarSwipe.current = null;
+            }}
+            onLostPointerCapture={(event) => {
+              if (
+                event.target === event.currentTarget &&
+                sidebarSwipe.current?.id === event.pointerId
+              )
+                sidebarSwipe.current = null;
+            }}
+            onClickCapture={(event) => {
+              if (
+                event.detail &&
+                Date.now() < sidebarIgnoreClickUntil.current
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+            }}
           >
             <div className="pdf-book-sidebar-tabs">
               <button
