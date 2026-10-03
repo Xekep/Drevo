@@ -5618,10 +5618,19 @@ try {
   console.log("runtime_discovery_candidate_locality_pagination_ok");
   const candidatePriorOwner = (await client.query(`SELECT user_id FROM archive_owners
     WHERE archive_id='runtime-test'`)).rows[0].user_id as string;
+  const candidatePriorRole = (await client.query(`SELECT role FROM archive_memberships
+    WHERE archive_id='runtime-test' AND user_id=$1`, [candidatePriorOwner])).rows[0].role as string;
   await client.query(`INSERT INTO accounts(id,name,created_at)
     VALUES('candidate-owner-successor','Candidate successor',$1)`, [new Date().toISOString()]);
+  await client.query(`INSERT INTO account_tiers(account_id,full_access)
+    VALUES('candidate-owner-successor',true)`);
   await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
     VALUES('runtime-test','candidate-owner-successor','admin',true,'all')`);
+  const candidateSuccessorToken = newSessionToken();
+  await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
+    VALUES($1,'candidate-owner-successor',$2)`, [
+    sessionTokenHash(candidateSuccessorToken), Date.now() + 600_000,
+  ]);
   const ownerCandidateBarrier = async (beforeResponse: boolean, ip: string) => {
     let reached!: () => void, release!: () => void;
     const ready = new Promise<void>((resolve) => { reached = resolve; });
@@ -5659,6 +5668,12 @@ try {
       assert.equal(busy.status, 409,
         "a busy ownership row rejects a candidate response without waiting for transfer");
     } finally { await client.query("ROLLBACK"); }
+    const proposedTransfer = await fetch(securedBase + "/api/account/owner-transfer", {
+      method: "POST",
+      headers: { ...ownerHeaders, "X-Drevo-Owner-Transfer": "1" },
+      body: JSON.stringify({ targetId: "candidate-owner-successor" }),
+    });
+    assert.equal(proposedTransfer.status, 200, await proposedTransfer.text());
     const beforeLock = await ownerCandidateBarrier(false, "203.0.113.66");
     try {
       await Promise.race([beforeLock.ready,
@@ -5666,14 +5681,21 @@ try {
         new Promise<never>((_, reject) => setTimeout(() =>
           reject(new Error("Candidate page did not reach owner barrier")), 30_000)),
       ]);
-      await client.query(`UPDATE archive_owners SET user_id='candidate-owner-successor'
-        WHERE archive_id='runtime-test'`);
+      const acceptedTransfer = await fetch(securedBase + "/api/account/owner-transfer/accept", {
+        method: "POST",
+        headers: { ...ownerHeaders, Cookie: `drevo_session=${candidateSuccessorToken}`,
+          "X-Drevo-Owner-Transfer": "1" },
+      });
+      assert.equal(acceptedTransfer.status, 200, await acceptedTransfer.text());
       beforeLock.release();
       assert.equal((await beforeLock.response).status, 403,
-        "a former owner cannot receive a candidate page after ownership transfers");
+        "a former owner cannot receive a candidate page after HTTP ownership transfer");
     } finally { await beforeLock.close(); }
+    console.log("runtime_discovery_candidate_owner_http_transfer_ok");
     await client.query(`UPDATE archive_owners SET user_id=$1
       WHERE archive_id='runtime-test'`, [candidatePriorOwner]);
+    await client.query(`UPDATE archive_memberships SET role=$2
+      WHERE archive_id='runtime-test' AND user_id=$1`, [candidatePriorOwner, candidatePriorRole]);
     const duringLock = await ownerCandidateBarrier(true, "203.0.113.67");
     let transfer: Promise<unknown> | undefined;
     try {
@@ -5703,8 +5725,18 @@ try {
   } finally {
     await client.query(`UPDATE archive_owners SET user_id=$1
       WHERE archive_id='runtime-test'`, [candidatePriorOwner]);
+    await client.query(`UPDATE archive_memberships SET role=$2
+      WHERE archive_id='runtime-test' AND user_id=$1`, [candidatePriorOwner, candidatePriorRole]);
+    await client.query(`DELETE FROM account_sessions
+      WHERE token_hash=$1`, [sessionTokenHash(candidateSuccessorToken)]);
     await client.query(`DELETE FROM archive_memberships
       WHERE archive_id='runtime-test' AND user_id='candidate-owner-successor'`);
+    await client.query(`DELETE FROM account_tiers
+      WHERE account_id='candidate-owner-successor'`);
+    await client.query(`DELETE FROM archive_audit_entries
+      WHERE archive_id='runtime-test' AND entity='user'
+        AND entity_id='candidate-owner-successor'
+        AND action IN ('Предложена передача владения деревом','Передано владение деревом')`);
     await client.query(`DELETE FROM accounts WHERE id='candidate-owner-successor'`);
   }
   console.log("runtime_discovery_candidate_owner_revocation_ok");
