@@ -11,6 +11,8 @@ export type ArchiveUser = {
   treeAccess?: TreeAccess;
   platformAdmin?: boolean;
   fullAccess?: boolean;
+  /** Effective AI access for the current archive; both viewer and owner tiers are required. */
+  aiAvailable?: boolean;
 };
 export const ROLE_NAMES: Record<Role, string> = {
   admin: "Администратор",

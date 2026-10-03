@@ -68,12 +68,14 @@ export function TreePreferencesDialog({
   anchorId,
   onChange,
   onClose,
+  onAdmin,
 }: {
   preferences: TreePreferences;
   people?: Person[];
   anchorId?: string;
   onChange: (value: TreePreferences) => Promise<TreePreferences>;
   onClose: () => void;
+  onAdmin?: () => void;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -266,6 +268,11 @@ export function TreePreferencesDialog({
           <p className="form-error" role="alert">
             {error}
           </p>
+        )}
+        {onAdmin && (
+          <button className="tree-admin-link" type="button" onClick={onAdmin}>
+            Управление деревом
+          </button>
         )}
       </div>
     </EditorDialog>
