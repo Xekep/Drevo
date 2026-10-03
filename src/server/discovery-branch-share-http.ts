@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { finished } from "node:stream/promises";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
@@ -92,10 +93,14 @@ function listed(row: Row, relation: Relation, viaIds?: string[]): Member {
 }
 
 /** Only a mutual opt-in on this exact linked pair exposes published direct relatives. */
-export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
+export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
+  beforeMemberDelivery, beforeListPublicationLock, beforeListDelivery }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
+  beforeMemberDelivery?: () => Promise<void>;
+  beforeListPublicationLock?: () => Promise<void>;
+  beforeListDelivery?: () => Promise<void>;
 }) {
   const db = archive.db;
   const limiter = createSharedRequestLimiter(db, "discovery-branch-share", { windowMs: 60_000, limit: 20 });
@@ -108,6 +113,22 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
     });
     res.end(JSON.stringify(value));
     return true;
+  };
+  const deliverLocked = async (res: ServerResponse, value: unknown) => {
+    const delivered = finished(res, { cleanup: true });
+    // Bound the connection and row locks held for a slow recipient.
+    const timeout = setTimeout(() => res.destroy(), 5_000);
+    timeout.unref();
+    try {
+      json(res, 200, value);
+      await delivered;
+    } catch (error) {
+      const disconnected = res.destroyed;
+      res.destroy();
+      await delivered.catch(() => {});
+      // The socket is gone; do not let the outer handler write another reply.
+      if (!disconnected) throw error;
+    } finally { clearTimeout(timeout); }
   };
   const linkedPair = (id: string, archiveId: string, lock = false) => db.prepare("", `
     SELECT m.left_archive_id,m.left_person_id,m.right_archive_id,m.right_person_id
@@ -163,6 +184,25 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
   const isOwner = async (archiveId: string, userId: string, lock = false) => Boolean(
     await db.prepare("", `SELECT 1 FROM archive_owners WHERE archive_id=? AND user_id=?
       ${lock ? "FOR SHARE" : ""}`).get(archiveId, userId));
+  const lockedGrantsFor = async (pair: Row, archiveId: string, sourceArchiveId: string) => {
+    const lockGrant = (grantorArchiveId: string) => db.prepare("", `SELECT 1
+      FROM discovery_branch_grants WHERE left_archive_id=? AND left_person_id=?
+        AND right_archive_id=? AND right_person_id=? AND grantor_archive_id=?
+        AND (expires_at IS NULL OR expires_at>now()) FOR SHARE`)
+      .get(...pairArgs(pair), grantorArchiveId);
+    const own = Boolean(await lockGrant(archiveId));
+    // SELECT FOR SHARE applies the grant's UPDATE RLS policy. Lock the
+    // source's exact grant as its grantor, then restore recipient scope.
+    await db.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+      .get(sourceArchiveId);
+    let source: Row | undefined;
+    try { source = await lockGrant(sourceArchiveId); }
+    finally {
+      await db.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+        .get(archiveId);
+    }
+    return { own, source: Boolean(source) };
+  };
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const detail = route.exec(url.pathname);
     if (!detail) return false;
@@ -192,14 +232,29 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
     if (memberId) {
       const personId = memberId;
       const person = await db.transaction(async () => {
-        const pair = await linkedPair(detail[1], archiveId);
-        if (!pair || !(await isOwner(archiveId, user.id))) return null;
-        const grants = await db.prepare("", `SELECT grantor_archive_id FROM discovery_branch_grants
-          WHERE left_archive_id=? AND left_person_id=? AND right_archive_id=?
-            AND right_person_id=? AND (expires_at IS NULL OR expires_at>now())`)
-          .all(...pairArgs(pair));
-        if (!grants.some((row) => row.grantor_archive_id === archiveId) ||
-            !grants.some((row) => row.grantor_archive_id !== archiveId)) return null;
+        const preliminary = await linkedPair(detail[1], archiveId);
+        if (!preliminary) return false;
+        const sourceArchiveId = recipient(preliminary, archiveId).archiveId;
+        const preliminaryMember = await db.prepare("", `SELECT via_person_id
+          FROM discovery_branch_members WHERE left_archive_id=? AND left_person_id=?
+            AND right_archive_id=? AND right_person_id=? AND grantor_archive_id=?
+            AND person_id=?`).get(...pairArgs(preliminary), sourceArchiveId, personId);
+        if (!preliminaryMember) return false;
+        const publicationIds = [...new Set([personId,
+          ...(preliminaryMember.via_person_id ? [String(preliminaryMember.via_person_id)] : [])])]
+          .sort();
+        // Unpublication locks discovery_people before it cascades into branch
+        // members or the linked pair. Take the same order to avoid a cycle.
+        const published = await db.prepare("", `SELECT person_id FROM discovery_people
+          WHERE archive_id=? AND person_id IN (SELECT jsonb_array_elements_text(?::jsonb))
+          ORDER BY person_id FOR SHARE`).all(sourceArchiveId, JSON.stringify(publicationIds));
+        if (published.length !== publicationIds.length) return false;
+        const pair = await linkedPair(detail[1], archiveId, true);
+        if (!pair || pairArgs(pair).some((value, index) =>
+          value !== pairArgs(preliminary)[index])) return false;
+        if (!(await isOwner(archiveId, user.id, true))) return false;
+        const grants = await lockedGrantsFor(pair, archiveId, sourceArchiveId);
+        if (!grants.own || !grants.source) return false;
         const row = await db.prepare("", `SELECT p.archive_id,p.person_id,p.name,p.birth_year,
           p.death_year,p.birth_place,p.death_place,b.relation,b.via_person_id
           FROM discovery_branch_members b JOIN discovery_people p
@@ -207,7 +262,8 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
           WHERE b.left_archive_id=? AND b.left_person_id=? AND b.right_archive_id=?
             AND b.right_person_id=? AND b.grantor_archive_id<>? AND b.person_id=?`)
           .get(...pairArgs(pair), archiveId, personId);
-        return row ? {
+        if (!row || row.via_person_id !== preliminaryMember.via_person_id) return false;
+        const member = {
           archiveId: String(row.archive_id), id: String(row.person_id),
           relation: String(row.relation) as Relation, name: String(row.name),
           ...(row.birth_year ? { birthYear: String(row.birth_year) } : {}),
@@ -215,15 +271,37 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
           ...(row.birth_place ? { birthPlace: String(row.birth_place) } : {}),
           ...(row.death_place ? { deathPlace: String(row.death_place) } : {}),
           ...(row.via_person_id ? { viaId: String(row.via_person_id) } : {}),
-        } : null;
-      }, true);
-      return person ? json(res, 200, { person })
-        : json(res, 404, { error: "Карточка недоступна" });
+        };
+        await beforeMemberDelivery?.();
+        await deliverLocked(res, { person: member });
+        return true;
+      });
+      return person ? true : json(res, 404, { error: "Карточка недоступна" });
     }
     if (req.method === "GET") {
       const result = await db.transaction(async () => {
-        const pair = await linkedPair(detail[1], archiveId);
-        if (!pair) return null;
+        const preliminary = await linkedPair(detail[1], archiveId);
+        if (!preliminary) return null;
+        const sourceArchiveId = recipient(preliminary, archiveId).archiveId;
+        const selected = await db.prepare("", `SELECT person_id,via_person_id
+          FROM discovery_branch_members WHERE left_archive_id=? AND left_person_id=?
+            AND right_archive_id=? AND right_person_id=? AND grantor_archive_id=?
+          ORDER BY person_id LIMIT ?`).all(...pairArgs(preliminary), sourceArchiveId, maxMembers);
+        await beforeListPublicationLock?.();
+        const publicationIds = [...new Set(selected.flatMap((row) => [String(row.person_id),
+          ...(row.via_person_id ? [String(row.via_person_id)] : [])]))].sort();
+        // Publication withdrawal precedes its member cascade and may precede
+        // a linked-pair revoke. Take public row locks before the pair lock.
+        const published = publicationIds.length ? await db.prepare("", `SELECT person_id
+          FROM discovery_people WHERE archive_id=?
+            AND person_id IN (SELECT jsonb_array_elements_text(?::jsonb))
+          ORDER BY person_id FOR SHARE`).all(sourceArchiveId, JSON.stringify(publicationIds)) : [];
+        const lockedPublications = new Set(published.map((row) => String(row.person_id)));
+        const pair = await linkedPair(detail[1], archiveId, true);
+        if (!pair || pairArgs(pair).some((value, index) =>
+          value !== pairArgs(preliminary)[index])) return null;
+        if (!(await isOwner(archiveId, user.id, true))) return null;
+        const lockedGrants = await lockedGrantsFor(pair, archiveId, sourceArchiveId);
         const addressee = recipient(pair, archiveId);
         const publishedRecipient = await db.prepare("", `SELECT name FROM discovery_people
           WHERE archive_id=? AND person_id=?`).get(addressee.archiveId,addressee.personId);
@@ -244,13 +322,22 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
           WHERE b.left_archive_id=? AND b.left_person_id=? AND b.right_archive_id=?
             AND b.right_person_id=? AND b.grantor_archive_id<>?
           ORDER BY p.person_id LIMIT ?`).all(...pairArgs(pair), archiveId, maxMembers) : [];
-        return { ...preview, ownReady, otherReady, outgoingIds,
+        if (incoming.some((row) => !lockedPublications.has(String(row.person_id)) ||
+            (row.via_person_id && !lockedPublications.has(String(row.via_person_id)))) ||
+            (incoming.length > 0 && (!lockedGrants.own || !lockedGrants.source)))
+          return { code: 409 as const };
+        const payload = { ...preview, ownReady, otherReady, outgoingIds,
           recipientArchiveId: addressee.archiveId,
           recipientPersonName: String(publishedRecipient.name),
           ownExpiresAt: ownGrant?.expires_at || null,
           incoming: incoming.map((row) => listed(row, String(row.relation) as Relation)) };
-      }, true);
-      return result ? json(res, 200, result) : json(res, 404, { error: "Связь не найдена" });
+        await beforeListDelivery?.();
+        await deliverLocked(res, payload);
+        return { code: 200 as const };
+      });
+      return !result ? json(res, 404, { error: "Связь не найдена" })
+        : result.code === 409 ? json(res, 409, { error: "Ветка изменилась. Повторите запрос" })
+          : true;
     }
     if (req.method === "PUT") {
       const body = await readBody(req);
