@@ -39,6 +39,15 @@
 .match-candidate-card a { overflow-wrap: anywhere; }
 .match-candidate-card small { color: var(--muted); }
 .match-candidate-origin { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.match-pair-comparison { display: grid; gap: 8px; }
+.match-pair-comparison h3, .match-pair-comparison p { margin: 0; }
+.match-pair-comparison h3 { font-size: 14px; }
+.match-pair-comparison p { color: var(--muted); font-size: .85rem; }
+.match-pair-comparison dl { display: grid; gap: 0; margin: 0; border-top: 1px solid var(--line); }
+.match-pair-comparison dl > div { display: grid; grid-template-columns: minmax(140px,1fr) minmax(0,2fr); gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.match-pair-comparison dt { font-weight: 600; }
+.match-pair-comparison dt small { display: block; color: var(--muted); font-weight: normal; }
+.match-pair-comparison dd { display: grid; gap: 3px; margin: 0; overflow-wrap: anywhere; }
 .match-request-heading, .match-request-actions, .match-pages { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .match-request-heading { justify-content: space-between; }
 .match-request-heading time { color: var(--muted); font-size: 12px; }
@@ -55,6 +64,7 @@
 .match-shared-fields dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 700px) {
   .match-search-grid, .match-pair { grid-template-columns: minmax(0,1fr); }
+  .match-pair-comparison dl > div { grid-template-columns: minmax(0,1fr); }
   .match-review > button { width: 100%; }
   .match-request-actions > button { flex: 1 1 auto; }
   .match-ignored-archive { align-items: flex-start; flex-direction: column; }
