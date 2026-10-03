@@ -654,9 +654,12 @@ export function AccountPage({
                           href="/api/account/export/attachments"
                           download="drevo-account-attachments.zip"
                         >
-                          Скачать свои вложения обсуждений
+                          Скачать свои вложения обсуждений и ИИ-диалогов
                           <ExternalLink size={16} aria-hidden="true" />
                         </a>
+                        <p className="account-card-copy">
+                          ИИ-диалоги и их вложения входят в экспорт только при действующем доступе к ИИ в этом дереве.
+                        </p>
                       </div>
                     )}
                     <button
