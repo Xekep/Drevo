@@ -5,6 +5,7 @@ import type { StoreDatabase } from "./store-database.ts";
 import { randomUUID } from "node:crypto";
 import { ARCHIVE_SCHEMA_VERSION } from "./schema.ts";
 import { provisionPrivateArchiveInTransaction } from "./postgres-private-archive.ts";
+import { AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 
 export function accountArchivesHttp(
@@ -24,7 +25,10 @@ export function accountArchivesHttp(
       res.end(JSON.stringify(value));
       return true;
     };
-    const accountId = await auth.accountId(req);
+    const session = req.method === "POST" ? await auth.accountSession(req) : null;
+    const accountId = req.method === "POST"
+      ? session?.accountId
+      : await auth.accountId(req);
     if (!accountId)
       return send(401, { error: "Войдите, чтобы увидеть свои деревья" });
     if (req.method === "POST") {
@@ -48,7 +52,24 @@ export function accountArchivesHttp(
             "SELECT id FROM accounts WHERE id=$1 FOR UPDATE",
             [accountId],
           );
-          if (!account.rowCount) throw new Error("Аккаунт не найден");
+          if (!account.rowCount) throw new AccountSessionExpired("Аккаунт не найден");
+          // Account deletion takes account -> session locks too. A revoke that
+          // won the session lock first makes this request retry or fail closed.
+          let sessionExpiresAt = NaN;
+          try {
+            const currentSession = await client.query<{ expires_at: string }>(
+              `SELECT expires_at FROM account_sessions
+               WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+              [session!.tokenHash, accountId],
+            );
+            sessionExpiresAt = Number(currentSession.rows[0]?.expires_at);
+          } catch (error) {
+            if ((error as { code?: string }).code === "55P03")
+              throw new AccountSessionBusy("Сеанс занят другим действием. Повторите запрос");
+            throw error;
+          }
+          if (!Number.isFinite(sessionExpiresAt) || sessionExpiresAt <= Date.now())
+            throw new AccountSessionExpired("Сессия завершена. Войдите снова");
           await client.query("SELECT set_config('drevo.account_id',$1,true)", [
             accountId,
           ]);
@@ -74,6 +95,10 @@ export function accountArchivesHttp(
           ? send(201, { archiveId })
           : send(409, { error: "У аккаунта уже есть собственное дерево" });
       } catch (error) {
+        if (error instanceof AccountSessionExpired)
+          return send(401, { error: error.message });
+        if (error instanceof AccountSessionBusy)
+          return send(409, { error: error.message });
         console.error("account_archive_create_failed", error);
         return send(500, { error: "Не удалось создать дерево" });
       }
