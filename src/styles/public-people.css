@@ -49,3 +49,7 @@
 .public-people-linked { margin-top: 28px; }
 .public-people-linked > h2 { margin-bottom: 6px; }
 .public-people-linked > p { color: var(--muted); }
+.public-people-match { margin: 28px 0; }
+.public-people-match > h2 { margin-bottom: 6px; }
+.public-people-match > p { color: var(--muted); }
+.public-people-match > a { display: block; margin: 10px 0; }

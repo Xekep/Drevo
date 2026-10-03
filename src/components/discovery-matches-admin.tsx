@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { DiscoveryLinkedCardShare } from "./discovery-linked-card-share.tsx";
 import { DiscoveryBranchShare } from "./discovery-branch-share.tsx";
+import { adminMatchTargetAt } from "../domain/archive-routes.ts";
 import "../styles/discovery-matches-admin.css";
 
 type Candidate = {
@@ -51,6 +52,8 @@ function CandidateCard({ candidate, ownArchiveId }: { candidate: Candidate; ownA
 }
 
 export function DiscoveryMatchesAdmin() {
+  const [linkedTarget] = useState(() => typeof window === "undefined"
+    ? null : adminMatchTargetAt(window.location.pathname));
   const [archiveId, setArchiveId] = useState("");
   const [ownQuery, setOwnQuery] = useState("");
   const [targetQuery, setTargetQuery] = useState("");
@@ -86,6 +89,28 @@ export function DiscoveryMatchesAdmin() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (!linkedTarget) return;
+    const controller = new AbortController();
+    archiveFetch(`/api/discovery/people/${encodeURIComponent(linkedTarget.archiveId)}/${encodeURIComponent(linkedTarget.personId)}`,
+      { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "Опубликованная карточка недоступна");
+        const person = body.person as Candidate | undefined;
+        if (!person || person.archiveId !== linkedTarget.archiveId || person.id !== linkedTarget.personId)
+          throw new Error("Опубликованная карточка недоступна");
+        if (!controller.signal.aborted) setTarget(person);
+      })
+      .catch((reason) => {
+        if (!controller.signal.aborted) {
+          setTarget(null);
+          setError((reason as Error).message);
+        }
+      });
+    return () => controller.abort();
+  }, [linkedTarget]);
 
   useEffect(() => {
     const recheck = () => {
@@ -318,7 +343,10 @@ export function DiscoveryMatchesAdmin() {
               className={source?.id === person.id ? "is-selected" : ""}
               aria-pressed={source?.id === person.id}
               onClick={() => {
-                setSource(person); setTarget(null); setSuggestions([]);
+                setSource(person);
+                setTarget((current) => linkedTarget && current?.archiveId === linkedTarget.archiveId &&
+                  current.id === linkedTarget.personId ? current : null);
+                setSuggestions([]);
                 setSuggestionsBusy(true); setSuggestionsCursor(null); setSuggestionsNextCursor(null);
                 setSuggestionsStale(false); setShowIgnored(false);
                 setSuggestionsReload((value) => value + 1);
@@ -345,6 +373,11 @@ export function DiscoveryMatchesAdmin() {
             onClick={() => { setTargetLoading(true); setTargetCursor(targetNextCursor); }}>Показать ещё</button>}
         </div>
       </div>
+      {linkedTarget && target && !source && <div className="match-review">
+        <h2>Карточка из ссылки</h2>
+        <CandidateCard candidate={target} ownArchiveId={archiveId} />
+        <p>Выберите опубликованную карточку из своего дерева, чтобы сравнить сведения и предложить связь.</p>
+      </div>}
       {source && <div className="match-suggestions">
         <div className="match-suggestions-heading">
           <h2>{showIgnored ? "Скрытые подсказки" : "Возможные совпадения"}</h2>

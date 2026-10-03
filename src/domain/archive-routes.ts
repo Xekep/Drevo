@@ -16,6 +16,33 @@ export const archivePaths = {
 export type ArchiveView = keyof typeof archivePaths;
 export const adminMatchesPath = "/admin/matches";
 
+type MatchTarget = { archiveId: string; personId: string };
+const matchArchiveId = /^[A-Za-z0-9-]{3,64}$/;
+function matchPersonId(value: string) {
+  if (!value || value.length > 100 || value === "." || value === ".." ||
+      /[\p{Cc}/%\\]/u.test(value)) return false;
+  try { encodeURIComponent(value); return true; }
+  catch { return false; }
+}
+
+/** An exact published card can be handed to the owner of a different archive. */
+export function adminMatchTargetPath(ownArchiveId: string, target: MatchTarget) {
+  if (!matchArchiveId.test(ownArchiveId) || !matchArchiveId.test(target.archiveId) ||
+      ownArchiveId === target.archiveId || !matchPersonId(target.personId))
+    throw new Error("Invalid match target");
+  return `/a/${ownArchiveId}${adminMatchesPath}/target/${target.archiveId}/${encodeURIComponent(target.personId)}`;
+}
+
+export function adminMatchTargetAt(pathname: string): MatchTarget | null {
+  const archive = archiveContextAt(pathname);
+  const match = archive && /^\/admin\/matches\/target\/([A-Za-z0-9-]{3,64})\/([^/]{1,1200})$/.exec(archive.innerPath);
+  if (!match || match[1] === archive.id) return null;
+  try {
+    const personId = decodeURIComponent(match[2]);
+    return matchPersonId(personId) ? { archiveId: match[1], personId } : null;
+  } catch { return null; }
+}
+
 export type ArchiveEntity =
   { kind: "person"; id: string } | { kind: "photo"; id: string };
 
@@ -109,6 +136,7 @@ export function archiveViewAt(pathname: string): ArchiveView | null {
   const path = innerPath.length > 1 ? innerPath.replace(/\/$/, "") : innerPath;
   if (path === "/") return "tree";
   if (path === adminMatchesPath) return "admin";
+  if (adminMatchTargetAt(pathname)) return "admin";
   return (
     (Object.keys(archivePaths) as ArchiveView[]).find(
       (view) => archivePaths[view] === path,

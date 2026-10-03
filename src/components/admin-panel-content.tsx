@@ -38,7 +38,7 @@ import { SourceCatalogAdmin } from "./source-catalog-admin";
 import { PublicationAdmin } from "./publication-admin";
 import type { PublicationOwnership } from "../hooks/useArchivePublicationOwner";
 import { DiscoveryMatchesAdmin } from "./discovery-matches-admin";
-import { adminMatchesPath, archivePaths } from "../domain/archive-routes";
+import { adminMatchesPath, adminMatchTargetAt, archivePaths } from "../domain/archive-routes";
 import { archiveContextAt, scopedArchivePath } from "../domain/archive-context";
 type Settings = {
   publicTree: boolean;
@@ -336,7 +336,8 @@ export function AdminPanel({
 }) {
   const [section, setSection] = useState(() =>
     typeof window !== "undefined" &&
-    (archiveContextAt(window.location.pathname)?.innerPath || window.location.pathname) === adminMatchesPath
+    ((archiveContextAt(window.location.pathname)?.innerPath || window.location.pathname) === adminMatchesPath ||
+      adminMatchTargetAt(window.location.pathname))
       ? "matches" : "users"),
     [users, setUsers] = useState<ArchiveUser[]>([]),
     [usersTotal, setUsersTotal] = useState(0),

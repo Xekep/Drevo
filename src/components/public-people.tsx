@@ -1,6 +1,7 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { LoginButtons } from "./login-buttons";
+import { adminMatchTargetPath } from "../domain/archive-routes.ts";
 
 type PublicPerson = {
   archiveId?: string;
@@ -12,6 +13,7 @@ type PublicPerson = {
   birthPlace?: string;
   deathPlace?: string;
 };
+type OwnedArchive = { id: string; title: string; role: string; approved: boolean; owned: boolean };
 
 function discoveryLocation() {
   const parts = location.pathname.split("/").filter(Boolean);
@@ -48,6 +50,8 @@ export default function PublicPeople() {
   const [results, setResults] = useState<PublicPerson[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [detail, setDetail] = useState<PublicPerson | null>(null);
+  const [matchArchives, setMatchArchives] = useState<OwnedArchive[]>([]);
+  const [matchArchivesError, setMatchArchivesError] = useState("");
   const [linkedCards, setLinkedCards] = useState<PublicPerson[]>([]);
   const [linkedCardsTruncated, setLinkedCardsTruncated] = useState(false);
   const [error, setError] = useState("");
@@ -55,6 +59,24 @@ export default function PublicPeople() {
   const [busy, setBusy] = useState(() => Boolean(discoveryLocation().query || discoveryLocation().personId));
   const request = useRef<AbortController | null>(null);
   const requestVersion = useRef(0);
+  useEffect(() => {
+    if (!detail?.archiveId) return;
+    const controller = new AbortController();
+    void archiveFetch("/api/account/archives", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (response.status === 501) return null;
+        if (!response.ok) throw new Error("Не удалось проверить ваши деревья для сопоставления");
+        return response.json() as Promise<{ archives: OwnedArchive[] }>;
+      })
+      .then((data) => {
+        if (!controller.signal.aborted && data) setMatchArchives(data.archives.filter((archive) =>
+          archive.owned && archive.approved && archive.role === "admin" && archive.id !== detail.archiveId));
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setMatchArchivesError("Не удалось проверить ваши деревья для сопоставления");
+      });
+    return () => controller.abort();
+  }, [detail?.archiveId, detail?.id]);
   async function read(url: string) {
     request.current?.abort();
     const controller = new AbortController();
@@ -94,6 +116,8 @@ export default function PublicPeople() {
           : "";
       if (!url) return;
       setDetail(null);
+      setMatchArchives([]);
+      setMatchArchivesError("");
       setLinkedCards([]);
       setLinkedCardsTruncated(false);
       setResults([]);
@@ -130,6 +154,8 @@ export default function PublicPeople() {
     }
     history.replaceState(null, "", `/discover/search/${encodeURIComponent(value)}`);
     setDetail(null);
+    setMatchArchives([]);
+    setMatchArchivesError("");
     setLinkedCards([]);
     setLinkedCardsTruncated(false);
     void read(
@@ -176,6 +202,15 @@ export default function PublicPeople() {
       {needsLogin && <LoginButtons />}
       {busy && <p role="status">Ищем…</p>}
       {detail && <PersonCard person={detail} />}
+      {detail?.archiveId && matchArchives.length > 0 && <section className="public-people-match">
+        <h2>Предложить связь с моей карточкой</h2>
+        <p>Выберите своё дерево и сравните две опубликованные карточки перед отправкой запроса. Связь появится только после подтверждения другой стороны.</p>
+        {matchArchives.map((archive) => <a key={archive.id}
+          href={adminMatchTargetPath(archive.id, { archiveId: detail.archiveId!, personId: detail.id })}>
+          Открыть сопоставление в дереве «{archive.title}»
+        </a>)}
+      </section>}
+      {detail && matchArchivesError && <p role="status">{matchArchivesError}</p>}
       {detail && linkedCards.length > 0 && <section className="public-people-linked">
         <h2>Этот человек в других деревьях</h2>
         <p>Владельцы обоих деревьев подтвердили соответствие карточек. Доступны только опубликованные сведения.</p>
