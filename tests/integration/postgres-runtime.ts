@@ -9872,6 +9872,36 @@ try {
       .then((response) => response.json());
     assert.equal(returnedSession.user.role, "researcher");
     assert.equal(returnedSession.canEdit, true);
+    const newComment = await fetch(securedBase + "/api/people/person-a/discussion", {
+      method: "POST",
+      headers: { ...returnedHeaders, Origin: process.env.PUBLIC_ORIGIN!, "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Comment after re-registration" }),
+    });
+    assert.equal(newComment.status, 201, newComment.status === 201 ? "" : await newComment.text());
+    const newCommentItem = (await newComment.json()).item as {
+      id: number; author: string; canEdit: boolean;
+    };
+    assert.equal(newCommentItem.author, "Returned member",
+      "a live re-registered account must retain attribution on new comments");
+    assert.equal(newCommentItem.canEdit, true,
+      "a live re-registered account can edit its new comments");
+    assert.deepEqual((await client.query(
+      "SELECT author_id,author_name FROM person_comments WHERE id=$1", [newCommentItem.id],
+    )).rows[0], { author_id: "former-member", author_name: "Returned member" });
+    const editedNewComment = await fetch(securedBase + `/api/people/person-a/discussion/${newCommentItem.id}`, {
+      method: "PATCH",
+      headers: { ...returnedHeaders, Origin: process.env.PUBLIC_ORIGIN!, "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Edited after re-registration", editedAt: null }),
+    });
+    assert.equal(editedNewComment.status, 200,
+      "the re-registered author can edit only its own newly written comment");
+    assert.deepEqual((await client.query(
+      "SELECT author_id,author_name FROM runtime_visible_person_comments WHERE text='Historical comment'",
+    )).rows[0], { author_id: "deleted-account", author_name: "Удалённый участник" },
+    "the predecessor's old comment remains anonymized during re-registration");
+    await client.query("DELETE FROM person_comments WHERE id=$1", [newCommentItem.id]);
+    await client.query("DELETE FROM archive_audit_entries WHERE entity='person_comment' AND entity_id=$1",
+      [String(newCommentItem.id)]);
     const returnedFamily = await fetch(securedBase + "/api/family", { headers: returnedHeaders })
       .then((response) => response.json());
     assert.equal(returnedFamily.family.unions.find((union: { id: string }) =>
