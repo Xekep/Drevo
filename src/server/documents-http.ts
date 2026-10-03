@@ -76,6 +76,12 @@ type Row = {
   pages: string;
 };
 
+const deliveredDocumentFields = [
+  "id", "title", "document_type", "document_date", "place", "description",
+  "provenance", "file_name", "file_size", "created_at", "uploaded_by",
+  "annotations", "event_links", "pages",
+] as const satisfies readonly (keyof Row)[];
+
 function rowDetails(row: Row): DocumentDetails {
   return {
     documentType: row.document_type,
@@ -610,15 +616,15 @@ export function documentsHttp({
           return "denied";
         if (rows.length) {
           const documents = await client.query(
-            `SELECT id,title,file_name,uploaded_by FROM documents
+            `SELECT * FROM documents
              WHERE id=ANY($1::text[]) FOR SHARE NOWAIT`,
             [rows.map((row) => row.id)],
           );
-          const current = new Map(documents.rows.map((row) => [String(row.id), row]));
+          const current = new Map((documents.rows as Row[]).map((row) => [row.id, row]));
           if (rows.some((row) => {
             const found = current.get(row.id);
-            return !found || found.title !== row.title ||
-              found.file_name !== row.file_name || found.uploaded_by !== row.uploaded_by;
+            return !found || deliveredDocumentFields.some((field) =>
+              found[field] !== row[field]);
           })) return "denied";
           if (access.scoped) {
             const associations = await client.query(

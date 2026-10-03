@@ -5623,6 +5623,40 @@ try {
     unscopedMetadataServer.closeAllConnections();
     await new Promise<void>((resolve) => unscopedMetadataServer.close(() => resolve()));
   }
+  let releaseEditedMetadata!: () => void;
+  let editedMetadataReady!: () => void;
+  const editedMetadataGate = new Promise<void>((resolve) => { releaseEditedMetadata = resolve; });
+  const editedMetadataReached = new Promise<void>((resolve) => { editedMetadataReady = resolve; });
+  const editedMetadataHandler = documentsHttp({
+    archive: app.archive, auth: documentMetadataAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeMetadataDelivery: async () => { editedMetadataReady(); await editedMetadataGate; },
+  });
+  const editedMetadataServer = createServer((req, res) => {
+    void editedMetadataHandler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => editedMetadataServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const localBase = `http://127.0.0.1:${(editedMetadataServer.address() as { port: number }).port}`;
+    const pending = fetch(localBase + `/api/documents/${scopedDocumentId}`,
+      { headers: ownerHeaders });
+    await Promise.race([editedMetadataReached,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Edited metadata barrier missed")), 10_000))]);
+    await client.query("UPDATE documents SET description='updated' WHERE id=$1",
+      [scopedDocumentId]);
+    releaseEditedMetadata();
+    const delivered = await pending;
+    assert.equal(delivered.status, 404,
+      "a completed edit must not deliver the stale document metadata snapshot");
+    assert.doesNotMatch(await delivered.text(), /Scoped document/);
+  } finally {
+    releaseEditedMetadata();
+    editedMetadataServer.closeAllConnections();
+    await new Promise<void>((resolve) => editedMetadataServer.close(() => resolve()));
+    await client.query("UPDATE documents SET description='' WHERE id=$1", [scopedDocumentId]);
+  }
   const unreadMetadata = await fetch(securedBase + `/api/documents/${scopedDocumentId}`,
     { headers });
   assert.equal(unreadMetadata.status, 200);
