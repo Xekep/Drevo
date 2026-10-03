@@ -44,6 +44,8 @@ test("a document remains attached while any exact claim, union citation, or cata
       ["ending", (next) => { next.unions![0].ending = { date: "1940", sources: [citation] }; }],
       ["divorce", (next) => { next.unions![0].divorce = { date: "1940", sources: [citation] }; }],
       ["ongoing", (next) => { next.unions![0].ongoing = { date: "1930", sources: [citation] }; }],
+      ["additional link", (next) => { next.links = [{ id: "care", from: "anna", to: "boris",
+        type: "presumed_parent", sources: [citation] }]; }],
     ];
     for (const [slot, attach] of slots) {
       const snapshot = await app.archive.read();

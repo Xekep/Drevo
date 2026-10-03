@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { test } from "./fixtures/document-server";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import PDFDocument from "pdfkit";
@@ -91,6 +92,15 @@ test("BookReader searches the PDF text layer and navigates native highlights", a
     `PDF search ${info.project.name}`,
   );
   const externalRequests: string[] = [];
+  expect(
+    await book
+      .locator("body")
+      .evaluate(
+        () =>
+          (window as unknown as { jQuery: { ui: { version: string } } }).jQuery
+            .ui.version,
+      ),
+  ).toBe("1.14.2");
   page.on("request", (request) => {
     if (/archive\.org|inside\.php/.test(request.url()))
       externalRequests.push(request.url());
@@ -194,7 +204,8 @@ test("BookReader explains when a PDF has no text layer", async ({
 test("BookReader keeps its navigation and Drevo comments and lens", async ({
   page,
 }, info) => {
-  if (info.project.name === "mobile") await page.setViewportSize({ width: 320, height: 640 });
+  if (info.project.name === "mobile")
+    await page.setViewportSize({ width: 320, height: 640 });
   const csp = readFileSync("ops/nginx.conf", "utf8").match(
     /add_header Content-Security-Policy "([^"]+)"/,
   )![1];
@@ -233,8 +244,13 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
   await expect(sidebar).toBeVisible();
   await expect(commentsButton).toHaveAttribute("aria-expanded", "true");
   if (info.project.name === "mobile") {
-    const toolbarBottom = await book.locator(".BRtoolbar").evaluate((bar) => bar.getBoundingClientRect().bottom);
-    await expect.poll(() => sidebar.evaluate((panel) => panel.getBoundingClientRect().top))
+    const toolbarBottom = await book
+      .locator(".BRtoolbar")
+      .evaluate((bar) => bar.getBoundingClientRect().bottom);
+    await expect
+      .poll(() =>
+        sidebar.evaluate((panel) => panel.getBoundingClientRect().top),
+      )
       .toBeGreaterThanOrEqual(toolbarBottom);
   }
   await commentsButton.click();
@@ -491,4 +507,92 @@ test("BookReader turns the cover and preloads the next spread", async ({
   ).toBeLessThanOrEqual(1);
   await book.locator(".BRicon.book_left:visible").first().click();
   await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();
+});
+
+test("PDF modal keeps keyboard focus across iframe and sidebar controls", async ({
+  page,
+}, info) => {
+  const { reader, book } = await openSample(page, `Focus ${info.project.name}`);
+  await book.getByRole("button", { name: "Комментарии" }).click();
+  await book.locator("body").evaluate(() => {
+    const controls = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        "a[href],button,input,select,textarea,[tabindex]",
+      ),
+    ).filter(
+      (element) =>
+        element.tabIndex >= 0 &&
+        element.getClientRects().length &&
+        !element.matches(":disabled"),
+    );
+    controls.at(-1)?.focus();
+  });
+  for (const key of ["Tab", "Tab", "Shift+Tab", "Shift+Tab"]) {
+    await page.keyboard.press(key);
+    expect(
+      await reader.evaluate((dialog) =>
+        dialog.contains(document.activeElement),
+      ),
+    ).toBe(true);
+  }
+  await book.getByRole("button", { name: "Закрыть документ" }).click();
+  await expect(reader).toHaveCount(0);
+});
+
+test("PDF page URLs stay bounded and evicted pages can be revisited", async ({
+  page,
+}, info) => {
+  test.skip(
+    info.project.name === "mobile",
+    "The same renderer is shared by both layouts",
+  );
+  await page.addInitScript(() => {
+    const urls = new Set<string>();
+    const create = URL.createObjectURL,
+      revoke = URL.revokeObjectURL;
+    URL.createObjectURL = (object) => {
+      const url = create(object);
+      if (object instanceof Blob && object.type === "image/webp") urls.add(url);
+      return url;
+    };
+    URL.revokeObjectURL = (url) => {
+      urls.delete(url);
+      revoke(url);
+    };
+    Object.defineProperty(window, "readerPageUrlCount", {
+      get: () => urls.size,
+    });
+  });
+  const { book } = await openSample(page, "Page cache", await samplePdf(0, 40));
+  const frame = page
+    .frames()
+    .find((frame) => frame.url().includes("bookreader-frame.html"))!;
+  for (const index of [5, 10, 15, 20, 25, 30, 35, 0]) {
+    await expect(book.locator(".br-mode-2up__leafs--flipping")).toHaveCount(0);
+    await page.evaluate(
+      (index) =>
+        document
+          .querySelector<HTMLIFrameElement>("iframe.pdf-book-frame")!
+          .contentWindow!.postMessage(
+            { source: "drevo-bookreader", type: "jump", page: index },
+            location.origin,
+          ),
+      index,
+    );
+    await expect
+      .poll(() =>
+        book
+          .locator(`.BRpage-visible[data-index="${index}"] img.BRpageimage`)
+          .first()
+          .evaluate((image: HTMLImageElement) => image.naturalWidth),
+      )
+      .toBeGreaterThan(0);
+  }
+  expect(
+    await frame.evaluate(
+      () =>
+        (window as unknown as { readerPageUrlCount: number })
+          .readerPageUrlCount,
+    ),
+  ).toBeLessThanOrEqual(24);
 });

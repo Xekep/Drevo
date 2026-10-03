@@ -1,7 +1,6 @@
 import "@internetarchive/bookreader/BookReader/BookReader.css";
 import polyfillUrl from "@internetarchive/bookreader/BookReader/webcomponents-bundle.js?url";
 import jqueryUrl from "@internetarchive/bookreader/BookReader/jquery-3.js?url";
-import bookReaderUrl from "@internetarchive/bookreader/BookReader/BookReader.js?url";
 
 export type ReaderPage = { width: number; height: number; leafNum?: number };
 export type BookReaderInstance = {
@@ -28,7 +27,7 @@ export type BookReaderConstructor = {
     flipSpeed: number;
     imagesBaseURL: string;
     metadata: { label: string; value: string }[];
-    plugins?: { search: { enabled: boolean } };
+    plugins?: { search: { enabled: boolean }; resume: { enabled: boolean } };
     getPageNum(index: number): string;
     getPageURI(index: number): string;
     renderPageURI(image: HTMLImageElement, uri: string): void;
@@ -63,8 +62,9 @@ export async function loadBookReader(): Promise<BookReaderConstructor> {
   await Promise.all([
     ...(needsPolyfill ? [loadScript(polyfillUrl)] : []),
     loadScript(jqueryUrl),
-    loadScript(bookReaderUrl),
   ]);
-  if (!window.BookReader) throw new Error("Не удалось запустить BookReader");
-  return window.BookReader;
+  // Bundle the official modules against the patched npm dependency. The
+  // precompiled BookReader.js embeds its own older copy of jQuery UI.
+  const { default: BookReader } = await import("./bookreader-entry");
+  return BookReader;
 }

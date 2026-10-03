@@ -47,6 +47,171 @@ const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6+fIAAAAASUVORK5CYII=",
   "base64",
 );
+
+test("full backup restores citation-only originals, remaps shared media and retains page suffixes", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "drevo-restore-citations-"));
+  const source = await startServer(
+    0,
+    join(directory, "source", "drevo.sqlite"),
+    true,
+  );
+  let target: Awaited<ReturnType<typeof startServer>> | undefined;
+  try {
+    const pdf = Buffer.from(
+      "%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF",
+    );
+    for (const [name, bytes] of [
+      ["citation.png", png],
+      ["shared.png", png],
+      ["citation.pdf", pdf],
+    ] as const)
+      writeFileSync(join(directory, "source", "uploads", name), bytes);
+    const cited: Family = {
+      ...family,
+      people: [
+        {
+          ...p,
+          photo: "/media/shared.png",
+          sources: [
+            {
+              title: "Скан",
+              type: "archive",
+              reference: "",
+              url: "/media/citation.png#page=2",
+            },
+          ],
+          birthDateClaim: {
+            value: p.birth,
+            sources: [
+              {
+                title: "Портрет",
+                type: "photo",
+                reference: "",
+                url: "/media/shared.png?scan=1#page=3",
+              },
+            ],
+          },
+        },
+        { ...p, id: "second-person", name: "Борис" },
+      ],
+      unions: [
+        {
+          id: "union",
+          type: "marriage",
+          participants: [p.id, "second-person"],
+          sources: [
+            {
+              title: "PDF",
+              type: "archive",
+              reference: "",
+              url: "/media/citation.pdf#page=4",
+            },
+          ],
+        },
+      ],
+      links: [
+        {
+          id: "care",
+          type: "presumed_parent",
+          from: p.id,
+          to: "second-person",
+          sources: [
+            {
+              title: "Связь",
+              type: "archive",
+              reference: "",
+              url: "/media/citation.png?scan=2",
+            },
+          ],
+        },
+      ],
+    };
+    await source.archive.write(cited, (await source.archive.read()).revision);
+    const sourceBase = `http://127.0.0.1:${(source.server.address() as { port: number }).port}`;
+    const full = Buffer.from(
+      await (await fetch(sourceBase + "/api/backup/full")).arrayBuffer(),
+    );
+    target = await startServer(
+      0,
+      join(directory, "target", "drevo.sqlite"),
+      true,
+    );
+    const targetBase = `http://127.0.0.1:${(target.server.address() as { port: number }).port}`;
+    const request = (part: string, body: Buffer | object) =>
+      fetch(targetBase + "/api/restore/" + part, {
+        method: "POST",
+        headers: { "X-Drevo-Restore": "1" },
+        body: Buffer.isBuffer(body) ? new Uint8Array(body) : JSON.stringify(body),
+      });
+    const incomplete = await request(
+      "preview",
+      await databaseBackupBytes(source.archive.db),
+    );
+    assert.equal(incomplete.status, 200, await incomplete.clone().text());
+    assert.equal(
+      (await incomplete.json()).missing,
+      3,
+      "citation originals are included in missing",
+    );
+    const collisionPath = join(directory, "target", "uploads", "citation.pdf");
+    const unrelatedPdf = Buffer.from(
+      "%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n% unrelated target file\n%%EOF",
+    );
+    writeFileSync(collisionPath, unrelatedPdf);
+    const incompleteTar = tar(
+      "drevo.sqlite",
+      await databaseBackupBytes(source.archive.db),
+    );
+    const collision = await request("preview", incompleteTar);
+    assert.equal(collision.status, 400, await collision.clone().text());
+    assert.match((await collision.json()).error, /одноимённый файл/i);
+    assert.deepEqual(readFileSync(collisionPath), unrelatedPdf);
+    rmSync(collisionPath);
+    const previewResponse = await request("preview", full);
+    assert.equal(
+      previewResponse.status,
+      200,
+      await previewResponse.clone().text(),
+    );
+    const preview = await previewResponse.json();
+    assert.equal(preview.files, 3);
+    assert.equal(preview.missing, 0);
+    const applied = await request("apply", {
+      token: preview.token,
+      confirm: true,
+    });
+    assert.equal(applied.status, 200, await applied.clone().text());
+    const restored = (await target.archive.read()).family;
+    const person = restored.people[0];
+    assert.notEqual(person.photo, "/media/shared.png");
+    assert.equal(
+      person.birthDateClaim!.sources[0].url,
+      person.photo + "?scan=1#page=3",
+    );
+    const sourceUrl = person.sources[0].url!;
+    assert.match(sourceUrl, /\.png#page=2$/);
+    assert.notEqual(sourceUrl, cited.people[0].sources[0].url);
+    assert.equal(
+      restored.links![0].sources![0].url,
+      sourceUrl.replace("#page=2", "?scan=2"),
+    );
+    assert.match(restored.unions![0].sources![0].url!, /\.pdf#page=4$/);
+    for (const [url, expected] of [
+      [sourceUrl, png],
+      [person.photo!, png],
+      [restored.unions![0].sources![0].url!, pdf],
+    ] as const) {
+      const response = await fetch(targetBase + url);
+      assert.equal(response.status, 200);
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), expected);
+    }
+    assert.equal(readdirSync(join(directory, "target", "uploads")).length, 3);
+  } finally {
+    await target?.close();
+    await source.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 function tar(name: string, content: Buffer, type = "0", size = content.length) {
   const header = Buffer.alloc(512);
   header.write(name, 0);
@@ -75,32 +240,55 @@ test("restore preview counts cascaded current comments and skipped backup commen
   const dir = mkdtempSync(join(tmpdir(), "drevo-restore-comments-"));
   const removed = { ...p, id: "removed-person", name: "Удаляемый" };
   const current = await openArchive(join(dir, "current.sqlite"), {
-    ...family, people: [p, removed],
+    ...family,
+    people: [p, removed],
   });
   const source = await openArchive(join(dir, "source.sqlite"), family);
   const restores = restoreStore(current, join(dir, "current.sqlite"));
-  const admin = { id: "admin", name: "Администратор", role: "admin" as const,
-    createdAt: "2026-01-01T00:00:00.000Z" };
+  const admin = {
+    id: "admin",
+    name: "Администратор",
+    role: "admin" as const,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
   try {
     for (const [personId, text] of [
-      [p.id, "retained"], [removed.id, "lost-1"], [removed.id, "lost-2"],
+      [p.id, "retained"],
+      [removed.id, "lost-1"],
+      [removed.id, "lost-2"],
     ])
-      await current.db.prepare(
-        "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'admin',1000,?)",
-      ).run(personId, text);
+      await current.db
+        .prepare(
+          "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'admin',1000,?)",
+        )
+        .run(personId, text);
     for (const text of ["source-1", "source-2", "source-3"])
-      await source.db.prepare(
-        "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'admin',1000,?)",
-      ).run(p.id, text);
-    const preview = await restores.preview(await databaseBackupBytes(source.db), admin);
+      await source.db
+        .prepare(
+          "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'admin',1000,?)",
+        )
+        .run(p.id, text);
+    const preview = await restores.preview(
+      await databaseBackupBytes(source.db),
+      admin,
+    );
     assert.equal(preview.currentCommentsLost, 2);
     assert.equal(preview.backupCommentsSkipped, 3);
     await current.write(family, (await current.read()).revision);
-    assert.deepEqual((await current.db.prepare("SELECT text FROM person_comments ORDER BY id").all())
-      .map((row) => row.text), ["retained"]);
+    assert.deepEqual(
+      (
+        await current.db
+          .prepare("SELECT text FROM person_comments ORDER BY id")
+          .all()
+      ).map((row) => row.text),
+      ["retained"],
+    );
 
     await source.db.exec("DROP TABLE person_comments");
-    const legacy = await restores.preview(await databaseBackupBytes(source.db), admin);
+    const legacy = await restores.preview(
+      await databaseBackupBytes(source.db),
+      admin,
+    );
     assert.equal(legacy.currentCommentsLost, 0);
     assert.equal(legacy.backupCommentsSkipped, 0);
   } finally {
@@ -116,40 +304,56 @@ test("family import previews a full backup containing private discussion and AI 
   const archive = await openArchive(databasePath, family);
   const restores = restoreStore(archive, databasePath);
   const id = "a5ac420a-5ed9-44ee-a307-8550f6b64708";
-  const admin = { id: "admin", name: "Администратор", role: "admin" as const,
-    createdAt: "2026-01-01T00:00:00.000Z" };
+  const admin = {
+    id: "admin",
+    name: "Администратор",
+    role: "admin" as const,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
   try {
     const backup = await databaseBackupBytes(archive.db);
     const entry = (name: string, data = Buffer.alloc(0), type = "0") =>
       gunzipSync(tar(name, data, type)).subarray(0, -1024);
     const privateBytes = Buffer.from("private attachment");
-    const full = gzipSync(Buffer.concat([
-      entry("drevo.sqlite", backup),
-      entry("uploads/", Buffer.alloc(0), "5"),
-      entry("uploads/discussion-files/", Buffer.alloc(0), "5"),
-      entry(`uploads/discussion-files/${id}`, privateBytes),
-      entry(`uploads/discussion-files/${id}.webp`, privateBytes),
-      entry("uploads/ai-chat-files/", Buffer.alloc(0), "5"),
-      entry(`uploads/ai-chat-files/${id}/`, Buffer.alloc(0), "5"),
-      entry(`uploads/ai-chat-files/${id}/${id}`, privateBytes),
-      Buffer.alloc(1024),
-    ]));
+    const full = gzipSync(
+      Buffer.concat([
+        entry("drevo.sqlite", backup),
+        entry("uploads/", Buffer.alloc(0), "5"),
+        entry("uploads/discussion-files/", Buffer.alloc(0), "5"),
+        entry(`uploads/discussion-files/${id}`, privateBytes),
+        entry(`uploads/discussion-files/${id}.webp`, privateBytes),
+        entry("uploads/ai-chat-files/", Buffer.alloc(0), "5"),
+        entry(`uploads/ai-chat-files/${id}/`, Buffer.alloc(0), "5"),
+        entry(`uploads/ai-chat-files/${id}/${id}`, privateBytes),
+        Buffer.alloc(1024),
+      ]),
+    );
     const preview = await restores.preview(full, admin);
     assert.equal(preview.people, 1);
-    const stage = await archive.db.prepare(
-      "SELECT directory FROM workflow_stages WHERE token=?",
-    ).get(preview.token);
+    const stage = await archive.db
+      .prepare("SELECT directory FROM workflow_stages WHERE token=?")
+      .get(preview.token);
     assert.ok(stage?.directory);
-    assert.equal(readdirSync(join(String(stage.directory), "uploads")).length, 0,
-      "family import must not stage private attachments that it cannot restore");
+    assert.equal(
+      readdirSync(join(String(stage.directory), "uploads")).length,
+      0,
+      "family import must not stage private attachments that it cannot restore",
+    );
     for (const forbidden of [
       `uploads/discussion-files/${id}/../../escape`,
       `uploads/ai-chat-files/${id}/../../escape`,
     ]) {
-      const malformed = gzipSync(Buffer.concat([
-        entry("drevo.sqlite", backup), entry(forbidden, privateBytes), Buffer.alloc(1024),
-      ]));
-      await assert.rejects(restores.preview(malformed, admin), /Недопустимый путь/);
+      const malformed = gzipSync(
+        Buffer.concat([
+          entry("drevo.sqlite", backup),
+          entry(forbidden, privateBytes),
+          Buffer.alloc(1024),
+        ]),
+      );
+      await assert.rejects(
+        restores.preview(malformed, admin),
+        /Недопустимый путь/,
+      );
     }
   } finally {
     await restores.close();
@@ -453,9 +657,17 @@ test("full downloaded backup restores portrait, gallery and tags without overwri
     writeFileSync(join(dir, "uploads", ".unfinished.upload"), "unfinished");
     const privateId = "a5ac420a-5ed9-44ee-a307-8550f6b64708";
     mkdirSync(join(dir, "uploads", "discussion-files"));
-    writeFileSync(join(dir, "uploads", "discussion-files", privateId), "discussion");
-    mkdirSync(join(dir, "uploads", "ai-chat-files", privateId), { recursive: true });
-    writeFileSync(join(dir, "uploads", "ai-chat-files", privateId, privateId), "chat");
+    writeFileSync(
+      join(dir, "uploads", "discussion-files", privateId),
+      "discussion",
+    );
+    mkdirSync(join(dir, "uploads", "ai-chat-files", privateId), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(dir, "uploads", "ai-chat-files", privateId, privateId),
+      "chat",
+    );
     await app.archive.write(
       {
         ...family,
@@ -522,8 +734,11 @@ test("full downloaded backup restores portrait, gallery and tags without overwri
       ),
       png,
     );
-    assert.equal(readdirSync(join(dir, "uploads"))
-      .filter((name) => name.endsWith(".png")).length, 2);
+    assert.equal(
+      readdirSync(join(dir, "uploads")).filter((name) => name.endsWith(".png"))
+        .length,
+      2,
+    );
     assert.equal(
       readFileSync(join(dir, "uploads", "discussion-files", privateId), "utf8"),
       "discussion",

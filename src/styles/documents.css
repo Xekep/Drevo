@@ -149,12 +149,22 @@
   background: rgb(8 11 10 / 88%);
 }
 .pdf-book-dialog {
-  position: relative;
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  max-width: none;
+  max-height: none;
+  background: transparent;
   display: flex;
   width: 100%;
   height: 100dvh;
   min-height: 0;
   color: #f1f3ee;
+}
+.pdf-book-dialog::backdrop {
+  background: transparent;
 }
 .pdf-book-content {
   display: flex;

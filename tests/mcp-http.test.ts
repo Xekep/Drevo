@@ -7,6 +7,48 @@ import { request as httpRequest, type ClientRequest } from "node:http";
 import { startServer } from "../src/server/index.ts";
 import type { Family } from "../src/domain/types.ts";
 
+test("MCP audit failure is logged and shutdown waits for the audit", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-mcp-audit-"));
+  const app = await startServer(0, join(dir, "drevo.sqlite"), true);
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  const prepare = app.archive.db.prepare;
+  const log = console.error;
+  const errors: unknown[][] = [];
+  let release!: () => void, began!: () => void;
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { began = resolve; });
+  try {
+    const issued = await fetch(base + "/api/mcp/tokens", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Журнал", scopes: ["tree:read"] }),
+    }).then(response => response.json());
+    console.error = (...args: unknown[]) => { errors.push(args); };
+    app.archive.db.prepare = (sql, postgresSql) => {
+      const statement = prepare(sql, postgresSql);
+      if (!sql.startsWith("UPDATE mcp_usage")) return statement;
+      return { ...statement, run: async () => {
+        began(); await waiting; throw new Error("Test storage unavailable");
+      } };
+    };
+    const response = await fetch(base + "/mcp", {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${issued.token}` },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    });
+    assert.equal(response.status, 200);
+    await response.json(); await started;
+    let closed = false;
+    const closing = app.close().then(() => { closed = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(closed, false);
+    release(); await closing;
+    assert.equal(errors.length, 1);
+    assert.match(String(errors[0][0]), /журнала MCP/);
+  } finally {
+    release(); console.error = log; app.archive.db.prepare = prepare;
+    await app.close(); rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("revoking an MCP token while its request body arrives prevents tool output", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-mcp-midrequest-"));
   const app = await startServer(0, join(dir, "drevo.sqlite"), true);

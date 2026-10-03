@@ -11,6 +11,7 @@ import { ownsPendingMedia } from "./media-access.ts";
 import { allCitations } from "./source-catalog-store.ts";
 import type { Family } from "../domain/types.ts";
 import type { ArchiveUser } from "../domain/access.ts";
+import type { pdfDocumentPages } from "./document-pdf.ts";
 
 type MediaAccess = "public" | { user: ArchiveUser; pending: boolean };
 
@@ -29,6 +30,7 @@ export function mediaHttp({
   archive,
   beforeDelivery,
   beforeLockedDelivery,
+  pdfPages,
 }: {
   auth: Awaited<ReturnType<typeof createAuth>>;
   media: ReturnType<typeof mediaStore>;
@@ -39,6 +41,7 @@ export function mediaHttp({
   beforeDelivery?: () => Promise<void>;
   /** Test seam for a concurrent edit while final rows are locked. */
   beforeLockedDelivery?: () => Promise<void>;
+  pdfPages?: ReturnType<typeof pdfDocumentPages>;
 }) {
   let cachedKey = "",
     cachedUrls = new Set<string>();
@@ -223,6 +226,16 @@ export function mediaHttp({
 
     const file = media.openOriginal(url.pathname);
     if (!file) return json(res, 404, { error: "Фото не найдено" });
+    if (file.type === "application/pdf" && url.searchParams.get("reader") === "pages" && pdfPages) {
+      const pages = await pdfPages(file.path);
+      const expectedRevision = (await archive.meta()).revision;
+      const access = await permitted(req, url.pathname);
+      if (!access) return denied(res);
+      let delivered!: Promise<void>;
+      return await deliver(req, res, access, url.pathname, expectedRevision,
+        () => { delivered = finished(res, { cleanup: true }).catch(() => {}); json(res, 200, { pages }); },
+        async () => { await delivered; });
+    }
     const requested = url.searchParams.get("variant");
     const variant: ImagePreviewVariant | null =
       requested === "tiny" || requested === "thumb" || requested === "display"

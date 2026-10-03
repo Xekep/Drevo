@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { finished } from "node:stream/promises";
 import {
   validatedChanges,
   archiveChanges,
@@ -11,6 +12,11 @@ import { ForbiddenError } from "./users.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { UploadQuotaError } from "./upload-quota-error.ts";
+import {
+  AccountSessionBusy,
+  AccountSessionExpired,
+  assertActiveAccountSession,
+} from "./account-session-guard.ts";
 
 const MAX_CHANGES = 10_000;
 const MAX_BODY = 8 * 1024 * 1024;
@@ -69,10 +75,14 @@ export function familyChangesHttp({
   archive,
   auth,
   publicOrigin,
+  beforeMutation,
+  beforeDelivery,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
+  beforeMutation?: () => Promise<void>;
+  beforeDelivery?: () => Promise<void>;
 }) {
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -135,58 +145,138 @@ export function familyChangesHttp({
         );
 
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      if (full)
-        return json(res, 200, await archive.write(body, revision, actor));
-
-      const changes = parseChanges(body);
-      const patched = await archive.patchPeople(changes, revision, actor);
-      if (patched) {
-        if (
-          req.headers.prefer === "return=minimal" &&
-          patched.baseRevision === revision
-        ) {
-          res.setHeader("Preference-Applied", "return=minimal");
-          return json(res, 200, patched);
+      const checkActor = async () => {
+        if (archive.db.kind === "postgres" && !auth.local) {
+          const session = await auth.accountSession(req);
+          if (!session || session.accountId !== actor.id)
+            throw new AccountSessionExpired("Сессия завершена. Войдите снова");
+          await assertActiveAccountSession(
+            archive.db,
+            actor.id,
+            session.tokenHash,
+          );
         }
-        return json(res, 200, {
-          ...patched,
-          family: projectFamilyForUser((await archive.read()).family, actor),
+        const current = await auth.currentUser(req);
+        if (!current)
+          throw new AccountSessionExpired("Сессия завершена. Войдите снова");
+        if (
+          !current.approved ||
+          current.id !== actor.id ||
+          current.role !== actor.role ||
+          current.personId !== actor.personId ||
+          (current.treeAccess || "all") !== (actor.treeAccess || "all")
+        )
+          throw new ForbiddenError(
+            "Права доступа изменились. Обновите страницу перед сохранением.",
+          );
+      };
+      let minimal = false;
+      await beforeMutation?.();
+      const value = await archive.db.transaction(async () => {
+        await checkActor();
+        if (full)
+          return await archive.write(
+            body,
+            revision,
+            actor,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            { withinTransaction: true },
+          );
+        const changes = parseChanges(body);
+        const patched = await archive.patchPeople(changes, revision, actor, {
+          withinTransaction: true,
         });
-      }
-      const current = await archive.read();
-      if (revision > current.revision) return conflict(res);
-      if (!changes.length)
-        return json(res, 200, {
-          ...current,
-          appliedChanges: [],
-          family: projectFamilyForUser(current.family, actor),
-        });
-
-      const merged = validatedChanges(current.family, changes);
-      if (merged.conflicts.length) return conflict(res);
-      const saved = await archive.write(
-        merged.family,
-        current.revision,
-        actor,
-        undefined,
-        current.family,
-      );
-      return json(res, 200, {
-        ...saved,
-        appliedChanges: archiveChanges(current.family, saved.family),
-        family: projectFamilyForUser(saved.family, actor),
+        if (patched) {
+          minimal =
+            req.headers.prefer === "return=minimal" &&
+            patched.baseRevision === revision;
+          if (minimal) return patched;
+          return {
+            ...patched,
+            family: projectFamilyForUser((await archive.read()).family, actor),
+          };
+        }
+        const current = await archive.read();
+        if (revision > current.revision)
+          throw new ConflictError("Некорректная версия архива");
+        if (!changes.length)
+          return {
+            ...current,
+            appliedChanges: [],
+            family: projectFamilyForUser(current.family, actor),
+          };
+        const merged = validatedChanges(current.family, changes);
+        if (merged.conflicts.length)
+          throw new ConflictError(
+            "Архив изменён в другой вкладке. Обновите данные перед сохранением.",
+          );
+        const saved = await archive.write(
+          merged.family,
+          current.revision,
+          actor,
+          undefined,
+          current.family,
+          undefined,
+          undefined,
+          undefined,
+          { withinTransaction: true },
+        );
+        return {
+          ...saved,
+          appliedChanges: archiveChanges(current.family, saved.family),
+          family: projectFamilyForUser(saved.family, actor),
+        };
+      });
+      // Commit before reporting success. A second short transaction protects
+      // delivery from a revoked session or changed scope after that commit.
+      const payload = JSON.stringify(value);
+      await beforeDelivery?.();
+      return await archive.db.transaction(async () => {
+        await checkActor();
+        const row = await archive.db
+          .prepare(
+            "SELECT revision FROM archive WHERE id=1",
+            "SELECT revision FROM archives WHERE id=current_setting('drevo.archive_id',true)",
+          )
+          .get();
+        if (Number(row?.revision) !== value.revision) return conflict(res);
+        if (res.destroyed) return true;
+        const delivered = finished(res, { cleanup: true });
+        const timeout = setTimeout(() => res.destroy(), 5_000);
+        timeout.unref();
+        try {
+          if (minimal) res.setHeader("Preference-Applied", "return=minimal");
+          res.writeHead(200, {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-store",
+          });
+          res.end(payload);
+          await delivered;
+        } catch (error) {
+          if (!res.destroyed) throw error;
+          await delivered.catch(() => {});
+        } finally {
+          clearTimeout(timeout);
+        }
+        return true;
       });
     } catch (error) {
       if (isInfrastructureError(error)) throw error;
       return json(
         res,
-        error instanceof ConflictError
+        error instanceof ConflictError || error instanceof AccountSessionBusy
           ? 409
-          : error instanceof ForbiddenError
-            ? 403
-            : error instanceof UploadQuotaError
-              ? error.status
-              : 400,
+          : error instanceof AccountSessionExpired
+            ? 401
+            : error instanceof ForbiddenError
+              ? 403
+              : error instanceof UploadQuotaError
+                ? error.status
+                : 400,
         {
           error:
             error instanceof Error

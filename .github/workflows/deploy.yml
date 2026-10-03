@@ -8,17 +8,14 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: drevo-production
-  cancel-in-progress: false
 jobs:
-  deploy:
+  prepare:
     if: github.event_name == 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    environment:
-      name: production
-      url: https://mydrevo.org
+    timeout-minutes: 45
+    concurrency:
+      group: drevo-prepare-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -81,7 +78,54 @@ jobs:
             node --experimental-strip-types "$test_file"
           done
       - run: npm run test:worker
+      - name: Assemble the verified release
+        env:
+          RELEASE_ID: ${{ github.sha }}-${{ github.run_attempt }}
+        run: |
+          mkdir -p release/src release/public
+          cp -R dist ops assets release/
+          cp -R src/domain src/server src/shared release/src/
+          cp -R public/data release/public/
+          cp ops/runtime/package.json ops/runtime/package-lock.json release/
+          node --input-type=module -e 'import {writeFileSync} from "node:fs"; writeFileSync("release/release.json", JSON.stringify({releaseId:process.env.RELEASE_ID}))'
+          npm ci --prefix release --omit=dev --no-audit --no-fund
+          tar -czf release.tar.gz release
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verified-release
+          path: release.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 2
+
+  deploy:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: drevo-production
+      cancel-in-progress: false
+    environment:
+      name: production
+      url: https://mydrevo.org
+    steps:
+      - name: Skip a release superseded during verification
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          current=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if test "$current" = "$EXPECTED_SHA"; then echo 'deploy=true' >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: steps.current.outputs.deploy == 'true'
+        with:
+          name: verified-release
+      - name: Extract verified release
+        if: steps.current.outputs.deploy == 'true'
+        run: tar -xzf release.tar.gz
       - name: Configure SSH
+        if: steps.current.outputs.deploy == 'true'
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
@@ -90,27 +134,22 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' '[94.232.248.210]:4321 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG2C3d6j+K8FTcK6aoKhH7lTTfBWX2lp1hBFZp+I8nhV' > ~/.ssh/known_hosts
       - name: Upload isolated release
+        if: steps.current.outputs.deploy == 'true'
         env:
           RELEASE_ID: ${{ github.sha }}-${{ github.run_attempt }}
         run: |
-          mkdir -p release/src release/public
-          cp -R dist ops release/
-          cp -R assets release/
-          cp -R src/domain src/server src/shared release/src/
-          cp -R public/data release/public/
-          cp ops/runtime/package.json ops/runtime/package-lock.json release/
-          npm ci --prefix release --omit=dev --no-audit --no-fund
           ssh -p 4321 -o BatchMode=yes -o StrictHostKeyChecking=yes deploy@94.232.248.210 "mkdir -p /var/www/drevo.kiiko.ru/releases/$RELEASE_ID"
           rsync -az --no-owner --no-group --chmod=Dg+rwx,Dg+s,Do-rwx,Fg+rw,Fo-rwx \
             -e 'ssh -p 4321 -o BatchMode=yes -o StrictHostKeyChecking=yes' \
             release/ "deploy@94.232.248.210:/var/www/drevo.kiiko.ru/releases/$RELEASE_ID/"
       - name: Activate and check release
+        if: steps.current.outputs.deploy == 'true'
         env:
           RELEASE_ID: ${{ github.sha }}-${{ github.run_attempt }}
         run: |
           ssh -p 4321 -o BatchMode=yes -o StrictHostKeyChecking=yes deploy@94.232.248.210 \
             "bash /var/www/drevo.kiiko.ru/releases/$RELEASE_ID/ops/deploy.sh $RELEASE_ID"
-          curl --fail --retry 3 --silent --show-error https://mydrevo.org/api/health
+          curl --fail --retry 3 --silent --show-error https://mydrevo.org/api/health | python3 -c 'import json,sys; health=json.load(sys.stdin); assert health["ok"] is True and health.get("releaseId")==sys.argv[1]' "$RELEASE_ID"
           redirect=$(curl --fail --silent --show-error --output /dev/null \
             --write-out '%{http_code} %{redirect_url}' https://drevo.kiiko.ru/api/health)
           test "$redirect" = '301 https://mydrevo.org/api/health'

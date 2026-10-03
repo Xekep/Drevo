@@ -40,6 +40,51 @@ const packet = (count: number) => ({
   })),
 });
 
+test("undo removes unions wholly inside the import and preserves unrelated unions", () => {
+  const current: Family = {
+    ...family,
+    people: [person("old"), person("other"), person("new-a"), person("new-b")],
+    unions: [
+      {
+        id: "imported-union",
+        type: "marriage",
+        participants: ["new-a", "new-b"],
+      },
+      {
+        id: "retained-union",
+        type: "marriage",
+        participants: ["old", "other"],
+      },
+    ],
+  };
+  const result = removeImportedPeople(current, new Set(["new-a", "new-b"]));
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.connections, 1);
+  assert.deepEqual(
+    result.family.people.map((p) => p.id),
+    ["old", "other"],
+  );
+  assert.deepEqual(result.family.unions, [current.unions![1]]);
+  assert.equal(
+    current.unions!.length,
+    2,
+    "the preview does not mutate its input",
+  );
+});
+
+test("undo previews a union crossing the import boundary without changing retained people", () => {
+  const current: Family = {
+    ...family,
+    people: [person("old"), person("new-a")],
+    unions: [
+      { id: "crossing", type: "marriage", participants: ["old", "new-a"] },
+    ],
+  };
+  const result = removeImportedPeople(current, new Set(["new-a"]));
+  assert.match(result.errors[0], /семейный союз.*вне импорта/);
+  assert.equal(result.family, current);
+});
+
 test("undo identifies all 382 imported IDs even after snapshot history expires and preserves later unrelated edits", async () => {
   const archive = await openArchive(":memory:", family);
   try {
