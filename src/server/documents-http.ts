@@ -555,6 +555,7 @@ export function documentsHttp({
     rows: Row[],
     links: Map<string, string[]>,
     value: unknown,
+    countCheck?: { where: string; args: string[]; total: number },
   ) => {
     // Build the entire bounded page before locking. res.end only hands the
     // bytes to HTTP; a slow socket does not retain a PostgreSQL connection.
@@ -614,6 +615,16 @@ export function documentsHttp({
         }
         if (access.scoped && Number(archiveRow!.rows[0].revision) !== access.revision)
           return "denied";
+        if (access.scoped && countCheck) {
+          let index = 0;
+          const where = countCheck.where.replace(/\?/g, () => `$${++index}`);
+          const counted = await client.query(
+            `SELECT count(*) AS count FROM documents d${where}`,
+            countCheck.args,
+          );
+          if (Number(counted.rows[0]?.count) !== countCheck.total)
+            return "denied";
+        }
         if (rows.length) {
           const documents = await client.query(
             `SELECT * FROM documents
@@ -764,7 +775,8 @@ export function documentsHttp({
           ),
         ),
       };
-      const result = await deliverMetadata(req, res, access, rows, links, value);
+      const result = await deliverMetadata(req, res, access, rows, links, value,
+        { where, args, total });
       if (result === "denied")
         return json(res, 403, { error: "Доступ к документам изменился" });
       if (result === "busy")

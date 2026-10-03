@@ -5549,6 +5549,50 @@ try {
     await client.query("INSERT INTO document_people(document_id,person_id) VALUES($1,'account-export-hidden') ON CONFLICT DO NOTHING",
       [scopedDocumentId]);
   }
+  const offPageDocumentId = randomUUID();
+  await client.query(
+    `INSERT INTO documents(id,ordinal,title,title_search,file_name,file_size,uploaded_by,created_at)
+     VALUES($1,(SELECT COALESCE(max(ordinal),0)+1 FROM documents),
+       'Off-page scoped document','off-page scoped document',$2,1,'owner','2000-01-01T00:00:00.000Z')`,
+    [offPageDocumentId, `${randomUUID()}.pdf`],
+  );
+  await client.query(
+    "INSERT INTO document_people(document_id,person_id) VALUES($1,'account-export-hidden')",
+    [offPageDocumentId],
+  );
+  let releaseCountMetadata!: () => void;
+  let countMetadataReady!: () => void;
+  const countMetadataGate = new Promise<void>((resolve) => { releaseCountMetadata = resolve; });
+  const countMetadataReached = new Promise<void>((resolve) => { countMetadataReady = resolve; });
+  const countMetadataHandler = documentsHttp({
+    archive: app.archive, auth: documentMetadataAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeMetadataDelivery: async () => { countMetadataReady(); await countMetadataGate; },
+  });
+  const countMetadataServer = createServer((req, res) => {
+    void countMetadataHandler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => countMetadataServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const localBase = `http://127.0.0.1:${(countMetadataServer.address() as { port: number }).port}`;
+    const pending = fetch(localBase +
+      "/api/documents?personId=account-export-hidden&limit=1", { headers });
+    await Promise.race([countMetadataReached,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Off-page metadata count barrier missed")), 10_000))]);
+    await client.query("DELETE FROM document_people WHERE document_id=$1", [offPageDocumentId]);
+    releaseCountMetadata();
+    const delivered = await pending;
+    assert.equal(delivered.status, 403,
+      "removing an off-page scoped association must not deliver its stale total");
+    assert.doesNotMatch(await delivered.text(), /Off-page scoped document/);
+  } finally {
+    releaseCountMetadata();
+    countMetadataServer.closeAllConnections();
+    await new Promise<void>((resolve) => countMetadataServer.close(() => resolve()));
+    await client.query("DELETE FROM documents WHERE id=$1", [offPageDocumentId]);
+  }
   let releaseBusyMetadata!: () => void;
   let busyMetadataReady!: () => void;
   const busyMetadataGate = new Promise<void>((resolve) => { releaseBusyMetadata = resolve; });
