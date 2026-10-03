@@ -58,6 +58,7 @@ async function openSample(
     data: pdf ?? (await samplePdf()),
   });
   expect(upload.status()).toBe(201);
+  const { id } = await upload.json();
   await page.goto("/documents");
   await page.locator(".document-item").filter({ hasText: uniqueTitle }).click();
   const reader = page.getByRole("dialog");
@@ -71,8 +72,155 @@ async function openSample(
         .evaluate((image: HTMLImageElement) => image.naturalWidth),
     )
     .toBeGreaterThan(0);
-  return { reader, book };
+  return { reader, book, id: id as string };
 }
+
+test("book and annotation clicks keep comments open", async ({
+  page,
+}, info) => {
+  const { reader, book, id } = await openSample(
+    page,
+    "Comment panel reading",
+  );
+  const created = await page.request.post(`/api/documents/${id}/annotations`, {
+    data: {
+      page: 2,
+      x: 0.2,
+      y: 0.2,
+      width: 0.3,
+      height: 0.1,
+      text: "Комментарий к фрагменту",
+    },
+  });
+  expect(created.status()).toBe(201);
+  await page.goto(`/documents/${id}/page/2`);
+  const mark = book
+    .locator('.BRpage-visible[data-index="1"] .drevo-page-mark')
+    .first();
+  await mark.click();
+  const sidebar = reader.locator(".pdf-book-sidebar");
+  const toggle = book.getByRole("button", { name: "Комментарии" });
+  await expect(sidebar).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await reader.getByText("Комментарий к фрагменту", { exact: true }).click();
+  await expect(sidebar).toBeVisible();
+
+  const tapBook = async () => {
+    const image = book
+      .locator(".BRpage-visible img.BRpageimage:visible")
+      .first();
+    const bounds = (await image.boundingBox())!;
+    const panelBounds = (await sidebar.boundingBox())!;
+    // Mobile comments overlay most of the page; tap the exposed part of the book.
+    const x = Math.min(bounds.x + bounds.width / 2, panelBounds.x - 12);
+    const y = Math.min(
+      bounds.y + bounds.height * 0.65,
+      page.viewportSize()!.height - 100,
+    );
+    expect(x).toBeGreaterThan(bounds.x);
+    if (info.project.name === "mobile") await page.touchscreen.tap(x, y);
+    else await page.mouse.click(x, y);
+    await expect(sidebar).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(reader).toBeVisible();
+  };
+  await tapBook();
+  if (info.project.name === "desktop") {
+    await book.locator(".BRicon.onepg:visible").first().click();
+    await expect(book.locator("br-mode-1up")).toBeVisible();
+    await tapBook();
+  }
+});
+
+test("mobile right swipes dismiss comments without hijacking scrolling or editing", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "mobile");
+  const { reader, book, id } = await openSample(page, "Comment panel swipe");
+  for (let index = 0; index < 12; index++) {
+    const created = await page.request.post(
+      `/api/documents/${id}/annotations`,
+      {
+        data: {
+          page: 1,
+          x: 0.1,
+          y: 0.2,
+          width: 0.3,
+          height: 0.1,
+          text: `Комментарий ${index + 1}. Подробности архивной записи.\nТекст можно читать и копировать.`,
+        },
+      },
+    );
+    expect(created.status()).toBe(201);
+  }
+  await page.reload();
+  const sidebar = reader.locator(".pdf-book-sidebar");
+  const toggle = book.getByRole("button", { name: "Комментарии" });
+  const comments = reader.locator(".pdf-book-comments");
+  await toggle.click();
+  await expect(comments.locator("article")).toHaveCount(12);
+
+  const swipe = async (
+    target: import("@playwright/test").Locator,
+    dx: number,
+    dy = 0,
+  ) => {
+    const bounds = (await target.boundingBox())!;
+    const x = bounds.x + Math.min(100, bounds.width / 2);
+    const y = bounds.y + Math.min(140, bounds.height / 2);
+    const session = await page.context().newCDPSession(page);
+    try {
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [{ x, y }],
+      });
+      for (const progress of [1 / 4, 1 / 2, 3 / 4, 1]) {
+        await session.send("Input.dispatchTouchEvent", {
+          type: "touchMove",
+          touchPoints: [{ x: x + dx * progress, y: y + dy * progress }],
+        });
+        await page.waitForTimeout(25);
+      }
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchEnd",
+        touchPoints: [],
+      });
+    } finally {
+      await session.detach();
+    }
+  };
+  // Vertical reading and short/leftward movements must not dismiss the panel.
+  await swipe(comments, 0, -100);
+  await expect
+    .poll(() => comments.evaluate((node) => node.scrollTop))
+    .toBeGreaterThan(0);
+  await expect(sidebar).toBeVisible();
+  await swipe(comments, -70);
+  await expect(sidebar).toBeVisible();
+  await swipe(comments, 25);
+  await expect(sidebar).toBeVisible();
+  await swipe(comments, 110);
+  await expect(sidebar).toBeHidden();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(reader).toBeVisible();
+  await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();
+
+  // Dismissing and reopening also preserves an unfinished edit.
+  await toggle.click();
+  await comments.evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  await comments.locator(".pdf-book-comment-edit").first().click();
+  const edit = reader.getByRole("textbox", { name: "Изменить комментарий" });
+  await edit.fill("Незавершённый черновик");
+  await swipe(edit, 100);
+  await expect(sidebar).toBeVisible();
+  await expect(edit).toHaveValue("Незавершённый черновик");
+  await swipe(reader.locator(".pdf-book-sidebar-tabs"), 110);
+  await expect(sidebar).toBeHidden();
+  await toggle.click();
+  await expect(edit).toHaveValue("Незавершённый черновик");
+});
 
 test("BookReader searches the PDF text layer and navigates native highlights", async ({
   page,

@@ -420,6 +420,10 @@
   outline-offset: 2px;
 }
 @media (max-width: 820px) {
+  /* Scroll containers resolve touch-action before reaching the sidebar. */
+  .pdf-book-sidebar, .pdf-book-sidebar > * {
+    touch-action: pan-y pinch-zoom;
+  }
   .pdf-book-sidebar {
     position: absolute;
     z-index: 4;
