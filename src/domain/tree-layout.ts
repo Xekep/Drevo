@@ -1,5 +1,6 @@
 import { familyPositions } from "./family-layout.ts";
 import { householdLevels } from "./household-levels.ts";
+import { familyNeighbors } from "./family-neighborhood.ts";
 import type { GenerationBand } from "./generation-bands.ts";
 import { arrangeHouseholds } from "./family-arrangement.ts";
 import { routeRelationships, type EdgeRoute } from "./edge-routing.ts";
@@ -147,20 +148,17 @@ export function visibleBranch(
   collapsed: Set<string>,
   protectedIds: string[] = [],
 ) {
-  const children = new Map<string, string[]>(),
-    map = new Map(family.people.map((p) => [p.id, p]));
-  for (const p of family.people)
-    for (const parent of p.parents) {
-      const list = children.get(parent) || [];
-      list.push(p.id);
-      children.set(parent, list);
-    }
-  const reachable = (starts: string[], neighbors: (id: string) => string[]) => {
-    const seen = new Set(starts),
-      queue = [...starts];
+  const { children, people: map, neighbors } = familyNeighbors(family);
+  const reachable = (
+    starts: string[],
+    next: (id: string) => Iterable<string>,
+    within?: ReadonlySet<string>,
+  ) => {
+    const seen = new Set(starts.filter((id) => !within || within.has(id))),
+      queue = [...seen];
     for (let i = 0; i < queue.length; i++)
-      for (const id of neighbors(queue[i]))
-        if (!seen.has(id)) {
+      for (const id of next(queue[i]))
+        if ((!within || within.has(id)) && !seen.has(id)) {
           seen.add(id);
           queue.push(id);
         }
@@ -174,13 +172,37 @@ export function visibleBranch(
     for (const id of [...visible])
       for (const spouse of map.get(id)?.spouses || []) visible.add(spouse);
   }
-  for (const id of collapsed)
-    for (const descendant of reachable(
-      children.get(id) || [],
-      (p) => children.get(p) || [],
-    ))
-      visible.delete(descendant);
-  for (const id of [...collapsed, ...protectedIds])
+  const beforeCollapse = new Set(visible);
+  const descendants = reachable(
+    [...collapsed].flatMap((id) => [...(children.get(id) || [])]),
+    (id) => children.get(id) || [],
+  );
+  const adjacent = (id: string) => neighbors.get(id) || [];
+  const boundaries = [...collapsed].filter(
+    (id) => map.has(id) && !descendants.has(id),
+  );
+  const affected = reachable(boundaries, adjacent, beforeCollapse);
+  // При циклических архивных записях оставляем границу в каждой затронутой
+  // компоненте. В обычном DAG внутренние сворачивания остаются скрытыми.
+  for (const id of [...collapsed].reverse())
+    if (map.has(id) && beforeCollapse.has(id) && !affected.has(id)) {
+      boundaries.push(id);
+      for (const connected of reachable([id], adjacent, beforeCollapse))
+        affected.add(connected);
+    }
+  for (const descendant of descendants) visible.delete(descendant);
+  for (const id of [...boundaries, ...protectedIds])
     if (map.has(id)) visible.add(id);
+  if (collapsed.size) {
+    // Убираем лишь фрагменты, отсоединённые сворачиванием. Изначально
+    // отдельные семьи и явно выбранные карточки остаются в полном обзоре.
+    const retained = reachable(
+      [...boundaries, ...protectedIds],
+      adjacent,
+      visible,
+    );
+    for (const id of visible)
+      if (affected.has(id) && !retained.has(id)) visible.delete(id);
+  }
   return visible;
 }
