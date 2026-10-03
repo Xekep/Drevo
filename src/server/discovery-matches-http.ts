@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { finished } from "node:stream/promises";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
@@ -126,11 +127,15 @@ function candidateCursor(value: string | null): [string,string,string] | null {
 }
 
 export function discoveryMatchesHttp({ archive, auth, publicOrigin,
-  beforeCandidateDelivery }: {
+  beforeCandidateDelivery, beforeCandidateResponse,
+  beforeMatchListDelivery, beforeIgnoredArchivesDelivery }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
   beforeCandidateDelivery?: () => Promise<void>;
+  beforeCandidateResponse?: () => Promise<void>;
+  beforeMatchListDelivery?: () => Promise<void>;
+  beforeIgnoredArchivesDelivery?: () => Promise<void>;
 }) {
   const db = archive.db;
   const limiter = createSharedRequestLimiter(db, "discovery-matches", { windowMs: 60_000, limit: 20 });
@@ -142,6 +147,20 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
     });
     res.end(JSON.stringify(value));
     return true;
+  };
+  const deliverLocked = async (res: ServerResponse, value: unknown) => {
+    const delivered = finished(res, { cleanup: true });
+    const timeout = setTimeout(() => res.destroy(), 5_000);
+    timeout.unref();
+    try {
+      json(res, 200, value);
+      await delivered;
+    } catch (error) {
+      const disconnected = res.destroyed;
+      res.destroy();
+      await delivered.catch(() => {});
+      if (!disconnected) throw error;
+    } finally { clearTimeout(timeout); }
   };
   const readMatch = (id: string) => db.prepare("", `${projection} WHERE m.id=?`).get(id);
   const hideRejectedCandidate = (row: Row, archiveId: string, actorId: string) => {
@@ -179,15 +198,42 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         const page = Number(url.searchParams.get("page") || "0");
         if (!Number.isInteger(page) || page < 0 || page > 1000)
           return json(res, 400, { error: "Некорректная страница" });
-        const rows = await db.prepare("", `SELECT i.target_archive_id,
-          (SELECT d.name FROM discovery_people d WHERE d.archive_id=i.target_archive_id
-            ORDER BY d.name,d.person_id LIMIT 1) AS example_name
-          FROM discovery_ignored_archives i WHERE i.archive_id=?
-          ORDER BY i.ignored_at DESC,i.target_archive_id LIMIT 31 OFFSET ?`).all(archiveId,page*30);
-        return json(res, 200, { archives: rows.slice(0,30).map((row) => ({
-          archiveId: String(row.target_archive_id),
-          ...(row.example_name ? { exampleName: String(row.example_name) } : {}),
-        })), nextPage: rows.length > 30 ? page + 1 : null });
+        const pageSql = `SELECT i.target_archive_id,d.person_id AS example_person_id,
+          d.name AS example_name
+          FROM discovery_ignored_archives i LEFT JOIN LATERAL (
+            SELECT person_id,name FROM discovery_people
+            WHERE archive_id=i.target_archive_id ORDER BY name,person_id LIMIT 1
+          ) d ON true WHERE i.archive_id=?
+          ORDER BY i.ignored_at DESC,i.target_archive_id LIMIT 31 OFFSET ?`;
+        const preliminary = await db.prepare("", pageSql).all(archiveId,page*30);
+        const examples = preliminary.flatMap((row) => row.example_person_id ? [{
+          archive_id: String(row.target_archive_id),
+          person_id: String(row.example_person_id),
+        }] : []);
+        const result = await db.transaction(async () => {
+          if (!await isOwner(user.id,true)) return 403;
+          if (examples.length) {
+            const locked = await db.prepare("", `SELECT d.archive_id,d.person_id
+              FROM discovery_people d JOIN jsonb_to_recordset(?::jsonb)
+                AS e(archive_id text,person_id text)
+                ON e.archive_id=d.archive_id AND e.person_id=d.person_id
+              ORDER BY d.archive_id COLLATE "C",d.person_id COLLATE "C" FOR SHARE OF d`)
+              .all(JSON.stringify(examples));
+            if (locked.length !== examples.length) return 409;
+          }
+          const rows = await db.prepare("", pageSql).all(archiveId,page*30);
+          if (rows.length !== preliminary.length || rows.some((row,index) =>
+            row.target_archive_id !== preliminary[index].target_archive_id ||
+            row.example_person_id !== preliminary[index].example_person_id)) return 409;
+          await beforeIgnoredArchivesDelivery?.();
+          await deliverLocked(res, { archives: rows.slice(0,30).map((row) => ({
+            archiveId: String(row.target_archive_id),
+            ...(row.example_name ? { exampleName: String(row.example_name) } : {}),
+          })), nextPage: rows.length > 30 ? page + 1 : null });
+          return 200;
+        });
+        return result === 200 ? true : json(res, result, { error: result === 403
+          ? "Доступ владельца отозван" : "Публикации изменились. Обновите список." });
       }
       if (req.method !== "POST") return json(res, 405, { error: "Ожидается GET или POST" });
       if (!(await limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress))))
@@ -353,9 +399,19 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       }));
       const expectedPage = rows.map((row) => ({ archive_id: String(row.archive_id),
         person_id: String(row.person_id) }));
-      // One MVCC snapshot checks the indexed page (including its overflow row)
-      // and selected publications before delivery.
-      const current = await db.prepare("", `WITH expected_people AS (
+      const result = await db.transaction(async () => {
+        // Withdrawal locks a published row before its projection disappears.
+        // Hold the source, page and overflow rows through response completion.
+        const locked = await db.prepare("", `SELECT d.archive_id,d.person_id
+          FROM discovery_people d JOIN jsonb_to_recordset(?::jsonb)
+            AS e(archive_id text,person_id text)
+            ON e.archive_id=d.archive_id AND e.person_id=d.person_id
+          ORDER BY d.archive_id COLLATE "C",d.person_id COLLATE "C" FOR SHARE OF d`)
+          .all(JSON.stringify(expectedPeople));
+        if (locked.length !== expectedPeople.length) return 409;
+        // One MVCC snapshot checks the indexed page (including its overflow
+        // row) and selected publication versions after the locks are held.
+        const current = await db.prepare("", `WITH expected_people AS (
           SELECT * FROM jsonb_to_recordset(?::jsonb) AS e(
             archive_id text,person_id text,publication_version text,row_version text)
         ), expected_page AS (
@@ -369,12 +425,16 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
           (SELECT count(*) FROM current_page c JOIN expected_page e
             ON c.archive_id=e.archive_id AND c.person_id=e.person_id) AS page_count,
           (SELECT count(*) FROM current_page) AS current_page_count`)
-        .get(JSON.stringify(expectedPeople),JSON.stringify(expectedPage),...candidateArgs);
-      if (Number(current?.people_count) !== expectedPeople.length ||
-          Number(current?.page_count) !== expectedPage.length ||
-          Number(current?.current_page_count) !== expectedPage.length)
-        return json(res, 409, { error: "Опубликованные карточки изменились. Обновите подсказки." });
-      return json(res, 200, { candidates: ranked, truncated: nextCursor !== null, nextCursor });
+          .get(JSON.stringify(expectedPeople),JSON.stringify(expectedPage),...candidateArgs);
+        if (Number(current?.people_count) !== expectedPeople.length ||
+            Number(current?.page_count) !== expectedPage.length ||
+            Number(current?.current_page_count) !== expectedPage.length) return 409;
+        await beforeCandidateResponse?.();
+        await deliverLocked(res, { candidates: ranked, truncated: nextCursor !== null, nextCursor });
+        return 200;
+      });
+      return result === 200 ? true
+        : json(res, 409, { error: "Опубликованные карточки изменились. Обновите подсказки." });
     }
 
     if (ownPeople) {
@@ -403,14 +463,53 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
     if (collection && req.method === "GET") {
       const after = cursor(url.searchParams.get("cursor"));
       if (!after) return json(res, 400, { error: "Некорректная страница" });
-      const rows = await db.prepare("", `${projection}
+      const pageSql = `${projection}
         WHERE (m.left_archive_id=? OR m.right_archive_id=?)
           AND (m.requested_at,m.id) < (?::timestamptz,?)
-        ORDER BY m.requested_at DESC,m.id DESC LIMIT 31`).all(archiveId,archiveId,...after);
-      const items = rows.slice(0, 30).map(match);
-      const last = rows.length > 30 ? items.at(-1) : undefined;
-      return json(res, 200, { archiveId, matches: items,
-        nextCursor: last ? Buffer.from(JSON.stringify([last.requestedAt,last.id])).toString("base64url") : null });
+        ORDER BY m.requested_at DESC,m.id DESC LIMIT 31`;
+      const preliminary = await db.prepare("", pageSql).all(archiveId,archiveId,...after);
+      const publicationKeys = [...new Map(preliminary.flatMap((row) =>
+        (["left","right"] as const).flatMap((side) => row[`${side}_name`] == null ? [] : [{
+          archive_id: String(row[`${side}_archive_id`]),
+          person_id: String(row[`${side}_person_id`]),
+        }])).map((key) => [`${key.archive_id}\0${key.person_id}`,key])).values()];
+      const lockedKeys = new Set(publicationKeys.map((key) =>
+        `${key.archive_id}\0${key.person_id}`));
+      const result = await db.transaction(async () => {
+        if (!await isOwner(user.id,true)) return 403;
+        // Withdrawal locks publications before its trigger updates match
+        // requests. Use that order, then keep both sets through delivery.
+        if (publicationKeys.length) {
+          const lockedPublications = await db.prepare("", `SELECT d.archive_id,d.person_id
+            FROM discovery_people d JOIN jsonb_to_recordset(?::jsonb)
+              AS e(archive_id text,person_id text)
+              ON e.archive_id=d.archive_id AND e.person_id=d.person_id
+            ORDER BY d.archive_id COLLATE "C",d.person_id COLLATE "C" FOR SHARE OF d`)
+            .all(JSON.stringify(publicationKeys));
+          if (lockedPublications.length !== publicationKeys.length) return 409;
+        }
+        if (preliminary.length) {
+          const lockedMatches = await db.prepare("", `SELECT m.id
+            FROM discovery_match_requests m JOIN jsonb_to_recordset(?::jsonb) AS e(id text)
+              ON e.id=m.id ORDER BY m.id FOR SHARE OF m`)
+            .all(JSON.stringify(preliminary.map((row) => ({ id: String(row.id) }))));
+          if (lockedMatches.length !== preliminary.length) return 409;
+        }
+        const rows = await db.prepare("", pageSql).all(archiveId,archiveId,...after);
+        if (rows.length !== preliminary.length || rows.some((row,index) =>
+          row.id !== preliminary[index].id ||
+          (["left","right"] as const).some((side) => row[`${side}_name`] != null &&
+            !lockedKeys.has(`${row[`${side}_archive_id`]}\0${row[`${side}_person_id`]}`))))
+          return 409;
+        const items = rows.slice(0, 30).map(match);
+        const last = rows.length > 30 ? items.at(-1) : undefined;
+        await beforeMatchListDelivery?.();
+        await deliverLocked(res, { archiveId, matches: items,
+          nextCursor: last ? Buffer.from(JSON.stringify([last.requestedAt,last.id])).toString("base64url") : null });
+        return 200;
+      });
+      return result === 200 ? true : json(res, result, { error: result === 403
+        ? "Доступ владельца отозван" : "Сопоставления изменились. Обновите список." });
     }
     if (collection && req.method === "POST") {
       if (!(await limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress))))
