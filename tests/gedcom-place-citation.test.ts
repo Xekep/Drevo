@@ -85,3 +85,87 @@ test("a PLAC.SOUR without a place value stays as a general citation", () => {
   assert.equal(result.deathPlaceClaim?.sources[0].reference, "л. 9");
   assert.ok(imported.warnings.some((warning) => warning.includes("Источник места без названия")));
 });
+
+test("nonstandard place citation on a regular event remains with that event", async () => {
+  for (const version of ["5.5.1", "7.0"] as const) {
+    const input = [
+      "0 HEAD", "1 GEDC", `2 VERS ${version}`,
+      "0 @I1@ INDI", "1 NAME Anna /Test/",
+      "1 RESI", "2 DATE 1910", "2 SOUR @S2@", "3 PAGE leaf 1", "2 PLAC Tula",
+      "3 SOUR @S1@", "4 PAGE leaf 3",
+      "0 @S1@ SOUR", "1 TITL Address book",
+      "0 @S2@ SOUR", "1 TITL Event register", "0 TRLR", "",
+    ].join("\n");
+    const imported = importGedcom(input, `event-place-${version}`);
+    const residence = imported.family.people[0].events!.find((event) => event.gedcomTag === "RESI")!;
+    assert.equal(residence.placeClaim, undefined);
+    assert.deepEqual(residence.sources?.map((source) => [source.title, source.reference]),
+      [["Event register", "leaf 1"], ["Address book", "leaf 3"]]);
+    assert.ok(imported.warnings.some((warning) => warning.includes("PLAC.SOUR") &&
+      warning.includes("общий источник события")));
+
+    const directory = await mkdtemp(join(tmpdir(), "drevo-event-place-citation-"));
+    try {
+      const file = join(directory, "places.ged"), stage = join(directory, "stage");
+      await mkdir(stage);
+      await writeFile(file, input);
+      const preview = await prepareGenealogyImport(file, stage, `event-place-${version}`);
+      assert.ok(preview.warnings.some((warning) => warning.includes("PLAC.SOUR")));
+    } finally { await rm(directory, { recursive: true, force: true }); }
+
+    const roundtrip = importGedcom(exportGedcom(imported.family, { version }),
+      `event-place-roundtrip-${version}`);
+    const restored = roundtrip.family.people[0].events!.find((event) => event.gedcomTag === "RESI")!;
+    assert.deepEqual(restored.sources?.map((source) => [source.title, source.reference]),
+      [["Event register", "leaf 1"], ["Address book", "leaf 3"]]);
+    assert.equal(restored.placeClaim, undefined);
+  }
+});
+
+test("flattening an event-place citation deduplicates only identical evidence", () => {
+  for (const version of ["5.5.1", "7.0"] as const) {
+    const citations = (placePage: string, placeNote: string) => {
+      const input = [
+        "0 HEAD", "1 GEDC", `2 VERS ${version}`,
+        "0 @I1@ INDI", "1 NAME Anna /Test/",
+        "1 RESI", "2 SOUR @S1@", "3 PAGE leaf 1", "3 NOTE same note",
+        "2 PLAC Tula",
+        "3 SOUR @S1@", `4 PAGE ${placePage}`, `4 NOTE ${placeNote}`,
+        "0 @S1@ SOUR", "1 TITL Address book", "0 TRLR", "",
+      ].join("\n");
+      const parsed = importGedcom(input, `flatten-${version}`);
+      const event = parsed.family.people[0].events!.find((item) => item.gedcomTag === "RESI")!;
+      const restored = importGedcom(exportGedcom(parsed.family, { version }),
+        `flatten-roundtrip-${version}`).family.people[0].events!
+        .find((item) => item.gedcomTag === "RESI")!;
+      return { event: event.sources!, restored: restored.sources! };
+    };
+    for (const sources of Object.values(citations("leaf 1", "same note"))) {
+      assert.equal(sources.length, 1);
+      assert.equal(sources[0].reference, "leaf 1");
+    }
+    for (const sources of Object.values(citations("leaf 2", "same note")))
+      assert.deepEqual(sources.map((source) => source.reference), ["leaf 1", "leaf 2"]);
+    for (const sources of Object.values(citations("leaf 1", "other note"))) {
+      assert.equal(sources.length, 2);
+      assert.notEqual(sources[0].note, sources[1].note);
+    }
+  }
+});
+
+test("equal citation text with different documents keeps both attachments", () => {
+  const input = [
+    "0 HEAD", "1 GEDC", "2 VERS 7.0",
+    "0 @I1@ INDI", "1 NAME Anna /Test/",
+    "1 RESI", "2 SOUR @S1@", "3 PAGE leaf 1", "3 OBJE @M1@",
+    "2 PLAC Tula", "3 SOUR @S1@", "4 PAGE leaf 1", "4 OBJE @M2@",
+    "0 @S1@ SOUR", "1 TITL Address book",
+    "0 @M1@ OBJE", "1 FILE first.pdf", "2 FORM application/pdf",
+    "0 @M2@ OBJE", "1 FILE second.pdf", "2 FORM application/pdf",
+    "0 TRLR", "",
+  ].join("\n");
+  const imported = importGedcom(input, "distinct-attachments");
+  const event = imported.family.people[0].events!.find((item) => item.gedcomTag === "RESI")!;
+  assert.equal(event.sources?.length, 2);
+  assert.equal(imported.citationMedia?.length, 2);
+});
