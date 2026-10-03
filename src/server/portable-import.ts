@@ -21,6 +21,9 @@ import {
   PortablePackageError,
   MAX_PORTABLE_ENTRIES,
   MAX_PORTABLE_MANIFEST_BYTES,
+  PORTABLE_CATALOG_FIELDS,
+  PORTABLE_COMMENT_FILE_FIELDS,
+  hasOnlyPortableFields,
   portableCitationMedia,
   type PortableComment,
   type PortableDocument,
@@ -77,6 +80,15 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function supportedFields(
+  value: Record<string, unknown>,
+  fields: readonly string[],
+  section: string,
+) {
+  if (!hasOnlyPortableFields(value, fields))
+    invalid(`Пакет Drevo содержит неподдерживаемые поля в разделе ${section}; обновите Drevo`);
+}
+
 function manifestFrom(value: unknown): PortableManifest {
   const data = object(value);
   if (
@@ -110,6 +122,10 @@ function manifestFrom(value: unknown): PortableManifest {
 
 function snapshotFrom(value: unknown): PortableSnapshot {
   const data = object(value);
+  supportedFields(data, ["family", "documents", "comments", "sources"], "archive.json");
+  supportedFields(object(data.family),
+    ["title", "description", "demo", "people", "unions", "links", "photos"],
+    "family");
   const family = validateFamily(data.family);
   if (
     !Array.isArray(data.documents) ||
@@ -124,6 +140,9 @@ function snapshotFrom(value: unknown): PortableSnapshot {
   const documents: PortableDocument[] = [];
   for (const raw of data.documents) {
     const document = object(raw);
+    supportedFields(document, ["id", "title", "fileName", "createdAt", "uploadedBy",
+      "documentType", "documentDate", "place", "description", "provenance",
+      "annotations", "personIds", "eventLinks", "pages"], "documents");
     if (
       typeof document.id !== "string" ||
       !portableId.test(document.id) ||
@@ -191,6 +210,7 @@ function snapshotFrom(value: unknown): PortableSnapshot {
     invalid("Некорректный каталог источников");
   const sourceIds = new Set<string>();
   const sources = (data.sources || []).map((raw: unknown) => {
+    supportedFields(object(raw), PORTABLE_CATALOG_FIELDS, "sources");
     const source = parseCatalogSource(raw);
     if (!source || sourceIds.has(source.id) || source.documentIds.some((id) => !documentIds.has(id)))
       invalid("Некорректный источник в пакете Drevo");
@@ -206,6 +226,11 @@ function snapshotFrom(value: unknown): PortableSnapshot {
   const comments: PortableComment[] = [];
   for (const raw of data.comments) {
     const comment = object(raw);
+    supportedFields(comment, ["id", "personId", "authorId", "authorName",
+      "createdMs", "editedMs", "text", "attachments"], "comments");
+    if (Array.isArray(comment.attachments))
+      for (const file of comment.attachments)
+        supportedFields(object(file), PORTABLE_COMMENT_FILE_FIELDS, "comments.attachments");
     if (
       !Number.isSafeInteger(comment.id) ||
       (comment.id as number) < 1 ||

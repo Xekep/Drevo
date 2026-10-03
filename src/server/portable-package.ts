@@ -61,6 +61,16 @@ export type PortableSnapshot = {
   sources?: CatalogSource[];
 };
 
+export const PORTABLE_CATALOG_FIELDS = ["id", "title", "type", "author",
+  "institution", "archive", "fond", "opis", "delo", "sheet", "reference",
+  "url", "accessedAt", "description", "documentIds"] as const satisfies
+  readonly (keyof CatalogSource)[];
+export const PORTABLE_COMMENT_FILE_FIELDS = ["id", "name", "type", "size"] as const satisfies readonly (keyof CommentAttachmentFile)[];
+
+export function hasOnlyPortableFields(value: Record<string, unknown>, fields: readonly string[]) {
+  return Object.keys(value).every((key) => fields.includes(key));
+}
+
 export type PortableManifest = {
   format: "drevo";
   version: 1;
@@ -110,7 +120,11 @@ function fileNames(snapshot: PortableSnapshot) {
   for (const comment of snapshot.comments) {
     if (comment.attachments && !validCommentFiles(comment.attachments))
       throw new PortablePackageError("Некорректные вложения обсуждения");
-    for (const file of comment.attachments || []) names.add(`discussion-files/${file.id}`);
+    for (const file of comment.attachments || []) {
+      if (!hasOnlyPortableFields(file, PORTABLE_COMMENT_FILE_FIELDS))
+        throw new PortablePackageError("Неподдерживаемые поля вложения обсуждения; экспорт остановлен");
+      names.add(`discussion-files/${file.id}`);
+    }
   }
   for (const citation of allCitations(snapshot.family)) {
     const local = citation.url && portableCitationMedia(citation.url);

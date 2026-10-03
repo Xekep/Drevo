@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { createWriteStream } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +12,7 @@ import type { createAuth } from "../src/server/auth.ts";
 import { openArchive } from "../src/server/database.ts";
 import { portableExportHttp } from "../src/server/portable-http.ts";
 import { portableImportHttp } from "../src/server/portable-import-http.ts";
+import { writePortablePackage, type PortableSnapshot } from "../src/server/portable-package.ts";
 import { discussionAttachmentStore, prepareCommentFile } from "../src/server/discussion-attachments.ts";
 import { userStore } from "../src/server/users.ts";
 
@@ -45,20 +47,53 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
   const family = JSON.parse(await readFile(join("tests", "fixtures", "family.json"), "utf8")) as Family;
   const documentId = "36db38fd-f709-44dc-b481-52ef56bf0656";
   const eventId = "residence-record";
+  const archiveEvidence = { title: "Census", type: "archive", reference: "folio 7" };
+  family.people[0].createdBy = "old-owner";
+  // Older imports can carry additional Person JSON that the current domain
+  // still stores verbatim. The compatibility guard must not discard it.
+  (family.people[0] as typeof family.people[number] & { legacyCustomNote: string })
+    .legacyCustomNote = "Original transcription retained";
+  family.people[0].needsReview = true;
+  family.people[0].birthDateClaim = { value: family.people[0].birth,
+    sources: [archiveEvidence], confidence: "confirmed" };
+  family.people[0].deathDateClaim = { value: family.people[0].death!,
+    sources: [archiveEvidence], confidence: "confirmed" };
+  family.people[0].birthPlaceClaim = { value: family.people[0].birthPlace,
+    sources: [archiveEvidence], confidence: "probable" };
+  family.people[0].birthLocation = { place: family.people[0].birthPlace,
+    lat: 56.86, lon: 35.91, label: "Тверь" };
+  family.people[0].occupationClaim = { value: family.people[0].occupation!,
+    sources: [archiveEvidence], confidence: "tentative" };
+  family.people[0].factAlternatives = [{ id: "alternative-place", field: "birthPlace",
+    value: "Кашин", sources: [{ ...archiveEvidence, reference: "folio 9" }],
+    confidence: "conflicting" }];
+  family.people[0].awards = [{ id: "award-1", name: "Почётная грамота", year: "1900",
+    source: { title: "Наградной лист", url: "https://example.test/award" } }];
+  family.people[1].maidenName = "Иванова";
+  family.people[1].maidenNameClaim = { value: "Иванова", sources: [archiveEvidence],
+    confidence: "probable" };
   family.people[0].events = [{
     id: eventId, type: "residence", date: "1900", place: "Tver",
+    dateClaim: { value: "1900", sources: [archiveEvidence], confidence: "confirmed" },
+    placeClaim: { value: "Tver", sources: [archiveEvidence], confidence: "probable" },
+    alternatives: [{ id: "alternate-event-place", field: "place", value: "Torzhok",
+      sources: [archiveEvidence], confidence: "conflicting" }],
     sources: [{ title: "Census", type: "archive", reference: "folio 7",
       url: "https://example.test/census" }],
   }];
   family.unions = [{
-    id: "union-1", participants: [family.people[0].id, family.people[1].id],
-    type: "marriage", formation: { date: "1865", place: "Tver",
+    id: "union-1", createdBy: "old-owner",
+    participants: [family.people[0].id, family.people[1].id],
+    type: "marriage", confidence: "confirmed", formation: { date: "1865", place: "Tver",
+      confidence: "confirmed",
       sources: [{ title: "Marriage register", type: "archive", reference: "folio 2" }] },
+    ongoing: { dateText: "около 1880 года", sources: [archiveEvidence] },
     note: "Original register checked",
   }];
   family.links = [{
-    id: "link-1", from: family.people[0].id, to: family.people[2].id,
-    type: "guardian", note: "Named guardian in register",
+    id: "link-1", createdBy: "old-owner",
+    from: family.people[0].id, to: family.people[2].id,
+    type: "guardian", note: "Named guardian in register", confidence: "probable",
     sources: [{ title: "Guardian register", type: "archive", reference: "folio 8" }],
   }];
   family.people[0].photo = "/media/portrait.png";
@@ -70,8 +105,10 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
     title: "Legacy JPEG register scan", type: "archive", reference: "leaf 12",
     documentId: legacyJpegId,
   });
-  family.photos = [{ id: "gallery-1", url: "/media/gallery.png", title: "Семья",
-    takenAt: "1900", place: "Тверь", description: "Подпись на обороте",
+  family.photos = [{ id: "gallery-1", createdBy: "old-owner",
+    url: "/media/gallery.png", title: "Семья",
+    createdAt: "2026-09-30T00:00:00.000Z", takenAt: "1900", place: "Тверь",
+    description: "Подпись на обороте",
     tags: [{ id: "tag-1", personId: family.people[0].id,
       x: 0.1, y: 0.2, width: 0.3, height: 0.4 }] }];
   const source = await openArchive(join(sourceRoot, "archive.sqlite"), family);
@@ -125,6 +162,13 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
     (person_id,author_id,author_name,created_ms,text,updated_ms,attachments)
     VALUES(?,?,?,?,?,?,?)`).run(family.people[0].id, "old-owner", "Историк", 1000,
     "Проверено по книге", 2000, JSON.stringify(attachments));
+  const attachmentOnlyBytes = Buffer.from("Отдельная расшифровка", "utf8");
+  const attachmentOnly = await discussionAttachmentStore(join(sourceRoot, "uploads"))
+    .save([await prepareCommentFile("transcription.txt", attachmentOnlyBytes)]);
+  await source.db.prepare(`INSERT INTO person_comments
+    (person_id,author_id,author_name,created_ms,text,updated_ms,attachments)
+    VALUES(?,?,?,?,?,?,?)`).run(family.people[0].id, "old-owner", "Историк", 3000,
+    "", null, JSON.stringify(attachmentOnly));
   const sourceAuth = { local: true, currentUser: () => ({
     id: "old-owner", name: "Историк", role: "admin", approved: true, createdAt: "",
   }) } as unknown as Awaited<ReturnType<typeof createAuth>>;
@@ -140,14 +184,39 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
   try {
     const sourceUrl = `http://127.0.0.1:${(sourceServer.address() as { port: number }).port}`;
     const targetUrl = `http://127.0.0.1:${(targetServer.address() as { port: number }).port}`;
+    const catalogBefore = String((await source.db.prepare(
+      "SELECT data FROM source_catalog WHERE id='catalog-record'",
+    ).get())?.data);
+    await source.db.prepare("UPDATE source_catalog SET data=? WHERE id='catalog-record'")
+      .run(JSON.stringify({ ...JSON.parse(catalogBefore), futureEvidence: "Retained by older data" }));
+    const unsafeExport = await fetch(`${sourceUrl}/api/drevo/export`);
+    assert.equal(unsafeExport.status, 409,
+      "export must not silently strip previously stored source-catalog metadata");
+    assert.match(await unsafeExport.text(), /неподдерживаемые поля источника/);
+    await source.db.prepare("UPDATE source_catalog SET data=? WHERE id='catalog-record'")
+      .run(catalogBefore);
     const response = await fetch(`${sourceUrl}/api/drevo/export`);
     assert.equal(response.status, 200, response.status === 200 ? "" : await response.text());
     const bytes = Buffer.from(await response.arrayBuffer());
+    const unknownPackage = join(root, "unsupported.drevo");
+    await writePortablePackage(createWriteStream(unknownPackage), sourceRoot,
+      { family: { title: "Unsupported", description: "", demo: false, people: [] },
+        documents: [], comments: [], sources: [],
+        futureEvidence: [{ title: "Must not disappear" }],
+      } as PortableSnapshot, async () => {});
+    const unsupported = await fetch(`${targetUrl}/api/drevo/preview`, {
+      method: "POST", headers: { Origin: targetUrl, "X-Drevo-Import": "1" },
+      body: await readFile(unknownPackage),
+    });
+    assert.equal(unsupported.status, 400);
+    assert.match(await unsupported.text(), /неподдерживаемые поля/);
     const preview = await fetch(`${targetUrl}/api/drevo/preview`, {
       method: "POST", headers: { Origin: targetUrl, "X-Drevo-Import": "1" }, body: bytes,
     });
     assert.equal(preview.status, 200, preview.status === 200 ? "" : await preview.text());
-    const { token } = await preview.json() as { token: string };
+    const previewData = await preview.json() as { token: string; comments: number };
+    assert.equal(previewData.comments, 2);
+    const { token } = previewData;
     const applied = await fetch(`${targetUrl}/api/drevo/import`, {
       method: "POST", headers: { Origin: targetUrl, "X-Drevo-Import": "1",
         "Content-Type": "application/json" },
@@ -165,19 +234,25 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
     assert.deepEqual(await readFile(join(targetRoot, "uploads", evidenceName)), original,
       "a local citation image must remain available after import");
     const normalized = structuredClone(targetFamily);
+    const expected = structuredClone(sourceFamily);
+    delete expected.people[0].createdBy;
+    delete expected.unions![0].createdBy;
+    delete expected.links![0].createdBy;
+    delete expected.photos![0].createdBy;
     normalized.people[0].photo = "/media/portrait.png";
     normalized.photos![0].url = "/media/gallery.png";
     normalized.people[0].sources.find((item) => item.title === "Семейная фотография")!.url = "/media/evidence.png?download=1#scan";
-    assert.deepEqual(normalized, sourceFamily);
+    assert.deepEqual(normalized, expected);
     assert.deepEqual(await readFile(join(targetRoot, "uploads", targetFamily.people[0].photo!.slice(7))), original);
     assert.deepEqual(await readFile(join(targetRoot, "uploads", targetFamily.photos![0].url.slice(7))), original);
-    const doc = await target.db.prepare("SELECT title,file_name,document_type,document_date,place,description,provenance,annotations,pages FROM documents WHERE id=?").get(documentId);
+    const doc = await target.db.prepare("SELECT title,file_name,uploaded_by,document_type,document_date,place,description,provenance,annotations,pages FROM documents WHERE id=?").get(documentId);
     assert.equal(doc?.title, "Запись о семье");
     assert.equal(doc?.document_type, "Метрическая книга");
     assert.equal(doc?.document_date, "1900");
     assert.equal(doc?.place, "Тверь");
     assert.equal(doc?.description, "Семья Соколовых");
     assert.equal(doc?.provenance, "Государственный архив");
+    assert.equal(doc?.uploaded_by, owner.id);
     assert.deepEqual(await readFile(join(targetRoot, "uploads", String(doc?.file_name))), pdf);
     const transferredLegacy = await target.db.prepare(
       "SELECT id,file_name FROM documents WHERE id IN (?,?) ORDER BY id",
@@ -188,7 +263,12 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
     assert.deepEqual(await readFile(join(targetRoot, "uploads", legacyFiles.get(legacyTiffId)!)), legacyTiff);
     assert.equal(storedDocumentFileType(legacyFiles.get(legacyJpegId)!)?.mime, "image/jpeg");
     assert.equal(storedDocumentFileType(legacyFiles.get(legacyTiffId)!)?.mime, "image/tiff");
-    assert.equal((JSON.parse(String(doc?.annotations)) as Array<{ text: string }>)[0].text, "Строка о рождении");
+    const restoredAnnotation = (JSON.parse(String(doc?.annotations)) as Array<{
+      text: string; authorId: string; authorName: string;
+    }>)[0];
+    assert.equal(restoredAnnotation.text, "Строка о рождении");
+    assert.equal(restoredAnnotation.authorId, "");
+    assert.equal(restoredAnnotation.authorName, "Историк");
     assert.equal((JSON.parse(String(doc?.pages)) as Array<{ description: string }>)[0].description, "Лист 7: о семье");
     const documentLinks = await target.db.prepare(
       "SELECT document_id,person_id FROM document_people ORDER BY person_id",
@@ -203,12 +283,26 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
     const eventLinks = await target.db.prepare("SELECT event_links FROM documents WHERE id=?").get(documentId);
     assert.deepEqual(JSON.parse(String(eventLinks?.event_links)),
       [{ personId: family.people[0].id, eventId, page: 1 }]);
-    const comment = await target.db.prepare("SELECT text,updated_ms,attachments FROM person_comments").get();
+    const comment = await target.db.prepare("SELECT text,author_id,author_name,created_ms,updated_ms,attachments FROM person_comments").get();
     assert.equal(comment?.text, "Проверено по книге");
+    assert.equal(comment?.author_id, "");
+    assert.equal(comment?.author_name, "Историк");
+    assert.equal(comment?.created_ms, 1000);
     assert.equal(comment?.updated_ms, 2000);
     const restoredFiles = JSON.parse(String(comment?.attachments)) as Array<{ id: string; name: string }>;
     assert.equal(restoredFiles[0]?.name, "archive-note.txt");
     assert.deepEqual(await readFile(join(targetRoot, "uploads", "discussion-files", restoredFiles[0].id)), note);
+    const attachmentOnlyComment = await target.db.prepare(
+      "SELECT text,author_id,author_name,updated_ms,attachments FROM person_comments WHERE created_ms=3000",
+    ).get();
+    assert.equal(attachmentOnlyComment?.text, "");
+    assert.equal(attachmentOnlyComment?.author_id, "");
+    assert.equal(attachmentOnlyComment?.author_name, "Историк");
+    assert.equal(attachmentOnlyComment?.updated_ms, null);
+    const secondFile = (JSON.parse(String(attachmentOnlyComment?.attachments)) as Array<{ id: string; name: string }>)[0];
+    assert.equal(secondFile.name, "transcription.txt");
+    assert.deepEqual(await readFile(join(targetRoot, "uploads", "discussion-files", secondFile.id)),
+      attachmentOnlyBytes);
     const sourceCatalog = await source.db.prepare("SELECT data FROM source_catalog WHERE id='catalog-record'").get();
     const targetCatalog = await target.db.prepare("SELECT data FROM source_catalog WHERE id='catalog-record'").get();
     assert.deepEqual(JSON.parse(String(targetCatalog?.data)), JSON.parse(String(sourceCatalog?.data)));
