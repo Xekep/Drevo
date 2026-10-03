@@ -55,6 +55,7 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       id: "admin",
       role: "admin",
       name: "Администратор",
+      approved: true,
     } as ArchiveUser;
     const p: Person = {
       id: "a",
@@ -103,22 +104,38 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       ),
       /Резервные копии/,
     );
+    const navigationProps = {
+      view: "tree",
+      onView: noop,
+      user,
+      local: false,
+      readTree: true,
+      readPhotos: true,
+      onHelp: noop,
+    };
     const navigation = renderToStaticMarkup(
-      createElement(ArchiveNavigation, {
-        view: "tree",
-        onView: noop,
-        user,
-        local: false,
-        readTree: true,
-        readPhotos: true,
-        onHelp: noop,
-      }),
+      createElement(ArchiveNavigation, navigationProps),
     );
     assert.match(navigation, /О проекте/);
     assert.doesNotMatch(navigation, /export\.json|Экспорт JSON без фото/);
     assert.match(navigation, /Семьи/);
     assert.match(navigation, /Фото/);
     assert.match(navigation, /Управление деревом/);
+    assert.match(navigation, /class="nav-admin" href="\/admin"/);
+    for (const viewer of [
+      null,
+      { ...user, approved: false },
+      ...(["researcher", "relative", "reader"] as const).map((role) => ({
+        ...user, role, platformAdmin: true,
+      })),
+    ]) {
+      assert.doesNotMatch(
+        renderToStaticMarkup(createElement(ArchiveNavigation, {
+          ...navigationProps, user: viewer,
+        })),
+        /class="nav-admin"/,
+      );
+    }
     const inspector = renderToStaticMarkup(
       createElement(PersonInspector, {
         person: p,
