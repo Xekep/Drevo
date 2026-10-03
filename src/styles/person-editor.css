@@ -44,6 +44,30 @@
 .person-editor-form .name-entry .field-error {
   color: #a04738;
 }
+.person-editor-form .name-order-hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 8px 10px;
+  border: 1px solid #e5d8b6;
+  border-radius: 8px;
+  background: #fff9e9;
+  color: #655334;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.person-editor-form .name-order-hint button {
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: #315b4b;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
 .person-editor-form .portrait-edit-button {
   width: 64px;
   height: 64px;

@@ -58,3 +58,43 @@ test("an owner can name an empty tree and bind its first person to their account
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect.poll(() => family?.people.some((person) => person.parents.includes(boundPersonId))).toBe(true);
 });
+
+test("a two-word first-name-first entry offers an explicit swap before saving sex", async ({ page }) => {
+  let family: Family | null = null;
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    family ||= { ...data.family, people: [], photos: [], links: [] };
+    data.family = family;
+    data.partial = false;
+    await route.fulfill({ response, json: data });
+  });
+  await page.route("**/api/family/changes", async (route) => {
+    const changes = route.request().postDataJSON().changes as Change[];
+    family = applyArchiveChanges(family!, changes).family;
+    await route.fulfill({ json: { family, revision: 2, appliedChanges: changes } });
+  });
+  await page.route("**/api/users/*", async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    await route.fulfill({ json: { user: { personId: route.request().postDataJSON().personId } } });
+  });
+
+  await page.goto("/tree");
+  await page.getByRole("button", { name: "Добавить себя" }).click();
+  const name = page.getByRole("textbox", { name: /ФИО/ });
+  await name.fill("Щекалёв Степан");
+  await expect(page.getByText("Возможно, имя и фамилия переставлены")).toBeHidden();
+  await expect(page.getByLabel("Пол").locator("option:checked")).toContainText("Мужской");
+
+  await name.fill("Степан Щекалёв");
+  await expect(page.getByText("Возможно, имя и фамилия переставлены")).toBeVisible();
+  await expect(page.getByLabel("Пол").locator("option:checked")).toContainText("Определить по ФИО");
+  await page.getByRole("button", { name: "Поменять местами" }).click();
+  await expect(name).toHaveValue("Щекалёв Степан");
+  await expect(page.getByText("Возможно, имя и фамилия переставлены")).toBeHidden();
+  await expect(page.getByLabel("Пол").locator("option:checked")).toContainText("Мужской");
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect.poll(() => family?.people[0]).toMatchObject({
+    surname: "Щекалёв", name: "Степан", patronymic: "", sex: "m",
+  });
+});
