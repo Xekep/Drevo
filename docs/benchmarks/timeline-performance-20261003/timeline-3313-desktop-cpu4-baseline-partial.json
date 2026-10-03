@@ -1,0 +1,1444 @@
+{
+  "date": "2026-10-03T05:53:39.374Z",
+  "status": "timed-out",
+  "timeoutMs": 600000,
+  "timedOutDuring": "vertical-people",
+  "lastCompletedPhase": "year-scroll-settled",
+  "rawLog": "F:\\Codex\\drevo-timeline-tests\\baseline-3313.log",
+  "rawLogHash": "a40487ca3a6e90ce5b994383dee9120ecf8f6f264b0b8d71d4054ec0234f7378",
+  "commit": "9d0b3cb3efaea860afffb53b4cbf2f8d66a412cc",
+  "sourceHashes": {
+    "src/components/tree/tree-canvas.tsx": "13f1d1a8cafd6d4b31d1cc1c83f49b85ad572c187b9d473ee0296361787e2da3",
+    "src/components/tree/horizontal-timeline.tsx": "9ac8e80cde26a10550b9e895fbde681a8f3f3763788007ad6566f47954832762",
+    "src/domain/horizontal-timeline.ts": "bcd9f538cc9fca190fd27082d94b976ef8a95843d8b6fa7b66ed36cc85e358df",
+    "src/domain/timeline-window.ts": "c50309b16135892b39842937e97b1e59726d7fa05728c510fd4ee63c24486a3a",
+    "src/styles/timeline.css": "887e89178b49c1c548d5c6ae40ccd849924fc3520963b9fb95b72a6d9003805b",
+    "src/components/person-panel.tsx": "e245ce7374cdbb265d3fe6f42fb33718b25c33d87dc34775266ccec60a00e382",
+    "src/hooks/useArchive.ts": "6f7064a3353cb1cc8f1c0b86c2c328ab4aac0be1cf86a7b02c1fd4ae266a21ab",
+    "tests/e2e/tree-acceptance-fixture.ts": "8c1414338762c70c88cda81f296e4129e5550c31b955c6efbe479599a98e552a",
+    "tests/e2e/timeline-performance.spec.ts": "3dd5818d5f4a68416d12d255a8f41b5cbd92b20aa2350f77024357bbe7ccc7c1",
+    "package-lock.json": "d9761c619236fcc67fa7375bd01974fb262e3867d8e9c9e75314f0bd6137cf34"
+  },
+  "buildHashes": {
+    "dist/archive/family-notes.html": "4b33fa2d514cf1fa240f294a1b16651dd59872872653cbb4f860124417d8cc52",
+    "dist/assets/App-BXtQyEhJ.js": "618d0c0c0a93af8af59b348946e2148ec024c23df294e3c259f61d4cd323f998",
+    "dist/assets/App-D2GCeocH.css": "9fb33f3a164f13a9653f6404850ab220c1f225c201494b551c45c8bf5eb241e5",
+    "dist/assets/BookReader-Bx-6cSQN.js": "42493765b644e866979e075e39a6fcb5d4d8df42aba8b6bc68264e74281a2adc",
+    "dist/assets/abnfDiagram-VCTEODGH-C5P_lPSx.js": "4b621d416bfc761d0119cc5076284c1883aa27c73b9d5bc9443b9201b7819754",
+    "dist/assets/access-DC05ZJoM.js": "1c7386809de0967898420c524f508f981363415a8fcd471c4d4f57c470e4dd83",
+    "dist/assets/admin-panel-content-DLvWqIQF.css": "5f6c5c4bf2dd5352b188a1ee9511a05f76fcbbc13492605e4a3774d355d340f9",
+    "dist/assets/admin-panel-content-DWfpiOc7.js": "ac306d43ca2470e282f0b6d1bf2cd6d5c374ab0edd38fd2611b657825279b249",
+    "dist/assets/arc-Pry-7G1_.js": "f75eded460da333a370d80955d052d86f7a70552e684709e1b671b5520ddab23",
+    "dist/assets/architecture-7GRP2DOG-BBuD-jlL.js": "0dd02aa0157b2106479ea1e3b6d75dfdf845bfc728efed279e1b12d54dacdf24",
+    "dist/assets/architectureDiagram-5GKGNRK7-DLTXa_3E.js": "7f4322cba5cc32a08b32fee0f14e7761c8ded578b25c8986396e01972297e84c",
+    "dist/assets/archive-editors-content-BiMnGIT3.js": "ffb30ce15ce9a3a64561468f3d5c0ca0615cf2ec5cfb558a0ef8e55565bf7136",
+    "dist/assets/archive-editors-content-CtgtwJNN.css": "dea400613d788e83eb89e3c6a60263d7b24d394717b114eeaf8a9f640778ad84",
+    "dist/assets/archive-editors-yf-WLH2e.js": "83310ded447bec3b0aabea6857b77750b6c6b5e51bed4cb63530d230366c843f",
+    "dist/assets/archive-links-Cm-2P80Z.js": "d4b81e3d9f89aa8b164594186cab9018b02be8f61ea083f0fc3d38b62bfe0097",
+    "dist/assets/archive-quality-B8QzYPyO.js": "2f881b667bbc6f79d558c062b45312e8633b842087b7c6a03357eb0da1d10b9b",
+    "dist/assets/archive-quality-page-DMNEqDYL.js": "cd1fb5cba17925242cc0d5a2db89461fb2cf732130a29e7356e8b7e07ad06a14",
+    "dist/assets/archive-routes-CONPpOej.js": "86e3b3b6e150928ef57f8cf36c39a58cdef86289c791bac3c471a43b692fca35",
+    "dist/assets/archive-summary-K-TzhHyd.js": "0d8ffc65102e585fcca75a355920829f32fdb97d724ee3a2404e92c7c24ee6f6",
+    "dist/assets/array-BifhSqXX.js": "63126646dbf611a0cf9e2293a9f636ac3c93c815a8f7d1e97d783151ab8529b9",
+    "dist/assets/arrow-left-BAxNe7I7.js": "449a2454ab9747e7051be7390b18feb4c58187e94dd832da1271a743eed3de69",
+    "dist/assets/audit-log-w9fcbmIN.js": "4c066e96f8661c58ed5af489d84574b143560e5a97c3d6042dc33f5aa1b13c1a",
+    "dist/assets/blockDiagram-I7D4REHJ-5Lwl27u6.js": "a5db7a4d65251ae14159d1b129d9c30dff98a9ad882109499019cf96a8e713f8",
+    "dist/assets/bookreader-BU0_FgU-.js": "8f96afc606f89b1eb9554366dcc9fcab4413cb907c94a6d3af169a030cf47432",
+    "dist/assets/bookreader-ChLfIugk.css": "e8192f56a2f1c2851ba16f9336a87bdcb9a779e28c4a742214618e2f0f8d16fd",
+    "dist/assets/bookreader-pdf-search-plugin-C-DCSZ1z.js": "98e130693042b0332884aa31427f385b413d800ada6d08a09533c11e57f26b5f",
+    "dist/assets/c4Diagram-7LVT6UL2-C15sIm3m.js": "5bfbd06bbd5ae1099232a51c3a621222e3eb4ce452bd502dac1c2caa2d89aba9",
+    "dist/assets/channel-ZXGifBXX.js": "fbed6130451fbe0e62acacb3c650813a91f25b7c7f276a71ccbe9b4bc0826def",
+    "dist/assets/chart-canvas-B4jUrubA.js": "1f6593f635da26c52b28c14c3397a4b47026b9ee5465105e54015cabfb16b780",
+    "dist/assets/check-BtMqCuOh.js": "de41759a7d69c52530b127da9ea74108865f6c155910ec031859680f10c7467d",
+    "dist/assets/chunk-2Q5K7J3B-C1jixKkw.js": "675dd6cbaeea3bf091ba6afb397cf4c3debf6b66cc7bee6d115d87fa831e05fc",
+    "dist/assets/chunk-4HAMMTFA-C-aFsbgB.js": "16a471eeed27d239d6a5827ef1da4d102f3e9dabd0564a4844179113c2669301",
+    "dist/assets/chunk-5VM5RSS4-ZNzvKenW.js": "cee7c98f98440b1fbf0548b756d421097642c784547b835515f1124b9cdd4351",
+    "dist/assets/chunk-75Z2AOVW-CJ7LJ0E3.js": "a4411917e28ab74b6db691513890b41c26329c43b139f6cb65048d91693a5dde",
+    "dist/assets/chunk-DU6HZSFF-BAE_lRQZ.js": "a8fa827cbf7bf2bcc125e961cd782c543b73c41f818d7b3bdc365924e755ca94",
+    "dist/assets/chunk-F27PBJKO-DK9vsrT7.js": "fd832657349478283f451a669ac4469c7c4ff4d0d67f701b8ed3019da0b1e9a7",
+    "dist/assets/chunk-FOHPRMQF-DzxwRta7.js": "8a5f3e922154c318d45230e9d0a1bbd5e021a5d567fdf4d238d3b6342c056261",
+    "dist/assets/chunk-GMAD6QVW-DbZ_QH8H.js": "18c2140323499086652e1da5ea333c5ed7a699c4f0848b94dda77b73eeaca5c8",
+    "dist/assets/chunk-GVQU2GXP-95H7W9im.js": "7d5d843ae8354253ee4f610925ee08d31c23f3fd32584bc3cb376f4297a4a5b1",
+    "dist/assets/chunk-IMKFNOWR-CqCcOi4A.js": "5257b8cb1237a7563b7970953447d67fdbb17c6d40bed30aef519159028bc3dd",
+    "dist/assets/chunk-JWPE2WC7-DVXcaiue.js": "11e56beaf2526e7304036d27b4e083ed68ced60066faded0e683115da3dfa099",
+    "dist/assets/chunk-L3NEJ4N5-C1IGHnsD.js": "e499cfcf7eb697d649530c7373455d5ff16864d5676b939cfd75233b2d764016",
+    "dist/assets/chunk-OSK3NFVY-BA1eBODs.js": "f9520b778a5848e29ba9f27a3ff63759774c92dc0d6a496baa17c90b938b02f4",
+    "dist/assets/chunk-P2QGCYS3-B5SfBeFz.js": "c00c484f0a74a8188b3e605ebb9508d60a11bdb52a59396700b17575599ca2e4",
+    "dist/assets/chunk-POPQ4Y6H-DhsBAbKW.js": "3d84225283d1f5c3a12e4f60501e3edc204c0569335d52ad53d6c5a99b5a7396",
+    "dist/assets/chunk-PWAF6VOD-BQ9Pvcec.js": "37abbdcec3deb7ff088cf1f006491ff82433875041f161168ea37f382fb05684",
+    "dist/assets/chunk-SHT3W25Y-DOb6XuQ9.js": "16b533db11b41bb364196aa14c824a4af382016d36982cb8791aed3fc7ffd662",
+    "dist/assets/chunk-SVP7TREG-Dyr0wjNg.js": "3d6459673a253c0d4ca98f0825971b5218ef6a266fcb1c148e670ca903c09ef5",
+    "dist/assets/chunk-TICWLB2K-CKlH5lEq.js": "c16abb27c7b099e0062a86be641f58694f6591c7a75580179207434fa6f98436",
+    "dist/assets/chunk-XXDRQBXY-Bd3Sm03O.js": "b4a3eb2bedf7f33e29301bf1bdb749a1b57a66828a66f71983403662feb69e08",
+    "dist/assets/chunk-Y2CYZVJY-DsF7k-Jl.js": "a74e3669f356ad0d67cc5232f1e0f62ff4544fdb8e7057cf9a5001a0ea6fc2cc",
+    "dist/assets/classDiagram-ZZMXUADV-BuRJWFPF.js": "5736625cd672e56598af4d618c76880bffe12604a5367d08aa29a911c08e0dd8",
+    "dist/assets/classDiagram-v2-VYDZK3BY-BuRJWFPF.js": "5736625cd672e56598af4d618c76880bffe12604a5367d08aa29a911c08e0dd8",
+    "dist/assets/cose-bilkent-JH36ORCC-D9o2lR-b.js": "33af64c7e4ab0eff7731802f5d982bb97b2bf6ebaa8db28b22f3edda31e4ca6e",
+    "dist/assets/cynefin-OW5HDTMX-B-6TQfl3.js": "25ace31fd805f5271efc46e619b1ab623c21b6bf79d0ac125bc5c544edb7a4bc",
+    "dist/assets/cynefinDiagram-5FMLGOSQ-DxQwyPxg.js": "41913d8ab7a4b2198c56a4e8e918dc3a564f43b29789179496d4af70df1b8885",
+    "dist/assets/cytoscape.esm-Yq6u8L66.js": "8f5eb19c60a07917254fd76da05c61f3bd58be3eb50bb185db4208ce62caceb3",
+    "dist/assets/dagre-C-rnJpZF.js": "f114fd495c7ce524c8ec3122bf87fd92687d5a1fb8f9cd3d86c6b358bbcb9500",
+    "dist/assets/dagre-GXQ25YYZ-CzWryFXz.js": "9188cefeb46033e3ecd4a554c5430faa919d5a853a1038d558536010cf8cd509",
+    "dist/assets/dates-H3myDfrx.js": "faa38dd05b266aece13853f7aa204bf96b0a3109e88044662b66feb23b299c29",
+    "dist/assets/defaultLocale-BFoDCU3G.js": "098cc4b380fbfa5bf43b3dc6afaa137a43b0df3f079845fc096dca41e38fb341",
+    "dist/assets/diagram-S7CK7UJ4-COJxWtUP.js": "f6cb8797fbd66277b0c063423c202d66c210b93285c037e93c1f0bb180b93b8a",
+    "dist/assets/diagram-UQ7AKVKN-BRULfTj1.js": "ee66244ef5a422bdeb6ebc5861383492a79121653c7be79ad0bfaa9bb20665c0",
+    "dist/assets/diagram-VSXAHHWV-BDvMOZr8.js": "f276f740fe58aba2825ae3a7e5ea0b63017954c1806f91a8e3728f7acc349135",
+    "dist/assets/diagram-VX7I27RA-3t1dfXjY.js": "4d9de213b6ac857d60a1a4fbbf90264fcd266a3e69d5860c1dd9f3d303457dc6",
+    "dist/assets/diagram-Z3DM3KII-DYq73FAP.js": "35c470a37e757f4b7b896beb213903396f09ad87d7a41a2d4c181afe255bb3a1",
+    "dist/assets/discovery-branch-9w4FdIoG.js": "f887db7fac2dfb278fe2f939f05a6af44e1914fd1fb89fa77ddf07285faddfb9",
+    "dist/assets/discovery-linked-branch-person-D4CMuwyV.js": "1409680f51b25d57226254fa91c9ec32f2cebd2b6ef15c11cbac65d38e7065e7",
+    "dist/assets/dist-v5Q1xZ2K.js": "6c5cec80bf8c172970025d53577c70cf4cab9f68a5275674b83118a8c5edf0f2",
+    "dist/assets/document-file-CdDPA0-T.js": "b946389b96f484c1e636e12cbeeb477453cc012a9dcd1f0bc7867acd71e54fd7",
+    "dist/assets/documents-CX3E_ObM.css": "a3a3dea41e9d56a5f462066bf5dcd9cbf33a430ebbe9d8b78d051a43e00dfdc9",
+    "dist/assets/documents-catalog-DEOtebiz.js": "f3e1df37c022b8b5e54e41db49f3a8114aa06be5a707f0351d3311b67de369b0",
+    "dist/assets/domain-CjcTQM3X.js": "1c7cc337b2ffaa7d2ad3c4188a11b9eb48b72c88f18cc8186c8b02b06ad0a939",
+    "dist/assets/download-generation-report-Dw6NOrDv.js": "3ea7456ce2545f840dfe231819a7a9bd08df9b9102de63df34b0269138f1dac7",
+    "dist/assets/ebnfDiagram-PWID7BFC-DCj4Abco.js": "d036107a964b98b466dff2287a0ed5dc1facd4c2e45a8f5081cede5878a7a962",
+    "dist/assets/echarts-runtime-DBMdSS9C.js": "53c1c86f1b93ec3600c8e042a73ce7b63cfd25f2b2bb6f616c4cd92a800c3e29",
+    "dist/assets/elk-worker.min-B0rP1gRk.js": "5d8ba0553acabc22200c36127f4ef9aff3f84b7d7ccfb5f9b9d6ef6cc664892e",
+    "dist/assets/erDiagram-RLTQ6QDP-h_dGkNBO.js": "b39b65905ae5d376230f9dfcac6442d4e52b24ed04ec038e590440733bbdf0a4",
+    "dist/assets/esm-Cb3lGruy.js": "162fd0025fd67ada8948cbf70cb52cfc0532f55df1324b1857f5e08eb5617a24",
+    "dist/assets/eventmodeling-NTZA5JFV-B9vJYYtH.js": "ffc8ed997a8bc00070d3dd80fcced6746f9c694b6e0b4332bcf0e9a569f3454e",
+    "dist/assets/face-assistant-CgjD0DUF.js": "e2f78dc48f81a3af88ee17b3be37ada71243d029bd97062ad633bfe6e681138f",
+    "dist/assets/families-catalog-C9BhUw1A.js": "0f637cc48446c0d77edfaf542f977289d9b6b0d499c98f8a125da4d84efd6c12",
+    "dist/assets/family-insights-Cc64G3Mw.js": "52a1cac02590f684f2e2ae48e603efa2ad54695ccb563936a3e2c1c4b8246451",
+    "dist/assets/file-text-BuRk_JYM.js": "3ea815cf674ec77850e24a37710ab902d7feca019c7291e9d3f69480d35703e1",
+    "dist/assets/flowDiagram-HODETNUW-BIyj85ge.js": "6564dcfbdfd47e7225c30392d4cd10c420740654434db041cec66d964198c531",
+    "dist/assets/gallery-BjmTiX8Y.js": "ae40f796811257fc5d0b3fa00f7d69762f1cf92ab84c604131a052fcbcddab23",
+    "dist/assets/ganttDiagram-EL5Y4UJY-yyjaS-LA.js": "72e7a1f0aa3a8e48ffe0e8f1d166debfd0c1f7c11e71e59aea8efeed52d3712e",
+    "dist/assets/gitGraph-4MIJSDKK-Dd5zdd0S.js": "3bed10a21f2357fb4402422c82b798664b94005e4959437f390b2895f83b992d",
+    "dist/assets/gitGraphDiagram-WWUBYQGX-BstEJo_S.js": "265c11d841e9a46a587dba2dee487cf2e82384e8ab400cef68a56c9384af07a2",
+    "dist/assets/gpu-scene-C60XBAgS.js": "8ccd399f207e5f8ecfbd329de66aebfde01acb40156a45bbb0879288df1595f2",
+    "dist/assets/graphlib-DS17s2tU.js": "6afce81d54f184820fad5ed0c9fa2dc42acc6e0cd0fd8fbcb0568dafc2cc7ab7",
+    "dist/assets/html2canvas-Dn6bw578.js": "574ab4dd546005eef9ba3bb3dd9955d71dc71efe16fcb555730ddd00d97c18da",
+    "dist/assets/human.esm-D10UQNG3.js": "b33f70ab055b3e7b4c8f295060384bf9dc8ac739fd03e5a06da464e644cb7d86",
+    "dist/assets/index.es-BwysVmbE.js": "b7a0cf3880457af0254f77c06bd511d62f558b1d56775180507c53c4435efab3",
+    "dist/assets/info-A6RAGUB7-wzrrWW_2.js": "38a69103dae3be5e8de00922fed4fdb47406f911c13fabae4d3b5e2562323130",
+    "dist/assets/infoDiagram-27XIBGKW-DKuDWa9L.js": "c55942a92e7b5ca0196d3ab4e02bede60cafa0003ca60cbd46ec48478d6352a6",
+    "dist/assets/init-C-OQMol4.js": "cb5c97a434bb5c3eeb4f6d38072ad7d8e4ac454d14e039a1fb6e8262c5ce82bc",
+    "dist/assets/insights-page-Dpd9MhTK.js": "3cf25c25bf2a618606c95aa101bcd45251e120841ad825dccc1f5d6344968cef",
+    "dist/assets/ishikawaDiagram-5VMMS53U-BDGsSzP3.js": "8fa921ece66690d48e4d7aa28ee823747a0fb2fbf047cff97cca394bef0cc9a5",
+    "dist/assets/join-archive-BGOOyxmO.js": "5fa50ac9a02530bbdb90d50b1d4fea37995fd910892e64ccd7f0c0fd26eaa756",
+    "dist/assets/join-archive-CCyr2TC6.css": "76e354ec58f6cbde8fe3c3f55d76481d819104d3f46ba9bd4e589360b88ea8db",
+    "dist/assets/journeyDiagram-3NMN7TZE-DdUfZXyQ.js": "265541e82662441e43b03baed33a50fde499c22bd0c09a11a3ca2e00695f0755",
+    "dist/assets/jquery-3-Dp7SDtaV.js": "119c06134449ae92db26f6b4eb4fc37ec5375f8d850203d78a11144832635e45",
+    "dist/assets/kanban-definition-UXKFOSKX-CzHPGTTA.js": "276499e99831e60481450d1729194e6a6064dc8408f331e11557991efb8b0a5a",
+    "dist/assets/katex-DEcVZfaU.css": "e3e391a763650a96600053095451bbaf9daeb554a92c13f14b496d595c502251",
+    "dist/assets/katex.min-DGZ8Bb7P.js": "6ed0f07d0c00b7429080db0a78bc0e831bad1804a8ba30b59e8aa9104c8064d4",
+    "dist/assets/layout.worker-BYeu_AKN.js": "b384ed3d68aac942aa84bde5c2f2275b2f5aaa0d61518c77f0d9d6957708b305",
+    "dist/assets/lib-CQzj6rsw.js": "e434f71e8bff28c8d1631557f925711efcc1e0e63878dd0a4e7b5fa6579dbfe5",
+    "dist/assets/lib-XSamBX4j.js": "e99e33883476f5a1ba2f7e2a51e6b71f2d1a7398f974a57540cf52f2bb87cdd3",
+    "dist/assets/line-C_9aNKH9.js": "d38c0225c966e72336ff33ca5d9666315c86c00b0671697a261a5b3cb1cc2360",
+    "dist/assets/linear-CFt_L1U_.js": "a1ad5f412d5550054b8b7eecb5aa50c4be79f2e2ceef29dec98bb2ea90eab350",
+    "dist/assets/link-2-D1ukK0XC.js": "8b9ed28558a3c7e9542e2172822f7269c566d2384f5ae94f9da31c65e8cb162d",
+    "dist/assets/load-more-wVOgM5Yq.js": "4cad5883eca1f55fde619ebb8c726e5d5bdf05598545b43ef13f9fa3c71d04c7",
+    "dist/assets/login-buttons-BGH9SKEP.js": "5c260d37d2db61d3f2f15b321aa6d7568ccf46c24a721d6825181bd551e1bdfe",
+    "dist/assets/login-buttons-D7Sr4_-g.css": "6d1280dbc9e07035cd2c1c03173f55fc6526f12f9e6f7bfe3182d58ffc2ff606",
+    "dist/assets/main-BI5fRVHi.js": "ee8b97108660d37d58754acc83b6c2d2b10d94919c0741c1a56fedb2716788ba",
+    "dist/assets/main-rby6LWh3.css": "fd9b983e8775bd577e4af4b9faa8af0198002c8a0a9384614aacbcfc4d3ecad3",
+    "dist/assets/markdown-answer-CtZ4wT0V.js": "ffb27da869fd45d94eb32d67a36e3ca655b4a4c434fdf3a7f811e8001fce4851",
+    "dist/assets/media-preview-CvBz6FiK.js": "8e1f90df30f88c04bf13a317b237f55c1e8059139c373592b31c8a584bd63d62",
+    "dist/assets/mermaid-parser.core-CWQKIG0j.js": "d1e3a6a1608328e737a0da8a22fe7cfd52d1b085dfc450f64fc93cfeb25ad6d4",
+    "dist/assets/mermaid.core-3JnKT9FX.js": "84a4f45d36ba7ffad51f0977ff1ca9de028948b7c84ad7c549a44ca0a98eeffd",
+    "dist/assets/mindmap-definition-YA3MSWOX-BeKHMjqo.js": "8cf49fc352941953f59bf101251d1fa7f11e8aa2563b6acf84b91034bba0aa39",
+    "dist/assets/mutations-CjvmuCJN.js": "ab40ec2ea1305d0f76af25a2b1ec9ddb7617d001b0f074674b02fe98b019f9f9",
+    "dist/assets/ordinal-BDEzSJ7C.js": "1a236cf33d69c13da184852fe890a0d5d4083636373cb3ce166537b3e8cc0dcb",
+    "dist/assets/packet-AYTQ26CC-CEjwZnUP.js": "4e449146a75c354acde0758c02552724be35571ae2efc026bb34166dd6938556",
+    "dist/assets/path-fybaL0A-.js": "71b62c60fd6659668995a83955af7c0ffd1bc05496148191841e017441afe36b",
+    "dist/assets/pegDiagram-XKGWAZYB-CSM1GCFC.js": "ef60e5e920416a36f68564856269a3743f605c226574c7658856579f1ec6fdce",
+    "dist/assets/people-catalog-TuFxVN89.js": "bbb8bcdc7b49bce5e80bb6dd84b457b6a3d6888bba8c272303bf4235f9786ecb",
+    "dist/assets/people-directory-auRg8BQa.js": "42a8ac5048ff62c2a3c527f7a97d693f76c563e607c804e3ea5d4b548bd38eb5",
+    "dist/assets/person-discussion-BHmNwoM1.js": "372063753b53b20c6bb6ddc3afa4d01564c83a01276ad877227cbe4d40e95020",
+    "dist/assets/person-events-Aux48jhr.css": "7318c6f926f080d456c38badd3477555f98d56efe191ec805576eeae7630817f",
+    "dist/assets/person-events-DYuFKvoe.js": "4caa4b76a96e858ab709bb93aee13fe67f3292a1f184185034c7725a12c00cf5",
+    "dist/assets/person-full-view-D6xa62TD.js": "8a696632ac5185f4b7a1cf29c5f9e8a17d762b56a26b139cdf6e93ff1d86dfcc",
+    "dist/assets/person-panel-zrE04VyN.js": "8514aab23a77f1a8acc3b9e17fde44058010427ad8acfa920efcde0e1b5506ac",
+    "dist/assets/person-sources-Mj9leuhX.js": "9a5efe671ec3d4c946ea9f8dc46934752109719b30cf2a4a334a967efd816b98",
+    "dist/assets/photo-metadata-C4LCakY5.js": "fc703751facc8aff2157bcdbea25809f89012cd0fb2e45352fc6143dd26842b8",
+    "dist/assets/photo-upload-BdK-2ETX.js": "bd58712fd0816ad4d8ee4ea01d2980b2dbbe42ab02d96654143708c440fc04dd",
+    "dist/assets/photo-upload-D3qsjY-Z.js": "1de2c1eee788a4526bb67f14855ac8ed402918737f5d201d8beb9a6942487f3d",
+    "dist/assets/photo-viewer-B3qSbdL8.js": "087e99e81034fac59def74be42f22c27db01cd873a57d8177be8351d9381825c",
+    "dist/assets/pie-WAS4IAKB-Bc6NBkJ7.js": "977854a301a611214afdb53350c13e005af10e6f4a85719bf4e41efd9ad1c619",
+    "dist/assets/pieDiagram-E7YTZNPT-BIJcM5Ki.js": "b6df62464c6efb8c7d3ae667a2841b6d35516c4da0bb0c5df21c4206f483d7aa",
+    "dist/assets/place-field-Dos0F_rP.js": "d544333abe253715916587df1b1f11104903d62149a4e307083dec7903f13968",
+    "dist/assets/places-map-BqkJfxkf.js": "b979433b6f953a27c35bca65d2baa9ca9d52819839d7c2965a73e8cfb14eab31",
+    "dist/assets/places-map-vh-t_kPv.css": "86d3d093fad979e1d185c8a93258f5f124d863fd13ca894c0b9f50bb68b66997",
+    "dist/assets/plus-BtzX1mbl.js": "55a2031ef025047be2f725e631969ed7d4c406319f3c1569833b4737f2cfacc1",
+    "dist/assets/preload-helper-CqwWvUnY.js": "907e45861b947d1c8db89f8c6638463289665d44e27701a20534bb345370f06c",
+    "dist/assets/public-people-D4SqjLdg.js": "c98c83f2b85e9bcf4d9d7c946e90d351d16a1b327bfb5bba2c5872ee47b53f3f",
+    "dist/assets/purify.es-DmVU2mR8.js": "c5ee06282977e2e295e7bb1c35a1bba0cea6153e16017af33639a02d9766a926",
+    "dist/assets/quadrantDiagram-AXDQQJYC-DotsjmOj.js": "e0e473d9b919bc15d66ae5c35bc7b92beb680b6f7ca4a06bb43e1f4d0415d5bd",
+    "dist/assets/radar-RG4KPBEZ-BRF2Iy4F.js": "718979adafaa0e622e61b444fb4dae2d4ca3055ad8146c0a74c4bdf6bc69cb7d",
+    "dist/assets/railroad-74A4TZTK-CgdQazAW.js": "8364823c3970765f4e1c51944b30a1e2cdfbe8ba033f2419d685c6fca022dd1e",
+    "dist/assets/railroad-abnf-HS5TGJTU-DvpRawdZ.js": "69fe0bee80e57c6dbb196c4d2458ce4405556e25aa7d7f1f405530f63950a20b",
+    "dist/assets/railroad-ebnf-LZEXJU2U-D2k1AYMn.js": "b5fd6c751c9e1b42859450a393903ef4e844e7e880e6ad75ff3422f47ea10041",
+    "dist/assets/railroad-peg-WCYAUIDC-xgfcg3Bn.js": "a7501936b6d112d704393694febd130cbbeed3e6fcebea01f295f1977d2dd0bd",
+    "dist/assets/railroadDiagram-O6MQD6OU-ByAsHgQt.js": "e9d7a382c4bd2e433b85360ae3f30e1fa99e161c2ad428dc900c95c289a7b5eb",
+    "dist/assets/requirementDiagram-BXWQKSXE-fagw89YW.js": "e8d5fb9e7a7cb0d96e9c76a26b84cb4e7ddcdff1f8aa0c93e1bfec263133b702",
+    "dist/assets/research-resources-page-DCDo9rCz.css": "794e8a2093d08ff8dca44aa8139f36fa72b220cbc812f49d431ccfd2ec08f1c5",
+    "dist/assets/research-resources-page-sKUv9na3.js": "6e6d3319e3bc00b17fcc81a74f06539f4344af69f75d8d4b9ff7d80da119d82b",
+    "dist/assets/rolldown-runtime-hePW80VL.js": "580ad8c58061a4dde99bde0a56905e382f0568516ee2f5b84dbfb52085709021",
+    "dist/assets/rough.esm-Dy-Kn_BL.js": "ef405c5eaa3316c75428f63ec698e39993bdcc2da358dbc7ebd355d18901f63f",
+    "dist/assets/sankeyDiagram-P5KCCOFB-TpwebKDD.js": "d75ab84a0c7454ad2129b17a3c02db961311ea9d8142fd2c47ec3fb3c38a7cdb",
+    "dist/assets/scan-face-FlT61Nko.js": "4d62b9d7cd39f0c724e60cc8272f3cc2e78d5e32e7a89c601cbe8530eb2375fb",
+    "dist/assets/send-CzCs0DSD.js": "f7b6c9ad045f4b4ad8d2d2a8b0f19b9cf553108d09ad803cf73433aea71a8c36",
+    "dist/assets/sequenceDiagram-WJ2MYXX4-BL3MzrSP.js": "aa7f5dc2e91cd154e5615ac47d2598e1dd95829f9af12b471d789d212a77e9f2",
+    "dist/assets/shared-tree-BKXsXTB2.js": "e15eea681bdc685c7f33e9da62cc9ab6a1f4e6056b33e31c4de877d4fe58ab4b",
+    "dist/assets/shield-check-BL6AZpUx.js": "80f372451a44e10d79ffa5b3c1f33c4b9ae22e36ee9bf7181e5fb9f7667e1eaa",
+    "dist/assets/sizeCapture-INFHLROL-B0uUizjq.js": "a72637dd3244cfb0f1b1ef936e53a5c642dbb29bc5de087acc4abbc69f283523",
+    "dist/assets/src-B-DeWB10.js": "e852c8cb4e0f18b47e52481384c8bddecbd866b863e2023826dedb4a38146d27",
+    "dist/assets/src-D6_zRfqR.js": "d8a6fb9096b23c43eae18ce9d4c1582d2911068d4b81e735032be988b89528bc",
+    "dist/assets/stateDiagram-D77RDMKH-BXRW2XF8.js": "d16510b6e9dbbe97c5aae883029bc6236fa05e56f0364aa8e4f96d2d0721a9ad",
+    "dist/assets/stateDiagram-v2-MP3YSRHH-CGuubM-N.js": "440f0353e7dfe8e09545eb2c0de6ba70f0a285e4af9f1c27ec49d91b44d76915",
+    "dist/assets/swimlanes-42K2YHIH-Ci8w2iKi.js": "0be172ee503be938d39bd0690ec7ec4caaacbd7485685e52ea01a02d64a0b608",
+    "dist/assets/swimlanesDiagram-VR7AAH4N--zTB28Ha.js": "996b2f8054d62ddd75d982a76ed58a3f578b7495039560285939fb4b62461872",
+    "dist/assets/timeline-definition-24CTP7MA-pzT6RJXd.js": "9d12c10637d357291d66f9a850f338e7f164d5917139a34f78fcdc7fa03c17ca",
+    "dist/assets/trash-DkUI-vNs.js": "1bfc2879012ebf4ddc81aaf7ee662c64a976c3e13d54426c3d4f61acde930b7d",
+    "dist/assets/tree-export-dialog-Ba2Fwiob.css": "85726e07389d37a0035f925c2a594975970241695ebddad0300986288bd61439",
+    "dist/assets/tree-export-dialog-fHFAX8AY.js": "58fac669d6c617c0803d3dc70cb5832af236c2d772d8643b6cdd246c0909f3fa",
+    "dist/assets/tree-export-model-zz57fudD.js": "2ff0f8c325942b3a239b4737d50642d9cea95fcb96be8f8f41a62e844878f085",
+    "dist/assets/tree-pdf-DoDvMlMz.js": "2e9effeb54afa2ab2f373b8ef0e2ed6061186bb6f7e032ab0b0bffe73b2a4113",
+    "dist/assets/treeView-Q6P3EWNA-6_Tb8k_A.js": "db1af46c4bcddd15e85c730a925294e03cda576b37f3a3cf26c4d088ab0a3530",
+    "dist/assets/treemap-WGGIJYW6-C0xVnEvz.js": "d9c676ff83e84655b0a68507e006cb91a98f7bd166149163def4d2adf8b98362",
+    "dist/assets/triangle-alert-ClNPHjAp.js": "13c7bcdefabc9e9b9bff25d7ddaf0f74738bb6b41d8b1e445fd883d808f76f73",
+    "dist/assets/use-photo-swipe-DZL-uBbk.js": "ba831bc3eeb0070dc6d7b1260d99e6be8c7d74bbbaf6380eb8699e3b91198468",
+    "dist/assets/useUnsavedChanges-ha7dU5U4.js": "51637cb75a6b67f3d563e590193c4eeffc3cbdf937f755f90f50e5dbda796bcb",
+    "dist/assets/user-round-QdDEmbbb.js": "bd81504b81402dd78e9cfe6be18212009e2b978365d9d06f0173c0f7575de3e1",
+    "dist/assets/value-DcGlvoTp.js": "4f35ae716fae5a0004fbcdf389d7e722be176decb2f1150f54ef58ded3c0749c",
+    "dist/assets/vennDiagram-4TSXK5OY-CqZ-2Kge.js": "b62be7ae4766a8dbb2ef1bed28faf082177f5dd3c6912ee164f8b28801b567c0",
+    "dist/assets/wardley-WFR3VGLG-BHYM51vL.js": "a33fba62e0564d8fe316989002df7ba770c68978b6cfbb6987cbefbb563e3268",
+    "dist/assets/wardleyDiagram-VM6X3IG4-CSNJBN62.js": "ae49a9165ce77ebe99c97caf51737cf6e1a0a6749ee5ef8fc08ff605905d564b",
+    "dist/assets/webcomponents-bundle-IOKbOeYR.js": "5238d4f14e2f26fa96496caff7f6a3870eb45f319f04741a794d52f2dfbfd638",
+    "dist/assets/x-Doh82L4o.js": "61a4841e9c9bd3d3118ab86bb2aa1a10db70a7e8e837cb3015cc1bba9977a908",
+    "dist/assets/xychartDiagram-S5SC5T6Z-DAKHF05V.js": "8a3f0056333689d776371de9195d466353c6693ef77a3154bbdeda9dbe312d87",
+    "dist/bookreader-frame.html": "a3edfdc5047a1cd66fafbeb2c607aabfefce1661039619d05e86d6fa002860dc",
+    "dist/index.html": "d78099c961c15b5553efd1e4448016264e7618228874f468a97b2feac68f9ac8"
+  },
+  "fixture": {
+    "people": 3313,
+    "seed": 5,
+    "generations": 12,
+    "synthetic": true,
+    "dates": "birth=1750+parentDepth*20+(archiveIndex%7), January 1; no recorded deaths"
+  },
+  "device": {
+    "browser": "155.0.8059.26",
+    "gpu": [
+      {
+        "vendorId": 4318,
+        "deviceId": 7041,
+        "subSysId": 2241335363,
+        "revision": 161,
+        "vendorString": "",
+        "deviceString": "NVIDIA GeForce GTX 1070",
+        "driverVendor": "NVIDIA",
+        "driverVersion": "32.0.15.7247"
+      },
+      {
+        "vendorId": 5140,
+        "deviceId": 140,
+        "subSysId": 0,
+        "revision": 0,
+        "vendorString": "",
+        "deviceString": "Microsoft Basic Render Driver",
+        "driverVendor": "",
+        "driverVersion": "10.0.19041.4355"
+      }
+    ],
+    "features": {
+      "2d_canvas": "enabled",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "enabled",
+      "multiple_raster_threads": "enabled_on",
+      "opengl": "enabled_on",
+      "rasterization": "unavailable_off",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "disabled_off",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "enabled",
+      "video_encode": "enabled",
+      "webgl": "enabled",
+      "webgpu": "enabled",
+      "webnn": "disabled_off"
+    },
+    "gpuAuxiliary": {
+      "amdSwitchable": false,
+      "bgra8OverlaySupport": "NONE",
+      "canSupportThreadedTextureMailbox": false,
+      "directComposition": false,
+      "directMLFeatureLevel": "Not supported",
+      "directRenderingVersion": "",
+      "displayType": "ANGLE_VULKAN",
+      "dx12FeatureLevel": "Not supported",
+      "glExtensions": "GL_AMD_performance_monitor GL_ANGLE_base_vertex_base_instance_shader_builtin GL_ANGLE_blob_cache GL_ANGLE_client_arrays GL_ANGLE_copy_texture_3d GL_ANGLE_depth_texture GL_ANGLE_framebuffer_blit GL_ANGLE_framebuffer_multisample GL_ANGLE_get_image GL_ANGLE_get_serialized_context_string GL_ANGLE_get_tex_level_parameter GL_ANGLE_instanced_arrays GL_ANGLE_logic_op GL_ANGLE_memory_object_flags GL_ANGLE_memory_size GL_ANGLE_multi_draw GL_ANGLE_pack_reverse_row_order GL_ANGLE_polygon_mode GL_ANGLE_program_binary_readiness_query GL_ANGLE_program_cache_control GL_ANGLE_read_only_depth_stencil_feedback_loops GL_ANGLE_relaxed_vertex_attribute_type GL_ANGLE_renderability_validation GL_ANGLE_request_extension GL_ANGLE_rgbx_internal_format GL_ANGLE_robust_client_memory GL_ANGLE_robust_fragment_shader_output GL_ANGLE_shader_pixel_local_storage GL_ANGLE_shader_pixel_local_storage_coherent GL_ANGLE_stencil_texturing GL_ANGLE_texture_compression_dxt3 GL_ANGLE_texture_compression_dxt5 GL_ANGLE_texture_multisample GL_ANGLE_texture_usage GL_ANGLE_translated_shader_source GL_ANGLE_vulkan_image GL_ANGLE_yuv_internal_format GL_ARM_rgba8 GL_ARM_shader_framebuffer_fetch GL_CHROMIUM_bind_generates_resource GL_CHROMIUM_bind_uniform_location GL_CHROMIUM_copy_compressed_texture GL_CHROMIUM_copy_texture GL_CHROMIUM_lose_context GL_EXT_EGL_image_array GL_EXT_EGL_image_external_wrap_modes GL_EXT_EGL_image_storage GL_EXT_base_instance GL_EXT_blend_func_extended GL_EXT_blend_minmax GL_EXT_buffer_storage GL_EXT_clear_texture GL_EXT_clip_control GL_EXT_color_buffer_float GL_EXT_color_buffer_half_float GL_EXT_compressed_ETC1_RGB8_sub_texture GL_EXT_conservative_depth GL_EXT_copy_image GL_EXT_debug_label GL_EXT_debug_marker GL_EXT_depth_clamp GL_EXT_discard_framebuffer GL_EXT_disjoint_timer_query GL_EXT_draw_buffers GL_EXT_draw_buffers_indexed GL_EXT_draw_elements_base_vertex GL_EXT_float_blend GL_EXT_frag_depth GL_EXT_instanced_arrays GL_EXT_map_buffer_range GL_EXT_memory_object GL_EXT_multisample_compatibility GL_EXT_occlusion_query_boolean GL_EXT_polygon_offset_clamp GL_EXT_read_format_bgra GL_EXT_render_snorm GL_EXT_robustness GL_EXT_sRGB GL_EXT_sRGB_write_control GL_EXT_semaphore GL_EXT_separate_shader_objects GL_EXT_shader_framebuffer_fetch GL_EXT_shader_framebuffer_fetch_non_coherent GL_EXT_shader_non_constant_global_initializers GL_EXT_shader_texture_lod GL_EXT_shadow_samplers GL_EXT_texture_border_clamp GL_EXT_texture_compression_bptc GL_EXT_texture_compression_dxt1 GL_EXT_texture_compression_rgtc GL_EXT_texture_compression_s3tc_srgb GL_EXT_texture_filter_anisotropic GL_EXT_texture_format_BGRA8888 GL_EXT_texture_lod_bias GL_EXT_texture_mirror_clamp_to_edge GL_EXT_texture_norm16 GL_EXT_texture_rg GL_EXT_texture_sRGB_R8 GL_EXT_texture_sRGB_decode GL_EXT_texture_shadow_lod GL_EXT_texture_storage GL_EXT_texture_type_2_10_10_10_REV GL_EXT_unpack_subimage GL_KHR_blend_equation_advanced GL_KHR_blend_equation_advanced_coherent GL_KHR_debug GL_KHR_robustness GL_NV_fence GL_NV_framebuffer_blit GL_NV_pack_subimage GL_NV_pixel_buffer_object GL_NV_polygon_mode GL_NV_read_depth GL_NV_read_depth_stencil GL_NV_read_stencil GL_NV_shader_noperspective_interpolation GL_OES_EGL_image GL_OES_EGL_image_external GL_OES_EGL_image_external_essl3 GL_OES_EGL_sync GL_OES_compressed_ETC1_RGB8_texture GL_OES_compressed_paletted_texture GL_OES_copy_image GL_OES_depth24 GL_OES_depth32 GL_OES_depth_texture GL_OES_depth_texture_cube_map GL_OES_draw_buffers_indexed GL_OES_draw_elements_base_vertex GL_OES_element_index_uint GL_OES_fbo_render_mipmap GL_OES_get_program_binary GL_OES_mapbuffer GL_OES_packed_depth_stencil GL_OES_required_internalformat GL_OES_rgb8_rgba8 GL_OES_sample_shading GL_OES_sample_variables GL_OES_shader_multisample_interpolation GL_OES_standard_derivatives GL_OES_surfaceless_context GL_OES_texture_3D GL_OES_texture_border_clamp GL_OES_texture_float GL_OES_texture_float_linear GL_OES_texture_half_float GL_OES_texture_half_float_linear GL_OES_texture_npot GL_OES_texture_stencil8 GL_OES_texture_storage_multisample_2d_array GL_OES_vertex_array_object GL_OES_vertex_half_float GL_OES_vertex_type_10_10_10_2 GL_OVR_multiview GL_OVR_multiview2 GL_QCOM_texture_lod_bias ",
+      "glImplementationParts": "(gl=egl-angle,angle=vulkan)",
+      "glRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA-572.47.0.0)",
+      "glResetNotificationStrategy": 33362,
+      "glVendor": "Google Inc. (NVIDIA)",
+      "glVersion": "OpenGL ES 3.0 (ANGLE 2.1.28853 git hash: 170484eea03a)",
+      "glWsExtensions": "EGL_EXT_create_context_robustness EGL_ANGLE_surface_orientation EGL_KHR_create_context EGL_KHR_image EGL_KHR_image_base EGL_EXT_image_gl_colorspace EGL_KHR_gl_colorspace EGL_KHR_gl_texture_2D_image EGL_KHR_gl_texture_cubemap_image EGL_KHR_gl_texture_3D_image EGL_KHR_gl_renderbuffer_image EGL_KHR_get_all_proc_addresses EGL_KHR_fence_sync EGL_KHR_wait_sync EGL_ANGLE_create_context_webgl_compatibility EGL_CHROMIUM_create_context_bind_generates_resource EGL_KHR_swap_buffers_with_damage EGL_EXT_pixel_format_float EGL_KHR_surfaceless_context EGL_ANGLE_display_texture_share_group EGL_ANGLE_display_semaphore_share_group EGL_ANGLE_create_context_client_arrays EGL_ANGLE_program_cache_control EGL_ANGLE_robust_resource_initialization EGL_ANGLE_create_context_extensions_enabled EGL_ANDROID_blob_cache EGL_ANDROID_recordable EGL_ANGLE_create_context_backwards_compatible EGL_KHR_no_config_context EGL_IMG_context_priority EGL_KHR_create_context_no_error EGL_KHR_reusable_sync EGL_EXT_buffer_age EGL_ANGLE_create_surface_swap_interval EGL_ANGLE_vulkan_image EGL_KHR_partial_update EGL_ANGLE_global_fence_sync EGL_ANGLE_memory_usage_report ",
+      "glWsVendor": "Google Inc. (NVIDIA)",
+      "glWsVersion": "1.5 (ANGLE 2.1.28853 git hash: 170484eea03a)",
+      "inProcessGpu": false,
+      "initializationTime": 0.339463,
+      "isAsan": false,
+      "isClangCoverage": false,
+      "jpegDecodeAcceleratorSupported": false,
+      "maxMsaaSamples": "8",
+      "nv12OverlaySupport": "NONE",
+      "optimus": false,
+      "p010OverlaySupport": "NONE",
+      "passthroughCmdDecoder": true,
+      "pixelShaderVersion": "3.00",
+      "processCrashCount": 0,
+      "rgb10a2OverlaySupport": "NONE",
+      "sandboxed": false,
+      "skiaBackendType": "GaneshGL",
+      "subpixelFontRendering": true,
+      "supportsD3dSharedImages": false,
+      "supportsDirectML": false,
+      "supportsDx12": false,
+      "supportsOverlays": false,
+      "supportsVulkan": false,
+      "targetCpuBits": 64,
+      "vertexShaderVersion": "3.00",
+      "visibilityCallbackCallCount": 0,
+      "vulkanVersion": "Not supported",
+      "yuy2OverlaySupport": "NONE"
+    },
+    "project": "desktop",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "cpuThrottle": 4,
+    "angle": "vulkan",
+    "node": "v22.14.0",
+    "cpu": "AMD Ryzen 9 5950X 16-Core Processor            ",
+    "logicalCpus": 32,
+    "totalMemoryBytes": 68629217280
+  },
+  "deviceProvenance": "Same Chrome155/Vulkan/CPU4 host and benchmark configuration as preceding977 run; copied metadata, not a new query.",
+  "gestureSamples": {
+    "horizontalPerDirection": 8,
+    "vertical": 16,
+    "pacingMs": 32
+  },
+  "method": "Exact completed JSON lines from failed baseline. Vertical phase did not finish; not a successful acceptance result. No input hash emitted before timeout. Runtime/build hashes captured after process ended, before candidate edits/build.",
+  "phases": [
+    {
+      "phase": "tree-ready",
+      "measuredMs": null,
+      "ScriptDurationMs": 0,
+      "TaskDurationMs": 0,
+      "LayoutDurationMs": 0,
+      "RecalcStyleDurationMs": 0,
+      "layoutCount": 0,
+      "styleCount": 0,
+      "mainThreadHeapBytes": 161566236,
+      "frames": {
+        "count": 671,
+        "p95Ms": 83.40000000000009,
+        "maxMs": 3819.7999999999993,
+        "over50Ms": 71
+      },
+      "longTasks": [
+        {
+          "startTime": 96.5,
+          "duration": 91
+        },
+        {
+          "startTime": 192.80000007152557,
+          "duration": 68
+        },
+        {
+          "startTime": 591.6000000238419,
+          "duration": 80
+        },
+        {
+          "startTime": 746.6000000238419,
+          "duration": 134
+        },
+        {
+          "startTime": 887.8000000715256,
+          "duration": 648
+        },
+        {
+          "startTime": 1597.8000000715256,
+          "duration": 90
+        },
+        {
+          "startTime": 1761,
+          "duration": 99
+        },
+        {
+          "startTime": 1883.3000000715256,
+          "duration": 106
+        },
+        {
+          "startTime": 2011.8999999761581,
+          "duration": 99
+        },
+        {
+          "startTime": 2131.8000000715256,
+          "duration": 95
+        },
+        {
+          "startTime": 2263.3000000715256,
+          "duration": 97
+        },
+        {
+          "startTime": 2380.399999976158,
+          "duration": 99
+        },
+        {
+          "startTime": 2498.100000023842,
+          "duration": 108
+        },
+        {
+          "startTime": 2626.7000000476837,
+          "duration": 88
+        },
+        {
+          "startTime": 2736.2000000476837,
+          "duration": 82
+        },
+        {
+          "startTime": 2849.600000023842,
+          "duration": 80
+        },
+        {
+          "startTime": 2948.7000000476837,
+          "duration": 76
+        },
+        {
+          "startTime": 3047,
+          "duration": 108
+        },
+        {
+          "startTime": 3171.399999976158,
+          "duration": 75
+        },
+        {
+          "startTime": 3276.399999976158,
+          "duration": 72
+        },
+        {
+          "startTime": 3377.100000023842,
+          "duration": 73
+        },
+        {
+          "startTime": 3467.399999976158,
+          "duration": 66
+        },
+        {
+          "startTime": 3550,
+          "duration": 80
+        },
+        {
+          "startTime": 3645.3000000715256,
+          "duration": 81
+        },
+        {
+          "startTime": 3744.8000000715256,
+          "duration": 88
+        },
+        {
+          "startTime": 3843.2000000476837,
+          "duration": 117
+        },
+        {
+          "startTime": 3961.899999976158,
+          "duration": 75
+        },
+        {
+          "startTime": 8010.600000023842,
+          "duration": 204
+        },
+        {
+          "startTime": 8224.800000071526,
+          "duration": 835
+        },
+        {
+          "startTime": 9076.5,
+          "duration": 512
+        },
+        {
+          "startTime": 9855.5,
+          "duration": 61
+        },
+        {
+          "startTime": 10049.100000023842,
+          "duration": 81
+        },
+        {
+          "startTime": 10666.899999976158,
+          "duration": 56
+        },
+        {
+          "startTime": 11344,
+          "duration": 50
+        },
+        {
+          "startTime": 11421,
+          "duration": 54
+        },
+        {
+          "startTime": 11523.200000047684,
+          "duration": 53
+        },
+        {
+          "startTime": 11612.399999976158,
+          "duration": 59
+        },
+        {
+          "startTime": 11700.5,
+          "duration": 55
+        },
+        {
+          "startTime": 11858.399999976158,
+          "duration": 55
+        },
+        {
+          "startTime": 11943.399999976158,
+          "duration": 57
+        },
+        {
+          "startTime": 12041.700000047684,
+          "duration": 55
+        },
+        {
+          "startTime": 12139.5,
+          "duration": 62
+        },
+        {
+          "startTime": 12233.200000047684,
+          "duration": 55
+        },
+        {
+          "startTime": 12315.100000023842,
+          "duration": 351
+        },
+        {
+          "startTime": 12675.300000071526,
+          "duration": 68
+        },
+        {
+          "startTime": 12774,
+          "duration": 125
+        },
+        {
+          "startTime": 12914.100000023842,
+          "duration": 60
+        },
+        {
+          "startTime": 13024.600000023842,
+          "duration": 60
+        },
+        {
+          "startTime": 13123.800000071526,
+          "duration": 61
+        },
+        {
+          "startTime": 13214.700000047684,
+          "duration": 52
+        },
+        {
+          "startTime": 13293.800000071526,
+          "duration": 52
+        },
+        {
+          "startTime": 13373.700000047684,
+          "duration": 53
+        },
+        {
+          "startTime": 13455,
+          "duration": 3622
+        },
+        {
+          "startTime": 17083.5,
+          "duration": 153
+        },
+        {
+          "startTime": 17315.399999976158,
+          "duration": 83
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1180,
+      "pendingMedia": 0,
+      "peakPendingMedia": 12,
+      "mediaFailures": 0,
+      "eligiblePeopleAtYear": null
+    },
+    {
+      "phase": "enter-sparse-timeline",
+      "measuredMs": 12538.5,
+      "ScriptDurationMs": 3253.9480000000012,
+      "TaskDurationMs": 12507.551000000003,
+      "LayoutDurationMs": 624.4739999999999,
+      "RecalcStyleDurationMs": 4844.637,
+      "layoutCount": 8,
+      "styleCount": 9,
+      "mainThreadHeapBytes": 82347620,
+      "frames": {
+        "count": 12,
+        "p95Ms": 8073.200000000001,
+        "maxMs": 8073.200000000001,
+        "over50Ms": 6
+      },
+      "longTasks": [
+        {
+          "startTime": 24357.100000023842,
+          "duration": 5152
+        },
+        {
+          "startTime": 29509.899999976158,
+          "duration": 2938
+        },
+        {
+          "startTime": 32454.300000071526,
+          "duration": 59
+        },
+        {
+          "startTime": 32543.800000071526,
+          "duration": 2799
+        },
+        {
+          "startTime": 35356.200000047684,
+          "duration": 848
+        },
+        {
+          "startTime": 36396,
+          "duration": 54
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1182,
+      "pendingMedia": 0,
+      "peakPendingMedia": 12,
+      "mediaFailures": 0,
+      "year": 1750,
+      "domNodes": 23334,
+      "timelineDomNodes": 100,
+      "mountedRows": 2,
+      "mountedActiveRows": 2,
+      "exitingRows": 0,
+      "screenRows": 2,
+      "screenPersonIds": [
+        "f-0",
+        "f-7"
+      ],
+      "mountedEvents": 2,
+      "visiblePortraits": 2,
+      "loadedVisiblePortraits": 2,
+      "summary": "2 человека · 2 события",
+      "scrollLeft": 120,
+      "scrollTop": 0,
+      "scrollHeight": 586,
+      "scrollWidth": 4712,
+      "viewport": {
+        "width": 1280,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 2
+    },
+    {
+      "phase": "sparse-year-settled",
+      "measuredMs": null,
+      "ScriptDurationMs": 0,
+      "TaskDurationMs": 0,
+      "LayoutDurationMs": 0,
+      "RecalcStyleDurationMs": 0,
+      "layoutCount": 0,
+      "styleCount": 0,
+      "mainThreadHeapBytes": 82415772,
+      "frames": {
+        "count": 35,
+        "p95Ms": 2902.7000000000007,
+        "maxMs": 8073.200000000001,
+        "over50Ms": 6
+      },
+      "longTasks": [
+        {
+          "startTime": 24357.100000023842,
+          "duration": 5152
+        },
+        {
+          "startTime": 29509.899999976158,
+          "duration": 2938
+        },
+        {
+          "startTime": 32454.300000071526,
+          "duration": 59
+        },
+        {
+          "startTime": 32543.800000071526,
+          "duration": 2799
+        },
+        {
+          "startTime": 35356.200000047684,
+          "duration": 848
+        },
+        {
+          "startTime": 36396,
+          "duration": 54
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1182,
+      "pendingMedia": 0,
+      "peakPendingMedia": 12,
+      "mediaFailures": 0,
+      "year": 1750,
+      "domNodes": 23334,
+      "timelineDomNodes": 100,
+      "mountedRows": 2,
+      "mountedActiveRows": 2,
+      "exitingRows": 0,
+      "screenRows": 2,
+      "screenPersonIds": [
+        "f-0",
+        "f-7"
+      ],
+      "mountedEvents": 2,
+      "visiblePortraits": 2,
+      "loadedVisiblePortraits": 2,
+      "summary": "2 человека · 2 события",
+      "scrollLeft": 120,
+      "scrollTop": 0,
+      "scrollHeight": 586,
+      "scrollWidth": 4712,
+      "viewport": {
+        "width": 1280,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 2
+    },
+    {
+      "phase": "jump-year-2020",
+      "measuredMs": 34862.300000071526,
+      "ScriptDurationMs": 9600.74,
+      "TaskDurationMs": 34815.789,
+      "LayoutDurationMs": 2861.949,
+      "RecalcStyleDurationMs": 5627.335999999999,
+      "layoutCount": 6,
+      "styleCount": 6,
+      "mainThreadHeapBytes": 120652796,
+      "frames": {
+        "count": 12,
+        "p95Ms": 19382.1,
+        "maxMs": 19382.1,
+        "over50Ms": 9
+      },
+      "longTasks": [
+        {
+          "startTime": 37463.60000002384,
+          "duration": 1707
+        },
+        {
+          "startTime": 39187.10000002384,
+          "duration": 113
+        },
+        {
+          "startTime": 39301.700000047684,
+          "duration": 54
+        },
+        {
+          "startTime": 39356.700000047684,
+          "duration": 831
+        },
+        {
+          "startTime": 40436.10000002384,
+          "duration": 13771
+        },
+        {
+          "startTime": 54207.700000047684,
+          "duration": 6132
+        },
+        {
+          "startTime": 60440,
+          "duration": 2591
+        },
+        {
+          "startTime": 63121.200000047684,
+          "duration": 3282
+        },
+        {
+          "startTime": 66408.20000004768,
+          "duration": 3146
+        },
+        {
+          "startTime": 69557.60000002384,
+          "duration": 2558
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1208,
+      "pendingMedia": 0,
+      "peakPendingMedia": 25,
+      "mediaFailures": 0,
+      "year": 2020,
+      "domNodes": 89554,
+      "timelineDomNodes": 66320,
+      "mountedRows": 3313,
+      "mountedActiveRows": 3313,
+      "exitingRows": 0,
+      "screenRows": 8,
+      "screenPersonIds": [
+        "f-0",
+        "f-7",
+        "f-1",
+        "f-8",
+        "f-2",
+        "f-9",
+        "f-10",
+        "f-3"
+      ],
+      "mountedEvents": 3313,
+      "visiblePortraits": 8,
+      "loadedVisiblePortraits": 8,
+      "summary": "3313 человек · 0 событий",
+      "scrollLeft": 3360,
+      "scrollTop": 0,
+      "scrollHeight": 212162,
+      "scrollWidth": 4712,
+      "viewport": {
+        "width": 1280,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 3313
+    },
+    {
+      "phase": "full-year-2020-settled",
+      "measuredMs": null,
+      "ScriptDurationMs": 0,
+      "TaskDurationMs": 0,
+      "LayoutDurationMs": 0,
+      "RecalcStyleDurationMs": 0,
+      "layoutCount": 0,
+      "styleCount": 0,
+      "mainThreadHeapBytes": 121017904,
+      "frames": {
+        "count": 21,
+        "p95Ms": 5688,
+        "maxMs": 19382.1,
+        "over50Ms": 13
+      },
+      "longTasks": [
+        {
+          "startTime": 37463.60000002384,
+          "duration": 1707
+        },
+        {
+          "startTime": 39187.10000002384,
+          "duration": 113
+        },
+        {
+          "startTime": 39301.700000047684,
+          "duration": 54
+        },
+        {
+          "startTime": 39356.700000047684,
+          "duration": 831
+        },
+        {
+          "startTime": 40436.10000002384,
+          "duration": 13771
+        },
+        {
+          "startTime": 54207.700000047684,
+          "duration": 6132
+        },
+        {
+          "startTime": 60440,
+          "duration": 2591
+        },
+        {
+          "startTime": 63121.200000047684,
+          "duration": 3282
+        },
+        {
+          "startTime": 66408.20000004768,
+          "duration": 3146
+        },
+        {
+          "startTime": 69557.60000002384,
+          "duration": 2558
+        },
+        {
+          "startTime": 72549.30000007153,
+          "duration": 485
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1208,
+      "pendingMedia": 0,
+      "peakPendingMedia": 25,
+      "mediaFailures": 0,
+      "year": 2020,
+      "domNodes": 89554,
+      "timelineDomNodes": 66320,
+      "mountedRows": 3313,
+      "mountedActiveRows": 3313,
+      "exitingRows": 0,
+      "screenRows": 8,
+      "screenPersonIds": [
+        "f-0",
+        "f-7",
+        "f-1",
+        "f-8",
+        "f-2",
+        "f-9",
+        "f-10",
+        "f-3"
+      ],
+      "mountedEvents": 3313,
+      "visiblePortraits": 8,
+      "loadedVisiblePortraits": 8,
+      "summary": "3313 человек · 0 событий",
+      "scrollLeft": 3360,
+      "scrollTop": 0,
+      "scrollHeight": 212162,
+      "scrollWidth": 4712,
+      "viewport": {
+        "width": 1280,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 3313
+    },
+    {
+      "phase": "horizontal-years",
+      "measuredMs": 306918.3000000715,
+      "ScriptDurationMs": 36246.537000000004,
+      "TaskDurationMs": 306909.78700000007,
+      "LayoutDurationMs": 14019.532000000001,
+      "RecalcStyleDurationMs": 85147.70300000001,
+      "layoutCount": 35,
+      "styleCount": 59,
+      "mainThreadHeapBytes": 147388744,
+      "frames": {
+        "count": 40,
+        "p95Ms": 13110.899999999994,
+        "maxMs": 79546.90000000002,
+        "over50Ms": 33
+      },
+      "longTasks": [
+        {
+          "startTime": 74663.70000004768,
+          "duration": 9352
+        },
+        {
+          "startTime": 84016.39999997616,
+          "duration": 2847
+        },
+        {
+          "startTime": 86864.10000002384,
+          "duration": 4147
+        },
+        {
+          "startTime": 91018.30000007153,
+          "duration": 8376
+        },
+        {
+          "startTime": 99396,
+          "duration": 3152
+        },
+        {
+          "startTime": 102548.60000002384,
+          "duration": 4405
+        },
+        {
+          "startTime": 106955.89999997616,
+          "duration": 9099
+        },
+        {
+          "startTime": 116056.39999997616,
+          "duration": 2543
+        },
+        {
+          "startTime": 118600.10000002384,
+          "duration": 9383
+        },
+        {
+          "startTime": 127986.89999997616,
+          "duration": 132
+        },
+        {
+          "startTime": 128119.10000002384,
+          "duration": 8383
+        },
+        {
+          "startTime": 136504.39999997616,
+          "duration": 8771
+        },
+        {
+          "startTime": 145277,
+          "duration": 4252
+        },
+        {
+          "startTime": 149532.30000007153,
+          "duration": 9164
+        },
+        {
+          "startTime": 158702.89999997616,
+          "duration": 4735
+        },
+        {
+          "startTime": 163438.39999997616,
+          "duration": 2815
+        },
+        {
+          "startTime": 166255.39999997616,
+          "duration": 58
+        },
+        {
+          "startTime": 166319.80000007153,
+          "duration": 5323
+        },
+        {
+          "startTime": 171644.70000004768,
+          "duration": 4405
+        },
+        {
+          "startTime": 176050.70000004768,
+          "duration": 2732
+        },
+        {
+          "startTime": 178799.10000002384,
+          "duration": 5311
+        },
+        {
+          "startTime": 184116.80000007153,
+          "duration": 3681
+        },
+        {
+          "startTime": 187798.89999997616,
+          "duration": 2120
+        },
+        {
+          "startTime": 189955.5,
+          "duration": 4295
+        },
+        {
+          "startTime": 194258.70000004768,
+          "duration": 3310
+        },
+        {
+          "startTime": 197569.89999997616,
+          "duration": 2059
+        },
+        {
+          "startTime": 199640,
+          "duration": 4024
+        },
+        {
+          "startTime": 203671.30000007153,
+          "duration": 3133
+        },
+        {
+          "startTime": 206805.10000002384,
+          "duration": 1769
+        },
+        {
+          "startTime": 208598.60000002384,
+          "duration": 3648
+        },
+        {
+          "startTime": 212248.10000002384,
+          "duration": 1277
+        },
+        {
+          "startTime": 213525.70000004768,
+          "duration": 1523
+        },
+        {
+          "startTime": 215056,
+          "duration": 863
+        },
+        {
+          "startTime": 215920,
+          "duration": 3628
+        },
+        {
+          "startTime": 219555.20000004768,
+          "duration": 4301
+        },
+        {
+          "startTime": 223856.60000002384,
+          "duration": 2348
+        },
+        {
+          "startTime": 226212.80000007153,
+          "duration": 1315
+        },
+        {
+          "startTime": 227528.30000007153,
+          "duration": 4505
+        },
+        {
+          "startTime": 232040,
+          "duration": 4102
+        },
+        {
+          "startTime": 236142.39999997616,
+          "duration": 2406
+        },
+        {
+          "startTime": 238563.70000004768,
+          "duration": 4732
+        },
+        {
+          "startTime": 243297.30000007153,
+          "duration": 6049
+        },
+        {
+          "startTime": 249347.30000007153,
+          "duration": 3208
+        },
+        {
+          "startTime": 252579.60000002384,
+          "duration": 5932
+        },
+        {
+          "startTime": 258517.80000007153,
+          "duration": 6787
+        },
+        {
+          "startTime": 265306.10000002384,
+          "duration": 3109
+        },
+        {
+          "startTime": 268475.7000000477,
+          "duration": 6954
+        },
+        {
+          "startTime": 275451.39999997616,
+          "duration": 8176
+        },
+        {
+          "startTime": 283628.60000002384,
+          "duration": 4420
+        },
+        {
+          "startTime": 288110.10000002384,
+          "duration": 7660
+        },
+        {
+          "startTime": 295770.89999997616,
+          "duration": 3318
+        },
+        {
+          "startTime": 299089,
+          "duration": 3295
+        },
+        {
+          "startTime": 381370.10000002384,
+          "duration": 51
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1208,
+      "pendingMedia": 0,
+      "peakPendingMedia": 25,
+      "mediaFailures": 0,
+      "year": 2020,
+      "domNodes": 89554,
+      "timelineDomNodes": 66320,
+      "mountedRows": 3313,
+      "mountedActiveRows": 3313,
+      "exitingRows": 0,
+      "screenRows": 8,
+      "screenPersonIds": [
+        "f-0",
+        "f-7",
+        "f-1",
+        "f-8",
+        "f-2",
+        "f-9",
+        "f-10",
+        "f-3"
+      ],
+      "mountedEvents": 3313,
+      "visiblePortraits": 8,
+      "loadedVisiblePortraits": 8,
+      "summary": "3313 человек · 0 событий",
+      "scrollLeft": 3360,
+      "scrollTop": 0,
+      "scrollHeight": 212162,
+      "scrollWidth": 4712,
+      "viewport": {
+        "width": 1280,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 3313
+    },
+    {
+      "phase": "year-scroll-settled",
+      "measuredMs": null,
+      "ScriptDurationMs": 0,
+      "TaskDurationMs": 0,
+      "LayoutDurationMs": 0,
+      "RecalcStyleDurationMs": 0,
+      "layoutCount": 0,
+      "styleCount": 0,
+      "mainThreadHeapBytes": 147882476,
+      "frames": {
+        "count": 57,
+        "p95Ms": 12460.299999999988,
+        "maxMs": 79546.90000000002,
+        "over50Ms": 34
+      },
+      "longTasks": [
+        {
+          "startTime": 74663.70000004768,
+          "duration": 9352
+        },
+        {
+          "startTime": 84016.39999997616,
+          "duration": 2847
+        },
+        {
+          "startTime": 86864.10000002384,
+          "duration": 4147
+        },
+        {
+          "startTime": 91018.30000007153,
+          "duration": 8376
+        },
+        {
+          "startTime": 99396,
+          "duration": 3152
+        },
+        {
+          "startTime": 102548.60000002384,
+          "duration": 4405
+        },
+        {
+          "startTime": 106955.89999997616,
+          "duration": 9099
+        },
+        {
+          "startTime": 116056.39999997616,
+          "duration": 2543
+        },
+        {
+          "startTime": 118600.10000002384,
+          "duration": 9383
+        },
+        {
+          "startTime": 127986.89999997616,
+          "duration": 132
+        },
+        {
+          "startTime": 128119.10000002384,
+          "duration": 8383
+        },
+        {
+          "startTime": 136504.39999997616,
+          "duration": 8771
+        },
+        {
+          "startTime": 145277,
+          "duration": 4252
+        },
+        {
+          "startTime": 149532.30000007153,
+          "duration": 9164
+        },
+        {
+          "startTime": 158702.89999997616,
+          "duration": 4735
+        },
+        {
+          "startTime": 163438.39999997616,
+          "duration": 2815
+        },
+        {
+          "startTime": 166255.39999997616,
+          "duration": 58
+        },
+        {
+          "startTime": 166319.80000007153,
+          "duration": 5323
+        },
+        {
+          "startTime": 171644.70000004768,
+          "duration": 4405
+        },
+        {
+          "startTime": 176050.70000004768,
+          "duration": 2732
+        },
+        {
+          "startTime": 178799.10000002384,
+          "duration": 5311
+        },
+        {
+          "startTime": 184116.80000007153,
+          "duration": 3681
+        },
+        {
+          "startTime": 187798.89999997616,
+          "duration": 2120
+        },
+        {
+          "startTime": 189955.5,
+          "duration": 4295
+        },
+        {
+          "startTime": 194258.70000004768,
+          "duration": 3310
+        },
+        {
+          "startTime": 197569.89999997616,
+          "duration": 2059
+        },
+        {
+          "startTime": 199640,
+          "duration": 4024
+        },
+        {
+          "startTime": 203671.30000007153,
+          "duration": 3133
+        },
+        {
+          "startTime": 206805.10000002384,
+          "duration": 1769
+        },
+        {
+          "startTime": 208598.60000002384,
+          "duration": 3648
+        },
+        {
+          "startTime": 212248.10000002384,
+          "duration": 1277
+        },
+        {
+          "startTime": 213525.70000004768,
+          "duration": 1523
+        },
+        {
+          "startTime": 215056,
+          "duration": 863
+        },
+        {
+          "startTime": 215920,
+          "duration": 3628
+        },
+        {
+          "startTime": 219555.20000004768,
+          "duration": 4301
+        },
+        {
+          "startTime": 223856.60000002384,
+          "duration": 2348
+        },
+        {
+          "startTime": 226212.80000007153,
+          "duration": 1315
+        },
+        {
+          "startTime": 227528.30000007153,
+          "duration": 4505
+        },
+        {
+          "startTime": 232040,
+          "duration": 4102
+        },
+        {
+          "startTime": 236142.39999997616,
+          "duration": 2406
+        },
+        {
+          "startTime": 238563.70000004768,
+          "duration": 4732
+        },
+        {
+          "startTime": 243297.30000007153,
+          "duration": 6049
+        },
+        {
+          "startTime": 249347.30000007153,
+          "duration": 3208
+        },
+        {
+          "startTime": 252579.60000002384,
+          "duration": 5932
+        },
+        {
+          "startTime": 258517.80000007153,
+          "duration": 6787
+        },
+        {
+          "startTime": 265306.10000002384,
+          "duration": 3109
+        },
+        {
+          "startTime": 268475.7000000477,
+          "duration": 6954
+        },
+        {
+          "startTime": 275451.39999997616,
+          "duration": 8176
+        },
+        {
+          "startTime": 283628.60000002384,
+          "duration": 4420
+        },
+        {
+          "startTime": 288110.10000002384,
+          "duration": 7660
+        },
+        {
+          "startTime": 295770.89999997616,
+          "duration": 3318
+        },
+        {
+          "startTime": 299089,
+          "duration": 3295
+        },
+        {
+          "startTime": 381370.10000002384,
+          "duration": 51
+        }
+      ],
+      "workerRequests": 1,
+      "mediaRequests": 1208,
+      "pendingMedia": 0,
+      "peakPendingMedia": 25,
+      "mediaFailures": 0,
+      "year": 2020,
+      "domNodes": 89554,
+      "timelineDomNodes": 66320,
+      "mountedRows": 3313,
+      "mountedActiveRows": 3313,
+      "exitingRows": 0,
+      "screenRows": 8,
+      "screenPersonIds": [
+        "f-0",
+        "f-7",
+        "f-1",
+        "f-8",
+        "f-2",
+        "f-9",
+        "f-10",
+        "f-3"
+      ],
+      "mountedEvents": 3313,
+      "visiblePortraits": 8,
+      "loadedVisiblePortraits": 8,
+      "summary": "3313 человек · 0 событий",
+      "scrollLeft": 3360,
+      "scrollTop": 0,
+      "scrollHeight": 212162,
+      "scrollWidth": 4712,
+      "viewport": {
+        "width": 1280,
+        "height": 586
+      },
+      "eligiblePeopleAtYear": 3313
+    }
+  ]
+}
