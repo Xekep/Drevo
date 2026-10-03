@@ -131,6 +131,13 @@ export async function fixture(t: TestContext) {
   );
   await first.query(readFileSync(new URL("../../ops/postgres/053_person_comment_edits.sql", import.meta.url), "utf8"));
   await first.query(readFileSync(new URL("../../ops/postgres/057_person_comment_attachments.sql", import.meta.url), "utf8"));
+  // The focused fixture needs the real original-file RLS and the runtime's
+  // temporary-grant table for transactional media quota assertions.
+  await first.query(readFileSync(new URL("../../ops/postgres/015_media_originals.sql", import.meta.url), "utf8"));
+  await first.query(`CREATE TABLE media_upload_grants (
+    archive_id text NOT NULL REFERENCES archives(id) ON DELETE CASCADE,
+    url text NOT NULL, user_id text NOT NULL, expires_ms bigint NOT NULL,
+    PRIMARY KEY(archive_id,url))`);
   for (const [id, token] of Object.entries(tokens)) {
     await first.query(
       "INSERT INTO accounts(id,name,created_at) VALUES($1,$2,$3)",
@@ -166,6 +173,10 @@ export async function fixture(t: TestContext) {
         "INSERT INTO photos(archive_id,id,ordinal,data) VALUES($1,$2,$3,$4::jsonb)",
         [archiveId, row.id, index, row.data],
       );
+    await first.query(
+      "INSERT INTO media_originals(archive_id,url,size_bytes) VALUES($1,'/media/photo.png',1)",
+      [archiveId],
+    );
     for (const [index, row] of rows.tags.entries())
       await first.query(
         "INSERT INTO photo_tags(archive_id,id,ordinal,photo_id,person_id,data) VALUES($1,$2,$3,$4,$5,$6::jsonb)",
