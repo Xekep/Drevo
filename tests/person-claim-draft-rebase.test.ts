@@ -91,3 +91,68 @@ test("an open event or alternative draft cannot overwrite a newer nested assessm
   assert.throws(() => rebasePersonDraft(base, freshAlternative, draftAlternative),
     /Утверждение изменилось в архиве/);
 });
+
+for (const kind of ["event", "alternative"] as const) {
+  test(`stale unassessed ${kind} citation cannot erase another editor's source`, async () => {
+    const initial = structuredClone(family);
+    const cited = [{ title: "Register", type: "", reference: "base" }];
+    initial.people[0].events = [{ id: "residence", type: "residence", date: "1920",
+      dateClaim: { value: "1920", sources: structuredClone(cited) } }];
+    initial.people[0].factAlternatives = [{ id: "earlier-birth", field: "birth",
+      value: "1899", sources: structuredClone(cited) }];
+    const archive = await openArchive(":memory:", initial);
+    try {
+      const opened = await archive.read();
+      const draft = structuredClone(opened.family.people[0]);
+      draft.name = "Ada edited";
+      const server = structuredClone(opened.family);
+      server.people[0].surname = "Updated";
+      const sources = (person: typeof draft) => kind === "event"
+        ? person.events![0].dateClaim!.sources
+        : person.factAlternatives![0].sources;
+      sources(draft).push({ title: "Register", type: "", reference: "draft" });
+      sources(server.people[0]).push({ title: "Register", type: "", reference: "server" });
+      await archive.write(authorizeArchive(server, opened.family, actor), opened.revision);
+
+      const fresh = await archive.read();
+      await assert.rejects(async () => {
+        const merged = rebasePersonDraft(opened.family.people[0], fresh.family.people[0], draft);
+        const candidate = applyPersonDraft(fresh.family, merged, []);
+        await archive.write(authorizeArchive(candidate, fresh.family, actor), fresh.revision);
+      }, /Утверждение изменилось в архиве/,
+      `${kind}: a stale save must leave both the user's draft and the newer source intact`);
+      assert.deepEqual(sources((await archive.read()).family.people[0]).map((source) => source.reference),
+        ["base", "server"]);
+      assert.deepEqual(sources(draft).map((source) => source.reference), ["base", "draft"]);
+      assert.equal((await archive.read()).family.people[0].surname, "Updated");
+    } finally {
+      await archive.close();
+    }
+  });
+}
+
+test("an event citation edit still merges with an independent person field", async () => {
+  const initial = structuredClone(family);
+  initial.people[0].events = [{ id: "residence", type: "residence", date: "1920",
+    dateClaim: { value: "1920", sources: [{ title: "Register", type: "", reference: "base" }] } }];
+  const archive = await openArchive(":memory:", initial);
+  try {
+    const opened = await archive.read();
+    const draft = structuredClone(opened.family.people[0]);
+    draft.events![0].dateClaim!.sources.push({ title: "Register", type: "", reference: "draft" });
+    const server = structuredClone(opened.family);
+    server.people[0].surname = "Updated";
+    await archive.write(authorizeArchive(server, opened.family, actor), opened.revision);
+
+    const fresh = await archive.read();
+    const merged = rebasePersonDraft(opened.family.people[0], fresh.family.people[0], draft);
+    await archive.write(authorizeArchive(applyPersonDraft(fresh.family, merged, []),
+      fresh.family, actor), fresh.revision);
+    const saved = (await archive.read()).family.people[0];
+    assert.equal(saved.surname, "Updated");
+    assert.deepEqual(saved.events![0].dateClaim!.sources.map((source) => source.reference),
+      ["base", "draft"]);
+  } finally {
+    await archive.close();
+  }
+});

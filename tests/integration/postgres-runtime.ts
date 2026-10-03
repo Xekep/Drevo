@@ -5701,7 +5701,8 @@ try {
       const response = await pending;
       const body = await response.json();
       return { status: response.status, present: contains(body),
-        hasPrivatePayload: "people" in body || "categories" in body };
+        hasPrivatePayload: "people" in body || "categories" in body,
+        disposition: response.headers.get("content-disposition") };
     } finally {
       release();
       await pending.catch(() => {});
@@ -5747,6 +5748,138 @@ try {
     staleResources.status, staleResources.present, staleResources.hasPrivatePayload],
   [409, false, false, 409, false, false]);
   console.log("runtime_archive_query_search_resource_revocation_ok");
+  const initialArchiveExport = await fetch(securedBase + "/a/other-archive/api/export",
+    { headers: otherOnlyHeaders });
+  assert.equal(initialArchiveExport.status, 200);
+  assert.match(initialArchiveExport.headers.get("content-disposition") || "", /drevo-archive\.json/);
+  assert.ok((await initialArchiveExport.json()).people.some(
+    (person: { id: string }) => person.id === privateSearchPerson.id));
+  const staleArchiveExport = await raceArchiveQuery("/api/export", otherOnlyHeaders,
+    async () => {
+      const revoke = await fetch(securedBase + "/a/other-archive/api/users/other-only", {
+        method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }),
+      });
+      assert.equal(revoke.status, 200);
+    }, (body) => Array.isArray(body.people) && body.people.some(
+      (person: { id: string }) => person.id === privateSearchPerson.id));
+  assert.equal((await fetch(securedBase + "/a/other-archive/api/export",
+    { headers: otherOnlyHeaders })).status, 404);
+  await client.query(`UPDATE archive_memberships SET approved=true
+    WHERE archive_id='other-archive' AND user_id='other-only'`);
+  await setPublicTree(true);
+  const initialAnalysisExport = await fetch(otherBase + "/api/export.json?download=1");
+  assert.equal(initialAnalysisExport.status, 200);
+  assert.match(initialAnalysisExport.headers.get("content-disposition") || "", /drevo-family\.json/);
+  assert.ok((await initialAnalysisExport.json()).people.some(
+    (person: { id: string }) => person.id === privateSearchPerson.id));
+  const staleAnalysisExport = await raceArchiveQuery("/api/export.json?download=1", undefined,
+    async () => { await setPublicTree(false); },
+    (body) => Array.isArray(body.people) && body.people.some(
+      (person: { id: string }) => person.id === privateSearchPerson.id));
+  assert.equal((await fetch(otherBase + "/api/export.json?download=1")).status, 401);
+  assert.deepEqual([staleArchiveExport.status, staleArchiveExport.present,
+    staleArchiveExport.hasPrivatePayload, staleArchiveExport.disposition,
+    staleAnalysisExport.status, staleAnalysisExport.present,
+    staleAnalysisExport.hasPrivatePayload, staleAnalysisExport.disposition],
+  [409, false, false, null, 409, false, false, null]);
+  console.log("runtime_archive_query_export_revocation_ok");
+  const exportSnapshot = await otherApp.archive.read();
+  const largeExportArchive = { ...otherApp.archive,
+    read: async () => ({ ...exportSnapshot, family: { ...exportSnapshot.family,
+      people: exportSnapshot.family.people.map((person, index) => index === 0
+        ? { ...person, biography: "x".repeat(8 * 1024 * 1024) } : person) } }),
+  };
+  let slowExportLocked!: () => void, releaseSlowExport!: () => void;
+  const slowExportReady = new Promise<void>((resolve) => { slowExportLocked = resolve; });
+  const slowExportGate = new Promise<void>((resolve) => { releaseSlowExport = resolve; });
+  const slowExportEndpoint = archiveQueryHttp({ archive: largeExportArchive,
+    auth: await createAuth(await userStore(otherApp.archive.db), otherApp.archive.db,
+      process.env.PUBLIC_ORIGIN),
+    visibility: await settingsStore(otherApp.archive.db),
+    treePreferences: treePreferencesStore(otherApp.archive.db),
+    researchCatalog: researchCatalogStore(otherApp.archive.db),
+    beforeLockedDelivery: async () => { slowExportLocked(); await slowExportGate; },
+  });
+  const slowExportServer = createServer((req, res) => {
+    // Delay completion after a small first chunk to emulate a stalled send
+    // without depending on the operating system's socket buffer size.
+    const end = res.end.bind(res);
+    res.end = ((body: string) => {
+      res.write(body.slice(0, 1024));
+      const timer = setTimeout(() => end(body.slice(1024)), 20_000);
+      timer.unref();
+      res.once("close", () => clearTimeout(timer));
+      return res;
+    }) as typeof res.end;
+    void slowExportEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => slowExportServer.listen(0, "127.0.0.1", resolve));
+  const slowExportPort = (slowExportServer.address() as { port: number }).port;
+  let firstExportChunkReached!: () => void;
+  const firstExportChunk = new Promise<void>((resolve) => { firstExportChunkReached = resolve; });
+  const pendingSlowExport = fetch(`http://127.0.0.1:${slowExportPort}/api/export`,
+    { headers: otherOnlyHeaders }).then(async (response) => {
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("content-disposition") || "", /drevo-archive\.json/);
+      assert.ok(response.body);
+      const reader = response.body.getReader();
+      const first = await reader.read();
+      assert.equal(first.done, false);
+      assert.ok(first.value?.byteLength);
+      firstExportChunkReached();
+      for (;;) {
+        const next = await reader.read();
+        if (next.done) return "complete";
+      }
+    });
+  let slowExportRevoke: Promise<Response> | undefined;
+  try {
+    await Promise.race([slowExportReady,
+      pendingSlowExport.then(() => { throw new Error("Large export completed before locked barrier"); }),
+      familyBarrierTimeout("Large export missed locked barrier"),
+    ]);
+    slowExportRevoke = fetch(securedBase + "/a/other-archive/api/users/other-only", {
+      method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }),
+    });
+    assert.equal(await Promise.race([slowExportRevoke.then(() => "completed"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("waiting"), 250))]),
+    "waiting", "slow export must hold revocation until delivery closes");
+    releaseSlowExport();
+    await Promise.race([firstExportChunk,
+      pendingSlowExport.then(() => { throw new Error("Large export finished before first chunk check"); }),
+      familyBarrierTimeout("Large export did not send its first chunk"),
+    ]);
+    assert.equal(await Promise.race([
+      pendingSlowExport.then(() => "completed", () => "closed"),
+      new Promise<never>((_, reject) => {
+        const timer = setTimeout(() =>
+          reject(new Error("Slow export did not close after delivery timeout")), 10_000);
+        timer.unref();
+      }),
+    ]), "closed", "timeout must close without sending a second response");
+    const revokedAfterSlowExport = await slowExportRevoke;
+    if (revokedAfterSlowExport.status === 400) {
+      const busy = await revokedAfterSlowExport.json();
+      assert.match(String(busy.error), /lock timeout/i,
+        "a writer may time out while the export holds the archive row");
+      const retry = await fetch(securedBase + "/a/other-archive/api/users/other-only", {
+        method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }),
+      });
+      assert.equal(retry.status, 200);
+    } else assert.equal(revokedAfterSlowExport.status, 200);
+    assert.equal((await fetch(securedBase + "/a/other-archive/api/export",
+      { headers: otherOnlyHeaders })).status, 404);
+  } finally {
+    releaseSlowExport();
+    slowExportServer.closeAllConnections();
+    await pendingSlowExport.catch(() => {});
+    await slowExportRevoke?.catch(() => {});
+    await new Promise<void>((resolve) => slowExportServer.close(() => resolve()));
+    await client.query(`UPDATE archive_memberships SET approved=true
+      WHERE archive_id='other-archive' AND user_id='other-only'`);
+  }
+  console.log("runtime_archive_query_export_slow_delivery_ok");
   assert.equal(
     (await fetch(securedBase + "/a/other-archive/api/health", { headers: otherOnlyHeaders })).status,
     200,
