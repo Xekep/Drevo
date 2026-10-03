@@ -13,6 +13,8 @@ import { publicPersonId } from "./public-person-id.ts";
 const archivePattern = /^[A-Za-z0-9-]{3,64}$/;
 const matchPattern = /^[a-f0-9-]{36}$/;
 const candidatePageSize = 24;
+// Rescue an empty evidence page without an unbounded scan of indexed matches.
+const candidateEmptyScanLimit = 96;
 type Row = Record<string, unknown>;
 
 const projection = `SELECT m.id,m.left_archive_id,m.left_person_id,m.right_archive_id,m.right_person_id,
@@ -391,7 +393,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         lookupArgs.push(archiveId,place.terms,place.locality,place.from,place.to);
       }
       // Each branch starts with a GIN index. Only opt-in projections are read.
-      const candidateSql = `WITH candidate_keys AS (${branches.join(" UNION ")})
+      const candidateSql = (limit: number) => `WITH candidate_keys AS (${branches.join(" UNION ")})
         SELECT d.archive_id,d.person_id,d.name,d.surname_part,d.given_part,d.birth_surname,
           d.birth_year,d.death_year,d.birth_place,d.death_place,
           d.publication_version::text AS publication_version,d.xmin::text AS row_version
@@ -411,20 +413,32 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
                 AND m.right_archive_id=d.archive_id AND m.right_person_id=d.person_id)
               OR (m.right_archive_id=? AND m.right_person_id=?
                 AND m.left_archive_id=d.archive_id AND m.left_person_id=d.person_id)))
-        ORDER BY d.name,d.archive_id,d.person_id LIMIT ${candidatePageSize + 1}`;
+        ORDER BY d.name,d.archive_id,d.person_id LIMIT ${limit}`;
       const candidateArgs = [...lookupArgs,archiveId,...after,archiveId,archiveId,sourceId,
         archiveId,sourceId,archiveId,sourceId];
-      const rows = await db.prepare("", candidateSql).all(...candidateArgs);
-      const page = rows.slice(0, candidatePageSize);
-      const nextCursor = rows.length > candidatePageSize
-        ? Buffer.from(JSON.stringify([
-          page.at(-1)!.name, page.at(-1)!.archive_id, page.at(-1)!.person_id,
-        ])).toString("base64url") : null;
-      const ranked = page.map((row) => {
+      let scanLimit = candidatePageSize;
+      let query = candidateSql(scanLimit + 1);
+      let rows = await db.prepare("", query).all(...candidateArgs);
+      const evaluate = (found: typeof rows, limit: number) => found.slice(0, limit).map((row, index) => {
         const candidate = published(row);
         const evidence = candidateEvidence(source,candidate);
-        return evidence ? { ...candidate, ...evidence } : null;
-      }).filter((item) => item !== null)
+        return evidence ? { ...candidate, ...evidence, rawIndex: index } : null;
+      }).filter((item) => item !== null);
+      let scored = evaluate(rows,scanLimit);
+      if (!scored.length && rows.length > candidatePageSize) {
+        scanLimit = candidateEmptyScanLimit;
+        query = candidateSql(scanLimit + 1);
+        rows = await db.prepare("", query).all(...candidateArgs);
+        scored = evaluate(rows,scanLimit);
+      }
+      const chosen = scored.slice(0,candidatePageSize);
+      const consumed = chosen.length === candidatePageSize
+        ? chosen.at(-1)!.rawIndex + 1 : Math.min(rows.length,scanLimit);
+      const lastRaw = rows[consumed - 1];
+      const nextCursor = rows.length > consumed
+        ? Buffer.from(JSON.stringify([lastRaw.name,lastRaw.archive_id,lastRaw.person_id]))
+          .toString("base64url") : null;
+      const ranked = chosen
         .sort((a,b) => b.score - a.score || a.name.localeCompare(b.name,"ru-RU"))
         .map((item) => ({
           archiveId: item.archiveId, id: item.id, name: item.name,
@@ -459,7 +473,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
             archive_id text,person_id text,publication_version text,row_version text)
         ), expected_page AS (
           SELECT * FROM jsonb_to_recordset(?::jsonb) AS e(archive_id text,person_id text)
-        ), current_page AS (${candidateSql}
+        ), current_page AS (${query}
         ) SELECT
           (SELECT count(*) FROM expected_people e JOIN discovery_people d
             ON d.archive_id=e.archive_id AND d.person_id=e.person_id

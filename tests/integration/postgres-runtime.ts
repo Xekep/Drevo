@@ -5575,6 +5575,47 @@ try {
     "a published death settlement alone does not prove the same birth settlement");
   await otherApp.archive.write(beforePlacePageOther.family, placeOtherWrite.revision);
   console.log("runtime_discovery_candidate_place_roles_ok");
+  const beforeLocalityPage = await otherApp.archive.read();
+  const localityPageFamily = structuredClone(beforeLocalityPage.family);
+  const wrongLocalityIds = Array.from({ length: 24 }, (_, index) =>
+    `wrong-locality-${String(index).padStart(2, "0")}`);
+  localityPageFamily.people.push(...wrongLocalityIds.map((id) => ({
+    ...structuredClone(localityPageFamily.people.find((person) => person.id === candidateTargetId)!),
+    id, surname: "Aab", birthPlace: "Amberton, Otherburg",
+  })));
+  const localityWrite = await otherApp.archive.write(localityPageFamily, beforeLocalityPage.revision);
+  for (const id of wrongLocalityIds)
+    await publishedPeopleStore(otherApp.archive.db).publish(id, "owner");
+  const localityPageResponse = await fetch(securedBase + revokeCandidatePath,
+    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.63" } });
+  assert.equal(localityPageResponse.status, 200);
+  const localityPage = await localityPageResponse.json();
+  assert.ok(localityPage.candidates.some((item: { id: string }) => item.id === candidateTargetId),
+    "a place token outside the selected settlement must not hide a valid candidate page");
+  const cappedFamily = structuredClone(localityPageFamily);
+  const additionalLocalityIds = Array.from({ length: 72 }, (_, index) =>
+    `wrong-locality-${String(index + 24).padStart(2, "0")}`);
+  cappedFamily.people.push(...additionalLocalityIds.map((id) => ({
+    ...structuredClone(cappedFamily.people.find((person) => person.id === wrongLocalityIds[0])!), id,
+  })));
+  const cappedWrite = await otherApp.archive.write(cappedFamily, localityWrite.revision);
+  for (const id of additionalLocalityIds)
+    await publishedPeopleStore(otherApp.archive.db).publish(id, "owner");
+  const cappedResponse = await fetch(securedBase + revokeCandidatePath,
+    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.64" } });
+  assert.equal(cappedResponse.status, 200);
+  const cappedPage = await cappedResponse.json();
+  assert.deepEqual(cappedPage.candidates, [], "the bounded scan stops after 96 false positives");
+  assert.equal(typeof cappedPage.nextCursor, "string");
+  const afterCapResponse = await fetch(securedBase + revokeCandidatePath +
+    `&cursor=${encodeURIComponent(cappedPage.nextCursor)}`,
+  { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.65" } });
+  assert.equal(afterCapResponse.status, 200);
+  assert.ok((await afterCapResponse.json()).candidates.some(
+    (item: { id: string }) => item.id === candidateTargetId),
+  "the cursor resumes after the last evaluated raw row without skipping a valid candidate");
+  await otherApp.archive.write(beforeLocalityPage.family, cappedWrite.revision);
+  console.log("runtime_discovery_candidate_locality_pagination_ok");
   let candidateReached!: () => void, releaseCandidate!: () => void;
   const candidateReady = new Promise<void>((resolve) => { candidateReached = resolve; });
   const candidateGate = new Promise<void>((resolve) => { releaseCandidate = resolve; });
