@@ -86,6 +86,10 @@ test("мобильная панель помещается в один ряд и
   await expect(page.locator(".relationship-godparent")).toHaveCount(0);
   await extra.click();
   await expect(extra).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+  await mode.click();
+  await expect(mode).not.toBeChecked();
+  await expect(extra).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".relationship-godparent")).toBeAttached();
   await page.screenshot({ path: testInfo.outputPath("toolbar-320.png") });
   await page.getByRole("button", { name: "Родство", exact: true }).click();
