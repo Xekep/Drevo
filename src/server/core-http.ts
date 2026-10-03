@@ -29,6 +29,7 @@ export function coreHttp({
     res: ServerResponse,
     value: unknown,
     expectedAccountId?: string,
+    requireOwner = false,
   ) {
     if (auth.local) return json(res, 200, value);
     const session = await auth.accountSession(req);
@@ -37,9 +38,18 @@ export function coreHttp({
     if (archive.db.kind !== "postgres") return json(res, 200, value);
     if (!archive.db.postgresTransaction)
       throw new Error("PostgreSQL account response requires a transaction");
+    const archiveId = archive.db.archiveId;
+    if (requireOwner && !archiveId)
+      throw new Error("PostgreSQL account capacity requires an archive ID");
     try {
       return await archive.db.postgresTransaction(async (client) => {
         await client.query("SET LOCAL lock_timeout='5s'");
+        // Owner-transfer writes lock the archive before the session and owner.
+        // Keep the same order so a prepared owned capacity cannot outlive a
+        // completed transfer, without cross-locking those transactions.
+        const currentArchive = requireOwner
+          ? await client.query("SELECT id FROM archives WHERE id=$1 FOR SHARE", [archiveId])
+          : null;
         const locked = await client.query<{ expires_at: string }>(
           `SELECT expires_at FROM account_sessions
             WHERE token_hash=$1 AND user_id=$2 FOR SHARE`,
@@ -47,9 +57,20 @@ export function coreHttp({
         );
         if (!locked.rows[0] || Number(locked.rows[0].expires_at) <= Date.now())
           return signInRequired(res);
+        if (requireOwner) {
+          const owner = currentArchive?.rowCount
+            ? await client.query(
+                `SELECT 1 FROM archive_owners
+                  WHERE archive_id=$1 AND user_id=$2 FOR SHARE`,
+                [archiveId, session.accountId],
+              )
+            : null;
+          if (!owner?.rowCount)
+            return json(res, 409, { error: "Владелец архива изменился. Обновите страницу." });
+        }
         // Keep the session row locked until the response is handed to HTTP.
         // A concurrent revoke must complete before this check or wait here.
-        const delivered = finished(res);
+        const delivered = finished(res, { cleanup: true });
         const timeout = setTimeout(() => res.destroy(), 5_000);
         timeout.unref();
         try {
@@ -98,9 +119,10 @@ export function coreHttp({
 
     if (path === "/api/account/capacity" && req.method === "GET") {
       const user = await auth.currentUser(req);
-      return user
-        ? accountRead(req, res, await accountCapacity(archive.db, user.id), user.id)
-        : signInRequired(res);
+      if (!user) return signInRequired(res);
+      const capacity = await accountCapacity(archive.db, user.id);
+      return accountRead(req, res, capacity, user.id,
+        capacity.available && capacity.owned);
     }
 
     if (
