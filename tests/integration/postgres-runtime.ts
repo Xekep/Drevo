@@ -27,6 +27,7 @@ import { backupCoordinator } from "../../src/server/backup-coordinator.ts";
 import { verifyManagedBackupDelivery } from "./postgres-managed-backup-delivery.ts";
 import { verifyManagedBackupStatusDelivery } from "./postgres-managed-backup-status-delivery.ts";
 import { verifyManagedBackupSettingsRevocation } from "./postgres-managed-backup-settings-revocation.ts";
+import { verifyManagedBackupCheckRevocation } from "./postgres-managed-backup-check-revocation.ts";
 import { databaseBackupHttp } from "../../src/server/database-backup-http.ts";
 import { createAuth } from "../../src/server/auth.ts";
 import { openArchive } from "../../src/server/database.ts";
@@ -4404,6 +4405,7 @@ try {
   } finally {
     await manager.close();
   }
+  await verifyManagedBackupCheckRevocation(app.archive, source, client);
   await client.query(
     "UPDATE account_tiers SET full_access=false WHERE account_id='owner'",
   );

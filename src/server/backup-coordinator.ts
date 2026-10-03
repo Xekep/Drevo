@@ -17,6 +17,14 @@ import {
 import type { BackupRemote } from "./backup-remote.ts";
 const hour = 3600000;
 export class BackupBusyError extends Error {}
+export class BackupAccessError extends Error {
+  readonly status: 401 | 403;
+  constructor(status: 401 | 403) {
+    super("Доступ администратора отозван.");
+    this.status = status;
+  }
+}
+export type BackupCheckAccess = { accountId: string; tokenHash: string };
 export async function backupCoordinator(
   db: StoreDatabase,
   databasePath: string,
@@ -119,6 +127,7 @@ export async function backupCoordinator(
     actor: ArchiveUser | undefined,
     task: () => Promise<Pick<BackupJob, "preview" | "warning"> | void>,
     scheduled = false,
+    checkAccess?: BackupCheckAccess,
   ) {
     if (closed) throw new BackupBusyError("Сервер завершает работу.");
     if (pending)
@@ -136,7 +145,7 @@ export async function backupCoordinator(
         state: "running",
         startedAt: new Date(now()).toISOString(),
       };
-    const acquired = await db.transaction(async () => {
+    const claim = async () => await db.transaction(async () => {
       const occupied = await db
         .prepare(
           "SELECT lease_until FROM backup_job WHERE id=1",
@@ -163,6 +172,44 @@ export async function backupCoordinator(
 
       return true;
     });
+    const acquired = checkAccess && kind === "check" && db.kind === "postgres" && db.postgresTransaction
+      ? await db.postgresTransaction(async (client) => {
+          const account = await client.query(
+            "SELECT id FROM accounts WHERE id=$1 FOR SHARE NOWAIT", [checkAccess.accountId]);
+          if (!account.rowCount) throw new BackupAccessError(401);
+          const active = await client.query<{ expires_at: string }>(
+            `SELECT expires_at FROM account_sessions
+             WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+            [checkAccess.tokenHash, checkAccess.accountId]);
+          if (!active.rows[0] || Number(active.rows[0].expires_at) <= Date.now())
+            throw new BackupAccessError(401);
+          await client.query("SELECT set_config('drevo.account_id',$1,true)",
+            [checkAccess.accountId]);
+          const membership = await client.query<{ approved: boolean }>(
+            `SELECT approved FROM archive_memberships
+             WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+            [db.archiveId, checkAccess.accountId]);
+          const platformGrant = await client.query(
+            "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
+            [checkAccess.accountId]);
+          if (!membership.rows[0]?.approved || !platformGrant.rowCount)
+            throw new BackupAccessError(403);
+          // Serialize with other launchers even when backup_job has no row yet.
+          await client.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE NOWAIT", [db.archiveId]);
+          const occupied = await client.query<{ lease_until: string }>(
+            "SELECT lease_until FROM backup_job WHERE archive_id=$1 AND id=1", [db.archiveId]);
+          if (occupied.rows[0] && Number(occupied.rows[0].lease_until) > now())
+            throw new BackupBusyError("Уже выполняется операция с резервными копиями.");
+          await client.query(
+            `INSERT INTO backup_job(archive_id,id,owner,actor_id,lease_until,data)
+             VALUES($1,1,$2,$3,$4,$5)
+             ON CONFLICT(archive_id,id) DO UPDATE SET owner=excluded.owner,
+               actor_id=excluded.actor_id,lease_until=excluded.lease_until,data=excluded.data`,
+            [db.archiveId, owner, checkAccess.accountId, now() + 90000, JSON.stringify(job)],
+          );
+          return true;
+        })
+      : await claim();
     if (!acquired) return null;
     const heartbeat = setInterval(async () => {
       try {
@@ -280,11 +327,11 @@ export async function backupCoordinator(
     withFile,
     startCreate,
     tick,
-    async check(value: unknown, actor: ArchiveUser) {
+    async check(value: unknown, actor: ArchiveUser, access?: BackupCheckAccess) {
       const config = validateBackupSettings(value);
       if (config.storage !== "remote")
         throw new BackupInputError("Выберите отдельный сервер.");
-      return await launch("check", actor, () => files.check(config, signal));
+      return await launch("check", actor, () => files.check(config, signal), false, access);
     },
     async preview(
       id: string,

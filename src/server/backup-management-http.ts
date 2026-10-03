@@ -5,6 +5,7 @@ import { open } from "node:fs/promises";
 import { finished, pipeline } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
 import {
+  BackupAccessError,
   BackupBusyError,
   type BackupCoordinator,
 } from "./backup-coordinator.ts";
@@ -164,6 +165,15 @@ export function backupManagementHttp({
         const body = await readJson(req);
         if (!(await auth.isPlatformAdmin(req)))
           return json(res, 403, { error: "Доступ администратора отозван." });
+        if (!auth.local && db.kind === "postgres" && db.postgresTransaction) {
+          const session = await auth.accountSession(req);
+          if (!session)
+            return json(res, 401, { error: "Доступ администратора отозван." });
+          const actor = await auth.currentUser(req);
+          if (!actor || actor.id !== session.accountId)
+            return json(res, 403, { error: "Доступ администратора отозван." });
+          return json(res, 202, await backups.check(body, actor, session));
+        }
         return json(
           res,
           202,
@@ -325,8 +335,8 @@ export function backupManagementHttp({
         res.destroy();
         return true;
       }
-      if (error instanceof BackupInputError || error instanceof BackupBusyError)
-        return json(res, error instanceof BackupBusyError ? 409 : 400, {
+      if (error instanceof BackupInputError || error instanceof BackupBusyError || error instanceof BackupAccessError)
+        return json(res, error instanceof BackupAccessError ? error.status : error instanceof BackupBusyError ? 409 : 400, {
           error: error.message,
         });
       if ((error as { code?: string }).code === "55P03")
