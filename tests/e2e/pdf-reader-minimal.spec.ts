@@ -75,12 +75,12 @@ async function openSample(
   return { reader, book, id: id as string };
 }
 
-test("book clicks dismiss comments while annotation clicks keep them open", async ({
+test("book and annotation clicks keep comments open", async ({
   page,
 }, info) => {
   const { reader, book, id } = await openSample(
     page,
-    "Comment panel dismissal",
+    "Comment panel reading",
   );
   const created = await page.request.post(`/api/documents/${id}/annotations`, {
     data: {
@@ -120,15 +120,14 @@ test("book clicks dismiss comments while annotation clicks keep them open", asyn
     expect(x).toBeGreaterThan(bounds.x);
     if (info.project.name === "mobile") await page.touchscreen.tap(x, y);
     else await page.mouse.click(x, y);
-    await expect(sidebar).toBeHidden();
-    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(sidebar).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await expect(reader).toBeVisible();
   };
   await tapBook();
   if (info.project.name === "desktop") {
     await book.locator(".BRicon.onepg:visible").first().click();
     await expect(book.locator("br-mode-1up")).toBeVisible();
-    await toggle.click();
     await tapBook();
   }
 });

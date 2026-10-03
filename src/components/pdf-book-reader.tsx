@@ -192,9 +192,6 @@ export function PdfBookReader({
         setMagnifier((value) => !value);
       } else if (message.type === "toggle-comments") {
         setCommentsOpen((value) => !value);
-      } else if (message.type === "close-comments") {
-        setCommentsOpen(false);
-        setHoveredAnnotation("");
       } else if (message.type === "close") {
         closeLatest.current();
       } else if (message.type === "error") {

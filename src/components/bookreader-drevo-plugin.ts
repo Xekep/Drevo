@@ -55,7 +55,6 @@ export function makeDrevoPlugin(
     private fittedOnePage = false;
 
     init() {
-      this.bindBookTap();
       const sizeEdgeLabel = (event: MouseEvent) => {
         if (!(event.target instanceof Element)) return;
         const edge = event.target.closest<HTMLElement>("br-leaf-edges");
@@ -85,60 +84,6 @@ export function makeDrevoPlugin(
         ).$;
         jquery?.fn?.colorbox?.close?.();
       });
-    }
-
-    private bindBookTap() {
-      let tap: { id: number; x: number; y: number } | null = null;
-      const isBook = (target: EventTarget | null) =>
-        target instanceof Element &&
-        !target.closest(".drevo-page-mark") &&
-        !!target.closest(".BRcontainer");
-      document.addEventListener(
-        "pointerdown",
-        (event) => {
-          tap =
-            event.isPrimary && event.button === 0 && isBook(event.target)
-              ? { id: event.pointerId, x: event.clientX, y: event.clientY }
-              : null;
-        },
-        true,
-      );
-      document.addEventListener(
-        "pointermove",
-        (event) => {
-          if (
-            tap?.id === event.pointerId &&
-            Math.hypot(event.clientX - tap.x, event.clientY - tap.y) > 8
-          )
-            tap = null;
-        },
-        true,
-      );
-      document.addEventListener(
-        "pointerup",
-        (event) => {
-          const start = tap;
-          tap = null;
-          if (!start || start.id !== event.pointerId || !isBook(event.target))
-            return;
-          const distance = Math.hypot(
-            event.clientX - start.x,
-            event.clientY - start.y,
-          );
-          // A selection drag must keep the comment form open. Capture runs before
-          // the native reader turns a page on mouseup and replaces its container.
-          if (distance <= (this.annotating ? 1 : 8))
-            emit({ source: "drevo-bookreader", type: "close-comments" });
-        },
-        true,
-      );
-      document.addEventListener(
-        "pointercancel",
-        () => {
-          tap = null;
-        },
-        true,
-      );
     }
 
     _configureToolbar($toolbar: { 0: HTMLElement }) {
