@@ -42,7 +42,7 @@ export type ListedDocument = DocumentDetails & {
   people: Array<{ id: string; name: string }>;
   eventLinks: Array<DocumentEventLink & { personName: string; eventTitle: string }>;
   pages: DocumentPage[];
-  sources: Array<{ personId: string; personName: string; eventId?: string; eventTitle?: string; title: string; reference: string; page?: number }>;
+  sources: Array<{ personId: string; personName: string; eventId?: string; eventTitle?: string; title: string; reference: string; page?: number; assertions: string[] }>;
 };
 
 type DocumentCatalogPage = { items: ListedDocument[]; total: number };

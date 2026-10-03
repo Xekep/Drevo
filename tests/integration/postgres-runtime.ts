@@ -1219,6 +1219,16 @@ try {
       type: "", reference: "", documentId: documents.items[0].id }],
   };
   await app.archive.write(backupClaimFamily, backupClaimBefore.revision);
+  const citedDocumentUrl = `${base}/api/documents/${documents.items[0].id}`;
+  const citedDetail = await fetch(citedDocumentUrl).then((response) => response.json());
+  const citedList = await fetch(base + "/api/documents?limit=20")
+    .then((response) => response.json());
+  for (const item of [citedDetail, citedList.items.find((entry: { id: string }) =>
+    entry.id === documents.items[0].id)]) {
+    assert.deepEqual(item.sources.find((source: { title: string }) =>
+      source.title === backupCatalog.title)?.assertions, ["Дата рождения"],
+    "PostgreSQL list and detail retain the exact claim behind a document citation");
+  }
   const fullBackup = await fetch(base + "/api/backup/full");
   assert.equal(fullBackup.status, 200);
   const backupBytes = await fullBackup.arrayBuffer();

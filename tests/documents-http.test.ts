@@ -262,21 +262,56 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     ] as const)
       citedPerson[field] = { value, sources: [{ catalogId: catalog.source.id,
         title: catalog.source.title, type: "", reference: "", documentId: id, documentPage: 2 }] };
+    citedPerson.maidenName = "Соколова";
+    citedPerson.maidenNameClaim = { value: "Соколова", sources: [
+      { title: "Фамилия по записи", type: "archive", reference: "", documentId: id },
+    ] };
+    citedPerson.occupation = "Учитель";
+    citedPerson.occupationClaim = { value: "Учитель", sources: [
+      { title: "Занятие по записи", type: "archive", reference: "", documentId: id },
+    ] };
+    citedPerson.factAlternatives = [{ id: "alternate-birth-place", field: "birthPlace",
+      value: "Пермь", sources: [{ title: "Другое место по записи", type: "archive",
+        reference: "", documentId: id }] }];
     citedPerson.events![0].dateClaim = { value: "1887", sources: [{
       catalogId: catalog.source.id, title: catalog.source.title, type: "",
       reference: "", documentId: id, documentPage: 2,
     }] };
+    citedPerson.events![0].alternatives = [{ id: "alternate-move-date", field: "date",
+      value: "1888", sources: [{ title: "Другая дата переезда", type: "archive",
+        reference: "", documentId: id }] }];
     citedSnapshot.family.unions = [{ id: "anna-boris", participants: ["anna", "boris"],
       type: "marriage", sources: [{ title: "Семейная запись", type: "archive", reference: "", documentId: id }],
       formation: { date: "1970", sources: [{ title: "Запись о браке", type: "archive", reference: "", documentId: id }] },
       divorce: { date: "1990", sources: [{ title: "Запись о разводе", type: "archive", reference: "", documentId: id }] },
     }];
+    citedSnapshot.family.links = [{ id: "anna-guardian-boris", from: "anna", to: "boris",
+      type: "guardian", sources: [{ title: "Опекунская запись", type: "archive",
+        reference: "", documentId: id, documentPage: 2 }] }];
     await app.archive.write(citedSnapshot.family, citedSnapshot.revision);
     const sourced = (await (await fetch(`${base}/api/documents/${id}`)).json()) as {
-      sources: Array<{ title: string; page: number }>;
+      sources: Array<{ title: string; page: number; assertions: string[] }>;
     };
-    assert.deepEqual(sourced.sources.map((source) => [source.title, source.page]),
-      [["Дело 104", 2], ["Метрическая книга", 2]]);
+    const expectedSources = [
+      ["Дело 104", 2, ["Карточка"]],
+      ["Метрическая книга", 2, ["Дата рождения", "Дата смерти",
+        "Место рождения", "Место смерти", "Дата события: Переезд"]],
+      ["Фамилия по записи", undefined, ["Фамилия при рождении"]],
+      ["Занятие по записи", undefined, ["Занятие"]],
+      ["Другое место по записи", undefined, ["Другое место рождения: Пермь"]],
+      ["Другая дата переезда", undefined, ["Другая дата события: 1888"]],
+      ["Семейная запись", undefined, ["Брак"]],
+      ["Запись о браке", undefined, ["Брак · образование"]],
+      ["Запись о разводе", undefined, ["Брак · развод"]],
+      ["Опекунская запись", 2, ["Опекун"]],
+    ];
+    const reverseSources = (sources: typeof sourced.sources) => sources.map((source) =>
+      [source.title, source.page, source.assertions]);
+    assert.deepEqual(reverseSources(sourced.sources), expectedSources);
+    const sourcedList = (await (await fetch(`${base}/api/documents`)).json()) as {
+      items: Array<{ sources: typeof sourced.sources }>;
+    };
+    assert.deepEqual(reverseSources(sourcedList.items[0].sources), expectedSources);
     const file = await withoutFullRead(() => fetch(`${base}/api/documents/${id}/file`));
     assert.equal(file.status, 200);
     assert.equal(file.headers.get("content-type"), "application/pdf");
@@ -781,13 +816,47 @@ test("document deletion enforces ownership, scope and origin, removes files and 
       ] } }),
     });
     assert.equal(eventLinks.status, 200, await eventLinks.clone().text());
+    const cited = await app.archive.read();
+    cited.family.people[0].birthDateClaim = { value: "1950", sources: [
+      { title: "Visible birth record", type: "archive", reference: "", documentId: id },
+    ] };
+    cited.family.people[1].birthDateClaim = { value: "1950", sources: [
+      { title: "Hidden birth record", type: "archive", reference: "", documentId: id },
+    ] };
+    cited.family.unions = [{ id: "anna-hidden-union", participants: ["anna", "hidden"],
+      type: "marriage", sources: [{ title: "Hidden union record", type: "archive",
+        reference: "", documentId: id }] }];
+    cited.family.links = [{ id: "anna-hidden-link", from: "anna", to: "hidden",
+      type: "guardian", sources: [{ title: "Hidden link record", type: "archive",
+        reference: "", documentId: id }] }];
+    await app.archive.write(cited.family, cited.revision);
+    const adminSources = (await (await request(path, "admin")).json()) as {
+      sources: Array<{ title: string }>;
+    };
+    assert.ok(adminSources.sources.some((source) => source.title === "Hidden birth record"));
+    assert.ok(adminSources.sources.some((source) => source.title === "Hidden union record"));
+    assert.ok(adminSources.sources.some((source) => source.title === "Hidden link record"));
     await db
       .prepare(
         "UPDATE users SET person_id='anna',tree_access='common_ancestors' WHERE id='owner'",
       )
       .run();
-    const scopedDocument = (await (await request(path, "owner")).json()) as { eventLinks: Array<{ personId: string }> };
+    const scopedDocument = (await (await request(path, "owner")).json()) as {
+      eventLinks: Array<{ personId: string }>;
+      sources: Array<{ title: string; personName: string }>;
+    };
     assert.deepEqual(scopedDocument.eventLinks.map((link) => link.personId), ["anna"]);
+    assert.deepEqual(scopedDocument.sources.map((source) => source.title), ["Visible birth record"]);
+    assert.ok(scopedDocument.sources.every((source) => !source.personName.includes("hidden")));
+    const scopedList = (await (await request("/api/documents", "owner")).json()) as {
+      items: Array<{ sources: typeof scopedDocument.sources }>;
+    };
+    assert.deepEqual(scopedList.items[0].sources, scopedDocument.sources);
+    const afterCitations = await app.archive.read();
+    for (const person of afterCitations.family.people) person.birthDateClaim = undefined;
+    afterCitations.family.unions = [];
+    afterCitations.family.links = [];
+    await app.archive.write(afterCitations.family, afterCitations.revision);
     const removeVisibleEvent = await fetch(base + path, {
       method: "PATCH",
       headers: { Cookie: cookies.get("owner")!, Origin: "https://archive.test", "Content-Type": "application/json" },
