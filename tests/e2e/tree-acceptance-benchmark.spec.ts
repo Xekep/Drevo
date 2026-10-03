@@ -461,7 +461,8 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
       .check();
     await dialog
       .getByRole("combobox", { name: "Относительно человека" })
-      .selectOption("g-0-0");
+      .fill("g-0-0");
+    await dialog.getByRole("option", { name: /^Тестов g-0-0 / }).click();
     await dialog.getByRole("radio", { name: "Вниз: 1", exact: true }).check();
     await dialog
       .getByRole("radio", { name: "Боковые ветви: 0", exact: true })

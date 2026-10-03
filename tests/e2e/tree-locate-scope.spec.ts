@@ -88,7 +88,7 @@ test("locating a searched person outside the generation window changes only its 
 
 test("locating an already visible person moves the camera without saving generation limits", async ({ page, isMobile }) => {
   test.skip(isMobile, "The desktop camera toolbar owns this action");
-  const { writes, original } = await limitedTree(page);
+  const { writes } = await limitedTree(page);
   await searchPerson(page, "Иван", /Тестов Иван Петрович/);
   await expectCentered(page, "e2e-memorial-person");
   const viewport = page.locator(".react-flow__viewport");
@@ -106,7 +106,7 @@ test("locating an already visible person moves the camera without saving generat
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
   await expect(dialog.getByRole("combobox", { name: "Относительно человека" }))
-    .toHaveValue(original.generationLimits!.anchorId);
+    .toHaveValue("Тестов Пётр Иванович");
   await expect(dialog.getByRole("radio", { name: "Вверх: 3", exact: true })).toBeChecked();
   await expect(dialog.getByRole("radio", { name: "Вниз: 1", exact: true })).toBeChecked();
   await expect(dialog.getByRole("radio", { name: "Боковые ветви: 0", exact: true })).toBeChecked();

@@ -82,16 +82,24 @@
   color: #596a58;
   font-size: 11px;
 }
-.tree-generation-anchor select {
+.tree-generation-anchor .person-search > label {
+  font-size: 11px;
+}
+.tree-generation-anchor .person-search {
+  margin: 0;
+}
+.tree-generation-anchor .person-search-input input {
   min-width: 0;
   width: 100%;
   min-height: 36px;
-  padding: 4px 8px;
-  border: 1px solid #d1dccd;
-  border-radius: 8px;
-  background: #fff;
+  padding: 4px 0;
   color: #365b40;
   font-size: 12px;
+}
+.tree-generation-anchor .person-search-results ul {
+  max-height: 180px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .tree-generation-row {
   display: grid;
