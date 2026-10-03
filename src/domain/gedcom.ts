@@ -343,7 +343,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
   const usedRepositories = new Set<string>();
   const sources = (n: Node): Source[] =>
     children(n, "SOUR").map((s) => {
-      const record = s.pointer ? records.get(s.value) : undefined,
+      const voidPointer = version.startsWith("7.0") && s.pointer && s.value === "@VOID@";
+      const record = s.pointer && !voidPointer ? records.get(s.value) : undefined,
         noteUrl = record
           ? children(record, "NOTE")
               .map((note) => /^URL: (https?:\/\/\S+)$/i.exec(note.value)?.[1])
@@ -354,7 +355,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           (record ? value(record, "_URL") || value(record, "WWW") : "") ||
           noteUrl ||
           "";
-      if (s.pointer && record?.tag !== "SOUR")
+      if (s.pointer && !voidPointer && record?.tag !== "SOUR")
         throw new Error(`Не найден источник ${s.value}`);
       if (record && value(record, "_DREVO_CATALOG_LINK_LOST") === "Y")
         warnings.add("Связь цитаты с каталогом источников Drevo не перенесена: GEDCOM сохраняет цитату и вложение, но не запись каталога. Для полного переноса между деревьями используйте .drevo.");
@@ -452,15 +453,19 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         repositoryDetails.push(...mediaDetails);
       }
       const page = value(s, "PAGE");
+      if (voidPointer)
+        warnings.add(page
+          ? "Цитата SOUR @VOID@ не указывает на запись источника: текст PAGE сохранён как название цитаты. При экспорте будет создана обычная запись SOUR; исходный @VOID@ не восстанавливается."
+          : "Цитата SOUR @VOID@ без PAGE: создан источник с названием «Источник не указан». При экспорте он станет обычной записью SOUR; исходный @VOID@ не восстанавливается.");
       if (repositoryNames.length || callNumbers.length || repositoryDetails.length)
         warnings.add("Часть сведений о хранилище GEDCOM сохранена текстом; структура REPO не восстанавливается.");
       const source: Source = {
-        title: record
+        title: voidPointer ? page || "Источник не указан" : record
           ? value(record, "TITL") || value(record, "ABBR") || "Источник"
           : s.value,
         type: value(s, "_TYPE") || (record ? value(record, "_TYPE") : ""),
         // PAGE locates this citation; CALN locates the source at its repository.
-        reference: page || (structuredRepository ? "" : callNumbers[0] || ""),
+        reference: voidPointer ? "" : page || (structuredRepository ? "" : callNumbers[0] || ""),
         ...(structuredRepository ? { repository: structuredRepository } : {}),
         note:
           [
