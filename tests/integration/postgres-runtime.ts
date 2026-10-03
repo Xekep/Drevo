@@ -7329,6 +7329,11 @@ try {
     person.id === compoundTargetId), "revocation removes the compound-name suggestion");
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_people
     WHERE archive_id='other-archive' AND person_id=$1`, [compoundTargetId])).rows[0].count, 0);
+  for (const id of [compoundSourceId,spacedSourceId])
+    await publishedPeopleStore(app.archive.db).unpublish(id);
+  await otherPublication.unpublish(spacedTargetId);
+  await app.archive.write(compoundSourceBefore.family, (await app.archive.read()).revision);
+  await otherApp.archive.write(compoundTargetBefore.family, (await otherApp.archive.read()).revision);
   console.log("runtime_discovery_candidate_name_parts_ok");
   const specialMatchHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.241" };
   const specialRecipientHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.242" };
