@@ -45,6 +45,7 @@ import { verifyGeneratedFileGlobalCap } from "./generated-file-cap-test.ts";
 import { verifyPortablePreviewGlobalCap } from "./portable-preview-cap.ts";
 import { verifyPlatformAiOrphanSweep } from "./platform-ai-orphan-sweep.ts";
 import { verifyOwnerTransferGetRevocation } from "./postgres-owner-transfer-reads.ts";
+import { verifyInvitationAcceptSessionRevocation } from "./postgres-invitation-accept-session.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
@@ -998,6 +999,7 @@ try {
   app = await startServer(0, source, true);
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   await verifyOwnerTransferGetRevocation(app.archive.db, client);
+  await verifyInvitationAcceptSessionRevocation(app.archive.db, client);
   {
     // A revoked session must not receive the deletion plan after its initial
     // HTTP authentication has completed.

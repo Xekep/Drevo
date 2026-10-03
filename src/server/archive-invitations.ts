@@ -3,6 +3,7 @@ import type pg from "pg";
 import type { ArchiveUser } from "../domain/access.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { assertCurrentArchiveActor } from "./users.ts";
+import { AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
 
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
 const archivePattern = /^[A-Za-z0-9][A-Za-z0-9-]{2,63}$/;
@@ -139,6 +140,7 @@ export function accountInvitations(db: StoreDatabase) {
       invite: { id: string; role: string; used_by: string | null },
     ) => Promise<T>,
     lock = false,
+    session?: { accountId: string; tokenHash: string },
   ) => {
     validate(archiveId, token);
     if (!db.postgresTransaction)
@@ -147,6 +149,28 @@ export function accountInvitations(db: StoreDatabase) {
       await client.query("SELECT set_config('drevo.archive_id',$1,true)", [
         archiveId,
       ]);
+      if (session) {
+        // Account deletion holds the session before locking memberships'
+        // archives. Take the archive first and use NOWAIT on the session to
+        // avoid waiting across the opposite lock order.
+        const archive = await client.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE", [archiveId]);
+        if (!archive.rowCount)
+          throw new InvalidInvitationError("Приглашение недействительно.");
+        let active: pg.QueryResult<{ expires_at: number }>;
+        try {
+          active = await client.query<{ expires_at: number }>(
+            `SELECT expires_at FROM account_sessions
+             WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+            [session.tokenHash, session.accountId],
+          );
+        } catch (error) {
+          if ((error as { code?: string }).code === "55P03")
+            throw new AccountSessionBusy("Сеанс занят другим действием. Повторите запрос");
+          throw error;
+        }
+        if (!active.rowCount || Number(active.rows[0].expires_at) <= Date.now())
+          throw new AccountSessionExpired("Сессия завершена. Войдите снова");
+      }
       const result = await client.query<{
         id: string;
         role: string;
@@ -181,7 +205,7 @@ export function accountInvitations(db: StoreDatabase) {
         };
       });
     },
-    async accept(archiveId: string, token: string, accountId: string) {
+    async accept(archiveId: string, token: string, accountId: string, tokenHash: string) {
       if (!accountId)
         throw new InvalidInvitationError("Войдите, чтобы принять приглашение.");
       return await withInvitation(
@@ -213,6 +237,7 @@ export function accountInvitations(db: StoreDatabase) {
           return { archiveId, path: `/a/${archiveId}/tree` };
         },
         true,
+        { accountId, tokenHash },
       );
     },
   };
