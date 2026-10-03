@@ -8,6 +8,8 @@ import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 import type { Family } from "../domain/types.ts";
 import type { DiscoveryBranchRelation } from "../shared/discovery-branch.ts";
+import { AccountSessionBusy } from "./account-session-guard.ts";
+import { lockDiscoveryOwnerReadAccess } from "./discovery-owner-read-access.ts";
 
 type Row = Record<string, unknown>;
 type Relation = DiscoveryBranchRelation;
@@ -94,13 +96,15 @@ function listed(row: Row, relation: Relation, viaIds?: string[]): Member {
 
 /** Only a mutual opt-in on this exact linked pair exposes published direct relatives. */
 export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
-  beforeMemberDelivery, beforeListPublicationLock, beforeListDelivery }: {
+  beforeMemberDelivery, beforeListPublicationLock, beforeListDelivery,
+  beforeReadAccessLock }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
   beforeMemberDelivery?: () => Promise<void>;
   beforeListPublicationLock?: () => Promise<void>;
   beforeListDelivery?: () => Promise<void>;
+  beforeReadAccessLock?: () => Promise<void>;
 }) {
   const db = archive.db;
   const limiter = createSharedRequestLimiter(db, "discovery-branch-share", { windowMs: 60_000, limit: 20 });
@@ -230,8 +234,11 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
       return json(res, 429, { error: "Слишком много запросов" });
     const archiveId = db.archiveId;
     if (memberId) {
+      const session = await auth.accountSession(req);
+      await beforeReadAccessLock?.();
       const personId = memberId;
       const person = await db.transaction(async () => {
+        if (!await lockDiscoveryOwnerReadAccess(db, auth.local, session, user)) return false;
         const preliminary = await linkedPair(detail[1], archiveId);
         if (!preliminary) return false;
         const sourceArchiveId = recipient(preliminary, archiveId).archiveId;
@@ -275,11 +282,21 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
         await beforeMemberDelivery?.();
         await deliverLocked(res, { person: member });
         return true;
+      }).catch((error) => {
+        if (error instanceof AccountSessionBusy ||
+            (error as { code?: string }).code === "55P03")
+          return { busy: true };
+        throw error;
       });
+      if (person && typeof person === "object" && "busy" in person)
+        return json(res, 409, { error: "Доступ изменяется. Повторите запрос" });
       return person ? true : json(res, 404, { error: "Карточка недоступна" });
     }
     if (req.method === "GET") {
+      const session = await auth.accountSession(req);
+      await beforeReadAccessLock?.();
       const result = await db.transaction(async () => {
+        if (!await lockDiscoveryOwnerReadAccess(db, auth.local, session, user)) return null;
         const preliminary = await linkedPair(detail[1], archiveId);
         if (!preliminary) return null;
         const sourceArchiveId = recipient(preliminary, archiveId).archiveId;
@@ -334,6 +351,11 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
         await beforeListDelivery?.();
         await deliverLocked(res, payload);
         return { code: 200 as const };
+      }).catch((error) => {
+        if (error instanceof AccountSessionBusy ||
+            (error as { code?: string }).code === "55P03")
+          return { code: 409 as const };
+        throw error;
       });
       return !result ? json(res, 404, { error: "Связь не найдена" })
         : result.code === 409 ? json(res, 409, { error: "Ветка изменилась. Повторите запрос" })

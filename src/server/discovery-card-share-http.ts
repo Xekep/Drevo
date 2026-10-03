@@ -10,6 +10,8 @@ import { patchPeople } from "./person-patches.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { ForbiddenError } from "./users.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
+import { AccountSessionBusy } from "./account-session-guard.ts";
+import { lockDiscoveryOwnerReadAccess } from "./discovery-owner-read-access.ts";
 import type { Change } from "../domain/changes.ts";
 
 const fields = ["birth", "death", "birthPlace", "deathPlace", "occupation"] as const;
@@ -111,12 +113,13 @@ function recipient(pair: Row, archiveId: string) {
 
 /** Extra details require a separate, revocable grant for exactly one confirmed pair. */
 export function discoveryCardShareHttp({ archive, auth, publicOrigin,
-  beforeCopyPreviewDelivery, beforeCardShareDelivery }: {
+  beforeCopyPreviewDelivery, beforeCardShareDelivery, beforeReadAccessLock }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
   beforeCopyPreviewDelivery?: () => Promise<void>;
   beforeCardShareDelivery?: () => Promise<void>;
+  beforeReadAccessLock?: () => Promise<void>;
 }) {
   const db = archive.db;
   const limiter = createSharedRequestLimiter(db, "discovery-card-share", { windowMs: 60_000, limit: 20 });
@@ -219,7 +222,11 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
         return json(res, 405, { error: "Метод не поддерживается" });
       const archiveId = db.archiveId;
       if (req.method === "GET") {
+        const session = await auth.accountSession(req);
+        await beforeReadAccessLock?.();
         const result = await db.transaction(async () => {
+          if (!await lockDiscoveryOwnerReadAccess(db, auth.local, session, user))
+            return { code: 403 as const };
           // Hold the pair and grant row through response completion so a
           // concurrent revoke cannot commit before these fields are sent.
           const state = await copyState(detail[1], archiveId, user.id, true);
@@ -268,10 +275,16 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
             throw error;
           } finally { clearTimeout(timeout); }
           return { code: 200 as const };
+        }).catch((error) => {
+          if (error instanceof AccountSessionBusy ||
+              (error as { code?: string }).code === "55P03")
+            return { code: 409 as const };
+          throw error;
         });
         if (result.code === 200) return true;
         return json(res, result.code, { error: result.code === 403
-          ? "Доступно владельцу дерева" : "Связь не найдена" });
+          ? "Доступно владельцу дерева" : result.code === 409
+            ? "Доступ изменяется. Повторите запрос" : "Связь не найдена" });
       }
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Недопустимый источник запроса" });
@@ -342,7 +355,11 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
       return json(res, 429, { error: "Слишком много запросов" });
     const archiveId = db.archiveId;
     if (req.method === "GET") {
+      const session = await auth.accountSession(req);
+      await beforeReadAccessLock?.();
       const result = await db.transaction(async () => {
+        if (!await lockDiscoveryOwnerReadAccess(db, auth.local, session, user))
+          return { forbidden: true };
         if (!await db.prepare("", `SELECT 1 FROM archive_owners
           WHERE archive_id=? AND user_id=? FOR SHARE`).get(archiveId,user.id))
           return { forbidden: true };
@@ -386,7 +403,14 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
         await beforeCardShareDelivery?.();
         await deliverLocked(res, payload);
         return { delivered: true };
+      }).catch((error) => {
+        if (error instanceof AccountSessionBusy ||
+            (error as { code?: string }).code === "55P03")
+          return { busy: true };
+        throw error;
       });
+      if (result && "busy" in result)
+        return json(res, 409, { error: "Доступ изменяется. Повторите запрос" });
       if (result && "forbidden" in result)
         return json(res, 403, { error: "Доступно владельцу дерева" });
       return result ? true : json(res, 404, { error: "Связь не найдена" });
