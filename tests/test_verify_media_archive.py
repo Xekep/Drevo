@@ -78,6 +78,33 @@ class MediaRestoreTests(unittest.TestCase):
         self.assertEqual(result.files, 3)  # Extra older original is allowed.
         self.assertEqual(list(self.root.glob("drevo-media-restore.*")), [])
 
+    def test_pair_checks_citation_only_original(self):
+        self.pair_archive()
+        manifest = self.pair_manifest(
+            {"kind": "archive", "archive_id": "tree-a"},
+            {"kind": "archive", "archive_id": "tree-b"},
+            {"kind": "ref", "archive_id": "tree-a", "name": "older.png",
+             "source": "citation", "known_bytes": None},
+        )
+        result = verifier.verify_archive(
+            self.backup, self.root, reserve_bytes=0,
+            reference_manifest=manifest, legacy_archive_id="tree-a",
+        )
+        self.assertEqual(result.references_checked, 1)
+
+        missing_manifest = self.pair_manifest(
+            {"kind": "archive", "archive_id": "tree-a"},
+            {"kind": "archive", "archive_id": "tree-b"},
+            {"kind": "ref", "archive_id": "tree-a", "name": "missing.png",
+             "source": "citation", "known_bytes": None},
+        )
+        with self.assertRaisesRegex(ValueError, "missing=1 wrong_size=0"):
+            verifier.verify_archive(
+                self.backup, self.root, reserve_bytes=0,
+                reference_manifest=missing_manifest, legacy_archive_id="tree-a",
+            )
+        self.assertEqual(list(self.root.glob("drevo-media-restore.*")), [])
+
     def test_pair_rejects_missing_and_wrong_size_and_cleans_temp(self):
         self.pair_archive()
         manifest = self.pair_manifest(

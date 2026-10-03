@@ -19,7 +19,7 @@ BACKUP_NAME = re.compile(r"media-\d{8}T\d{6}Z\.tar\.gz\Z")
 ARCHIVE_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9-]{2,63}\Z")
 FILE_NAME = re.compile(r"[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|tif|pdf)\Z")
 REFERENCE_SOURCES = frozenset({
-    "person", "photo", "history", "upload_grant", "image_metadata", "document",
+    "person", "photo", "history", "citation", "upload_grant", "image_metadata", "document",
     "restore_stage_image", "restore_stage_document",
 })
 DISK_RESERVE = 8 * 1024**3
