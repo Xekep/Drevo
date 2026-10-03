@@ -11,6 +11,7 @@ import { fullName, resolvedSex, years, type Person } from "../../domain";
 import { archiveFetch } from "../../data/archive-fetch.ts";
 import { archiveContextAt, archiveResourceUrl } from "../../domain/archive-context.ts";
 import { Avatar } from "../person-panel";
+import { PortraitPlaceholder } from "../portrait-placeholder";
 import { useLongPress } from "./use-long-press";
 import { samePersonNodeData, type PersonNodeData } from "./person-node-data";
 import {
@@ -238,7 +239,9 @@ export const PersonNode = memo(function PersonNode({
           <span
             className={`person-avatar ${resolvedSex(data.person) === "f" ? "female" : resolvedSex(data.person) === "m" ? "male" : "unknown"}`}
             aria-hidden="true"
-          />
+          >
+            {detail === "distant" && !gpu && !deferPortraits && <PortraitPlaceholder compact />}
+          </span>
         ) : <Avatar person={data.person} loading="eager" />}
         <span className="portrait-card-info">
           <strong>{fullName(data.person)}</strong>
