@@ -15,15 +15,6 @@ function claimChanged(): never {
   throw new Error("Утверждение изменилось в архиве. Обновите карточку и повторите правку.");
 }
 
-function hasNestedAssessment(key: "events" | "factAlternatives", value: unknown): boolean {
-  if (key === "factAlternatives")
-    return ((value || []) as NonNullable<Person["factAlternatives"]>)
-      .some((alternative) => !!alternative.confidence);
-  return ((value || []) as NonNullable<Person["events"]>)
-    .some((event) => !!(event.dateClaim?.confidence || event.placeClaim?.confidence ||
-      event.alternatives?.some((alternative) => alternative.confidence)));
-}
-
 function rebaseClaim(base: PersonValueClaim | undefined,
   fresh: PersonValueClaim | undefined, draft: PersonValueClaim | undefined,
 ): PersonValueClaim | undefined {
@@ -64,11 +55,10 @@ export function rebasePersonDraft(
       if (claim) next[key] = claim;
       else delete next[key];
     } else if ((key === "events" || key === "factAlternatives") &&
-      !sameValue(old[key], next[key]) && !sameValue(edited[key], next[key]) &&
-      [old[key], next[key], edited[key]].some((value) =>
-        hasNestedAssessment(key, value))) {
-      // These arrays can contain several assessed assertions. Until their
-      // records are merged individually, a stale array must not replace one.
+      !sameValue(old[key], next[key]) && !sameValue(edited[key], next[key])) {
+      // These arrays contain independent values, citations, and assessments.
+      // Replacing a concurrently edited array could discard another editor's
+      // source even when neither editor assigned a confidence status.
       claimChanged();
     } else if (key in edited) next[key] = structuredClone(edited[key]);
     else delete next[key];
