@@ -19,7 +19,8 @@ export function BackupRestore({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
-    [confirmed, setConfirmed] = useState(false);
+    [confirmed, setConfirmed] = useState(false),
+    [restoreComments, setRestoreComments] = useState(initialPreview?.canRestoreComments || false);
   async function send(apply = false) {
     if (!apply && !file) return;
     setBusy(true);
@@ -37,9 +38,11 @@ export function BackupRestore({
               ? "application/json"
               : "application/octet-stream",
             "X-Drevo-Restore": "1",
+            ...(!apply && restoreComments ? { "X-Drevo-Restore-Comments": "1" } : {}),
           },
           body: apply
-            ? JSON.stringify({ token: preview?.token, confirm: confirmed })
+            ? JSON.stringify({ token: preview?.token, confirm: confirmed,
+                restoreComments })
             : file,
         },
       );
@@ -51,6 +54,7 @@ export function BackupRestore({
         setFile(null);
         if (input.current) input.current.value = "";
         setConfirmed(false);
+        setRestoreComments(false);
         setNotice(
           "Древо восстановлено. Предыдущая база сохранена на сервере: " +
             data.backupName,
@@ -59,6 +63,7 @@ export function BackupRestore({
       } else {
         setPreview(data);
         setConfirmed(false);
+        setRestoreComments(restoreComments && data.canRestoreComments === true);
       }
     } catch (e) {
       setError((e as Error).message);
@@ -92,6 +97,13 @@ export function BackupRestore({
               }}
             />
           </label>
+          {!preview && (
+            <label className="restore-confirm">
+              <input type="checkbox" checked={restoreComments} disabled={busy}
+                onChange={(event) => setRestoreComments(event.target.checked)} />
+              Подготовить восстановление комментариев и вложений из копии
+            </label>
+          )}
           <button
             type="button"
             disabled={!file || busy}
@@ -133,9 +145,20 @@ export function BackupRestore({
             <p className="restore-warning" role="alert">
               На момент проверки будут удалены комментарии к людям,
               которых нет в копии:{" "}
-              <b>{preview.currentCommentsLost || 0}</b>. Комментарии из копии,
-              которые не будут импортированы вместе с вложениями:{" "}
+              <b>{preview.currentCommentsLost || 0}</b>. При обычном восстановлении
+              будут пропущены комментарии и вложения из копии:{" "}
               <b>{preview.backupCommentsSkipped || 0}</b>.
+            </p>
+          )}
+          {preview.backupCommentsSkipped > 0 && (
+            preview.canRestoreComments ? (
+              <label className="restore-confirm">
+                <input type="checkbox" checked={restoreComments} disabled={busy}
+                  onChange={(event) => setRestoreComments(event.target.checked)} />
+                Восстановить комментарии и вложения из копии ({preview.backupCommentsSkipped})
+              </label>
+            ) : <p className="restore-warning" role="alert">
+              Восстановление комментариев недоступно: {preview.commentsRestoreReason || "проверьте копию повторно"}
             </p>
           )}
           <label className="restore-confirm">

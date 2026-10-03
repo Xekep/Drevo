@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { DatabaseSync } from "node:sqlite";
+import { gzipSync } from "node:zlib";
 import pg from "pg";
 import PDFDocument from "pdfkit";
 import sharp from "sharp";
@@ -102,6 +103,7 @@ import { verifyAtomicSuggestionAcceptance } from "./postgres-suggestion-accept.t
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { discoveryNamePartsBatch } from "../../ops/postgres/backfill-discovery-name-parts.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
+import { databaseBackupBytes } from "../helpers/database-backup.ts";
 import { restoreStore } from "../../src/server/restore.ts";
 import { startServer } from "../../src/server/index.ts";
 import { adaptLegacyAiFake } from "../legacy-ai-fake.ts";
@@ -12532,6 +12534,119 @@ try {
     guardedApp.archive.write = originalRestoreWrite;
     await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
   }
+  // Full TAR discussion restore is explicit. The final zero-comment check is
+  // made under the same archive lock as all live discussion writers.
+  await guardedApp.archive.db.prepare("", "DELETE FROM person_comments").run();
+  const discussionSource = await openArchive(":memory:", family);
+  const discussionFileId = "8f251989-45a6-4b77-8a47-8f0010001111";
+  const discussionOriginal = Buffer.from("PostgreSQL discussion original\n");
+  const tarEntry = (name: string, bytes: Buffer) => {
+    const header = Buffer.alloc(512);
+    header.write(name, 0);
+    header.write("0000600\0", 100);
+    header.write(bytes.length.toString(8).padStart(11, "0") + "\0", 124);
+    header.fill(32, 148, 156);
+    header.write("0", 156);
+    header.write("ustar\0", 257);
+    header.write(header.reduce((sum, byte) => sum + byte, 0)
+      .toString(8).padStart(6, "0") + "\0 ", 148);
+    return Buffer.concat([header, bytes,
+      Buffer.alloc((512 - bytes.length % 512) % 512)]);
+  };
+  let discussionTar: Buffer;
+  try {
+    await discussionSource.db.prepare(
+      "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,attachments) VALUES(?,?,?,?,?,?)",
+    ).run("person-a", "owner", "Автор прежнего сайта", 1000,
+      "Обсуждение из TAR", JSON.stringify([{
+        id: discussionFileId, name: "источник.txt",
+        type: "text/plain", size: discussionOriginal.length,
+      }]));
+    discussionTar = gzipSync(Buffer.concat([
+      tarEntry("drevo.sqlite", await databaseBackupBytes(discussionSource.db)),
+      tarEntry(`uploads/discussion-files/${discussionFileId}`, discussionOriginal),
+      Buffer.alloc(1024),
+    ]));
+  } finally { await discussionSource.close(); }
+  const restoreDiscussionHeaders = {
+    ...securedRestoreHeaders, "X-Drevo-Restore-Comments": "1",
+  };
+  const discussionPreviewResponse = await fetch(guardedBase + "/api/restore/preview", {
+    method: "POST", headers: restoreDiscussionHeaders,
+    body: Uint8Array.from(discussionTar).buffer,
+  });
+  assert.equal(discussionPreviewResponse.status, 200,
+    await discussionPreviewResponse.clone().text());
+  let discussionPreview = await discussionPreviewResponse.json() as {
+    token: string; canRestoreComments: boolean; backupCommentsSkipped: number;
+  };
+  assert.equal(discussionPreview.backupCommentsSkipped, 1);
+  assert.equal(discussionPreview.canRestoreComments, true);
+  const discussionDirectory = join(guardedUploads, "discussion-files");
+  const beforeContested = existsSync(discussionDirectory)
+    ? readdirSync(discussionDirectory).sort() : [];
+  await guardedApp.archive.db.transaction(async () => {
+    await guardedApp.archive.db.prepare("",
+      "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'owner',1001,'Concurrent comment')")
+      .run("person-a");
+  });
+  const contestedApply = await fetch(guardedBase + "/api/restore/apply", {
+    method: "POST", headers: securedRestoreHeaders,
+    body: JSON.stringify({ token: discussionPreview.token, confirm: true,
+      restoreComments: true }),
+  });
+  assert.equal(contestedApply.status, 409, await contestedApply.clone().text());
+  assert.deepEqual(existsSync(discussionDirectory)
+    ? readdirSync(discussionDirectory).sort() : [], beforeContested,
+  "a comment added after preview blocks restore and cleans the copied original");
+  assert.equal((await guardedApp.archive.db.prepare("",
+    "SELECT count(*)::int AS count FROM person_comments WHERE text='Concurrent comment'")
+    .get())?.count, 1);
+  await guardedApp.archive.db.transaction(async () => {
+    await guardedApp.archive.db.prepare("",
+      "DELETE FROM person_comments WHERE text='Concurrent comment'").run();
+  });
+  const freshDiscussionPreview = await fetch(guardedBase + "/api/restore/preview", {
+    method: "POST", headers: restoreDiscussionHeaders,
+    body: Uint8Array.from(discussionTar).buffer,
+  });
+  assert.equal(freshDiscussionPreview.status, 200,
+    await freshDiscussionPreview.clone().text());
+  discussionPreview = await freshDiscussionPreview.json();
+  assert.equal(discussionPreview.canRestoreComments, true);
+  const discussionApply = await fetch(guardedBase + "/api/restore/apply", {
+    method: "POST", headers: securedRestoreHeaders,
+    body: JSON.stringify({ token: discussionPreview.token, confirm: true,
+      restoreComments: true }),
+  });
+  assert.equal(discussionApply.status, 200, await discussionApply.clone().text());
+  const restoredDiscussion = await guardedApp.archive.db.prepare("",
+    "SELECT author_id,author_name,text,attachments FROM person_comments WHERE text=?")
+    .get("Обсуждение из TAR");
+  assert.equal(restoredDiscussion?.author_name, "Автор прежнего сайта");
+  assert.notEqual(restoredDiscussion?.author_id, "owner");
+  const restoredAttachment = JSON.parse(String(restoredDiscussion?.attachments))[0];
+  assert.notEqual(restoredAttachment.id, discussionFileId);
+  assert.deepEqual(readFileSync(join(guardedUploads, "discussion-files", restoredAttachment.id)),
+    discussionOriginal);
+  const repeatPreviewResponse = await fetch(guardedBase + "/api/restore/preview", {
+    method: "POST", headers: restoreDiscussionHeaders,
+    body: Uint8Array.from(discussionTar).buffer,
+  });
+  assert.equal(repeatPreviewResponse.status, 200,
+    await repeatPreviewResponse.clone().text());
+  const repeatPreview = await repeatPreviewResponse.json() as {
+    token: string; canRestoreComments: boolean;
+  };
+  assert.equal(repeatPreview.canRestoreComments, false);
+  const repeatedApply = await fetch(guardedBase + "/api/restore/apply", {
+    method: "POST", headers: securedRestoreHeaders,
+    body: JSON.stringify({ token: repeatPreview.token, confirm: true,
+      restoreComments: true }),
+  });
+  assert.equal(repeatedApply.status, 409);
+  assert.equal((await guardedApp.archive.db.prepare("",
+    "SELECT count(*)::int AS count FROM person_comments").get())?.count, 1);
   await verifyPlatformAiOrphanSweep(app!.archive.db, client, source);
   console.log("runtime_http_and_backup_ok");
 } finally {
