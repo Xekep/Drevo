@@ -14,6 +14,7 @@ import {
 } from "./postgres-archive-write.ts";
 import { persistPostgresGraphChanges } from "./postgres-graph-rows.ts";
 import { checkPostgresPeopleGrowth } from "./postgres-people-quota.ts";
+import { enforcePostgresArchiveMediaQuota, postgresArchiveMediaBytes } from "./postgres-media-quota.ts";
 import {
   capturePersonRemovalDependencies,
   restorePersonRemovalDependencies,
@@ -185,6 +186,7 @@ export async function restorePostgresPersonForSession(
         archiveId,
         after.people.length - before.people.length,
       );
+      const mediaBytesBefore = await postgresArchiveMediaBytes(client, archiveId);
       await persistPostgresGraphChanges(client, archiveId, before, after);
       await restorePersonRemovalDependencies(
         client,
@@ -192,6 +194,7 @@ export async function restorePostgresPersonForSession(
         receipt.person_id,
         receipt.dependencies,
       );
+      await enforcePostgresArchiveMediaQuota(client, archiveId, mediaBytesBefore);
       const persisted = (
         await readPostgresArchiveInTransaction(client, archiveId)
       ).family;

@@ -447,6 +447,28 @@ test("undo enforces the owner's people quota; freeing space then permits retry",
   assert.equal((await read(first, "tree-a")).family.people.length, 150);
 });
 
+test("undo rejects restored comment attachments over the owner's media quota and permits retry", async (t) => {
+  const { first } = await fixture(t);
+  await first.query(`INSERT INTO documents(archive_id,id,ordinal,title,title_search,file_name,file_size,uploaded_by,created_at)
+    VALUES('tree-a','large',0,'Large','large','large.pdf',499999998,'admin','2026-01-01')`);
+  await first.query(
+    "INSERT INTO person_comments(archive_id,id,person_id,author_id,created_ms,text,attachments) VALUES('tree-a',42,'own','admin',1,'Comment',$1::jsonb)",
+    [JSON.stringify([{ id: randomUUID(), name: "scan.png", type: "image/png", size: 2 }])],
+  );
+  const id = randomUUID();
+  await remove(first, tokens.admin, "tree-a", "own", id, 0);
+  await first.query("UPDATE account_tiers SET full_access=false WHERE account_id='admin'");
+  const afterDeletion = await fingerprint(first);
+  await assert.rejects(restore(first, tokens.admin, "tree-a", id, 1), /500/);
+  assert.deepEqual(await fingerprint(first), afterDeletion);
+  assert.equal((await first.query("SELECT restored_revision FROM person_removals WHERE archive_id='tree-a' AND request_id=$1", [id])).rows[0].restored_revision, null);
+
+  await first.query("UPDATE documents SET file_size=499999997 WHERE archive_id='tree-a' AND id='large'");
+  await restore(first, tokens.admin, "tree-a", id, 1);
+  assert.equal((await first.query("SELECT attachments->0->>'size' AS size FROM person_comments WHERE archive_id='tree-a' AND id=42")).rows[0].size, "2");
+  assert.equal((await first.query("SELECT revision FROM archives WHERE id='tree-a'")).rows[0].revision, "2");
+});
+
 test("undo receipts expire with the 50-revision history window", async (t) => {
   const { first } = await fixture(t);
   const id = randomUUID();
