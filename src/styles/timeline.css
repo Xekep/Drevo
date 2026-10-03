@@ -14,6 +14,7 @@
 }
 .horizontal-timeline {
   --timeline-pad: 0px;
+  --timeline-row-height: 64px;
   --timeline-viewport-height: 100vh;
   position: absolute;
   inset: 68px 0 0;
@@ -223,14 +224,32 @@
 .timeline-person-row {
   position: relative;
   display: flex;
-  height: 64px;
-  min-height: 64px;
+  height: var(--timeline-row-height);
+  min-height: var(--timeline-row-height);
   border-bottom: 1px solid #d4dccc80;
   animation: timeline-person-enter 240ms ease both;
   transition:
     height 240ms ease,
     min-height 240ms ease,
     opacity 240ms ease;
+}
+.timeline-rows {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+}
+.timeline-row-spacer {
+  flex: none;
+  pointer-events: none;
+}
+.timeline-rows.is-virtualized .timeline-person-row {
+  /* Keep a fixed row grid during the short exit fade. Offscreen exits are
+     discarded; scrolling a row into view does not replay its enter animation. */
+  height: var(--timeline-row-height);
+  min-height: var(--timeline-row-height);
+  flex: none;
+  animation: none;
+  transition: opacity 240ms ease;
 }
 .timeline-person-row.is-exiting {
   height: 0;
@@ -492,6 +511,9 @@
   }
 }
 @media (max-width: 899px) {
+  .horizontal-timeline {
+    --timeline-row-height: 62px;
+  }
   .mode-timeline {
     --timeline-person-width: 132px;
   }
@@ -551,7 +573,8 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .timeline-person-row {
+  .timeline-person-row,
+  .timeline-rows.is-virtualized .timeline-person-row {
     animation: none;
     transition: none;
   }
