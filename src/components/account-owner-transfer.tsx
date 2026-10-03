@@ -204,8 +204,7 @@ export function AccountOwnerTransfer() {
                     onClick={() => setSelected(candidate)}
                   >
                     {candidate.name}
-                    {!candidate.eligible &&
-                      " · уже владеет деревом или дерево превышает доступный лимит"}
+                    {!candidate.eligible && " · сейчас не может принять дерево"}
                   </button>
                 ))}
               </div>

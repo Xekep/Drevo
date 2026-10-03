@@ -458,7 +458,7 @@ test("owner can choose a member and propose a transfer in the account cabinet", 
   await page.goto("/account");
   await page.getByRole("button", { name: "Передать владение" }).click();
   await expect(page.getByRole("button", { name: "Борис Иванов" })).toBeDisabled();
-  await expect(page.getByText(/уже владеет деревом или дерево превышает доступный лимит/)).toBeVisible();
+  await expect(page.getByText(/сейчас не может принять дерево/)).toBeVisible();
   await page.getByRole("button", { name: "Анна Иванова" }).click();
   await page.getByRole("button", { name: "Предложить передачу" }).click();
   await expect(page.getByText("Ожидаем согласия: Анна Иванова")).toBeVisible();
