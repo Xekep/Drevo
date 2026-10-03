@@ -49,7 +49,7 @@ export function accountDataExportHttp(
       () => {
         if (oversized)
           send(413, {
-            error: "История ИИ слишком велика для текущего JSON-экспорта. Для полного экспорта нужна потоковая выдача.",
+            error: "Экспорт не сформирован: история ИИ превышает текущий лимит. Данные не изменены.",
           });
         else
           send(200, prepared!.download, true, json);

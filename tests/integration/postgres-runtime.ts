@@ -2012,7 +2012,8 @@ try {
     assert.equal(oversizedExport.status, 413,
       "the account export rejects visible AI history before materializing an oversized JSON response");
     const oversizedError = await oversizedExport.json();
-    assert.match(oversizedError.error, /История ИИ слишком велика/);
+    assert.equal(oversizedError.error,
+      "Экспорт не сформирован: история ИИ превышает текущий лимит. Данные не изменены.");
     assert.doesNotMatch(JSON.stringify(oversizedError), /\d+ МиБ|x{100}|bytes/i,
       "the size response does not reveal the content or byte count");
     const oversizedAuth = await createAuth(
