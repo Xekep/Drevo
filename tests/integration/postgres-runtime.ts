@@ -3,7 +3,7 @@ import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { createServer } from "node:http";
+import { createServer, get as httpGet } from "node:http";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
 import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { statfs, symlink, unlink, utimes } from "node:fs/promises";
@@ -59,6 +59,7 @@ import { accountSelfDeletionHttp } from "../../src/server/account-self-deletion-
 import { archiveOwnerTransferHttp } from "../../src/server/archive-owner-transfer-http.ts";
 import { archiveDeletionHttp } from "../../src/server/archive-deletion-http.ts";
 import { accountDataExportHttp } from "../../src/server/account-data-export-http.ts";
+import { accountAttachmentExportHttp } from "../../src/server/account-attachment-export-http.ts";
 import { gedcomHttp } from "../../src/server/gedcom-http.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
 import { mcpHttp } from "../../src/server/mcp-http.ts";
@@ -4845,6 +4846,201 @@ try {
     .filter((item: { text: string }) => item.text.startsWith("account-export-probe:"))
     .map((item: { text: string }) => item.text), ["account-export-probe:visible"],
   "a scoped member cannot export their old comment in a now-hidden branch");
+  const attachmentExportStore = discussionAttachmentStore(join(dirname(source), "uploads"));
+  const visibleAttachmentBytes = Buffer.from("reader-owned-visible-attachment");
+  const hiddenAttachmentBytes = Buffer.from("reader-owned-hidden-attachment");
+  const foreignAttachmentBytes = Buffer.from("owner-owned-visible-attachment");
+  const [visibleAttachment] = await attachmentExportStore.save([
+    await prepareCommentFile("visible.txt", visibleAttachmentBytes),
+  ]);
+  const [hiddenAttachment] = await attachmentExportStore.save([
+    await prepareCommentFile("hidden.txt", hiddenAttachmentBytes),
+  ]);
+  const [foreignAttachment] = await attachmentExportStore.save([
+    await prepareCommentFile("foreign.txt", foreignAttachmentBytes),
+  ]);
+  const exportAttachmentRows = await client.query(
+    `INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,attachments)
+     VALUES('person-a','reader','Reader',$1,'account-export-attachment:visible',$2::jsonb),
+           ('account-export-hidden','reader','Reader',$1,'account-export-attachment:hidden',$3::jsonb),
+           ('person-a','owner','Owner',$1,'account-export-attachment:foreign',$4::jsonb)
+     RETURNING id`,
+    [Date.now(), JSON.stringify([visibleAttachment]), JSON.stringify([hiddenAttachment]),
+      JSON.stringify([foreignAttachment])],
+  );
+  const attachmentExportUrl = securedBase + "/api/account/export/attachments";
+  const accountAttachments = await fetch(attachmentExportUrl, { headers });
+  assert.equal(accountAttachments.status, 200,
+    "an invited member can back up their own visible discussion originals");
+  const accountAttachmentZip = join(directory, "reader-account-attachments.zip");
+  writeFileSync(accountAttachmentZip, Buffer.from(await accountAttachments.arrayBuffer()));
+  const attachmentZip = await openPromise(accountAttachmentZip);
+  const attachmentEntries = new Map<string, Buffer>();
+  for await (const entry of attachmentZip.eachEntry()) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of await attachmentZip.openReadStreamPromise(entry))
+      chunks.push(Buffer.from(chunk));
+    attachmentEntries.set(entry.fileName, Buffer.concat(chunks));
+  }
+  const attachmentManifest = JSON.parse(attachmentEntries.get("manifest.json")!.toString()) as {
+    format: string; version: number;
+    attachments: Array<{ archiveId: string; commentId: string; path: string; id: string; name: string; sha256: string }>;
+  };
+  assert.equal(attachmentManifest.format, "drevo-account-attachments");
+  assert.equal(attachmentManifest.version, 1);
+  assert.equal(attachmentManifest.attachments.length, 1,
+    "hidden-branch and other authors' attachments must be excluded");
+  assert.equal(attachmentManifest.attachments[0].archiveId, "runtime-test");
+  assert.equal(attachmentManifest.attachments[0].commentId, String(exportAttachmentRows.rows[0].id));
+  assert.equal(attachmentManifest.attachments[0].id, visibleAttachment.id);
+  assert.equal(attachmentManifest.attachments[0].name, "visible.txt");
+  assert.deepEqual(attachmentEntries.get(attachmentManifest.attachments[0].path), visibleAttachmentBytes);
+  assert.equal(attachmentManifest.attachments[0].sha256,
+    createHash("sha256").update(visibleAttachmentBytes).digest("hex"));
+  assert.equal(attachmentEntries.size, 2);
+  await client.query("UPDATE archive_memberships SET approved=false WHERE user_id='reader'");
+  const revokedAttachmentExport = await fetch(attachmentExportUrl, { headers });
+  assert.notEqual(revokedAttachmentExport.status, 200,
+    "an unapproved member cannot download their former discussion originals");
+  assert.doesNotMatch(await revokedAttachmentExport.text(), /reader-owned-visible-attachment/);
+  await client.query("UPDATE archive_memberships SET approved=true WHERE user_id='reader'");
+  const attachmentExportAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  const raceAttachmentExport = accountAttachmentExportHttp(
+    app.archive.db, attachmentExportAuth,
+    () => join(dirname(source), "uploads"),
+    async () => {
+      await client.query("UPDATE archive_memberships SET approved=false WHERE user_id='reader'");
+    },
+  );
+  const raceAttachmentServer = createServer((req, res) => {
+    void raceAttachmentExport(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => raceAttachmentServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (raceAttachmentServer.address() as { port: number }).port;
+    const changedAttachmentExport = await fetch(
+      `http://127.0.0.1:${port}/api/account/export/attachments`, { headers });
+    assert.equal(changedAttachmentExport.status, 409,
+      "revocation after original preflight must block the ZIP before its first byte");
+    assert.equal(changedAttachmentExport.headers.get("content-type"), "application/json; charset=utf-8");
+    assert.doesNotMatch(await changedAttachmentExport.text(), /reader-owned-visible-attachment/);
+  } finally {
+    await new Promise<void>((resolve) => raceAttachmentServer.close(() => resolve()));
+    await client.query("UPDATE archive_memberships SET approved=true WHERE user_id='reader'");
+  }
+  const detachAttachmentExport = accountAttachmentExportHttp(
+    app.archive.db, attachmentExportAuth,
+    () => join(dirname(source), "uploads"),
+    async () => {
+      await client.query("UPDATE person_comments SET attachments='[]'::jsonb WHERE id=$1",
+        [exportAttachmentRows.rows[0].id]);
+    },
+  );
+  const detachAttachmentServer = createServer((req, res) => {
+    void detachAttachmentExport(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => detachAttachmentServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (detachAttachmentServer.address() as { port: number }).port;
+    const detached = await fetch(`http://127.0.0.1:${port}/api/account/export/attachments`, { headers });
+    assert.equal(detached.status, 409,
+      "detaching a file after ZIP preflight must block delivery of stale bytes");
+    assert.equal(detached.headers.get("content-type"), "application/json; charset=utf-8");
+    await detached.text();
+  } finally {
+    await new Promise<void>((resolve) => detachAttachmentServer.close(() => resolve()));
+    await client.query("UPDATE person_comments SET attachments=$1::jsonb WHERE id=$2",
+      [JSON.stringify([visibleAttachment]), exportAttachmentRows.rows[0].id]);
+  }
+  const slowAttachmentBytes = Buffer.alloc(9 * 1024 * 1024, 0x41);
+  const [slowAttachment] = await attachmentExportStore.save([
+    await prepareCommentFile("large.txt", slowAttachmentBytes),
+  ]);
+  await client.query(
+    `INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,attachments)
+     VALUES('person-a','reader','Reader',$1,'account-export-attachment:slow',$2::jsonb)`,
+    [Date.now(), JSON.stringify([slowAttachment])],
+  );
+  const timedAttachmentExport = accountAttachmentExportHttp(
+    app.archive.db, attachmentExportAuth,
+    () => join(dirname(source), "uploads"), undefined, 750,
+  );
+  const timedAttachmentServer = createServer((req, res) => {
+    // Deterministic slow-client backpressure: send the first ZIP chunk, then
+    // stop draining writes until the server-side deadline aborts the stream.
+    const originalWrite = res.write.bind(res);
+    let writes = 0;
+    res.write = ((...args: Parameters<typeof res.write>) => {
+      if (writes++ > 0) return false;
+      return originalWrite(...args);
+    }) as typeof res.write;
+    void timedAttachmentExport(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => timedAttachmentServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (timedAttachmentServer.address() as { port: number }).port;
+    await new Promise<void>((resolve, reject) => {
+      let abortStalled = () => {};
+      const timer = setTimeout(() => {
+        abortStalled();
+        reject(new Error("stalled account ZIP did not abort"));
+      }, 5_000);
+      const request = httpGet(`http://127.0.0.1:${port}/api/account/export/attachments`,
+        { headers }, (response) => {
+          try { assert.equal(response.statusCode, 200); }
+          catch (error) { clearTimeout(timer); reject(error); response.destroy(); return; }
+          response.pause();
+          response.once("close", () => { clearTimeout(timer); resolve(); });
+        });
+      abortStalled = () => request.destroy();
+      request.on("error", (error) => { clearTimeout(timer); reject(error); });
+    });
+    let released = false;
+    for (let attempt = 0; attempt < 20 && !released; attempt++) {
+      try {
+        await client.query("SELECT id FROM archives WHERE id='runtime-test' FOR UPDATE NOWAIT");
+        released = true;
+      } catch (error) {
+        if ((error as { code?: string }).code !== "55P03") throw error;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+    assert.equal(released, true,
+      "a timed-out slow ZIP client must release its archive lock and PostgreSQL transaction");
+  } finally {
+    await new Promise<void>((resolve) => timedAttachmentServer.close(() => resolve()));
+  }
+  const preHeaderTimeout = accountAttachmentExportHttp(
+    app.archive.db, attachmentExportAuth,
+    () => join(dirname(source), "uploads"),
+    async () => { await new Promise((resolve) => setTimeout(resolve, 150)); }, 50,
+  );
+  const preHeaderServer = createServer((req, res) => {
+    void preHeaderTimeout(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => preHeaderServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (preHeaderServer.address() as { port: number }).port;
+    const timedOut = await fetch(`http://127.0.0.1:${port}/api/account/export/attachments`,
+      { headers });
+    assert.equal(timedOut.status, 503, "an expired export must fail before ZIP headers");
+    assert.equal(timedOut.headers.get("retry-after"), "30");
+    await timedOut.text();
+  } finally {
+    await new Promise<void>((resolve) => preHeaderServer.close(() => resolve()));
+  }
+  await attachmentExportStore.remove([visibleAttachment]);
+  const missingAttachmentExport = await fetch(attachmentExportUrl, { headers });
+  assert.equal(missingAttachmentExport.status, 409,
+    "a missing original must fail explicitly before starting the ZIP");
+  assert.equal(missingAttachmentExport.headers.get("content-type"), "application/json; charset=utf-8");
+  await client.query("DELETE FROM person_comments WHERE text LIKE 'account-export-attachment:%'");
+  await attachmentExportStore.remove([visibleAttachment, hiddenAttachment, foreignAttachment, slowAttachment]);
   const ownerCommentExport = await fetch(accountExportUrl, { headers: ownerHeaders })
     .then((response) => response.json());
   assert.deepEqual(new Set(ownerCommentExport.archives.map((item: { id: string }) => item.id)),

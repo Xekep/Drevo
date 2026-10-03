@@ -649,6 +649,14 @@ export function AccountPage({
                           Скачать данные аккаунта
                           <ExternalLink size={16} aria-hidden="true" />
                         </a>
+                        <a
+                          className="account-row-action"
+                          href="/api/account/export/attachments"
+                          download="drevo-account-attachments.zip"
+                        >
+                          Скачать свои вложения обсуждений
+                          <ExternalLink size={16} aria-hidden="true" />
+                        </a>
                       </div>
                     )}
                     <button

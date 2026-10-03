@@ -35,6 +35,7 @@ import { configuredDatabaseBackend } from "./store-database.ts";
 import { accountArchiveDirectory } from "./account-archives.ts";
 import { accountArchivesHttp } from "./account-archives-http.ts";
 import { accountDataExportHttp } from "./account-data-export-http.ts";
+import { accountAttachmentExportHttp } from "./account-attachment-export-http.ts";
 import { accountSelfDeletionHttp } from "./account-self-deletion-http.ts";
 import { archiveOwnerTransferHttp } from "./archive-owner-transfer-http.ts";
 import { archiveDeletionHttp } from "./archive-deletion-http.ts";
@@ -163,6 +164,17 @@ export async function startServer(
     !archiveId,
   );
   const exportAccountData = accountDataExportHttp(archive.db, auth);
+  const exportAccountAttachments = accountAttachmentExportHttp(
+    archive.db,
+    auth,
+    (targetArchiveId) => resolve(
+      dirname(configuredPath),
+      ...(targetArchiveId === process.env.ARCHIVE_ID
+        ? []
+        : ["archives", targetArchiveId]),
+      "uploads",
+    ),
+  );
   const deleteAccount = accountSelfDeletionHttp(
     archive.db,
     auth,
@@ -323,6 +335,7 @@ export async function startServer(
     if (emailAuth && (await emailAuth.handle(req, res, parsedUrl))) return;
     if (await listAccountArchives(req, res, parsedUrl)) return;
     if (await exportAccountData(req, res, parsedUrl)) return;
+    if (await exportAccountAttachments(req, res, parsedUrl)) return;
     if (await deleteAccount(req, res, parsedUrl)) return;
     if (await searchPublishedPeople(req, res, parsedUrl)) return;
     if (
