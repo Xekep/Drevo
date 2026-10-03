@@ -6,6 +6,7 @@ import {
   AccountDeletionConflict,
   AccountDeletionSessionExpired,
 } from "./account-self-deletion.ts";
+import { accountDataExport } from "./account-data-export.ts";
 import { removeDeletedAccountAiFiles } from "./account-deletion-files.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 
@@ -48,6 +49,7 @@ export function accountSelfDeletionHttp(
   publicOrigin?: string,
 ) {
   const deletion = accountSelfDeletion(db, enabled);
+  const sessionDelivery = accountDataExport(db);
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (url.pathname !== "/api/account/deletion") return false;
     const send = (status: number, value: unknown) => {
@@ -72,9 +74,18 @@ export function accountSelfDeletionHttp(
     try {
       if (req.method === "GET") {
         const preview = await deletion.preview(session.accountId);
-        return preview
-          ? send(200, preview)
-          : send(404, { error: "Аккаунт не найден" });
+        if (!preview)
+          return send(404, { error: "Аккаунт не найден" });
+        // Hold the session row until the prepared name and counts are sent.
+        // The preview is account-only, so it has no archive scopes to lock.
+        const delivery = await sessionDelivery.deliverWithCurrentSession(
+          session.accountId, session.tokenHash, [], () => { send(200, preview); },
+        );
+        if (delivery === "session-expired" || delivery === "access-changed")
+          return send(401, { error: "Сеанс завершён. Войдите снова" });
+        if (delivery === "access-busy")
+          return send(409, { error: "Права доступа меняются. Повторите запрос" });
+        return true;
       }
       if (req.method === "DELETE") {
         const result = await deletion.remove(
