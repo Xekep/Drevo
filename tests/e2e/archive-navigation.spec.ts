@@ -89,21 +89,27 @@ test("mobile section links keep native addresses and close the menu on navigatio
   await expect(page.locator(".archive-more")).not.toHaveAttribute("open");
 });
 
-test("visible about link and account avatar keep the header usable", async ({
+test("about stays in the desktop header and mobile menu beside the account avatar", async ({
   page,
 }, testInfo) => {
   await page.goto("/tree");
   const avatar = page.locator(".nav-account");
   const menu = page.locator(".archive-more > summary");
   const about = page.getByRole("button", { name: "О проекте", exact: true });
+  if (testInfo.project.name === "mobile") {
+    await expect(page.locator(".nav-about")).toBeHidden();
+    await expect(about).toHaveCount(0);
+    await menu.click();
+  }
   await expect(about).toBeVisible();
   await about.click();
+  await expect(page.locator(".archive-more")).not.toHaveAttribute("open");
   await expect(page.getByRole("dialog", { name: "О проекте" })).toBeVisible();
   await expect(
     page.getByRole("dialog").getByRole("link", { name: "Евгений С." }),
   ).toHaveAttribute("href", "https://vk.ru/xekep");
   await page.keyboard.press("Escape");
-  await expect(about).toBeFocused();
+  await expect(testInfo.project.name === "mobile" ? menu : about).toBeFocused();
   await expect(avatar).toHaveAttribute("href", "/account");
   await expect(avatar).toHaveAttribute("aria-label", /Личный кабинет/);
   await expect(avatar.locator(".nav-account-avatar")).toHaveText("Н");
@@ -116,7 +122,10 @@ test("visible about link and account avatar keep the header usable", async ({
     const search = page.locator(".archive-search");
     expect((await search.boundingBox())!.width).toBeGreaterThan(150);
     await page.setViewportSize({ width: 320, height: 640 });
+    await expect(page.locator(".nav-about")).toBeHidden();
+    await menu.click();
     await expect(about).toBeVisible();
+    await page.keyboard.press("Escape");
     expect((await search.boundingBox())!.width).toBeGreaterThan(70);
     await expect
       .poll(() =>
@@ -134,11 +143,23 @@ test("visible about link and account avatar keep the header usable", async ({
     expect(resultsBox.x).toBeGreaterThanOrEqual(0);
     expect(resultsBox.x + resultsBox.width).toBeLessThanOrEqual(320);
     await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 844, height: 390 });
+    await menu.click();
+    await about.scrollIntoViewIfNeeded();
+    const menuBounds = (await page.locator(".nav-bottom").boundingBox())!;
+    expect(menuBounds.y).toBeGreaterThanOrEqual(0);
+    expect(menuBounds.y + menuBounds.height).toBeLessThanOrEqual(390);
+    await page.screenshot({ path: testInfo.outputPath("mobile-landscape-menu.png") });
+    await about.click();
+    await expect(page.getByRole("dialog", { name: "О проекте" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeFocused();
+    await page.setViewportSize({ width: 320, height: 640 });
   } else {
-    for (const width of [1201, 1101, 1024]) {
+    for (const width of [1201, 1101, 1024, 900]) {
       await page.setViewportSize({ width, height: 720 });
       await expect(about).toBeVisible();
-      if (width === 1024) {
+      if (width <= 1100) {
         await expect(menu).toBeVisible();
         const menuBox = (await menu.boundingBox())!;
         expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(width);
@@ -148,6 +169,7 @@ test("visible about link and account avatar keep the header usable", async ({
             .locator(".mobile-sections")
             .getByRole("link", { name: "Люди", exact: true }),
         ).toBeVisible();
+        await expect(page.locator(".nav-about-menu")).toBeHidden();
         await page.keyboard.press("Escape");
       } else {
         await expect(menu).toBeHidden();
@@ -158,7 +180,7 @@ test("visible about link and account avatar keep the header usable", async ({
   }
   if (testInfo.project.name === "mobile") {
     await menu.click();
-    await expect(page.locator(".archive-more .nav-bottom")).not.toContainText(
+    await expect(page.locator(".archive-more .nav-bottom")).toContainText(
       "О проекте",
     );
     await expect(page.locator(".archive-more .nav-bottom")).not.toContainText(

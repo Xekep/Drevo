@@ -1294,6 +1294,9 @@
   color: #3e604a;
   background: #edf1e6;
 }
+.archive-nav .nav-about-menu {
+  display: none;
+}
 .archive-header-actions .primary-action {
   border-radius: 7px;
   padding: 9px 13px;
@@ -1599,6 +1602,12 @@
   }
 }
 @media (max-width: 899px) {
+  .archive-nav .nav-about {
+    display: none;
+  }
+  .archive-nav .nav-about-menu {
+    display: flex;
+  }
   .archive-header {
     flex-basis: 56px;
     height: 56px;
@@ -1609,6 +1618,9 @@
   .archive-more[open] .nav-bottom {
     left: auto;
     right: 0;
+    max-height: calc(100dvh - 80px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .archive-search {
     flex: 1;

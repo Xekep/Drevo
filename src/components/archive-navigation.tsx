@@ -19,6 +19,7 @@ import {
   MapPin,
   ChartNoAxesCombined,
   LibraryBig,
+  Info,
 } from "lucide-react";
 import { safeUrl, type Person, type ArchiveUser } from "../domain";
 import { mediaPreview } from "../domain/media-preview";
@@ -103,6 +104,13 @@ export function ArchiveNavigation({
       window.location.reload();
     }
   };
+  const showAbout = () => {
+    if (menu.current?.open) {
+      menu.current.open = false;
+      menu.current.querySelector("summary")?.focus();
+    }
+    onHelp();
+  };
   return (
     <nav className="archive-nav" aria-label="Разделы архива">
       <a
@@ -151,10 +159,7 @@ export function ArchiveNavigation({
       <button
         className="nav-about"
         type="button"
-        onClick={() => {
-          if (menu.current) menu.current.open = false;
-          onHelp();
-        }}
+        onClick={showAbout}
       >
         О проекте
       </button>
@@ -221,6 +226,10 @@ export function ArchiveNavigation({
                 </a>
               ))}
           </div>
+          <button className="nav-about-menu" type="button" onClick={showAbout}>
+            <Info size={18} aria-hidden="true" />
+            <span>О проекте</span>
+          </button>
           <a href="/discover">
             <Users size={18} />
             <span>Поиск опубликованных людей</span>
