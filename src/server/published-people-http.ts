@@ -67,6 +67,7 @@ export function publishedPeopleHttp({
   beforePublicDelivery,
   beforeSearchDelivery,
   beforeAdminFinalLock,
+  beforeAdminBatchFinalLock,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -75,6 +76,7 @@ export function publishedPeopleHttp({
   beforePublicDelivery?: () => Promise<void>;
   beforeSearchDelivery?: () => Promise<void>;
   beforeAdminFinalLock?: () => Promise<void>;
+  beforeAdminBatchFinalLock?: () => Promise<void>;
 }) {
   const limiter = createSharedRequestLimiter(archive.db, "published-people", { windowMs: 60_000, limit: 60 });
   const isOwner = async (userId: string, lock = false) => {
@@ -138,6 +140,41 @@ export function publishedPeopleHttp({
       if (!disconnected) throw error;
     } finally { clearTimeout(timeout); }
   };
+  const deliverOwnerBatch = async (req: IncomingMessage, res: ServerResponse,
+    initialUserId: string, value: (userId: string) => Promise<unknown | null>) => {
+    await beforeAdminBatchFinalLock?.();
+    const status = await archive.db.transaction(async () => {
+      const freshUser = await auth.currentUser(req);
+      if (!freshUser) return 401;
+      if (freshUser.id !== initialUserId) return 403;
+      if (!auth.local) {
+        const session = await auth.accountSession(req);
+        if (!session || session.accountId !== freshUser.id) return 401;
+        await assertActiveAccountSession(archive.db, freshUser.id, session.tokenHash);
+      }
+      // The transaction locks the archive before these rows, matching owner
+      // transfer and membership writes. Hold all locks through delivery.
+      if (!await isOwner(freshUser.id, true)) return 403;
+      const archiveId = archive.db.archiveId;
+      if (!archiveId) return 403;
+      const membership = await archive.db.prepare("", `SELECT role,approved
+        FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
+        .get(archiveId, freshUser.id);
+      if (membership?.role !== "admin" || membership.approved !== true) return 403;
+      const payload = await value(freshUser.id);
+      if (payload === null) return 409;
+      await deliverLocked(res, payload);
+      return 200;
+    }).catch((error) => {
+      if (error instanceof AccountSessionExpired) return 401;
+      if (error instanceof AccountSessionBusy ||
+          (error as { code?: string }).code === "55P03") return 409;
+      throw error;
+    });
+    return status === 200 ? true : json(res, status, { error: status === 401
+      ? "Сессия завершена. Войдите снова" : status === 403
+        ? "Доступ к публикации отозван" : "Данные заняты или изменились. Повторите запрос" });
+  };
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const batch = url.pathname === "/api/admin/published-people/batch";
     const batchPreview = url.pathname === "/api/admin/published-people/batch/preview";
@@ -181,6 +218,9 @@ export function publishedPeopleHttp({
       if (!ids || (action !== "publish" && action !== "unpublish") ||
           (action === "publish" && !fields))
         return json(res, 400, { error: "Некорректный список людей или выбор полей" });
+      if (archive.db.kind === "postgres")
+        return deliverOwnerBatch(req, res, user.id, async (userId) =>
+          await reviewSelection(action, ids, fields, userId));
       const result = await archive.db.transaction(async () => {
         const freshUser = await auth.currentUser(req);
         if (freshUser?.role !== "admin" || freshUser.approved !== true ||
@@ -197,6 +237,9 @@ export function publishedPeopleHttp({
       if (req.method === "GET") {
         const ids = batchIds(url.searchParams.getAll("id"));
         if (!ids) return json(res, 400, { error: "Укажите от 1 до 50 людей" });
+        if (archive.db.kind === "postgres")
+          return deliverOwnerBatch(req, res, user.id, async () =>
+            ({ fields: Object.fromEntries(await store.fieldsForIds(ids)) }));
         return json(res, 200, { fields: Object.fromEntries(await store.fieldsForIds(ids)) });
       }
       if (req.method !== "POST" && req.method !== "DELETE")

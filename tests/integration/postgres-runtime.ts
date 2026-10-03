@@ -5947,6 +5947,47 @@ try {
     assert.equal((await client.query(`SELECT 1 FROM published_people
       WHERE archive_id='runtime-test' AND person_id='person-a'`)).rowCount, 0,
     "the admin preview race must use an unpublished card");
+    const beforeBatchFields = await fetch(securedBase +
+      `/api/admin/published-people/batch?id=${candidateSourceId}`, { headers: ownerHeaders });
+    assert.equal(beforeBatchFields.status, 200);
+    assert.ok((await beforeBatchFields.json()).fields[candidateSourceId],
+      "the owner can inspect their selected publication fields");
+    const beforeBatchPreview = await fetch(securedBase +
+      "/api/admin/published-people/batch/preview", { method: "POST", headers: ownerHeaders,
+      body: JSON.stringify({ action: "unpublish", personIds: ["person-a"] }) });
+    assert.equal(beforeBatchPreview.status, 200);
+    assert.equal((await beforeBatchPreview.json()).people[0].person.id, "person-a",
+      "the owner can preview an unpublished living card");
+    const publicationBatchBarrier = async (kind: "fields" | "preview") => {
+      let reached!: () => void, release!: () => void;
+      const ready = new Promise<void>((resolve) => { reached = resolve; });
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const pause = async () => { reached(); await gate; };
+      const endpoint = publishedPeopleHttp({ archive: app!.archive, auth: detailAuth,
+        store: publishedPeopleStore(app!.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN,
+        beforeAdminBatchFinalLock: pause });
+      const server = createServer((req, res) => {
+        void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+          .catch((error) => { res.destroy(error); });
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const port = (server.address() as { port: number }).port;
+      const url = kind === "fields"
+        ? `/api/admin/published-people/batch?id=${candidateSourceId}`
+        : "/api/admin/published-people/batch/preview";
+      const response = fetch(`http://127.0.0.1:${port}${url}`, { headers: ownerHeaders,
+        ...(kind === "preview" ? { method: "POST",
+          body: JSON.stringify({ action: "unpublish", personIds: ["person-a"] }) } : {}),
+      });
+      const close = async () => {
+        release();
+        await response.catch(() => {});
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      };
+      return { ready, release, response, close };
+    };
+    const pausedBatchFields = await publicationBatchBarrier("fields");
+    const pausedBatchPreview = await publicationBatchBarrier("preview");
     let adminReached!: () => void, releaseAdmin!: () => void;
     const adminReady = new Promise<void>((resolve) => { adminReached = resolve; });
     const adminGate = new Promise<void>((resolve) => { releaseAdmin = resolve; });
@@ -5976,6 +6017,12 @@ try {
         new Promise<never>((_, reject) => setTimeout(() =>
           reject(new Error("Admin preview did not reach final lock barrier")), 30_000)),
       ]);
+      await Promise.race([Promise.all([pausedBatchFields.ready,pausedBatchPreview.ready]),
+        pausedBatchFields.response.then(() => { throw new Error("Batch fields sent before barrier"); }),
+        pausedBatchPreview.response.then(() => { throw new Error("Batch preview sent before barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Publication batch did not reach both barriers")), 30_000)),
+      ]);
       const acceptedTransfer = await fetch(securedBase + "/api/account/owner-transfer/accept", {
         method: "POST",
         headers: { ...ownerHeaders, Cookie: `drevo_session=${candidateSuccessorToken}`,
@@ -5984,19 +6031,31 @@ try {
       assert.equal(acceptedTransfer.status, 200, await acceptedTransfer.text());
       beforeLock.release();
       releaseAdmin();
+      pausedBatchFields.release();
+      pausedBatchPreview.release();
       assert.equal((await beforeLock.response).status, 403,
         "a former owner cannot receive a candidate page after HTTP ownership transfer");
       const revokedAdmin = await pausedAdmin;
       assert.equal(revokedAdmin.status, 403,
         "a former owner cannot receive an unpublished card after HTTP ownership transfer");
       assert.equal("person" in await revokedAdmin.json(), false);
+      const revokedBatchFields = await pausedBatchFields.response;
+      const revokedBatchPreview = await pausedBatchPreview.response;
+      const fieldsBody = await revokedBatchFields.json();
+      const previewBody = await revokedBatchPreview.json();
+      assert.deepEqual([revokedBatchFields.status,revokedBatchPreview.status], [403,403],
+        "a former owner cannot receive batch fields or a living-card preview");
+      assert.equal("fields" in fieldsBody || "people" in previewBody, false);
     } finally {
       releaseAdmin();
+      await pausedBatchFields.close();
+      await pausedBatchPreview.close();
       await pausedAdmin.catch(() => {});
       await new Promise<void>((resolve) => adminServer.close(() => resolve()));
       await beforeLock.close();
     }
     console.log("runtime_admin_published_owner_transfer_revocation_ok");
+    console.log("runtime_admin_published_batch_owner_transfer_revocation_ok");
     console.log("runtime_discovery_candidate_owner_http_transfer_ok");
     await client.query(`UPDATE archive_owners SET user_id=$1
       WHERE archive_id='runtime-test'`, [candidatePriorOwner]);
@@ -6055,6 +6114,62 @@ try {
       await client.query(`DELETE FROM account_sessions WHERE token_hash=$1`, [adminSessionHash]);
     }
     console.log("runtime_admin_published_session_delivery_revocation_ok");
+    const batchSessionToken = newSessionToken();
+    const batchSessionHash = sessionTokenHash(batchSessionToken);
+    await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
+      VALUES($1,$2,$3)`, [batchSessionHash,candidatePriorOwner,Date.now() + 600_000]);
+    let batchReached!: () => void, releaseBatch!: () => void;
+    const batchReady = new Promise<void>((resolve) => { batchReached = resolve; });
+    const batchGate = new Promise<void>((resolve) => { releaseBatch = resolve; });
+    const batchArchive = { ...app!.archive, read: async () => {
+      const value = await app!.archive.read();
+      batchReached();
+      await batchGate;
+      return value;
+    } };
+    const finalBatchEndpoint = publishedPeopleHttp({ archive: batchArchive, auth: detailAuth,
+      store: publishedPeopleStore(app!.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN });
+    const finalBatchServer = createServer((req, res) => {
+      void finalBatchEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => finalBatchServer.listen(0, "127.0.0.1", resolve));
+    const finalBatchPort = (finalBatchServer.address() as { port: number }).port;
+    const batchSessionHeaders = { ...ownerHeaders, Cookie: `drevo_session=${batchSessionToken}` };
+    const heldBatch = fetch(`http://127.0.0.1:${finalBatchPort}` +
+      "/api/admin/published-people/batch/preview", { method: "POST", headers: batchSessionHeaders,
+      body: JSON.stringify({ action: "unpublish", personIds: ["person-a"] }) });
+    let revokeBatchSession: Promise<unknown> | undefined;
+    try {
+      await Promise.race([batchReady,
+        heldBatch.then(() => { throw new Error("Batch preview sent before final barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Batch preview did not reach final barrier")), 30_000)),
+      ]);
+      revokeBatchSession = client.query(`DELETE FROM account_sessions WHERE token_hash=$1`,
+        [batchSessionHash]);
+      assert.equal(await Promise.race([revokeBatchSession.then(() => "completed"),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300))]), "pending",
+      "session revocation waits until the batch preview finishes delivery");
+      releaseBatch();
+      const deliveredBatch = await heldBatch;
+      assert.equal(deliveredBatch.status, 200);
+      assert.equal((await deliveredBatch.json()).people[0].person.id, "person-a");
+      await revokeBatchSession;
+      const afterBatchRevoke = await fetch(securedBase +
+        "/api/admin/published-people/batch/preview", { method: "POST", headers: batchSessionHeaders,
+        body: JSON.stringify({ action: "unpublish", personIds: ["person-a"] }) });
+      assert.equal(afterBatchRevoke.status, 401,
+        "the revoked session cannot request another batch preview");
+      assert.equal("people" in await afterBatchRevoke.json(), false);
+    } finally {
+      releaseBatch();
+      await heldBatch.catch(() => {});
+      await new Promise<void>((resolve) => finalBatchServer.close(() => resolve()));
+      await revokeBatchSession?.catch(() => {});
+      await client.query(`DELETE FROM account_sessions WHERE token_hash=$1`, [batchSessionHash]);
+    }
+    console.log("runtime_admin_published_batch_session_delivery_revocation_ok");
     const duringLock = await ownerCandidateBarrier(true, "203.0.113.67");
     let transfer: Promise<unknown> | undefined;
     try {
