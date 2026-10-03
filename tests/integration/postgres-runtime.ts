@@ -2509,6 +2509,156 @@ try {
     await new Promise<void>((resolve) => delayedServer.close(() => resolve()));
     await delayedAi.close();
   }
+  // A final identity check is insufficient if the session or membership can
+  // be revoked after writeHead and before a private chat response is ended.
+  await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
+  const chatReader = await (await userStore(app.archive.db)).get("reader");
+  assert.ok(chatReader);
+  const privateChat = await aiChatStore(app.archive.db).create("reader", JSON.stringify([
+    chatReader.role, chatReader.treeAccess || "all", chatReader.personId || "",
+  ]));
+  await aiChatStore(app.archive.db).append(privateChat.id, "user", "private-chat-title-marker");
+  await aiChatStore(app.archive.db).append(privateChat.id, "assistant", "private-chat-answer-marker");
+  const chatReadAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  const chatBarrierTimeout = (message: string) => new Promise<never>((_, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), 10_000);
+    timer.unref();
+  });
+  const raceChatDelivery = async (path: string, readHeaders: typeof headers,
+    revoke: () => Promise<Response>, expectedBody: RegExp, nextStatus: number) => {
+    let reached!: () => void, release!: () => void;
+    const atEnd = new Promise<void>((resolve) => { reached = resolve; });
+    const endGate = new Promise<void>((resolve) => { release = resolve; });
+    const handler = aiResearchHttp({
+      archive: app!.archive, auth: chatReadAuth,
+      suggestions: researchSuggestionStore(app!.archive.db),
+      aiSettings: await aiSettingsStore(app!.archive.db),
+      usage: aiUsageStore(app!.archive.db),
+      media: mediaStore(join(dirname(source), "uploads")),
+      previewImage: imagePreviews(join(dirname(source), "previews")),
+      researchCatalog: researchCatalogStore(app!.archive.db),
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+    });
+    const server = createServer((req, res) => {
+      if (req.method === "GET" && req.url === path) {
+        const end = res.end.bind(res);
+        res.end = ((body: string) => {
+          reached();
+          void endGate.then(() => end(body));
+          return res;
+        }) as typeof res.end;
+      }
+      void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const localBase = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    const pending = fetch(localBase + path, { headers: readHeaders });
+    let revoking: Promise<Response> | undefined;
+    try {
+      await Promise.race([atEnd, chatBarrierTimeout("AI chat GET missed response barrier")]);
+      revoking = revoke();
+      const revokeOrder = await Promise.race([revoking.then(() => "completed"),
+        new Promise<string>((resolve) => setTimeout(() => resolve("waiting"), 250))]);
+      release();
+      const response = await pending;
+      assert.equal(response.status, 200);
+      assert.match(await response.text(), expectedBody);
+      assert.equal(revokeOrder, "waiting",
+        "a completed revocation must not precede private chat bytes");
+      assert.equal((await revoking).status, 200);
+      assert.equal((await fetch(localBase + path, { headers: readHeaders })).status, nextStatus);
+    } finally {
+      release();
+      server.closeAllConnections();
+      await pending.catch(() => {});
+      await revoking?.catch(() => {});
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await handler.close();
+    }
+  };
+  try {
+    const chatSessionToken = newSessionToken();
+    const chatSessionHash = sessionTokenHash(chatSessionToken);
+    await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'reader',$2)",
+      [chatSessionHash, Date.now() + 60_000]);
+    const chatSessionHeaders = { ...headers, Cookie: `drevo_session=${chatSessionToken}` };
+    await raceChatDelivery(`/api/ai/chats/${privateChat.id}`, chatSessionHeaders,
+      () => fetch(securedBase + "/auth/logout", {
+        method: "POST", headers: chatSessionHeaders,
+      }), /private-chat-answer-marker/, 401);
+    await raceChatDelivery("/api/ai/chats", headers,
+      () => fetch(securedBase + "/api/users/reader", {
+        method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }),
+      }), /private-chat-title-marker/, 403);
+    await client.query(`UPDATE archive_memberships SET approved=true
+      WHERE archive_id='runtime-test' AND user_id='reader'`);
+    for (const closeReason of ["abort", "timeout"] as const) {
+      let reached!: () => void;
+      const atEnd = new Promise<void>((resolve) => { reached = resolve; });
+      const handler = aiResearchHttp({
+        archive: app.archive, auth: chatReadAuth,
+        suggestions: researchSuggestionStore(app.archive.db),
+        aiSettings: await aiSettingsStore(app.archive.db),
+        usage: aiUsageStore(app.archive.db),
+        media: mediaStore(join(dirname(source), "uploads")),
+        previewImage: imagePreviews(join(dirname(source), "previews")),
+        researchCatalog: researchCatalogStore(app.archive.db),
+        publicOrigin: process.env.PUBLIC_ORIGIN,
+      });
+      let stallNextChat = true;
+      const server = createServer((req, res) => {
+        if (stallNextChat && req.method === "GET" &&
+            req.url === `/api/ai/chats/${privateChat.id}`) {
+          stallNextChat = false;
+          const end = res.end.bind(res);
+          res.end = ((body: string) => {
+            reached();
+            const timer = setTimeout(() => end(body), 20_000);
+            timer.unref();
+            res.once("close", () => clearTimeout(timer));
+            return res;
+          }) as typeof res.end;
+        }
+        void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+          .catch((error) => { res.destroy(error); });
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const localBase = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+      const controller = new AbortController();
+      const pending = fetch(localBase + `/api/ai/chats/${privateChat.id}`,
+        { headers, signal: controller.signal }).then((response) => response.text());
+      try {
+        await Promise.race([atEnd, chatBarrierTimeout("AI chat GET missed close barrier")]);
+        if (closeReason === "abort") controller.abort();
+        await assert.rejects(Promise.race([pending,
+          chatBarrierTimeout("AI chat delivery did not close")]),
+        "a closed AI chat response must reject rather than hang");
+        const revokeAfterClose = await fetch(securedBase + "/api/users/reader", {
+          method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }),
+        });
+        assert.equal(revokeAfterClose.status, 200,
+          `${closeReason} must release the AI chat delivery lock`);
+        assert.equal((await fetch(localBase + `/api/ai/chats/${privateChat.id}`,
+          { headers })).status, 403);
+      } finally {
+        controller.abort();
+        server.closeAllConnections();
+        await pending.catch(() => {});
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        await handler.close();
+        await client.query(`UPDATE archive_memberships SET approved=true
+          WHERE archive_id='runtime-test' AND user_id='reader'`);
+      }
+    }
+    console.log("runtime_ai_chat_read_delivery_revocation_ok");
+  } finally {
+    await client.query(`UPDATE archive_memberships SET approved=true
+      WHERE archive_id='runtime-test' AND user_id='reader'`);
+    await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='reader'");
+    await aiChatStore(app.archive.db).delete(privateChat.id, "reader");
+  }
   const aiKeys = ["YANDEX_AI_API_KEY", "YANDEX_AI_FOLDER_ID", "YANDEX_AI_MODEL"] as const;
   const previousAiEnvironment = aiKeys.map((key) => process.env[key]);
   process.env.YANDEX_AI_API_KEY = "test-key";

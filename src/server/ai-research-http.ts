@@ -1,5 +1,6 @@
 import { createWebSearchService } from "./web-search.ts";
 import { dirname, join } from "node:path";
+import { finished } from "node:stream/promises";
 import { aiAttachmentStore, validateAttachments } from "./ai-attachments.ts";
 import type { ResearchAttachment } from "../shared/research-attachments.ts";
 import { generatedResearchFileStore } from "./generated-research-files.ts";
@@ -120,43 +121,43 @@ export function aiResearchHttp({
       isScopedUser(user) ? (await archive.read()).family : undefined,
     );
   };
+  const lockedChatReader = async (req: IncomingMessage, expectedUserId?: string) => {
+    const current = await auth.currentUser(req);
+    if (!current || (expectedUserId && current.id !== expectedUserId)) return null;
+    if (archive.db.kind === "postgres" && !auth.local) {
+      const session = await auth.accountSession(req);
+      if (!session || session.accountId !== current.id) return null;
+      // Account deletion locks the session before the archive. Do not wait on
+      // it while the archive row is already locked by this transaction.
+      const lockedSession = await archive.db.prepare("", `SELECT user_id,expires_at
+        FROM account_sessions WHERE token_hash=? FOR SHARE SKIP LOCKED`)
+        .get(session.tokenHash);
+      if (lockedSession?.user_id !== current.id ||
+        Number(lockedSession.expires_at) <= Date.now()) return null;
+      const membership = await archive.db.prepare("", `SELECT role,approved,person_id,tree_access
+        FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
+        .get(archive.db.archiveId || "", current.id);
+      if (!membership?.approved || membership.role !== current.role ||
+        (membership.person_id || "") !== (current.personId || "") ||
+        membership.tree_access !== (current.treeAccess || "all")) return null;
+    }
+    return await auth.canRead(req) ? current : null;
+  };
   const canDeliverAiData = async (
     req: IncomingMessage,
     expectedScope: string,
     expectedUserId?: string,
     lockAccess = false,
   ) => {
-    const current = await auth.currentUser(req);
+    const current = lockAccess
+      ? await lockedChatReader(req, expectedUserId)
+      : await auth.currentUser(req);
     if (!current || (expectedUserId && current.id !== expectedUserId)) return false;
-    if (lockAccess && archive.db.kind === "postgres") {
-      if (!auth.local) {
-        const session = await auth.accountSession(req);
-        if (!session || session.accountId !== current.id) return false;
-        // Account deletion locks the session before the archive. SKIP LOCKED
-        // fails closed without reversing that lock order.
-        const lockedSession = await archive.db.prepare("", `SELECT user_id,expires_at
-          FROM account_sessions WHERE token_hash=? FOR SHARE SKIP LOCKED`)
-          .get(session.tokenHash);
-        if (lockedSession?.user_id !== current.id ||
-          Number(lockedSession.expires_at) <= Date.now()) return false;
-      }
-      if (!auth.local) {
-        // Serialize the durable answer with membership and tier revocation.
-        // The trusted local identity has no membership row in PostgreSQL.
-        const membership = await archive.db.prepare("", `SELECT role,approved,person_id,tree_access
-          FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
-          .get(archive.db.archiveId || "", current.id);
-        if (!membership?.approved || membership.role !== current.role ||
-          (membership.person_id || "") !== (current.personId || "") ||
-          membership.tree_access !== (current.treeAccess || "all")) return false;
-      }
-    }
     if (lockAccess) {
       // Transactional callers already hold session and membership locks. Keep
       // the established tier-before-scope order; the tier lock lasts through
       // the remaining read and write until that transaction commits.
-      return (await auth.canRead(req)) &&
-        (await accountAiAccess(archive.db, current.id, auth.local, true)) &&
+      return (await accountAiAccess(archive.db, current.id, auth.local, true)) &&
         (await accessScope(current)) === expectedScope;
     }
     if (!(await auth.canRead(req)) || (await accessScope(current)) !== expectedScope)
@@ -192,6 +193,42 @@ export function aiResearchHttp({
     });
     res.end(JSON.stringify(value));
     return true;
+  };
+  const deliverChatJson = async (req: IncomingMessage, res: ServerResponse,
+    user: ArchiveUser, expectedScope: string, fullValue: unknown,
+    cleanupValue?: () => Promise<unknown>) => {
+    const fullBody = JSON.stringify(fullValue);
+    const outcome = await archive.db.transaction(async () => {
+      const current = await lockedChatReader(req, user.id);
+      if (!current) return "denied";
+      // A basic account may still see chat IDs to delete old history, but
+      // titles and messages require the current locked tier and scope.
+      const showPrivate = (await accountAiAccess(archive.db, current.id, auth.local, true)) &&
+        (await accessScope(current)) === expectedScope;
+      if (!showPrivate && !cleanupValue) return "denied";
+      const body = showPrivate ? fullBody : JSON.stringify(await cleanupValue!());
+      if (res.destroyed) return "sent";
+      const delivered = finished(res, { cleanup: true });
+      const timeout = setTimeout(() => res.destroy(), 5_000);
+      timeout.unref();
+      try {
+        res.writeHead(200, {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "private, no-store",
+        });
+        res.end(body);
+        await delivered;
+      } catch (error) {
+        const disconnected = res.destroyed;
+        res.destroy();
+        await delivered.catch(() => {});
+        if (!disconnected && !res.headersSent) throw error;
+      } finally { clearTimeout(timeout); }
+      return "sent";
+    });
+    return outcome === "sent" || res.headersSent || res.destroyed
+      ? true
+      : json(res, 403, { error: "Доступ к диалогам изменился" });
   };
 
   const runResearch = createResearchRunner({
@@ -424,6 +461,9 @@ export function aiResearchHttp({
         user.id,
         aiAvailable ? scope : "history-cleanup-only",
       );
+      if (archive.db.kind === "postgres")
+        return deliverChatJson(req, res, user, scope, { chats: chatsForScope },
+          async () => ({ chats: await chats.list(user.id, "history-cleanup-only") }));
       const currentUser = await auth.currentUser(req);
       if (!currentUser?.approved || currentUser.id !== user.id)
         return json(res, 403, { error: "Доступ к диалогам изменился" });
@@ -461,6 +501,16 @@ export function aiResearchHttp({
         const busy = !!(await chats.isBusy(id));
         const messages = await chats.messages(id, user.id);
         await beforeChatDelivery?.();
+        if (archive.db.kind === "postgres")
+          return deliverChatJson(req, res, user, chat.accessScope, {
+            chat: {
+              id: chat.id,
+              createdAt: chat.createdAt,
+              updatedAt: chat.updatedAt,
+              busy,
+            },
+            messages,
+          });
         if (!(await canDeliverAiData(req, chat.accessScope)))
           return json(res, 403, { error: "Доступ к диалогу изменился" });
         return json(res, 200, {
