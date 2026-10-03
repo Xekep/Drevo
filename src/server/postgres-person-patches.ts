@@ -74,7 +74,7 @@ async function readPatchNeighborhood(
   ids: string[],
 ) {
   const relations = await client.query(
-    `SELECT id,source,target,type,note,twin_kind,created_by,sources FROM relations
+    `SELECT id,source,target,type,note,twin_kind,created_by,sources,confidence FROM relations
       WHERE archive_id=$1 AND (source=ANY($2::text[]) OR target=ANY($2::text[]))
       ORDER BY ordinal`,
     [archiveId, ids],

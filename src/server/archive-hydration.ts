@@ -39,6 +39,7 @@ export function hydrateRelations(
         type: type as FamilyLink["type"],
         ...(row.note ? { note: String(row.note) } : {}),
         ...(Array.isArray(sources) && sources.length ? { sources } : {}),
+        ...(row.confidence ? { confidence: String(row.confidence) as FamilyLink["confidence"] } : {}),
         ...(type === "twin" ? { twinKind: (row.twin_kind || "unknown") as FamilyLink["twinKind"] } : {}),
       });
   }

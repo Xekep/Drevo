@@ -56,6 +56,7 @@ test("analysis export retains genealogy and sources, excludes media and internal
         to: "p",
         type: "godparent",
         note: "Метрическая книга",
+        confidence: "probable",
         createdBy: "oauth-id",
       },
     ],
@@ -76,6 +77,7 @@ test("analysis export retains genealogy and sources, excludes media and internal
       to: "p",
       type: "godparent",
       note: "Метрическая книга",
+      confidence: "probable",
     },
   ]);
   assert.doesNotMatch(

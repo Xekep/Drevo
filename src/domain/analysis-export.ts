@@ -78,6 +78,7 @@ export function analysisExport(
       to: l.to,
       type: l.type,
       note: l.note,
+      confidence: l.confidence,
     })),
   };
 }

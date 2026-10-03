@@ -62,6 +62,7 @@ const tables: Table[] = [
       "twin_kind",
       "created_by",
       "sources",
+      "confidence",
     ],
     order: "ordinal",
     numbers: ["ordinal"],
@@ -219,7 +220,7 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
       (table.name === "person_comments" && imported.some((column) =>
         !["author_name", "updated_ms", "attachments"].includes(column) && !columns.includes(column))) ||
       (table.name === "relations" && imported.some((column) =>
-        !["twin_kind", "sources"].includes(column) && !columns.includes(column)))
+        !["twin_kind", "sources", "confidence"].includes(column) && !columns.includes(column)))
     )
       throw new Error(`Столбцы ${table.name} отличаются от схемы импорта`);
   }
@@ -282,7 +283,7 @@ function sqliteRows(db: DatabaseSync, table: Table): Row[] {
     : null;
   return db
     .prepare(
-      `SELECT ${table.columns.includes("ordinal") ? "rowid AS ordinal," : ""}${fields.map((field) => optionalColumns && !optionalColumns.has(field) ? ["twin_kind", "updated_ms"].includes(field) ? `NULL AS ${field}` : `'${["annotations", "event_links", "pages", "sources"].includes(field) ? "[]" : ""}' AS ${field}` : field).join(",")} FROM ${table.name} ORDER BY ${table.columns.includes("ordinal") ? "rowid" : table.order}`,
+      `SELECT ${table.columns.includes("ordinal") ? "rowid AS ordinal," : ""}${fields.map((field) => optionalColumns && !optionalColumns.has(field) ? ["twin_kind", "confidence", "updated_ms"].includes(field) ? `NULL AS ${field}` : `'${["annotations", "event_links", "pages", "sources"].includes(field) ? "[]" : ""}' AS ${field}` : field).join(",")} FROM ${table.name} ORDER BY ${table.columns.includes("ordinal") ? "rowid" : table.order}`,
     )
     .all()
     .map((row) => {

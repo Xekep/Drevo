@@ -10,8 +10,10 @@ import {
   connectionRoleName,
   fullName,
   suggestConnectionOrder,
+  CLAIM_CONFIDENCE_LABELS,
   type Family,
   type ArchiveUser,
+  type ClaimConfidence,
   type ConnectionType,
 } from "../domain";
 import { PersonSearch } from "./person-search";
@@ -45,7 +47,9 @@ export function ConnectionInspector({
   useUnsavedChanges(dirty);
   const [error, setError] = useState(""),
     [confirm, setConfirm] = useState(false),
-    [manualOrder, setManualOrder] = useState(false);
+    [manualOrder, setManualOrder] = useState(false),
+    [assessmentReset, setAssessmentReset] = useState(false);
+  const canAssess = user?.role === "admin" || user?.role === "researcher";
   const readonly =
     !canEdit ||
     (!!draft.original && !canChangeConnection(family, user, draft.original));
@@ -65,13 +69,16 @@ export function ConnectionInspector({
   const changedAssertion = !!draft.original &&
     (draft.from !== draft.original.from || draft.to !== draft.original.to ||
       draft.type !== draft.original.type);
+  const assessmentLocked = !!draft.original?.confidence && !canAssess;
+  const saveIdentityFirst = !!draft.original?.confidence && changedAssertion;
   const update = (next: Partial<ConnectionDraft>) => {
     setError("");
     setConfirm(false);
     const assertionChanged = ["from", "to", "type"].some((key) =>
       key in next && next[key as "from" | "to" | "type"] !== draft[key as "from" | "to" | "type"]);
     const merged = { ...draft, hint: undefined, ...next,
-      ...(assertionChanged ? { sources: [] } : {}) };
+      ...(assertionChanged ? { sources: [], confidence: undefined } : {}) };
+    if (assertionChanged && draft.confidence) setAssessmentReset(true);
     onChange(
       !draft.original &&
         !manualOrder &&
@@ -103,9 +110,10 @@ export function ConnectionInspector({
                 draft.note,
                 draft.twinKind,
               );
-      if (!remove && !draft.original && !["parent", "spouse"].includes(draft.type) &&
-        draft.sources?.length)
-        next.links!.at(-1)!.sources = draft.sources;
+      if (!remove && !draft.original && !["parent", "spouse"].includes(draft.type)) {
+        if (draft.sources?.length) next.links!.at(-1)!.sources = draft.sources;
+        if (draft.confidence) next.links!.at(-1)!.confidence = draft.confidence;
+      }
       if (!remove && archiveConnections(next).length === 0)
         throw new Error("Связь не создана");
       await save(next);
@@ -133,6 +141,7 @@ export function ConnectionInspector({
           </p>
           {draft.note && <p>{draft.note}</p>}
           {!!draft.sources?.length && <p>Источники связи: {draft.sources.map((source) => source.title).join("; ")}</p>}
+          {draft.confidence && <p>Оценка связи: {CLAIM_CONFIDENCE_LABELS[draft.confidence]}</p>}
           {draft.type === "twin" && (
             <p>
               Тип:{" "}
@@ -188,7 +197,7 @@ export function ConnectionInspector({
           selected={from}
           excludeId={draft.to}
           onChange={(id) => update({ from: id })}
-          disabled={busy}
+          disabled={busy || assessmentLocked}
         />
         {draft.hint && (
           <p className="field-hint" role="status">
@@ -199,7 +208,7 @@ export function ConnectionInspector({
           Кем приходится
           <select
             value={draft.type}
-            disabled={readonly || busy}
+            disabled={readonly || busy || assessmentLocked}
             onChange={(e) => update({ type: e.target.value as ConnectionType })}
           >
             <optgroup label="Семья">
@@ -261,7 +270,7 @@ export function ConnectionInspector({
           selected={to}
           excludeId={draft.from}
           onChange={(id) => update({ to: id })}
-          disabled={busy}
+          disabled={busy || assessmentLocked}
         />
         {!readonly && (
           <button
@@ -269,17 +278,19 @@ export function ConnectionInspector({
             className="icon-button connection-swap"
             aria-label="Поменять участников местами"
             title="Поменять участников местами"
-            disabled={busy}
+            disabled={busy || assessmentLocked}
             onClick={() => {
               setManualOrder(true);
               setError("");
               setConfirm(false);
+              if (draft.confidence) setAssessmentReset(true);
               onChange({
                 ...draft,
                 hint: undefined,
                 from: draft.to,
                 to: draft.from,
                 sources: [],
+                confidence: undefined,
               });
             }}
           >
@@ -297,6 +308,21 @@ export function ConnectionInspector({
             />
           </label>
         )}
+        {!["parent", "spouse"].includes(draft.type) && (
+          saveIdentityFirst
+            ? <p>Сначала сохраните новую связь, затем оцените её заново.</p>
+            : <label>
+                Статус достоверности связи
+                <select value={draft.confidence || ""} disabled={!canAssess || busy}
+                  onChange={(event) => update({ confidence: event.target.value
+                    ? event.target.value as ClaimConfidence : undefined })}>
+                  <option value="">Оценка не задана</option>
+                  {(Object.keys(CLAIM_CONFIDENCE_LABELS) as ClaimConfidence[]).map((status) =>
+                    <option key={status} value={status}>{CLAIM_CONFIDENCE_LABELS[status]}</option>)}
+                </select>
+              </label>
+        )}
+        {assessmentReset && <p role="status">Прежняя оценка связи снята из черновика. После сохранения оцените новую связь заново.</p>}
         {!["parent", "spouse"].includes(draft.type) && (
           <details className="union-milestone-sources">
             <summary>Источники связи ({draft.sources?.length || 0})</summary>
@@ -333,7 +359,7 @@ export function ConnectionInspector({
             {draft.original && (
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || assessmentLocked}
                 className="danger-action"
                 onClick={() => (confirm ? void submit(true) : setConfirm(true))}
               >
@@ -342,6 +368,7 @@ export function ConnectionInspector({
             )}
           </footer>
         )}
+        {assessmentLocked && <p>Оценённую связь может удалить или изменить по участникам и типу только исследователь или администратор.</p>}
       </form>
       {draft.type === "spouse" && draft.original && from && to && <FamilyUnionsPanel family={family} participants={[from.id, to.id]} user={user} editable={canEdit} save={save} busy={busy} onSaved={onSaved} />}
     </section>

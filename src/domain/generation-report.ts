@@ -215,6 +215,7 @@ export function generationReport(
           CONNECTION_NAMES[link.type],
           `${reference(link.from)}${link.note ? `; ${inline(link.note)}` : ""}`,
         );
+        write("Оценка связи", link.confidence && CLAIM_CONFIDENCE_LABELS[link.confidence]);
         sources("Источник связи", link.sources);
       }
       write("Занятие", person.occupation);
