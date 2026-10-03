@@ -4,6 +4,7 @@ import type { createAuth } from "./auth.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import {
   emailCredentials,
+  EmailDeliveryFailure,
   InvalidEmailCredential,
   StaleEmailSession,
   StaleOAuthSession,
@@ -67,6 +68,12 @@ export function emailAuthHttp(
     limit: 8,
     windowMs: 10 * 60_000,
   });
+  const registrationRequested = {
+    message: "Если адрес доступен, письмо с подтверждением отправлено.",
+  };
+  const resetRequested = {
+    message: "Если адрес зарегистрирован, письмо отправлено.",
+  };
   const json = (res: ServerResponse, status: number, data: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -137,9 +144,7 @@ export function emailAuthHttp(
             name: body.name,
             password: body.password,
           });
-          return json(res, 202, {
-            message: "Если адрес доступен, письмо с подтверждением отправлено.",
-          });
+          return json(res, 202, registrationRequested);
         }
         if (url.pathname === "/api/auth/email/verify") {
           const account = await credentials.verifyRegistration(body.token);
@@ -164,9 +169,7 @@ export function emailAuthHttp(
         }
         if (url.pathname === "/api/auth/email/reset/request") {
           await credentials.requestReset(body.email);
-          return json(res, 202, {
-            message: "Если адрес зарегистрирован, письмо отправлено.",
-          });
+          return json(res, 202, resetRequested);
         }
         if (url.pathname === "/api/auth/email/reset/complete") {
           await credentials.resetPassword(body.token, body.password);
@@ -227,6 +230,16 @@ export function emailAuthHttp(
         }
         return json(res, 404, { error: "Неизвестный запрос." });
       } catch (error) {
+        if (error instanceof EmailDeliveryFailure) {
+          // Both anonymous routes promise the same answer regardless of
+          // whether the address exists. Delivery failure must not turn that
+          // answer into an account-existence signal.
+          console.error("email_delivery_failed", url.pathname);
+          if (url.pathname === "/api/auth/email/register")
+            return json(res, 202, registrationRequested);
+          if (url.pathname === "/api/auth/email/reset/request")
+            return json(res, 202, resetRequested);
+        }
         if (error instanceof StaleEmailSession)
           return json(res, 401, { error: error.message });
         if (error instanceof StaleOAuthSession)

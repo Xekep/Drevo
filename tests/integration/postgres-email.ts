@@ -110,6 +110,58 @@ export async function verifyEmailAccounts(
     1,
     "a duplicate email must not create a second archive",
   );
+  const previousDeliveryFlag = process.env.EMAIL_AUTH_ENABLED;
+  process.env.EMAIL_AUTH_ENABLED = "1";
+  try {
+    const unavailableSender = emailAuthHttp(
+      db,
+      {} as Parameters<typeof emailAuthHttp>[1],
+      "https://mydrevo.org",
+      async () => { throw new Error("synthetic SMTP outage"); },
+    );
+    const requestDuringOutage = async (path: string, body: Record<string, string>) => {
+      const bytes = Buffer.from(JSON.stringify(body));
+      const request = {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "https://mydrevo.org" },
+        socket: { remoteAddress: "127.0.0.1" },
+        async *[Symbol.asyncIterator]() { yield bytes; },
+      } as unknown as IncomingMessage;
+      let status = 0;
+      let payload = "";
+      const response = {
+        writeHead(code: number) { status = code; },
+        end(value: string) { payload = value; },
+      } as unknown as ServerResponse;
+      await unavailableSender.handle(request, response, new URL(`https://mydrevo.org${path}`));
+      return { status, payload };
+    };
+    const unknownReset = await requestDuringOutage("/api/auth/email/reset/request",
+      { email: "absent-reset@example.org" });
+    const knownReset = await requestDuringOutage("/api/auth/email/reset/request",
+      { email: "new.person@example.org" });
+    assert.deepEqual(knownReset, unknownReset,
+      "an SMTP outage must not reveal whether a reset address is registered");
+    assert.equal(knownReset.status, 202);
+    const occupiedRegistration = await requestDuringOutage("/api/auth/email/register", {
+      email: "new.person@example.org", name: "Existing", password: "another secure password",
+    });
+    const availableRegistration = await requestDuringOutage("/api/auth/email/register", {
+      email: "outage-register@example.org", name: "New", password: "another secure password",
+    });
+    assert.deepEqual(availableRegistration, occupiedRegistration,
+      "an SMTP outage must not reveal whether registration is available");
+    assert.equal(availableRegistration.status, 202);
+    assert.equal((await client.query(
+      "SELECT count(*)::int AS n FROM email_password_resets WHERE email='new.person@example.org'",
+    )).rows[0].n, 0, "a failed delivery leaves no usable reset token");
+    assert.equal((await client.query(
+      "SELECT count(*)::int AS n FROM pending_email_registrations WHERE email='outage-register@example.org'",
+    )).rows[0].n, 0, "a failed delivery leaves no usable registration token");
+  } finally {
+    if (previousDeliveryFlag === undefined) delete process.env.EMAIL_AUTH_ENABLED;
+    else process.env.EMAIL_AUTH_ENABLED = previousDeliveryFlag;
+  }
   await accounts.requestReset("new.person@example.org");
   const checkedBeforeReset = await accounts.login({
     email: "new.person@example.org",
