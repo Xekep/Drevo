@@ -114,12 +114,18 @@ export function personDiscussionHttp({
   publicOrigin,
   uploadsDirectory,
   media,
+  beforeAttachmentDelivery,
+  beforeLockedAttachmentDelivery,
+  afterAttachmentAccessCheck,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
   uploadsDirectory: string;
   media: ReturnType<typeof mediaStore>;
+  beforeAttachmentDelivery?: () => Promise<void>;
+  beforeLockedAttachmentDelivery?: () => Promise<void>;
+  afterAttachmentAccessCheck?: () => Promise<void>;
 }) {
   const db = archive.db;
   const audit = auditStore(db);
@@ -231,25 +237,99 @@ export function personDiscussionHttp({
         return json(res, 404, { error: "Вложение не найдено" });
       try {
         const bytes = await attachments.read(file, !!match[4]);
+        // Capture revision before the scoped visibility snapshot. A graph
+        // edit between that snapshot and final delivery must not bless stale
+        // visibility with the new revision.
+        const expectedRevision = (await archive.meta()).revision;
         await checkCurrentAccess();
+        await afterAttachmentAccessCheck?.();
         const current = (await comment.get(Number(match[2]), personId)) as
           CommentRow | undefined;
         if (!current || !commentFilesFromJson(current.attachments).some(
           (item) => item.id === file.id && item.type === file.type,
         ))
           return json(res, 404, { error: "Вложение не найдено" });
-        res.writeHead(200, {
-          "Content-Type": match[4] ? "image/webp" : file.type,
-          "Content-Length": bytes.length,
-          "Cache-Control": "private, no-store",
-          "X-Content-Type-Options": "nosniff",
-          "Content-Security-Policy": "default-src 'none'; sandbox",
-          "Content-Disposition": `${(match[4] || file.type.startsWith("image/")) && url.searchParams.get("download") !== "1" ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16)}`)}`,
-        });
-        res.end(bytes);
+        await beforeAttachmentDelivery?.();
+        const send = () => {
+          res.writeHead(200, {
+            "Content-Type": match[4] ? "image/webp" : file.type,
+            "Content-Length": bytes.length,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "Content-Disposition": `${(match[4] || file.type.startsWith("image/")) && url.searchParams.get("download") !== "1" ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16)}`)}`,
+          });
+          res.end(bytes);
+        };
+        if (db.kind !== "postgres" || !db.postgresTransaction || auth.local) {
+          send();
+          return true;
+        }
+        const session = await auth.accountSession(req);
+        if (!session || session.accountId !== user.id)
+          return json(res, 401, { error: "Сеанс завершён. Войдите снова" });
+        if (!db.archiveId) return json(res, 404, { error: "Вложение не найдено" });
+        let delivery: "sent" | "denied";
+        try {
+          delivery = await db.postgresTransaction(async (client) => {
+            // Keep the archive, session, membership and comment stable until
+            // the in-memory attachment is handed to HTTP. A slow reader then
+            // cannot hold ordinary archive edits through the whole transfer.
+            await client.query("SELECT set_config('drevo.archive_id',$1,true)", [db.archiveId]);
+            const archiveRow = await client.query<{ revision: string }>(
+              "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT", [db.archiveId],
+            );
+            if (Number(archiveRow.rows[0]?.revision) !== expectedRevision)
+              return "denied";
+            const active = await client.query<{ expires_at: string }>(
+              `SELECT expires_at FROM account_sessions WHERE token_hash=$1 AND user_id=$2
+               FOR SHARE NOWAIT`, [session.tokenHash, user.id],
+            );
+            if (!active.rows[0] || Number(active.rows[0].expires_at) <= Date.now())
+              return "denied";
+            const members = await client.query<{
+              role: string; approved: boolean; tree_access: string; person_id: string | null;
+            }>(
+              `SELECT role,approved,tree_access,person_id FROM archive_memberships
+               WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+              [db.archiveId, user.id],
+            );
+            const member = members.rows[0];
+            if (!member?.approved || member.role !== user.role ||
+                (member.tree_access || "all") !== (user.treeAccess || "all") ||
+                (member.person_id || null) !== (user.personId || null))
+              return "denied";
+            const comments = await client.query<{ attachments: unknown }>(
+              `SELECT attachments FROM person_comments WHERE id=$1 AND person_id=$2
+               FOR SHARE NOWAIT`, [Number(match[2]), personId],
+            );
+            if (!comments.rows[0] || !commentFilesFromJson(comments.rows[0].attachments)
+              .some((item) => item.id === file.id && item.type === file.type &&
+                item.name === file.name && item.size === file.size))
+              return "denied";
+            await beforeLockedAttachmentDelivery?.();
+            if (!res.destroyed) send();
+            return "sent";
+          });
+        } catch (error) {
+          if ((error as { code?: string }).code === "55P03")
+            return json(res, 409, { error: "Права доступа меняются. Повторите запрос" });
+          throw error;
+        }
+        if (res.destroyed) return true;
+        if (delivery === "denied")
+          return json(res, 404, { error: "Вложение не найдено" });
         return true;
-      } catch {
-        return json(res, 404, { error: "Файл вложения не найден" });
+      } catch (error) {
+        if (res.destroyed) return true;
+        if (res.headersSent) {
+          res.destroy(error as Error);
+          return true;
+        }
+        if (error instanceof ForbiddenError ||
+            (error as NodeJS.ErrnoException).code === "ENOENT")
+          return json(res, 404, { error: "Файл вложения не найден" });
+        throw error;
       }
     }
     if (match[3]) return json(res, 405, { error: "Метод не поддерживается" });
