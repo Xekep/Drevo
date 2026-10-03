@@ -46,6 +46,7 @@ import { accountInvitationsHttp } from "./account-invitations-http.ts";
 import { archiveRoutePool } from "./archive-route-pool.ts";
 import { publicShareAccess } from "./public-share-access.ts";
 import { safeRequestRoute } from "./safe-request-route.ts";
+import { sessionHttp } from "./session-http.ts";
 import { sourceCatalogHttp } from "./source-catalog-http.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -284,6 +285,11 @@ export async function startServer(
     fetcher: oauthFetch,
     db: archive.db,
   });
+  const showSession = sessionHttp(auth, archive.db, {
+    yandex: yandex.enabled,
+    vk: () => vk.isEnabled(),
+    email: emailAuth?.enabled === true,
+  });
   const vite = production
     ? null
     : await (
@@ -355,23 +361,7 @@ export async function startServer(
     if (await yandex.handle(req, res, parsedUrl)) return;
     if (await vk.handle(req, res, parsedUrl)) return;
 
-    if (path === "/api/session" && req.method === "GET") {
-      const sessionUser = await auth.currentUser(req);
-      return json(res, 200, {
-        canEdit: await auth.canEdit(req),
-        local: auth.local,
-        yandex: yandex.enabled,
-        vk: await vk.isEnabled(),
-        email: emailAuth?.enabled === true,
-        account: await auth.accountProfile(req),
-        user: sessionUser
-          ? {
-              ...sessionUser,
-              platformAdmin: await auth.isPlatformAdmin(req),
-            }
-          : null,
-      });
-    }
+    if (await showSession(req, res, parsedUrl)) return;
 
     if (!path.startsWith("/api/")) {
       if (vite) {

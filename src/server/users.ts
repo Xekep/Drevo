@@ -39,6 +39,23 @@ type UserStoreOptions = {
   requireInitialAdmin?: boolean;
 };
 
+export function archiveUserFromRow(row: Record<string, unknown>): ArchiveUser {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    role: row.role as Role,
+    createdAt: String(row.created_at),
+    lastVisitAt: row.last_visit_at ? String(row.last_visit_at) : undefined,
+    approved: !!row.approved,
+    personId: row.person_id ? String(row.person_id) : undefined,
+    treeAccess: (row.tree_access || "all") as TreeAccess,
+    fullAccess:
+      row.full_access === undefined || row.full_access === null
+        ? undefined
+        : !!row.full_access,
+  };
+}
+
 export async function userStore(
   db: StoreDatabase,
   options: UserStoreOptions = {
@@ -72,20 +89,6 @@ export async function userStore(
     throw new Error(
       "Для первого запуска production задайте INITIAL_ADMIN_YANDEX_ID в /etc/drevo.env",
     );
-  const convert = (row: Record<string, unknown>): ArchiveUser => ({
-    id: String(row.id),
-    name: String(row.name),
-    role: row.role as Role,
-    createdAt: String(row.created_at),
-    lastVisitAt: row.last_visit_at ? String(row.last_visit_at) : undefined,
-    approved: !!row.approved,
-    personId: row.person_id ? String(row.person_id) : undefined,
-    treeAccess: (row.tree_access || "all") as TreeAccess,
-    fullAccess:
-      row.full_access === undefined || row.full_access === null
-        ? undefined
-        : !!row.full_access,
-  });
   async function get(id: string) {
     const row = await db
       .prepare(
@@ -93,7 +96,7 @@ export async function userStore(
         "SELECT u.*, t.full_access FROM runtime_users u LEFT JOIN account_tiers t ON t.account_id=u.id WHERE u.id=?",
       )
       .get(id);
-    return row ? convert(row) : null;
+    return row ? archiveUserFromRow(row) : null;
   }
   const updateVisit = db.prepare(
     "UPDATE users SET last_visit_at=? WHERE id=? AND (last_visit_at IS NULL OR last_visit_at<?)",
@@ -353,7 +356,7 @@ export async function userStore(
     const page = rows.slice(0, limit);
     const last = page.at(-1);
     return {
-      users: page.map(convert),
+      users: page.map(archiveUserFromRow),
       next:
         rows.length > limit && last
           ? Buffer.from(JSON.stringify([last.created_at, last.id])).toString(
@@ -483,6 +486,6 @@ export async function userStore(
             "SELECT u.*, t.full_access FROM runtime_users u LEFT JOIN account_tiers t ON t.account_id=u.id ORDER BY u.created_at,u.id",
           )
           .all()
-      ).map(convert),
+      ).map(archiveUserFromRow),
   };
 }
