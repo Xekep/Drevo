@@ -120,7 +120,8 @@ export function sharedFamily(
       })),
     links: (family.links || [])
       .filter((l) => ids.has(l.from) && ids.has(l.to))
-      .map(({ id, from, to, type, note }) => ({ id, from, to, type, note })),
+      .map(({ id, from, to, type, note, confidence }) => ({ id, from, to, type, note,
+        ...(confidence !== undefined ? { confidence } : {}) })),
     unions: (family.unions || [])
       .filter((union) => union.participants.every((id) => ids.has(id)))
       .map((union) => ({

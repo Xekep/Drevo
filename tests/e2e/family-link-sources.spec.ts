@@ -33,6 +33,7 @@ test("источник дополнительной связи сохраняе�
   await edge.focus();
   await edge.press("Enter");
   const panel = page.locator(".connection-inspector");
+  await panel.getByLabel("Статус достоверности связи").selectOption("confirmed");
   await panel.getByText("Источники связи (0)").click();
   await panel.getByRole("button", { name: "Добавить источник вручную" }).click();
   const inline = panel.locator(".union-inline-citation");
@@ -47,17 +48,32 @@ test("источник дополнительной связи сохраняе�
     .toBe(source.id);
   expect(family.links?.find((link) => link.id === "test-guardian-evidence")?.sources?.[0].title)
     .toBe("Семейная запись");
+  expect(family.links?.find((link) => link.id === "test-guardian-evidence")?.confidence)
+    .toBe("confirmed");
   expect(family.people.find((person) => person.id === "e2e-sibling")?.parents)
     .not.toContain("e2e-child");
   await edge.focus();
   await edge.press("Enter");
   await panel.getByLabel("Кем приходится").selectOption("nurse");
   await expect(panel.getByText("Источники связи (0)")).toBeVisible();
+  await expect(panel.getByRole("status")).toContainText("Прежняя оценка связи снята");
+  await expect(panel.getByLabel("Статус достоверности связи")).toHaveCount(0);
   await panel.getByRole("button", { name: "Сохранить связь" }).click();
   await expect.poll(() => family.links?.find((link) => link.id === "test-guardian-evidence")?.type)
     .toBe("nurse");
   expect(family.links?.find((link) => link.id === "test-guardian-evidence")?.sources)
     .toBeUndefined();
+  expect(family.links?.find((link) => link.id === "test-guardian-evidence")?.confidence)
+    .toBeUndefined();
+  const updated = page.getByRole("button", { name: "Связь: Кормилица" });
+  await updated.focus();
+  await updated.press("Enter");
+  await panel.getByLabel("Статус достоверности связи").selectOption("probable");
+  await panel.getByRole("button", { name: "Сохранить связь" }).click();
+  await expect.poll(() => family.links?.find((link) => link.id === "test-guardian-evidence")?.confidence)
+    .toBe("probable");
+  await page.locator('.flow-person[data-person-id="e2e-sibling"] .flow-person-content').click();
+  await expect(page.getByText("Оценка связи «Кормилица»: Вероятно")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1))
     .toBe(true);
 });

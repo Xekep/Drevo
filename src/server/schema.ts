@@ -674,6 +674,20 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const linkConfidenceExtension = "2026-10-family-link-confidence";
+  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(linkConfidenceExtension) ||
+      !tableHasColumn(db, "relations", "confidence")) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      if (!tableHasColumn(db, "relations", "confidence"))
+        db.exec("ALTER TABLE relations ADD COLUMN confidence TEXT CHECK(confidence IS NULL OR (type NOT IN ('parent','spouse') AND confidence IN ('confirmed','probable','tentative','conflicting','unknown')))");
+      db.prepare("INSERT OR IGNORE INTO migrations(id) VALUES(?)").run(linkConfidenceExtension);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   // Nullable metadata is compatible with the previous release. Keep the base
   // schema version so rollback can still open the database after deployment.
   const visitsExtension = "2026-09-user-last-visit";

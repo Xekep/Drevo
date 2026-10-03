@@ -5,13 +5,14 @@ import {
   type ConnectionType,
 } from "./mutations.ts";
 import { owns, type ArchiveUser } from "./access.ts";
-import type { Family, Person, Source } from "./types.ts";
+import type { ClaimConfidence, Family, Person, Source } from "./types.ts";
 
 export type GraphConnection = Connection & {
   key: string;
   note?: string;
   createdBy?: string;
   sources?: Source[];
+  confidence?: ClaimConfidence;
 };
 export function connectionKey(edge: Connection) {
   return edge.id
@@ -27,7 +28,8 @@ export function connectionKey(edge: Connection) {
 }
 export function archiveConnections(family: Family): GraphConnection[] {
   const edges = new Map<string, GraphConnection>();
-  function add(edge: Connection & { note?: string; createdBy?: string; sources?: Source[] }) {
+  function add(edge: Connection & { note?: string; createdBy?: string; sources?: Source[];
+    confidence?: ClaimConfidence }) {
     const key = connectionKey(edge);
     edges.set(key, { ...edge, key });
   }
@@ -71,6 +73,7 @@ export function replaceConnection(
     note?: string;
     twinKind?: Connection["twinKind"];
     sources?: Source[];
+    confidence?: ClaimConfidence;
   },
 ) {
   const actual = archiveConnections(family).find((e) => e.key === old.key);
@@ -98,6 +101,10 @@ export function replaceConnection(
     if (old.from === replacement.from && old.to === replacement.to &&
       old.type === replacement.type)
       added.sources = replacement.sources ?? actual.sources;
+    if (old.from === replacement.from && old.to === replacement.to &&
+      old.type === replacement.type)
+      added.confidence = Object.hasOwn(replacement, "confidence")
+        ? replacement.confidence : actual.confidence;
   }
   return next;
 }

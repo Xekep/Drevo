@@ -297,6 +297,7 @@ export function validateFamily(value: unknown): Family {
       link.from === link.to ||
       !EXTRA_LINK_TYPES.includes(link.type) ||
       (link.note !== undefined && typeof link.note !== "string") ||
+      (link.confidence !== undefined && !isClaimConfidence(link.confidence)) ||
       (link.sources !== undefined &&
         (!Array.isArray(link.sources) || link.sources.length > 50 ||
           !link.sources.every((source) => validPersonSource(source) &&

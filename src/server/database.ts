@@ -87,8 +87,8 @@ async function replaceArchiveRows(db: StoreDatabase, rows: ArchiveRows) {
     await unionQuery.run(row.id, row.participantA, row.participantB, row.data);
 
   const relationQuery = db.prepare(
-    "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by,sources) VALUES(?,?,?,?,?,?,?,?)",
-    "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by,sources) VALUES(?,?,?,?,?,?,?,?)",
+    "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by,sources,confidence) VALUES(?,?,?,?,?,?,?,?,?)",
+    "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by,sources,confidence) VALUES(?,?,?,?,?,?,?,?,?)",
   );
   for (const row of rows.relations)
     await relationQuery.run(
@@ -100,6 +100,7 @@ async function replaceArchiveRows(db: StoreDatabase, rows: ArchiveRows) {
       row.twinKind,
       row.createdBy,
       row.sources,
+      row.confidence,
     );
 
   const photoQuery = db.prepare(
@@ -158,12 +159,12 @@ async function syncRelations(
       "DELETE FROM relations WHERE id=?",
     ),
     insert = db.prepare(
-      "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by,sources) VALUES(?,?,?,?,?,?,?,?)",
-      "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by,sources) VALUES(?,?,?,?,?,?,?,?)",
+      "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by,sources,confidence) VALUES(?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by,sources,confidence) VALUES(?,?,?,?,?,?,?,?,?)",
     ),
     update = db.prepare(
-      "UPDATE relations SET note=?,twin_kind=?,created_by=?,sources=? WHERE id=?",
-      "UPDATE relations SET note=?,twin_kind=?,created_by=?,sources=? WHERE id=?",
+      "UPDATE relations SET note=?,twin_kind=?,created_by=?,sources=?,confidence=? WHERE id=?",
+      "UPDATE relations SET note=?,twin_kind=?,created_by=?,sources=?,confidence=? WHERE id=?",
     );
   for (const row of before) {
     const next = following.get(row.id);
@@ -192,14 +193,17 @@ async function syncRelations(
         row.twinKind,
         row.createdBy,
         row.sources,
+        row.confidence,
       );
     else if (
       old.note !== row.note ||
       old.twinKind !== row.twinKind ||
       old.createdBy !== row.createdBy ||
-      old.sources !== row.sources
+      old.sources !== row.sources ||
+      old.confidence !== row.confidence
     )
-      await update.run(row.note, row.twinKind, row.createdBy, row.sources, row.id);
+      await update.run(row.note, row.twinKind, row.createdBy, row.sources,
+        row.confidence, row.id);
   }
 }
 

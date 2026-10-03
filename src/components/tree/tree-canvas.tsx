@@ -107,7 +107,8 @@ export type ConnectionDraft = {
   type: GraphConnection["type"];
   original?: GraphConnection;
   note?: string;
-  sources?: GraphConnection["sources"];
+    sources?: GraphConnection["sources"];
+    confidence?: GraphConnection["confidence"];
   twinKind?: GraphConnection["twinKind"];
   hint?: string;
 };
@@ -1769,6 +1770,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 note: edge.data.connection.note,
                 twinKind: edge.data.connection.twinKind,
                 sources: edge.data.connection.sources,
+                confidence: edge.data.connection.confidence,
               });
           }}
           onReconnectStart={() => setConnecting(true)}

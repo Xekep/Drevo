@@ -90,7 +90,7 @@ export async function persistPostgresGraphChanges(
   // changes use a temporary negative range to avoid immediate UNIQUE collisions.
   const oldRows = (
     await client.query(
-      "SELECT id,ordinal,source,target,type,note,twin_kind,created_by,sources FROM relations WHERE archive_id=$1 ORDER BY ordinal",
+      "SELECT id,ordinal,source,target,type,note,twin_kind,created_by,sources,confidence FROM relations WHERE archive_id=$1 ORDER BY ordinal",
       [archiveId],
     )
   ).rows;
@@ -104,6 +104,7 @@ export async function persistPostgresGraphChanges(
     twin_kind: row.twinKind,
     created_by: row.createdBy,
     sources: JSON.parse(row.sources),
+    confidence: row.confidence,
   }));
   const nextById = new Map(rows.map((row) => [row.id, row]));
   const kind = (row: { type: string }) =>
@@ -183,11 +184,11 @@ export async function persistPostgresGraphChanges(
   );
   if (changed.length)
     await client.query(
-      `INSERT INTO relations(archive_id,id,ordinal,source,target,type,note,twin_kind,created_by,sources)
-     SELECT $1,r.id,r.ordinal,r.source,r.target,r.type,r.note,r.twin_kind,r.created_by,r.sources
-       FROM jsonb_to_recordset($2::jsonb) AS r(id text,ordinal bigint,source text,target text,type text,note text,twin_kind text,created_by text,sources jsonb)
+      `INSERT INTO relations(archive_id,id,ordinal,source,target,type,note,twin_kind,created_by,sources,confidence)
+     SELECT $1,r.id,r.ordinal,r.source,r.target,r.type,r.note,r.twin_kind,r.created_by,r.sources,r.confidence
+       FROM jsonb_to_recordset($2::jsonb) AS r(id text,ordinal bigint,source text,target text,type text,note text,twin_kind text,created_by text,sources jsonb,confidence text)
      ON CONFLICT (archive_id,id) DO UPDATE SET ordinal=EXCLUDED.ordinal,source=EXCLUDED.source,
-       target=EXCLUDED.target,type=EXCLUDED.type,note=EXCLUDED.note,twin_kind=EXCLUDED.twin_kind,created_by=EXCLUDED.created_by,sources=EXCLUDED.sources`,
+       target=EXCLUDED.target,type=EXCLUDED.type,note=EXCLUDED.note,twin_kind=EXCLUDED.twin_kind,created_by=EXCLUDED.created_by,sources=EXCLUDED.sources,confidence=EXCLUDED.confidence`,
       [archiveId, JSON.stringify(changed)],
     );
   const remaining = new Set(next.people.map((row) => row.id));

@@ -26,6 +26,7 @@ import {
   type FamilyLink,
   type PersonValueClaim,
   CLAIM_CONFIDENCE_LABELS,
+  CONNECTION_NAMES,
 } from "../domain";
 import { collectPersonSources, repositorySummary } from "../domain/person-sources.ts";
 import { PortraitPlaceholder } from "./portrait-placeholder";
@@ -435,6 +436,12 @@ export function PersonPanel({
                         {analyzeKinship(person, p, people, links, unions).roles?.[1]
                           .term || edgeLabel(person, p, links)}
                       </small>
+                      {links?.filter((link) => link.confidence &&
+                        ((link.from === person.id && link.to === p.id) ||
+                          (link.to === person.id && link.from === p.id)))
+                        .map((link) => <small key={link.id}>
+                          Оценка связи «{CONNECTION_NAMES[link.type]}»: {CLAIM_CONFIDENCE_LABELS[link.confidence!]}
+                        </small>)}
                     </span>
                     <ChevronRight size={13} />
                   </button>

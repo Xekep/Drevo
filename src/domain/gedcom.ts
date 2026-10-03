@@ -31,6 +31,7 @@ const CLAIM_CONFIDENCE_TAGS = [
   "_DREVO_PLACE_CONFIDENCE",
   "_DREVO_OCCUPATION_CONFIDENCE",
   "_DREVO_BIRTH_SURNAME_CONFIDENCE",
+  "_DREVO_LINK_CONFIDENCE",
 ] as const;
 
 function stripArchiveSourceIds(sources?: Source[]) {
@@ -1009,6 +1010,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     note?: string,
     twinKind?: FamilyLink["twinKind"],
     evidence?: Source[],
+    confidence?: ClaimConfidence,
   ) => {
     const existing = links.find(
       (l) =>
@@ -1020,6 +1022,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       if (note) existing.note = note;
       if (type === "twin") existing.twinKind = twinKind || "unknown";
       if (evidence?.length) existing.sources = [...(existing.sources || []), ...evidence];
+      if (confidence) existing.confidence = confidence;
     } else
       links.push({
         id: `${namespace}-l${links.length + 1}`,
@@ -1028,6 +1031,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         type,
         note,
         ...(evidence?.length ? { sources: evidence } : {}),
+        ...(confidence ? { confidence } : {}),
         ...(type === "twin" ? { twinKind: twinKind || "unknown" } : {}),
       });
   };
@@ -1236,7 +1240,10 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         );
         continue;
       }
-      if (EXTRA_LINK_TYPES.includes(type))
+      if (EXTRA_LINK_TYPES.includes(type)) {
+        const status = value(assoc, "_DREVO_LINK_CONFIDENCE");
+        if (status && !isClaimConfidence(status))
+          warnings.add("Некорректная оценка дополнительной связи Drevo опущена; проверьте исходный GEDCOM.");
         addLink(
           personRef(assoc.value).id,
           ids.get(n.xref)!,
@@ -1247,8 +1254,9 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
                 "unknown") as FamilyLink["twinKind"])
             : undefined,
           sources(assoc),
+          isClaimConfidence(status) ? status : undefined,
         );
-      else
+      } else
         warnings.add(
           `Дополнительная связь «${type || "без типа"}» не перенесена автоматически.`,
         );
@@ -1854,6 +1862,7 @@ export function exportGedcom(
         } else emit(2, "RELA", l.type);
         if (l.note) emit(2, "NOTE", l.note);
         if (l.type === "twin") emit(2, "_DREVO_TWIN", l.twinKind || "unknown");
+        if (l.confidence) emit(2, "_DREVO_LINK_CONFIDENCE", l.confidence);
         for (const source of l.sources || []) citation(2, source);
       }
     media.forEach((item, i) => {

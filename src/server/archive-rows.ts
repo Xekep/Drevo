@@ -10,6 +10,7 @@ export type RelationRow = {
   twinKind: string | null;
   createdBy: string | null;
   sources: string;
+  confidence: string | null;
 };
 export type TagRow = {
   id: string;
@@ -56,6 +57,7 @@ export function archiveRows(family: Family): ArchiveRows {
         twinKind: null,
         createdBy: null,
         sources: "[]",
+        confidence: null,
       });
     for (const spouse of person.spouses) {
       const pair = [person.id, spouse].sort(),
@@ -71,6 +73,7 @@ export function archiveRows(family: Family): ArchiveRows {
         twinKind: null,
         createdBy: null,
         sources: "[]",
+        confidence: null,
       });
     }
   }
@@ -84,6 +87,7 @@ export function archiveRows(family: Family): ArchiveRows {
       twinKind: link.type === "twin" ? link.twinKind || "unknown" : null,
       createdBy: link.createdBy || null,
       sources: JSON.stringify(link.sources || []),
+      confidence: link.confidence || null,
     });
 
   const photos: JsonRow[] = [],

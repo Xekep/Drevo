@@ -76,9 +76,20 @@ export function authorizeArchive(
   owners(next.links || [], current.links || []);
   owners(next.unions || [], current.unions || []);
   const previousLinks = new Map((current.links || []).map((link) => [link.id, link]));
+  const canAssess = user.role === "admin" || user.role === "researcher";
+  if (!canAssess)
+    for (const old of current.links || [])
+      if (old.confidence && !next.links?.some((link) => link.id === old.id))
+        throw new ForbiddenError("Оценённую связь может удалить только исследователь или администратор");
   for (const link of next.links || []) {
     const old = previousLinks.get(link.id);
-    if (old && (old.from !== link.from || old.to !== link.to || old.type !== link.type) &&
+    const identityChanged = old && (old.from !== link.from || old.to !== link.to ||
+      old.type !== link.type);
+    if (identityChanged && old.confidence && link.confidence)
+      throw new ForbiddenError("При изменении связи снимите прежнюю оценку достоверности");
+    if (!canAssess && link.confidence !== old?.confidence)
+      throw new ForbiddenError("Статус достоверности может менять только исследователь или администратор");
+    if (identityChanged &&
       link.sources?.length)
       throw new ForbiddenError("При смене участников или типа связи снимите прежние источники");
   }
