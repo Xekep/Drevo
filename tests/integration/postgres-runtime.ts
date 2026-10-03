@@ -90,6 +90,7 @@ import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgr
 import { verifyEmailAccounts } from "./postgres-email.ts";
 import { verifyAccountSessionManagement } from "./postgres-account-sessions.ts";
 import { verifyCoreAccountGetRevocation } from "./postgres-core-account-reads.ts";
+import { verifyPostgresMediaReadDelivery } from "./postgres-media-read-delivery.ts";
 import { verifyPostgresCommentEdits } from "./postgres-comment-edits.ts";
 import { verifyAtomicSuggestionAcceptance } from "./postgres-suggestion-accept.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
@@ -1844,6 +1845,7 @@ try {
   }
   await verifyAccountSessionManagement(app.archive.db, securedBase, ownerHeaders, headers);
   await verifyCoreAccountGetRevocation(app.archive, client);
+  await verifyPostgresMediaReadDelivery(app.archive, client);
   const generatedChats = aiChatStore(app.archive.db);
   const generatedStore = generatedResearchFileStore(
     app.archive.db, join(dirname(source), "uploads"), generatedChats,
