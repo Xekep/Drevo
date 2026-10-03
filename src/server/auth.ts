@@ -16,6 +16,28 @@ import {
 export { SESSION_MAX_AGE } from "./session-token.ts";
 const RENEW_INTERVAL = 24 * 60 * 60 * 1000;
 const VISIT_INTERVAL = 60 * 1000;
+
+export function accountProfileFromRow(row: Record<string, unknown>) {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    createdAt: String(row.created_at),
+    fullAccess: row.full_access === true,
+    provider:
+      row.provider === "email"
+        ? "email" as const
+        : row.provider === "vk"
+          ? "vk" as const
+          : row.provider === "yandex"
+            ? "yandex" as const
+            : null,
+    providers: Array.isArray(row.providers)
+      ? row.providers.filter((value) =>
+          ["email", "vk", "yandex"].includes(value),
+        )
+      : [],
+  };
+}
 export async function createAuth(
   users: Awaited<ReturnType<typeof userStore>>,
   db: StoreDatabase,
@@ -205,27 +227,7 @@ export async function createAuth(
       const session = await sessionFor(req);
       if (!session) return null;
       const row = await accountDetails.get(session.userId);
-      return row
-        ? {
-            id: String(row.id),
-            name: String(row.name),
-            createdAt: String(row.created_at),
-            fullAccess: row.full_access === true,
-            provider:
-              row.provider === "email"
-                ? "email"
-                : row.provider === "vk"
-                  ? "vk"
-                  : row.provider === "yandex"
-                    ? "yandex"
-                    : null,
-            providers: Array.isArray(row.providers)
-              ? row.providers.filter((value) =>
-                  ["email", "vk", "yandex"].includes(value),
-                )
-              : [],
-          }
-        : null;
+      return row ? accountProfileFromRow(row) : null;
     },
     issueSession,
     async issueAccountSession(

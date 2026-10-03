@@ -49,6 +49,7 @@ import { verifyInvitationAcceptSessionRevocation } from "./postgres-invitation-a
 import { verifyInvitationPreviewDelivery } from "./postgres-invitation-preview-delivery.ts";
 import { verifyAccountArchiveCreateSessionRevocation } from "./postgres-account-archive-create-session.ts";
 import { verifyAccountArchivesReadSessionRevocation } from "./postgres-account-archives-read-session.ts";
+import { verifySessionDelivery } from "./postgres-session-delivery.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
@@ -1703,6 +1704,7 @@ try {
     ).user.id,
     "reader",
   );
+  await verifySessionDelivery(app.archive.db, client);
   assert.equal(await accountAiAccess(app.archive.db, "reader"), false);
   assert.equal(
     (await fetch(securedBase + "/api/ai/status", { headers }).then((r) =>
