@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createHash } from "node:crypto";
+import { finished } from "node:stream/promises";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import type { publishedPeopleStore } from "./published-people.ts";
@@ -62,11 +63,15 @@ export function publishedPeopleHttp({
   auth,
   store,
   publicOrigin,
+  beforePublicDelivery,
+  beforeSearchDelivery,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   store: ReturnType<typeof publishedPeopleStore>;
   publicOrigin?: string;
+  beforePublicDelivery?: () => Promise<void>;
+  beforeSearchDelivery?: () => Promise<void>;
 }) {
   const limiter = createSharedRequestLimiter(archive.db, "published-people", { windowMs: 60_000, limit: 60 });
   const isOwner = async (userId: string, lock = false) => {
@@ -115,6 +120,20 @@ export function publishedPeopleHttp({
     });
     res.end(JSON.stringify(value));
     return true;
+  };
+  const deliverLocked = async (res: ServerResponse, value: unknown) => {
+    const delivered = finished(res, { cleanup: true });
+    const timeout = setTimeout(() => res.destroy(), 5_000);
+    timeout.unref();
+    try {
+      json(res, 200, value);
+      await delivered;
+    } catch (error) {
+      const disconnected = res.destroyed;
+      res.destroy();
+      await delivered.catch(() => {});
+      if (!disconnected) throw error;
+    } finally { clearTimeout(timeout); }
   };
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const batch = url.pathname === "/api/admin/published-people/batch";
@@ -217,12 +236,12 @@ export function publishedPeopleHttp({
         return json(res, 400, {
           error: "Введите от 2 до 100 символов для поиска",
         });
-      const entries = await store.entries();
       const terms = query
         .toLocaleLowerCase("ru-RU")
         .split(/\s+/)
         .filter(Boolean);
-      const results = snapshot.family.people
+      const matching = (family: typeof snapshot.family,
+        entries: Awaited<ReturnType<typeof store.entries>>) => family.people
         .filter((person) => entries.has(person.id) && publishablePerson(person))
         .map((person) => publicPerson(person, entries.get(person.id)))
         .filter((person) => {
@@ -240,7 +259,31 @@ export function publishedPeopleHttp({
           return terms.every((term) => searchable.includes(term));
         })
         .slice(0, 30);
-      return json(res, 200, { results });
+      const results = matching(snapshot.family, await store.entries());
+      if (archive.db.kind !== "postgres") {
+        await beforeSearchDelivery?.();
+        return json(res, 200, { results });
+      }
+      return archive.db.transaction(async () => {
+        // archive.read locks the archive row. Writers take that row before
+        // changing published_people, so acquire it before publication locks.
+        const currentSnapshot = await archive.read();
+        if (results.length) {
+          const locked = await archive.db.prepare("", `SELECT person_id FROM published_people
+            WHERE person_id IN (${results.map(() => "?").join(",")})
+            ORDER BY person_id COLLATE "C" FOR SHARE`)
+            .all(...results.map((person) => person.id));
+          if (locked.length !== results.length)
+            return json(res, 409, { error: "Публикации изменились. Обновите поиск." });
+        }
+        const current = matching(currentSnapshot.family, await store.entries());
+        if (current.length !== results.length || current.some((person,index) =>
+          person.id !== results[index].id))
+          return json(res, 409, { error: "Публикации изменились. Обновите поиск." });
+        await beforeSearchDelivery?.();
+        await deliverLocked(res, { results: current });
+        return true;
+      });
     }
     const personId = decodePublicPersonId(admin?.[1] || detail?.[1] || "");
     if (!personId)
@@ -290,6 +333,22 @@ export function publishedPeopleHttp({
     const fields = await store.getFields(personId);
     if (!publishablePerson(person) || !fields)
       return json(res, 404, { error: "Человек не найден" });
-    return json(res, 200, { person: publicPerson(person, fields) });
+    if (archive.db.kind !== "postgres") {
+      await beforePublicDelivery?.();
+      return json(res, 200, { person: publicPerson(person, fields) });
+    }
+    return archive.db.transaction(async () => {
+      const currentSnapshot = await archive.read();
+      const published = await archive.db.prepare("", `SELECT person_id FROM published_people
+        WHERE person_id=? FOR SHARE`).get(personId);
+      if (!published) return json(res, 404, { error: "Человек не найден" });
+      const currentPerson = currentSnapshot.family.people.find((entry) => entry.id === personId);
+      const currentFields = await store.getFields(personId);
+      if (!currentPerson || !publishablePerson(currentPerson) || !currentFields)
+        return json(res, 404, { error: "Человек не найден" });
+      await beforePublicDelivery?.();
+      await deliverLocked(res, { person: publicPerson(currentPerson, currentFields) });
+      return true;
+    });
   };
 }
