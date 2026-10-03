@@ -457,6 +457,11 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       const expectedPage = rows.map((row) => ({ archive_id: String(row.archive_id),
         person_id: String(row.person_id) }));
       const result = await db.transaction(async () => {
+        // Publication writes check owner access before touching published rows.
+        // Keep that order, and hold ownership through response delivery so a
+        // transfer cannot complete before a former owner receives suggestions.
+        if (!await db.prepare("", `SELECT 1 FROM archive_owners
+          WHERE archive_id=? AND user_id=? FOR SHARE NOWAIT`).get(archiveId,user.id)) return 403;
         // Withdrawal locks a published row before its projection disappears.
         // Hold the source, page and overflow rows through response completion.
         const locked = await db.prepare("", `SELECT d.archive_id,d.person_id
@@ -489,9 +494,13 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         await beforeCandidateResponse?.();
         await deliverLocked(res, { candidates: ranked, truncated: nextCursor !== null, nextCursor });
         return 200;
+      }).catch((error) => {
+        if ((error as { code?: string }).code === "55P03") return 409;
+        throw error;
       });
       return result === 200 ? true
-        : json(res, 409, { error: "Опубликованные карточки изменились. Обновите подсказки." });
+        : json(res, result, { error: result === 403 ? "Доступ владельца отозван" :
+          "Опубликованные карточки изменились. Обновите подсказки." });
     }
 
     if (ownPeople) {

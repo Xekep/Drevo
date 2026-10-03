@@ -5616,6 +5616,98 @@ try {
   "the cursor resumes after the last evaluated raw row without skipping a valid candidate");
   await otherApp.archive.write(beforeLocalityPage.family, cappedWrite.revision);
   console.log("runtime_discovery_candidate_locality_pagination_ok");
+  const candidatePriorOwner = (await client.query(`SELECT user_id FROM archive_owners
+    WHERE archive_id='runtime-test'`)).rows[0].user_id as string;
+  await client.query(`INSERT INTO accounts(id,name,created_at)
+    VALUES('candidate-owner-successor','Candidate successor',$1)`, [new Date().toISOString()]);
+  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+    VALUES('runtime-test','candidate-owner-successor','admin',true,'all')`);
+  const ownerCandidateBarrier = async (beforeResponse: boolean, ip: string) => {
+    let reached!: () => void, release!: () => void;
+    const ready = new Promise<void>((resolve) => { reached = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const pause = async () => { reached(); await gate; };
+    const endpoint = discoveryMatchesHttp({ archive: app!.archive, auth: detailAuth,
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeCandidateDelivery: beforeResponse ? undefined : pause,
+      beforeCandidateResponse: beforeResponse ? pause : undefined,
+    });
+    const server = createServer((req, res) => {
+      void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    const response = fetch(`http://127.0.0.1:${port}${revokeCandidatePath}`,
+      { headers: { ...ownerHeaders, "X-Real-IP": ip } });
+    const close = async () => {
+      release();
+      await response.catch(() => {});
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    };
+    return { ready, release, response, close };
+  };
+  try {
+    await client.query("BEGIN");
+    try {
+      await client.query(`UPDATE archive_owners SET user_id='candidate-owner-successor'
+        WHERE archive_id='runtime-test'`);
+      const busy = await fetch(securedBase + revokeCandidatePath, {
+        headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.69" },
+        signal: AbortSignal.timeout(2_000),
+      });
+      assert.equal(busy.status, 409,
+        "a busy ownership row rejects a candidate response without waiting for transfer");
+    } finally { await client.query("ROLLBACK"); }
+    const beforeLock = await ownerCandidateBarrier(false, "203.0.113.66");
+    try {
+      await Promise.race([beforeLock.ready,
+        beforeLock.response.then(() => { throw new Error("Candidate page sent before owner barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Candidate page did not reach owner barrier")), 30_000)),
+      ]);
+      await client.query(`UPDATE archive_owners SET user_id='candidate-owner-successor'
+        WHERE archive_id='runtime-test'`);
+      beforeLock.release();
+      assert.equal((await beforeLock.response).status, 403,
+        "a former owner cannot receive a candidate page after ownership transfers");
+    } finally { await beforeLock.close(); }
+    await client.query(`UPDATE archive_owners SET user_id=$1
+      WHERE archive_id='runtime-test'`, [candidatePriorOwner]);
+    const duringLock = await ownerCandidateBarrier(true, "203.0.113.67");
+    let transfer: Promise<unknown> | undefined;
+    try {
+      await Promise.race([duringLock.ready,
+        duringLock.response.then(() => { throw new Error("Candidate page sent before owner lock barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Candidate page did not reach owner lock barrier")), 30_000)),
+      ]);
+      transfer = client.query(`UPDATE archive_owners SET user_id='candidate-owner-successor'
+        WHERE archive_id='runtime-test'`);
+      assert.equal(await Promise.race([transfer.then(() => "completed"),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300))]), "pending",
+      "ownership transfer waits until the candidate response completes");
+      duringLock.release();
+      const delivered = await duringLock.response;
+      assert.equal(delivered.status, 200);
+      assert.ok((await delivered.json()).candidates.some(
+        (item: { id: string }) => item.id === candidateTargetId));
+      await transfer;
+      assert.equal((await fetch(securedBase + revokeCandidatePath,
+        { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.68" } })).status, 403,
+      "a later candidate request fails after ownership transfer");
+    } finally {
+      await duringLock.close();
+      await transfer?.catch(() => {});
+    }
+  } finally {
+    await client.query(`UPDATE archive_owners SET user_id=$1
+      WHERE archive_id='runtime-test'`, [candidatePriorOwner]);
+    await client.query(`DELETE FROM archive_memberships
+      WHERE archive_id='runtime-test' AND user_id='candidate-owner-successor'`);
+    await client.query(`DELETE FROM accounts WHERE id='candidate-owner-successor'`);
+  }
+  console.log("runtime_discovery_candidate_owner_revocation_ok");
   let candidateReached!: () => void, releaseCandidate!: () => void;
   const candidateReady = new Promise<void>((resolve) => { candidateReached = resolve; });
   const candidateGate = new Promise<void>((resolve) => { releaseCandidate = resolve; });
