@@ -534,6 +534,18 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     }
     return { place: place.value, lat, lon };
   };
+  const sameCitation = (left: Source, right: Source) => {
+    if (left.title !== right.title || left.type !== right.type ||
+      left.reference !== right.reference || left.url !== right.url ||
+      left.note !== right.note || left.catalogId !== right.catalogId ||
+      left.documentId !== right.documentId || left.documentPage !== right.documentPage ||
+      JSON.stringify(left.repository) !== JSON.stringify(right.repository)) return false;
+    const leftMedia = citationObjectBySource.get(left) || [];
+    const rightMedia = citationObjectBySource.get(right) || [];
+    return leftMedia.length === rightMedia.length && leftMedia.every((item, index) =>
+      item.object === rightMedia[index].object && item.page === rightMedia[index].page &&
+      item.inlineUrlSuffix === rightMedia[index].inlineUrlSuffix);
+  };
   let eventId = 0;
   function event(n: Node, fallback?: string): PersonEvent {
     const raw = value(n, "DATE"),
@@ -593,6 +605,12 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     if (!place?.trim() && sourceNodes.some((source) =>
       value(source, "_DREVO_CLAIM") === "EVENT_PLACE"))
       warnings.add("Источник места события без названия сохранён как общий источник события.");
+    const generalSources = parsedSources.filter((source) =>
+      !dateSources.includes(source) && !placeSources.includes(source) &&
+      !alternatives.some((item) => item.sources.includes(source)));
+    for (const source of nestedPlaceSources)
+      if (!generalSources.some((existing) => sameCitation(existing, source)))
+        generalSources.push(source);
     return {
       id: `${namespace}-e${++eventId}`,
       gedcomTag: n.tag,
@@ -612,12 +630,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       ...(alternatives.length ? { alternatives } : {}),
       location: placeLocation(n),
       description: notes(n) || undefined,
-      sources: [
-        ...parsedSources.filter((source) =>
-          !dateSources.includes(source) && !placeSources.includes(source) &&
-          !alternatives.some((item) => item.sources.includes(source))),
-        ...nestedPlaceSources,
-      ],
+      sources: generalSources,
     };
   }
   const people: Person[] = individuals.map((n) => {
