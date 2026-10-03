@@ -2067,6 +2067,40 @@ try {
     await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='reader'", [readerTierBeforeExport]);
     await client.query("DELETE FROM ai_chats WHERE archive_id='runtime-test' AND id=$1", [oversizedExportChatId]);
   }
+  const manyMessagesChatId = randomUUID();
+  try {
+    await client.query(
+      `INSERT INTO ai_chats(archive_id,id,user_id,access_scope)
+       VALUES('runtime-test',$1,'owner',$2)`,
+      [manyMessagesChatId, JSON.stringify(["admin", "all", ""])],
+    );
+    await client.query(
+      `INSERT INTO ai_chat_messages(archive_id,chat_id,role,content,data)
+       SELECT 'runtime-test',$1,'user','','{"hidden":true}'::jsonb
+       FROM generate_series(1,50001)`,
+      [manyMessagesChatId],
+    );
+    const hiddenCountExport = await fetch(accountExportUrl, { headers: ownerHeaders });
+    assert.equal(hiddenCountExport.status, 200,
+      "hidden messages do not consume the visible AI message count");
+    const hiddenCountChats = (await hiddenCountExport.json()).archives[0].ownAiChats;
+    assert.deepEqual(hiddenCountChats.find((chat: { id: string }) =>
+      chat.id === manyMessagesChatId).messages, []);
+    await client.query(
+      `UPDATE ai_chat_messages SET data='{}'::jsonb
+       WHERE archive_id='runtime-test' AND chat_id=$1`,
+      [manyMessagesChatId],
+    );
+    const manyMessagesExport = await fetch(accountExportUrl, { headers: ownerHeaders });
+    assert.equal(manyMessagesExport.status, 413,
+      "50,001 empty visible AI messages cannot bypass the byte preflight");
+    assert.equal((await manyMessagesExport.json()).error,
+      "Экспорт не сформирован: история ИИ превышает текущий лимит. Данные не изменены.");
+  } finally {
+    await client.query("DELETE FROM ai_chats WHERE archive_id='runtime-test' AND id=$1", [manyMessagesChatId]);
+  }
+  assert.equal((await fetch(accountExportUrl, { headers: ownerHeaders })).status, 200,
+    "ordinary account export remains available after the large history is removed");
   const revokedExportToken = newSessionToken();
   const revokedExportHash = sessionTokenHash(revokedExportToken);
   await client.query(
