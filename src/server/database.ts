@@ -423,6 +423,7 @@ export async function openArchive(
     knownPrevious?: Family,
     faceDescriptors?: StoredFaceDescriptor[],
     afterWrite?: (db: StoreDatabase) => void | Promise<void>,
+    beforeWrite?: (db: StoreDatabase) => void | Promise<void>,
     options: { withinTransaction?: boolean } = {},
   ) {
     const apply = async () => {
@@ -440,6 +441,7 @@ export async function openArchive(
       );
       if (actor && previous)
         await authorizeMediaReferences(db, previous, family, actor);
+      await beforeWrite?.(db);
       const mediaActorId =
         actor && previous && addsMediaReference(previous, family)
           ? actor.id

@@ -8,14 +8,17 @@ import {
   writeFileSync,
   readFileSync,
   readdirSync,
+  existsSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
+import sharp from "sharp";
 import { startServer } from "../src/server/index.ts";
 import { openArchive, readArchive } from "../src/server/database.ts";
 import { restoreStore } from "../src/server/restore.ts";
+import { sourceComments } from "../src/server/restore-comments.ts";
 import { databaseBackupBytes } from "./helpers/database-backup.ts";
 import { userStore } from "../src/server/users.ts";
 import { settingsStore } from "../src/server/settings.ts";
@@ -150,6 +153,20 @@ test("full backup restores citation-only originals, remaps shared media and reta
       3,
       "citation originals are included in missing",
     );
+    const collisionPath = join(directory, "target", "uploads", "citation.pdf");
+    const unrelatedPdf = Buffer.from(
+      "%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n% unrelated target file\n%%EOF",
+    );
+    writeFileSync(collisionPath, unrelatedPdf);
+    const incompleteTar = tar(
+      "drevo.sqlite",
+      await databaseBackupBytes(source.archive.db),
+    );
+    const collision = await request("preview", incompleteTar);
+    assert.equal(collision.status, 400, await collision.clone().text());
+    assert.match((await collision.json()).error, /одноимённый файл/i);
+    assert.deepEqual(readFileSync(collisionPath), unrelatedPdf);
+    rmSync(collisionPath);
     const previewResponse = await request("preview", full);
     assert.equal(
       previewResponse.status,
@@ -341,6 +358,170 @@ test("family import previews a full backup containing private discussion and AI 
   } finally {
     await restores.close();
     await archive.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("opt-in full restore imports discussions with fresh file and author IDs; ordinary restore keeps existing comments", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-restore-discussions-"));
+  const source = await openArchive(join(dir, "source.sqlite"), family);
+  const target = await openArchive(join(dir, "target.sqlite"), family);
+  const restores = restoreStore(target, join(dir, "target.sqlite"));
+  const admin = { id: "admin", name: "Администратор", role: "admin" as const,
+    createdAt: "2026-01-01T00:00:00.000Z" };
+  const originalId = "a5ac420a-5ed9-44ee-a307-8550f6b64708";
+  const attachmentBytes = Buffer.from("Source discussion attachment\n");
+  const fileOnlyId = "b6bd531b-6fea-45ff-b418-9661f7c75819";
+  const fileOnlyBytes = await sharp({
+    create: { width: 2, height: 2, channels: 4, background: "#4477aa" },
+  }).png().toBuffer();
+  const entry = (name: string, data: Buffer) =>
+    gunzipSync(tar(name, data)).subarray(0, -1024);
+  try {
+    await source.db.prepare(`INSERT INTO person_comments
+      (person_id,author_id,author_name,created_ms,text,updated_ms,attachments)
+      VALUES(?,?,?,?,?,?,?)`).run(p.id, "admin", "Автор из копии", 1000,
+      "Историческое обсуждение", 2000, JSON.stringify([{
+        id: originalId, name: "документ.txt", type: "text/plain", size: attachmentBytes.length,
+      }]));
+    await source.db.prepare(`INSERT INTO person_comments
+      (person_id,author_id,author_name,created_ms,text,attachments)
+      VALUES(?,?,?,?,?,?)`).run(p.id, "admin", "Автор из копии", 3000, "", JSON.stringify([{
+        id: fileOnlyId, name: "только-фото.png", type: "image/png", size: fileOnlyBytes.length,
+      }]));
+    const bytes = await databaseBackupBytes(source.db);
+    const full = gzipSync(Buffer.concat([
+      entry("drevo.sqlite", bytes),
+      entry(`uploads/discussion-files/${originalId}`, attachmentBytes),
+      entry(`uploads/discussion-files/${fileOnlyId}`, fileOnlyBytes),
+      Buffer.alloc(1024),
+    ]));
+    await target.db.prepare("INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,?,?,?)")
+      .run(p.id, "admin", 3000, "Текущий комментарий");
+    const ordinary = await restores.preview(full, admin);
+    assert.equal(ordinary.backupCommentsSkipped, 2);
+    await restores.apply(ordinary.token, admin, async () => {});
+    assert.deepEqual((await target.db.prepare("SELECT text FROM person_comments").all())
+      .map((row) => row.text), ["Текущий комментарий"]);
+
+    const blocked = await restores.preview(full, admin, { restoreComments: true });
+    assert.equal(blocked.canRestoreComments, false);
+    await assert.rejects(restores.apply(blocked.token, admin, async () => {}, true),
+      /комментари/i);
+    await target.db.prepare("DELETE FROM person_comments").run();
+    const stale = await restores.preview(full, admin, { restoreComments: true });
+    assert.equal(stale.canRestoreComments, true);
+    await target.db.prepare("INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,?,?,?)")
+      .run(p.id, "admin", 4000, "Concurrent comment");
+    await assert.rejects(restores.apply(stale.token, admin, async () => {}, true),
+      /уже есть комментарии/);
+    assert.deepEqual((await target.db.prepare("SELECT text FROM person_comments").all())
+      .map((row) => row.text), ["Concurrent comment"]);
+    await target.db.prepare("DELETE FROM person_comments").run();
+    const preview = await restores.preview(full, admin, { restoreComments: true });
+    assert.equal(preview.canRestoreComments, true);
+    await restores.apply(preview.token, admin, async () => {}, true);
+    const importedRows = await target.db.prepare(
+      "SELECT author_id,author_name,created_ms,updated_ms,text,attachments FROM person_comments ORDER BY created_ms",
+    ).all();
+    assert.equal(importedRows.length, 2);
+    const [imported, fileOnly] = importedRows;
+    const files = JSON.parse(String(imported.attachments));
+    assert.equal(imported.author_name, "Автор из копии");
+    assert.notEqual(imported.author_id, "admin");
+    assert.equal(imported.created_ms, 1000);
+    assert.equal(imported.updated_ms, 2000);
+    assert.equal(imported.text, "Историческое обсуждение");
+    assert.notEqual(files[0].id, originalId);
+    assert.deepEqual(readFileSync(join(dir, "uploads", "discussion-files", files[0].id)), attachmentBytes);
+    assert.equal(fileOnly.text, "");
+    assert.notEqual(fileOnly.author_id, "admin");
+    const fileOnlyFiles = JSON.parse(String(fileOnly.attachments));
+    assert.notEqual(fileOnlyFiles[0].id, fileOnlyId);
+    assert.deepEqual(readFileSync(join(dir, "uploads", "discussion-files", fileOnlyFiles[0].id)), fileOnlyBytes);
+    assert.ok(readFileSync(join(dir, "uploads", "discussion-files", `${fileOnlyFiles[0].id}.webp`)).length > 0);
+    const duplicate = await restores.preview(full, admin, { restoreComments: true });
+    assert.equal(duplicate.canRestoreComments, false);
+    await source.db.prepare("UPDATE person_comments SET text=? WHERE created_ms=1000")
+      .run("😀".repeat(1001));
+    const inspected = new DatabaseSync(join(dir, "source.sqlite"), { readOnly: true });
+    try {
+      assert.throws(() => sourceComments(inspected, new Set([p.id])),
+        /Некорректный комментарий/,
+        "restore must enforce the same UTF-16 text length as comment POST");
+    } finally { inspected.close(); }
+    await assert.rejects(restores.apply(duplicate.token, admin, async () => {}, true),
+      /комментари/i);
+  } finally {
+    await restores.close();
+    await target.close();
+    await source.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("missing discussion original blocks only opt-in and failed import removes new files", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-restore-discussion-rollback-"));
+  const source = await openArchive(join(dir, "source.sqlite"), family);
+  const target = await openArchive(join(dir, "target.sqlite"), family);
+  const restores = restoreStore(target, join(dir, "target.sqlite"));
+  const admin = { id: "admin", name: "Администратор", role: "admin" as const,
+    createdAt: "2026-01-01T00:00:00.000Z" };
+  const id = "a5ac420a-5ed9-44ee-a307-8550f6b64708";
+  const attachment = Buffer.from("A complete source original");
+  const entry = (name: string, data: Buffer) =>
+    gunzipSync(tar(name, data)).subarray(0, -1024);
+  try {
+    await source.db.prepare(`INSERT INTO person_comments
+      (person_id,author_id,author_name,created_ms,text,attachments) VALUES(?,?,?,?,?,?)`)
+      .run(p.id, "source-user", "Старый автор", 1000, "С файлом", JSON.stringify([{
+        id, name: "source.txt", type: "text/plain", size: attachment.length,
+      }]));
+    const sqlite = await databaseBackupBytes(source.db);
+    const missing = gzipSync(Buffer.concat([entry("drevo.sqlite", sqlite), Buffer.alloc(1024)]));
+    const missingPreview = await restores.preview(missing, admin, { restoreComments: true });
+    assert.equal(missingPreview.canRestoreComments, false);
+    assert.match(missingPreview.commentsRestoreReason, /оригинал/i);
+    await assert.rejects(restores.apply(missingPreview.token, admin, async () => {}, true),
+      /Комментарии.*не были подготовлены/);
+    await restores.apply(missingPreview.token, admin, async () => {});
+    assert.equal((await target.db.prepare("SELECT count(*) AS count FROM person_comments").get())?.count, 0);
+
+    const complete = gzipSync(Buffer.concat([
+      entry("drevo.sqlite", sqlite), entry(`uploads/discussion-files/${id}`, attachment),
+      Buffer.alloc(1024),
+    ]));
+    const preview = await restores.preview(complete, admin, { restoreComments: true });
+    assert.equal(preview.canRestoreComments, true);
+    await assert.rejects(restores.apply(preview.token, admin, async (db) => {
+      if (db) throw new Error("forced transactional failure");
+    }, true), /forced transactional failure/);
+    assert.equal((await target.db.prepare("SELECT count(*) AS count FROM person_comments").get())?.count, 0);
+    const rows = existsSync(join(dir, "uploads", "discussion-files"))
+      ? readdirSync(join(dir, "uploads", "discussion-files")) : [];
+    assert.deepEqual(rows, [], "rollback must remove copied discussion originals");
+    const stage = await target.db.prepare(
+      "SELECT directory FROM workflow_stages WHERE token=?",
+    ).get(preview.token);
+    assert.equal(existsSync(join(String(stage!.directory), ".upload")), false,
+      "rejected opt-in must release the staged TAR");
+    await restores.apply(preview.token, admin, async () => {});
+    assert.equal((await target.db.prepare("SELECT count(*) AS count FROM person_comments").get())?.count, 0,
+      "ordinary restore remains available after opt-in refusal");
+    const stalePreview = await restores.preview(complete, admin, { restoreComments: true });
+    assert.equal(stalePreview.canRestoreComments, true);
+    const staleStage = await target.db.prepare(
+      "SELECT directory FROM workflow_stages WHERE token=?",
+    ).get(stalePreview.token);
+    await target.write(family, (await target.read()).revision);
+    await assert.rejects(restores.apply(stalePreview.token, admin, async () => {}, true),
+      /архив изменился/);
+    assert.equal(existsSync(join(String(staleStage!.directory), ".upload")), false,
+      "a stale opt-in apply must release its retained TAR");
+  } finally {
+    await restores.close();
+    await target.close();
+    await source.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

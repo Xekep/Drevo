@@ -1,4 +1,4 @@
-import { BackupInputError } from "./backup-store.ts";
+import { BackupInputError, validateBackupSettings } from "./backup-store.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createReadStream } from "node:fs";
 import { open } from "node:fs/promises";
@@ -24,6 +24,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
     if (size > 4096) throw new BackupInputError("Запрос слишком большой.");
     chunks.push(Buffer.from(chunk));
   }
+  if (!size) return {};
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
   } catch {
@@ -116,6 +117,43 @@ export function backupManagementHttp({
         const body = await readJson(req);
         if (!(await auth.isPlatformAdmin(req)))
           return json(res, 403, { error: "Доступ администратора отозван." });
+        if (!auth.local && db.kind === "postgres" && db.postgresTransaction) {
+          const checked = validateBackupSettings(body);
+          const session = await auth.accountSession(req);
+          if (!session)
+            return json(res, 401, { error: "Доступ администратора отозван." });
+          const actor = await auth.currentUser(req);
+          if (!actor || actor.id !== session.accountId)
+            return json(res, 403, { error: "Доступ администратора отозван." });
+          const result = await db.postgresTransaction(async (client) => {
+            // Match account deletion's account -> session order. Keep the
+            // rights locked through the settings UPDATE and audit insertion.
+            const account = await client.query(
+              "SELECT id FROM accounts WHERE id=$1 FOR SHARE NOWAIT", [session.accountId]);
+            if (!account.rowCount) return { status: 401 as const };
+            const active = await client.query<{ expires_at: string }>(
+              `SELECT expires_at FROM account_sessions
+               WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+              [session.tokenHash, session.accountId]);
+            if (!active.rows[0] || Number(active.rows[0].expires_at) <= Date.now())
+              return { status: 401 as const };
+            await client.query("SELECT set_config('drevo.account_id',$1,true)",
+              [session.accountId]);
+            const membership = await client.query<{ approved: boolean }>(
+              `SELECT approved FROM archive_memberships
+               WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+              [db.archiveId, session.accountId]);
+            const platformGrant = await client.query(
+              "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
+              [session.accountId]);
+            if (!membership.rows[0]?.approved || !platformGrant.rowCount)
+              return { status: 403 as const };
+            return { status: 200 as const,
+              settings: await backups.savePostgres(checked, actor, client) };
+          });
+          return json(res, result.status,
+            result.status === 200 ? result.settings : { error: "Доступ администратора отозван." });
+        }
         return json(
           res,
           200,
@@ -145,6 +183,9 @@ export function backupManagementHttp({
         /^\/api\/backups\/([a-f0-9-]{36})\/(preview|download)$/,
       );
       if (match?.[2] === "preview" && req.method === "POST") {
+        const body = await readJson(req) as { restoreComments?: unknown };
+        if (body?.restoreComments !== undefined && typeof body.restoreComments !== "boolean")
+          throw new BackupInputError("Некорректный режим восстановления комментариев.");
         return json(
           res,
           202,
@@ -161,6 +202,7 @@ export function backupManagementHttp({
                 createReadStream(file, { signal }),
                 (await auth.currentUser(req))!,
                 assertAccess,
+                { restoreComments: body?.restoreComments === true },
               );
             },
           ),

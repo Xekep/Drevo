@@ -275,6 +275,7 @@ export async function backupCoordinator(
   return {
     status,
     save: store.save,
+    savePostgres: store.savePostgres,
     record,
     withFile,
     startCreate,
