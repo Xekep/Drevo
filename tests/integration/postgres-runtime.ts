@@ -5386,6 +5386,335 @@ try {
   assert.equal(firstDocumentDownload.status, 200,
     "the scoped reader initially sees a document linked to an ancestor");
   assert.match(await firstDocumentDownload.text(), /scoped-document-secret/);
+  const documentMetadataAuth = await createAuth(await userStore(app.archive.db),
+    app.archive.db, process.env.PUBLIC_ORIGIN);
+  for (const path of [`/api/documents/${scopedDocumentId}`,
+    "/api/documents?personId=account-export-hidden"]) {
+    let releaseMetadata!: () => void;
+    let metadataReady!: () => void;
+    const metadataGate = new Promise<void>((resolve) => { releaseMetadata = resolve; });
+    const metadataReached = new Promise<void>((resolve) => { metadataReady = resolve; });
+    const handler = documentsHttp({
+      archive: app.archive, auth: documentMetadataAuth, media: mediaStore(scopedUploads),
+      uploadsDirectory: scopedUploads,
+      beforeMetadataDelivery: async () => { metadataReady(); await metadataGate; },
+    });
+    const server = createServer((req, res) => {
+      void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const localBase = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+      const pending = fetch(localBase + path, { headers });
+      await Promise.race([metadataReached,
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Document metadata barrier missed")), 10_000))]);
+      const revoked = await fetch(securedBase + "/api/users/reader", {
+        method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }),
+      });
+      assert.equal(revoked.status, 200);
+      releaseMetadata();
+      const delivered = await pending;
+      const body = await delivered.text();
+      assert.ok(delivered.status === 403 || delivered.status === 404,
+        `revoked metadata ${path} returned ${delivered.status}`);
+      assert.doesNotMatch(body, /Scoped document/);
+    } finally {
+      releaseMetadata();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id='reader'");
+    }
+  }
+  const parallelMetadata = await Promise.race([
+    Promise.all(Array.from({ length: 12 }, async () => {
+      const response = await fetch(securedBase + `/api/documents/${scopedDocumentId}`, { headers });
+      return { status: response.status, title: (await response.json()).title };
+    })),
+    new Promise<never>((_, reject) => setTimeout(() =>
+      reject(new Error("Parallel metadata reads exhausted the PostgreSQL pool")), 10_000)),
+  ]);
+  assert.ok(parallelMetadata.every((item) =>
+    item.status === 200 && item.title === "Scoped document"));
+  const metadataSessionToken = newSessionToken();
+  await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'reader',$2)",
+    [sessionTokenHash(metadataSessionToken), Date.now() + 60_000]);
+  const metadataSessionHeaders = { ...headers, Cookie: `drevo_session=${metadataSessionToken}` };
+  let releaseSessionMetadata!: () => void;
+  let sessionMetadataReady!: () => void;
+  const sessionMetadataGate = new Promise<void>((resolve) => { releaseSessionMetadata = resolve; });
+  const sessionMetadataReached = new Promise<void>((resolve) => { sessionMetadataReady = resolve; });
+  const sessionMetadataHandler = documentsHttp({
+    archive: app.archive, auth: documentMetadataAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeMetadataDelivery: async () => { sessionMetadataReady(); await sessionMetadataGate; },
+  });
+  const sessionMetadataServer = createServer((req, res) => {
+    void sessionMetadataHandler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => sessionMetadataServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const localBase = `http://127.0.0.1:${(sessionMetadataServer.address() as { port: number }).port}`;
+    const pending = fetch(localBase + `/api/documents/${scopedDocumentId}`,
+      { headers: metadataSessionHeaders });
+    await Promise.race([sessionMetadataReached,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Metadata session barrier missed")), 10_000))]);
+    assert.equal((await fetch(securedBase + "/auth/logout", {
+      method: "POST", headers: metadataSessionHeaders,
+    })).status, 200);
+    releaseSessionMetadata();
+    const delivered = await pending;
+    assert.equal(delivered.status, 404);
+    assert.doesNotMatch(await delivered.text(), /Scoped document/);
+  } finally {
+    releaseSessionMetadata();
+    sessionMetadataServer.closeAllConnections();
+    await new Promise<void>((resolve) => sessionMetadataServer.close(() => resolve()));
+    await client.query("DELETE FROM account_sessions WHERE token_hash=$1",
+      [sessionTokenHash(metadataSessionToken)]);
+  }
+  let releaseLockedMetadata!: () => void;
+  let lockedMetadataReady!: () => void;
+  const lockedMetadataGate = new Promise<void>((resolve) => { releaseLockedMetadata = resolve; });
+  const lockedMetadataReached = new Promise<void>((resolve) => { lockedMetadataReady = resolve; });
+  const lockedMetadataHandler = documentsHttp({
+    archive: app.archive, auth: documentMetadataAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeLockedMetadataDelivery: async () => {
+      lockedMetadataReady(); await lockedMetadataGate;
+    },
+  });
+  const lockedMetadataServer = createServer((req, res) => {
+    void lockedMetadataHandler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => lockedMetadataServer.listen(0, "127.0.0.1", resolve));
+  let pendingMetadataRevoke: Promise<Response> | undefined;
+  try {
+    const localBase = `http://127.0.0.1:${(lockedMetadataServer.address() as { port: number }).port}`;
+    const pending = fetch(localBase + `/api/documents/${scopedDocumentId}`, { headers });
+    await Promise.race([lockedMetadataReached,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Locked metadata barrier missed")), 10_000))]);
+    pendingMetadataRevoke = fetch(securedBase + "/api/users/reader", {
+      method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }),
+    });
+    assert.equal(await Promise.race([pendingMetadataRevoke.then(() => "completed"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("waiting"), 250))]),
+    "waiting", "membership revoke must wait for the JSON handoff");
+    releaseLockedMetadata();
+    const delivered = await pending;
+    assert.equal(delivered.status, 200);
+    assert.equal((await delivered.json()).title, "Scoped document");
+    assert.equal((await pendingMetadataRevoke).status, 200);
+    assert.equal((await fetch(localBase + `/api/documents/${scopedDocumentId}`,
+      { headers })).status, 401);
+  } finally {
+    releaseLockedMetadata();
+    lockedMetadataServer.closeAllConnections();
+    await pendingMetadataRevoke?.catch(() => {});
+    await new Promise<void>((resolve) => lockedMetadataServer.close(() => resolve()));
+    await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id='reader'");
+  }
+  let releaseUnlinkedMetadata!: () => void;
+  let unlinkedMetadataReady!: () => void;
+  const unlinkedMetadataGate = new Promise<void>((resolve) => { releaseUnlinkedMetadata = resolve; });
+  const unlinkedMetadataReached = new Promise<void>((resolve) => { unlinkedMetadataReady = resolve; });
+  const unlinkedMetadataHandler = documentsHttp({
+    archive: app.archive, auth: documentMetadataAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeMetadataDelivery: async () => { unlinkedMetadataReady(); await unlinkedMetadataGate; },
+  });
+  const unlinkedMetadataServer = createServer((req, res) => {
+    void unlinkedMetadataHandler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => unlinkedMetadataServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const localBase = `http://127.0.0.1:${(unlinkedMetadataServer.address() as { port: number }).port}`;
+    const pending = fetch(localBase + `/api/documents/${scopedDocumentId}`, { headers });
+    await Promise.race([unlinkedMetadataReached,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Unlinked metadata barrier missed")), 10_000))]);
+    await client.query("DELETE FROM document_people WHERE document_id=$1", [scopedDocumentId]);
+    releaseUnlinkedMetadata();
+    const delivered = await pending;
+    assert.equal(delivered.status, 404,
+      "removing the scoped person's document association must hide metadata");
+    assert.doesNotMatch(await delivered.text(), /Scoped document/);
+  } finally {
+    releaseUnlinkedMetadata();
+    unlinkedMetadataServer.closeAllConnections();
+    await new Promise<void>((resolve) => unlinkedMetadataServer.close(() => resolve()));
+    await client.query("INSERT INTO document_people(document_id,person_id) VALUES($1,'account-export-hidden') ON CONFLICT DO NOTHING",
+      [scopedDocumentId]);
+  }
+  const offPageDocumentId = randomUUID();
+  await client.query(
+    `INSERT INTO documents(id,ordinal,title,title_search,file_name,file_size,uploaded_by,created_at)
+     VALUES($1,(SELECT COALESCE(max(ordinal),0)+1 FROM documents),
+       'Off-page scoped document','off-page scoped document',$2,1,'owner','2000-01-01T00:00:00.000Z')`,
+    [offPageDocumentId, `${randomUUID()}.pdf`],
+  );
+  await client.query(
+    "INSERT INTO document_people(document_id,person_id) VALUES($1,'account-export-hidden')",
+    [offPageDocumentId],
+  );
+  let releaseCountMetadata!: () => void;
+  let countMetadataReady!: () => void;
+  const countMetadataGate = new Promise<void>((resolve) => { releaseCountMetadata = resolve; });
+  const countMetadataReached = new Promise<void>((resolve) => { countMetadataReady = resolve; });
+  const countMetadataHandler = documentsHttp({
+    archive: app.archive, auth: documentMetadataAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeMetadataDelivery: async () => { countMetadataReady(); await countMetadataGate; },
+  });
+  const countMetadataServer = createServer((req, res) => {
+    void countMetadataHandler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => countMetadataServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const localBase = `http://127.0.0.1:${(countMetadataServer.address() as { port: number }).port}`;
+    const pending = fetch(localBase +
+      "/api/documents?personId=account-export-hidden&limit=1", { headers });
+    await Promise.race([countMetadataReached,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Off-page metadata count barrier missed")), 10_000))]);
+    await client.query("DELETE FROM document_people WHERE document_id=$1", [offPageDocumentId]);
+    releaseCountMetadata();
+    const delivered = await pending;
+    assert.equal(delivered.status, 403,
+      "removing an off-page scoped association must not deliver its stale total");
+    assert.doesNotMatch(await delivered.text(), /Off-page scoped document/);
+  } finally {
+    releaseCountMetadata();
+    countMetadataServer.closeAllConnections();
+    await new Promise<void>((resolve) => countMetadataServer.close(() => resolve()));
+    await client.query("DELETE FROM documents WHERE id=$1", [offPageDocumentId]);
+  }
+  let releaseBusyMetadata!: () => void;
+  let busyMetadataReady!: () => void;
+  const busyMetadataGate = new Promise<void>((resolve) => { releaseBusyMetadata = resolve; });
+  const busyMetadataReached = new Promise<void>((resolve) => { busyMetadataReady = resolve; });
+  const busyMetadataHandler = documentsHttp({
+    archive: app.archive, auth: documentMetadataAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeMetadataDelivery: async () => { busyMetadataReady(); await busyMetadataGate; },
+  });
+  const busyMetadataServer = createServer((req, res) => {
+    void busyMetadataHandler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => busyMetadataServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const localBase = `http://127.0.0.1:${(busyMetadataServer.address() as { port: number }).port}`;
+    const pending = fetch(localBase + `/api/documents/${scopedDocumentId}`, { headers });
+    await Promise.race([busyMetadataReached,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Busy metadata barrier missed")), 10_000))]);
+    await client.query("BEGIN");
+    try {
+      await client.query("UPDATE archives SET revision=revision WHERE id='runtime-test'");
+      releaseBusyMetadata();
+      const delivered = await pending;
+      assert.equal(delivered.status, 409);
+      assert.doesNotMatch(await delivered.text(), /Scoped document/);
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  } finally {
+    releaseBusyMetadata();
+    busyMetadataServer.closeAllConnections();
+    await new Promise<void>((resolve) => busyMetadataServer.close(() => resolve()));
+  }
+  let releaseUnscopedMetadata!: () => void;
+  let unscopedMetadataReady!: () => void;
+  const unscopedMetadataGate = new Promise<void>((resolve) => { releaseUnscopedMetadata = resolve; });
+  const unscopedMetadataReached = new Promise<void>((resolve) => { unscopedMetadataReady = resolve; });
+  const unscopedMetadataHandler = documentsHttp({
+    archive: app.archive, auth: documentMetadataAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeMetadataDelivery: async () => { unscopedMetadataReady(); await unscopedMetadataGate; },
+  });
+  const unscopedMetadataServer = createServer((req, res) => {
+    void unscopedMetadataHandler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => unscopedMetadataServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const localBase = `http://127.0.0.1:${(unscopedMetadataServer.address() as { port: number }).port}`;
+    const pending = fetch(localBase + "/api/documents?limit=20", { headers: ownerHeaders });
+    await Promise.race([unscopedMetadataReached,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Unscoped metadata barrier missed")), 10_000))]);
+    await client.query("BEGIN");
+    try {
+      await client.query("UPDATE archives SET revision=revision WHERE id='runtime-test'");
+      releaseUnscopedMetadata();
+      const delivered = await Promise.race([pending,
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Unscoped metadata waited for unrelated archive write")), 10_000))]);
+      assert.equal(delivered.status, 200,
+        "an all-access metadata read must not contend with unrelated graph writes");
+      assert.ok((await delivered.json()).items.some((item: { id: string }) =>
+        item.id === scopedDocumentId));
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  } finally {
+    releaseUnscopedMetadata();
+    unscopedMetadataServer.closeAllConnections();
+    await new Promise<void>((resolve) => unscopedMetadataServer.close(() => resolve()));
+  }
+  let releaseEditedMetadata!: () => void;
+  let editedMetadataReady!: () => void;
+  const editedMetadataGate = new Promise<void>((resolve) => { releaseEditedMetadata = resolve; });
+  const editedMetadataReached = new Promise<void>((resolve) => { editedMetadataReady = resolve; });
+  const editedMetadataHandler = documentsHttp({
+    archive: app.archive, auth: documentMetadataAuth, media: mediaStore(scopedUploads),
+    uploadsDirectory: scopedUploads,
+    beforeMetadataDelivery: async () => { editedMetadataReady(); await editedMetadataGate; },
+  });
+  const editedMetadataServer = createServer((req, res) => {
+    void editedMetadataHandler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => editedMetadataServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const localBase = `http://127.0.0.1:${(editedMetadataServer.address() as { port: number }).port}`;
+    const pending = fetch(localBase + `/api/documents/${scopedDocumentId}`,
+      { headers: ownerHeaders });
+    await Promise.race([editedMetadataReached,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("Edited metadata barrier missed")), 10_000))]);
+    await client.query("UPDATE documents SET description='updated' WHERE id=$1",
+      [scopedDocumentId]);
+    releaseEditedMetadata();
+    const delivered = await pending;
+    assert.equal(delivered.status, 404,
+      "a completed edit must not deliver the stale document metadata snapshot");
+    assert.doesNotMatch(await delivered.text(), /Scoped document/);
+  } finally {
+    releaseEditedMetadata();
+    editedMetadataServer.closeAllConnections();
+    await new Promise<void>((resolve) => editedMetadataServer.close(() => resolve()));
+    await client.query("UPDATE documents SET description='' WHERE id=$1", [scopedDocumentId]);
+  }
+  const unreadMetadata = await fetch(securedBase + `/api/documents/${scopedDocumentId}`,
+    { headers });
+  assert.equal(unreadMetadata.status, 200);
+  const revokeAfterMetadataHandoff = await fetch(securedBase + "/api/users/reader", {
+    method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ approved: false }),
+  });
+  assert.equal(revokeAfterMetadataHandoff.status, 200,
+    "a client delaying body consumption must not retain the archive lock");
+  assert.equal((await unreadMetadata.json()).title, "Scoped document");
+  await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id='reader'");
+  console.log("runtime_document_metadata_delivery_revocation_ok");
   const parallelDocuments = await Promise.race([
     Promise.all(Array.from({ length: 12 }, async () => {
       const response = await fetch(securedBase + scopedDocumentPath, { headers });
