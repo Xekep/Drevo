@@ -1,9 +1,8 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   ANCESTOR_GENERATIONS,
   DESCENDANT_GENERATIONS,
   COLLATERAL_GENERATIONS,
-  fullName,
   type Person,
   type TreePreferences,
 } from "../domain";
@@ -11,7 +10,57 @@ import { initialFamilyFocus } from "../domain/tree-interactions";
 import { familyNeighbors } from "../domain/family-neighborhood";
 import { generationScope } from "../domain/tree-generation-scope";
 import { EditorDialog } from "./editor-dialog";
+import { PersonSearch } from "./person-search";
 import "../styles/tree-preferences.css";
+
+function ReferencePersonSearch({
+  people,
+  anchorId,
+  disabled,
+  onSelect,
+}: {
+  people: Person[];
+  anchorId: string;
+  disabled: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const savedId = people.some((person) => person.id === anchorId)
+    ? anchorId
+    : "";
+  const [candidate, setCandidate] = useState({ savedId, id: savedId });
+  const candidateId = candidate.savedId === savedId ? candidate.id : savedId;
+  const root = useRef<HTMLDivElement>(null);
+  const restoreFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (disabled || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    // Disabling the saving fieldset blurs the input. Restore only if the user
+    // has not moved focus to another control in the meantime.
+    if (document.activeElement === document.body)
+      root.current?.querySelector("input")?.focus();
+  }, [disabled]);
+  return (
+    <div className="tree-generation-anchor" ref={root}>
+      <PersonSearch
+        people={people}
+        label="Относительно человека"
+        value={candidateId}
+        selected={people.find((person) => person.id === candidateId)}
+        disabled={disabled}
+        onChange={(id) => setCandidate({ savedId, id })}
+        onCommit={(id) => {
+          if (id && id !== savedId) {
+            restoreFocus.current =
+              root.current?.querySelector("input") === document.activeElement;
+            setCandidate({ savedId: id, id });
+            onSelect(id);
+          }
+        }}
+        onCancel={() => setCandidate({ savedId, id: savedId })}
+      />
+    </div>
+  );
+}
 
 export function TreePreferencesDialog({
   preferences,
@@ -137,44 +186,17 @@ export function TreePreferencesDialog({
                   {generationScope(familyNeighbors({ people }), limits).size} из{" "}
                   {people.length} карточек
                 </p>
-                <label className="tree-generation-anchor">
-                  Относительно человека
-                  <select
-                    value={
-                      people.some((person) => person.id === limits.anchorId)
-                        ? limits.anchorId
-                        : ""
-                    }
-                    onChange={(event) =>
-                      void choose({
-                        ...draft,
-                        generationLimits: {
-                          ...limits,
-                          anchorId: event.target.value,
-                        },
-                      })
-                    }
-                  >
-                    {!people.some(
-                      (person) => person.id === limits.anchorId,
-                    ) && (
-                      <option value="" disabled>
-                        Выберите человека
-                      </option>
-                    )}
-                    {[...people]
-                      .sort(
-                        (a, b) =>
-                          fullName(a).localeCompare(fullName(b), "ru") ||
-                          a.id.localeCompare(b.id),
-                      )
-                      .map((person) => (
-                        <option key={person.id} value={person.id}>
-                          {fullName(person)}
-                        </option>
-                      ))}
-                  </select>
-                </label>
+                <ReferencePersonSearch
+                  people={people}
+                  anchorId={limits.anchorId}
+                  disabled={saving}
+                  onSelect={(id) =>
+                    void choose({
+                      ...draft,
+                      generationLimits: { ...limits, anchorId: id },
+                    })
+                  }
+                />
                 {generationOptions.map(({ key, label, values }) => (
                   <div className="tree-generation-row" key={key}>
                     <span id={`tree-generation-${key}`}>{label}</span>

@@ -4,6 +4,108 @@ import {
   type TreePreferences,
 } from "../../src/domain/tree-preferences";
 
+test("reference autocomplete keeps the saved anchor while typing and finds people outside the visible scope", async ({
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  let preferences: TreePreferences = {
+    ...DEFAULT_TREE_PREFERENCES,
+    generationLimits: {
+      anchorId: "e2e-child",
+      ancestors: 3,
+      descendants: 1,
+      collateral: 0,
+    },
+  };
+  const writes: TreePreferences[] = [];
+  let rejectSave = false;
+  const searchRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/people/search"))
+      searchRequests.push(request.url());
+  });
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({
+      response,
+      json: { ...data, treePreferences: preferences },
+    });
+  });
+  await page.route("**/api/tree-preferences", async (route) => {
+    if (route.request().method() === "PUT") {
+      if (rejectSave) {
+        await route.fulfill({
+          status: 503,
+          json: { error: "Сохранение временно недоступно" },
+        });
+        return;
+      }
+      preferences = route.request().postDataJSON();
+      writes.push(preferences);
+    }
+    await route.fulfill({ json: preferences });
+  });
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).toHaveAttribute("data-layout-people", "4");
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  const dialog = page.getByRole("dialog", { name: "Вид древа" });
+  const input = dialog.getByRole("combobox", { name: "Относительно человека" });
+  await expect(input).toHaveValue("Тестов Пётр Иванович");
+  await input.fill("Такого человека нет");
+  await expect(
+    dialog.getByText("Никого не найдено. Попробуйте другую часть ФИО."),
+  ).toBeVisible();
+  await input.press("Enter");
+  await expect(canvas).toHaveAttribute("data-layout-people", "4");
+  expect(writes).toEqual([]);
+  await input.press("Escape");
+  await expect(dialog).toBeVisible();
+  await expect(input).toHaveValue("Тестов Пётр Иванович");
+  await input.fill("");
+  await input.press("Tab");
+  await expect(input).toHaveValue("Тестов Пётр Иванович");
+  expect(writes).toEqual([]);
+  await input.fill("мария");
+  const option = dialog.getByRole("option", {
+    name: /Тестова Мария Ивановна.*1968/,
+  });
+  await expect(option).toBeVisible();
+  await expect(
+    page.locator('.flow-person[data-person-id="e2e-sibling"]'),
+  ).toHaveCount(0);
+  await dialog.screenshot({
+    path: testInfo.outputPath("reference-search.png"),
+  });
+  await input.press("ArrowDown");
+  await expect(option).toHaveAttribute("aria-selected", "true");
+  await input.press("Enter");
+  await expect(input).toHaveValue("Тестова Мария Ивановна");
+  await expect(input).toHaveAttribute("aria-expanded", "false");
+  await expect(input).toBeFocused();
+  await expect.poll(() => writes.length).toBe(1);
+  expect(writes[0].generationLimits).toEqual({
+    anchorId: "e2e-sibling",
+    ancestors: 3,
+    descendants: 1,
+    collateral: 0,
+  });
+  rejectSave = true;
+  await input.fill("Елена");
+  await dialog.getByRole("option", { name: /Тестова Елена Сергеевна/ }).click();
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "Сохранение временно недоступно",
+  );
+  await expect(input).toHaveValue("Тестова Мария Ивановна");
+  expect(writes).toHaveLength(1);
+  await dialog.getByRole("button", { name: "Закрыть" }).click();
+  await expect(
+    page.locator('.flow-person[data-person-id="e2e-sibling"]'),
+  ).toBeVisible();
+  expect(searchRequests).toEqual([]);
+});
+
 test("generation settings trim the visible tree and survive reload without changing genealogy", async ({
   page,
 }, testInfo) => {
@@ -36,7 +138,8 @@ test("generation settings trim the visible tree and survive reload without chang
     .check();
   await dialog
     .getByRole("combobox", { name: "Относительно человека" })
-    .selectOption("e2e-child");
+    .fill("Пётр");
+  await dialog.getByRole("option", { name: /Тестов Пётр Иванович/ }).click();
   await dialog.getByRole("radio", { name: "Вниз: 1", exact: true }).check();
   await dialog
     .getByRole("radio", { name: "Боковые ветви: 0", exact: true })
@@ -63,7 +166,7 @@ test("generation settings trim the visible tree and survive reload without chang
   await page.getByRole("button", { name: "Настройки древа" }).click();
   await expect(
     dialog.getByRole("combobox", { name: "Относительно человека" }),
-  ).toHaveValue("e2e-child");
+  ).toHaveValue("Тестов Пётр Иванович");
   await dialog
     .getByRole("radio", { name: "Боковые ветви: 1", exact: true })
     .check();
@@ -135,6 +238,9 @@ test("a 1023-person archive sends only the bounded projection to the layout Work
     };
     await route.fulfill({ response, json: data });
   });
+  await page.route("**/api/tree-preferences", async (route) => {
+    await route.fulfill({ json: route.request().postDataJSON() });
+  });
   await page.goto("/tree");
   await expect(page.locator('.flow-person[data-person-id="31"]')).toBeVisible();
   await expect(page.locator(".flow-person")).toHaveCount(6);
@@ -149,6 +255,19 @@ test("a 1023-person archive sends only the bounded projection to the layout Work
   await expect(
     page.getByText("В области поколений: 6 из 1023 карточек"),
   ).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "Вид древа" });
+  await dialog
+    .getByRole("combobox", { name: "Относительно человека" })
+    .fill("Человек 1000");
+  await dialog.getByRole("option", { name: /^Тестов Человек 1000/ }).click();
+  await dialog.getByRole("button", { name: "Закрыть" }).click();
+  await expect(
+    page.locator('.flow-person[data-person-id="1000"]'),
+  ).toBeVisible();
+  await expect(page.locator(".tree-canvas")).toHaveAttribute(
+    "data-layout-people",
+    "4",
+  );
 });
 
 test("generation settings remain usable while the initial layout is still computing", async ({
@@ -191,7 +310,8 @@ test("generation settings remain usable while the initial layout is still comput
     .check();
   await dialog
     .getByRole("combobox", { name: "Относительно человека" })
-    .selectOption("e2e-child");
+    .fill("Пётр");
+  await dialog.getByRole("option", { name: /Тестов Пётр Иванович/ }).click();
   await dialog
     .getByRole("radio", { name: "Боковые ветви: 0", exact: true })
     .check();

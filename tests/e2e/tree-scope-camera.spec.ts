@@ -97,7 +97,8 @@ test("scope and anchor changes center the current anchor, even with unchanged ge
   dialog = await settings(page);
   await dialog
     .getByRole("combobox", { name: "Относительно человека" })
-    .selectOption("e2e-grandchild");
+    .fill("Анна");
+  await dialog.getByRole("option", { name: /Тестова Анна Петровна/ }).click();
   await dialog.getByRole("button", { name: "Закрыть" }).click();
   await expectCentered(page, "e2e-grandchild");
 
@@ -240,9 +241,8 @@ test("opening a card cancels scope focus while its Worker layout is pending", as
     page.getByRole("button", { name: "Закрыть панель", exact: true }),
   ).toBeVisible();
   await page.evaluate(() =>
-    (
-      window as Window & { releaseCardScopeLayout?: () => void }
-    ).releaseCardScopeLayout!(),
+    (window as Window & { releaseCardScopeLayout?: () => void })
+      .releaseCardScopeLayout!(),
   );
   await expect(page.locator(".flow-person")).toHaveCount(4);
   await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
@@ -289,7 +289,8 @@ test("a pending layout cannot replace the camera target from a newer scope", asy
   );
   await dialog
     .getByRole("combobox", { name: "Относительно человека" })
-    .selectOption("e2e-spouse");
+    .fill("Елена");
+  await dialog.getByRole("option", { name: /Тестова Елена Сергеевна/ }).click();
   await dialog.getByRole("button", { name: "Закрыть" }).click();
   await expect(page.locator(".flow-person")).toHaveCount(2);
   await expectCentered(page, "e2e-spouse");
