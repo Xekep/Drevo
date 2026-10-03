@@ -4,7 +4,7 @@ import type { ClaimConfidence, EventFactAlternative, PersonEvent, Source } from 
 import { CLAIM_CONFIDENCE_LABELS } from "../domain/claim-confidence.ts";
 import { repositorySummary } from "../domain/person-sources.ts";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
-import { claimableEventDate, EVENT_NAMES } from "../domain/person-events";
+import { claimableEventDate, eventHasEvidence, retypeEvent, EVENT_NAMES } from "../domain/person-events";
 import { dateInputLabel, dateLabel, normalizeDateInput, safeUrl } from "../domain/dates";
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
 import { archiveDocumentPath } from "../domain/archive-routes.ts";
@@ -81,10 +81,15 @@ export function EventsEditor({
   savedEvents?: PersonEvent[];
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [resetEventIds, setResetEventIds] = useState<Set<string>>(() => new Set());
   const update = (id: string, patch: Partial<PersonEvent>) =>
     onChange(
       events.map((event) => (event.id === id ? { ...event, ...patch } : event)),
     );
+  const citedSavedTypes = new Map(savedEvents?.filter(eventHasEvidence)
+    .map((event) => [event.id, event.type]));
+  const saveTypeFirst = (event: PersonEvent) =>
+    citedSavedTypes.has(event.id) && citedSavedTypes.get(event.id) !== event.type;
   return (
     <details className="form-details event-editor">
       <summary>
@@ -127,11 +132,12 @@ export function EventsEditor({
               <select
                 value={event.type}
                 disabled={!canAssess && hasAssessment(event)}
-                onChange={(e) =>
-                  update(event.id, {
-                    type: e.target.value as PersonEvent["type"],
-                  })
-                }
+                onChange={(e) => {
+                  const changed = retypeEvent(event, e.target.value as PersonEvent["type"]);
+                  if (changed.removedDetails)
+                    setResetEventIds((ids) => new Set(ids).add(event.id));
+                  onChange(events.map((item) => item.id === event.id ? changed.event : item));
+                }}
               >
                 {Object.entries(EVENT_NAMES).map(([key, label]) => (
                   <option key={key} value={key}>
@@ -140,6 +146,7 @@ export function EventsEditor({
                 ))}
               </select>
             </label>
+            {(resetEventIds.has(event.id) || saveTypeFirst(event)) && <p role="status">При смене типа из черновика сняты данные прежнего события: источники, оценки, другие значения или исходный тег GEDCOM. Сохраните новый тип, затем добавьте подходящие данные.</p>}
             {event.type === "other" && (
               <label>
                 Что произошло
@@ -164,7 +171,7 @@ export function EventsEditor({
                 }
               />
             </label>
-            <details className="event-date-claim">
+            {!saveTypeFirst(event) && <details className="event-date-claim">
               <summary>Источники даты события{event.dateClaim?.sources.length
                 ? ` · ${event.dateClaim.sources.length}` : ""}</summary>
               {event.dateClaim && event.dateClaim.value !== claimableEventDate(event)
@@ -193,7 +200,7 @@ export function EventsEditor({
                       </select>
                     </label>}</>
                   : <p>Укажите одну дату без периода или приблизительной формулировки, чтобы привязать свидетельство.</p>}
-            </details>
+            </details>}
             <label>
               Место
               <input
@@ -208,7 +215,7 @@ export function EventsEditor({
                 }
               />
             </label>
-            <details className="event-place-claim">
+            {!saveTypeFirst(event) && <details className="event-place-claim">
               <summary>Источники места события{event.placeClaim?.sources.length
                 ? ` · ${event.placeClaim.sources.length}` : ""}</summary>
               {event.placeClaim && event.placeClaim.value !== event.place
@@ -237,11 +244,11 @@ export function EventsEditor({
                       </select>
                     </label>}</>
                   : <p>Укажите место, чтобы привязать к нему свидетельство.</p>}
-            </details>
-            <EventAlternatives event={event} isAdmin={isAdmin} canAssess={canAssess}
+            </details>}
+            {!saveTypeFirst(event) && <EventAlternatives event={event} isAdmin={isAdmin} canAssess={canAssess}
               savedIds={new Set(savedEvents?.find((item) => item.id === event.id)
                 ?.alternatives?.map((item) => item.id) || [])}
-              onChange={(alternatives) => update(event.id, { alternatives })} />
+              onChange={(alternatives) => update(event.id, { alternatives })} />}
             <details className="event-extra">
               <summary>
                 Подробности
@@ -299,7 +306,7 @@ export function EventsEditor({
                     }
                   />
                 </label>
-                {(event.sources || []).map((source, index) => (
+                {!saveTypeFirst(event) && <>{(event.sources || []).map((source, index) => (
                   <div key={index} className="event-source-editor">
                     {source.catalogId ? <>
                       <strong>{source.title}</strong>
@@ -415,7 +422,7 @@ export function EventsEditor({
                   onChoose={(entry) => update(event.id, {
                     sources: [...(event.sources || []), sourceCitation(entry)],
                   })}
-                />}
+                />}</>}
               </div>
             </details>
             <button

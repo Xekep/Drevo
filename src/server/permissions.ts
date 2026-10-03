@@ -7,6 +7,7 @@ import {
 } from "../domain/index.ts";
 import { ForbiddenError } from "./users.ts";
 import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
+import { eventHasEvidence } from "../domain/person-events.ts";
 
 function catalogCitationSlots(family: Family) {
   const slots = new Map<string, Source[]>();
@@ -183,6 +184,18 @@ export function authorizeArchive(
         if (before && (before.field !== alternative.field || before.value !== alternative.value))
           throw new ForbiddenError("Для другого значения удалите прежний вариант и добавьте новый источник");
       }
+    }
+  }
+  for (const person of next.people) {
+    const oldEvents = new Map((current.people.find((item) => item.id === person.id)
+      ?.events || []).map((event) => [event.id, event]));
+    for (const event of person.events || []) {
+      const old = oldEvents.get(event.id);
+      if (!old || old.type === event.type) continue;
+      if (eventHasEvidence(old) && eventHasEvidence(event))
+        throw new ForbiddenError("При смене типа события снимите прежние источники события, его даты, места и вариантов");
+      if (event.gedcomTag)
+        throw new ForbiddenError("При смене типа события снимите прежний тип GEDCOM");
     }
   }
   if (admin) return next;

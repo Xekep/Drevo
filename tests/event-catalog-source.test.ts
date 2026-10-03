@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { exportGedcom, importGedcom } from "../src/domain/gedcom.ts";
 import type { ArchiveUser, Family } from "../src/domain/index.ts";
 import { authorizeArchive } from "../src/server/permissions.ts";
+import { retypeEvent } from "../src/domain/person-events.ts";
 import { writePortablePackage } from "../src/server/portable-package.ts";
 import { readPortablePackage } from "../src/server/portable-import.ts";
 import {
@@ -123,6 +124,59 @@ test("event catalog link requires an admin, while inline editing and retained li
       .sources?.length,
     1,
   );
+});
+
+test("changing a cited event's identity cannot reuse evidence for a different event", () => {
+  const evidence = [
+    (value: Family) => { value.people[0].events![0].sources = [
+      { title: "Move record", type: "archive", reference: "1" }]; },
+    (value: Family) => { value.people[0].events![0].dateClaim = {
+      value: "1901", sources: [{ title: "Move date", type: "archive", reference: "2" }] }; },
+    (value: Family) => { value.people[0].events![0].placeClaim = {
+      value: "Москва", sources: [{ title: "Move place", type: "archive", reference: "3" }] }; },
+    (value: Family) => { value.people[0].events![0].alternatives = [
+      { id: "alternate-place", field: "place", value: "Тула",
+        sources: [{ title: "Other move place", type: "archive", reference: "4" }] }]; },
+  ];
+  for (const addEvidence of evidence) {
+    const before = family();
+    before.people[0].events![0].sources = [];
+    addEvidence(before);
+    const reclassified = structuredClone(before);
+    reclassified.people[0].events![0].type = "military";
+    assert.throws(() => authorizeArchive(reclassified, before, actor("admin")),
+      /снимите прежние источники события/);
+    const transition = retypeEvent(before.people[0].events![0], "military");
+    assert.equal(transition.removedDetails, true);
+    const clean = structuredClone(before);
+    clean.people[0].events![0] = transition.event;
+    assert.doesNotThrow(() => authorizeArchive(clean, before, actor("admin")));
+    const retitled = structuredClone(before);
+    retitled.people[0].events![0].title = "Переезд в Москву";
+    assert.doesNotThrow(() => authorizeArchive(retitled, before, actor("researcher")));
+  }
+  const imported = family();
+  imported.people[0].events![0].sources = [];
+  imported.people[0].events![0].gedcomTag = "RESI";
+  const staleTag = structuredClone(imported);
+  staleTag.people[0].events![0].type = "military";
+  assert.throws(() => authorizeArchive(staleTag, imported, actor("admin")),
+    /прежний тип GEDCOM/);
+  const transitioned = retypeEvent(imported.people[0].events![0], "military");
+  assert.equal(transitioned.event.gedcomTag, undefined);
+  assert.equal(transitioned.removedDetails, true);
+  staleTag.people[0].events![0] = transitioned.event;
+  assert.doesNotThrow(() => authorizeArchive(staleTag, imported, actor("admin")));
+
+  const draft = family().people[0].events![0];
+  draft.sources = [];
+  draft.alternatives = [{ id: "draft-place", field: "place", value: "Казань", sources: [] }];
+  draft.dateClaim = { value: "1901", sources: [], confidence: "probable" };
+  const clearedDraft = retypeEvent(draft, "military");
+  assert.equal(clearedDraft.removedDetails, true,
+    "the editor must warn even when discarded draft values have no citation yet");
+  assert.equal(clearedDraft.event.alternatives, undefined);
+  assert.equal(clearedDraft.event.dateClaim, undefined);
 });
 
 test("non-admin cannot add catalog citations to any person, claim, event, or union slot", () => {

@@ -101,6 +101,22 @@ test("каталожный источник связывается с событ
   expect(saved.sources?.[1].title).toBe(title);
   expect(person.birthDateClaim).toBeUndefined();
   expect(person.birthPlaceClaim).toBeUndefined();
+
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  const section = page.locator(".event-editor");
+  if (!(await section.evaluate((element) => (element as HTMLDetailsElement).open)))
+    await section.locator(":scope > summary").click();
+  const reopened = page.locator(".life-event-editor").filter({ hasText: "1901" });
+  await reopened.locator(":scope > summary").click();
+  await reopened.getByLabel("Событие").selectOption("military");
+  await expect(reopened.getByRole("status")).toContainText("из черновика сняты данные прежнего события");
+  await expect(reopened.locator(".event-source-editor")).toHaveCount(0);
+  await expect(reopened.getByRole("button", { name: "Добавить источник", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect.poll(() => readFamily().people.find((item) => item.id === "e2e-child")
+    ?.events?.find((item) => item.id === saved.id)?.type).toBe("military");
+  expect(readFamily().people.find((item) => item.id === "e2e-child")!
+    .events!.find((item) => item.id === saved.id)!.sources).toBeUndefined();
 });
 
 test("после потери прав каталог события скрыт, ручной источник остаётся", async ({
