@@ -17,6 +17,10 @@ export async function accountCapacity(db: StoreDatabase, accountId: string) {
        SELECT
          owner.full_access,
          (SELECT count(*) FROM people) AS people,
+         (SELECT count(*) FROM photos) AS photos,
+         (SELECT count(*) FROM documents) AS documents,
+         (SELECT count(*) FROM person_comments) AS comments,
+         (SELECT count(*) FROM source_catalog) AS sources,
          COALESCE((SELECT sum(file_size) FROM documents),0)
          + COALESCE((
            SELECT sum(m.size_bytes) FROM media_originals m
@@ -41,6 +45,10 @@ export async function accountCapacity(db: StoreDatabase, accountId: string) {
     owned: true as const,
     fullAccess: !!row.full_access,
     people: Number(row?.people || 0),
+    emptyArchive: !(
+      Number(row.people) || Number(row.photos) || Number(row.documents) ||
+      Number(row.comments) || Number(row.sources)
+    ),
     peopleLimit: BASIC_PEOPLE_LIMIT,
     mediaBytes: row?.unindexed ? null : Number(row?.media_bytes || 0),
     mediaLimitBytes: BASIC_MEDIA_BYTES,

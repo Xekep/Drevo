@@ -315,6 +315,7 @@ test("empty archive owner previews a portable import before applying", async ({
         owned: true,
         fullAccess: false,
         people: 0,
+        emptyArchive: true,
         peopleLimit: 150,
         mediaBytes: 0,
         mediaLimitBytes: 500_000_000,
@@ -387,6 +388,24 @@ test("account cabinet hides archive export from a non-owner", async ({
   await expect(
     page.getByRole("link", { name: /Скачать данные дерева/ }),
   ).toHaveCount(0);
+});
+
+test("owner is not offered portable import when only catalog data occupies the archive", async ({ page }) => {
+  await page.route("**/api/session", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({ response, json: {
+      ...data, local: false, user: { ...data.user, fullAccess: false },
+    } });
+  });
+  await page.route("**/api/account/capacity", (route) => route.fulfill({ json: {
+    available: true, owned: true, fullAccess: false, people: 0,
+    emptyArchive: false, peopleLimit: 150, mediaBytes: 0,
+    mediaLimitBytes: 500_000_000,
+  } }));
+  await page.goto("/account");
+  await expect(page.getByText("Перенести архив в пустое дерево")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Скачать полный переносимый архив/ })).toBeVisible();
 });
 
 test("owner can choose a member and propose a transfer in the account cabinet", async ({
