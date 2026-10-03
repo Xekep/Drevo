@@ -2,10 +2,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import { readArchive, type openArchive } from "./database.ts";
 import { ForbiddenError } from "./users.ts";
-import { sourceCatalogStore } from "./source-catalog-store.ts";
+import { parseCatalogSource } from "../shared/source-catalog.ts";
 import {
   writePortablePackage,
   PortablePackageError,
+  PORTABLE_CATALOG_FIELDS,
+  hasOnlyPortableFields,
   type PortableComment,
   type PortableDocument,
   type PortableSnapshot,
@@ -86,9 +88,17 @@ export function portableExportHttp(
         text: String(row.text),
         attachments: typeof row.attachments === "string" ? JSON.parse(row.attachments) : row.attachments as PortableComment["attachments"],
       }));
-      const sources = (await sourceCatalogStore(db).list()).map((entry) => {
-        const source = { ...entry };
-        delete (source as Partial<typeof source>).version;
+      const sources = (await db.prepare(
+        "SELECT data FROM source_catalog ORDER BY id",
+        "SELECT data FROM source_catalog ORDER BY id",
+      ).all()).map((row) => {
+        const raw = JSON.parse(String(row.data));
+        if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
+          !hasOnlyPortableFields(raw, PORTABLE_CATALOG_FIELDS))
+          throw new PortablePackageError("Каталог содержит неподдерживаемые поля источника; экспорт остановлен");
+        const source = parseCatalogSource(raw);
+        if (!source)
+          throw new PortablePackageError("Повреждён источник в каталоге; экспорт остановлен");
         return source;
       });
       return { family, documents, comments, sources };

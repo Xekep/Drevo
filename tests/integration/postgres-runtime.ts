@@ -11055,6 +11055,18 @@ try {
       Origin: process.env.PUBLIC_ORIGIN!,
       "X-Drevo-Import": "1",
     };
+    const unsupportedFile = join(directory, "portable-unsupported.drevo");
+    await writePortablePackage(createWriteStream(unsupportedFile), directory, {
+      family: { title: "Future archive", description: "", demo: false, people: [] },
+      documents: [], comments: [], sources: [],
+      futureEvidence: [{ title: "Must not disappear" }],
+    } as Parameters<typeof writePortablePackage>[2], async () => {});
+    const unsupportedPreview = await fetch(oauthBase + location.replace(/\/tree$/, "/api/drevo/preview"), {
+      method: "POST", headers: transferHeaders, body: readFileSync(unsupportedFile),
+    });
+    assert.equal(unsupportedPreview.status, 400,
+      "the preview must reject unknown archival data instead of approving a lossy import");
+    assert.match(await unsupportedPreview.text(), /неподдерживаемые поля/);
     await assertPortableTaskBlocked(
       "portable-import",
       () => fetch(
