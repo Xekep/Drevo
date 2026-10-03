@@ -62,8 +62,6 @@ export default function PublicPeople() {
   useEffect(() => {
     if (!detail?.archiveId) return;
     const controller = new AbortController();
-    setMatchArchives([]);
-    setMatchArchivesError("");
     void archiveFetch("/api/account/archives", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         if (response.status === 501) return null;
@@ -119,6 +117,7 @@ export default function PublicPeople() {
       if (!url) return;
       setDetail(null);
       setMatchArchives([]);
+      setMatchArchivesError("");
       setLinkedCards([]);
       setLinkedCardsTruncated(false);
       setResults([]);
@@ -156,6 +155,7 @@ export default function PublicPeople() {
     history.replaceState(null, "", `/discover/search/${encodeURIComponent(value)}`);
     setDetail(null);
     setMatchArchives([]);
+    setMatchArchivesError("");
     setLinkedCards([]);
     setLinkedCardsTruncated(false);
     void read(

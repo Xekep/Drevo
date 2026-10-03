@@ -52,7 +52,8 @@ function CandidateCard({ candidate, ownArchiveId }: { candidate: Candidate; ownA
 }
 
 export function DiscoveryMatchesAdmin() {
-  const linkedTarget = typeof window === "undefined" ? null : adminMatchTargetAt(window.location.pathname);
+  const [linkedTarget] = useState(() => typeof window === "undefined"
+    ? null : adminMatchTargetAt(window.location.pathname));
   const [archiveId, setArchiveId] = useState("");
   const [ownQuery, setOwnQuery] = useState("");
   const [targetQuery, setTargetQuery] = useState("");
@@ -109,7 +110,7 @@ export function DiscoveryMatchesAdmin() {
         }
       });
     return () => controller.abort();
-  }, [linkedTarget?.archiveId, linkedTarget?.personId]);
+  }, [linkedTarget]);
 
   useEffect(() => {
     const recheck = () => {

@@ -5329,6 +5329,7 @@ try {
       AND right_archive_id='runtime-test' AND right_person_id='person-a'`).get())?.count, 0,
   "the stale handoff creates no match request");
   await otherPublication.publish("person-a", "owner");
+  console.log("runtime_discovery_handoff_revocation_ok");
   const requestedMatch = await fetch(securedBase + "/api/discovery/matches", {
     method: "POST", headers: ownerHeaders,
     body: proposedPair,
