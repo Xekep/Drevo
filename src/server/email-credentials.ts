@@ -24,6 +24,7 @@ const DUMMY_HASH =
   "scrypt$16384$8$5$2d14a31d02ff2175bd89d20f1a7081df$167103d9acb595920576aac1782847df92ab983d0590747beea356a52dcb8779";
 
 export class InvalidEmailCredential extends Error {}
+export class EmailDeliveryFailure extends Error {}
 export class StaleOAuthSession extends Error {}
 export class StaleEmailSession extends Error {}
 
@@ -212,7 +213,7 @@ export function emailCredentials(
               [email, tokenHash(token)],
             ),
           );
-          throw new Error("Не удалось отправить письмо. Попробуйте позднее.");
+          throw new EmailDeliveryFailure("Не удалось отправить письмо. Попробуйте позднее.");
         }
       }
     },
@@ -389,7 +390,7 @@ export function emailCredentials(
               [email, tokenHash(token)],
             ),
           );
-          throw new Error("Не удалось отправить письмо. Попробуйте позднее.");
+          throw new EmailDeliveryFailure("Не удалось отправить письмо. Попробуйте позднее.");
         }
       }
     },
