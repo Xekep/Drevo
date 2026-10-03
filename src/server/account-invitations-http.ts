@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { finished } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import {
@@ -54,14 +55,28 @@ export function accountInvitationsHttp(
         typeof input?.token !== "string"
       )
         throw new InvalidInvitationError("Приглашение недействительно.");
-      return json(
-        res,
-        200,
-        accept
-          ? await invitations.accept(input.archiveId, input.token, session!.accountId, session!.tokenHash)
-          : await invitations.preview(input.archiveId, input.token),
-      );
+      if (preview) {
+        // Keep the archive and invitation locks until this small HTTP
+        // response has finished, so a completed revoke cannot leak it.
+        await invitations.deliverPreview(input.archiveId, input.token, async (value) => {
+          const timeout = setTimeout(() => res.destroy(new Error("Invitation preview timed out")), 4_000);
+          timeout.unref();
+          try {
+            json(res, 200, value);
+            await finished(res);
+          } finally {
+            clearTimeout(timeout);
+          }
+        });
+        return true;
+      }
+      return json(res, 200,
+        await invitations.accept(input.archiveId, input.token, session!.accountId, session!.tokenHash));
     } catch (error) {
+      if (res.headersSent || res.destroyed) {
+        res.destroy(error as Error);
+        return true;
+      }
       if (error instanceof AccountSessionExpired)
         return json(res, 401, { error: error.message });
       if (error instanceof AccountSessionBusy)
