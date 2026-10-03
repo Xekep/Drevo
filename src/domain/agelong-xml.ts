@@ -276,6 +276,36 @@ export function importAgelongXml(
       ),
     };
   };
+  const placeContext = (node: XmlNode, label: string, tag = "place") => {
+    const ref = one(node, tag);
+    const place = ref && places.get(ref.attrs.id);
+    if (!place) return "";
+    const parentNames: string[] = [];
+    const visited = new Set([ref.attrs.id]);
+    let current = place;
+    for (let parentId = one(current, "parent_id")?.attrs.id; parentId;
+      parentId = one(current, "parent_id")?.attrs.id) {
+      if (visited.has(parentId)) {
+        warnings.add(`Цикл родительских мест XML у ${ref.attrs.id}; цепочка сохранена только до повтора.`);
+        break;
+      }
+      visited.add(parentId);
+      const parent = places.get(parentId);
+      if (!parent) {
+        warnings.add(`Родительское место ${parentId} отсутствует в XML; цепочка места ${ref.attrs.id} неполная.`);
+        parentNames.push(`ID ${parentId} (отсутствует в XML)`);
+        break;
+      }
+      const name = parent.attrs.fullname || parent.attrs.name || parent.attrs.nameshort || `ID ${parentId}`;
+      parentNames.push(parent.attrs.date ? `${name} (дата места в XML: ${parent.attrs.date})` : name);
+      current = parent;
+    }
+    const details = [
+      ...(place.attrs.date ? [`дата места в XML: ${place.attrs.date}`] : []),
+      ...(parentNames.length ? [`родительские места: ${parentNames.join(" → ")}`] : []),
+    ];
+    return details.length ? `Контекст места ${label} из XML: ${details.join("; ")}` : "";
+  };
   const uncertain = (
     raw: string | undefined,
     label: string,
@@ -363,7 +393,12 @@ export function importAgelongXml(
         type: "residence",
         place: residence.name,
         location: residence.location,
+        description: placeContext(n, "проживания") || undefined,
       });
+    p.biography = addNotes(p.biography, [
+      placeContext(n, "рождения", "bplace"),
+      placeContext(n, "смерти", "dplace"),
+    ]);
     const extra = textOf(n, "drevo");
     if (extra) {
       const data = JSON.parse(extra);
@@ -537,6 +572,7 @@ export function importAgelongXml(
           n.attrs.deathreason &&
             !p.biography?.includes(`Причина смерти: ${n.attrs.deathreason}`) &&
             `Причина смерти: ${n.attrs.deathreason}`,
+          placeContext(n, birth ? "рождения" : death ? "смерти" : "события"),
           ...extraEvent,
         ]
           .filter(Boolean)
@@ -582,9 +618,17 @@ export function importAgelongXml(
               `${namespace}-e${eventId}`,
             ),
           );
-        if (description)
+        const directPlaceContext = placeContext(
+          nodes.find((node) => ids.get(node.attrs.id) === p.id)!,
+          birth ? "рождения" : "смерти",
+          birth ? "bplace" : "dplace",
+        );
+        const biographyDescription = directPlaceContext && description.includes(directPlaceContext)
+          ? description.replace(directPlaceContext, "").trim()
+          : description;
+        if (biographyDescription)
           p.biography = [
-            ...new Set([p.biography, description].filter(Boolean)),
+            ...new Set([p.biography, biographyDescription].filter(Boolean)),
           ].join("\n\n");
       } else if (
         !textOf(
@@ -783,14 +827,14 @@ export function importAgelongXml(
   ).length;
   if (datedPlaces)
     warnings.add(
-      `Даты исторических названий мест (${datedPlaces}) не перенесены.`,
+      `Даты исторических названий мест (${datedPlaces}) не перенесены как отдельная структура; у используемых мест сохранены текстом у связанных фактов.`,
     );
   if (alternateNames)
     warnings.add(
       `Альтернативные названия мест (${alternateNames}) не перенесены; основное название сохранено там, где место используется.`,
     );
   if (parentPlaces)
-    warnings.add(`Иерархия родительских мест (${parentPlaces}) не перенесена.`);
+    warnings.add(`Иерархия родительских мест (${parentPlaces}) не перенесена как отдельная структура; у используемых мест сохранена текстом у связанных фактов.`);
   if (sourcedPlaces)
     warnings.add(
       `Ссылки на источники для мест (${sourcedPlaces}) не перенесены.`,
