@@ -30,6 +30,15 @@ function stageStatus(value: unknown) {
     ? (data as { status: unknown }).status
     : null;
 }
+function readyStage(value: unknown) {
+  const data = typeof value === "string" ? JSON.parse(value) : value;
+  if (!data || typeof data !== "object" ||
+    (data as { status?: unknown }).status !== "ready" ||
+    typeof (data as { manifestSha256?: unknown }).manifestSha256 !== "string" ||
+    !/^[a-f0-9]{64}$/.test((data as { manifestSha256: string }).manifestSha256))
+    return null;
+  return data as { status: "ready"; manifestSha256: string };
+}
 
 export function portableImportHttp(
   archive: Awaited<ReturnType<typeof openArchive>>,
@@ -188,7 +197,8 @@ export function portableImportHttp(
           "DELETE FROM workflow_stages WHERE kind='drevo' AND token=? AND actor_id=? AND data=?",
           "DELETE FROM workflow_stages WHERE kind='drevo' AND token=? AND actor_id=? AND data=?::jsonb",
         )
-        .run(String(row.token), actorId, JSON.stringify({ status: "ready" }));
+        .run(String(row.token), actorId,
+          typeof row.data === "string" ? row.data : JSON.stringify(row.data));
       if (!deleted.changes) throw new ConflictError("Импорт уже выполняется");
       await rm(stagePath(String(row.token)), { recursive: true, force: true });
     }
@@ -326,7 +336,8 @@ export function portableImportHttp(
           "UPDATE workflow_stages SET data=?,expires_at=? WHERE kind='drevo' AND token=? AND actor_id=? AND expires_at>?",
         )
         .run(
-          JSON.stringify({ status: "ready" }),
+          JSON.stringify({ status: "ready",
+            manifestSha256: parsed.files.get("manifest.json")!.sha256 }),
           Date.now() + STAGE_LIFETIME,
           token,
           actorId,
@@ -387,11 +398,12 @@ export function portableImportHttp(
         "SELECT actor_id,revision,expires_at,data FROM workflow_stages WHERE kind='drevo' AND token=?",
       )
       .get(body.token);
+    const previewed = row && readyStage(row.data);
     if (
       !row ||
       row.actor_id !== actorId ||
       Number(row.expires_at) <= Date.now() ||
-      stageStatus(row.data) !== "ready"
+      !previewed
     )
       throw new ConflictError(
         "Предпросмотр импорта истёк или уже используется",
@@ -402,11 +414,12 @@ export function portableImportHttp(
         "UPDATE workflow_stages SET data=?,expires_at=? WHERE kind='drevo' AND token=? AND actor_id=? AND data=?::jsonb AND expires_at>?",
       )
       .run(
-        JSON.stringify({ status: "applying" }),
+        JSON.stringify({ status: "applying",
+          manifestSha256: previewed.manifestSha256 }),
         Date.now() + 2 * 60 * 60_000,
         body.token,
         actorId,
-        JSON.stringify({ status: "ready" }),
+        JSON.stringify(previewed),
         Date.now(),
       );
     if (!claimed.changes) throw new ConflictError("Импорт уже выполняется");
@@ -419,6 +432,8 @@ export function portableImportHttp(
       if (!(await empty()))
         throw new ConflictError("Дерево изменилось после предпросмотра");
       const parsed = await parsePackage(join(directory, "input"), directory);
+      if (parsed.files.get("manifest.json")!.sha256 !== previewed.manifestSha256)
+        throw new ConflictError("Пакет Drevo изменился после предпросмотра; проверьте его заново");
       const originalFiles = [...parsed.files].filter(([path]) =>
         path.startsWith("media/"),
       );
@@ -471,7 +486,7 @@ export function portableImportHttp(
               "UPDATE workflow_stages SET data=?,expires_at=? WHERE kind='drevo' AND token=? AND actor_id=? AND expires_at>?",
             )
             .run(
-              JSON.stringify({ status: "ready" }),
+              JSON.stringify(previewed),
               Date.now() + STAGE_LIFETIME,
               body.token,
               actorId,
