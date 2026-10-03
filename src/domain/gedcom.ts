@@ -501,6 +501,13 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         const object = ref.pointer ? records.get(ref.value) : ref;
         if (!object || object.tag !== "OBJE")
           throw new Error(`Не найдено медиа цитаты ${ref.value}`);
+        const linkTitle = value(ref, "TITL");
+        if (linkTitle) {
+          const context = directObjects.length ? "SOUR.OBJE.TITL" : "SOURCE_RECORD.OBJE.TITL";
+          source.note = [source.note, `Название вложения (${context}): ${linkTitle}`]
+            .filter(Boolean).join("\n");
+          warnings.add(`${context} сохранено текстом в цитате; отдельное название ссылки на медиа при экспорте не восстанавливается.`);
+        }
         const rawPage = value(s, "_DREVO_DOCUMENT_PAGE");
         const page = rawPage ? Number(rawPage) : undefined;
         if (page !== undefined && (!Number.isInteger(page) || page < 1 || page > 2000))
