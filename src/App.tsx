@@ -773,6 +773,7 @@ export default function App() {
                   family={family}
                   currentUserId={user.id}
                   platformAdmin={user.platformAdmin === true}
+                  aiAvailable={user.aiAvailable === true}
                   publicationOwnership={publicationOwnership}
                   onClose={() => navigate("tree")}
                   onChanged={archive.reload}
@@ -1197,6 +1198,10 @@ export default function App() {
           anchorId={selected[0] || user?.personId}
           onChange={archive.saveTreePreferences}
           onClose={() => setTreePreferencesOpen(false)}
+          onAdmin={user?.role === "admin" && user.approved === true ? () => {
+            setTreePreferencesOpen(false);
+            navigate("admin");
+          } : undefined}
         />
       )}
       {treeExportOpen && family && readTree && (

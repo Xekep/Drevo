@@ -218,6 +218,19 @@
   cursor: wait;
   opacity: 0.7;
 }
+.tree-admin-link {
+  min-height: 36px;
+  border: 1px solid #dce3d6;
+  border-radius: 8px;
+  background: #f5f8f1;
+  color: #365b40;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tree-admin-link:hover {
+  background: #eaf1e3;
+}
 .tree-pdf-export {
   border-top: 1px solid #e0e6dc;
   padding-top: 12px;

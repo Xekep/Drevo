@@ -89,6 +89,7 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       onSettings: noop,
       save: async () => family,
       canEdit: true,
+      aiAvailable: false,
     };
     assert.doesNotMatch(
       renderToStaticMarkup(
@@ -117,7 +118,7 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
     assert.doesNotMatch(navigation, /export\.json|Экспорт JSON без фото/);
     assert.match(navigation, /Семьи/);
     assert.match(navigation, /Фото/);
-    assert.match(navigation, /Админка/);
+    assert.match(navigation, /Управление деревом/);
     const inspector = renderToStaticMarkup(
       createElement(PersonInspector, {
         person: p,

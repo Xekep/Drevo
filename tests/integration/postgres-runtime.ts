@@ -4214,6 +4214,35 @@ try {
   }).then((response) => response.json());
   assert.equal(archiveAdminSession.user.role, "admin");
   assert.equal(archiveAdminSession.user.platformAdmin, false);
+  const ownerTierBeforeAdminView = (await client.query<{ full_access: boolean }>(
+    "SELECT full_access FROM account_tiers WHERE account_id='owner'",
+  )).rows[0].full_access;
+  const viewerTierBeforeAdminView = (await client.query<{ full_access: boolean }>(
+    "SELECT full_access FROM account_tiers WHERE account_id='vk:42'",
+  )).rows[0].full_access;
+  try {
+    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='vk:42'");
+    await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+    const overview = await fetch(securedBase + "/api/family?projection=overview", {
+      headers: archiveAdminHeaders,
+    }).then((response) => response.json());
+    assert.equal(overview.user.fullAccess, true);
+    assert.equal(overview.user.aiAvailable, false,
+      "a full-tier invited admin cannot use AI in a basic-tier owner's tree");
+    assert.equal((await fetch(securedBase + "/api/family", {
+      headers: archiveAdminHeaders,
+    }).then((response) => response.json())).user.aiAvailable, false,
+    "full snapshots retain the same effective capability after a page retry");
+    assert.equal((await fetch(securedBase + "/api/admin/ai", {
+      headers: archiveAdminHeaders,
+    })).status, 403);
+    assert.equal((await fetch(securedBase + "/api/mcp/tokens", {
+      headers: archiveAdminHeaders,
+    })).status, 403);
+  } finally {
+    await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='owner'", [ownerTierBeforeAdminView]);
+    await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='vk:42'", [viewerTierBeforeAdminView]);
+  }
   const shareBeforeRevocation = await app.archive.read();
   const shareCountBefore = Number((await app.archive.db.prepare("", `SELECT count(*)::int AS count
     FROM share_links`).get())?.count);
