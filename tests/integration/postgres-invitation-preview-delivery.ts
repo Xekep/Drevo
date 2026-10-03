@@ -38,22 +38,21 @@ export async function verifyInvitationPreviewDelivery(db: StoreDatabase, client:
   let revokedBeforeFinalCheck = { status: 0, leakedRole: false };
   const first = await makeInvitation();
   try {
-    let reachedRead!: () => void;
-    let resumeRead!: () => void;
-    const readReached = new Promise<void>((resolve) => { reachedRead = resolve; });
-    const readGate = new Promise<void>((resolve) => { resumeRead = resolve; });
+    let reachedTransaction!: () => void;
+    let resumeTransaction!: () => void;
+    const transactionReached = new Promise<void>((resolve) => { reachedTransaction = resolve; });
+    const transactionGate = new Promise<void>((resolve) => { resumeTransaction = resolve; });
     let gated = true;
     const gatedDb: StoreDatabase = {
       ...db,
       postgresTransaction: async <T>(work: (client: pg.PoolClient) => Promise<T>) =>
         db.postgresTransaction!(async (transactionClient) => {
-          const value = await work(transactionClient);
           if (!gated) {
             gated = true;
-            reachedRead();
-            await readGate;
+            reachedTransaction();
+            await transactionGate;
           }
-          return value;
+          return await work(transactionClient);
         }),
     };
     const handler = accountInvitationsHttp(gatedDb, auth, origin);
@@ -68,20 +67,20 @@ export async function verifyInvitationPreviewDelivery(db: StoreDatabase, client:
       assert.equal(active.status, 200);
       assert.equal((await active.json()).role, "reader",
         "a valid bearer can still preview a live invitation");
-      // Only gate the second request, after the first transaction has read
-      // title/role but before the final delivery authorization.
+      // Only gate the second request, immediately before its locked final
+      // authorization, while a revoke completes.
       gated = false;
       const held = preview(base, first.token);
       await Promise.race([
-        readReached,
-        held.then(() => { throw new Error("Invitation preview finished before read barrier"); }),
+        transactionReached,
+        held.then(() => { throw new Error("Invitation preview finished before transaction barrier"); }),
         new Promise<never>((_, reject) => {
-          const timer = setTimeout(() => reject(new Error("Invitation preview missed read barrier")), 30_000);
+          const timer = setTimeout(() => reject(new Error("Invitation preview missed transaction barrier")), 30_000);
           timer.unref();
         }),
       ]);
       assert.equal(await invitations.revoke(owner, first.id), true);
-      resumeRead();
+      resumeTransaction();
       const response = await held;
       const body = await response.text();
       revokedBeforeFinalCheck = {
@@ -89,7 +88,7 @@ export async function verifyInvitationPreviewDelivery(db: StoreDatabase, client:
         leakedRole: /"role":"reader"/.test(body),
       };
     } finally {
-      resumeRead();
+      resumeTransaction();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
@@ -150,5 +149,53 @@ export async function verifyInvitationPreviewDelivery(db: StoreDatabase, client:
     revokedBeforeFinalCheck: { status: 410, leakedRole: false },
     revokedBeforeDelivery: false,
   }, "revocation before final check hides the preview; revocation after its lock waits for delivery");
+
+  const stalled = await makeInvitation();
+  try {
+    let reachedEnd!: () => void;
+    const endReached = new Promise<void>((resolve) => { reachedEnd = resolve; });
+    const handler = accountInvitationsHttp(db, auth, origin);
+    const server = createServer((req, res) => {
+      // Model a client/transport that never finishes this tiny response.
+      res.end = (() => { reachedEnd(); return res; }) as ServerResponse["end"];
+      void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => res.destroy(error));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    try {
+      const pending = preview(base, stalled.token).then((response) => response.text());
+      await Promise.race([
+        endReached,
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error("Stalled preview missed delivery barrier")), 30_000);
+          timer.unref();
+        }),
+      ]);
+      // The route's five-second delivery deadline must win over PostgreSQL's
+      // five-second lock timeout on the competing revoke transaction.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const revocation = invitations.revoke(owner, stalled.id);
+      void revocation.catch(() => {});
+      assert.equal(await Promise.race([
+        revocation.then(() => true),
+        new Promise<false>((resolve) => setTimeout(() => resolve(false), 150)),
+      ]), false, "the stalled response initially holds the invitation lock");
+      await assert.rejects(Promise.race([
+        pending,
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error("Stalled preview exceeded delivery deadline")), 8_000);
+          timer.unref();
+        }),
+      ]), (error: unknown) => !String(error).includes("exceeded delivery deadline"));
+      assert.equal(await revocation, true,
+        "the delivery deadline releases the archive and invitation locks");
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  } finally {
+    await client.query("DELETE FROM archive_invitations WHERE archive_id=$1 AND id=$2", [archiveId, stalled.id]);
+  }
   console.log("invitation_preview_delivery_revocation_verified");
 }

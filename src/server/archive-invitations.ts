@@ -132,6 +132,22 @@ export function accountInvitations(db: StoreDatabase) {
     if (!archivePattern.test(archiveId) || !tokenPattern.test(token))
       throw new InvalidInvitationError("Приглашение недействительно.");
   };
+  const previewValue = async (
+    client: pg.PoolClient,
+    archiveId: string,
+    invite: { role: string; used_by: string | null },
+  ) => {
+    if (invite.used_by)
+      throw new InvalidInvitationError("Приглашение уже использовано.");
+    const archive = await client.query<{ title: string }>(
+      "SELECT title FROM archives WHERE id=$1", [archiveId],
+    );
+    return {
+      archiveId,
+      title: archive.rows[0]?.title || "Семейное древо",
+      role: invite.role,
+    };
+  };
   const withInvitation = async <T>(
     archiveId: string,
     token: string,
@@ -149,13 +165,16 @@ export function accountInvitations(db: StoreDatabase) {
       await client.query("SELECT set_config('drevo.archive_id',$1,true)", [
         archiveId,
       ]);
+      if (lock) {
+        // Match invitation revoke and accept: archive before invitation row.
+        const archive = await client.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE", [archiveId]);
+        if (!archive.rowCount)
+          throw new InvalidInvitationError("Приглашение недействительно.");
+      }
       if (session) {
         // Account deletion holds the session before locking memberships'
         // archives. Take the archive first and use NOWAIT on the session to
         // avoid waiting across the opposite lock order.
-        const archive = await client.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE", [archiveId]);
-        if (!archive.rowCount)
-          throw new InvalidInvitationError("Приглашение недействительно.");
         let active: pg.QueryResult<{ expires_at: number }>;
         try {
           active = await client.query<{ expires_at: number }>(
@@ -190,20 +209,14 @@ export function accountInvitations(db: StoreDatabase) {
     });
   };
   return {
-    async preview(archiveId: string, token: string) {
+    async deliverPreview(
+      archiveId: string,
+      token: string,
+      deliver: (value: Awaited<ReturnType<typeof previewValue>>) => Promise<void>,
+    ) {
       return await withInvitation(archiveId, token, async (client, invite) => {
-        if (invite.used_by)
-          throw new InvalidInvitationError("Приглашение уже использовано.");
-        const archive = await client.query<{ title: string }>(
-          "SELECT title FROM archives WHERE id=$1",
-          [archiveId],
-        );
-        return {
-          archiveId,
-          title: archive.rows[0]?.title || "Семейное древо",
-          role: invite.role,
-        };
-      });
+        await deliver(await previewValue(client, archiveId, invite));
+      }, true);
     },
     async accept(archiveId: string, token: string, accountId: string, tokenHash: string) {
       if (!accountId)
