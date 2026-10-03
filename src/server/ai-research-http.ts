@@ -904,8 +904,8 @@ export function aiResearchHttp({
         models: new Map(),
       },
       controller = new AbortController();
-    const assertTurnRunning = async () => {
-      const status = await chats.turnStatus(chat.id, lockToken);
+    const assertTurnRunning = async (lockForCommit = false) => {
+      const status = await chats.turnStatus(chat.id, lockToken, lockForCommit);
       if (status === "lost") leaseLost = true;
       if (status !== "active") controller.abort();
       if (controller.signal.aborted)
@@ -1008,6 +1008,7 @@ export function aiResearchHttp({
         },
         signal: controller.signal,
         chatId: chat.id,
+        turnToken: lockToken,
         assertAiAccess: async () => {
           await assertTurnRunning();
           if (await canDeliverAiData(req, chat.accessScope, user.id)) return;
@@ -1017,7 +1018,7 @@ export function aiResearchHttp({
         },
         commitSuggestion: async (name, _actor, family, revision, args) =>
           archive.db.transaction(async () => {
-            await assertTurnRunning();
+            await assertTurnRunning(true);
             const latest = await auth.currentUser(req);
             if (controller.signal.aborted || !latest || latest.id !== user.id ||
               !latest.approved || !(await auth.canEdit(req))) {
@@ -1048,7 +1049,7 @@ export function aiResearchHttp({
       if (controller.signal.aborted)
         throw new DOMException("Запрос остановлен", "AbortError");
       const answerSaved = await archive.db.transaction(async () => {
-        await assertTurnRunning();
+        await assertTurnRunning(true);
         if (!(await canDeliverAiData(req, chat.accessScope, user.id, true)))
           return false;
         await chats.append(chat.id, "assistant", result.answer, {
@@ -1149,7 +1150,7 @@ export function aiResearchHttp({
         accessRevoked = true;
         controller.abort();
       }
-      await chats.setRemote(chat.id, null);
+      await chats.setRemote(chat.id, null, lockToken);
       const errorMessage = accessRevoked
         ? "Доступ к ИИ отключён. Ответ не сохранён."
         : leaseLost

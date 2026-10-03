@@ -142,7 +142,7 @@ test("one clock instance rereads time on every use", (t) => {
 test("HTTP agent refreshes its clock per model round and per chat turn; client date is ignored", async (t) => {
   t.mock.timers.enable({
     apis: ["Date"],
-    now: new Date("2026-09-25T21:30:00Z"),
+    now: new Date("2026-09-25T21:30:59Z"),
   });
   const dir = mkdtempSync(join(tmpdir(), "drevo-clock-"));
   const keys = ["YANDEX_AI_API_KEY", "YANDEX_AI_FOLDER_ID", "YANDEX_AI_MODEL"];
@@ -157,7 +157,9 @@ test("HTTP agent refreshes its clock per model round and per chat turn; client d
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     requests.push(body);
     if (requests.length === 1) {
-      t.mock.timers.setTime(Date.now() + 60000);
+      // Cross a minute boundary while the chat's 60-second lease stays valid.
+      // Mocking Date alone does not run the lease-renewal interval.
+      t.mock.timers.setTime(Date.now() + 1000);
       return Response.json({
         id: "clock-tool",
         status: "completed",
@@ -218,7 +220,7 @@ test("HTTP agent refreshes its clock per model round and per chat turn; client d
     const response = await send("Europe/Moscow", undefined, "сколько мне лет?");
     assert.equal(response.status, 200);
     const first = (await response.json()) as { chatId: string };
-    assert.match(String(requests[0].instructions), /2026-09-26T00:30:00/);
+    assert.match(String(requests[0].instructions), /2026-09-26T00:30:59/);
     assert.doesNotMatch(String(requests[0].instructions), /2024-05-22/);
     assert.ok(
       (requests[0].tools as Array<{ name: string }>).some(

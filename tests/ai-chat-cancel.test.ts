@@ -36,6 +36,7 @@ test("a late provider answer cannot commit after another runner acquires the exp
     await app.archive.db.prepare("UPDATE ai_chats SET busy_until=? WHERE id=?").run(Date.now() - 1, chat.id);
     const replacement = (await chats.acquire(chat.id))!;
     assert.ok(replacement);
+    await chats.setRemote(chat.id, "replacement-remote");
     // Release immediately so the final commit guard, not the timer, fences the old turn.
     release();
     const response = await pending;
@@ -44,6 +45,8 @@ test("a late provider answer cannot commit after another runner acquires the exp
     assert.deepEqual((await chats.messages(chat.id, "local"))!.map((message) => message.role), ["user"]);
     assert.equal(await chats.turnStatus(chat.id, replacement), "active",
       "cleanup of the old runner must not release the replacement lease");
+    assert.equal((await chats.read(chat.id, "local"))?.yandexConversationId,
+      "replacement-remote", "a stale runner must not clear the new turn's provider context");
     await chats.release(chat.id, replacement);
   } finally {
     release();

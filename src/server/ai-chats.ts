@@ -172,13 +172,15 @@ export function aiChatStore(db: StoreDatabase) {
         )
         .run(id);
     },
-    async setRemote(id: string, conversationId: string | null) {
+    async setRemote(id: string, conversationId: string | null, token?: string) {
       await db
         .prepare(
-          "UPDATE ai_chats SET yandex_conversation_id=? WHERE id=?",
-          "UPDATE ai_chats SET yandex_conversation_id=? WHERE id=?",
+          "UPDATE ai_chats SET yandex_conversation_id=? WHERE id=?" +
+            (token ? " AND busy_token=?" : ""),
+          "UPDATE ai_chats SET yandex_conversation_id=? WHERE id=?" +
+            (token ? " AND busy_token=?" : ""),
         )
-        .run(conversationId, id);
+        .run(conversationId, id, ...(token ? [token] : []));
     },
     async setActivePeople(id: string, personIds: string[]) {
       await db
@@ -226,11 +228,14 @@ export function aiChatStore(db: StoreDatabase) {
       if (db.inTransaction()) await work();
       else await db.transaction(work);
     },
-    async turnStatus(id: string, token: string): Promise<"active" | "stopped" | "lost"> {
+    async turnStatus(id: string, token: string, lockForCommit = false): Promise<"active" | "stopped" | "lost"> {
+      if (lockForCommit && !db.inTransaction())
+        throw new Error("Фиксация ответа требует транзакции");
       const row = await db
         .prepare(
           "SELECT stop_token FROM ai_chats WHERE id=? AND busy_token=? AND busy_until>?",
-          "SELECT stop_token FROM ai_chats WHERE id=? AND busy_token=? AND busy_until>?",
+          "SELECT stop_token FROM ai_chats WHERE id=? AND busy_token=? AND busy_until>?" +
+            (lockForCommit ? " FOR UPDATE" : ""),
         )
         .get(id, token, Date.now());
       return !row ? "lost" : row.stop_token === token ? "stopped" : "active";
