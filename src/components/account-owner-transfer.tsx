@@ -11,6 +11,7 @@ type Candidate = {
   name: string;
   role: string;
   eligible: boolean;
+  reason?: "unavailable";
 };
 
 async function responseJson<T>(response: Response): Promise<T> {
@@ -203,7 +204,8 @@ export function AccountOwnerTransfer() {
                     onClick={() => setSelected(candidate)}
                   >
                     {candidate.name}
-                    {!candidate.eligible && " · уже владеет деревом"}
+                    {!candidate.eligible &&
+                      " · уже владеет деревом или дерево превышает доступный лимит"}
                   </button>
                 ))}
               </div>
