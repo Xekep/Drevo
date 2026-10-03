@@ -1,5 +1,5 @@
-import { mediaPreview } from "../../domain/media-preview";
-import { safeUrl } from "../../domain";
+import { mediaPreview } from "../../domain/media-preview.ts";
+import { safeUrl } from "../../domain/index.ts";
 
 type Tile = { slot: number; touched: number };
 export type PortraitTile = {
@@ -8,6 +8,10 @@ export type PortraitTile = {
   gray: boolean;
 };
 const SIZE = 2048;
+const TINY_SIZES = [48, 28, 20, 16];
+const capacityFor = (size: number) => Math.floor(SIZE / (size + 4)) ** 2;
+const MAX_FAILURES = capacityFor(16) + capacityFor(264);
+const RETRY_MS = 30_000;
 
 /** Two fixed pages within a 32 MiB budget, no archive-sized decoded-image cache. */
 export class GpuPortraitCache {
@@ -22,17 +26,25 @@ export class GpuPortraitCache {
   private loading = new Map<string, HTMLImageElement>();
   private failed = new Map<string, number>();
   private wanted: { key: string; photo: string; level: number }[] = [];
+  private wantedKeys = new Set<string>();
+  private nextWanted = 0;
   private clock = 0;
   private stopped = false;
   private highQuality = false;
   private scratch = document.createElement("canvas");
+  private gl: WebGL2RenderingContext;
+  private redraw: () => void;
+  private failure: () => void;
   readonly bytes = Math.ceil((SIZE * SIZE * 5 * 4) / 3);
 
   constructor(
-    private gl: WebGL2RenderingContext,
-    private redraw: () => void,
-    private failure: () => void,
+    gl: WebGL2RenderingContext,
+    redraw: () => void,
+    failure: () => void,
   ) {
+    this.gl = gl;
+    this.redraw = redraw;
+    this.failure = failure;
     this.pages = [48, 264].map((size) => {
       const texture = gl.createTexture();
       if (!texture) throw new Error("GPU texture allocation failed");
@@ -77,48 +89,63 @@ export class GpuPortraitCache {
   }
 
   update(redraw: () => void, failure: () => void, photos: ReadonlySet<string>) {
+    if (this.stopped) return;
     this.redraw = redraw;
     this.failure = failure;
+    this.expandTiny(photos.size);
     for (const page of this.pages)
       for (const [photo, tile] of page.tiles)
         if (!photos.has(photo)) {
           page.tiles.delete(photo);
           page.free.push(tile.slot);
         }
-    this.wanted = this.wanted.filter((item) => photos.has(item.photo));
+    this.setWanted(this.wanted.filter((item) => photos.has(item.photo)));
     for (const [key, image] of this.loading)
       if (!photos.has(key.slice(2))) {
         image.onload = image.onerror = null;
         image.src = "";
         this.loading.delete(key);
       }
+    for (const key of this.failed.keys())
+      if (!photos.has(key.slice(2))) this.failed.delete(key);
+    this.pump();
   }
 
   request(photos: string[], zoom: number) {
+    if (this.stopped) return;
     this.highQuality = this.quality(zoom);
     const unique = [...new Set(photos)];
+    this.expandTiny(unique.length);
     // High resolution only for the nearest 49 visible portraits. Tiny tiles stay
     // resident during upgrades; camera motion never blanks an existing portrait.
-    this.wanted = unique.slice(0, 1521).map((photo) => ({
-      key: `0:${photo}`,
-      photo,
-      level: 0,
-    }));
+    const wanted = unique
+      .slice(0, capacityFor(this.pages[0].size))
+      .map((photo) => ({
+        key: `0:${photo}`,
+        photo,
+        level: 0,
+      }));
     if (this.highQuality)
-      this.wanted.unshift(
+      wanted.unshift(
         ...unique.slice(0, 49).map((photo) => ({
           key: `1:${photo}`,
           photo,
           level: 1,
         })),
       );
+    this.setWanted(wanted);
+    const now = Date.now();
+    for (const [key, failedAt] of this.failed)
+      if (this.wantedKeys.has(key) && now - failedAt >= RETRY_MS) {
+        this.nextWanted = 0;
+        break;
+      }
     for (const item of this.wanted) {
       const tile = this.pages[item.level].tiles.get(item.photo);
       if (tile) tile.touched = ++this.clock;
     }
-    const wanted = new Set(this.wanted.map((item) => item.key));
     for (const [key, image] of this.loading)
-      if (!wanted.has(key)) {
+      if (!this.wantedKeys.has(key)) {
         image.onload = image.onerror = null;
         image.src = "";
         this.loading.delete(key);
@@ -131,11 +158,24 @@ export class GpuPortraitCache {
   }
 
   ready() {
+    const now = Date.now();
     return this.wanted.every(
       (item) =>
         this.pages[item.level].tiles.has(item.photo) ||
-        this.failed.has(item.key),
+        (this.failed.has(item.key) &&
+          now - this.failed.get(item.key)! < RETRY_MS),
     );
+  }
+
+  private setWanted(wanted: typeof this.wanted) {
+    if (
+      wanted.length === this.wanted.length &&
+      wanted.every((item, index) => item.key === this.wanted[index].key)
+    )
+      return;
+    this.wanted = wanted;
+    this.wantedKeys = new Set(wanted.map((item) => item.key));
+    this.nextWanted = 0;
   }
 
   prepare() {
@@ -148,7 +188,7 @@ export class GpuPortraitCache {
   }
 
   get(photo: string): PortraitTile | undefined {
-    for (const level of this.highQuality ? [1, 0] : [0]) {
+    for (const level of this.highQuality ? [1, 0] : [0, 1]) {
       const page = this.pages[level],
         tile = page.tiles.get(photo);
       if (!tile) continue;
@@ -166,16 +206,44 @@ export class GpuPortraitCache {
     }
   }
 
+  private expandTiny(photoCount: number) {
+    const page = this.pages[0];
+    if (photoCount <= capacityFor(page.size)) return;
+    const size =
+      TINY_SIZES.find((value) => capacityFor(value) >= photoCount) ??
+      TINY_SIZES[TINY_SIZES.length - 1];
+    if (size >= page.size) return;
+    // Reuse immutable R8 storage. Old tiny UVs become invalid together, and
+    // pending callbacks cannot insert a tile using the previous packing.
+    for (const [key, image] of this.loading)
+      if (key.startsWith("0:")) {
+        image.onload = image.onerror = null;
+        image.src = "";
+        this.loading.delete(key);
+      }
+    page.size = size;
+    page.cell = size + 4;
+    page.tiles.clear();
+    this.nextWanted = 0;
+    const capacity = capacityFor(size);
+    page.free = Array.from(
+      { length: capacity },
+      (_, index) => capacity - index - 1,
+    );
+    page.dirty = true;
+    this.redraw();
+  }
+
   private pump() {
     if (this.stopped) return;
-    for (const item of this.wanted) {
-      if (this.loading.size >= 6) break;
+    while (this.nextWanted < this.wanted.length && this.loading.size < 6) {
+      const item = this.wanted[this.nextWanted++];
       const page = this.pages[item.level];
       if (
         page.tiles.has(item.photo) ||
         this.loading.has(item.key) ||
         (this.failed.has(item.key) &&
-          Date.now() - this.failed.get(item.key)! < 30_000)
+          Date.now() - this.failed.get(item.key)! < RETRY_MS)
       )
         continue;
       const image = new Image();
@@ -241,6 +309,7 @@ export class GpuPortraitCache {
             );
           page.dirty = true;
           page.tiles.set(item.photo, { slot, touched: ++this.clock });
+          this.failed.delete(item.key);
           this.redraw();
         } catch {
           this.failure();
@@ -249,9 +318,16 @@ export class GpuPortraitCache {
         this.pump();
       };
       image.onerror = () => {
+        if (this.stopped || this.loading.get(item.key) !== image) return;
         this.loading.delete(item.key);
-        if (this.failed.size >= 2048) this.failed.clear();
         this.failed.set(item.key, Date.now());
+        // Keep failures for the entire active packing, including all-404 trees.
+        // Historical viewport failures may be evicted, active ones retain TTL.
+        for (const key of this.failed.keys()) {
+          if (this.failed.size <= MAX_FAILURES) break;
+          if (!this.wantedKeys.has(key)) this.failed.delete(key);
+        }
+        image.onload = image.onerror = null;
         this.redraw();
         this.pump();
       };
@@ -271,6 +347,8 @@ export class GpuPortraitCache {
     }
     this.loading.clear();
     this.wanted = [];
+    this.wantedKeys.clear();
+    this.nextWanted = 0;
     this.failed.clear();
     for (const page of this.pages) {
       this.gl.deleteTexture(page.texture);

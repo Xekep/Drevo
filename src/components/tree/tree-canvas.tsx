@@ -1064,7 +1064,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         : displayEdges,
     [displayEdges, layoutTransition],
   );
-  const overviewAvailable = nodes.length >= 600 && !growing && !layoutSettling;
+  const overviewAvailable = mode !== "timeline" && !activeFanAnchor &&
+    nodes.length >= 600 && !growing && !layoutSettling;
   const portraitPeople = useMemo(() => nodes.map((node) => node.data.person), [nodes]);
   const distantScene = overviewAvailable && distantZoom;
   // Use the existing distant canvas scene for large introductions instead of
@@ -1157,6 +1158,47 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     return () => window.clearTimeout(timer);
   }, [anchorNotice]);
   const savingAnchor = useRef(false);
+  const { onGenerationAnchor } = props;
+  const saveGenerationAnchor = useCallback(async (id: string) => {
+    if (savingAnchor.current || !onGenerationAnchor) return false;
+    savingAnchor.current = true;
+    const person = currentPeople.get(id);
+    try {
+      await onGenerationAnchor(id);
+      setAnchorNotice(`Опорный человек: ${person ? fullName(person) : id}`);
+      return true;
+    } catch (error: unknown) {
+      setAnchorNotice(error instanceof Error ? error.message : "Не удалось сохранить опорного человека");
+      return false;
+    } finally {
+      savingAnchor.current = false;
+    }
+  }, [onGenerationAnchor, currentPeople]);
+  const reanchorHiddenPerson = useCallback(async (id: string) => {
+    // Only exclusion by the generation window changes its anchor. Assistant
+    // filters, collapsed branches and ordinary card selection keep their policy.
+    if (!props.generationLimits || !generationRange || generationRange.has(id) ||
+        !currentPeople.has(id)) return false;
+    return saveGenerationAnchor(id);
+  }, [props.generationLimits, generationRange, currentPeople, saveGenerationAnchor]);
+  const focusSelected = async () => {
+    if (selected.length === 1 && props.assistantFilter &&
+        ("excludeNeedsReview" in props.assistantFilter
+          ? currentPeople.get(selected[0])?.needsReview
+          : !props.assistantFilter.ids.includes(selected[0]))) {
+      setAnchorNotice("Человек скрыт фильтром исследования. Снимите фильтр, чтобы перейти к нему");
+      return;
+    }
+    if (selected.length === 1 && await reanchorHiddenPerson(selected[0])) return;
+    void fitTree({
+      ids: selected,
+      minZoom: selected.length === 1 ? PERSON_FOCUS_ZOOM : 0.05,
+      maxZoom: selected.length === 1 ? PERSON_FOCUS_ZOOM : 1,
+      padding: 0.4,
+      duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 480,
+      ease: (progress) => 1 - (1 - progress) ** 3,
+    });
+  };
   const middleAnchor = useMiddlePersonAnchor(
     !!props.onGenerationAnchor && !cameraLocked && !layoutBusy && !activeFanAnchor,
     (target, x, y) => {
@@ -1174,18 +1216,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         : null;
     },
     (id) => {
-      if (savingAnchor.current || !props.onGenerationAnchor) return;
-      savingAnchor.current = true;
-      const person = peopleMap.get(id);
-      const label = person ? fullName(person) : id;
-      void props.onGenerationAnchor(id)
-        .then(() => {
-          setAnchorNotice(`Опорный человек: ${label}`);
-        })
-        .catch((error: unknown) => {
-          setAnchorNotice(error instanceof Error ? error.message : "Не удалось сохранить опорного человека");
-        })
-        .finally(() => { savingAnchor.current = false; });
+      void saveGenerationAnchor(id);
     },
   );
   const flowNodes = useMemo(() => gpuActive
@@ -1846,7 +1877,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               </button>
             </Panel>
           ) : (
-            <TreeCameraTools selected={selected} disabled={cameraLocked} fitTree={fitTree} />
+            <TreeCameraTools selected={selected} disabled={cameraLocked} fitTree={fitTree}
+              onFocusSelected={() => { void focusSelected(); }} />
           )}
         </ReactFlow>
         )}
@@ -1857,7 +1889,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             hovered={gpuHovered} focused={gpuFocused} relationLabel={actions.relationLabel}
             onReady={gpuReady} onFailure={gpuFailure} />
         )}
-        {!activeFanAnchor && !gpuActive && (
+        {!activeFanAnchor && mode !== "timeline" && !gpuActive && (
           <DistantPortraits
             people={portraitPeople}
             nodes={nodes}

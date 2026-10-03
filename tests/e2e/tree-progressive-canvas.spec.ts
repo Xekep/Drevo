@@ -47,6 +47,16 @@ test("3000 person canvas intro survives GPU handoff or canvas fallback", async (
     Object.assign(window, { __canvasIntroHandoff: handoff });
     let observed = false;
     let contentShown = false;
+    const compositedVisible = (element: HTMLElement | null) => {
+      if (!element || getComputedStyle(element).visibility !== "visible") return false;
+      // A child may explicitly override an ancestor's visibility:hidden.
+      // Opacity and display, however, hide the whole composited subtree.
+      for (let current: HTMLElement | null = element; current; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || Number(style.opacity) === 0) return false;
+      }
+      return element.getClientRects().length > 0;
+    };
     const sample = () => {
       const root = document.querySelector(".tree-canvas");
       const canvas = document.querySelector<HTMLCanvasElement>(".tree-distant-portraits");
@@ -58,7 +68,8 @@ test("3000 person canvas intro survives GPU handoff or canvas fallback", async (
         new MutationObserver(record).observe(root, { attributes: true,
           attributeFilter: ["class", "data-renderer"] });
       }
-      if (root?.classList.contains("is-growing") && canvas) {
+      if (root && canvas && (root.classList.contains("is-growing") ||
+        root.classList.contains("is-growth-preparing"))) {
         samples.push({ at: Math.round(performance.now()),
           partial: Number(canvas.dataset.introPartialEdges || 0),
           edges: Number(canvas.dataset.introVisibleEdges || 0),
@@ -67,16 +78,16 @@ test("3000 person canvas intro survives GPU handoff or canvas fallback", async (
           svgEdges: root.querySelectorAll(".react-flow__edge").length,
           visible: getComputedStyle(canvas).visibility,
           clipVisible: getComputedStyle(canvas.parentElement!).visibility,
+          compositedVisible: compositedVisible(canvas),
           preparing: root.classList.contains("is-growth-preparing"),
           zoom: new DOMMatrix(getComputedStyle(root.querySelector(".react-flow__viewport")!).transform).a,
         });
       }
       if (root && states.some((state) => String((state as { className: string }).className).includes("is-growing"))) {
         const gpu = root.querySelector<HTMLCanvasElement>(".tree-gpu-scene");
-        const canvasVisible = !!canvas && getComputedStyle(canvas).visibility === "visible" &&
-            getComputedStyle(canvas.parentElement!).visibility === "visible" &&
+        const canvasVisible = compositedVisible(canvas) && !!canvas &&
             Number(canvas.dataset.sceneEdges || 0) > 0;
-        const gpuVisible = !!gpu && getComputedStyle(gpu).visibility === "visible" &&
+        const gpuVisible = compositedVisible(gpu) && !!gpu &&
             Number(gpu.dataset.gpuDraws || 0) > 0;
         if (canvasVisible || gpuVisible) contentShown = true;
         if (contentShown) handoff.push({ at: Math.round(performance.now()),
@@ -94,7 +105,7 @@ test("3000 person canvas intro survives GPU handoff or canvas fallback", async (
     (window as typeof window & { __canvasIntroSamples: Array<{
       at: number; partial: number; edges: number; nodes: number;
       sceneEdges: number; svgEdges: number; visible: string;
-      clipVisible: string; preparing: boolean; zoom: number;
+      clipVisible: string; compositedVisible: boolean; preparing: boolean; zoom: number;
     }> }).__canvasIntroSamples);
   const states = await page.evaluate(() =>
     (window as typeof window & { __canvasIntroStates: Array<{
@@ -105,12 +116,15 @@ test("3000 person canvas intro survives GPU handoff or canvas fallback", async (
       at: number; canvas: boolean; gpu: boolean;
     }> }).__canvasIntroHandoff);
   const progress = samples.filter((sample) => !sample.preparing &&
-    sample.visible === "visible" && sample.clipVisible === "visible" && sample.partial > 0);
+    sample.compositedVisible && sample.partial > 0);
+  const preparing = samples.filter((sample) => sample.preparing);
+  expect(preparing.length).toBeGreaterThan(0);
+  expect(preparing.every((sample) => !sample.compositedVisible)).toBe(true);
   expect(progress.length).toBeGreaterThanOrEqual(2);
   expect(new Set(progress.map((sample) => sample.partial)).size).toBeGreaterThanOrEqual(2);
   expect(Math.max(...samples.map((sample) => sample.sceneEdges))).toBeGreaterThanOrEqual(2500);
   expect(Math.max(...samples.map((sample) => sample.svgEdges))).toBe(0);
-  const visible = samples.filter((sample) => !sample.preparing && sample.clipVisible === "visible");
+  const visible = samples.filter((sample) => !sample.preparing && sample.compositedVisible);
   // Culling changes the number of cards and lines between desktop and mobile.
   // Require distinct visible card and line phases across three generations.
   const phases: string[] = [];

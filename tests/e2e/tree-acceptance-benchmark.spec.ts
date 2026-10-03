@@ -180,6 +180,8 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
             ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL))
             : null,
         labelLod: Number(canvas?.dataset.gpuLabelLod ?? -1),
+        visiblePhotos: Number(canvas?.dataset.gpuVisiblePhotos || 0),
+        texturedPhotos: Number(canvas?.dataset.gpuTexturedPhotos || 0),
         dom: document.querySelectorAll("*").length,
         mountedCards: document.querySelectorAll(".react-flow__node-person")
           .length,
@@ -534,6 +536,23 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
       return;
     }
   }
+  // Verify actual visible photo coverage after fitting the full projection.
+  // The minimum zoom may still crop a wide archive; exhaustive atlas capacity
+  // is covered separately by the cache tests, without assuming all cards fit.
+  if (!isMobile) {
+    await page.getByRole("button", { name: "Вписать видимую часть дерева" }).click();
+    await waitForMediaIdle();
+    await expect.poll(async () => page.locator(".tree-gpu-scene").evaluate((canvas) => {
+      const node = canvas as HTMLCanvasElement;
+      const visible = Number(node.dataset.gpuVisiblePhotos);
+      const textured = Number(node.dataset.gpuTexturedPhotos);
+      return { visible, textured, ready: visible > 0 && textured === visible };
+    }), { timeout: 60_000 }).toMatchObject({ ready: true });
+    const overview = await snapshot("full-portrait-overview");
+    expect(overview.visiblePhotos).toBeGreaterThan(0);
+    expect(overview.texturedPhotos).toBe(overview.visiblePhotos);
+    expect(overview.resources.textures).toBe(stableResources.textures);
+  }
   await session.send("HeapProfiler.collectGarbage");
   const retainedHeapAfter = (await metrics()).JSHeapUsedSize;
   // Exercise actual HTTP edits in the disposable database; text preserves geometry,
@@ -603,8 +622,11 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
         "src/components/tree/tree-growth.ts",
         "src/components/research-assistant.tsx",
         "src/components/tree/gpu-scene.ts",
+        "src/components/tree/gpu-portrait-cache.ts",
         "src/components/tree/tree-gpu-scene.tsx",
         "src/components/tree/distant-portraits.tsx",
+        "src/styles/tree-workspace.css",
+        "src/styles/timeline.css",
         "src/components/tree/use-tree-layout.ts",
         "src/components/tree/layout-cache.ts",
         "src/components/tree/layout-storage.ts",

@@ -255,6 +255,8 @@
   will-change: transform;
 }
 .tree-canvas.is-growth-preparing .tree-distant-portrait-clip {
+  /* Child canvas visibility changes cannot override composited opacity. */
+  opacity: 0;
   visibility: hidden;
 }
 .tree-canvas .react-flow {
