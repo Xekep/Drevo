@@ -1,11 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { finished } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
 import type { accountArchiveDirectory } from "./account-archives.ts";
+import { AccountArchiveListChanged } from "./account-archives.ts";
 import type { StoreDatabase } from "./store-database.ts";
+import { AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
 import { randomUUID } from "node:crypto";
 import { ARCHIVE_SCHEMA_VERSION } from "./schema.ts";
 import { provisionPrivateArchiveInTransaction } from "./postgres-private-archive.ts";
-import { AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 
 export function accountArchivesHttp(
@@ -25,8 +27,9 @@ export function accountArchivesHttp(
       res.end(JSON.stringify(value));
       return true;
     };
-    const session = req.method === "POST" ? await auth.accountSession(req) : null;
-    const accountId = req.method === "POST"
+    const requiresSession = req.method === "GET" || req.method === "POST";
+    const session = requiresSession ? await auth.accountSession(req) : null;
+    const accountId = requiresSession
       ? session?.accountId
       : await auth.accountId(req);
     if (!accountId)
@@ -108,6 +111,34 @@ export function accountArchivesHttp(
     const archives = await directory.list(accountId);
     if (!archives)
       return send(501, { error: "Список деревьев доступен с PostgreSQL" });
-    return send(200, { archives });
+    const body = JSON.stringify({ archives });
+    try {
+      await directory.deliverList(accountId, session!.tokenHash, archives, async () => {
+        const timeout = setTimeout(() => res.destroy(new Error("Archive list delivery timed out")), 4_000);
+        timeout.unref();
+        try {
+          res.writeHead(200, {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-store",
+          });
+          const delivered = finished(res, { cleanup: true });
+          res.end(body);
+          await delivered;
+        } finally {
+          clearTimeout(timeout);
+        }
+      });
+      return true;
+    } catch (error) {
+      if (res.headersSent || res.destroyed) {
+        res.destroy(error as Error);
+        return true;
+      }
+      if (error instanceof AccountSessionExpired)
+        return send(401, { error: error.message });
+      if (error instanceof AccountSessionBusy || error instanceof AccountArchiveListChanged)
+        return send(409, { error: error.message });
+      throw error;
+    }
   };
 }
