@@ -1,0 +1,22 @@
+{
+  "measuredCommit": "3deb737c7404b8017f8c717286448cfd2ea5ee07",
+  "runtimeCommit": "c478a30cf8608a7fbadaad49922ec88331cefc0f",
+  "sourceHashCount": 28,
+  "bothReportsMatchCurrentSources": true,
+  "rawReportsUnmodified": true,
+  "reportSha256": {
+    "portrait-layers-desktop-3313.json": "7b72ea6df9f3ab8759f81998e7e6415d3719e679c03ada2a9bc76ec406ce8ee9",
+    "portrait-layers-mobile-3313.json": "a0d7611b21da3d4ae6531d7ace48df9ae0a9033933a7c84332da9938743ba1aa"
+  },
+  "checks": {
+    "unitPassed": 974,
+    "browserPassed": 13,
+    "browserSkipped": 5,
+    "builtWorkerPassed": 3,
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "hardwareDesktop": "passed",
+    "hardwareTouchEmulation": "passed"
+  }
+}
