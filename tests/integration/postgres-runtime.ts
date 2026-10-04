@@ -116,6 +116,7 @@ import { publishedPeopleHttp } from "../../src/server/published-people-http.ts";
 import { discoveryPeopleHttp } from "../../src/server/discovery-people-http.ts";
 import { discoveryCardShareHttp } from "../../src/server/discovery-card-share-http.ts";
 import { discoveryBranchShareHttp } from "../../src/server/discovery-branch-share-http.ts";
+import { verifyDiscoveryBranchDepth } from "./postgres-discovery-branch-depth.ts";
 import { discoveryMatchesHttp } from "../../src/server/discovery-matches-http.ts";
 import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgres-yandex-login.ts";
@@ -9343,6 +9344,10 @@ try {
     ["branch-grandparent-a", "branch-parent-a"]);
   assert.equal(secondGeneration.incoming[0].relation, "grandparent");
   assert.equal(secondGeneration.incoming[0].viaId, "branch-parent-a");
+  await verifyDiscoveryBranchDepth({ archive: app.archive, auth: discoveryAuth,
+    sourceBase: securedBase, recipientBase: otherBase, ownerHeaders,
+    recipientHeaders: archiveAdminHeaders, branchPath,
+    publicOrigin: process.env.PUBLIC_ORIGIN });
   const branchLogoutToken = newSessionToken();
   const branchLogoutHash = sessionTokenHash(branchLogoutToken);
   await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2)",
@@ -9660,6 +9665,12 @@ try {
       recipientArchiveId: "runtime-test", durationDays: 1 }),
   })).status, 200);
   console.log("runtime_discovery_branch_abort_ok");
+  const beforeStaleListExpansion = await fetch(otherBase + branchPath, {
+    headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.5" },
+  });
+  assert.equal(beforeStaleListExpansion.status, 200);
+  const parentOnlyPreview = await beforeStaleListExpansion.json();
+  assert.deepEqual(parentOnlyPreview.outgoingIds, ["branch-parent-b"]);
   let staleListReached!: () => void, releaseStaleList!: () => void;
   const staleListReady = new Promise<void>((resolve) => { staleListReached = resolve; });
   const staleListGate = new Promise<void>((resolve) => { releaseStaleList = resolve; });
@@ -9684,7 +9695,7 @@ try {
     assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
       headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.6" },
       body: JSON.stringify({ personIds: ["branch-parent-b", "branch-grandparent-b"],
-        previewToken: secondBranch.previewToken,
+        previewToken: parentOnlyPreview.previewToken,
         recipientArchiveId: "runtime-test", durationDays: 1 }),
     })).status, 200);
     releaseStaleList();
@@ -9697,10 +9708,19 @@ try {
     await staleList.catch(() => {});
     await new Promise<void>((resolve) => staleListServer.close(() => resolve()));
   }
+  // The staged selection is part of the v2 preview fingerprint. Reverting
+  // from two selected people requires a new preview of that committed state.
+  const afterStaleListSelection = await fetch(otherBase + branchPath, {
+    headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.7" },
+  });
+  assert.equal(afterStaleListSelection.status, 200);
+  const currentBranchPreview = await afterStaleListSelection.json();
+  assert.deepEqual(currentBranchPreview.outgoingIds,
+    ["branch-grandparent-b", "branch-parent-b"]);
   assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
     headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.7" },
     body: JSON.stringify({ personIds: ["branch-parent-b"],
-      previewToken: secondBranch.previewToken,
+      previewToken: currentBranchPreview.previewToken,
       recipientArchiveId: "runtime-test", durationDays: 1 }),
   })).status, 200);
   console.log("runtime_discovery_branch_list_stale_ok");
@@ -9870,6 +9890,9 @@ try {
   assert.equal((await fetch(otherBase + transferCardPath, {
     headers: archiveAdminHeaders,
   })).status, 403, "the former owner cannot inspect scalar grants after transfer");
+  assert.equal((await fetch(otherBase + `${branchPath}/options/branch-parent-b`, {
+    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.181" },
+  })).status, 403, "the former owner cannot expand the linked branch after transfer");
   assert.equal((await client.query(`SELECT count(*)::int AS count
     FROM discovery_linked_pairs WHERE left_person_id='person-a'`)).rows[0].count, 1,
   "ownership transfer preserves the confirmed public link");
@@ -10058,8 +10081,11 @@ try {
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_members
     WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`)).rows[0].count,
     0, "C cannot inspect A-B members through its own link to B");
-  const oneHopOnly = await fetch(securedBase + branchPath, { headers: ownerHeaders })
-    .then((response) => response.json());
+  const oneHopResponse = await fetch(securedBase + branchPath, { headers: {
+    ...ownerHeaders, "X-Real-IP": "198.51.100.236",
+  } });
+  assert.equal(oneHopResponse.status, 200);
+  const oneHopOnly = await oneHopResponse.json();
   assert.deepEqual(oneHopOnly.incoming.map((person: { id: string }) => person.id),
     ["branch-parent-b"], "A-B cannot traverse B-C or reveal C's branch");
   assert.doesNotMatch(JSON.stringify(oneHopOnly), /third-archive|family:person.1|Третий родитель/);
@@ -10105,13 +10131,19 @@ try {
   shareFamily.people[0].birthPlace = "Архивный город";
   shareFamily.people[0].biography = "Закрытая биография и источники";
   await app.archive.write(shareFamily,shareBeforeEdit.revision);
-  assert.deepEqual((await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
-    .then((response) => response.json())).incoming, [],
+  const editedBranch = await fetch(otherBase + branchPath, { headers: {
+    ...archiveAdminHeaders, "X-Real-IP": "198.51.100.237",
+  } });
+  assert.equal(editedBranch.status, 200);
+  assert.deepEqual((await editedBranch.json()).incoming, [],
     "a family edit revokes the source archive's branch consent before another read");
-  const renewedBranch = await fetch(securedBase + branchPath, { headers: ownerHeaders })
-    .then((response) => response.json());
+  const renewedBranchResponse = await fetch(securedBase + branchPath, { headers: {
+    ...ownerHeaders, "X-Real-IP": "198.51.100.238",
+  } });
+  assert.equal(renewedBranchResponse.status, 200);
+  const renewedBranch = await renewedBranchResponse.json();
   assert.equal((await fetch(securedBase + branchPath, {
-    method: "PUT", headers: ownerHeaders,
+    method: "PUT", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.238" },
     body: JSON.stringify({ personIds: ["branch-parent-a", "branch-grandparent-a"],
       previewToken: renewedBranch.previewToken,
       recipientArchiveId: "other-archive", durationDays: 7 }),
@@ -11928,6 +11960,10 @@ try {
     ...ownerHeaders, "X-Real-IP": "198.51.100.210",
   } })).status, 404,
     "a revoked link cannot reopen the previously granted branch");
+  assert.equal((await fetch(securedBase + `${branchPath}/options/branch-parent-a`, {
+    headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.183" },
+  })).status, 404,
+  "a revoked link cannot resume a previously chosen branch path");
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
     FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.count, 0,
   "removing either publication revokes the extra-field grant in the same transaction");
