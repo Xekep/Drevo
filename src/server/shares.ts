@@ -241,7 +241,7 @@ export function sharesStore(db: StoreDatabase) {
           items: rows.slice(0, 100).map(convert),
           next: rows.length > 100 ? String(rows[99].cursor) : null,
         };
-      }, true);
+      }, db.kind !== "postgres");
     },
     async revoke(id: string, actor: ArchiveUser, now = Date.now()) {
       if (!isArchiveOwner(actor))

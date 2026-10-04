@@ -71,7 +71,7 @@ export function archiveInvitations(db: StoreDatabase) {
           usedAt: row.used_at ? String(row.used_at) : null,
           revokedAt: row.revoked_at ? String(row.revoked_at) : null,
         }));
-      }, true);
+      }, db.kind !== "postgres");
     },
     async create(actor: ArchiveUser, role: unknown, durationHours: unknown) {
       requireAdmin(actor);

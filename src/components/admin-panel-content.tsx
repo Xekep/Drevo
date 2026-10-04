@@ -167,7 +167,6 @@ function AdminUserRow({
   busy,
   currentUserId,
   platformAdmin,
-  archiveOwner: _archiveOwner,
   onPatch,
   onDelete,
 }: {
@@ -176,7 +175,6 @@ function AdminUserRow({
   busy: boolean;
   currentUserId: string;
   platformAdmin: boolean;
-  archiveOwner: boolean;
   onPatch: (patch: UserPatch) => Promise<boolean>;
   onDelete: () => Promise<void>;
 }) {
@@ -333,7 +331,6 @@ export function AdminPanel({
   currentUserId,
   archiveOwner = true,
   platformAdmin,
-  archiveOwner,
   aiAvailable,
   publicationOwnership,
   onClose,
@@ -346,7 +343,6 @@ export function AdminPanel({
   currentUserId: string;
   archiveOwner?: boolean;
   platformAdmin: boolean;
-  archiveOwner: boolean;
   aiAvailable: boolean;
   publicationOwnership: PublicationOwnership;
   onClose: () => void;
@@ -374,7 +370,7 @@ export function AdminPanel({
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
   const [auditActor, setAuditActor] = useState("");
-  const platformSections = ["ai", "vk", "resources", "storage"];
+  const platformSections = ["ai", "vk", "resources", "storage", "backups"];
   const visibleGroups = ADMIN_SECTIONS.map((group) => ({
     ...group,
     items: group.items.filter(({ id }) =>
@@ -586,7 +582,6 @@ export function AdminPanel({
                       busy={busy}
                       currentUserId={currentUserId}
                       platformAdmin={platformAdmin}
-                      archiveOwner={archiveOwner}
                       onPatch={async (patch) => {
                         const data = await change(
                           `/api/users/${encodeURIComponent(user.id)}`,

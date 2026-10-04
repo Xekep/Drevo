@@ -772,6 +772,9 @@ export default function App() {
             onPerson={showPerson}
             onAdmin={() => navigate("admin")}
             onOwnPlatformRoleChanged={(role) => {
+              archive.syncSessionUser(user ? {
+                ...user, globalRole: role, platformAdmin: role === "admin",
+              } : null);
               setAccountSession((current) => current?.account ? {
                 ...current,
                 account: { ...current.account, globalRole: role },
@@ -783,8 +786,12 @@ export default function App() {
               } : current);
               void archiveFetch("/api/session", { cache: "no-store" })
                 .then(async (response) => {
-                  if (response.ok) setAccountSession(await response.json() as AccountSession);
-                });
+                  if (!response.ok) throw new Error("Session refresh failed");
+                  const refreshed = await response.json() as AccountSession;
+                  setAccountSession(refreshed);
+                  archive.syncSessionUser(refreshed.user);
+                })
+                .catch(() => setNotice("Роль изменена. Обновите страницу, чтобы проверить актуальные права."));
             }}
           />
         ) : family ? (

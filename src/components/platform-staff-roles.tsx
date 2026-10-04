@@ -73,7 +73,7 @@ export function PlatformStaffRoles({ currentAccountId, onOwnRoleChanged }: {
         Администратор и исследователь назначаются для платформы. Роль не даёт доступ к чужому дереву: для него требуется отдельное приглашение.
       </p>
       {accounts.map((account) => (
-        <div className="account-archive-row" key={account.id}>
+        <div className="account-archive-row platform-role-row" key={account.id}>
           <span className="account-archive-name"><strong>{account.name}</strong><small>{account.id}</small></span>
           <label>
             <span className="sr-only">Роль {account.name}</span>

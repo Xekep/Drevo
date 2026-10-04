@@ -91,11 +91,11 @@ test("basic owner reaches tree management from the gear without platform or AI s
   await expect(page.getByRole("heading", { name: "Участники" })).toBeVisible();
 });
 
-test("full owner keeps archive MCP while platform settings stay hidden", async ({ page }) => {
+test("full owner without a platform grant cannot manage AI or platform settings", async ({ page }) => {
   await accountView(page, { fullAccess: true, platformAdmin: false });
   await page.goto("/admin");
   const navigation = page.locator(".admin-sidebar nav");
-  await expect(navigation.locator("button", { hasText: "MCP-токены" })).toBeAttached();
+  await expect(navigation.locator("button", { hasText: "MCP-токены" })).toHaveCount(0);
   for (const label of ["Yandex AI", "Вход через VK", "Ресурсы поиска",
     "Хранилище", "Резервные копии"]) {
     await expect(navigation.locator("button", { hasText: label })).toHaveCount(0);
@@ -136,11 +136,17 @@ test("platform admin without tree ownership sees only common configuration", asy
   await expect(navigation.locator("button", { hasText: "Источники" })).toHaveCount(0);
   await expect(navigation.locator("button", { hasText: "Вход через VK" })).toBeAttached();
   await expect(navigation.locator("button", { hasText: "Ресурсы поиска" })).toBeAttached();
+  for (const label of ["Резервные копии", "MCP-токены"]) {
+    await expect(navigation.locator("button", { hasText: label })).toHaveCount(0);
+    await expect(page.locator("#admin-section-select").getByRole("option", { name: label }))
+      .toHaveCount(0);
+  }
   await expect(page.locator(".admin-page-header .section-label"))
     .toHaveText("УПРАВЛЕНИЕ ПЛАТФОРМОЙ");
   await page.goto("/admin?section=users");
   await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByRole("heading", { name: "Yandex AI" })).toBeVisible();
+  await expect(navigation.locator("button", { hasText: "Yandex AI" })).toBeAttached();
+  await expect(page.getByRole("heading", { name: "ИИ и поиск" })).toBeVisible();
 });
 
 test("full-tier invited admin cannot see AI tools while the tree owner is basic", async ({ page }) => {

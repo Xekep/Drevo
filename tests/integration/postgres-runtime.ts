@@ -127,6 +127,8 @@ import { databaseBackupBytes } from "../helpers/database-backup.ts";
 import { restoreStore } from "../../src/server/restore.ts";
 import { startServer } from "../../src/server/index.ts";
 import { adaptLegacyAiFake } from "../legacy-ai-fake.ts";
+import { verifyAiLegacyChatRekey } from "./postgres-ai-legacy-rekey.ts";
+import { verifyAiBufferedDelivery } from "./postgres-ai-buffered-delivery.ts";
 import {
   BASIC_MEDIA_BYTES,
   enforcePostgresMediaQuota,
@@ -1830,7 +1832,7 @@ try {
       "",
       "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'owner',?)",
     )
-    .run(sessionTokenHash(aiOwnerToken), Date.now() + 60000);
+    .run(sessionTokenHash(aiOwnerToken), Date.now() + 10 * 60_000);
   const ownerHeaders = {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
@@ -1973,7 +1975,7 @@ try {
     [staleShareId, createHash("sha256").update(staleShareId).digest("hex"),
       new Date().toISOString(), new Date(Date.now() + 60_000).toISOString()],
   );
-  await client.query("UPDATE archive_memberships SET role='relative' WHERE archive_id='runtime-test' AND user_id='owner'");
+  await client.query("UPDATE archive_owners SET user_id='reader' WHERE archive_id='runtime-test'");
   try {
     const staleAuth = { currentUser: async () => staleShareAdmin } as unknown as Awaited<ReturnType<typeof createAuth>>;
     const handler = adminSharingHttp({
@@ -2005,7 +2007,7 @@ try {
     assert.equal((await client.query("SELECT revoked_at FROM share_links WHERE id=$1", [staleShareId]))
       .rows[0]?.revoked_at, null);
   } finally {
-    await client.query("UPDATE archive_memberships SET role='admin' WHERE archive_id='runtime-test' AND user_id='owner'");
+    await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
     await client.query("DELETE FROM share_links WHERE id=$1", [staleShareId]);
   }
   // A downgrade can commit while a generated file is staged but not installed.
@@ -2110,6 +2112,8 @@ try {
   const ownGenerated = await fetch(generatedUrl, { headers: ownerHeaders });
   assert.equal(ownGenerated.status, 200, await ownGenerated.clone().text());
   assert.deepEqual(Buffer.from(await ownGenerated.arrayBuffer()), generatedBytes);
+  await verifyAiBufferedDelivery(app.archive, client, source, ownerHeaders,
+    generatedLink.url, process.env.PUBLIC_ORIGIN!);
   const generatedHistory = await fetch(securedBase + `/api/ai/chats/${generatedChat.id}`,
     { headers: ownerHeaders });
   assert.equal(generatedHistory.status, 200);
@@ -2241,7 +2245,7 @@ try {
           { provider: "yandex", subject: "reader" }],
       "the account download includes only the reader's linked login identifiers");
     assert.deepEqual(exported.archives.map((item: { id: string }) => item.id), ["runtime-test"]);
-    assert.equal(exported.archives[0].role, index % 2 ? "reader" : "admin");
+    assert.equal(exported.archives[0].role, index % 2 ? "reader" : "relative");
     assert.equal(exported.archives[0].owned, index % 2 === 0);
     assert.equal(exported.archives[0].preferences?.colorScheme, index % 2 ? undefined : "white");
     assert.deepEqual(exported.archives[0].ownComments, []);
@@ -2601,9 +2605,8 @@ try {
   const chatToDeleteAfterDowngrade = await aiChatStore(app.archive.db).create("owner", "[]");
   const aiOwner = await (await userStore(app.archive.db)).get("owner");
   assert.ok(aiOwner);
-  const delayedChat = await aiChatStore(app.archive.db).create("owner", JSON.stringify([
-    aiOwner.role, aiOwner.treeAccess || "all", aiOwner.personId || "",
-  ]));
+  const delayedChat = await aiChatStore(app.archive.db).create("owner",
+    aiChatAccessScope(aiOwner));
   await aiChatStore(app.archive.db).append(delayedChat.id, "assistant", "downgrade-private-answer");
   const visibleBeforeDowngrade = await fetch(
     securedBase + `/api/ai/chats/${delayedChat.id}`, { headers: ownerHeaders },
@@ -2654,9 +2657,8 @@ try {
   await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
   const chatReader = await (await userStore(app.archive.db)).get("reader");
   assert.ok(chatReader);
-  const privateChat = await aiChatStore(app.archive.db).create("reader", JSON.stringify([
-    chatReader.role, chatReader.treeAccess || "all", chatReader.personId || "",
-  ]));
+  const privateChat = await aiChatStore(app.archive.db).create("reader",
+    aiChatAccessScope(chatReader));
   await aiChatStore(app.archive.db).append(privateChat.id, "user", "private-chat-title-marker");
   await aiChatStore(app.archive.db).append(privateChat.id, "assistant", "private-chat-answer-marker");
   const chatReadAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
@@ -3383,8 +3385,9 @@ try {
     await client.query("INSERT INTO account_tiers(account_id,full_access) VALUES($1,true)", [proposalMember]);
     await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
       VALUES('runtime-test',$1,'researcher',true,'all')`, [proposalMember]);
+    await client.query("INSERT INTO platform_researchers(account_id) VALUES($1)", [proposalMember]);
     await app.archive.db.prepare("", "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)")
-      .run(sessionTokenHash(proposalToken), proposalMember, Date.now() + 60000);
+      .run(sessionTokenHash(proposalToken), proposalMember, Date.now() + 10 * 60_000);
     const proposalHeaders = { ...ownerHeaders, Cookie: `drevo_session=${proposalToken}` };
     const runDeferredAnswer = async (
       label: string,
@@ -3548,7 +3551,7 @@ try {
         const actor = await (await userStore(app!.archive.db)).get(proposalMember);
         assert.ok(actor);
         const chat = await aiChatStore(app!.archive.db).create(proposalMember,
-          JSON.stringify([actor.role, actor.treeAccess || "all", actor.personId || ""]));
+          aiChatAccessScope(actor));
         const handler = aiResearchHttp({
           archive: app!.archive,
           auth: await createAuth(await userStore(app!.archive.db), app!.archive.db,
@@ -3681,6 +3684,14 @@ try {
       }, async () => {
         await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
       }, false);
+      await runDeferredAnswer("global-profile-revoked", async () => {
+        await client.query("DELETE FROM platform_researchers WHERE account_id=$1", [proposalMember]);
+      }, async () => {
+        await client.query("INSERT INTO platform_researchers(account_id) VALUES($1) ON CONFLICT DO NOTHING",
+          [proposalMember]);
+      }, false);
+      await verifyAiLegacyChatRekey(app!.archive, client, source,
+        process.env.PUBLIC_ORIGIN!, proposalMember, proposalHeaders);
       {
         let modelCalls = 0;
         const forbiddenAnswer = "Answer from a model called after downgrade";
@@ -3910,6 +3921,13 @@ try {
         await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id=$1",
           [proposalMember]);
       }, false, true);
+      await runDeferredAnswer("global-profile-delivery-revoked", async () => {
+        await client.query("DELETE FROM platform_researchers WHERE account_id=$1", [proposalMember]);
+      }, async () => {
+        await client.query("INSERT INTO platform_researchers(account_id) VALUES($1) ON CONFLICT DO NOTHING",
+          [proposalMember]);
+      }, false, true);
+      console.log("runtime_ai_global_profile_turn_revocation_ok");
       const rollbackReason = proposalReason("rollback");
       const rollbackActor = await (await userStore(app.archive.db)).get("owner");
       const rollbackFamily = await app.archive.read();
@@ -3950,6 +3968,7 @@ try {
       await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
       await client.query("DELETE FROM research_suggestions WHERE reason=$1", [proposalReason("allowed")]);
       await client.query("DELETE FROM archive_memberships WHERE archive_id='runtime-test' AND user_id=$1", [proposalMember]);
+      await client.query("DELETE FROM platform_researchers WHERE account_id=$1", [proposalMember]);
       await client.query("DELETE FROM account_sessions WHERE user_id=$1", [proposalMember]);
       await client.query("DELETE FROM account_tiers WHERE account_id=$1", [proposalMember]);
       await client.query("DELETE FROM accounts WHERE id=$1", [proposalMember]);
@@ -4331,7 +4350,9 @@ try {
   const archiveAdminSession = await fetch(securedBase + "/api/session", {
     headers: archiveAdminHeaders,
   }).then((response) => response.json());
-  assert.equal(archiveAdminSession.user.role, "admin");
+  assert.equal(archiveAdminSession.user.role, "relative",
+    "legacy per-tree admin input normalizes to a local grant, not global admin");
+  assert.equal(archiveAdminSession.user.archiveOwner, false);
   assert.equal(archiveAdminSession.user.platformAdmin, false);
   for (const path of ["/api/settings/storage", "/api/admin/auth/vk",
     "/api/admin/research-resources"])
@@ -4433,13 +4454,13 @@ try {
   const exportAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
     process.env.PUBLIC_ORIGIN);
   for (const [path, options, revoke] of [
-    ["/api/gedcom/export?format=gedcom7", { headers: archiveAdminHeaders },
-      "UPDATE archive_memberships SET role='reader' WHERE archive_id='runtime-test' AND user_id='vk:42'"],
+    ["/api/gedcom/export?format=gedcom7", { headers: ownerHeaders },
+      "UPDATE archive_owners SET user_id='vk:42' WHERE archive_id='runtime-test'"],
     ["/api/gedcom/export-visible?format=gedcom551", {
       method: "POST",
-      headers: { ...archiveAdminHeaders, "Content-Type": "application/x-www-form-urlencoded" },
+      headers: { ...ownerHeaders, "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ ids: JSON.stringify(["person-a"]) }),
-    }, "UPDATE archive_memberships SET approved=false WHERE archive_id='runtime-test' AND user_id='vk:42'"],
+    }, "UPDATE archive_memberships SET approved=false WHERE archive_id='runtime-test' AND user_id='owner'"],
   ] as const) {
     let reachedRead!: () => void;
     let resumeRead!: () => void;
@@ -4475,11 +4496,12 @@ try {
       resumeRead();
       const response = await pending;
       assert.equal(response.status, 403,
-        "a revoked archive admin cannot receive a prepared plain GEDCOM export");
+        "a former owner or unapproved member cannot receive a prepared plain GEDCOM export");
       assert.doesNotMatch(await response.text(), /0 HEAD|1 NAME/);
     } finally {
       resumeRead();
-      await client.query("UPDATE archive_memberships SET role='admin',approved=true WHERE archive_id='runtime-test' AND user_id='vk:42'");
+      await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
+      await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id='owner'");
       await delayedExport.close();
       await new Promise<void>((resolve) => exportServer.close(() => resolve()));
     }
@@ -4937,7 +4959,8 @@ try {
       headers: archiveAdminHeaders,
     }).then((response) => response.json());
     assert.equal(selectedAdmin.user.id, "vk:42");
-    assert.equal(selectedAdmin.user.role, "admin");
+    assert.equal(selectedAdmin.user.role, "relative");
+    assert.equal(selectedAdmin.user.archiveOwner, true);
     assert.equal(selectedAdmin.user.approved, true);
     assert.equal(selectedAdmin.user.platformAdmin, false);
     const crossArchiveAdmin = selectedAdmin.user;

@@ -146,11 +146,19 @@ export function platformRolesHttp(
         res.destroy(error as Error);
         return true;
       }
+      const known = error instanceof PlatformAccessBusy ||
+        error instanceof PlatformAccessDenied || error instanceof RangeError ||
+        error instanceof SyntaxError || error instanceof TypeError ||
+        error instanceof URIError;
+      if (!known) console.error(JSON.stringify({ event: "platform.roles_failed",
+        name: error instanceof Error ? error.name : undefined,
+        code: (error as { code?: string } | null)?.code }));
       return send(res,
         error instanceof PlatformAccessBusy ? 409 :
         error instanceof PlatformAccessDenied ? 403 :
-        error instanceof RangeError ? 413 : 400,
-        { error: error instanceof Error ? error.message : "Запрос не выполнен" });
+        error instanceof RangeError ? 413 : known ? 400 : 500,
+        { error: known && error instanceof Error
+          ? error.message : "Не удалось изменить глобальные роли" });
     }
   };
 }

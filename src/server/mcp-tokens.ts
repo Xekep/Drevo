@@ -72,9 +72,15 @@ export function mcpTokenStore(db: StoreDatabase) {
        LEFT JOIN runtime_users u ON u.id=t.bound_user_id
        LEFT JOIN deleted_account_tombstones d ON d.id=t.created_by
        WHERE t.token_hash=? AND t.revoked_at IS NULL
-         AND d.id IS NULL
-         AND (t.expires_at IS NULL OR t.expires_at>?)
-         AND (t.bound_user_id IS NULL OR u.approved=1)`,
+       AND d.id IS NULL
+       AND (t.expires_at IS NULL OR t.expires_at>?)
+       AND EXISTS (SELECT 1 FROM archive_memberships issuer
+         JOIN archive_owners owner ON owner.archive_id=issuer.archive_id
+           AND owner.user_id=issuer.user_id
+         JOIN platform_admins admin ON admin.account_id=issuer.user_id
+         WHERE issuer.archive_id=t.archive_id AND issuer.user_id=t.created_by
+           AND issuer.approved)
+       AND (t.bound_user_id IS NULL OR u.approved=1)`,
   );
   const lockedLookup = db.prepare(
     `SELECT ${tokenColumns}
@@ -88,9 +94,15 @@ export function mcpTokenStore(db: StoreDatabase) {
        LEFT JOIN runtime_users u ON u.id=t.bound_user_id
        LEFT JOIN deleted_account_tombstones d ON d.id=t.created_by
        WHERE t.token_hash=? AND t.revoked_at IS NULL
-         AND d.id IS NULL
-         AND (t.expires_at IS NULL OR t.expires_at>?)
-         AND (t.bound_user_id IS NULL OR u.approved=1)
+       AND d.id IS NULL
+       AND (t.expires_at IS NULL OR t.expires_at>?)
+       AND EXISTS (SELECT 1 FROM archive_memberships issuer
+         JOIN archive_owners owner ON owner.archive_id=issuer.archive_id
+           AND owner.user_id=issuer.user_id
+         JOIN platform_admins admin ON admin.account_id=issuer.user_id
+         WHERE issuer.archive_id=t.archive_id AND issuer.user_id=t.created_by
+           AND issuer.approved)
+       AND (t.bound_user_id IS NULL OR u.approved=1)
        FOR SHARE OF t`,
   );
 

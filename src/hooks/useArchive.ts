@@ -14,6 +14,8 @@ import {
   type TreePreferences,
   DEFAULT_TREE_PREFERENCES,
   isTreeGenerationLimits,
+  isArchiveOwner,
+  canEditArchive,
 } from "../domain";
 import { completeArchive } from "../data/archive-pages";
 import { fetchWithTimeout, RequestTimeoutError } from "../data/request-timeout";
@@ -487,7 +489,7 @@ export function useArchive() {
     conflict,
     getRevision: () => revision.current,
     undo,
-    canUndo: undoCount > 0 && (user?.role === "admin" || !undoRemovesPerson),
+    canUndo: undoCount > 0 && (isArchiveOwner(user) || !undoRemovesPerson),
     reverseTimeline: treePreferences.reverseTimeline,
     treePreferences,
     saveTreePreferences,
@@ -504,6 +506,10 @@ export function useArchive() {
     save,
     upload,
     uploadPortrait,
+    syncSessionUser: (next: ArchiveUser | null) => {
+      setUser(next);
+      setCanEdit(canEditArchive(next));
+    },
     reload: () => setAttempt((n) => n + 1),
   };
 }

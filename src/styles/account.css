@@ -95,6 +95,9 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
+.account-grid > .account-card-wide {
+  grid-column: 1 / -1;
+}
 .account-card {
   min-width: 0;
   padding: 28px 30px;
@@ -560,6 +563,27 @@
   .account-card {
     padding: 23px;
     border-radius: 17px;
+  }
+  .platform-role-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .platform-role-row .account-archive-name strong {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+  .platform-role-row .account-archive-name small {
+    overflow-wrap: anywhere;
+  }
+  .platform-role-row label,
+  .platform-role-row select {
+    width: 100%;
+  }
+  .platform-role-row select {
+    min-height: 44px;
   }
   .account-owner-transfer button,
   .account-owner-transfer input {
