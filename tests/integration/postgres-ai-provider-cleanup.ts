@@ -74,3 +74,20 @@ export async function verifyAiProviderCleanup(db: StoreDatabase, configuredPath:
     await other.close();
   }
 }
+
+export async function verifyAiProviderDeleteRoute(
+  db: StoreDatabase, configuredPath: string, baseUrl: string,
+  fetcher: typeof fetch, chatId: string, deleteCount: () => number,
+) {
+  const removed = await fetch(baseUrl + `/api/ai/chats/${chatId}`, { method: "DELETE" });
+  assert.equal(removed.status, 200, await removed.clone().text());
+  const queued = await db.prepare("", "SELECT state FROM platform_ai_conversations WHERE local_chat_id=?")
+    .get(chatId);
+  assert.equal(queued?.state, "pending", "HTTP delete durably queues the original provider conversation");
+  process.env.YANDEX_AI_API_KEY = "changed-after-creation";
+  assert.equal(await (await aiProviderCleanup(db, configuredPath, fetcher)).process(), 1);
+  assert.equal(deleteCount(), 1);
+  assert.equal((await db.prepare("", "SELECT state FROM platform_ai_conversations WHERE local_chat_id=?")
+    .get(chatId))?.state, "done");
+  await db.prepare("", "DELETE FROM platform_ai_conversations WHERE local_chat_id=?").run(chatId);
+}
