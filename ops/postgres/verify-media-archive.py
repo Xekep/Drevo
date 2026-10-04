@@ -25,6 +25,10 @@ REFERENCE_SOURCES = frozenset({
     "restore_stage_image", "restore_stage_document",
 })
 DISK_RESERVE = 8 * 1024**3
+PLATFORM_KEY_PATHS = frozenset({
+    ("ai-provider-cleanup.v1.key",),
+    ("backups", "platform-keys", "ai-provider-cleanup.v1.key"),
+})
 
 
 @dataclass(frozen=True)
@@ -111,7 +115,7 @@ def member_parts(member: tarfile.TarInfo) -> tuple[str, ...]:
         or any(ord(character) < 32 for character in name)
     ):
         raise ValueError(f"Unsafe media archive path: {member.name!r}")
-    if parts == ("ai-provider-cleanup.v1.key",):
+    if parts in PLATFORM_KEY_PATHS:
         if not member.isfile() or member.mode & 0o077:
             raise ValueError("AI cleanup key is not a private file")
     elif parts[0] == "uploads":
@@ -187,7 +191,7 @@ def verify_archive(
             files = 0
             total_bytes = 0
             has_legacy_uploads = False
-            restored_key: str | None = None
+            restored_keys: dict[tuple[str, ...], tuple[str, bytes]] = {}
             with tarfile.open(fileobj=source, mode="r|gz") as media:
                 for member in media:
                     parts = member_parts(member)
@@ -220,7 +224,7 @@ def verify_archive(
                             output.write(block)
                             archived_digest.update(block)
                             copied += len(block)
-                    if parts == ("ai-provider-cleanup.v1.key",):
+                    if parts in PLATFORM_KEY_PATHS:
                         os.chmod(target, 0o600)
                     if copied != member.size or target.stat().st_size != member.size:
                         raise ValueError(f"Incomplete media file: {member.name!r}")
@@ -231,19 +235,30 @@ def verify_archive(
                     if restored_digest.digest() != archived_digest.digest():
                         raise ValueError(f"Restored media differs from archive: {member.name!r}")
                     extracted[parts] = copied
-                    if parts == ("ai-provider-cleanup.v1.key",):
+                    if parts in PLATFORM_KEY_PATHS:
                         try:
-                            key_data = json.loads(target.read_text(encoding="utf-8"))
+                            content = target.read_bytes()
+                            key_data = json.loads(content.decode("utf-8"))
                             raw_key = base64.b64decode(key_data["key"], validate=True)
                             if key_data["version"] != 1 or len(raw_key) != 32:
                                 raise ValueError()
-                            restored_key = hashlib.sha256(raw_key).hexdigest()
+                            restored_keys[parts] = (hashlib.sha256(raw_key).hexdigest(), content)
                         except (ValueError, KeyError, TypeError, UnicodeError) as error:
                             raise ValueError("Restored AI cleanup key is invalid") from error
             if not has_legacy_uploads or files == 0:
                 raise ValueError("Media backup has no legacy uploads root or no files")
+            if restored_keys and (
+                set(restored_keys) != PLATFORM_KEY_PATHS
+                or len({entry[1] for entry in restored_keys.values()}) != 1
+            ):
+                raise ValueError("AI cleanup primary and backup keys do not match")
             if expected is not None:
-                if restored_key != expected_key:
+                if expected_key is None and restored_keys:
+                    raise ValueError("Restored database/AI cleanup key mismatch")
+                if expected_key is not None and (
+                    set(restored_keys) != PLATFORM_KEY_PATHS
+                    or {entry[0] for entry in restored_keys.values()} != {expected_key}
+                ):
                     raise ValueError("Restored database/AI cleanup key mismatch")
                 missing = sum(1 for parts in expected if parts not in extracted)
                 wrong_size = sum(

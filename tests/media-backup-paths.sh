@@ -20,6 +20,21 @@ grep -qx 'uploads/one.jpg' "$work/files"
 grep -qx 'archives/tree-b/uploads/two.pdf' "$work/files"
 ! grep -q 'drevo.sqlite' "$work/files"
 ! grep -q '.pending.upload' "$work/files"
+mkdir -p "$shared/backups/platform-keys"
+printf private-key > "$shared/ai-provider-cleanup.v1.key"
+cp "$shared/ai-provider-cleanup.v1.key" \
+  "$shared/backups/platform-keys/ai-provider-cleanup.v1.key"
+chmod 600 "$shared/ai-provider-cleanup.v1.key" \
+  "$shared/backups/platform-keys/ai-provider-cleanup.v1.key"
+paths="$(bash "$repo/ops/postgres/media-backup-paths.sh" "$shared")"
+[[ "$paths" == $'uploads\nai-provider-cleanup.v1.key\nbackups/platform-keys/ai-provider-cleanup.v1.key\narchives/tree-b/uploads' ]]
+printf wrong > "$shared/backups/platform-keys/ai-provider-cleanup.v1.key"
+if bash "$repo/ops/postgres/media-backup-paths.sh" "$shared" > /dev/null 2>&1; then
+  echo 'Mismatched platform backup key was accepted' >&2
+  exit 1
+fi
+cp "$shared/ai-provider-cleanup.v1.key" \
+  "$shared/backups/platform-keys/ai-provider-cleanup.v1.key"
 ln -s "$shared/archives/tree-b" "$shared/archives/evil"
 if [[ -L "$shared/archives/evil" ]] &&
   bash "$repo/ops/postgres/media-backup-paths.sh" "$shared" > /dev/null 2>&1; then

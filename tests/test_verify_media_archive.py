@@ -82,18 +82,25 @@ class MediaRestoreTests(unittest.TestCase):
     def test_pair_requires_the_restored_platform_key(self):
         key = b"k" * 32
         content = json.dumps({"version": 1, "key": base64.b64encode(key).decode()}).encode()
-        with tarfile.open(self.backup, "w:gz") as media:
-            directory = tarfile.TarInfo("uploads")
-            directory.type = tarfile.DIRTYPE
-            media.addfile(directory)
-            original = tarfile.TarInfo("uploads/one.jpg")
-            original.size = 3
-            media.addfile(original, io.BytesIO(b"abc"))
-            secret = tarfile.TarInfo("ai-provider-cleanup.v1.key")
-            secret.mode = 0o600
-            secret.size = len(content)
-            media.addfile(secret, io.BytesIO(content))
-        self.seal()
+        def write_pair(backup_content=content, include_backup=True):
+            with tarfile.open(self.backup, "w:gz") as media:
+                directory = tarfile.TarInfo("uploads")
+                directory.type = tarfile.DIRTYPE
+                media.addfile(directory)
+                original = tarfile.TarInfo("uploads/one.jpg")
+                original.size = 3
+                media.addfile(original, io.BytesIO(b"abc"))
+                paths = ["ai-provider-cleanup.v1.key"]
+                if include_backup:
+                    paths.append("backups/platform-keys/ai-provider-cleanup.v1.key")
+                for path in paths:
+                    payload = backup_content if path.startswith("backups/") else content
+                    secret = tarfile.TarInfo(path)
+                    secret.mode = 0o600
+                    secret.size = len(payload)
+                    media.addfile(secret, io.BytesIO(payload))
+            self.seal()
+        write_pair()
         manifest = self.pair_manifest(
             {"kind": "archive", "archive_id": "tree-a"},
             {"kind": "platform_key", "version": 1,
@@ -109,6 +116,15 @@ class MediaRestoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "database/AI cleanup key mismatch"):
             verifier.verify_archive(self.backup, self.root, reserve_bytes=0,
                                     reference_manifest=wrong)
+        write_pair(include_backup=False)
+        with self.assertRaisesRegex(ValueError, "primary and backup keys do not match"):
+            verifier.verify_archive(self.backup, self.root, reserve_bytes=0,
+                                    reference_manifest=manifest)
+        wrong_copy = json.dumps({"version": 1, "key": base64.b64encode(b"z" * 32).decode()}).encode()
+        write_pair(backup_content=wrong_copy)
+        with self.assertRaisesRegex(ValueError, "primary and backup keys do not match"):
+            verifier.verify_archive(self.backup, self.root, reserve_bytes=0,
+                                    reference_manifest=manifest)
 
     def test_pair_checks_citation_only_original(self):
         self.pair_archive()

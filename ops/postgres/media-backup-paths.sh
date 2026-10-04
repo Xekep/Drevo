@@ -12,6 +12,7 @@ printf 'uploads\n'
 # The platform cleanup key is immutable and paired with the database ledger.
 # It is never placed in a downloadable per-archive backup.
 platform_key="$shared/ai-provider-cleanup.v1.key"
+platform_key_backup="$shared/backups/platform-keys/ai-provider-cleanup.v1.key"
 if [[ -e "$platform_key" || -L "$platform_key" ]]; then
   [[ -f "$platform_key" && ! -L "$platform_key" ]] || {
     echo 'AI cleanup key is not a regular file' >&2; exit 2;
@@ -20,7 +21,20 @@ if [[ -e "$platform_key" || -L "$platform_key" ]]; then
   (( (8#$mode & 0077) == 0 )) || {
     echo 'AI cleanup key permissions are too broad' >&2; exit 2;
   }
+  [[ -f "$platform_key_backup" && ! -L "$platform_key_backup" ]] || {
+    echo 'AI cleanup backup key is missing or not a regular file' >&2; exit 2;
+  }
+  mode="$(stat -c %a "$platform_key_backup")"
+  (( (8#$mode & 0077) == 0 )) || {
+    echo 'AI cleanup backup key permissions are too broad' >&2; exit 2;
+  }
+  cmp -s -- "$platform_key" "$platform_key_backup" || {
+    echo 'AI cleanup backup key does not match' >&2; exit 2;
+  }
   printf 'ai-provider-cleanup.v1.key\n'
+  printf 'backups/platform-keys/ai-provider-cleanup.v1.key\n'
+elif [[ -e "$platform_key_backup" || -L "$platform_key_backup" ]]; then
+  echo 'AI cleanup primary key is missing' >&2; exit 2
 fi
 
 archives="$shared/archives"
