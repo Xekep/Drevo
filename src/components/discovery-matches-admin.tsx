@@ -25,6 +25,7 @@ type Match = {
   id: string;
   status: "pending" | "linked" | "rejected" | "revoked";
   reason?: string;
+  decisionNote?: string;
   reviewToken?: string;
   changedSinceRequest?: boolean;
   confirmationHistoryAvailable?: boolean;
@@ -130,6 +131,7 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
   const [target, setTarget] = useState<Candidate | null>(null);
   const [reason, setReason] = useState("");
   const [matches, setMatches] = useState<Match[]>([]);
+  const [decisionNotes, setDecisionNotes] = useState<Record<string, string>>({});
   const [matchesLoading, setMatchesLoading] = useState(true);
   const [matchesReload, setMatchesReload] = useState(0);
   const matchesRequest = useRef<AbortController | null>(null);
@@ -359,9 +361,11 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
   async function decide(id: string, decision: "accept" | "reject" | "revoke", reviewToken?: string) {
     setBusy(true); setError(""); setNotice("");
     try {
+      const note = decision === "revoke" ? "" : decisionNotes[id]?.trim();
       const response = await archiveFetch(`${endpoint}/${id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, ...(decision === "accept" ? { reviewToken } : {}) }),
+        body: JSON.stringify({ decision, ...(decision === "accept" ? { reviewToken } : {}),
+          ...(note ? { note } : {}) }),
       });
       const body = await response.json();
       if (!response.ok) {
@@ -374,6 +378,11 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
         setSuggestions([]); setSuggestionsCursor(null); setSuggestionsNextCursor(null);
         setSuggestionsReload((value) => value + 1);
       }
+      setDecisionNotes((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
       setReload((value) => value + 1);
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
@@ -582,6 +591,7 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
           own={item.left.archiveId === archiveId ? item.left : item.right}
           other={item.left.archiveId === archiveId ? item.right : item.left} />
         {item.reason && <p className="match-reason">Основание: {item.reason}</p>}
+        {item.decisionNote && <p className="match-reason">Пояснение решения: {item.decisionNote}</p>}
         {item.status === "pending" && item.changedSinceRequest &&
           <p className="match-reason">Опубликованные сведения изменились после запроса. Сверьте обе карточки перед решением.</p>}
         {item.status === "linked" && item.confirmationHistoryAvailable === false &&
@@ -603,6 +613,16 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
         </details>}
         <div className="match-request-actions">
           {item.status === "pending" && item.initiatedByArchiveId !== archiveId && <>
+            <details className="match-decision-note">
+              <summary>Добавить пояснение</summary>
+              <label>Пояснение к решению (необязательно)
+                <textarea value={decisionNotes[item.id] || ""} maxLength={500} rows={2}
+                  onChange={(event) => setDecisionNotes((current) => ({
+                    ...current, [item.id]: event.target.value,
+                  }))} />
+              </label>
+              <small>Его увидят владельцы обоих деревьев. После повторной публикации любой карточки пояснение скрывается. Не добавляйте закрытые сведения.</small>
+            </details>
             <button type="button" disabled={busy || !item.reviewToken}
               data-review-token={item.reviewToken}
               onClick={() => void decide(item.id, "accept", item.reviewToken)}>Подтвердить</button>

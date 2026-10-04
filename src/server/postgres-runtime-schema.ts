@@ -327,6 +327,23 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
             'discovery_match_confirmation_fields_read','discovery_match_confirmation_fields_insert'))=4`,
       "086_discovery_match_confirmation.sql",
     ],
+    [
+      `SELECT 1 AS present WHERE
+        EXISTS (SELECT 1 FROM pg_class WHERE oid=to_regclass('discovery_match_decision_notes')
+          AND relrowsecurity AND relforcerowsecurity)
+        AND (SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema()
+          AND table_name='discovery_match_decision_notes'
+          AND column_name IN ('left_publication_version','right_publication_version'))=2
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+          AND table_name='discovery_match_requests' AND column_name='decision_txid')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('discovery_match_requests')
+          AND tgname='guard_discovery_match_decision_txid' AND NOT tgisinternal)
+        AND (SELECT count(*) FROM pg_policies WHERE schemaname=current_schema()
+          AND tablename='discovery_match_decision_notes'
+          AND policyname IN ('discovery_match_decision_notes_read',
+            'discovery_match_decision_notes_insert'))=2`,
+      "087_discovery_match_decision_notes.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     try {
@@ -350,7 +367,8 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       if ((file !== "080_discovery_relative_consents.sql" &&
            file !== "081_discovery_candidate_tiers.sql" &&
            file !== "083_discovery_grandparent_consents.sql" &&
-           file !== "086_discovery_match_confirmation.sql") ||
+           file !== "086_discovery_match_confirmation.sql" &&
+           file !== "087_discovery_match_decision_notes.sql") ||
           (error as { code?: string }).code !== "42P07" ||
           !(await db.prepare("", query).get())?.present) throw error;
     }

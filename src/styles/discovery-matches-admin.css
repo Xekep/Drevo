@@ -49,6 +49,11 @@
 .match-pair-comparison dt small { display: block; color: var(--muted); font-weight: normal; }
 .match-pair-comparison dd { display: grid; gap: 3px; margin: 0; overflow-wrap: anywhere; }
 .match-request-heading, .match-request-actions, .match-pages { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.match-decision-note { flex: 1 0 100%; }
+.match-decision-note summary { cursor: pointer; font-weight: 600; }
+.match-decision-note label { display: grid; gap: 4px; margin-top: 8px; }
+.match-decision-note textarea { min-height: 64px; resize: vertical; }
+.match-decision-note small { color: var(--muted); }
 .match-request-heading { justify-content: space-between; }
 .match-request-heading time { color: var(--muted); font-size: 12px; }
 .match-pages { justify-content: space-between; }

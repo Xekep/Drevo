@@ -66,6 +66,11 @@ import { verifyAiTurnCoordination } from "./postgres-ai-turn-coordination.ts";
 import { verifyAiProviderCleanup, verifyAiProviderDeleteRoute } from "./postgres-ai-provider-cleanup.ts";
 import { verifyAiProviderActiveOrphanBackfill } from "./postgres-ai-provider-active-orphan-backfill.ts";
 import { verifyDeployAiKeyPreflight } from "./postgres-deploy-ai-key-preflight.ts";
+import { acceptWithDecisionNote, rejectWithStableDecisionNote,
+  verifyRejectedDecisionNote, verifyRejectedNoteUnchanged,
+  verifyLateNoteDenied, verifyRevocableDecisionNote, verifyRevokedDecisionNote,
+  verifyWithdrawnDecisionNotes, verifyLegacyDecisionCannotReopen,
+  verifyNoteHiddenAfterPublicationChange } from "./postgres-match-decision-notes.ts";
 import { verifyAiProviderCleanupStatus } from "./postgres-ai-provider-status.ts";
 import { verifyAiProviderCleanupRetry } from "./postgres-ai-provider-retry.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
@@ -8746,7 +8751,8 @@ try {
   await otherApp.archive.write(changedBeforeReview, beforeReviewChange.revision);
   assert.equal((await fetch(otherBase + matchPath, {
     method: "PATCH", headers: archiveAdminHeaders,
-    body: JSON.stringify({ decision: "accept", reviewToken: matchBody.match.reviewToken }),
+    body: JSON.stringify({ decision: "accept", reviewToken: matchBody.match.reviewToken,
+      note: "Устаревшее пояснение" }),
   })).status, 409, "a changed published identity cannot be accepted using a stale review token");
   const freshReview = (await (await fetch(otherBase + "/api/discovery/matches", {
     headers: archiveAdminHeaders,
@@ -8756,22 +8762,12 @@ try {
     "the responding owner sees that the published cards changed after proposal");
   assert.equal((await fetch(securedBase + matchPath, {
     method: "PATCH", headers: ownerHeaders,
-    body: JSON.stringify({ decision: "accept" }),
+    body: JSON.stringify({ decision: "accept", note: "Пояснение отправителя" }),
   })).status, 403, "an initiating archive cannot confirm its own request");
-  const acceptedMatch = await fetch(otherBase + matchPath, {
-    method: "PATCH", headers: archiveAdminHeaders,
-    body: JSON.stringify({ decision: "accept", reviewToken: freshReview.reviewToken }),
-  });
-  assert.equal(acceptedMatch.status, 200);
-  assert.equal((await acceptedMatch.json()).match.status, "linked");
-  const acceptedAudit = await matchDb.prepare("", `SELECT requested_by,request_review_token,
-    responded_by,responded_at,decision_review_token FROM discovery_match_requests WHERE id=?`)
-    .get(matchBody.match.id);
-  assert.equal(acceptedAudit?.requested_by, "owner");
-  assert.equal(acceptedAudit?.request_review_token, matchBody.match.reviewToken);
-  assert.equal(acceptedAudit?.responded_by, "vk:42");
-  assert.ok(acceptedAudit?.responded_at);
-  assert.equal(acceptedAudit?.decision_review_token, freshReview.reviewToken);
+  const acceptedAudit = await acceptWithDecisionNote({ db: matchDb,
+    matchId: matchBody.match.id, matchPath, reviewToken: freshReview.reviewToken,
+    requestReviewToken: matchBody.match.reviewToken, otherBase, securedBase,
+    recipientHeaders: archiveAdminHeaders, senderHeaders: ownerHeaders, publicHeaders: headers });
   const confirmationAcceptedAudit = acceptedAudit;
   const confirmationSourceArchive = app.archive;
   const confirmationOtherArchive = otherApp.archive;
@@ -8914,10 +8910,14 @@ try {
     FROM discovery_match_confirmation_fields WHERE match_id=? AND side='left'
       AND field_name='birthYear'`).get(matchBody.match.id))?.n, 0,
   "field-level RLS also hides the withdrawn historical value from participant SQL");
+  await verifyNoteHiddenAfterPublicationChange(matchDb,matchBody.match.id,
+    otherBase,archiveAdminHeaders);
   assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
     method: "PUT", headers: archiveAdminHeaders,
     body: JSON.stringify({ fields: confirmationOriginalFields }),
   })).status, 200);
+  await verifyNoteHiddenAfterPublicationChange(matchDb,matchBody.match.id,
+    otherBase,archiveAdminHeaders);
   const assertHistoryAccessRevokedBeforeFinalLock = async (withdraw: (token: string) => Promise<void>) => {
     const token = newSessionToken();
     await matchDb.prepare("", `INSERT INTO account_sessions(token_hash,user_id,expires_at)
@@ -9842,6 +9842,7 @@ try {
     right_archive_id,right_person_id,initiated_by_archive_id,requested_by,status)
     VALUES($1,'other-archive','person-a','third-archive','person-c',
       'other-archive','owner','linked')`, [secondPairId]);
+  await verifyLegacyDecisionCannotReopen(client,secondPairId);
   await client.query(`INSERT INTO discovery_branch_grants(left_archive_id,left_person_id,
     right_archive_id,right_person_id,grantor_archive_id,granted_by)
     VALUES('other-archive','person-a','third-archive','person-c','other-archive','owner')`);
@@ -10732,9 +10733,9 @@ try {
   assert.ok(!(await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
     .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
   "the recipient must not see an already pending request as a new suggestion");
-  assert.equal((await fetch(otherBase + rejectedPath, {
-    method: "PATCH", headers: recipientHeaders, body: JSON.stringify({ decision: "reject" }),
-  })).status, 200);
+  await rejectWithStableDecisionNote({ archive: otherApp.archive, client,
+    matchId: rejectedId, recipientHeaders });
+  await verifyRejectedDecisionNote(matchDb,rejectedId,otherBase,recipientHeaders);
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
     const ignored = await matchDb.prepare("", `SELECT source_person_id,target_archive_id,
@@ -10766,8 +10767,10 @@ try {
   assert.match(String(rejectedAudit?.request_review_token), /^[0-9a-f]{64}$/);
   assert.match(String(rejectedAudit?.decision_review_token), /^[0-9a-f]{64}$/);
   assert.equal((await fetch(otherBase + rejectedPath, {
-    method: "PATCH", headers: recipientHeaders, body: JSON.stringify({ decision: "reject" }),
+    method: "PATCH", headers: recipientHeaders,
+    body: JSON.stringify({ decision: "reject", note: "Попытка заменить основание" }),
   })).status, 200, "repeating a rejection is idempotent");
+  await verifyRejectedNoteUnchanged(matchDb,rejectedId);
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
     assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
@@ -10825,6 +10828,7 @@ try {
   assert.equal((await fetch(securedBase + `/api/discovery/matches/${reverseId}`, {
     method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "reject" }),
   })).status, 200);
+  await verifyLateNoteDenied(client,reverseId);
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
     assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
@@ -11554,8 +11558,10 @@ try {
   assert.ok(revocableReview?.reviewToken);
   assert.equal((await fetch(otherBase + revocablePath, {
     method: "PATCH", headers: recipientHeaders,
-    body: JSON.stringify({ decision: "accept", reviewToken: revocableReview.reviewToken }),
+    body: JSON.stringify({ decision: "accept", reviewToken: revocableReview.reviewToken,
+      note: "Сравнены открытые карточки" }),
   })).status, 200);
+  await verifyRevocableDecisionNote(matchDb,revocableId,securedBase,revocablePath,manualHeaders);
   const revocableSharePath = revocablePath + "/card-share";
   const revocablePreview = await fetch(securedBase + revocableSharePath, { headers: manualHeaders })
     .then((response) => response.json());
@@ -11654,6 +11660,7 @@ try {
   assert.equal(revokedAudit?.status, "revoked");
   assert.equal(revokedAudit?.revoked_by, "owner");
   assert.equal(revokedAudit?.decision_review_token, revocableReview.reviewToken);
+  await verifyRevokedDecisionNote(matchDb,revocableId,securedBase,manualHeaders);
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
     WHERE left_person_id=? AND right_person_id=?`).get(parent.id,parent.id))?.count, 0,
   "manual revocation removes the public transition immediately");
@@ -11749,6 +11756,8 @@ try {
   await otherApp.archive.write(otherBeforeSignals.family, afterRelativePages.revision);
   await otherPublication.unpublish("person-a");
   await otherPublication.unpublish("person-b");
+  await verifyWithdrawnDecisionNotes(matchDb,matchBody.match.id,rejectedId,
+    otherBase,archiveAdminHeaders);
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
     FROM discovery_branch_grants WHERE left_person_id='person-a'
       AND right_person_id='person-a'`).get())?.count, 0,
