@@ -646,8 +646,10 @@ export function createResearchRunner({
       }));
     if (!conversationId) {
       await assertAiAccess();
+      await chats.assertProviderReady();
       conversationId = await responses.createConversation(runtime, signal);
-      await chats.setRemote(chatId, conversationId, turnToken);
+      if (!(await chats.bindNewRemote(chatId, conversationId, runtime, turnToken)))
+        throw new Error("AI chat lease was lost before provider binding");
       pendingInput.push(...restoreHistory());
     }
     pendingInput.push(currentInput);
@@ -723,13 +725,7 @@ export function createResearchRunner({
           console.warn(
             JSON.stringify({
               event: "ai.response_recovery",
-              model: runtime.modelUri,
-              providerErrorCode:
-                error instanceof YandexResponseError
-                  ? error.code
-                  : "provider_timeout",
-              responseId:
-                error instanceof YandexResponseError ? error.responseId : "",
+              providerStatus: error instanceof YandexResponseError ? error.status : undefined,
               afterTools: recoveryResults.length > 0,
               completedToolCount: recoveryResults.length,
             }),
@@ -744,11 +740,13 @@ export function createResearchRunner({
             AbortSignal.timeout(60_000),
           ]);
           await assertAiAccess();
+          await chats.assertProviderReady();
           conversationId = await responses.createConversation(
             runtime,
             recoverySignal,
           );
-          await chats.setRemote(chatId, conversationId, turnToken);
+          if (!(await chats.bindNewRemote(chatId, conversationId, runtime, turnToken)))
+            throw new Error("AI chat lease was lost before provider binding");
           await assertAiAccess();
           recordModelCall(metrics, runtime.modelUri);
           completion = await responses.respond({
@@ -783,8 +781,10 @@ export function createResearchRunner({
         ) {
           contextRecovered = true;
           await assertAiAccess();
+          await chats.assertProviderReady();
           conversationId = await responses.createConversation(runtime, signal);
-          await chats.setRemote(chatId, conversationId, turnToken);
+          if (!(await chats.bindNewRemote(chatId, conversationId, runtime, turnToken)))
+            throw new Error("AI chat lease was lost before provider binding");
           pendingInput.splice(
             0,
             pendingInput.length,
@@ -806,14 +806,11 @@ export function createResearchRunner({
             console.warn(
               JSON.stringify({
                 event: "ai.web_answer_fallback",
-                model: runtime.modelUri,
                 sourceCount: webReferences.size,
                 providerStatus:
                   error instanceof YandexResponseError
                     ? error.status
                     : undefined,
-                providerErrorCode:
-                  error instanceof YandexResponseError ? error.code : undefined,
                 errorType: error instanceof Error ? error.name : "unknown",
               }),
             );
@@ -931,8 +928,6 @@ export function createResearchRunner({
           console.warn(
             JSON.stringify({
               event: "ai.empty_response_retry",
-              model: runtime.modelUri,
-              responseId: completion.id,
               attempt: emptyResponseRetries,
               toolCallCount: metrics.toolCallCount,
             }),

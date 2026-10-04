@@ -2,8 +2,10 @@
 """Rehearse extraction of one immutable Drevo media backup."""
 
 import argparse
+import base64
 import hashlib
 import json
+import os
 import re
 import shutil
 import stat
@@ -23,6 +25,10 @@ REFERENCE_SOURCES = frozenset({
     "restore_stage_image", "restore_stage_document",
 })
 DISK_RESERVE = 8 * 1024**3
+PLATFORM_KEY_PATHS = frozenset({
+    ("ai-provider-cleanup.v1.key",),
+    ("backups", "platform-keys", "ai-provider-cleanup.v1.key"),
+})
 
 
 @dataclass(frozen=True)
@@ -37,17 +43,26 @@ class RestoreResult:
 
 def read_references(
     manifest: Path, legacy_archive_id: str | None
-) -> dict[tuple[str, ...], int | None]:
+) -> tuple[dict[tuple[str, ...], int | None], str | None]:
     if not stat.S_ISREG(manifest.lstat().st_mode):
         raise ValueError("Reference manifest is not a regular file")
     archives: set[str] = set()
     references: list[tuple[str, str, int | None]] = []
+    platform_key: str | None = None
     with manifest.open("r", encoding="utf-8") as source:
         for number, line in enumerate(source, 1):
             try:
                 row = json.loads(line)
             except (json.JSONDecodeError, UnicodeError) as error:
                 raise ValueError(f"Invalid reference manifest line {number}") from error
+            if isinstance(row, dict) and row.get("kind") == "platform_key":
+                if set(row) != {"kind", "version", "fingerprint"} or row["version"] != 1 \
+                        or not isinstance(row["fingerprint"], str) \
+                        or not re.fullmatch(r"[a-f0-9]{64}", row["fingerprint"]) \
+                        or platform_key is not None:
+                    raise ValueError(f"Invalid platform key on manifest line {number}")
+                platform_key = row["fingerprint"]
+                continue
             if not isinstance(row, dict) or not isinstance(row.get("archive_id"), str) \
                     or not ARCHIVE_ID.fullmatch(row["archive_id"]):
                 raise ValueError(f"Invalid archive ID on manifest line {number}")
@@ -86,7 +101,7 @@ def read_references(
         if previous is not None and size is not None and previous != size:
             raise ValueError("Conflicting sizes in restored database")
         expected[parts] = size if size is not None else previous
-    return expected
+    return expected, platform_key
 
 
 def member_parts(member: tarfile.TarInfo) -> tuple[str, ...]:
@@ -100,7 +115,10 @@ def member_parts(member: tarfile.TarInfo) -> tuple[str, ...]:
         or any(ord(character) < 32 for character in name)
     ):
         raise ValueError(f"Unsafe media archive path: {member.name!r}")
-    if parts[0] == "uploads":
+    if parts in PLATFORM_KEY_PATHS:
+        if not member.isfile() or member.mode & 0o077:
+            raise ValueError("AI cleanup key is not a private file")
+    elif parts[0] == "uploads":
         if len(parts) == 1 and not member.isdir():
             raise ValueError("Legacy uploads root is not a directory")
     elif parts[0] == "archives":
@@ -128,10 +146,11 @@ def verify_archive(
     started = time.monotonic()
     if legacy_archive_id is not None and reference_manifest is None:
         raise ValueError("Legacy archive ID requires a reference manifest")
-    expected = (
+    pair = (
         read_references(reference_manifest, legacy_archive_id)
         if reference_manifest is not None else None
     )
+    expected, expected_key = pair if pair is not None else (None, None)
     if not BACKUP_NAME.fullmatch(archive.name):
         raise ValueError("Invalid media backup name")
     sidecar = archive.with_name(archive.name + ".sha256")
@@ -172,6 +191,7 @@ def verify_archive(
             files = 0
             total_bytes = 0
             has_legacy_uploads = False
+            restored_keys: dict[tuple[str, ...], tuple[str, bytes]] = {}
             with tarfile.open(fileobj=source, mode="r|gz") as media:
                 for member in media:
                     parts = member_parts(member)
@@ -183,6 +203,8 @@ def verify_archive(
                     if member.isfile():
                         if member.size < 0:
                             raise ValueError(f"Invalid media file size: {member.name!r}")
+                        if parts in PLATFORM_KEY_PATHS and member.size > 4096:
+                            raise ValueError("AI cleanup key exceeds the size limit")
                         files += 1
                         total_bytes += member.size
                         if total_bytes > available_bytes:
@@ -199,7 +221,11 @@ def verify_archive(
                         raise ValueError(f"Cannot read media file: {member.name!r}")
                     archived_digest = hashlib.sha256()
                     copied = 0
-                    with input_file, target.open("xb") as output:
+                    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600) \
+                        if parts in PLATFORM_KEY_PATHS else None
+                    output_file = os.fdopen(descriptor, "wb") if descriptor is not None \
+                        else target.open("xb")
+                    with input_file, output_file as output:
                         for block in iter(lambda: input_file.read(1024 * 1024), b""):
                             output.write(block)
                             archived_digest.update(block)
@@ -213,9 +239,31 @@ def verify_archive(
                     if restored_digest.digest() != archived_digest.digest():
                         raise ValueError(f"Restored media differs from archive: {member.name!r}")
                     extracted[parts] = copied
+                    if parts in PLATFORM_KEY_PATHS:
+                        try:
+                            content = target.read_bytes()
+                            key_data = json.loads(content.decode("utf-8"))
+                            raw_key = base64.b64decode(key_data["key"], validate=True)
+                            if key_data["version"] != 1 or len(raw_key) != 32:
+                                raise ValueError()
+                            restored_keys[parts] = (hashlib.sha256(raw_key).hexdigest(), content)
+                        except (ValueError, KeyError, TypeError, UnicodeError) as error:
+                            raise ValueError("Restored AI cleanup key is invalid") from error
             if not has_legacy_uploads or files == 0:
                 raise ValueError("Media backup has no legacy uploads root or no files")
+            if restored_keys and (
+                set(restored_keys) != PLATFORM_KEY_PATHS
+                or len({entry[1] for entry in restored_keys.values()}) != 1
+            ):
+                raise ValueError("AI cleanup primary and backup keys do not match")
             if expected is not None:
+                if expected_key is None and restored_keys:
+                    raise ValueError("Restored database/AI cleanup key mismatch")
+                if expected_key is not None and (
+                    set(restored_keys) != PLATFORM_KEY_PATHS
+                    or {entry[0] for entry in restored_keys.values()} != {expected_key}
+                ):
+                    raise ValueError("Restored database/AI cleanup key mismatch")
                 missing = sum(1 for parts in expected if parts not in extracted)
                 wrong_size = sum(
                     1 for parts, size in expected.items()

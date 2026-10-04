@@ -538,7 +538,6 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
             console.warn(
               JSON.stringify({
                 event: "ai.compaction_object_fallback",
-                model: runtime.modelUri,
               }),
             );
           }
@@ -549,9 +548,7 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
             console.warn(
               JSON.stringify({
                 event: "ai.compaction_unavailable",
-                model: runtime.modelUri,
                 providerStatus: rejection?.status,
-                providerErrorCode: rejection?.code,
                 fallback: options.automaticTruncation
                   ? "truncation_auto"
                   : "none",

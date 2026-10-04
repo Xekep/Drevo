@@ -41,6 +41,7 @@ import { archiveOwnerTransferHttp } from "./archive-owner-transfer-http.ts";
 import { archiveDeletionHttp } from "./archive-deletion-http.ts";
 import { cleanupDeletedArchiveDirectories } from "./archive-deletion-files.ts";
 import { sweepPlatformAiOrphans } from "./platform-ai-orphan-sweep.ts";
+import { aiProviderCleanup } from "./ai-provider-cleanup.ts";
 import { discoveryPeopleHttp } from "./discovery-people-http.ts";
 import { accountInvitationsHttp } from "./account-invitations-http.ts";
 import { archiveRoutePool } from "./archive-route-pool.ts";
@@ -73,10 +74,11 @@ export async function startServer(
     process.env.NODE_ENV === "production",
     process.env.PUBLIC_ORIGIN,
   );
-  const configuredPath =
+  const selectedPath =
     databasePath ||
     process.env.DATABASE_PATH ||
     resolve(root, "data/drevo.sqlite");
+  const configuredPath = selectedPath === ":memory:" ? selectedPath : resolve(selectedPath);
   if (archiveId && !/^[a-zA-Z0-9][a-zA-Z0-9-]{2,63}$/.test(archiveId))
     throw new Error("Некорректный archive_id");
   if (archiveId && configuredDatabaseBackend(configuredPath) !== "postgres")
@@ -122,6 +124,27 @@ export async function startServer(
       archiveId,
     );
     own(() => archive.close());
+    const providerCleanup = archive.db.kind === "postgres"
+      ? await aiProviderCleanup(archive.db, configuredPath, aiFetch)
+      : undefined;
+    let providerCleanupRun: Promise<void> | null = null;
+    const sweepProviderConversations = !archiveId && providerCleanup
+      ? () => {
+          if (providerCleanupRun) return;
+          providerCleanupRun = providerCleanup.process(2)
+            .then(() => undefined)
+            .catch(() => console.warn(JSON.stringify({ event: "ai.provider_cleanup_failed" })))
+            .finally(() => { providerCleanupRun = null; });
+        }
+      : null;
+    sweepProviderConversations?.();
+    const providerCleanupTimer = sweepProviderConversations
+      ? setInterval(sweepProviderConversations, 60_000) : null;
+    providerCleanupTimer?.unref();
+    own(async () => {
+      if (providerCleanupTimer) clearInterval(providerCleanupTimer);
+      await providerCleanupRun;
+    });
     const cleanupDeletedArchives =
       !archiveId && archive.db.kind === "postgres"
         ? () =>
@@ -285,6 +308,7 @@ export async function startServer(
       aiFetch,
       uploadsDirectory: resolve(dirname(dbPath), "uploads"),
       selectedArchiveId: archiveId,
+      providerCleanup,
       serveStatic,
     });
     const stopRequests = own(() => handleArchive.close());

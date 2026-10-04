@@ -96,6 +96,12 @@ if [[ -n "$manifest_path" ]]; then
   # exported; the query reads the isolated restored cluster, never production.
   ( set -C; psql -XqAt -v ON_ERROR_STOP=1 -h "$socket_dir" -p 55433 \
       -d "$database" -f "$script_dir/media-filesystem-refs.sql" > "$manifest_path" )
+  key_table="$(psql -XAtq -v ON_ERROR_STOP=1 -h "$socket_dir" -p 55433 \
+    -d "$database" -c "SELECT to_regclass('public.platform_ai_cleanup_keys') IS NOT NULL")"
+  if [[ "$key_table" == t ]]; then
+    psql -XqAt -v ON_ERROR_STOP=1 -h "$socket_dir" -p 55433 -d "$database" \
+      -c "SELECT json_build_object('kind','platform_key','version',version,'fingerprint',fingerprint)::text FROM public.platform_ai_cleanup_keys" >> "$manifest_path"
+  fi
 fi
 printf 'PHYSICAL_RESTORE_VERIFIED database=%s archives=%s revision=%s restore_seconds=%s ready_seconds=%s\n' \
   "$database" "${archive_state%%|*}" "${archive_state#*|}" \

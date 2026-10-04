@@ -274,6 +274,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
         to_regclass('discovery_people_tier_birth_surname') IS NOT NULL`,
       "081_discovery_candidate_tiers.sql",
     ],
+    [
+      "SELECT to_regclass('platform_ai_conversations') AS present",
+      "082_ai_provider_cleanup.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     try {

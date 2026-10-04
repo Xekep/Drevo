@@ -185,6 +185,7 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
     "archive",
     ...tables.map((table) => table.name),
     ...serviceTables,
+    ...["platform_ai_cleanup_keys", "platform_ai_conversations"].filter((name) => actual.includes(name)),
   ]
     .filter(
       (name) =>
@@ -200,6 +201,10 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
         .concat(expected.filter((name) => !actual.includes(name)))
         .join(", ")}`,
     );
+  for (const name of ["platform_ai_cleanup_keys", "platform_ai_conversations"])
+    if (actual.includes(name) &&
+        Number(db.prepare(`SELECT count(*) AS total FROM ${name}`).get()?.total) > 0)
+      throw new Error("A platform AI cleanup registry cannot be imported as one archive");
   for (const table of tables) {
     if (table.optional && !actual.includes(table.name)) continue;
     const columns = db

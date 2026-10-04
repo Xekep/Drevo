@@ -26,6 +26,7 @@ import { YandexResponseError } from "./yandex-responses.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
 import { aiChatAccessScope } from "./ai-chat-access-scope.ts";
 import { researchPdf } from "./research-pdf.ts";
+import type { AiProviderCleanup } from "./ai-provider-cleanup.ts";
 
 import { createResearchRunner } from "./ai-research-runner.ts";
 import { yandexResponsesClient } from "./yandex-responses.ts";
@@ -66,6 +67,7 @@ export function aiResearchHttp({
   beforeAttachmentDelivery,
   attachmentDeliveryDeadlineMs = 30_000,
   renderPdf,
+  providerCleanup,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -85,8 +87,9 @@ export function aiResearchHttp({
   beforeAttachmentDelivery?: () => Promise<void>;
   attachmentDeliveryDeadlineMs?: number;
   renderPdf?: typeof researchPdf;
+  providerCleanup?: AiProviderCleanup;
 }) {
-  const chats = aiChatStore(archive.db);
+  const chats = aiChatStore(archive.db, providerCleanup);
   const attachments = aiAttachmentStore(
     uploadsDirectory || join(dirname(archive.db.file), "uploads"),
     chats,
@@ -665,7 +668,7 @@ export function aiResearchHttp({
           console.warn(JSON.stringify({ event: "ai.generated_file_cleanup_failed" })));
         const remoteId =
           chat.yandexConversationId || existing.yandexConversationId;
-        if (remoteId) {
+        if (remoteId && !chat.providerCleanupRef && !existing.providerCleanupRef) {
           void responses
             .deleteConversation(await aiRuntimeConfig(aiSettings), remoteId)
             .catch((error) =>
@@ -1104,13 +1107,9 @@ export function aiResearchHttp({
         JSON.stringify({
           event: "ai.turn_completed",
           localConversationId: chat.id,
-          yandexConversationId: (await chats.read(chat.id, user.id))
-            ?.yandexConversationId,
-          model: runtime.modelUri,
           providerCalls: metrics.providerCalls,
           agentIterations: metrics.agentIterations,
           toolCallCount: metrics.toolCallCount,
-          responseId: metrics.responseId,
           inputTokens: metrics.inputTokens,
           outputTokens: metrics.outputTokens,
           cachedTokens: metrics.cachedTokens,
@@ -1183,19 +1182,10 @@ export function aiResearchHttp({
         JSON.stringify({
           event: "ai.turn_failed",
           localConversationId: chat.id,
-          model: runtime.modelUri,
-          responseId:
-            error instanceof YandexResponseError && error.responseId
-              ? error.responseId
-              : metrics.responseId,
           agentIterations: metrics.agentIterations,
           toolCallCount: metrics.toolCallCount,
-          providerErrorCode:
-            error instanceof YandexResponseError ? error.code : undefined,
           providerStatus:
             error instanceof YandexResponseError ? error.status : undefined,
-          providerEndpoint:
-            error instanceof YandexResponseError ? error.endpoint : undefined,
           errorType: error instanceof Error ? error.name : "unknown",
           latencyMs: Date.now() - usageRun.started,
         }),

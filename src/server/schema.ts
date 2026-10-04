@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { researchCatalogSeed } from "./research-catalog-seed.ts";
 
-export const ARCHIVE_SCHEMA_VERSION = 20;
+export const ARCHIVE_SCHEMA_VERSION = 21;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -124,6 +124,24 @@ function relationHasCreatedBy(db: DatabaseSync) {
 }
 
 function migrate(db: DatabaseSync, target: number) {
+  if (target === 21) {
+    if (!tableHasColumn(db, "ai_chats", "provider_cleanup_ref"))
+      db.exec("ALTER TABLE ai_chats ADD COLUMN provider_cleanup_ref TEXT");
+    db.exec(`CREATE TABLE IF NOT EXISTS platform_ai_cleanup_keys (
+      version INTEGER PRIMARY KEY CHECK(version=1), fingerprint TEXT NOT NULL
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS platform_ai_conversations (
+      id TEXT PRIMARY KEY, key_version INTEGER NOT NULL,
+      encrypted_snapshot TEXT, archive_id TEXT NOT NULL,
+      local_chat_id TEXT NOT NULL, state TEXT NOT NULL,
+      available_at INTEGER NOT NULL DEFAULT 0, lease_token TEXT,
+      lease_until INTEGER, attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    ) STRICT;
+    CREATE INDEX IF NOT EXISTS platform_ai_conversations_due
+      ON platform_ai_conversations(state,available_at);`);
+    return;
+  }
   if (target === 20) {
     if (
       !db
