@@ -102,17 +102,27 @@ test("GEDCOM 7 DATE_VALUE kinds retain TIME without false invalidity warnings", 
   for (const [name, date] of [
     ["approximate", "ABT 3 MAR 1920"],
     ["range", "BET 3 MAR 1920 AND 4 MAR 1920"],
-    ["calendar", "@#DJULIAN@ 3 MAR 1920"],
+    ["calendar", "JULIAN 3 MAR 1920"],
     ["empty", ""],
     ["year", "1920"],
   ]) {
     const modified = input.replace("2 DATE 3 MAR 1920\n3 TIME 23:59:59",
       `2 DATE${date ? ` ${date}` : ""}\n3 TIME 23:59:59`);
     const imported = importGedcom(modified, `time-${name}`);
-    assert.match(timedEvent(imported.family.people[0], "RESI")?.description || "",
+    const residence = timedEvent(imported.family.people[0], "RESI");
+    assert.match(residence?.description || "",
       /DATE\.TIME: 23:59:59/, name);
     assert.equal(imported.warnings.some((warning) => /Недопустимый.*DATE\.TIME/.test(warning)),
       false, name);
+    if (name === "calendar") {
+      assert.equal(residence?.date, undefined, "JULIAN date is not converted to Gregorian");
+      assert.equal(residence?.dateText, date, "the source calendar and day remain together");
+      const again = importGedcom(exportGedcom(imported.family, { version: "7.0" }),
+        "julian-time-again");
+      assert.equal(timedEvent(again.family.people[0], "RESI")?.dateText, date);
+      assert.equal(timedEvent(again.family.people[0], "RESI")?.description,
+        residence?.description);
+    }
   }
   const historic = input.replace("2 VERS 7.0", "2 VERS 5.5.1");
   const historicImport = importGedcom(historic, "nonstandard-time");
