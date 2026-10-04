@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Install root-owned as /usr/local/sbin/drevo-postgres-maintenance.
+# Release deployment does not update this installed helper; install its new
+# version separately before deploying a release that requires key staging.
 # Release code always executes as site_drevo, never as root.
 set -euo pipefail
 umask 077
@@ -47,6 +49,9 @@ sudo -u site_drevo /bin/sh -c 'set -C; umask 077; cat > "$1"' sh "$backup" < "$d
 test -s "$backup"
 sudo -u postgres /usr/bin/createdb --owner=site_drevo "$fixture"
 sudo -u site_drevo env "${runtime_env[@]}" /usr/bin/pg_restore --exit-on-error --no-owner --dbname="$fixture" "$backup"
+# The app-owned stage must carry the exact physical key pair for the restored
+# platform ledger. The runtime verifies its fingerprint against that ledger.
+sudo -u site_drevo /usr/bin/python3 "$release/ops/postgres/stage-ai-provider-key.py" "$base/shared" "$stage"
 for candidate in "$release" "$previous"; do
   sudo -u site_drevo env "${runtime_env[@]}" PGDATABASE="$fixture" PUBLIC_ORIGIN=https://migration-check.invalid \
     "$node" --experimental-strip-types "$release/ops/postgres/check-runtime.mjs" "$candidate" "$stage/drevo.sqlite"
