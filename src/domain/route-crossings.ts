@@ -7,8 +7,9 @@ export type CrossingEdge = {
   route?: EdgeRoute;
 };
 
-let cachedGeometry = "";
-let cachedPaths = new Map<string, string>();
+export type CrossingPathFinder = (
+  edges: readonly CrossingEdge[],
+) => ReadonlyMap<string, string>;
 
 /**
  * Визуальное состояние ребра (выбор, подсветка, толщина) сюда намеренно не
@@ -27,11 +28,49 @@ export function crossingGeometryKey(edges: readonly CrossingEdge[]) {
   );
 }
 
-/** Разрывы только на пересечениях разных ветвей, не на семейных развилках. */
-export function crossingPaths(edges: CrossingEdge[]) {
-  const geometryKey = crossingGeometryKey(edges);
-  if (geometryKey === cachedGeometry) return cachedPaths;
+/** Bounded, exact-key LRU. The byte budget covers retained key/path strings, not total heap. */
+export function createCrossingPathCache(
+  maxEntries = 4,
+  maxBytes = 4 * 1024 * 1024,
+): CrossingPathFinder {
+  const entries = new Map<
+    string,
+    { paths: ReadonlyMap<string, string>; bytes: number }
+  >();
+  let bytes = 0;
+  return (edges) => {
+    const key = crossingGeometryKey(edges);
+    const cached = entries.get(key);
+    if (cached) {
+      entries.delete(key);
+      entries.set(key, cached);
+      return cached.paths;
+    }
+    const paths = calculateCrossingPaths(edges);
+    let size = key.length * 2;
+    for (const [id, path] of paths) size += (id.length + path.length) * 2;
+    if (maxEntries < 1 || size > maxBytes) return paths;
+    entries.set(key, { paths, bytes: size });
+    bytes += size;
+    while (entries.size > maxEntries || bytes > maxBytes) {
+      const oldest = entries.keys().next().value!;
+      bytes -= entries.get(oldest)!.bytes;
+      entries.delete(oldest);
+    }
+    return paths;
+  };
+}
 
+const defaultCrossingPaths = createCrossingPathCache();
+
+/** Разрывы только на пересечениях разных ветвей, не на семейных развилках. */
+export function crossingPaths(
+  edges: readonly CrossingEdge[],
+): ReadonlyMap<string, string> {
+  return defaultCrossingPaths(edges);
+}
+
+function calculateCrossingPaths(edges: readonly CrossingEdge[]) {
   type Segment = {
     edge: string;
     group: string;
@@ -107,7 +146,5 @@ export function crossingPaths(edges: CrossingEdge[]) {
     chunks.push(chunk);
     paths.set(edge.id, chunks.map((part) => roundedRoute(part).path).join(" "));
   }
-  cachedGeometry = geometryKey;
-  cachedPaths = paths;
   return paths;
 }
