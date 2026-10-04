@@ -35,6 +35,17 @@
   color: #76816d;
   white-space: nowrap;
 }
+.tree-generation-status {
+  min-width: 0;
+}
+.tree-generation-status > .tree-family-tools {
+  flex-wrap: nowrap;
+  padding: 5px 7px;
+}
+.tree-generation-status .tree-family-name {
+  min-width: 0;
+  max-width: 360px;
+}
 .tree-family-tools button {
   min-height: 34px;
   padding: 5px 8px;
@@ -92,6 +103,18 @@
   right: auto;
 }
 @media (max-width: 899px) {
+  .tree-generation-status {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    width: 100%;
+  }
+  .tree-generation-status .tree-family-name {
+    max-width: 230px;
+  }
+  .tree-canvas .tree-generation-status .tree-family-count {
+    display: inline;
+  }
   .tree-family-menu {
     flex: none;
   }
