@@ -94,7 +94,7 @@ export function makeDrevoPlugin(
       const button = (
         name: string,
         icon: string,
-        action: () => void,
+        action: (event: MouseEvent) => void,
         className = "",
       ) => {
         const element = document.createElement("button");
@@ -123,7 +123,11 @@ export function makeDrevoPlugin(
       this.commentsButton = button(
         "Комментарии",
         "M20 11.5a8.5 8.5 0 0 1-8.5 8.5 9 9 0 0 1-3.6-.8L3 21l1.8-4.9a8.5 8.5 0 1 1 15.2-4.6Z",
-        () => emit({ source: "drevo-bookreader", type: "toggle-comments" }),
+        (event) => emit({
+          source: "drevo-bookreader",
+          type: "toggle-comments",
+          keyboard: event.detail === 0,
+        }),
         "drevo-toolbar-comments",
       );
       button(

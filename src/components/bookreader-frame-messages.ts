@@ -35,7 +35,7 @@ export type ReaderEvent =
   | { source: "drevo-bookreader"; type: "page"; page: number }
   | { source: "drevo-bookreader"; type: "magnifier-off" }
   | { source: "drevo-bookreader"; type: "toggle-magnifier" }
-  | { source: "drevo-bookreader"; type: "toggle-comments" }
+  | { source: "drevo-bookreader"; type: "toggle-comments"; keyboard: boolean }
   | { source: "drevo-bookreader"; type: "annotation"; id: string }
   | { source: "drevo-bookreader"; type: "close" }
   | {

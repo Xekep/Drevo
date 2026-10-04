@@ -99,7 +99,7 @@ test("book and annotation clicks keep comments open", async ({
     .first();
   await mark.click();
   const sidebar = reader.locator(".pdf-book-sidebar");
-  const toggle = book.getByRole("button", { name: "Комментарии" });
+  const toggle = book.locator(".drevo-toolbar-comments");
   await expect(sidebar).toBeVisible();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
   await reader.getByText("Комментарий к фрагменту", { exact: true }).click();
@@ -155,7 +155,7 @@ test("mobile right swipes dismiss comments without hijacking scrolling or editin
   }
   await page.reload();
   const sidebar = reader.locator(".pdf-book-sidebar");
-  const toggle = book.getByRole("button", { name: "Комментарии" });
+  const toggle = book.locator(".drevo-toolbar-comments");
   const comments = reader.locator(".pdf-book-comments");
   await toggle.click();
   await expect(comments.locator("article")).toHaveCount(12);
@@ -383,14 +383,20 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
   await book.locator("body").press("Escape");
   await expect(book.locator("#colorbox")).toBeHidden();
   await expect(reader).toBeVisible();
-  const commentsButton = book.getByRole("button", { name: "Комментарии" });
+  const commentsButton = book.locator(".drevo-toolbar-comments");
   const sidebar = reader.locator(".pdf-book-sidebar");
   await expect(commentsButton).toBeVisible();
   await expect(commentsButton).toHaveAttribute("aria-expanded", "false");
   await expect(sidebar).toBeHidden();
-  await commentsButton.click();
+  await commentsButton.focus();
+  await commentsButton.press("Enter");
   await expect(sidebar).toBeVisible();
   await expect(commentsButton).toHaveAttribute("aria-expanded", "true");
+  await expect(commentsButton).toBeHidden();
+  const closePanel = reader.getByRole("button", {
+    name: "Закрыть панель комментариев",
+  });
+  await expect(closePanel).toBeFocused();
   if (info.project.name === "mobile") {
     const toolbarBottom = await book
       .locator(".BRtoolbar")
@@ -401,8 +407,9 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
       )
       .toBeGreaterThanOrEqual(toolbarBottom);
   }
-  await commentsButton.click();
+  await closePanel.click();
   await expect(sidebar).toBeHidden();
+  await expect(commentsButton).toBeVisible();
   await commentsButton.click();
   await reader.locator(".pdf-book-sidebar-tabs button").last().click();
   await reader.locator(".pdf-book-outline button").first().click();
@@ -486,7 +493,7 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
       ),
     ),
   ).toBe(false);
-  await commentsButton.click();
+  await closePanel.click();
 
   await commentsButton.click();
   await reader.locator(".pdf-book-sidebar-tabs button").first().click();
