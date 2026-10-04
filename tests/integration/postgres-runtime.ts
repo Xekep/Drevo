@@ -7378,15 +7378,20 @@ try {
     { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.64" } });
   assert.equal(cappedResponse.status, 200);
   const cappedPage = await cappedResponse.json();
-  assert.deepEqual(cappedPage.candidates, [], "the bounded scan stops after 96 false positives");
+  assert.deepEqual(cappedPage.candidates.map((item: { id: string }) => item.id),
+    [candidateTargetId],
+  "an exact-name candidate is retrieved before 96 unrelated approximate rows");
+  assert.equal(cappedPage.approximate, true);
+  assert.equal(cappedPage.partial, true,
+    "the approximate tail still reports its bounded raw scan");
   assert.equal(typeof cappedPage.nextCursor, "string");
   const afterCapResponse = await fetch(securedBase + revokeCandidatePath +
     `&cursor=${encodeURIComponent(cappedPage.nextCursor)}`,
   { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.65" } });
   assert.equal(afterCapResponse.status, 200);
-  assert.ok((await afterCapResponse.json()).candidates.some(
-    (item: { id: string }) => item.id === candidateTargetId),
-  "the cursor resumes after the last evaluated raw row without skipping a valid candidate");
+  assert.equal((await afterCapResponse.json()).candidates.some(
+    (item: { id: string }) => item.id === candidateTargetId), false,
+  "the approximate cursor cannot repeat a candidate already returned by an exact tier");
   await otherApp.archive.write(beforeLocalityPage.family, cappedWrite.revision);
   console.log("runtime_discovery_candidate_locality_pagination_ok");
   const candidatePriorOwner = (await client.query(`SELECT user_id FROM archive_owners
