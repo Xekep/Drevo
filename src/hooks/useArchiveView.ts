@@ -17,12 +17,10 @@ function canonicalPath() {
 }
 
 export function useArchiveView(canLeave: () => boolean = () => true) {
-  const currentUrl = useRef(window.location.pathname + window.location.search);
+  const [currentPath, updatePath] = useState(canonicalPath);
+  const currentUrl = useRef(currentPath);
   const [view, update] = useState<ArchiveView>(
     () => archiveViewAt(window.location.pathname) || "tree",
-  );
-  const [currentPath, updatePath] = useState(
-    () => window.location.pathname + window.location.search,
   );
   const navigate = useCallback(
     (next: ArchiveView, target?: ArchiveTarget | string, replace = false) => {
@@ -51,9 +49,6 @@ export function useArchiveView(canLeave: () => boolean = () => true) {
     [],
   );
   useEffect(() => {
-    const canonical = canonicalPath();
-    currentUrl.current = canonical;
-    updatePath(canonical);
     const sync = () => {
       if (!canLeave()) {
         window.history.pushState(null, "", currentUrl.current);

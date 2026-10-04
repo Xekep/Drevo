@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import type {
@@ -35,7 +35,7 @@ const date = (value: number) =>
 
 /** Owns only the lazy operational listing, independently of the settings draft. */
 export function AiProviderCleanupAdmin({ archiveId = null }: { archiveId?: string | null }) {
-  const url = (path: string) => archiveId ? `/a/${archiveId}${path}` : path;
+  const url = useCallback((path: string) => archiveId ? `/a/${archiveId}${path}` : path, [archiveId]);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<AiCleanupFilter>("all");
   const [cursor, setCursor] = useState<string | null>(null);
@@ -81,7 +81,7 @@ export function AiProviderCleanupAdmin({ archiveId = null }: { archiveId?: strin
         });
     });
     return () => controller.abort();
-  }, [open, filter, cursor, reload]);
+  }, [open, filter, cursor, reload, url]);
   const refresh = () => {
     setCursor(null);
     setHistory([]);

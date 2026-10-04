@@ -104,7 +104,7 @@ export function AiSettingsAdmin({ archiveId = null, showCleanup = true }: {
   archiveId?: string | null;
   showCleanup?: boolean;
 }) {
-  const url = (path: string) => archiveId ? `/a/${archiveId}${path}` : path;
+  const url = useCallback((path: string) => archiveId ? `/a/${archiveId}${path}` : path, [archiveId]);
   const [status, setStatus] = useState<AiAdminStatus | null>(null),
     [enabled, setEnabled] = useState(true),
     [webSearchEnabled, setWebSearchEnabled] = useState(false),
@@ -155,7 +155,7 @@ export function AiSettingsAdmin({ archiveId = null, showCleanup = true }: {
     if (!response.ok)
       throw new Error(data.error || "Не удалось загрузить настройки AI Studio");
     applyStatus(data as AiAdminStatus);
-  }, [applyStatus, archiveId]);
+  }, [applyStatus, url]);
 
   useEffect(() => {
     let active = true;

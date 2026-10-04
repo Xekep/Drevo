@@ -20,7 +20,7 @@ import {
   type ArchiveTarget,
 } from "./domain/archive-links";
 import { archiveContextAt, scopedArchivePath } from "./domain/archive-context.ts";
-import { adminMatchSourcePath, archiveDocumentAt, archiveDocumentPath, archiveViewAt } from "./domain/archive-routes.ts";
+import { adminMatchSourcePath, archiveDocumentAt, archiveDocumentPath } from "./domain/archive-routes.ts";
 import {
   ArchiveNavigation,
   ArchiveHeader,
@@ -100,13 +100,7 @@ export default function App() {
       return leave;
     }, []),
   );
-  const [archiveEnabled, setArchiveEnabled] = useState(
-    () => archiveViewAt(window.location.pathname) !== "admin",
-  );
-  useEffect(() => {
-    if (requestedView !== "admin") setArchiveEnabled(true);
-  }, [requestedView]);
-  const archive = useArchive(archiveEnabled),
+  const archive = useArchive(requestedView !== "admin"),
     {
       family,
       user,
