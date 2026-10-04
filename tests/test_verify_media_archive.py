@@ -108,8 +108,8 @@ class MediaRestoreTests(unittest.TestCase):
         )
         original_open = verifier.os.open
         private_key_opens = []
-        def observe_open(path, flags, mode=0o777):
-            descriptor = original_open(path, flags, mode)
+        def observe_open(path, flags, mode=0o777, **kwargs):
+            descriptor = original_open(path, flags, mode, **kwargs)
             if str(path).endswith("ai-provider-cleanup.v1.key"):
                 self.assertEqual(mode, 0o600, "key must be created private before any input is read")
                 if verifier.os.name != "nt":
