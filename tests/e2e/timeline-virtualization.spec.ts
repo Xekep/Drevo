@@ -322,7 +322,21 @@ test("virtual rows retain event details and keyboard focus across unmounts and r
   test.skip(isMobile, "Desktop keyboard and the 899px row-height breakpoint");
   await fixture(page);
   const timeline = await enterTimeline(page);
+  await expect(page.getByLabel("Год в центре хронологии")).toHaveText("1950");
+  await expect
+    .poll(() =>
+      row(timeline, "window-000")
+        .locator(".timeline-life")
+        .evaluate(
+          (element) =>
+            new DOMMatrixReadOnly(getComputedStyle(element).transform).a,
+        ),
+    )
+    .toBeGreaterThan(0);
   await year(page, timeline, 1970);
+  const lifeProgress = await row(timeline, "window-000")
+    .locator(".timeline-life")
+    .evaluate((element) => getComputedStyle(element).transform);
   await expect(timeline.locator(".timeline-event-list")).toHaveCount(0);
   const events = row(timeline, "window-000")
     .locator(".timeline-event")
@@ -345,6 +359,12 @@ test("virtual rows retain event details and keyboard focus across unmounts and r
     element.scrollTop = 6400;
   });
   await expect(row(timeline, "window-000")).toHaveCount(0);
+  // A newly mounted person born in the same year must show the same elapsed
+  // life, even though only the vertical axis moved and its DOM did not exist.
+  await expect(row(timeline, "window-100").locator(".timeline-life")).toHaveCSS(
+    "transform",
+    lifeProgress,
+  );
   await timeline.evaluate((element) => {
     element.scrollTop = 0;
   });
@@ -403,6 +423,10 @@ test("virtual rows retain event details and keyboard focus across unmounts and r
     .toBe(62);
   await expectBounded(timeline, 200);
   await expect(row(timeline, lastId!).locator("summary").last()).toBeFocused();
+  await expect(row(timeline, lastId!).locator(".timeline-life")).toHaveCSS(
+    "transform",
+    lifeProgress,
+  );
   await page.setViewportSize({ width: 1280, height: 720 });
   await expect
     .poll(() =>
@@ -450,6 +474,15 @@ test("smooth focus remains on its person while intervening historical rows appea
   // while the requested row passes through the viewport.
   await page.waitForTimeout(900);
   await expectInViewport(timeline, "window-380", true);
+  // Returning from the current year to this person's birth must not retain
+  // the old horizontal progress while the distant row mounts and resizes.
+  const lifeProgress = await row(timeline, "window-380")
+    .locator(".timeline-life")
+    .evaluate(
+      (element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a,
+    );
+  expect(lifeProgress).toBeGreaterThan(0);
+  expect(lifeProgress).toBeLessThan(0.02);
 });
 
 test("small chronology retains animated row collapse instead of virtual spacers", async ({

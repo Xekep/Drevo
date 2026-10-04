@@ -222,6 +222,7 @@ export function HorizontalTimeline({
   const viewport = useRef<HTMLDivElement>(null);
   const board = useRef<HTMLDivElement>(null);
   const lifelines = useRef<HTMLElement[]>([]);
+  const currentScrollLeft = useRef(0);
   const yearLabel = useRef<HTMLOutputElement>(null);
   const drag = useRef<{
     x: number;
@@ -308,12 +309,12 @@ export function HorizontalTimeline({
     () => new Map(visibleRows.map((row, index) => [row.person.id, index])),
     [visibleRows],
   );
-  const syncViewport = useCallback(() => {
+  const syncViewport = useCallback((scrollTop?: number) => {
     const scroll = viewport.current;
     if (!scroll) return;
     const { height, rowHeight } = metrics.current;
     const next = {
-      top: Math.floor(scroll.scrollTop / rowHeight) * rowHeight,
+      top: Math.floor((scrollTop ?? scroll.scrollTop) / rowHeight) * rowHeight,
       height,
       rowHeight,
     };
@@ -362,30 +363,36 @@ export function HorizontalTimeline({
     const scroll = viewport.current;
     if (!scroll) return;
     const measure = () => {
+      // Read the viewport before writing custom properties. Reading computed
+      // style again after --timeline-pad changes forces a second style pass.
+      const style = getComputedStyle(scroll);
       const rail =
-        parseFloat(
-          getComputedStyle(scroll).getPropertyValue("--timeline-person-width"),
-        ) || 226;
-      scroll.style.setProperty(
-        "--timeline-pad",
-        `${Math.max(0, (scroll.clientWidth - rail) / 2)}px`,
-      );
-      scroll.style.setProperty(
-        "--timeline-viewport-height",
-        `${scroll.clientHeight}px`,
-      );
+        parseFloat(style.getPropertyValue("--timeline-person-width")) || 226;
       const rowHeight =
-        parseFloat(
-          getComputedStyle(scroll).getPropertyValue("--timeline-row-height"),
-        ) || 64;
+        parseFloat(style.getPropertyValue("--timeline-row-height")) || 64;
+      const width = scroll.clientWidth;
+      const height = scroll.clientHeight;
+      const scrollTop = scroll.scrollTop;
+      currentScrollLeft.current = scroll.scrollLeft;
       const previousHeight = metrics.current.rowHeight;
-      metrics.current = { height: scroll.clientHeight, rowHeight };
-      if (
+      metrics.current = { height, rowHeight };
+      const resizedRows =
         rowsRef.current.length > VIRTUAL_ROW_THRESHOLD &&
-        previousHeight !== rowHeight
+        previousHeight !== rowHeight;
+      const top = resizedRows
+        ? (scrollTop * rowHeight) / previousHeight
+        : scrollTop;
+      const pad = `${Math.max(0, (width - rail) / 2)}px`;
+      const viewportHeight = `${height}px`;
+      if (scroll.style.getPropertyValue("--timeline-pad") !== pad)
+        scroll.style.setProperty("--timeline-pad", pad);
+      if (
+        scroll.style.getPropertyValue("--timeline-viewport-height") !==
+        viewportHeight
       )
-        scroll.scrollTop = (scroll.scrollTop * rowHeight) / previousHeight;
-      syncViewport();
+        scroll.style.setProperty("--timeline-viewport-height", viewportHeight);
+      if (resizedRows) scroll.scrollTop = top;
+      syncViewport(top);
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -502,6 +509,8 @@ export function HorizontalTimeline({
     if (!scroll || !model.rows.length || initialScrollDone.current) return;
     initialScrollDone.current = true;
     scroll.scrollLeft = model.yearX(firstYear);
+    // Read the actual initial position once: the browser can clamp a setter.
+    currentScrollLeft.current = scroll.scrollLeft;
     setYear(firstYear);
   }, [firstYear, model]);
 
@@ -509,7 +518,7 @@ export function HorizontalTimeline({
     lifelines.current = Array.from(
       board.current?.querySelectorAll<HTMLElement>(".timeline-life") || [],
     );
-    revealLifelines(lifelines.current, viewport.current?.scrollLeft ?? 0);
+    revealLifelines(lifelines.current, currentScrollLeft.current);
   }, [renderedRows, model, mountedIndices]);
 
   useEffect(() => {
@@ -564,16 +573,22 @@ export function HorizontalTimeline({
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        const next = model.yearAtX(scroll.scrollLeft);
-        label.textContent = String(next);
-        syncViewport();
+        // Capture both axes before mutating the label or lifeline styles.
+        // Newly mounted rows use this same position without a layout read.
+        const left = scroll.scrollLeft;
+        const top = scroll.scrollTop;
+        currentScrollLeft.current = left;
+        const next = model.yearAtX(left);
+        const text = String(next);
+        if (label.textContent !== text) label.textContent = text;
+        syncViewport(top);
         const pending = pendingHorizontalFocus.current;
-        if (pending && Math.abs(scroll.scrollLeft - pending.left) <= 1) {
+        if (pending && Math.abs(left - pending.left) <= 1) {
           pendingHorizontalFocus.current = null;
           setHorizontalFocusReady(pending.token);
         }
-        if (scroll.scrollLeft !== previousLeft) {
-          previousLeft = scroll.scrollLeft;
+        if (left !== previousLeft) {
+          previousLeft = left;
           revealLifelines(lifelines.current, previousLeft);
         }
         setYear((current) => (current === next ? current : next));
@@ -608,7 +623,9 @@ export function HorizontalTimeline({
       left,
       behavior: scrollBehavior(),
     });
-    if (Math.abs(scroll.scrollLeft - left) <= 1) {
+    const actualLeft = scroll.scrollLeft;
+    currentScrollLeft.current = actualLeft;
+    if (Math.abs(actualLeft - left) <= 1) {
       pendingHorizontalFocus.current = null;
       setHorizontalFocusReady(focusToken);
     }

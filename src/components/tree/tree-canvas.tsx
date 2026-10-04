@@ -956,9 +956,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     ],
   );
   const connections = useMemo(() => archiveConnections(renderFamily), [renderFamily]);
-  const preparedEdges = useMemo(
-    () =>
-      prepareTreeEdges({
+  const readPreparedEdges = useMemo(
+    () => {
+      let prepared: ReturnType<typeof prepareTreeEdges> | undefined;
+      return () => prepared ??= prepareTreeEdges({
         mode: layoutMode,
         geometry,
         connections,
@@ -974,7 +975,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         onChoices: setEdgeChoices,
         growthDelays,
         crossingPaths: cachedCrossingPaths,
-      }),
+      });
+    },
     [
       layoutMode,
       geometry,
@@ -992,15 +994,25 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       cachedCrossingPaths,
     ],
   );
+  const readDisplayEdges = useMemo(
+    () => {
+      let edges: RelationshipEdgeType[] | undefined;
+      return () => edges ??= applyTreeEdgePermissions(readPreparedEdges(), {
+        family: renderFamily,
+        user,
+        peopleMap,
+        canEdit: props.canEdit,
+        busy: props.busy,
+      });
+    },
+    [readPreparedEdges, renderFamily, user, peopleMap, props.canEdit, props.busy],
+  );
+  // Chronology does not draw graph edges. Keep their preparation lazy so
+  // searching its rows cannot reroute the hidden tree; exports can still read
+  // the current geometry and permissions from their committed snapshot.
   const displayEdges = useMemo(
-    () => applyTreeEdgePermissions(preparedEdges, {
-      family: renderFamily,
-      user,
-      peopleMap,
-      canEdit: props.canEdit,
-      busy: props.busy,
-    }),
-    [preparedEdges, renderFamily, user, peopleMap, props.canEdit, props.busy],
+    () => mode === "timeline" ? [] : readDisplayEdges(),
+    [mode, readDisplayEdges],
   );
   const settledGeometry = useRef<typeof geometry>(null);
   const committedScene = useRef<{
@@ -1288,7 +1300,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     extraVisible,
     tree: {
       nodes: displayNodes,
-      edges: displayEdges,
+      get edges() { return readDisplayEdges(); },
       actions,
       title: family.title,
       white: props.colorScheme === "white",
@@ -1303,13 +1315,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       extraVisible,
       tree: {
         nodes: displayNodes,
-        edges: displayEdges,
+        get edges() { return readDisplayEdges(); },
         actions,
         title: family.title,
         white: props.colorScheme === "white",
       },
     };
-  }, [ready, layoutBusy, displayNodes, displayEdges, actions, family, reverse, extraVisible, props.colorScheme]);
+  }, [ready, layoutBusy, displayNodes, readDisplayEdges, actions, family, reverse, extraVisible, props.colorScheme]);
   useImperativeHandle(
     exportRef,
     () => {
