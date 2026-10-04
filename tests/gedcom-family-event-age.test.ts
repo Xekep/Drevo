@@ -98,6 +98,28 @@ test("new family AGE beside Drevo metadata is preserved without duplicating exis
   assert.equal(samePerson.biography?.includes("22y") || false, false);
   assert.equal(duplicate.warnings.some((warning) => /AGE.*не перенесён/.test(warning)), false);
 
+  const sameAge = addHusbandAge("22y");
+  const dateLine = "1 MARR Y\r\n2 HUSB\r\n3 AGE 22y\r\n2 DATE 1 JAN 1900";
+  assert.ok(sameAge.includes(dateLine));
+  for (const [label, changed] of [
+    ["qualified", sameAge.replace(dateLine,
+      "1 MARR Y\r\n2 HUSB\r\n3 AGE 22y\r\n2 DATE ABT 1910")],
+    ["missing", sameAge.replace(dateLine,
+      "1 MARR Y\r\n2 HUSB\r\n3 AGE 22y")],
+    ["period", sameAge.replace(dateLine,
+      "1 MARR Y\r\n2 HUSB\r\n3 AGE 22y\r\n2 DATE FROM 1900 TO 1910")],
+    ["phrase", sameAge.replace(dateLine,
+      "1 MARR Y\r\n2 HUSB\r\n3 AGE 22y\r\n2 DATE 1 JAN 1900\r\n3 PHRASE winter ceremony")],
+  ] as const) {
+    const result = importGedcom(changed, `changed-date-${label}`);
+    const biography = result.family.people[0].biography || "";
+    assert.match(biography, /22y/);
+    if (label === "qualified") assert.match(biography, /ABT 1910/);
+    if (label === "period") assert.match(biography, /FROM 1900 TO 1910/);
+    if (label === "phrase") assert.match(biography, /DATE.PHRASE: winter ceremony/);
+    assert.ok(result.warnings.some((warning) => /AGE/.test(warning) && /биограф/.test(warning)));
+  }
+
   const added = importGedcom(addHusbandAge("29y", "from family record"), "added-age");
   const person = added.family.people[0];
   assert.match(person.biography || "", /MARR/);

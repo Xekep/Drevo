@@ -1318,15 +1318,19 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         } else {
           const ageText = familyEventAges.get(e)?.get(p.id) || [];
           if (!ageText.length) continue;
-          const date = gedcomDate(value(e, "DATE"));
+          const rawDate = value(e, "DATE");
+          const date = gedcomDate(rawDate);
+          const datePhrase = child(e, "DATE") ? value(child(e, "DATE")!, "PHRASE") : "";
           const place = value(e, "PLAC");
           // Export may assign HUSB/WIFE roles differently from the original
           // file. The person, event and complete AGE text identify an existing
           // flattened value without treating the old role as a new age.
           const ageValues = ageText.map((text) => text.replace(/^(?:HUSB|WIFE): /, ""));
-          const matchingEvents = (p.events || []).filter((item) =>
-            item.gedcomTag === e.tag && (!date || item.date === date) &&
-            (!place || item.place === place));
+          // An unknown, qualified or absent DATE (or an absent PLAC) cannot
+          // identify the old event. Keep the new source context explicitly.
+          const matchingEvents = date && place ? (p.events || []).filter((item) =>
+            item.gedcomTag === e.tag && item.date === date &&
+            item.place === place && (item.dateText || "") === datePhrase) : [];
           const alreadyInEvent = matchingEvents.length === 1 &&
             ageValues.every((text) => matchingEvents[0].description?.split("\n").some((line) =>
               line.endsWith(text)));
@@ -1336,7 +1340,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           }
           const note = [
             `Исходный возраст семейного события GEDCOM ${f.xref || "FAM"}.${e.tag}:`,
-            ...(value(e, "DATE") ? [`DATE: ${value(e, "DATE")}`] : []),
+            ...(rawDate ? [`DATE: ${rawDate}`] : []),
+            ...(datePhrase ? [`DATE.PHRASE: ${datePhrase}`] : []),
             ...(place ? [`PLAC: ${place}`] : []),
             ...ageText,
           ].join("\n");
