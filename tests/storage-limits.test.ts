@@ -11,7 +11,6 @@ import {
   DEFAULT_STORAGE_LIMITS,
   parseStorageLimits,
 } from "../src/shared/storage-limits.ts";
-import { MAX_PDF_BYTES } from "../src/shared/upload-limits.ts";
 import {
   readStorageLimits,
   writeStorageLimits,
@@ -182,7 +181,7 @@ test("lowering a storage limit still allows attaching an already-counted upload"
   }
 });
 
-test("PDF accepts 50 MiB, rejects larger uploads and reserves actual small request size", async () => {
+test("PDF accepts 100 MiB, rejects larger uploads and reserves actual small request size", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-pdf-limit-"));
   const app = await startServer(0, join(dir, "db.sqlite"), true);
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
@@ -193,7 +192,7 @@ test("PDF accepts 50 MiB, rejects larger uploads and reserves actual small reque
     ),
   };
   try {
-    const large = Buffer.alloc(MAX_PDF_BYTES, 32);
+    const large = Buffer.alloc(100 * 1024 * 1024, 32);
     large.write("%PDF-1.4\n%%EOF\n");
     const response = await fetch(base + "/api/documents", {
       method: "POST",
@@ -204,7 +203,7 @@ test("PDF accepts 50 MiB, rejects larger uploads and reserves actual small reque
     const { id } = await response.json();
     assert.equal(
       (await (await fetch(base + `/api/documents/${id}`)).json()).size,
-      MAX_PDF_BYTES,
+      large.length,
     );
     const oversized = await new Promise<number | undefined>(
       (resolve, reject) => {
@@ -214,7 +213,7 @@ test("PDF accepts 50 MiB, rejects larger uploads and reserves actual small reque
             method: "POST",
             headers: {
               ...headers,
-              "Content-Length": String(MAX_PDF_BYTES + 1),
+              "Content-Length": String(large.length + 1),
             },
           },
           (res) => {
@@ -227,6 +226,13 @@ test("PDF accepts 50 MiB, rejects larger uploads and reserves actual small reque
       },
     );
     assert.equal(oversized, 413);
+    const oversizedTiff = await fetch(base + "/api/documents", {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "image/tiff" },
+      body: large.subarray(0, 50 * 1024 * 1024 + 1),
+    });
+    assert.equal(oversizedTiff.status, 413, "TIFF remains limited to 50 MiB");
+    assert.match((await oversizedTiff.json()).error, /TIFF.*50/);
     await fetch(base + `/api/documents/${id}`, { method: "DELETE" });
     const limits = { ...DEFAULT_STORAGE_LIMITS, admin: 1 };
     await app.archive.db.transaction(() =>
@@ -240,7 +246,7 @@ test("PDF accepts 50 MiB, rejects larger uploads and reserves actual small reque
     assert.equal(
       small.status,
       201,
-      "a tiny PDF does not reserve the full 50 MiB",
+      "a tiny PDF does not reserve the full 100 MiB",
     );
     await app.archive.db.transaction(() =>
       writeStorageLimits(

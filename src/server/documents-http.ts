@@ -1474,7 +1474,7 @@ export function documentsHttp({
       if (!fileType)
         return json(res, 415, { error: "Загрузите PDF или изображение TIFF, JPEG, PNG, WebP, GIF" });
       const sizeLimitMessage = ["pdf", "tif"].includes(fileType.extension)
-        ? "PDF или TIFF должен быть не больше 50 МБ"
+        ? `${fileType.extension === "pdf" ? "PDF" : "TIFF"} должен быть не больше ${fileType.maxBytes / 1024 / 1024} МБ`
         : "Изображение должно быть не больше 20 МБ";
       if (Number(req.headers["content-length"] || 0) > fileType.maxBytes)
         return json(res, 413, { error: sizeLimitMessage });

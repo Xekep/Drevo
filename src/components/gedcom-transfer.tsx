@@ -155,7 +155,7 @@ export function GedcomTransfer({
       <h2>Импорт</h2>
       <p>
         GEDCOM 5.5.1 / 7 — до 32 МиБ, GEDZIP — до 512 МиБ, XML с вложениями — до
-        256 МиБ; PDF — до 50 МБ, фото — до 20 МБ. XML с папкой .files упакуйте в
+        256 МиБ; PDF — до 100 МБ, TIFF — до 50 МБ, фото — до 20 МБ. XML с папкой .files упакуйте в
         один ZIP.
       </p>
       <label>

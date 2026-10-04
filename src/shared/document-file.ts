@@ -1,4 +1,4 @@
-import { MAX_PDF_BYTES, MAX_PHOTO_BYTES } from "./upload-limits.ts";
+import { MAX_PDF_BYTES, MAX_PHOTO_BYTES, MAX_TIFF_BYTES } from "./upload-limits.ts";
 
 export type DocumentFileType = {
   extension: "pdf" | "jpg" | "png" | "webp" | "gif" | "tif";
@@ -14,8 +14,8 @@ const types: Record<string, DocumentFileType> = {
   png: { extension: "png", mime: "image/png", maxBytes: MAX_PHOTO_BYTES },
   webp: { extension: "webp", mime: "image/webp", maxBytes: MAX_PHOTO_BYTES },
   gif: { extension: "gif", mime: "image/gif", maxBytes: MAX_PHOTO_BYTES },
-  tif: { extension: "tif", mime: "image/tiff", maxBytes: MAX_PDF_BYTES },
-  tiff: { extension: "tif", mime: "image/tiff", maxBytes: MAX_PDF_BYTES },
+  tif: { extension: "tif", mime: "image/tiff", maxBytes: MAX_TIFF_BYTES },
+  tiff: { extension: "tif", mime: "image/tiff", maxBytes: MAX_TIFF_BYTES },
 };
 
 export function documentFileTypeFromName(

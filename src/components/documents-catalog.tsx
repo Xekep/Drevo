@@ -129,7 +129,7 @@ export function DocumentsCatalog({
       }
       if (next.size > type.maxBytes) {
         setUploadError(["pdf", "tif"].includes(type.extension)
-          ? "PDF или TIFF должен быть не больше 50 МБ"
+          ? `${type.extension === "pdf" ? "PDF" : "TIFF"} должен быть не больше ${type.maxBytes / 1024 / 1024} МБ`
           : "Изображение должно быть не больше 20 МБ");
         setFile(null);
         return;
@@ -500,7 +500,7 @@ export function DocumentsCatalog({
           <div className="documents-drop-overlay" role="status">
             <Upload size={48} strokeWidth={1.4} aria-hidden="true" />
             <b>Перетащите документ сюда</b>
-            <span>PDF до 50 МБ или изображение до 20 МБ</span>
+            <span>PDF до 100 МБ, TIFF до 50 МБ или изображение до 20 МБ</span>
           </div>,
           document.body,
         )}
@@ -565,7 +565,7 @@ export function DocumentsCatalog({
             <strong>
               {file ? file.name : "Перетащите документ сюда"}
             </strong>
-            <span>PDF до 50 МБ, изображение до 20 МБ · людей можно привязать позже</span>
+            <span>PDF до 100 МБ, TIFF до 50 МБ, изображение до 20 МБ · людей можно привязать позже</span>
             <span className="documents-file-picker">
               {file ? "Выбрать другой файл" : "Выбрать файл"}
             </span>
