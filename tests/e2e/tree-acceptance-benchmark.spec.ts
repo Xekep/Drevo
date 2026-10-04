@@ -541,7 +541,7 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
   // The minimum zoom may still crop a wide archive; exhaustive atlas capacity
   // is covered separately by the cache tests, without assuming all cards fit.
   if (!isMobile) {
-    await page.getByRole("button", { name: "Вписать видимую часть дерева" }).click();
+    await page.getByRole("button", { name: "Вписать видимую часть древа" }).click();
     await waitForMediaIdle();
     await expect.poll(async () => page.locator(".tree-gpu-scene").evaluate((canvas) => {
       const node = canvas as HTMLCanvasElement;

@@ -58,7 +58,7 @@ export function archiveDeletionHttp(
     if (!deletion.available)
       return respond(404, { error: "Удаление здесь недоступно" });
     const actor = await auth.currentUser(req);
-    if (!actor) return respond(401, { error: "Требуется вход в дерево" });
+    if (!actor) return respond(401, { error: "Требуется вход в древо" });
     const session = await auth.accountSession(req);
     if (!session || session.accountId !== actor.id)
       return respond(401, { error: "Сессия завершена. Войдите снова" });
@@ -94,7 +94,7 @@ export function archiveDeletionHttp(
       return respond(status, {
         error:
           status === 500
-            ? "Не удалось удалить дерево. Данные сохранены, попробуйте позже"
+            ? "Не удалось удалить древо. Данные сохранены, попробуйте позже"
             : (error as Error).message,
       });
     }

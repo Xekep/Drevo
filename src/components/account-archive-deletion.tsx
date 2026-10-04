@@ -25,7 +25,7 @@ export function AccountArchiveDeletion() {
       const response = await archiveFetch("/api/account/archive-deletion");
       const value = await response.json();
       if (!response.ok)
-        throw new Error(value.error || "Не удалось проверить дерево");
+        throw new Error(value.error || "Не удалось проверить древо");
       setPlan(value as DeletionPlan);
     } catch (cause) {
       setError((cause as Error).message);
@@ -49,7 +49,7 @@ export function AccountArchiveDeletion() {
       });
       const value = await response.json();
       if (!response.ok)
-        throw new Error(value.error || "Не удалось удалить дерево");
+        throw new Error(value.error || "Не удалось удалить древо");
       window.location.assign("/account");
     } catch (cause) {
       setError((cause as Error).message);
@@ -61,11 +61,11 @@ export function AccountArchiveDeletion() {
     <div className="account-archive-deletion">
       {!open ? (
         <button type="button" onClick={() => void showPlan()}>
-          Удалить это дерево
+          Удалить это древо
         </button>
       ) : (
         <div className="account-archive-deletion-form">
-          <strong>Удаление дерева</strong>
+          <strong>Удаление древа</strong>
           {busy && !plan && <p>Проверяем данные…</p>}
           {plan && (
             <>
@@ -86,14 +86,14 @@ export function AccountArchiveDeletion() {
                     }
                   />
                   <span>
-                    Понимаю, что доступ к дереву потеряют ещё{" "}
+                    Понимаю, что доступ к древу потеряют ещё{" "}
                     {plan.otherMembers} участников. Вместо удаления можно
                     передать владение участнику.
                   </span>
                 </label>
               )}
               <label>
-                Для подтверждения введите название дерева
+                Для подтверждения введите название древа
                 <input
                   type="text"
                   value={title}
@@ -112,7 +112,7 @@ export function AccountArchiveDeletion() {
                   }
                   onClick={() => void remove()}
                 >
-                  {busy ? "Удаляем…" : "Удалить дерево и файлы"}
+                  {busy ? "Удаляем…" : "Удалить древо и файлы"}
                 </button>
                 <button
                   type="button"

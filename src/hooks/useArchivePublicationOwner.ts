@@ -21,9 +21,9 @@ export function useArchivePublicationOwner(
       .then(async (response) => {
         // The legacy single-archive SQLite deployment has no owner directory.
         if (response.status === 501) return "owner" as const;
-        if (!response.ok) throw new Error("Не удалось проверить владельца дерева");
+        if (!response.ok) throw new Error("Не удалось проверить владельца древа");
         const data = await response.json() as { archives?: Array<{ current: boolean; owned: boolean }> };
-        if (!Array.isArray(data.archives)) throw new Error("Некорректный список деревьев");
+        if (!Array.isArray(data.archives)) throw new Error("Некорректный список древ");
         return data.archives.some((item) => item.current && item.owned) ? "owner" as const : "other" as const;
       })
       .then((status) => {

@@ -965,7 +965,6 @@ export default function App() {
                   publicationOwnership={publicationOwnership}
                   onClose={() => navigate("tree")}
                   onChanged={archive.reload}
-                  onSettings={() => setSettings(true)}
                   save={save}
                   canEdit={canEdit && desktop}
                 />

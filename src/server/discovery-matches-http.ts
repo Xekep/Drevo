@@ -260,7 +260,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
     const detail = /^\/api\/discovery\/matches\/([a-f0-9-]{36})$/.exec(url.pathname);
     if (!collection && !ownPeople && !candidates && !relativeConsents && !ignoredCandidates && !ignoredArchives && !detail) return false;
     if (db.kind !== "postgres" || !db.archiveId)
-      return json(res, 501, { error: "Сопоставление деревьев доступно с PostgreSQL" });
+      return json(res, 501, { error: "Сопоставление древ доступно с PostgreSQL" });
     const archiveId = db.archiveId;
     const isOwner = async (userId: string, lock = false) => !!await db.prepare("",
       `SELECT 1 FROM archive_owners WHERE archive_id=? AND user_id=? ${lock ? "FOR SHARE" : ""}`,
@@ -268,7 +268,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
     const user = await auth.currentUser(req);
     if (!user) return json(res, 401, { error: "Войдите в архив" });
     if (!isArchiveOwner(user) || user.approved !== true || !await isOwner(user.id))
-      return json(res, 403, { error: "Сопоставлять людей может владелец дерева" });
+      return json(res, 403, { error: "Сопоставлять людей может владелец древа" });
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
     const deliverMutationMatch = (initial: Row) => db.transaction(async () => {
@@ -475,7 +475,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       const ignored = body?.ignored;
       if (typeof targetArchiveId !== "string" || !archivePattern.test(targetArchiveId) ||
           targetArchiveId === archiveId || typeof ignored !== "boolean")
-        return json(res, 400, { error: "Выберите другое опубликованное дерево" });
+        return json(res, 400, { error: "Выберите другое опубликованное древо" });
       const approved = await auth.currentUser(req);
       if (!isArchiveOwner(approved) || approved?.approved !== true || !await isOwner(approved.id))
         return json(res, 403, { error: "Доступ отозван" });
@@ -488,7 +488,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         }
         const visible = await db.prepare("", `SELECT 1 FROM discovery_people
           WHERE archive_id=? LIMIT 1`).get(targetArchiveId);
-        if (!visible) return { code: 409, error: "В этом дереве больше нет опубликованных карточек" };
+        if (!visible) return { code: 409, error: "В этом древе больше нет опубликованных карточек" };
         await db.prepare("", `INSERT INTO discovery_ignored_archives(
           archive_id,target_archive_id,ignored_by) VALUES(?,?,?) ON CONFLICT DO NOTHING`)
           .run(archiveId,targetArchiveId,approved.id);

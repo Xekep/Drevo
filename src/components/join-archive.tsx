@@ -96,13 +96,13 @@ export function JoinArchive({
             <p>
               Вы сможете{" "}
               {preview.role === "reader"
-                ? "смотреть дерево"
+                ? "смотреть древо"
                 : "добавлять свои сведения"}{" "}
               вместе с родственниками.
             </p>
             <div className="join-archive-privacy">
               <ShieldCheck size={18} aria-hidden="true" /> Доступ действует
-              только для этого дерева.
+              только для этого древа.
             </div>
             {account ? (
               <>
@@ -134,7 +134,7 @@ export function JoinArchive({
         ) : (
           <>
             <h1 id="join-archive-title">Приглашение недоступно</h1>
-            <p>Попросите владельца дерева отправить новую ссылку.</p>
+            <p>Попросите владельца древа отправить новую ссылку.</p>
           </>
         )}
         {error && (

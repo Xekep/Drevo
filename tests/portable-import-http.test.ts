@@ -330,7 +330,7 @@ test("private package preview and one-time import preserve people, media, docume
       body: Buffer.from("invalid archive"),
     });
     assert.equal(occupied.status, 409, "catalog-only archives are not empty");
-    assert.match((await occupied.json() as { error: string }).error, /только в пустое дерево/);
+    assert.match((await occupied.json() as { error: string }).error, /только в пустое древо/);
     assert.equal((await archive.read()).revision, initialRevision);
     assert.equal(
       (await archive.db.prepare("SELECT data FROM source_catalog WHERE id=?").get("existing-source"))?.data,

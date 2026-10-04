@@ -35,8 +35,8 @@ export function TreeCameraTools({
       <i />
       <button
         disabled={disabled}
-        title="Вписать видимую часть дерева"
-        aria-label="Вписать видимую часть дерева"
+        title="Вписать видимую часть древа"
+        aria-label="Вписать видимую часть древа"
         onClick={() => void fitTree({ padding: 0.2, maxZoom: 1 })}
       >
         <Maximize2 size={18} />

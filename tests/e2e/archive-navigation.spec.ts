@@ -275,10 +275,10 @@ test("account cabinet shows the owner's current tier and quotas", async ({
   await expect(page.getByText("42 из 150")).toBeVisible();
   await expect(page.getByText("120 МБ из 500 МБ")).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /Скачать дерево с фото и документами/ }),
+    page.getByRole("link", { name: /Скачать древо с фото и документами/ }),
   ).toHaveAttribute("href", "/api/gedcom/export?format=gedzip7");
   await expect(
-    page.getByRole("link", { name: /Скачать данные дерева/ }),
+    page.getByRole("link", { name: /Скачать данные древа/ }),
   ).toHaveAttribute("href", "/api/gedcom/export?format=gedcom7");
   await expect(
     page.getByRole("link", { name: /Скачать полный переносимый архив/ }),
@@ -350,7 +350,7 @@ test("empty archive owner previews a portable import before applying", async ({
     }),
   );
   await page.goto("/account");
-  await expect(page.getByText("Перенести архив в пустое дерево")).toBeVisible();
+  await expect(page.getByText("Перенести архив в пустое древо")).toBeVisible();
   await page.getByLabel("Файл .drevo").setInputFiles({
     name: "family.drevo",
     mimeType: "application/zip",
@@ -361,18 +361,18 @@ test("empty archive owner previews a portable import before applying", async ({
     page.locator(".account-portable-preview").getByText("Семейный архив"),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Импортировать в это дерево" }),
+    page.getByRole("button", { name: "Импортировать в это древо" }),
   ).toBeEnabled();
   overLimit = true;
   await page.getByRole("button", { name: "Проверить файл" }).click();
   await expect(
-    page.getByRole("button", { name: "Импортировать в это дерево" }),
+    page.getByRole("button", { name: "Импортировать в это древо" }),
   ).toBeDisabled();
   await expect(page.getByRole("alert")).toContainText("Лимит людей: 150");
   unsupported = true;
   await page.getByRole("button", { name: "Проверить файл" }).click();
   await expect(page.getByRole("alert")).toContainText("неподдерживаемые поля");
-  await expect(page.getByRole("button", { name: "Импортировать в это дерево" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Импортировать в это древо" })).toHaveCount(0);
 });
 
 test("account cabinet hides archive export from a non-owner", async ({
@@ -382,11 +382,11 @@ test("account cabinet hides archive export from a non-owner", async ({
     route.fulfill({ json: { available: true, owned: false } }),
   );
   await page.goto("/account");
-  await expect(page.getByRole("link", { name: /Скачать дерево/ })).toHaveCount(
+  await expect(page.getByRole("link", { name: /Скачать древо/ })).toHaveCount(
     0,
   );
   await expect(
-    page.getByRole("link", { name: /Скачать данные дерева/ }),
+    page.getByRole("link", { name: /Скачать данные древа/ }),
   ).toHaveCount(0);
 });
 
@@ -404,7 +404,7 @@ test("owner is not offered portable import when only catalog data occupies the a
     mediaLimitBytes: 500_000_000,
   } }));
   await page.goto("/account");
-  await expect(page.getByText("Перенести архив в пустое дерево")).toHaveCount(0);
+  await expect(page.getByText("Перенести архив в пустое древо")).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Скачать полный переносимый архив/ })).toBeVisible();
 });
 
@@ -477,7 +477,7 @@ test("owner can choose a member and propose a transfer in the account cabinet", 
   await page.goto("/account");
   await page.getByRole("button", { name: "Передать владение" }).click();
   await expect(page.getByRole("button", { name: "Борис Иванов" })).toBeDisabled();
-  await expect(page.getByText(/сейчас не может принять дерево/)).toBeVisible();
+  await expect(page.getByText(/сейчас не может принять древо/)).toBeVisible();
   await page.getByRole("button", { name: "Анна Иванова" }).click();
   await page.getByRole("button", { name: "Предложить передачу" }).click();
   await expect(page.getByText("Ожидаем согласия: Анна Иванова")).toBeVisible();
@@ -545,11 +545,11 @@ test("deleting a personal tree requires its name and collaborator consent", asyn
       .then((response) => route.fulfill({ response }));
   });
   await page.goto("/a/test-archive/account");
-  await page.getByRole("button", { name: "Удалить это дерево" }).click();
-  const confirm = page.getByRole("button", { name: "Удалить дерево и файлы" });
+  await page.getByRole("button", { name: "Удалить это древо" }).click();
+  const confirm = page.getByRole("button", { name: "Удалить древо и файлы" });
   await expect(confirm).toBeDisabled();
   await page
-    .getByLabel("Для подтверждения введите название дерева")
+    .getByLabel("Для подтверждения введите название древа")
     .fill("Моё дерево");
   await expect(confirm).toBeDisabled();
   await page.getByRole("checkbox").check();
@@ -584,7 +584,7 @@ test("an account with no tree can create a new private tree", async ({
     return route.fulfill({ json: { archives: [] } });
   });
   await page.goto("/account");
-  await page.getByRole("button", { name: "Создать новое дерево" }).click();
+  await page.getByRole("button", { name: "Создать новое древо" }).click();
   await expect.poll(() => created).toBe(true);
   await expect(page).toHaveURL(/\/a\/new-tree\/tree$/);
 });
@@ -679,7 +679,7 @@ test("an invited member can create their own private tree", async ({
   });
   await page.goto("/account");
   await expect(page.getByText("Дерево родственника")).toBeVisible();
-  await page.getByRole("button", { name: "Создать новое дерево" }).click();
+  await page.getByRole("button", { name: "Создать новое древо" }).click();
   await expect.poll(() => created).toBe(true);
   await expect(page).toHaveURL(/\/a\/new-tree\/tree$/);
 });

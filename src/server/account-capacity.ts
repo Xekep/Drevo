@@ -93,7 +93,7 @@ export async function platformOwnedArchiveCapacity(client: pg.PoolClient, accoun
       `SELECT 1 FROM archive_owners WHERE archive_id=$1 AND user_id=$2
        FOR SHARE NOWAIT`, [archiveId, accountId]);
     if (!lockedOwner.rowCount) throw new PlatformAccessBusy(
-      "Владелец дерева изменился. Повторите проверку расхода");
+      "Владелец древа изменился. Повторите проверку расхода");
     await client.query("SET LOCAL statement_timeout='3s'");
     const usage = await client.query<{ people: string; media_bytes: string; unindexed: boolean }>(
       `WITH referenced AS (${postgresMediaReferencesSql}) SELECT

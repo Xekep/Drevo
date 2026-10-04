@@ -68,9 +68,9 @@ async function ownsAnyArchive(db: StoreDatabase, accountId: string) {
 async function basicCapacityError(db: StoreDatabase, currentOwnerId: string) {
   const capacity = await accountCapacity(db, currentOwnerId);
   if (!capacity.available || !capacity.owned)
-    return "Не удалось проверить квоту дерева";
+    return "Не удалось проверить квоту древа";
   if (capacity.people > capacity.peopleLimit)
-    return "Дерево превышает лимит 150 человек для базового аккаунта получателя";
+    return "Древо превышает лимит 150 человек для базового аккаунта получателя";
   if (
     capacity.mediaBytes === null ||
     capacity.mediaBytes > capacity.mediaLimitBytes
@@ -97,9 +97,9 @@ async function assertCanOwn(
     )
     .get(targetId);
   if (!target)
-    throw new ConflictError("Получатель больше не участвует в этом дереве");
+    throw new ConflictError("Получатель больше не участвует в этом древе");
   if (await ownsAnyArchive(db, targetId))
-    throw new ConflictError("Получатель уже владеет другим деревом");
+    throw new ConflictError("Получатель уже владеет другим древом");
   if (!target.full_access) {
     const error = await basicCapacityError(db, currentOwnerId);
     if (error) throw new ConflictError(error);
@@ -111,7 +111,7 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
   async function requirePostgres() {
     if (db.kind !== "postgres")
       throw new ConflictError(
-        "Передача владения доступна для личных деревьев PostgreSQL",
+        "Передача владения доступна для личных древ PostgreSQL",
       );
   }
 
@@ -151,7 +151,7 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
         await assertCurrentArchiveActor(db, actor);
         if ((await ownerId(db)) !== actor.id)
           throw new ForbiddenError(
-            "Только владелец может предложить передачу дерева",
+            "Только владелец может предложить передачу древа",
           );
         const rows = await db
           .prepare(
@@ -194,10 +194,10 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
         await assertCurrentArchiveActor(transaction, actor);
         if ((await ownerId(transaction, true)) !== actor.id)
           throw new ForbiddenError(
-            "Только владелец может предложить передачу дерева",
+            "Только владелец может предложить передачу древа",
           );
         if (!targetId || targetId === actor.id)
-          throw new ConflictError("Выберите другого участника дерева");
+          throw new ConflictError("Выберите другого участника древа");
         const target = await assertCanOwn(transaction, actor.id, targetId);
         const now = Date.now();
         await transaction
@@ -213,7 +213,7 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
           .run(actor.id, targetId, now, now + PROPOSAL_LIFETIME);
         await auditStore(transaction).record(
           {
-            action: "Предложена передача владения деревом",
+            action: "Предложена передача владения древом",
             entity: "user",
             entityId: targetId,
             label: target.name,
@@ -266,7 +266,7 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
           .run(actor.id, currentOwner);
         if (updated.changes !== 1)
           throw new ConflictError(
-            "Владелец дерева изменился. Обновите страницу",
+            "Владелец древа изменился. Обновите страницу",
           );
         await transaction
           .prepare(
@@ -283,7 +283,7 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
           .run();
         await auditStore(transaction).record(
           {
-            action: "Передано владение деревом",
+            action: "Передано владение древом",
             entity: "user",
             entityId: actor.id,
             label: transfer.target_name,
@@ -322,7 +322,7 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
           .run();
         await auditStore(transaction).record(
           {
-            action: "Отменена передача владения деревом",
+            action: "Отменена передача владения древом",
             entity: "user",
             entityId: transfer.to_user_id,
             label: transfer.target_name,

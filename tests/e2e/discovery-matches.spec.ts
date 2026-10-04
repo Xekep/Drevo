@@ -36,11 +36,11 @@ test("a selected tree card opens matching with its exact published source", asyn
   });
   await page.goto("/a/tree-a/tree");
   await page.getByTestId("rf__node-e2e-memorial-person").click();
-  const handoff = page.getByRole("link", { name: "Найти совпадения в других деревьях" });
+  const handoff = page.getByRole("link", { name: "Найти совпадения в других древах" });
   await expect(handoff).toHaveAttribute("href", "/a/tree-a/manage/matches/from/e2e-memorial-person");
   await handoff.click();
   await expect(page).toHaveURL(/\/a\/tree-a\/manage\/matches\/from\/e2e-memorial-person$/);
-  await expect(page.getByRole("heading", { name: "Карточка из вашего дерева" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Карточка из вашего древа" })).toBeVisible();
   await page.getByRole("button", { name: /Иван Петров.*Совпадают имена/ }).click();
   await expect(page.getByRole("heading", { name: "Проверьте обе карточки" })).toBeVisible();
   await page.getByRole("button", { name: "Предложить сопоставление" }).click();
@@ -73,11 +73,11 @@ test("an unpublished source can be published before matching", async ({ page }) 
         birthPlace: false, deathPlace: false }, person: { name: "Иван Тестов" } } });
   });
   await page.goto("/a/tree-a/manage/matches/from/e2e-memorial-person");
-  await expect(page.getByRole("heading", { name: "Карточка из вашего дерева" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Карточка из вашего древа" })).toHaveCount(0);
   await page.getByRole("button", { name: "Открыть публикацию карточки" }).click();
   await page.getByRole("button", { name: "Опубликовать в поиске" }).click();
   await page.getByRole("button", { name: "Закрыть", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Карточка из вашего дерева" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Карточка из вашего древа" })).toBeVisible();
   await expect(page.getByText("Иван Тестов").first()).toBeVisible();
 });
 
@@ -96,7 +96,7 @@ test("a non-owner does not get the cross-tree handoff on a tree card", async ({ 
   ] } }));
   await page.goto("/a/tree-a/tree");
   await page.getByTestId("rf__node-e2e-memorial-person").click();
-  await expect(page.getByRole("link", { name: "Найти совпадения в других деревьях" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Найти совпадения в других древах" })).toHaveCount(0);
 });
 
 test("a published-card link preselects its exact target for an owning archive", async ({ page }) => {
@@ -132,7 +132,7 @@ test("a published-card link preselects its exact target for an owning archive", 
     return route.fulfill({ json: { archiveId: "tree-a", matches: [], nextCursor: null } });
   });
   await page.goto("/discover/person/tree-b/person-b");
-  const handoff = page.getByRole("link", { name: "Открыть сопоставление в дереве «Моё дерево»" });
+  const handoff = page.getByRole("link", { name: "Открыть сопоставление в древе «Моё дерево»" });
   await expect(handoff).toHaveAttribute("href", "/a/tree-a/manage/matches/target/tree-b/person-b");
   await expect(page.getByRole("link", { name: /Дерево адресата|Чужое дерево/ })).toHaveCount(0);
   await handoff.click();
@@ -201,8 +201,8 @@ test("archive admin proposes a match using only two published cards", async ({ p
     }] : [], nextCursor: null } });
   });
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
-  await page.getByRole("searchbox", { name: "Человек из этого дерева" }).fill("Иван");
+  await openAdminSection(page, "matches", "Связи древ");
+  await page.getByRole("searchbox", { name: "Человек из этого древа" }).fill("Иван");
   await page.getByRole("button", { name: /Иван Петров.*1900/ }).click();
   await expect(page.getByText(/Год рождения близок/)).toBeVisible();
   await page.getByRole("button", { name: "Не тот" }).click();
@@ -210,13 +210,13 @@ test("archive admin proposes a match using only two published cards", async ({ p
   await page.getByRole("button", { name: "Вернуть", exact: true }).click();
   await page.getByRole("button", { name: "К предложениям" }).click();
   await expect(page.getByText(/Год рождения близок/)).toBeVisible();
-  await page.getByRole("button", { name: "Скрыть дерево" }).click();
+  await page.getByRole("button", { name: "Скрыть древо" }).click();
   await expect(page.getByText("Пока совпадений нет. Можно найти карточку вручную.")).toBeVisible();
-  await page.getByText("Скрытые деревья", { exact: false }).click();
-  await expect(page.getByText("Дерево с карточкой «Иван Петров»")).toBeVisible();
-  await page.getByRole("button", { name: "Вернуть дерево" }).click();
+  await page.getByText("Скрытые древа", { exact: false }).click();
+  await expect(page.getByText("Древо с карточкой «Иван Петров»")).toBeVisible();
+  await page.getByRole("button", { name: "Вернуть древо" }).click();
   await expect(page.getByText(/Год рождения близок/)).toBeVisible();
-  await page.getByRole("searchbox", { name: "Карточка из другого дерева" }).fill("Иван");
+  await page.getByRole("searchbox", { name: "Карточка из другого древа" }).fill("Иван");
   await page.getByRole("button", { name: "Показать ещё" }).click();
   await expect(page.locator(".match-options").last()).toContainText("Иван Сидоров");
   await page.locator(".match-options").last().getByRole("button", { name: /Иван Петров.*1901/ }).click();
@@ -248,8 +248,8 @@ test("a stale candidate page clears earlier suggestions and can be retried", asy
       reasons: ["Совпадает имя"], conflicts: [] }], nextCursor: stale ? null : "page2" } });
   });
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
-  await page.getByRole("searchbox", { name: "Человек из этого дерева" }).fill("Иван");
+  await openAdminSection(page, "matches", "Связи древ");
+  await page.getByRole("searchbox", { name: "Человек из этого древа" }).fill("Иван");
   await page.getByRole("button", { name: /Иван Петров/ }).click();
   await expect(page.locator(".match-suggestion-list")).toContainText("Старая карточка");
   await page.locator(".match-suggestions").getByRole("button", { name: "Показать ещё похожих" }).click();
@@ -288,10 +288,10 @@ test("a changed published card requires a fresh review before acceptance", async
     return route.fulfill({ json: { match: { status: "linked" } } });
   });
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   await page.getByText("Добавить пояснение").click();
   await page.getByRole("textbox", { name: /Пояснение к решению/ }).fill(decisionNote);
-  await expect(page.getByText(/Его увидят владельцы обоих деревьев/)).toBeVisible();
+  await expect(page.getByText(/Его увидят владельцы обоих древ/)).toBeVisible();
   await page.getByRole("button", { name: "Подтвердить" }).click();
   await expect(page.getByRole("alert")).toContainText("Проверьте сведения ещё раз");
   await expect(page.getByText("Опубликованные сведения изменились после запроса. Сверьте обе карточки перед решением.")).toBeVisible();
@@ -326,7 +326,7 @@ test("a linked pair shows the confirmation history and a field-only change notic
     ],
   } }));
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   const confirmed = page.locator(".match-request").first();
   await expect(confirmed.getByText(/Опубликованные сведения изменились после подтверждения связи/))
     .toContainText("первая карточка — Имя");
@@ -338,7 +338,7 @@ test("a linked pair shows the confirmation history and a field-only change notic
     "История сведений на момент подтверждения для этой связи недоступна.");
   published = false;
   await page.reload();
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   await expect(page.locator(".match-request").first()).not.toContainText("Прежнее имя");
   await expect(page.locator(".match-request").first()).not.toContainText(
     "Опубликованные сведения изменились после подтверждения связи");
@@ -361,7 +361,7 @@ test("an incoming owner compares only currently published fields before confirma
       requestedAt: "2026-09-30T00:00:00Z" }],
   } }));
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   const request = page.locator(".match-request");
   const comparison = request.getByRole("region", { name: "Сравнение опубликованных полей" });
   await expect(comparison).toBeVisible();
@@ -369,15 +369,15 @@ test("an incoming owner compares only currently published fields before confirma
     .toContainText("Текст совпадает");
   await expect(comparison.locator("dl > div").filter({ hasText: "Год рождения" }))
     .toContainText("Текст различается");
-  await expect(comparison).toContainText("Ваше дерево: 1902");
-  await expect(comparison).toContainText("Другое дерево: 1900");
+  await expect(comparison).toContainText("Ваше древо: 1902");
+  await expect(comparison).toContainText("Другое древо: 1900");
   await expect(comparison.locator("dl > div").filter({ hasText: "Место рождения" }))
     .toContainText("Недостаточно опубликованных сведений");
-  await expect(comparison).toContainText("Другое дерево: Нет в публикации");
+  await expect(comparison).toContainText("Другое древо: Нет в публикации");
   await expect(comparison).not.toContainText("дата рождения");
   published = false;
   await page.reload();
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   await expect(page.locator(".match-request").getByRole("region",
     { name: "Сравнение опубликованных полей" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Подтвердить" })).toBeDisabled();
@@ -418,14 +418,14 @@ test("rejecting a manual match hides only the recipient's candidate until restor
       requestedAt: "2026-09-30T00:00:00Z" }],
   } }));
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   await page.getByRole("button", { name: "Иван Петров", exact: false }).first().click();
   await expect(page.locator(".match-suggestion")).toHaveCount(1);
   await page.getByText("Добавить пояснение").click();
   await page.getByRole("textbox", { name: /Пояснение к решению/ })
     .fill("Имена относятся к разным людям");
   await page.getByRole("button", { name: "Не тот человек" }).click();
-  await expect(page.getByText("Эта подсказка скрыта для вашего дерева", { exact: false })).toBeVisible();
+  await expect(page.getByText("Эта подсказка скрыта для вашего древа", { exact: false })).toBeVisible();
   await expect(page.getByText("Пояснение решения: Имена относятся к разным людям"))
     .toBeVisible();
   await expect(page.locator(".match-suggestion")).toHaveCount(0);
@@ -459,7 +459,7 @@ test("later defers only an incoming request for this visit without answering", a
     route.fulfill({ json: { archiveId: "tree-b", matches, nextCursor: null } }));
 
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   const incoming = page.locator(".match-request").filter({ hasText: "Входящий запрос" });
   const outgoing = page.locator(".match-request").filter({ hasText: "Исходящий запрос" });
   await expect(incoming.getByRole("button", { name: "Позже" })).toBeVisible();
@@ -478,7 +478,7 @@ test("later defers only an incoming request for this visit without answering", a
   await expect(page.getByText("Отложенные запросы снова показаны.")).toBeVisible();
   await incoming.getByRole("button", { name: "Позже" }).click();
   await page.reload();
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   await expect(incoming).toBeVisible();
   expect(decisions).toBe(0);
 });
@@ -500,7 +500,7 @@ test("linked cards keep their archive of origin visible with identical names", a
   } }));
 
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   const origins = page.locator(".match-request .match-candidate-origin");
   await expect(page.locator(".match-request .match-candidate-card a")).toHaveText(["Иван Петров", "Иван Петров"]);
   await expect(origins).toHaveText(["Ваш архив", `Исходный архив: ${otherArchiveId}`]);
@@ -512,7 +512,7 @@ test("linked cards keep their archive of origin visible with identical names", a
 
   currentArchiveId = otherArchiveId;
   await page.reload();
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   await expect(origins).toHaveText(["Исходный архив: tree-a", "Ваш архив"]);
 });
 
@@ -581,8 +581,8 @@ test("candidate suggestions can continue past the first indexed page", async ({ 
   await page.route("**/api/discovery/matches", (route) =>
     route.fulfill({ json: { archiveId: "tree-a", matches: [], nextCursor: null } }));
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
-  await page.getByRole("searchbox", { name: "Человек из этого дерева" }).fill("Иван");
+  await openAdminSection(page, "matches", "Связи древ");
+  await page.getByRole("searchbox", { name: "Человек из этого древа" }).fill("Иван");
   await page.getByRole("button", { name: /Иван Петров/ }).first().click();
   await expect(page.locator(".match-suggestion")).toHaveCount(1);
   await expect(page.getByText("Приближённые совпадения проверяются ограниченной порцией", { exact: false })).toBeVisible();
@@ -611,8 +611,8 @@ test("a broad relative search asks for publication refinement and retries", asyn
   await page.route("**/api/discovery/matches", (route) =>
     route.fulfill({ json: { archiveId: "tree-a", matches: [], nextCursor: null } }));
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
-  await page.getByRole("searchbox", { name: "Человек из этого дерева" }).fill("Иван");
+  await openAdminSection(page, "matches", "Связи древ");
+  await page.getByRole("searchbox", { name: "Человек из этого древа" }).fill("Иван");
   await page.getByRole("button", { name: /Иван Петров/ }).first().click();
   await expect(page.getByText("Для поиска по родству оставьте не более 32 разных", { exact: false })).toBeVisible();
   await expect(page.getByRole("link", { name: "Открыть карточку" })).toBeVisible();
@@ -660,7 +660,7 @@ test("an admin reviews and revokes an explicit linked-card snapshot", async ({ p
     } });
   });
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   await page.getByText("Дополнительные сведения связанной карточки").click();
   const panel = page.locator(".match-card-share").filter({ hasText: "Дополнительные сведения связанной карточки" });
   await expect(panel).toContainText("Адресат: опубликованная карточка «Иван Петров», архив tree-b");
@@ -701,7 +701,7 @@ test("reopening a linked-card panel discards revoked and in-flight snapshots", a
   });
   try {
     await page.goto("/manage");
-    await openAdminSection(page, "matches", "Связи деревьев");
+    await openAdminSection(page, "matches", "Связи древ");
     const panel = page.locator(".match-card-share").filter({ hasText: "Дополнительные сведения связанной карточки" });
     await panel.locator("summary").click();
     await expect(panel).toContainText("Уже отозванные сведения");
@@ -750,7 +750,7 @@ test("an owner previews only granted fields and loses the copy comparison after 
     } }) : route.fulfill({ status: 404, json: { error: "Связь не найдена" } });
   });
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   const panel = page.locator(".match-card-share").filter({ hasText: "Дополнительные сведения связанной карточки" });
   await panel.locator("summary").click();
   await panel.getByRole("button", { name: "Сравнить с моей карточкой" }).click();
@@ -816,7 +816,7 @@ test("copying a linked place requires field choice and separate conflict confirm
     } });
   });
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   const panel = page.locator(".match-card-share").filter({ hasText: "Дополнительные сведения связанной карточки" });
   await panel.locator("summary").click();
   await panel.getByRole("button", { name: "Сравнить с моей карточкой" }).click();
@@ -877,7 +877,7 @@ test("a linked branch needs both grants and clears a revoked projection", async 
     } });
   });
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   await page.getByText("Поделиться разрешённой веткой").click();
   const panel = page.locator(".match-card-share").filter({ hasText: "Поделиться разрешённой веткой" });
   await expect(panel).toContainText("Адресат: опубликованная карточка «Иван Петров», архив tree-b");
@@ -947,7 +947,7 @@ test("a linked owner explicitly extends one published step and discards an old o
   });
   try {
     await page.goto("/manage");
-    await openAdminSection(page, "matches", "Связи деревьев");
+    await openAdminSection(page, "matches", "Связи древ");
     const panel = page.locator("details.match-card-share")
       .filter({ hasText: "Поделиться разрешённой веткой" });
     await panel.locator(":scope > summary").click();
@@ -992,7 +992,7 @@ test("reopening a linked-branch panel discards revoked and in-flight members", a
   });
   try {
     await page.goto("/manage");
-    await openAdminSection(page, "matches", "Связи деревьев");
+    await openAdminSection(page, "matches", "Связи древ");
     const panel = page.locator(".match-card-share").filter({ hasText: "Поделиться разрешённой веткой" });
     await panel.locator("summary").click();
     await expect(panel).toContainText("Уже отозванный родственник");
@@ -1035,7 +1035,7 @@ test("a selected linked member opens through its own permission-checked URL", as
       : route.fulfill({ status: 404, json: { error: "Карточка недоступна" } });
   });
   await page.goto("/manage");
-  await openAdminSection(page, "matches", "Связи деревьев");
+  await openAdminSection(page, "matches", "Связи древ");
   await page.getByText("Поделиться разрешённой веткой").click();
   await expect(page.getByText("Мария Петрова")).toBeVisible();
   await page.getByRole("link", { name: "Открыть разрешённую карточку" }).click();
@@ -1053,8 +1053,8 @@ test("a selected linked member opens through its own permission-checked URL", as
   await expect(page).toHaveURL(/\/a\/tree-a\/manage\/matches$/);
   // This fixture has a local SQLite archive, so tree-a is a mocked remote archive.
   await page.goto("/manage/matches");
-  await expect(page.getByRole("heading", { name: "Запросы между деревьями" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Запросы между древами" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Разделы админки" })
-    .getByRole("button", { name: "Связи деревьев", exact: true }))
+    .getByRole("button", { name: "Связи древ", exact: true }))
     .toHaveAttribute("aria-current", "page");
 });

@@ -294,9 +294,9 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
     const user = await auth.currentUser(req);
     if (!user) return json(res, 401, { error: "Войдите в архив" });
     if (!isArchiveOwner(user) || user.approved !== true)
-      return json(res, 403, { error: "Доступно владельцу дерева" });
+      return json(res, 403, { error: "Доступно владельцу древа" });
     if (!(await isOwner(db.archiveId, user.id)))
-      return json(res, 403, { error: "Доступно владельцу дерева" });
+      return json(res, 403, { error: "Доступно владельцу древа" });
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
     if ((options && req.method !== "GET" && req.method !== "POST") ||

@@ -83,7 +83,7 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
         );
         if (owned.rowCount)
           throw new AccountDeletionConflict(
-            "Сначала передайте или удалите собственное дерево",
+            "Сначала передайте или удалите собственное древо",
           );
         const platformAdmins = await client.query<{ account_id: string }>(
           "SELECT account_id FROM platform_admins ORDER BY account_id FOR UPDATE",
@@ -101,7 +101,7 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
         );
         if (memberships.rowCount && !confirmation.leaveSharedArchives)
           throw new AccountDeletionConflict(
-            "Подтвердите выход из остальных деревьев",
+            "Подтвердите выход из остальных древ",
           );
         const aiChats: Array<{ archiveId: string; chatId: string }> = [];
         for (const { archive_id: archiveId } of memberships.rows) {

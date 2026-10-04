@@ -12,7 +12,6 @@ type AdminPanelProps = {
   publicationOwnership: PublicationOwnership;
   onClose: () => void;
   onChanged: () => void;
-  onSettings: () => void;
   save: (family: Family) => Promise<Family>;
   canEdit: boolean;
 };

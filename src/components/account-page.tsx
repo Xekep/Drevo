@@ -83,7 +83,7 @@ type AccountArchive = {
 };
 function ArchiveList({ archives }: { archives: AccountArchive[] }) {
   return (
-    <div className="account-archive-list" aria-label="Доступные деревья">
+    <div className="account-archive-list" aria-label="Доступные древа">
       {archives.map((item) => (
         <div className="account-archive-row" key={item.id}>
           <span className="account-archive-name">
@@ -404,7 +404,7 @@ export function AccountPage({
                     {capacity?.available && capacity.owned && (
                       <>
                         <div>
-                          <span>Людей в этом дереве</span>
+                          <span>Людей в этом древе</span>
                           <strong>
                             {capacity.people.toLocaleString("ru-RU")}
                             {capacity.fullAccess
@@ -447,7 +447,7 @@ export function AccountPage({
                   </div>
                   {archives && archives.length > 1 && (
                     <div className="account-archive-summary">
-                      <h3>Мои деревья</h3>
+                      <h3>Мои древа</h3>
                       <ArchiveList archives={archives} />
                     </div>
                   )}
@@ -485,7 +485,7 @@ export function AccountPage({
                     </span>
                     <div>
                       <span className="account-eyebrow">Семейный архив</span>
-                      <h2 id="account-archives-title">Мои деревья</h2>
+                      <h2 id="account-archives-title">Мои древа</h2>
                     </div>
                   </div>
                   <div className="account-facts">
@@ -497,7 +497,7 @@ export function AccountPage({
                     </div>
                   </div>
                   {archives === null ? (
-                    <p className="account-card-copy">Загружаем деревья…</p>
+                    <p className="account-card-copy">Загружаем древа…</p>
                   ) : archives.length ? (
                     <>
                       <ArchiveList archives={archives} />
@@ -508,7 +508,7 @@ export function AccountPage({
                   ) : (
                     <>
                       <p className="account-card-copy">
-                        Пока нет доступных деревьев.
+                        Пока нет доступных древ.
                       </p>
                       {!local && session?.account && <CreatePersonalArchive />}
                     </>
@@ -650,7 +650,7 @@ export function AccountPage({
                         <p className="account-card-copy">
                           Скачайте сведения об аккаунте, способах входа, доступе
                           к архивам, настройках и свои текущие комментарии в
-                          доступных частях деревьев. Тексты из закрытых ветвей и
+                          доступных частях древ. Тексты из закрытых ветвей и
                           архивов без действующего доступа в файл не входят.
                         </p>
                         <a
@@ -670,7 +670,7 @@ export function AccountPage({
                           <ExternalLink size={16} aria-hidden="true" />
                         </a>
                         <p className="account-card-copy">
-                          ИИ-диалоги и их вложения входят в экспорт только при действующем доступе к ИИ в этом дереве.
+                          ИИ-диалоги и их вложения входят в экспорт только при действующем доступе к ИИ в этом древе.
                         </p>
                       </div>
                     )}
@@ -700,7 +700,7 @@ export function AccountPage({
                     </div>
                   </div>
                   <p className="account-card-copy">
-                    Сведения и экспорт выбранного дерева доступны в пределах
+                    Сведения и экспорт выбранного древа доступны в пределах
                     вашей роли.
                   </p>
                   {capacity?.available &&
@@ -723,7 +723,7 @@ export function AccountPage({
                           )}
                           download="drevo.gdz"
                         >
-                          Скачать дерево с фото и документами (GEDZIP)
+                          Скачать древо с фото и документами (GEDZIP)
                           <ExternalLink size={16} aria-hidden="true" />
                         </a>
                         <a
@@ -733,7 +733,7 @@ export function AccountPage({
                           )}
                           download="drevo-7.ged"
                         >
-                          Скачать данные дерева (GEDCOM 7)
+                          Скачать данные древа (GEDCOM 7)
                           <ExternalLink size={16} aria-hidden="true" />
                         </a>
                       </div>

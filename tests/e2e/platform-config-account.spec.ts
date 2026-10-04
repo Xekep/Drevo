@@ -82,7 +82,7 @@ test("platform admin without membership opens global settings, with archive-scop
 
   await page.goto("/account");
   await expect(page.getByRole("heading", { name: "Глобальные роли" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Управление деревом" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Управление древом" })).toHaveCount(0);
   await page.getByRole("button", { name: "Админка платформы" }).click();
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole("heading", { name: "Админка платформы" })).toBeVisible();

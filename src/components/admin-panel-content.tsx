@@ -54,7 +54,7 @@ const ADMIN_SECTIONS = [
       { id: "invitations", label: "Приглашения", icon: Link2 },
       { id: "shares", label: "Общий доступ", icon: Link2 },
       { id: "publications", label: "Можно найти", icon: ScanSearch },
-      { id: "matches", label: "Связи деревьев", icon: GitCompareArrows },
+      { id: "matches", label: "Связи древ", icon: GitCompareArrows },
     ],
   },
   {
@@ -81,7 +81,7 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
   },
   invitations: {
     title: "Приглашения",
-    description: "Одноразовые ссылки для новых участников этого дерева.",
+    description: "Одноразовые ссылки для новых участников этого древа.",
   },
   data: {
     title: "Экспорт и импорт",
@@ -101,7 +101,7 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
       "Выберите людей и точные поля, доступные другим участникам через поиск.",
   },
   matches: {
-    title: "Связи деревьев",
+    title: "Связи древ",
     description:
       "Сопоставление опубликованных людей между разными семейными архивами.",
   },
@@ -284,7 +284,6 @@ export function AdminPanel({
   publicationOwnership,
   onClose,
   onChanged,
-  onSettings,
   save,
   canEdit,
 }: {
@@ -295,7 +294,6 @@ export function AdminPanel({
   publicationOwnership: PublicationOwnership;
   onClose: () => void;
   onChanged: () => void;
-  onSettings: () => void;
   save: (family: Family) => Promise<Family>;
   canEdit: boolean;
 }) {
@@ -430,7 +428,7 @@ export function AdminPanel({
           </span>
           <span>
             <small>DREVO</small>
-            <b>Управление деревом</b>
+            <b>Управление древом</b>
           </span>
         </div>
         <nav ref={navigation} aria-label="Разделы админки">
@@ -466,7 +464,7 @@ export function AdminPanel({
       </aside>
       <div className="admin-content">
         <header className="admin-page-header">
-          <span className="section-label">УПРАВЛЕНИЕ ДЕРЕВОМ</span>
+          <span className="section-label">УПРАВЛЕНИЕ ДРЕВОМ</span>
           <h1>{ADMIN_INTRO[visibleSection].title}</h1>
           {(publicationOwnership === "owner" ||
             (visibleSection !== "publications" && visibleSection !== "matches")) &&
@@ -479,7 +477,7 @@ export function AdminPanel({
               Новые пользователи ожидают одобрения. Читатель видит закрытый
               архив после допуска, родственник редактирует свои объекты,
               владелец управляет участниками и содержимым архива.
-              Публикацией людей и связями деревьев управляет владелец.
+              Публикацией людей и связями древ управляет владелец.
             </p>
             {(settings.publicTree || settings.publicAlbums) && (
               <p role="note" className="form-error">
@@ -594,15 +592,6 @@ export function AdminPanel({
             )}
           </section>
         )}
-        {visibleSection === "shares" && (
-          <section className="admin-card archive-form">
-            <h2>Название и описание архива</h2>
-            <button type="button" disabled={!canEdit} onClick={onSettings}>
-              Изменить название и описание
-            </button>
-            {!canEdit && <small>Редактирование доступно с компьютера.</small>}
-          </section>
-        )}
         {settings && visibleSection === "shares" && (
           <form
             className="admin-card archive-form"
@@ -613,15 +602,15 @@ export function AdminPanel({
             }}
           >
             <h2>Публичный просмотр</h2>
-            <p>Выберите, что смогут видеть гости без входа в аккаунт.</p>
+            <p>Откройте всё древо по ссылке для гостей без входа. Публикация отдельных людей в общем поиске настраивается отдельно.</p>
             <label
               className="setting-toggle"
               htmlFor="public-tree"
-              aria-label="Публичное древо и семьи"
+              aria-label="Всё древо по ссылке"
             >
               <span>
-                <b>Древо и семьи</b>
-                <small>Люди, карточки и родственные связи</small>
+                <b>Всё древо по ссылке</b>
+                <small>Все люди, их карточки, семьи и родственные связи</small>
               </span>
               <input
                 type="checkbox"
@@ -664,14 +653,14 @@ export function AdminPanel({
           : <section className="admin-card archive-form"><p role="status">{
             publicationOwnership === "checking" ? "Проверяем право на публикацию…"
               : publicationOwnership === "unavailable" ? "Не удалось проверить право на публикацию. Обновите страницу и повторите попытку."
-                : "Публикацией людей управляет владелец дерева."
+                : "Публикацией людей управляет владелец древа."
           }</p></section>)}
         {visibleSection === "matches" && (publicationOwnership === "owner"
           ? <DiscoveryMatchesAdmin family={family} />
           : <section className="admin-card archive-form"><p role="status">{
             publicationOwnership === "checking" ? "Проверяем право на сопоставление…"
               : publicationOwnership === "unavailable" ? "Не удалось проверить право на сопоставление. Обновите страницу и повторите попытку."
-                : "Связями с другими деревьями управляет владелец дерева."
+                : "Связями с другими древами управляет владелец древа."
           }</p></section>)}
         {visibleSection === "invitations" && <InvitationsAdmin />}
         {visibleSection === "audit" && (

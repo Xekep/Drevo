@@ -33,22 +33,22 @@ export function accountArchivesHttp(
       ? session?.accountId
       : await auth.accountId(req);
     if (!accountId)
-      return send(401, { error: "Войдите, чтобы увидеть свои деревья" });
+      return send(401, { error: "Войдите, чтобы увидеть свои древа" });
     if (req.method === "POST") {
       if (!allowCreate || db.kind !== "postgres" || !db.postgresTransaction)
-        return send(404, { error: "Создание дерева здесь недоступно" });
+        return send(404, { error: "Создание древа здесь недоступно" });
       if (!isSameOriginRequest(req, publicOrigin))
         return send(403, { error: "Недопустимый источник запроса" });
       if (req.headers["x-drevo-new-archive"] !== "1")
         return send(400, {
-          error: "Откройте создание дерева в личном кабинете",
+          error: "Откройте создание древа в личном кабинете",
         });
       if (
         (req.headers["content-length"] !== undefined &&
           req.headers["content-length"] !== "0") ||
         req.headers["transfer-encoding"]
       )
-        return send(400, { error: "Для создания дерева данные не нужны" });
+        return send(400, { error: "Для создания древа данные не нужны" });
       try {
         const archiveId = await db.postgresTransaction(async (client) => {
           const account = await client.query(
@@ -96,21 +96,21 @@ export function accountArchivesHttp(
         });
         return archiveId
           ? send(201, { archiveId })
-          : send(409, { error: "У аккаунта уже есть собственное дерево" });
+          : send(409, { error: "У аккаунта уже есть собственное древо" });
       } catch (error) {
         if (error instanceof AccountSessionExpired)
           return send(401, { error: error.message });
         if (error instanceof AccountSessionBusy)
           return send(409, { error: error.message });
         console.error("account_archive_create_failed", error);
-        return send(500, { error: "Не удалось создать дерево" });
+        return send(500, { error: "Не удалось создать древо" });
       }
     }
     if (req.method !== "GET")
       return send(405, { error: "Метод не поддерживается" });
     const archives = await directory.list(accountId);
     if (!archives)
-      return send(501, { error: "Список деревьев доступен с PostgreSQL" });
+      return send(501, { error: "Список древ доступен с PostgreSQL" });
     const body = JSON.stringify({ archives });
     try {
       await directory.deliverList(accountId, session!.tokenHash, archives, async () => {

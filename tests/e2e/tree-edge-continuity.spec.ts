@@ -391,7 +391,7 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
       await expect(viewport).not.toHaveAttribute("style", before!);
       await page
         .locator(".flow-camera-tools")
-        .getByRole("button", { name: "Вписать видимую часть дерева" })
+        .getByRole("button", { name: "Вписать видимую часть древа" })
         .click();
       await page
         .getByTestId("rf__node-e2e-child")
