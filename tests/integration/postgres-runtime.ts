@@ -11,7 +11,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { DatabaseSync } from "node:sqlite";
-import { gzipSync } from "node:zlib";
 import pg from "pg";
 import PDFDocument from "pdfkit";
 import sharp from "sharp";
@@ -31,6 +30,7 @@ import { verifyManagedBackupSettingsRevocation } from "./postgres-managed-backup
 import { verifyManagedBackupCheckRevocation } from "./postgres-managed-backup-check-revocation.ts";
 import { verifyManagedBackupPreviewRevocation } from "./postgres-managed-backup-preview-revocation.ts";
 import { verifyRestorePreviewDelivery } from "./postgres-restore-preview-delivery.ts";
+import { verifyRestoreGuard } from "./postgres-restore-guard.ts";
 import { databaseBackupHttp } from "../../src/server/database-backup-http.ts";
 import { createAuth } from "../../src/server/auth.ts";
 import { openArchive } from "../../src/server/database.ts";
@@ -124,7 +124,6 @@ import { verifyAtomicSuggestionAcceptance } from "./postgres-suggestion-accept.t
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { discoveryNamePartsBatch } from "../../ops/postgres/backfill-discovery-name-parts.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
-import { databaseBackupBytes } from "../helpers/database-backup.ts";
 import { restoreStore } from "../../src/server/restore.ts";
 import { startServer } from "../../src/server/index.ts";
 import { adaptLegacyAiFake } from "../legacy-ai-fake.ts";
@@ -202,7 +201,6 @@ const family: Family = {
 let live: Awaited<ReturnType<typeof openArchive>> | undefined;
 let app: Awaited<ReturnType<typeof startServer>> | undefined;
 let otherApp: Awaited<ReturnType<typeof startServer>> | undefined;
-let restoreGuardApp: Awaited<ReturnType<typeof startServer>> | undefined;
 try {
   delete process.env.DATABASE_BACKEND;
   const sqlite = await openArchive(source, family);
@@ -13892,270 +13890,10 @@ try {
   const restoredPeople = structuredClone(withoutPeer.family);
   restoredPeople.people = restoredPeople.people.filter((person) => person.id !== "pg-union-identity-peer");
   await app.archive.write(restoredPeople, withoutPeer.revision);
-  // Keep the restore concurrency checks in their own archive: later fixtures
-  // include cards by other authors, which cannot be replaced by this actor.
-  const guardedArchiveId = "restore-guard-test";
-  const guardedOwnerId = "restore-guard-owner";
-  await client.query("SELECT set_config('drevo.archive_id',$1,false)", [guardedArchiveId]);
-  await client.query(`INSERT INTO archives(id,title,description,demo,revision,sqlite_schema_version)
-    VALUES($1,'Restore guard','',false,0,18)`, [guardedArchiveId]);
-  await client.query("INSERT INTO accounts(id,name,created_at) VALUES($1,'Restore guard owner',$2)",
-    [guardedOwnerId, new Date().toISOString()]);
-  await client.query("INSERT INTO account_tiers(account_id,full_access) VALUES($1,true)", [guardedOwnerId]);
-  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
-    VALUES($1,$2,'admin',true,'all')`, [guardedArchiveId, guardedOwnerId]);
-  await client.query("INSERT INTO archive_owners(archive_id,user_id) VALUES($1,$2)",
-    [guardedArchiveId, guardedOwnerId]);
-  // The existing platform administrator is an approved editor here, while
-  // ownership belongs to a different account to respect one-tree-per-owner.
-  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
-    VALUES($1,'owner','admin',true,'all')`, [guardedArchiveId]);
-  await client.query("INSERT INTO people(id,data) VALUES('person-a',$1)",
-    [JSON.stringify(family.people[0])]);
-  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
-  restoreGuardApp = await startServer(0, source, true, undefined, undefined, guardedArchiveId);
-  const guardedApp = restoreGuardApp;
-  const guardedBase = `http://127.0.0.1:${(guardedApp.server.address() as { port: number }).port}`;
-  const guardedUploads = join(dirname(guardedApp.archive.db.file), "uploads");
-  const guardBeforeComments = await guardedApp.archive.read();
-  const guardWithRemovedPerson = structuredClone(guardBeforeComments.family);
-  guardWithRemovedPerson.people.push({ ...family.people[0], id: "restore-comment-removed",
-    name: "Removed" });
-  await guardedApp.archive.write(guardWithRemovedPerson, guardBeforeComments.revision);
-  await guardedApp.archive.db.prepare("",
-    "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'owner',1000,?)")
-    .run("person-a", "restore-comment-retained");
-  await guardedApp.archive.db.prepare("",
-    "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'owner',1000,?)")
-    .run("restore-comment-removed", "restore-comment-lost");
-  // A platform grant can be revoked while a restore is copying staged media.
-  // The final grant check must run inside archive.write's transaction and lock
-  // the grant until commit, without holding that lock during file copying.
-  const securedRestoreHeaders = { ...ownerHeaders, "X-Drevo-Restore": "1" };
-  const guardedPreviewResponse = await fetch(guardedBase + "/api/restore/preview", {
-    method: "POST", headers: securedRestoreHeaders, body: restoreBytes,
-  });
-  assert.equal(guardedPreviewResponse.status, 200, await guardedPreviewResponse.clone().text());
-  const guardedPreview = await guardedPreviewResponse.json() as {
-    token: string; currentCommentsLost: number; backupCommentsSkipped: number;
-  };
-  assert.equal(guardedPreview.currentCommentsLost, 1,
-    "PostgreSQL preview counts only comments cascaded from this archive");
-  assert.equal(guardedPreview.backupCommentsSkipped, 0,
-    "the source backup has no comments after its migration fixture is cleared");
-  const revisionBeforeRevocation = (await guardedApp.archive.read()).revision;
-  const filesBeforeRevocation = readdirSync(guardedUploads).sort();
-  const originalRestoreWrite = guardedApp.archive.write;
-  let restoreAtCommit!: () => void;
-  let resumeRestoreCommit!: () => void;
-  const restoreCommitReady = new Promise<void>((resolve) => { restoreAtCommit = resolve; });
-  const restoreCommitGate = new Promise<void>((resolve) => { resumeRestoreCommit = resolve; });
-  const awaitRestoreBarrier = async (ready: Promise<void>, request: Promise<Response>) => {
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        ready,
-        request.then(async (response) => {
-          throw new Error(`Restore completed before the commit barrier: ${response.status} ${await response.clone().text()}`);
-        }),
-        new Promise<never>((_, reject) => {
-          timeout = setTimeout(() => reject(new Error("Restore did not reach the commit barrier")), 30_000);
-          timeout.unref();
-        }),
-      ]);
-    } finally {
-      if (timeout) clearTimeout(timeout);
-    }
-  };
-  guardedApp.archive.write = async (...args) => {
-    restoreAtCommit();
-    await restoreCommitGate;
-    return originalRestoreWrite(...args);
-  };
-  try {
-    const pendingApply = fetch(guardedBase + "/api/restore/apply", {
-      method: "POST", headers: securedRestoreHeaders,
-      body: JSON.stringify({ token: guardedPreview.token, confirm: true }),
-    });
-    await awaitRestoreBarrier(restoreCommitReady, pendingApply);
-    await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
-    resumeRestoreCommit();
-    const deniedApply = await pendingApply;
-    assert.equal(deniedApply.status, 403, await deniedApply.text());
-    assert.equal((await guardedApp.archive.read()).revision, revisionBeforeRevocation);
-    assert.deepEqual(readdirSync(guardedUploads).sort(), filesBeforeRevocation,
-      "revoked restore removes copies made before the commit check");
-    assert.equal((await guardedApp.archive.db.prepare("", "SELECT count(*)::int AS n FROM workflow_stages WHERE kind='restore' AND token=?")
-      .get(guardedPreview.token))?.n, 1, "the failed stage stays available for an authorized retry");
-  } finally {
-    resumeRestoreCommit();
-    guardedApp.archive.write = originalRestoreWrite;
-    await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
-  }
-  // The seed SQLite has no media or documents, so the successful lock test
-  // does not copy any original files.
-  const noMediaPreviewResponse = await fetch(guardedBase + "/api/restore/preview", {
-    method: "POST", headers: securedRestoreHeaders, body: readFileSync(source),
-  });
-  assert.equal(noMediaPreviewResponse.status, 200, await noMediaPreviewResponse.clone().text());
-  const noMediaPreview = await noMediaPreviewResponse.json() as {
-    token: string; files: number; documents: number;
-  };
-  assert.equal(noMediaPreview.files, 0);
-  assert.equal(noMediaPreview.documents, 0);
-  let platformLockHeld!: () => void;
-  let releasePlatformLock!: () => void;
-  const platformLockReady = new Promise<void>((resolve) => { platformLockHeld = resolve; });
-  const platformLockGate = new Promise<void>((resolve) => { releasePlatformLock = resolve; });
-  guardedApp.archive.write = async (...args) => {
-    const afterWrite = args[6];
-    args[6] = async (db) => {
-      await afterWrite?.(db);
-      platformLockHeld();
-      await platformLockGate;
-    };
-    return originalRestoreWrite(...args);
-  };
-  try {
-    const pendingApply = fetch(guardedBase + "/api/restore/apply", {
-      method: "POST", headers: securedRestoreHeaders,
-      body: JSON.stringify({ token: noMediaPreview.token, confirm: true }),
-    });
-    await awaitRestoreBarrier(platformLockReady, pendingApply);
-    const concurrentRevocation = client.query("DELETE FROM platform_admins WHERE account_id='owner'");
-    try {
-      assert.equal(await Promise.race([
-        concurrentRevocation.then(() => "revoked"),
-        new Promise<string>((resolve) => setTimeout(() => resolve("waiting"), 100)),
-      ]), "waiting", "grant revocation waits for an authorized restore commit");
-    } finally {
-      releasePlatformLock();
-    }
-    const allowedApply = await pendingApply;
-    assert.equal(allowedApply.status, 200, await allowedApply.text());
-    await concurrentRevocation;
-  } finally {
-    releasePlatformLock();
-    guardedApp.archive.write = originalRestoreWrite;
-    await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
-  }
-  // Full TAR discussion restore is explicit. The final zero-comment check is
-  // made under the same archive lock as all live discussion writers.
-  await guardedApp.archive.db.prepare("", "DELETE FROM person_comments").run();
-  const discussionSource = await openArchive(":memory:", family);
-  const discussionFileId = "8f251989-45a6-4b77-8a47-8f0010001111";
-  const discussionOriginal = Buffer.from("PostgreSQL discussion original\n");
-  const tarEntry = (name: string, bytes: Buffer) => {
-    const header = Buffer.alloc(512);
-    header.write(name, 0);
-    header.write("0000600\0", 100);
-    header.write(bytes.length.toString(8).padStart(11, "0") + "\0", 124);
-    header.fill(32, 148, 156);
-    header.write("0", 156);
-    header.write("ustar\0", 257);
-    header.write(header.reduce((sum, byte) => sum + byte, 0)
-      .toString(8).padStart(6, "0") + "\0 ", 148);
-    return Buffer.concat([header, bytes,
-      Buffer.alloc((512 - bytes.length % 512) % 512)]);
-  };
-  let discussionTar: Buffer;
-  try {
-    await discussionSource.db.prepare(
-      "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,attachments) VALUES(?,?,?,?,?,?)",
-    ).run("person-a", "owner", "Автор прежнего сайта", 1000,
-      "Обсуждение из TAR", JSON.stringify([{
-        id: discussionFileId, name: "источник.txt",
-        type: "text/plain", size: discussionOriginal.length,
-      }]));
-    discussionTar = gzipSync(Buffer.concat([
-      tarEntry("drevo.sqlite", await databaseBackupBytes(discussionSource.db)),
-      tarEntry(`uploads/discussion-files/${discussionFileId}`, discussionOriginal),
-      Buffer.alloc(1024),
-    ]));
-  } finally { await discussionSource.close(); }
-  const restoreDiscussionHeaders = {
-    ...securedRestoreHeaders, "X-Drevo-Restore-Comments": "1",
-  };
-  const discussionPreviewResponse = await fetch(guardedBase + "/api/restore/preview", {
-    method: "POST", headers: restoreDiscussionHeaders,
-    body: Uint8Array.from(discussionTar).buffer,
-  });
-  assert.equal(discussionPreviewResponse.status, 200,
-    await discussionPreviewResponse.clone().text());
-  let discussionPreview = await discussionPreviewResponse.json() as {
-    token: string; canRestoreComments: boolean; backupCommentsSkipped: number;
-  };
-  assert.equal(discussionPreview.backupCommentsSkipped, 1);
-  assert.equal(discussionPreview.canRestoreComments, true);
-  const discussionDirectory = join(guardedUploads, "discussion-files");
-  const beforeContested = existsSync(discussionDirectory)
-    ? readdirSync(discussionDirectory).sort() : [];
-  await guardedApp.archive.db.transaction(async () => {
-    await guardedApp.archive.db.prepare("",
-      "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'owner',1001,'Concurrent comment')")
-      .run("person-a");
-  });
-  const contestedApply = await fetch(guardedBase + "/api/restore/apply", {
-    method: "POST", headers: securedRestoreHeaders,
-    body: JSON.stringify({ token: discussionPreview.token, confirm: true,
-      restoreComments: true }),
-  });
-  assert.equal(contestedApply.status, 409, await contestedApply.clone().text());
-  assert.deepEqual(existsSync(discussionDirectory)
-    ? readdirSync(discussionDirectory).sort() : [], beforeContested,
-  "a comment added after preview blocks restore and cleans the copied original");
-  assert.equal((await guardedApp.archive.db.prepare("",
-    "SELECT count(*)::int AS count FROM person_comments WHERE text='Concurrent comment'")
-    .get())?.count, 1);
-  await guardedApp.archive.db.transaction(async () => {
-    await guardedApp.archive.db.prepare("",
-      "DELETE FROM person_comments WHERE text='Concurrent comment'").run();
-  });
-  const freshDiscussionPreview = await fetch(guardedBase + "/api/restore/preview", {
-    method: "POST", headers: restoreDiscussionHeaders,
-    body: Uint8Array.from(discussionTar).buffer,
-  });
-  assert.equal(freshDiscussionPreview.status, 200,
-    await freshDiscussionPreview.clone().text());
-  discussionPreview = await freshDiscussionPreview.json();
-  assert.equal(discussionPreview.canRestoreComments, true);
-  const discussionApply = await fetch(guardedBase + "/api/restore/apply", {
-    method: "POST", headers: securedRestoreHeaders,
-    body: JSON.stringify({ token: discussionPreview.token, confirm: true,
-      restoreComments: true }),
-  });
-  assert.equal(discussionApply.status, 200, await discussionApply.clone().text());
-  const restoredDiscussion = await guardedApp.archive.db.prepare("",
-    "SELECT author_id,author_name,text,attachments FROM person_comments WHERE text=?")
-    .get("Обсуждение из TAR");
-  assert.equal(restoredDiscussion?.author_name, "Автор прежнего сайта");
-  assert.notEqual(restoredDiscussion?.author_id, "owner");
-  const restoredAttachment = JSON.parse(String(restoredDiscussion?.attachments))[0];
-  assert.notEqual(restoredAttachment.id, discussionFileId);
-  assert.deepEqual(readFileSync(join(guardedUploads, "discussion-files", restoredAttachment.id)),
-    discussionOriginal);
-  const repeatPreviewResponse = await fetch(guardedBase + "/api/restore/preview", {
-    method: "POST", headers: restoreDiscussionHeaders,
-    body: Uint8Array.from(discussionTar).buffer,
-  });
-  assert.equal(repeatPreviewResponse.status, 200,
-    await repeatPreviewResponse.clone().text());
-  const repeatPreview = await repeatPreviewResponse.json() as {
-    token: string; canRestoreComments: boolean;
-  };
-  assert.equal(repeatPreview.canRestoreComments, false);
-  const repeatedApply = await fetch(guardedBase + "/api/restore/apply", {
-    method: "POST", headers: securedRestoreHeaders,
-    body: JSON.stringify({ token: repeatPreview.token, confirm: true,
-      restoreComments: true }),
-  });
-  assert.equal(repeatedApply.status, 409);
-  assert.equal((await guardedApp.archive.db.prepare("",
-    "SELECT count(*)::int AS count FROM person_comments").get())?.count, 1);
+  await verifyRestoreGuard({ client, source, family, ownerHeaders, restoreBytes });
   await verifyPlatformAiOrphanSweep(app!.archive.db, client, source);
   console.log("runtime_http_and_backup_ok");
 } finally {
-  await restoreGuardApp?.close();
   await otherApp?.close();
   await app?.close();
   await live?.close();
