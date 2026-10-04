@@ -86,27 +86,52 @@ export async function verifyAiProviderAdminTest(db: StoreDatabase, configuredPat
     holdResponse = true;
     const revokedRequest = fetch(base + "/api/admin/ai/test", { method: "POST" });
     await responseEntered;
+    const revokedBinding = await db.prepare("", `SELECT id,state,encrypted_snapshot
+      FROM platform_ai_conversations WHERE local_chat_id LIKE 'admin-test:%'
+        AND state='binding' ORDER BY created_at DESC,id DESC LIMIT 1`).get();
+    assert.ok(revokedBinding);
+    assert.equal(revokedBinding.state, "binding");
+    assert.doesNotMatch(String(revokedBinding.encrypted_snapshot),
+      /fake-admin-original-key|admin-fixture/);
     authorized = false;
     release();
     assert.equal((await revokedRequest).status, 403);
-    const revoked = await db.prepare("", `SELECT id,state FROM platform_ai_conversations
-      WHERE local_chat_id LIKE 'admin-test:%' AND state='pending'
-      ORDER BY created_at DESC LIMIT 1`).get();
+    // The 403 bytes can reach fetch before the handler's async finally queues
+    // this already-durable binding. Wait for this exact conversation, not any
+    // unrelated pending cleanup row.
+    let revoked: Record<string, unknown> | undefined;
+    for (let attempt = 0; attempt < 300; attempt++) {
+      revoked = await db.prepare("", "SELECT id,state FROM platform_ai_conversations WHERE id=?")
+        .get(String(revokedBinding.id));
+      if (revoked?.state === "pending") break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     assert.equal(revoked?.state, "pending");
     assert.equal(await cleanup.process(1), 1);
+    assert.equal((await db.prepare("", "SELECT state FROM platform_ai_conversations WHERE id=?")
+      .get(String(revokedBinding.id)))?.state, "done");
+    assert.ok(seen.some((call) => call.url.endsWith("/conversations/admin-fixture-2") &&
+      call.authorization === "Api-Key fake-admin-original-key"));
     authorized = true;
 
     // A failed model request also queues cleanup, without returning provider IDs.
+    const beforeFailure = new Set((await db.prepare("", `SELECT id FROM platform_ai_conversations
+      WHERE local_chat_id LIKE 'admin-test:%'`).all()).map((row) => String(row.id)));
     holdResponse = false;
     failResponse = true;
     const failed = await fetch(base + "/api/admin/ai/test", { method: "POST" });
     assert.equal(failed.status, 502);
     assert.doesNotMatch(await failed.text(), /admin-fixture-secret/);
-    const failedJob = await db.prepare("", `SELECT id,state FROM platform_ai_conversations
-      WHERE local_chat_id LIKE 'admin-test:%' AND state='pending'
-      ORDER BY created_at DESC LIMIT 1`).get();
-    assert.equal(failedJob?.state, "pending");
+    const newFailureRows = (await db.prepare("", `SELECT id,state FROM platform_ai_conversations
+      WHERE local_chat_id LIKE 'admin-test:%'`).all())
+      .filter((row) => !beforeFailure.has(String(row.id)));
+    assert.equal(newFailureRows.length, 1);
+    assert.equal(newFailureRows[0].state, "pending");
     assert.equal(await cleanup.process(1), 1);
+    assert.equal((await db.prepare("", "SELECT state FROM platform_ai_conversations WHERE id=?")
+      .get(String(newFailureRows[0].id)))?.state, "done");
+    assert.ok(seen.some((call) => call.url.endsWith("/conversations/admin-fixture-3") &&
+      call.authorization === "Api-Key fake-admin-original-key"));
 
     // A process exit has no finally: expired provisional work is reclaimed.
     const crashRef = await cleanup.registerTest("admin-fixture-crash", {
