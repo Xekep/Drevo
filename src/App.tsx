@@ -1,6 +1,7 @@
 import { archiveFetch } from "./data/archive-fetch.ts";
-import { isArchiveOwner } from "./domain/access.ts";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isArchiveOwner, type ArchiveUser } from "./domain/access.ts";
+import { isScopedUser } from "./domain/tree-access.ts";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { confirmDiscardChanges } from "./hooks/useUnsavedChanges";
 import { ArrowDownUp, ImagePlus, Link2, Plus, X } from "lucide-react";
 import {
@@ -81,6 +82,14 @@ const galleryAlbumPath = (personId: string | null, year: string | null) => {
   if (year) params.set("year", year);
   return `/photos${params.size ? `?${params}` : ""}`;
 };
+
+function sameCachedReadProjection(previous: ArchiveUser, current: ArchiveUser) {
+  if (previous.id !== current.id || current.approved !== true ||
+      isScopedUser(previous) !== isScopedUser(current)) return false;
+  // Local/global role and tier changes affect actions, but not the family
+  // projection. Scoped graph visibility additionally depends on this anchor.
+  return !isScopedUser(previous) || previous.personId === current.personId;
+}
 
 export default function App() {
   const [emailAuthLink] = useState(() =>
@@ -189,6 +198,91 @@ export default function App() {
       string | null
     >(null);
   const accountSessionVersion = useRef(0);
+  const restoredSessionController = useRef<AbortController | null>(null);
+  const restoredSessionDialog = useRef<HTMLDialogElement>(null);
+  const [restoredSessionState, setRestoredSessionState] = useState<"ready" | "checking" | "retry">("ready");
+  const restoredSessionStateRef = useRef<"ready" | "checking" | "retry">("ready");
+  const archiveSessionActions = useRef({
+    sync: archive.syncSessionUser,
+    closeChanged: archive.closeChangedPrivateView,
+    hasPendingRead: archive.hasPendingRead,
+    user: archive.user,
+    hasFamily: Boolean(archive.family),
+    view: requestedView,
+  });
+  useLayoutEffect(() => {
+    archiveSessionActions.current = {
+      sync: archive.syncSessionUser,
+      closeChanged: archive.closeChangedPrivateView,
+      hasPendingRead: archive.hasPendingRead,
+      user: archive.user,
+      hasFamily: Boolean(archive.family),
+      view: requestedView,
+    };
+  }, [archive.syncSessionUser, archive.closeChangedPrivateView,
+    archive.hasPendingRead, archive.user, archive.family, requestedView]);
+  const finishRestoredSession = useCallback((session: AccountSession) => {
+    const previous = archiveSessionActions.current;
+    if (previous.user) {
+      if (!session.user?.approved || (!session.local && !session.account))
+        previous.closeChanged(true);
+      else if (!sameCachedReadProjection(previous.user, session.user))
+        previous.closeChanged(false);
+      else previous.sync(session.user);
+    } else if ((previous.hasFamily || previous.hasPendingRead()) &&
+        (archiveContextAt(window.location.pathname) ||
+          (previous.view !== "account" && previous.view !== "admin"))) {
+      // No actor was materialized for the pending snapshot. Its original
+      // authorization cannot be compared, so require an explicit reopen.
+      previous.closeChanged(session.user?.approved !== true);
+    } else previous.sync(session.user);
+    setAccountSession(session);
+    setAccountError(false);
+    setAccountLoading(false);
+    restoredSessionStateRef.current = "ready";
+    setRestoredSessionState("ready");
+  }, []);
+  const validateRestoredSession = useCallback(() => {
+    restoredSessionController.current?.abort();
+    const controller = new AbortController();
+    restoredSessionController.current = controller;
+    const version = ++accountSessionVersion.current;
+    restoredSessionStateRef.current = "checking";
+    setRestoredSessionState("checking");
+    void archiveFetch("/api/session", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Не удалось проверить сеанс");
+        return response.json() as Promise<AccountSession>;
+      })
+      .then((session) => {
+        if (controller.signal.aborted || version !== accountSessionVersion.current) return;
+        finishRestoredSession(session);
+      })
+      .catch(() => {
+        if (controller.signal.aborted || version !== accountSessionVersion.current) return;
+        // Busy or failed reads cannot prove revocation. Keep the mounted graph
+        // and editor state hidden until a retry validates the current session.
+        restoredSessionStateRef.current = "retry";
+        setRestoredSessionState("retry");
+      });
+  }, [finishRestoredSession]);
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) validateRestoredSession();
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      window.removeEventListener("pageshow", onPageShow);
+      restoredSessionController.current?.abort();
+    };
+  }, [validateRestoredSession]);
+  useLayoutEffect(() => {
+    const dialog = restoredSessionDialog.current;
+    if (!dialog || restoredSessionState === "ready") return;
+    // A native dialog sits above an already-open photo/PDF modal in the top layer.
+    if (!dialog.open) dialog.showModal();
+    return () => { if (dialog.open) dialog.close(); };
+  }, [restoredSessionState]);
   useEffect(() => {
     if (view !== "account" && view !== "admin" && !archive.needsLogin) return;
     const controller = new AbortController();
@@ -200,19 +294,28 @@ export default function App() {
       })
       .then((session: AccountSession) => {
         if (controller.signal.aborted || version !== accountSessionVersion.current) return;
+        if (restoredSessionStateRef.current !== "ready") {
+          finishRestoredSession(session);
+          return;
+        }
         setAccountSession(session);
         setAccountError(false);
         setAccountLoading(false);
       })
       .catch(() => {
         if (!controller.signal.aborted && version === accountSessionVersion.current) {
+          if (restoredSessionStateRef.current !== "ready") {
+            restoredSessionStateRef.current = "retry";
+            setRestoredSessionState("retry");
+            return;
+          }
           setAccountSession(null);
           setAccountError(true);
           setAccountLoading(false);
         }
       });
     return () => controller.abort();
-  }, [view, archive.needsLogin]);
+  }, [view, archive.needsLogin, finishRestoredSession]);
   const [entryPending, setEntryPending] = useState(shouldPlayEntrySequence);
   useEffect(() => {
     const preventPageZoom = (event: WheelEvent) => {
@@ -696,7 +799,7 @@ export default function App() {
     ? family?.people.find((person) => person.id === navigationUser.personId)
     : undefined;
   return (
-    <div className="archive-app">
+    <div className={`archive-app${restoredSessionState === "ready" ? "" : " is-validating-restored-session"}`}>
       {shareDraft && (
         <ShareDialog {...shareDraft} onClose={() => setShareDraft(null)} />
       )}
@@ -1267,6 +1370,19 @@ export default function App() {
             await treeCanvas.current.exportPdf(undefined, scope);
           }}
         />
+      )}
+      {restoredSessionState !== "ready" && (
+        <dialog ref={restoredSessionDialog} className="restored-session-gate" aria-label="Проверка доступа"
+          onCancel={(event) => event.preventDefault()}>
+          {restoredSessionState === "checking" ? (
+            <p>Проверяем доступ к архиву…</p>
+          ) : (
+            <>
+              <p>Не удалось проверить сеанс. Сведения скрыты до повторной проверки.</p>
+              <button type="button" onClick={validateRestoredSession}>Повторить проверку</button>
+            </>
+          )}
+        </dialog>
       )}
       {settings && canEdit && family && isArchiveOwner(user) && (
         <ArchiveSettings
