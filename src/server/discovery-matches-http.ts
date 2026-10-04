@@ -18,7 +18,7 @@ type Row = Record<string, unknown>;
 
 const projection = `SELECT m.id,m.left_archive_id,m.left_person_id,m.right_archive_id,m.right_person_id,
   m.initiated_by_archive_id,m.status,m.reason,m.request_review_token,
-  m.decision_review_token,m.requested_at::text AS requested_at,
+  m.decision_review_token,m.requested_by,m.responded_by,m.requested_at::text AS requested_at,
   m.responded_at::text AS responded_at,m.revoked_at::text AS revoked_at,
   l.name AS left_name,l.birth_surname AS left_birth_surname,
   l.birth_year AS left_birth_year,l.death_year AS left_death_year,
@@ -45,8 +45,33 @@ function person(row: Row, side: "left" | "right") {
   };
 }
 
-function match(row: Row) {
+const publishedFields = [
+  ["name", "name"], ["birthSurname", "birth_surname"], ["birthYear", "birth_year"],
+  ["deathYear", "death_year"], ["birthPlace", "birth_place"], ["deathPlace", "death_place"],
+] as const;
+
+type Confirmation = {
+  confirmedAt: string;
+  requestedBy: string;
+  confirmedBy: string;
+  leftPublicationVersion: string;
+  rightPublicationVersion: string;
+  left: Record<string, string>;
+  right: Record<string, string>;
+};
+
+function confirmationChanges(row: Row, confirmation: Confirmation) {
+  return (["left", "right"] as const).flatMap((side) => publishedFields.flatMap(([field, column]) => {
+    const current = row[`${side}_${column}`];
+    if (current == null || current === "") return [];
+    return confirmation[side][field] === String(current) ? [] : [{ side, field }];
+  }));
+}
+
+function match(row: Row, confirmation?: Confirmation, includeConfirmation = false) {
   const token = reviewToken(row);
+  const hasBothPublications = row.left_name != null && row.right_name != null;
+  const confirmationChangesForRow = confirmation ? confirmationChanges(row, confirmation) : [];
   return {
     id: String(row.id),
     status: String(row.status),
@@ -60,6 +85,12 @@ function match(row: Row) {
     ...(token ? { reviewToken: token } : {}),
     ...(row.status === "pending" && row.request_review_token && token
       ? { changedSinceRequest: row.request_review_token !== token } : {}),
+    ...(includeConfirmation && row.status === "linked" && hasBothPublications ? {
+      confirmationHistoryAvailable: !!confirmation,
+      ...(confirmation ? { confirmation,
+        changedSinceConfirmation: confirmationChangesForRow.length > 0,
+        changedFieldsSinceConfirmation: confirmationChangesForRow } : {}),
+    } : {}),
   };
 }
 
@@ -105,13 +136,14 @@ function cursor(value: string | null): [string,string] | null {
 
 export function discoveryMatchesHttp({ archive, auth, publicOrigin,
   beforeCandidateDelivery, beforeCandidateResponse,
-  beforeMatchListDelivery, beforeIgnoredArchivesDelivery, beforeMutationDelivery,
+  beforeMatchListAccessLock, beforeMatchListDelivery, beforeIgnoredArchivesDelivery, beforeMutationDelivery,
   beforeOwnPersonAccessLock, beforeOwnPersonResponse }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
   beforeCandidateDelivery?: () => Promise<void>;
   beforeCandidateResponse?: () => Promise<void>;
+  beforeMatchListAccessLock?: () => Promise<void>;
   beforeMatchListDelivery?: () => Promise<void>;
   beforeIgnoredArchivesDelivery?: () => Promise<void>;
   beforeMutationDelivery?: () => Promise<void>;
@@ -144,6 +176,54 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
     } finally { clearTimeout(timeout); }
   };
   const readMatch = (id: string) => db.prepare("", `${projection} WHERE m.id=?`).get(id);
+  const confirmationsFor = async (rows: Row[]) => {
+    const result = new Map<string, Confirmation>();
+    const ids = rows.filter((row) => row.status === "linked" && row.left_name != null &&
+      row.right_name != null).map((row) => ({ id: String(row.id) }));
+    if (!ids.length) return result;
+    const selected = await db.prepare("", `SELECT c.match_id,
+      c.left_publication_version,c.right_publication_version,c.confirmed_at::text AS confirmed_at,
+      m.requested_by,m.responded_by
+      FROM discovery_match_confirmations c
+      JOIN discovery_match_requests m ON m.id=c.match_id
+      JOIN jsonb_to_recordset(?::jsonb) AS e(id text) ON e.id=c.match_id`)
+      .all(JSON.stringify(ids));
+    for (const row of selected) result.set(String(row.match_id), {
+      confirmedAt: String(row.confirmed_at), requestedBy: String(row.requested_by),
+      confirmedBy: String(row.responded_by),
+      leftPublicationVersion: String(row.left_publication_version),
+      rightPublicationVersion: String(row.right_publication_version), left: {}, right: {},
+    });
+    if (!result.size) return result;
+    const fields = await db.prepare("", `SELECT f.match_id,f.side,f.field_name,f.field_value
+      FROM discovery_match_confirmation_fields f
+      JOIN jsonb_to_recordset(?::jsonb) AS e(id text) ON e.id=f.match_id`)
+      .all(JSON.stringify(ids));
+    for (const field of fields) {
+      const confirmation = result.get(String(field.match_id));
+      if (confirmation) {
+        const side = field.side === "left" ? "left" : "right";
+        confirmation[side][String(field.field_name)] = String(field.field_value);
+      }
+    }
+    return result;
+  };
+  const saveConfirmation = async (row: Row, token: string) => {
+    const id = String(row.id);
+    await db.prepare("", `INSERT INTO discovery_match_confirmations(match_id,review_token,
+      left_publication_version,right_publication_version,confirmed_at)
+      SELECT id,?, ?,?,responded_at FROM discovery_match_requests WHERE id=?`)
+      .run(token,String(row.left_publication_version),String(row.right_publication_version),id);
+    for (const side of ["left", "right"] as const) {
+      for (const [field,column] of publishedFields) {
+        const value = row[`${side}_${column}`];
+        if (value == null || value === "") continue;
+        await db.prepare("", `INSERT INTO discovery_match_confirmation_fields(
+          match_id,side,field_name,field_value) VALUES(?,?,?,?)`)
+          .run(id,side,field,String(value));
+      }
+    }
+  };
   const hideRejectedCandidate = (row: Row, archiveId: string, actorId: string) => {
     const ownIsLeft = row.left_archive_id === archiveId;
     return db.prepare("", `INSERT INTO discovery_ignored_candidates(
@@ -643,6 +723,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
     if (collection && req.method === "GET") {
       const after = cursor(url.searchParams.get("cursor"));
       if (!after) return json(res, 400, { error: "Некорректная страница" });
+      const session = auth.local ? null : await auth.accountSession(req);
       const pageSql = `${projection}
         WHERE (m.left_archive_id=? OR m.right_archive_id=?)
           AND (m.requested_at,m.id) < (?::timestamptz,?)
@@ -655,8 +736,10 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         }])).map((key) => [`${key.archive_id}\0${key.person_id}`,key])).values()];
       const lockedKeys = new Set(publicationKeys.map((key) =>
         `${key.archive_id}\0${key.person_id}`));
+      await beforeMatchListAccessLock?.();
       const result = await db.transaction(async () => {
-        if (!await isOwner(user.id,true)) return 403;
+        if (!await lockDiscoveryOwnerReadAccess(db,auth.local,session,user) ||
+            !await isOwner(user.id,true)) return 403;
         // Withdrawal locks publications before its trigger updates match
         // requests. Use that order, then keep both sets through delivery.
         if (publicationKeys.length) {
@@ -681,12 +764,18 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
           (["left","right"] as const).some((side) => row[`${side}_name`] != null &&
             !lockedKeys.has(`${row[`${side}_archive_id`]}\0${row[`${side}_person_id`]}`))))
           return 409;
-        const items = rows.slice(0, 30).map(match);
+        const currentPage = rows.slice(0, 30);
+        const confirmations = await confirmationsFor(currentPage);
+        const items = currentPage.map((row) => match(row, confirmations.get(String(row.id)), true));
         const last = rows.length > 30 ? items.at(-1) : undefined;
         await beforeMatchListDelivery?.();
         await deliverLocked(res, { archiveId, matches: items,
           nextCursor: last ? Buffer.from(JSON.stringify([last.requestedAt,last.id])).toString("base64url") : null });
         return 200;
+      }).catch((error) => {
+        if (error instanceof AccountSessionBusy || (error as { code?: string }).code === "55P03")
+          return 409;
+        throw error;
       });
       return result === 200 ? true : json(res, result, { error: result === 403
         ? "Доступ владельца отозван" : "Сопоставления изменились. Обновите список." });
@@ -791,6 +880,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         WHERE id=?`).run(decision === "accept" ? "linked" : decision === "reject" ? "rejected" : "revoked",
           decision,approved.id,decision,decision,decisionToken,
           decision,approved.id,decision,detail[1]);
+        if (decision === "accept") await saveConfirmation(current!, decisionToken!);
         if (decision === "reject") await hideRejectedCandidate(row,archiveId,approved.id);
         return { code: 200, row: await readMatch(detail[1]) };
       });

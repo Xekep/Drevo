@@ -310,6 +310,18 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
          AND tgname='queue_deleted_ai_chat_conversation' AND NOT tgisinternal`,
       "084_ai_provider_cleanup_cascades.sql",
     ],
+    [
+      `SELECT 1 AS present WHERE
+        EXISTS (SELECT 1 FROM pg_class WHERE oid=to_regclass('discovery_match_confirmations')
+          AND relrowsecurity AND relforcerowsecurity)
+        AND EXISTS (SELECT 1 FROM pg_class WHERE oid=to_regclass('discovery_match_confirmation_fields')
+          AND relrowsecurity AND relforcerowsecurity)
+        AND (SELECT count(*) FROM pg_policies WHERE schemaname=current_schema()
+          AND tablename IN ('discovery_match_confirmations','discovery_match_confirmation_fields')
+          AND policyname IN ('discovery_match_confirmations_read','discovery_match_confirmations_insert',
+            'discovery_match_confirmation_fields_read','discovery_match_confirmation_fields_insert'))=4`,
+      "086_discovery_match_confirmation.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     try {
@@ -332,7 +344,8 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       // a conflicting partial table/index installation remains fatal.
       if ((file !== "080_discovery_relative_consents.sql" &&
            file !== "081_discovery_candidate_tiers.sql" &&
-           file !== "083_discovery_grandparent_consents.sql") ||
+           file !== "083_discovery_grandparent_consents.sql" &&
+           file !== "086_discovery_match_confirmation.sql") ||
           (error as { code?: string }).code !== "42P07" ||
           !(await db.prepare("", query).get())?.present) throw error;
     }
