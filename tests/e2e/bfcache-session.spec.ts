@@ -3,11 +3,12 @@ import { chromium, expect, test, type Page } from "@playwright/test";
 const origin = `http://127.0.0.1:${process.env.DREVO_E2E_PORT || 4173}`;
 
 async function cachedPage() {
-  // Playwright disables BFCache by default. This browser exercises the same
-  // native-document Back path that Chrome users actually take.
+  // Playwright's default headless shell and flags disable BFCache. Use full
+  // Chromium and native-document Back, as in a real Chrome session.
   const browser = await chromium.launch({
     ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
-      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}),
+      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
+      : { channel: "chromium" }),
     ignoreDefaultArgs: ["--disable-back-forward-cache"],
   });
   const page = await browser.newPage();
@@ -23,6 +24,19 @@ async function cachedPage() {
 async function wasRestored(page: Page) {
   return page.evaluate(() =>
     (window as typeof window & { cacheRestores: boolean[] }).cacheRestores.at(-1));
+}
+
+async function expectRestored(page: Page) {
+  try {
+    await expect.poll(() => wasRestored(page)).toBe(true);
+  } catch (error) {
+    const navigation = await page.evaluate(() => {
+      const entry = performance.getEntriesByType("navigation").at(-1) as
+        (PerformanceNavigationTiming & { notRestoredReasons?: unknown }) | undefined;
+      return { type: entry?.type, notRestoredReasons: entry?.notRestoredReasons };
+    });
+    throw new Error(`Native Back did not restore BFCache: ${JSON.stringify(navigation)}`, { cause: error });
+  }
 }
 
 test("Back from platform settings revalidates a cached account and ignores late older sessions", async () => {
@@ -72,7 +86,7 @@ test("Back from platform settings revalidates a cached account and ignores late 
     await expect(page.getByLabel("Уровень доступа Synthetic administrator")).toHaveValue("basic");
     const beforeBack = sessionReads;
     await page.goBack({ waitUntil: "commit" });
-    await expect.poll(() => wasRestored(page)).toBe(true);
+    await expectRestored(page);
     await expect(page.locator(".account-facts").first()).toContainText("Базовый");
     expect(sessionReads).toBeGreaterThan(beforeBack);
 
@@ -179,7 +193,7 @@ test("cached scoped tree stays hidden on busy validation, then retains its graph
     await expect.poll(() => sessionPaths.length).toBeGreaterThan(beforeTierSession);
     failNextSession = true;
     await page.goBack({ waitUntil: "commit" });
-    await expect.poll(() => wasRestored(page)).toBe(true);
+    await expectRestored(page);
     await expect(page.getByRole("button", { name: "Повторить проверку" })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "Повторить проверку" })).toBeVisible();
@@ -199,7 +213,7 @@ test("cached scoped tree stays hidden on busy validation, then retains its graph
     archiveOwner = false;
     treeRole = "reader";
     await page.goBack({ waitUntil: "commit" });
-    await expect.poll(() => wasRestored(page)).toBe(true);
+    await expectRestored(page);
     await expect(graph).toBeVisible();
     await expect(graph).toHaveAttribute("style", transform || "");
     expect(familyReads).toBe(beforeBackFamily);
@@ -208,7 +222,7 @@ test("cached scoped tree stays hidden on busy validation, then retains its graph
     await page.locator("#platform-tiers-title").waitFor();
     treeAccess = "common_ancestors";
     await page.goBack({ waitUntil: "commit" });
-    await expect.poll(() => wasRestored(page)).toBe(true);
+    await expectRestored(page);
     await expect(page.getByText("Права просмотра архива изменились.", { exact: false })).toBeVisible();
     await expect(graph).toHaveCount(0);
   } finally {
@@ -250,7 +264,7 @@ test("cached unscoped private tree closes after completed logout", async () => {
     await page.getByRole("heading", { name: "Админка платформы" }).first().waitFor();
     loggedOut = true;
     await page.goBack({ waitUntil: "commit" });
-    await expect.poll(() => wasRestored(page)).toBe(true);
+    await expectRestored(page);
     await expect(page.getByText("Доступ к семейному архиву изменился.", { exact: false })).toBeVisible();
     await expect(graph).toHaveCount(0);
   } finally {
