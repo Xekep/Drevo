@@ -151,7 +151,8 @@ export async function aiProviderCleanup(db: StoreDatabase, configuredPath: strin
       }
     },
     /** Durable before binding. An interrupted or stale bind remains recoverable. */
-    async register(chatId: string, conversationId: string, runtime: Runtime) {
+    async register(chatId: string, conversationId: string, runtime: Runtime,
+      bindingMs = 60_000) {
       await assertReady();
       const id = randomUUID(), now = Date.now();
       await db.prepare(
@@ -163,8 +164,19 @@ export async function aiProviderCleanup(db: StoreDatabase, configuredPath: strin
          VALUES(?,?,?,?,?,'binding',?,?,?)`,
       ).run(id, 1, encrypt(key, { conversationId, baseUrl: runtime.baseUrl,
         folderId: runtime.folderId, apiKey: runtime.apiKey }), archiveId, chatId,
-        now + 60_000, now, now);
+        now + bindingMs, now, now);
       return id;
+    },
+    /** A connection-check conversation has no chat row. Its bounded binding
+     * expires after the entire HTTP test deadline if the process exits. */
+    async registerTest(conversationId: string, runtime: Runtime) {
+      const localId = `admin-test:${randomUUID()}`;
+      try {
+        return await this.register(localId, conversationId, runtime, 300_000);
+      } catch (error) {
+        await this.compensateKnown(localId, conversationId, runtime);
+        throw error;
+      }
     },
     pending,
     async claim(limit = 4): Promise<Claimed[]> {

@@ -11,6 +11,7 @@ import { fetchAiStudioModels, type AiStudioModel } from "./ai-models.ts";
 import { yandexResponsesClient } from "./yandex-responses.ts";
 import { ROLE_NAMES, type Role } from "../domain/access.ts";
 import type { StoreDatabase } from "./store-database.ts";
+import type { AiProviderCleanup } from "./ai-provider-cleanup.ts";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -28,6 +29,7 @@ export function adminAiHttp({
   db,
   settings,
   usage,
+  providerCleanup,
   publicOrigin,
   fetcher = fetch,
 }: {
@@ -35,6 +37,7 @@ export function adminAiHttp({
   db: StoreDatabase;
   settings: Awaited<ReturnType<typeof aiSettingsStore>>;
   usage: ReturnType<typeof aiUsageStore>;
+  providerCleanup?: AiProviderCleanup;
   publicOrigin?: string;
   fetcher?: typeof fetch;
 }) {
@@ -198,10 +201,20 @@ export function adminAiHttp({
         return json(res, 403, { error: "Доступ отозван" });
       try {
         const client = yandexResponsesClient(fetcher);
-        const conversationId = await client.createConversation(runtime);
+        // This deadline covers creation and every possible model fallback.
+        // The durable provisional binding outlives it by a full minute.
+        const signal = AbortSignal.timeout(240_000);
+        if (db.kind === "postgres") {
+          if (!providerCleanup) throw new Error("AI cleanup is unavailable");
+          await providerCleanup.assertReady();
+        }
+        const conversationId = await client.createConversation(runtime, signal);
         let answer = "";
         let compactionAvailable = false;
+        let cleanupRef: string | null = null;
         try {
+          if (providerCleanup)
+            cleanupRef = await providerCleanup.registerTest(conversationId, runtime);
           // Creating the remote conversation can outlive a platform grant.
           if (!(await stillAdmin()))
             return json(res, 403, { error: "Доступ отозван" });
@@ -222,15 +235,16 @@ export function adminAiHttp({
               ? runtime.compactThresholdTokens
               : null,
             automaticTruncation: runtime.automaticTruncation,
+            signal,
           });
           answer = result.text;
           compactionAvailable = result.compactionAvailable;
           if (!(await stillAdmin()))
             return json(res, 403, { error: "Доступ отозван" });
         } finally {
-          void client
-            .deleteConversation(runtime, conversationId)
-            .catch(() => {});
+          if (cleanupRef) await providerCleanup!.pending(cleanupRef);
+          else if (db.kind !== "postgres")
+            void client.deleteConversation(runtime, conversationId).catch(() => {});
         }
         if (!(await stillAdmin()))
           return json(res, 403, { error: "Доступ отозван" });
@@ -240,12 +254,10 @@ export function adminAiHttp({
           answer: answer.trim() || "Подключение установлено",
           compactionAvailable,
         });
-      } catch (error) {
+      } catch {
+        // Provider error text may contain remote IDs or request details.
         return json(res, 502, {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Не удалось проверить подключение AI Studio",
+          error: "Не удалось проверить подключение AI Studio",
         });
       }
     }
