@@ -38,7 +38,7 @@ function validFactAlternatives(person: Family["people"][number]): boolean {
       typeof alternative.id !== "string" ||
       !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(alternative.id) ||
       ids.has(alternative.id) ||
-      !["birth", "death", "birthPlace", "deathPlace", "maidenName"].includes(alternative.field) ||
+      !["birth", "death", "birthPlace", "deathPlace", "maidenName", "occupation"].includes(alternative.field) ||
       typeof alternative.value !== "string" ||
       !alternative.value.trim() || alternative.value.length > 1000 ||
       alternative.value !== alternative.value.trim() ||

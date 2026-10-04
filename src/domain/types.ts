@@ -70,7 +70,7 @@ export type EventFactAlternative = PersonValueClaim & {
 /** A cited competing record; it never silently replaces the displayed value. */
 export type PersonFactAlternative = PersonValueClaim & {
   id: string;
-  field: "birth" | "death" | "birthPlace" | "deathPlace" | "maidenName";
+  field: "birth" | "death" | "birthPlace" | "deathPlace" | "maidenName" | "occupation";
 };
 /** Evidence for one existing direct parent edge; parents remains authoritative. */
 export type ParentClaim = {

@@ -10,11 +10,12 @@ const fieldName: Record<Fact, string> = {
   birthPlace: "место рождения",
   deathPlace: "место смерти",
   maidenName: "фамилия при рождении",
+  occupation: "занятие",
 };
 
 export function PersonAlternativeClaims({ kind, alternatives, savedIds, onChange,
   isAdmin, canAssess }: {
-  kind: "birth" | "death" | "maidenName";
+  kind: "birth" | "death" | "maidenName" | "occupation";
   alternatives: PersonFactAlternative[];
   savedIds: ReadonlySet<string>;
   onChange: (alternatives: PersonFactAlternative[]) => void;
@@ -22,7 +23,8 @@ export function PersonAlternativeClaims({ kind, alternatives, savedIds, onChange
   canAssess: boolean;
 }) {
   const visible = alternatives.filter((alternative) =>
-    alternative.field === kind || (kind !== "maidenName" && alternative.field === `${kind}Place`));
+    alternative.field === kind || ((kind === "birth" || kind === "death") &&
+      alternative.field === `${kind}Place`));
   const update = (id: string, changes: Partial<PersonFactAlternative>) =>
     onChange(alternatives.map((alternative) => alternative.id === id
       ? { ...alternative, ...changes } : alternative));
@@ -30,10 +32,13 @@ export function PersonAlternativeClaims({ kind, alternatives, savedIds, onChange
     id: crypto.randomUUID(), field, value: "", sources: [],
   }]);
   return <details className="form-details fact-alternatives">
-    <summary>{kind === "maidenName" ? "Другие фамилии при рождении" :
+    <summary>{kind === "occupation" ? "Другие записи о занятии" :
+      kind === "maidenName" ? "Другие фамилии при рождении" :
       `Другие записи о ${kind === "birth" ? "рождении" : "смерти"}`}
       {visible.length ? ` · ${visible.length}` : ""}</summary>
-    <p>{kind === "maidenName"
+    <p>{kind === "occupation"
+      ? "Если документы называют другое занятие, сохраните его отдельно с источником. Текущее занятие останется без изменений."
+      : kind === "maidenName"
       ? "Если документы называют другую фамилию при рождении, сохраните каждый вариант с его источником. Текущая фамилия останется без изменений."
       : "Если документы называют другую дату или место, сохраните каждый вариант с его источником. Основная дата и место останутся без изменений."}</p>
     {visible.map((alternative) => {
@@ -80,9 +85,10 @@ export function PersonAlternativeClaims({ kind, alternatives, savedIds, onChange
       </section>;
     })}
     <div className="fact-alternative-actions">
-      <button type="button" onClick={() => add(kind)}>{kind === "maidenName"
-        ? "Добавить другую фамилию" : "Добавить другую дату"}</button>
-      {kind !== "maidenName" && <button type="button" onClick={() => add(`${kind}Place`)}>
+      <button type="button" onClick={() => add(kind)}>{kind === "occupation"
+        ? "Добавить другое занятие" : kind === "maidenName"
+          ? "Добавить другую фамилию" : "Добавить другую дату"}</button>
+      {(kind === "birth" || kind === "death") && <button type="button" onClick={() => add(`${kind}Place`)}>
         Добавить другое место</button>}
     </div>
   </details>;

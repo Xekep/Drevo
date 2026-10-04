@@ -12,3 +12,16 @@ export function preserveBirthSurnameClaim(person: Person, alternativeId: string)
     }],
   };
 }
+
+/** Keep the cited former occupation as a competing value without changing its evidence. */
+export function preserveOccupationClaim(person: Person, alternativeId: string): Person {
+  const claim = person.occupationClaim;
+  if (!claim || claim.value === person.occupation) return person;
+  return {
+    ...person,
+    occupationClaim: undefined,
+    factAlternatives: [...(person.factAlternatives || []), {
+      ...claim, id: alternativeId, field: "occupation",
+    }],
+  };
+}

@@ -51,10 +51,14 @@ test("источник занятия остаётся связанным тол
   await page.locator(".occupation-claim > summary").click();
   await page.getByLabel("Занятие", { exact: true }).fill("Учитель");
   await expect(page.getByRole("alert").filter({ hasText: "Источники относятся к прежнему занятию" })).toBeVisible();
-  await page.getByRole("button", { name: "Снять связи с прежним занятием" }).click();
+  await page.getByRole("button", { name: "Сохранить прежнее занятие с источниками как вариант" }).click();
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect.poll(() => family.people.find((person) => person.id === "e2e-child")?.occupation)
     .toBe("Учитель");
   expect(family.people.find((person) => person.id === "e2e-child")?.occupationClaim)
     .toBeUndefined();
+  expect(family.people.find((person) => person.id === "e2e-child")?.factAlternatives)
+    .toEqual([expect.objectContaining({ field: "occupation", value: "Столяр",
+      sources: [expect.objectContaining({ catalogId: source.id, title })] })]);
+  await expect(page.getByText("Другое занятие: Столяр")).toBeVisible();
 });
