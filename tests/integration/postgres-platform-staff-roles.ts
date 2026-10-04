@@ -63,16 +63,22 @@ export async function verifyPlatformStaffRoles(
       (await fetch(`${base}/api/family`, { headers: targetHeaders })).status));
     assert.equal((await patch(targetHeaders, "admin")).status, 403);
 
+    // A received body can precede COMMIT of the protected GET delivery.
+    // Wait for its target-account read lock before the next ordinary mutation.
+    await client.query("SELECT id FROM accounts WHERE id=$1 FOR UPDATE", [id]);
     assert.equal((await patch(ownerHeaders, "admin")).status, 200);
     const adminProfile = await fetch(`${base}/api/session`, { headers: targetHeaders }).then((r) => r.json());
     assert.equal(adminProfile.account?.globalRole, "admin");
     assert.equal(adminProfile.user, null);
-    assert.equal((await fetch(`${base}/api/platform/roles`, { headers: targetHeaders })).status, 200);
+    const roles = await fetch(`${base}/api/platform/roles`, { headers: targetHeaders });
+    assert.equal(roles.status, 200);
+    await roles.arrayBuffer();
     assert.ok([401, 403].includes(
       (await fetch(`${base}/api/family`, { headers: targetHeaders })).status));
     assert.equal((await fetch(`${base}/api/mcp/tokens`, { headers: targetHeaders })).status, 403,
       "a global admin without approved archive ownership cannot manage full-tree MCP tokens");
 
+    await client.query("SELECT id FROM accounts WHERE id=$1 FOR UPDATE", [id]);
     assert.equal((await patch(ownerHeaders, null)).status, 200);
     assert.equal((await fetch(`${base}/api/platform/roles`, { headers: targetHeaders })).status, 403);
     assert.equal((await patch(ownerHeaders, null)).status, 200,
