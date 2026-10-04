@@ -73,7 +73,7 @@ test("folding descendants hides detached in-laws but keeps partners connected th
       await page.keyboard.up("Control");
     } else {
       await page
-        .getByRole("button", { name: "Вписать видимую часть дерева" })
+        .getByRole("button", { name: "Вписать видимую часть древа" })
         .click();
     }
   };

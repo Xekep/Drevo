@@ -70,7 +70,7 @@ export function PlatformStaffRoles({ currentAccountId, onOwnRoleChanged }: {
         <h2 id="platform-roles-title">Глобальные роли</h2>
       </div></div>
       <p className="account-card-copy">
-        Администратор и исследователь назначаются для платформы. Роль не даёт доступ к чужому дереву: для него требуется отдельное приглашение.
+        Администратор и исследователь назначаются для платформы. Роль не даёт доступ к чужому древу: для него требуется отдельное приглашение.
       </p>
       {accounts.map((account) => (
         <div className="account-archive-row platform-role-row" key={account.id}>

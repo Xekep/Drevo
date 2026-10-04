@@ -17,7 +17,7 @@ type Candidate = {
 async function responseJson<T>(response: Response): Promise<T> {
   const data = await response.json();
   if (!response.ok)
-    throw new Error(data.error || "Не удалось обновить владение деревом");
+    throw new Error(data.error || "Не удалось обновить владение древом");
   return data as T;
 }
 
@@ -110,12 +110,12 @@ export function AccountOwnerTransfer() {
   if (status && !status.owner && !status.incoming) return null;
   return (
     <div className="account-owner-transfer">
-      <strong>Владение деревом</strong>
+      <strong>Владение древом</strong>
       {status?.incoming && (
         <div className="account-owner-transfer-pending">
           <p>
             {status.incoming.fromName} предлагает вам стать владельцем этого
-            дерева. После принятия он останется участником без прав управления.
+            древа. После принятия он останется участником без прав управления.
           </p>
           <div className="account-owner-transfer-actions">
             <button
@@ -170,7 +170,7 @@ export function AccountOwnerTransfer() {
           ) : (
             <div className="account-owner-transfer-form">
               <p>
-                Получатель должен уже участвовать в этом дереве и подтвердить
+                Получатель должен уже участвовать в этом древе и подтвердить
                 передачу. Вы останетесь участником без прав управления.
               </p>
               <label>
@@ -192,7 +192,7 @@ export function AccountOwnerTransfer() {
                 {!loadingCandidates && !candidates.length && (
                   <p>
                     Подходящих участников нет. Сначала пригласите человека в
-                    дерево.
+                    древо.
                   </p>
                 )}
                 {candidates.map((candidate) => (
@@ -204,7 +204,7 @@ export function AccountOwnerTransfer() {
                     onClick={() => setSelected(candidate)}
                   >
                     {candidate.name}
-                    {!candidate.eligible && " · сейчас не может принять дерево"}
+                    {!candidate.eligible && " · сейчас не может принять древо"}
                   </button>
                 ))}
               </div>

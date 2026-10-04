@@ -408,7 +408,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       if (s.pointer && !voidPointer && record?.tag !== "SOUR")
         throw new Error(`Не найден источник ${s.value}`);
       if (record && value(record, "_DREVO_CATALOG_LINK_LOST") === "Y")
-        warnings.add("Связь цитаты с каталогом источников Drevo не перенесена: GEDCOM сохраняет цитату и вложение, но не запись каталога. Для полного переноса между деревьями используйте .drevo.");
+        warnings.add("Связь цитаты с каталогом источников Drevo не перенесена: GEDCOM сохраняет цитату и вложение, но не запись каталога. Для полного переноса между древами используйте .drevo.");
       const data = child(s, "DATA"),
         citationEvent = child(s, "EVEN"),
         eventRole = citationEvent && child(citationEvent, "ROLE"),

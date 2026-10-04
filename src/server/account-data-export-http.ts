@@ -92,7 +92,7 @@ export function accountDataExportHttp(
     if (delivery === "session-expired")
       return send(401, { error: "Сеанс завершён. Войдите снова" });
     if (delivery === "access-changed")
-      return send(409, { error: "Доступ к дереву изменился. Повторите экспорт" });
+      return send(409, { error: "Доступ к древу изменился. Повторите экспорт" });
     if (delivery === "access-busy")
       return send(409, { error: "Права доступа меняются. Повторите экспорт" });
     return true;

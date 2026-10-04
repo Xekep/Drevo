@@ -53,7 +53,7 @@ export function archiveInvitations(db: StoreDatabase) {
   const requireAdmin = (actor: ArchiveUser) => {
     if (!isArchiveOwner(actor) || !actor.approved)
       throw new InvalidInvitationError(
-        "Приглашениями управляет администратор дерева.",
+        "Приглашениями управляет администратор древа.",
       );
   };
   return {

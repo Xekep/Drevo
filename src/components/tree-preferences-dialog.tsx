@@ -271,7 +271,7 @@ export function TreePreferencesDialog({
         )}
         {onAdmin && (
           <button className="tree-admin-link" type="button" onClick={onAdmin}>
-            Управление деревом
+            Управление древом
           </button>
         )}
       </div>

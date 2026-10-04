@@ -65,7 +65,7 @@ export default function PublicPeople() {
     void archiveFetch("/api/account/archives", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         if (response.status === 501) return null;
-        if (!response.ok) throw new Error("Не удалось проверить ваши деревья для сопоставления");
+        if (!response.ok) throw new Error("Не удалось проверить ваши древа для сопоставления");
         return response.json() as Promise<{ archives: OwnedArchive[] }>;
       })
       .then((data) => {
@@ -73,7 +73,7 @@ export default function PublicPeople() {
           archive.owned && archive.approved && archive.id !== detail.archiveId));
       })
       .catch(() => {
-        if (!controller.signal.aborted) setMatchArchivesError("Не удалось проверить ваши деревья для сопоставления");
+        if (!controller.signal.aborted) setMatchArchivesError("Не удалось проверить ваши древа для сопоставления");
       });
     return () => controller.abort();
   }, [detail?.archiveId, detail?.id]);
@@ -204,16 +204,16 @@ export default function PublicPeople() {
       {detail && <PersonCard person={detail} />}
       {detail?.archiveId && matchArchives.length > 0 && <section className="public-people-match">
         <h2>Предложить связь с моей карточкой</h2>
-        <p>Выберите своё дерево и сравните две опубликованные карточки перед отправкой запроса. Связь появится только после подтверждения другой стороны.</p>
+        <p>Выберите своё древо и сравните две опубликованные карточки перед отправкой запроса. Связь появится только после подтверждения другой стороны.</p>
         {matchArchives.map((archive) => <a key={archive.id}
           href={adminMatchTargetPath(archive.id, { archiveId: detail.archiveId!, personId: detail.id })}>
-          Открыть сопоставление в дереве «{archive.title}»
+          Открыть сопоставление в древе «{archive.title}»
         </a>)}
       </section>}
       {detail && matchArchivesError && <p role="status">{matchArchivesError}</p>}
       {detail && linkedCards.length > 0 && <section className="public-people-linked">
-        <h2>Этот человек в других деревьях</h2>
-        <p>Владельцы обоих деревьев подтвердили соответствие карточек. Доступны только опубликованные сведения.</p>
+        <h2>Этот человек в других древах</h2>
+        <p>Владельцы обоих древ подтвердили соответствие карточек. Доступны только опубликованные сведения.</p>
         <div className="public-people-results">
           {linkedCards.map((person) => <a key={`${person.archiveId}:${person.id}`}
             href={`/discover/person/${encodeURIComponent(person.archiveId || "")}/${encodeURIComponent(person.id)}`}

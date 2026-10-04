@@ -67,7 +67,7 @@ export function PortableImport() {
 
   return (
     <div className="account-portable-import">
-      <strong>Перенести архив в пустое дерево</strong>
+      <strong>Перенести архив в пустое древо</strong>
       <p>
         Фото, документы, источники и обсуждения будут проверены перед импортом.
       </p>
@@ -116,7 +116,7 @@ export function PortableImport() {
             disabled={busy || !preview.canImport}
             onClick={() => void apply()}
           >
-            {busy ? "Импортируем…" : "Импортировать в это дерево"}
+            {busy ? "Импортируем…" : "Импортировать в это древо"}
           </button>
         </div>
       )}

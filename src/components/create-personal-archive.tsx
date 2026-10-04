@@ -15,7 +15,7 @@ export function CreatePersonalArchive() {
       });
       const data = await response.json();
       if (!response.ok)
-        throw new Error(data.error || "Не удалось создать дерево");
+        throw new Error(data.error || "Не удалось создать древо");
       window.location.assign(`/a/${encodeURIComponent(data.archiveId)}/tree`);
     } catch (cause) {
       setError((cause as Error).message);
@@ -31,7 +31,7 @@ export function CreatePersonalArchive() {
         disabled={busy}
         onClick={() => void create()}
       >
-        {busy ? "Создаём дерево…" : "Создать новое дерево"}
+        {busy ? "Создаём древо…" : "Создать новое древо"}
       </button>
       {error && (
         <p className="account-error" role="alert">

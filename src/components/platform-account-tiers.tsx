@@ -128,7 +128,7 @@ export function PlatformAccountTiers({ currentAccountId, onOwnTierChanged }: {
       <h2 id="platform-tiers-title">Уровень доступа</h2>
     </div></div>
     <p className="account-card-copy">Полный уровень включает расширенные возможности,
-      но не открывает чужие деревья и не назначает глобальную роль.</p>
+      но не открывает чужие древа и не назначает глобальную роль.</p>
     {totals && <p className="account-card-copy" aria-label="Сводка уровней доступа">
       Базовый: {totals.basic} · Полный: {totals.full}
     </p>}
@@ -151,7 +151,7 @@ export function PlatformAccountTiers({ currentAccountId, onOwnTierChanged }: {
           Людей: {usage[account.id].people}; файлы: {usage[account.id].mediaBytes === null
             ? "объём не подтверждён" : `${new Intl.NumberFormat("ru-RU", {
               maximumFractionDigits: 1 }).format(usage[account.id].mediaBytes! / 1_000_000)} МБ`}
-        </> : "Своё дерево ещё не создано; расход неизвестен"}
+        </> : "Своё древо ещё не создано; расход неизвестен"}
       </p>}
       {usageError[account.id] && <p role="alert" className="form-error">{usageError[account.id]}</p>}
     </div>)}

@@ -101,7 +101,7 @@ export function InvitationsAdmin() {
   };
   return (
     <section className="admin-card invitations-admin">
-      <h2>Пригласить в дерево</h2>
+      <h2>Пригласить в древо</h2>
       <p>
         Одноразовая ссылка открывает доступ только к этому архиву. Первый
         вошедший участник принимает приглашение.

@@ -8172,7 +8172,7 @@ try {
     await client.query(`DELETE FROM archive_audit_entries
       WHERE archive_id='runtime-test' AND entity='user'
         AND entity_id='candidate-owner-successor'
-        AND action IN ('Предложена передача владения деревом','Передано владение деревом')`);
+        AND action IN ('Предложена передача владения древом','Передано владение древом')`);
     await client.query(`DELETE FROM accounts WHERE id='candidate-owner-successor'`);
   }
   console.log("runtime_discovery_candidate_owner_revocation_ok");

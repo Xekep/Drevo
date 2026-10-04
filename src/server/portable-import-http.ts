@@ -169,7 +169,7 @@ export function portableImportHttp(
   async function preview(req: IncomingMessage, actorId: string) {
     if (!(await empty()))
       throw new ConflictError(
-        "Переносимый архив можно импортировать только в пустое дерево",
+        "Переносимый архив можно импортировать только в пустое древо",
       );
     const length =
       req.headers["content-length"] === undefined
@@ -432,7 +432,7 @@ export function portableImportHttp(
     let committed = false;
     try {
       if (!(await empty()))
-        throw new ConflictError("Дерево изменилось после предпросмотра");
+        throw new ConflictError("Древо изменилось после предпросмотра");
       const parsed = await parsePackage(join(directory, "input"), directory);
       if (parsed.files.get("manifest.json")!.sha256 !== previewed.manifestSha256)
         throw new ConflictError("Пакет Drevo изменился после предпросмотра; проверьте его заново");
@@ -536,7 +536,7 @@ export function portableImportHttp(
       const actor = await mayImport(req);
       if (!actor)
         return json((await auth.currentUser(req)) ? 403 : 401, {
-          error: "Импорт доступен владельцу дерева",
+          error: "Импорт доступен владельцу древа",
         });
       try {
         const performImport = async () => {

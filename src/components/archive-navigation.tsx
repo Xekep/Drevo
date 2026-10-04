@@ -196,7 +196,7 @@ export function ArchiveNavigation({
               onClick={(event) => navigate(event, "manage")}
             >
               <ShieldCheck size={22} />
-              <span>Управление деревом</span>
+              <span>Управление древом</span>
             </a>
           )}
           {(account?.globalRole === "admin" || user?.globalRole === "admin" || user?.platformAdmin === true) && (

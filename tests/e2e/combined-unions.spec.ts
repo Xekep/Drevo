@@ -58,7 +58,7 @@ for (const cardVariant of ["classic", "portrait"] as const)
     await expect(page.locator(".flow-household")).toHaveCount(0);
     if (!isMobile)
       await page
-        .getByRole("button", { name: "Вписать видимую часть дерева" })
+        .getByRole("button", { name: "Вписать видимую часть древа" })
         .click();
     const positions = await page
       .locator(".react-flow__node-person")

@@ -1602,7 +1602,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               <ArrowLeftRight size={14} aria-hidden="true" />
             </button>
           ) : (
-            <div className="segmented" aria-label="Представление дерева">
+            <div className="segmented" aria-label="Представление древа">
               <button
                 aria-pressed={!activeFanAnchor && mode === "generations"}
                 disabled={growthLocked || layoutBusy}
@@ -1921,7 +1921,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           ariaLabelConfig={{
             "controls.zoomIn.ariaLabel": "Увеличить",
             "controls.zoomOut.ariaLabel": "Уменьшить",
-            "controls.fitView.ariaLabel": "Показать дерево",
+            "controls.fitView.ariaLabel": "Показать древо",
             "edge.a11yDescription.default":
               "Нажмите Enter для выбора связи. Изменить участников можно в правой панели.",
           }}
@@ -2038,7 +2038,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 </button>
                 {props.onRename && (
                   <button className="flow-empty-rename" onClick={props.onRename}>
-                    Назвать дерево
+                    Назвать древо
                   </button>
                 )}
               </div>

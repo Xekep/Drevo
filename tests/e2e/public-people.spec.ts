@@ -47,7 +47,7 @@ test("discovery keeps same-ID cards from different archives distinct and paginat
   await page.getByRole("link", { name: "Тестов Павел" }).click();
   await expect(page.locator(".public-person-card").first()).toContainText("1901");
   await expect(page).toHaveURL(/\/discover\/person\/tree-b\/same$/);
-  await expect(page.getByRole("heading", { name: "Этот человек в других деревьях" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Этот человек в других древах" })).toBeVisible();
   await page.getByRole("link", { name: "Тестов Иван" }).click();
   await expect(page).toHaveURL(/\/discover\/person\/tree-a\/same$/);
 });
@@ -447,15 +447,15 @@ test("invited admin sees owner-only publication explanation without forbidden co
       role: "admin", approved: true, owned: false, current: true }] } }));
   await page.route((url) => url.pathname.startsWith("/api/admin/published-people/"), (route) => {
     forbiddenCalls += 1;
-    return route.fulfill({ status: 403, json: { error: "Публикация доступна владельцу дерева" } });
+    return route.fulfill({ status: 403, json: { error: "Публикация доступна владельцу древа" } });
   });
 
   await page.goto("/manage");
   await openAdminSection(page, "publications", "Можно найти");
-  await expect(page.getByText("Публикацией людей управляет владелец дерева.")).toBeVisible();
+  await expect(page.getByText("Публикацией людей управляет владелец древа.")).toBeVisible();
   await expect(page.locator(".publication-admin-list")).toHaveCount(0);
-  await openAdminSection(page, "matches", "Связи деревьев");
-  await expect(page.getByText("Связями с другими деревьями управляет владелец дерева.")).toBeVisible();
+  await openAdminSection(page, "matches", "Связи древ");
+  await expect(page.getByText("Связями с другими древами управляет владелец древа.")).toBeVisible();
 
   await page.goto("/tree");
   await expect(page.getByTestId("rf__node-e2e-memorial-person")).toBeAttached();

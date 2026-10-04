@@ -55,7 +55,7 @@ test("tree owner reaches scoped management from the avatar menu, and old scoped 
   await expect(page).toHaveURL(/\/a\/tree-a\/manage\/matches$/);
   await page.goto("/admin/matches");
   await expect(page).toHaveURL(/\/manage\/matches$/);
-  await expect(page.getByRole("heading", { name: "Связи деревьев" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Связи древ" })).toBeVisible();
 });
 
 test("gear opens only owner management; full tier does not grant platform settings", async ({ page }) => {
@@ -63,7 +63,7 @@ test("gear opens only owner management; full tier does not grant platform settin
   await page.goto("/tree");
   await page.getByRole("button", { name: "Настройки древа" }).click();
   await page.getByRole("dialog", { name: "Вид древа" })
-    .getByRole("button", { name: "Управление деревом" }).click();
+    .getByRole("button", { name: "Управление древом" }).click();
   await expect(page).toHaveURL(/\/manage$/);
   for (const label of ["Yandex AI", "Хранилище", "Вход через VK", "Ресурсы поиска"])
     await expect(page.locator(".admin-sidebar nav").getByRole("button", { name: label })).toHaveCount(0);
@@ -93,7 +93,7 @@ test("global admin without membership opens /admin without requesting a private 
   await expect(page.locator(".nav-menu-account")).toHaveAttribute("href", "/account");
   await expect(page.locator(".nav-menu-platform")).toHaveAttribute("href", "/admin");
   await expect(page.locator(".nav-menu-manage")).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Управление деревом" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Управление древом" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Резервные копии", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "MCP-токены", exact: true })).toBeVisible();
 });
@@ -127,7 +127,7 @@ test("global admin with reader membership has platform entry but no owner contro
   await page.getByLabel("Меню проекта").click();
   await page.getByRole("button", { name: "Настройки древа" }).click();
   await expect(page.getByRole("dialog", { name: "Вид древа" })
-    .getByRole("button", { name: "Управление деревом" })).toHaveCount(0);
+    .getByRole("button", { name: "Управление древом" })).toHaveCount(0);
   await page.goto("/manage");
   await expect(page.getByText("Панель доступна администратору.")).toBeVisible();
 });

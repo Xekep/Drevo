@@ -91,8 +91,8 @@ export function PersonInspector({
             <CopyArchiveLink target={{ kind: "person", id: person.id }} />
           )}
           {matchPath && <a className="person-action-icon" href={matchPath}
-            aria-label="Найти совпадения в других деревьях"
-            title="Найти совпадения в других деревьях"><Link2 size={16} /></a>}
+            aria-label="Найти совпадения в других древах"
+            title="Найти совпадения в других древах"><Link2 size={16} /></a>}
           {canEdit && owns(user, person) && (
             <button
               onClick={onEdit}

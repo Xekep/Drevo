@@ -158,7 +158,7 @@ export function PublishPersonDialog({
           <legend>Близкие родственники в поиске</legend>
           <p>Каждую связь можно разрешить и отозвать отдельно. Для деда или бабушки
             опубликованы все три карточки; выбранный путь виден в подсказках только при
-            отдельном согласии владельцев обоих деревьев.</p>
+            отдельном согласии владельцев обоих древ.</p>
           {relatives.map((relative) => <label key={relativeKey(relative)} className="publication-field">
             <input type="checkbox" checked={relative.enabled}
               onChange={() => void updateRelative(relative)} />

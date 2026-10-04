@@ -213,7 +213,7 @@ export function publishedPeopleHttp({
       });
     if ((admin || batch || batchPreview) &&
         (!isArchiveOwner(user) || user.approved !== true || !await isOwner(user.id)))
-      return json(res, 403, { error: "Публикация доступна владельцу дерева" });
+      return json(res, 403, { error: "Публикация доступна владельцу древа" });
     if (
       !admin && !batch && !batchPreview &&
       !(await limiter.allow(

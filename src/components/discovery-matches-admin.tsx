@@ -89,8 +89,8 @@ function PublishedPairComparison({ own, other }: { own: Candidate; other: Candid
           ? "Текст совпадает" : "Текст различается";
       return <div key={field}>
         <dt>{label} <small>{state}</small></dt>
-        <dd><span>Ваше дерево: {ownValue || "Нет в публикации"}</span>
-          <span>Другое дерево: {otherValue || "Нет в публикации"}</span></dd>
+        <dd><span>Ваше древо: {ownValue || "Нет в публикации"}</span>
+          <span>Другое древо: {otherValue || "Нет в публикации"}</span></dd>
       </div>;
     })}</dl>
   </section>;
@@ -302,7 +302,7 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
       signal: controller.signal, cache: "no-store",
     }).then(async (response) => {
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Не удалось загрузить скрытые деревья");
+      if (!response.ok) throw new Error(body.error || "Не удалось загрузить скрытые древа");
       setIgnoredArchives((current) => ignoredArchivePage
         ? [...current, ...body.archives.filter((item: IgnoredArchive) =>
           !current.some((old) => old.archiveId === item.archiveId))]
@@ -373,7 +373,7 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
         throw new Error(body.error || "Не удалось изменить решение");
       }
       setNotice(decision === "accept" ? "Сопоставление подтверждено." :
-        decision === "reject" ? "Запрос отклонён. Эта подсказка скрыта для вашего дерева; вернуть её можно в списке «Скрытые»." : "Связь отозвана.");
+        decision === "reject" ? "Запрос отклонён. Эта подсказка скрыта для вашего древа; вернуть её можно в списке «Скрытые»." : "Связь отозвана.");
       if (decision === "reject") {
         setSuggestions([]); setSuggestionsCursor(null); setSuggestionsNextCursor(null);
         setSuggestionsReload((value) => value + 1);
@@ -417,10 +417,10 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
         body: JSON.stringify({ targetArchiveId, ignored }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Не удалось изменить скрытое дерево");
+      if (!response.ok) throw new Error(body.error || "Не удалось изменить скрытое древо");
       if (target?.archiveId === targetArchiveId) setTarget(null);
-      setNotice(ignored ? "Подсказки этого дерева скрыты. Ручной поиск остаётся доступным."
-        : "Подсказки этого дерева снова доступны.");
+      setNotice(ignored ? "Подсказки этого древа скрыты. Ручной поиск остаётся доступным."
+        : "Подсказки этого древа снова доступны.");
       setIgnoredArchivePage(0);
       setIgnoredArchiveReload((value) => value + 1);
       setSuggestionsCursor(null); setSuggestionsNextCursor(null);
@@ -437,9 +437,9 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
 
   return <div className="discovery-matches-admin">
     <section className="admin-card archive-form">
-      <p>Сопоставление подтверждает, что две опубликованные карточки описывают одного человека. После подтверждения переход между ними доступен вошедшим пользователям. Оно не объединяет деревья и не открывает чужую ветку.</p>
+      <p>Сопоставление подтверждает, что две опубликованные карточки описывают одного человека. После подтверждения переход между ними доступен вошедшим пользователям. Оно не объединяет древа и не открывает чужую ветку.</p>
       <div className="match-search-grid">
-        <div><label>Человек из этого дерева
+        <div><label>Человек из этого древа
           <input type="search" value={ownQuery} onChange={(event) => {
             setOwnQuery(event.target.value); setSource(null); setSourceUnavailable(false); setSuggestions([]);
             setSuggestionsBusy(false); setSuggestionsCursor(null); setSuggestionsNextCursor(null);
@@ -465,36 +465,36 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
             {!ownPeople.length && !source && <p>Опубликуйте свою карточку в разделе «Можно найти».</p>}
           </div>
         </div>
-        <div><label>Карточка из другого дерева
+        <div><label>Карточка из другого древа
           <input type="search" value={targetQuery} onChange={(event) => {
             setTargetQuery(event.target.value); setTarget(null); setTargets([]);
             setTargetCursor(null); setTargetNextCursor(null);
             setTargetLoading(event.target.value.trim().length >= 2);
           }} placeholder="Введите ФИО (от 2 символов)" />
         </label>
-          <div className="match-options" aria-label="Найденные люди в других деревьях">
+          <div className="match-options" aria-label="Найденные люди в других древах">
             {targets.filter((person) => person.archiveId !== archiveId).map((person) => <button type="button"
               key={`${person.archiveId}:${person.id}`} className={target?.archiveId === person.archiveId && target.id === person.id ? "is-selected" : ""}
               aria-pressed={target?.archiveId === person.archiveId && target.id === person.id}
               onClick={() => setTarget(person)}>{person.name}<small>{person.birthYear || "?"}–{person.deathYear || "?"}</small></button>)}
             {targetLoading && <p role="status">Ищем…</p>}
-            {targetQuery.trim().length >= 2 && !targetLoading && !targets.some((person) => person.archiveId !== archiveId) && <p>Карточек в других деревьях не найдено.</p>}
+            {targetQuery.trim().length >= 2 && !targetLoading && !targets.some((person) => person.archiveId !== archiveId) && <p>Карточек в других древах не найдено.</p>}
           </div>
           {targetNextCursor && <button type="button" className="match-more" disabled={targetLoading}
             onClick={() => { setTargetLoading(true); setTargetCursor(targetNextCursor); }}>Показать ещё</button>}
         </div>
       </div>
       {linkedSource && source?.id === linkedSource && <div className="match-review">
-        <h2>Карточка из вашего дерева</h2>
+        <h2>Карточка из вашего древа</h2>
         <CandidateCard candidate={source} ownArchiveId={archiveId} />
-        <p>Выберите предложенное совпадение или найдите опубликованную карточку другого дерева вручную.</p>
+        <p>Выберите предложенное совпадение или найдите опубликованную карточку другого древа вручную.</p>
       </div>}
       {linkedSource && sourceUnavailable && (linkedSourcePerson
         ? <p role="status">Сначала опубликуйте эту карточку в разделе «Можно найти». После публикации вернитесь к сопоставлению.
           <button type="button" onClick={() => setShowPublication(true)}>Открыть публикацию карточки</button>
           <a href={scopedArchivePath(archiveTargetPath({ kind: "person", id: linkedSource }))}>Вернуться к человеку</a>
         </p>
-        : <p role="status">Карточка недоступна в этом дереве.</p>)}
+        : <p role="status">Карточка недоступна в этом древе.</p>)}
       {showPublication && linkedSourcePerson &&
         <PublishPersonDialog person={linkedSourcePerson}
           onStatus={setPublicationPublished} onClose={() => {
@@ -505,7 +505,7 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
       {linkedTarget && target && !source && <div className="match-review">
         <h2>Карточка из ссылки</h2>
         <CandidateCard candidate={target} ownArchiveId={archiveId} />
-        <p>Выберите опубликованную карточку из своего дерева, чтобы сравнить сведения и предложить связь.</p>
+        <p>Выберите опубликованную карточку из своего древа, чтобы сравнить сведения и предложить связь.</p>
       </div>}
       {source && <div className="match-suggestions">
         <div className="match-suggestions-heading">
@@ -546,7 +546,7 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
               <button type="button" className="match-ignore-action" disabled={busy}
                 onClick={() => void setIgnored(item, !showIgnored)}>{showIgnored ? "Вернуть" : "Не тот"}</button>
               {!showIgnored && <button type="button" className="match-ignore-action" disabled={busy}
-                onClick={() => void setIgnoredArchive(item.archiveId, true)}>Скрыть дерево</button>}
+                onClick={() => void setIgnoredArchive(item.archiveId, true)}>Скрыть древо</button>}
             </div>
           </div>)}
         </div>
@@ -556,11 +556,11 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
         </button>}
       </div>}
       <details className="match-ignored-archives">
-        <summary>Скрытые деревья{ignoredArchives.length ? ` · ${ignoredArchives.length}${nextIgnoredArchivePage !== null ? "+" : ""}` : ""}</summary>
-        {!ignoredArchives.length && <p>Нет скрытых деревьев.</p>}
+        <summary>Скрытые древа{ignoredArchives.length ? ` · ${ignoredArchives.length}${nextIgnoredArchivePage !== null ? "+" : ""}` : ""}</summary>
+        {!ignoredArchives.length && <p>Нет скрытых древ.</p>}
         {ignoredArchives.map((item) => <div className="match-ignored-archive" key={item.archiveId}>
-          <span>{item.exampleName ? `Дерево с карточкой «${item.exampleName}»` : "Дерево без опубликованных карточек"}</span>
-          <button type="button" disabled={busy} onClick={() => void setIgnoredArchive(item.archiveId, false)}>Вернуть дерево</button>
+          <span>{item.exampleName ? `Древо с карточкой «${item.exampleName}»` : "Древо без опубликованных карточек"}</span>
+          <button type="button" disabled={busy} onClick={() => void setIgnoredArchive(item.archiveId, false)}>Вернуть древо</button>
         </div>)}
         {nextIgnoredArchivePage !== null && <button type="button" disabled={busy}
           onClick={() => setIgnoredArchivePage(nextIgnoredArchivePage)}>Показать ещё</button>}
@@ -570,7 +570,7 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
         <div className="match-pair"><CandidateCard candidate={source} ownArchiveId={archiveId} />
           <CandidateCard candidate={target} ownArchiveId={archiveId} /></div>
         <PublishedPairComparison own={source} other={target} />
-        <label>Почему это один человек? <small>Необязательно; сообщение увидит другое дерево</small>
+        <label>Почему это один человек? <small>Необязательно; сообщение увидит другое древо</small>
           <textarea value={reason} maxLength={500} rows={2} onChange={(event) => setReason(event.target.value)}
             placeholder="Например: совпадают родители и место рождения" />
         </label>
@@ -578,7 +578,7 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
       </div>}
     </section>
     <section className="admin-card archive-form">
-      <h2>Запросы между деревьями</h2>
+      <h2>Запросы между древами</h2>
       {deferredCount > 0 && <p>Отложено до следующего открытия раздела: {deferredCount}. <button type="button"
         onClick={() => { setDeferredMatches(new Set()); setNotice("Отложенные запросы снова показаны."); }}>Показать сейчас</button></p>}
       {matchesLoading && <p role="status">Проверяем доступность связей…</p>}
@@ -621,7 +621,7 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
                     ...current, [item.id]: event.target.value,
                   }))} />
               </label>
-              <small>Его увидят владельцы обоих деревьев. После повторной публикации любой карточки пояснение скрывается. Не добавляйте закрытые сведения.</small>
+              <small>Его увидят владельцы обоих древ. После повторной публикации любой карточки пояснение скрывается. Не добавляйте закрытые сведения.</small>
             </details>
             <button type="button" disabled={busy || !item.reviewToken}
               data-review-token={item.reviewToken}

@@ -78,7 +78,7 @@ test("rendered families share generation floors with bounded soft alignment", as
     points.get("grand-a")!.y,
   );
   await page
-    .getByRole("button", { name: "Вписать видимую часть дерева" })
+    .getByRole("button", { name: "Вписать видимую часть древа" })
     .click();
   await expect(page.getByTestId("rf__node-grand-d")).toBeInViewport({
     // Chromium's intersection ratio can round below 1 after viewport scaling.

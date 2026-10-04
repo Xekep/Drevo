@@ -184,7 +184,7 @@ export async function userStore(
         );
       if (!Object.hasOwn(ROLE_NAMES, role)) throw new Error("Неизвестная роль");
       if (db.kind === "postgres" && role !== "reader" && role !== "relative")
-        throw new ForbiddenError("Владелец дерева может назначать только читателя или родственника");
+        throw new ForbiddenError("Владелец древа может назначать только читателя или родственника");
       const target = await get(id);
       if (!target) throw new Error("Пользователь не найден");
       if (

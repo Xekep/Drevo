@@ -64,7 +64,7 @@ export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, onOw
         <div className="account-heading">
           <span className="account-eyebrow">Drevo</span>
           <h1>Админка платформы</h1>
-          <p>Глобальные роли и настройки платформы. Управление конкретным деревом открывается из его меню.</p>
+          <p>Глобальные роли и настройки платформы. Управление конкретным древом открывается из его меню.</p>
         </div>
         <nav className="platform-settings-tabs" aria-label="Разделы админки платформы">
           {sections.filter((item) => showRoles || item.id !== "roles").map((item) => (

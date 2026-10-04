@@ -45,7 +45,7 @@ export function archiveDeletion(
       )
       .get(actor.id, actor.id);
     if (!row)
-      throw new ForbiddenError("Удалить дерево может только его владелец");
+      throw new ForbiddenError("Удалить древо может только его владелец");
     return {
       title: String(row.title),
       people: Number(row.people),
@@ -70,7 +70,7 @@ export function archiveDeletion(
         const current = await plan(actor, true);
         if (confirmation.title !== current.title)
           throw new ConflictError(
-            "Название дерева не совпало. Проверьте подтверждение",
+            "Название древа не совпало. Проверьте подтверждение",
           );
         if (current.otherMembers && !confirmation.removeCollaborators)
           throw new ConflictError(
@@ -92,7 +92,7 @@ export function archiveDeletion(
           .prepare("", "DELETE FROM archives WHERE id=?")
           .run(archiveId);
         if (deleted.changes !== 1)
-          throw new ConflictError("Дерево уже удалено");
+          throw new ConflictError("Древо уже удалено");
         return current;
       });
       let filesRemoved = true;
