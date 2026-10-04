@@ -931,7 +931,48 @@ test("мобильная админка доступна и не разъезж�
   await expect(
     page.getByRole("heading", { name: "Участники", exact: true }),
   ).toBeVisible();
-  await expect(page.locator("#admin-section-select")).toHaveValue("users");
+  const navigation = page.getByRole("navigation", { name: "Разделы админки" });
+  await expect(navigation.getByRole("button", { name: "Участники", exact: true }))
+    .toHaveAttribute("aria-current", "page");
+  await expect(page.locator("#admin-section-select")).toHaveCount(0);
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    const menu = await navigation.evaluate((nav) => ({
+      width: nav.clientWidth,
+      contentWidth: nav.scrollWidth,
+      pageOverflow: document.documentElement.scrollWidth - innerWidth,
+      rows: [...nav.querySelectorAll("button")].map((button) =>
+        button.getBoundingClientRect().top,
+      ),
+    }));
+    expect(menu.contentWidth).toBeGreaterThan(menu.width);
+    expect(menu.pageOverflow).toBeLessThanOrEqual(1);
+    expect(Math.max(...menu.rows) - Math.min(...menu.rows)).toBeLessThan(2);
+  }
+  await page.setViewportSize({ width: 320, height: 844 });
+  const touch = await page.context().newCDPSession(page);
+  for (const direction of [-1, 1]) {
+    const before = await navigation.evaluate((nav) => nav.scrollLeft);
+    const bounds = (await navigation.boundingBox())!;
+    const x = direction < 0 ? bounds.x + bounds.width - 20 : bounds.x + 20;
+    const y = bounds.y + bounds.height / 2;
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchStart", touchPoints: [{ x, y }],
+    });
+    for (const distance of [30, 60, 90, 120]) {
+      await touch.send("Input.dispatchTouchEvent", {
+        type: "touchMove", touchPoints: [{ x: x + direction * distance, y }],
+      });
+      await page.waitForTimeout(25);
+    }
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchEnd", touchPoints: [],
+    });
+    const scrolled = expect.poll(() => navigation.evaluate((nav) => nav.scrollLeft));
+    if (direction < 0) await scrolled.toBeGreaterThan(before);
+    else await scrolled.toBeLessThan(before);
+  }
+  await touch.detach();
   const row = page.locator(".admin-user-row").first();
   await expect(row).toBeVisible();
   await expect(row.getByText("Роль", { exact: true })).toBeVisible();
@@ -947,6 +988,15 @@ test("мобильная админка доступна и не разъезж�
   await expect(
     page.getByRole("heading", { level: 1, name: "Журнал правок" }),
   ).toBeVisible();
+  await page.reload();
+  const selected = navigation.getByRole("button", { name: "Журнал правок", exact: true });
+  await expect(selected).toHaveAttribute("aria-current", "page");
+  await expect.poll(async () => {
+    const menu = (await navigation.boundingBox())!;
+    const button = (await selected.boundingBox())!;
+    return button.x >= menu.x - 1 && button.x + button.width <= menu.x + menu.width + 1;
+  }).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("admin-navigation-320.png") });
 });
 
 test("семья на древе подсвечивается без режима родства", async ({

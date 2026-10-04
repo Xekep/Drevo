@@ -72,10 +72,9 @@ test("basic owner reaches tree management from the gear without platform or AI s
   await expect(navigation.locator("button", { hasText: "Хранилище" })).toBeAttached();
   for (const label of ["Yandex AI", "Ресурсы поиска", "MCP-токены", "Резервные копии"]) {
     await expect(navigation.locator("button", { hasText: label })).toHaveCount(0);
-    await expect(page.locator("#admin-section-select").getByRole("option", { name: label })).toHaveCount(0);
   }
-  await expect(page.locator("#admin-section-select optgroup[label='Платформа']")).toHaveCount(0);
-  await expect(page.locator("#admin-section-select optgroup[label='ИИ и поиск']")).toHaveCount(0);
+  await expect(navigation.locator(".admin-nav-label", { hasText: "Платформа" })).toHaveCount(0);
+  await expect(navigation.locator(".admin-nav-label", { hasText: "ИИ и поиск" })).toHaveCount(0);
 
   await page.goto("/admin?section=ai");
   await expect(page).toHaveURL(/\/admin$/);
@@ -94,9 +93,8 @@ test("full owner keeps archive AI tools, while platform settings stay hidden", a
     await expect(navigation.locator("button", { hasText: label })).toBeAttached();
   }
   await expect(navigation.locator("button", { hasText: "Yandex AI" })).toHaveCount(0);
-  await expect(page.locator("#admin-section-select").getByRole("option", { name: "Yandex AI" })).toHaveCount(0);
   await expect(navigation.locator("button", { hasText: "Резервные копии" })).toHaveCount(0);
-  await expect(page.locator("#admin-section-select optgroup[label='Платформа']")).toHaveCount(0);
+  await expect(navigation.locator(".admin-nav-label", { hasText: "Платформа" })).toHaveCount(0);
   await page.goto("/admin?section=ai");
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole("heading", { name: "Участники" })).toBeVisible();
@@ -109,7 +107,9 @@ test("platform admin gets AI settings even without the archive AI feature tier",
   await expect(navigation.locator(".admin-nav-label", { hasText: "Платформа" })).toBeAttached();
   await expect(navigation.locator("button", { hasText: "Yandex AI" })).toBeAttached();
   await expect(navigation.locator("button", { hasText: "Резервные копии" })).toBeAttached();
-  await expect(page.locator("#admin-section-select optgroup[label='Платформа'] option")).toHaveText(["Yandex AI", "Резервные копии"]);
+  await expect(navigation.locator(".admin-nav-group").filter({
+    has: page.locator(".admin-nav-label", { hasText: "Платформа" }),
+  }).locator("button")).toHaveText(["Yandex AI", "Резервные копии"]);
   await expect(navigation.locator("button", { hasText: "MCP-токены" })).toHaveCount(0);
   await openAdminSection(page, "ai", "Yandex AI");
   await expect(page.locator(".admin-page-header .section-label")).toHaveText("УПРАВЛЕНИЕ ПЛАТФОРМОЙ");
@@ -121,7 +121,7 @@ test("full-tier invited admin cannot see AI tools while the tree owner is basic"
   await accountView(page, { fullAccess: true, platformAdmin: false, aiAvailable: false });
   await page.goto("/admin");
   await expect(page.locator(".admin-sidebar nav button", { hasText: "Yandex AI" })).toHaveCount(0);
-  await expect(page.locator("#admin-section-select option", { hasText: "MCP-токены" })).toHaveCount(0);
+  await expect(page.locator(".admin-sidebar nav button", { hasText: "MCP-токены" })).toHaveCount(0);
   await expect(page.locator(".admin-sidebar nav button", { hasText: "Источники" })).toBeAttached();
 });
 

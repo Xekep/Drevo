@@ -995,5 +995,7 @@ test("a selected linked member opens through its own permission-checked URL", as
   // This fixture has a local SQLite archive, so tree-a is a mocked remote archive.
   await page.goto("/admin/matches");
   await expect(page.getByRole("heading", { name: "Запросы между деревьями" })).toBeVisible();
-  await expect(page.locator("#admin-section-select")).toHaveValue("matches");
+  await expect(page.getByRole("navigation", { name: "Разделы админки" })
+    .getByRole("button", { name: "Связи деревьев", exact: true }))
+    .toHaveAttribute("aria-current", "page");
 });

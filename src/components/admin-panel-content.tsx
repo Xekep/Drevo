@@ -1,5 +1,5 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Bot,
@@ -373,6 +373,24 @@ export function AdminPanel({
   })).filter((group) => group.items.length > 0);
   const visibleSection = visibleGroups.some((group) => group.items.some((item) => item.id === section))
     ? section : "users";
+  const navigation = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const nav = navigation.current;
+    if (!nav) return;
+    const revealSelected = () => {
+      if (nav.scrollWidth <= nav.clientWidth) return;
+      const selected = nav.querySelector('[aria-current="page"]');
+      if (!selected) return;
+      const bounds = nav.getBoundingClientRect();
+      const item = selected.getBoundingClientRect();
+      if (item.left < bounds.left) nav.scrollLeft += item.left - bounds.left;
+      else if (item.right > bounds.right) nav.scrollLeft += item.right - bounds.right;
+    };
+    revealSelected();
+    const observer = new ResizeObserver(revealSelected);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, [visibleSection]);
   const selectSection = (next: string) => {
     if (!visibleGroups.some((group) => group.items.some((item) => item.id === next))) return;
     setSection(next);
@@ -461,27 +479,7 @@ export function AdminPanel({
             <b>Управление деревом</b>
           </span>
         </div>
-        <label className="admin-mobile-section" htmlFor="admin-section-select">
-          Раздел
-          <select
-            id="admin-section-select"
-            value={visibleSection}
-            onChange={(event) => {
-              selectSection(event.target.value);
-            }}
-          >
-            {visibleGroups.map((group) => (
-              <optgroup key={group.label} label={group.label}>
-                {group.items.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-              </optgroup>
-            ))}
-          </select>
-        </label>
-        <nav aria-label="Разделы админки">
+        <nav ref={navigation} aria-label="Разделы админки">
           {visibleGroups.map((group) => (
             <div className="admin-nav-group" key={group.label}>
               <span className="admin-nav-label">{group.label}</span>
@@ -501,9 +499,15 @@ export function AdminPanel({
             </div>
           ))}
         </nav>
-        <button className="admin-back" type="button" onClick={onClose}>
-          <ArrowLeft size={16} />
-          Вернуться к древу
+        <button
+          className="admin-back"
+          type="button"
+          onClick={onClose}
+          aria-label="Вернуться к древу"
+          title="Вернуться к древу"
+        >
+          <ArrowLeft size={16} aria-hidden="true" />
+          <span>Вернуться к древу</span>
         </button>
       </aside>
       <div className="admin-content">
