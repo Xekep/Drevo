@@ -90,7 +90,12 @@ export function adminAiHttp({
       return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: "Только администратор может управлять AI Studio",
       });
-    const adminId = (await auth.currentUser(req))!.id;
+    const admin = await auth.currentUser(req);
+    if (!admin)
+      return json(res, 401, { error: "Сеанс завершён. Войдите снова." });
+    if (!admin.approved)
+      return json(res, 403, { error: "Доступ отозван" });
+    const adminId = admin.id;
     const stillAdmin = async () => {
       const current = await auth.currentUser(req);
       return current?.id === adminId && current.approved === true &&
