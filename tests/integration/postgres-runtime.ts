@@ -98,6 +98,7 @@ import { accountDataExportHttp } from "../../src/server/account-data-export-http
 import { accountAttachmentExportHttp } from "../../src/server/account-attachment-export-http.ts";
 import { gedcomHttp } from "../../src/server/gedcom-http.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
+import { verifyMcpIssuanceVisibility } from "./postgres-mcp-issuance-visibility.ts";
 import { mcpHttp } from "../../src/server/mcp-http.ts";
 import { mcpUsageStore } from "../../src/server/mcp-usage.ts";
 import { verifyFamilyWriteAccess } from "./postgres-family-write-access.ts";
@@ -4225,6 +4226,7 @@ try {
     await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
     await new Promise<void>((resolve) => tokenServer.close(() => resolve()));
   }
+  await verifyMcpIssuanceVisibility(app.archive, client, securedBase, process.env.PUBLIC_ORIGIN!);
   await app.archive.db
     .prepare("", "UPDATE account_tiers SET full_access=false WHERE account_id=?")
     .run("owner");
