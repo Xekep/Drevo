@@ -388,7 +388,8 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
   await expect(commentsButton).toBeVisible();
   await expect(commentsButton).toHaveAttribute("aria-expanded", "false");
   await expect(sidebar).toBeHidden();
-  await commentsButton.click();
+  await commentsButton.focus();
+  await commentsButton.press("Enter");
   await expect(sidebar).toBeVisible();
   await expect(commentsButton).toHaveAttribute("aria-expanded", "true");
   await expect(commentsButton).toBeHidden();

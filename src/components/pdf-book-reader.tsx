@@ -199,7 +199,7 @@ export function PdfBookReader({
         setSelection(null);
         setMagnifier((value) => !value);
       } else if (message.type === "toggle-comments") {
-        focusSidebarOnOpen.current = true;
+        focusSidebarOnOpen.current = message.keyboard;
         setCommentsOpen((value) => !value);
       } else if (message.type === "close") {
         closeLatest.current();
