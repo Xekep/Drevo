@@ -80,6 +80,126 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
+test("предзагруженные фото перелистываются без вспышки индикатора загрузки", async ({
+  page,
+}) => {
+  await page.goto("/photos/album-child-1990");
+  const current = page.locator(".photo-slide-current .tag-image > img");
+  const neighbors = page.locator(".photo-slide-neighbor img");
+  await expect
+    .poll(() =>
+      current.evaluate(
+        (image: HTMLImageElement) => image.complete && image.naturalWidth > 0,
+      ),
+    )
+    .toBe(true);
+  await expect
+    .poll(() =>
+      neighbors.evaluateAll(
+        (images) =>
+          images.length > 0 &&
+          images.every(
+            (image) =>
+              (image as HTMLImageElement).complete &&
+              (image as HTMLImageElement).naturalWidth > 0,
+          ),
+      ),
+    )
+    .toBe(true);
+  await expect(page.locator(".photo-load-status")).toHaveCount(0);
+  await page.evaluate(() => {
+    const flashes: string[] = [];
+    Object.assign(window, { photoLoadingFlashes: flashes });
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          const status = node.matches(".photo-load-status")
+            ? node
+            : node.querySelector(".photo-load-status");
+          if (status) flashes.push(status.textContent || "");
+        }
+      }
+    }).observe(document.querySelector(".photo-lightbox")!, {
+      childList: true,
+      subtree: true,
+    });
+  });
+  for (let turn = 0; turn < 4; turn++) {
+    const forward = turn % 2 === 0;
+    await page
+      .getByRole("button", {
+        name: forward ? "Следующая фотография" : "Предыдущая фотография",
+      })
+      .click();
+    await expect(page).toHaveURL(
+      new RegExp(`/photos/album-child-${forward ? "1980" : "1990"}$`),
+    );
+    await expect
+      .poll(() =>
+        current.evaluate(
+          (image: HTMLImageElement) => image.complete && image.naturalWidth > 0,
+        ),
+      )
+      .toBe(true);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { photoLoadingFlashes: string[] })
+            .photoLoadingFlashes,
+      ),
+    ).toEqual([]);
+  }
+});
+
+test("медленная загрузка показывает статус, а ошибку снимка можно повторить", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let fail = true;
+  await page.route(
+    "**/media/album-child-1990.png?variant=display",
+    async (route) => {
+      if (fail) {
+        await pending;
+        await route.fulfill({ status: 503, body: "Недоступно" });
+      } else {
+        await route.fulfill({
+          contentType: "image/svg+xml",
+          body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#738273"/></svg>',
+        });
+      }
+    },
+  );
+  await page.goto("/photos/album-child-1990");
+  const status = page.locator(".photo-load-status");
+  await expect(status).toHaveText("Загружаем фотографию…");
+  await expect(status).toBeVisible();
+  release();
+  await expect(status).toContainText("Не удалось загрузить снимок.");
+  fail = false;
+  await status.getByRole("button", { name: "Повторить" }).click();
+  await expect(status).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page
+        .locator(".photo-slide-current .tag-image > img")
+        .evaluate(
+          (image: HTMLImageElement) => image.complete && image.naturalWidth > 0,
+        ),
+    )
+    .toBe(true);
+});
+
 test("альбом человека сохраняет адрес и показывает только добавление и годы", async ({
   page,
 }) => {
