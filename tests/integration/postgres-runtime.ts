@@ -10846,6 +10846,7 @@ try {
   await otherPublication.publish("relative-undated-exact", "owner");
   await otherPublication.publish("place-match", "owner");
   await otherPublication.publish("region-only", "owner");
+  let sourceRevisionAfterGrandparentFixture = ownSignalWrite.revision;
   await (async () => {
     const beforeGrandSource = await app.archive.read();
     const beforeGrandTarget = await otherApp.archive.read();
@@ -11065,7 +11066,8 @@ try {
       await enableLastPath();
     }
     assert.ok(await grandSuggestion());
-    await app.archive.write(beforeGrandSource.family,latestSourceRevision);
+    sourceRevisionAfterGrandparentFixture =
+      (await app.archive.write(beforeGrandSource.family,latestSourceRevision)).revision;
     await otherApp.archive.write(beforeGrandTarget.family,latestTargetRevision);
     console.log("runtime_discovery_grandparent_consent_paths_ok");
   })();
@@ -11501,7 +11503,7 @@ try {
   "a fresh indexed search cannot return a withdrawn publication");
   assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
     "withdrawing a published parent never reveals a relationship hint");
-  await app.archive.write(ownBeforeSignals.family, ownSignalWrite.revision);
+  await app.archive.write(ownBeforeSignals.family, sourceRevisionAfterGrandparentFixture);
   await otherApp.archive.write(otherBeforeSignals.family, afterRelativePages.revision);
   await otherPublication.unpublish("person-a");
   await otherPublication.unpublish("person-b");
