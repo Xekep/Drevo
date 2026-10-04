@@ -105,6 +105,9 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
   const [suggestionsCursor, setSuggestionsCursor] = useState<string | null>(null);
   const [suggestionsNextCursor, setSuggestionsNextCursor] = useState<string | null>(null);
   const [suggestionsStale, setSuggestionsStale] = useState(false);
+  const [suggestionsRefine, setSuggestionsRefine] = useState(false);
+  const [suggestionsApproximate, setSuggestionsApproximate] = useState(false);
+  const [suggestionsPartial, setSuggestionsPartial] = useState(false);
   const [showIgnored, setShowIgnored] = useState(false);
   const [suggestionsReload, setSuggestionsReload] = useState(0);
   const [ignoredArchives, setIgnoredArchives] = useState<IgnoredArchive[]>([]);
@@ -255,8 +258,20 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
         setSuggestionsBusy(false);
         setTarget(null);
       }
+      if (response.status === 422 && body.refineRequired) {
+        setSuggestions([]);
+        setSuggestionsNextCursor(null);
+        setSuggestionsRefine(true);
+        setSuggestionsApproximate(false);
+        setSuggestionsPartial(false);
+        return;
+      }
       if (!response.ok) throw new Error(body.error || "Не удалось найти возможные совпадения");
       setSuggestionsStale(false);
+      setSuggestionsRefine(false);
+      setSuggestionsApproximate((current) => suggestionsCursor ? current || body.approximate === true
+        : body.approximate === true);
+      setSuggestionsPartial(body.partial === true);
       setSuggestions((current) => suggestionsCursor
         ? [...current, ...body.candidates.filter((item: SuggestedCandidate) =>
           !current.some((old) => old.archiveId === item.archiveId && old.id === item.id))]
@@ -407,7 +422,8 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
           <input type="search" value={ownQuery} onChange={(event) => {
             setOwnQuery(event.target.value); setSource(null); setSourceUnavailable(false); setSuggestions([]);
             setSuggestionsBusy(false); setSuggestionsCursor(null); setSuggestionsNextCursor(null);
-            setSuggestionsStale(false); setShowIgnored(false);
+            setSuggestionsStale(false); setSuggestionsRefine(false);
+            setSuggestionsApproximate(false); setSuggestionsPartial(false); setShowIgnored(false);
           }} placeholder="Поиск среди опубликованных" />
         </label>
           <div className="match-options" aria-label="Свои опубликованные люди">
@@ -421,7 +437,8 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
                   current.id === linkedTarget.personId ? current : null);
                 setSuggestions([]);
                 setSuggestionsBusy(true); setSuggestionsCursor(null); setSuggestionsNextCursor(null);
-                setSuggestionsStale(false); setShowIgnored(false);
+                setSuggestionsStale(false); setSuggestionsRefine(false);
+                setSuggestionsApproximate(false); setSuggestionsPartial(false); setShowIgnored(false);
                 setSuggestionsReload((value) => value + 1);
               }}>{person.name}<small>{person.birthYear || "?"}–{person.deathYear || "?"}</small></button>)}
             {!ownPeople.length && !source && <p>Опубликуйте свою карточку в разделе «Можно найти».</p>}
@@ -485,7 +502,13 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
           }}>Обновить подсказки</button>
         </p>}
         {suggestionsBusy && <p role="status">Ищем совпадения…</p>}
-        {!suggestionsStale && !suggestionsBusy && !suggestions.length && !suggestionsNextCursor && <p>{showIgnored ? "Скрытых подсказок нет." : "Пока совпадений нет. Можно найти карточку вручную."}</p>}
+        {suggestionsRefine && <p role="status">Для поиска по родству оставьте не более 32 разных и 128 общих подсказок о близких родственниках в настройках публикации карточки.
+          <a href={scopedArchivePath(archiveTargetPath({ kind: "person", id: source.id }))}>Открыть карточку</a>
+          <button type="button" onClick={() => { setSuggestionsCursor(null); setSuggestionsBusy(true);
+            setSuggestionsReload((value) => value + 1); }}>Повторить поиск</button>
+        </p>}
+        {suggestionsApproximate && <p role="status">Приближённые совпадения проверяются ограниченной порцией опубликованных карточек. Порядок внутри неё не означает вероятность совпадения.{suggestionsPartial ? " Можно продолжить поиск на следующей странице." : ""}</p>}
+        {!suggestionsRefine && !suggestionsStale && !suggestionsBusy && !suggestions.length && !suggestionsNextCursor && <p>{showIgnored ? "Скрытых подсказок нет." : "Пока совпадений нет. Можно найти карточку вручную."}</p>}
         <div className="match-suggestion-list">
           {suggestions.map((item) => <div className="match-suggestion" key={`${item.archiveId}:${item.id}`}>
             {showIgnored ? <div className="match-suggestion-summary">

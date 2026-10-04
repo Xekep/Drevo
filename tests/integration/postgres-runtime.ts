@@ -10488,7 +10488,8 @@ try {
   const template = pagedFamily.people.find((person) => person.id === "person-b")!;
   const pageIds = Array.from({ length: 25 }, (_, index) => `similar-${String(index).padStart(2, "0")}`);
   pagedFamily.people.push(...pageIds.map((id, index) => ({
-    ...structuredClone(template), id, column: index + 2,
+    ...structuredClone(template), id, birth: index === 24 ? "1990" : "1980",
+    column: index + 2,
   })));
   const paged = await otherApp.archive.write(pagedFamily, beforeCandidatePages.revision);
   for (const id of pageIds)
@@ -10506,6 +10507,38 @@ try {
   assert.equal((await fetch(securedBase + candidatePath + "&cursor=invalid", {
     headers: ownerHeaders,
   })).status, 400);
+  const beforeTierFields = await ownerPublication.getFields("person-a");
+  assert.ok(beforeTierFields);
+  const datedFields = { ...selectedDiscoveryFields, birthYear: true };
+  await ownerPublication.publish("person-a", "owner", datedFields);
+  for (const id of pageIds) await otherPublication.publish(id, "owner", datedFields);
+  const strongPage = await fetch(securedBase + candidatePath,
+    { headers: ownerHeaders }).then((response) => response.json());
+  assert.ok(strongPage.candidates.some((candidate: { id: string }) => candidate.id === "similar-24"),
+    "a strong candidate beyond the raw first page reaches the first ranked page");
+  assert.ok(strongPage.candidates.findIndex((candidate: { id: string }) => candidate.id === "similar-24") <
+    strongPage.candidates.findIndex((candidate: { id: string }) => candidate.id === "similar-00"),
+  "published exact name and birth year outrank weak names");
+  await client.query("BEGIN");
+  try {
+    await client.query("SET LOCAL enable_seqscan=off");
+    const tierPlan = await client.query(`EXPLAIN (FORMAT JSON)
+      SELECT person_id FROM discovery_people d
+      WHERE replace(lower(coalesce(nullif(d.given_part,''),split_part(d.name,' ',2))),
+        'ё','е')='иван'
+        AND replace(lower(coalesce(nullif(d.surname_part,''),split_part(d.name,' ',1))),
+          'ё','е')='тестов'
+        AND coalesce(d.birth_year,'9999')='1990'
+      ORDER BY coalesce(d.birth_year,'9999'),d.name COLLATE "C",
+        d.archive_id COLLATE "C",d.person_id COLLATE "C" LIMIT 24`);
+    assert.match(JSON.stringify(tierPlan.rows), /discovery_people_tier_current/,
+      "the exact-name and published-year stream uses its actual B-tree index");
+  } finally { await client.query("ROLLBACK"); }
+  await ownerPublication.publish("person-a", "owner", beforeTierFields);
+  assert.equal((await fetch(securedBase + candidatePath +
+    `&cursor=${encodeURIComponent(strongPage.nextCursor)}`, { headers: ownerHeaders })).status,
+  409, "changing the source publication invalidates its tiered cursor");
+  console.log("runtime_discovery_candidate_tiers_ok");
   await client.query("BEGIN");
   try {
     await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
@@ -10701,6 +10734,10 @@ try {
   assert.ok(changedSurnameHint?.reasons.some((reason) => reason.includes("родителя")),
     "an indexed bilateral relative plus published given name and close year finds a changed surname");
   assert.ok(changedSurnameHint?.conflicts.includes("Указанные фамилии различаются"));
+  const rankedSignalIds = (await signalIds()).map((item) => item.id);
+  assert.ok(rankedSignalIds.indexOf("relative-only") >= 0 &&
+    rankedSignalIds.indexOf("relative-only") < rankedSignalIds.indexOf("person-b"),
+  "bilateral close-relative evidence precedes exact-name evidence in the tier contract");
   await client.query("BEGIN");
   try {
     await client.query("SET LOCAL enable_seqscan=off");
