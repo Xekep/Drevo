@@ -11231,8 +11231,8 @@ try {
   for (const id of [compoundSourceId,spacedSourceId])
     await publishedPeopleStore(app.archive.db).unpublish(id);
   await otherPublication.unpublish(spacedTargetId);
-  await app.archive.write(compoundSourceBefore.family, (await app.archive.read()).revision);
-  await otherApp.archive.write(compoundTargetBefore.family, (await otherApp.archive.read()).revision);
+  await app.archive.write(compoundSourceBefore.family, (await app.archive.meta()).revision);
+  await otherApp.archive.write(compoundTargetBefore.family, (await otherApp.archive.meta()).revision);
   console.log("runtime_discovery_candidate_name_parts_ok");
   const specialMatchHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.241" };
   const specialRecipientHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.242" };
