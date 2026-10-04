@@ -54,6 +54,8 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
   (family.people[0] as typeof family.people[number] & { legacyCustomNote: string })
     .legacyCustomNote = "Original transcription retained";
   family.people[0].needsReview = true;
+  family.people[0].deceased = true;
+  family.people[0].parentageComplete = true;
   family.people[0].birthDateClaim = { value: family.people[0].birth,
     sources: [archiveEvidence], confidence: "confirmed" };
   family.people[0].deathDateClaim = { value: family.people[0].death!,
@@ -62,16 +64,24 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
     sources: [archiveEvidence], confidence: "probable" };
   family.people[0].birthLocation = { place: family.people[0].birthPlace,
     lat: 56.86, lon: 35.91, label: "Тверь" };
+  family.people[0].deathPlaceClaim = { value: family.people[0].deathPlace!,
+    sources: [archiveEvidence], confidence: "unknown" };
+  family.people[0].deathLocation = { place: family.people[0].deathPlace!,
+    lat: 56.86, lon: 35.91 };
   family.people[0].occupationClaim = { value: family.people[0].occupation!,
     sources: [archiveEvidence], confidence: "tentative" };
   family.people[0].factAlternatives = [{ id: "alternative-place", field: "birthPlace",
     value: "Кашин", sources: [{ ...archiveEvidence, reference: "folio 9" }],
     confidence: "conflicting" }];
   family.people[0].awards = [{ id: "award-1", name: "Почётная грамота", year: "1900",
+    awardDefinitionId: "synthetic-honour", degreeId: "first",
     source: { title: "Наградной лист", url: "https://example.test/award" } }];
   family.people[1].maidenName = "Иванова";
   family.people[1].maidenNameClaim = { value: "Иванова", sources: [archiveEvidence],
     confidence: "probable" };
+  family.people[1].factAlternatives = [{ id: "alternative-birth-surname",
+    field: "maidenName", value: "Петрова", sources: [archiveEvidence],
+    confidence: "conflicting" }];
   family.people[0].events = [{
     id: eventId, type: "residence", date: "1900", place: "Tver",
     dateClaim: { value: "1900", sources: [archiveEvidence], confidence: "confirmed" },
@@ -80,6 +90,11 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
       sources: [archiveEvidence], confidence: "conflicting" }],
     sources: [{ title: "Census", type: "archive", reference: "folio 7",
       url: "https://example.test/census" }],
+  }, {
+    id: "journey-record", type: "move", gedcomTag: "RESI", title: "Long journey",
+    date: "1901", endDate: "1902", dateText: "around 1901–1902",
+    place: "Moscow", location: { place: "Moscow", lat: 55.75, lon: 37.62 },
+    description: "Two-year journey", sources: [archiveEvidence],
   }];
   family.unions = [{
     id: "union-1", createdBy: "old-owner",
@@ -87,20 +102,39 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
     type: "marriage", confidence: "confirmed", formation: { date: "1865", place: "Tver",
       confidence: "confirmed",
       sources: [{ title: "Marriage register", type: "archive", reference: "folio 2" }] },
-    ongoing: { dateText: "около 1880 года", sources: [archiveEvidence] },
+    ongoing: { dateText: "около 1880 года", sources: [archiveEvidence],
+      confidence: "probable" },
+    ending: { date: "1890", place: "Тверь", sources: [archiveEvidence],
+      confidence: "tentative" },
+    sources: [archiveEvidence],
     note: "Original register checked",
+  }, {
+    id: "union-2", participants: [family.people[2].id, family.people[3].id],
+    type: "marriage", confidence: "probable",
+    formation: { date: "1900", sources: [archiveEvidence] },
+    divorce: { date: "1905", dateText: "recorded in 1905", place: "Moscow",
+      sources: [archiveEvidence], confidence: "confirmed" },
   }];
   family.links = [{
     id: "link-1", createdBy: "old-owner",
     from: family.people[0].id, to: family.people[2].id,
     type: "guardian", note: "Named guardian in register", confidence: "probable",
     sources: [{ title: "Guardian register", type: "archive", reference: "folio 8" }],
+  }, {
+    id: "link-2", from: family.people[4].id, to: family.people[5].id,
+    type: "twin", twinKind: "fraternal", confidence: "tentative",
+    sources: [archiveEvidence],
   }];
   family.people[0].photo = "/media/portrait.png";
   family.people[0].sources.push({
     title: "Семейная фотография", type: "фотография", reference: "оборот",
     url: "/media/evidence.png?download=1#scan",
   });
+  family.people[0].sources.push({ title: "Repository register", type: "archive",
+    reference: "box 1", note: "Back cover", repository: {
+      name: "Synthetic repository", callNumber: "A-1", website: "https://example.test/repository",
+      note: "Reading room", linkNote: "Catalog entry",
+    } });
   family.people[1].sources.push({
     title: "Legacy JPEG register scan", type: "archive", reference: "leaf 12",
     documentId: legacyJpegId,
@@ -108,6 +142,7 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
   family.photos = [{ id: "gallery-1", createdBy: "old-owner",
     url: "/media/gallery.png", title: "Семья",
     createdAt: "2026-09-30T00:00:00.000Z", takenAt: "1900", place: "Тверь",
+    year: "1900", event: "Family gathering",
     description: "Подпись на обороте",
     tags: [{ id: "tag-1", personId: family.people[0].id,
       x: 0.1, y: 0.2, width: 0.3, height: 0.4 }] }];
@@ -147,9 +182,9 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
     .run(legacyJpegId, family.people[1].id);
   await source.db.prepare("INSERT INTO source_catalog(id,data,version) VALUES(?,?,1)")
     .run("catalog-record", JSON.stringify({ id: "catalog-record", title: "Метрическая книга",
-      type: "архив", author: "", institution: "", archive: "Государственный архив",
+      type: "архив", author: "Record keeper", institution: "County office", archive: "Государственный архив",
       fond: "2", opis: "1", delo: "4", sheet: "7", reference: "л. 7", url: "",
-      accessedAt: "", description: "", documentIds: [documentId] }));
+      accessedAt: "2026-09-30", description: "Transcribed ledger", documentIds: [documentId] }));
   family.people[0].sources.push({
     title: "Метрическая книга", type: "архив", reference: "л. 7",
     catalogId: "catalog-record", documentId, documentPage: 1,
@@ -195,6 +230,31 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
     assert.match(await unsafeExport.text(), /неподдерживаемые поля источника/);
     await source.db.prepare("UPDATE source_catalog SET data=? WHERE id='catalog-record'")
       .run(catalogBefore);
+    const commentBefore = String((await source.db.prepare(
+      "SELECT attachments FROM person_comments WHERE created_ms=1000",
+    ).get())?.attachments);
+    const wrongMime = JSON.parse(commentBefore) as Array<{ type: string }>;
+    wrongMime[0].type = "text/html";
+    await source.db.prepare("UPDATE person_comments SET attachments=? WHERE created_ms=1000")
+      .run(JSON.stringify(wrongMime));
+    const unsafeMimeExport = await fetch(`${sourceUrl}/api/drevo/export`);
+    assert.equal(unsafeMimeExport.status, 409,
+      "export must reject attachment metadata that preview cannot restore unchanged");
+    await source.db.prepare("UPDATE person_comments SET attachments=? WHERE created_ms=1000")
+      .run(commentBefore);
+    const wrongSize = JSON.parse(commentBefore) as Array<{ size: number }>;
+    wrongSize[0].size += 1;
+    await source.db.prepare("UPDATE person_comments SET attachments=? WHERE created_ms=1000")
+      .run(JSON.stringify(wrongSize));
+    assert.equal((await fetch(`${sourceUrl}/api/drevo/export`)).status, 409,
+      "export must reject a stale attachment size before writing a package");
+    await source.db.prepare("UPDATE person_comments SET attachments=? WHERE created_ms=1000")
+      .run(commentBefore);
+    const commentOriginal = join(sourceRoot, "uploads", "discussion-files", attachments[0].id);
+    await writeFile(commentOriginal, Buffer.alloc(note.length));
+    assert.equal((await fetch(`${sourceUrl}/api/drevo/export`)).status, 409,
+      "export must reject an attachment original that preview would reject");
+    await writeFile(commentOriginal, note);
     const response = await fetch(`${sourceUrl}/api/drevo/export`);
     assert.equal(response.status, 200, response.status === 200 ? "" : await response.text());
     const bytes = Buffer.from(await response.arrayBuffer());
