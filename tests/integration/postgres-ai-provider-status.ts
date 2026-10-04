@@ -40,7 +40,7 @@ export async function verifyAiProviderCleanupStatus(
       "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'owner',?)",
     )
     .run(hash, Date.now() + 600_000);
-  let revoke: "none" | "grant" | "session" = "none";
+  let revoke: "none" | "grant" | "membership" | "session" = "none";
   const auth = await createAuth(
     await userStore(db),
     db,
@@ -58,6 +58,8 @@ export async function verifyAiProviderCleanupStatus(
         await db
           .prepare("", "DELETE FROM account_sessions WHERE token_hash=?")
           .run(hash);
+      if (revoke === "membership")
+        await db.prepare("", "UPDATE archive_memberships SET approved=false WHERE user_id='owner'").run();
     },
   });
   const server = createServer((req, res) => {
@@ -158,6 +160,11 @@ export async function verifyAiProviderCleanupStatus(
         "INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING",
       )
       .run();
+    revoke = "membership";
+    const lostMembership = await fetch(direct + path, { headers: adminHeaders });
+    assert.equal(lostMembership.status, 403);
+    assert.equal("jobs" in (await lostMembership.json()), false);
+    await db.prepare("", "UPDATE archive_memberships SET approved=true WHERE user_id='owner'").run();
     revoke = "session";
     const lostSession = await fetch(direct + path, { headers: adminHeaders });
     assert.equal(lostSession.status, 401);
@@ -191,6 +198,7 @@ export async function verifyAiProviderCleanupStatus(
     await db
       .prepare("", "DELETE FROM account_sessions WHERE token_hash=?")
       .run(hash);
+    await db.prepare("", "UPDATE archive_memberships SET approved=true WHERE user_id='owner'").run();
     for (const id of ids)
       await db
         .prepare("", "DELETE FROM platform_ai_conversations WHERE id=?")
