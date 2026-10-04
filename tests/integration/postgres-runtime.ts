@@ -10519,8 +10519,13 @@ try {
   const datedFields = { ...selectedDiscoveryFields, birthYear: true };
   await ownerPublication.publish("person-a", "owner", datedFields);
   for (const id of pageIds) await otherPublication.publish(id, "owner", datedFields);
-  const strongPage = await fetch(securedBase + candidatePath,
-    { headers: ownerHeaders }).then((response) => response.json());
+  // Candidate lookup has an intentional per-client rate limit. Keep this new
+  // regression independent of earlier pagination requests in the same suite.
+  const tierHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.126" };
+  const strongResponse = await fetch(securedBase + candidatePath,
+    { headers: tierHeaders });
+  assert.equal(strongResponse.status, 200);
+  const strongPage = await strongResponse.json();
   assert.ok(strongPage.candidates.some((candidate: { id: string }) => candidate.id === "similar-24"),
     "a strong candidate beyond the raw first page reaches the first ranked page");
   assert.ok(strongPage.candidates.findIndex((candidate: { id: string }) => candidate.id === "similar-24") <
@@ -10543,7 +10548,7 @@ try {
   } finally { await client.query("ROLLBACK"); }
   await ownerPublication.publish("person-a", "owner", beforeTierFields);
   assert.equal((await fetch(securedBase + candidatePath +
-    `&cursor=${encodeURIComponent(strongPage.nextCursor)}`, { headers: ownerHeaders })).status,
+    `&cursor=${encodeURIComponent(strongPage.nextCursor)}`, { headers: tierHeaders })).status,
   409, "changing the source publication invalidates its tiered cursor");
   console.log("runtime_discovery_candidate_tiers_ok");
   await client.query("BEGIN");
