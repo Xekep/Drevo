@@ -125,11 +125,19 @@ export function adminMcpHttp({
     if (path === "/api/mcp/tokens" && req.method === "POST") {
       if (!req.headers["content-type"]?.startsWith("application/json"))
         return json(res, 415, { error: "JSON required" });
+      let issued: Awaited<ReturnType<typeof tokens.issue>> | undefined;
       try {
         const body = await readJson(req);
-        return await withAccess(async () =>
-          guardedJson(201, await tokens.issue(actor, body)));
+        // Commit the credential before exposing its one-time secret. The
+        // second transaction holds current access locks through delivery.
+        issued = await withAccess(() => tokens.issue(actor, body));
+        return await withAccess(() => guardedJson(201, issued));
       } catch (error) {
+        if (issued) {
+          // Best-effort cleanup applies only to this newly minted credential.
+          // MCP bearer access does not depend on the issuing browser session.
+          await tokens.revoke(issued.item.id).catch(() => {});
+        }
         if (res.headersSent || res.destroyed) { res.destroy(error as Error); return true; }
         if (error instanceof PlatformAccessBusy || error instanceof PlatformAccessDenied)
           return json(res, error instanceof PlatformAccessBusy ? 409 : 403,
@@ -142,10 +150,9 @@ export function adminMcpHttp({
 
     if (path.startsWith("/api/mcp/tokens/") && req.method === "DELETE") {
       try {
-        return await withAccess(async () => {
-          await tokens.revoke(decodeURIComponent(path.slice("/api/mcp/tokens/".length)));
-          return guardedJson(200, { revoked: true });
-        });
+        await withAccess(() =>
+          tokens.revoke(decodeURIComponent(path.slice("/api/mcp/tokens/".length))));
+        return await withAccess(() => guardedJson(200, { revoked: true }));
       } catch (error) {
         if (res.headersSent || res.destroyed) { res.destroy(error as Error); return true; }
         if (error instanceof PlatformAccessBusy || error instanceof PlatformAccessDenied)
