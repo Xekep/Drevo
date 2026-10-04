@@ -81,6 +81,7 @@ import { verifyGlobalStaffMigrationStartup } from "./postgres-global-staff-migra
 import { verifyGlobalRoleFinalization } from "./postgres-global-role-finalization.ts";
 import { verifyAiProviderCleanupRetry } from "./postgres-ai-provider-retry.ts";
 import { verifyPlatformAiCleanup } from "./postgres-platform-ai-cleanup.ts";
+import { verifyDocumentWriteSessionRevocation } from "./postgres-document-write-revocation.ts";
 import { verifyPlatformConfigurationMigration, verifyPlatformConfigurationRevocation,
   verifySharedPlatformConfiguration } from "./postgres-platform-configuration.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
@@ -1848,6 +1849,8 @@ try {
   };
   await verifyPlatformTiers(client, app.archive.db, securedBase,
     process.env.PUBLIC_ORIGIN!, ownerHeaders);
+  await verifyDocumentWriteSessionRevocation(app.archive, client,
+    securedBase, process.env.PUBLIC_ORIGIN!, uploads);
   await verifyPlatformStaffRoles(client, securedBase,
     ownerHeaders, process.env.PUBLIC_ORIGIN!);
   await verifyAiProviderCleanupStatus(app.archive.db, securedBase, ownerHeaders, headers);

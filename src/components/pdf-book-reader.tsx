@@ -327,7 +327,15 @@ export function PdfBookReader({
       const result = (await response.json()) as {
         items?: DocumentAnnotation[];
         error?: string;
+        accessChanged?: boolean;
       };
+      if (response.ok && result.accessChanged) {
+        setSelection(null);
+        setComment("");
+        setAnnotating(false);
+        setAnnotationError("Комментарий сохранён, но доступ изменился. Не повторяйте запрос; войдите снова.");
+        return;
+      }
       if (!response.ok || !result.items)
         throw new Error(result.error || "Не удалось сохранить комментарий");
       setAnnotations(result.items);
@@ -366,7 +374,13 @@ export function PdfBookReader({
         items?: DocumentAnnotation[];
         error?: string;
         current?: string;
+        accessChanged?: boolean;
       };
+      if (response.ok && result.accessChanged) {
+        setEditing(null);
+        setAnnotationError("Комментарий сохранён, но доступ изменился. Не повторяйте запрос; войдите снова.");
+        return;
+      }
       const current = result.current;
       if (response.status === 409 && typeof current === "string")
         setAnnotations((items) =>
@@ -401,7 +415,13 @@ export function PdfBookReader({
       const result = (await response.json()) as {
         items?: DocumentAnnotation[];
         error?: string;
+        accessChanged?: boolean;
       };
+      if (response.ok && result.accessChanged) {
+        if (activeAnnotation === id) setActiveAnnotation("");
+        setAnnotationError("Комментарий удалён, но доступ изменился. Не повторяйте запрос; войдите снова.");
+        return;
+      }
       if (!response.ok || !result.items)
         throw new Error(result.error || "Не удалось удалить комментарий");
       setAnnotations(result.items);
