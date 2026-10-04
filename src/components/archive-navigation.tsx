@@ -15,7 +15,6 @@ import {
   Heart,
   ShieldCheck,
   LogOut,
-  Menu,
   MapPin,
   ChartNoAxesCombined,
   LibraryBig,
@@ -71,7 +70,10 @@ export function ArchiveNavigation({
     )
       return;
     event.preventDefault();
-    if (menu.current) menu.current.open = false;
+    if (menu.current) {
+      menu.current.open = false;
+      menu.current.querySelector("summary")?.focus();
+    }
     onView(next);
   };
   const checkPlatformLeave = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -170,51 +172,41 @@ export function ArchiveNavigation({
       >
         О проекте
       </button>
-      {user && isArchiveOwner(user) && user.approved === true && (
-        <a
-          className="nav-admin"
-          href={scopedArchivePath(archivePaths.manage)}
-          aria-current={view === "manage" ? "page" : undefined}
-          onClick={(event) => navigate(event, "manage")}
-        >
-          Управление деревом
-        </a>
-      )}
-      {(account?.globalRole === "admin" || user?.globalRole === "admin" || user?.platformAdmin === true) && (
-        <a className="nav-admin" href="/admin" aria-current={view === "admin" ? "page" : undefined}
-          onClick={checkPlatformLeave}>
-          Админка платформы
-        </a>
-      )}
-      <a
-        className="nav-account"
-        href={scopedArchivePath(archivePaths.account)}
-        aria-label={
-          identity ? `Личный кабинет: ${identity.name}` : "Личный кабинет"
-        }
-        aria-current={view === "account" ? "page" : undefined}
-        onClick={(event) => navigate(event, "account")}
-        title="Личный кабинет"
-      >
-        <span className="nav-account-avatar" aria-hidden="true">
-          {portrait && portrait !== failedPortrait ? (
-            <img
-              src={portrait}
-              alt=""
-              onError={() => setFailedPortrait(portrait)}
-            />
-          ) : identity ? (
-            initial
-          ) : (
-            <UserRound size={20} />
-          )}
-        </span>
-      </a>
       <details ref={menu} className="archive-more" key={view}>
-        <summary aria-label="Меню проекта">
-          <Menu size={20} />
+        <summary className="nav-account" aria-label="Меню проекта"
+          title={identity ? `Меню: ${identity.name}` : "Меню проекта"}>
+          <span className="nav-account-avatar" aria-hidden="true">
+            {portrait && portrait !== failedPortrait ? (
+              <img src={portrait} alt="" onError={() => setFailedPortrait(portrait)} />
+            ) : identity ? initial : <UserRound size={20} />}
+          </span>
         </summary>
         <div className="nav-bottom">
+          <a className="nav-menu-account" href={scopedArchivePath(archivePaths.account)}
+            aria-current={view === "account" ? "page" : undefined}
+            onClick={(event) => navigate(event, "account")}>
+            <UserRound size={18} aria-hidden="true" />
+            <span>Личный кабинет</span>
+          </a>
+          {user && isArchiveOwner(user) && user.approved === true && (
+            <a
+              className="nav-menu-manage"
+              href={scopedArchivePath(archivePaths.manage)}
+              aria-current={view === "manage" ? "page" : undefined}
+              onClick={(event) => navigate(event, "manage")}
+            >
+              <ShieldCheck size={22} />
+              <span>Управление деревом</span>
+            </a>
+          )}
+          {(account?.globalRole === "admin" || user?.globalRole === "admin" || user?.platformAdmin === true) && (
+            <a className="nav-menu-platform" href="/admin"
+              aria-current={view === "admin" ? "page" : undefined}
+              onClick={checkPlatformLeave}>
+              <ShieldCheck size={22} />
+              <span>Админка платформы</span>
+            </a>
+          )}
           <div className="mobile-sections">
             {(
               [
@@ -257,24 +249,6 @@ export function ArchiveNavigation({
             <Users size={18} />
             <span>Поиск опубликованных людей</span>
           </a>
-          {user && isArchiveOwner(user) && user.approved === true && (
-            <a
-              href={scopedArchivePath(archivePaths.manage)}
-              aria-current={view === "manage" ? "page" : undefined}
-              onClick={(event) => navigate(event, "manage")}
-              title="Управление деревом"
-            >
-              <ShieldCheck size={22} />
-              <span>Управление деревом</span>
-            </a>
-          )}
-          {(account?.globalRole === "admin" || user?.globalRole === "admin" || user?.platformAdmin === true) && (
-            <a href="/admin" aria-current={view === "admin" ? "page" : undefined}
-              onClick={checkPlatformLeave}>
-              <ShieldCheck size={22} />
-              <span>Админка платформы</span>
-            </a>
-          )}
           {identity && !local && (
             <button title="Выйти" onClick={() => void logout()}>
               <LogOut size={20} />
