@@ -1,4 +1,4 @@
-import { MAX_PDF_BYTES } from "../shared/upload-limits.ts";
+import { MAX_PDF_BYTES, MAX_TIFF_BYTES } from "../shared/upload-limits.ts";
 import { documentFileTypeFromName } from "../shared/document-file.ts";
 import { createWriteStream } from "node:fs";
 import {
@@ -148,10 +148,10 @@ async function unpack(
       total += entry.uncompressedSize;
       const limit = /\.(ged|gedcom|xml)$/i.test(name)
         ? TRANSFER_TEXT_LIMIT
-        : MAX_PDF_BYTES;
+        : documentFileTypeFromName(name)?.maxBytes ?? MAX_PDF_BYTES;
       if (entry.uncompressedSize > limit || total > TRANSFER_PACKAGE_LIMIT)
         throw new Error(
-          "Превышен размер распакованного пакета (512 МиБ; PDF/TIFF 50 МиБ, фото 20 МиБ)",
+          "Превышен размер распакованного пакета (512 МиБ; PDF 100 МиБ, TIFF 50 МиБ, фото 20 МиБ)",
         );
       const destination = join(directory, randomUUID());
       let size = 0,
@@ -281,7 +281,7 @@ export async function prepareGenealogyImport(
         continue;
       }
       const data = await readFile(source);
-      if (data.length > MAX_PDF_BYTES) throw new Error("Вложение больше 50 МБ");
+      if (data.length > MAX_PDF_BYTES) throw new Error("Вложение больше 100 МБ");
       let extension: string;
       if (data.subarray(0, 5).toString("ascii") === "%PDF-") extension = "pdf";
       else {
@@ -295,7 +295,10 @@ export async function prepareGenealogyImport(
         }
         if (extension !== "tif" && data.length > TRANSFER_FILE_LIMIT)
           throw new Error("Фотография больше 20 МБ");
-        if (extension === "tif") await tiffDocumentPages(source);
+        if (extension === "tif") {
+          if (data.length > MAX_TIFF_BYTES) throw new Error("TIFF больше 50 МБ");
+          await tiffDocumentPages(source);
+        }
         await sharp(data, { limitInputPixels: 50_000_000 })
           .resize(1, 1)
           .toBuffer();
@@ -536,7 +539,7 @@ async function preparePackage(
     if (
       limited &&
       (info.size >
-        (/\.(?:pdf|tif)$/.test(name) ? MAX_PDF_BYTES : TRANSFER_FILE_LIMIT) ||
+        (documentFileTypeFromName(name)?.maxBytes ?? TRANSFER_FILE_LIMIT) ||
         size > TRANSFER_PACKAGE_LIMIT - TRANSFER_TEXT_LIMIT)
     )
       throw new Error(

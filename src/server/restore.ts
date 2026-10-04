@@ -1,5 +1,4 @@
-import { MAX_PDF_BYTES } from "../shared/upload-limits.ts";
-import { storedDocumentFileType } from "../shared/document-file.ts";
+import { documentFileTypeFromName, storedDocumentFileType } from "../shared/document-file.ts";
 import { storeDatabase } from "./store-database.ts";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
@@ -278,9 +277,7 @@ async function unpack(
               remaining >
               (name === "drevo.sqlite"
                 ? SQLITE_LIMIT
-                : /\.(?:pdf|tif)$/.test(name)
-                  ? MAX_PDF_BYTES
-                  : 20 * 1024 * 1024)
+                : documentFileTypeFromName(name)?.maxBytes ?? 20 * 1024 * 1024)
             )
               throw new Error("Один из файлов бэкапа слишком большой");
             if (seen.has(name))

@@ -50,7 +50,7 @@ const png = Buffer.from(
   "base64",
 );
 
-test("full backup restores citation-only originals, remaps shared media and retains page suffixes", async () => {
+test("full backup restores a 100 MiB citation-only PDF, remaps shared media and retains page suffixes", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-restore-citations-"));
   const source = await startServer(
     0,
@@ -59,9 +59,8 @@ test("full backup restores citation-only originals, remaps shared media and reta
   );
   let target: Awaited<ReturnType<typeof startServer>> | undefined;
   try {
-    const pdf = Buffer.from(
-      "%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF",
-    );
+    const pdf = Buffer.alloc(100 * 1024 * 1024, 32);
+    pdf.write("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF");
     for (const [name, bytes] of [
       ["citation.png", png],
       ["shared.png", png],

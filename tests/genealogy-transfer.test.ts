@@ -1088,7 +1088,7 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
     })
       .png()
       .toBuffer();
-    const pdf = Buffer.alloc(50 * 1024 * 1024, 32);
+    const pdf = Buffer.alloc(100 * 1024 * 1024, 32);
     pdf.write("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF");
     await writeFile(join(uploads, "photo.png"), picture);
     await writeFile(join(uploads, "file.pdf"), pdf);
