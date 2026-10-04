@@ -139,6 +139,7 @@ export async function archiveHttp({
     db: archive.db,
     settings: aiSettings,
     usage: aiUsage,
+    providerCleanup,
     publicOrigin,
     fetcher: aiFetch,
   });

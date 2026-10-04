@@ -40,6 +40,7 @@ import {
   defaultAiRoleProfile,
 } from "../../src/server/ai-settings.ts";
 import { aiChatStore, AiChatLimitError } from "../../src/server/ai-chats.ts";
+import { aiProviderCleanup } from "../../src/server/ai-provider-cleanup.ts";
 import { aiAttachmentStore } from "../../src/server/ai-attachments.ts";
 import { adminAiHttp } from "../../src/server/admin-ai-http.ts";
 import { aiUsageStore } from "../../src/server/ai-usage.ts";
@@ -3077,6 +3078,7 @@ try {
         },
       },
       usage: aiUsageStore(app.archive.db),
+      providerCleanup: await aiProviderCleanup(app.archive.db, source),
       publicOrigin: process.env.PUBLIC_ORIGIN,
       fetcher: async (url, init) => {
         const path = String(url);

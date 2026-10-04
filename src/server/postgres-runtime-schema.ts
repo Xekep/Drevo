@@ -304,6 +304,12 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
           AND tgname='revoke_changed_discovery_grandparent_relation' AND NOT tgisinternal)`,
       "083_discovery_grandparent_consents.sql",
     ],
+    [
+      `SELECT 1 AS present FROM pg_trigger
+       WHERE tgrelid=to_regclass('public.ai_chats')
+         AND tgname='queue_deleted_ai_chat_conversation' AND NOT tgisinternal`,
+      "084_ai_provider_cleanup_cascades.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     try {
