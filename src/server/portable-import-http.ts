@@ -7,6 +7,7 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
 import { accountCapacity } from "./account-capacity.ts";
+import { AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import { applyPortablePackage, portableStoreOccupied } from "./portable-apply.ts";
 import { isArchiveOwner } from "../domain/access.ts";
@@ -458,6 +459,10 @@ export function portableImportHttp(
       const actor = await mayImport(req);
       if (!actor || actor.id !== actorId)
         throw new ForbiddenError("Доступ владельца отозван");
+      const session = auth.local ? null : await auth.accountSession(req);
+      if (db.kind === "postgres" && !auth.local &&
+          (!session || session.accountId !== actor.id))
+        throw new AccountSessionExpired("Сессия завершена. Войдите снова");
       await release?.assertValid();
       const result = await applyPortablePackage(
         archive,
@@ -465,6 +470,7 @@ export function portableImportHttp(
         body.token,
         Number(row.revision),
         installed,
+        { local: auth.local, tokenHash: session?.tokenHash },
       );
       committed = true;
       installed = undefined;
@@ -549,8 +555,10 @@ export function portableImportHttp(
           : json(409, { error: "Импорт уже выполняется" });
       } catch (error) {
         const status =
-          error instanceof ConflictError
-            ? 409
+          error instanceof AccountSessionExpired
+            ? 401
+            : error instanceof AccountSessionBusy || error instanceof ConflictError
+              ? 409
             : error instanceof ForbiddenError
               ? 403
               : error instanceof UploadQuotaError
