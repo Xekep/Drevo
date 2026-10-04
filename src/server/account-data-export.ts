@@ -23,6 +23,8 @@ const MAX_EXPORTED_COMMENT_PREFLIGHT_BYTES = 8 * 1024 * 1024;
 const MAX_EXPORTED_IDENTITIES = 64;
 const MAX_EXPORTED_ARCHIVES = 1_000;
 const MAX_EXPORTED_METADATA_RAW_BYTES = 2 * 1024 * 1024;
+const MAX_SCOPED_GRAPH_ROWS = 20_000;
+const MAX_SCOPED_GRAPH_BYTES = 16 * 1024 * 1024;
 
 type AccessScope = {
   archiveId: string;
@@ -45,10 +47,31 @@ export class AccountAiHistoryTooLarge extends Error {
 
 export class AccountJsonTooLarge extends Error {
   readonly accessScopes: AccessScope[];
-  constructor(accessScopes: AccessScope[]) {
+  readonly membershipBoundsExceeded: boolean;
+  constructor(accessScopes: AccessScope[], membershipBoundsExceeded = false) {
     super("Account JSON export exceeds the current limit");
     this.accessScopes = accessScopes;
+    this.membershipBoundsExceeded = membershipBoundsExceeded;
   }
+}
+
+/** For a generic over-limit refusal, recheck the current count/size without
+ * returning an unbounded row array to Node. A completed removal that takes
+ * the account back under the limit makes the prepared refusal stale. The
+ * account-wide RLS read policy applies here; row locks would instead use the
+ * single-archive write policy and miss memberships in other trees. */
+export async function accountMembershipsStillOverExportLimit(
+  client: PoolClient,
+  accountId: string,
+) {
+  const result = await client.query(`SELECT count(*)::integer AS total,
+      COALESCE(sum(octet_length(m.archive_id)+octet_length(a.title)
+        +octet_length(m.role)+octet_length(m.tree_access)
+        +COALESCE(octet_length(m.person_id),0)+512),0) AS bytes
+    FROM archive_memberships m JOIN archives a ON a.id=m.archive_id
+    WHERE m.user_id=$1`, [accountId]);
+  return Number(result.rows[0]?.total) > MAX_EXPORTED_ARCHIVES ||
+    Number(result.rows[0]?.bytes) > MAX_EXPORTED_METADATA_RAW_BYTES;
 }
 
 function scopesStillVisible(
@@ -104,6 +127,20 @@ export function accountDataExport(db: StoreDatabase) {
               WHERE m.user_id=?) AS membership_bytes`).get(
                 accountId, accountId, accountId, accountId)
           : null;
+        const membershipBounds = metadata == null
+          ? await db.prepare("", `SELECT count(*) AS memberships,
+              COALESCE(sum(octet_length(m.archive_id)+octet_length(a.title)
+                +octet_length(m.role)+octet_length(m.tree_access)
+                +COALESCE(octet_length(m.person_id),0)+512),0) AS membership_bytes
+              FROM archive_memberships m JOIN archives a ON a.id=m.archive_id
+              WHERE m.user_id=?`).get(accountId)
+          : metadata;
+        // No archive data is serialized for this refusal. In particular, do
+        // not load every membership merely to construct an unbounded set of
+        // per-archive delivery scopes for an already oversized account.
+        if (Number(membershipBounds?.memberships) > MAX_EXPORTED_ARCHIVES ||
+            Number(membershipBounds?.membership_bytes) > MAX_EXPORTED_METADATA_RAW_BYTES)
+          throw new AccountJsonTooLarge([], true);
         let metadataRawBytes = metadata == null ? 0 :
           Number(metadata.identity_bytes) + Number(metadata.membership_bytes) +
           Buffer.byteLength(String(profile.id)) + Buffer.byteLength(String(profile.name)) +
@@ -140,6 +177,8 @@ export function accountDataExport(db: StoreDatabase) {
         let aiHistoryTooLarge = false;
         let commentCount = BigInt(0);
         let commentPreflightBytes = BigInt(0);
+        let scopedGraphRows = 0;
+        let scopedGraphBytes = 0;
         for (const membership of memberships) {
           await db
             .prepare("", "SELECT set_config('drevo.archive_id',?,true)")
@@ -211,7 +250,37 @@ export function accountDataExport(db: StoreDatabase) {
                 : {}),
             };
             const family = isScopedUser(user)
-              ? (await readArchive(db)).family
+              ? await (async () => {
+                // readArchive materializes the entire graph and may hydrate
+                // citations from the source catalog. Bound the combined rows
+                // and raw JSON before that read. The final revision check
+                // still protects the visibility snapshot at delivery.
+                const graph = await db.prepare("", `SELECT
+                    (SELECT count(*) FROM people) +
+                    (SELECT count(*) FROM relations) +
+                    (SELECT count(*) FROM photos) +
+                    (SELECT count(*) FROM photo_tags) +
+                    (SELECT count(*) FROM family_unions) +
+                    (SELECT count(*) FROM source_catalog) AS rows,
+                    (SELECT octet_length(description) FROM archives
+                      WHERE id=current_setting('drevo.archive_id',true)) +
+                    (SELECT COALESCE(sum(octet_length(data::text)),0) FROM people) +
+                    (SELECT COALESCE(sum(octet_length(note)+
+                      COALESCE(octet_length(sources::text),0)+
+                      octet_length(id)+octet_length(source)+octet_length(target)+
+                      COALESCE(octet_length(created_by),0)+256),0) FROM relations) +
+                    (SELECT COALESCE(sum(octet_length(data::text)),0) FROM photos) +
+                    (SELECT COALESCE(sum(octet_length(data::text)),0) FROM photo_tags) +
+                    (SELECT COALESCE(sum(octet_length(data::text)),0) FROM family_unions) +
+                    (SELECT COALESCE(sum(octet_length(data::text)),0) FROM source_catalog)
+                      AS bytes`).get();
+                scopedGraphRows += Number(graph?.rows);
+                scopedGraphBytes += Number(graph?.bytes);
+                if (scopedGraphRows > MAX_SCOPED_GRAPH_ROWS ||
+                    scopedGraphBytes > MAX_SCOPED_GRAPH_BYTES)
+                  throw new AccountJsonTooLarge(accessScopes);
+                return (await readArchive(db)).family;
+              })()
               : undefined;
             const visible = family ? visiblePersonIds(family, user) : null;
             const personFilter = visible
