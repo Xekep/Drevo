@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { PlatformStaffRoles } from "./platform-staff-roles";
 import { AiSettingsAdmin } from "./ai-settings-admin";
+import { AiProviderCleanupAdmin } from "./ai-provider-cleanup-admin";
 import { StorageLimitsAdmin } from "./storage-limits-admin";
 import { VkAuthAdmin } from "./vk-auth-admin";
 import { ResearchResourcesAdmin } from "./research-resources-admin";
@@ -18,7 +19,7 @@ const sections: { id: Section; label: string }[] = [
 type AvailableArchive = { id: string; title: string; approved: boolean; current: boolean };
 
 /** Account-scoped entry. Archive-specific AI settings are selected explicitly. */
-export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, primaryMembershipApproved = false,
+export default function PlatformSettingsPage({ accountId, onOwnRoleChanged,
   showRoles = true }: {
   accountId: string;
   onOwnRoleChanged: (role: "admin" | "researcher" | null) => void;
@@ -69,7 +70,9 @@ export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, prim
         </nav>
         {showRoles && section === "roles" && <PlatformStaffRoles currentAccountId={accountId}
           onOwnRoleChanged={onOwnRoleChanged} />}
-        {section === "ai" && (!archivesReady ? <p role="status">Проверяем доступные архивы…</p> : <div className="platform-ai-settings">
+        {section === "ai" && <div className="platform-ai-settings">
+          <AiProviderCleanupAdmin platform />
+          {!archivesReady ? <p role="status">Проверяем доступные архивы…</p> : <>
           <label className="account-card platform-ai-archive">
             Архив для Yandex AI
             <select value={aiArchiveId} onChange={(event) => setAiArchiveId(event.target.value)}>
@@ -79,8 +82,9 @@ export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, prim
             <small>Настройки ИИ задаются отдельно для выбранного архива.</small>
           </label>
           <AiSettingsAdmin key={aiArchiveId} archiveId={aiArchiveId || null}
-            showCleanup={Boolean(aiArchiveId) || primaryMembershipApproved} />
-        </div>)}
+            showCleanup={false} />
+          </>}
+        </div>}
         {section === "storage" && <section className="account-card">
           <div className="account-card-title"><div><span className="account-eyebrow">Платформа</span>
             <h2>Лимиты хранилища</h2></div></div>

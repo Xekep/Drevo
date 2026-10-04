@@ -6,8 +6,20 @@ test("platform cleanup list loads lazily, paginates and shows actionable errors 
   page,
 }, info) => {
   const calls: URL[] = [];
+  let familyRequests = 0;
+  await page.route("**/api/family**", (route) => {
+    familyRequests++;
+    return route.fulfill({ status: 403, json: { error: "Private archive" } });
+  });
+  await page.route("**/api/session", (route) => route.fulfill({ json: {
+    user: null, account: { id: "platform-only", name: "Администратор платформы",
+      createdAt: "2026-10-04", fullAccess: false, globalRole: "admin", provider: "email" },
+    local: false, yandex: false, vk: false, email: true,
+  } }));
+  await page.route("**/api/account/archives", (route) =>
+    route.fulfill({ json: { archives: [] } }));
   const time = new Date("2026-01-01T12:00:00Z").getTime();
-  await page.route("**/api/admin/ai/cleanup?*", async (route) => {
+  await page.route("**/api/platform/ai/cleanup?*", async (route) => {
     const url = new URL(route.request().url());
     calls.push(url);
     const second = url.searchParams.has("cursor");
@@ -36,6 +48,7 @@ test("platform cleanup list loads lazily, paginates and shows actionable errors 
   });
   await page.goto("/admin");
   await openAdminSection(page, "ai", "Yandex AI");
+  await expect(page.getByLabel("Архив для Yandex AI")).toHaveValue("");
   await expect(
     page.getByText("Очистка диалогов у провайдера", { exact: true }),
   ).toBeVisible();
@@ -61,11 +74,14 @@ test("platform cleanup list loads lazily, paginates and shows actionable errors 
   ).toBeDisabled();
   expect(calls.at(-1)?.searchParams.get("filter")).toBe("blocked");
   expect(calls.at(-1)?.searchParams.has("cursor")).toBe(false);
+  expect(calls.every((url) => url.pathname === "/api/platform/ai/cleanup")).toBe(true);
+  expect(familyRequests).toBe(0);
   expect(
     await listing.evaluate(
       (element) => element.scrollWidth <= element.clientWidth + 1,
     ),
   ).toBe(true);
+  await page.screenshot({ path: info.outputPath("admin-fullpage.png"), fullPage: true });
   await listing.screenshot({ path: info.outputPath("ai-cleanup.png") });
 });
 
@@ -73,7 +89,7 @@ test("manual retry reports a queued attempt without losing the AI settings draft
   const id = "c4030731-7619-4e23-91c3-9216a51b3773";
   let queued = false;
   let attempts = 0;
-  await page.route("**/api/admin/ai/cleanup?*", async (route) => {
+  await page.route("**/api/platform/ai/cleanup?*", async (route) => {
     const now = Date.now();
     const body: AiCleanupStatus = {
       supported: true, checkedAt: now,
@@ -88,7 +104,7 @@ test("manual retry reports a queued attempt without losing the AI settings draft
     };
     await route.fulfill({ json: body });
   });
-  await page.route(`**/api/admin/ai/cleanup/${id}/retry`, async (route) => {
+  await page.route(`**/api/platform/ai/cleanup/${id}/retry`, async (route) => {
     attempts++;
     if (attempts < 3) {
       await route.fulfill({ status: attempts === 1 ? 409 : 503,

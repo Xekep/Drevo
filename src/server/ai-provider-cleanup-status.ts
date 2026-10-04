@@ -23,6 +23,27 @@ export function canRetryBlockedCleanup(
   return !!rejected && ![401, 403, 404, 408, 429].includes(Number(rejected[1]));
 }
 
+/** Queue one eligible blocked job; callers retain authorization and audit in their own transaction. */
+export async function queueBlockedAiCleanup(client: PoolClient, id: string, expiresAt: number) {
+  const job = await client.query<{
+    state: string; last_error: string | null; encrypted_snapshot: string | null;
+    lease_token: string | null; lease_until: number | null;
+  }>(`SELECT state,last_error,encrypted_snapshot,lease_token,lease_until
+       FROM public.platform_ai_conversations WHERE id=$1 FOR UPDATE NOWAIT`, [id]);
+  if (!job.rowCount) return { status: 404 as const, error: "Задание не найдено" };
+  const row = job.rows[0];
+  if (!canRetryBlockedCleanup(row.state, row.last_error,
+    !!row.encrypted_snapshot, row.lease_token === null && row.lease_until === null))
+    return { status: 409 as const, error: "Задание изменилось. Обновите очередь" };
+  if (expiresAt <= Date.now())
+    return { status: 401 as const, error: "Сеанс завершён" };
+  const now = Date.now(), nextAttemptAt = now + 45_000;
+  await client.query(`UPDATE public.platform_ai_conversations
+       SET state='pending',available_at=$2,updated_at=$3,last_error=NULL
+       WHERE id=$1`, [id, nextAttemptAt, now]);
+  return { status: 202 as const, queued: true, nextAttemptAt, now };
+}
+
 export function aiCleanupStatusQuery(url: URL) {
   const filter = url.searchParams.get("filter") || "all";
   if (filter !== "all" && filter !== "blocked")

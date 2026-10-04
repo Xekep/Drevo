@@ -25,10 +25,18 @@ export async function verifyAiProviderCleanupRetry(
   let revoke: "none" | "session" | "membership" | "grant" = "none";
   let ready = true;
   let pauseAfterAccess = false;
+  let pauseBeforeRetryDelivery = false;
+  let pauseQueuedDelivery = false;
   let expiryHookAt = 0, expiredAfterLock = false;
   let entered!: () => void, release!: () => void;
   const reached = new Promise<void>((resolve) => { entered = resolve; });
   const held = new Promise<void>((resolve) => { release = resolve; });
+  let resultEntered!: () => void, releaseResult!: () => void;
+  const resultReached = new Promise<void>((resolve) => { resultEntered = resolve; });
+  const resultHeld = new Promise<void>((resolve) => { releaseResult = resolve; });
+  let queuedEntered!: () => void, releaseQueued!: () => void;
+  const queuedReached = new Promise<void>((resolve) => { queuedEntered = resolve; });
+  const queuedHeld = new Promise<void>((resolve) => { releaseQueued = resolve; });
   const handle = aiProviderCleanupHttp({
     auth, db, publicOrigin: "https://archive.test",
     providerCleanup: { assertReady: async () => { if (!ready) throw new Error("unavailable"); } },
@@ -48,6 +56,10 @@ export async function verifyAiProviderCleanupRetry(
         expiredAfterLock = true;
       }
       if (pauseAfterAccess) { entered(); await held; }
+    },
+    beforeRetryDelivery: async () => {
+      if (pauseBeforeRetryDelivery) { resultEntered(); await resultHeld; }
+      if (pauseQueuedDelivery) { queuedEntered(); await queuedHeld; }
     },
   });
   const server = createServer((req, res) => {
@@ -159,6 +171,23 @@ export async function verifyAiProviderCleanupRetry(
     assert.equal((await row(id))?.available_at, response.nextAttemptAt);
     assert.equal((await audit()).length, beforeAudit + 1);
 
+    pauseBeforeRetryDelivery = true;
+    try {
+      const hiddenStatus = post(id);
+      await resultReached;
+      await db.prepare("", "DELETE FROM platform_admins WHERE account_id='owner'").run();
+      pauseBeforeRetryDelivery = false;
+      releaseResult();
+      assert.equal((await hiddenStatus).status, 403,
+        "revoke before handoff hides a duplicate job's 409 status");
+      assert.equal((await row(id))?.available_at, response.nextAttemptAt);
+      assert.equal((await audit()).length, beforeAudit + 1);
+    } finally {
+      pauseBeforeRetryDelivery = false;
+      releaseResult();
+      await db.prepare("", "INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING").run();
+    }
+
     const concurrent = await insert("provider_rejected_422");
     const results = await Promise.all([post(concurrent), post(concurrent)]);
     assert.deepEqual(results.map((item) => item.status).sort(), [202, 409]);
@@ -166,6 +195,7 @@ export async function verifyAiProviderCleanupRetry(
 
     const locked = await insert("provider_auth_401");
     pauseAfterAccess = true;
+    pauseQueuedDelivery = true;
     const delivery = post(locked);
     await reached;
     const revocation = db.prepare("", "DELETE FROM account_sessions WHERE token_hash=?").run(tokenHash);
@@ -176,13 +206,22 @@ export async function verifyAiProviderCleanupRetry(
     assert.equal(raced, "waiting", "revocation waits for the final authorization lock");
     pauseAfterAccess = false;
     release();
-    assert.equal((await delivery).status, 202);
+    await queuedReached;
     await revocation;
+    pauseQueuedDelivery = false;
+    releaseQueued();
+    assert.equal((await delivery).status, 401,
+      "a revoke after queue commit withholds the 202 acknowledgment");
+    assert.equal((await row(locked))?.state, "pending");
     assert.equal((await post(locked)).status, 401);
     console.log("runtime_ai_provider_retry_permissions_cooldown_audit_ok");
   } finally {
     pauseAfterAccess = false;
+    pauseBeforeRetryDelivery = false;
+    pauseQueuedDelivery = false;
     release();
+    releaseResult();
+    releaseQueued();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await db.prepare("", "DELETE FROM account_sessions WHERE token_hash=?").run(tokenHash);

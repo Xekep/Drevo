@@ -78,6 +78,7 @@ import { verifyPlatformStaffRoles } from "./postgres-platform-staff-roles.ts";
 import { verifyGlobalStaffMigrationStartup } from "./postgres-global-staff-migration-startup.ts";
 import { verifyGlobalRoleFinalization } from "./postgres-global-role-finalization.ts";
 import { verifyAiProviderCleanupRetry } from "./postgres-ai-provider-retry.ts";
+import { verifyPlatformAiCleanup } from "./postgres-platform-ai-cleanup.ts";
 import { verifyPlatformConfigurationMigration, verifyPlatformConfigurationRevocation,
   verifySharedPlatformConfiguration } from "./postgres-platform-configuration.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
@@ -1845,6 +1846,7 @@ try {
     ownerHeaders, process.env.PUBLIC_ORIGIN!);
   await verifyAiProviderCleanupStatus(app.archive.db, securedBase, ownerHeaders, headers);
   await verifyAiProviderCleanupRetry(app.archive.db, headers);
+  await verifyPlatformAiCleanup(app.archive.db, client, securedBase, process.env.PUBLIC_ORIGIN!);
   // A temporary portrait grant must become a permanent citation reference at
   // attachment time. Removing that last citation must immediately free quota.
   const citationImage = await sharp({ create: { width: 1, height: 1,

@@ -34,8 +34,12 @@ const date = (value: number) =>
   });
 
 /** Owns only the lazy operational listing, independently of the settings draft. */
-export function AiProviderCleanupAdmin({ archiveId = null }: { archiveId?: string | null }) {
-  const url = useCallback((path: string) => archiveId ? `/a/${archiveId}${path}` : path, [archiveId]);
+export function AiProviderCleanupAdmin({ archiveId = null, platform = false }: {
+  archiveId?: string | null; platform?: boolean;
+}) {
+  const url = useCallback((path: string) => platform
+    ? path.replace("/api/admin/ai/cleanup", "/api/platform/ai/cleanup")
+    : archiveId ? `/a/${archiveId}${path}` : path, [archiveId, platform]);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<AiCleanupFilter>("all");
   const [cursor, setCursor] = useState<string | null>(null);
