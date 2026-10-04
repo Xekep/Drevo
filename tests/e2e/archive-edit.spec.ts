@@ -45,14 +45,18 @@ test("card editor accepts minimal replies and preserves an independent concurren
       (r) =>
         r.url().endsWith("/api/family/changes") &&
         r.request().method() === "POST",
-    );
+    ).then(async (saved) => {
+      expect(saved.status()).toBe(200);
+      // Consume the body as soon as the response arrives. Closing the editor
+      // may navigate before a later CDP body lookup can retrieve it.
+      return saved.json();
+    });
     await page.getByRole("button", { name: "Сохранить", exact: true }).click();
     const saved = await response;
-    expect(saved.status()).toBe(200);
     await expect(
       page.getByRole("heading", { name: "Редактировать человека" }),
     ).toHaveCount(0);
-    return saved.json();
+    return saved;
   };
   try {
     await page.goto("/tree");
