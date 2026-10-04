@@ -158,8 +158,8 @@ async function verifyTierRevocationBarrier(client: Client, base: string, origin:
     for (let attempt = 0; attempt < 250; attempt++) {
       const waiting = await blocker.query<{ blocked: boolean }>(
         `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
-          WHERE wait_event_type='Lock' AND $1=ANY(pg_blocking_pids(pid))
-            AND query LIKE '%runtime_users%') AS blocked`, [blockerPid]);
+          WHERE wait_event_type='Lock' AND $1=ANY(pg_blocking_pids(pid))) AS blocked`,
+        [blockerPid]);
       if (waiting.rows[0].blocked) return;
       if (completedStatus !== undefined)
         throw new Error(`Tier mutation finished before its target lock: ${completedStatus}`);
