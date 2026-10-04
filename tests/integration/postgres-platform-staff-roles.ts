@@ -150,16 +150,22 @@ async function verifyTierRevocationBarrier(client: Client, base: string, origin:
   await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2)",
     [hash, Date.now() + 600_000]);
   let transactionOpen = false;
-  const waitForBlocked = async (fragment: string) => {
+  const blockerPid = (await blocker.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+  const waitForBlocked = async (change: Promise<Response>) => {
+    let completedStatus: number | undefined;
+    void change.then((response) => { completedStatus = response.status; },
+      () => { completedStatus = 0; });
     for (let attempt = 0; attempt < 250; attempt++) {
       const waiting = await blocker.query<{ blocked: boolean }>(
         `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
-          WHERE pid<>pg_backend_pid() AND wait_event_type='Lock'
-            AND query LIKE $1) AS blocked`, [`%${fragment}%`]);
+          WHERE wait_event_type='Lock' AND $1=ANY(pg_blocking_pids(pid))
+            AND query LIKE '%runtime_users%') AS blocked`, [blockerPid]);
       if (waiting.rows[0].blocked) return;
+      if (completedStatus !== undefined)
+        throw new Error(`Tier mutation finished before its target lock: ${completedStatus}`);
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    throw new Error(`Expected PostgreSQL lock wait: ${fragment}`);
+    throw new Error("Expected tier mutation to wait on its locked target account");
   };
   try {
     await blocker.query("BEGIN");
@@ -170,7 +176,7 @@ async function verifyTierRevocationBarrier(client: Client, base: string, origin:
     const change = fetch(`${base}/api/users/reader`, {
       method: "PATCH", headers, body: JSON.stringify({ fullAccess: !before }),
     });
-    await waitForBlocked("SELECT u.*, t.full_access FROM runtime_users");
+    await waitForBlocked(change);
     const revoke = client.query("DELETE FROM account_sessions WHERE token_hash=$1", [hash]);
     const revokeCompleted = await Promise.race([
       revoke.then(() => true),
