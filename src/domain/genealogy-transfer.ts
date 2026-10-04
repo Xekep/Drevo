@@ -26,6 +26,8 @@ export type GenealogyImport = {
   media: TransferMedia[];
   /** Temporary import-only pointers; never persisted in Family. */
   citationMedia?: Array<{ source: Source; mediaId: string; page?: number; inlineUrlSuffix?: string }>;
+  /** Standard EVENT.OBJE links awaiting verified PDF/TIFF classification. */
+  eventMedia?: Array<{ mediaId: string; personId: string; eventId: string }>;
 };
 export type GedcomVersion = "5.5.1" | "7.0";
 export type GenealogyExportFormat = "gedcom551" | "gedcom7" | "gedzip7";

@@ -787,6 +787,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       sources: generalSources,
     };
   }
+  const parsedEventNodes = new Map<Node, { personId: string; event: PersonEvent }>();
   const people: Person[] = individuals.map((n) => {
     const personSourceNodes = children(n, "SOUR");
     const personCitations = sources(n);
@@ -833,7 +834,11 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     const birthSources = eventClaimSources(birth, parsedBirthDate, parsedBirthPlace, "BIRTH");
     const deathSources = eventClaimSources(death, parsedDeathDate, parsedDeathPlace, "DEATH");
     const eventNodes = n.children.filter((c) => Object.hasOwn(eventTags, c.tag));
-    const events = eventNodes.map((c) => event(c, c.tag === "ADOP" ? "Усыновление" : undefined));
+    const events = eventNodes.map((c) => {
+      const parsed = event(c, c.tag === "ADOP" ? "Усыновление" : undefined);
+      parsedEventNodes.set(c, { personId: ids.get(n.xref)!, event: parsed });
+      return parsed;
+    });
     const generatedEventNodes = new Set(eventNodes);
     const occupationNode = child(n, "OCCU");
     const occupation = occupationNode?.value || "";
@@ -858,11 +863,12 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       [death, "Уход из жизни"],
     ] as const)
       if (node && (child(node, "DATE") || notes(node) || sources(node).length ||
-        eventAgeText(node).length)) {
+        eventAgeText(node).length || children(node, "OBJE").length)) {
         const parsed = event(node, label);
         if (node === birth) parsed.sources = birthSources.general;
         if (node === death) parsed.sources = deathSources.general;
         events.push(parsed);
+        parsedEventNodes.set(node, { personId: ids.get(n.xref)!, event: parsed });
         generatedEventNodes.add(node);
       }
     const p: Person = {
@@ -1690,16 +1696,43 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     }
     citationMedia.push({ source, mediaId: item.id, page, ...(inlineUrlSuffix === undefined ? {} : { inlineUrlSuffix }) });
   }
+  const eventMedia: NonNullable<GenealogyImport["eventMedia"]> = [];
+  const eventMediaKeys = new Set<string>();
   const attachMedia = (node: Node, personIds: string[]) => {
     for (const ref of children(node, "OBJE")) {
-      if (ref.value === "@VOID@") continue;
+      const eventAssociation = ["BIRT", "DEAT"].includes(node.tag) ||
+        Object.hasOwn(eventTags, node.tag);
+      if (ref.value === "@VOID@") {
+        if (eventAssociation)
+          warnings.add("Связь EVENT.OBJE с неизвестным медиа @VOID@ не перенесена.");
+        continue;
+      }
       const object = ref.pointer ? records.get(ref.value) : ref;
       if (!object || object.tag !== "OBJE")
         throw new Error(`Не найдено медиа ${ref.value}`);
-      for (const item of readObject(object)) {
+      const files = readObject(object);
+      if (!files.length && eventAssociation)
+        warnings.add("Связь EVENT.OBJE без файла FILE не перенесена.");
+      for (const item of files) {
         item.personIds = [...new Set([...item.personIds, ...personIds])];
         if (value(ref, "_PRIM") === "Y")
           item.portraitIds = [...new Set([...item.portraitIds, ...personIds])];
+        if (eventAssociation) {
+          const binding = parsedEventNodes.get(node);
+          const retained = binding && map.get(binding.personId)?.events?.filter((event) =>
+            event === binding.event).length === 1 &&
+            map.get(binding.personId)?.events?.filter((event) =>
+              event.id === binding.event.id).length === 1;
+          if (retained) {
+            const key = `${item.id}\0${binding.personId}\0${binding.event.id}`;
+            if (!eventMediaKeys.has(key)) {
+              eventMediaKeys.add(key);
+              eventMedia.push({ mediaId: item.id, personId: binding.personId,
+                eventId: binding.event.id });
+            }
+          } else
+            warnings.add("Связь EVENT.OBJE с событием не перенесена: событие не сохранилось однозначно после импорта или относится к FAM; файл оставлен у участников.");
+        }
       }
     }
     for (const c of node.children.filter((c) => c.tag !== "OBJE" && c.tag !== "SOUR"))
@@ -1749,6 +1782,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     warnings: [...warnings],
     media,
     citationMedia,
+    eventMedia,
     version,
   };
 }
