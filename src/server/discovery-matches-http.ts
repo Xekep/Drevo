@@ -68,7 +68,8 @@ function confirmationChanges(row: Row, confirmation: Confirmation) {
   }));
 }
 
-function match(row: Row, confirmation?: Confirmation, includeConfirmation = false) {
+function match(row: Row, confirmation?: Confirmation, includeConfirmation = false,
+  decisionNote?: string) {
   const token = reviewToken(row);
   const hasBothPublications = row.left_name != null && row.right_name != null;
   const confirmationChangesForRow = confirmation ? confirmationChanges(row, confirmation) : [];
@@ -91,6 +92,8 @@ function match(row: Row, confirmation?: Confirmation, includeConfirmation = fals
         changedSinceConfirmation: confirmationChangesForRow.length > 0,
         changedFieldsSinceConfirmation: confirmationChangesForRow } : {}),
     } : {}),
+    ...(includeConfirmation && hasBothPublications && decisionNote &&
+      (row.status === "linked" || row.status === "rejected") ? { decisionNote } : {}),
   };
 }
 
@@ -206,6 +209,18 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         confirmation[side][String(field.field_name)] = String(field.field_value);
       }
     }
+    return result;
+  };
+  const decisionNotesFor = async (rows: Row[]) => {
+    const result = new Map<string, string>();
+    const ids = rows.filter((row) => (row.status === "linked" || row.status === "rejected") &&
+      row.left_name != null && row.right_name != null).map((row) => ({ id: String(row.id) }));
+    if (!ids.length) return result;
+    const selected = await db.prepare("", `SELECT n.match_id,n.note
+      FROM discovery_match_decision_notes n
+      JOIN jsonb_to_recordset(?::jsonb) AS e(id text) ON e.id=n.match_id`)
+      .all(JSON.stringify(ids));
+    for (const row of selected) result.set(String(row.match_id), String(row.note));
     return result;
   };
   const saveConfirmation = async (row: Row, token: string) => {
@@ -766,7 +781,9 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
           return 409;
         const currentPage = rows.slice(0, 30);
         const confirmations = await confirmationsFor(currentPage);
-        const items = currentPage.map((row) => match(row, confirmations.get(String(row.id)), true));
+        const decisionNotes = await decisionNotesFor(currentPage);
+        const items = currentPage.map((row) => match(row, confirmations.get(String(row.id)), true,
+          decisionNotes.get(String(row.id))));
         const last = rows.length > 30 ? items.at(-1) : undefined;
         await beforeMatchListDelivery?.();
         await deliverLocked(res, { archiveId, matches: items,
@@ -833,6 +850,10 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       const decision = body?.decision;
       if (decision !== "accept" && decision !== "reject" && decision !== "revoke")
         return json(res, 400, { error: "Некорректное решение" });
+      if (body?.note !== undefined && (decision === "revoke" ||
+          typeof body.note !== "string" || body.note.trim().length > 500))
+        return json(res, 400, { error: "Пояснение должно быть короче 500 символов" });
+      const decisionNote = typeof body?.note === "string" ? body.note.trim() : "";
       const approved = await auth.currentUser(req);
       if (approved?.role !== "admin" || approved.approved !== true || !await isOwner(approved.id))
         return json(res, 403, { error: "Доступ отозван" });
@@ -875,12 +896,17 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
           responded_by=CASE WHEN ?='revoke' THEN responded_by ELSE ? END,
           responded_at=CASE WHEN ?='revoke' THEN responded_at ELSE now() END,
           decision_review_token=CASE WHEN ?='revoke' THEN decision_review_token ELSE ? END,
+          decision_txid=CASE WHEN ?='revoke' THEN decision_txid ELSE txid_current() END,
           revoked_by=CASE WHEN ?='revoke' THEN ? ELSE revoked_by END,
           revoked_at=CASE WHEN ?='revoke' THEN now() ELSE revoked_at END
         WHERE id=?`).run(decision === "accept" ? "linked" : decision === "reject" ? "rejected" : "revoked",
-          decision,approved.id,decision,decision,decisionToken,
+          decision,approved.id,decision,decision,decisionToken,decision,
           decision,approved.id,decision,detail[1]);
         if (decision === "accept") await saveConfirmation(current!, decisionToken!);
+        if (decisionNote) await db.prepare("", `INSERT INTO discovery_match_decision_notes(
+          match_id,note,left_publication_version,right_publication_version)
+          VALUES(?,?,?,?)`).run(detail[1],decisionNote,
+          String(current!.left_publication_version),String(current!.right_publication_version));
         if (decision === "reject") await hideRejectedCandidate(row,archiveId,approved.id);
         return { code: 200, row: await readMatch(detail[1]) };
       });

@@ -262,6 +262,7 @@ test("a stale candidate page clears earlier suggestions and can be retried", asy
 test("a changed published card requires a fresh review before acceptance", async ({ page }) => {
   const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
   const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
+  const decisionNote = "Сверены опубликованные сведения";
   let stale = true;
   let linked = false;
   await page.route("**/api/discovery/matches/own-people?**", (route) =>
@@ -269,12 +270,14 @@ test("a changed published card requires a fresh review before acceptance", async
   await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
     archiveId: "tree-b", nextCursor: null, matches: [{ id: "match-1", left, right,
       initiatedByArchiveId: "tree-a", status: linked ? "linked" : "pending",
+      ...(linked ? { decisionNote } : {}),
       reviewToken: stale ? "old-token" : "new-token", changedSinceRequest: !stale,
       requestedAt: "2026-09-30T00:00:00Z" }],
   } }));
   await page.route("**/api/discovery/matches/match-1", (route) => {
     const body = route.request().postDataJSON();
     expect(body.decision).toBe("accept");
+    expect(body.note).toBe(decisionNote);
     if (stale) {
       expect(body.reviewToken).toBe("old-token");
       stale = false;
@@ -286,12 +289,16 @@ test("a changed published card requires a fresh review before acceptance", async
   });
   await page.goto("/admin");
   await openAdminSection(page, "matches", "Связи деревьев");
+  await page.getByText("Добавить пояснение").click();
+  await page.getByRole("textbox", { name: /Пояснение к решению/ }).fill(decisionNote);
+  await expect(page.getByText(/Его увидят владельцы обоих деревьев/)).toBeVisible();
   await page.getByRole("button", { name: "Подтвердить" }).click();
   await expect(page.getByRole("alert")).toContainText("Проверьте сведения ещё раз");
   await expect(page.getByText("Опубликованные сведения изменились после запроса. Сверьте обе карточки перед решением.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Подтвердить" })).toHaveAttribute("data-review-token", "new-token");
   await page.getByRole("button", { name: "Подтвердить" }).click();
   await expect(page.getByText("Сопоставлено")).toBeVisible();
+  await expect(page.getByText(`Пояснение решения: ${decisionNote}`)).toBeVisible();
 });
 
 test("a linked pair shows the confirmation history and a field-only change notice", async ({ page }) => {
@@ -398,21 +405,29 @@ test("rejecting a manual match hides only the recipient's candidate until restor
     return route.fulfill({ json: { ignored: false } });
   });
   await page.route("**/api/discovery/matches/match-1", (route) => {
-    expect(route.request().postDataJSON()).toEqual({ decision: "reject" });
+    expect(route.request().postDataJSON()).toEqual({
+      decision: "reject", note: "Имена относятся к разным людям",
+    });
     rejected = true;
     return route.fulfill({ json: { match: { status: "rejected" } } });
   });
   await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
     archiveId: "tree-b", nextCursor: null, matches: [{ id: "match-1", left, right,
       initiatedByArchiveId: "tree-a", status: rejected ? "rejected" : "pending",
+      ...(rejected ? { decisionNote: "Имена относятся к разным людям" } : {}),
       requestedAt: "2026-09-30T00:00:00Z" }],
   } }));
   await page.goto("/admin");
   await openAdminSection(page, "matches", "Связи деревьев");
   await page.getByRole("button", { name: "Иван Петров", exact: false }).first().click();
   await expect(page.locator(".match-suggestion")).toHaveCount(1);
+  await page.getByText("Добавить пояснение").click();
+  await page.getByRole("textbox", { name: /Пояснение к решению/ })
+    .fill("Имена относятся к разным людям");
   await page.getByRole("button", { name: "Не тот человек" }).click();
   await expect(page.getByText("Эта подсказка скрыта для вашего дерева", { exact: false })).toBeVisible();
+  await expect(page.getByText("Пояснение решения: Имена относятся к разным людям"))
+    .toBeVisible();
   await expect(page.locator(".match-suggestion")).toHaveCount(0);
   await page.getByRole("button", { name: "Скрытые" }).click();
   await expect(page.locator(".match-suggestion")).toHaveCount(1);
@@ -449,6 +464,9 @@ test("later defers only an incoming request for this visit without answering", a
   const outgoing = page.locator(".match-request").filter({ hasText: "Исходящий запрос" });
   await expect(incoming.getByRole("button", { name: "Позже" })).toBeVisible();
   await expect(outgoing.getByRole("button", { name: "Позже" })).toHaveCount(0);
+  await incoming.getByText("Добавить пояснение").click();
+  await incoming.getByRole("textbox", { name: /Пояснение к решению/ })
+    .fill("Черновик, который не отправляется");
   await incoming.getByRole("button", { name: "Позже" }).click();
   await expect(incoming).toHaveCount(0);
   await expect(outgoing).toBeVisible();
