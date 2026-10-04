@@ -119,7 +119,7 @@ export function AiProviderCleanupAdmin({ archiveId = null, platform = false }: {
       className="ai-admin-connection ai-cleanup-admin"
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary>Очистка диалогов у провайдера</summary>
+      <summary>Очистка данных у провайдера</summary>
       {open && (
         <section aria-label="Очередь очистки ИИ" aria-busy={loading}>
           <div className="ai-cleanup-toolbar">
@@ -177,7 +177,8 @@ export function AiProviderCleanupAdmin({ archiveId = null, platform = false }: {
                         {stateLabels[job.state]}
                       </strong>
                       <small title={job.id}>
-                        Задание {job.id.slice(0, 8)} · попыток {job.attempts}
+                        {job.kind === "input_file" ? "Входной файл" : "Диалог"} ·
+                        {" "}задание {job.id.slice(0, 8)} · попыток {job.attempts}
                       </small>
                     </div>
                     <time dateTime={new Date(job.updatedAt).toISOString()}>

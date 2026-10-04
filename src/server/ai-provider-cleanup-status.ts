@@ -96,16 +96,17 @@ function safeFailure(value: unknown): {
 }
 
 /** One SQL snapshot, bounded page, and an explicit public projection. */
-export async function aiProviderCleanupStatus(
-  client: PoolClient,
-  input: ReturnType<typeof aiCleanupStatusQuery>,
-): Promise<AiCleanupStatus> {
-  const result = await client.query(
-    `WITH counts AS (
-    SELECT state,count(*) AS total FROM public.platform_ai_conversations
-    WHERE state IN ('binding','pending','leased','blocked') GROUP BY state
-  ), page AS (
-    SELECT id,state,attempts,last_error,available_at,lease_until,updated_at,
+export const aiCleanupStatusSql = `WITH counts AS (
+    SELECT state,sum(total) AS total FROM (
+      SELECT state,count(*) AS total FROM public.platform_ai_conversations
+      WHERE state IN ('binding','pending','leased','blocked') GROUP BY state
+      UNION ALL
+      SELECT state,count(*) AS total FROM public.platform_ai_input_files
+      WHERE state IN ('binding','pending','leased','blocked') GROUP BY state
+    ) unfinished GROUP BY state
+  ), conversation_page AS (
+    SELECT 'conversation'::text AS kind,id,state,attempts,last_error,
+      available_at,lease_until,updated_at,
       encrypted_snapshot IS NOT NULL AS has_snapshot,
       lease_token IS NULL AND lease_until IS NULL AS lease_clear
     FROM public.platform_ai_conversations
@@ -113,9 +114,29 @@ export async function aiProviderCleanupStatus(
       AND ($1::text='all' OR state='blocked')
       AND ($2::bigint IS NULL OR (updated_at,id)<($2::bigint,$3::uuid))
     ORDER BY updated_at DESC,id DESC LIMIT 21
+  ), file_page AS (
+    SELECT 'input_file'::text AS kind,id,state,attempts,last_error,
+      available_at,lease_until,updated_at,
+      encrypted_snapshot IS NOT NULL AS has_snapshot,
+      lease_token IS NULL AND lease_until IS NULL AS lease_clear
+    FROM public.platform_ai_input_files
+    WHERE state IN ('binding','pending','leased','blocked')
+      AND ($1::text='all' OR state='blocked')
+      AND ($2::bigint IS NULL OR (updated_at,id)<($2::bigint,$3::uuid))
+    ORDER BY updated_at DESC,id DESC LIMIT 21
+  ), page AS (
+    SELECT * FROM conversation_page UNION ALL SELECT * FROM file_page
+    ORDER BY updated_at DESC,id DESC LIMIT 21
   ) SELECT coalesce((SELECT jsonb_object_agg(state,total) FROM counts),'{}'::jsonb) AS counts,
     coalesce((SELECT jsonb_agg(to_jsonb(p) ORDER BY updated_at DESC,id DESC)
-      FROM page p),'[]'::jsonb) AS jobs`,
+      FROM page p),'[]'::jsonb) AS jobs`;
+
+export async function aiProviderCleanupStatus(
+  client: PoolClient,
+  input: ReturnType<typeof aiCleanupStatusQuery>,
+): Promise<AiCleanupStatus> {
+  const result = await client.query(
+    aiCleanupStatusSql,
     [input.filter, input.cursor?.at ?? null, input.cursor?.id ?? null],
   );
   const row = result.rows[0];
@@ -130,6 +151,7 @@ export async function aiProviderCleanupStatus(
   const last = selected.at(-1);
   const jobs: AiCleanupJobStatus[] = selected.map((job) => ({
     id: String(job.id),
+    kind: job.kind === "input_file" ? "input_file" : "conversation",
     state: job.state as AiCleanupState,
     attempts: Number(job.attempts),
     updatedAt: Number(job.updated_at),
@@ -142,7 +164,7 @@ export async function aiProviderCleanupStatus(
               : job.available_at,
           ),
     ...safeFailure(job.last_error),
-    canRetry: canRetryBlockedCleanup(job.state, job.last_error,
+    canRetry: job.kind === "conversation" && canRetryBlockedCleanup(job.state, job.last_error,
       job.has_snapshot === true, job.lease_clear === true),
   }));
   return {

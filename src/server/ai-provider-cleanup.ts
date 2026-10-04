@@ -5,6 +5,7 @@ import type { StoreDatabase } from "./store-database.ts";
 import { YandexResponseError, yandexResponsesClient } from "./yandex-responses.ts";
 
 type Credential = { conversationId: string; baseUrl: string; folderId: string; apiKey: string };
+type InputFileCredential = { fileId: string; baseUrl: string; folderId: string; apiKey: string };
 type Runtime = Pick<Credential, "baseUrl" | "folderId" | "apiKey">;
 type Claimed = { id: string; encrypted_snapshot: string; lease_token: string; attempts: number };
 
@@ -55,7 +56,7 @@ async function loadKey(db: StoreDatabase, configuredPath: string) {
   ).get();
   const count = await db.prepare(
     "SELECT 1 AS present FROM platform_ai_conversations LIMIT 1",
-    "SELECT 1 AS present FROM platform_ai_conversations LIMIT 1",
+    "SELECT 1 AS present FROM platform_ai_conversations UNION ALL SELECT 1 FROM platform_ai_input_files LIMIT 1",
   ).get();
   await mkdir(dirname(paths.primary), { recursive: true, mode: 0o700 });
   let primary: Buffer;
@@ -107,23 +108,37 @@ async function loadKey(db: StoreDatabase, configuredPath: string) {
   return key;
 }
 
-function encrypt(key: Buffer, value: Credential) {
+function encrypt(key: Buffer, value: Credential | InputFileCredential) {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
   const data = Buffer.concat([cipher.update(JSON.stringify(value), "utf8"), cipher.final()]);
   return [iv, cipher.getAuthTag(), data].map((part) => part.toString("base64url")).join(".");
 }
-function decrypt(key: Buffer, value: string): Credential {
+function decryptJson(key: Buffer, value: string): Record<string, unknown> {
   const parts = value.split(".").map((part) => Buffer.from(part, "base64url"));
   if (parts.length !== 3 || parts[0].length !== 12 || parts[1].length !== 16)
     throw new Error("AI cleanup snapshot is invalid");
   const decipher = createDecipheriv("aes-256-gcm", key, parts[0]);
   decipher.setAuthTag(parts[1]);
   const result = JSON.parse(Buffer.concat([decipher.update(parts[2]), decipher.final()]).toString("utf8"));
+  if (!result || typeof result !== "object" || Array.isArray(result))
+    throw new Error("AI cleanup snapshot is invalid");
+  return result;
+}
+function decrypt(key: Buffer, value: string): Credential {
+  const result = decryptJson(key, value);
   if (!result || typeof result.conversationId !== "string" ||
       typeof result.baseUrl !== "string" || typeof result.folderId !== "string" ||
       typeof result.apiKey !== "string") throw new Error("AI cleanup snapshot is invalid");
-  return result;
+  return result as Credential;
+}
+function decryptInputFile(key: Buffer, value: string): InputFileCredential {
+  const result = decryptJson(key, value);
+  if (!result || typeof result.fileId !== "string" ||
+      !/^[A-Za-z0-9_-]{1,200}$/.test(result.fileId) ||
+      typeof result.baseUrl !== "string" || typeof result.folderId !== "string" ||
+      typeof result.apiKey !== "string") throw new Error("AI input file snapshot is invalid");
+  return result as InputFileCredential;
 }
 
 export async function aiProviderCleanup(db: StoreDatabase, configuredPath: string, fetcher: typeof fetch = fetch) {
@@ -140,6 +155,94 @@ export async function aiProviderCleanup(db: StoreDatabase, configuredPath: strin
   ).run(Date.now(), Date.now(), ref);
   return {
     assertReady,
+    /** Register every known input ID before the provider can use it. The
+     * binding deadline recovers a process killed before its finally block. */
+    async registerInputFile(fileId: string, runtime: Runtime, bindingUntil: number) {
+      if (db.kind !== "postgres") throw new Error("Durable input file cleanup needs PostgreSQL");
+      if (!/^[A-Za-z0-9_-]{1,200}$/.test(fileId) ||
+          !Number.isSafeInteger(bindingUntil))
+        throw new Error("Invalid AI input file registration");
+      await assertReady();
+      const id = randomUUID(), now = Date.now();
+      await db.prepare("", `INSERT INTO public.platform_ai_input_files
+        (id,key_version,encrypted_snapshot,state,available_at,created_at,updated_at)
+        VALUES(?,1,?,'binding',?,?,?)`).run(id,
+        encrypt(key, { fileId, baseUrl: runtime.baseUrl,
+          folderId: runtime.folderId, apiKey: runtime.apiKey }),
+        Math.max(bindingUntil, now + 5_001), now, now);
+      return id;
+    },
+    async queueInputFile(id: string) {
+      const now = Date.now();
+      await db.prepare("", `UPDATE public.platform_ai_input_files
+        SET state='pending',available_at=?,updated_at=?
+        WHERE id=? AND state='binding'`).run(now, now, id);
+    },
+    async compensateInputFile(fileId: string, runtime: Runtime) {
+      try {
+        await responses.deleteCalculationFile(runtime, fileId, AbortSignal.timeout(5000));
+      } catch (error) {
+        if (!(error instanceof YandexResponseError && error.status === 404))
+          console.warn(JSON.stringify({ event: "ai.input_file_compensation_failed" }));
+      }
+    },
+    async processInputFiles(limit = 2) {
+      if (db.kind !== "postgres" || !db.postgresTransaction) return 0;
+      await assertReady();
+      let processed = 0;
+      for (let index = 0; index < Math.min(Math.max(limit, 1), 8); index++) {
+        const now = Date.now(), token = randomUUID();
+        const [job] = await db.postgresTransaction(async (client) => {
+          const rows = await client.query<Claimed>(`WITH due AS (
+            SELECT id FROM public.platform_ai_input_files
+            WHERE (state='pending' AND available_at<=$1)
+               OR (state IN ('binding','leased') AND coalesce(lease_until,available_at)<=$1)
+            ORDER BY available_at,id LIMIT 1 FOR UPDATE SKIP LOCKED
+          ) UPDATE public.platform_ai_input_files work SET state='leased',
+            lease_token=$2,lease_until=$3,attempts=attempts+1,updated_at=$1
+            FROM due WHERE work.id=due.id
+            RETURNING work.id,work.encrypted_snapshot,work.lease_token,work.attempts`,
+          [now, token, now + 120_000]);
+          return rows.rows;
+        });
+        if (!job) break;
+        processed++;
+        let state = "done", category: string | null = null;
+        let snapshot: InputFileCredential | null = null;
+        try { snapshot = decryptInputFile(key, job.encrypted_snapshot); }
+        catch { state = "blocked"; category = "snapshot_invalid"; }
+        if (snapshot) {
+          try {
+            await responses.deleteCalculationFile(snapshot, snapshot.fileId,
+              AbortSignal.timeout(90_000));
+          } catch (error) {
+            const status = error instanceof YandexResponseError ? error.status : 0;
+            if (status === 404) state = "done";
+            else if (status === 401 || status === 403) {
+              state = "blocked"; category = `provider_auth_${status}`;
+            } else if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
+              state = "blocked"; category = `provider_rejected_${status}`;
+            } else {
+              state = "pending";
+              category = status ? `provider_http_${status}` : "provider_network";
+            }
+          }
+        }
+        const savedAt = Date.now();
+        const delay = state === "pending" ? Math.min(24 * 60 * 60_000,
+          30_000 * 2 ** Math.min(job.attempts - 1, 11)) : 0;
+        const saved = await db.prepare("", `UPDATE public.platform_ai_input_files
+          SET state=?,available_at=?,lease_token=NULL,lease_until=NULL,
+              last_error=?,updated_at=?,
+              encrypted_snapshot=CASE WHEN ?='done' THEN NULL ELSE encrypted_snapshot END
+          WHERE id=? AND lease_token=?`).run(state, savedAt + delay, category,
+            savedAt, state, job.id, job.lease_token);
+        if (saved.changes) console.info(JSON.stringify({
+          event: "ai.input_file_cleanup_attempt", jobId: job.id,
+        }));
+      }
+      return processed;
+    },
     async compensateKnown(chatId: string, conversationId: string, runtime: Runtime) {
       try {
         await responses.deleteConversation(runtime, conversationId);

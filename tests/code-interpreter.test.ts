@@ -81,6 +81,38 @@ test("Code Interpreter receives selected chat files and deletes remote uploads",
   assert.doesNotMatch(JSON.stringify(result), /secret-api-key/);
 });
 
+test("durable input binding spans a longer calculation and access is rechecked before use", async () => {
+  const started = Date.now();
+  let checked = 0, modelCalls = 0, queued = 0, bindingUntil = 0;
+  const client = yandexResponsesClient(async (url) => {
+    if (String(url).endsWith("/files")) return Response.json({ id: "bound-input" });
+    modelCalls++;
+    return Response.json(success());
+  });
+  await assert.rejects(runCodeInterpreter({
+    client, runtime, family,
+    input: { task: "Посчитай", fields: ["birth"] },
+    signal: new AbortController().signal, timeoutMs: 120_000,
+    allowPdf: false, onCall() {}, onUsage() {},
+    assertAiAccess: async () => {
+      checked++;
+      if (checked === 2) throw new Error("AI access revoked");
+    },
+    inputFileCleanup: {
+      registerInputFile: async (_id, _runtime, until) => {
+        bindingUntil = until;
+        return "01828202-1d55-46c5-a3b7-ef055573bf08";
+      },
+      queueInputFile: async () => { queued++; },
+      compensateInputFile: async () => {},
+    },
+  }), /AI access revoked/);
+  assert.ok(bindingUntil >= started + 125_000,
+    "worker cannot reclaim a binding while this longer calculator may use it");
+  assert.equal(modelCalls, 0, "revoked input is not sent to the model");
+  assert.equal(queued, 1, "the registered input remains a deletion obligation");
+});
+
 test("Code Interpreter stops after a tier change during data upload", async () => {
   const controller = new AbortController();
   let allowed = true;

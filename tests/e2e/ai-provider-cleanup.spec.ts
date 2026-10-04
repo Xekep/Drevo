@@ -30,6 +30,7 @@ test("platform cleanup list loads lazily, paginates and shows actionable errors 
       counts: { binding: 1, pending: 20, leased: 1, blocked: 2 },
       jobs: [
         {
+          kind: second ? "input_file" : "conversation",
           id: second
             ? "c4030731-7619-4e23-91c3-9216a51b3773"
             : "01828202-1d55-46c5-a3b7-ef055573bf08",
@@ -39,7 +40,7 @@ test("platform cleanup list loads lazily, paginates and shows actionable errors 
           nextAttemptAt: blocked || second ? null : time + 60_000,
           error: second || blocked ? "provider_auth" : "provider_temporary",
           httpStatus: second || blocked ? 403 : 503,
-          canRetry: second || blocked,
+          canRetry: blocked && !second,
         },
       ],
       nextCursor: !second && !blocked ? "next-page" : null,
@@ -50,11 +51,11 @@ test("platform cleanup list loads lazily, paginates and shows actionable errors 
   await openAdminSection(page, "ai", "Yandex AI");
   await expect(page.getByLabel("Архив для Yandex AI")).toHaveValue("");
   await expect(
-    page.getByText("Очистка диалогов у провайдера", { exact: true }),
+    page.getByText("Очистка данных у провайдера", { exact: true }),
   ).toBeVisible();
   expect(calls).toHaveLength(0);
   await page
-    .getByText("Очистка диалогов у провайдера", { exact: true })
+    .getByText("Очистка данных у провайдера", { exact: true })
     .click();
   const listing = page.getByRole("region", { name: "Очередь очистки ИИ" });
   await expect(
@@ -63,6 +64,8 @@ test("platform cleanup list loads lazily, paginates and shows actionable errors 
   await expect(listing.getByText(/Временная ошибка провайдера/)).toBeVisible();
   await listing.getByRole("button", { name: "Далее", exact: true }).click();
   await expect(listing.getByText("Страница 2", { exact: true })).toBeVisible();
+  await expect(listing.getByText(/Входной файл/)).toBeVisible();
+  await expect(listing.getByRole("button", { name: "Повторить" })).toHaveCount(0);
   await expect(
     listing.getByText(/Проверьте права исходного подключения/),
   ).toBeVisible();
@@ -94,11 +97,11 @@ test("manual retry reports a queued attempt without losing the AI settings draft
     const body: AiCleanupStatus = {
       supported: true, checkedAt: now,
       counts: { binding: 0, pending: queued ? 1 : 0, leased: 0, blocked: queued ? 1 : 2 },
-      jobs: [{ id, state: queued ? "pending" : "blocked", attempts: 2,
+      jobs: [{ id, kind: "conversation", state: queued ? "pending" : "blocked", attempts: 2,
         updatedAt: now, nextAttemptAt: queued ? now + 45_000 : null,
         error: queued ? null : "provider_auth", httpStatus: queued ? undefined : 403,
         canRetry: !queued },
-      { id: "01828202-1d55-46c5-a3b7-ef055573bf08", state: "blocked", attempts: 2,
+      { id: "01828202-1d55-46c5-a3b7-ef055573bf08", kind: "input_file", state: "blocked", attempts: 2,
         updatedAt: now, nextAttemptAt: null, error: "snapshot_invalid", canRetry: false }],
       nextCursor: null,
     };
@@ -124,7 +127,7 @@ test("manual retry reports a queued attempt without losing the AI settings draft
   await page.getByText("Подключение Yandex, общие лимиты и контекст", { exact: true }).click();
   const folder = page.getByRole("textbox", { name: "Folder ID" });
   await folder.fill("unsaved-draft-folder");
-  await page.getByText("Очистка диалогов у провайдера", { exact: true }).click();
+  await page.getByText("Очистка данных у провайдера", { exact: true }).click();
   const listing = page.getByRole("region", { name: "Очередь очистки ИИ" });
   const retry = listing.getByRole("button", { name: "Повторить" });
   await expect(retry).toHaveCount(1);
