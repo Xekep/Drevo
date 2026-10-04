@@ -10586,6 +10586,35 @@ try {
     await client.query("ROLLBACK");
   }
   await otherApp.archive.write(beforeCandidatePages.family, paged.revision);
+  const beforeCrossSource = await app.archive.read();
+  const beforeCrossOther = await otherApp.archive.read();
+  const beforeCrossFields = await ownerPublication.getFields("person-a");
+  assert.ok(beforeCrossFields);
+  const crossSource = structuredClone(beforeCrossSource.family);
+  crossSource.people.find((person) => person.id === "person-a")!.maidenName = "Старов";
+  const crossSourceWrite = await app.archive.write(crossSource, beforeCrossSource.revision);
+  const crossOther = structuredClone(beforeCrossOther.family);
+  const crossTemplate = crossOther.people.find((person) => person.id === "person-b")!;
+  crossOther.people.push({ ...structuredClone(crossTemplate), id: "birth-to-current",
+    surname: "Старов", maidenName: "", name: "Иван", birth: "1990", column: 72 });
+  crossOther.people.push({ ...structuredClone(crossTemplate), id: "current-to-birth",
+    surname: "Другов", maidenName: "Тестов", name: "Иван", birth: "1990", column: 73 });
+  const crossOtherWrite = await otherApp.archive.write(crossOther, beforeCrossOther.revision);
+  await ownerPublication.publish("person-a", "owner", datedFields);
+  for (const id of ["birth-to-current","current-to-birth"])
+    await otherPublication.publish(id, "owner", datedFields);
+  const crossResponse = await fetch(securedBase + candidatePath,
+    { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.127" } });
+  assert.equal(crossResponse.status, 200);
+  const crossIds = (await crossResponse.json()).candidates.map((item: { id: string }) => item.id);
+  assert.ok(crossIds.includes("birth-to-current") && crossIds.includes("current-to-birth"),
+    "both published current/birth surname crossings enter exact-name tiers");
+  assert.equal(new Set(crossIds).size, crossIds.length,
+    "overlapping published surname roles do not duplicate a first-page candidate");
+  await app.archive.write(beforeCrossSource.family, crossSourceWrite.revision);
+  await otherApp.archive.write(beforeCrossOther.family, crossOtherWrite.revision);
+  await ownerPublication.publish("person-a", "owner", beforeCrossFields);
+  console.log("runtime_discovery_candidate_surname_crossing_ok");
   const ownBeforeSignals = await app.archive.read();
   const otherBeforeSignals = await otherApp.archive.read();
   const ownWithRelative = structuredClone(ownBeforeSignals.family);
@@ -10606,6 +10635,9 @@ try {
   otherWithRelative.people.push({ ...structuredClone(otherPerson),
     id: "name-typo", surname: "Тестав", name: "Иван", deceased: true,
     parents: [parent.id], column: 52 });
+  otherWithRelative.people.push({ ...structuredClone(otherPerson),
+    id: "relative-undated-exact", surname: "Тестов", name: "Иван", birth: "",
+    deceased: true, parents: [parent.id], column: 57 });
   otherWithRelative.people.push({ ...structuredClone(otherPerson),
     id: "place-match", surname: "Петров", name: "Иван", birth: "1991",
     birthPlace: "Россия, Свердловская область, Нижний Тагил", deceased: true,
@@ -10631,6 +10663,7 @@ try {
     "the opt-in control does not reveal an unpublished relative's name");
   await otherPublication.publish("relative-only", "owner");
   await otherPublication.publish("name-typo", "owner");
+  await otherPublication.publish("relative-undated-exact", "owner");
   await otherPublication.publish("place-match", "owner");
   await otherPublication.publish("region-only", "owner");
   // Earlier scenarios deliberately spend the normal per-client search budget.
@@ -10725,6 +10758,27 @@ try {
     });
   assert.equal((await setRelativeConsent(securedBase,ownerHeaders,
     "person-a",ownRelationId,true)).status, 200);
+  assert.equal((await app.archive.db.prepare("", `SELECT birth_year FROM discovery_people
+    WHERE archive_id=? AND person_id=?`).get("runtime-test","person-a"))?.birth_year,
+  "1990", "the source has a published year for the relative exclusion boundary");
+  const undatedRelative = await fetch(otherBase + relativePath +
+    "?personId=relative-undated-exact", { headers: recipientHeaders })
+    .then((response) => response.json());
+  const undatedRelationId = undatedRelative.relatives.find((item: { personId: string }) =>
+    item.personId === parent.id)?.relationId;
+  assert.ok(undatedRelationId);
+  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+    "relative-undated-exact",undatedRelationId,true)).status, 200);
+  assert.equal((await otherApp.archive.db.prepare("", `SELECT birth_year FROM discovery_people
+    WHERE archive_id=? AND person_id=?`).get("other-archive","relative-undated-exact"))?.birth_year,
+  null, "the target has no published birth year");
+  const undatedResponse = await fetch(securedBase + candidatePath,
+    { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.128" } });
+  assert.equal(undatedResponse.status, 200);
+  assert.ok((await undatedResponse.json()).candidates.some(
+    (item: { id: string }) => item.id === "relative-undated-exact"),
+  "a matched relative clue cannot hide an exact-role candidate with unknown birth year");
+  console.log("runtime_discovery_candidate_unknown_year_ok");
   assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
     .some((reason) => reason.includes("родителя")), false,
   "one-sided relation consent does not reveal a shared relative");

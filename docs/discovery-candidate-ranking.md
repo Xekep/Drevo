@@ -1,40 +1,43 @@
-# Candidate suggestion order
+# Порядок подсказок межархивного сопоставления
 
-Automatic suggestions read only explicitly published person fields and separately
-consented close-relative names. They do not assert that two people are identical;
-the displayed reasons and contradictions are evidence for a person to review.
+Автоматический поиск читает только явно опубликованные поля карточек и отдельно
+согласованные имена близких родственников. Подсказка не утверждает, что два
+человека совпадают: причины и противоречия нужны для проверки владельцем.
 
-The server walks these tiers in order, with no claim of global numeric-score
-ordering:
+Сервер просматривает следующие уровни доказательств по порядку. Числовой балл
+помогает объяснить совпадение, но не задаёт глобальный порядок:
 
-1. A bilateral, same-kind close-relative clue, the same published given name,
-   and published birth years within two years. This can find a changed surname.
-2. Exact published given name and current or birth surname, with the same
-   published birth year.
-3. The same name roles, with published birth years within two years.
-4. The same name roles with another or unavailable published birth year.
-5. Approximate name or place evidence from existing GIN-assisted lookups. This
-   tier scans at most 96 raw matches per page and has a 500 ms SQL statement
-   timeout; it is marked `approximate` and may be `partial`.
+1. Двусторонне согласованный близкий родственник того же типа, точное
+   опубликованное имя и годы рождения с разницей не более двух лет. Так можно
+   найти карточку после смены фамилии.
+2. Точное опубликованное имя и совпадение любой пары текущих фамилий или
+   фамилий при рождении при одинаковом опубликованном годе рождения.
+3. Те же части имени при разнице опубликованных годов не более двух лет.
+4. Те же части имени при другом либо неизвестном опубликованном годе.
+5. Приближённое совпадение имён или мест из существующих индексных запросов
+   GIN. На страницу проверяется не более 96 исходных строк, а SQL-запрос
+   ограничен 500 мс; ответ отмечается `approximate` и при необходимости
+   `partial`.
 
-Tiers 1–4 use indexed keyset streams ordered by birth year, published name and
-archive/person IDs. The relative tier uses the consent lookup index and
-archive/person keyset. Lower tiers exclude matches from higher tiers, including
-when a person matches both current and birth surnames. The cursor carries a
-fingerprint of the source publication, its selected relative consents and the
-ignored-list mode; changing those inputs requires restarting at page one.
-Target publications and dismissals can change between pages, so pagination is
-best effort under concurrent writes. A final locked check verifies the source,
-every selected target, consents and caller access before any response bytes.
+Точные уровни используют B-tree и постраничный ключ из года, опубликованного
+имени и идентификаторов архива/человека. Уровень родственников использует
+индекс согласий и ключ из идентификаторов архива/человека. Нижние уровни
+исключают найденных выше, в том числе при совпадении сразу нескольких видов
+фамилии. Курсор версии 2 привязан к публикации исходной карточки, выбранным
+согласиям на родственников и режиму скрытых подсказок: при их изменении поиск
+надо начать с первой страницы. Публикации и скрытия других карточек могут
+меняться между страницами, поэтому при конкурентных правках выдача основана
+на актуальном состоянии каждой страницы. При неизменных данных порядок
+устойчив. Непосредственно перед отправкой ответа сервер под блокировкой
+повторно проверяет сеанс, владельца, исходную и выбранные публикации и
+согласия.
 
-A source with more than 32 distinct consented relative clues or 128 selected
-relative rows receives a `422 refineRequired` response; the UI links back to
-publication settings. No consent is silently discarded. The approximate tier
-can return a retryable `503` if its bounded SQL query exceeds the timeout.
-Exact-name and relative queries have a 2 second SQL statement timeout; they
-also return a retryable `503` if the local database cannot meet that bound.
+Если у исходной карточки больше 32 разных или 128 общих согласованных
+подсказок о родственниках, API возвращает `422 refineRequired`, а интерфейс
+ведёт к настройкам публикации. Согласия не отбрасываются молча. Точные
+именные и родственные запросы ограничены двумя секундами, приблизительный —
+500 мс; превышение возвращает повторяемую ошибку `503`.
 
-The extra B-tree indexes are on published name roles and year only. There is no
-materialized cross-archive pair table or shared generation counter. Numeric
-evidence scores remain an explanation aid in the ranking helper, but are not
-the ordering contract for the suggestion API.
+Новые B-tree индексы содержат только опубликованные части имени и год.
+Таблицы всех пар архивов и общей строки поколения индекса нет. Полный
+глобальный порядок по числовому баллу не обещается.

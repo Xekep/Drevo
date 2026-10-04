@@ -75,10 +75,12 @@ export async function discoveryCandidatePage(db: StoreDatabase, input: {
   const birthSurname = String(sourceRow.birth_surname_key || "");
   const surnames = [...new Set([currentSurname,birthSurname]
     .map((part) => String(part || "")).filter(Boolean))];
-  const surnameComparisons = [
-    ...(currentSurname ? [{ column: surnameKey("d"), value: currentSurname }] : []),
-    ...(birthSurname ? [{ column: "d.birth_surname_normalized", value: birthSurname }] : []),
-  ];
+  // Either published surname role may match either role on the other card.
+  // The UNION in exactRows removes a person matched through multiple roles.
+  const surnameComparisons = surnames.flatMap((value) => [
+    { column: surnameKey("d"), value },
+    { column: "d.birth_surname_normalized", value },
+  ]);
   const birth = String(sourceRow.birth_year || "");
   const relativeRows = await db.prepare("", `SELECT relation_id,kind,relative_name_key,
     xmin::text AS row_version FROM discovery_relative_consents
@@ -141,7 +143,7 @@ export async function discoveryCandidatePage(db: StoreDatabase, input: {
       const yearArgs = tier === 1 ? [birth] : tier === 2 ? [lower,upper,birth] :
         birth ? [lower,upper] : [];
       const skipRelative = relativeEnabled
-        ? `AND NOT (d.birth_year BETWEEN ? AND ? AND ${relativeExists})` : "";
+        ? `AND (d.birth_year BETWEEN ? AND ? AND ${relativeExists}) IS NOT TRUE` : "";
       branches.push(`(SELECT ${fields},coalesce(d.birth_year,'9999') AS sort_birth
         FROM discovery_people d WHERE ${givenKey("d")}=? AND ${column}=? AND ${yearSql}
           AND (${exactOrder}) > (?,?,?,?) AND ${filter} ${skipRelative}
@@ -209,10 +211,10 @@ export async function discoveryCandidatePage(db: StoreDatabase, input: {
       args.push(archiveId,place.terms,place.locality,place.from,place.to);
     }
     if (!branches.length) return [];
-    const exactExclusion = surnames.length ? `AND NOT (${givenKey("d") }=? AND (${
-      surnameComparisons.map(({ column }) => `${column}=?`).join(" OR ")}))` : "";
-    const relativeExclusion = relativeEnabled ? `AND NOT (${givenKey("d") }=?
-      AND d.birth_year BETWEEN ? AND ? AND ${relativeExists})` : "";
+    const exactExclusion = surnames.length ? `AND (${givenKey("d") }=? AND (${
+      surnameComparisons.map(({ column }) => `${column}=?`).join(" OR ")})) IS NOT TRUE` : "";
+    const relativeExclusion = relativeEnabled ? `AND (${givenKey("d") }=?
+      AND d.birth_year BETWEEN ? AND ? AND ${relativeExists}) IS NOT TRUE` : "";
     const sql = `WITH candidate_keys AS (${branches.join(" UNION ")})
       SELECT ${fields} FROM discovery_people d JOIN candidate_keys k
         ON k.archive_id=d.archive_id AND k.person_id=d.person_id
