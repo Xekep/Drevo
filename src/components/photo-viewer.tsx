@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
 import {
   faceRecognitionAvailable,
   saveFaceDescriptor,
@@ -72,6 +79,27 @@ function PhotoViewerContent({
     "loading",
   );
   const [imageAttempt, setImageAttempt] = useState(0);
+  const [loadingVisible, setLoadingVisible] = useState(false);
+  const image = useRef<HTMLImageElement>(null);
+  const displaySrc = mediaPreview(photo.url, "display");
+  useLayoutEffect(() => {
+    const node = image.current;
+    // Cached adjacent slides may already be ready before their load event.
+    setImageState(
+      node?.complete ? (node.naturalWidth ? "ready" : "error") : "loading",
+    );
+    setLoadingVisible(false);
+  }, [displaySrc, imageAttempt]);
+  useEffect(() => {
+    if (imageState !== "loading") return;
+    const timer = window.setTimeout(() => {
+      const node = image.current;
+      if (node?.complete)
+        setImageState(node.naturalWidth ? "ready" : "error");
+      else setLoadingVisible(true);
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [imageState, displaySrc, imageAttempt]);
   const index = photos.findIndex((p) => p.id === photo.id);
   const previous = photos[index - 1];
   const next = photos[index + 1];
@@ -373,8 +401,9 @@ function PhotoViewerContent({
                   }}
                 >
                   <img
-                    key={imageAttempt}
-                    src={mediaPreview(photo.url, "display")}
+                    key={`${displaySrc}:${imageAttempt}`}
+                    ref={image}
+                    src={displaySrc}
                     alt={photoLabel(photo)}
                     draggable={false}
                     onLoad={() => {
@@ -382,7 +411,8 @@ function PhotoViewerContent({
                     }}
                     onError={() => setImageState("error")}
                   />
-                  {imageState !== "ready" && (
+                  {(imageState === "error" ||
+                    (imageState === "loading" && loadingVisible)) && (
                     <div className="photo-load-status" role="status">
                       {imageState === "loading" ? (
                         "Загружаем фотографию…"
