@@ -5,7 +5,7 @@ import { discoveryBranchRelationLabels as relationLabels,
 
 type Member = { id: string; relation: DiscoveryBranchRelation; name: string;
   birthYear?: string; deathYear?: string; birthPlace?: string; deathPlace?: string;
-  viaIds?: string[]; viaId?: string };
+  viaIds?: string[]; viaId?: string; previewToken?: string };
 type Detail = { available: Member[]; truncated: boolean; previewToken: string;
   ownReady: boolean; otherReady: boolean; outgoingIds: string[]; incoming: Member[];
   recipientArchiveId: string; recipientPersonName: string; ownExpiresAt: string | null };
@@ -31,6 +31,10 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [expandingViaId, setExpandingViaId] = useState<string | null>(null);
+  const [expansionOptions, setExpansionOptions] = useState<Member[]>([]);
+  const [expansionCursor, setExpansionCursor] = useState<string | null>(null);
+  const [expansionBusy, setExpansionBusy] = useState(false);
   const endpoint = `/api/discovery/matches/${matchId}/branch-share`;
   const available = detail?.available || [];
   const chosenViaName = (person: Member) => available.find((item) =>
@@ -45,7 +49,8 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
     const controller = new AbortController();
     request.current = controller;
     const version = ++requestVersion.current;
-    setDetail(null); setSelected([]);
+    setDetail(null); setSelected([]); setExpandingViaId(null); setExpansionOptions([]);
+    setExpansionCursor(null);
     setBusy(true); if (!preserveError) setError("");
     try {
       const response = await archiveFetch(endpoint, { cache: "no-store", signal: controller.signal });
@@ -89,6 +94,35 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
       await load(true);
     } finally { if (version === requestVersion.current) setBusy(false); }
   }
+  async function showNext(viaId: string, after?: string) {
+    setExpansionBusy(true); setError("");
+    try {
+      const path = `${endpoint}/options/${encodeURIComponent(viaId)}`;
+      const response = await archiveFetch(after ? `${path}?after=${encodeURIComponent(after)}` : path,
+        { cache: "no-store" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Не удалось проверить продолжение ветки");
+      setExpandingViaId(viaId);
+      setExpansionOptions((current) => after ? [...current,...body.options] : body.options);
+      setExpansionCursor(body.nextCursor);
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setExpansionBusy(false); }
+  }
+  async function addNext(person: Member) {
+    if (!expandingViaId || !person.previewToken) return;
+    setExpansionBusy(true); setError("");
+    try {
+      const response = await archiveFetch(`${endpoint}/options/${encodeURIComponent(expandingViaId)}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personId: person.id, previewToken: person.previewToken }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Ветка изменилась. Обновите продолжение");
+      setNotice("Карточка добавлена в ваш явный выбор. Она станет видна после разрешения другой стороны.");
+      await load();
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setExpansionBusy(false); }
+  }
   return <details ref={panel} className="match-card-share" onToggle={(event) => {
     if (event.currentTarget.open) { setNotice(""); void load(); }
     else {
@@ -97,7 +131,7 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
     }
   }}>
     <summary>Поделиться разрешённой веткой</summary>
-    <p>Каждый владелец явно выбирает опубликованных родственников до второго поколения. Для второго шага сначала выберите опубликованного родителя или ребёнка. Ветви видны только после разрешения обеих сторон; частные карточки, фото и документы не открываются. Любая правка своего дерева отзывает выданное разрешение: после неё выбор нужно подтвердить заново. Отзыв публикации промежуточного человека убирает и зависимую карточку.</p>
+    <p>Каждый владелец явно выбирает опубликованных родственников. Сначала сохраните ближайших людей; затем можно добавить соседнюю опубликованную карточку по одному шагу от уже выбранного человека, всего до 20 карточек. Ветви видны только после разрешения обеих сторон; частные карточки, фото и документы не открываются. Любая правка своего дерева отзывает выданное разрешение: после неё выбор нужно подтвердить заново. Отзыв публикации промежуточного человека убирает и зависимую карточку.</p>
     {busy && !detail && <p role="status">Проверяем…</p>}
     {detail && <>
       <p>Адресат: опубликованная карточка «{detail.recipientPersonName}», архив <code
@@ -111,15 +145,46 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
             (Boolean(person.viaIds?.length) && !person.viaIds?.some((id) => selected.includes(id)))))}
           onChange={(event) => setSelected((current) => {
             if (event.target.checked) return [...current, person.id];
-            const remaining = current.filter((id) => id !== person.id);
-            return remaining.filter((id) => {
-              const choice = available.find((item) => item.id === id);
-              return !choice?.viaIds?.length || choice.viaIds.some((viaId) => remaining.includes(viaId));
-            });
+            const remaining = new Set(current.filter((id) => id !== person.id));
+            let changed = true;
+            while (changed) {
+              changed = false;
+              for (const id of [...remaining]) {
+                const choice = available.find((item) => item.id === id);
+                if (choice?.viaIds?.length && !choice.viaIds.some((viaId) => remaining.has(viaId))) {
+                  remaining.delete(id);
+                  changed = true;
+                }
+              }
+            }
+            return [...remaining];
           })} />
         <span>{relationLabels[person.relation]}: {person.name}
           {chosenViaName(person) && <small> · через {chosenViaName(person)}</small>}</span>
       </label>)}
+      {detail.ownReady && detail.outgoingIds.length > 0 && <div className="match-branch-expansion">
+        <h4>Продолжить выбранную ветку</h4>
+        <p>Каждый следующий шаг выбирается отдельно. Показаны только опубликованные соседние карточки вашего архива.</p>
+        {detail.outgoingIds.map((id) => {
+          const person = available.find((item) => item.id === id);
+          return person && <button key={id} type="button" disabled={busy || expansionBusy ||
+            detail.outgoingIds.length >= 20} onClick={() => void showNext(id)}>
+            Дальше от «{person.name}»
+          </button>;
+        })}
+        {expandingViaId && <div>
+          <p>Следующий опубликованный шаг от «{available.find((item) =>
+            item.id === expandingViaId)?.name || "выбранной карточки"}»:</p>
+          {!expansionOptions.length && !expansionBusy && <p>Доступных соседних карточек нет.</p>}
+          {expansionOptions.map((person) => <div key={person.id}>
+            <span>{person.name}</span>{person.birthYear && <small> · {person.birthYear}</small>}
+            <button type="button" disabled={busy || expansionBusy}
+              onClick={() => void addNext(person)}>Добавить эту карточку</button>
+          </div>)}
+          {expansionCursor && <button type="button" disabled={busy || expansionBusy}
+            onClick={() => void showNext(expandingViaId,expansionCursor)}>Показать ещё</button>}
+        </div>}
+      </div>}
       <p>Можно выбрать до 20 человек. Согласие без выбранных людей позволяет видеть разрешённую ветку другой стороны.</p>
       <label>Срок нового разрешения <select value={durationDays} disabled={busy}
         onChange={(event) => setDurationDays(Number(event.target.value))}>
