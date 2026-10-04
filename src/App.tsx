@@ -907,7 +907,8 @@ export default function App() {
               <Suspense fallback={<main className="archive-status" role="status">Загружаем админку платформы…</main>}>
                 <PlatformSettingsPage accountId={(accountSession.account || accountSession.user)!.id}
                 showRoles={Boolean(accountSession.account)}
-                primaryMembershipApproved={accountSession.user?.approved === true}
+                primaryUser={accountSession.user}
+                local={accountSession.local === true}
                 onOwnRoleChanged={(role) => {
                   setAccountSession((current) => current?.account ? {
                     ...current,
@@ -961,7 +962,6 @@ export default function App() {
                   currentUserId={user.id}
                   platformAdmin={user.platformAdmin === true}
                   archiveOwner={isArchiveOwner(user)}
-                  aiAvailable={user.aiAvailable === true}
                   publicationOwnership={publicationOwnership}
                   onClose={() => navigate("tree")}
                   onChanged={archive.reload}

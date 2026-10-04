@@ -90,20 +90,22 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       onSettings: noop,
       save: async () => family,
       canEdit: true,
-      aiAvailable: false,
     };
-    assert.doesNotMatch(
-      renderToStaticMarkup(
-        createElement(AdminPanel, { ...adminProps, platformAdmin: false }),
-      ),
-      /Резервные копии/,
+    for (const platformAdmin of [false, true]) {
+      assert.doesNotMatch(
+        renderToStaticMarkup(createElement(AdminPanel, { ...adminProps, platformAdmin })),
+        /Резервные копии|MCP-токены/,
+        "archive management keeps platform tools out even for a global administrator",
+      );
+    }
+    const { default: PlatformSettingsPage } = await server.ssrLoadModule(
+      "/src/components/platform-settings-page.tsx",
     );
-    assert.match(
-      renderToStaticMarkup(
-        createElement(AdminPanel, { ...adminProps, platformAdmin: true }),
-      ),
-      /Резервные копии/,
-    );
+    const platform = renderToStaticMarkup(createElement(PlatformSettingsPage, {
+      accountId: user.id, onOwnRoleChanged: noop, onOwnTierChanged: noop,
+    }));
+    assert.match(platform, /Резервные копии/);
+    assert.match(platform, /MCP-токены/);
     const navigationProps = {
       view: "tree",
       onView: noop,
@@ -121,7 +123,9 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
     assert.match(navigation, /Семьи/);
     assert.match(navigation, /Фото/);
     assert.match(navigation, /Управление деревом/);
-    assert.match(navigation, /class="nav-admin" href="\/manage"/);
+    assert.match(navigation, /class="nav-menu-manage" href="\/manage"/);
+    assert.match(navigation, /class="nav-menu-account" href="\/account"/);
+    assert.doesNotMatch(navigation, /class="nav-admin"/);
     for (const viewer of [
       null,
       { ...user, approved: false },
@@ -133,27 +137,27 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
         renderToStaticMarkup(createElement(ArchiveNavigation, {
           ...navigationProps, user: viewer,
         })),
-        /class="nav-admin"/,
+        /class="nav-menu-manage"/,
       );
     }
     const pendingPlatformAdmin = renderToStaticMarkup(createElement(ArchiveNavigation, {
       ...navigationProps, user: { ...user, approved: false, platformAdmin: true },
     }));
-    assert.match(pendingPlatformAdmin, /class="nav-admin" href="\/admin"/);
-    assert.doesNotMatch(pendingPlatformAdmin, /class="nav-admin" href="\/manage"/);
+    assert.match(pendingPlatformAdmin, /class="nav-menu-platform" href="\/admin"/);
+    assert.doesNotMatch(pendingPlatformAdmin, /class="nav-menu-manage"/);
     for (const role of ["researcher", "relative", "reader"] as const) {
       assert.match(
         renderToStaticMarkup(createElement(ArchiveNavigation, {
           ...navigationProps, user: { ...user, role, platformAdmin: true },
         })),
-        /class="nav-admin" href="\/admin"/,
+        /class="nav-menu-platform" href="\/admin"/,
         "a platform administrator can reach common settings with a local reader grant",
       );
     }
     assert.match(renderToStaticMarkup(createElement(ArchiveNavigation, {
       ...navigationProps, user: null,
       account: { id: "platform", name: "Platform", globalRole: "admin" },
-    })), /class="nav-admin" href="\/admin"/);
+    })), /class="nav-menu-platform" href="\/admin"/);
     const inspector = renderToStaticMarkup(
       createElement(PersonInspector, {
         person: p,

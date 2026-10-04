@@ -27,20 +27,17 @@ async function treeUser(page: Page, options: {
   });
 }
 
-test("tree owner has scoped management, and old scoped admin URL becomes manage", async ({ page }, info) => {
+test("tree owner reaches scoped management from the avatar menu, and old scoped admin URL becomes manage", async ({ page }, info) => {
   await page.route("**/a/tree-a/api/**", (route) => route.continue({
     url: route.request().url().replace("/a/tree-a/api/", "/api/"),
   }));
   await treeUser(page, { owner: true, platformAdmin: false, fullAccess: false });
   await page.goto("/a/tree-a/tree");
-  if (info.project.name === "mobile") {
-    await page.getByLabel("Меню проекта").click();
-    await page.getByRole("link", { name: "Управление деревом", exact: true }).click();
-  } else {
-    const link = page.locator(".nav-admin", { hasText: "Управление деревом" });
-    await expect(link).toHaveAttribute("href", "/a/tree-a/manage");
-    await link.click();
-  }
+  await page.getByLabel("Меню проекта").click();
+  const manage = page.locator(".nav-menu-manage");
+  await expect(manage).toHaveAttribute("href", "/a/tree-a/manage");
+  await expect(page.locator(".nav-bottom").getByRole("button", { name: "Выйти" })).toBeVisible();
+  await manage.click();
   await expect(page).toHaveURL(/\/a\/tree-a\/manage$/);
   await expect(page.getByRole("heading", { name: "Участники", exact: true })).toBeVisible();
   if (info.project.name === "desktop") {
@@ -92,9 +89,13 @@ test("global admin without membership opens /admin without requesting a private 
   await expect(page.getByRole("heading", { name: "Админка платформы" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Глобальные роли" })).toBeVisible();
   expect(familyRequests).toBe(0);
+  await page.getByLabel("Меню проекта").click();
+  await expect(page.locator(".nav-menu-account")).toHaveAttribute("href", "/account");
+  await expect(page.locator(".nav-menu-platform")).toHaveAttribute("href", "/admin");
+  await expect(page.locator(".nav-menu-manage")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Управление деревом" })).toHaveCount(0);
-  await expect(page.getByText("Резервные копии", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("MCP-токены", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Резервные копии", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "MCP-токены", exact: true })).toBeVisible();
 });
 
 test("legacy local platform admin uses the trusted session flag without an account profile", async ({ page }) => {
@@ -120,9 +121,10 @@ test("legacy local platform admin uses the trusted session flag without an accou
 test("global admin with reader membership has platform entry but no owner controls", async ({ page }) => {
   await treeUser(page, { owner: false, platformAdmin: true });
   await page.goto("/tree");
-  if (page.viewportSize()!.width < 700) await page.getByLabel("Меню проекта").click();
-  await expect(page.getByRole("link", { name: "Админка платформы" }).first()).toHaveAttribute("href", "/admin");
-  if (page.viewportSize()!.width < 700) await page.getByLabel("Меню проекта").click();
+  await page.getByLabel("Меню проекта").click();
+  await expect(page.locator(".nav-menu-platform")).toHaveAttribute("href", "/admin");
+  await expect(page.locator(".nav-menu-manage")).toHaveCount(0);
+  await page.getByLabel("Меню проекта").click();
   await page.getByRole("button", { name: "Настройки древа" }).click();
   await expect(page.getByRole("dialog", { name: "Вид древа" })
     .getByRole("button", { name: "Управление деревом" })).toHaveCount(0);
@@ -130,7 +132,7 @@ test("global admin with reader membership has platform entry but no owner contro
   await expect(page.getByText("Панель доступна администратору.")).toBeVisible();
 });
 
-test("combined owner and global admin get two entries and native Back restores the scoped tree", async ({ page }, info) => {
+test("combined owner and global admin get two avatar entries and native Back restores the scoped tree", async ({ page }) => {
   await page.route("**/a/tree-a/api/**", (route) => route.continue({
     url: route.request().url().replace("/a/tree-a/api/", "/api/"),
   }));
@@ -140,10 +142,10 @@ test("combined owner and global admin get two entries and native Back restores t
       fullAccess: true, globalRole: "admin", provider: "email" }, local: false, yandex: false,
   } }));
   await page.goto("/a/tree-a/tree");
-  if (info.project.name === "mobile") await page.getByLabel("Меню проекта").click();
-  const platform = page.getByRole("link", { name: "Админка платформы" }).last();
+  await page.getByLabel("Меню проекта").click();
+  const platform = page.locator(".nav-menu-platform");
   await expect(platform).toHaveAttribute("href", "/admin");
-  await expect(page.getByRole("link", { name: "Управление деревом" }).last())
+  await expect(page.locator(".nav-menu-manage"))
     .toHaveAttribute("href", "/a/tree-a/manage");
   await platform.click();
   await expect(page).toHaveURL(/\/admin$/);

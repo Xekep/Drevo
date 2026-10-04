@@ -130,8 +130,11 @@ test("platform admin without membership opens global settings, with archive-scop
   expect(familyRequests).toBe(beforePlatform);
   for (const path of ["/api/settings/storage", "/api/admin/auth/vk", "/api/admin/research-resources"])
     expect(paths).toContain(path);
-  await expect(page.getByText("MCP-токены", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("Резервные копии", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "MCP-токены", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Резервные копии", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "MCP-токены", exact: true }).click();
+  await expect(page.getByText("Нет доступных архивов для этой операции.")).toBeVisible();
+  expect(familyRequests).toBe(beforePlatform);
 });
 
 test("own tier downgrade and upgrade refresh the locked session without a family reload", async ({ page }) => {

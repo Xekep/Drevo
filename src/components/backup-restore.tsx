@@ -1,12 +1,15 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
+import { archiveResourceUrl } from "../domain/archive-context.ts";
 import { useRef, useState } from "react";
 import { FileUp, RotateCcw } from "lucide-react";
 import type { RestorePreview } from "../shared/backup-management";
 export function BackupRestore({
+  archiveId,
   onRestored,
   initialPreview,
   onCancel,
 }: {
+  archiveId: string | null;
   onRestored: () => void;
   initialPreview?: RestorePreview;
   onCancel?: () => void;
@@ -30,7 +33,8 @@ export function BackupRestore({
       if (file && file.size > 12 * 1024 * 1024 * 1024)
         throw new Error("Максимальный размер — 12 ГиБ");
       const response = await archiveFetch(
-        `/api/restore/${apply ? "apply" : "preview"}`,
+        archiveResourceUrl(`/api/restore/${apply ? "apply" : "preview"}`,
+          archiveId ? `/a/${archiveId}` : "/"),
         {
           method: "POST",
           headers: {

@@ -7,12 +7,16 @@ import { AiProviderCleanupAdmin } from "./ai-provider-cleanup-admin";
 import { StorageLimitsAdmin } from "./storage-limits-admin";
 import { VkAuthAdmin } from "./vk-auth-admin";
 import { ResearchResourcesAdmin } from "./research-resources-admin";
+import { PlatformArchiveTools } from "./platform-archive-tools";
+import type { ArchiveUser } from "../domain/access.ts";
 import "../styles/account.css";
 
-type Section = "roles" | "ai" | "storage" | "vk" | "resources";
+type Section = "roles" | "ai" | "mcp" | "backups" | "storage" | "vk" | "resources";
 const sections: { id: Section; label: string }[] = [
   { id: "roles", label: "Глобальные роли" },
   { id: "ai", label: "Yandex AI" },
+  { id: "mcp", label: "MCP-токены" },
+  { id: "backups", label: "Резервные копии" },
   { id: "storage", label: "Хранилище" },
   { id: "vk", label: "Вход через VK" },
   { id: "resources", label: "Ресурсы поиска" },
@@ -21,11 +25,12 @@ type AvailableArchive = { id: string; title: string; approved: boolean; current:
 
 /** Account-scoped entry. Archive-specific AI settings are selected explicitly. */
 export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, onOwnTierChanged,
-  showRoles = true }: {
+  primaryUser, local = false, showRoles = true }: {
   accountId: string;
   onOwnRoleChanged: (role: "admin" | "researcher" | null) => void;
   onOwnTierChanged: (fullAccess: boolean) => void;
-  primaryMembershipApproved?: boolean;
+  primaryUser?: ArchiveUser | null;
+  local?: boolean;
   showRoles?: boolean;
 }) {
   const [section, setSection] = useState<Section>(showRoles ? "roles" : "ai");
@@ -90,6 +95,10 @@ export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, onOw
             showCleanup={false} />
           </>}
         </div>}
+        {(section === "mcp" || section === "backups") && (
+          <PlatformArchiveTools key={section} kind={section} accountId={accountId}
+            primaryUser={primaryUser} local={local} />
+        )}
         {section === "storage" && <section className="account-card">
           <div className="account-card-title"><div><span className="account-eyebrow">Платформа</span>
             <h2>Лимиты хранилища</h2></div></div>
