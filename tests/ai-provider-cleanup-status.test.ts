@@ -5,7 +5,21 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
-import { aiCleanupStatusQuery } from "../src/server/ai-provider-cleanup-status.ts";
+import { aiCleanupStatusQuery, canRetryBlockedCleanup } from "../src/server/ai-provider-cleanup-status.ts";
+
+test("only worker-produced provider rejections can be manually queued", () => {
+  for (const reason of ["provider_auth_401", "provider_auth_403",
+    "provider_rejected_400", "provider_rejected_409", "provider_rejected_422"])
+    assert.equal(canRetryBlockedCleanup("blocked", reason, true, true), true, reason);
+  for (const reason of [null, "snapshot_invalid", "provider_network",
+    "provider_auth_404", "provider_rejected_404", "provider_rejected_408",
+    "provider_rejected_429", "provider_rejected_503", "provider_http_503",
+    "private-provider-error-marker"])
+    assert.equal(canRetryBlockedCleanup("blocked", reason, true, true), false, String(reason));
+  assert.equal(canRetryBlockedCleanup("pending", "provider_auth_403", true, true), false);
+  assert.equal(canRetryBlockedCleanup("blocked", "provider_auth_403", false, true), false);
+  assert.equal(canRetryBlockedCleanup("blocked", "provider_auth_403", true, false), false);
+});
 import { aiProviderCleanupHttp } from "../src/server/ai-provider-cleanup-http.ts";
 import { createAuth } from "../src/server/auth.ts";
 import { userStore } from "../src/server/users.ts";

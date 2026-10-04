@@ -15,6 +15,7 @@ export type AiCleanupJobStatus = {
   nextAttemptAt: number | null;
   error: AiCleanupFailure | null;
   httpStatus?: number;
+  canRetry: boolean;
 };
 export type AiCleanupStatus = {
   supported: boolean;

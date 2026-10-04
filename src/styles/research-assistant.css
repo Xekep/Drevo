@@ -1393,6 +1393,12 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
 .ai-cleanup-jobs li > small {
   grid-column: 1 / -1;
 }
+.ai-cleanup-jobs li > button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-height: 32px;
+  padding: 4px 12px;
+}
 .ai-cleanup-jobs time {
   white-space: nowrap;
 }

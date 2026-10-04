@@ -8,9 +8,20 @@ import type {
 } from "../shared/ai-provider-cleanup-status.ts";
 
 const states = ["binding", "pending", "leased", "blocked"] as const;
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const cleanupJobUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Cursor = { at: number; id: string; filter: AiCleanupFilter };
 export class AiCleanupStatusInputError extends Error {}
+
+/** Only errors produced by the worker for a decryptable, retryable snapshot. */
+export function canRetryBlockedCleanup(
+  state: unknown, reason: unknown, hasSnapshot: boolean, leaseClear: boolean,
+) {
+  if (state !== "blocked" || typeof reason !== "string" ||
+      !hasSnapshot || !leaseClear) return false;
+  if (/^provider_auth_(401|403)$/.test(reason)) return true;
+  const rejected = /^provider_rejected_(4\d\d)$/.exec(reason);
+  return !!rejected && ![401, 403, 404, 408, 429].includes(Number(rejected[1]));
+}
 
 export function aiCleanupStatusQuery(url: URL) {
   const filter = url.searchParams.get("filter") || "all";
@@ -27,7 +38,7 @@ export function aiCleanupStatusQuery(url: URL) {
       if (
         !value ||
         typeof value.id !== "string" ||
-        !uuid.test(value.id) ||
+        !cleanupJobUuid.test(value.id) ||
         !Number.isSafeInteger(value.at) ||
         value.at < 0 ||
         value.filter !== filter
@@ -73,7 +84,9 @@ export async function aiProviderCleanupStatus(
     SELECT state,count(*) AS total FROM public.platform_ai_conversations
     WHERE state IN ('binding','pending','leased','blocked') GROUP BY state
   ), page AS (
-    SELECT id,state,attempts,last_error,available_at,lease_until,updated_at
+    SELECT id,state,attempts,last_error,available_at,lease_until,updated_at,
+      encrypted_snapshot IS NOT NULL AS has_snapshot,
+      lease_token IS NULL AND lease_until IS NULL AS lease_clear
     FROM public.platform_ai_conversations
     WHERE state IN ('binding','pending','leased','blocked')
       AND ($1::text='all' OR state='blocked')
@@ -108,6 +121,8 @@ export async function aiProviderCleanupStatus(
               : job.available_at,
           ),
     ...safeFailure(job.last_error),
+    canRetry: canRetryBlockedCleanup(job.state, job.last_error,
+      job.has_snapshot === true, job.lease_clear === true),
   }));
   return {
     supported: true,
