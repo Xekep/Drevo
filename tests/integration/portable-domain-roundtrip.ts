@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { openPromise } from "yauzl";
 import { openArchive } from "../../src/server/database.ts";
+import { validateFamily } from "../../src/domain/validation.ts";
 import type { Family } from "../../src/domain/types.ts";
 import type { CommentAttachmentFile } from "../../src/shared/person-discussion.ts";
 import type { PortableSnapshot } from "../../src/server/portable-package.ts";
@@ -34,7 +35,7 @@ export function portableDomainFixture(
           sources: [portableCitation], confidence: "conflicting" }],
         awards: [{ id: "pg-award", name: "Research medal", awardDefinitionId: "test-medal",
           degreeId: "first", year: "2000", source: { title: "Award card" } }],
-        photo: "/media/portable-citation.tif",
+        photo: "/media/portable-portrait.png",
         events: [{ id: "pg-event", type: "residence", date: "1920", place: "Test town",
           dateClaim: { value: "1920", sources: [portableCitation], confidence: "confirmed" },
           placeClaim: { value: "Test town", sources: [portableCitation], confidence: "probable" },
@@ -53,7 +54,7 @@ export function portableDomainFixture(
       links: [{ id: "pg-link", from: "pg-portable-person", to: "pg-portable-twin",
         type: "twin", twinKind: "fraternal", confidence: "unknown",
         sources: [portableCitation], createdBy: "owner" }],
-      photos: [{ id: "pg-photo", url: "/media/portable-citation.tif", title: "Record image",
+      photos: [{ id: "pg-photo", url: "/media/portable-portrait.png", title: "Record image",
         createdAt: "2026-09-30T00:00:00.000Z", takenAt: "1920", year: "1920",
         place: "Test town", event: "Family event", description: "Original TIFF",
         tags: [{ id: "pg-tag", personId: "pg-portable-person",
@@ -77,6 +78,7 @@ export function portableDomainFixture(
       delo: "3", sheet: "4", reference: "folio 2", url: "", accessedAt: "",
       description: "Synthetic catalog", documentIds: [portableDocumentId] }],
   };
+  validateFamily(portableFixture.family);
   return portableFixture;
 }
 
@@ -90,6 +92,7 @@ type RoundtripArgs = {
   fallbackFamily: Family;
   citationPdf: Buffer;
   citationTiff: Buffer;
+  portablePortrait: Buffer;
   portableAttachmentBytes: Buffer;
   portableDocumentId: string;
 };
@@ -97,7 +100,7 @@ type RoundtripArgs = {
 /** The second target starts as a distinct, empty PostgreSQL owner archive. */
 export async function assertPortableSecondPgRoundtrip({
   oauthBase, directory, roundtripPath, roundtripSnapshot, firstFamily,
-  fixture, fallbackFamily, citationPdf, citationTiff, portableAttachmentBytes,
+  fixture, fallbackFamily, citationPdf, citationTiff, portablePortrait, portableAttachmentBytes,
   portableDocumentId,
 }: RoundtripArgs) {
   const transferred = { family: firstFamily };
@@ -173,8 +176,9 @@ export async function assertPortableSecondPgRoundtrip({
     const secondUploads = join(dirname(secondDbPath), "uploads");
     for (const [name, expectedBytes] of [
       [secondDocument?.file_name, Buffer.from("%PDF-1.4\nportable document")],
-      [secondFamily.people[0].photo!.slice(7), citationTiff],
+      [secondFamily.people[0].photo!.slice(7), portablePortrait],
       [secondFamily.people[0].sources[0].url!.slice(7).split(/[?#]/, 1)[0], citationPdf],
+      [secondFamily.people[0].sources[1].url!.slice(7).split(/[?#]/, 1)[0], citationTiff],
       [join("discussion-files", secondAttachment.id), portableAttachmentBytes],
     ] as const) {
       const bytes = readFileSync(join(secondUploads, String(name)));

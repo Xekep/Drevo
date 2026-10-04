@@ -11329,8 +11329,12 @@ try {
     writeFileSync(join(directory, "portable-record.pdf"), "%PDF-1.4\nportable document");
     const citationPdf = Buffer.from("%PDF-1.4\nportable citation only");
     const citationTiff = await sampleTiff();
+    const portablePortrait = await sharp({ create: {
+      width: 4, height: 4, channels: 3, background: "#976b52",
+    } }).png().toBuffer();
     writeFileSync(join(directory, "portable-citation.pdf"), citationPdf);
     writeFileSync(join(directory, "portable-citation.tif"), citationTiff);
+    writeFileSync(join(directory, "portable-portrait.png"), portablePortrait);
     const portableAttachmentBytes = Buffer.from("portable discussion original", "utf8");
     const [portableAttachment] = await discussionAttachmentStore(directory).save([
       await prepareCommentFile("research-note.txt", portableAttachmentBytes),
@@ -11560,7 +11564,8 @@ try {
     const quotaArchive = await openPostgresDatabase(personalArchiveId, source);
     try {
       assert.equal((await accountCapacity(quotaArchive, newAccountSession.user.id)).mediaBytes,
-        citationPdf.length + citationTiff.length + Buffer.byteLength("%PDF-1.4\nportable document") +
+        citationPdf.length + citationTiff.length + portablePortrait.length +
+          Buffer.byteLength("%PDF-1.4\nportable document") +
           portableAttachmentBytes.length,
         "basic-account quota includes citation-only originals once");
     } finally {
@@ -11582,6 +11587,8 @@ try {
     }
     assert.deepEqual(roundtripEntries.get(`media/${importedOriginals[0].slice(7)}`), citationPdf);
     assert.deepEqual(roundtripEntries.get(`media/${importedOriginals[1].slice(7)}`), citationTiff);
+    assert.deepEqual(roundtripEntries.get(`media/${transferred.family.people[0].photo.slice(7)}`),
+      portablePortrait);
     assert.deepEqual(JSON.parse(roundtripEntries.get("archive.json")!.toString()).family.people[0].sources,
       transferred.family.people[0].sources);
     const roundtripSnapshot = JSON.parse(roundtripEntries.get("archive.json")!.toString()) as PortableSnapshot;
@@ -11603,7 +11610,7 @@ try {
     await assertPortableSecondPgRoundtrip({
       oauthBase, directory, roundtripPath, roundtripSnapshot,
       firstFamily: transferred.family, fixture: portableFixture,
-      fallbackFamily: family, citationPdf, citationTiff, portableAttachmentBytes,
+      fallbackFamily: family, citationPdf, citationTiff, portablePortrait, portableAttachmentBytes,
       portableDocumentId,
     });
     assert.equal(transferred.family.people[0].createdBy, undefined,
