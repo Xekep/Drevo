@@ -1,5 +1,5 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { archiveResourceUrl } from "../domain/archive-context.ts";
+import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Check, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 
@@ -75,7 +75,9 @@ const scopePresets = [
 type McpScopePreset = (typeof scopePresets)[number]["value"];
 
 export function McpTokenAdmin({ archiveId }: { archiveId: string | null }) {
-  const endpoint = archiveResourceUrl("/api/mcp/tokens", archiveId ? `/a/${archiveId}` : "/");
+  const pathname = archiveId ? `/a/${archiveId}` : "/";
+  const endpoint = archiveResourceUrl("/api/mcp/tokens", pathname);
+  const connectionPath = scopedArchivePath("/mcp", pathname);
   const [tokens, setTokens] = useState<McpTokenItem[]>([]),
     [recentUsage, setRecentUsage] = useState<McpUsageItem[]>([]),
     [name, setName] = useState("Yandex AI Studio"),
@@ -169,7 +171,7 @@ export function McpTokenAdmin({ archiveId }: { archiveId: string | null }) {
     <section className="admin-card archive-form mcp-token-admin">
       <p>
         Токены дают внешним ИИ-клиентам доступ к исследовательским инструментам
-        Drevo через <code>/mcp</code>. Каждый токен видит весь архив, а секрет
+        Drevo через <code className="mcp-endpoint">{connectionPath}</code>. Каждый токен видит весь архив, а секрет
         показывается только один раз.
       </p>
       <form className="mcp-token-create" onSubmit={createToken}>

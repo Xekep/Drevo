@@ -52,6 +52,7 @@
   gap: 16px;
   min-width: 0;
 }
+.platform-archive-tools .mcp-endpoint { overflow-wrap: anywhere; }
 .platform-archive-tools > .account-card {
   padding: 18px 22px;
 }

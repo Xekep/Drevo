@@ -549,7 +549,7 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   await expect(tokenPlot).toHaveAttribute("aria-label", /2.?700/);
   await expect(page.locator(".ai-token-model-legend")).toHaveCount(0);
 
-  await page.goto("/manage");
+  await page.goto("/admin");
   await openAdminSection(page, "mcp", "MCP-токены");
   const permissions = page.getByLabel("Разрешения");
   await expect(permissions).toHaveValue("all");

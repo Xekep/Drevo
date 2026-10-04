@@ -173,6 +173,7 @@ test("platform MCP selection scopes create/revoke and clears the prior secret", 
     "Архив Бета",
   ]);
   await expect(page.getByText("Основной токен", { exact: true })).toBeVisible();
+  await expect(page.locator(".mcp-endpoint")).toHaveText("/mcp");
   await page
     .getByRole("button", { name: "Создать токен", exact: true })
     .click();
@@ -181,6 +182,7 @@ test("platform MCP selection scopes create/revoke and clears the prior secret", 
   ).toBeVisible();
   await select.selectOption("owned-alpha");
   await expect(page.getByText("Токен Альфа", { exact: true })).toBeVisible();
+  await expect(page.locator(".mcp-endpoint")).toHaveText("/a/owned-alpha/mcp");
   await expect(
     page.getByText("primary-test-secret", { exact: true }),
   ).toHaveCount(0);
