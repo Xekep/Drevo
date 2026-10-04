@@ -1,7 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import type { StoreDatabase } from "./store-database.ts";
-import { accountDataExport } from "./account-data-export.ts";
+import { accountDataExport, AccountJsonTooLarge,
+  accountMembershipsStillOverExportLimit } from "./account-data-export.ts";
 import {
   AccountAttachmentExportMissing,
   AccountAttachmentExportTooLarge,
@@ -51,10 +52,17 @@ export function accountAttachmentExportHttp(
     try {
     // Inventory visible AI originals without materializing chat text. The
     // attachment bundle has its own count and byte limit.
-    const prepared = await exporter.read(session.accountId, false, true);
-    if (!prepared) return send(404, "Аккаунт не найден");
-    const readable = prepared.download.archives.filter((archive) => archive.approved);
-    if (!readable.length) return send(403, "Нет доступа к обсуждениям архивов");
+    let prepared: Awaited<ReturnType<typeof exporter.read>> = null;
+    let scopeLimit: AccountJsonTooLarge | null = null;
+    try {
+      prepared = await exporter.read(session.accountId, false, true);
+    } catch (error) {
+      if (error instanceof AccountJsonTooLarge) scopeLimit = error;
+      else throw error;
+    }
+    if (!prepared && !scopeLimit) return send(404, "Аккаунт не найден");
+    const readable = prepared?.download.archives.filter((archive) => archive.approved) ?? [];
+    if (!readable.length && !scopeLimit) return send(403, "Нет доступа к обсуждениям архивов");
     const own: OwnCommentAttachment[] = readable.flatMap((archive) =>
       (archive.ownComments || []).flatMap((comment) =>
         comment.attachments.map((file) => ({
@@ -63,9 +71,9 @@ export function accountAttachmentExportHttp(
           commentId: comment.id,
           file,
         }))));
-    const attachments = [...own, ...prepared.aiAttachments];
+    const attachments = [...own, ...(prepared?.aiAttachments ?? [])];
     let bundle: Awaited<ReturnType<typeof prepareAccountAttachmentExport>> | null = null;
-    let preflightError = prepared.aiAttachmentError;
+    let preflightError = scopeLimit ? "too-large" : prepared!.aiAttachmentError;
     if (!preflightError) {
       try {
         bundle = await prepareAccountAttachmentExport(attachments, uploadsForArchive, controller.signal);
@@ -83,9 +91,11 @@ export function accountAttachmentExportHttp(
     const delivery = await exporter.deliverWithCurrentSession(
       session.accountId,
       session.tokenHash,
-      prepared.accessScopes,
+      scopeLimit?.accessScopes ?? prepared!.accessScopes,
       async () => {
         controller.signal.throwIfAborted();
+        if (scopeLimit)
+          return void send(413, "Экспорт не сформирован: объём данных превышает текущий лимит. Данные не изменены.");
         if (preflightError === "too-large")
           return void send(413, "Для одного ZIP доступно не более 1000 вложений и 256 МиБ. Данные не изменены");
         if (preflightError === "missing")
@@ -100,7 +110,9 @@ export function accountAttachmentExportHttp(
         });
         await bundle!.writeTo(res, controller.signal);
       },
-      (client) => ownAttachmentsStillCurrent(client, session.accountId, attachments),
+      scopeLimit?.membershipBoundsExceeded
+        ? (client) => accountMembershipsStillOverExportLimit(client, session.accountId)
+        : (client) => ownAttachmentsStillCurrent(client, session.accountId, attachments),
     );
     if (delivery === "session-expired") return send(401, "Сеанс завершён. Войдите снова");
     if (delivery === "access-changed") return send(409, "Доступ к дереву изменился. Повторите экспорт");

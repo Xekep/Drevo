@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { finished } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
 import { accountDataExport, AccountAiHistoryTooLarge, AccountJsonTooLarge,
-  MAX_ACCOUNT_JSON_BYTES } from "./account-data-export.ts";
+  MAX_ACCOUNT_JSON_BYTES, accountMembershipsStillOverExportLimit } from "./account-data-export.ts";
 import type { StoreDatabase } from "./store-database.ts";
 
 export function accountDataExportHttp(
@@ -78,6 +78,9 @@ export function accountDataExportHttp(
             clearTimeout(timer);
           }
         },
+        oversized instanceof AccountJsonTooLarge && oversized.membershipBoundsExceeded
+          ? (client) => accountMembershipsStillOverExportLimit(client, session.accountId)
+          : undefined,
       );
     } catch (error) {
       if (res.headersSent || res.destroyed) {

@@ -71,7 +71,7 @@ import { discussionAttachmentStore, prepareCommentFile } from "../../src/server/
 import { sampleTiff } from "../fixtures/tiff.ts";
 import { imagePreviews } from "../../src/server/image-previews.ts";
 import { accountCapacity } from "../../src/server/account-capacity.ts";
-import { accountDataExport } from "../../src/server/account-data-export.ts";
+import { accountDataExport, AccountJsonTooLarge } from "../../src/server/account-data-export.ts";
 import { accountSelfDeletion } from "../../src/server/account-self-deletion.ts";
 import { accountSelfDeletionHttp } from "../../src/server/account-self-deletion-http.ts";
 import { archiveOwnerTransferHttp } from "../../src/server/archive-owner-transfer-http.ts";
@@ -5281,6 +5281,170 @@ try {
   assert.equal((await fetch(accountExportUrl, { headers })).status, 413,
     "identity metadata also has a preflight limit before JSON materialization");
   await client.query("DELETE FROM account_identities WHERE account_id='reader' AND provider LIKE 'export-provider-%'");
+
+  // A scoped account must reject an oversized tree before readArchive loads
+  // the full people/media graph merely to decide which comments are visible.
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  await client.query(`INSERT INTO people(id,ordinal,data)
+    SELECT 'export-graph-cap',(SELECT max(ordinal)+1 FROM people),
+      jsonb_set(data,'{biography}',to_jsonb(repeat('x',17*1024*1024)))
+    FROM people WHERE id='person-a'`);
+  await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+  const graphGuardDb = new Proxy(app.archive.db, {
+    get(target, property) {
+      if (property !== "prepare") return Reflect.get(target, property);
+      return (sqlite: string, postgres?: string) => {
+        const statement = target.prepare(sqlite, postgres);
+        if (!postgres?.includes("SELECT data FROM people ORDER BY ordinal")) return statement;
+        return { ...statement, all: async () => {
+          throw new Error("oversized scoped graph was materialized before preflight");
+        } };
+      };
+    },
+  });
+  const graphGuardEndpoint = accountDataExportHttp(graphGuardDb, graphAuth, async () => {
+    await client.query("UPDATE archive_memberships SET approved=false WHERE user_id='reader'");
+  });
+  const graphGuardServer = createServer((req, res) => {
+    void graphGuardEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => graphGuardServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (graphGuardServer.address() as { port: number }).port;
+    const response = await fetch(`http://127.0.0.1:${port}/api/account/export`, { headers });
+    assert.equal(response.status, 409,
+      "completed scope revoke hides even the oversized-graph refusal");
+  } finally {
+    await new Promise<void>((resolve) => graphGuardServer.close(() => resolve()));
+    await client.query("UPDATE archive_memberships SET approved=true WHERE user_id='reader'");
+  }
+  await assert.rejects(accountDataExport(graphGuardDb).read("reader"), AccountJsonTooLarge,
+    "the large common-ancestors graph is refused before full materialization");
+  await client.query("DELETE FROM people WHERE id='export-graph-cap'");
+  await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+
+  // Two individually acceptable scopes can still exceed the export's total
+  // graph budget before their visibility sets are materialized.
+  await client.query(`INSERT INTO people(id,ordinal,data)
+    SELECT 'export-graph-total',(SELECT max(ordinal)+1 FROM people),
+      jsonb_set(data,'{biography}',to_jsonb(repeat('y',9*1024*1024)))
+    FROM people WHERE id='person-a'`);
+  await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query(`INSERT INTO people(id,ordinal,data)
+    SELECT 'export-graph-total',(SELECT max(ordinal)+1 FROM people),
+      jsonb_set(data,'{biography}',to_jsonb(repeat('z',9*1024*1024)))
+    FROM people WHERE id='person-a'`);
+  await client.query(`INSERT INTO archive_memberships
+    (archive_id,user_id,role,approved,tree_access,person_id)
+    VALUES('other-archive','reader','reader',true,'common_ancestors','person-a')`);
+  await client.query("UPDATE archives SET revision=revision+1 WHERE id='other-archive'");
+  await assert.rejects(accountDataExport(app.archive.db).read("reader"), AccountJsonTooLarge,
+    "the sum of two scoped graph reads is bounded");
+  await client.query("DELETE FROM archive_memberships WHERE archive_id='other-archive' AND user_id='reader'");
+  await client.query("DELETE FROM people WHERE id='export-graph-total'");
+  await client.query("UPDATE archives SET revision=revision+1 WHERE id='other-archive'");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  await client.query("DELETE FROM people WHERE id='export-graph-total'");
+  await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+
+  // The membership ceiling must be enforced before collecting an unbounded
+  // array of archive rows and final-delivery access scopes.
+  const scopeFixtureAdmin = new pg.Client({
+    user: process.env.PGADMINUSER, password: process.env.PGADMINPASSWORD,
+  });
+  await scopeFixtureAdmin.connect();
+  await scopeFixtureAdmin.query(`INSERT INTO archives(id,title,description,demo,revision,sqlite_schema_version)
+    SELECT 'export-cap-'||n,'Extra tree '||n,'',false,0,1
+      FROM generate_series(1,1001) AS n`);
+  await scopeFixtureAdmin.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+    SELECT 'export-cap-'||n,'reader','reader',false,'all'
+      FROM generate_series(1,1001) AS n`);
+  const membershipGuardDb = new Proxy(app.archive.db, {
+    get(target, property) {
+      if (property !== "prepare") return Reflect.get(target, property);
+      return (sqlite: string, postgres?: string) => {
+        const statement = target.prepare(sqlite, postgres);
+        if (!postgres?.includes("SELECT m.archive_id,a.title,m.role,m.approved")) return statement;
+        return { ...statement, all: async () => {
+          throw new Error("oversized membership list was materialized after preflight");
+        } };
+      };
+    },
+  });
+  const membershipGuard = accountDataExportHttp(membershipGuardDb, graphAuth);
+  const membershipServer = createServer((req, res) => {
+    void membershipGuard(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => membershipServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (membershipServer.address() as { port: number }).port;
+    const response = await fetch(`http://127.0.0.1:${port}/api/account/export`, { headers });
+    assert.equal(response.status, 413);
+    assert.doesNotMatch(await response.text(), /Extra tree/);
+  } finally {
+    await new Promise<void>((resolve) => membershipServer.close(() => resolve()));
+  }
+  const attachmentMembershipGuard = accountAttachmentExportHttp(
+    membershipGuardDb, graphAuth, () => uploads,
+  );
+  const attachmentMembershipServer = createServer((req, res) => {
+    void attachmentMembershipGuard(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => attachmentMembershipServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (attachmentMembershipServer.address() as { port: number }).port;
+    const response = await fetch(`http://127.0.0.1:${port}/api/account/export/attachments`, { headers });
+    assert.equal(response.status, 413,
+      "attachment inventory must also refuse an unbounded membership list");
+    assert.doesNotMatch(await response.text(), /Extra tree/);
+  } finally {
+    await new Promise<void>((resolve) => attachmentMembershipServer.close(() => resolve()));
+  }
+  const membershipRevoke = accountDataExportHttp(membershipGuardDb, graphAuth, async () => {
+    await scopeFixtureAdmin.query("DELETE FROM archives WHERE id LIKE 'export-cap-%'");
+  });
+  const membershipRevokeServer = createServer((req, res) => {
+    void membershipRevoke(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => membershipRevokeServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (membershipRevokeServer.address() as { port: number }).port;
+    const response = await fetch(`http://127.0.0.1:${port}/api/account/export`, { headers });
+    assert.equal(response.status, 409,
+      "the obsolete over-limit refusal is not delivered after completed membership removal");
+  } finally {
+    await new Promise<void>((resolve) => membershipRevokeServer.close(() => resolve()));
+    await scopeFixtureAdmin.query("DELETE FROM archives WHERE id LIKE 'export-cap-%'");
+  }
+  assert.equal((await fetch(accountExportUrl, { headers })).status, 200,
+    "normal scoped export works after the oversized memberships are removed");
+  await scopeFixtureAdmin.query(`INSERT INTO archives(id,title,description,demo,revision,sqlite_schema_version)
+    SELECT 'export-byte-cap-'||n,repeat('T',2400)||n,'',false,0,1
+      FROM generate_series(1,750) AS n`);
+  await scopeFixtureAdmin.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+    SELECT 'export-byte-cap-'||n,'reader','reader',false,'all'
+      FROM generate_series(1,750) AS n`);
+  const membershipByteServer = createServer((req, res) => {
+    void membershipGuard(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => membershipByteServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (membershipByteServer.address() as { port: number }).port;
+    const response = await fetch(`http://127.0.0.1:${port}/api/account/export`, { headers });
+    assert.equal(response.status, 413,
+      "large membership titles must be refused before loading rows even below the count cap");
+    assert.doesNotMatch(await response.text(), /TTTT/);
+  } finally {
+    await new Promise<void>((resolve) => membershipByteServer.close(() => resolve()));
+    await scopeFixtureAdmin.query("DELETE FROM archives WHERE id LIKE 'export-byte-cap-%'");
+    await scopeFixtureAdmin.end();
+  }
 
   await client.query(
     `INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text)
