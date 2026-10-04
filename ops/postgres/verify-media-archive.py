@@ -203,6 +203,8 @@ def verify_archive(
                     if member.isfile():
                         if member.size < 0:
                             raise ValueError(f"Invalid media file size: {member.name!r}")
+                        if parts in PLATFORM_KEY_PATHS and member.size > 4096:
+                            raise ValueError("AI cleanup key exceeds the size limit")
                         files += 1
                         total_bytes += member.size
                         if total_bytes > available_bytes:
@@ -219,13 +221,15 @@ def verify_archive(
                         raise ValueError(f"Cannot read media file: {member.name!r}")
                     archived_digest = hashlib.sha256()
                     copied = 0
-                    with input_file, target.open("xb") as output:
+                    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600) \
+                        if parts in PLATFORM_KEY_PATHS else None
+                    output_file = os.fdopen(descriptor, "wb") if descriptor is not None \
+                        else target.open("xb")
+                    with input_file, output_file as output:
                         for block in iter(lambda: input_file.read(1024 * 1024), b""):
                             output.write(block)
                             archived_digest.update(block)
                             copied += len(block)
-                    if parts in PLATFORM_KEY_PATHS:
-                        os.chmod(target, 0o600)
                     if copied != member.size or target.stat().st_size != member.size:
                         raise ValueError(f"Incomplete media file: {member.name!r}")
                     restored_digest = hashlib.sha256()

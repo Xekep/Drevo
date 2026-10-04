@@ -1,5 +1,6 @@
 import { startServer } from "../../src/server/index.ts";
 import { backupCoordinator, BackupBusyError } from "../../src/server/backup-coordinator.ts";
+import { aiProviderCleanup } from "../../src/server/ai-provider-cleanup.ts";
 
 if (process.env.DATABASE_BACKEND !== "postgres" ||
     !/^drevo_migration_bench_[a-z0-9_]+$/.test(process.env.PGDATABASE || ""))
@@ -13,6 +14,8 @@ const aiFetch: typeof fetch = async (input, init) => {
     throw new Error("HTTP benchmark blocks external AI requests");
   if (init?.method === "DELETE" &&
       /^\/v1\/conversations\/benchmark-conversation-[0-9]+-[0-9]+$/.test(url.pathname)) {
+    if ((init.headers as Record<string, string>)?.Authorization !== "Api-Key benchmark-only-key")
+      throw new Error("Synthetic cleanup did not use the original credential");
     process.send?.({ aiDelete: url.pathname });
     return new Response(null, { status: 204 });
   }
@@ -53,6 +56,14 @@ const app = await startServer(0, process.env.DREVO_BENCH_DATA_PATH, true,
   undefined, aiFetch);
 process.send?.({ port: (app.server.address() as { port: number }).port });
 process.on("message", (message) => {
+  if (message === "cleanup-provider") {
+    process.env.YANDEX_AI_API_KEY = "rotated-benchmark-key";
+    void aiProviderCleanup(app.archive.db, process.env.DREVO_BENCH_DATA_PATH!, aiFetch)
+      .then((cleanup) => cleanup.process(1))
+      .then(() => process.send?.({ aiCleanupDone: true }))
+      .catch(() => process.send?.({ aiCleanupError: true }))
+      .finally(() => { process.env.YANDEX_AI_API_KEY = "benchmark-only-key"; });
+  }
   if (message === "metrics")
     process.send?.({ metrics: { pid: process.pid, rssBytes: process.memoryUsage().rss,
       cpu: process.cpuUsage() } });

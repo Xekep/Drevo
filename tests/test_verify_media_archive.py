@@ -82,7 +82,7 @@ class MediaRestoreTests(unittest.TestCase):
     def test_pair_requires_the_restored_platform_key(self):
         key = b"k" * 32
         content = json.dumps({"version": 1, "key": base64.b64encode(key).decode()}).encode()
-        def write_pair(backup_content=content, include_backup=True):
+        def write_pair(primary_content=content, backup_content=content, include_backup=True):
             with tarfile.open(self.backup, "w:gz") as media:
                 directory = tarfile.TarInfo("uploads")
                 directory.type = tarfile.DIRTYPE
@@ -94,7 +94,7 @@ class MediaRestoreTests(unittest.TestCase):
                 if include_backup:
                     paths.append("backups/platform-keys/ai-provider-cleanup.v1.key")
                 for path in paths:
-                    payload = backup_content if path.startswith("backups/") else content
+                    payload = backup_content if path.startswith("backups/") else primary_content
                     secret = tarfile.TarInfo(path)
                     secret.mode = 0o600
                     secret.size = len(payload)
@@ -106,8 +106,20 @@ class MediaRestoreTests(unittest.TestCase):
             {"kind": "platform_key", "version": 1,
              "fingerprint": hashlib.sha256(key).hexdigest()},
         )
-        verifier.verify_archive(self.backup, self.root, reserve_bytes=0,
-                                reference_manifest=manifest)
+        original_open = verifier.os.open
+        private_key_opens = []
+        def observe_open(path, flags, mode=0o777):
+            descriptor = original_open(path, flags, mode)
+            if str(path).endswith("ai-provider-cleanup.v1.key"):
+                self.assertEqual(mode, 0o600, "key must be created private before any input is read")
+                if verifier.os.name != "nt":
+                    self.assertEqual(verifier.os.fstat(descriptor).st_mode & 0o077, 0)
+                private_key_opens.append(path)
+            return descriptor
+        with patch.object(verifier.os, "open", side_effect=observe_open):
+            verifier.verify_archive(self.backup, self.root, reserve_bytes=0,
+                                    reference_manifest=manifest)
+        self.assertEqual(len(private_key_opens), 2)
         wrong = self.pair_manifest(
             {"kind": "archive", "archive_id": "tree-a"},
             {"kind": "platform_key", "version": 1,
@@ -120,6 +132,11 @@ class MediaRestoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "primary and backup keys do not match"):
             verifier.verify_archive(self.backup, self.root, reserve_bytes=0,
                                     reference_manifest=manifest)
+        write_pair(primary_content=b"x" * 4097, backup_content=b"x" * 4097)
+        with self.assertRaisesRegex(ValueError, "key exceeds the size limit"):
+            verifier.verify_archive(self.backup, self.root, reserve_bytes=0,
+                                    reference_manifest=manifest)
+        self.assertEqual(list(self.root.glob("drevo-media-restore.*")), [])
         wrong_copy = json.dumps({"version": 1, "key": base64.b64encode(b"z" * 32).decode()}).encode()
         write_pair(backup_content=wrong_copy)
         with self.assertRaisesRegex(ValueError, "primary and backup keys do not match"):

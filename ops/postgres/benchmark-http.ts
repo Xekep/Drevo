@@ -208,11 +208,22 @@ try {
       child.off("message", received);
       reject(new Error("Synthetic remote AI conversation was not deleted"));
     }, 5000);
+    let deletedPath = "", cleanupDone = false;
     const received = (message: unknown) => {
-      if (!message || typeof message !== "object" || !("aiDelete" in message)) return;
-      clearTimeout(timer);
-      child.off("message", received);
-      resolve(String(message.aiDelete));
+      if (!message || typeof message !== "object") return;
+      if ("aiCleanupError" in message) {
+        clearTimeout(timer);
+        child.off("message", received);
+        reject(new Error("Synthetic queued provider cleanup failed"));
+        return;
+      }
+      if ("aiDelete" in message) deletedPath = String(message.aiDelete);
+      if ("aiCleanupDone" in message) cleanupDone = true;
+      if (deletedPath && cleanupDone) {
+        clearTimeout(timer);
+        child.off("message", received);
+        resolve(deletedPath);
+      }
     };
     child.on("message", received);
   });
@@ -220,9 +231,20 @@ try {
     method: "DELETE", headers: { Origin: bases[1] },
   });
   assert.equal(deletedPdfChat.status, 200, await deletedPdfChat.clone().text());
+  const queuedCleanup = await client.query(
+    "SELECT state FROM platform_ai_conversations WHERE local_chat_id=$1", [pdfTurn.chatId]);
+  assert.equal(queuedCleanup.rows[0]?.state, "pending",
+    "Chat deletion must durably queue the synthetic provider conversation");
+  children[0].send("cleanup-provider");
   assert.match(await remoteDelete,
     /^\/v1\/conversations\/benchmark-conversation-[0-9]+-[0-9]+$/,
     "The fake provider must observe remote conversation cleanup");
+  const finishedCleanup = await client.query(
+    "SELECT state,encrypted_snapshot FROM platform_ai_conversations WHERE local_chat_id=$1",
+    [pdfTurn.chatId]);
+  assert.equal(finishedCleanup.rows[0]?.state, "done");
+  assert.equal(finishedCleanup.rows[0]?.encrypted_snapshot, null,
+    "Terminal cleanup must discard the credential snapshot");
   assert.equal((await fetch(bases[0] + pdfTurn.files[0].url)).status, 404,
     "Chat deletion on another process must revoke the generated file");
   const routes = [
