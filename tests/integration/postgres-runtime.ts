@@ -9670,8 +9670,7 @@ try {
   });
   assert.equal(beforeStaleListExpansion.status, 200);
   const parentOnlyPreview = await beforeStaleListExpansion.json();
-  assert.deepEqual(parentOnlyPreview.selected.map((person: { person_id: string }) => person.person_id),
-    ["branch-parent-b"]);
+  assert.deepEqual(parentOnlyPreview.outgoingIds, ["branch-parent-b"]);
   let staleListReached!: () => void, releaseStaleList!: () => void;
   const staleListReady = new Promise<void>((resolve) => { staleListReached = resolve; });
   const staleListGate = new Promise<void>((resolve) => { releaseStaleList = resolve; });
@@ -9716,7 +9715,7 @@ try {
   });
   assert.equal(afterStaleListSelection.status, 200);
   const currentBranchPreview = await afterStaleListSelection.json();
-  assert.deepEqual(currentBranchPreview.selected.map((person: { person_id: string }) => person.person_id),
+  assert.deepEqual(currentBranchPreview.outgoingIds,
     ["branch-grandparent-b", "branch-parent-b"]);
   assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
     headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.7" },
