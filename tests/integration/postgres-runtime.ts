@@ -9665,6 +9665,13 @@ try {
       recipientArchiveId: "runtime-test", durationDays: 1 }),
   })).status, 200);
   console.log("runtime_discovery_branch_abort_ok");
+  const beforeStaleListExpansion = await fetch(otherBase + branchPath, {
+    headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.5" },
+  });
+  assert.equal(beforeStaleListExpansion.status, 200);
+  const parentOnlyPreview = await beforeStaleListExpansion.json();
+  assert.deepEqual(parentOnlyPreview.selected.map((person: { person_id: string }) => person.person_id),
+    ["branch-parent-b"]);
   let staleListReached!: () => void, releaseStaleList!: () => void;
   const staleListReady = new Promise<void>((resolve) => { staleListReached = resolve; });
   const staleListGate = new Promise<void>((resolve) => { releaseStaleList = resolve; });
@@ -9689,7 +9696,7 @@ try {
     assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
       headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.6" },
       body: JSON.stringify({ personIds: ["branch-parent-b", "branch-grandparent-b"],
-        previewToken: secondBranch.previewToken,
+        previewToken: parentOnlyPreview.previewToken,
         recipientArchiveId: "runtime-test", durationDays: 1 }),
     })).status, 200);
     releaseStaleList();
