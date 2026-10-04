@@ -1276,6 +1276,27 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         if (notes(f))
           p.biography = [p.biography, notes(f)].filter(Boolean).join("\n\n");
       }
+    const familyEventAges = new Map<Node, Map<string, string[]>>();
+    for (const familyEvent of f.children.filter((node) => Object.hasOwn(eventTags, node.tag))) {
+      const byPerson = new Map<string, string[]>();
+      for (const role of ["HUSB", "WIFE"] as const) {
+        const ageNodes = children(familyEvent, role).filter((node) =>
+          eventAgeText(node).length);
+        if (!ageNodes.length) continue;
+        const references = children(f, role);
+        const otherReferences = children(f, role === "HUSB" ? "WIFE" : "HUSB");
+        const ref = references[0]?.value;
+        const personId = ref && ids.get(ref);
+        if (ageNodes.length !== 1 || references.length !== 1 || !personId ||
+          ref === "@VOID@" || otherReferences.some((node) => node.value === ref) ||
+          !spousePair.some((person) => person.id === personId)) {
+          warnings.add(`Возраст ${familyEvent.tag}.${role}.AGE не перенесён: участник семьи отсутствует или неоднозначен. Проверьте исходный GEDCOM.`);
+          continue;
+        }
+        byPerson.set(personId, eventAgeText(ageNodes[0]).map((text) => `${role}: ${text}`));
+      }
+      familyEventAges.set(familyEvent, byPerson);
+    }
     for (const p of spousePair)
       for (const e of f.children.filter((n) =>
         Object.hasOwn(eventTags, n.tag),
@@ -1285,14 +1306,43 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         if (!value(individual, "_DREVO")) {
           const imported = event(e);
           const partner = spousePair.find((s) => s.id !== p.id);
-          if (partner)
-            imported.description = [
-              imported.description,
-              `Участник: ${fullName(partner)}`,
-            ]
-              .filter(Boolean)
-              .join("\n");
+          const ageText = familyEventAges.get(e)?.get(p.id) || [];
+          if (ageText.length)
+            warnings.add("Возраст AGE участников семейного события сохранён текстом у соответствующего человека; отдельная структура HUSB/WIFE.AGE не перенесена.");
+          imported.description = [
+            imported.description,
+            ...ageText,
+            ...(partner ? [`Участник: ${fullName(partner)}`] : []),
+          ].filter(Boolean).join("\n") || undefined;
           (p.events ||= []).push(imported);
+        } else {
+          const ageText = familyEventAges.get(e)?.get(p.id) || [];
+          if (!ageText.length) continue;
+          const date = gedcomDate(value(e, "DATE"));
+          const place = value(e, "PLAC");
+          // Export may assign HUSB/WIFE roles differently from the original
+          // file. The person, event and complete AGE text identify an existing
+          // flattened value without treating the old role as a new age.
+          const ageValues = ageText.map((text) => text.replace(/^(?:HUSB|WIFE): /, ""));
+          const matchingEvents = (p.events || []).filter((item) =>
+            item.gedcomTag === e.tag && (!date || item.date === date) &&
+            (!place || item.place === place));
+          const alreadyInEvent = matchingEvents.length === 1 &&
+            ageValues.every((text) => matchingEvents[0].description?.split("\n").some((line) =>
+              line.endsWith(text)));
+          if (alreadyInEvent) {
+            warnings.add("Возраст AGE семейного события уже сохранён текстом в событии Drevo; отдельная структура HUSB/WIFE.AGE не перенесена.");
+            continue;
+          }
+          const note = [
+            `Исходный возраст семейного события GEDCOM ${f.xref || "FAM"}.${e.tag}:`,
+            ...(value(e, "DATE") ? [`DATE: ${value(e, "DATE")}`] : []),
+            ...(place ? [`PLAC: ${place}`] : []),
+            ...ageText,
+          ].join("\n");
+          if (!p.biography?.includes(note))
+            p.biography = [p.biography, note].filter(Boolean).join("\n\n");
+          warnings.add("Возраст AGE семейного события с метаданными Drevo сохранён в биографии; точная привязка к событию не восстановлена.");
         }
       }
   }
