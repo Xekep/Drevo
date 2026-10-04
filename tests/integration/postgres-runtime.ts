@@ -46,6 +46,7 @@ import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { aiResearchHttp } from "../../src/server/ai-research-http.ts";
 import { researchPdf } from "../../src/server/research-pdf.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
+import { aiChatAccessScope } from "../../src/server/ai-chat-access-scope.ts";
 import { generatedResearchFileStore } from "../../src/server/generated-research-files.ts";
 import { verifyGeneratedFileGlobalCap } from "./generated-file-cap-test.ts";
 import { verifyPortablePreviewGlobalCap } from "./portable-preview-cap.ts";
@@ -60,6 +61,7 @@ import { verifyAccountExportDelivery } from "./postgres-account-export-delivery.
 import { verifyOfflineExportDelivery } from "./postgres-offline-export-delivery.ts";
 import { verifyAiAttachmentDelivery } from "./postgres-ai-attachment-delivery.ts";
 import { verifyDiscussionAttachmentDelivery } from "./postgres-discussion-attachment-delivery.ts";
+import { verifyAiTurnCoordination } from "./postgres-ai-turn-coordination.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
@@ -902,6 +904,7 @@ try {
   await assert.rejects(preferences.write("owner", { reverseTimeline: false, generationLimits: { ...generationLimits, collateral: 3 } }), /Некорректные/);
   await preferences.write("owner", { reverseTimeline: false, generationLimits: null });
   assert.equal((await preferences.read("owner")).generationLimits, undefined);
+  await verifyAiTurnCoordination(live.db);
   const chats = aiChatStore(live.db);
   const chat = await chats.create("owner", "all");
   await chats.append(chat.id, "user", "Проверка");
@@ -2081,15 +2084,31 @@ try {
     [ownerExportChatId, readerExportChatId, staleExportChatId,
       JSON.stringify(["admin", "all", ""]), JSON.stringify(["reader", "all", ""])],
   );
+  const readerAiAttachmentBytes = Buffer.from("reader-owned-ai-attachment");
+  const chatAttachmentExportStore = aiAttachmentStore(
+    join(dirname(source), "uploads"), aiChatStore(app.archive.db),
+  );
+  const [readerAiAttachment, hiddenAiAttachment] = await chatAttachmentExportStore.save(
+    readerExportChatId, [{
+    name: "research.txt", type: "text/plain", bytes: readerAiAttachmentBytes,
+  }, { name: "hidden.txt", type: "text/plain", bytes: Buffer.from("hidden-ai-original") }]);
+  assert.equal(existsSync(join(dirname(source), "uploads", "ai-chat-files", readerExportChatId,
+    readerAiAttachment.url.split("/").at(-1)!)), true);
+  const [staleAiAttachment] = await chatAttachmentExportStore.save(staleExportChatId,
+    [{ name: "stale.txt", type: "text/plain", bytes: Buffer.from("former-scope-ai-original") }]);
+  const [ownerAiAttachment] = await chatAttachmentExportStore.save(ownerExportChatId,
+    [{ name: "owner.txt", type: "text/plain", bytes: Buffer.from("other-account-ai-original") }]);
   await client.query(
     `INSERT INTO ai_chat_messages(archive_id,chat_id,role,content,data)
-     VALUES('runtime-test',$1,'user','owner-export-chat-text','{}'::jsonb),
-           ('runtime-test',$2,'assistant','reader-export-chat-text',
-             '{"attachments":[{"url":"attachment-private-url"}]}'::jsonb),
-           ('runtime-test',$2,'user','hidden-internal-prompt',
-             '{"hidden":true,"token":"internal-token"}'::jsonb),
-           ('runtime-test',$3,'user','former-scope-secret','{}'::jsonb)`,
-    [ownerExportChatId, readerExportChatId, staleExportChatId],
+     VALUES('runtime-test',$1,'user','owner-export-chat-text',$7::jsonb),
+           ('runtime-test',$2,'assistant','reader-export-chat-text',$4::jsonb),
+           ('runtime-test',$2,'user','hidden-internal-prompt',$5::jsonb),
+           ('runtime-test',$3,'user','former-scope-secret',$6::jsonb)`,
+    [ownerExportChatId, readerExportChatId, staleExportChatId,
+      JSON.stringify({ attachments: [readerAiAttachment] }),
+      JSON.stringify({ hidden: true, token: "internal-token", attachments: [hiddenAiAttachment] }),
+      JSON.stringify({ attachments: [staleAiAttachment] }),
+      JSON.stringify({ attachments: [ownerAiAttachment] })],
   );
   const readerTierBeforeExport = (await client.query(
     "SELECT full_access FROM account_tiers WHERE account_id='reader'",
@@ -2112,10 +2131,12 @@ try {
     assert.match(response.headers.get("content-disposition") || "", /attachment/);
     assert.equal(response.headers.get("cache-control"), "no-store");
     const raw = await response.text();
-    assert.doesNotMatch(raw, /secret-hash-sentinel|password_hash|token_hash|drevo_session|remote-conversation-secret|attachment-private-url|hidden-internal-prompt|internal-token|former-scope-secret/);
+    assert.doesNotMatch(raw, /secret-hash-sentinel|password_hash|token_hash|drevo_session|remote-conversation-secret|hidden-internal-prompt|internal-token|former-scope-secret/);
+    assert.equal(raw.includes(readerAiAttachment.url), false,
+      "the JSON export identifies the message without exposing its internal download path");
     const exported = JSON.parse(raw);
     assert.equal(exported.format, "drevo-account-data");
-    assert.equal(exported.version, 4);
+    assert.equal(exported.version, 5);
     assert.equal(exported.account.id, index % 2 ? "reader" : "owner");
     assert.equal(exported.account.verifiedEmail, index % 2 ? "reader-export@example.invalid" : null);
     assert.equal(exported.account.identities.some((identity: { provider: string; subject: string }) =>
@@ -2131,7 +2152,8 @@ try {
     assert.equal(exported.archives[0].owned, index % 2 === 0);
     assert.equal(exported.archives[0].preferences?.colorScheme, index % 2 ? undefined : "white");
     assert.deepEqual(exported.archives[0].ownComments, []);
-    const ownAiChats = exported.archives[0].ownAiChats as Array<{ id: string; messages: Array<{ role: string; content: string }> }>;
+    const ownAiChats = exported.archives[0].ownAiChats as Array<{ id: string;
+      messages: Array<{ id: string; role: string; content: string }> }>;
     assert.ok(ownAiChats.some((chat) => chat.id === (index % 2 ? readerExportChatId : ownerExportChatId)));
     assert.equal(ownAiChats.some((chat) => chat.id === (index % 2 ? ownerExportChatId : readerExportChatId)), false,
       "the account download excludes another account's AI chat");
@@ -2140,6 +2162,9 @@ try {
     index % 2
       ? [{ role: "assistant", content: "reader-export-chat-text" }]
       : [{ role: "user", content: "owner-export-chat-text" }]);
+    assert.equal(typeof ownAiChats.find((chat) => chat.id === readerExportChatId)?.messages[0]?.id,
+      index % 2 ? "string" : "undefined",
+      "message IDs connect the personal JSON with the attachment ZIP manifest");
   }
   await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='reader'");
   const basicAccountExport = await fetch(accountExportUrl, { headers }).then((response) => response.text());
@@ -5222,6 +5247,92 @@ try {
     .filter((item: { text: string }) => item.text.startsWith("account-export-probe:"))
     .map((item: { text: string }) => item.text), ["account-export-probe:visible"],
   "a scoped member cannot export their old comment in a now-hidden branch");
+  const currentReader = await (await userStore(app.archive.db)).get("reader");
+  assert.ok(currentReader);
+  await client.query("UPDATE ai_chats SET access_scope=$1 WHERE id=$2", [
+    aiChatAccessScope(currentReader, (await app.archive.read()).family), readerExportChatId,
+  ]);
+  const scopedAiScope = aiChatAccessScope(currentReader, (await app.archive.read()).family);
+  const readerTierBeforeBoundedJson = (await client.query<{ full_access: boolean }>(
+    "SELECT full_access FROM account_tiers WHERE account_id='reader'",
+  )).rows[0].full_access;
+  const escapedChatId = randomUUID();
+  await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
+  await client.query(
+    "INSERT INTO ai_chats(archive_id,id,user_id,access_scope) VALUES('runtime-test',$1,'reader',$2)",
+    [escapedChatId, scopedAiScope],
+  );
+  await client.query(
+    `INSERT INTO ai_chat_messages(archive_id,chat_id,role,content)
+     VALUES('runtime-test',$1,'assistant',repeat(chr(1),5*1024*1024))`, [escapedChatId],
+  );
+  const escapedJsonExport = await fetch(accountExportUrl, { headers });
+  assert.equal(escapedJsonExport.status, 413,
+    "JSON escaping must not turn a permitted raw AI size into an unbounded account response");
+  assert.doesNotMatch(await escapedJsonExport.text(), /former-scope-secret|hidden-internal-prompt/);
+  await client.query("DELETE FROM ai_chats WHERE id=$1", [escapedChatId]);
+  await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='reader'",
+    [readerTierBeforeBoundedJson]);
+  await client.query(
+    `INSERT INTO account_identities(provider,subject,account_id)
+     SELECT 'export-provider-'||n,'export-subject-'||n,'reader'
+       FROM generate_series(1,65) AS n`,
+  );
+  assert.equal((await fetch(accountExportUrl, { headers })).status, 413,
+    "identity metadata also has a preflight limit before JSON materialization");
+  await client.query("DELETE FROM account_identities WHERE account_id='reader' AND provider LIKE 'export-provider-%'");
+
+  await client.query(
+    `INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text)
+     SELECT 'account-export-hidden','reader','Reader',$1,'bounded-hidden:'||n
+       FROM generate_series(1,10001) AS n`, [Date.now()],
+  );
+  const hiddenBulkExport = await fetch(accountExportUrl, { headers });
+  assert.equal(hiddenBulkExport.status, 200,
+    "comments outside the current person scope cannot consume the visible export limit");
+  assert.doesNotMatch(await hiddenBulkExport.text(), /bounded-hidden:/);
+  await client.query(
+    `INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text)
+     SELECT 'person-a','reader','Reader',$1,'bounded-visible:'||n
+       FROM generate_series(1,10001) AS n`, [Date.now()],
+  );
+  const manyCommentsExport = await fetch(accountExportUrl, { headers });
+  assert.equal(manyCommentsExport.status, 413,
+    "visible own comments must be bounded before materializing all rows");
+  assert.doesNotMatch(await manyCommentsExport.text(), /bounded-visible:|bounded-hidden:/);
+  await client.query("DELETE FROM person_comments WHERE text LIKE 'bounded-visible:%'");
+  await client.query(
+    `INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text)
+     SELECT 'person-a','reader','Reader',$1,'bounded-bytes:'||repeat('x',1986)
+       FROM generate_series(1,3800)`, [Date.now()],
+  );
+  const rawBytesExport = await fetch(accountExportUrl, { headers });
+  assert.equal(rawBytesExport.status, 413,
+    "visible comment bytes are bounded even below the comment-count ceiling");
+  assert.doesNotMatch(await rawBytesExport.text(), /bounded-bytes:/);
+  const boundedJsonAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  const revokedBoundedJson = accountDataExportHttp(app.archive.db, boundedJsonAuth, async () => {
+    await client.query("UPDATE archive_memberships SET approved=false WHERE user_id='reader'");
+  });
+  const revokedBoundedJsonServer = createServer((req, res) => {
+    void revokedBoundedJson(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => revokedBoundedJsonServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (revokedBoundedJsonServer.address() as { port: number }).port;
+    const revoked = await fetch(`http://127.0.0.1:${port}/api/account/export`, { headers });
+    assert.equal(revoked.status, 409,
+      "a completed membership revoke hides even the fact that the prior export was oversized");
+    assert.doesNotMatch(await revoked.text(), /bounded-visible:|bounded-hidden:/);
+  } finally {
+    await new Promise<void>((resolve) => revokedBoundedJsonServer.close(() => resolve()));
+    await client.query("UPDATE archive_memberships SET approved=true WHERE user_id='reader'");
+  }
+  await client.query("DELETE FROM person_comments WHERE text LIKE 'bounded-hidden:%' OR text LIKE 'bounded-bytes:%'");
+  assert.equal((await fetch(accountExportUrl, { headers })).status, 200,
+    "a normal account export works after the oversized rows are removed");
   const attachmentExportStore = discussionAttachmentStore(join(dirname(source), "uploads"));
   const visibleAttachmentBytes = Buffer.from("reader-owned-visible-attachment");
   const hiddenAttachmentBytes = Buffer.from("reader-owned-hidden-attachment");
@@ -5244,10 +5355,17 @@ try {
     [Date.now(), JSON.stringify([visibleAttachment]), JSON.stringify([hiddenAttachment]),
       JSON.stringify([foreignAttachment])],
   );
+  const readerTierBeforeAttachmentExport = (await client.query<{ full_access: boolean }>(
+    "SELECT full_access FROM account_tiers WHERE account_id='reader'",
+  )).rows[0].full_access;
+  assert.equal(existsSync(join(dirname(source), "uploads", "ai-chat-files", readerExportChatId,
+    readerAiAttachment.url.split("/").at(-1)!)), true,
+  "the fixture's AI original remains in the active archive uploads before export");
+  await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
   const attachmentExportUrl = securedBase + "/api/account/export/attachments";
   const accountAttachments = await fetch(attachmentExportUrl, { headers });
   assert.equal(accountAttachments.status, 200,
-    "an invited member can back up their own visible discussion originals");
+    `an invited member can back up their own visible originals: ${await accountAttachments.clone().text()}`);
   const accountAttachmentZip = join(directory, "reader-account-attachments.zip");
   writeFileSync(accountAttachmentZip, Buffer.from(await accountAttachments.arrayBuffer()));
   const attachmentZip = await openPromise(accountAttachmentZip);
@@ -5260,12 +5378,13 @@ try {
   }
   const attachmentManifest = JSON.parse(attachmentEntries.get("manifest.json")!.toString()) as {
     format: string; version: number;
-    attachments: Array<{ archiveId: string; commentId: string; path: string; id: string; name: string; sha256: string }>;
+    attachments: Array<{ archiveId: string; commentId?: string; chatId?: string;
+      messageId?: string; path: string; id: string; name: string; sha256: string }>;
   };
   assert.equal(attachmentManifest.format, "drevo-account-attachments");
-  assert.equal(attachmentManifest.version, 1);
-  assert.equal(attachmentManifest.attachments.length, 1,
-    "hidden-branch and other authors' attachments must be excluded");
+  assert.equal(attachmentManifest.version, 2);
+  assert.equal(attachmentManifest.attachments.length, 2,
+    "the bundle includes the reader's AI original but excludes hidden branches and other authors");
   assert.equal(attachmentManifest.attachments[0].archiveId, "runtime-test");
   assert.equal(attachmentManifest.attachments[0].commentId, String(exportAttachmentRows.rows[0].id));
   assert.equal(attachmentManifest.attachments[0].id, visibleAttachment.id);
@@ -5273,7 +5392,39 @@ try {
   assert.deepEqual(attachmentEntries.get(attachmentManifest.attachments[0].path), visibleAttachmentBytes);
   assert.equal(attachmentManifest.attachments[0].sha256,
     createHash("sha256").update(visibleAttachmentBytes).digest("hex"));
-  assert.equal(attachmentEntries.size, 2);
+  const ownAiEntry = attachmentManifest.attachments.find((item: { chatId?: string }) =>
+    item.chatId === readerExportChatId)!;
+  assert.equal(ownAiEntry.messageId,
+    String((await client.query("SELECT id FROM ai_chat_messages WHERE chat_id=$1 AND content='reader-export-chat-text'",
+      [readerExportChatId])).rows[0].id));
+  assert.equal(ownAiEntry.name, readerAiAttachment.name);
+  assert.deepEqual(attachmentEntries.get(ownAiEntry.path), readerAiAttachmentBytes);
+  assert.equal(ownAiEntry.sha256,
+    createHash("sha256").update(readerAiAttachmentBytes).digest("hex"));
+  assert.doesNotMatch(JSON.stringify(attachmentManifest),
+    /hidden\.txt|stale\.txt|owner\.txt|hidden-internal-prompt|former-scope-secret/);
+  assert.equal(attachmentEntries.size, 3);
+  await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='reader'");
+  try {
+    const basicBundle = await fetch(attachmentExportUrl, { headers });
+    assert.equal(basicBundle.status, 200,
+      "a basic member can still export their discussion original");
+    const basicPath = join(directory, "reader-basic-attachments.zip");
+    writeFileSync(basicPath, Buffer.from(await basicBundle.arrayBuffer()));
+    const basicZip = await openPromise(basicPath);
+    for await (const entry of basicZip.eachEntry()) {
+      if (entry.fileName !== "manifest.json") continue;
+      const chunks: Buffer[] = [];
+      for await (const chunk of await basicZip.openReadStreamPromise(entry))
+        chunks.push(Buffer.from(chunk));
+      const basicManifest = JSON.parse(Buffer.concat(chunks).toString()) as
+        { attachments: Array<{ kind: string }> };
+      assert.deepEqual(basicManifest.attachments.map((item) => item.kind), ["discussion"],
+        "AI originals are excluded after a tier downgrade");
+    }
+  } finally {
+    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
+  }
   await client.query("UPDATE archive_memberships SET approved=false WHERE user_id='reader'");
   const revokedAttachmentExport = await fetch(attachmentExportUrl, { headers });
   assert.notEqual(revokedAttachmentExport.status, 200,
@@ -5306,6 +5457,29 @@ try {
     await new Promise<void>((resolve) => raceAttachmentServer.close(() => resolve()));
     await client.query("UPDATE archive_memberships SET approved=true WHERE user_id='reader'");
   }
+  const tierAttachmentExport = accountAttachmentExportHttp(
+    app.archive.db, attachmentExportAuth,
+    () => join(dirname(source), "uploads"),
+    async () => {
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='reader'");
+    },
+  );
+  const tierAttachmentServer = createServer((req, res) => {
+    void tierAttachmentExport(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => tierAttachmentServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (tierAttachmentServer.address() as { port: number }).port;
+    const response = await fetch(`http://127.0.0.1:${port}/api/account/export/attachments`,
+      { headers });
+    assert.equal(response.status, 409,
+      "a completed AI-tier downgrade before delivery blocks the prepared mixed ZIP");
+    assert.doesNotMatch(await response.text(), /reader-owned-ai-attachment/);
+  } finally {
+    await new Promise<void>((resolve) => tierAttachmentServer.close(() => resolve()));
+    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
+  }
   const detachAttachmentExport = accountAttachmentExportHttp(
     app.archive.db, attachmentExportAuth,
     () => join(dirname(source), "uploads"),
@@ -5330,6 +5504,32 @@ try {
     await new Promise<void>((resolve) => detachAttachmentServer.close(() => resolve()));
     await client.query("UPDATE person_comments SET attachments=$1::jsonb WHERE id=$2",
       [JSON.stringify([visibleAttachment]), exportAttachmentRows.rows[0].id]);
+  }
+  const detachAiExport = accountAttachmentExportHttp(
+    app.archive.db, attachmentExportAuth,
+    () => join(dirname(source), "uploads"),
+    async () => {
+      await client.query("UPDATE ai_chat_messages SET data='{}'::jsonb WHERE chat_id=$1 AND content='reader-export-chat-text'",
+        [readerExportChatId]);
+    },
+  );
+  const detachAiServer = createServer((req, res) => {
+    void detachAiExport(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => detachAiServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (detachAiServer.address() as { port: number }).port;
+    const detached = await fetch(`http://127.0.0.1:${port}/api/account/export/attachments`,
+      { headers });
+    assert.equal(detached.status, 409,
+      "detaching an AI original after ZIP preflight must block delivery");
+    assert.equal(detached.headers.get("content-type"), "application/json; charset=utf-8");
+    await detached.text();
+  } finally {
+    await new Promise<void>((resolve) => detachAiServer.close(() => resolve()));
+    await client.query("UPDATE ai_chat_messages SET data=$1::jsonb WHERE chat_id=$2 AND content='reader-export-chat-text'",
+      [JSON.stringify({ attachments: [readerAiAttachment] }), readerExportChatId]);
   }
   const slowAttachmentBytes = Buffer.alloc(9 * 1024 * 1024, 0x41);
   const [slowAttachment] = await attachmentExportStore.save([
@@ -5417,6 +5617,8 @@ try {
   assert.equal(missingAttachmentExport.headers.get("content-type"), "application/json; charset=utf-8");
   await client.query("DELETE FROM person_comments WHERE text LIKE 'account-export-attachment:%'");
   await attachmentExportStore.remove([visibleAttachment, hiddenAttachment, foreignAttachment, slowAttachment]);
+  await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='reader'",
+    [readerTierBeforeAttachmentExport]);
   const ownerCommentExport = await fetch(accountExportUrl, { headers: ownerHeaders })
     .then((response) => response.json());
   assert.deepEqual(new Set(ownerCommentExport.archives.map((item: { id: string }) => item.id)),
@@ -10358,7 +10560,7 @@ try {
     deceased: true, parents: [parent.id], spouses: ["closed-relative"], column: 51 });
   otherWithRelative.people.push({ ...structuredClone(otherPerson),
     id: "name-typo", surname: "Тестав", name: "Иван", deceased: true,
-    parents: [], column: 52 });
+    parents: [parent.id], column: 52 });
   otherWithRelative.people.push({ ...structuredClone(otherPerson),
     id: "place-match", surname: "Петров", name: "Иван", birth: "1991",
     birthPlace: "Россия, Свердловская область, Нижний Тагил", deceased: true,
@@ -10376,6 +10578,12 @@ try {
     parents: [], spouses: ["relative-only"], column: 53 });
   const ownSignalWrite = await app.archive.write(ownWithRelative, ownBeforeSignals.revision);
   await otherApp.archive.write(otherWithRelative, otherBeforeSignals.revision);
+  const relativePath = "/api/discovery/matches/relative-consents";
+  const unpublishedRelative = await fetch(securedBase + relativePath + "?personId=person-a",
+    { headers: ownerHeaders });
+  assert.equal(unpublishedRelative.status, 200);
+  assert.deepEqual((await unpublishedRelative.json()).relatives, [],
+    "the opt-in control does not reveal an unpublished relative's name");
   await otherPublication.publish("relative-only", "owner");
   await otherPublication.publish("name-typo", "owner");
   await otherPublication.publish("place-match", "owner");
@@ -10456,6 +10664,81 @@ try {
     bothPlaceWrite.revision);
   await publishedPeopleStore(app.archive.db).publish(parent.id, "owner");
   await otherPublication.publish(parent.id, "owner");
+  const ownRelative = await fetch(securedBase + relativePath + "?personId=person-a",
+    { headers: ownerHeaders }).then((response) => response.json());
+  const otherRelative = await fetch(otherBase + relativePath + "?personId=name-typo",
+    { headers: recipientHeaders }).then((response) => response.json());
+  const ownRelationId = ownRelative.relatives.find((item: { personId: string }) =>
+    item.personId === parent.id)?.relationId;
+  const otherRelationId = otherRelative.relatives.find((item: { personId: string }) =>
+    item.personId === parent.id)?.relationId;
+  assert.ok(ownRelationId && otherRelationId, "only already published relatives are selectable");
+  const setRelativeConsent = async (base: string, headers: Record<string,string>,
+    personId: string, relationId: string, enabled: boolean) => fetch(base + relativePath, {
+      method: "POST", headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ personId, relationId, enabled }),
+    });
+  assert.equal((await setRelativeConsent(securedBase,ownerHeaders,
+    "person-a",ownRelationId,true)).status, 200);
+  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+    .some((reason) => reason.includes("родителя")), false,
+  "one-sided relation consent does not reveal a shared relative");
+  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+    "name-typo",otherRelationId,true)).status, 200);
+  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+    .some((reason) => reason.includes("родителя")), true,
+  "bilateral explicit relation consent adds explainable evidence");
+  const changedSurnameRelation = await fetch(otherBase + relativePath +
+    "?personId=relative-only", { headers: recipientHeaders }).then((response) => response.json());
+  const changedSurnameRelationId = changedSurnameRelation.relatives.find(
+    (item: { personId: string }) => item.personId === parent.id)?.relationId;
+  assert.ok(changedSurnameRelationId);
+  assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
+    "one-sided consent cannot retrieve a changed-surname candidate");
+  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+    "relative-only",changedSurnameRelationId,true)).status, 200);
+  const changedSurnameHint = (await signalIds()).find((item) => item.id === "relative-only");
+  assert.ok(changedSurnameHint?.reasons.some((reason) => reason.includes("родителя")),
+    "an indexed bilateral relative plus published given name and close year finds a changed surname");
+  assert.ok(changedSurnameHint?.conflicts.includes("Указанные фамилии различаются"));
+  await client.query("BEGIN");
+  try {
+    await client.query("SET LOCAL enable_seqscan=off");
+    const relativePlan = await client.query(`EXPLAIN (FORMAT JSON)
+      SELECT target.person_id FROM discovery_relative_consents own
+      JOIN discovery_relative_consents target ON target.kind=own.kind
+        AND target.relative_name_key=own.relative_name_key
+      WHERE own.archive_id='runtime-test' AND own.person_id='person-a'
+        AND target.archive_id='other-archive'`);
+    assert.match(JSON.stringify(relativePlan.rows), /discovery_relative_consents_lookup/,
+      "the consented-relative shortlist has an executable B-tree lookup");
+  } finally { await client.query("ROLLBACK"); }
+  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+    "relative-only",changedSurnameRelationId,false)).status, 200);
+  assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
+    "revoking that relation removes its sole shortlist path");
+  const originalRelativeName = String((await otherApp.archive.db.prepare("",
+    `SELECT name FROM discovery_people WHERE archive_id=? AND person_id=?`)
+    .get("other-archive",parent.id))?.name);
+  await otherApp.archive.db.prepare("", `UPDATE discovery_people SET name=?
+    WHERE archive_id=? AND person_id=?`).run("Иное имя", "other-archive", parent.id);
+  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+    .some((reason) => reason.includes("родителя")), false,
+  "a published relative's name change incrementally refreshes only its consented clue");
+  await otherApp.archive.db.prepare("", `UPDATE discovery_people SET name=?
+    WHERE archive_id=? AND person_id=?`).run(originalRelativeName, "other-archive", parent.id);
+  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+    .some((reason) => reason.includes("родителя")), true);
+  await runDiscoveryBackfill();
+  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+    .some((reason) => reason.includes("родителя")), true,
+  "the administrative index rebuild preserves only pre-existing relation consent");
+  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+    "name-typo",otherRelationId,false)).status, 200);
+  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+    .some((reason) => reason.includes("родителя")), false,
+  "completed relation revocation removes the evidence immediately");
+  console.log("runtime_discovery_relative_consent_ok");
   const revocableRequest = await fetch(securedBase + "/api/discovery/matches", {
     method: "POST", headers: manualHeaders,
     body: JSON.stringify({ sourcePersonId: parent.id, targetArchiveId: "other-archive",
@@ -10623,6 +10906,15 @@ try {
   assert.equal(unchangedPage.nextCursor, null);
   assert.ok(unchangedPage.candidates.some((item: { id: string }) =>
     item.id === "name-typo"), "unchanged published candidates remain available");
+  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+    "name-typo",otherRelationId,true)).status, 200);
+  const revokedRelativeDelivery = await candidateDelivery(async () => {
+    assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+      "name-typo",otherRelationId,false)).status, 200);
+  });
+  assert.equal(revokedRelativeDelivery.status, 409,
+    "a completed relation-consent withdrawal before delivery cannot leak its evidence");
+  assert.equal((await revokedRelativeDelivery.json()).candidates, undefined);
   const revokedCandidateDelivery = await candidateDelivery(async () => {
     await otherPublication.unpublish("name-typo");
   });
@@ -10640,7 +10932,13 @@ try {
   };
   assert.equal((await publicParentResults()).some((item) =>
     item.archiveId === "other-archive" && item.id === parent.id), true);
+  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+    "name-typo",otherRelationId,true)).status, 200);
   await otherPublication.unpublish(parent.id);
+  assert.equal((await otherApp.archive.db.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_relative_consents WHERE archive_id=? AND person_id=?`)
+    .get("other-archive","name-typo"))?.count, 0,
+  "unpublishing the named relative cascades its separately consented clue");
   assert.equal((await publicParentResults()).some((item) =>
     item.archiveId === "other-archive" && item.id === parent.id), false,
   "a fresh indexed search cannot return a withdrawn publication");
@@ -11055,6 +11353,18 @@ try {
       Origin: process.env.PUBLIC_ORIGIN!,
       "X-Drevo-Import": "1",
     };
+    const unsupportedFile = join(directory, "portable-unsupported.drevo");
+    await writePortablePackage(createWriteStream(unsupportedFile), directory, {
+      family: { title: "Future archive", description: "", demo: false, people: [] },
+      documents: [], comments: [], sources: [],
+      futureEvidence: [{ title: "Must not disappear" }],
+    } as Parameters<typeof writePortablePackage>[2], async () => {});
+    const unsupportedPreview = await fetch(oauthBase + location.replace(/\/tree$/, "/api/drevo/preview"), {
+      method: "POST", headers: transferHeaders, body: readFileSync(unsupportedFile),
+    });
+    assert.equal(unsupportedPreview.status, 400,
+      "the preview must reject unknown archival data instead of approving a lossy import");
+    assert.match(await unsupportedPreview.text(), /неподдерживаемые поля/);
     await assertPortableTaskBlocked(
       "portable-import",
       () => fetch(

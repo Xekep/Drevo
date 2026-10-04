@@ -1892,7 +1892,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           }}
           onMoveEnd={(_, camera) => rememberViewport(camera)}
         >
-          {props.canEdit && (
+          {props.canEdit && !narrow && (
             <Panel position="bottom-left" className="flow-add-tools">
               <button onClick={props.onAdd}>
                 <Plus size={18} />

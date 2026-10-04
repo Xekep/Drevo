@@ -163,6 +163,16 @@ export function ArchiveNavigation({
       >
         О проекте
       </button>
+      {user?.role === "admin" && user.approved === true && (
+        <a
+          className="nav-admin"
+          href={scopedArchivePath(archivePaths.admin)}
+          aria-current={view === "admin" ? "page" : undefined}
+          onClick={(event) => navigate(event, "admin")}
+        >
+          Админка
+        </a>
+      )}
       <a
         className="nav-account"
         href={scopedArchivePath(archivePaths.account)}

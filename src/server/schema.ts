@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { researchCatalogSeed } from "./research-catalog-seed.ts";
 
-export const ARCHIVE_SCHEMA_VERSION = 19;
+export const ARCHIVE_SCHEMA_VERSION = 20;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -124,6 +124,16 @@ function relationHasCreatedBy(db: DatabaseSync) {
 }
 
 function migrate(db: DatabaseSync, target: number) {
+  if (target === 20) {
+    if (
+      !db
+        .prepare("PRAGMA table_info(ai_chats)")
+        .all()
+        .some((column) => column.name === "stop_token")
+    )
+      db.exec("ALTER TABLE ai_chats ADD COLUMN stop_token TEXT");
+    return;
+  }
   if (target === 19) {
     db.exec(`
       CREATE TABLE IF NOT EXISTS family_unions (

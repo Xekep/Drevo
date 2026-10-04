@@ -5,6 +5,10 @@ import type { StoreDatabase } from "./store-database.ts";
 export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
   for (const [query, file] of [
     [
+      "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='ai_chats' AND column_name='stop_token'",
+      "079_ai_chat_stop.sql",
+    ],
+    [
       "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='relations' AND column_name='confidence'",
       "078_family_link_confidence.sql",
     ],
@@ -242,20 +246,52 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT 1 AS present WHERE pg_get_viewdef(to_regclass('runtime_visible_person_comments'),true) LIKE '%JOIN accounts%'",
       "077_reregistered_comment_authors.sql",
     ],
+    [
+      `SELECT 1 AS present WHERE
+        EXISTS (SELECT 1 FROM pg_class WHERE oid=to_regclass('discovery_relative_consents')
+          AND relrowsecurity AND relforcerowsecurity)
+        AND to_regclass('discovery_relative_consents_relative') IS NOT NULL
+        AND to_regclass('discovery_relative_consents_relation') IS NOT NULL
+        AND to_regclass('discovery_relative_consents_lookup') IS NOT NULL
+        AND (SELECT count(*) FROM pg_policies WHERE schemaname=current_schema()
+          AND tablename='discovery_relative_consents' AND policyname IN
+            ('discovery_relative_consents_read','discovery_relative_consents_insert',
+             'discovery_relative_consents_update','discovery_relative_consents_delete'))=4
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE
+          tgrelid=to_regclass('discovery_relative_consents')
+          AND tgname='lock_discovery_relative_focal' AND NOT tgisinternal)
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE
+          tgrelid=to_regclass('discovery_people')
+          AND tgname='sync_discovery_relative_name' AND NOT tgisinternal)
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE
+          tgrelid=to_regclass('relations')
+          AND tgname='revoke_changed_discovery_relation' AND NOT tgisinternal)`,
+      "080_discovery_relative_consents.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
-    await db.transaction(async () => {
-      // Serialize DDL across processes/archives, not only this archive's writes.
-      await db.exec("", "SELECT pg_advisory_xact_lock(186743291)");
-      if ((await db.prepare("", query).get())?.present) return;
-      await db.exec(
-        "",
-        readFileSync(
-          new URL(`../../ops/postgres/${file}`, import.meta.url),
-          "utf8",
-        ),
-      );
-    });
+    try {
+      await db.transaction(async () => {
+        // Serialize DDL across processes/archives, not only this archive's writes.
+        await db.exec("", "SELECT pg_advisory_xact_lock(186743291)");
+        if ((await db.prepare("", query).get())?.present) return;
+        await db.exec(
+          "",
+          readFileSync(
+            new URL(`../../ops/postgres/${file}`, import.meta.url),
+            "utf8",
+          ),
+        );
+      });
+    } catch (error) {
+      // A transaction opened before another process committed DDL can retain
+      // a stale catalog lookup even after the advisory lock. Rollback gives
+      // this check a fresh catalog snapshot. Only an entirely installed 080
+      // may satisfy a concurrent duplicate-table error; partial DDL is fatal.
+      if (file !== "080_discovery_relative_consents.sql" ||
+          (error as { code?: string }).code !== "42P07" ||
+          !(await db.prepare("", query).get())?.present) throw error;
+    }
   }
   if (!(await db.prepare("", `SELECT 1 AS present FROM discovery_publication_reconciled_archives
     WHERE archive_id=current_setting('drevo.archive_id', true)`).get())?.present)

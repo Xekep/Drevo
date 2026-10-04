@@ -90,6 +90,8 @@ test("signed-in account without a tree can download its account data", async ({ 
   await expect(page.getByText(/Тексты из закрытых ветвей и архивов без действующего доступа/)).toBeVisible();
   await expect(link).toBeVisible();
   await expect(link).toHaveAttribute("href", "/api/account/export");
+  await expect(page.getByRole("link", { name: "Скачать свои вложения обсуждений и ИИ-диалогов" }))
+    .toHaveAttribute("href", "/api/account/export/attachments");
   const download = page.waitForEvent("download");
   await link.click();
   expect((await download).suggestedFilename()).toBe("drevo-account.json");

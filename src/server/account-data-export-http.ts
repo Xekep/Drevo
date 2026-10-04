@@ -1,7 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { finished } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
-import { accountDataExport, AccountAiHistoryTooLarge } from "./account-data-export.ts";
+import { accountDataExport, AccountAiHistoryTooLarge, AccountJsonTooLarge,
+  MAX_ACCOUNT_JSON_BYTES } from "./account-data-export.ts";
 import type { StoreDatabase } from "./store-database.ts";
 
 export function accountDataExportHttp(
@@ -34,15 +35,21 @@ export function accountDataExportHttp(
     if (!session)
       return send(401, { error: "Требуется вход в аккаунт" });
     let prepared: Awaited<ReturnType<typeof exporter.read>> = null;
-    let oversized: AccountAiHistoryTooLarge | null = null;
+    let oversized: AccountAiHistoryTooLarge | AccountJsonTooLarge | null = null;
     try {
       prepared = await exporter.read(session.accountId);
     } catch (error) {
-      if (error instanceof AccountAiHistoryTooLarge) oversized = error;
+      if (error instanceof AccountAiHistoryTooLarge || error instanceof AccountJsonTooLarge)
+        oversized = error;
       else throw error;
     }
     if (!prepared && !oversized) return send(404, { error: "Аккаунт не найден" });
-    const json = prepared ? JSON.stringify(prepared.download) : "";
+    let json = prepared ? JSON.stringify(prepared.download) : "";
+    if (prepared && Buffer.byteLength(json) > MAX_ACCOUNT_JSON_BYTES) {
+      oversized = new AccountJsonTooLarge(prepared.accessScopes);
+      prepared = null;
+      json = "";
+    }
     await beforeSend?.();
     let delivery: Awaited<ReturnType<typeof exporter.deliverWithCurrentSession>>;
     try {
@@ -60,7 +67,9 @@ export function accountDataExportHttp(
           try {
             if (oversized)
               send(413, {
-                error: "Экспорт не сформирован: история ИИ превышает текущий лимит. Данные не изменены.",
+                error: oversized instanceof AccountAiHistoryTooLarge
+                  ? "Экспорт не сформирован: история ИИ превышает текущий лимит. Данные не изменены."
+                  : "Экспорт не сформирован: объём данных превышает текущий лимит. Данные не изменены.",
               });
             else
               send(200, prepared!.download, true, json);

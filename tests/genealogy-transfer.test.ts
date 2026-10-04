@@ -885,11 +885,11 @@ test("Agelong XML retains cited sources and custom values while disclosing lost 
   assert.ok(result.warnings.some((warning) => warning.includes("отдельного признака избранного")));
 });
 
-test("Agelong XML preserves a family-only photo's group name through GEDZIP", async () => {
-  const xml = `<agelongtree><persons><person id="p" fn="Anna" sn="Example"/></persons>
+test("Agelong XML preserves a family's distinct source names through GEDZIP", async () => {
+  const xml = `<agelongtree><persons><person id="p" fn="Anna" sn="Example"><family id="f"/></person></persons>
     <documents><document id="d" path="archive.xml.files/group.png" title="Group photo">
       <details><detail><family id="f"/></detail></details></document></documents>
-    <families><family id="f" name="Example lineage"><documents><document id="d"/></documents></family></families>
+    <families><family id="f" name="Example lineage" fs="Example ancestor" ms="Example lineage"><documents><document id="d"/></documents></family></families>
     </agelongtree>`;
   const directory = await mkdtemp(join(tmpdir(), "drevo-xml-family-photo-"));
   try {
@@ -897,7 +897,8 @@ test("Agelong XML preserves a family-only photo's group name through GEDZIP", as
       xml.replace('<details><detail><family id="f"/></detail></details>', ""),
       "family-list-only",
     );
-    assert.equal(fromFamilyList.media[0].photo?.description, "Род в «Древе Жизни»: Example lineage");
+    assert.match(fromFamilyList.media[0].photo?.description || "", /Род в «Древе Жизни»: Example lineage/);
+    assert.match(fromFamilyList.media[0].photo?.description || "", /family.fs: Example ancestor/);
     const image = await sharp({
       create: { width: 2, height: 2, channels: 3, background: "blue" },
     }).png().toBuffer();
@@ -911,16 +912,23 @@ test("Agelong XML preserves a family-only photo's group name through GEDZIP", as
     const prepared = await prepareGenealogyImport(input, stage, "xml-family-photo");
     assert.equal(prepared.files.length, 1);
     assert.deepEqual(prepared.files[0].personIds, []);
-    assert.equal(prepared.family.photos?.[0].description, "Род в «Древе Жизни»: Example lineage");
+    assert.match(prepared.family.people[0].biography || "", /family.fs: Example ancestor/);
+    assert.match(prepared.family.photos?.[0].description || "", /family.fs: Example ancestor/);
+    assert.doesNotMatch(prepared.family.people[0].biography || "", /family.ms:/);
+    assert.equal(prepared.family.people[0].surname, "Example");
+    assert.equal(prepared.family.people[0].maidenName, undefined);
     assert.deepEqual(prepared.family.photos?.[0].tags, []);
     assert.ok(prepared.warnings.some((warning) => warning.includes("Связи 1 документов с родами сохранены текстом")));
+    assert.ok(prepared.warnings.some((warning) => warning.includes("family.fs") && warning.includes("структур")));
 
     const exported = join(directory, "roundtrip.gdz");
     await writeGenealogyPackage(exported, stage, prepared.family, familyMedia(prepared.family));
     const restoredStage = join(directory, "restored");
     await mkdir(restoredStage);
     const restored = await prepareGenealogyImport(exported, restoredStage, "gedzip-family-photo");
-    assert.equal(restored.family.photos?.[0].description, "Род в «Древе Жизни»: Example lineage");
+    assert.match(restored.family.people[0].biography || "", /family.fs: Example ancestor/);
+    assert.match(restored.family.photos?.[0].description || "", /family.fs: Example ancestor/);
+    assert.equal(restored.family.people[0].surname, "Example");
     assert.deepEqual(restored.family.photos?.[0].tags, []);
     assert.equal(restored.files.length, 1);
   } finally {
@@ -2131,6 +2139,76 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
     assert.equal((await request("/api/gedcom/export")).status, 403);
     actor = null;
     assert.equal((await request("/api/gedcom/export")).status, 401);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    route.close();
+    await archive.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Agelong XML family values survive HTTP preview, apply and GEDZIP export", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "drevo-xml-family-http-"));
+  const dbPath = join(dir, "archive.sqlite");
+  const archive = await openArchive(dbPath, seed());
+  const auth = { currentUser: () => ({
+    id: "admin", name: "Admin", role: "admin", createdAt: "", approved: true,
+  }) } as unknown as Awaited<ReturnType<typeof createAuth>>;
+  const route = gedcomHttp(archive, auth, dbPath, "https://test.invalid");
+  const server = createServer(async (req, res) => {
+    void (await route.handle(req, res, new URL(req.url!, "https://test.invalid")));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    const picture = await sharp({ create: {
+      width: 2, height: 2, channels: 3, background: "blue",
+    } }).png().toBuffer();
+    const xml = `<agelongtree><persons><person id="p" fn="Anna" sn="Example"><family id="f"/></person></persons>
+      <documents><document id="d" path="family.xml.files/photo.png" title="Group photo"/></documents>
+      <families><family id="f" name="Example lineage" fs="Example ancestor" ms="Example lineage">
+        <documents><document id="d"/></documents></family></families></agelongtree>`;
+    const packagePath = join(dir, "family.zip");
+    await zipFile(packagePath, [
+      ["family.xml", Buffer.from(xml)],
+      ["family.xml.files/photo.png", picture],
+    ]);
+    const previewResponse = await fetch(`${base}/api/gedcom/preview`, {
+      method: "POST",
+      headers: { Origin: "https://test.invalid", "X-Drevo-Import": "1" },
+      body: new Uint8Array(await readFile(packagePath)),
+    });
+    assert.equal(previewResponse.status, 200);
+    const preview = await previewResponse.json();
+    assert.ok(preview.warnings.some((warning: string) => warning.includes("family.fs/family.ms")));
+    assert.equal(preview.photos, 1);
+    const apply = await fetch(`${base}/api/gedcom/import`, {
+      method: "POST",
+      headers: { Origin: "https://test.invalid", "X-Drevo-Import": "1" },
+      body: JSON.stringify({ token: preview.token, confirm: true }),
+    });
+    assert.equal(apply.status, 200, await apply.text());
+    const stored = (await archive.read()).family;
+    const imported = stored.people.find((person) => person.name === "Anna")!;
+    assert.match(imported.biography || "", /family.fs: Example ancestor/);
+    assert.equal(imported.surname, "Example");
+    const photo = stored.photos?.find((item) => item.title === "Group photo");
+    assert.ok(photo);
+    assert.match(photo.description || "", /family.fs: Example ancestor/);
+    assert.deepEqual(await readFile(join(dir, "uploads", photo.url.slice(7))), picture);
+    const exported = await fetch(`${base}/api/gedcom/export?format=gedzip7`);
+    assert.equal(exported.status, 200);
+    const exportedPath = join(dir, "roundtrip.gdz");
+    const restoredStage = join(dir, "restored-stage");
+    await writeFile(exportedPath, Buffer.from(await exported.arrayBuffer()));
+    await mkdir(restoredStage);
+    const restored = await prepareGenealogyImport(exportedPath, restoredStage, "xml-http-roundtrip");
+    assert.match(restored.family.people.find((person) => person.name === "Anna")?.biography || "",
+      /family.fs: Example ancestor/);
+    assert.match(restored.family.photos?.find((item) => item.title === "Group photo")?.description || "",
+      /family.fs: Example ancestor/);
+    assert.deepEqual(await readFile(join(restoredStage, restored.files.find((file) =>
+      file.title === "Group photo")!.name)), picture);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     route.close();

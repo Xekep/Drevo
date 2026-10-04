@@ -17,6 +17,8 @@ type Status = {
     deathPlace?: string;
   };
 };
+type RelativeConsent = { relationId: string; personId: string; name: string;
+  kind: "parent" | "child" | "spouse"; enabled: boolean };
 
 export function PublishPersonDialog({
   person,
@@ -31,7 +33,9 @@ export function PublishPersonDialog({
   const [fields, setFields] = useState<PublicationFields>(defaultPublicationFields);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [relatives, setRelatives] = useState<RelativeConsent[]>([]);
   const endpoint = `/api/admin/published-people/${encodeURIComponent(person.id)}`;
+  const relativeEndpoint = `/api/discovery/matches/relative-consents?personId=${encodeURIComponent(person.id)}`;
   useEffect(() => {
     const controller = new AbortController();
     archiveFetch(endpoint, { signal: controller.signal, cache: "no-store" })
@@ -54,6 +58,36 @@ export function PublishPersonDialog({
       });
     return () => controller.abort();
   }, [endpoint, person.maidenName, person.birth, person.death, person.birthPlace, person.deathPlace, onStatus]);
+  useEffect(() => {
+    if (!status?.published || !status.archiveId) return;
+    const controller = new AbortController();
+    archiveFetch(relativeEndpoint, { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        setRelatives(data.relatives);
+      }).catch((reason) => {
+        if (!controller.signal.aborted) setError(reason.message || "Не удалось загрузить связи");
+      });
+    return () => controller.abort();
+  }, [relativeEndpoint, status?.published, status?.archiveId]);
+  async function updateRelative(relative: RelativeConsent) {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await archiveFetch("/api/discovery/matches/relative-consents", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personId: person.id, relationId: relative.relationId,
+          enabled: !relative.enabled }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      setRelatives((current) => current.map((item) => item.relationId === relative.relationId
+        ? { ...item, enabled: !relative.enabled } : item));
+    } catch (reason) {
+      setError((reason as Error).message || "Не удалось изменить согласие");
+    } finally { setBusy(false); }
+  }
   async function update(publish: boolean) {
     setBusy(true);
     setError("");
@@ -113,7 +147,17 @@ export function PublishPersonDialog({
             </label>
           ) : null)}
         </fieldset>
-        <p>Родственные связи, фото и документы не раскрываются.</p>
+        <p>Фото и документы не раскрываются. Близкие родственные связи открываются отдельно.</p>
+        {status?.published && status.archiveId && relatives.length > 0 && <fieldset disabled={busy}>
+          <legend>Близкие родственники в поиске</legend>
+          <p>Каждую связь можно разрешить и отозвать отдельно. Обе карточки уже опубликованы.</p>
+          {relatives.map((relative) => <label key={relative.relationId} className="publication-field">
+            <input type="checkbox" checked={relative.enabled}
+              onChange={() => void updateRelative(relative)} />
+            <span>{relative.kind === "parent" ? "Родитель" : relative.kind === "child"
+              ? "Ребёнок" : "Супруг(а)"}: {relative.name}</span>
+          </label>)}
+        </fieldset>}
         {status && !status.publishable && (
           <p>
             Опубликовать можно только человека, для которого подтверждена

@@ -62,7 +62,7 @@ export function aiUsageStore(db: StoreDatabase) {
     return utc;
   };
 
-  return {
+  const store = {
     async check(
       userId: string,
       limits: AiUsageLimits,
@@ -142,6 +142,23 @@ export function aiUsageStore(db: StoreDatabase) {
         id: Number(result.lastInsertRowid),
         started,
       };
+    },
+
+    /** The archive transaction serializes admission across server processes.
+     * The input message can be committed in the same transaction by the caller.
+     */
+    async admit(
+      userId: string,
+      model: string,
+      limits: AiUsageLimits,
+      userLimits?: AiUsageLimits,
+    ) {
+      const work = async () => {
+        await store.check(userId, limits);
+        if (userLimits) await store.check(userId, userLimits, "user");
+        return await store.begin(userId, model);
+      };
+      return db.inTransaction() ? await work() : await db.transaction(work);
     },
 
     async finish(
@@ -333,4 +350,5 @@ export function aiUsageStore(db: StoreDatabase) {
       };
     },
   };
+  return store;
 }

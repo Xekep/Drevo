@@ -124,7 +124,7 @@ test("XML Древа Жизни показывает сохранённые те
   await page.goto("/admin");
   await openAdminSection(page, "data", "Экспорт и импорт");
   const panel = page.locator(".gedcom-transfer");
-  const xml = `<agelongtree><persons><person id="a" sex="Ж" fn="Анна" sn="Тестова" bdate="1900" /></persons><events><event id="e" type="Поездка" date="1920" custom="value"><persons><person id="a" role="Участник" /></persons></event></events></agelongtree>`;
+  const xml = `<agelongtree><persons><person id="a" sex="Ж" fn="Анна" sn="Тестова" bdate="1900"><family id="f"/></person></persons><events><event id="e" type="Поездка" date="1920" custom="value"><persons><person id="a" role="Участник" /></persons></event></events><families><family id="f" name="Род Тестовых" fs="Тестов предок" ms="Род Тестовых"/></families></agelongtree>`;
   await panel.getByLabel("Файл GEDCOM, GEDZIP или XML «Древа Жизни 6»").setInputFiles({
     name: "archive.xml",
     mimeType: "application/xml",
@@ -133,5 +133,6 @@ test("XML Древа Жизни показывает сохранённые те
   await panel.getByRole("button", { name: "Проверить файл" }).click();
   await expect(panel.getByText("Формат: Agelong Tree XML")).toBeVisible();
   await expect(panel.getByText("Поле event.custom сохранено как текст; его тип и назначение в Drevo не представлены.")).toBeVisible();
+  await expect(panel.getByText("Поля family.fs/family.ms сохранены как исходный текст; их структура и назначение в Drevo не представлены.")).toBeVisible();
   await expect(panel.getByRole("button", { name: "Подтвердить добавление 1 человек" })).toBeVisible();
 });

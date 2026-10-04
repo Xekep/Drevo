@@ -119,3 +119,23 @@ test("both published settlements can independently retrieve a changed surname", 
       { field: "deathPlace", terms: "анна & москва", locality: "москва", from: "1898", to: "1902" }],
   "both opt-in place roles need a lookup even when the settlement is identical");
 });
+
+test("close-relative evidence needs separate consent on both published cards", () => {
+  const source = { name: "Тестов Иван" };
+  const candidate = { name: "Тестав Иван" };
+  const parent = [{ kind: "parent" as const, name: "Орлов Пётр" }];
+  assert.equal(candidateEvidence(source,candidate,parent)?.reasons
+    .some((reason) => reason.includes("родителя")), false);
+  assert.equal(candidateEvidence(source,candidate,parent,parent)?.reasons
+    .some((reason) => reason.includes("родителя")), true);
+  assert.equal(candidateEvidence({ name: "Сидоров Иван" },candidate,parent,parent), null,
+    "a relative name alone cannot assert that two people are identical");
+  const changedSurname = candidateEvidence(
+    { name: "Тестов Иван", birthYear: "1900" },
+    { name: "Сидоров Иван", birthYear: "1901" },parent,parent);
+  assert.ok(changedSurname?.reasons.some((reason) => reason.includes("родителя")));
+  assert.ok(changedSurname?.conflicts.includes("Указанные фамилии различаются"));
+  assert.equal(candidateEvidence({ name: "Тестов Иван", birthYear: "1900" },
+    { name: "Сидоров Иван", birthYear: "1910" },parent,parent),null,
+  "a shared relative without a close published year cannot suggest a changed surname");
+});

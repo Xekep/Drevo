@@ -348,8 +348,12 @@ test("empty archive owner previews a portable import before applying", async ({
     route.fulfill({ json: { owner: false, incoming: null, outgoing: null } }),
   );
   let overLimit = false;
+  let unsupported = false;
   await page.route("**/api/drevo/preview", (route) =>
-    route.fulfill({
+    route.fulfill(unsupported ? {
+      status: 400,
+      json: { error: "Пакет Drevo содержит неподдерживаемые поля в разделе archive.json; обновите Drevo" },
+    } : {
       json: overLimit
         ? {
             token: "over-limit-stage",
@@ -395,6 +399,10 @@ test("empty archive owner previews a portable import before applying", async ({
     page.getByRole("button", { name: "Импортировать в это дерево" }),
   ).toBeDisabled();
   await expect(page.getByRole("alert")).toContainText("Лимит людей: 150");
+  unsupported = true;
+  await page.getByRole("button", { name: "Проверить файл" }).click();
+  await expect(page.getByRole("alert")).toContainText("неподдерживаемые поля");
+  await expect(page.getByRole("button", { name: "Импортировать в это дерево" })).toHaveCount(0);
 });
 
 test("account cabinet hides archive export from a non-owner", async ({

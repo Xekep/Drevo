@@ -198,6 +198,23 @@ export function importAgelongXml(
   );
   const places = index(many(one(root, "places"), "place"));
   const families = index(many(one(root, "families"), "family"));
+  const familyNotes = (group: XmlNode, includeId = false): string[] => {
+    const name = group.attrs.name || "";
+    // fs/ms are present in real exports, but the official XML help does not
+    // define their meaning. Retain distinct values under their source names.
+    const extra = (["fs", "ms"] as const).flatMap((key) => {
+      const value = group.attrs[key]?.trim();
+      return value && value !== name ? [`family.${key}: ${value}`] : [];
+    });
+    if (extra.length)
+      warnings.add(
+        "Поля family.fs/family.ms сохранены как исходный текст; их структура и назначение в Drevo не представлены.",
+      );
+    return [
+      (name || includeId) && `Род в «Древе Жизни»: ${name || `ID ${group.attrs.id}`}`,
+      ...extra,
+    ].filter(Boolean) as string[];
+  };
   const sourceNodes = index(many(one(root, "sources"), "source"));
   const usedSources = new Set<string>();
   const sourcesFor = (node: XmlNode, context: string): Source[] =>
@@ -374,14 +391,13 @@ export function importAgelongXml(
     const familyRef = one(n, "family");
     if (familyRef) {
       const group = families.get(familyRef.attrs.id);
-      if (group?.attrs.name) {
-        p.biography = addNotes(p.biography, [
-          `Род в «Древе Жизни»: ${group.attrs.name}`,
-        ]);
-        warnings.add(
-          "Названия родов сохранены в биографиях участников; отдельной модели родов в Drevo нет.",
-        );
-      } else if (!group) {
+      if (group) {
+        p.biography = addNotes(p.biography, familyNotes(group));
+        if (group.attrs.name)
+          warnings.add(
+            "Названия родов сохранены в биографиях участников; отдельной модели родов в Drevo нет.",
+          );
+      } else {
         warnings.add(
           `Род ${familyRef.attrs.id} отсутствует в XML; ссылка не перенесена.`,
         );
@@ -768,8 +784,8 @@ export function importAgelongXml(
       } } : {}),
       photo: {
         description: addNotes(textOf(n, "comment") || undefined, [
-          ...[...(familyDocuments.get(id) || [])].map((familyId) =>
-            `Род в «Древе Жизни»: ${families.get(familyId)!.attrs.name || `ID ${familyId}`}`,
+          ...[...(familyDocuments.get(id) || [])].flatMap((familyId) =>
+            familyNotes(families.get(familyId)!, true),
           ),
           ...extraAttributes(n, ["id", "path", "title"], "document", warnings),
           ...extraChildren(
