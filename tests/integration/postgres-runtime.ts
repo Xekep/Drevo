@@ -10081,8 +10081,11 @@ try {
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_members
     WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`)).rows[0].count,
     0, "C cannot inspect A-B members through its own link to B");
-  const oneHopOnly = await fetch(securedBase + branchPath, { headers: ownerHeaders })
-    .then((response) => response.json());
+  const oneHopResponse = await fetch(securedBase + branchPath, { headers: {
+    ...ownerHeaders, "X-Real-IP": "198.51.100.236",
+  } });
+  assert.equal(oneHopResponse.status, 200);
+  const oneHopOnly = await oneHopResponse.json();
   assert.deepEqual(oneHopOnly.incoming.map((person: { id: string }) => person.id),
     ["branch-parent-b"], "A-B cannot traverse B-C or reveal C's branch");
   assert.doesNotMatch(JSON.stringify(oneHopOnly), /third-archive|family:person.1|Третий родитель/);
@@ -10128,13 +10131,19 @@ try {
   shareFamily.people[0].birthPlace = "Архивный город";
   shareFamily.people[0].biography = "Закрытая биография и источники";
   await app.archive.write(shareFamily,shareBeforeEdit.revision);
-  assert.deepEqual((await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
-    .then((response) => response.json())).incoming, [],
+  const editedBranch = await fetch(otherBase + branchPath, { headers: {
+    ...archiveAdminHeaders, "X-Real-IP": "198.51.100.237",
+  } });
+  assert.equal(editedBranch.status, 200);
+  assert.deepEqual((await editedBranch.json()).incoming, [],
     "a family edit revokes the source archive's branch consent before another read");
-  const renewedBranch = await fetch(securedBase + branchPath, { headers: ownerHeaders })
-    .then((response) => response.json());
+  const renewedBranchResponse = await fetch(securedBase + branchPath, { headers: {
+    ...ownerHeaders, "X-Real-IP": "198.51.100.238",
+  } });
+  assert.equal(renewedBranchResponse.status, 200);
+  const renewedBranch = await renewedBranchResponse.json();
   assert.equal((await fetch(securedBase + branchPath, {
-    method: "PUT", headers: ownerHeaders,
+    method: "PUT", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.238" },
     body: JSON.stringify({ personIds: ["branch-parent-a", "branch-grandparent-a"],
       previewToken: renewedBranch.previewToken,
       recipientArchiveId: "other-archive", durationDays: 7 }),
