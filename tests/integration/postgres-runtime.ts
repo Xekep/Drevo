@@ -10816,6 +10816,55 @@ try {
     assert.match(JSON.stringify(relativePlan.rows), /discovery_relative_consents_lookup/,
       "the consented-relative shortlist has an executable B-tree lookup");
   } finally { await client.query("ROLLBACK"); }
+  const beforeRelativePages = await otherApp.archive.read();
+  const relativePageFamily = structuredClone(beforeRelativePages.family);
+  const relativePageIds = Array.from({ length: 26 }, (_, index) =>
+    `relative-sort-${String(index).padStart(2,"0")}`);
+  relativePageIds.splice(0,4,"relative-sort-A","relative-sort-a",
+    "relative-sort-Ё","relative-sort-я");
+  relativePageFamily.people.push(...relativePageIds.map((id, index) => ({
+    ...structuredClone(otherPerson), id, surname: "Сидоров", name: "Иван",
+    birth: "1991", deceased: true, parents: [parent.id], column: 100 + index,
+  })));
+  const relativePageWrite = await otherApp.archive.write(relativePageFamily,
+    beforeRelativePages.revision);
+  for (const id of relativePageIds) {
+    await otherPublication.publish(id,"owner");
+    const selectable = await fetch(otherBase + relativePath +
+      `?personId=${encodeURIComponent(id)}`, { headers: recipientHeaders })
+      .then((response) => response.json());
+    const relationId = selectable.relatives.find((item: { personId: string }) =>
+      item.personId === parent.id)?.relationId;
+    assert.ok(relationId);
+    assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+      id,relationId,true)).status,200);
+  }
+  const relativePageHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.129" };
+  const allRelativePageIds: string[] = [];
+  let relativePageCursor: string | null = null;
+  for (let pageNumber = 0; pageNumber < 5; pageNumber++) {
+    const response: Response = await fetch(securedBase + candidatePath +
+      (relativePageCursor ? `&cursor=${encodeURIComponent(relativePageCursor)}` : ""),
+    { headers: relativePageHeaders });
+    assert.equal(response.status,200);
+    const body = await response.json() as { candidates: { id: string }[];
+      nextCursor: string | null };
+    allRelativePageIds.push(...body.candidates.map((item) => item.id));
+    if (pageNumber === 0) assert.equal(body.candidates.length,24);
+    relativePageCursor = body.nextCursor;
+    if (!relativePageCursor || relativePageIds.every((id) =>
+      allRelativePageIds.includes(id))) break;
+  }
+  const foundRelativePageIds = allRelativePageIds.filter((id) =>
+    relativePageIds.includes(id));
+  assert.equal(new Set(foundRelativePageIds).size,relativePageIds.length,
+    "relative keyset reaches each consented Unicode and mixed-case ID once");
+  assert.deepEqual(foundRelativePageIds,
+    [...relativePageIds].sort((left,right) =>
+      Buffer.compare(Buffer.from(left,"utf8"),Buffer.from(right,"utf8"))),
+  "the relative cursor uses the same C byte order as its SQL ORDER BY");
+  await otherApp.archive.write(beforeRelativePages.family,relativePageWrite.revision);
+  console.log("runtime_discovery_candidate_relative_keyset_ok");
   assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
     "relative-only",changedSurnameRelationId,false)).status, 200);
   assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,

@@ -170,7 +170,7 @@ export async function discoveryCandidatePage(db: StoreDatabase, input: {
         FROM discovery_relative_consents c JOIN discovery_people d
           ON d.archive_id=c.archive_id AND d.person_id=c.person_id
         WHERE c.kind=s.kind AND c.relative_name_key=s.key
-          AND (c.archive_id,c.person_id) > (?,?)
+          AND (c.archive_id COLLATE "C",c.person_id COLLATE "C") > (?,?)
           AND ${givenKey("d") }=? AND d.birth_year BETWEEN ? AND ?
           AND ${filter}
         ORDER BY c.archive_id COLLATE "C",c.person_id COLLATE "C",c.relation_id
