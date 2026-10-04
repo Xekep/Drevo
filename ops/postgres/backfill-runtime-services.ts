@@ -48,6 +48,7 @@ export async function backfillRuntimeServicesInTransaction(
     ),
   );
   await client.query(readFileSync(new URL("./079_ai_chat_stop.sql", import.meta.url), "utf8"));
+  await client.query(readFileSync(new URL("./082_ai_provider_cleanup.sql", import.meta.url), "utf8"));
   await client.query(
     readFileSync(
       new URL("./011_vk_auth_settings.sql", import.meta.url),

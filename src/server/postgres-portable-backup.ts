@@ -56,13 +56,21 @@ export async function writePortablePostgresBackup(
         target.exec(`DELETE FROM ${identifier(table)}`);
       await source.transaction(async () => {
         for (const table of tables) {
+          // Platform cleanup credentials and obligations belong to the physical
+          // system backup, never to one archive's downloadable TAR.
+          if (table === "platform_ai_cleanup_keys" ||
+              table === "platform_ai_conversations") continue;
           const columns = target
             .prepare(`PRAGMA table_info(${identifier(table)})`)
             .all()
             .map((row) => String(row.name));
           const names = columns.map(identifier).join(",");
-          const projection =
-            projections[table] || `SELECT * FROM ${identifier(table)}`;
+          const projection = table === "ai_chats"
+            ? `SELECT ${columns.map((column) =>
+                column === "yandex_conversation_id" || column === "provider_cleanup_ref"
+                  ? `NULL AS ${identifier(column)}` : identifier(column)).join(",")}
+              FROM ai_chats`
+            : projections[table] || `SELECT * FROM ${identifier(table)}`;
           const select = `SELECT ${names} FROM (${projection}${ordered.has(table) ? " ORDER BY ordinal" : ""}) AS saved`;
           const insert = target.prepare(
             `INSERT INTO ${identifier(table)}(${names}) VALUES(${columns.map(() => "?").join(",")})`,

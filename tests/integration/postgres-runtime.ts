@@ -40,6 +40,7 @@ import {
   defaultAiRoleProfile,
 } from "../../src/server/ai-settings.ts";
 import { aiChatStore, AiChatLimitError } from "../../src/server/ai-chats.ts";
+import { aiProviderCleanup } from "../../src/server/ai-provider-cleanup.ts";
 import { aiAttachmentStore } from "../../src/server/ai-attachments.ts";
 import { adminAiHttp } from "../../src/server/admin-ai-http.ts";
 import { aiUsageStore } from "../../src/server/ai-usage.ts";
@@ -62,6 +63,7 @@ import { verifyOfflineExportDelivery } from "./postgres-offline-export-delivery.
 import { verifyAiAttachmentDelivery } from "./postgres-ai-attachment-delivery.ts";
 import { verifyDiscussionAttachmentDelivery } from "./postgres-discussion-attachment-delivery.ts";
 import { verifyAiTurnCoordination } from "./postgres-ai-turn-coordination.ts";
+import { verifyAiProviderCleanup } from "./postgres-ai-provider-cleanup.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
@@ -906,6 +908,7 @@ try {
   await preferences.write("owner", { reverseTimeline: false, generationLimits: null });
   assert.equal((await preferences.read("owner")).generationLimits, undefined);
   await verifyAiTurnCoordination(live.db);
+  await verifyAiProviderCleanup(live.db, source);
   const chats = aiChatStore(live.db);
   const chat = await chats.create("owner", "all");
   await chats.append(chat.id, "user", "Проверка");
@@ -1002,6 +1005,7 @@ try {
     /просмотр|измен|прав|доступ/i,
   );
   const portable = join(directory, "portable.sqlite");
+  await aiChatStore(live.db).setRemote(chat.id, "portable-provider-id");
   await writeDatabaseBackup(live.db, portable);
   await live.close();
   live = undefined;
@@ -1017,6 +1021,10 @@ try {
     (await aiChatStore(restored.db).messages(chat.id, "owner"))?.length,
     1,
   );
+  assert.equal((await aiChatStore(restored.db).read(chat.id, "owner"))?.yandexConversationId,
+    null, "portable restore starts a fresh native provider context while retaining local messages");
+  assert.equal((await aiChatStore(restored.db).read(chat.id, "owner"))?.providerCleanupRef,
+    null, "portable TAR does not carry a live platform cleanup binding");
   await restored.close();
   process.env.DATABASE_BACKEND = "postgres";
   app = await startServer(0, source, true);
@@ -1649,9 +1657,16 @@ try {
   process.env.YANDEX_AI_BASE_URL = "https://local-ai.invalid/v1";
   const localAnswer = "Ответ локального PostgreSQL архива";
   let localModelCalls = 0;
+  let localDeletes = 0;
   const localAiFetch: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     assert.equal(url.origin, "https://local-ai.invalid");
+    if (init?.method === "DELETE") {
+      assert.equal(url.pathname, "/v1/conversations/local-test-conversation");
+      assert.equal((init.headers as Record<string, string>).Authorization, "Api-Key local-test-key");
+      localDeletes++;
+      return new Response(null, { status: 204 });
+    }
     assert.equal(init?.method, "POST");
     if (url.pathname === "/v1/conversations")
       return Response.json({ id: "local-test-conversation" });
@@ -1678,7 +1693,18 @@ try {
     const history = await fetch(localBase + `/api/ai/chats/${chatId}`);
     assert.equal(history.status, 200, await history.clone().text());
     assert.match(await history.text(), /Ответ локального PostgreSQL архива/);
-    await aiChatStore(app.archive.db).delete(chatId, "local");
+    const removed = await fetch(localBase + `/api/ai/chats/${chatId}`, { method: "DELETE" });
+    assert.equal(removed.status, 200, await removed.clone().text());
+    const queued = await client.query(
+      "SELECT state FROM platform_ai_conversations WHERE local_chat_id=$1", [chatId]);
+    assert.equal(queued.rows[0]?.state, "pending",
+      "HTTP delete durably queues the original provider conversation");
+    process.env.YANDEX_AI_API_KEY = "changed-after-creation";
+    assert.equal(await (await aiProviderCleanup(app.archive.db, source, localAiFetch)).process(), 1);
+    assert.equal(localDeletes, 1);
+    assert.equal((await client.query(
+      "SELECT state FROM platform_ai_conversations WHERE local_chat_id=$1", [chatId])).rows[0]?.state, "done");
+    await client.query("DELETE FROM platform_ai_conversations WHERE local_chat_id=$1", [chatId]);
     await app.archive.db.prepare("", "DELETE FROM ai_usage WHERE user_id='local'").run();
   } finally {
     await app?.close();

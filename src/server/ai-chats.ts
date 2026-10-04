@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { StoreDatabase } from "./store-database.ts";
 import type { ResearchAttachment } from "../shared/research-attachments.ts";
 import { AI_CHAT_LIMIT } from "../shared/research-attachments.ts";
+import type { AiProviderCleanup } from "./ai-provider-cleanup.ts";
 import type { GeneratedResearchFileMeta } from "./generated-research-files.ts";
 
 export class AiChatLimitError extends Error {
@@ -17,6 +18,7 @@ type ChatRow = {
   user_id: string;
   access_scope: string;
   yandex_conversation_id: string | null;
+  provider_cleanup_ref: string | null;
   session_state: string;
   created_at: string;
   updated_at: string;
@@ -33,11 +35,11 @@ export type AiChatMessage = {
   attachments?: ResearchAttachment[];
 };
 
-export function aiChatStore(db: StoreDatabase) {
+export function aiChatStore(db: StoreDatabase, cleanup?: AiProviderCleanup) {
   const getRow = db.prepare(
-    `SELECT id,user_id,access_scope,yandex_conversation_id,session_state,created_at,updated_at
+    `SELECT id,user_id,access_scope,yandex_conversation_id,provider_cleanup_ref,session_state,created_at,updated_at
      FROM ai_chats WHERE id=? AND user_id=?`,
-    "SELECT id,user_id,access_scope,yandex_conversation_id,session_state,created_at,updated_at\n     FROM ai_chats WHERE id=? AND user_id=?",
+    "SELECT id,user_id,access_scope,yandex_conversation_id,provider_cleanup_ref,session_state,created_at,updated_at\n     FROM ai_chats WHERE id=? AND user_id=?",
   );
   async function read(id: string, userId: string) {
     const row = (await getRow.get(id, userId)) as ChatRow | undefined;
@@ -47,6 +49,7 @@ export function aiChatStore(db: StoreDatabase) {
       userId: row.user_id,
       accessScope: row.access_scope,
       yandexConversationId: row.yandex_conversation_id,
+      providerCleanupRef: row.provider_cleanup_ref,
       sessionState: JSON.parse(row.session_state) as {
         schemaVersion: number;
         activePersonIds: string[];
@@ -57,6 +60,7 @@ export function aiChatStore(db: StoreDatabase) {
   }
   return {
     read,
+    async assertProviderReady() { await cleanup?.assertReady(); },
     async exists(id: string) {
       return !!(await db
         .prepare(
@@ -173,14 +177,63 @@ export function aiChatStore(db: StoreDatabase) {
         .run(id);
     },
     async setRemote(id: string, conversationId: string | null, token?: string) {
-      await db
-        .prepare(
-          "UPDATE ai_chats SET yandex_conversation_id=? WHERE id=?" +
+      return await db.transaction(async () => {
+        const row = await db.prepare(
+          "SELECT provider_cleanup_ref FROM ai_chats WHERE id=?" + (token ? " AND busy_token=?" : ""),
+          "SELECT provider_cleanup_ref FROM ai_chats WHERE id=?" + (token ? " AND busy_token=?" : "") + " FOR UPDATE",
+        ).get(id, ...(token ? [token] : []));
+        if (!row) return false;
+        if (cleanup && conversationId) throw new Error("New provider conversation requires registration");
+        const result = await db.prepare(
+          "UPDATE ai_chats SET yandex_conversation_id=?,provider_cleanup_ref=NULL WHERE id=?" +
             (token ? " AND busy_token=?" : ""),
-          "UPDATE ai_chats SET yandex_conversation_id=? WHERE id=?" +
+          "UPDATE ai_chats SET yandex_conversation_id=?,provider_cleanup_ref=NULL WHERE id=?" +
             (token ? " AND busy_token=?" : ""),
-        )
-        .run(conversationId, id, ...(token ? [token] : []));
+        ).run(conversationId, id, ...(token ? [token] : []));
+        if (result.changes && row.provider_cleanup_ref && cleanup)
+          await cleanup.pending(String(row.provider_cleanup_ref));
+        return result.changes === 1;
+      });
+    },
+    async bindNewRemote(id: string, conversationId: string, runtime: {
+      baseUrl: string; folderId: string; apiKey: string
+    }, token: string) {
+      if (!cleanup) return await this.setRemote(id, conversationId, token);
+      let ref: string;
+      try {
+        ref = await cleanup.register(id, conversationId, runtime);
+      } catch (error) {
+        // The POST already succeeded. Best-effort compensation uses the exact
+        // creation credential if durable registration cannot complete.
+        await cleanup.compensateKnown(id, conversationId, runtime);
+        throw error;
+      }
+      return await this.bindRegisteredRemote(id, conversationId, token, ref);
+    },
+    async bindRegisteredRemote(id: string, conversationId: string, token: string, ref: string) {
+      if (!cleanup) throw new Error("Provider cleanup is unavailable");
+      const bound = await db.transaction(async () => {
+        const previous = await db.prepare(
+          "SELECT provider_cleanup_ref FROM ai_chats WHERE id=? AND busy_token=? AND busy_until>?",
+          "SELECT provider_cleanup_ref FROM ai_chats WHERE id=? AND busy_token=? AND busy_until>? FOR UPDATE",
+        ).get(id, token, Date.now());
+        if (!previous) return false;
+        const reserved = await db.prepare(
+          "UPDATE platform_ai_conversations SET state='active',available_at=0,updated_at=? WHERE id=? AND local_chat_id=? AND archive_id=? AND state='binding' AND available_at>?",
+          "UPDATE platform_ai_conversations SET state='active',available_at=0,updated_at=? WHERE id=? AND local_chat_id=? AND archive_id=? AND state='binding' AND available_at>?",
+        ).run(Date.now(), ref, id, db.archiveId || "local", Date.now());
+        if (reserved.changes !== 1) return false;
+        const result = await db.prepare(
+          "UPDATE ai_chats SET yandex_conversation_id=?,provider_cleanup_ref=? WHERE id=? AND busy_token=? AND busy_until>?",
+          "UPDATE ai_chats SET yandex_conversation_id=?,provider_cleanup_ref=? WHERE id=? AND busy_token=? AND busy_until>?",
+        ).run(conversationId, ref, id, token, Date.now());
+        if (result.changes !== 1) throw new Error("AI chat binding was lost");
+        if (previous.provider_cleanup_ref)
+          await cleanup.pending(String(previous.provider_cleanup_ref));
+        return true;
+      });
+      if (!bound) await cleanup.pending(ref);
+      return bound;
     },
     async setActivePeople(id: string, personIds: string[]) {
       await db
@@ -260,15 +313,21 @@ export function aiChatStore(db: StoreDatabase) {
       );
     },
     async delete(id: string, userId: string) {
-      const row = await read(id, userId);
-      if (row)
-        await db
-          .prepare(
-            "DELETE FROM ai_chats WHERE id=? AND user_id=?",
-            "DELETE FROM ai_chats WHERE id=? AND user_id=?",
-          )
-          .run(id, userId);
-      return row;
+      return await db.transaction(async () => {
+        const locked = await db.prepare(
+          "SELECT id FROM ai_chats WHERE id=? AND user_id=?",
+          "SELECT id FROM ai_chats WHERE id=? AND user_id=? FOR UPDATE",
+        ).get(id, userId);
+        if (!locked) return null;
+        const row = await read(id, userId);
+        if (!row) return null;
+        if (row.providerCleanupRef && cleanup) await cleanup.pending(row.providerCleanupRef);
+        await db.prepare(
+          "DELETE FROM ai_chats WHERE id=? AND user_id=?",
+          "DELETE FROM ai_chats WHERE id=? AND user_id=?",
+        ).run(id, userId);
+        return row;
+      });
     },
   };
 }

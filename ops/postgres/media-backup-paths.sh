@@ -9,6 +9,20 @@ shared="${1:?Usage: media-backup-paths.sh <shared-directory>}"
 }
 printf 'uploads\n'
 
+# The platform cleanup key is immutable and paired with the database ledger.
+# It is never placed in a downloadable per-archive backup.
+platform_key="$shared/ai-provider-cleanup.v1.key"
+if [[ -e "$platform_key" || -L "$platform_key" ]]; then
+  [[ -f "$platform_key" && ! -L "$platform_key" ]] || {
+    echo 'AI cleanup key is not a regular file' >&2; exit 2;
+  }
+  mode="$(stat -c %a "$platform_key")"
+  (( (8#$mode & 0077) == 0 )) || {
+    echo 'AI cleanup key permissions are too broad' >&2; exit 2;
+  }
+  printf 'ai-provider-cleanup.v1.key\n'
+fi
+
 archives="$shared/archives"
 [[ ! -L "$archives" ]] || { echo 'Archive directory is symlinked' >&2; exit 2; }
 [[ ! -e "$archives" ]] && exit 0

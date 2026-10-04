@@ -30,6 +30,7 @@ import { adminMcpHttp } from "./admin-mcp-http.ts";
 import { mcpHttp } from "./mcp-http.ts";
 import { mcpUsageStore } from "./mcp-usage.ts";
 import { aiResearchHttp } from "./ai-research-http.ts";
+import type { AiProviderCleanup } from "./ai-provider-cleanup.ts";
 import { researchSuggestionStore } from "./research-suggestions.ts";
 import { researchSuggestionsHttp } from "./research-suggestions-http.ts";
 import { aiSettingsStore } from "./ai-settings.ts";
@@ -62,6 +63,7 @@ export async function archiveHttp({
   selectedArchiveId,
   geocoding,
   restores,
+  providerCleanup,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -75,6 +77,7 @@ export async function archiveHttp({
   selectedArchiveId?: string;
   geocoding: GeocodingStore;
   restores: RestoreStore;
+  providerCleanup?: AiProviderCleanup;
 }) {
   const tokens = mcpTokenStore(archive.db);
   const mcpUsage = mcpUsageStore(archive.db);
@@ -123,6 +126,7 @@ export async function archiveHttp({
     publicOrigin,
     fetcher: aiFetch,
     uploadsDirectory,
+    providerCleanup,
   });
   const researchSuggestions = researchSuggestionsHttp({
     archive,

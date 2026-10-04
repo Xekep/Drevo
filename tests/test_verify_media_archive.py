@@ -1,4 +1,5 @@
 import hashlib
+import base64
 import importlib.util
 import io
 import json
@@ -77,6 +78,37 @@ class MediaRestoreTests(unittest.TestCase):
         self.assertEqual(result.references_checked, 2)
         self.assertEqual(result.files, 3)  # Extra older original is allowed.
         self.assertEqual(list(self.root.glob("drevo-media-restore.*")), [])
+
+    def test_pair_requires_the_restored_platform_key(self):
+        key = b"k" * 32
+        content = json.dumps({"version": 1, "key": base64.b64encode(key).decode()}).encode()
+        with tarfile.open(self.backup, "w:gz") as media:
+            directory = tarfile.TarInfo("uploads")
+            directory.type = tarfile.DIRTYPE
+            media.addfile(directory)
+            original = tarfile.TarInfo("uploads/one.jpg")
+            original.size = 3
+            media.addfile(original, io.BytesIO(b"abc"))
+            secret = tarfile.TarInfo("ai-provider-cleanup.v1.key")
+            secret.mode = 0o600
+            secret.size = len(content)
+            media.addfile(secret, io.BytesIO(content))
+        self.seal()
+        manifest = self.pair_manifest(
+            {"kind": "archive", "archive_id": "tree-a"},
+            {"kind": "platform_key", "version": 1,
+             "fingerprint": hashlib.sha256(key).hexdigest()},
+        )
+        verifier.verify_archive(self.backup, self.root, reserve_bytes=0,
+                                reference_manifest=manifest)
+        wrong = self.pair_manifest(
+            {"kind": "archive", "archive_id": "tree-a"},
+            {"kind": "platform_key", "version": 1,
+             "fingerprint": hashlib.sha256(b"other").hexdigest()},
+        )
+        with self.assertRaisesRegex(ValueError, "database/AI cleanup key mismatch"):
+            verifier.verify_archive(self.backup, self.root, reserve_bytes=0,
+                                    reference_manifest=wrong)
 
     def test_pair_checks_citation_only_original(self):
         self.pair_archive()
