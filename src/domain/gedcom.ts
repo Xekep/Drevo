@@ -356,6 +356,36 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       })
       .join("\n\n");
   };
+  const headerPlace = child(header, "PLAC");
+  const headerPlaceForm = headerPlace ? value(headerPlace, "FORM") : "";
+  const placeFormText = (n: Node | undefined, context: string) => {
+    const place = n && child(n, "PLAC");
+    if (!place) return "";
+    const local = child(place, "FORM");
+    const form = local ? local.value : headerPlaceForm;
+    if (local && !form.trim()) {
+      warnings.add("Пустой локальный PLAC.FORM перекрывает общий HEAD.PLAC.FORM; проверьте исходный GEDCOM.");
+      return "";
+    }
+    if (!form) return "";
+    if (!place.value.trim()) {
+      warnings.add("PLAC.FORM без названия места не привязан к факту; сохраните исходный GEDCOM.");
+      return "";
+    }
+    warnings.add("Иерархия PLAC.FORM сохранена текстом рядом с местом; отдельная структура уровней не восстанавливается.");
+    return `Исходное место GEDCOM (${context}): ${place.value}\n${local ? "PLAC.FORM" : "HEAD.PLAC.FORM"}: ${form}`;
+  };
+  const hasPlaceForm = (description: string | undefined, note: string,
+    sameContext = false) => {
+    const [placeLine, formLine] = note.split("\n");
+    const place = placeLine.slice(placeLine.indexOf("): ") + 3);
+    const form = formLine.slice(formLine.indexOf(": ") + 2);
+    const lines = description?.split("\n") || [];
+    return lines.some((line, index) => line.startsWith("Исходное место GEDCOM (") &&
+      (sameContext ? line === placeLine : line.slice(line.indexOf("): ") + 3) === place) &&
+      [`PLAC.FORM: ${form}`, `HEAD.PLAC.FORM: ${form}`].includes(lines[index + 1]));
+  };
+  const sourcePlaceForms = new Map<Source, string[]>();
   const citationObjects: Array<{ source: Source; object: Node; page?: number; inlineUrlSuffix?: string }> = [];
   const citationObjectBySource = new Map<Source, Array<(typeof citationObjects)[number]>>();
   const usedRepositories = new Set<string>();
@@ -409,6 +439,13 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         );
       const recordData = record && child(record, "DATA");
       const recordDataNotes = recordData ? notes(recordData) : "";
+      const recordPlaceForms = recordData
+        ? children(recordData, "EVEN").map((event) =>
+          placeFormText(event, ["SOUR.DATA.EVEN.PLAC",
+            ...(event.value ? [`EVEN ${event.value}`] : []),
+            ...(value(event, "DATE") ? [`DATE ${value(event, "DATE")}`] : []),
+          ].join("; "))).filter(Boolean)
+        : [];
       const recordDataDetails = recordData ? [
         value(recordData, "AGNC")
           ? `Учреждение, собравшее сведения: ${value(recordData, "AGNC")}` : "",
@@ -423,6 +460,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           ].filter(Boolean).join("; ");
         }),
         recordDataNotes ? `Примечание к сведениям источника: ${recordDataNotes}` : "",
+        ...recordPlaceForms,
       ].filter(Boolean) : [];
       if (recordData)
         warnings.add(recordDataDetails.length
@@ -509,6 +547,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             .join("\n") || undefined,
         url: /^https?:\/\//i.test(url) && safeUrl(url) ? url : undefined,
       };
+      if (recordPlaceForms.length) sourcePlaceForms.set(source, recordPlaceForms);
       const directObjects = children(s, "OBJE");
       const sourceRecordObjects = record ? children(record, "OBJE") : [];
       const objects = directObjects.length ? directObjects : sourceRecordObjects;
@@ -575,6 +614,15 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     if (!target?.length) return;
     for (let index = 0; index < target.length; index++) {
       const candidate = parsed[index];
+      if (!candidate) continue;
+      const placeForms = sourcePlaceForms.get(candidate) || [];
+      if (placeForms.length && target[index].title === candidate.title &&
+        target[index].reference === candidate.reference) {
+        for (const note of placeForms)
+          if (!hasPlaceForm(target[index].note, note, true))
+            target[index].note = [target[index].note, note].filter(Boolean).join("\n");
+      } else if (placeForms.length)
+        warnings.add(`Иерархия места источника ${context} не сопоставлена с цитатой; сохраните исходный GEDCOM.`);
       const pending = citationObjectBySource.get(candidate);
       if (!pending) continue;
       if (target[index].title === candidate.title && target[index].reference === candidate.reference)
@@ -717,7 +765,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         "_DREVO_EVENT_PLACE_CONFIDENCE") } : {}),
       ...(alternatives.length ? { alternatives } : {}),
       location: placeLocation(n),
-      description: [notes(n), ...ageText].filter(Boolean).join("\n") || undefined,
+      description: [notes(n), ...ageText, placeFormText(n, `${n.tag}.PLAC`)]
+        .filter(Boolean).join("\n") || undefined,
       sources: generalSources,
     };
   }
@@ -942,6 +991,38 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         }
       } catch {
         throw new Error("Повреждены дополнительные сведения Drevo в GEDCOM");
+      }
+    }
+    for (const node of [birth, death, ...eventNodes]) {
+      if (!node) continue;
+      const rawDate = value(node, "DATE");
+      const date = gedcomDate(rawDate);
+      const datePhrase = child(node, "DATE") ? value(child(node, "DATE")!, "PHRASE") : "";
+      const placeNote = placeFormText(node, [
+        `${node.tag}.PLAC`,
+        rawDate ? `DATE ${rawDate}` : "DATE не указана",
+        ...(datePhrase ? [`DATE.PHRASE ${datePhrase}`] : []),
+      ].join("; "));
+      if (!placeNote) continue;
+      const eventId = value(node, "_DREVO_EVENT_ID");
+      const place = value(node, "PLAC");
+      const matched = eventId && date ? (p.events || []).filter((item) =>
+        item.id === eventId && item.gedcomTag === node.tag &&
+        item.date === date && (item.dateText || "") === datePhrase &&
+        item.place === place) : [];
+      const equivalent = (p.events || []).filter((item) =>
+        item.gedcomTag === node.tag && item.place === place &&
+        item.date === (date || undefined) && (item.dateText || "") === datePhrase &&
+        hasPlaceForm(item.description, placeNote));
+      if (matched.length === 1) {
+        if (!hasPlaceForm(matched[0].description, placeNote))
+          matched[0].description = [matched[0].description, placeNote]
+            .filter(Boolean).join("\n");
+      } else if (equivalent.length !== 1) {
+        if (!p.biography?.includes(placeNote))
+          p.biography = [p.biography, placeNote].filter(Boolean).join("\n\n");
+        if (extension)
+          warnings.add("PLAC.FORM сохранён в биографии: событие из метаданных Drevo не сопоставлено однозначно.");
       }
     }
     for (const [index, name] of names.entries()) {
@@ -1317,20 +1398,39 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           (p.events ||= []).push(imported);
         } else {
           const ageText = familyEventAges.get(e)?.get(p.id) || [];
-          if (!ageText.length) continue;
           const rawDate = value(e, "DATE");
           const date = gedcomDate(rawDate);
           const datePhrase = child(e, "DATE") ? value(child(e, "DATE")!, "PHRASE") : "";
           const place = value(e, "PLAC");
+          const placeNote = placeFormText(e, [
+            `FAM ${f.xref || "без ID"}.${e.tag}.PLAC`,
+            rawDate ? `DATE ${rawDate}` : "DATE не указана",
+            ...(datePhrase ? [`DATE.PHRASE ${datePhrase}`] : []),
+          ].join("; "));
+          // Only a represented date and place identify one existing event.
+          // An approximate or absent date must keep its own source context.
+          const matchingEvents = date && place ? (p.events || []).filter((item) =>
+            item.gedcomTag === e.tag && item.date === date &&
+            item.place === place && (item.dateText || "") === datePhrase) : [];
+          const partner = spousePair.find((person) => person.id !== p.id);
+          const uniquePartnerName = partner && people.filter((person) =>
+            fullName(person) === fullName(partner)).length === 1;
+          const alreadyHasForm = !!placeNote && matchingEvents.length === 1 &&
+            uniquePartnerName &&
+            matchingEvents[0].description?.split("\n").includes(`Участник: ${fullName(partner)}`) &&
+            hasPlaceForm(matchingEvents[0].description, placeNote);
+          if (placeNote && !alreadyHasForm) {
+            if (!p.biography?.includes(placeNote))
+              p.biography = [p.biography, placeNote].filter(Boolean).join("\n\n");
+            warnings.add("PLAC.FORM семейного события сохранён в биографии участника: точная связь с событием из метаданных Drevo не восстановлена.");
+          }
+          if (!ageText.length) continue;
           // Export may assign HUSB/WIFE roles differently from the original
           // file. The person, event and complete AGE text identify an existing
           // flattened value without treating the old role as a new age.
           const ageValues = ageText.map((text) => text.replace(/^(?:HUSB|WIFE): /, ""));
           // An unknown, qualified or absent DATE (or an absent PLAC) cannot
           // identify the old event. Keep the new source context explicitly.
-          const matchingEvents = date && place ? (p.events || []).filter((item) =>
-            item.gedcomTag === e.tag && item.date === date &&
-            item.place === place && (item.dateText || "") === datePhrase) : [];
           const alreadyInEvent = matchingEvents.length === 1 &&
             ageValues.every((text) => matchingEvents[0].description?.split("\n").some((line) =>
               line.endsWith(text)));
