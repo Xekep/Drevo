@@ -157,6 +157,7 @@ export async function patchPostgresPeopleForSession(
               JSON.stringify({
                 ...person,
                 parents: undefined,
+                parentClaims: undefined,
                 spouses: undefined,
               }),
             ],

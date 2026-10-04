@@ -37,6 +37,7 @@ const fields: Record<string, string> = {
   awards: "Награды",
   photo: "Портрет",
   parents: "Родители",
+  parentClaims: "Свидетельства и оценки прямого родительства",
   spouses: "Супруги",
   parentageComplete: "Все родители известны",
   sources: "Источники",

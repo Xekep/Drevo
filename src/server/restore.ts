@@ -996,6 +996,8 @@ export function restoreStore(
           if (person.photo)
             person.photo = urls.get(person.photo) || person.photo;
           person.sources = remapCitations(person.sources);
+          for (const claim of person.parentClaims || [])
+            if (claim.sources) claim.sources = remapCitations(claim.sources);
           for (const key of [
             "birthDateClaim",
             "deathDateClaim",

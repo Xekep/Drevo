@@ -34,6 +34,7 @@ export async function writeArchiveRevisionForParity(
   const databaseName = String((await client.query("SELECT current_database() AS name")).rows[0]?.name || "");
   if (!/^drevo_migration(?:_|$)/.test(databaseName))
     throw new Error("Репетиционная запись разрешена только в migration-базе");
+  await client.query("SELECT set_config('drevo.parent_evidence_write','on',true)");
   const meta = await client.query(
     "SELECT revision FROM archives WHERE id=$1 FOR UPDATE",
     [archiveId],

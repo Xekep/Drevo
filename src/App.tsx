@@ -139,6 +139,12 @@ export default function App() {
     } = selection;
   const navigationDirty = useRef(false);
   const treeCanvas = useRef<TreeCanvasHandle>(null);
+  const checkParentEvidence = useCallback(async (signal: AbortSignal) => {
+    if (!family) return false;
+    const visible = new Set(await treeCanvas.current!.visiblePersonIds(signal));
+    return family.people.some((person) => visible.has(person.id) &&
+      person.parentClaims?.some((claim) => visible.has(claim.parentId)));
+  }, [family]);
   const [requestedView, setView, currentPath] = useArchiveView(
     useCallback(() => {
       const leave = confirmDiscardChanges(navigationDirty.current);
@@ -1206,6 +1212,7 @@ export default function App() {
       )}
       {treeExportOpen && family && readTree && (
         <TreeExportDialog
+          onCheckParentEvidence={checkParentEvidence}
           onExportPdf={(signal) => treeCanvas.current!.exportPdf(signal, "current")}
           onExportText={async (signal) => {
             const ids = await treeCanvas.current!.visiblePersonIds(signal);

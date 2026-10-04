@@ -54,7 +54,7 @@ export function rebasePersonDraft(
         edited[key] as PersonValueClaim | undefined);
       if (claim) next[key] = claim;
       else delete next[key];
-    } else if ((key === "events" || key === "factAlternatives") &&
+    } else if ((key === "events" || key === "factAlternatives" || key === "parentClaims") &&
       !sameValue(old[key], next[key]) && !sameValue(edited[key], next[key])) {
       // These arrays contain independent values, citations, and assessments.
       // Replacing a concurrently edited array could discard another editor's

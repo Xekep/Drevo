@@ -112,6 +112,10 @@ export function sharedFamily(
           ? `/api/shared/${token}/portrait/${encodeURIComponent(p.id)}`
           : undefined,
         parents: p.parents.filter((id) => ids.has(id)),
+        parentClaims: p.parentClaims?.filter((claim) => ids.has(claim.parentId))
+          .map((claim) => ({ parentId: claim.parentId,
+            sources: claim.sources?.map(publicSource),
+            ...(claim.confidence !== undefined ? { confidence: claim.confidence } : {}) })),
         spouses: p.spouses.filter((id) => ids.has(id)),
         parentageComplete:
           p.parentageComplete && p.parents.every((id) => ids.has(id)),

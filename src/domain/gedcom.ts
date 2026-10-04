@@ -32,6 +32,7 @@ const CLAIM_CONFIDENCE_TAGS = [
   "_DREVO_OCCUPATION_CONFIDENCE",
   "_DREVO_BIRTH_SURNAME_CONFIDENCE",
   "_DREVO_LINK_CONFIDENCE",
+  "_DREVO_PARENT_CONFIDENCE",
 ] as const;
 
 function stripArchiveSourceIds(sources?: Source[]) {
@@ -284,6 +285,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     "_DREVO",
     "_DREVO_ARCHIVE",
     "_DREVO_PARENT",
+    "_DREVO_PARENT_CLAIM",
     "_DREVO_UNMARRIED",
     "_DREVO_MEDIA",
     "_DREVO_TWIN",
@@ -1521,6 +1523,32 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         }
       }
   }
+  // Drevo's individual extension names one already reconstructed biological edge.
+  // GEDCOM FAMC/CHIL has no standard per-parent citation substructure.
+  for (const individual of individuals) {
+    const childId = ids.get(individual.xref);
+    const person = people.find((item) => item.id === childId);
+    if (!person) continue;
+    const seen = new Set<string>();
+    for (const node of children(individual, "_DREVO_PARENT_CLAIM")) {
+      const parentId = ids.get(node.value);
+      if (!parentId || !person.parents.includes(parentId) || seen.has(parentId)) {
+        warnings.add("Расширение свидетельства родительства не соответствует существующей прямой связи и пропущено.");
+        continue;
+      }
+      seen.add(parentId);
+      const citations = sources(node);
+      const status = value(node, "_DREVO_PARENT_CONFIDENCE");
+      if (status && !isClaimConfidence(status))
+        warnings.add("Некорректная оценка родительства GEDCOM не перенесена.");
+      if (citations.length || isClaimConfidence(status))
+        (person.parentClaims ||= []).push({ parentId,
+          ...(citations.length ? { sources: citations } : {}),
+          ...(isClaimConfidence(status) ? { confidence: status } : {}) });
+    }
+  }
+  if (people.some((person) => person.parentClaims?.length))
+    warnings.add("Свидетельства и оценки прямого родительства перенесены через расширение Drevo; другие программы GEDCOM могут не сохранить эту привязку.");
   for (const n of individuals) {
     for (const assoc of children(n, "ASSO")) {
       const role = value(assoc, "ROLE");
@@ -1659,6 +1687,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
   };
   for (const person of people) {
     retain(person.sources);
+    for (const claim of person.parentClaims || []) retain(claim.sources);
     for (const alternative of person.factAlternatives || [])
       retain(alternative.sources);
     retain(person.birthDateClaim?.sources);
@@ -1974,6 +2003,7 @@ export function exportGedcom(
       "_DREVO",
       "_DREVO_ARCHIVE",
       "_DREVO_PARENT",
+      "_DREVO_PARENT_CLAIM",
       "_DREVO_UNMARRIED",
       "_DREVO_SPOUSE",
       "_DREVO_UNION",
@@ -2191,6 +2221,12 @@ export function exportGedcom(
       }
       if (g.parents.includes(p.id)) emit(1, "FAMS", g.id, true);
     }
+    for (const claim of p.parentClaims || []) {
+      if (!p.parents.includes(claim.parentId) || !ids.has(claim.parentId)) continue;
+      emit(1, "_DREVO_PARENT_CLAIM", ids.get(claim.parentId)!, true);
+      if (claim.confidence) emit(2, "_DREVO_PARENT_CONFIDENCE", claim.confidence);
+      for (const source of claim.sources || []) citation(2, source);
+    }
     for (const l of family.links || [])
       if (l.to === p.id) {
         emit(1, "ASSO", ids.get(l.from)!, true);
@@ -2214,6 +2250,7 @@ export function exportGedcom(
       createdBy: _createdBy,
       id: _id,
       parents: _parents,
+      parentClaims: _parentClaims,
       spouses: _spouses,
       generation: _generation,
       column: _column,
@@ -2225,7 +2262,7 @@ export function exportGedcom(
       maidenNameClaim: _maidenNameClaim,
       ...extra
     } = p;
-    void [_photo, _createdBy, _id, _parents, _spouses, _generation, _column,
+    void [_photo, _createdBy, _id, _parents, _parentClaims, _spouses, _generation, _column,
       _birthDateClaim, _deathDateClaim, _birthPlaceClaim, _deathPlaceClaim,
       _occupationClaim, _maidenNameClaim];
     // The Drevo extension carries readable evidence, never archive-local source IDs.

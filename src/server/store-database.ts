@@ -83,6 +83,8 @@ export function storeDatabase(
   // must also match Cyrillic archive names and abbreviations.
   source.function("drevo_lower", { deterministic: true },
     (value: unknown) => String(value ?? "").toLocaleLowerCase("ru"));
+  // Older binaries lack this function and fail closed at the relation triggers.
+  source.function("drevo_parent_evidence_writer", { deterministic: true }, () => 1);
   // Awaiting SQLite calls yields to other requests too. Serialize complete
   // transactions, not individual statements, and retain ownership across awaits.
   const context = new AsyncLocalStorage<{
@@ -288,6 +290,8 @@ export async function openPostgresDatabase(
             : "BEGIN",
         );
         await client.query("SET LOCAL lock_timeout='5s'");
+        if (!readOnly)
+          await client.query("SELECT set_config('drevo.parent_evidence_write','on',true)");
         if (!readOnly)
           await client.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE", [
             archiveId,

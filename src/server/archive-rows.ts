@@ -35,6 +35,7 @@ export function archiveRows(family: Family): ArchiveRows {
     data: JSON.stringify({
       ...person,
       parents: undefined,
+      parentClaims: undefined,
       spouses: undefined,
     }),
   }));
@@ -47,7 +48,8 @@ export function archiveRows(family: Family): ArchiveRows {
   const relations: RelationRow[] = [];
   const spouses = new Set<string>();
   for (const person of family.people) {
-    for (const parent of person.parents)
+    for (const parent of person.parents) {
+      const claim = person.parentClaims?.find((item) => item.parentId === parent);
       relations.push({
         id: `parent:${parent}:${person.id}`,
         source: parent,
@@ -56,9 +58,10 @@ export function archiveRows(family: Family): ArchiveRows {
         note: "",
         twinKind: null,
         createdBy: null,
-        sources: "[]",
-        confidence: null,
+        sources: JSON.stringify(claim?.sources || []),
+        confidence: claim?.confidence || null,
       });
+    }
     for (const spouse of person.spouses) {
       const pair = [person.id, spouse].sort(),
         key = JSON.stringify(pair);

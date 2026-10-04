@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { StoreDatabase } from "./store-database.ts";
 
-/** Additive extension: the preceding release can still run after deployment. */
+/** Runtime extensions; an older writer may read but cannot change an annotated parent edge. */
 export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
   for (const [query, file] of [
     [
@@ -23,6 +23,16 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
     [
       "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='relations' AND column_name='sources'",
       "060_family_link_sources.sql",
+    ],
+    [
+      `SELECT 1 AS present WHERE
+        EXISTS (SELECT 1 FROM pg_constraint
+          WHERE conrelid=to_regclass('relations') AND conname='relations_parent_confidence_check'
+            AND pg_get_constraintdef(oid) LIKE '%type <> ''spouse''%')
+        AND EXISTS (SELECT 1 FROM pg_trigger
+          WHERE tgrelid=to_regclass('relations') AND tgname='protect_parent_evidence_before_write'
+            AND NOT tgisinternal)`,
+      "088_parent_confidence.sql",
     ],
     ["SELECT to_regclass('family_unions') AS present", "047_family_unions.sql"],
     [

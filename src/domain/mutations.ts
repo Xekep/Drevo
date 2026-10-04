@@ -72,6 +72,11 @@ export function removeConnections(family: Family, edges: Connection[]): Family {
     if (edge.type === "parent") {
       const child = next.people.find((p) => p.id === edge.to)!;
       child.parents = child.parents.filter((id) => id !== edge.from);
+      if (child.parentClaims) {
+        child.parentClaims = child.parentClaims.filter((item) => item.parentId !== edge.from);
+        // Keep an explicit empty annotation to distinguish removal from an
+        // older client that omitted the field entirely.
+      }
       child.parentageComplete = false;
     } else if (edge.type === "spouse") {
       if (
@@ -102,6 +107,8 @@ export function removePerson(family: Family, id: string): Family {
       ...p,
       ...(p.parents.includes(id) ? { parentageComplete: false } : {}),
       parents: p.parents.filter((x) => x !== id),
+      ...(p.parentClaims ? { parentClaims: p.parentClaims.filter((item) =>
+        item.parentId !== id) } : {}),
       spouses: p.spouses.filter((x) => x !== id),
     }));
   next.links = (next.links || []).filter((l) => l.from !== id && l.to !== id);
