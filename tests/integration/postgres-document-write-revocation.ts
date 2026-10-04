@@ -292,6 +292,9 @@ export async function verifyDocumentWriteSessionRevocation(
     }
     assert.equal((await client.query("SELECT id FROM documents WHERE id=$1", [id])).rowCount,
       0, "the authorized DELETE completes once before its concurrent logout");
+    assert.equal((await client.query(
+      "SELECT current_setting('drevo.archive_id') AS id",
+    )).rows[0].id, "runtime-test", "the shared runtime client's archive scope is retained");
     console.log("runtime_document_write_session_revocation_ok");
   } finally {
     if (blocking) await blocker.query("ROLLBACK");
@@ -303,7 +306,6 @@ export async function verifyDocumentWriteSessionRevocation(
     await client.query("DELETE FROM account_sessions WHERE token_hash=ANY($1::text[])",
       [scenarioHashes]);
     await client.query("DELETE FROM documents WHERE id=$1", [id]);
-    await client.query("RESET drevo.archive_id");
     await unlink(originalPath).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "ENOENT") throw error;
     });
