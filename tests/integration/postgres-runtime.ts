@@ -12158,7 +12158,11 @@ try {
       oauthBase + location.replace(/\/tree$/, "/api/session"),
       { headers: { Cookie: sessionCookie } },
     ).then((response) => response.json());
-    assert.equal(newAccountSession.user.role, "admin");
+    assert.equal(newAccountSession.user.role, "relative");
+    assert.equal(newAccountSession.user.treeRole, "relative");
+    assert.equal(newAccountSession.user.archiveOwner, true);
+    assert.equal(newAccountSession.user.globalRole, null,
+      "creating a personal archive does not grant platform staff authority");
     assert.equal(newAccountSession.user.approved, true);
     assert.equal(newAccountSession.user.fullAccess, false);
     assert.deepEqual(
@@ -12982,7 +12986,7 @@ try {
     assert.equal(transferExportSnapshot.download.archives.find((archive) => archive.id === personalArchiveId)?.owned,
       false, "the recipient's account export starts before accepting ownership");
     assert.equal(transferExportSnapshot.download.archives.find((archive) => archive.id === personalArchiveId)?.role,
-      "admin", "an existing archive admin keeps the same role during acceptance");
+      "relative", "acceptance preserves the recipient's local grant without minting staff authority");
     const transferExportAuth = await createAuth(await userStore(transferExportDb), transferExportDb,
       process.env.PUBLIC_ORIGIN);
     let acceptedOwner!: Response;
@@ -13041,13 +13045,18 @@ try {
     ).rows;
     assert.equal(
       transferRoles.find((row) => row.user_id === "transfer-target")?.role,
-      "admin",
+      "relative",
     );
     assert.equal(
       transferRoles.find((row) => row.user_id === newAccountSession.user.id)
         ?.role,
       "relative",
     );
+    assert.equal((await client.query(`SELECT
+      EXISTS(SELECT 1 FROM platform_admins WHERE account_id='transfer-target') OR
+      EXISTS(SELECT 1 FROM platform_researchers WHERE account_id='transfer-target') AS staff`)
+    ).rows[0].staff, false,
+    "archive ownership transfer must not grant platform staff authority");
     const deletionPath = location.replace(/\/tree$/, "/api/account/archive-deletion");
     assert.equal((await fetch(oauthBase + deletionPath, {
       headers: transferOwnerHeaders,
