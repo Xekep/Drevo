@@ -1,4 +1,4 @@
-import { readStorageLimits, writeStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
+import { readStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
@@ -23,6 +23,7 @@ import {
 } from "../../src/server/session-token.ts";
 import { openPostgresDatabase } from "../../src/server/store-database.ts";
 import { initializePostgresRuntimeSchema } from "../../src/server/postgres-runtime-schema.ts";
+import { initializePlatformConfiguration } from "../../src/server/platform-configuration.ts";
 import { backupCoordinator } from "../../src/server/backup-coordinator.ts";
 import { verifyManagedBackupDelivery } from "./postgres-managed-backup-delivery.ts";
 import { verifyManagedBackupStatusDelivery } from "./postgres-managed-backup-status-delivery.ts";
@@ -74,6 +75,8 @@ import { acceptWithDecisionNote, rejectWithStableDecisionNote,
 import { verifyAiProviderCleanupStatus } from "./postgres-ai-provider-status.ts";
 import { verifyPlatformStaffRoles } from "./postgres-platform-staff-roles.ts";
 import { verifyAiProviderCleanupRetry } from "./postgres-ai-provider-retry.ts";
+import { verifyPlatformConfigurationMigration, verifyPlatformConfigurationRevocation,
+  verifySharedPlatformConfiguration } from "./postgres-platform-configuration.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
@@ -206,6 +209,11 @@ try {
   await users.setRole((await users.get("owner"))!, "vk:42", "researcher");
   await settingsStore(sqlite.db);
   await aiSettingsStore(sqlite.db);
+  const primaryCategory = (await researchCatalogStore(sqlite.db).list())[0];
+  await researchCatalogStore(sqlite.db).createResource(primaryCategory.id, {
+    name: "Primary custom resource", url: "https://primary-resource.invalid/",
+    description: "Custom resource retained during the global catalog migration",
+  }, (await users.get("owner"))!);
   await sqlite.db.prepare("INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,updated_ms) VALUES('person-a','owner','Владелец',1000,'Правка до переноса',2000),('person-a','owner','Владелец',1001,'Без правок',NULL)").run();
   const before = await sqlite.read();
   await sqlite.close();
@@ -250,6 +258,7 @@ try {
   await client.query("COMMIT");
   await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   live = await openArchive(source, family);
+  await verifyPlatformConfigurationMigration(live.db, client);
   assert.equal(live.db.kind, "postgres");
   await client.query("SELECT set_config('drevo.archive_id','role-legacy-archive',false)");
   assert.deepEqual((await client.query(`SELECT user_id,role FROM archive_memberships
@@ -907,16 +916,19 @@ try {
     /владельца/,
   );
   const preferences = treePreferencesStore(live.db);
-  await live.db.transaction(() => writeStorageLimits(live!.db, { ...DEFAULT_STORAGE_LIMITS, admin: 0 }, owner));
+  await live.db.prepare("", "INSERT INTO platform_upload_limits(id,data) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data")
+    .run(JSON.stringify({ ...DEFAULT_STORAGE_LIMITS, admin: 0 }));
   assert.equal((await readStorageLimits(live.db)).admin, 0);
   await assert.rejects(enforceUserStorageLimit(live.db, "owner", 1), UploadQuotaError);
   const vkSettings = vkAuthSettingsStore(live.db, "https://archive.invalid");
-  assert.equal((await vkSettings.read()).available, false);
-  await vkSettings.write({ enabled: true, clientId: "12345" }, owner);
   assert.equal((await vkSettings.read()).available, true);
   const isolatedVk = await openPostgresDatabase("other-archive", source);
   try {
-    assert.deepEqual(await readStorageLimits(isolatedVk), DEFAULT_STORAGE_LIMITS);
+    await assert.rejects(initializePlatformConfiguration(isolatedVk, "runtime-test"),
+      /primary archive/,
+      "a selected archive cannot become the migration source");
+    assert.equal((await readStorageLimits(isolatedVk)).admin, 0,
+      "the upload cap is shared across archives");
     await assert.rejects(isolatedVk.prepare("", "INSERT INTO upload_limits(archive_id,id,data) VALUES('runtime-test',1,'{}')").run(), /row-level security/);
     const isolatedAi = await aiSettingsStore(isolatedVk);
     assert.equal((await isolatedAi.read()).roleProfiles.researcher, null);
@@ -932,7 +944,8 @@ try {
     assert.equal(
       (await vkAuthSettingsStore(isolatedVk, "https://archive.invalid").read())
         .available,
-      false,
+      true,
+      "VK sign-in configuration is shared across archives",
     );
     await assert.rejects(
       isolatedVk
@@ -946,7 +959,8 @@ try {
   } finally {
     await isolatedVk.close();
   }
-  await live.db.transaction(() => writeStorageLimits(live!.db, DEFAULT_STORAGE_LIMITS, owner));
+  await live.db.prepare("", "UPDATE platform_upload_limits SET data=? WHERE id=1")
+    .run(JSON.stringify(DEFAULT_STORAGE_LIMITS));
   await preferences.write("owner", {
     reverseTimeline: false,
     cardVariant: "portrait",
@@ -1070,6 +1084,7 @@ try {
     (await vkAuthSettingsStore(restored.db, "https://archive.invalid").read())
       .clientId,
     "12345",
+    "the legacy root row remains intact for historical archive backups",
   );
   assert.equal((await restored.read()).revision, snapshot.revision + 1);
   assert.equal(
@@ -1776,6 +1791,7 @@ try {
     );
   }));
   const securedBase = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  await verifyPlatformConfigurationRevocation(app.archive.db, client);
   const token = newSessionToken();
   await app.archive.db
     .prepare(
@@ -4317,6 +4333,11 @@ try {
   }).then((response) => response.json());
   assert.equal(archiveAdminSession.user.role, "admin");
   assert.equal(archiveAdminSession.user.platformAdmin, false);
+  for (const path of ["/api/settings/storage", "/api/admin/auth/vk",
+    "/api/admin/research-resources"])
+    assert.equal((await fetch(securedBase + path, {
+      headers: archiveAdminHeaders,
+    })).status, 403, `${path} is platform-only even for a tree administrator`);
   const ownerTierBeforeAdminView = (await client.query<{ full_access: boolean }>(
     "SELECT full_access FROM account_tiers WHERE account_id='owner'",
   )).rows[0].full_access;
@@ -4888,6 +4909,9 @@ try {
   otherApp = await startServer(0, source, true, undefined, undefined, "other-archive");
   const otherBase = `http://127.0.0.1:${(otherApp.server.address() as { port: number }).port}`;
   assert.equal(otherApp.archive.db.archiveId, "other-archive");
+  await verifySharedPlatformConfiguration({ rootDb: app.archive.db,
+    otherDb: otherApp.archive.db, rootBase: securedBase, otherBase,
+    headers: ownerHeaders, client });
   await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
   await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
     VALUES('other-archive','vk:42','admin',true,'all')`);
@@ -4897,6 +4921,17 @@ try {
   await client.query(`INSERT INTO archive_owners(archive_id,user_id)
     VALUES('other-archive','vk:42') ON CONFLICT (archive_id) DO UPDATE SET user_id='vk:42'`);
   await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  const priorGlobalLimits = await readStorageLimits(otherApp.archive.db);
+  await otherApp.archive.db.prepare("", "UPDATE platform_upload_limits SET data=? WHERE id=1")
+    .run(JSON.stringify({ ...priorGlobalLimits, relative: 0 }));
+  try {
+    await assert.rejects(enforceUserStorageLimit(otherApp.archive.db, "vk:42", 1),
+      UploadQuotaError,
+      "a basic tree owner without global staff cannot inherit the admin upload cap");
+  } finally {
+    await otherApp.archive.db.prepare("", "UPDATE platform_upload_limits SET data=? WHERE id=1")
+      .run(JSON.stringify(priorGlobalLimits));
+  }
   try {
     const selectedAdmin = await fetch(securedBase + "/a/other-archive/api/session", {
       headers: archiveAdminHeaders,

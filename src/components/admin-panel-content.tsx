@@ -61,7 +61,6 @@ const ADMIN_SECTIONS = [
     items: [
       { id: "users", label: "Участники", icon: Users },
       { id: "invitations", label: "Приглашения", icon: Link2 },
-      { id: "vk", label: "Вход через VK", icon: ShieldCheck },
       { id: "shares", label: "Общий доступ", icon: Link2 },
       { id: "publications", label: "Можно найти", icon: ScanSearch },
       { id: "matches", label: "Связи деревьев", icon: GitCompareArrows },
@@ -76,7 +75,6 @@ const ADMIN_SECTIONS = [
   {
     label: "ИИ и поиск",
     items: [
-      { id: "resources", label: "Ресурсы поиска", icon: BookOpen },
       { id: "mcp", label: "MCP-токены", icon: KeyRound },
     ],
   },
@@ -84,7 +82,6 @@ const ADMIN_SECTIONS = [
     label: "Данные",
     items: [
       { id: "data", label: "Экспорт и импорт", icon: Download },
-      { id: "storage", label: "Хранилище", icon: DatabaseBackup },
     ],
   },
   {
@@ -95,6 +92,9 @@ const ADMIN_SECTIONS = [
     label: "Платформа",
     items: [
       { id: "ai", label: "Yandex AI", icon: Bot },
+      { id: "vk", label: "Вход через VK", icon: ShieldCheck },
+      { id: "resources", label: "Ресурсы поиска", icon: BookOpen },
+      { id: "storage", label: "Хранилище", icon: DatabaseBackup },
       { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
     ],
   },
@@ -102,11 +102,11 @@ const ADMIN_SECTIONS = [
 const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
   storage: {
     title: "Хранилище",
-    description: "Лимиты фотографий и документов по ролям участников.",
+    description: "Единые лимиты загрузок по ролям для всех деревьев.",
   },
   vk: {
     title: "Вход через VK",
-    description: "Подключение VK ID для входа в архив.",
+    description: "Подключение VK ID для входа на платформу.",
   },
   users: {
     title: "Участники",
@@ -131,7 +131,7 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
   resources: {
     title: "Ресурсы поиска",
     description:
-      "Категории и сайты, которые ИИ может предложить для дальнейшего исследования.",
+      "Общий справочник сайтов, которые ИИ может предложить для исследования.",
   },
   sources: {
     title: "Источники",
@@ -331,6 +331,7 @@ function AdminUserRow({
 export function AdminPanel({
   family,
   currentUserId,
+  archiveOwner = true,
   platformAdmin,
   archiveOwner,
   aiAvailable,
@@ -343,6 +344,7 @@ export function AdminPanel({
 }: {
   family: Family;
   currentUserId: string;
+  archiveOwner?: boolean;
   platformAdmin: boolean;
   archiveOwner: boolean;
   aiAvailable: boolean;
@@ -372,15 +374,17 @@ export function AdminPanel({
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
   const [auditActor, setAuditActor] = useState("");
+  const platformSections = ["ai", "vk", "resources", "storage"];
   const visibleGroups = ADMIN_SECTIONS.map((group) => ({
     ...group,
     items: group.items.filter(({ id }) =>
       id === "backups" ? platformAdmin && archiveOwner :
-      id === "ai" ? platformAdmin :
-      id === "resources" || id === "mcp" ? aiAvailable : true),
+      id === "mcp" ? platformAdmin && archiveOwner && aiAvailable :
+      platformSections.includes(id) ? platformAdmin :
+      archiveOwner),
   })).filter((group) => group.items.length > 0);
   const visibleSection = visibleGroups.some((group) => group.items.some((item) => item.id === section))
-    ? section : "users";
+    ? section : visibleGroups[0]?.items[0]?.id || "users";
   const navigation = useRef<HTMLElement>(null);
   useEffect(() => {
     const nav = navigation.current;
@@ -413,6 +417,7 @@ export function AdminPanel({
       window.history.replaceState(window.history.state, "", scopedArchivePath(archivePaths.admin));
   }, [section, visibleSection]);
   useEffect(() => {
+    if (!archiveOwner) return;
     const controller = new AbortController();
     void archiveFetch("/api/settings", { signal: controller.signal })
       .then(async (response) => {
@@ -423,8 +428,9 @@ export function AdminPanel({
         if (!controller.signal.aborted) setError(e.message);
       });
     return () => controller.abort();
-  }, []);
+  }, [archiveOwner]);
   useEffect(() => {
+    if (!archiveOwner) return;
     const controller = new AbortController();
     const query = new URLSearchParams({ limit: String(USERS_PAGE_SIZE) });
     if (usersCursor) query.set("cursor", usersCursor);
@@ -449,7 +455,7 @@ export function AdminPanel({
         if (!controller.signal.aborted) setUsersLoading(false);
       });
     return () => controller.abort();
-  }, [usersCursor, usersReload]);
+  }, [archiveOwner, usersCursor, usersReload]);
   async function change(url: string, method: string, body?: unknown) {
     setBusy(true);
     setError("");
@@ -520,13 +526,13 @@ export function AdminPanel({
       </aside>
       <div className="admin-content">
         <header className="admin-page-header">
-          <span className="section-label">{visibleSection === "backups" || visibleSection === "ai" ? "УПРАВЛЕНИЕ ПЛАТФОРМОЙ" : "УПРАВЛЕНИЕ ДЕРЕВОМ"}</span>
+          <span className="section-label">{platformSections.includes(visibleSection) ? "УПРАВЛЕНИЕ ПЛАТФОРМОЙ" : "УПРАВЛЕНИЕ ДЕРЕВОМ"}</span>
           <h1>{ADMIN_INTRO[visibleSection].title}</h1>
           {(publicationOwnership === "owner" ||
             (visibleSection !== "publications" && visibleSection !== "matches")) &&
             <p className="admin-subtitle">{ADMIN_INTRO[visibleSection].description}</p>}
         </header>
-        {!settings && !error && <p role="status">Загружаем настройки…</p>}
+        {archiveOwner && !settings && !error && <p role="status">Загружаем настройки…</p>}
         {settings && visibleSection === "users" && (
           <section className="admin-card archive-form">
             <p>

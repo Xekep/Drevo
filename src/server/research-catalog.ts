@@ -14,6 +14,10 @@ import { randomUUID } from "node:crypto";
 import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import { auditStore } from "./audit.ts";
+import type pg from "pg";
+import { assertCurrentPlatformAdmin } from "./platform-access.ts";
+
+type PlatformSession = { accountId: string; tokenHash: string };
 
 const ignoredSearchWords = new Set([
   "дай",
@@ -108,13 +112,13 @@ export function researchCatalogStore(db: StoreDatabase) {
     const categories = await db
       .prepare(
         "SELECT id,name FROM research_categories ORDER BY sort_order,id",
-        "SELECT id,name FROM research_categories ORDER BY sort_order,id",
+        "SELECT id,name FROM platform_research_categories ORDER BY sort_order,id",
       )
       .all();
     const resources = await db
       .prepare(
         "SELECT id,category_id,name,url,description,ai_search FROM research_resources ORDER BY category_id,sort_order,id",
-        "SELECT id,category_id,name,url,description,ai_search FROM research_resources ORDER BY category_id,sort_order,id",
+        "SELECT id,category_id,name,url,description,ai_search::text AS ai_search FROM platform_research_resources ORDER BY category_id,sort_order,id",
       )
       .all();
     return categories.map((category) => ({
@@ -144,9 +148,24 @@ export function researchCatalogStore(db: StoreDatabase) {
     action: string,
     entityId: string,
     label: string,
-    actor: ArchiveUser,
-    run: () => void | Promise<void>,
+    actor: ArchiveUser | null,
+    session: PlatformSession | undefined,
+    run: (client?: pg.PoolClient) => void | Promise<void>,
   ) {
+    if (db.kind === "postgres") {
+      if (!session || !db.postgresTransaction) throw new Error("Сеанс завершён");
+      await db.postgresTransaction(async (client) => {
+        await assertCurrentPlatformAdmin(client, session.accountId, session.tokenHash);
+        await run(client);
+        await client.query(
+          `INSERT INTO platform_config_audit(actor_id,action,item_id)
+           VALUES($1,$2,$3)`,
+          [session.accountId, action, entityId],
+        );
+      });
+      return;
+    }
+    if (!actor) throw new Error("Сеанс завершён");
     return await db.transaction(async () => {
       await run();
       await audit.record(
@@ -170,7 +189,7 @@ export function researchCatalogStore(db: StoreDatabase) {
     const row = await db
       .prepare(
         `SELECT * FROM ${table} WHERE id=?`,
-        `SELECT * FROM ${table} WHERE id=?`,
+        `SELECT * FROM platform_${table} WHERE id=?`,
       )
       .get(id);
     if (!row) throw new RangeError("Запись не найдена");
@@ -186,7 +205,7 @@ export function researchCatalogStore(db: StoreDatabase) {
         await db
           .prepare(
             "SELECT name FROM research_categories ORDER BY sort_order,id",
-            "SELECT name FROM research_categories ORDER BY sort_order,id",
+            "SELECT name FROM platform_research_categories ORDER BY sort_order,id",
           )
           .all()
       ).map((row) => String(row.name)),
@@ -293,15 +312,21 @@ export function researchCatalogStore(db: StoreDatabase) {
           })),
       };
     },
-    async createCategory(value: unknown, actor: ArchiveUser) {
+    async createCategory(value: unknown, actor: ArchiveUser | null,
+      session?: PlatformSession) {
       const name = requiredText(
         (value as Record<string, unknown>)?.name,
         "Категория",
         100,
       );
       const id = randomUUID();
-      await write("Добавлена категория поиска", id, name, actor, async () => {
-        await db
+      await write("Добавлена категория поиска", id, name, actor, session, async (client) => {
+        if (client) await client.query(
+          `INSERT INTO platform_research_categories(id,name,sort_order)
+           VALUES($1,$2,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM platform_research_categories))`,
+          [id, name],
+        );
+        else await db
           .prepare(
             "INSERT INTO research_categories(id,name,sort_order) VALUES(?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM research_categories))",
             "INSERT INTO research_categories(id,name,sort_order) VALUES(?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM research_categories))",
@@ -310,15 +335,23 @@ export function researchCatalogStore(db: StoreDatabase) {
       });
       return await list();
     },
-    async updateCategory(id: string, value: unknown, actor: ArchiveUser) {
+    async updateCategory(id: string, value: unknown, actor: ArchiveUser | null,
+      session?: PlatformSession) {
       await existing("research_categories", id);
       const name = requiredText(
         (value as Record<string, unknown>)?.name,
         "Категория",
         100,
       );
-      await write("Изменена категория поиска", id, name, actor, async () => {
-        await db
+      await write("Изменена категория поиска", id, name, actor, session, async (client) => {
+        if (client) {
+          const result = await client.query(
+            "UPDATE platform_research_categories SET name=$1 WHERE id=$2",
+            [name, id],
+          );
+          if (!result.rowCount) throw new RangeError("Запись не найдена");
+        }
+        else await db
           .prepare(
             "UPDATE research_categories SET name=? WHERE id=?",
             "UPDATE research_categories SET name=? WHERE id=?",
@@ -327,15 +360,24 @@ export function researchCatalogStore(db: StoreDatabase) {
       });
       return await list();
     },
-    async deleteCategory(id: string, actor: ArchiveUser) {
+    async deleteCategory(id: string, actor: ArchiveUser | null,
+      session?: PlatformSession) {
       const row = await existing("research_categories", id);
       await write(
         "Удалена категория поиска",
         id,
         String(row.name),
         actor,
-        async () => {
-          await db
+        session,
+        async (client) => {
+          if (client) {
+            const result = await client.query(
+              "DELETE FROM platform_research_categories WHERE id=$1",
+              [id],
+            );
+            if (!result.rowCount) throw new RangeError("Запись не найдена");
+          }
+          else await db
             .prepare(
               "DELETE FROM research_categories WHERE id=?",
               "DELETE FROM research_categories WHERE id=?",
@@ -348,7 +390,8 @@ export function researchCatalogStore(db: StoreDatabase) {
     async createResource(
       categoryId: string,
       value: unknown,
-      actor: ArchiveUser,
+      actor: ArchiveUser | null,
+      session?: PlatformSession,
     ) {
       const category = await existing("research_categories", categoryId);
       const item = value as Record<string, unknown>;
@@ -369,8 +412,16 @@ export function researchCatalogStore(db: StoreDatabase) {
         ),
       );
       const id = randomUUID();
-      await write("Добавлен ресурс поиска", id, name, actor, async () => {
-        await db
+      await write("Добавлен ресурс поиска", id, name, actor, session, async (client) => {
+        if (client) await client.query(
+          `INSERT INTO platform_research_resources
+             (id,category_id,name,url,description,ai_search,sort_order)
+           VALUES($1,$2,$3,$4,$5,$6,
+             (SELECT COALESCE(MAX(sort_order),-1)+1
+                FROM platform_research_resources WHERE category_id=$2))`,
+          [id, categoryId, name, url, description, JSON.stringify(search)],
+        );
+        else await db
           .prepare(
             "INSERT INTO research_resources(id,category_id,name,url,description,ai_search,sort_order) VALUES(?,?,?,?,?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM research_resources WHERE category_id=?))",
             "INSERT INTO research_resources(id,category_id,name,url,description,ai_search,sort_order) VALUES(?,?,?,?,?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM research_resources WHERE category_id=?))",
@@ -387,7 +438,8 @@ export function researchCatalogStore(db: StoreDatabase) {
       });
       return await list();
     },
-    async updateResource(id: string, value: unknown, actor: ArchiveUser) {
+    async updateResource(id: string, value: unknown, actor: ArchiveUser | null,
+      session?: PlatformSession) {
       const before = (await list())
         .flatMap((category) => category.resources)
         .find((resource) => resource.id === id);
@@ -402,8 +454,16 @@ export function researchCatalogStore(db: StoreDatabase) {
         true,
       );
       const search = validateSearchSettings(item, before);
-      await write("Изменён ресурс поиска", id, name, actor, async () => {
-        await db
+      await write("Изменён ресурс поиска", id, name, actor, session, async (client) => {
+        if (client) {
+          const result = await client.query(
+            `UPDATE platform_research_resources
+             SET name=$1,url=$2,description=$3,ai_search=$4 WHERE id=$5`,
+            [name, url, description, JSON.stringify(search), id],
+          );
+          if (!result.rowCount) throw new RangeError("Запись не найдена");
+        }
+        else await db
           .prepare(
             "UPDATE research_resources SET name=?,url=?,description=?,ai_search=? WHERE id=?",
             "UPDATE research_resources SET name=?,url=?,description=?,ai_search=? WHERE id=?",
@@ -412,15 +472,24 @@ export function researchCatalogStore(db: StoreDatabase) {
       });
       return await list();
     },
-    async deleteResource(id: string, actor: ArchiveUser) {
+    async deleteResource(id: string, actor: ArchiveUser | null,
+      session?: PlatformSession) {
       const row = await existing("research_resources", id);
       await write(
         "Удалён ресурс поиска",
         id,
         String(row.name),
         actor,
-        async () => {
-          await db
+        session,
+        async (client) => {
+          if (client) {
+            const result = await client.query(
+              "DELETE FROM platform_research_resources WHERE id=$1",
+              [id],
+            );
+            if (!result.rowCount) throw new RangeError("Запись не найдена");
+          }
+          else await db
             .prepare(
               "DELETE FROM research_resources WHERE id=?",
               "DELETE FROM research_resources WHERE id=?",

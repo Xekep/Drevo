@@ -50,6 +50,7 @@ import { safeRequestRoute } from "./safe-request-route.ts";
 import { sessionHttp } from "./session-http.ts";
 import { platformRolesHttp } from "./platform-roles-http.ts";
 import { sourceCatalogHttp } from "./source-catalog-http.ts";
+import { initializePlatformConfiguration } from "./platform-configuration.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 type StartedServer = {
@@ -125,6 +126,8 @@ export async function startServer(
       archiveId,
     );
     own(() => archive.close());
+    if (!archiveId)
+      await initializePlatformConfiguration(archive.db, process.env.ARCHIVE_ID || "");
     const providerCleanup = archive.db.kind === "postgres"
       ? await aiProviderCleanup(archive.db, configuredPath, aiFetch)
       : undefined;

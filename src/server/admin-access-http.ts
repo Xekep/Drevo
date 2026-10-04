@@ -6,10 +6,10 @@ import type { settingsStore } from "./settings.ts";
 import type { Role, TreeAccess } from "../domain/access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import type { StoreDatabase } from "./store-database.ts";
-import { readStorageLimits, writeStorageLimits } from "./storage-limits.ts";
-import { parseStorageLimits } from "../shared/storage-limits.ts";
+import { readStorageLimits, writeStorageLimits, writePlatformStorageLimits } from "./storage-limits.ts";
+import { DEFAULT_STORAGE_LIMITS, parseStorageLimits } from "../shared/storage-limits.ts";
 import { AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
-import { PlatformAccessBusy, PlatformAccessDenied } from "./platform-access.ts";
+import { assertCurrentPlatformAdmin, PlatformAccessBusy, PlatformAccessDenied } from "./platform-access.ts";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -58,15 +58,12 @@ export function adminAccessHttp({
     )
       return false;
 
-    if (!(await auth.isAdmin(req)))
-      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
-        error:
-          path === "/api/settings"
-            ? "Only administrators can change visibility"
-            : "Only administrators can manage access",
-      });
-
     if (path === "/api/settings/storage") {
+      const session = await auth.accountSession(req);
+      if ((!auth.local && !session) || !(await auth.isPlatformAdmin(req)))
+        return json(res, session ? 403 : 401, {
+          error: "Только администратор платформы может менять лимиты хранилища",
+        });
       if (req.method === "GET")
         return json(res, 200, await readStorageLimits(db));
       if (req.method !== "PUT")
@@ -83,31 +80,57 @@ export function adminAccessHttp({
           return json(res, 400, {
             error: "Укажите лимиты от 0 до 10240 МБ или оставьте поле пустым",
           });
-        const result = await db.transaction(async () => {
-          if (!(await auth.isAdmin(req)))
-            return { status: 403, error: "Нет прав на настройку хранилища" };
-          if (
-            JSON.stringify(await readStorageLimits(db)) !==
-            JSON.stringify(expected)
-          )
-            return {
-              status: 409,
-              error: "Лимиты изменились. Обновите страницу перед сохранением",
-            };
-          await writeStorageLimits(db, next, (await auth.currentUser(req))!);
-          return { status: 200 };
-        });
+        const result = db.kind === "postgres" ?
+          await db.postgresTransaction!(async (client) => {
+            await assertCurrentPlatformAdmin(client, session!.accountId, session!.tokenHash);
+            const row = await client.query<{ data: string }>(
+              "SELECT data FROM platform_upload_limits WHERE id=1 FOR UPDATE",
+            );
+            const current = row.rows[0] ?
+              parseStorageLimits(JSON.parse(row.rows[0].data)) :
+              { ...DEFAULT_STORAGE_LIMITS };
+            if (JSON.stringify(current) !== JSON.stringify(expected))
+              return {
+                status: 409,
+                error: "Лимиты изменились. Обновите страницу перед сохранением",
+              };
+            await writePlatformStorageLimits(client, next, session!.accountId);
+            return { status: 200 };
+          }) :
+          await db.transaction(async () => {
+            if (!(await auth.isPlatformAdmin(req)))
+              return { status: 403, error: "Нет прав на настройку хранилища" };
+            if (JSON.stringify(await readStorageLimits(db)) !== JSON.stringify(expected))
+              return {
+                status: 409,
+                error: "Лимиты изменились. Обновите страницу перед сохранением",
+              };
+            await writeStorageLimits(db, next, (await auth.currentUser(req))!);
+            return { status: 200 };
+          });
         return json(
           res,
           result.status,
           result.error ? { error: result.error } : next,
         );
       } catch (error) {
-        return json(res, error instanceof RangeError ? 413 : 400, {
+        const status = error instanceof RangeError ? 413 :
+          error instanceof SyntaxError ? 400 :
+          error instanceof ForbiddenError || error instanceof PlatformAccessDenied ? 403 :
+          error instanceof PlatformAccessBusy ? 409 : 500;
+        return json(res, status, {
           error: "Не удалось сохранить лимиты хранилища",
         });
       }
     }
+
+    if (!(await auth.isAdmin(req)))
+      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
+        error:
+          path === "/api/settings"
+            ? "Only administrators can change visibility"
+            : "Only administrators can manage access",
+      });
 
     if (path === "/api/users" && req.method === "GET") {
       try {

@@ -6,6 +6,7 @@ async function accountView(page: Page, options: {
   fullAccess: boolean;
   platformAdmin: boolean;
   aiAvailable?: boolean;
+  archiveOwner?: boolean;
 }) {
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
@@ -22,6 +23,7 @@ async function accountView(page: Page, options: {
           fullAccess: options.fullAccess,
           aiAvailable: options.aiAvailable ?? options.fullAccess,
           platformAdmin: options.platformAdmin,
+          archiveOwner: options.archiveOwner ?? true,
         },
       },
     });
@@ -68,9 +70,8 @@ test("basic owner reaches tree management from the gear without platform or AI s
   await expect(dialog).toHaveCount(0);
   const navigation = page.locator(".admin-sidebar nav");
   await expect(navigation.locator("button", { hasText: "Источники" })).toBeAttached();
-  await expect(navigation.locator("button", { hasText: "Вход через VK" })).toBeAttached();
-  await expect(navigation.locator("button", { hasText: "Хранилище" })).toBeAttached();
-  for (const label of ["Yandex AI", "Ресурсы поиска", "MCP-токены", "Резервные копии"]) {
+  for (const label of ["Yandex AI", "Вход через VK", "Ресурсы поиска",
+    "Хранилище", "MCP-токены", "Резервные копии"]) {
     await expect(navigation.locator("button", { hasText: label })).toHaveCount(0);
   }
   await expect(navigation.locator(".admin-nav-label", { hasText: "Платформа" })).toHaveCount(0);
@@ -80,17 +81,25 @@ test("basic owner reaches tree management from the gear without platform or AI s
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole("heading", { name: "Участники" })).toBeVisible();
   await expect(page.getByText("Yandex AI", { exact: true })).toHaveCount(0);
+  for (const hidden of ["vk", "resources", "storage"]) {
+    await page.goto(`/admin?section=${hidden}`);
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByRole("heading", { name: "Участники" })).toBeVisible();
+  }
   await page.goto("/admin?section=unknown");
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole("heading", { name: "Участники" })).toBeVisible();
 });
 
-test("full owner keeps archive AI tools, while platform settings stay hidden", async ({ page }) => {
+test("full owner keeps archive MCP while platform settings stay hidden", async ({ page }) => {
   await accountView(page, { fullAccess: true, platformAdmin: false });
   await page.goto("/admin");
   const navigation = page.locator(".admin-sidebar nav");
-  for (const label of ["Ресурсы поиска", "MCP-токены"]) {
-    await expect(navigation.locator("button", { hasText: label })).toBeAttached();
+  await expect(navigation.locator("button", { hasText: "MCP-токены" })).toBeAttached();
+  for (const label of ["Yandex AI", "Вход через VK", "Ресурсы поиска",
+    "Хранилище", "Резервные копии"]) {
+    await expect(navigation.locator("button", { hasText: label })).toHaveCount(0);
+    await expect(page.locator("#admin-section-select").getByRole("option", { name: label })).toHaveCount(0);
   }
   await expect(navigation.locator("button", { hasText: "Yandex AI" })).toHaveCount(0);
   await expect(navigation.locator("button", { hasText: "Резервные копии" })).toHaveCount(0);
@@ -115,6 +124,23 @@ test("platform admin gets AI settings even without the archive AI feature tier",
   await expect(page.locator(".admin-page-header .section-label")).toHaveText("УПРАВЛЕНИЕ ПЛАТФОРМОЙ");
   await openAdminSection(page, "backups", "Резервные копии");
   await expect(page.locator(".admin-page-header .section-label")).toHaveText("УПРАВЛЕНИЕ ПЛАТФОРМОЙ");
+});
+
+test("platform admin without tree ownership sees only common configuration", async ({ page }) => {
+  await accountView(page, { fullAccess: false, platformAdmin: true,
+    archiveOwner: false });
+  await page.goto("/admin?section=storage");
+  const navigation = page.locator(".admin-sidebar nav");
+  await expect(page.getByRole("heading", { name: "Хранилище" })).toBeVisible();
+  await expect(navigation.locator("button", { hasText: "Участники" })).toHaveCount(0);
+  await expect(navigation.locator("button", { hasText: "Источники" })).toHaveCount(0);
+  await expect(navigation.locator("button", { hasText: "Вход через VK" })).toBeAttached();
+  await expect(navigation.locator("button", { hasText: "Ресурсы поиска" })).toBeAttached();
+  await expect(page.locator(".admin-page-header .section-label"))
+    .toHaveText("УПРАВЛЕНИЕ ПЛАТФОРМОЙ");
+  await page.goto("/admin?section=users");
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page.getByRole("heading", { name: "Yandex AI" })).toBeVisible();
 });
 
 test("full-tier invited admin cannot see AI tools while the tree owner is basic", async ({ page }) => {
