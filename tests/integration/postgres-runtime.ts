@@ -76,6 +76,7 @@ import { acceptWithDecisionNote, rejectWithStableDecisionNote,
 import { verifyAiProviderCleanupStatus } from "./postgres-ai-provider-status.ts";
 import { verifyPlatformStaffRoles } from "./postgres-platform-staff-roles.ts";
 import { verifyGlobalStaffMigrationStartup } from "./postgres-global-staff-migration-startup.ts";
+import { verifyGlobalRoleFinalization } from "./postgres-global-role-finalization.ts";
 import { verifyAiProviderCleanupRetry } from "./postgres-ai-provider-retry.ts";
 import { verifyPlatformConfigurationMigration, verifyPlatformConfigurationRevocation,
   verifySharedPlatformConfiguration } from "./postgres-platform-configuration.ts";
@@ -13895,6 +13896,7 @@ try {
   await app.archive.write(restoredPeople, withoutPeer.revision);
   await verifyRestoreGuard({ client, source, family, ownerHeaders, restoreBytes });
   await verifyPlatformAiOrphanSweep(app!.archive.db, client, source);
+  await verifyGlobalRoleFinalization();
   console.log("runtime_http_and_backup_ok");
 } finally {
   await otherApp?.close();
