@@ -135,29 +135,22 @@ export async function rejectWithStableDecisionNote({ archive, client, matchId, r
     method: "PATCH", headers,
     body: JSON.stringify({ decision: "reject", note: rejectedNote }),
   });
-  let mutation: Promise<void> | undefined;
-  let mutationSettled = false;
-  let mutationError: unknown;
   try {
     await Promise.race([ready,
       request.then((response) => { throw new Error(`reject finished before barrier: ${response.status}`); }),
       new Promise<never>((_,reject) => setTimeout(() =>
         reject(new Error("reject did not reach decision-note barrier")),30_000)),
     ]);
-    mutation = client.query(`UPDATE discovery_people SET publication_version=$1
-      WHERE archive_id='runtime-test' AND person_id='person-a'`, [randomUUID()])
-      .then(() => { mutationSettled = true; },(error: unknown) => {
-        mutationSettled = true; mutationError = error;
-      });
-    await new Promise((resolve) => setTimeout(resolve,200));
-    assert.equal(mutationSettled,false,
-      "a concurrent publication edit must wait until the reject and its note commit");
+    await client.query("SET lock_timeout TO '250ms'");
+    await assert.rejects(client.query(`UPDATE discovery_people SET publication_version=$1
+      WHERE archive_id='runtime-test' AND person_id='person-a'`,[randomUUID()]),
+    (error: unknown) => (error as { code?: string }).code === "55P03",
+    "a concurrent publication edit must wait until the reject and its note commit");
+    await client.query("RESET lock_timeout");
     release();
     const response = await request;
-    assert.ok(response.status === 200 || response.status === 409,
-      `a post-commit publication edit may invalidate final delivery, but not the decision: ${response.status} ${await response.text()}`);
-    await mutation;
-    if (mutationError) throw mutationError;
+    assert.equal(response.status,200,
+      `an unchanged publication permits the reviewed reject with a note: ${await response.text()}`);
     const decided = (await client.query<{ status: string; decision_txid: string | null }>(`
       SELECT status,decision_txid FROM discovery_match_requests WHERE id=$1`,[matchId])).rows[0];
     assert.equal(decided.status,"rejected");
@@ -167,7 +160,7 @@ export async function rejectWithStableDecisionNote({ archive, client, matchId, r
   } finally {
     release();
     await request.catch(() => undefined);
-    if (mutation) await mutation;
+    await client.query("RESET lock_timeout");
     await client.query(`UPDATE discovery_people SET publication_version=$1
       WHERE archive_id='runtime-test' AND person_id='person-a'`,[originalVersion]);
     await new Promise<void>((resolve) => server.close(() => resolve()));
