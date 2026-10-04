@@ -241,10 +241,6 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "073_discovery_branch_second_generation.sql",
     ],
     [
-      "SELECT 1 AS present FROM pg_constraint WHERE conrelid=to_regclass('discovery_branch_members') AND conname='discovery_branch_members_relation_check' AND pg_get_constraintdef(oid) LIKE '%relative%'",
-      "089_discovery_branch_depth.sql",
-    ],
-    [
       "SELECT 1 AS present FROM pg_trigger WHERE tgrelid=to_regclass('people') AND tgname='discovery_revoke_ineligible_publication' AND NOT tgisinternal AND to_regclass('discovery_publication_reconciled_archives') IS NOT NULL",
       "074_revoke_ineligible_discovery_publication.sql",
     ],
@@ -369,9 +365,13 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
             AND column_name='archive_owner')`,
       "090_global_staff_roles.sql",
     ],
+    [
+      "SELECT 1 AS present FROM pg_constraint WHERE conrelid=to_regclass('discovery_branch_members') AND conname='discovery_branch_members_relation_check' AND pg_get_constraintdef(oid) LIKE '%relative%'",
+      "092_discovery_branch_depth.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
-    if (file === "090_global_staff_roles.sql") {
+    if (file === "090_global_staff_roles.sql" || file === "092_discovery_branch_depth.sql") {
       if (!db.postgresTransaction)
         throw new Error("PostgreSQL transaction unavailable");
       await db.postgresTransaction(async (client) => {

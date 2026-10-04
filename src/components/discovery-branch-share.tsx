@@ -25,6 +25,8 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
   const panel = useRef<HTMLDetailsElement>(null);
   const request = useRef<AbortController | null>(null);
   const requestVersion = useRef(0);
+  const expansionRequest = useRef<AbortController | null>(null);
+  const expansionVersion = useRef(0);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [durationDays, setDurationDays] = useState(7);
@@ -43,14 +45,20 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
     requestVersion.current++;
     request.current?.abort();
     request.current = null;
+    expansionVersion.current++;
+    expansionRequest.current?.abort();
+    expansionRequest.current = null;
   }, []);
   const load = useCallback(async (preserveError = false) => {
     request.current?.abort();
+    expansionVersion.current++;
+    expansionRequest.current?.abort();
+    expansionRequest.current = null;
     const controller = new AbortController();
     request.current = controller;
     const version = ++requestVersion.current;
     setDetail(null); setSelected([]); setExpandingViaId(null); setExpansionOptions([]);
-    setExpansionCursor(null);
+    setExpansionCursor(null); setExpansionBusy(false);
     setBusy(true); if (!preserveError) setError("");
     try {
       const response = await archiveFetch(endpoint, { cache: "no-store", signal: controller.signal });
@@ -95,39 +103,59 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
     } finally { if (version === requestVersion.current) setBusy(false); }
   }
   async function showNext(viaId: string, after?: string) {
+    expansionRequest.current?.abort();
+    const controller = new AbortController();
+    expansionRequest.current = controller;
+    const version = ++expansionVersion.current;
     setExpansionBusy(true); setError("");
     try {
       const path = `${endpoint}/options/${encodeURIComponent(viaId)}`;
       const response = await archiveFetch(after ? `${path}?after=${encodeURIComponent(after)}` : path,
-        { cache: "no-store" });
+        { cache: "no-store", signal: controller.signal });
       const body = await response.json();
+      if (controller.signal.aborted || version !== expansionVersion.current ||
+          !panel.current?.open) return;
       if (!response.ok) throw new Error(body.error || "Не удалось проверить продолжение ветки");
       setExpandingViaId(viaId);
       setExpansionOptions((current) => after ? [...current,...body.options] : body.options);
       setExpansionCursor(body.nextCursor);
-    } catch (reason) { setError((reason as Error).message); }
-    finally { setExpansionBusy(false); }
+    } catch (reason) {
+      if (!controller.signal.aborted && version === expansionVersion.current && panel.current?.open)
+        setError((reason as Error).message);
+    } finally {
+      if (version === expansionVersion.current) {
+        expansionRequest.current = null; setExpansionBusy(false);
+      }
+    }
   }
   async function addNext(person: Member) {
     if (!expandingViaId || !person.previewToken) return;
+    expansionRequest.current?.abort();
+    expansionRequest.current = null;
+    const version = ++expansionVersion.current;
+    const viaId = expandingViaId;
     setExpansionBusy(true); setError("");
     try {
-      const response = await archiveFetch(`${endpoint}/options/${encodeURIComponent(expandingViaId)}`, {
+      const response = await archiveFetch(`${endpoint}/options/${encodeURIComponent(viaId)}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ personId: person.id, previewToken: person.previewToken }),
       });
       const body = await response.json();
+      if (version !== expansionVersion.current || !panel.current?.open) return;
       if (!response.ok) throw new Error(body.error || "Ветка изменилась. Обновите продолжение");
       setNotice("Карточка добавлена в ваш явный выбор. Она станет видна после разрешения другой стороны.");
       await load();
-    } catch (reason) { setError((reason as Error).message); }
-    finally { setExpansionBusy(false); }
+    } catch (reason) {
+      if (version === expansionVersion.current && panel.current?.open)
+        setError((reason as Error).message);
+    } finally { if (version === expansionVersion.current) setExpansionBusy(false); }
   }
   return <details ref={panel} className="match-card-share" onToggle={(event) => {
     if (event.currentTarget.open) { setNotice(""); void load(); }
     else {
       cancelRead();
-      setDetail(null); setSelected([]); setBusy(false);
+      setDetail(null); setSelected([]); setBusy(false); setExpansionBusy(false);
+      setExpandingViaId(null); setExpansionOptions([]); setExpansionCursor(null);
     }
   }}>
     <summary>Поделиться разрешённой веткой</summary>

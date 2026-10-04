@@ -116,6 +116,7 @@ import { publishedPeopleHttp } from "../../src/server/published-people-http.ts";
 import { discoveryPeopleHttp } from "../../src/server/discovery-people-http.ts";
 import { discoveryCardShareHttp } from "../../src/server/discovery-card-share-http.ts";
 import { discoveryBranchShareHttp } from "../../src/server/discovery-branch-share-http.ts";
+import { verifyDiscoveryBranchDepth } from "./postgres-discovery-branch-depth.ts";
 import { discoveryMatchesHttp } from "../../src/server/discovery-matches-http.ts";
 import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgres-yandex-login.ts";
@@ -9343,6 +9344,10 @@ try {
     ["branch-grandparent-a", "branch-parent-a"]);
   assert.equal(secondGeneration.incoming[0].relation, "grandparent");
   assert.equal(secondGeneration.incoming[0].viaId, "branch-parent-a");
+  await verifyDiscoveryBranchDepth({ archive: app.archive, auth: discoveryAuth,
+    sourceBase: securedBase, recipientBase: otherBase, ownerHeaders,
+    recipientHeaders: archiveAdminHeaders, branchPath,
+    publicOrigin: process.env.PUBLIC_ORIGIN });
   const branchLogoutToken = newSessionToken();
   const branchLogoutHash = sessionTokenHash(branchLogoutToken);
   await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2)",
@@ -9870,6 +9875,9 @@ try {
   assert.equal((await fetch(otherBase + transferCardPath, {
     headers: archiveAdminHeaders,
   })).status, 403, "the former owner cannot inspect scalar grants after transfer");
+  assert.equal((await fetch(otherBase + `${branchPath}/options/branch-parent-b`, {
+    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.181" },
+  })).status, 403, "the former owner cannot expand the linked branch after transfer");
   assert.equal((await client.query(`SELECT count(*)::int AS count
     FROM discovery_linked_pairs WHERE left_person_id='person-a'`)).rows[0].count, 1,
   "ownership transfer preserves the confirmed public link");
@@ -11928,6 +11936,10 @@ try {
     ...ownerHeaders, "X-Real-IP": "198.51.100.210",
   } })).status, 404,
     "a revoked link cannot reopen the previously granted branch");
+  assert.equal((await fetch(securedBase + `${branchPath}/options/branch-parent-a`, {
+    headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.183" },
+  })).status, 404,
+  "a revoked link cannot resume a previously chosen branch path");
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
     FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.count, 0,
   "removing either publication revokes the extra-field grant in the same transaction");

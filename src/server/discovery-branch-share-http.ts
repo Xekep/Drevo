@@ -41,11 +41,12 @@ function pathFor(members: StoredMember[], rootId: string, memberId: string) {
 }
 
 function expansionToken(pair: Row, revision: number, grant: Row,
-  members: StoredMember[], viaId: string, candidate: Row) {
+  members: StoredMember[], viaId: string, pathPublications: Row[], candidate: Row) {
   return createHash("sha256").update(JSON.stringify({
     pair: pairArgs(pair), revision, grantedAt: grant.granted_at,
     expiresAt: grant.expires_at, viaId,
     members: members.map((member) => [member.person_id,member.via_person_id,member.relation]),
+    path: pathPublications.map((row) => [row.person_id,row.publication_version]),
     candidate: [candidate.person_id,candidate.publication_version],
   })).digest("hex");
 }
@@ -130,7 +131,7 @@ function listed(row: Row, relation: Relation, viaIds?: string[]): Member {
 /** Only a mutual opt-in on this exact linked pair exposes published direct relatives. */
 export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
   beforeMemberDelivery, beforeListPublicationLock, beforeListDelivery,
-  beforeReadAccessLock }: {
+  beforeReadAccessLock, beforeOptionsAccessLock, beforeOptionsDelivery }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
@@ -138,6 +139,8 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
   beforeListPublicationLock?: () => Promise<void>;
   beforeListDelivery?: () => Promise<void>;
   beforeReadAccessLock?: () => Promise<void>;
+  beforeOptionsAccessLock?: () => Promise<void>;
+  beforeOptionsDelivery?: () => Promise<void>;
 }) {
   const db = archive.db;
   const limiter = createSharedRequestLimiter(db, "discovery-branch-share", { windowMs: 60_000, limit: 20 });
@@ -296,9 +299,10 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
       return json(res, 403, { error: "Доступно владельцу дерева" });
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
-    if ((!options && detail[2] && req.method !== "GET") ||
-        (req.method !== "GET" && req.method !== "PUT" && req.method !== "DELETE" &&
-          !(options && req.method === "POST")))
+    if ((options && req.method !== "GET" && req.method !== "POST") ||
+        (!options && detail[2] && req.method !== "GET") ||
+        (!options && !detail[2] && req.method !== "GET" &&
+          req.method !== "PUT" && req.method !== "DELETE"))
       return json(res, 405, { error: "Метод не поддерживается" });
     if (!(await limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress))))
       return json(res, 429, { error: "Слишком много запросов" });
@@ -318,34 +322,54 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
           typeof body?.previewToken !== "string" || !/^[0-9a-f]{64}$/.test(body.previewToken)))
         return json(res, 400, { error: "Обновите выбор опубликованного родственника" });
       const session = await auth.accountSession(req);
+      await beforeOptionsAccessLock?.();
       const result = await db.transaction(async () => {
-        if (!await lockDiscoveryOwnerReadAccess(db,auth.local,session,user) ||
-            !await isOwner(archiveId,user.id,true)) return { code: 403 as const };
-        const pair = await linkedPair(options[1],archiveId,true);
-        if (!pair) return { code: 404 as const };
-        const grant = await ownGrantFor(pair,archiveId,true);
-        if (!grant) return { code: 409 as const };
-        const members = await selectedMembers(pair,archiveId);
-        const rootId = ownRoot(pair,archiveId);
-        if (members.length > maxMembers || !pathFor(members,rootId,viaId))
+        if (!await lockDiscoveryOwnerReadAccess(db,auth.local,session,user))
+          return { code: 403 as const };
+        const preliminary = await linkedPair(options[1],archiveId);
+        if (!preliminary) return { code: 404 as const };
+        const preliminaryMembers = await selectedMembers(preliminary,archiveId);
+        const rootId = ownRoot(preliminary,archiveId);
+        const path = pathFor(preliminaryMembers,rootId,viaId);
+        if (preliminaryMembers.length > maxMembers || viaId === rootId || !path)
           return { code: 404 as const };
         const snapshot = await archive.read();
         const neighbors = directRelations(snapshot.family,viaId);
-        const selectedIds = new Set([rootId,...members.map((member) => member.person_id)]);
+        const selectedIds = new Set([rootId,...preliminaryMembers.map((member) => member.person_id)]);
         const neighborIds = [...neighbors.keys()].filter((id) => !selectedIds.has(id));
+        // Publication withdrawal locks its row before cascading into members
+        // and the linked pair. Take exactly that order, including every via.
+        const pathIds = [...new Set([rootId,...path])].sort();
+        const pathPublications = await db.prepare("", `SELECT person_id,publication_version
+          FROM discovery_people WHERE archive_id=?
+            AND person_id IN (SELECT jsonb_array_elements_text(?::jsonb))
+          ORDER BY person_id COLLATE "C" FOR SHARE`)
+          .all(archiveId,JSON.stringify(pathIds));
+        if (pathPublications.length !== pathIds.length) return { code: 409 as const };
+        const pair = await linkedPair(options[1],archiveId,true);
+        if (!pair || pairArgs(pair).some((value,index) =>
+            value !== pairArgs(preliminary)[index])) return { code: 404 as const };
+        if (!await isOwner(archiveId,user.id,true)) return { code: 403 as const };
+        const grant = await ownGrantFor(pair,archiveId,true);
+        if (!grant) return { code: 409 as const };
+        const members = await selectedMembers(pair,archiveId);
+        if (JSON.stringify(members) !== JSON.stringify(preliminaryMembers))
+          return { code: 409 as const };
         if (req.method === "GET") {
           const rows = neighborIds.length ? await db.prepare("", `SELECT person_id,name,
             birth_year,death_year,birth_place,death_place,publication_version
             FROM discovery_people WHERE archive_id=?
               AND person_id IN (SELECT jsonb_array_elements_text(?::jsonb))
               AND person_id COLLATE "C" > ? COLLATE "C"
-            ORDER BY person_id COLLATE "C" LIMIT ?`)
+            ORDER BY person_id COLLATE "C" LIMIT ? FOR SHARE`)
             .all(archiveId,JSON.stringify(neighborIds),after,optionPageSize + 1) : [];
           const page = rows.slice(0,optionPageSize);
           const payload = { viaId, options: page.map((row) => ({
             ...listed(row,"relative",[viaId]),
-            previewToken: expansionToken(pair,snapshot.revision,grant,members,viaId,row),
+            previewToken: expansionToken(pair,snapshot.revision,grant,members,
+              viaId,pathPublications,row),
           })), nextCursor: rows.length > optionPageSize ? String(page.at(-1)!.person_id) : null };
+          await beforeOptionsDelivery?.();
           if (!liveUntil(grant.expires_at)) return { code: 409 as const };
           await deliverLocked(res,payload,grant.expires_at);
           return { code: 200 as const };
@@ -355,7 +379,8 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
         const candidate = await db.prepare("", `SELECT person_id,publication_version
           FROM discovery_people WHERE archive_id=? AND person_id=? FOR SHARE`)
           .get(archiveId,candidateId as string);
-        if (!candidate || expansionToken(pair,snapshot.revision,grant,members,viaId,candidate)
+        if (!candidate || expansionToken(pair,snapshot.revision,grant,members,
+          viaId,pathPublications,candidate)
             !== body!.previewToken || !liveUntil(grant.expires_at))
           return { code: 409 as const };
         await db.prepare("", `INSERT INTO discovery_branch_members(left_archive_id,left_person_id,
@@ -395,7 +420,7 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
         // members or the linked pair. Take the same order to avoid a cycle.
         const published = await db.prepare("", `SELECT person_id FROM discovery_people
           WHERE archive_id=? AND person_id IN (SELECT jsonb_array_elements_text(?::jsonb))
-          ORDER BY person_id FOR SHARE`).all(sourceArchiveId, JSON.stringify(publicationIds));
+          ORDER BY person_id COLLATE "C" FOR SHARE`).all(sourceArchiveId, JSON.stringify(publicationIds));
         if (published.length !== publicationIds.length) return false;
         const pair = await linkedPair(detail[1], archiveId, true);
         if (!pair || pairArgs(pair).some((value, index) =>
@@ -456,7 +481,7 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
         const published = publicationIds.length ? await db.prepare("", `SELECT person_id
           FROM discovery_people WHERE archive_id=?
             AND person_id IN (SELECT jsonb_array_elements_text(?::jsonb))
-          ORDER BY person_id FOR SHARE`).all(sourceArchiveId, JSON.stringify(publicationIds)) : [];
+          ORDER BY person_id COLLATE "C" FOR SHARE`).all(sourceArchiveId, JSON.stringify(publicationIds)) : [];
         const lockedPublications = new Set(published.map((row) => String(row.person_id)));
         const pair = await linkedPair(detail[1], archiveId, true);
         if (!pair || pairArgs(pair).some((value, index) =>

@@ -907,6 +907,65 @@ test("a linked branch needs both grants and clears a revoked projection", async 
   await expect(page.getByRole("alert")).toContainText("Связь не найдена");
 });
 
+test("a linked owner explicitly extends one published step and discards an old options response", async ({ page }) => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
+  const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
+  const parent = { id: "parent-a", relation: "parent", name: "Анна Петрова" };
+  const next = { id: "next-a", relation: "relative", name: "Елена Петрова",
+    viaIds: ["parent-a"], previewToken: "c".repeat(64) };
+  let added = false;
+  let reads = 0;
+  let releaseOld!: () => void;
+  const oldRead = new Promise<void>((resolve) => { releaseOld = resolve; });
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", people: [left] } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
+    archiveId: "tree-a", nextCursor: null, matches: [{ id, left, right,
+      initiatedByArchiveId: "tree-a", status: "linked", requestedAt: "2026-09-30T00:00:00Z" }],
+  } }));
+  await page.route(`**/api/discovery/matches/${id}/branch-share`, (route) =>
+    route.fulfill({ json: { available: added ? [parent,next] : [parent], truncated: false,
+      previewToken: "b".repeat(64), ownReady: true, otherReady: true,
+      recipientArchiveId: "tree-b", recipientPersonName: "Иван Петров",
+      ownExpiresAt: null, outgoingIds: added ? ["parent-a","next-a"] : ["parent-a"],
+      incoming: [],
+    } }));
+  await page.route(`**/api/discovery/matches/${id}/branch-share/options/parent-a`, async (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({ personId: "next-a",
+        previewToken: "c".repeat(64) });
+      added = true;
+      return route.fulfill({ json: { shared: true } });
+    }
+    const read = ++reads;
+    if (read === 1) await oldRead;
+    return route.fulfill({ json: { viaId: "parent-a", options: [next], nextCursor: null } })
+      .catch(() => {});
+  });
+  try {
+    await page.goto("/manage");
+    await openAdminSection(page, "matches", "Связи деревьев");
+    const panel = page.locator("details.match-card-share")
+      .filter({ hasText: "Поделиться разрешённой веткой" });
+    await panel.locator(":scope > summary").click();
+    await panel.getByRole("button", { name: "Дальше от «Анна Петрова»" }).click();
+    await expect.poll(() => reads).toBe(1);
+    await panel.locator(":scope > summary").click();
+    await panel.locator(":scope > summary").click();
+    releaseOld();
+    await expect(panel.getByRole("button", { name: "Добавить эту карточку" })).toHaveCount(0);
+    await panel.getByRole("button", { name: "Дальше от «Анна Петрова»" }).click();
+    await expect(panel.getByText("Елена Петрова")).toBeVisible();
+    await panel.getByRole("button", { name: "Добавить эту карточку" }).click();
+    await expect(panel).toContainText("Карточка добавлена в ваш явный выбор");
+    await expect(panel).toContainText("Елена Петрова");
+    expect(added).toBe(true);
+  } finally { releaseOld(); }
+});
+
 test("reopening a linked-branch panel discards revoked and in-flight members", async ({ page }) => {
   const id = "11111111-1111-4111-8111-111111111111";
   const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
