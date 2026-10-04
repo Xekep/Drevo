@@ -127,7 +127,8 @@ import type { Family } from "../../src/domain/types.ts";
 import { planAdditions } from "../../src/domain/additions-import.ts";
 import { listAdditionBatches, planUndoAdditions } from "../../src/server/additions-undo.ts";
 import { auditStore } from "../../src/server/audit.ts";
-import { writePortablePackage } from "../../src/server/portable-package.ts";
+import { writePortablePackage, type PortableSnapshot } from "../../src/server/portable-package.ts";
+import { portableDomainFixture, assertPortableSecondPgRoundtrip } from "./portable-domain-roundtrip.ts";
 import { portableExportHttp } from "../../src/server/portable-http.ts";
 import { portableImportHttp } from "../../src/server/portable-import-http.ts";
 import { createSharedRequestLimiter } from "../../src/server/shared-request-rate-limit.ts";
@@ -11326,7 +11327,11 @@ try {
   const oauthFetch: typeof fetch = async (input, init) =>
     String(input).includes("/token")
       ? Response.json({ access_token: (init?.body as URLSearchParams).get("code") })
-      : Response.json({ id: "new-account-probe", display_name: "New account" });
+      : Response.json({
+          id: (init?.headers as { Authorization?: string })?.Authorization ===
+            "OAuth portable-target" ? "portable-target-probe" : "new-account-probe",
+          display_name: "New account",
+        });
   const oauthApp = await startServer(0, source, true, oauthFetch);
   try {
     const oauthBase = `http://127.0.0.1:${(oauthApp.server.address() as { port: number }).port}`;
@@ -11488,30 +11493,20 @@ try {
     writeFileSync(join(directory, "portable-record.pdf"), "%PDF-1.4\nportable document");
     const citationPdf = Buffer.from("%PDF-1.4\nportable citation only");
     const citationTiff = await sampleTiff();
+    const portablePortrait = await sharp({ create: {
+      width: 4, height: 4, channels: 3, background: "#976b52",
+    } }).png().toBuffer();
     writeFileSync(join(directory, "portable-citation.pdf"), citationPdf);
     writeFileSync(join(directory, "portable-citation.tif"), citationTiff);
-    await writePortablePackage(createWriteStream(importFile), directory, {
-      family: {
-        title: "Transferred", description: "", demo: false,
-        people: [{ id: "pg-portable-person", name: "Portable", surname: "Person",
-          patronymic: "", sex: "u", birth: "1900", birthPlace: "",
-          parents: [], spouses: [], generation: 1, column: 0, sources: [
-            { title: "PDF citation", type: "archive", reference: "", url: "/media/portable-citation.pdf#page=2" },
-            { title: "TIFF citation", type: "archive", reference: "", url: "/media/portable-citation.tif?page=2" },
-          ],
-          createdBy: "owner" }],
-        photos: [],
-      },
-      documents: [{ id: portableDocumentId, title: "Portable record",
-        fileName: "portable-record.pdf", uploadedBy: "owner",
-        createdAt: "2026-09-30T00:00:00Z", documentType: "", documentDate: "",
-        place: "", description: "", provenance: "", personIds: ["pg-portable-person"],
-        annotations: [{ id: portableAnnotationId, page: 1, x: 0.1, y: 0.1,
-          width: 0.2, height: 0.2, text: "Source note", authorId: "owner",
-          authorName: "Original researcher", createdAt: "2026-09-30T00:00:00Z" }] }],
-      comments: [{ id: 1, personId: "pg-portable-person", authorId: "owner",
-        authorName: "Historian", createdMs: 1000, text: "Verified" }],
-    }, async () => {});
+    writeFileSync(join(directory, "portable-portrait.png"), portablePortrait);
+    const portableAttachmentBytes = Buffer.from("portable discussion original", "utf8");
+    const [portableAttachment] = await discussionAttachmentStore(directory).save([
+      await prepareCommentFile("research-note.txt", portableAttachmentBytes),
+    ]);
+    const portableFixture = portableDomainFixture(
+      portableDocumentId, portableAnnotationId, portableAttachment);
+    await writePortablePackage(createWriteStream(importFile), directory, portableFixture,
+      async () => {});
     const transferHeaders = {
       Cookie: sessionCookie,
       Origin: process.env.PUBLIC_ORIGIN!,
@@ -11690,7 +11685,18 @@ try {
       headers: { Cookie: sessionCookie },
     }).then((response) => response.json());
     assert.equal(transferred.family.people[0].id, "pg-portable-person");
-    const importedOriginals = transferred.family.people[0].sources.map(
+    const expectedPortableFamily = structuredClone(portableFixture.family);
+    delete expectedPortableFamily.people[0].createdBy;
+    delete expectedPortableFamily.unions![0].createdBy;
+    delete expectedPortableFamily.links![0].createdBy;
+    delete expectedPortableFamily.photos![0].createdBy;
+    expectedPortableFamily.people[0].sources[0].url = transferred.family.people[0].sources[0].url;
+    expectedPortableFamily.people[0].sources[1].url = transferred.family.people[0].sources[1].url;
+    expectedPortableFamily.people[0].photo = transferred.family.people[0].photo;
+    expectedPortableFamily.photos![0].url = transferred.family.photos[0].url;
+    assert.deepEqual(transferred.family, expectedPortableFamily,
+      "PostgreSQL apply retains every supported graph, claim and photo field after URL/author remapping");
+    const importedOriginals = transferred.family.people[0].sources.slice(0, 2).map(
       (citation: { url: string }) => citation.url.split(/[?#]/, 1)[0],
     );
     for (const [index, bytes, type] of [
@@ -11722,7 +11728,9 @@ try {
     const quotaArchive = await openPostgresDatabase(personalArchiveId, source);
     try {
       assert.equal((await accountCapacity(quotaArchive, newAccountSession.user.id)).mediaBytes,
-        citationPdf.length + citationTiff.length + Buffer.byteLength("%PDF-1.4\nportable document"),
+        citationPdf.length + citationTiff.length + portablePortrait.length +
+          Buffer.byteLength("%PDF-1.4\nportable document") +
+          portableAttachmentBytes.length,
         "basic-account quota includes citation-only originals once");
     } finally {
       await quotaArchive.close();
@@ -11743,8 +11751,32 @@ try {
     }
     assert.deepEqual(roundtripEntries.get(`media/${importedOriginals[0].slice(7)}`), citationPdf);
     assert.deepEqual(roundtripEntries.get(`media/${importedOriginals[1].slice(7)}`), citationTiff);
+    assert.deepEqual(roundtripEntries.get(`media/${transferred.family.people[0].photo.slice(7)}`),
+      portablePortrait);
     assert.deepEqual(JSON.parse(roundtripEntries.get("archive.json")!.toString()).family.people[0].sources,
       transferred.family.people[0].sources);
+    const roundtripSnapshot = JSON.parse(roundtripEntries.get("archive.json")!.toString()) as PortableSnapshot;
+    assert.deepEqual(roundtripSnapshot.family, transferred.family);
+    assert.deepEqual(roundtripSnapshot.sources, portableFixture.sources);
+    assert.deepEqual(roundtripSnapshot.documents[0].eventLinks,
+      portableFixture.documents[0].eventLinks);
+    assert.deepEqual(roundtripSnapshot.documents[0].pages,
+      portableFixture.documents[0].pages);
+    assert.equal(roundtripSnapshot.documents[0].provenance,
+      portableFixture.documents[0].provenance);
+    assert.equal(roundtripSnapshot.comments[0].authorId, "",
+      "the source author cannot gain rights in the target account");
+    assert.equal(roundtripSnapshot.comments[0].attachments?.[0]?.type,
+      portableAttachment.type);
+    const remappedAttachment = roundtripSnapshot.comments[0].attachments![0];
+    assert.deepEqual(roundtripEntries.get(`media/discussion-files/${remappedAttachment.id}`),
+      portableAttachmentBytes);
+    await assertPortableSecondPgRoundtrip({
+      oauthBase, directory, roundtripPath, roundtripSnapshot,
+      firstFamily: transferred.family, fixture: portableFixture,
+      fallbackFamily: family, citationPdf, citationTiff, portablePortrait, portableAttachmentBytes,
+      portableDocumentId,
+    });
     assert.equal(transferred.family.people[0].createdBy, undefined,
       "the source account ID must not become a live author in the target archive");
     await client.query("SELECT set_config('drevo.archive_id',$1,false)", [personalArchiveId]);

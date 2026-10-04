@@ -385,7 +385,13 @@ export async function readPortablePackage(
       const name = `media/discussion-files/${attachment.id}`;
       const file = files.get(name);
       if (!file || file.size !== attachment.size) invalid("В пакете нет оригинала вложения обсуждения");
-      const prepared = await prepareCommentFile(attachment.name, await readFile(file.path));
+      let prepared;
+      try {
+        prepared = await prepareCommentFile(attachment.name, await readFile(file.path));
+      } catch (error) {
+        if (error instanceof RangeError) invalid("Некорректный оригинал вложения обсуждения");
+        throw error;
+      }
       if (prepared.type !== attachment.type) invalid("Некорректный тип вложения обсуждения");
       expectedMedia.add(name);
     }

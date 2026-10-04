@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -12,6 +12,7 @@ import type { DocumentAnnotation } from "../shared/document-annotations.ts";
 import type { DocumentEventLink, DocumentPage } from "../shared/document-links.ts";
 import { documentFileTypeFromName } from "../shared/document-file.ts";
 import { validCommentFiles, type CommentAttachmentFile } from "../shared/person-discussion.ts";
+import { commentFileMimeType, prepareCommentFile } from "./discussion-attachments.ts";
 import { allCitations } from "./source-catalog-store.ts";
 
 const MAX_ARCHIVE_JSON_BYTES = 128 * 1024 * 1024;
@@ -123,6 +124,8 @@ function fileNames(snapshot: PortableSnapshot) {
     for (const file of comment.attachments || []) {
       if (!hasOnlyPortableFields(file, PORTABLE_COMMENT_FILE_FIELDS))
         throw new PortablePackageError("Неподдерживаемые поля вложения обсуждения; экспорт остановлен");
+      if (commentFileMimeType(file.name) !== file.type)
+        throw new PortablePackageError("Тип вложения обсуждения не соответствует имени файла; экспорт остановлен");
       names.add(`discussion-files/${file.id}`);
     }
   }
@@ -182,6 +185,25 @@ export async function writePortablePackage(
     originals.set(name, digest);
     entries.push({ path: `media/${name}`, ...digest });
   }
+  // A package produced here must pass this version's own preview. Legacy
+  // attachment rows can contain a valid-looking name/type but stale size or
+  // bytes that the upload validator would reject. Check them before headers.
+  for (const comment of snapshot.comments)
+    for (const file of comment.attachments || []) {
+      const path = `discussion-files/${file.id}`;
+      if (originals.get(path)?.size !== file.size)
+        throw new PortablePackageError("Размер вложения обсуждения изменился; экспорт остановлен");
+      try {
+        const prepared = await prepareCommentFile(file.name,
+          await readFile(join(uploads, path)));
+        if (prepared.type !== file.type)
+          throw new PortablePackageError("Тип вложения обсуждения изменился; экспорт остановлен");
+      } catch (error) {
+        if (error instanceof RangeError)
+          throw new PortablePackageError("Оригинал вложения обсуждения некорректен; экспорт остановлен");
+        throw error;
+      }
+    }
   const manifest: PortableManifest = {
     format: "drevo",
     version: 1,

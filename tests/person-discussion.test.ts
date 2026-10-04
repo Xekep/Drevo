@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
@@ -110,6 +110,26 @@ test("person discussion enforces login, visible scope, authorship and origin", a
       item: { id: number; text: string; canDelete: boolean };
     };
     assert.equal(adminComment.item.canDelete, true);
+    const legacyFileId = "c07a257d-50bf-4d7a-a737-20fa1f34ae51";
+    const legacyText = Buffer.from("A stored legacy attachment", "utf8");
+    mkdirSync(join(dir, "uploads", "discussion-files"), { recursive: true });
+    writeFileSync(join(dir, "uploads", "discussion-files", legacyFileId), legacyText);
+    await db.prepare("UPDATE person_comments SET attachments=? WHERE id=?").run(
+      JSON.stringify([{ id: legacyFileId, name: "legacy.txt", type: "text/html",
+        size: legacyText.length }]), adminComment.item.id,
+    );
+    const legacyListed = (await (await request(anna, admin.cookie)).json()).items[0];
+    assert.equal(legacyListed.attachments[0].type, "application/octet-stream");
+    assert.equal(legacyListed.attachments[0].previewUrl, undefined);
+    const legacyDownload = await request(
+      `${anna}/${adminComment.item.id}/attachments/${legacyFileId}`, admin.cookie,
+    );
+    assert.equal(legacyDownload.status, 200);
+    assert.equal(legacyDownload.headers.get("content-type"), "application/octet-stream");
+    assert.match(legacyDownload.headers.get("content-disposition") || "", /^attachment;/);
+    assert.deepEqual(Buffer.from(await legacyDownload.arrayBuffer()), legacyText);
+    await db.prepare("UPDATE person_comments SET attachments='[]' WHERE id=?")
+      .run(adminComment.item.id);
     await db.prepare("UPDATE users SET name='Renamed' WHERE id='admin'").run();
     const named = (await (await request(anna, admin.cookie)).json()) as {
       items: Array<{ author: string }>;

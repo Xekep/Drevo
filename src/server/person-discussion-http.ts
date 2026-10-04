@@ -12,6 +12,7 @@ import { enforceUserStorageLimit } from "./storage-limits.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
 import {
   commentFilesFromJson,
+  commentFileMimeType,
   discussionAttachmentStore,
   prepareCommentAttachments,
 } from "./discussion-attachments.ts";
@@ -214,10 +215,13 @@ export function personDiscussionHttp({
         canEdit: row.author_id === user.id,
         attachments: commentFilesFromJson(row.attachments).map((file) => {
           const url = `/api/people/${encodeURIComponent(personId)}/discussion/${row.id}/attachments/${file.id}`;
+          const type = commentFileMimeType(file.name) === file.type
+            ? file.type : "application/octet-stream";
           return {
             ...file,
+            type,
             url,
-            ...(file.type.startsWith("image/") && {
+            ...(type.startsWith("image/") && {
               previewUrl: `${url}/preview`,
             }),
           };
@@ -233,7 +237,9 @@ export function personDiscussionHttp({
         commentFilesFromJson(row.attachments).find(
           (item) => item.id === match[3],
         );
-      if (!file || (match[4] && !file.type.startsWith("image/")))
+      const safeType = file && commentFileMimeType(file.name) === file.type
+        ? file.type : "application/octet-stream";
+      if (!file || (match[4] && !safeType.startsWith("image/")))
         return json(res, 404, { error: "Вложение не найдено" });
       try {
         const bytes = await attachments.read(file, !!match[4]);
@@ -252,12 +258,12 @@ export function personDiscussionHttp({
         await beforeAttachmentDelivery?.();
         const send = () => {
           res.writeHead(200, {
-            "Content-Type": match[4] ? "image/webp" : file.type,
+            "Content-Type": match[4] ? "image/webp" : safeType,
             "Content-Length": bytes.length,
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
             "Content-Security-Policy": "default-src 'none'; sandbox",
-            "Content-Disposition": `${(match[4] || file.type.startsWith("image/")) && url.searchParams.get("download") !== "1" ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16)}`)}`,
+            "Content-Disposition": `${(match[4] || safeType.startsWith("image/")) && url.searchParams.get("download") !== "1" ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16)}`)}`,
           });
           res.end(bytes);
         };

@@ -31,6 +31,10 @@ const types: Record<string, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
+export function commentFileMimeType(name: string): string | undefined {
+  if (!validCommentFileName(name)) return undefined;
+  return types[name.split(".").at(-1)!.toLowerCase()];
+}
 export type PreparedCommentFile = {
   name: string;
   type: string;
@@ -48,7 +52,7 @@ export async function prepareCommentFile(
     bytes.length > MAX_COMMENT_FILE_BYTES
   )
     throw new RangeError("Некорректный файл. Максимальный размер — 10 МБ.");
-  const type = types[name.split(".").at(-1)!.toLowerCase()];
+  const type = commentFileMimeType(name);
   if (!type) throw new RangeError("Этот формат файла не поддерживается.");
   let preview: Buffer | undefined;
   if (type.startsWith("image/")) {

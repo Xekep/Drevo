@@ -100,21 +100,44 @@ test("v1 preview rejects unknown attachment metadata that installation would era
         size: attachment.length, futureDescription: "Must not disappear" }] }],
   }));
   const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
-  const path = join(root, "attachment.drevo");
-  const zip = new ZipFile();
-  zip.addBuffer(Buffer.from(JSON.stringify({ format: "drevo", version: 1,
-    exportedAt: "2026-10-04T00:00:00Z", entries: [
-      { path: "archive.json", size: archive.length, sha256: hash(archive) },
-      { path: `media/discussion-files/${id}`, size: attachment.length,
-        sha256: hash(attachment) },
-    ] })), "manifest.json");
-  zip.addBuffer(archive, "archive.json");
-  zip.addBuffer(attachment, `media/discussion-files/${id}`);
-  zip.end();
-  try {
+  const writeAttachmentPackage = async (path: string, data: Buffer) => {
+    const zip = new ZipFile();
+    zip.addBuffer(Buffer.from(JSON.stringify({ format: "drevo", version: 1,
+      exportedAt: "2026-10-04T00:00:00Z", entries: [
+        { path: "archive.json", size: data.length, sha256: hash(data) },
+        { path: `media/discussion-files/${id}`, size: attachment.length,
+          sha256: hash(attachment) },
+      ] })), "manifest.json");
+    zip.addBuffer(data, "archive.json");
+    zip.addBuffer(attachment, `media/discussion-files/${id}`);
+    zip.end();
     await pipeline(zip.outputStream, createWriteStream(path));
+  };
+  const path = join(root, "attachment.drevo");
+  try {
+    await writeAttachmentPackage(path, archive);
     await assert.rejects(readPortablePackage(path, extracted),
       /неподдерживаемые поля.*comments\.attachments/);
+    const changedType = JSON.parse(archive.toString()) as {
+      comments: Array<{ attachments: Array<{ name: string; type: string;
+        futureDescription?: string }> }>;
+    };
+    const legacyMetadata = changedType.comments[0].attachments[0];
+    delete legacyMetadata.futureDescription;
+    legacyMetadata.type = "text/html";
+    const changedArchive = Buffer.from(JSON.stringify(changedType));
+    const changedPath = join(root, "attachment-mime.drevo");
+    await writeAttachmentPackage(changedPath, changedArchive);
+    await assert.rejects(readPortablePackage(changedPath, extracted),
+      /Некорректный тип вложения обсуждения/,
+      "preview must refuse MIME metadata that install would replace");
+    legacyMetadata.name = "note.png";
+    legacyMetadata.type = "image/png";
+    const invalidOriginalPath = join(root, "attachment-bytes.drevo");
+    await writeAttachmentPackage(invalidOriginalPath, Buffer.from(JSON.stringify(changedType)));
+    await assert.rejects(readPortablePackage(invalidOriginalPath, extracted),
+      /Некорректный оригинал вложения обсуждения/,
+      "preview must report invalid bytes as package error before apply");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
