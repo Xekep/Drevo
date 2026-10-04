@@ -68,6 +68,7 @@ import { HorizontalTimeline } from "./horizontal-timeline";
 import { useNarrowScreen } from "../../hooks/useNarrowScreen";
 import { useFamilyView } from "./use-family-view";
 import { generationScope } from "../../domain/tree-generation-scope";
+import { createCrossingPathCache } from "../../domain/route-crossings";
 import type { TreeGenerationLimits } from "../../domain/tree-preferences";
 import { useTreeLayout } from "./use-tree-layout";
 import { FamilyViewTools } from "./family-view-tools";
@@ -385,10 +386,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   }, [props.onIntroComplete]);
   const [layoutSettling, setLayoutSettling] = useState(false);
   const settledLayout = useRef("");
+  const settledScope = useRef("");
   const settledNodes = useRef<Array<PersonNodeType | HouseholdNodeType>>([]);
   const settledEdges = useRef<RelationshipEdgeType[]>([]);
   const layoutTimer = useRef<number | null>(null);
   const [layoutTransition, setLayoutTransition] = useState<{
+    scope: string;
     enteringNodes: ReadonlySet<string>;
     exitingNodes: Array<PersonNodeType | HouseholdNodeType>;
     exitingEdges: RelationshipEdgeType[];
@@ -889,6 +892,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     user?.platformAdmin ?? null, user?.approved ?? null,
     props.restricted ?? false,
   ]);
+  const cachedCrossingPaths = useMemo(() => {
+    // Account, archive and read policy own this canvas's retained route paths.
+    void gpuScope;
+    return createCrossingPathCache();
+  }, [gpuScope]);
   const kinshipDay = new Date().toISOString().slice(0, 10);
   const labelKey = useMemo(() => user?.personId ? kinshipLabelKey(
     renderFamily.people, renderFamily.links || [], renderFamily.unions || [], kinshipDay, gpuScope,
@@ -965,6 +973,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         onEdge,
         onChoices: setEdgeChoices,
         growthDelays,
+        crossingPaths: cachedCrossingPaths,
       }),
     [
       layoutMode,
@@ -980,6 +989,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       props.preview,
       onEdge,
       growthDelays,
+      cachedCrossingPaths,
     ],
   );
   const displayEdges = useMemo(
@@ -992,26 +1002,48 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     }),
     [preparedEdges, renderFamily, user, peopleMap, props.canEdit, props.busy],
   );
+  const settledGeometry = useRef<typeof geometry>(null);
+  const committedScene = useRef<{
+    geometry: typeof geometry;
+    scope: string;
+    gpu: boolean;
+  } | null>(null);
   useLayoutEffect(() => {
     if (!ready || !geometry) return;
     const previous = settledLayout.current;
+    const previousScope = settledScope.current;
     const oldNodes = settledNodes.current;
     const oldEdges = settledEdges.current;
+    // A GPU overview had no native cards/branches to animate out. Creating
+    // those wrappers only for the transition makes a large archive stall.
+    const oldWasGpu = committedScene.current?.gpu === true &&
+      committedScene.current.geometry === settledGeometry.current &&
+      committedScene.current.scope === gpuScope;
     settledLayout.current = layoutKey;
+    settledScope.current = gpuScope;
+    settledGeometry.current = geometry;
     settledNodes.current = displayNodes;
     settledEdges.current = displayEdges;
+    if (previousScope !== gpuScope) {
+      setLayoutTransition(null);
+      setLayoutSettling(false);
+      if (layoutTimer.current !== null) window.clearTimeout(layoutTimer.current);
+      layoutTimer.current = null;
+      return;
+    }
     if (!previous || previous === layoutKey) return;
     const nodeIds = new Set(displayNodes.map((node) => node.id));
     const edgeIds = new Set(displayEdges.map((edge) => edge.id));
     const previousIds = new Set(oldNodes.map((node) => node.id));
     setLayoutTransition({
+      scope: gpuScope,
       enteringNodes: new Set(
         displayNodes
-          .filter((node) => !previousIds.has(node.id))
+          .filter((node) => oldWasGpu || !previousIds.has(node.id))
           .map((node) => node.id),
       ),
-      exitingNodes: oldNodes.filter((node) => !nodeIds.has(node.id)),
-      exitingEdges: oldEdges.filter((edge) => !edgeIds.has(edge.id)),
+      exitingNodes: oldWasGpu ? [] : oldNodes.filter((node) => !nodeIds.has(node.id)),
+      exitingEdges: oldWasGpu ? [] : oldEdges.filter((edge) => !edgeIds.has(edge.id)),
     });
     setLayoutSettling(true);
     if (layoutTimer.current !== null) window.clearTimeout(layoutTimer.current);
@@ -1020,7 +1052,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       setLayoutSettling(false);
       layoutTimer.current = null;
     }, TREE_LAYOUT_TRANSITION_MS);
-  }, [geometry, layoutKey, ready, displayNodes, displayEdges]);
+  }, [geometry, layoutKey, ready, displayNodes, displayEdges, gpuScope]);
   useEffect(
     () => () => {
       if (layoutTimer.current !== null)
@@ -1030,7 +1062,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   const renderedNodes = useMemo(
     () =>
-      layoutTransition
+      layoutTransition?.scope === gpuScope
         ? [
             ...displayNodes.map((node) =>
               layoutTransition.enteringNodes.has(node.id)
@@ -1049,11 +1081,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             })),
           ]
         : displayNodes,
-    [displayNodes, layoutTransition],
+    [displayNodes, layoutTransition, gpuScope],
   );
   const renderedEdges = useMemo(
     () =>
-      layoutTransition
+      layoutTransition?.scope === gpuScope
         ? [
             ...displayEdges,
             ...layoutTransition.exitingEdges.map((edge) => ({
@@ -1064,11 +1096,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             })),
           ]
         : displayEdges,
-    [displayEdges, layoutTransition],
+    [displayEdges, layoutTransition, gpuScope],
   );
   const overviewAvailable = mode !== "timeline" && !activeFanAnchor &&
     nodes.length >= 600 && !growing && !layoutSettling;
-  const portraitPeople = useMemo(() => nodes.map((node) => node.data.person), [nodes]);
   const distantScene = overviewAvailable && distantZoom;
   // Use the existing distant canvas scene for large introductions instead of
   // mounting hundreds of SVG edge wrappers during the short growth sequence.
@@ -1081,13 +1112,20 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const [connecting, setConnecting] = useState(false);
   const gpuOverlayEdges = useMemo(() => renderedEdges.filter((edge) => edge.selected ||
     !["parent", "spouse"].includes(edge.data?.connection.type || "")), [renderedEdges]);
-  const gpuEligible = nodes.length >= 500 && !growing && !layoutSettling && !layoutBusy &&
+  const gpuSceneMatches = gpuReadyScene?.geometry === geometry && gpuReadyScene?.scope === gpuScope;
+  // While a worker prepares the next projection, keep the ready current scene.
+  // A pending layout must not create a new GPU scene or mount the old archive
+  // as native cards just because its busy indicator appeared.
+  const gpuEligible = nodes.length >= 500 && !growing && !layoutSettling && (gpuSceneMatches || (ready && !layoutBusy)) &&
     !activeFanAnchor && mode !== "timeline" && !connecting && gpuFailedScope !== gpuScope &&
     gpuOverlayEdges.length <= 64 && nodes.every((node) => GpuPortraitCache.supported(node.data.person.photo));
   // A remounted canvas needs its own first frame and portrait handoff, even
   // when cancelling a connection leaves the layout geometry unchanged.
   if (!gpuEligible && gpuReadyScene) setGpuReadyScene(null);
-  const gpuActive = gpuEligible && gpuReadyScene?.geometry === geometry && gpuReadyScene?.scope === gpuScope;
+  const gpuActive = gpuEligible && gpuSceneMatches;
+  useLayoutEffect(() => {
+    committedScene.current = { geometry, scope: gpuScope, gpu: gpuActive };
+  }, [geometry, gpuScope, gpuActive]);
   const gpuReady = useCallback(() => setGpuReadyScene({ geometry, scope: gpuScope }), [geometry, gpuScope]);
   const gpuFailure = useCallback((reason: string) => {
     setGpuFailedScope(gpuScope); setGpuReadyScene(null); setGpuFallbackReason(reason);
@@ -1894,7 +1932,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         )}
         {!activeFanAnchor && mode !== "timeline" && !gpuActive && (
           <DistantPortraits
-            people={portraitPeople}
             nodes={nodes}
             households={overviewHouseholds}
             edges={canvasEdges}
@@ -1904,6 +1941,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             growing={growing}
             growthStarted={growthStarted}
             growthDelays={growthDelays}
+            cameraReady={initialCameraReady}
           />
         )}
         {!activeFanAnchor && (

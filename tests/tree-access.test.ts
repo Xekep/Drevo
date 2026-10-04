@@ -425,6 +425,7 @@ test("привязка аккаунта и область видимости д�
       uploaded.url,
       `${uploaded.url}?variant=thumb`,
       `${uploaded.url}?variant=tiny`,
+      `${uploaded.url}?variant=avatar`,
       "/media/orphan.png",
     ])
       assert.equal(

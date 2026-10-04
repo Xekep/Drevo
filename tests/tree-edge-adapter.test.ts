@@ -7,7 +7,12 @@ import {
   type Person,
   type TreeGeometry,
 } from "../src/domain/index.ts";
-import { buildTreeEdges } from "../src/components/tree/tree-edge-adapter.ts";
+import {
+  buildTreeEdges,
+  prepareTreeEdges,
+} from "../src/components/tree/tree-edge-adapter.ts";
+import { routeKey } from "../src/domain/edge-routing.ts";
+import { createCrossingPathCache } from "../src/domain/route-crossings.ts";
 
 function person(id: string): Person {
   return {
@@ -95,6 +100,78 @@ function baseInput() {
     growthDelays,
   };
 }
+
+test("covered relation lookup preserves absent/empty coverage and independent extra relations", () => {
+  const cases = [
+    {
+      branches: undefined,
+      coveredRelations: undefined,
+      expected: [parent.key, godparent.key],
+    },
+    { branches: [], coveredRelations: undefined, expected: [godparent.key] },
+    { branches: [], coveredRelations: [], expected: [parent.key, godparent.key] },
+    {
+      branches: [],
+      coveredRelations: [routeKey(parent), routeKey(parent)],
+      expected: [godparent.key],
+    },
+    {
+      branches: undefined,
+      coveredRelations: [routeKey(parent)],
+      expected: [parent.key, godparent.key],
+    },
+    {
+      branches: [],
+      coveredRelations: [routeKey(godparent)],
+      expected: [parent.key],
+    },
+  ];
+  for (const { branches, coveredRelations, expected } of cases) {
+    const input = { ...geometry, branches, coveredRelations };
+    const before = structuredClone(input);
+    const edges = buildTreeEdges({
+      ...baseInput(), geometry: input, extraVisible: true,
+    });
+    assert.deepEqual(edges.map((edge) => edge.id), expected);
+    assert.deepEqual(input, before);
+  }
+});
+
+test("edge preparation uses its canvas cache across projection changes without changing gap paths", () => {
+  const cache = createCrossingPathCache();
+  const results: ReadonlyMap<string, string>[] = [];
+  const input = {
+    ...baseInput(),
+    extraVisible: true,
+    geometry: {
+      ...geometry,
+      routes: [
+        [routeKey(parent), {
+          sourceHandle: "right", targetHandle: "left",
+          points: [{ x: 0, y: 50 }, { x: 100, y: 50 }],
+        }],
+        [routeKey(godparent), {
+          sourceHandle: "bottom", targetHandle: "top",
+          points: [{ x: 50, y: 0 }, { x: 50, y: 100 }],
+        }],
+      ],
+    } as TreeGeometry,
+    crossingPaths: (edges: Parameters<typeof cache>[0]) => {
+      const paths = cache(edges);
+      results.push(paths);
+      return paths;
+    },
+  };
+  const full = prepareTreeEdges(input);
+  const small = prepareTreeEdges({ ...input, extraVisible: false });
+  const returned = prepareTreeEdges(input);
+  assert.equal(results.length, 3);
+  assert.ok(full.edges[0].data?.path, "crossing different relationships creates a gap");
+  assert.equal(small.edges[0].data?.path, undefined);
+  assert.equal(results[2], results[0]);
+  assert.deepEqual(returned.edges.map((edge) => [edge.id, edge.data?.path]),
+    full.edges.map((edge) => [edge.id, edge.data?.path]));
+});
 
 test("edge adapter preserves handles, highlighting, filters and draft preview", () => {
   const edges = buildTreeEdges(baseInput());

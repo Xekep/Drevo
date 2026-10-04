@@ -160,7 +160,7 @@ const TimelinePersonRow = memo(function TimelinePersonRow({
         onClick={() => onChoose(row.person.id, false)}
         aria-label={`Открыть карточку: ${fullName(row.person)}`}
       >
-        <Avatar person={row.person} />
+        <Avatar person={row.person} preview="avatar" />
         <span>
           <strong>{row.person.surname || row.person.name}</strong>
           <span>

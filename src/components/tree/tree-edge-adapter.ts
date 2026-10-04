@@ -9,7 +9,10 @@ import {
 import { fullName } from "../../domain/dates.ts";
 import { connectionPairName } from "../../domain/connection-labels.ts";
 import { relaxAdditionalRoute, routeKey } from "../../domain/edge-routing.ts";
-import { crossingPaths } from "../../domain/route-crossings.ts";
+import {
+  crossingPaths,
+  type CrossingPathFinder,
+} from "../../domain/route-crossings.ts";
 import {
   TREE_NODE_HEIGHT,
   TREE_NODE_WIDTH,
@@ -74,7 +77,7 @@ type EdgeAdapterInput = {
 type EdgePreparationInput = Omit<
   EdgeAdapterInput,
   "family" | "user" | "canEdit" | "busy"
->;
+> & { crossingPaths?: CrossingPathFinder };
 export type PreparedTreeEdges = {
   edges: RelationshipEdgeType[];
   /** Only standalone connections can reconnect; family branches and drafts cannot. */
@@ -147,8 +150,12 @@ export function prepareTreeEdges({
   onEdge,
   onChoices,
   growthDelays,
+  crossingPaths: findCrossingPaths = crossingPaths,
 }: EdgePreparationInput): PreparedTreeEdges {
   const routes = new Map(geometry?.routes || []);
+  const coveredRelations = geometry?.coveredRelations
+    ? new Set(geometry.coveredRelations)
+    : null;
   const nodeWidth = geometry?.nodeSize?.width ?? TREE_NODE_WIDTH,
     nodeHeight = geometry?.nodeSize?.height ?? TREE_NODE_HEIGHT;
   const cards = extraVisible
@@ -178,8 +185,8 @@ export function prepareTreeEdges({
         positions.has(edge.from) &&
         positions.has(edge.to) &&
         (!geometry?.branches ||
-          (geometry.coveredRelations
-            ? !geometry.coveredRelations.includes(routeKey(edge))
+          (coveredRelations
+            ? !coveredRelations.has(routeKey(edge))
             : !["parent", "spouse"].includes(edge.type))) &&
         (extraVisible || ["parent", "spouse"].includes(edge.type)),
     )
@@ -341,7 +348,7 @@ export function prepareTreeEdges({
   const groups = new Map(
     (geometry?.branches || []).map((branch) => [branch.id, branch.union]),
   );
-  const paths = crossingPaths(
+  const paths = findCrossingPaths(
     combined.map((edge) => ({
       id: edge.id,
       group: groups.get(edge.id) || edge.id,

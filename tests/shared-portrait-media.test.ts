@@ -106,6 +106,21 @@ test("shared portrait uses path previews and streams GIF originals", async () =>
     assert.ok((tinyMeta.width || 0) <= 48);
     assert.ok((tinyMeta.height || 0) <= 48);
 
+    for (const path of [portrait, "/media/shared.png"]) {
+      const response = await fetch(base + path + "?variant=avatar");
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("content-type"), "image/webp");
+      assert.match(response.headers.get("cache-control") || "", /no-store/);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      const metadata = await sharp(bytes).metadata();
+      assert.equal(metadata.width, 128);
+      assert.equal(metadata.height, 96);
+      const pixels = await sharp(bytes).raw().toBuffer();
+      assert.ok(pixels[0] - pixels[2] > 15, "compact portraits keep colour");
+    }
+    assert.equal((await fetch(base + portrait.replace("/person", "/unshared") + "?variant=avatar")).status, 404);
+    assert.equal((await fetch(base + portrait.replace(issued.token, "b".repeat(43)) + "?variant=avatar")).status, 410);
+
     const current = await app.archive.read(),
       withGif = structuredClone(current.family);
     withGif.people[0].photo = "/media/shared.gif";
@@ -116,6 +131,9 @@ test("shared portrait uses path previews and streams GIF originals", async () =>
     assert.equal(gifResponse.headers.get("content-type"), "image/gif");
     assert.equal(gifResponse.headers.get("content-length"), String(gif.length));
     assert.deepEqual(Buffer.from(await gifResponse.arrayBuffer()), gif);
+    const compactGif = await fetch(base + portrait + "?variant=avatar");
+    assert.equal(compactGif.headers.get("content-type"), "image/gif");
+    assert.deepEqual(Buffer.from(await compactGif.arrayBuffer()), gif);
   } finally {
     await app.close();
     rmSync(directory, { recursive: true, force: true });
@@ -171,7 +189,7 @@ test("shared preview does not release a portrait replaced during generation", as
   try {
     const port = (server.address() as { port: number }).port;
     const response = fetch(
-      `http://127.0.0.1:${port}/api/shared/${token}/portrait/person`,
+      `http://127.0.0.1:${port}/api/shared/${token}/portrait/person?variant=avatar`,
     );
     await started;
     currentFamily = family("/media/new.png");

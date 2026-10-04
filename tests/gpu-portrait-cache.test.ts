@@ -67,7 +67,7 @@ function fixture(t: TestContext) {
     RED: 11,
     UNSIGNED_BYTE: 12,
     RGBA: 13,
-    createTexture: () => ({ id: ++textureCount }),
+    createTexture: (): object | null => ({ id: ++textureCount }),
     bindTexture: (_target: number, texture: object) => {
       bound = texture;
     },
@@ -133,6 +133,7 @@ function fixture(t: TestContext) {
     return peak;
   };
   return {
+    gl,
     cache,
     images,
     pending,
@@ -187,6 +188,63 @@ test("3313 tiny portraits fit the same two textures with at most six loaders", (
   ]);
   assert.equal(f.cache.bytes, bytes);
   assert.equal(f.failures(), 0);
+});
+
+test("failed allocation of the second atlas deletes the first texture only", (t) => {
+  const f = fixture(t);
+  const allocated = { id: "partial-atlas" };
+  let calls = 0;
+  t.mock.method(f.gl, "createTexture", () =>
+    ++calls === 1 ? allocated : null,
+  );
+  assert.throws(
+    () =>
+      new GpuPortraitCache(
+        f.gl as unknown as WebGL2RenderingContext,
+        f.redraw,
+        f.failure,
+      ),
+    /GPU texture allocation failed/,
+  );
+  assert.equal(calls, 2);
+  assert.deepEqual(f.deleted, [allocated]);
+  assert.equal(f.failures(), 0);
+  assert.equal(f.redraws(), 0);
+  // Other caches sharing this GL context retain their own resources.
+  f.cache.request(photos(1), 0.1);
+  f.drain();
+  assert.ok(f.cache.get(photos(1)[0]));
+  assert.deepEqual(f.deleted, [allocated]);
+});
+
+test("second atlas initialization failure releases both newly allocated textures", (t) => {
+  const f = fixture(t),
+    allocated: object[] = [];
+  const create = f.gl.createTexture;
+  t.mock.method(f.gl, "createTexture", () => {
+    const texture = create();
+    assert.ok(texture);
+    allocated.push(texture);
+    return texture;
+  });
+  const failure = new Error("Atlas storage unavailable");
+  let calls = 0;
+  t.mock.method(f.gl, "texStorage2D", () => {
+    if (++calls === 2) throw failure;
+  });
+  assert.throws(
+    () =>
+      new GpuPortraitCache(
+        f.gl as unknown as WebGL2RenderingContext,
+        f.redraw,
+        f.failure,
+      ),
+    (error) => error === failure,
+  );
+  assert.equal(allocated.length, 2);
+  assert.deepEqual(f.deleted, allocated);
+  assert.equal(f.failures(), 0);
+  assert.equal(f.redraws(), 0);
 });
 
 test("1521 photos retain 48px packing, and only larger projections repack", (t) => {
