@@ -668,7 +668,7 @@ export function aiResearchHttp({
           console.warn(JSON.stringify({ event: "ai.generated_file_cleanup_failed" })));
         const remoteId =
           chat.yandexConversationId || existing.yandexConversationId;
-        if (remoteId && !chat.providerCleanupRef) {
+        if (remoteId && !chat.providerCleanupRef && !existing.providerCleanupRef) {
           void responses
             .deleteConversation(await aiRuntimeConfig(aiSettings), remoteId)
             .catch((error) =>
