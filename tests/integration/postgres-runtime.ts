@@ -12467,19 +12467,30 @@ try {
     const importArchive = await openArchive(selectedDbPath, family, personalArchiveId);
     const importAuth = await createAuth(await userStore(importArchive.db), importArchive.db,
       process.env.PUBLIC_ORIGIN);
-    let importReadReady!: () => void;
-    let releaseImportRead!: () => void;
-    const importReadReached = new Promise<void>((resolve) => { importReadReady = resolve; });
-    const importReadGate = new Promise<void>((resolve) => { releaseImportRead = resolve; });
-    let holdImportRead = false;
+    let importReadBarrier: { remaining: number; reached: () => void; gate: Promise<void> } | null = null;
+    let releaseHeldImportRead = () => {};
+    const holdImportRead = (readNumber = 1) => {
+      let reached!: () => void;
+      let releaseGate!: () => void;
+      const ready = new Promise<void>((resolve) => { reached = resolve; });
+      const gate = new Promise<void>((resolve) => { releaseGate = resolve; });
+      const release = () => {
+        releaseGate();
+        if (releaseHeldImportRead === release) releaseHeldImportRead = () => {};
+      };
+      releaseHeldImportRead = release;
+      importReadBarrier = { remaining: readNumber, reached, gate };
+      return { ready, release };
+    };
     const delayedImport = portableImportHttp({
       ...importArchive,
       read: async () => {
         const snapshot = await importArchive.read();
-        if (holdImportRead) {
-          holdImportRead = false;
-          importReadReady();
-          await importReadGate;
+        const barrier = importReadBarrier;
+        if (barrier && --barrier.remaining === 0) {
+          importReadBarrier = null;
+          barrier.reached();
+          await barrier.gate;
         }
         return snapshot;
       },
@@ -12496,29 +12507,94 @@ try {
         method: "POST", headers: transferHeaders, body: readFileSync(importFile),
       })).status, 403, "an unapproved owner cannot start a portable preview");
       await setOwnerApproved(true);
-      holdImportRead = true;
+      const approvalBarrier = holdImportRead();
       const pending = fetch(portableImportBase + "/api/drevo/import", {
         method: "POST", headers: { ...transferHeaders, "Content-Type": "application/json" },
         body: JSON.stringify({ token: transferToken, confirm: true }),
       });
       let timer!: ReturnType<typeof setTimeout>;
       const progress = await Promise.race([
-        importReadReached.then(() => "read"),
+        approvalBarrier.ready.then(() => "read"),
         pending.then(() => "responded"),
         new Promise<string>((resolve) => { timer = setTimeout(() => resolve("timed out"), 10_000); }),
       ]);
       clearTimeout(timer);
       assert.equal(progress, "read", "portable apply must reach the gated archive read");
       await setOwnerApproved(false);
-      releaseImportRead();
+      approvalBarrier.release();
       assert.equal((await pending).status, 403,
         "revoking approval after apply starts must prevent the archive write");
       assert.equal((await importArchive.db.prepare("", "SELECT data->>'status' AS status FROM workflow_stages WHERE token=?")
         .get(transferToken))?.status, "ready", "failed apply returns its stage to ready");
       assert.equal((await importArchive.read()).family.people.length, 0,
         "revoked apply must not import a person");
+      await setOwnerApproved(true);
+      for (const kind of ["deleted", "expired"] as const) {
+        const token = newSessionToken();
+        const hash = sessionTokenHash(token);
+        await client.query(
+          "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)",
+          [hash, newAccountSession.user.id, Date.now() + 600_000],
+        );
+        const before = await importArchive.read();
+        const beforeCapacity = await accountCapacity(importArchive.db, newAccountSession.user.id);
+        const beforeOriginals = await importArchive.db.prepare("", "SELECT count(*)::int AS n FROM media_originals").get();
+        const beforeReservations = await importArchive.db.prepare("", "SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests WHERE reserved_bytes>0").get();
+        const beforePlatformReservations = await client.query(
+          "SELECT coalesce(sum(reserved_bytes),0)::bigint AS bytes FROM platform_upload_reservations",
+        );
+        const uploadDirectory = join(dirname(selectedDbPath), "uploads");
+        const beforeFiles = readdirSync(uploadDirectory, { recursive: true }).sort();
+        // empty() reads once before the final HTTP actor/session lookup;
+        // applyPortablePackage() reads again after that lookup but before write.
+        const barrier = holdImportRead(2);
+        try {
+          const request = fetch(portableImportBase + "/api/drevo/import", {
+            method: "POST",
+            headers: { ...transferHeaders, Cookie: `drevo_session=${token}`,
+              "Content-Type": "application/json" },
+            body: JSON.stringify({ token: transferToken, confirm: true }),
+          });
+          const reached = await Promise.race([
+            barrier.ready.then(() => "read"),
+            request.then(() => "responded"),
+            new Promise<string>((resolve) => { timer = setTimeout(() => resolve("timed out"), 10_000); }),
+          ]);
+          clearTimeout(timer);
+          assert.equal(reached, "read", `portable apply must reach the ${kind} session barrier`);
+          const revoked = kind === "deleted"
+            ? await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [hash])
+            : await client.query("UPDATE account_sessions SET expires_at=$2 WHERE token_hash=$1",
+                [hash, Date.now() - 1]);
+          assert.equal(revoked.rowCount, 1, "only the issuing session is revoked");
+          barrier.release();
+          const denied = await request;
+          assert.equal(denied.status, 401,
+            `a ${kind} issuing session must not commit the portable import`);
+          assert.equal((await importArchive.db.prepare("", "SELECT data->>'status' AS status FROM workflow_stages WHERE token=?")
+            .get(transferToken))?.status, "ready", "denied apply returns its preview stage to ready");
+          const after = await importArchive.read();
+          assert.equal(after.revision, before.revision, "denied import does not advance the archive revision");
+          assert.deepEqual(after.family, before.family, "denied import does not change the family");
+          assert.deepEqual(await accountCapacity(importArchive.db, newAccountSession.user.id), beforeCapacity,
+            "denied import does not consume the owner's quota");
+          assert.equal((await importArchive.db.prepare("", "SELECT count(*)::int AS n FROM media_originals").get())?.n,
+            beforeOriginals?.n, "denied import does not register originals");
+          assert.equal((await importArchive.db.prepare("", "SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests WHERE reserved_bytes>0").get())?.bytes,
+            beforeReservations?.bytes, "denied import releases its upload reservation");
+          assert.equal((await client.query("SELECT coalesce(sum(reserved_bytes),0)::bigint AS bytes FROM platform_upload_reservations")).rows[0]?.bytes,
+            beforePlatformReservations.rows[0]?.bytes, "denied import releases its platform reservation");
+          assert.deepEqual(readdirSync(uploadDirectory, { recursive: true }).sort(), beforeFiles,
+            "denied import removes copied originals");
+        } finally {
+          barrier.release();
+          await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [hash]);
+        }
+      }
+      console.log("runtime_portable_import_final_session_ok");
     } finally {
-      releaseImportRead();
+      releaseHeldImportRead();
+      importReadBarrier = null;
       await setOwnerApproved(true);
       portableImportServer.closeAllConnections();
       await new Promise<void>((resolve) => portableImportServer.close(() => resolve()));
