@@ -75,6 +75,7 @@ import { acceptWithDecisionNote, rejectWithStableDecisionNote,
   verifyNoteHiddenAfterPublicationChange } from "./postgres-match-decision-notes.ts";
 import { verifyAiProviderCleanupStatus } from "./postgres-ai-provider-status.ts";
 import { verifyPlatformStaffRoles } from "./postgres-platform-staff-roles.ts";
+import { verifyGlobalStaffMigrationStartup } from "./postgres-global-staff-migration-startup.ts";
 import { verifyAiProviderCleanupRetry } from "./postgres-ai-provider-retry.ts";
 import { verifyPlatformConfigurationMigration, verifyPlatformConfigurationRevocation,
   verifySharedPlatformConfiguration } from "./postgres-platform-configuration.ts";
@@ -261,6 +262,8 @@ try {
   live = await openArchive(source, family);
   await verifyPlatformConfigurationMigration(live.db, client);
   assert.equal(live.db.kind, "postgres");
+  await verifyGlobalStaffMigrationStartup(client, "runtime-test", source);
+  console.log("runtime_global_staff_concurrent_startup_ok");
   await client.query("SELECT set_config('drevo.archive_id','role-legacy-archive',false)");
   assert.deepEqual((await client.query(`SELECT user_id,role FROM archive_memberships
     WHERE archive_id='role-legacy-archive' ORDER BY user_id`)).rows,

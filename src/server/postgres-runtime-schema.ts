@@ -367,6 +367,20 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
     ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
+    if (file === "090_global_staff_roles.sql") {
+      if (!db.postgresTransaction)
+        throw new Error("PostgreSQL transaction unavailable");
+      await db.postgresTransaction(async (client) => {
+        // This migration needs relation-wide DDL locks. Take the global
+        // migration lock before any archive row lock: another backend may
+        // already hold DDL locks while opening this same archive.
+        await client.query("SELECT pg_advisory_xact_lock(186743291)");
+        if ((await client.query(query)).rows[0]?.present) return;
+        await client.query(readFileSync(
+          new URL(`../../ops/postgres/${file}`, import.meta.url), "utf8"));
+      });
+      continue;
+    }
     try {
       await db.transaction(async () => {
         // Serialize DDL across processes/archives, not only this archive's writes.
