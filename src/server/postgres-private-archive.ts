@@ -47,7 +47,7 @@ export async function provisionPrivateArchiveInTransaction(
   await client.query(
     `INSERT INTO archive_memberships
       (archive_id,user_id,role,approved,person_id,tree_access)
-     VALUES($1,$2,'admin',true,NULL,'all')`,
+     VALUES($1,$2,'relative',true,NULL,'all')`,
     [archiveId, ownerId],
   );
   await client.query(

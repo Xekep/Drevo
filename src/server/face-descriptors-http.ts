@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import type { openArchive } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
@@ -257,7 +258,7 @@ export function faceDescriptorsHttp({
           )
         )
           return json(res, 403, { error: "Нет доступа к человеку" });
-        if (actor.role !== "admin" && row.created_by !== actor.id)
+        if (!isArchiveOwner(actor) && row.created_by !== actor.id)
           return json(res, 403, { error: "Нет доступа к образцу" });
         await archive.db
           .prepare(
@@ -352,7 +353,7 @@ export function faceDescriptorsHttp({
         });
       const sourceTagRowId = String(source.tag_id);
       const photo = JSON.parse(String(source.photo)) as { createdBy?: string };
-      if (actor.role !== "admin" && photo.createdBy !== actor.id)
+      if (!isArchiveOwner(actor) && photo.createdBy !== actor.id)
         return json(res, 403, { error: "Нет доступа к исходной фотографии" });
       const saved = await archive.db.transaction(async () => {
         const currentActor = await currentWriter(req, actor);
@@ -377,7 +378,7 @@ export function faceDescriptorsHttp({
         if (!currentSource || JSON.stringify(currentSource.tag) !== JSON.stringify(source.tag))
           return "source";
         const currentPhoto = JSON.parse(String(currentSource.photo)) as { createdBy?: string };
-        if (currentActor.role !== "admin" && currentPhoto.createdBy !== currentActor.id)
+        if (!isArchiveOwner(currentActor) && currentPhoto.createdBy !== currentActor.id)
           return "access";
         const count = Number((await archive.db.prepare(
           `SELECT count(*) AS n FROM face_descriptors WHERE person_id=? AND model=?

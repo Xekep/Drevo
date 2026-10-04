@@ -20,7 +20,10 @@ export async function lockDiscoveryOwnerReadAccess(db: StoreDatabase,
   const membership = await db.prepare("", `SELECT role,approved,person_id,tree_access
     FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE NOWAIT`)
     .get(db.archiveId, user.id);
-  return membership?.role === "admin" && membership.approved === true &&
+  const owner = await db.prepare("", `SELECT 1 FROM archive_owners
+    WHERE archive_id=? AND user_id=? FOR SHARE NOWAIT`).get(db.archiveId, user.id);
+  return !!owner && membership?.role === (user.treeRole || user.role) &&
+    membership.approved === true &&
     (membership.person_id || "") === (user.personId || "") &&
     membership.tree_access === (user.treeAccess || "all");
 }

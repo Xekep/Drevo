@@ -1,0 +1,153 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import type { Client } from "pg";
+import pg from "pg";
+import { newSessionToken, sessionTokenHash } from "../../src/server/session-token.ts";
+
+/** Account-scoped roles do not mint archive access or change an account tier. */
+export async function verifyPlatformStaffRoles(
+  client: Client,
+  base: string,
+  ownerHeaders: Record<string, string>,
+  origin: string,
+) {
+  const id = `platform-role-${randomUUID()}`;
+  const token = newSessionToken();
+  const hash = sessionTokenHash(token);
+  const targetHeaders = {
+    Cookie: `drevo_session=${token}`,
+    Origin: origin,
+    "Content-Type": "application/json",
+  };
+  const roleUrl = `${base}/api/platform/roles/${encodeURIComponent(id)}`;
+  const patch = (headers: Record<string, string>, role: "admin" | "researcher" | null) =>
+    fetch(roleUrl, { method: "PATCH", headers, body: JSON.stringify({ role }) });
+  await client.query("INSERT INTO accounts(id,name,created_at) VALUES($1,'Platform role fixture',$2)",
+    [id, new Date().toISOString()]);
+  await client.query(`INSERT INTO account_tiers(account_id,full_access) VALUES($1,false)
+    ON CONFLICT(account_id) DO UPDATE SET full_access=false`, [id]);
+  await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)",
+    [hash, id, Date.now() + 600_000]);
+  try {
+    const beforeLocal = await client.query(`SELECT m.role,m.approved,m.person_id,m.tree_access,
+      t.full_access FROM archive_memberships m
+      JOIN account_tiers t ON t.account_id=m.user_id
+      WHERE m.archive_id='runtime-test' AND m.user_id='reader'`);
+    assert.equal(beforeLocal.rowCount, 1);
+    for (const body of [
+      { role: "admin" },
+      { role: "researcher" },
+      { approved: true, role: "admin" },
+    ]) {
+      const rejected = await fetch(`${base}/api/users/reader`, {
+        method: "PATCH", headers: ownerHeaders, body: JSON.stringify(body),
+      });
+      assert.ok([400, 403].includes(rejected.status),
+        `a tree owner cannot grant a global staff role through archive users: ${rejected.status}`);
+      const afterLocal = await client.query(`SELECT m.role,m.approved,m.person_id,m.tree_access,
+        t.full_access FROM archive_memberships m
+        JOIN account_tiers t ON t.account_id=m.user_id
+        WHERE m.archive_id='runtime-test' AND m.user_id='reader'`);
+      assert.deepEqual(afterLocal.rows, beforeLocal.rows,
+        "forbidden role input cannot partially apply approval, scope, identity, tier or role");
+    }
+    assert.equal((await fetch(`${base}/api/platform/roles`, { headers: ownerHeaders })).status, 200);
+    assert.equal((await patch(ownerHeaders, "researcher")).status, 200);
+    const profile = await fetch(`${base}/api/session`, { headers: targetHeaders });
+    assert.equal(profile.status, 200);
+    const session = await profile.json();
+    assert.equal(session.account?.globalRole, "researcher");
+    assert.equal(session.user, null, "a platform grant cannot fabricate archive membership");
+    assert.equal((await fetch(`${base}/api/platform/roles`, { headers: targetHeaders })).status, 403);
+    assert.ok([401, 403].includes(
+      (await fetch(`${base}/api/family`, { headers: targetHeaders })).status));
+    assert.equal((await patch(targetHeaders, "admin")).status, 403);
+
+    assert.equal((await patch(ownerHeaders, "admin")).status, 200);
+    const adminProfile = await fetch(`${base}/api/session`, { headers: targetHeaders }).then((r) => r.json());
+    assert.equal(adminProfile.account?.globalRole, "admin");
+    assert.equal(adminProfile.user, null);
+    assert.equal((await fetch(`${base}/api/platform/roles`, { headers: targetHeaders })).status, 200);
+    assert.ok([401, 403].includes(
+      (await fetch(`${base}/api/family`, { headers: targetHeaders })).status));
+    assert.equal((await fetch(`${base}/api/mcp/tokens`, { headers: targetHeaders })).status, 403,
+      "a global admin without approved archive ownership cannot manage full-tree MCP tokens");
+
+    assert.equal((await patch(ownerHeaders, null)).status, 200);
+    assert.equal((await fetch(`${base}/api/platform/roles`, { headers: targetHeaders })).status, 403);
+    assert.equal((await patch(ownerHeaders, null)).status, 200,
+      "an idempotent role request is accepted without new audit history");
+    assert.equal((await patch(ownerHeaders, null)).status, 200);
+    const targetState = await client.query<{ full_access: boolean; memberships: string; audit: string }>(
+      `SELECT t.full_access,
+        (SELECT count(*) FROM archive_memberships WHERE user_id=$1)::text AS memberships,
+        (SELECT count(*) FROM platform_role_audit WHERE target_id=$1)::text AS audit
+       FROM account_tiers t WHERE t.account_id=$1`, [id]);
+    assert.deepEqual(targetState.rows[0], { full_access: false, memberships: "0", audit: "3" });
+    const ownerId = "owner";
+    const selfDemotion = await fetch(`${base}/api/platform/roles/${ownerId}`, {
+      method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ role: null }),
+    });
+    assert.equal(selfDemotion.status, 403, "the final platform administrator remains assigned");
+    assert.equal((await client.query("SELECT count(*) AS n FROM platform_admins")).rows[0].n, "1");
+    await verifyTierRevocationBarrier(client, base, origin);
+    console.log("runtime_platform_staff_roles_isolation_ok");
+  } finally {
+    await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [hash]);
+    await client.query("DELETE FROM platform_role_audit WHERE target_id=$1", [id]);
+    await client.query("DELETE FROM platform_researchers WHERE account_id=$1", [id]);
+    await client.query("DELETE FROM platform_admins WHERE account_id=$1", [id]);
+    await client.query("DELETE FROM accounts WHERE id=$1", [id]);
+  }
+}
+
+async function verifyTierRevocationBarrier(client: Client, base: string, origin: string) {
+  const token = newSessionToken();
+  const hash = sessionTokenHash(token);
+  const before = (await client.query<{ full_access: boolean }>(
+    "SELECT full_access FROM account_tiers WHERE account_id='reader'"))
+    .rows[0].full_access;
+  const blocker = new pg.Client();
+  await blocker.connect();
+  await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2)",
+    [hash, Date.now() + 600_000]);
+  let transactionOpen = false;
+  const waitForBlocked = async (fragment: string) => {
+    for (let attempt = 0; attempt < 250; attempt++) {
+      const waiting = await blocker.query<{ blocked: boolean }>(
+        `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+          WHERE pid<>pg_backend_pid() AND wait_event_type='Lock'
+            AND query LIKE $1) AS blocked`, [`%${fragment}%`]);
+      if (waiting.rows[0].blocked) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`Expected PostgreSQL lock wait: ${fragment}`);
+  };
+  try {
+    await blocker.query("BEGIN");
+    transactionOpen = true;
+    await blocker.query("SELECT full_access FROM account_tiers WHERE account_id='reader' FOR UPDATE");
+    const headers = { Cookie: `drevo_session=${token}`, Origin: origin,
+      "Content-Type": "application/json" };
+    const change = fetch(`${base}/api/users/reader`, {
+      method: "PATCH", headers, body: JSON.stringify({ fullAccess: !before }),
+    });
+    await waitForBlocked("SELECT u.*, t.full_access FROM runtime_users");
+    const revoke = client.query("DELETE FROM account_sessions WHERE token_hash=$1", [hash]);
+    await waitForBlocked("DELETE FROM account_sessions WHERE token_hash");
+    await blocker.query("COMMIT");
+    transactionOpen = false;
+    assert.equal((await change).status, 200,
+      "tier mutation finishes before a concurrent session revoke can commit");
+    assert.equal((await revoke).rowCount, 1);
+    const after = await fetch(`${base}/api/users/reader`, {
+      method: "PATCH", headers, body: JSON.stringify({ fullAccess: before }),
+    });
+    assert.ok([401, 403].includes(after.status), "completed session revoke blocks another tier mutation");
+  } finally {
+    if (transactionOpen) await blocker.query("ROLLBACK");
+    await blocker.end();
+    await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [hash]);
+    await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='reader'", [before]);
+  }
+}

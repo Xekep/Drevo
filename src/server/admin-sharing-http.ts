@@ -5,6 +5,7 @@ import type { sharesStore } from "./shares.ts";
 import type { auditStore } from "./audit.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 
 export function adminSharingHttp({
   archive,
@@ -46,7 +47,7 @@ export function adminSharingHttp({
       return false;
 
     const actor = await auth.currentUser(req);
-    if (!actor || actor.role !== "admin" || !actor.approved)
+    if (!actor || !isArchiveOwner(actor) || !actor.approved)
       return json(res, actor ? 403 : 401, {
         error: "Доступно администратору",
       });
@@ -103,7 +104,7 @@ export function adminSharingHttp({
           chunks.push(Buffer.from(chunk));
         }
         const currentActor = await auth.currentUser(req);
-        if (currentActor?.role !== "admin" || !currentActor.approved)
+        if (!isArchiveOwner(currentActor) || !currentActor?.approved)
           return json(res, 403, { error: "Доступ отозван" });
         const current = await archive.read();
         if (

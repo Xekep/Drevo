@@ -271,7 +271,7 @@ export async function aiSettingsStore(db: StoreDatabase) {
   return {
     read,
     savedApiKey,
-    async write(value: unknown, actor: ArchiveUser) {
+    async write(value: unknown, actor: ArchiveUser | Pick<ArchiveUser, "id" | "name">) {
       if (!value || typeof value !== "object" || Array.isArray(value))
         throw new Error("Некорректные настройки AI Studio");
       const raw = value as Record<string, unknown>;

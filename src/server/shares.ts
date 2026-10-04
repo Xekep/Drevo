@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser } from "../domain/access.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import type { Family } from "../domain/types.ts";
 import type { ShareLink } from "../domain/shared-family.ts";
 import { auditStore } from "./audit.ts";
@@ -60,7 +61,7 @@ export function sharesStore(db: StoreDatabase) {
       actor: ArchiveUser,
       now = Date.now(),
     ) {
-      if (actor.role !== "admin")
+      if (!isArchiveOwner(actor))
         throw new Error("Ссылки выдаёт администратор");
       const people = new Set(family.people.map((p) => p.id));
       if (
@@ -101,7 +102,9 @@ export function sharesStore(db: StoreDatabase) {
           const membership = await db
             .prepare(
               "",
-              `SELECT role,approved
+              `SELECT approved,EXISTS(SELECT 1 FROM archive_owners o
+                WHERE o.archive_id=archive_memberships.archive_id
+                  AND o.user_id=archive_memberships.user_id) AS archive_owner
             FROM archive_memberships
             WHERE archive_id=current_setting('drevo.archive_id',true)
               AND user_id=? FOR SHARE`,
@@ -109,7 +112,7 @@ export function sharesStore(db: StoreDatabase) {
             .get(actor.id);
           if (
             !membership?.approved ||
-            membership.role !== "admin" ||
+            !membership.archive_owner ||
             !actor.approved
           )
             throw new ForbiddenError("Доступ к выдаче ссылок отозван");
@@ -224,7 +227,7 @@ export function sharesStore(db: StoreDatabase) {
       const cursor = Number(before || 0);
       return await db.transaction(async () => {
         if (db.kind === "postgres") {
-          if (!actor?.approved || actor.role !== "admin")
+          if (!actor?.approved || !isArchiveOwner(actor))
             throw new ForbiddenError("Доступ к ссылкам отозван");
           await assertCurrentArchiveActor(db, actor);
         }
@@ -241,7 +244,7 @@ export function sharesStore(db: StoreDatabase) {
       }, true);
     },
     async revoke(id: string, actor: ArchiveUser, now = Date.now()) {
-      if (actor.role !== "admin")
+      if (!isArchiveOwner(actor))
         throw new Error("Ссылки отзывает администратор");
       return await db.transaction(async () => {
         if (
@@ -251,7 +254,9 @@ export function sharesStore(db: StoreDatabase) {
           const membership = await db
             .prepare(
               "",
-              `SELECT role,approved
+              `SELECT approved,EXISTS(SELECT 1 FROM archive_owners o
+                WHERE o.archive_id=archive_memberships.archive_id
+                  AND o.user_id=archive_memberships.user_id) AS archive_owner
             FROM archive_memberships
             WHERE archive_id=current_setting('drevo.archive_id',true)
               AND user_id=? FOR SHARE`,
@@ -259,7 +264,7 @@ export function sharesStore(db: StoreDatabase) {
             .get(actor.id);
           if (
             !membership?.approved ||
-            membership.role !== "admin" ||
+            !membership.archive_owner ||
             !actor.approved
           )
             throw new ForbiddenError("Доступ к отзыву ссылок отозван");

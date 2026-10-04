@@ -252,7 +252,7 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
         await transaction
           .prepare(
             "",
-            `UPDATE archive_memberships SET role='admin',tree_access='all'
+            `UPDATE archive_memberships SET role='relative',tree_access='all'
              WHERE archive_id=current_setting('drevo.archive_id', true)
                AND user_id=? AND approved=true`,
           )

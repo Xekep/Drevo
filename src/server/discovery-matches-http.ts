@@ -11,6 +11,7 @@ import { decodeCandidatePageCursor, discoveryCandidatePage,
 import { publicPersonId } from "./public-person-id.ts";
 import { AccountSessionBusy } from "./account-session-guard.ts";
 import { lockDiscoveryOwnerReadAccess } from "./discovery-owner-read-access.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 
 const archivePattern = /^[A-Za-z0-9-]{3,64}$/;
 const matchPattern = /^[a-f0-9-]{36}$/;
@@ -266,7 +267,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
     ).get(archiveId, userId);
     const user = await auth.currentUser(req);
     if (!user) return json(res, 401, { error: "Войдите в архив" });
-    if (user.role !== "admin" || user.approved !== true || !await isOwner(user.id))
+    if (!isArchiveOwner(user) || user.approved !== true || !await isOwner(user.id))
       return json(res, 403, { error: "Сопоставлять людей может владелец дерева" });
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
@@ -476,7 +477,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
           targetArchiveId === archiveId || typeof ignored !== "boolean")
         return json(res, 400, { error: "Выберите другое опубликованное дерево" });
       const approved = await auth.currentUser(req);
-      if (approved?.role !== "admin" || approved.approved !== true || !await isOwner(approved.id))
+      if (!isArchiveOwner(approved) || approved?.approved !== true || !await isOwner(approved.id))
         return json(res, 403, { error: "Доступ отозван" });
       const result = await db.transaction(async () => {
         if (!await isOwner(approved.id, true)) return { code: 403, error: "Доступ владельца отозван" };
@@ -511,7 +512,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
           targetArchiveId === archiveId || typeof ignored !== "boolean")
         return json(res, 400, { error: "Выберите две опубликованные карточки из разных архивов" });
       const approved = await auth.currentUser(req);
-      if (approved?.role !== "admin" || approved.approved !== true || !await isOwner(approved.id))
+      if (!isArchiveOwner(approved) || approved?.approved !== true || !await isOwner(approved.id))
         return json(res, 403, { error: "Доступ отозван" });
       const result = await db.transaction(async () => {
         if (!await isOwner(approved.id, true)) return undefined;
@@ -813,7 +814,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       if (typeof reason !== "string" || reason.trim().length > 500)
         return json(res, 400, { error: "Комментарий должен быть короче 500 символов" });
       const approved = await auth.currentUser(req);
-      if (approved?.role !== "admin" || approved.approved !== true || !await isOwner(approved.id))
+      if (!isArchiveOwner(approved) || approved?.approved !== true || !await isOwner(approved.id))
         return json(res, 403, { error: "Доступ отозван" });
       const pair = [[archiveId,sourceId],[targetArchiveId,targetId]].sort((a,b) =>
         a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0);
@@ -856,7 +857,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         return json(res, 400, { error: "Пояснение должно быть короче 500 символов" });
       const decisionNote = typeof body?.note === "string" ? body.note.trim() : "";
       const approved = await auth.currentUser(req);
-      if (approved?.role !== "admin" || approved.approved !== true || !await isOwner(approved.id))
+      if (!isArchiveOwner(approved) || approved?.approved !== true || !await isOwner(approved.id))
         return json(res, 403, { error: "Доступ отозван" });
       const result = await db.transaction(async () => {
         if (!await isOwner(approved.id,true))

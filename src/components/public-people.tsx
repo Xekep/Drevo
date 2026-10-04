@@ -70,7 +70,7 @@ export default function PublicPeople() {
       })
       .then((data) => {
         if (!controller.signal.aborted && data) setMatchArchives(data.archives.filter((archive) =>
-          archive.owned && archive.approved && archive.role === "admin" && archive.id !== detail.archiveId));
+          archive.owned && archive.approved && archive.id !== detail.archiveId));
       })
       .catch(() => {
         if (!controller.signal.aborted) setMatchArchivesError("Не удалось проверить ваши деревья для сопоставления");

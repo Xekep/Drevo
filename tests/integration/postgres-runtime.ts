@@ -72,6 +72,7 @@ import { acceptWithDecisionNote, rejectWithStableDecisionNote,
   verifyWithdrawnDecisionNotes, verifyLegacyDecisionCannotReopen,
   verifyNoteHiddenAfterPublicationChange } from "./postgres-match-decision-notes.ts";
 import { verifyAiProviderCleanupStatus } from "./postgres-ai-provider-status.ts";
+import { verifyPlatformStaffRoles } from "./postgres-platform-staff-roles.ts";
 import { verifyAiProviderCleanupRetry } from "./postgres-ai-provider-retry.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
@@ -232,8 +233,43 @@ try {
   await client.query("DROP TABLE vk_auth_settings");
   await client.query("ALTER TABLE ai_settings DROP COLUMN role_profiles");
   await client.query("ALTER TABLE documents DROP COLUMN annotations");
+  // 090 runs as the non-BYPASSRLS application owner. A legacy grant in a
+  // different archive must not make its global NOT VALID check abort startup.
+  await client.query("BEGIN");
+  await client.query("SELECT set_config('drevo.archive_id','role-legacy-archive',true)");
+  await client.query(`INSERT INTO archives(id,title,description,demo,revision,sqlite_schema_version)
+    VALUES('role-legacy-archive','Legacy roles','',false,0,18)`);
+  await client.query(`INSERT INTO accounts(id,name,created_at) VALUES
+    ('role-legacy-owner','Legacy owner',now()),
+    ('role-legacy-member','Legacy member',now())`);
+  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+    VALUES('role-legacy-archive','role-legacy-owner','admin',true,'all'),
+          ('role-legacy-archive','role-legacy-member','researcher',true,'all')`);
+  await client.query(`INSERT INTO archive_owners(archive_id,user_id)
+    VALUES('role-legacy-archive','role-legacy-owner')`);
+  await client.query("COMMIT");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   live = await openArchive(source, family);
   assert.equal(live.db.kind, "postgres");
+  await client.query("SELECT set_config('drevo.archive_id','role-legacy-archive',false)");
+  assert.deepEqual((await client.query(`SELECT user_id,role FROM archive_memberships
+    WHERE archive_id='role-legacy-archive' ORDER BY user_id`)).rows,
+    [{ user_id: "role-legacy-member", role: "researcher" },
+     { user_id: "role-legacy-owner", role: "admin" }]);
+  await client.query(`UPDATE archive_memberships SET approved=false
+    WHERE archive_id='role-legacy-archive' AND user_id='role-legacy-member'`);
+  assert.equal((await client.query(`SELECT role FROM archive_memberships
+    WHERE archive_id='role-legacy-archive' AND user_id='role-legacy-member'`)).rows[0].role,
+    "relative", "the 090 trigger normalizes a legacy role on a non-role update");
+  const legacyRoleArchive = await openPostgresDatabase("role-legacy-archive", source);
+  await legacyRoleArchive.close();
+  assert.equal((await client.query(`SELECT role FROM archive_memberships
+    WHERE archive_id='role-legacy-archive' AND user_id='role-legacy-owner'`)).rows[0].role,
+    "relative", "opening a second archive lazily normalizes its former owner grant");
+  await client.query("DELETE FROM archives WHERE id='role-legacy-archive'");
+  await client.query("DELETE FROM accounts WHERE id IN ('role-legacy-owner','role-legacy-member')");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  console.log("runtime_global_roles_two_archive_migration_ok");
   assert.equal((await client.query(`SELECT 1 FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name='runtime_visible_person_comments'
       AND column_name='updated_ms'`)).rowCount, 1,
@@ -809,8 +845,16 @@ try {
     "SELECT set_config('drevo.archive_id','runtime-test',false)",
   );
   const runtimeUsers = await userStore(live.db);
-  assert.equal((await runtimeUsers.get("owner"))?.role, "admin");
-  assert.equal((await runtimeUsers.get("vk:42"))?.role, "researcher");
+  assert.deepEqual(((await runtimeUsers.get("owner")) && {
+    treeRole: (await runtimeUsers.get("owner"))?.treeRole,
+    globalRole: (await runtimeUsers.get("owner"))?.globalRole,
+    archiveOwner: (await runtimeUsers.get("owner"))?.archiveOwner,
+  }), { treeRole: "relative", globalRole: "admin", archiveOwner: true });
+  assert.deepEqual(((await runtimeUsers.get("vk:42")) && {
+    treeRole: (await runtimeUsers.get("vk:42"))?.treeRole,
+    globalRole: (await runtimeUsers.get("vk:42"))?.globalRole,
+    archiveOwner: (await runtimeUsers.get("vk:42"))?.archiveOwner,
+  }), { treeRole: "relative", globalRole: null, archiveOwner: false });
   assert.deepEqual(await accountCapacity(live.db, "vk:42"), {
     available: true,
     owned: false,
@@ -1775,6 +1819,8 @@ try {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
   };
+  await verifyPlatformStaffRoles(client, securedBase,
+    ownerHeaders, process.env.PUBLIC_ORIGIN!);
   await verifyAiProviderCleanupStatus(app.archive.db, securedBase, ownerHeaders, headers);
   await verifyAiProviderCleanupRetry(app.archive.db, headers);
   // A temporary portrait grant must become a permanent citation reference at
@@ -1901,7 +1947,8 @@ try {
   // The HTTP permission snapshot can precede an ownership transfer. Revoke
   // must reject the former admin after that transfer commits.
   const staleShareAdmin = await stagedUsers.get("owner");
-  assert.equal(staleShareAdmin?.role, "admin");
+  assert.equal(staleShareAdmin?.role, "relative");
+  assert.equal(staleShareAdmin?.archiveOwner, true);
   const staleShareId = randomUUID();
   await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   await client.query(

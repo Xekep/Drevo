@@ -412,6 +412,15 @@ export function mcpHttp({
         // with token revocation, membership changes and tier downgrade.
         const delivery = await archive.db.transaction(async () => {
           if (grant.boundUser && archive.db.kind === "postgres") {
+            // Keep the bound account and global grants stable through the
+            // response; a local role alone cannot represent a staff revoke.
+            const account = await archive.db.prepare("",
+              "SELECT id FROM accounts WHERE id=? FOR SHARE NOWAIT")
+              .get(grant.boundUser.id);
+            if (!account) return {
+              status: 403,
+              body: { error: "Доступ к участнику архива изменился" },
+            };
             const current = await archive.db
               .prepare(
                 "",
@@ -419,9 +428,22 @@ export function mcpHttp({
               FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`,
               )
               .get(archive.db.archiveId || "", grant.boundUser.id);
+            const owner = await archive.db.prepare("",
+              `SELECT user_id FROM archive_owners
+               WHERE archive_id=? AND user_id=? FOR SHARE NOWAIT`)
+              .get(archive.db.archiveId || "", grant.boundUser.id);
+            const admin = await archive.db.prepare("",
+              "SELECT account_id FROM platform_admins WHERE account_id=? FOR SHARE NOWAIT")
+              .get(grant.boundUser.id);
+            const researcher = await archive.db.prepare("",
+              "SELECT account_id FROM platform_researchers WHERE account_id=? FOR SHARE NOWAIT")
+              .get(grant.boundUser.id);
+            const globalRole = admin ? "admin" : researcher ? "researcher" : null;
             if (
               !current?.approved ||
               current.role !== grant.boundUser.role ||
+              !!owner !== grant.boundUser.archiveOwner ||
+              globalRole !== (grant.boundUser.globalRole ?? null) ||
               (current.person_id || "") !== (grant.boundUser.personId || "") ||
               current.tree_access !== (grant.boundUser.treeAccess || "all")
             )
@@ -450,6 +472,8 @@ export function mcpHttp({
             finalGrant.scopes.includes("sources:read") !== grant.scopes.includes("sources:read") ||
             finalGrant.boundUser?.id !== grant.boundUser?.id ||
             finalGrant.boundUser?.role !== grant.boundUser?.role ||
+            finalGrant.boundUser?.archiveOwner !== grant.boundUser?.archiveOwner ||
+            finalGrant.boundUser?.globalRole !== grant.boundUser?.globalRole ||
             finalGrant.boundUser?.personId !== grant.boundUser?.personId ||
             finalGrant.boundUser?.treeAccess !== grant.boundUser?.treeAccess
           )

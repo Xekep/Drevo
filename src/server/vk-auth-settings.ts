@@ -32,7 +32,9 @@ export function vkAuthSettingsStore(
   return {
     read,
     async write(value: unknown, actor: ArchiveUser) {
-      if (actor.role !== "admin" || !actor.approved)
+      if ((db.kind === "postgres"
+          ? actor.globalRole !== "admin"
+          : actor.role !== "admin") || !actor.approved)
         throw new ForbiddenError(
           "Настройки входа доступны только администратору",
         );

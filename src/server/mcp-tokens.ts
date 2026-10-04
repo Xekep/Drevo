@@ -45,6 +45,8 @@ export function mcpTokenStore(db: StoreDatabase) {
     u.name AS bound_user_name,u.role AS bound_user_role,
     u.created_at AS bound_user_created_at,u.approved AS bound_user_approved,
     u.person_id AS bound_person_id,u.tree_access AS bound_tree_access
+    ${db.kind === "postgres" ? `,u.tree_role AS bound_tree_role,
+      u.global_role AS bound_global_role,u.archive_owner AS bound_archive_owner` : ""}
   `;
   const listQuery = db.prepare(
     `SELECT ${tokenColumns}
@@ -97,7 +99,12 @@ export function mcpTokenStore(db: StoreDatabase) {
       ? {
           id: String(row.bound_user_id),
           name: String(row.bound_user_name || ""),
-          role: row.bound_user_role as ArchiveUser["role"],
+          role: (row.bound_tree_role || row.bound_user_role) as ArchiveUser["role"],
+          ...(Object.hasOwn(row, "bound_tree_role") ? {
+            treeRole: row.bound_tree_role as ArchiveUser["treeRole"],
+            globalRole: (row.bound_global_role || null) as ArchiveUser["globalRole"],
+            archiveOwner: row.bound_archive_owner === true,
+          } : {}),
           createdAt: String(row.bound_user_created_at || ""),
           approved: !!row.bound_user_approved,
           ...(row.bound_person_id

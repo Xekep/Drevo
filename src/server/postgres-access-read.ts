@@ -1,5 +1,5 @@
 import type pg from "pg";
-import type { ArchiveUser, Role, TreeAccess } from "../domain/access.ts";
+import type { ArchiveUser, Role, TreeAccess, GlobalRole, TreeRole } from "../domain/access.ts";
 
 type UserRow = {
   id: string;
@@ -10,6 +10,9 @@ type UserRow = {
   approved: boolean;
   person_id: string | null;
   tree_access: TreeAccess;
+  tree_role?: TreeRole;
+  global_role?: GlobalRole;
+  archive_owner?: boolean;
 };
 
 export function postgresUser(row: UserRow): ArchiveUser {
@@ -18,7 +21,10 @@ export function postgresUser(row: UserRow): ArchiveUser {
     name: row.name,
     createdAt: row.created_at,
     ...(row.last_visit_at ? { lastVisitAt: row.last_visit_at } : {}),
-    role: row.role,
+    role: row.tree_role || row.role,
+    ...(row.tree_role ? { treeRole: row.tree_role } : {}),
+    ...(row.global_role !== undefined ? { globalRole: row.global_role } : {}),
+    ...(row.archive_owner !== undefined ? { archiveOwner: row.archive_owner } : {}),
     approved: row.approved,
     ...(row.person_id ? { personId: row.person_id } : {}),
     treeAccess: row.tree_access,
@@ -28,9 +34,16 @@ export function postgresUser(row: UserRow): ArchiveUser {
 /** Every identity read is scoped to an archive membership. Not wired into HTTP yet. */
 export function postgresAccessReader(client: pg.Client, archiveId: string) {
   const selectUser = `SELECT a.id,a.name,a.created_at,a.last_visit_at,
-                            m.role,m.approved,m.person_id,m.tree_access
+                            m.role AS tree_role,m.role,m.approved,m.person_id,m.tree_access,
+                            (o.user_id IS NOT NULL) AS archive_owner,
+                            CASE WHEN pa.account_id IS NOT NULL THEN 'admin'
+                                 WHEN pr.account_id IS NOT NULL THEN 'researcher'
+                                 ELSE NULL END AS global_role
                        FROM archive_memberships m
-                       JOIN accounts a ON a.id=m.user_id`;
+                       JOIN accounts a ON a.id=m.user_id
+                       LEFT JOIN archive_owners o ON o.archive_id=m.archive_id AND o.user_id=m.user_id
+                       LEFT JOIN platform_admins pa ON pa.account_id=m.user_id
+                       LEFT JOIN platform_researchers pr ON pr.account_id=m.user_id`;
   return {
     async getUser(userId: string): Promise<ArchiveUser | null> {
       const result = await client.query<UserRow>(

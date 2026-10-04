@@ -138,7 +138,8 @@ export async function verifyOwnerTransferGetRevocation(db: StoreDatabase, client
         );
         resumeAuth();
         const response = await pending;
-        assert.equal(response.status, path.includes("candidates") ? 403 : 200);
+        assert.equal(response.status, 403,
+          "a former archive owner cannot read transfer state or candidates");
         assert.doesNotMatch(await response.text(), /Читатель|targetName|eligible/,
           "a former owner cannot receive the prepared recipient or candidate names");
       } finally {

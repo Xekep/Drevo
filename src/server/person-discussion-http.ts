@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { auditStore } from "./audit.ts";
 import { ForbiddenError } from "./users.ts";
@@ -211,7 +212,7 @@ export function personDiscussionHttp({
           row.updated_ms == null
             ? null
             : new Date(row.updated_ms).toISOString(),
-        canDelete: user.role === "admin" || row.author_id === user.id,
+        canDelete: isArchiveOwner(user) || row.author_id === user.id,
         canEdit: row.author_id === user.id,
         attachments: commentFilesFromJson(row.attachments).map((file) => {
           const url = `/api/people/${encodeURIComponent(personId)}/discussion/${row.id}/attachments/${file.id}`;
@@ -600,7 +601,7 @@ export function personDiscussionHttp({
           const row = (await comment.get(id, personId)) as
             CommentRow | undefined;
           if (!row) return { status: 404, error: "Сообщение не найдено" };
-          if (row.author_id !== user.id && user.role !== "admin")
+          if (row.author_id !== user.id && !isArchiveOwner(user))
             return {
               status: 403,
               error: "Удалить сообщение может автор или администратор",

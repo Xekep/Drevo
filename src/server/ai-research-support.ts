@@ -1,6 +1,7 @@
 import type { ResearchAnswerReference as AnswerReference } from "../domain/research-answer.ts";
 import type { IncomingMessage } from "node:http";
 import type { ArchiveUser } from "../domain/access.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import { fullName } from "../domain/dates.ts";
 import { PEOPLE_FILTER_SCHEMA } from "../domain/research-people-filter.ts";
 import type { Family } from "../domain/types.ts";
@@ -50,14 +51,14 @@ export function requesterPromptContext(user: ArchiveUser, family: Family) {
 
 export function requesterAccessContext(user: ArchiveUser, canPropose: boolean) {
   const readScope =
-    user.role !== "admin" && user.treeAccess === "common_ancestors"
+    !isArchiveOwner(user) && user.treeAccess === "common_ancestors"
       ? "Пользователь видит только людей из области общих предков и связанные с ними фотографии. Скрытых данных в инструментах нет; не предполагай их существование и не пытайся их раскрыть. Если поиск пуст, говори «не найдено в доступной вам части архива», а не «такого человека в архиве нет»."
       : "Пользователю доступен весь семейный архив.";
   if (!canPropose)
     return user.role === "reader"
       ? `${readScope} У пользователя доступ только для чтения — и у тебя, и в интерфейсе. Не предлагай сохранить, создать или изменить данные, не советуй нажать кнопку редактирования: она ему недоступна. Для изменения данных нужно обратиться к администратору.`
       : `${readScope} Предложения изменений через ИИ отключены для этой роли. Не обещай создать или изменить данные через чат. Права пользователя в обычном интерфейсе архива сохраняются.`;
-  if (user.role === "admin")
+  if (isArchiveOwner(user))
     return `${readScope} Пользователь может подтверждать изменения любых объектов архива.`;
   return `${readScope} Пользователь может создавать новые карточки, но редактировать и связывать только созданные им объекты. Сервер отдельно проверяет право на каждое предложение.`;
 }

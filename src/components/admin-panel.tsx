@@ -8,6 +8,7 @@ type AdminPanelProps = {
   family: Family;
   currentUserId: string;
   platformAdmin: boolean;
+  archiveOwner: boolean;
   aiAvailable: boolean;
   publicationOwnership: PublicationOwnership;
   onClose: () => void;

@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type pg from "pg";
 import type { ArchiveUser } from "../domain/access.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { assertCurrentArchiveActor } from "./users.ts";
 import { AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
@@ -50,7 +51,7 @@ export function archiveInvitations(db: StoreDatabase) {
         )
       : null;
   const requireAdmin = (actor: ArchiveUser) => {
-    if (actor.role !== "admin" || !actor.approved)
+    if (!isArchiveOwner(actor) || !actor.approved)
       throw new InvalidInvitationError(
         "Приглашениями управляет администратор дерева.",
       );
@@ -235,7 +236,7 @@ export function accountInvitations(db: StoreDatabase) {
              ON CONFLICT (archive_id,user_id) DO UPDATE SET
                approved=true,
                role=CASE
-                 WHEN archive_memberships.role='admin' OR archive_memberships.approved
+                 WHEN archive_memberships.approved
                    THEN archive_memberships.role
                  ELSE EXCLUDED.role END,
                tree_access=CASE WHEN archive_memberships.approved

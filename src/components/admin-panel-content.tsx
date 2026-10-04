@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import {
   ROLE_NAMES,
+  isArchiveOwner,
   type ArchiveUser,
   type Role,
   type TreeAccess,
@@ -166,6 +167,7 @@ function AdminUserRow({
   busy,
   currentUserId,
   platformAdmin,
+  archiveOwner: _archiveOwner,
   onPatch,
   onDelete,
 }: {
@@ -174,6 +176,7 @@ function AdminUserRow({
   busy: boolean;
   currentUserId: string;
   platformAdmin: boolean;
+  archiveOwner: boolean;
   onPatch: (patch: UserPatch) => Promise<boolean>;
   onDelete: () => Promise<void>;
 }) {
@@ -231,13 +234,15 @@ function AdminUserRow({
         <span>Роль</span>
         <select
           aria-label={`Роль: ${user.name}`}
-          value={user.role}
-          disabled={busy}
+          value={user.treeRole || user.role}
+          disabled={busy || user.archiveOwner === true}
           onChange={(event) =>
             void onPatch({ role: event.target.value as Role })
           }
         >
-          {Object.entries(ROLE_NAMES).map(([role, label]) => (
+          {Object.entries(ROLE_NAMES)
+            .filter(([role]) => !user.treeRole || role === "reader" || role === "relative")
+            .map(([role, label]) => (
             <option key={role} value={role}>
               {label}
             </option>
@@ -276,7 +281,7 @@ function AdminUserRow({
         <select
           aria-label={`Доступ к древу: ${user.name}`}
           value={user.personId ? user.treeAccess || "all" : "all"}
-          disabled={busy || user.role === "admin" || !user.personId}
+          disabled={busy || isArchiveOwner(user) || !user.personId}
           onChange={(event) =>
             void onPatch({
               personId: user.personId || null,
@@ -327,6 +332,7 @@ export function AdminPanel({
   family,
   currentUserId,
   platformAdmin,
+  archiveOwner,
   aiAvailable,
   publicationOwnership,
   onClose,
@@ -338,6 +344,7 @@ export function AdminPanel({
   family: Family;
   currentUserId: string;
   platformAdmin: boolean;
+  archiveOwner: boolean;
   aiAvailable: boolean;
   publicationOwnership: PublicationOwnership;
   onClose: () => void;
@@ -368,7 +375,8 @@ export function AdminPanel({
   const visibleGroups = ADMIN_SECTIONS.map((group) => ({
     ...group,
     items: group.items.filter(({ id }) =>
-      id === "backups" || id === "ai" ? platformAdmin :
+      id === "backups" ? platformAdmin && archiveOwner :
+      id === "ai" ? platformAdmin :
       id === "resources" || id === "mcp" ? aiAvailable : true),
   })).filter((group) => group.items.length > 0);
   const visibleSection = visibleGroups.some((group) => group.items.some((item) => item.id === section))
@@ -572,6 +580,7 @@ export function AdminPanel({
                       busy={busy}
                       currentUserId={currentUserId}
                       platformAdmin={platformAdmin}
+                      archiveOwner={archiveOwner}
                       onPatch={async (patch) => {
                         const data = await change(
                           `/api/users/${encodeURIComponent(user.id)}`,
@@ -745,7 +754,7 @@ export function AdminPanel({
             <AuditLog key={auditActor} actorId={auditActor || undefined} />
           </section>
         )}
-        {visibleSection === "backups" && platformAdmin && (
+        {visibleSection === "backups" && platformAdmin && archiveOwner && (
           <BackupAdmin onRestored={onChanged} />
         )}
         {visibleSection === "data" && (

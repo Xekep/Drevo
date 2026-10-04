@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import {
   archiveInvitations,
@@ -27,7 +28,7 @@ export function archiveInvitationsHttp(
     if (path !== "/api/invitations" && !path.startsWith("/api/invitations/"))
       return false;
     const actor = await auth.currentUser(req);
-    if (!actor?.approved || actor.role !== "admin")
+    if (!actor?.approved || !isArchiveOwner(actor))
       return json(res, actor ? 403 : 401, {
         error: "Доступно администратору дерева.",
       });

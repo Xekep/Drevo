@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import {
   ROLE_NAMES,
+  isArchiveOwner,
   fullName,
   type ArchiveUser,
   type Family,
@@ -31,6 +32,9 @@ import { AccountOwnerTransfer } from "./account-owner-transfer";
 import { AccountArchiveDeletion } from "./account-archive-deletion";
 import { AccountSelfDeletion } from "./account-self-deletion";
 import { CreatePersonalArchive } from "./create-personal-archive";
+import { PlatformStaffRoles } from "./platform-staff-roles";
+import { AiSettingsAdmin } from "./ai-settings-admin";
+import { McpTokenAdmin } from "./mcp-token-admin";
 
 export type AccountSession = {
   user: ArchiveUser | null;
@@ -39,6 +43,7 @@ export type AccountSession = {
     name: string;
     createdAt: string;
     fullAccess: boolean;
+    globalRole?: "admin" | "researcher" | null;
     provider: "vk" | "yandex" | "email" | null;
     providers?: ("vk" | "yandex" | "email")[];
   } | null;
@@ -86,7 +91,7 @@ function ArchiveList({ archives }: { archives: AccountArchive[] }) {
         <div className="account-archive-row" key={item.id}>
           <span className="account-archive-name">
             <strong>{item.title}</strong>
-            <small>{ROLE_NAMES[item.role]}</small>
+            <small>{item.owned ? "Владелец архива" : ROLE_NAMES[item.role]}</small>
           </span>
           {item.current ? (
             <span className="account-archive-current">Открыто</span>
@@ -144,6 +149,7 @@ export function AccountPage({
   readTree,
   onPerson,
   onAdmin,
+  onOwnPlatformRoleChanged,
 }: {
   session: AccountSession | null;
   loading: boolean;
@@ -152,6 +158,7 @@ export function AccountPage({
   readTree: boolean;
   onPerson: (id: string) => void;
   onAdmin: () => void;
+  onOwnPlatformRoleChanged: (role: "admin" | "researcher" | null) => void;
 }) {
   const user = session?.user;
   const identity = user || session?.account;
@@ -387,7 +394,7 @@ export function AccountPage({
                     )}
                     <div>
                       <span>Роль</span>
-                      <strong>{ROLE_NAMES[user.role]}</strong>
+                      <strong>{isArchiveOwner(user) ? "Владелец архива" : ROLE_NAMES[user.treeRole || user.role]}</strong>
                     </div>
                     {capacity?.available && capacity.owned && (
                       <>
@@ -456,7 +463,7 @@ export function AccountPage({
                       Открыть мою карточку <ArrowRight size={17} />
                     </button>
                   )}
-                  {user.role === "admin" && user.approved && (
+                  {isArchiveOwner(user) && user.approved && (
                     <button className="account-row-action" onClick={onAdmin}>
                       Управление архивом <ArrowRight size={17} />
                     </button>
@@ -693,7 +700,7 @@ export function AccountPage({
                   </p>
                   {capacity?.available &&
                     capacity.owned &&
-                    user.role === "admin" &&
+                    isArchiveOwner(user) &&
                     user.approved && (
                       <div className="account-export-actions">
                         <a
@@ -728,7 +735,7 @@ export function AccountPage({
                     )}
                   {capacity?.available &&
                     capacity.owned &&
-                    user.role === "admin" &&
+                    isArchiveOwner(user) &&
                     user.approved &&
                     capacity.emptyArchive && <PortableImport />}
                   {capacity?.available && user.approved && (
@@ -740,13 +747,21 @@ export function AccountPage({
                     window.location.pathname.startsWith("/a/") && (
                       <AccountArchiveDeletion key={window.location.pathname} />
                     )}
-                  {user.role === "admin" && user.approved && (
+                  {isArchiveOwner(user) && user.approved && (
                     <button className="account-row-action" onClick={onAdmin}>
                       <Users size={17} /> Управление архивом{" "}
                       <ArrowRight size={17} />
                     </button>
                   )}
                 </section>
+              )}
+              {session?.account?.globalRole === "admin" && (
+                <>
+                  <PlatformStaffRoles currentAccountId={accountId}
+                    onOwnRoleChanged={onOwnPlatformRoleChanged} />
+                  <AiSettingsAdmin />
+                  {user?.approved && isArchiveOwner(user) && <McpTokenAdmin />}
+                </>
               )}
               {user?.approved && (
                 <AccountAiHistory key={accountId} accountId={accountId} />

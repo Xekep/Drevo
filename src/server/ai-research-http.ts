@@ -24,6 +24,7 @@ import { type researchSuggestionStore } from "./research-suggestions.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { YandexResponseError } from "./yandex-responses.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
+import { aiProfileRole } from "../domain/access.ts";
 import { aiChatAccessScope } from "./ai-chat-access-scope.ts";
 import { researchPdf } from "./research-pdf.ts";
 import type { AiProviderCleanup } from "./ai-provider-cleanup.ts";
@@ -527,7 +528,7 @@ export function aiResearchHttp({
       if (req.method !== "GET")
         return json(res, 405, { error: "Ожидается GET" });
       const user = (await auth.currentUser(req))!;
-      const runtime = await aiRuntimeConfig(aiSettings, user.role);
+      const runtime = await aiRuntimeConfig(aiSettings, aiProfileRole(user));
       return json(res, 200, {
         enabled: runtime.active,
         canPropose: runtime.capabilities.proposals && (await auth.canEdit(req)),
@@ -713,7 +714,7 @@ export function aiResearchHttp({
     // A large attachment may arrive after the owner's tier was downgraded.
     if (!(await accountAiAccess(archive.db, user.id, auth.local)))
       return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
-    const runtime = await aiRuntimeConfig(aiSettings, user.role);
+    const runtime = await aiRuntimeConfig(aiSettings, aiProfileRole(user));
     if (!runtime.active)
       return json(res, 503, {
         error: runtime.configured
@@ -1033,7 +1034,7 @@ export function aiResearchHttp({
               const membership = await archive.db.prepare("", `SELECT role,approved
                 FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
                 .get(archive.db.archiveId || "", user.id);
-              if (!membership?.approved || !["admin", "researcher", "relative"].includes(String(membership.role))) {
+              if (!membership?.approved || String(membership.role) !== "relative") {
                 accessRevoked = true;
                 controller.abort();
                 throw new DOMException("Доступ к предложению отозван", "AbortError");

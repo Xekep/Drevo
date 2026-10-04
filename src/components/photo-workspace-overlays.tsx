@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import type { ArchiveUser, Family, PhotoMetadata } from "../domain";
-import { owns } from "../domain";
+import { isArchiveOwner, owns } from "../domain";
 import { viewerPhotos } from "../domain/photo-albums";
 import type { PhotoWorkspace } from "../hooks/usePhotoWorkspace";
 
@@ -69,7 +69,7 @@ export function PhotoWorkspaceOverlays({
             family={family}
             initialEditing={workspace.editPhotoId === photo.id}
             canEdit={canEdit && owns(user, photo)}
-            canDelete={canEdit && user?.role === "admin"}
+            canDelete={canEdit && isArchiveOwner(user)}
             busy={busy}
             save={save}
             onClose={workspace.closePhoto}

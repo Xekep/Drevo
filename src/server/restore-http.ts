@@ -7,6 +7,7 @@ import { ForbiddenError } from "./users.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
 import { UploadQuotaError } from "./upload-quota.ts";
 import type { StoreDatabase } from "./store-database.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 
 export function restoreHttp({
   restores,
@@ -39,8 +40,9 @@ export function restoreHttp({
       return false;
     if (req.method !== "POST")
       return json(res, 405, { error: "Ожидается POST" });
-    if (!(await auth.isPlatformAdmin(req)))
-      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
+    const archiveActor = await auth.currentUser(req);
+    if (!archiveActor || !isArchiveOwner(archiveActor) || !archiveActor.approved || !(await auth.isPlatformAdmin(req)))
+      return json(res, (await auth.accountId(req)) ? 403 : 401, {
         error: "Системное восстановление доступно администратору платформы",
       });
     if (!isSameOriginRequest(req, publicOrigin))

@@ -8,6 +8,8 @@ import {
   type UnionMilestone,
   type ClaimConfidence,
   CLAIM_CONFIDENCE_LABELS,
+  canAssessArchiveEvidence,
+  isArchiveOwner,
 } from "../domain";
 import { UnionSourcesEditor } from "./union-sources-editor.tsx";
 
@@ -49,7 +51,7 @@ export function FamilyUnionsPanel({
   const [sourcesReset, setSourcesReset] = useState(false);
   const [assessmentReset, setAssessmentReset] = useState(false);
   const [unionAssessmentReset, setUnionAssessmentReset] = useState(false);
-  const canAssess = user?.role === "admin" || user?.role === "researcher";
+  const canAssess = canAssessArchiveEvidence(user);
   const unions = (family.unions || []).filter((union) =>
     participants.every((id) => union.participants.includes(id)),
   );
@@ -59,10 +61,10 @@ export function FamilyUnionsPanel({
   const mayCreate =
     editable &&
     !!user &&
-    (user.role === "admin" ||
+    (isArchiveOwner(user) ||
       people.every((person) => person?.createdBy === user.id));
   const mayEdit = (union: FamilyUnion) =>
-    mayCreate && (user?.role === "admin" || union.createdBy === user?.id);
+    mayCreate && (isArchiveOwner(user) || union.createdBy === user?.id);
   const original = (family.unions || []).find((union) => union.id === draft?.id);
   const saveIdentityFirst = !!original && !!draft && original.type !== draft.type &&
     [original.sources, original.formation?.sources, original.ending?.sources,
@@ -342,7 +344,7 @@ export function FamilyUnionsPanel({
                   : <details className="union-milestone-sources">
                       <summary>Источники этапа ({draft[key]?.sources?.length || 0})</summary>
                       <UnionSourcesEditor sources={draft[key]?.sources || []}
-                        isAdmin={user?.role === "admin"}
+                        isAdmin={isArchiveOwner(user)}
                         onChange={(sources) => milestoneSources(key, sources)} />
                     </details>}
               </fieldset>
@@ -358,7 +360,7 @@ export function FamilyUnionsPanel({
             <legend>Источники союза</legend>
             {saveIdentityFirst ? <p>Сначала сохраните новый тип союза, затем добавьте источники.</p>
               : <UnionSourcesEditor sources={draft.sources || []}
-                isAdmin={user?.role === "admin"}
+                isAdmin={isArchiveOwner(user)}
                 onChange={(sources) => patch({ sources })} />}
           </fieldset>
           {error && (

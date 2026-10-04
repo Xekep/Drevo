@@ -10,7 +10,7 @@ import type { Family } from "../domain/types.ts";
 export function auditStore(db: StoreDatabase) {
   async function record(
     draft: AuditDraft,
-    actor?: ArchiveUser,
+    actor?: ArchiveUser | Pick<ArchiveUser, "id" | "name">,
     revision: number | null = null,
   ) {
     const id = (

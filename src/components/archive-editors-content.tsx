@@ -15,6 +15,7 @@ import {
   UsersRound,
   ContactRound,
 } from "lucide-react";
+import { canAssessArchiveEvidence } from "../domain";
 import "../styles/person-editor.css";
 import {
   availableColumn,
@@ -715,7 +716,7 @@ export function PersonEditor({
                 claim={kind === "birth" ? draft.birthDateClaim : draft.deathDateClaim}
                 onChange={(claim) => field(kind === "birth" ? "birthDateClaim" : "deathDateClaim", claim)}
                 isAdmin={isAdmin}
-                canAssess={user?.role === "admin" || user?.role === "researcher"}
+                canAssess={canAssessArchiveEvidence(user)}
               />
               <ValueClaimSourcesEditor
                 kind={kind}
@@ -724,14 +725,14 @@ export function PersonEditor({
                 claim={kind === "birth" ? draft.birthPlaceClaim : draft.deathPlaceClaim}
                 onChange={(claim) => field(kind === "birth" ? "birthPlaceClaim" : "deathPlaceClaim", claim)}
                 isAdmin={isAdmin}
-                canAssess={user?.role === "admin" || user?.role === "researcher"}
+                canAssess={canAssessArchiveEvidence(user)}
               />
               <PersonAlternativeClaims kind={kind}
                 alternatives={draft.factAlternatives || []}
                 savedIds={new Set(person?.factAlternatives?.map((item) => item.id) || [])}
                 onChange={(alternatives) => field("factAlternatives", alternatives)}
                 isAdmin={isAdmin}
-                canAssess={user?.role === "admin" || user?.role === "researcher"}
+                canAssess={canAssessArchiveEvidence(user)}
               />
               {kind === "death" &&
                 !deathText.trim() &&
@@ -879,14 +880,14 @@ export function PersonEditor({
             onPreservePrevious={() => setDraft((current) =>
               preserveBirthSurnameClaim(current, crypto.randomUUID()))}
             isAdmin={isAdmin}
-            canAssess={user?.role === "admin" || user?.role === "researcher"}
+            canAssess={canAssessArchiveEvidence(user)}
           />
           <PersonAlternativeClaims kind="maidenName"
             alternatives={draft.factAlternatives || []}
             savedIds={new Set(person?.factAlternatives?.map((item) => item.id) || [])}
             onChange={(alternatives) => field("factAlternatives", alternatives)}
             isAdmin={isAdmin}
-            canAssess={user?.role === "admin" || user?.role === "researcher"} />
+            canAssess={canAssessArchiveEvidence(user)} />
         </details>
         <details className="form-details">
           <summary>
@@ -907,7 +908,7 @@ export function PersonEditor({
             claim={draft.occupationClaim}
             onChange={(claim) => field("occupationClaim", claim)}
             isAdmin={isAdmin}
-            canAssess={user?.role === "admin" || user?.role === "researcher"}
+            canAssess={canAssessArchiveEvidence(user)}
           />
           <label>
             История человека
@@ -924,7 +925,7 @@ export function PersonEditor({
           onChange={(events) => field("events", events)}
           personId={person?.id}
           isAdmin={isAdmin}
-          canAssess={user?.role === "admin" || user?.role === "researcher"}
+          canAssess={canAssessArchiveEvidence(user)}
         />
         <details className="form-details">
           <summary>

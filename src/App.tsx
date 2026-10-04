@@ -1,4 +1,5 @@
 import { archiveFetch } from "./data/archive-fetch.ts";
+import { isArchiveOwner } from "./domain/access.ts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { confirmDiscardChanges } from "./hooks/useUnsavedChanges";
 import { ArrowDownUp, ImagePlus, Link2, Plus, X } from "lucide-react";
@@ -101,7 +102,7 @@ export default function App() {
   const desktop = useDesktopEditing(),
     canEdit = allowedEdit;
   const publicationOwnership = useArchivePublicationOwner(
-    user?.role === "admin" ? user.id : null,
+    isArchiveOwner(user) ? user!.id : null,
     archiveContextAt(window.location.pathname)?.id || "",
     archive.local,
     Boolean(family) && !archive.loadingDetails,
@@ -649,7 +650,7 @@ export default function App() {
         key={personDraft.key}
         inline
         suspended={!canEdit}
-        isAdmin={user?.role === "admin"}
+        isAdmin={isArchiveOwner(user)}
         user={user}
         family={family}
         person={personDraft.person}
@@ -770,15 +771,31 @@ export default function App() {
             readTree={readTree}
             onPerson={showPerson}
             onAdmin={() => navigate("admin")}
+            onOwnPlatformRoleChanged={(role) => {
+              setAccountSession((current) => current?.account ? {
+                ...current,
+                account: { ...current.account, globalRole: role },
+                user: current.user ? {
+                  ...current.user,
+                  globalRole: role,
+                  platformAdmin: role === "admin",
+                } : null,
+              } : current);
+              void archiveFetch("/api/session", { cache: "no-store" })
+                .then(async (response) => {
+                  if (response.ok) setAccountSession(await response.json() as AccountSession);
+                });
+            }}
           />
         ) : family ? (
           <>
             {view === "admin" ? (
-              user?.role === "admin" ? (
+              (user && (isArchiveOwner(user) || user.platformAdmin === true)) ? (
                 <AdminPanel
                   family={family}
                   currentUserId={user.id}
                   platformAdmin={user.platformAdmin === true}
+                  archiveOwner={isArchiveOwner(user)}
                   aiAvailable={user.aiAvailable === true}
                   publicationOwnership={publicationOwnership}
                   onClose={() => navigate("tree")}
@@ -808,9 +825,9 @@ export default function App() {
                       ref={treeCanvas}
                       onPreferences={() => setTreePreferencesOpen(true)}
                       onExport={() => setTreeExportOpen(true)}
-                      onImport={canEdit && user?.role === "admin" ? () => setTreeImportOpen(true) : undefined}
-                      onRename={canEdit && user?.role === "admin" ? () => setSettings(true) : undefined}
-                      onAddSelf={canEdit && user?.role === "admin" && !user.personId ? newSelf : undefined}
+                      onImport={canEdit && isArchiveOwner(user) ? () => setTreeImportOpen(true) : undefined}
+                      onRename={canEdit && isArchiveOwner(user) ? () => setSettings(true) : undefined}
+                      onAddSelf={canEdit && user && isArchiveOwner(user) && !user.personId ? newSelf : undefined}
                       skipInitialGrowth={initialPersonLink}
                       onGrowthChange={setTreeGrowing}
                       comparisonAction={
@@ -832,7 +849,7 @@ export default function App() {
                         </div>
                       }
                       onShare={
-                        user?.role === "admin" && canEdit && desktop &&
+                        isArchiveOwner(user) && canEdit && desktop &&
                         !archiveContextAt(window.location.pathname)
                           ? (anchorId, ids) => {
                               const anchor = map.get(anchorId);
@@ -848,7 +865,7 @@ export default function App() {
                           : undefined
                       }
                       onPublishPerson={
-                        user?.role === "admin" && canEdit && publicationOwnership === "owner"
+                        isArchiveOwner(user) && canEdit && publicationOwnership === "owner"
                           ? openPersonPublication
                           : undefined
                       }
@@ -1189,7 +1206,7 @@ export default function App() {
           }}
         />
       )}
-      {settings && canEdit && family && user?.role === "admin" && (
+      {settings && canEdit && family && isArchiveOwner(user) && (
         <ArchiveSettings
           family={family}
           save={save}
@@ -1204,7 +1221,7 @@ export default function App() {
           anchorId={selected[0] || user?.personId}
           onChange={archive.saveTreePreferences}
           onClose={() => setTreePreferencesOpen(false)}
-          onAdmin={user?.role === "admin" && user.approved === true ? () => {
+          onAdmin={(isArchiveOwner(user) || user?.platformAdmin === true) && user?.approved === true ? () => {
             setTreePreferencesOpen(false);
             navigate("admin");
           } : undefined}
@@ -1219,7 +1236,7 @@ export default function App() {
             const { downloadGenerationReport } = await import("./components/tree/download-generation-report");
             await downloadGenerationReport(ids, signal);
           }}
-          onExportGenealogy={user?.role === "admin" ? async (format, signal, onError) => {
+          onExportGenealogy={isArchiveOwner(user) ? async (format, signal, onError) => {
             const ids = await treeCanvas.current!.visiblePersonIds(signal);
             signal.throwIfAborted();
             downloadVisibleGenealogy(format, ids, onError);
@@ -1227,7 +1244,7 @@ export default function App() {
           onClose={() => setTreeExportOpen(false)}
         />
       )}
-      {treeImportOpen && family && user?.role === "admin" && (
+      {treeImportOpen && family && isArchiveOwner(user) && (
         <TreeImportDialog
           canEdit={canEdit}
           onClose={() => setTreeImportOpen(false)}

@@ -12,6 +12,7 @@ import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 import { decodePublicPersonId, publicPersonId } from "./public-person-id.ts";
 import { AccountSessionBusy, AccountSessionExpired, assertActiveAccountSession } from "./account-session-guard.ts";
 import type { Person } from "../domain/types.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 
 function visibleFields(person: Person, fields: PublicationFields): PublicationFields {
   return {
@@ -163,7 +164,7 @@ export function publishedPeopleHttp({
       const membership = await archive.db.prepare("", `SELECT role,approved
         FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
         .get(archiveId, freshUser.id);
-      if (membership?.role !== "admin" || membership.approved !== true) return 403;
+      if (!membership || membership.approved !== true) return 403;
       const payload = await value(freshUser.id);
       if (payload === null) return 409;
       await deliverLocked(res, payload);
@@ -211,7 +212,7 @@ export function publishedPeopleHttp({
         error: "Войдите, чтобы искать опубликованных людей",
       });
     if ((admin || batch || batchPreview) &&
-        (user.role !== "admin" || user.approved !== true || !await isOwner(user.id)))
+        (!isArchiveOwner(user) || user.approved !== true || !await isOwner(user.id)))
       return json(res, 403, { error: "Публикация доступна владельцу дерева" });
     if (
       !admin && !batch && !batchPreview &&
@@ -243,7 +244,7 @@ export function publishedPeopleHttp({
           await reviewSelection(action, ids, fields, userId));
       const result = await archive.db.transaction(async () => {
         const freshUser = await auth.currentUser(req);
-        if (freshUser?.role !== "admin" || freshUser.approved !== true ||
+        if (!isArchiveOwner(freshUser) || freshUser?.approved !== true ||
             freshUser.id !== user.id || !await isOwner(freshUser.id))
           return { status: "forbidden" as const };
         const review = await reviewSelection(action, ids, fields, freshUser.id);
@@ -276,7 +277,7 @@ export function publishedPeopleHttp({
         return json(res, 400, { error: "Сначала проверьте список публикации" });
       const result = await archive.db.transaction(async () => {
         const freshUser = await auth.currentUser(req);
-        if (freshUser?.role !== "admin" || freshUser.approved !== true ||
+        if (!isArchiveOwner(freshUser) || freshUser?.approved !== true ||
             freshUser.id !== user.id || !await isOwner(freshUser.id, true))
           return "forbidden";
         const action = req.method === "POST" ? "publish" : "unpublish";
@@ -314,7 +315,7 @@ export function publishedPeopleHttp({
         const membership = await archive.db.prepare("", `SELECT role,approved
           FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
           .get(archiveId, freshUser.id);
-        if (membership?.role !== "admin" || membership.approved !== true) return 403;
+        if (!membership || membership.approved !== true) return 403;
         const freshPerson = (await archive.read()).family.people.find((entry) => entry.id === personId);
         if (!freshPerson) return 404;
         const fields = await store.getFields(personId);
@@ -413,7 +414,7 @@ export function publishedPeopleHttp({
           return json(res, 400, { error: "Некорректный выбор полей публикации" });
         const result = await archive.db.transaction(async () => {
           const freshUser = await auth.currentUser(req);
-          if (freshUser?.role !== "admin" || freshUser.approved !== true ||
+          if (!isArchiveOwner(freshUser) || freshUser?.approved !== true ||
               freshUser.id !== user.id || !await isOwner(freshUser.id, true))
             return { status: "forbidden" as const };
           const freshPerson = (await archive.read()).family.people.find((entry) => entry.id === personId);

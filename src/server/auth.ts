@@ -1,6 +1,8 @@
 import type { StoreDatabase } from "./store-database.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ArchiveUser } from "../domain/access.ts";
+import { canEditArchive, isArchiveOwner } from "../domain/access.ts";
+import { hasCurrentPlatformAdmin } from "./platform-access.ts";
 import type { userStore } from "./users.ts";
 import {
   newSessionToken,
@@ -84,13 +86,6 @@ export async function createAuth(
            )
            SELECT (SELECT count(*) FROM current_session) AS active,
                   (SELECT count(*) FROM revoked) AS revoked`,
-        )
-      : null;
-  const platformAdmin =
-    db.kind === "postgres"
-      ? db.prepare(
-          "",
-          "SELECT 1 AS allowed FROM platform_admins WHERE account_id=?",
         )
       : null;
   const accountDetails =
@@ -445,20 +440,16 @@ export async function createAuth(
     canRead: async (req: IncomingMessage) =>
       (await currentUser(req))?.approved === true,
     canEdit: async (req: IncomingMessage) =>
-      (await currentUser(req))?.approved === true &&
-      ["admin", "researcher", "relative"].includes(
-        (await currentUser(req))?.role || "",
-      ),
+      canEditArchive(await currentUser(req)),
     isAdmin: async (req: IncomingMessage) =>
       (await currentUser(req))?.approved === true &&
-      (await currentUser(req))?.role === "admin",
+      isArchiveOwner(await currentUser(req)),
     isPlatformAdmin: async (req: IncomingMessage) => {
-      const user = await currentUser(req);
-      if (!user?.approved) return false;
       if (local) return true;
-      return platformAdmin
-        ? !!(await platformAdmin.get(user.id))?.allowed
-        : user.role === "admin";
+      const session = await sessionFor(req);
+      return session
+        ? await hasCurrentPlatformAdmin(db, session.userId, session.tokenHash)
+        : false;
     },
     async logout(req: IncomingMessage, res: ServerResponse) {
       await revoke.run(sessionTokenHash(cookie(req)));

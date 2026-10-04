@@ -1,5 +1,6 @@
 import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser } from "../domain/access.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import type { Family, FamilyLink, Person } from "../domain/types.ts";
 import {
   applyArchiveChanges,
@@ -52,7 +53,7 @@ export async function patchPeople(
   options: { withinTransaction?: boolean } = {},
 ) {
   // Scoped writes retain the complete visibility/relationship authorization.
-  if (actor.role !== "admin" && actor.treeAccess === "common_ancestors")
+  if (!isArchiveOwner(actor) && actor.treeAccess === "common_ancestors")
     return null;
   if (
     !changes.length ||
@@ -111,7 +112,7 @@ export async function patchPeople(
     });
     const map = new Map(people.map((p) => [p.id, p]));
     for (const id of ids)
-      if (actor.role !== "admin" && map.get(id)!.createdBy !== actor.id)
+      if (!isArchiveOwner(actor) && map.get(id)!.createdBy !== actor.id)
         throw new ForbiddenError("Можно редактировать только свои карточки");
     const links: FamilyLink[] = [];
     for (const row of relations) {

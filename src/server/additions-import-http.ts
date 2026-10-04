@@ -8,6 +8,7 @@ import { authorizeArchive } from "./permissions.ts";
 import type { createAuth } from "./auth.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import { ForbiddenError } from "./users.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { listAdditionBatches, planUndoAdditions } from "./additions-undo.ts";
@@ -48,7 +49,7 @@ export function additionsImportHttp({
       return json(403, { error: "Импорт разрешён только со страницы архива" });
     const actor = await auth.currentUser(req);
     // Same access as the existing transfer UI and GEDCOM import.
-    if (!actor || actor.role !== "admin")
+    if (!actor || !isArchiveOwner(actor))
       return json(actor ? 403 : 401, {
         error: "Пакетный импорт доступен администратору архива",
       });
@@ -137,7 +138,7 @@ export function additionsImportHttp({
           ...plan.preview,
         });
       const activeActor = await auth.currentUser(req);
-      if (activeActor?.id !== actor.id || activeActor.role !== "admin")
+      if (activeActor?.id !== actor.id || !isArchiveOwner(activeActor))
         return json(403, {
           error: "Права изменились. Добавление отменено",
         });

@@ -21,7 +21,7 @@ import {
   LibraryBig,
   Info,
 } from "lucide-react";
-import { safeUrl, type Person, type ArchiveUser } from "../domain";
+import { isArchiveOwner, safeUrl, type Person, type ArchiveUser } from "../domain";
 import { mediaPreview } from "../domain/media-preview";
 import { archivePaths, type ArchiveView } from "../domain/archive-routes";
 import { scopedArchivePath } from "../domain/archive-context.ts";
@@ -163,7 +163,7 @@ export function ArchiveNavigation({
       >
         О проекте
       </button>
-      {user?.role === "admin" && user.approved === true && (
+      {user && (isArchiveOwner(user) || user.platformAdmin === true) && user.approved === true && (
         <a
           className="nav-admin"
           href={scopedArchivePath(archivePaths.admin)}
@@ -244,7 +244,7 @@ export function ArchiveNavigation({
             <Users size={18} />
             <span>Поиск опубликованных людей</span>
           </a>
-          {user?.role === "admin" && (
+          {user && (isArchiveOwner(user) || user.platformAdmin === true) && (
             <a
               href={scopedArchivePath(archivePaths.admin)}
               aria-current={view === "admin" ? "page" : undefined}

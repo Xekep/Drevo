@@ -10,6 +10,7 @@ import type { Family } from "../domain/types.ts";
 import type { DiscoveryBranchRelation } from "../shared/discovery-branch.ts";
 import { AccountSessionBusy } from "./account-session-guard.ts";
 import { lockDiscoveryOwnerReadAccess } from "./discovery-owner-read-access.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 
 type Row = Record<string, unknown>;
 type Relation = DiscoveryBranchRelation;
@@ -221,7 +222,7 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
       return json(res, 501, { error: "Просмотр ветки доступен с PostgreSQL" });
     const user = await auth.currentUser(req);
     if (!user) return json(res, 401, { error: "Войдите в архив" });
-    if (user.role !== "admin" || user.approved !== true)
+    if (!isArchiveOwner(user) || user.approved !== true)
       return json(res, 403, { error: "Доступно владельцу дерева" });
     if (!(await isOwner(db.archiveId, user.id)))
       return json(res, 403, { error: "Доступно владельцу дерева" });
@@ -393,7 +394,7 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
         if (!locked || pairArgs(locked).some((value, index) => value !== pairArgs(pair)[index]))
           return { code: 404, error: "Связь не найдена" };
         const approved = await auth.currentUser(req);
-        if (approved?.role !== "admin" || approved.approved !== true || approved.id !== user.id)
+        if (!isArchiveOwner(approved) || approved?.approved !== true || approved.id !== user.id)
           return { code: 403, error: "Доступ отозван" };
         if (!(await isOwner(archiveId, approved.id, true)))
           return { code: 403, error: "Доступ отозван" };
@@ -424,7 +425,7 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin,
       const pair = await linkedPair(detail[1], archiveId, true);
       if (!pair) return { code: 404, error: "Связь не найдена" };
       const approved = await auth.currentUser(req);
-      if (approved?.role !== "admin" || approved.approved !== true || approved.id !== user.id)
+      if (!isArchiveOwner(approved) || approved?.approved !== true || approved.id !== user.id)
         return { code: 403, error: "Доступ отозван" };
       if (!(await isOwner(archiveId, approved.id, true)))
         return { code: 403, error: "Доступ отозван" };

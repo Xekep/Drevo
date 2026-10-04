@@ -12,6 +12,13 @@ import { yandexResponsesClient } from "./yandex-responses.ts";
 import { ROLE_NAMES, type Role } from "../domain/access.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import type { AiProviderCleanup } from "./ai-provider-cleanup.ts";
+import {
+  assertCurrentPlatformAdmin,
+  assertPlatformAdminInArchiveTransaction,
+  PlatformAccessBusy,
+  PlatformAccessDenied,
+} from "./platform-access.ts";
+import { finished } from "node:stream/promises";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -90,26 +97,54 @@ export function adminAiHttp({
     )
       return false;
     if (!(await auth.isPlatformAdmin(req)))
-      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
+      return json(res, (await auth.accountId(req)) ? 403 : 401, {
         error: "Только администратор может управлять AI Studio",
       });
-    const admin = await auth.currentUser(req);
+    const admin = auth.local ? await auth.currentUser(req) : await auth.accountProfile(req);
     if (!admin)
       return json(res, 401, { error: "Сеанс завершён. Войдите снова." });
-    if (!admin.approved)
-      return json(res, 403, { error: "Доступ отозван" });
+    const session = auth.local ? null : await auth.accountSession(req);
+    if (!auth.local && !session)
+      return json(res, 401, { error: "Сеанс завершён" });
     const adminId = admin.id;
     const stillAdmin = async () => {
-      const current = await auth.currentUser(req);
-      return current?.id === adminId && current.approved === true &&
+      const current = auth.local ? await auth.currentUser(req) : await auth.accountProfile(req);
+      const activeSession = auth.local ? null : await auth.accountSession(req);
+      return current?.id === adminId &&
+        (auth.local || activeSession?.tokenHash === session?.tokenHash) &&
         (await auth.isPlatformAdmin(req));
+    };
+    const deliver = async (status: number, value: unknown) => {
+      if (auth.local || db.kind !== "postgres" || !db.postgresTransaction)
+        return json(res, status, value);
+      try {
+        return await db.postgresTransaction(async (client) => {
+          await assertCurrentPlatformAdmin(client, adminId, session!.tokenHash);
+          const timer = setTimeout(() => res.destroy(new Error("AI settings delivery timed out")), 4_000);
+          timer.unref();
+          try {
+            const done = finished(res, { cleanup: true });
+            json(res, status, value);
+            await done;
+            return true;
+          } finally {
+            clearTimeout(timer);
+          }
+        });
+      } catch (error) {
+        if (res.headersSent || res.destroyed) { res.destroy(error as Error); return true; }
+        if (error instanceof PlatformAccessDenied || error instanceof PlatformAccessBusy)
+          return json(res, error instanceof PlatformAccessBusy ? 409 : 403,
+            { error: "Права администратора платформы изменились" });
+        throw error;
+      }
     };
 
     if (path === "/api/admin/ai" && req.method === "GET") {
       const status = await statusValue(req);
       if (!status || !(await stillAdmin()))
         return json(res, 403, { error: "Доступ отозван" });
-      return json(res, 200, status);
+      return deliver(200, status);
     }
 
     if (!isSameOriginRequest(req, publicOrigin))
@@ -122,25 +157,19 @@ export function adminAiHttp({
         const body = await readJson(req);
         if (!(await stillAdmin()))
           return json(res, 403, { error: "Доступ отозван" });
-        const written = await db.transaction(async () => {
-          const current = await auth.currentUser(req);
-          if (!current || current.id !== adminId ||
-            !(await auth.isPlatformAdmin(req))) return false;
-          if (!auth.local && db.kind === "postgres") {
-            const grant = await db.prepare("",
-              "SELECT account_id FROM platform_admins WHERE account_id=? FOR SHARE")
-              .get(adminId);
-            if (!grant) return false;
-          }
-          await settings.write(body, current);
-          return true;
+        await db.transaction(async () => {
+          if (!auth.local)
+            await assertPlatformAdminInArchiveTransaction(db, adminId, session!.tokenHash);
+          await settings.write(body, admin);
         });
-        if (!written) return json(res, 403, { error: "Доступ отозван" });
         const status = await statusValue(req);
         if (!status || !(await stillAdmin()))
           return json(res, 403, { error: "Доступ отозван" });
-        return json(res, 200, status);
+        return deliver(200, status);
       } catch (error) {
+        if (error instanceof PlatformAccessBusy || error instanceof PlatformAccessDenied)
+          return json(res, error instanceof PlatformAccessBusy ? 409 : 403,
+            { error: "Права администратора платформы изменились" });
         return json(res, error instanceof RangeError ? 413 : 400, {
           error: (error as Error).message,
         });
@@ -173,7 +202,7 @@ export function adminAiHttp({
         // Model discovery may finish after platform access is revoked.
         if (!(await stillAdmin()))
           return json(res, 403, { error: "Доступ отозван" });
-        return json(res, 200, { models });
+        return deliver(200, { models });
       } catch (error) {
         return json(res, error instanceof RangeError ? 413 : 502, {
           error:
@@ -248,7 +277,7 @@ export function adminAiHttp({
         }
         if (!(await stillAdmin()))
           return json(res, 403, { error: "Доступ отозван" });
-        return json(res, 200, {
+        return deliver(200, {
           ok: true,
           model: runtime.model,
           answer: answer.trim() || "Подключение установлено",

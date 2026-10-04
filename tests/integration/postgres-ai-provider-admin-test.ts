@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import type { createAuth } from "../../src/server/auth.ts";
 import { adminAiHttp } from "../../src/server/admin-ai-http.ts";
 import { aiProviderCleanup } from "../../src/server/ai-provider-cleanup.ts";
@@ -9,6 +10,9 @@ import type { StoreDatabase } from "../../src/server/store-database.ts";
 
 /** HTTP test with fake provider: live provisional lease, final queue, crash expiry. */
 export async function verifyAiProviderAdminTest(db: StoreDatabase, configuredPath: string) {
+  const tokenHash = `admin-test-${randomUUID()}`;
+  await db.prepare("", `INSERT INTO account_sessions(token_hash,user_id,expires_at)
+    VALUES(?,'owner',?)`).run(tokenHash, Date.now() + 60_000);
   let authorized = true;
   let holdResponse = false;
   let failResponse = false;
@@ -35,6 +39,8 @@ export async function verifyAiProviderAdminTest(db: StoreDatabase, configuredPat
   const fakeAuth = {
     isPlatformAdmin: async () => authorized,
     currentUser: async () => ({ id: "owner", approved: true }),
+    accountProfile: async () => ({ id: "owner", name: "Owner" }),
+    accountSession: async () => ({ accountId: "owner", tokenHash }),
   } as unknown as Awaited<ReturnType<typeof createAuth>>;
   const storedSettings = await aiSettingsStore(db);
   const settings = {
@@ -117,5 +123,6 @@ export async function verifyAiProviderAdminTest(db: StoreDatabase, configuredPat
     release();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await db.prepare("", "DELETE FROM platform_ai_conversations WHERE local_chat_id LIKE 'admin-test:%'").run();
+    await db.prepare("", "DELETE FROM account_sessions WHERE token_hash=?").run(tokenHash);
   }
 }

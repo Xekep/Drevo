@@ -48,6 +48,7 @@ import {
 } from "../shared/document-details.ts";
 import { validateFamily, type Family, type Source } from "../domain/index.ts";
 import type { ArchiveUser } from "../domain/access.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import {
   parseCatalogSource,
@@ -408,7 +409,7 @@ export function restoreStore(
     assertAccess?: () => void | Promise<void>,
     options: { restoreComments?: boolean } = {},
   ) {
-    if (actor.role !== "admin")
+    if (!isArchiveOwner(actor))
       throw new Error("Восстановление доступно администратору");
     const obsolete = await archive.db
       .prepare(
@@ -862,7 +863,7 @@ export function restoreStore(
     ) {
       const stage = await readStage(token);
       if (
-        actor.role !== "admin" ||
+        !isArchiveOwner(actor) ||
         !stage ||
         stage.actor !== actor.id ||
         stage.expires < Date.now()

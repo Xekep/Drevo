@@ -13,7 +13,7 @@ import { TreeCanvas } from "./tree/tree-canvas";
 import { PersonPhotoAlbum } from "./person-photo-album";
 import { CopyArchiveLink } from "./copy-archive-link";
 import { PersonEditor } from "./archive-editors";
-import { owns, type ArchiveUser } from "../domain/access";
+import { isArchiveOwner, owns, type ArchiveUser } from "../domain/access";
 const noop = () => {};
 export function PersonFullView({
   person,
@@ -93,7 +93,7 @@ export function PersonFullView({
               family={family}
               person={active}
               user={user}
-              isAdmin={user?.role === "admin"}
+              isAdmin={isArchiveOwner(user)}
               save={save}
               uploadPortrait={uploadPortrait}
               busy={busy}

@@ -8,6 +8,8 @@ import { isSameOriginRequest } from "./same-origin.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { readStorageLimits, writeStorageLimits } from "./storage-limits.ts";
 import { parseStorageLimits } from "../shared/storage-limits.ts";
+import { AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
+import { PlatformAccessBusy, PlatformAccessDenied } from "./platform-access.ts";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -132,6 +134,12 @@ export function adminAccessHttp({
         return json(res, 415, { error: "JSON required" });
       try {
         const body = await readJson(req);
+        const actor = await auth.currentUser(req);
+        const actorSession = db.kind === "postgres" && !auth.local
+          ? await auth.accountSession(req) : null;
+        if (!actor || (db.kind === "postgres" && !auth.local &&
+            (!actorSession || actorSession.accountId !== actor.id)))
+          return json(res, 401, { error: "Сеанс завершён" });
         const id = decodeURIComponent(path.slice("/api/users/".length));
         const identity =
           body.personId !== undefined || body.treeAccess !== undefined;
@@ -157,26 +165,29 @@ export function adminAccessHttp({
             (await auth.currentUser(req))!,
             id,
             body.fullAccess,
+            actorSession?.tokenHash,
           );
           return json(res, 200, { user });
         }
         if (typeof body.approved === "boolean")
           await users.setApproved(
-            (await auth.currentUser(req))!,
+            actor,
             id,
             body.approved,
+            actorSession?.tokenHash,
           );
         if (body.role !== undefined)
           await users.setRole(
-            (await auth.currentUser(req))!,
+            actor,
             id,
             body.role as Role,
+            actorSession?.tokenHash,
           );
         if (identity) {
           const target = await users.get(id);
           if (!target) throw new Error("Пользователь не найден");
           await users.setIdentity(
-            (await auth.currentUser(req))!,
+            actor,
             id,
             body.personId === undefined
               ? target.personId || null
@@ -184,12 +195,19 @@ export function adminAccessHttp({
             body.treeAccess === undefined
               ? target.treeAccess || "all"
               : (body.treeAccess as TreeAccess),
+            actorSession?.tokenHash,
           );
         }
         return json(res, 200, { user: await users.get(id) });
       } catch (error) {
         if (error instanceof RangeError)
           return json(res, 413, { error: error.message });
+        if (error instanceof AccountSessionBusy || error instanceof AccountSessionExpired)
+          return json(res, error instanceof AccountSessionBusy ? 409 : 401,
+            { error: "Сеанс изменился. Обновите страницу" });
+        if (error instanceof PlatformAccessBusy || error instanceof PlatformAccessDenied)
+          return json(res, error instanceof PlatformAccessBusy ? 409 : 403,
+            { error: "Права администратора платформы изменились" });
         return json(res, error instanceof ForbiddenError ? 403 : 400, {
           error: (error as Error).message,
         });
@@ -200,12 +218,22 @@ export function adminAccessHttp({
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Invalid origin" });
       try {
+        const actor = await auth.currentUser(req);
+        const actorSession = db.kind === "postgres" && !auth.local
+          ? await auth.accountSession(req) : null;
+        if (!actor || (db.kind === "postgres" && !auth.local &&
+            (!actorSession || actorSession.accountId !== actor.id)))
+          return json(res, 401, { error: "Сеанс завершён" });
         await users.remove(
-          (await auth.currentUser(req))!,
+          actor,
           decodeURIComponent(path.slice("/api/users/".length)),
+          actorSession?.tokenHash,
         );
         return json(res, 200, { deleted: true });
       } catch (error) {
+        if (error instanceof AccountSessionBusy || error instanceof AccountSessionExpired)
+          return json(res, error instanceof AccountSessionBusy ? 409 : 401,
+            { error: "Сеанс изменился. Обновите страницу" });
         return json(res, error instanceof ForbiddenError ? 403 : 400, {
           error: (error as Error).message,
         });
