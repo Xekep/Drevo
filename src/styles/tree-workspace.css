@@ -1309,8 +1309,7 @@
 .archive-header-actions:empty {
   display: none;
 }
-.archive-nav .nav-about,
-.archive-nav .nav-admin {
+.archive-nav .nav-about {
   order: 4;
   flex: none;
   min-height: 44px;
@@ -1320,12 +1319,9 @@
   background: transparent;
   border-radius: 7px;
 }
-.archive-nav .nav-admin { order: 5; }
 .archive-nav .nav-about:hover,
-.archive-nav .nav-about:focus-visible,
-.archive-nav .nav-admin:hover,
-.archive-nav .nav-admin:focus-visible,
-.archive-nav .nav-admin[aria-current="page"] {
+.archive-nav .nav-about:hover,
+.archive-nav .nav-about:focus-visible {
   color: #3e604a;
   background: #edf1e6;
 }
@@ -1338,14 +1334,12 @@
   background: #59735a;
 }
 .archive-more {
-  display: none;
-  order: 7;
+  display: block;
+  order: 6;
   position: relative;
   margin-left: 0;
 }
 .archive-nav .nav-account {
-  order: 6;
-  flex: none;
   width: 44px;
   height: 44px;
   padding: 3px;
@@ -1375,7 +1369,7 @@
 }
 .archive-nav .nav-account:hover,
 .archive-nav .nav-account:focus-visible,
-.archive-nav .nav-account[aria-current="page"] {
+.archive-more[open] > .nav-account {
   border-color: #799b78;
   box-shadow: 0 0 0 3px #a8c29a45;
 }
@@ -1385,30 +1379,21 @@
   }
 }
 .archive-more > summary {
-  display: flex;
   cursor: pointer;
   list-style: none;
-  padding: 9px;
-  color: #728069;
-  border-radius: 50%;
-  border: 1px solid #e1e6da;
-  min-width: 44px;
-  min-height: 44px;
-  align-items: center;
-  justify-content: center;
 }
 .archive-more > summary::-webkit-details-marker {
   display: none;
-}
-.archive-more[open] > summary {
-  background: #e9eee1;
 }
 .nav-bottom {
   position: absolute;
   z-index: 45;
   top: calc(100% + 12px);
   right: 0;
-  width: 235px;
+  width: 264px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 80px);
+  overflow-y: auto;
   padding: 10px;
   background: #fffefa;
   border: 1px solid var(--line);
@@ -1422,6 +1407,8 @@
   padding: 11px;
   border-radius: 7px;
   font-size: 13px;
+  white-space: normal;
+  text-align: left;
 }
 .nav-bottom button:hover,
 .nav-bottom a:hover {
@@ -1430,6 +1417,7 @@
 .nav-bottom svg {
   width: 18px;
   height: 18px;
+  flex: none;
 }
 .nav-bottom p {
   font-size: 12px;
@@ -1613,9 +1601,6 @@
   line-height: 1.8;
 }
 @media (max-width: 1100px) {
-  .archive-header .archive-more {
-    display: block;
-  }
   .archive-header .nav-sections {
     display: none;
   }
@@ -1637,8 +1622,7 @@
   }
 }
 @media (max-width: 899px) {
-  .archive-nav .nav-about,
-  .archive-nav .nav-admin {
+  .archive-nav .nav-about {
     display: none;
   }
   .archive-nav .nav-about-menu {

@@ -58,7 +58,9 @@ test("account without membership in the current archive can open another tree", 
 
   await page.goto("/tree");
   await expect(page.getByRole("button", { name: "Личный кабинет" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Личный кабинет: Другой участник" })).toBeVisible();
+  await page.getByLabel("Меню проекта").click();
+  await expect(page.locator(".nav-menu-account")).toHaveAttribute("href", "/account");
+  await expect(page.locator(".nav-account")).toHaveAttribute("title", "Меню: Другой участник");
 });
 
 test("signed-in account without a tree can download its account data", async ({ page }) => {

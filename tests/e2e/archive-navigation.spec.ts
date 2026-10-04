@@ -89,129 +89,75 @@ test("mobile section links keep native addresses and close the menu on navigatio
   await expect(page.locator(".archive-more")).not.toHaveAttribute("open");
 });
 
-test("about stays in the desktop header and mobile menu beside the account avatar", async ({
+test("the avatar opens the compact menu without replacing archive tabs", async ({
   page,
 }, testInfo) => {
   await page.goto("/tree");
-  const avatar = page.locator(".nav-account");
-  const menu = page.locator(".archive-more > summary");
+  const menu = page.locator(".archive-more");
+  const avatar = menu.locator("summary");
+  const account = menu.getByRole("link", { name: "Личный кабинет" });
   const about = page.getByRole("button", { name: "О проекте", exact: true });
-  if (testInfo.project.name === "mobile") {
-    await expect(page.locator(".nav-about")).toBeHidden();
-    await expect(about).toHaveCount(0);
-    await menu.click();
-  }
-  await expect(about).toBeVisible();
-  await about.click();
-  await expect(page.locator(".archive-more")).not.toHaveAttribute("open");
-  await expect(page.getByRole("dialog", { name: "О проекте" })).toBeVisible();
-  await expect(
-    page.getByRole("dialog").getByRole("link", { name: "Евгений С." }),
-  ).toHaveAttribute("href", "https://vk.ru/xekep");
-  await page.keyboard.press("Escape");
-  await expect(testInfo.project.name === "mobile" ? menu : about).toBeFocused();
-  await expect(avatar).toHaveAttribute("href", "/account");
-  await expect(avatar).toHaveAttribute("aria-label", /Личный кабинет/);
+  await expect(avatar).toBeVisible();
+  await expect(avatar).toHaveAttribute("aria-label", "Меню проекта");
   await expect(avatar.locator(".nav-account-avatar")).toHaveText("Н");
-  const avatarBox = await avatar.boundingBox();
-  expect(avatarBox).not.toBeNull();
-  if (testInfo.project.name === "mobile") {
-    await expect(menu).toBeVisible();
-    const menuBox = (await menu.boundingBox())!;
-    expect(avatarBox!.x + avatarBox!.width).toBeLessThan(menuBox.x);
-    const search = page.locator(".archive-search");
-    expect((await search.boundingBox())!.width).toBeGreaterThan(150);
-    await page.setViewportSize({ width: 320, height: 640 });
+  await expect(page.locator(".archive-nav > .nav-admin, .archive-nav > .nav-account")).toHaveCount(0);
+  if (testInfo.project.name === "desktop") {
+    await expect(page.locator(".nav-sections")).toBeVisible();
+    await expect(page.locator(".nav-about")).toBeVisible();
+  } else {
+    await expect(page.locator(".nav-sections")).toBeHidden();
     await expect(page.locator(".nav-about")).toBeHidden();
-    await menu.click();
+  }
+
+  await avatar.focus();
+  await page.keyboard.press("Enter");
+  await expect(menu).toHaveAttribute("open");
+  await expect(account).toHaveAttribute("href", "/account");
+  await expect(account).toBeVisible();
+  const bounds = (await menu.locator(".nav-bottom").boundingBox())!;
+  expect(bounds.width).toBeLessThanOrEqual(280);
+  await page.keyboard.press("Tab");
+  await expect(account).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).not.toHaveAttribute("open");
+  await expect(avatar).toBeFocused();
+  await avatar.click();
+  await page.locator(".archive-search").click();
+  await expect(menu).not.toHaveAttribute("open");
+
+  if (testInfo.project.name === "mobile") {
+    await page.setViewportSize({ width: 320, height: 640 });
+    await avatar.click();
     await expect(about).toBeVisible();
-    await page.keyboard.press("Escape");
-    expect((await search.boundingBox())!.width).toBeGreaterThan(70);
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        ),
-      )
-      .toBeLessThanOrEqual(1);
-    await search.locator("input").fill("Тестов");
-    const results = page.locator(".archive-search-results");
-    await expect(results).toBeVisible();
-    const resultsBox = (await results.boundingBox())!;
-    expect(resultsBox.x).toBeGreaterThanOrEqual(0);
-    expect(resultsBox.x + resultsBox.width).toBeLessThanOrEqual(320);
+    await expect.poll(() => page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    )).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("avatar-menu-mobile-320.png") });
     await page.keyboard.press("Escape");
     await page.setViewportSize({ width: 844, height: 390 });
-    await menu.click();
-    await about.scrollIntoViewIfNeeded();
-    const menuBounds = (await page.locator(".nav-bottom").boundingBox())!;
-    expect(menuBounds.y).toBeGreaterThanOrEqual(0);
-    expect(menuBounds.y + menuBounds.height).toBeLessThanOrEqual(390);
-    await page.screenshot({ path: testInfo.outputPath("mobile-landscape-menu.png") });
-    await about.click();
+    await avatar.click();
+    const landscape = (await menu.locator(".nav-bottom").boundingBox())!;
+    expect(landscape.y + landscape.height).toBeLessThanOrEqual(390);
+    await page.screenshot({ path: testInfo.outputPath("avatar-menu-landscape.png") });
+  } else {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await avatar.click();
+    await expect(page.locator(".nav-sections")).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("avatar-menu-desktop.png") });
+  }
+  await account.click();
+  await expect(page).toHaveURL(/\/account$/);
+  await expect(menu).not.toHaveAttribute("open");
+  await avatar.click();
+  await expect(menu.getByRole("link", { name: "Личный кабинет" })).toHaveAttribute("aria-current", "page");
+  await expect(menu.getByRole("link", { name: "Поиск опубликованных людей" })).toHaveAttribute("href", "/discover");
+  if (testInfo.project.name === "mobile") {
+    await menu.getByRole("button", { name: "О проекте" }).click();
     await expect(page.getByRole("dialog", { name: "О проекте" })).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(menu).toBeFocused();
-    await page.setViewportSize({ width: 320, height: 640 });
-  } else {
-    for (const width of [1201, 1101, 1024, 900]) {
-      await page.setViewportSize({ width, height: 720 });
-      await expect(about).toBeVisible();
-      if (width <= 1100) {
-        await expect(menu).toBeVisible();
-        const menuBox = (await menu.boundingBox())!;
-        expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(width);
-        await menu.click();
-        await expect(
-          page
-            .locator(".mobile-sections")
-            .getByRole("link", { name: "Люди", exact: true }),
-        ).toBeVisible();
-        await expect(page.locator(".nav-about-menu")).toBeHidden();
-        await page.keyboard.press("Escape");
-      } else {
-        await expect(menu).toBeHidden();
-        await expect(page.locator(".nav-sections")).toBeVisible();
-      }
-    }
-    await page.setViewportSize({ width: 1280, height: 720 });
+    await expect(avatar).toBeFocused();
   }
-  if (testInfo.project.name === "mobile") {
-    await menu.click();
-    await expect(page.locator(".archive-more .nav-bottom")).toContainText(
-      "О проекте",
-    );
-    await expect(page.locator(".archive-more .nav-bottom")).not.toContainText(
-      "Личный кабинет",
-    );
-  } else {
-    await expect(menu).toBeHidden();
-  }
-  await page.screenshot({
-    path: testInfo.outputPath("account-avatar-header.png"),
-  });
-  await avatar.click();
-  await expect(page).toHaveURL(/\/account$/);
-  await expect(avatar).toHaveAttribute("aria-current", "page");
-  await expect(
-    page.getByRole("heading", { name: "Личный кабинет" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: "Поиск опубликованных людей" }),
-  ).toHaveAttribute("href", "/discover");
-  await page.getByRole("region", { name: "Доступ и роль" }).getByRole("button", { name: "Управление архивом" }).click();
-  await expect(page).toHaveURL(/\/manage$/);
-  await avatar.click();
-  await expect(
-    page.getByRole("heading", { name: "Просмотр древа" }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Изменить просмотр" }),
-  ).toHaveCount(0);
 });
-
 test("account avatar uses the linked person's portrait when available", async ({
   page,
 }) => {
@@ -238,7 +184,28 @@ test("account avatar uses the linked person's portrait when available", async ({
     .toBeGreaterThan(0);
 });
 
-test("a guest can reach sign-in and public discovery from the profile", async ({
+test("a failed portrait falls back to the account initial without hiding the menu", async ({ page }) => {
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.user.personId = "e2e-memorial-person";
+    data.family.people.find(
+      (person: { id: string }) => person.id === data.user.personId,
+    ).photo = "/media/missing-nav-avatar.jpg";
+    await route.fulfill({ response, json: data });
+  });
+  await page.route("**/media/missing-nav-avatar.jpg?variant=thumb", (route) =>
+    route.fulfill({ status: 404, body: "" }),
+  );
+  await page.goto("/tree");
+  const avatar = page.locator(".nav-account");
+  await expect(avatar.locator(".nav-account-avatar")).toHaveText("Н");
+  await expect(avatar.locator("img")).toHaveCount(0);
+  await avatar.click();
+  await expect(page.locator(".nav-menu-account")).toBeVisible();
+});
+
+test("a guest can reach sign-in and public discovery from the avatar menu", async ({
   page,
 }) => {
   await page.route("**/api/family?projection=overview", async (route) => {
@@ -255,8 +222,11 @@ test("a guest can reach sign-in and public discovery from the profile", async ({
   await expect(page.locator(".nav-account")).toBeVisible();
   await expect(page.locator(".nav-account")).toHaveAttribute(
     "aria-label",
-    "Личный кабинет",
+    "Меню проекта",
   );
+  await page.locator(".nav-account").click();
+  await expect(page.locator(".nav-menu-account")).toHaveAttribute("href", "/account");
+  await expect(page.locator(".nav-bottom").getByRole("button", { name: "Выйти" })).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Войдите в Drevo" }),
   ).toBeVisible();
@@ -267,7 +237,7 @@ test("a guest can reach sign-in and public discovery from the profile", async ({
     page.getByRole("button", { name: "Выйти из этого сеанса" }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("link", { name: "Поиск опубликованных людей" }),
+    page.locator(".nav-bottom").getByRole("link", { name: "Поиск опубликованных людей" }),
   ).toHaveAttribute("href", "/discover");
 });
 

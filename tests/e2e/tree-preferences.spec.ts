@@ -80,7 +80,7 @@ test("each viewer can switch direction and colors; legacy card variants stay por
     );
     await page.locator(".archive-more summary").click();
   } else {
-    await expect(page.locator(".archive-more summary")).toBeHidden();
+    await expect(page.locator(".archive-more summary")).toBeVisible();
   }
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
