@@ -677,6 +677,22 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       ? [`Исходная формулировка возраста (AGE.PHRASE): ${value(age, "PHRASE")}`]
       : []),
   ]);
+  const eventTimeText = (n: Node) => {
+    const dateNode = child(n, "DATE");
+    if (!dateNode) return [];
+    const times = children(dateNode, "TIME");
+    if (!times.length) return [];
+    warnings.add("DATE.TIME сохранён исходным текстом у события; отдельная структура времени при экспорте не восстанавливается.");
+    if (!version.startsWith("7.0"))
+      warnings.add("DATE.TIME не является стандартным дочерним полем события GEDCOM 5.5.1; проверьте исходный файл.");
+    // DATE_VALUE also permits qualified dates, date ranges, other calendars
+    // and an empty DATE with only TIME/PHRASE. Only DatePeriod forbids TIME.
+    const period = /^(?:FROM|TO)(?:\s|$)/i.test(dateNode.value.trim());
+    const validTime = /^(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?Z?$/;
+    if (times.length !== 1 || period || times.some((time) => !validTime.test(time.value)))
+      warnings.add("Недопустимый или неоднозначный DATE.TIME сохранён как исходный текст, без вычисления точного момента или часового пояса.");
+    return times.map((time) => `DATE.TIME: ${time.value}`);
+  };
   function event(n: Node, fallback?: string): PersonEvent {
     if (n.tag === "ADOP" && child(n, "FAMC"))
       warnings.add("Привязка события ADOP.FAMC к конкретной приёмной семье не перенесена; событие и родительские связи сохранены отдельно.");
@@ -765,7 +781,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         "_DREVO_EVENT_PLACE_CONFIDENCE") } : {}),
       ...(alternatives.length ? { alternatives } : {}),
       location: placeLocation(n),
-      description: [notes(n), ...ageText, placeFormText(n, `${n.tag}.PLAC`)]
+      description: [notes(n), ...ageText, ...eventTimeText(n),
+        placeFormText(n, `${n.tag}.PLAC`)]
         .filter(Boolean).join("\n") || undefined,
       sources: generalSources,
     };
@@ -1006,31 +1023,53 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       const rawDate = value(node, "DATE");
       const date = gedcomDate(rawDate);
       const datePhrase = child(node, "DATE") ? value(child(node, "DATE")!, "PHRASE") : "";
+      const timeLines = eventTimeText(node);
       const placeNote = placeFormText(node, [
         `${node.tag}.PLAC`,
         rawDate ? `DATE ${rawDate}` : "DATE не указана",
         ...(datePhrase ? [`DATE.PHRASE ${datePhrase}`] : []),
       ].join("; "));
-      if (!placeNote) continue;
+      if (!placeNote && !timeLines.length) continue;
       const eventId = value(node, "_DREVO_EVENT_ID");
       const place = value(node, "PLAC");
-      const matched = eventId && date ? (p.events || []).filter((item) =>
+      const period = /^FROM (.+) TO (.+)$/.exec(rawDate);
+      const start = period && gedcomDate(period[1]);
+      const end = period && gedcomDate(period[2]);
+      const dateText = rawDate && !date && !(start && end) ? rawDate : datePhrase;
+      const matched = eventId ? (p.events || []).filter((item) =>
         item.id === eventId && item.gedcomTag === node.tag &&
-        item.date === date && (item.dateText || "") === datePhrase &&
-        item.place === place) : [];
+        item.date === (date || start || undefined) &&
+        item.endDate === (start && end ? end : undefined) &&
+        (item.dateText || "") === dateText && (item.place || "") === place) : [];
       const equivalent = (p.events || []).filter((item) =>
         item.gedcomTag === node.tag && item.place === place &&
         item.date === (date || undefined) && (item.dateText || "") === datePhrase &&
-        hasPlaceForm(item.description, placeNote));
-      if (matched.length === 1) {
+        !!placeNote && hasPlaceForm(item.description, placeNote));
+      if (placeNote && matched.length === 1) {
         if (!hasPlaceForm(matched[0].description, placeNote))
           matched[0].description = [matched[0].description, placeNote]
             .filter(Boolean).join("\n");
-      } else if (equivalent.length !== 1) {
+      } else if (placeNote && equivalent.length !== 1) {
         if (!p.biography?.includes(placeNote))
           p.biography = [p.biography, placeNote].filter(Boolean).join("\n\n");
         if (extension)
           warnings.add("PLAC.FORM сохранён в биографии: событие из метаданных Drevo не сопоставлено однозначно.");
+      }
+      if (timeLines.length && matched.length === 1) {
+        for (const line of timeLines)
+          if (!matched[0].description?.split("\n").includes(line))
+            matched[0].description = [matched[0].description, line].filter(Boolean).join("\n");
+      } else if (timeLines.length) {
+        const note = [
+          `Исходное время события GEDCOM ${node.tag}:`,
+          ...(rawDate ? [`DATE: ${rawDate}`] : []),
+          ...(datePhrase ? [`DATE.PHRASE: ${datePhrase}`] : []),
+          ...(place ? [`PLAC: ${place}`] : []),
+          ...timeLines,
+        ].join("\n");
+        if (!p.biography?.includes(note))
+          p.biography = [p.biography, note].filter(Boolean).join("\n\n");
+        warnings.add("DATE.TIME сохранён в биографии: событие из метаданных Drevo не сопоставлено однозначно.");
       }
     }
     for (const [index, name] of names.entries()) {
@@ -1406,6 +1445,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           (p.events ||= []).push(imported);
         } else {
           const ageText = familyEventAges.get(e)?.get(p.id) || [];
+          const timeLines = eventTimeText(e);
           const rawDate = value(e, "DATE");
           const date = gedcomDate(rawDate);
           const datePhrase = child(e, "DATE") ? value(child(e, "DATE")!, "PHRASE") : "";
@@ -1431,6 +1471,22 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             if (!p.biography?.includes(placeNote))
               p.biography = [p.biography, placeNote].filter(Boolean).join("\n\n");
             warnings.add("PLAC.FORM семейного события сохранён в биографии участника: точная связь с событием из метаданных Drevo не восстановлена.");
+          }
+          const alreadyHasTime = timeLines.length && matchingEvents.length === 1 &&
+            uniquePartnerName &&
+            matchingEvents[0].description?.split("\n").includes(`Участник: ${fullName(partner)}`) &&
+            timeLines.every((line) => matchingEvents[0].description?.split("\n").includes(line));
+          if (timeLines.length && !alreadyHasTime) {
+            const note = [
+              `Исходное время семейного события GEDCOM ${f.xref || "FAM"}.${e.tag}:`,
+              ...(rawDate ? [`DATE: ${rawDate}`] : []),
+              ...(datePhrase ? [`DATE.PHRASE: ${datePhrase}`] : []),
+              ...(place ? [`PLAC: ${place}`] : []),
+              ...timeLines,
+            ].join("\n");
+            if (!p.biography?.includes(note))
+              p.biography = [p.biography, note].filter(Boolean).join("\n\n");
+            warnings.add("DATE.TIME семейного события сохранён в биографии участника: точная связь с событием из метаданных Drevo не восстановлена.");
           }
           if (!ageText.length) continue;
           // Export may assign HUSB/WIFE roles differently from the original
