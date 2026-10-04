@@ -8179,9 +8179,42 @@ try {
   assert.equal(afterMatchWithdrawal.status, "revoked");
   assert.equal((afterMatchWithdrawal.left.archiveId === "other-archive"
     ? afterMatchWithdrawal.left : afterMatchWithdrawal.right).name, undefined);
+  assert.equal(afterMatchWithdrawal.confirmation, undefined,
+    "a completed publication withdrawal hides the accepted historical facts over HTTP");
+  assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS n
+    FROM discovery_match_confirmation_fields WHERE match_id=?`).get(candidateMatchId))?.n, 0,
+  "RLS also hides the accepted historical facts after withdrawal");
   console.log("runtime_discovery_match_list_delivery_revocation_ok");
   await app.archive.db.prepare("", "DELETE FROM discovery_match_requests WHERE id=?")
     .run(candidateMatchId);
+  const legacySourceArchive = app.archive, legacyOtherArchive = otherApp.archive;
+  async function verifyLegacyConfirmationHistory() {
+  // Existing linked rows predate migration 086. Their historical facts cannot
+  // be reconstructed from the current publication.
+  await publishedPeopleStore(legacyOtherArchive.db).publish(candidateTargetId,"owner");
+  const legacyConfirmationId = randomUUID();
+  try {
+    await legacySourceArchive.db.prepare("", `INSERT INTO discovery_match_requests(
+      id,left_archive_id,left_person_id,right_archive_id,right_person_id,
+      initiated_by_archive_id,requested_by,status,responded_by,responded_at)
+      VALUES(?,'other-archive',?,'runtime-test',?,'runtime-test','owner','linked','vk:42',now())`)
+      .run(legacyConfirmationId,candidateTargetId,candidateSourceId);
+    const legacyHistory = (await fetch(securedBase + "/api/discovery/matches", {
+      headers: ownerHeaders,
+    }).then((response) => response.json())).matches.find((item: { id: string }) =>
+      item.id === legacyConfirmationId);
+    assert.equal(legacyHistory.status, "linked");
+    assert.equal(legacyHistory.confirmationHistoryAvailable, false);
+    assert.equal(legacyHistory.confirmation, undefined,
+      "a legacy link never receives a fabricated historical snapshot");
+  } finally {
+    await legacySourceArchive.db.prepare("", "DELETE FROM discovery_match_requests WHERE id=?")
+      .run(legacyConfirmationId);
+    await publishedPeopleStore(legacyOtherArchive.db).unpublish(candidateTargetId);
+  }
+  console.log("runtime_discovery_confirmation_legacy_unavailable_ok");
+  }
+  await verifyLegacyConfirmationHistory();
   const patchSource = await fetch(securedBase + "/api/discovery/matches", {
     method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.46" },
     body: JSON.stringify({ sourcePersonId: candidateSourceId,
@@ -8733,6 +8766,205 @@ try {
   assert.equal(acceptedAudit?.responded_by, "vk:42");
   assert.ok(acceptedAudit?.responded_at);
   assert.equal(acceptedAudit?.decision_review_token, freshReview.reviewToken);
+  const confirmationAcceptedAudit = acceptedAudit;
+  const confirmationSourceArchive = app.archive;
+  const confirmationOtherArchive = otherApp.archive;
+  async function verifyConfirmationHistory() {
+  const confirmationRow = await matchDb.prepare("", `SELECT review_token,
+    left_publication_version,right_publication_version FROM discovery_match_confirmations
+    WHERE match_id=?`).get(matchBody.match.id);
+  assert.equal(confirmationRow?.review_token, freshReview.reviewToken);
+  assert.ok(confirmationRow?.left_publication_version && confirmationRow?.right_publication_version);
+  const confirmedFields = await matchDb.prepare("", `SELECT side,field_name,field_value
+    FROM discovery_match_confirmation_fields WHERE match_id=? ORDER BY side,field_name`)
+    .all(matchBody.match.id);
+  const expectedConfirmedFields = (["left","right"] as const).flatMap((side) =>
+    Object.keys(freshReview[side]).filter((field) => field !== "archiveId" && field !== "id")
+      .sort().map((field) => [side,field]));
+  assert.deepEqual(confirmedFields.map((field) => [field.side,field.field_name]),
+    expectedConfirmedFields,
+    "confirmation stores only the fields explicitly published at acceptance");
+  assert.equal((await matchDb.prepare("", `UPDATE discovery_match_confirmation_fields
+    SET field_value='overwritten' WHERE match_id=?`).run(matchBody.match.id)).changes, 0,
+  "a participant cannot overwrite the accepted facts through SQL");
+  assert.equal((await matchDb.prepare("", `DELETE FROM discovery_match_confirmation_fields
+    WHERE match_id=?`).run(matchBody.match.id)).changes, 0,
+  "a participant cannot erase the accepted facts through SQL");
+  await assert.rejects(matchDb.prepare("", `INSERT INTO discovery_match_confirmation_fields(
+    match_id,side,field_name,field_value) VALUES(?,'left','deathPlace','late addition')`)
+    .run(matchBody.match.id), (error: unknown) => (error as { code?: string }).code === "42501",
+  "a later transaction cannot append facts to an accepted snapshot");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("unrelated-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS n
+      FROM discovery_match_confirmations WHERE match_id=?`).get(matchBody.match.id))?.n, 0);
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS n
+      FROM discovery_match_confirmation_fields WHERE match_id=?`).get(matchBody.match.id))?.n, 0);
+  }, true);
+  const confirmedList = await fetch(otherBase + "/api/discovery/matches", { headers: archiveAdminHeaders });
+  assert.equal(confirmedList.status, 200);
+  const confirmedMatch = (await confirmedList.json()).matches.find((item: { id: string }) =>
+    item.id === matchBody.match.id);
+  assert.equal(confirmedMatch.confirmationHistoryAvailable, true);
+  assert.equal(confirmedMatch.changedSinceConfirmation, false);
+  assert.equal(confirmedMatch.confirmation.requestedBy, "owner");
+  assert.equal(confirmedMatch.confirmation.confirmedBy, "vk:42");
+  assert.equal(confirmedMatch.confirmation.reviewToken, undefined,
+    "a historical token that includes withdrawn fields is never delivered over HTTP");
+  assert.equal(Date.parse(confirmedMatch.confirmation.confirmedAt),
+    confirmationAcceptedAudit.responded_at instanceof Date ? confirmationAcceptedAudit.responded_at.getTime()
+      : Date.parse(String(confirmationAcceptedAudit.responded_at)),
+  "confirmation metadata identifies the actual accepted decision");
+  assert.deepEqual(Object.keys(confirmedMatch.confirmation.left).sort(),
+    Object.keys(freshReview.left).filter((field) => field !== "archiveId" && field !== "id").sort());
+  assert.deepEqual(Object.keys(confirmedMatch.confirmation.right).sort(),
+    Object.keys(freshReview.right).filter((field) => field !== "archiveId" && field !== "id").sort());
+  const beforeConfirmedEdit = await confirmationOtherArchive.read();
+  const editedConfirmedFamily = structuredClone(beforeConfirmedEdit.family);
+  editedConfirmedFamily.people[0].name = "Исправление после подтверждения";
+  const confirmedEdit = await confirmationOtherArchive.write(editedConfirmedFamily, beforeConfirmedEdit.revision);
+  const afterConfirmedEdit = (await fetch(otherBase + "/api/discovery/matches", {
+    headers: archiveAdminHeaders,
+  }).then((response) => response.json())).matches.find((item: { id: string }) =>
+    item.id === matchBody.match.id);
+  assert.equal(afterConfirmedEdit.status, "linked", "an ordinary correction keeps the identity link");
+  assert.equal(afterConfirmedEdit.changedSinceConfirmation, true);
+  assert.deepEqual(afterConfirmedEdit.changedFieldsSinceConfirmation, [{ side: "left", field: "name" }]);
+  assert.equal(afterConfirmedEdit.confirmation.left.name, confirmedMatch.confirmation.left.name,
+    "the accepted fact remains immutable after a published correction");
+  assert.equal(JSON.stringify(afterConfirmedEdit.changedFieldsSinceConfirmation).includes(
+    String(confirmedMatch.confirmation.left.name)), false,
+  "the diff contains field names, never historical values");
+  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS n FROM discovery_linked_pairs
+    WHERE left_archive_id='other-archive' AND left_person_id='person-a'
+      AND right_archive_id='runtime-test' AND right_person_id='person-a'`).get())?.n, 1);
+  await confirmationOtherArchive.write(beforeConfirmedEdit.family, confirmedEdit.revision);
+  let historyReached!: () => void, releaseHistory!: () => void;
+  const historyReady = new Promise<void>((resolve) => { historyReached = resolve; });
+  const historyGate = new Promise<void>((resolve) => { releaseHistory = resolve; });
+  const historyEndpoint = discoveryMatchesHttp({ archive: confirmationSourceArchive, auth: detailAuth,
+    publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeMatchListDelivery: async () => { historyReached(); await historyGate; },
+  });
+  const historyServer = createServer((req,res) => {
+    void historyEndpoint(req,res,new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => res.destroy(error));
+  });
+  await new Promise<void>((resolve) => historyServer.listen(0,"127.0.0.1",resolve));
+  const historyPort = (historyServer.address() as { port: number }).port;
+  const pausedHistory = fetch(`http://127.0.0.1:${historyPort}/api/discovery/matches`, {
+    headers: ownerHeaders,
+  });
+  let concurrentEdit: Promise<{ revision: number }> | undefined;
+  try {
+    await Promise.race([historyReady,
+      pausedHistory.then(() => { throw new Error("history sent before the final delivery barrier"); }),
+      new Promise<never>((_,reject) => setTimeout(() => reject(new Error("history barrier timed out")),30_000))]);
+    const beforeConcurrentEdit = await confirmationOtherArchive.read();
+    const concurrentFamily = structuredClone(beforeConcurrentEdit.family);
+    concurrentFamily.people[0].name = "Правка во время выдачи истории";
+    concurrentEdit = confirmationOtherArchive.write(concurrentFamily,beforeConcurrentEdit.revision);
+    assert.equal(await Promise.race([concurrentEdit.then(() => "completed"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"),300))]), "pending",
+    "the edit waits while the confirmed facts and live projection are delivered");
+    releaseHistory();
+    const delivered = await pausedHistory;
+    assert.equal(delivered.status, 200);
+    const inFlight = (await delivered.json()).matches.find((item: { id: string }) =>
+      item.id === matchBody.match.id);
+    assert.equal(inFlight.changedSinceConfirmation, false);
+    const edited = await concurrentEdit;
+    const afterDelivery = (await fetch(otherBase + "/api/discovery/matches", {
+      headers: archiveAdminHeaders,
+    }).then((response) => response.json())).matches.find((item: { id: string }) =>
+      item.id === matchBody.match.id);
+    assert.deepEqual(afterDelivery.changedFieldsSinceConfirmation, [{ side: "left", field: "name" }]);
+    await confirmationOtherArchive.write(beforeConcurrentEdit.family,edited.revision);
+  } finally {
+    releaseHistory();
+    await pausedHistory.catch(() => {});
+    await concurrentEdit?.catch(() => {});
+    await new Promise<void>((resolve) => historyServer.close(() => resolve()));
+  }
+  const confirmationOriginalFields = await otherPublication.getFields("person-a");
+  assert.ok(confirmationOriginalFields?.birthYear,
+    "the selected target year can be withdrawn independently for the privacy regression");
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+    method: "PUT", headers: archiveAdminHeaders,
+    body: JSON.stringify({ fields: { ...confirmationOriginalFields, birthYear: false } }),
+  })).status, 200);
+  const hiddenFieldList = await fetch(otherBase + "/api/discovery/matches", {
+    headers: archiveAdminHeaders,
+  });
+  assert.equal(hiddenFieldList.status, 200);
+  const hiddenFieldMatch = (await hiddenFieldList.json()).matches.find((item: { id: string }) =>
+    item.id === matchBody.match.id);
+  assert.equal(hiddenFieldMatch.status, "linked");
+  assert.equal(hiddenFieldMatch.confirmation.left.birthYear, undefined,
+    "HTTP history hides a formerly selected field after permission is withdrawn");
+  assert.equal(Object.hasOwn(hiddenFieldMatch.confirmation.left, "birthYear"), false,
+    "the hidden field is absent rather than replaced with a cached value");
+  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS n
+    FROM discovery_match_confirmation_fields WHERE match_id=? AND side='left'
+      AND field_name='birthYear'`).get(matchBody.match.id))?.n, 0,
+  "field-level RLS also hides the withdrawn historical value from participant SQL");
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+    method: "PUT", headers: archiveAdminHeaders,
+    body: JSON.stringify({ fields: confirmationOriginalFields }),
+  })).status, 200);
+  const assertHistoryAccessRevokedBeforeFinalLock = async (withdraw: (token: string) => Promise<void>) => {
+    const token = newSessionToken();
+    await matchDb.prepare("", `INSERT INTO account_sessions(token_hash,user_id,expires_at)
+      VALUES(?,'owner',?)`).run(sessionTokenHash(token),Date.now() + 60_000);
+    let reached!: () => void, release!: () => void;
+    const ready = new Promise<void>((resolve) => { reached = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const endpoint = discoveryMatchesHttp({ archive: confirmationSourceArchive, auth: detailAuth,
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeMatchListAccessLock: async () => { reached(); await gate; },
+    });
+    const server = createServer((req,res) => {
+      void endpoint(req,res,new URL(req.url || "/",`http://${req.headers.host}`))
+        .catch((error) => res.destroy(error));
+    });
+    await new Promise<void>((resolve) => server.listen(0,"127.0.0.1",resolve));
+    const port = (server.address() as { port: number }).port;
+    const request = fetch(`http://127.0.0.1:${port}/api/discovery/matches`, {
+      headers: { ...ownerHeaders, Cookie: `drevo_session=${token}` },
+    });
+    try {
+      await Promise.race([ready,
+        request.then(() => { throw new Error("history sent before access barrier"); }),
+        new Promise<never>((_,reject) => setTimeout(() => reject(new Error("history access barrier timed out")),30_000))]);
+      await withdraw(token);
+      release();
+      const response = await request;
+      assert.equal(response.status, 403);
+      assert.equal((await response.text()).includes(String(confirmedMatch.confirmation.left.name)), false);
+    } finally {
+      release();
+      await request.catch(() => {});
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await matchDb.prepare("", "DELETE FROM account_sessions WHERE token_hash=?")
+        .run(sessionTokenHash(token));
+    }
+  };
+  await assertHistoryAccessRevokedBeforeFinalLock(async (token) => {
+    await matchDb.prepare("", "DELETE FROM account_sessions WHERE token_hash=?")
+      .run(sessionTokenHash(token));
+  });
+  try {
+    await assertHistoryAccessRevokedBeforeFinalLock(async () => {
+      await matchDb.prepare("", `UPDATE archive_memberships SET approved=false
+        WHERE archive_id='runtime-test' AND user_id='owner'`).run();
+    });
+  } finally {
+    await matchDb.prepare("", `UPDATE archive_memberships SET approved=true
+      WHERE archive_id='runtime-test' AND user_id='owner'`).run();
+  }
+  console.log("runtime_discovery_confirmation_snapshot_change_ok");
+  }
+  await verifyConfirmationHistory();
   const branchPath = matchPath + "/branch-share";
   const branchPersonPath = branchPath + "/people/branch-parent-b";
   const navigationHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.214" };

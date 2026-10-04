@@ -294,6 +294,49 @@ test("a changed published card requires a fresh review before acceptance", async
   await expect(page.getByText("Сопоставлено")).toBeVisible();
 });
 
+test("a linked pair shows the confirmation history and a field-only change notice", async ({ page }) => {
+  const left = { archiveId: "tree-a", id: "person-a", name: "Исправленное имя" };
+  const right = { archiveId: "tree-b", id: "person-b", name: "Имя второй карточки" };
+  let published = true;
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-b", people: [right] } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
+    archiveId: "tree-b", nextCursor: null, matches: [
+      { id: "match-1", left: published ? left : { archiveId: "tree-a", id: "person-a" },
+        right, initiatedByArchiveId: "tree-a", status: published ? "linked" : "revoked",
+        requestedAt: "2026-09-30T00:00:00Z",
+        ...(published ? { confirmationHistoryAvailable: true, changedSinceConfirmation: true,
+          changedFieldsSinceConfirmation: [{ side: "left", field: "name" }],
+          confirmation: { confirmedAt: "2026-09-30T12:00:00Z", requestedBy: "owner-a",
+            confirmedBy: "owner-b", leftPublicationVersion: "v1",
+            rightPublicationVersion: "v1", left: { name: "Прежнее имя" },
+            right: { name: "Имя второй карточки" } } } : {}),
+      },
+      { id: "match-legacy", left, right, initiatedByArchiveId: "tree-a", status: "linked",
+        requestedAt: "2026-09-29T00:00:00Z", confirmationHistoryAvailable: false },
+    ],
+  } }));
+  await page.goto("/admin");
+  await openAdminSection(page, "matches", "Связи деревьев");
+  const confirmed = page.locator(".match-request").first();
+  await expect(confirmed.getByText(/Опубликованные сведения изменились после подтверждения связи/))
+    .toContainText("первая карточка — Имя");
+  await confirmed.getByText("Сведения на момент подтверждения").click();
+  await expect(confirmed).toContainText("Прежнее имя");
+  await expect(confirmed).not.toContainText("owner-a");
+  await expect(confirmed).not.toContainText("owner-b");
+  await expect(page.locator(".match-request").nth(1)).toContainText(
+    "История сведений на момент подтверждения для этой связи недоступна.");
+  published = false;
+  await page.reload();
+  await openAdminSection(page, "matches", "Связи деревьев");
+  await expect(page.locator(".match-request").first()).not.toContainText("Прежнее имя");
+  await expect(page.locator(".match-request").first()).not.toContainText(
+    "Опубликованные сведения изменились после подтверждения связи");
+});
+
 test("an incoming owner compares only currently published fields before confirmation", async ({ page }) => {
   const own = { archiveId: "tree-b", id: "person-b", name: "Иван Петров",
     birthYear: "1902", birthPlace: "Тула" };

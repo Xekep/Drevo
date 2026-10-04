@@ -27,6 +27,18 @@ type Match = {
   reason?: string;
   reviewToken?: string;
   changedSinceRequest?: boolean;
+  confirmationHistoryAvailable?: boolean;
+  changedSinceConfirmation?: boolean;
+  changedFieldsSinceConfirmation?: { side: "left" | "right"; field: keyof Candidate }[];
+  confirmation?: {
+    confirmedAt: string;
+    requestedBy: string;
+    confirmedBy: string;
+    leftPublicationVersion: string;
+    rightPublicationVersion: string;
+    left: Partial<Candidate>;
+    right: Partial<Candidate>;
+  };
   initiatedByArchiveId: string;
   requestedAt: string;
   left: Candidate;
@@ -572,6 +584,23 @@ export function DiscoveryMatchesAdmin({ family }: { family: Family }) {
         {item.reason && <p className="match-reason">Основание: {item.reason}</p>}
         {item.status === "pending" && item.changedSinceRequest &&
           <p className="match-reason">Опубликованные сведения изменились после запроса. Сверьте обе карточки перед решением.</p>}
+        {item.status === "linked" && item.confirmationHistoryAvailable === false &&
+          <p className="match-reason">История сведений на момент подтверждения для этой связи недоступна.</p>}
+        {item.status === "linked" && item.changedSinceConfirmation &&
+          <p className="match-reason" role="status">Опубликованные сведения изменились после подтверждения связи: {item.changedFieldsSinceConfirmation?.map(({ side, field }) =>
+            `${side === "left" ? "первая" : "вторая"} карточка — ${comparedFields.find(([key]) => key === field)?.[1] || field}`).join(", ")}.
+            Связь и выданные разрешения сохраняются; сверьте текущие карточки.</p>}
+        {item.status === "linked" && item.confirmation && <details>
+          <summary>Сведения на момент подтверждения</summary>
+          <p>Дата подтверждения: <time dateTime={item.confirmation.confirmedAt}>
+            {new Date(item.confirmation.confirmedAt).toLocaleString("ru-RU")}</time>.</p>
+          <div className="match-pair">{(["left", "right"] as const).map((side) =>
+            <section key={side} className="match-candidate-card">
+              <strong>{side === "left" ? "Первая карточка" : "Вторая карточка"}</strong>
+              <dl>{comparedFields.filter(([field]) => item.confirmation?.[side][field] != null).map(([field, label]) =>
+                <div key={field}><dt>{label}</dt><dd>{item.confirmation?.[side][field]}</dd></div>)}</dl>
+            </section>)}</div>
+        </details>}
         <div className="match-request-actions">
           {item.status === "pending" && item.initiatedByArchiveId !== archiveId && <>
             <button type="button" disabled={busy || !item.reviewToken}
