@@ -21,6 +21,7 @@ test("only worker-produced provider rejections can be manually queued", () => {
   assert.equal(canRetryBlockedCleanup("blocked", "provider_auth_403", true, false), false);
 });
 import { aiProviderCleanupHttp } from "../src/server/ai-provider-cleanup-http.ts";
+import { platformAiProviderCleanupHttp } from "../src/server/platform-ai-provider-cleanup-http.ts";
 import { createAuth } from "../src/server/auth.ts";
 import { userStore } from "../src/server/users.ts";
 import { storeDatabase } from "../src/server/store-database.ts";
@@ -74,8 +75,12 @@ test("cleanup status honestly reports SQLite limits and rejects a revoked admin 
           .run(admin.id);
     },
   });
+  const platformHandle = platformAiProviderCleanupHttp({ auth, db,
+    publicOrigin: "https://archive.test" });
   const server = createServer((req, res) => {
-    void handle(req, res, new URL(req.url!, "http://localhost")).catch(() =>
+    const url = new URL(req.url!, "http://localhost");
+    void (url.pathname.startsWith("/api/platform/")
+      ? platformHandle(req, res, url) : handle(req, res, url)).catch(() =>
       res.destroy(),
     );
   });
@@ -97,6 +102,9 @@ test("cleanup status honestly reports SQLite limits and rejects a revoked admin 
     assert.equal(allowed.status, 200);
     assert.equal(allowed.headers.get("cache-control"), "no-store");
     assert.equal((await allowed.json()).supported, false);
+    const platform = await fetch(base + "/api/platform/ai/cleanup", { headers });
+    assert.equal(platform.status, 501);
+    assert.match((await platform.json()).error, /PostgreSQL/);
     assert.equal(
       (await fetch(base + "/api/admin/ai/cleanup", { headers, method: "POST" }))
         .status,

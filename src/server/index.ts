@@ -42,6 +42,7 @@ import { archiveDeletionHttp } from "./archive-deletion-http.ts";
 import { cleanupDeletedArchiveDirectories } from "./archive-deletion-files.ts";
 import { sweepPlatformAiOrphans } from "./platform-ai-orphan-sweep.ts";
 import { aiProviderCleanup } from "./ai-provider-cleanup.ts";
+import { platformAiProviderCleanupHttp } from "./platform-ai-provider-cleanup-http.ts";
 import { discoveryPeopleHttp } from "./discovery-people-http.ts";
 import { accountInvitationsHttp } from "./account-invitations-http.ts";
 import { archiveRoutePool } from "./archive-route-pool.ts";
@@ -218,6 +219,9 @@ export async function startServer(
     const users = await userStore(archive.db);
     const auth = await createAuth(users, archive.db, publicOrigin);
     const managePlatformRoles = platformRolesHttp(archive.db, auth, publicOrigin);
+    const managePlatformCleanup = !archiveId
+      ? platformAiProviderCleanupHttp({ auth, db: archive.db, providerCleanup, publicOrigin })
+      : null;
     const emailAuth = !archiveId
       ? emailAuthHttp(archive.db, auth, publicOrigin)
       : null;
@@ -420,6 +424,7 @@ export async function startServer(
       if (path.startsWith("/api/")) await auth.refreshSession(req, res);
       if (emailAuth && (await emailAuth.handle(req, res, parsedUrl))) return;
       if (await managePlatformRoles(req, res, parsedUrl)) return;
+      if (managePlatformCleanup && await managePlatformCleanup(req, res, parsedUrl)) return;
       if (await listAccountArchives(req, res, parsedUrl)) return;
       if (await exportAccountData(req, res, parsedUrl)) return;
       if (await exportAccountAttachments(req, res, parsedUrl)) return;

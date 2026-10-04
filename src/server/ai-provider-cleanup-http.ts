@@ -8,11 +8,11 @@ import {
   aiCleanupStatusQuery,
   AiCleanupStatusInputError,
   aiProviderCleanupStatus,
-  canRetryBlockedCleanup,
+  queueBlockedAiCleanup,
   cleanupJobUuid,
 } from "./ai-provider-cleanup-status.ts";
 
-async function emptyJson(req: IncomingMessage) {
+export async function emptyCleanupJson(req: IncomingMessage) {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
@@ -32,6 +32,7 @@ export function aiProviderCleanupHttp({
   publicOrigin,
   beforeAccessLock,
   afterAccessLock,
+  beforeRetryDelivery,
 }: {
   auth: Awaited<ReturnType<typeof createAuth>>;
   db: StoreDatabase;
@@ -39,6 +40,7 @@ export function aiProviderCleanupHttp({
   publicOrigin?: string;
   beforeAccessLock?: () => Promise<void>;
   afterAccessLock?: () => Promise<void>;
+  beforeRetryDelivery?: () => Promise<void>;
 }) {
   const send = async (
     res: ServerResponse,
@@ -81,7 +83,7 @@ export function aiProviderCleanupHttp({
       if (!cleanupJobUuid.test(retry[1]))
         return send(res, 400, { error: "Некорректное задание" });
       try {
-        if (!(await emptyJson(req)))
+        if (!(await emptyCleanupJson(req)))
           return send(res, 400, { error: "Ожидается пустой JSON" });
         const actor = await auth.currentUser(req);
         if (!actor || !actor.approved)
@@ -117,39 +119,48 @@ export function aiProviderCleanupHttp({
           if (!member.rows[0]?.approved || !grant.rowCount)
             return { status: 403, error: "Доступ администратора отозван" };
           await afterAccessLock?.();
-          const job = await client.query<{
-            state: string; last_error: string | null; encrypted_snapshot: string | null;
-            lease_token: string | null; lease_until: number | null;
-          }>(
-            `SELECT state,last_error,encrypted_snapshot,lease_token,lease_until
-             FROM public.platform_ai_conversations WHERE id=$1 FOR UPDATE NOWAIT`,
-            [retry[1]]);
-          if (!job.rowCount) return { status: 404, error: "Задание не найдено" };
-          const row = job.rows[0];
-          if (!canRetryBlockedCleanup(row.state, row.last_error,
-            !!row.encrypted_snapshot, row.lease_token === null && row.lease_until === null))
-            return { status: 409, error: "Задание изменилось. Обновите очередь" };
-          if (expiresAt <= Date.now())
-            return { status: 401, error: "Сеанс завершён" };
-          const now = Date.now(), nextAttemptAt = now + 45_000;
-          await client.query(
-            `UPDATE public.platform_ai_conversations
-             SET state='pending',available_at=$2,updated_at=$3,last_error=NULL
-             WHERE id=$1`, [retry[1], nextAttemptAt, now]);
+          const queued = await queueBlockedAiCleanup(client, retry[1], expiresAt);
+          if (queued.status !== 202) return queued;
           await client.query(
             `INSERT INTO archive_audit_entries
              (archive_id,at,actor_id,actor_name,action,entity,entity_id,label,revision,details)
              VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULL,'[]'::jsonb)`,
-            [db.archiveId, new Date(now).toISOString(), actor.id,
+            [db.archiveId, new Date(queued.now).toISOString(), actor.id,
               String(account.rows[0].name), "Повтор очистки поставлен в очередь",
               "ai_provider_cleanup", "retry", "Очистка диалогов у провайдера"],
           );
-          return { status: 202, queued: true, nextAttemptAt };
+          return { status: 202, queued: true, nextAttemptAt: queued.nextAttemptAt };
+        });
+        await beforeRetryDelivery?.();
+        const delivered = await db.postgresTransaction(async (client) => {
+          await client.query("SET LOCAL statement_timeout='2s'");
+          const account = await client.query(
+            "SELECT id FROM accounts WHERE id=$1 FOR SHARE NOWAIT", [actor.id]);
+          if (!account.rowCount)
+            return send(res, 401, { error: "Сеанс завершён" });
+          const active = await client.query<{ expires_at: number }>(
+            `SELECT expires_at FROM account_sessions
+             WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+            [session.tokenHash, actor.id]);
+          if (!active.rowCount || Number(active.rows[0].expires_at) <= Date.now())
+            return send(res, 401, { error: "Сеанс завершён" });
+          await client.query("SELECT set_config('drevo.account_id',$1,true)", [actor.id]);
+          const member = await client.query<{ approved: boolean }>(
+            `SELECT approved FROM archive_memberships
+             WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+            [db.archiveId, actor.id]);
+          const grant = await client.query(
+            "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
+            [actor.id]);
+          if (!member.rows[0]?.approved || !grant.rowCount)
+            return send(res, 403, { error: "Доступ администратора отозван" });
+          return send(res, result.status, result, true);
         });
         if (result.status === 202)
           console.info(JSON.stringify({ event: "ai.provider_cleanup_manual_retry", jobId: retry[1] }));
-        return send(res, result.status, result);
+        return delivered;
       } catch (error) {
+        if (res.headersSent || res.destroyed) { res.destroy(); return true; }
         if (error instanceof RangeError)
           return send(res, 413, { error: "Слишком большой запрос" });
         if (error instanceof SyntaxError)
