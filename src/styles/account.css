@@ -47,6 +47,32 @@
   gap: 8px;
 }
 .platform-ai-archive select { max-width: 100%; }
+.platform-archive-tools {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.platform-archive-tools > .account-card {
+  padding: 18px 22px;
+}
+.platform-archive-select {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.platform-archive-select select {
+  width: min(100%, 440px);
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid #dce5d8;
+  border-radius: 10px;
+  background: #fffefa;
+  color: inherit;
+  font: inherit;
+}
+@media (max-width: 760px) {
+  .platform-archive-tools > .account-card { padding: 16px; }
+}
 .account-heading .account-row-action {
   min-height: 44px;
   margin-top: 0;

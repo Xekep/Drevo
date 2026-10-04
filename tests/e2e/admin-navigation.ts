@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 
 export async function openAdminSection(page: Page, id: string, label: string) {
-  if (["ai", "storage", "vk", "resources"].includes(id)) {
+  if (["ai", "mcp", "backups", "storage", "vk", "resources"].includes(id)) {
     await page.getByRole("button", { name: label, exact: true }).click();
     return;
   }

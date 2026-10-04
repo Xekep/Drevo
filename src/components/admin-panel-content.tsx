@@ -3,13 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   BookOpen,
-  DatabaseBackup,
   Download,
   ShieldCheck,
   Users,
   History,
   Link2,
-  KeyRound,
   Trash2,
   Clock3,
   ScanSearch,
@@ -23,13 +21,11 @@ import {
   type TreeAccess,
   type Family,
 } from "../domain";
-import { BackupAdmin } from "./backup-admin";
 import { ShareCatalog } from "./share-catalog";
 import { InvitationsAdmin } from "./invitations-admin";
 import { AuditLog } from "./audit-log";
 import { PersonSearch } from "./person-search";
 import { GedcomTransfer } from "./gedcom-transfer";
-import { McpTokenAdmin } from "./mcp-token-admin";
 import { SourceCatalogAdmin } from "./source-catalog-admin";
 import { PublicationAdmin } from "./publication-admin";
 import type { PublicationOwnership } from "../hooks/useArchivePublicationOwner";
@@ -68,16 +64,9 @@ const ADMIN_SECTIONS = [
     ],
   },
   {
-    label: "ИИ и поиск",
-    items: [
-      { id: "mcp", label: "MCP-токены", icon: KeyRound },
-    ],
-  },
-  {
     label: "Данные",
     items: [
       { id: "data", label: "Экспорт и импорт", icon: Download },
-      { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
     ],
   },
   {
@@ -98,17 +87,9 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
     title: "Экспорт и импорт",
     description: "Обмен данными и перенос в другие генеалогические программы.",
   },
-  backups: {
-    title: "Резервные копии",
-    description: "Расписание, хранилище и восстановление семейного архива.",
-  },
   sources: {
     title: "Источники",
     description: "Архивные записи, документы и доказательства фактов.",
-  },
-  mcp: {
-    title: "MCP-токены",
-    description: "Доступ внешних клиентов к инструментам архива.",
   },
   shares: {
     title: "Общий доступ",
@@ -300,7 +281,6 @@ export function AdminPanel({
   currentUserId,
   archiveOwner = true,
   platformAdmin,
-  aiAvailable,
   publicationOwnership,
   onClose,
   onChanged,
@@ -312,7 +292,6 @@ export function AdminPanel({
   currentUserId: string;
   archiveOwner?: boolean;
   platformAdmin: boolean;
-  aiAvailable: boolean;
   publicationOwnership: PublicationOwnership;
   onClose: () => void;
   onChanged: () => void;
@@ -342,10 +321,7 @@ export function AdminPanel({
   const [auditActor, setAuditActor] = useState("");
   const visibleGroups = ADMIN_SECTIONS.map((group) => ({
     ...group,
-    items: group.items.filter(({ id }) =>
-      id === "backups" ? platformAdmin && archiveOwner :
-      id === "mcp" ? platformAdmin && archiveOwner && aiAvailable :
-      archiveOwner),
+    items: group.items.filter(() => archiveOwner),
   })).filter((group) => group.items.length > 0);
   const visibleSection = visibleGroups.some((group) => group.items.some((item) => item.id === section))
     ? section : visibleGroups[0]?.items[0]?.id || "users";
@@ -682,7 +658,6 @@ export function AdminPanel({
           </form>
         )}
         {visibleSection === "sources" && <SourceCatalogAdmin family={family} onChanged={onChanged} />}
-        {visibleSection === "mcp" && <McpTokenAdmin />}
         {visibleSection === "shares" && <ShareCatalog />}
         {visibleSection === "publications" && (publicationOwnership === "owner"
           ? <PublicationAdmin family={family} />
@@ -718,9 +693,6 @@ export function AdminPanel({
             </label>
             <AuditLog key={auditActor} actorId={auditActor || undefined} />
           </section>
-        )}
-        {visibleSection === "backups" && platformAdmin && archiveOwner && (
-          <BackupAdmin onRestored={onChanged} />
         )}
         {visibleSection === "data" && (
           <section className="admin-card archive-form">

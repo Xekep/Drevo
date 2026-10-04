@@ -1,4 +1,5 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
+import { archiveResourceUrl } from "../domain/archive-context.ts";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Check, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 
@@ -73,7 +74,8 @@ const scopePresets = [
 }>;
 type McpScopePreset = (typeof scopePresets)[number]["value"];
 
-export function McpTokenAdmin() {
+export function McpTokenAdmin({ archiveId }: { archiveId: string | null }) {
+  const endpoint = archiveResourceUrl("/api/mcp/tokens", archiveId ? `/a/${archiveId}` : "/");
   const [tokens, setTokens] = useState<McpTokenItem[]>([]),
     [recentUsage, setRecentUsage] = useState<McpUsageItem[]>([]),
     [name, setName] = useState("Yandex AI Studio"),
@@ -85,25 +87,28 @@ export function McpTokenAdmin() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
 
-  const load = useCallback(async () => {
-    const response = await archiveFetch("/api/mcp/tokens", { cache: "no-store" }),
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const response = await archiveFetch(endpoint, { cache: "no-store", signal }),
       data = await response.json();
     if (!response.ok)
       throw new Error(data.error || "Не удалось загрузить MCP-токены");
+    if (signal?.aborted) return;
     setTokens(data.tokens || []);
     setRecentUsage(data.recentUsage || []);
-  }, []);
+  }, [endpoint]);
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     queueMicrotask(() => {
       if (!active) return;
-      void load().catch((reason) => {
+      void load(controller.signal).catch((reason) => {
         if (active) setError((reason as Error).message);
       });
     });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [load]);
 
@@ -116,7 +121,7 @@ export function McpTokenAdmin() {
     setError("");
     setSecret("");
     try {
-      const response = await archiveFetch("/api/mcp/tokens", {
+      const response = await archiveFetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -146,7 +151,7 @@ export function McpTokenAdmin() {
     setError("");
     try {
       const response = await archiveFetch(
-          `/api/mcp/tokens/${encodeURIComponent(id)}`,
+          `${endpoint}/${encodeURIComponent(id)}`,
           { method: "DELETE" },
         ),
         data = await response.json();

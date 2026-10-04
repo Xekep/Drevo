@@ -16,8 +16,9 @@ import type {
 } from "../shared/backup-management";
 import { BackupRestore } from "./backup-restore";
 
-async function request(path: string, method = "GET", body?: unknown) {
-  const response = await archiveFetch("/api/backups" + path, {
+async function request(archiveId: string | null, path: string, method = "GET", body?: unknown) {
+  const response = await archiveFetch(archiveResourceUrl("/api/backups" + path,
+    archiveId ? `/a/${archiveId}` : "/"), {
     method,
     headers: { "Content-Type": "application/json", "X-Drevo-Backup": "1" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -37,7 +38,7 @@ const bytes = (value: number) =>
     ? (value / 1024 ** 3).toFixed(1) + " ГиБ"
     : Math.max(0.1, value / 1024 ** 2).toFixed(1) + " МиБ";
 
-export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
+export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [draft, setDraft] = useState<BackupSettings | null>(null);
   const [offset, setOffset] = useState(0);
@@ -54,7 +55,8 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
     async function poll() {
       let delay = 15000;
       try {
-        const response = await archiveFetch("/api/backups/?offset=" + offset, {
+        const response = await archiveFetch(archiveResourceUrl("/api/backups/?offset=" + offset,
+          archiveId ? `/a/${archiveId}` : "/"), {
           signal: controller.signal,
         });
         const data = (await response.json()) as BackupStatus & {
@@ -78,7 +80,7 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [offset, refresh]);
+  }, [archiveId, offset, refresh]);
 
   const running = busy || status?.job?.state === "running";
   const dirty =
@@ -97,7 +99,7 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
     setError("");
     setNotice("");
     try {
-      const job = (await request(path, "POST", body)) as BackupJob;
+      const job = (await request(archiveId, path, "POST", body)) as BackupJob;
       if (path.endsWith("/preview")) setPreviewJobId(job.id);
       setStatus((current) => (current ? { ...current, job } : current));
       setRefresh((value) => value + 1);
@@ -114,6 +116,7 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
     setNotice("");
     try {
       const saved = (await request(
+        archiveId,
         "/settings",
         "PUT",
         draft,
@@ -385,7 +388,8 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
               </div>
               <div className="backup-list-actions">
                 <a
-                  href={archiveResourceUrl("/api/backups/" + item.id + "/download")}
+                  href={archiveResourceUrl("/api/backups/" + item.id + "/download",
+                    archiveId ? `/a/${archiveId}` : "/")}
                   download
                   aria-label={"Скачать копию от " + date(item.createdAt)}
                   title="Скачать"
@@ -437,12 +441,13 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
         {preview && (
           <BackupRestore
             key={preview.token}
+            archiveId={archiveId}
             initialPreview={preview}
             onCancel={() => setPreviewJobId(null)}
             onRestored={() => {
               setPreviewJobId(null);
               setNotice("Архив восстановлен. Данные обновлены.");
-              onRestored();
+              setRefresh((value) => value + 1);
             }}
           />
         )}
@@ -450,7 +455,10 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
       <section className="admin-card archive-form">
         <details>
           <summary>Восстановить из файла на компьютере</summary>
-          <BackupRestore onRestored={onRestored} />
+          <BackupRestore archiveId={archiveId} onRestored={() => {
+            setNotice("Архив восстановлен. Данные обновлены.");
+            setRefresh((value) => value + 1);
+          }} />
         </details>
       </section>
       {error && (
