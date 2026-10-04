@@ -94,6 +94,7 @@ export function analyzeArchiveCoverage(family: Family): ArchiveWarning[] {
       ["birthPlace", "место рождения", person.birthPlace, person.birthPlaceClaim],
       ["deathPlace", "место смерти", person.deathPlace || "", person.deathPlaceClaim],
       ["maidenName", "фамилия при рождении", person.maidenName || "", person.maidenNameClaim],
+      ["occupation", "занятие", person.occupation || "", person.occupationClaim],
     ] as const).flatMap(([field, label, value, claim]) => {
       const cited = (person.factAlternatives || []).filter((item) => item.field === field)
         .map((item) => ({ value: item.value, sources: item.sources }));

@@ -52,7 +52,7 @@ import { PortraitCropper } from "./portrait-cropper";
 import { photoLabel } from "../domain/photo-metadata";
 import { mediaPreview } from "../domain/media-preview";
 import { applyPersonDraft, rebasePersonDraft } from "../domain/person-draft";
-import { preserveBirthSurnameClaim } from "../domain/person-fact-alternatives";
+import { preserveBirthSurnameClaim, preserveOccupationClaim } from "../domain/person-fact-alternatives";
 import {
   confirmDiscardChanges,
   useUnsavedChanges,
@@ -83,13 +83,16 @@ function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange,
           <p role="alert">{occupation ? "Занятие изменилось. Источники относятся к прежнему занятию " : surname ? "Фамилия изменилась. Источники относятся к прежней фамилии при рождении " : subject === "date" ? "Дата изменилась. Источники относятся к прежней дате " : "Место изменилось. Источники относятся к прежнему месту "}{subject === "date" ? dateInputLabel(claim.value) : claim.value}. {claim.confidence && !canAssess
             ? "Верните прежнее значение перед сохранением или попросите исследователя снять оценку."
             : onPreservePrevious
-              ? "Сохраните прежнюю фамилию как вариант, снимите связь или верните прежнее значение перед сохранением."
+              ? occupation
+                ? "Сохраните прежнее занятие как вариант, снимите связь или верните прежнее значение перед сохранением."
+                : "Сохраните прежнюю фамилию как вариант, снимите связь или верните прежнее значение перед сохранением."
               : "Снимите связь или верните прежнее значение перед сохранением."}</p>
           {claim.confidence && !canAssess
             ? <p>Оценку и связь с прежним значением может снять только исследователь или администратор.</p>
             : <>
                 {onPreservePrevious && <button type="button" onClick={onPreservePrevious}>
-                  Сохранить прежнюю фамилию с источниками как вариант
+                  {occupation ? "Сохранить прежнее занятие с источниками как вариант" :
+                    "Сохранить прежнюю фамилию с источниками как вариант"}
                 </button>}
                 <button type="button" onClick={() => onChange(undefined)}>Снять связи с прежн{subject === "date" ? "ей датой" : occupation ? "им занятием" : surname ? "ей фамилией" : "им местом"}</button>
               </>}
@@ -907,9 +910,17 @@ export function PersonEditor({
             value={draft.occupation || ""}
             claim={draft.occupationClaim}
             onChange={(claim) => field("occupationClaim", claim)}
+            onPreservePrevious={() => setDraft((current) =>
+              preserveOccupationClaim(current, crypto.randomUUID()))}
             isAdmin={isAdmin}
             canAssess={canAssessArchiveEvidence(user)}
           />
+          <PersonAlternativeClaims kind="occupation"
+            alternatives={draft.factAlternatives || []}
+            savedIds={new Set(person?.factAlternatives?.map((item) => item.id) || [])}
+            onChange={(alternatives) => field("factAlternatives", alternatives)}
+            isAdmin={isAdmin}
+            canAssess={canAssessArchiveEvidence(user)} />
           <label>
             История человека
             <textarea

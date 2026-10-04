@@ -39,14 +39,15 @@ const PersonDiscussion = lazy(() => import("./person-discussion").then((module) 
 const claimSummary = (claim: PersonValueClaim) =>
   `${claim.sources.map((source) => source.title).join("; ")}${claim.confidence
     ? ` · Оценка: ${CLAIM_CONFIDENCE_LABELS[claim.confidence]}` : ""}`;
-function alternativeFacts(person: Person, kind: "birth" | "death" | "maidenName") {
+function alternativeFacts(person: Person, kind: "birth" | "death" | "maidenName" | "occupation") {
   const label = {
     birth: "Другая дата рождения", death: "Другая дата смерти",
     birthPlace: "Другое место рождения", deathPlace: "Другое место смерти",
-    maidenName: "Другая фамилия при рождении",
+    maidenName: "Другая фамилия при рождении", occupation: "Другое занятие",
   } as const;
   return (person.factAlternatives || []).filter((alternative) =>
-    alternative.field === kind || (kind !== "maidenName" && alternative.field === `${kind}Place`)).map((alternative) =>
+    alternative.field === kind || ((kind === "birth" || kind === "death") &&
+      alternative.field === `${kind}Place`)).map((alternative) =>
       <p key={alternative.id} className="life-fact-alternative">
         {label[alternative.field]}: {["birth", "death"].includes(alternative.field)
           ? dateLabel(alternative.value) : alternative.value}
@@ -413,11 +414,13 @@ export function PersonPanel({
               </div>
             ) : null}
             <LifeSpan person={person} />
-            {(person.biography || person.occupation) && (
+            {(person.biography || person.occupation || person.factAlternatives?.some((alternative) =>
+              alternative.field === "occupation")) && (
               <div className="biography">
                 <h3>{person.occupation || "Сохранённая история"}</h3>
                 {!!person.occupationClaim?.sources.length &&
                   <p>Источники занятия: {claimSummary(person.occupationClaim)}</p>}
+                {alternativeFacts(person, "occupation")}
                 {person.biography && <p>{person.biography}</p>}
               </div>
             )}

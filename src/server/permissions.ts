@@ -407,14 +407,16 @@ export function authorizeArchive(
         const oldPerson = current.people.find((person) => person.id === personId);
         const newPerson = next.people.find((person) => person.id === personId);
         const alternative = newPerson?.factAlternatives?.find((item) =>
-          item.id === alternativeId && item.field === "maidenName");
-        const preservedBirthSurname = kind === "person" && slot === "factAlternative" &&
-          alternative && oldPerson?.maidenNameClaim?.value === alternative.value &&
-          newPerson?.maidenName !== alternative.value &&
-          !newPerson?.maidenNameClaim?.sources.some((item) => item.catalogId === source.catalogId) &&
+          item.id === alternativeId && (item.field === "maidenName" || item.field === "occupation"));
+        const claimKey = alternative?.field === "occupation" ? "occupationClaim" : "maidenNameClaim";
+        const valueKey = alternative?.field === "occupation" ? "occupation" : "maidenName";
+        const preservedClaim = kind === "person" && slot === "factAlternative" &&
+          alternative && oldPerson?.[claimKey]?.value === alternative.value &&
+          newPerson?.[valueKey] !== alternative.value &&
+          !newPerson?.[claimKey]?.sources.some((item) => item.catalogId === source.catalogId) &&
           !oldPerson.factAlternatives?.some((item) => item.id === alternativeId) &&
-          oldPerson.maidenNameClaim.sources.some((old) => isDeepStrictEqual(old, source));
-        if (preservedBirthSurname) continue;
+          oldPerson[claimKey]!.sources.some((old) => isDeepStrictEqual(old, source));
+        if (preservedClaim) continue;
         throw new ForbiddenError("Привязать каталожный источник может только администратор");
       }
       const [old] = previousSources.splice(oldIndex, 1);

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { analyzeArchiveCoverage, qualityCategory } from "../src/domain/archive-coverage.ts";
 import { exportGedcom, importGedcom } from "../src/domain/gedcom.ts";
-import { preserveBirthSurnameClaim } from "../src/domain/person-fact-alternatives.ts";
+import { preserveBirthSurnameClaim, preserveOccupationClaim } from "../src/domain/person-fact-alternatives.ts";
 import { collectPersonSources } from "../src/domain/person-sources.ts";
 import { validateFamily } from "../src/domain/validation.ts";
 import type { ArchiveUser, Family, PersonFactAlternative } from "../src/domain/index.ts";
@@ -32,6 +32,89 @@ const alternative = (): PersonFactAlternative => ({ id: "alternate-1", field: "b
   value: "1881", sources: [sourceCitation(source)], confidence: "probable" });
 const actor = (role: ArchiveUser["role"]): ArchiveUser => ({
   id: "owner", name: "Анна", role, createdAt: "2026-01-01",
+});
+
+test("a competing occupation keeps its own cited value beside the displayed occupation", () => {
+  const value = family();
+  value.people[0].occupation = "Столяр";
+  value.people[0].occupationClaim = {
+    value: "Столяр", sources: [inline], confidence: "probable",
+  };
+  value.people[0].factAlternatives = [{ id: "occupation-other", field: "occupation",
+    value: "Учитель", sources: [sourceCitation(source)], confidence: "conflicting" }];
+  assert.doesNotThrow(() => validateFamily(value));
+  assert.equal(value.people[0].occupation, "Столяр");
+  assert.ok(collectPersonSources(value.people[0]).some((entry) =>
+    entry.origin === "Другое занятие: Учитель" && entry.catalogId === source.id));
+  assert.ok(analyzeArchiveCoverage(value).some((warning) =>
+    warning.code === "competing-life-evidence" && warning.detail.includes("Столяр и Учитель")));
+});
+
+test("editing a cited occupation preserves the former value and exact citation for a researcher", () => {
+  const before = family();
+  before.people[0].occupation = "Столяр";
+  before.people[0].occupationClaim = { value: "Столяр", sources: [sourceCitation(source)],
+    confidence: "probable" };
+  const edited = structuredClone(before);
+  edited.people[0].occupation = "Учитель";
+  assert.throws(() => validateFamily(edited), /Источник занятия относится к другому значению/);
+  edited.people[0] = preserveOccupationClaim(edited.people[0], "former-occupation");
+  edited.people[0].occupationClaim = { value: "Учитель", sources: [inline] };
+  assert.deepEqual(before.people[0].occupationClaim?.sources, [sourceCitation(source)],
+    "preserving the draft does not mutate the saved family");
+  assert.doesNotThrow(() => validateFamily(edited));
+  assert.equal(edited.people[0].factAlternatives?.[0].confidence, "probable");
+  assert.equal(edited.people[0].factAlternatives?.[0].sources[0].catalogId, source.id);
+  assert.throws(() => authorizeArchive(edited, before, actor("relative")),
+    /Статус достоверности/);
+  assert.doesNotThrow(() => authorizeArchive(edited, before, actor("researcher")));
+  const unassessedBefore = structuredClone(before);
+  unassessedBefore.people[0].occupationClaim!.confidence = undefined;
+  const unassessedEdit = structuredClone(edited);
+  unassessedEdit.people[0].factAlternatives![0].confidence = undefined;
+  assert.doesNotThrow(() => authorizeArchive(unassessedEdit, unassessedBefore,
+    actor("relative")), "an unchanged catalog citation can follow its former value");
+  const forged = structuredClone(edited);
+  forged.people[0].factAlternatives![0].sources[0].reference = "другой лист";
+  assert.throws(() => authorizeArchive(forged, before, actor("researcher")),
+    /Привязать каталожный источник/);
+  const invalid = structuredClone(edited);
+  invalid.people[0].factAlternatives![0].sources = [];
+  assert.throws(() => validateFamily(invalid), /альтернативные значения/);
+});
+
+test("occupation alternatives survive GEDCOM 5.5.1/7 and .drevo with their evidence", async () => {
+  const value = family();
+  value.people[0].occupation = "Учитель";
+  value.people[0].occupationClaim = { value: "Учитель", sources: [inline] };
+  value.people[0].factAlternatives = [{ id: "former-occupation", field: "occupation",
+    value: "Столяр", sources: [sourceCitation(source)], confidence: "probable" }];
+  for (const version of ["5.5.1", "7.0"] as const) {
+    const gedcom = exportGedcom(value, { version });
+    assert.doesNotMatch(gedcom, /"catalogId"|"documentId"/);
+    const imported = importGedcom(gedcom, `occupation-alternative-${version}`).family.people[0];
+    assert.equal(imported.occupation, "Учитель");
+    assert.equal(imported.factAlternatives?.[0].value, "Столяр");
+    assert.equal(imported.factAlternatives?.[0].confidence, "probable");
+    assert.equal(imported.factAlternatives?.[0].sources[0].title, source.title);
+    assert.equal(imported.factAlternatives?.[0].sources[0].catalogId, undefined);
+  }
+  const directory = await mkdtemp(join(tmpdir(), "drevo-occupation-alternative-"));
+  try {
+    const uploads = join(directory, "uploads"), stage = join(directory, "stage");
+    await mkdir(uploads);
+    await mkdir(stage);
+    const path = join(directory, "family.drevo");
+    await writePortablePackage(createWriteStream(path), uploads,
+      { family: value, sources: [source], documents: [], comments: [] }, async () => {});
+    const restored = await readPortablePackage(path, stage);
+    assert.equal(restored.snapshot.family.people[0].factAlternatives?.[0].value, "Столяр");
+    assert.equal(restored.snapshot.family.people[0].factAlternatives?.[0].confidence, "probable");
+    assert.equal(restored.snapshot.family.people[0].factAlternatives?.[0].sources[0].catalogId,
+      source.id);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("alternative life records remain distinct, source-backed and date-validated", () => {
