@@ -76,6 +76,7 @@ import { acceptWithDecisionNote, rejectWithStableDecisionNote,
   verifyNoteHiddenAfterPublicationChange } from "./postgres-match-decision-notes.ts";
 import { verifyAiProviderCleanupStatus } from "./postgres-ai-provider-status.ts";
 import { verifyPlatformStaffRoles } from "./postgres-platform-staff-roles.ts";
+import { verifyPlatformTiers } from "./postgres-platform-tiers.ts";
 import { verifyGlobalStaffMigrationStartup } from "./postgres-global-staff-migration-startup.ts";
 import { verifyGlobalRoleFinalization } from "./postgres-global-role-finalization.ts";
 import { verifyAiProviderCleanupRetry } from "./postgres-ai-provider-retry.ts";
@@ -1845,6 +1846,8 @@ try {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
   };
+  await verifyPlatformTiers(client, app.archive.db, securedBase,
+    process.env.PUBLIC_ORIGIN!, ownerHeaders);
   await verifyPlatformStaffRoles(client, securedBase,
     ownerHeaders, process.env.PUBLIC_ORIGIN!);
   await verifyAiProviderCleanupStatus(app.archive.db, securedBase, ownerHeaders, headers);
@@ -13200,6 +13203,10 @@ try {
       "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'deleting-account',$2)",
       [sessionTokenHash(deletingToken), Date.now() + 600_000],
     );
+    const deletedPlatformAudit = await client.query<{ id: string }>(`INSERT INTO platform_config_audit(actor_id,action,item_id) VALUES
+      ('owner','account_tier_enable_full','deleting-account'),
+      ('deleting-account','account_tier_disable_full','reader'),
+      ('deleting-account','vk_update','vk-settings') RETURNING id`);
     const deletedChatId = randomUUID();
     const retainedChatId = randomUUID();
     await client.query(
@@ -13438,6 +13445,13 @@ try {
       "a stale writer cannot add unredacted text after account deletion");
     await client.query("SELECT set_config('drevo.archive_id',$1,false)", [recreatedId]);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM accounts WHERE id='deleting-account'")).rows[0].n, 0);
+    assert.deepEqual((await client.query(`SELECT actor_id,action,item_id
+      FROM platform_config_audit WHERE id=ANY($1::bigint[])
+      ORDER BY action`, [deletedPlatformAudit.rows.map((row) => row.id)])).rows,
+      [{ actor_id: 'deleted-account', action: 'account_tier_disable_full', item_id: 'reader' },
+        { actor_id: 'owner', action: 'account_tier_enable_full', item_id: 'deleted-account' },
+        { actor_id: 'deleted-account', action: 'vk_update', item_id: 'vk-settings' }],
+      "deletion anonymizes tier subjects and all platform audit actor attribution");
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_memberships WHERE user_id='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM ai_chats WHERE user_id='deleting-account'")).rows[0].n, 0);
     for (let attempt = 0; attempt < 100 && accountChatFiles.some((path) => existsSync(path)); attempt++)

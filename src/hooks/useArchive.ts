@@ -66,6 +66,9 @@ export function useArchive(enabled = true) {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const revision = useRef(0),
     saving = useRef(false);
+  const accessEpoch = useRef(0);
+  const accessClosed = useRef(false);
+  const loadingController = useRef<AbortController | null>(null);
   const snapshot = useRef<Family | null>(null),
     history = useRef<Change[][]>([]);
   const [undoCount, setUndoCount] = useState(0);
@@ -85,7 +88,10 @@ export function useArchive(enabled = true) {
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
+    loadingController.current = controller;
     let active = true;
+    const epoch = accessEpoch.current;
+    const current = () => active && epoch === accessEpoch.current;
     const timeout = setTimeout(() => controller.abort(), 60000);
     async function load() {
       try {
@@ -108,7 +114,7 @@ export function useArchive(enabled = true) {
           } catch {
             // The original archive error remains useful if session lookup fails.
           }
-          if (active) {
+          if (current()) {
             setNeedsLogin(true);
             setCanEdit(false);
             setFamily(null);
@@ -124,7 +130,7 @@ export function useArchive(enabled = true) {
           throw new Error("Архив недоступен");
         if (response.ok && json) {
           const initial = await response.json();
-          if (active && initial.partial) {
+          if (current() && initial.partial) {
             setFamily(validateFamily(initial.family));
             setCanEdit(false);
             snapshot.current = null;
@@ -144,11 +150,12 @@ export function useArchive(enabled = true) {
                 cache: "no-store",
               }),
             (data) => {
-              if (active) setFamily(data);
+              if (current()) setFamily(data);
             },
           );
           const data = validateFamily(result.family);
-          if (active) {
+          if (current()) {
+            accessClosed.current = false;
             setFamily(data);
             snapshot.current = data;
             history.current = [];
@@ -171,14 +178,14 @@ export function useArchive(enabled = true) {
           });
           if (!fallback.ok) throw new Error("Не удалось загрузить архив");
           const data = validateFamily(await fallback.json());
-          if (active) {
+          if (current()) {
             setFamily(data);
             setCanEdit(false);
             setError("");
           }
         }
       } catch (reason) {
-        if (active) {
+        if (current()) {
           setCanEdit(false);
           setFamily(null);
           setError(
@@ -189,24 +196,28 @@ export function useArchive(enabled = true) {
         }
       } finally {
         clearTimeout(timeout);
-        if (active) setLoadingDetails(false);
+        if (loadingController.current === controller) loadingController.current = null;
+        if (current()) setLoadingDetails(false);
       }
     }
     void load();
     return () => {
       active = false;
+      if (loadingController.current === controller) loadingController.current = null;
       clearTimeout(timeout);
       controller.abort();
     };
   }, [attempt, enabled]);
 
   const reconcileAfterUnknownWrite = useCallback(async () => {
+    const epoch = accessEpoch.current;
     const response = await fetchWithTimeout(
       "/api/family",
       { cache: "no-store" },
       RECONCILE_TIMEOUT_MS,
       archiveFetch,
     );
+    if (epoch !== accessEpoch.current || accessClosed.current) return false;
     if (response.status === 401) {
       setCanEdit(false);
       setNeedsLogin(true);
@@ -215,6 +226,7 @@ export function useArchive(enabled = true) {
     if (!response.ok) return false;
     const result = await response.json(),
       data = validateFamily(result.family);
+    if (epoch !== accessEpoch.current || accessClosed.current) return false;
     snapshot.current = data;
     revision.current = result.revision;
     history.current = [];
@@ -240,6 +252,12 @@ export function useArchive(enabled = true) {
     ) => {
       if (saving.current) throw new Error("Дождитесь завершения сохранения");
       if (!canEdit) throw new Error("Войдите в архив для сохранения изменений");
+      if (accessClosed.current) throw new Error("Права просмотра архива изменились. Откройте архив заново.");
+      const epoch = accessEpoch.current;
+      const assertCurrent = () => {
+        if (epoch !== accessEpoch.current || accessClosed.current)
+          throw new Error("Права просмотра архива изменились. Откройте архив заново.");
+      };
       saving.current = true;
       setBusy(true);
       try {
@@ -269,6 +287,7 @@ export function useArchive(enabled = true) {
               archiveFetch,
             );
           } catch (reason) {
+            assertCurrent();
             if (!(reason instanceof RequestTimeoutError)) throw reason;
             let reconciled = false;
             try {
@@ -282,7 +301,9 @@ export function useArchive(enabled = true) {
                 : "Сервер не подтвердил сохранение вовремя. Не повторяйте действие вслепую: черновик остаётся открытым, обновите архив перед повтором.",
             );
           }
+          assertCurrent();
           const result = await response.json();
+          assertCurrent();
           if (
             response.status === 409 &&
             familyWrite &&
@@ -310,6 +331,7 @@ export function useArchive(enabled = true) {
               );
             const fresh = await freshResponse.json(),
               current = validateFamily(fresh.family);
+            assertCurrent();
             const changes =
               pendingChanges ||
               archiveChanges(base, validateFamily(JSON.parse(body)));
@@ -318,6 +340,7 @@ export function useArchive(enabled = true) {
               const choice = await new Promise<"local" | "remote" | "cancel">(
                 (resolve) => setConflict({ fields: merged.conflicts, resolve }),
               );
+              assertCurrent();
               setConflict(null);
               if (choice === "cancel")
                 throw new Error(
@@ -347,6 +370,7 @@ export function useArchive(enabled = true) {
                 ? applyArchiveChanges(base, result.appliedChanges).family
                 : undefined),
           );
+          assertCurrent();
           if (familyWrite && track && base) {
             const changes = Array.isArray(result.appliedChanges)
               ? (result.appliedChanges as Change[])
@@ -510,6 +534,28 @@ export function useArchive(enabled = true) {
     syncSessionUser: (next: ArchiveUser | null) => {
       setUser(next);
       setCanEdit(canEditArchive(next));
+    },
+    hasPendingRead: () => loadingController.current !== null,
+    closeChangedPrivateView: (revoked: boolean) => {
+      // A confirmed identity or read-projection change invalidates the cached tree.
+      accessEpoch.current++;
+      accessClosed.current = true;
+      loadingController.current?.abort();
+      setConflict((current) => {
+        current?.resolve("cancel");
+        return null;
+      });
+      setFamily(null);
+      snapshot.current = null;
+      history.current = [];
+      setUndoCount(0);
+      setUser(null);
+      setCanEdit(false);
+      setLoadingDetails(false);
+      setNeedsLogin(revoked);
+      setError(revoked
+        ? "Доступ к семейному архиву изменился. Войдите снова или выберите доступный архив."
+        : "Права просмотра архива изменились. Откройте архив заново.");
     },
     reload: () => setAttempt((n) => n + 1),
   };
