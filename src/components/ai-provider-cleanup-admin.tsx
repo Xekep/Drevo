@@ -34,7 +34,8 @@ const date = (value: number) =>
   });
 
 /** Owns only the lazy operational listing, independently of the settings draft. */
-export function AiProviderCleanupAdmin() {
+export function AiProviderCleanupAdmin({ archiveId = null }: { archiveId?: string | null }) {
+  const url = (path: string) => archiveId ? `/a/${archiveId}${path}` : path;
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<AiCleanupFilter>("all");
   const [cursor, setCursor] = useState<string | null>(null);
@@ -55,7 +56,7 @@ export function AiProviderCleanupAdmin() {
       setError("");
       const query = new URLSearchParams({ filter });
       if (cursor) query.set("cursor", cursor);
-      void archiveFetch(`/api/admin/ai/cleanup?${query}`, {
+      void archiveFetch(url(`/api/admin/ai/cleanup?${query}`), {
         signal: controller.signal,
         cache: "no-store",
       })
@@ -92,7 +93,7 @@ export function AiProviderCleanupAdmin() {
     setRetryMessage("");
     setRetryError("");
     try {
-      const response = await archiveFetch(`/api/admin/ai/cleanup/${id}/retry`, {
+      const response = await archiveFetch(url(`/api/admin/ai/cleanup/${id}/retry`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",

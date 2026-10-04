@@ -32,7 +32,7 @@ test("participants show last visit in the viewer timezone and keep unknown visit
       },
     }),
   );
-  await page.goto("/admin");
+  await page.goto("/manage");
   await openAdminSection(page, "users", "Участники");
   const visited = page.getByRole("article", {
     name: "Участник: Иван Тестовый",
@@ -104,7 +104,7 @@ test("platform administrator changes the account tier separately from tree role"
       },
     });
   });
-  await page.goto("/admin");
+  await page.goto("/manage");
   await openAdminSection(page, "users", "Участники");
   const tier = page.getByRole("combobox", {
     name: "Уровень аккаунта: Участник",

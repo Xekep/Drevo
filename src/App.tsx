@@ -1,6 +1,6 @@
 import { archiveFetch } from "./data/archive-fetch.ts";
 import { isArchiveOwner } from "./domain/access.ts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { confirmDiscardChanges } from "./hooks/useUnsavedChanges";
 import { ArrowDownUp, ImagePlus, Link2, Plus, X } from "lucide-react";
 import {
@@ -20,7 +20,7 @@ import {
   type ArchiveTarget,
 } from "./domain/archive-links";
 import { archiveContextAt, scopedArchivePath } from "./domain/archive-context.ts";
-import { adminMatchSourcePath, archiveDocumentAt, archiveDocumentPath } from "./domain/archive-routes.ts";
+import { adminMatchSourcePath, archiveDocumentAt, archiveDocumentPath, archiveViewAt } from "./domain/archive-routes.ts";
 import {
   ArchiveNavigation,
   ArchiveHeader,
@@ -56,6 +56,10 @@ import { PublishPersonDialog } from "./components/publish-person-dialog";
 import { ArchiveLoading } from "./components/archive-loading";
 import { ResearchAssistant } from "./components/research-assistant";
 import { AccountPage, type AccountSession } from "./components/account-page";
+import { LazyChunkBoundary } from "./components/lazy-chunk-boundary";
+import { loadLazyModule } from "./components/lazy-section-recovery";
+const PlatformSettingsPage = lazy(() =>
+  loadLazyModule(() => import("./components/platform-settings-page"), "platform-settings"));
 import {
   clearEntrySequence,
   EntrySequence,
@@ -88,7 +92,21 @@ export default function App() {
         ?.kind === "person",
   );
   const [treeGrowing, setTreeGrowing] = useState(!initialPersonLink);
-  const archive = useArchive(),
+  const navigationDirty = useRef(false);
+  const [requestedView, setView, currentPath] = useArchiveView(
+    useCallback(() => {
+      const leave = confirmDiscardChanges(navigationDirty.current);
+      if (leave) navigationDirty.current = false;
+      return leave;
+    }, []),
+  );
+  const [archiveEnabled, setArchiveEnabled] = useState(
+    () => archiveViewAt(window.location.pathname) !== "admin",
+  );
+  useEffect(() => {
+    if (requestedView !== "admin") setArchiveEnabled(true);
+  }, [requestedView]);
+  const archive = useArchive(archiveEnabled),
     {
       family,
       user,
@@ -138,7 +156,6 @@ export default function App() {
       revealFamily,
       dispatch,
     } = selection;
-  const navigationDirty = useRef(false);
   const treeCanvas = useRef<TreeCanvasHandle>(null);
   const checkParentEvidence = useCallback(async (signal: AbortSignal) => {
     if (!family) return false;
@@ -146,15 +163,8 @@ export default function App() {
     return family.people.some((person) => visible.has(person.id) &&
       person.parentClaims?.some((claim) => visible.has(claim.parentId)));
   }, [family]);
-  const [requestedView, setView, currentPath] = useArchiveView(
-    useCallback(() => {
-      const leave = confirmDiscardChanges(navigationDirty.current);
-      if (leave) navigationDirty.current = false;
-      return leave;
-    }, []),
-  );
   const view =
-    requestedView === "admin" || requestedView === "account"
+    requestedView === "admin" || requestedView === "manage" || requestedView === "account"
       ? requestedView
       : requestedView === "places" && (readTree || readPhotos)
         ? "places"
@@ -185,7 +195,7 @@ export default function App() {
       string | null
     >(null);
   useEffect(() => {
-    if (view !== "account" && !archive.needsLogin) return;
+    if (view !== "account" && view !== "admin" && !archive.needsLogin) return;
     const controller = new AbortController();
     archiveFetch("/api/session", { cache: "no-store", signal: controller.signal })
       .then((response) => {
@@ -701,7 +711,18 @@ export default function App() {
         />
       )}
       <div className="archive-main">
-        <ArchiveHeader
+        {view === "admin" ? <header className="archive-header">
+          <ArchiveNavigation
+            view={view}
+            onView={navigate}
+            user={accountSession?.user || null}
+            account={accountSession?.account}
+            local={accountSession?.local === true}
+            readTree={false}
+            readPhotos={false}
+            onHelp={() => setHelp(true)}
+          />
+        </header> : <ArchiveHeader
           navigation={
             <ArchiveNavigation
               view={view}
@@ -713,6 +734,11 @@ export default function App() {
               readTree={readTree}
               readPhotos={readPhotos}
               onHelp={() => setHelp(true)}
+              onPlatformLeave={() => {
+                const leave = confirmDiscardChanges(navigationDirty.current);
+                if (leave) navigationDirty.current = false;
+                return leave;
+              }}
             />
           }
           people={people}
@@ -723,7 +749,7 @@ export default function App() {
             ? (id) => setView("documents", archiveDocumentPath(null, id))
             : undefined}
           busy={busy}
-        />
+        />}
         {addMenu && canEdit && (
           <div className="archive-add-menu">
             <button onClick={newPerson}>
@@ -770,34 +796,39 @@ export default function App() {
             family={family}
             readTree={readTree}
             onPerson={showPerson}
-            onAdmin={() => navigate("admin")}
-            onOwnPlatformRoleChanged={(role) => {
-              archive.syncSessionUser(user ? {
-                ...user, globalRole: role, platformAdmin: role === "admin",
-              } : null);
-              setAccountSession((current) => current?.account ? {
-                ...current,
-                account: { ...current.account, globalRole: role },
-                user: current.user ? {
-                  ...current.user,
-                  globalRole: role,
-                  platformAdmin: role === "admin",
-                } : null,
-              } : current);
-              void archiveFetch("/api/session", { cache: "no-store" })
-                .then(async (response) => {
-                  if (!response.ok) throw new Error("Session refresh failed");
-                  const refreshed = await response.json() as AccountSession;
-                  setAccountSession(refreshed);
-                  archive.syncSessionUser(refreshed.user);
-                })
-                .catch(() => setNotice("Роль изменена. Обновите страницу, чтобы проверить актуальные права."));
-            }}
+            onAdmin={() => navigate("manage")}
+            onPlatformAdmin={() => window.location.assign("/admin")}
           />
+        ) : view === "admin" ? (
+          accountLoading ? <main className="archive-status" role="status">Проверяем доступ к платформе…</main>
+          : accountSession?.account?.globalRole === "admin" ||
+              (!accountSession?.account && accountSession?.user?.platformAdmin === true) ? (
+            <LazyChunkBoundary message="Админка платформы не загрузилась. Обновите страницу и повторите вход.">
+              <Suspense fallback={<main className="archive-status" role="status">Загружаем админку платформы…</main>}>
+                <PlatformSettingsPage accountId={(accountSession.account || accountSession.user)!.id}
+                showRoles={Boolean(accountSession.account)}
+                primaryMembershipApproved={accountSession.user?.approved === true}
+                onOwnRoleChanged={(role) => {
+                  setAccountSession((current) => current?.account ? {
+                    ...current,
+                    account: { ...current.account, globalRole: role },
+                    user: current.user ? {
+                      ...current.user, globalRole: role, platformAdmin: role === "admin",
+                    } : null,
+                  } : current);
+                  if (role !== "admin") navigate("account");
+                }} />
+              </Suspense>
+            </LazyChunkBoundary>
+          ) : <main className="archive-status">
+            <h1>Админка платформы</h1>
+            <p>Доступна только администратору платформы.</p>
+            {!accountSession?.account && <LoginButtons />}
+          </main>
         ) : family ? (
           <>
-            {view === "admin" ? (
-              (user && (isArchiveOwner(user) || user.platformAdmin === true)) ? (
+            {view === "manage" ? (
+              (user && isArchiveOwner(user) && user.approved) ? (
                 <AdminPanel
                   family={family}
                   currentUserId={user.id}
@@ -1134,7 +1165,7 @@ export default function App() {
       {entryPending &&
         !archive.error &&
         !archive.needsLogin &&
-        view !== "account" &&
+        view !== "account" && view !== "admin" && view !== "manage" &&
         (!family || user) && (
           <EntrySequence
             onFinish={finishEntry}
@@ -1159,7 +1190,7 @@ export default function App() {
           }}
         />
       )}
-      {family && readTree && user && view !== "admin" && view !== "account" && (
+      {family && readTree && user && view !== "admin" && view !== "manage" && view !== "account" && (
         <ResearchAssistant
           view={view}
           onOpenChange={setAssistantOpen}
@@ -1228,9 +1259,9 @@ export default function App() {
           anchorId={selected[0] || user?.personId}
           onChange={archive.saveTreePreferences}
           onClose={() => setTreePreferencesOpen(false)}
-          onAdmin={(isArchiveOwner(user) || user?.platformAdmin === true) && user?.approved === true ? () => {
+          onAdmin={isArchiveOwner(user) && user?.approved === true ? () => {
             setTreePreferencesOpen(false);
-            navigate("admin");
+            navigate("manage");
           } : undefined}
         />
       )}

@@ -121,12 +121,12 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
     assert.match(navigation, /Семьи/);
     assert.match(navigation, /Фото/);
     assert.match(navigation, /Управление деревом/);
-    assert.match(navigation, /class="nav-admin" href="\/admin"/);
+    assert.match(navigation, /class="nav-admin" href="\/manage"/);
     for (const viewer of [
       null,
       { ...user, approved: false },
       ...(["researcher", "relative", "reader"] as const).map((role) => ({
-        ...user, role, platformAdmin: true,
+        ...user, role, platformAdmin: false,
       })),
     ]) {
       assert.doesNotMatch(
@@ -136,6 +136,24 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
         /class="nav-admin"/,
       );
     }
+    const pendingPlatformAdmin = renderToStaticMarkup(createElement(ArchiveNavigation, {
+      ...navigationProps, user: { ...user, approved: false, platformAdmin: true },
+    }));
+    assert.match(pendingPlatformAdmin, /class="nav-admin" href="\/admin"/);
+    assert.doesNotMatch(pendingPlatformAdmin, /class="nav-admin" href="\/manage"/);
+    for (const role of ["researcher", "relative", "reader"] as const) {
+      assert.match(
+        renderToStaticMarkup(createElement(ArchiveNavigation, {
+          ...navigationProps, user: { ...user, role, platformAdmin: true },
+        })),
+        /class="nav-admin" href="\/admin"/,
+        "a platform administrator can reach common settings with a local reader grant",
+      );
+    }
+    assert.match(renderToStaticMarkup(createElement(ArchiveNavigation, {
+      ...navigationProps, user: null,
+      account: { id: "platform", name: "Platform", globalRole: "admin" },
+    })), /class="nav-admin" href="\/admin"/);
     const inspector = renderToStaticMarkup(
       createElement(PersonInspector, {
         person: p,

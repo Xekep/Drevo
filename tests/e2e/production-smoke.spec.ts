@@ -523,7 +523,7 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   await openAdminSection(page, "ai", "Yandex AI");
 
   await expect(
-    page.getByRole("heading", { name: "ИИ и поиск" }),
+    page.getByRole("heading", { name: "Админка платформы" }),
   ).toBeVisible();
   await page.getByText("Подключение Yandex, общие лимиты и контекст").click();
 
@@ -549,6 +549,7 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   await expect(tokenPlot).toHaveAttribute("aria-label", /2.?700/);
   await expect(page.locator(".ai-token-model-legend")).toHaveCount(0);
 
+  await page.goto("/manage");
   await openAdminSection(page, "mcp", "MCP-токены");
   const permissions = page.getByLabel("Разрешения");
   await expect(permissions).toHaveValue("all");
@@ -828,7 +829,7 @@ test("администратор выбирает себя в древе и пр
       json: { publicTree: false, publicAlbums: false, reverseTimeline: false },
     }),
   );
-  await page.goto("/admin");
+  await page.goto("/manage");
   await expect(
     page.getByRole("heading", { name: "Участники", exact: true }),
   ).toBeVisible();
@@ -885,7 +886,7 @@ test("поля участника не разъезжаются на разны�
   );
   for (const width of [1000, 1440]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto("/admin");
+    await page.goto("/manage");
     const card = page.locator(".admin-user-row");
     await expect(card).toBeVisible();
     const layout = await card.evaluate((element) => {
@@ -927,7 +928,7 @@ test("мобильная админка доступна и не разъезж�
       },
     }),
   );
-  await page.goto("/admin");
+  await page.goto("/manage");
   await expect(
     page.getByRole("heading", { name: "Участники", exact: true }),
   ).toBeVisible();
@@ -1112,7 +1113,7 @@ test("участники загружаются страницами и удал
       json: { publicTree: false, publicAlbums: false, reverseTimeline: false },
     }),
   );
-  await page.goto("/admin");
+  await page.goto("/manage");
   await expect(page.locator(".admin-user-row")).toHaveCount(20);
   await page.getByRole("button", { name: "Далее" }).click();
   await expect(page.locator(".admin-user-row")).toHaveCount(20);

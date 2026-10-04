@@ -222,6 +222,7 @@ export async function archiveHttp({
   const restore = restoreHttp({
     restores,
     auth,
+    db: archive.db,
     publicOrigin,
   });
   const saveChanges = familyChangesHttp({ archive, auth, publicOrigin });

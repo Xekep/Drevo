@@ -32,12 +32,6 @@ import { AccountOwnerTransfer } from "./account-owner-transfer";
 import { AccountArchiveDeletion } from "./account-archive-deletion";
 import { AccountSelfDeletion } from "./account-self-deletion";
 import { CreatePersonalArchive } from "./create-personal-archive";
-import { PlatformStaffRoles } from "./platform-staff-roles";
-import { AiSettingsAdmin } from "./ai-settings-admin";
-import { McpTokenAdmin } from "./mcp-token-admin";
-import { StorageLimitsAdmin } from "./storage-limits-admin";
-import { VkAuthAdmin } from "./vk-auth-admin";
-import { ResearchResourcesAdmin } from "./research-resources-admin";
 
 export type AccountSession = {
   user: ArchiveUser | null;
@@ -152,7 +146,7 @@ export function AccountPage({
   readTree,
   onPerson,
   onAdmin,
-  onOwnPlatformRoleChanged,
+  onPlatformAdmin,
 }: {
   session: AccountSession | null;
   loading: boolean;
@@ -161,7 +155,7 @@ export function AccountPage({
   readTree: boolean;
   onPerson: (id: string) => void;
   onAdmin: () => void;
-  onOwnPlatformRoleChanged: (role: "admin" | "researcher" | null) => void;
+  onPlatformAdmin: () => void;
 }) {
   const user = session?.user;
   const identity = user || session?.account;
@@ -302,11 +296,19 @@ export function AccountPage({
             <h1>Личный кабинет</h1>
             <p>Профиль, доступ к семейному архиву и настройки просмотра.</p>
           </div>
-          {identity && (
-            <a className="account-row-action" href="/discover">
-              <Users size={17} aria-hidden="true" /> Поиск опубликованных людей
-            </a>
-          )}
+          <div className="account-heading-actions">
+            {(session?.account?.globalRole === "admin" ||
+              (!session?.account && user?.platformAdmin === true)) && (
+              <button className="account-row-action" onClick={onPlatformAdmin}>
+                <ShieldCheck size={17} aria-hidden="true" /> Админка платформы
+              </button>
+            )}
+            {identity && (
+              <a className="account-row-action" href="/discover">
+                <Users size={17} aria-hidden="true" /> Поиск опубликованных людей
+              </a>
+            )}
+          </div>
         </div>
         {loading ? (
           <div className="account-card account-empty" role="status">
@@ -757,36 +759,6 @@ export function AccountPage({
                     </button>
                   )}
                 </section>
-              )}
-              {session?.account?.globalRole === "admin" && (
-                <>
-                  <PlatformStaffRoles currentAccountId={accountId}
-                    onOwnRoleChanged={onOwnPlatformRoleChanged} />
-                  <AiSettingsAdmin />
-                  <section className="account-card" aria-labelledby="platform-storage-title">
-                    <div className="account-card-title"><div>
-                      <span className="account-eyebrow">Платформа</span>
-                      <h2 id="platform-storage-title">Лимиты хранилища</h2>
-                    </div></div>
-                    <StorageLimitsAdmin />
-                  </section>
-                  <section className="account-card" aria-labelledby="platform-vk-title">
-                    <div className="account-card-title"><div>
-                      <span className="account-eyebrow">Платформа</span>
-                      <h2 id="platform-vk-title">Вход через VK</h2>
-                    </div></div>
-                    <VkAuthAdmin />
-                  </section>
-                  <section className="account-card account-card-wide" aria-labelledby="platform-resources-title">
-                    <div className="account-card-title"><div>
-                      <span className="account-eyebrow">Платформа</span>
-                      <h2 id="platform-resources-title">Ресурсы поиска</h2>
-                    </div></div>
-                    <ResearchResourcesAdmin />
-                  </section>
-                  {user?.approved && session.account?.fullAccess &&
-                    isArchiveOwner(user) && <McpTokenAdmin />}
-                </>
               )}
               {user?.approved && (
                 <AccountAiHistory key={accountId} accountId={accountId} />

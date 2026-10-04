@@ -144,7 +144,7 @@ export async function verifyManagedBackupPreviewRevocation(
       await restoreJob();
       await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [normal.hash]);
     }
-    for (const kind of ["logout", "platform-grant", "membership"] as const) {
+    for (const kind of ["logout", "platform-grant", "membership", "owner-transfer"] as const) {
       resetGate();
       const session = await insertSession();
       try {
@@ -156,6 +156,8 @@ export async function verifyManagedBackupPreviewRevocation(
           await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [session.hash]);
         else if (kind === "platform-grant")
           await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
+        else if (kind === "owner-transfer")
+          await client.query("UPDATE archive_owners SET user_id='vk:42' WHERE archive_id=$1", [archive.db.archiveId]);
         else
           await client.query("UPDATE archive_memberships SET approved=false WHERE archive_id=$1 AND user_id='owner'",
             [archive.db.archiveId]);
@@ -170,6 +172,8 @@ export async function verifyManagedBackupPreviewRevocation(
         await backups.idle();
         if (kind === "platform-grant")
           await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
+        else if (kind === "owner-transfer")
+          await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id=$1", [archive.db.archiveId]);
         else if (kind === "membership")
           await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id=$1 AND user_id='owner'",
             [archive.db.archiveId]);
@@ -181,6 +185,7 @@ export async function verifyManagedBackupPreviewRevocation(
       { kind: "logout", status: 401, queued: false, downloaded: false },
       { kind: "platform-grant", status: 403, queued: false, downloaded: false },
       { kind: "membership", status: 403, queued: false, downloaded: false },
+      { kind: "owner-transfer", status: 403, queued: false, downloaded: false },
     ], "completed revocation before job claim must prevent remote preview download");
 
     resetGate();

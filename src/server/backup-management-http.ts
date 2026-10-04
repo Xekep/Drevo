@@ -60,6 +60,16 @@ export function backupManagementHttp({
     res.end(JSON.stringify(data));
     return true;
   };
+  const jsonLocked = async (res: ServerResponse, status: number, data: unknown) => {
+    const completed = finished(res, { cleanup: true }).catch(() => {});
+    const timeout = setTimeout(() => res.destroy(), 5000);
+    timeout.unref();
+    try {
+      json(res, status, data);
+      await completed;
+    } finally { clearTimeout(timeout); }
+    return true;
+  };
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const path = url.pathname;
     if (path !== "/api/backups" && !path.startsWith("/api/backups/"))
@@ -103,15 +113,15 @@ export function backupManagementHttp({
               `SELECT approved FROM archive_memberships
                WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
               [db.archiveId, session.accountId]);
-            const platformGrant = await client.query(
-              "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
-              [session.accountId]);
             const owner = await client.query(
               "SELECT user_id FROM archive_owners WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT",
               [db.archiveId, session.accountId]);
+            const platformGrant = await client.query(
+              "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
+              [session.accountId]);
             if (!membership.rows[0]?.approved || !platformGrant.rowCount || !owner.rowCount)
               return json(res, 403, { error: "Доступ администратора отозван." });
-            return json(res, 200, status);
+            return await jsonLocked(res, 200, status);
           });
         }
         if (!(await auth.isPlatformAdmin(req)))
@@ -149,12 +159,12 @@ export function backupManagementHttp({
               `SELECT approved FROM archive_memberships
                WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
               [db.archiveId, session.accountId]);
-            const platformGrant = await client.query(
-              "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
-              [session.accountId]);
             const owner = await client.query(
               "SELECT user_id FROM archive_owners WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT",
               [db.archiveId, session.accountId]);
+            const platformGrant = await client.query(
+              "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
+              [session.accountId]);
             if (!membership.rows[0]?.approved || !platformGrant.rowCount || !owner.rowCount)
               return { status: 403 as const };
             return { status: 200 as const,
@@ -189,12 +199,16 @@ export function backupManagementHttp({
         );
       }
       if (path === "/api/backups/create" && req.method === "POST") {
+        const session = !auth.local && db.kind === "postgres"
+          ? await auth.accountSession(req) : undefined;
+        if (!auth.local && db.kind === "postgres" && !session)
+          throw new BackupAccessError(401);
         if (downloading)
           throw new BackupBusyError("Дождитесь скачивания резервной копии.");
         return json(
           res,
           202,
-          await backups.startCreate((await auth.currentUser(req))!),
+          await backups.startCreate((await auth.currentUser(req))!, false, session || undefined),
         );
       }
       const match = path.match(
@@ -303,12 +317,12 @@ export function backupManagementHttp({
                     `SELECT approved FROM archive_memberships
                      WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
                     [db.archiveId, session.accountId]);
-                  const platformGrant = await client.query(
-                    "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
-                    [session.accountId]);
                   const owner = await client.query(
                     "SELECT user_id FROM archive_owners WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT",
                     [db.archiveId, session.accountId]);
+                  const platformGrant = await client.query(
+                    "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
+                    [session.accountId]);
                   if (!membership.rows[0]?.approved || !platformGrant.rowCount || !owner.rowCount)
                     return json(res, 403, { error: "Доступ администратора отозван." });
                   await beforeLockedDelivery?.();

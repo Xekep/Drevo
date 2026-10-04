@@ -100,22 +100,23 @@ export function adminAiHttp({
       return json(res, (await auth.accountId(req)) ? 403 : 401, {
         error: "Только администратор может управлять AI Studio",
       });
-    const admin = auth.local ? await auth.currentUser(req) : await auth.accountProfile(req);
+    const platformOnly = db.kind === "postgres" && !auth.local;
+    const admin = platformOnly ? await auth.accountProfile(req) : await auth.currentUser(req);
     if (!admin)
       return json(res, 401, { error: "Сеанс завершён. Войдите снова." });
-    const session = auth.local ? null : await auth.accountSession(req);
-    if (!auth.local && !session)
+    const session = platformOnly ? await auth.accountSession(req) : null;
+    if (platformOnly && !session)
       return json(res, 401, { error: "Сеанс завершён" });
     const adminId = admin.id;
     const stillAdmin = async () => {
-      const current = auth.local ? await auth.currentUser(req) : await auth.accountProfile(req);
-      const activeSession = auth.local ? null : await auth.accountSession(req);
+      const current = platformOnly ? await auth.accountProfile(req) : await auth.currentUser(req);
+      const activeSession = platformOnly ? await auth.accountSession(req) : null;
       return current?.id === adminId &&
-        (auth.local || activeSession?.tokenHash === session?.tokenHash) &&
+        (!platformOnly || activeSession?.tokenHash === session?.tokenHash) &&
         (await auth.isPlatformAdmin(req));
     };
     const deliver = async (status: number, value: unknown) => {
-      if (auth.local || db.kind !== "postgres" || !db.postgresTransaction)
+      if (!platformOnly || !db.postgresTransaction)
         return json(res, status, value);
       try {
         return await db.postgresTransaction(async (client) => {
@@ -158,7 +159,7 @@ export function adminAiHttp({
         if (!(await stillAdmin()))
           return json(res, 403, { error: "Доступ отозван" });
         await db.transaction(async () => {
-          if (!auth.local)
+          if (platformOnly)
             await assertPlatformAdminInArchiveTransaction(db, adminId, session!.tokenHash);
           await settings.write(body, admin);
         });

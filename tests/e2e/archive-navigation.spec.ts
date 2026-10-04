@@ -202,7 +202,7 @@ test("about stays in the desktop header and mobile menu beside the account avata
     page.getByRole("link", { name: "Поиск опубликованных людей" }),
   ).toHaveAttribute("href", "/discover");
   await page.getByRole("region", { name: "Доступ и роль" }).getByRole("button", { name: "Управление архивом" }).click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/manage$/);
   await avatar.click();
   await expect(
     page.getByRole("heading", { name: "Просмотр древа" }),

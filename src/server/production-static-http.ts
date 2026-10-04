@@ -93,8 +93,9 @@ export function productionStaticHttp(
         decoded.slice("/discover/search/".length).length <= 100) ||
       validDiscoveryPerson ||
       linkedBranch;
+    const privateView = archiveViewAt(pathname);
     const filePath =
-      archiveViewAt(pathname) ||
+      privateView ||
       shared ||
       invitation ||
       discovery
@@ -111,7 +112,8 @@ export function productionStaticHttp(
         await handle.close();
         return jsonError(res, 404, "Страница не найдена");
       }
-      if (shared || invitation || linkedBranch || pathname === "/account") {
+      if (shared || invitation || linkedBranch ||
+          privateView === "account" || privateView === "admin" || privateView === "manage") {
         res.setHeader("Referrer-Policy", "no-referrer");
         res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
       }

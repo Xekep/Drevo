@@ -49,7 +49,7 @@ function treePreferencesFromResponse(data: {
     : readGuestTreePreferences(preferences);
 }
 
-export function useArchive() {
+export function useArchive(enabled = true) {
   const [treePreferences, setTreePreferences] = useState<TreePreferences>(() =>
     readGuestTreePreferences(DEFAULT_TREE_PREFERENCES),
   );
@@ -83,6 +83,7 @@ export function useArchive() {
     resolve: (choice: "local" | "remote" | "cancel") => void;
   } | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     let active = true;
     const timeout = setTimeout(() => controller.abort(), 60000);
@@ -197,7 +198,7 @@ export function useArchive() {
       clearTimeout(timeout);
       controller.abort();
     };
-  }, [attempt]);
+  }, [attempt, enabled]);
 
   const reconcileAfterUnknownWrite = useCallback(async () => {
     const response = await fetchWithTimeout(

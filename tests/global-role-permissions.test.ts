@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ArchiveUser } from "../src/domain/access.ts";
-import { canAssessArchiveEvidence, canEditArchive, isArchiveOwner } from "../src/domain/access.ts";
+import { canAssessArchiveEvidence, canEditArchive, isArchiveOwner, owns } from "../src/domain/access.ts";
 import { projectFamilyForUser } from "../src/domain/tree-access.ts";
 import type { Family, Person } from "../src/domain/types.ts";
 import { authorizeArchive } from "../src/server/permissions.ts";
@@ -47,6 +47,25 @@ const member = (overrides: Partial<ArchiveUser> = {}): ArchiveUser => ({
   id: "staff", name: "Synthetic staff", role: "relative", treeRole: "relative",
   globalRole: null, archiveOwner: false, approved: true, createdAt: "2026-01-01",
   treeAccess: "all", ...overrides,
+});
+
+test("explicit archive grants require approval while trusted legacy actors retain their policy", () => {
+  for (const globalRole of ["admin", "researcher"] as const)
+    for (const approved of [undefined, false]) {
+      const actor = member({ globalRole, approved });
+      assert.equal(canEditArchive(actor), false);
+      assert.equal(canAssessArchiveEvidence(actor), false);
+      assert.equal(owns(actor, { createdBy: actor.id }), false);
+    }
+  for (const role of ["admin", "researcher"] as const) {
+    const legacy: ArchiveUser = {
+      id: "legacy", name: "Synthetic legacy", createdAt: "2026-01-01", role,
+    };
+    assert.equal(canAssessArchiveEvidence(legacy), true);
+    assert.equal(owns(legacy, { createdBy: legacy.id }), true);
+    assert.equal(canAssessArchiveEvidence({ ...legacy, approved: false }), false);
+    assert.equal(owns({ ...legacy, approved: false }, { createdBy: legacy.id }), false);
+  }
 });
 
 test("archive ownership permits editing other cards but does not grant confidence assessment", () => {

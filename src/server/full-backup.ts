@@ -19,6 +19,7 @@ export async function fullBackup(
   pathOrResponse: string | ServerResponse,
   legacyResponse?: ServerResponse,
   beforeSend?: () => Promise<void>,
+  deliverPrepared?: (path: string, res: ServerResponse) => Promise<void>,
 ) {
   const dbPath =
       typeof pathOrResponse === "string" ? pathOrResponse : databasePath(db),
@@ -51,6 +52,10 @@ export async function fullBackup(
       );
     });
     await beforeSend?.();
+    if (deliverPrepared) {
+      await deliverPrepared(destination, res);
+      return;
+    }
     res.writeHead(200, {
       "Content-Type": "application/gzip",
       "Content-Disposition": `attachment; filename="drevo-full-${new Date().toISOString().slice(0, 10)}.tar.gz"`,

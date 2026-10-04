@@ -31,14 +31,25 @@ export const isArchiveOwner = (user: ArchiveUser | null | undefined) =>
 export const canEditArchive = (user: ArchiveUser | null | undefined) =>
   !!user?.approved && (isArchiveOwner(user) ||
     (user.treeRole ?? user.role) !== "reader");
-export const canAssessArchiveEvidence = (user: ArchiveUser | null | undefined) =>
-  !!user?.approved && (user.globalRole !== undefined
-    ? user.globalRole !== null && (user.treeRole ?? user.role) !== "reader"
-    : user.role === "admin" || user.role === "researcher");
+export const canAssessArchiveEvidence = (user: ArchiveUser | null | undefined) => {
+  if (!user || user.approved === false) return false;
+  const explicitGrants = user.treeRole !== undefined ||
+    user.globalRole !== undefined || user.archiveOwner !== undefined;
+  if (explicitGrants)
+    return user.approved === true && !!user.globalRole &&
+      (user.treeRole ?? user.role) !== "reader";
+  // Trusted legacy domain fixtures and SQLite actors have only a local role.
+  return user.role === "admin" || user.role === "researcher";
+};
 export const aiProfileRole = (user: ArchiveUser): Role =>
   user.treeRole === "reader" ? "reader" :
   user.globalRole || user.treeRole || user.role;
-export const owns = (user: ArchiveUser | null, item: { createdBy?: string }) =>
-  !!user &&
-  (isArchiveOwner(user) ||
-    (canEditArchive(user) && item.createdBy === user.id));
+export const owns = (user: ArchiveUser | null, item: { createdBy?: string }) => {
+  if (!user || user.approved === false) return false;
+  const explicitGrants = user.treeRole !== undefined ||
+    user.globalRole !== undefined || user.archiveOwner !== undefined;
+  if (explicitGrants && user.approved !== true) return false;
+  return isArchiveOwner(user) ||
+    ((canEditArchive(user) || (!explicitGrants && user.role !== "reader")) &&
+      item.createdBy === user.id);
+};

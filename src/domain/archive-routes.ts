@@ -11,10 +11,12 @@ export const archivePaths = {
   resources: "/resources",
   quality: "/quality",
   account: "/account",
+  manage: "/manage",
   admin: "/admin",
 } as const;
 export type ArchiveView = keyof typeof archivePaths;
-export const adminMatchesPath = "/admin/matches";
+export const adminMatchesPath = "/manage/matches";
+const legacyAdminMatchesPath = "/admin/matches";
 
 type MatchTarget = { archiveId: string; personId: string };
 const matchArchiveId = /^[A-Za-z0-9-]{3,64}$/;
@@ -35,7 +37,7 @@ export function adminMatchTargetPath(ownArchiveId: string, target: MatchTarget) 
 
 export function adminMatchTargetAt(pathname: string): MatchTarget | null {
   const archive = archiveContextAt(pathname);
-  const match = archive && /^\/admin\/matches\/target\/([A-Za-z0-9-]{3,64})\/([^/]{1,1200})$/.exec(archive.innerPath);
+  const match = archive && /^\/(?:manage|admin)\/matches\/target\/([A-Za-z0-9-]{3,64})\/([^/]{1,1200})$/.exec(archive.innerPath);
   if (!match || match[1] === archive.id) return null;
   try {
     const personId = decodeURIComponent(match[2]);
@@ -52,7 +54,7 @@ export function adminMatchSourcePath(archiveId: string, personId: string) {
 
 export function adminMatchSourceAt(pathname: string): string | null {
   const archive = archiveContextAt(pathname);
-  const match = archive && /^\/admin\/matches\/from\/([^/]{1,1200})$/.exec(archive.innerPath);
+  const match = archive && /^\/(?:manage|admin)\/matches\/from\/([^/]{1,1200})$/.exec(archive.innerPath);
   if (!match) return null;
   try {
     const personId = decodeURIComponent(match[1]);
@@ -146,15 +148,17 @@ export function archiveEntityAt(pathname: string): ArchiveEntity | null {
 
 /** Адреса разделов и карточек; неизвестный путь не становится файловым маршрутом. */
 export function archiveViewAt(pathname: string): ArchiveView | null {
+  if (archiveContextAt(pathname)?.innerPath.replace(/\/$/, "") === archivePaths.admin)
+    return "manage";
   const entity = archiveEntityAt(pathname);
   if (entity) return entity.kind === "person" ? "tree" : "gallery";
   if (archiveDocumentAt(pathname)) return "documents";
   const innerPath = archiveContextAt(pathname)?.innerPath || pathname;
   const path = innerPath.length > 1 ? innerPath.replace(/\/$/, "") : innerPath;
   if (path === "/") return "tree";
-  if (path === adminMatchesPath) return "admin";
-  if (adminMatchTargetAt(pathname)) return "admin";
-  if (adminMatchSourceAt(pathname)) return "admin";
+  if (path === adminMatchesPath || path === legacyAdminMatchesPath) return "manage";
+  if (adminMatchTargetAt(pathname)) return "manage";
+  if (adminMatchSourceAt(pathname)) return "manage";
   return (
     (Object.keys(archivePaths) as ArchiveView[]).find(
       (view) => archivePaths[view] === path,

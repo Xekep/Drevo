@@ -24,8 +24,12 @@ test("all archive sections have stable exact URLs shared by browser and server",
   }
   assert.equal(archivePaths.list, "/people");
   assert.equal(archivePaths.gallery, "/photos");
-  assert.equal(archiveViewAt(adminMatchesPath), "admin");
-  assert.equal(archiveViewAt(`/a/family-one${adminMatchesPath}`), "admin");
+  assert.equal(archiveViewAt(adminMatchesPath), "manage");
+  assert.equal(archiveViewAt(`/a/family-one${adminMatchesPath}`), "manage");
+  assert.equal(archiveViewAt("/admin"), "admin");
+  assert.equal(archiveViewAt("/a/family-one/admin"), "manage");
+  assert.equal(archiveViewAt("/a/family-one/admin/matches"), "manage");
+  assert.equal(archiveViewAt("/admin/matches"), "manage");
   for (const path of [
     "/admin-secret",
     "/api/family",
@@ -42,10 +46,11 @@ test("all archive sections have stable exact URLs shared by browser and server",
 test("a published card handoff keeps the exact target in an archive-scoped path", () => {
   const target = { archiveId: "other-tree", personId: "gedcom-Иван 1" };
   const path = adminMatchTargetPath("family-one", target);
-  assert.equal(path, "/a/family-one/admin/matches/target/other-tree/gedcom-%D0%98%D0%B2%D0%B0%D0%BD%201");
+  assert.equal(path, "/a/family-one/manage/matches/target/other-tree/gedcom-%D0%98%D0%B2%D0%B0%D0%BD%201");
   assert.equal(new URL(path, "https://example.test").search, "");
   assert.deepEqual(adminMatchTargetAt(path), target);
-  assert.equal(archiveViewAt(path), "admin");
+  assert.equal(archiveViewAt(path), "manage");
+  assert.deepEqual(adminMatchTargetAt(path.replace("/manage/", "/admin/")), target);
   for (const invalid of [
     "/a/family-one/admin/matches/target/other-tree/%ZZ",
     "/a/family-one/admin/matches/target/other-tree/%252F",
@@ -59,10 +64,11 @@ test("a published card handoff keeps the exact target in an archive-scoped path"
 
 test("a tree card handoff keeps the exact source in an archive-scoped path", () => {
   const path = adminMatchSourcePath("family-one", "gedcom-Иван 1");
-  assert.equal(path, "/a/family-one/admin/matches/from/gedcom-%D0%98%D0%B2%D0%B0%D0%BD%201");
+  assert.equal(path, "/a/family-one/manage/matches/from/gedcom-%D0%98%D0%B2%D0%B0%D0%BD%201");
   assert.equal(new URL(path, "https://example.test").search, "");
   assert.equal(adminMatchSourceAt(path), "gedcom-Иван 1");
-  assert.equal(archiveViewAt(path), "admin");
+  assert.equal(archiveViewAt(path), "manage");
+  assert.equal(adminMatchSourceAt(path.replace("/manage/", "/admin/")), "gedcom-Иван 1");
   for (const invalid of [
     "/a/family-one/admin/matches/from/%ZZ",
     "/a/family-one/admin/matches/from/%252F",

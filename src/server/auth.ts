@@ -446,6 +446,12 @@ export async function createAuth(
       isArchiveOwner(await currentUser(req)),
     isPlatformAdmin: async (req: IncomingMessage) => {
       if (local) return true;
+      // SQLite remains a single-archive installation without platform grants.
+      // Its approved owner retains the legacy administrator settings path.
+      if (db.kind !== "postgres") {
+        const actor = await currentUser(req);
+        return actor?.approved === true && isArchiveOwner(actor);
+      }
       const session = await sessionFor(req);
       return session
         ? await hasCurrentPlatformAdmin(db, session.userId, session.tokenHash)

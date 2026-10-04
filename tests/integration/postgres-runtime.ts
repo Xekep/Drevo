@@ -30,6 +30,7 @@ import { verifyManagedBackupStatusDelivery } from "./postgres-managed-backup-sta
 import { verifyManagedBackupSettingsRevocation } from "./postgres-managed-backup-settings-revocation.ts";
 import { verifyManagedBackupCheckRevocation } from "./postgres-managed-backup-check-revocation.ts";
 import { verifyManagedBackupPreviewRevocation } from "./postgres-managed-backup-preview-revocation.ts";
+import { verifyRestorePreviewDelivery } from "./postgres-restore-preview-delivery.ts";
 import { databaseBackupHttp } from "../../src/server/database-backup-http.ts";
 import { createAuth } from "../../src/server/auth.ts";
 import { openArchive } from "../../src/server/database.ts";
@@ -4589,6 +4590,49 @@ try {
     await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
     await new Promise<void>((resolve) => backupServer.close(() => resolve()));
   }
+  for (const scenario of [
+    { path: "/api/backup", revoke: "session", status: 401 },
+    { path: "/api/backup/full", revoke: "owner", status: 403 },
+  ] as const) {
+    let reached!: () => void;
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => { reached = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const handler = databaseBackupHttp({ archive: app.archive, auth: backupAuth,
+      beforeSend: async () => { reached(); await gate; } });
+    const server = createServer((req, res) => {
+      void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => res.destroy(error));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+      const pending = fetch(base + scenario.path, { headers: ownerHeaders });
+      await Promise.race([ready, pending.then((response) => {
+        throw new Error(`Raw backup sent before final guard: ${response.status}`);
+      })]);
+      if (scenario.revoke === "session")
+        await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(aiOwnerToken)]);
+      else
+        await client.query("UPDATE archive_owners SET user_id='vk:42' WHERE archive_id='runtime-test'");
+      release();
+      const response = await pending;
+      assert.equal(response.status, scenario.status, "completed revoke before first byte denies raw backup");
+      assert.match(response.headers.get("content-type") || "", /application\/json/);
+      await response.text();
+    } finally {
+      release();
+      if (scenario.revoke === "session")
+        await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2) ON CONFLICT(token_hash) DO UPDATE SET expires_at=excluded.expires_at",
+          [sessionTokenHash(aiOwnerToken), Date.now() + 5 * 60_000]);
+      else
+        await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+  console.log("runtime_raw_backup_final_owner_session_ok");
+  await verifyRestorePreviewDelivery(app.archive, source, restoreBytes,
+    aiOwnerToken, process.env.PUBLIC_ORIGIN!, client);
   await app.archive.db
     .prepare("", "UPDATE archive_memberships SET role='reader' WHERE user_id='vk:42'")
     .run();
@@ -4977,7 +5021,7 @@ try {
         const memberships = await app!.archive.db.prepare("", `SELECT archive_id,role
           FROM archive_memberships WHERE user_id=? ORDER BY archive_id`).all("vk:42");
         assert.deepEqual(memberships.map((row) => [row.archive_id,row.role]),
-          [["other-archive","admin"],["runtime-test","reader"]],
+          [["other-archive","relative"],["runtime-test","reader"]],
           "account-level RLS can expose both memberships in the same transaction");
         await assert.rejects(assertCurrentArchiveActor(app!.archive.db, crossArchiveAdmin),
           ForbiddenError, "another archive's admin row cannot authorize this archive");
@@ -5011,6 +5055,16 @@ try {
     await client.query("DELETE FROM archive_memberships WHERE archive_id='other-archive' AND user_id='vk:42'");
     await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   }
+  for (const path of ["/api/backup", "/api/backup/full", "/api/backups"])
+    assert.equal((await fetch(securedBase + "/a/other-archive" + path,
+      { headers: ownerHeaders })).status, 403,
+      `global platform admin without selected-archive ownership cannot download ${path}`);
+  // A single account may own only one tree: move the fixture's ownership
+  // while exercising positive selected-archive system operations.
+  await client.query("UPDATE archive_owners SET user_id='vk:42' WHERE archive_id='runtime-test'");
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query("INSERT INTO archive_owners(archive_id,user_id) VALUES('other-archive','owner')");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   const selectedBackup = await fetch(securedBase + "/a/other-archive/api/backup", {
     headers: ownerHeaders,
   });
@@ -5301,7 +5355,7 @@ try {
   );
   assert.equal(
     ownerArchives.archives.find((archive: { id: string }) => archive.id === "runtime-test").owned,
-    true,
+    false,
   );
   const readerArchives = await fetch(securedBase + "/api/account/archives", {
     headers,
@@ -5309,6 +5363,10 @@ try {
   assert.deepEqual(readerArchives.archives.map((archive: { id: string }) => archive.id), ["runtime-test"]);
   assert.equal(readerArchives.archives[0].owned, false);
   assert.equal((await fetch(securedBase + "/api/account/archives")).status, 401);
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query("DELETE FROM archive_owners WHERE archive_id='other-archive' AND user_id='owner'");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
   // The account download includes only the caller's current comments in trees
   // they can still read. A restricted reader must not recover a hidden branch.
   const hiddenForExport = {
@@ -6735,6 +6793,10 @@ try {
       .then((r) => r.json())).archives.find((archive: { id: string }) => archive.id === "other-archive").current,
     true,
   );
+  await client.query("UPDATE archive_owners SET user_id='vk:42' WHERE archive_id='runtime-test'");
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query("INSERT INTO archive_owners(archive_id,user_id) VALUES('other-archive','owner')");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   await client.query(
     "INSERT INTO accounts(id,name,created_at) VALUES('other-only','Other only',$1)",
     [new Date().toISOString()],
@@ -7023,11 +7085,6 @@ try {
     { headers: otherOnlyHeaders })).status, 404);
   await client.query(`UPDATE archive_memberships SET approved=true
     WHERE archive_id='other-archive' AND user_id='other-only'`);
-  await client.query(`INSERT INTO research_categories(id,name,sort_order)
-    VALUES('query-revoke-category','Query Revoke Category',999)`);
-  await client.query(`INSERT INTO research_resources(id,category_id,name,url,description,sort_order)
-    VALUES('query-revoke-resource','query-revoke-category','Query Revoke Resource',
-      'https://example.org/query-revoke','synthetic source',999)`);
   const setPublicTree = async (publicTree: boolean) => {
     const response = await fetch(securedBase + "/a/other-archive/api/settings", {
       method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
@@ -7035,21 +7092,11 @@ try {
     });
     assert.equal(response.status, 200);
   };
-  await setPublicTree(true);
-  const initialResources = await fetch(otherBase + "/api/research-resources");
-  assert.equal(initialResources.status, 200);
-  assert.ok((await initialResources.json()).categories.some((category: { id: string }) =>
-    category.id === "query-revoke-category"));
-  const staleResources = await raceArchiveQuery("/api/research-resources", undefined,
-    async () => { await setPublicTree(false); },
-    (body) => Array.isArray(body.categories) && body.categories.some(
-      (category: { id: string }) => category.id === "query-revoke-category"));
-  assert.equal((await fetch(otherBase + "/api/research-resources")).status, 401);
-  await client.query(`DELETE FROM research_categories WHERE id='query-revoke-category'`);
-  assert.deepEqual([staleSearch.status, staleSearch.present, staleSearch.hasPrivatePayload,
-    staleResources.status, staleResources.present, staleResources.hasPrivatePayload],
-  [409, false, false, 409, false, false]);
-  console.log("runtime_archive_query_search_resource_revocation_ok");
+  assert.deepEqual([staleSearch.status, staleSearch.present, staleSearch.hasPrivatePayload],
+    [409, false, false]);
+  // The resource catalog is platform-shared since 091; its independent
+  // authorization and cross-archive projection are tested separately.
+  console.log("runtime_archive_query_search_revocation_ok");
   const initialArchiveExport = await fetch(securedBase + "/a/other-archive/api/export",
     { headers: otherOnlyHeaders });
   assert.equal(initialArchiveExport.status, 200);
@@ -7237,6 +7284,10 @@ try {
       .then((r) => r.json())).account.id,
     "other-only",
   );
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query("DELETE FROM archive_owners WHERE archive_id='other-archive' AND user_id='owner'");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
   const primaryDb = app.archive.db;
   assert.equal(
     (await primaryDb.prepare("", "SELECT count(*) AS n FROM archives").get())?.n,
