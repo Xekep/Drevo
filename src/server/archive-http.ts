@@ -144,7 +144,8 @@ export async function archiveHttp({
     publicOrigin,
     fetcher: aiFetch,
   });
-  const providerCleanupStatus = aiProviderCleanupHttp({ auth, db: archive.db });
+  const providerCleanupStatus = aiProviderCleanupHttp({ auth, db: archive.db,
+    providerCleanup, publicOrigin });
   const adminResearchResources = adminResearchResourcesHttp({
     auth,
     catalog: researchCatalog,

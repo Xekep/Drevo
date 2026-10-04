@@ -43,6 +43,9 @@ export function AiProviderCleanupAdmin() {
   const [status, setStatus] = useState<AiCleanupStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [retryMessage, setRetryMessage] = useState("");
+  const [retryError, setRetryError] = useState("");
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
@@ -83,6 +86,29 @@ export function AiProviderCleanupAdmin() {
     setHistory([]);
     setReload((value) => value + 1);
   };
+  const retry = async (id: string) => {
+    if (retryingId) return;
+    setRetryingId(id);
+    setRetryMessage("");
+    setRetryError("");
+    try {
+      const response = await archiveFetch(`/api/admin/ai/cleanup/${id}/retry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "Не удалось поставить повтор в очередь");
+      setRetryMessage("Поставлено в очередь. Удаление у провайдера ещё не подтверждено.");
+      refresh();
+    } catch (reason) {
+      setRetryError(reason instanceof Error ? reason.message :
+        "Не удалось поставить повтор в очередь");
+    } finally {
+      setRetryingId(null);
+    }
+  };
   return (
     <details
       className="ai-admin-connection ai-cleanup-admin"
@@ -113,6 +139,8 @@ export function AiProviderCleanupAdmin() {
           </div>
           {loading && <p role="status">Загружаем очередь…</p>}
           {error && <p role="alert">{error}</p>}
+          {retryError && <p role="alert">{retryError}</p>}
+          {retryMessage && <p role="status">{retryMessage}</p>}
           {status && !status.supported && (
             <p>
               Долговечная очередь доступна при PostgreSQL. В этом режиме
@@ -162,6 +190,12 @@ export function AiProviderCleanupAdmin() {
                           ? "При следующей проверке очереди"
                           : `Следующая проверка: ${date(job.nextAttemptAt)}`}
                       </small>
+                    )}
+                    {job.canRetry && (
+                      <button type="button" disabled={retryingId !== null}
+                        onClick={() => void retry(job.id)}>
+                        {retryingId === job.id ? "Ставим в очередь…" : "Повторить"}
+                      </button>
                     )}
                   </li>
                 ))}

@@ -27,6 +27,7 @@ test("platform cleanup list loads lazily, paginates and shows actionable errors 
           nextAttemptAt: blocked || second ? null : time + 60_000,
           error: second || blocked ? "provider_auth" : "provider_temporary",
           httpStatus: second || blocked ? 403 : 503,
+          canRetry: second || blocked,
         },
       ],
       nextCursor: !second && !blocked ? "next-page" : null,
@@ -66,4 +67,65 @@ test("platform cleanup list loads lazily, paginates and shows actionable errors 
     ),
   ).toBe(true);
   await listing.screenshot({ path: info.outputPath("ai-cleanup.png") });
+});
+
+test("manual retry reports a queued attempt without losing the AI settings draft", async ({ page }) => {
+  const id = "c4030731-7619-4e23-91c3-9216a51b3773";
+  let queued = false;
+  let attempts = 0;
+  await page.route("**/api/admin/ai/cleanup?*", async (route) => {
+    const now = Date.now();
+    const body: AiCleanupStatus = {
+      supported: true, checkedAt: now,
+      counts: { binding: 0, pending: queued ? 1 : 0, leased: 0, blocked: queued ? 1 : 2 },
+      jobs: [{ id, state: queued ? "pending" : "blocked", attempts: 2,
+        updatedAt: now, nextAttemptAt: queued ? now + 45_000 : null,
+        error: queued ? null : "provider_auth", httpStatus: queued ? undefined : 403,
+        canRetry: !queued },
+      { id: "01828202-1d55-46c5-a3b7-ef055573bf08", state: "blocked", attempts: 2,
+        updatedAt: now, nextAttemptAt: null, error: "snapshot_invalid", canRetry: false }],
+      nextCursor: null,
+    };
+    await route.fulfill({ json: body });
+  });
+  await page.route(`**/api/admin/ai/cleanup/${id}/retry`, async (route) => {
+    attempts++;
+    if (attempts < 3) {
+      await route.fulfill({ status: attempts === 1 ? 409 : 503,
+        json: { error: attempts === 1 ? "Задание изменилось" : "Очередь недоступна" } });
+      return;
+    }
+    if (attempts === 3) {
+      await route.abort("failed");
+      return;
+    }
+    queued = true;
+    await route.fulfill({ status: 202, json: { queued: true,
+      nextAttemptAt: Date.now() + 45_000 } });
+  });
+  await page.goto("/admin");
+  await openAdminSection(page, "ai", "Yandex AI");
+  await page.getByText("Подключение Yandex, общие лимиты и контекст", { exact: true }).click();
+  const folder = page.getByRole("textbox", { name: "Folder ID" });
+  await folder.fill("unsaved-draft-folder");
+  await page.getByText("Очистка диалогов у провайдера", { exact: true }).click();
+  const listing = page.getByRole("region", { name: "Очередь очистки ИИ" });
+  const retry = listing.getByRole("button", { name: "Повторить" });
+  await expect(retry).toHaveCount(1);
+  await retry.click();
+  await expect(listing.getByRole("alert")).toContainText("Задание изменилось");
+  await expect(folder).toHaveValue("unsaved-draft-folder");
+  await retry.click();
+  await expect(listing.getByRole("alert")).toContainText("Очередь недоступна");
+  await expect(folder).toHaveValue("unsaved-draft-folder");
+  await retry.click();
+  await expect(listing.getByRole("alert")).toBeVisible();
+  await expect(folder).toHaveValue("unsaved-draft-folder");
+  await retry.click();
+  await expect(listing.getByRole("status").filter({ hasText: "Поставлено в очередь" }))
+    .toContainText("Удаление у провайдера ещё не подтверждено");
+  await expect(retry).toHaveCount(0);
+  await expect(folder).toHaveValue("unsaved-draft-folder");
+  await expect(listing.getByText("Удалено", { exact: true })).toHaveCount(0);
+  expect(attempts).toBe(4);
 });

@@ -85,7 +85,7 @@ export async function verifyAiProviderCleanupStatus(
           id,
           states[index % 4],
           stamp,
-          stamp,
+          index % 4 === 3 ? null : stamp,
           index === 3
             ? "provider_auth_403"
             : index === 7
@@ -123,10 +123,12 @@ export async function verifyAiProviderCleanupStatus(
       "provider_auth",
     );
     assert.equal(selected.find((job) => job.id === ids[3])?.httpStatus, 403);
+    assert.equal(selected.find((job) => job.id === ids[3])?.canRetry, true);
     assert.equal(
       selected.find((job) => job.id === ids[7])?.error,
       "provider_temporary",
     );
+    assert.equal(selected.find((job) => job.id === ids[7])?.canRetry, false);
     const blocked = (await fetch(base + path + "?filter=blocked", {
       headers: ownerHeaders,
     }).then((r) => r.json())) as AiCleanupStatus;
