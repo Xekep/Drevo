@@ -375,7 +375,47 @@ export async function prepareGenealogyImport(
     } else
       result.warnings.push("Вложение цитаты не загружено; связь с документом не восстановлена.");
   }
+  const stagedDocuments = new Map(result.files.filter((file) => file.documentId)
+    .map((file) => [file.documentId!, file]));
+  // Staging may share the original document object. Capture extension links
+  // before adding standard EVENT.OBJE links so a later reference to the same
+  // file is not mistaken for conflicting _DREVO_MEDIA metadata.
+  const ownEventLinks = new Map(parsed.media
+    .filter((item) => item.document?.eventLinks !== undefined)
+    .map((item) => [item.id, item.document!.eventLinks!.map((link) => ({ ...link }))]));
+  const eventMediaWarnings = new Set<string>();
+  const warnEventMedia = (message: string) => {
+    if (eventMediaWarnings.has(message)) return;
+    eventMediaWarnings.add(message);
+    result.warnings.push(message);
+  };
+  for (const link of parsed.eventMedia || []) {
+    const ownLinks = ownEventLinks.get(link.mediaId);
+    const documentId = importedDocuments.get(link.mediaId);
+    const staged = documentId && stagedDocuments.get(documentId);
+    if (!staged || !/\.(?:pdf|tif)$/.test(staged.name)) {
+      warnEventMedia("Связь EVENT.OBJE с событием не перенесена: оригинал не загружен как PDF/TIFF-документ; если файл доступен, фото или ссылка на человека сохраняются отдельно.");
+      continue;
+    }
+    if (ownLinks !== undefined) {
+      if (!ownLinks.some((existing) =>
+        existing.personId === link.personId && existing.eventId === link.eventId))
+        warnEventMedia("Связь EVENT.OBJE с событием не перенесена: сведения _DREVO_MEDIA о документе имеют приоритет.");
+      continue;
+    }
+    staged.document ||= { documentType: "", documentDate: "", place: "",
+      description: "", provenance: "" };
+    const links = staged.document.eventLinks ||= [];
+    if (links.some((existing) => existing.personId === link.personId &&
+      existing.eventId === link.eventId)) continue;
+    if (links.length >= 100) {
+      warnEventMedia("У документа больше 100 связей EVENT.OBJE; лишние связи с событиями не перенесены.");
+      continue;
+    }
+    links.push({ personId: link.personId, eventId: link.eventId });
+  }
   delete result.citationMedia;
+  delete result.eventMedia;
   if (result.files.length)
     result.warnings = result.warnings.filter(
       (w) => !w.startsWith("Файлы фотографий и документов не загружаются"),
