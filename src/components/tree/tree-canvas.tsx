@@ -616,6 +616,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     displayNodes,
     maxGrowthDelay,
   } = nodeModel;
+  const generationAnchor = props.generationLimits
+    ? peopleMap.get(props.generationLimits.anchorId)
+    : undefined;
   const cameraModel = useRef({ nodes: displayNodes, personOccurrences });
   useLayoutEffect(() => {
     cameraModel.current = { nodes: displayNodes, personOccurrences };
@@ -1633,6 +1636,26 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             </button>
           )}
           {narrow && props.comparisonAction}
+          {generationAnchor && !activeFanAnchor && (
+            <div
+              className="tree-family-row tree-generation-status"
+              role="status"
+              aria-label="Опорный человек"
+            >
+              <div className="tree-family-tools">
+                <span
+                  className="tree-family-name"
+                  title={`Опорный: ${fullName(generationAnchor)}`}
+                >
+                  <GitBranch size={15} aria-hidden="true" />
+                  <span>Опорный: {fullName(generationAnchor)}</span>
+                </span>
+                <span className="tree-family-count">
+                  {visible.size} из {family.people.length}
+                </span>
+              </div>
+            </div>
+          )}
           {props.assistantFilter && (
             <div
               className="tree-family-tools tree-filter-status"

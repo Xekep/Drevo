@@ -49,6 +49,22 @@ test("reference autocomplete keeps the saved anchor while typing and finds peopl
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).toHaveAttribute("data-layout-people", "4");
+  const anchorStatus = page.getByRole("status", { name: "Опорный человек" });
+  await expect(anchorStatus).toContainText("Опорный: Тестов Пётр Иванович");
+  await expect(anchorStatus.locator(".tree-family-count")).toHaveText("4 из 6");
+  await expect(anchorStatus.locator(".tree-family-count")).toBeVisible();
+  if (testInfo.project.name === "mobile") {
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      const bounds = (await anchorStatus.boundingBox())!;
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+      expect(
+        await anchorStatus.evaluate((element) => element.scrollWidth - element.clientWidth),
+      ).toBeLessThanOrEqual(1);
+      await expect(anchorStatus.locator(".tree-family-count")).toBeVisible();
+    }
+  }
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
   const input = dialog.getByRole("combobox", { name: "Относительно человека" });
@@ -103,6 +119,11 @@ test("reference autocomplete keeps the saved anchor while typing and finds peopl
   await expect(
     page.locator('.flow-person[data-person-id="e2e-sibling"]'),
   ).toBeVisible();
+  await expect(anchorStatus).toContainText("Опорный: Тестова Мария Ивановна");
+  await expect(anchorStatus.locator(".tree-family-count")).toHaveText("3 из 6");
+  await expect(canvas).toHaveAttribute("data-layout-people", "3");
+  await expect(canvas).not.toHaveClass(/is-layout-settling/);
+  await page.screenshot({ path: testInfo.outputPath("anchor-status.png") });
   expect(searchRequests).toEqual([]);
 });
 
@@ -127,6 +148,8 @@ test("generation settings trim the visible tree and survive reload without chang
   const card = (id: string) =>
     page.locator(`.flow-person[data-person-id="${id}"]`).first();
   await page.goto("/tree");
+  const anchorStatus = page.getByRole("status", { name: "Опорный человек" });
+  await expect(anchorStatus).toHaveCount(0);
   await expect(card("e2e-sibling-child")).toBeVisible();
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
@@ -163,6 +186,8 @@ test("generation settings trim the visible tree and survive reload without chang
   await page.reload();
   await expect(card("e2e-child")).toBeVisible();
   await expect(card("e2e-sibling")).toHaveCount(0);
+  await expect(anchorStatus).toContainText("Опорный: Тестов Пётр Иванович");
+  await expect(anchorStatus.locator(".tree-family-count")).toHaveText("4 из 6");
   await page.getByRole("button", { name: "Настройки древа" }).click();
   await expect(
     dialog.getByRole("combobox", { name: "Относительно человека" }),
@@ -181,6 +206,7 @@ test("generation settings trim the visible tree and survive reload without chang
   await dialog
     .getByRole("switch", { name: "Ограничить видимое древо" })
     .uncheck();
+  await expect(anchorStatus).toHaveCount(0);
   await expect(card("e2e-sibling-child")).toBeVisible();
   await expect(
     dialog.getByRole("combobox", { name: "Относительно человека" }),
