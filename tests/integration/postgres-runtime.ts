@@ -9702,10 +9702,19 @@ try {
     await staleList.catch(() => {});
     await new Promise<void>((resolve) => staleListServer.close(() => resolve()));
   }
+  // The staged selection is part of the v2 preview fingerprint. Reverting
+  // from two selected people requires a new preview of that committed state.
+  const afterStaleListSelection = await fetch(otherBase + branchPath, {
+    headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.7" },
+  });
+  assert.equal(afterStaleListSelection.status, 200);
+  const currentBranchPreview = await afterStaleListSelection.json();
+  assert.deepEqual(currentBranchPreview.selected.map((person: { person_id: string }) => person.person_id),
+    ["branch-grandparent-b", "branch-parent-b"]);
   assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
     headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.7" },
     body: JSON.stringify({ personIds: ["branch-parent-b"],
-      previewToken: secondBranch.previewToken,
+      previewToken: currentBranchPreview.previewToken,
       recipientArchiveId: "runtime-test", durationDays: 1 }),
   })).status, 200);
   console.log("runtime_discovery_branch_list_stale_ok");
