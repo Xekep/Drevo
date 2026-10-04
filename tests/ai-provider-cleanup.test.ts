@@ -107,7 +107,7 @@ test("known provider IDs retain original credentials through replacement, stale 
     writeFileSync(paths.primary, readFileSync(paths.backup));
     rmSync(paths.primary);
     await assert.rejects(aiProviderCleanup(db, path, fake as typeof fetch), /missing/);
-    writeFileSync(paths.primary, readFileSync(paths.backup));
+    writeFileSync(paths.primary, readFileSync(paths.backup), { mode: 0o600 });
     await aiProviderCleanup(db, path, fake as typeof fetch);
     rmSync(paths.backup);
     await assert.rejects(aiProviderCleanup(db, path, fake as typeof fetch), /ENOENT/);
