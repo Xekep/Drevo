@@ -66,7 +66,8 @@ import { verifyAiTurnCoordination } from "./postgres-ai-turn-coordination.ts";
 import { verifyAiProviderCleanup, verifyAiProviderDeleteRoute } from "./postgres-ai-provider-cleanup.ts";
 import { verifyAiProviderActiveOrphanBackfill } from "./postgres-ai-provider-active-orphan-backfill.ts";
 import { verifyDeployAiKeyPreflight } from "./postgres-deploy-ai-key-preflight.ts";
-import { acceptWithDecisionNote, verifyRejectedDecisionNote, verifyRejectedNoteUnchanged,
+import { acceptWithDecisionNote, rejectWithStableDecisionNote,
+  verifyRejectedDecisionNote, verifyRejectedNoteUnchanged,
   verifyLateNoteDenied, verifyRevocableDecisionNote, verifyRevokedDecisionNote,
   verifyWithdrawnDecisionNotes, verifyLegacyDecisionCannotReopen,
   verifyNoteHiddenAfterPublicationChange } from "./postgres-match-decision-notes.ts";
@@ -10730,10 +10731,8 @@ try {
   assert.ok(!(await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
     .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
   "the recipient must not see an already pending request as a new suggestion");
-  assert.equal((await fetch(otherBase + rejectedPath, {
-    method: "PATCH", headers: recipientHeaders,
-    body: JSON.stringify({ decision: "reject", note: "Опубликованные сведения расходятся" }),
-  })).status, 200);
+  await rejectWithStableDecisionNote({ archive: otherApp.archive, client,
+    matchId: rejectedId, recipientHeaders });
   await verifyRejectedDecisionNote(matchDb,rejectedId,otherBase,recipientHeaders);
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");

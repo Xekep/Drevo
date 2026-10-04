@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import type pg from "pg";
+import { createAuth } from "../../src/server/auth.ts";
+import type { openArchive } from "../../src/server/database.ts";
+import { discoveryMatchesHttp } from "../../src/server/discovery-matches-http.ts";
 import type { StoreDatabase } from "../../src/server/store-database.ts";
+import { userStore } from "../../src/server/users.ts";
 
 const acceptedNote = "После сравнения опубликованных полей";
 const rejectedNote = "Опубликованные сведения расходятся";
@@ -101,6 +106,72 @@ export async function verifyRejectedDecisionNote(db: StoreDatabase, matchId: str
   assert.equal(list.status, 200);
   assert.equal((await list.json()).matches.find((item: { id: string }) =>
     item.id === matchId)?.decisionNote, rejectedNote);
+}
+
+export async function rejectWithStableDecisionNote({ archive, client, matchId, recipientHeaders }: {
+  archive: Awaited<ReturnType<typeof openArchive>>; client: pg.Client;
+  matchId: string; recipientHeaders: HeadersInit;
+}) {
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  const originalVersion = (await client.query<{ publication_version: string }>(`
+    SELECT publication_version FROM discovery_people
+    WHERE archive_id='runtime-test' AND person_id='person-a'`)).rows[0].publication_version;
+  let reached!: () => void, release!: () => void;
+  const ready = new Promise<void>((resolve) => { reached = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const auth = await createAuth(await userStore(archive.db), archive.db, process.env.PUBLIC_ORIGIN);
+  const endpoint = discoveryMatchesHttp({ archive, auth, publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeDecisionNoteInsert: async () => { reached(); await gate; },
+  });
+  const server = createServer((req,res) => {
+    void endpoint(req,res,new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => server.listen(0,"127.0.0.1",resolve));
+  const port = (server.address() as { port: number }).port;
+  const headers = new Headers(recipientHeaders);
+  headers.set("X-Real-IP","198.51.100.111");
+  const request = fetch(`http://127.0.0.1:${port}/api/discovery/matches/${matchId}`, {
+    method: "PATCH", headers,
+    body: JSON.stringify({ decision: "reject", note: rejectedNote }),
+  });
+  let mutation: Promise<void> | undefined;
+  let mutationSettled = false;
+  let mutationError: unknown;
+  try {
+    await Promise.race([ready,
+      request.then((response) => { throw new Error(`reject finished before barrier: ${response.status}`); }),
+      new Promise<never>((_,reject) => setTimeout(() =>
+        reject(new Error("reject did not reach decision-note barrier")),30_000)),
+    ]);
+    mutation = client.query(`UPDATE discovery_people SET publication_version=$1
+      WHERE archive_id='runtime-test' AND person_id='person-a'`, [randomUUID()])
+      .then(() => { mutationSettled = true; },(error: unknown) => {
+        mutationSettled = true; mutationError = error;
+      });
+    await new Promise((resolve) => setTimeout(resolve,200));
+    assert.equal(mutationSettled,false,
+      "a concurrent publication edit must wait until the reject and its note commit");
+    release();
+    const response = await request;
+    assert.ok(response.status === 200 || response.status === 409,
+      `a post-commit publication edit may invalidate final delivery, but not the decision: ${response.status} ${await response.text()}`);
+    await mutation;
+    if (mutationError) throw mutationError;
+    const decided = (await client.query<{ status: string; decision_txid: string | null }>(`
+      SELECT status,decision_txid FROM discovery_match_requests WHERE id=$1`,[matchId])).rows[0];
+    assert.equal(decided.status,"rejected");
+    assert.ok(decided.decision_txid,
+      "the concurrent edit cannot force a rollback of the reviewed decision or note");
+    console.log("runtime_discovery_match_decision_note_publication_lock_ok");
+  } finally {
+    release();
+    await request.catch(() => undefined);
+    if (mutation) await mutation;
+    await client.query(`UPDATE discovery_people SET publication_version=$1
+      WHERE archive_id='runtime-test' AND person_id='person-a'`,[originalVersion]);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 }
 
 export async function verifyRejectedNoteUnchanged(db: StoreDatabase, matchId: string) {

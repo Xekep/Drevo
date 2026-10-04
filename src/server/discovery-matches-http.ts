@@ -140,7 +140,7 @@ function cursor(value: string | null): [string,string] | null {
 export function discoveryMatchesHttp({ archive, auth, publicOrigin,
   beforeCandidateDelivery, beforeCandidateResponse,
   beforeMatchListAccessLock, beforeMatchListDelivery, beforeIgnoredArchivesDelivery, beforeMutationDelivery,
-  beforeOwnPersonAccessLock, beforeOwnPersonResponse }: {
+  beforeOwnPersonAccessLock, beforeOwnPersonResponse, beforeDecisionNoteInsert }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
@@ -152,6 +152,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
   beforeMutationDelivery?: () => Promise<void>;
   beforeOwnPersonAccessLock?: () => Promise<void>;
   beforeOwnPersonResponse?: () => Promise<void>;
+  beforeDecisionNoteInsert?: () => Promise<void>;
 }) {
   const db = archive.db;
   const limiter = createSharedRequestLimiter(db, "discovery-matches", { windowMs: 60_000, limit: 20 });
@@ -860,9 +861,10 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       const result = await db.transaction(async () => {
         if (!await isOwner(approved.id,true))
           return { code: 403, error: "Доступ владельца отозван" };
-        if (decision === "accept") {
-          // Publication deletion also locks its row before the revocation
-          // trigger locks this request. Keep the same order to avoid deadlock.
+        if (decision === "accept" || decisionNote) {
+          // The note binds to both publication versions. Publication edits and
+          // deletion lock their rows before touching this request, so keep
+          // that order before reading the versions and locking the match.
           const candidate = await db.prepare("", "SELECT * FROM discovery_match_requests WHERE id=?").get(detail[1]);
           if (!candidate) return { code: 404, error: "Запрос не найден" };
           const visible = await db.prepare("", `SELECT archive_id,person_id FROM discovery_people
@@ -892,6 +894,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
               body.reviewToken !== decisionToken)
             return { code: 409, error: "Карточки изменились. Проверьте сведения ещё раз перед подтверждением" };
         }
+        if (decisionNote) await beforeDecisionNoteInsert?.();
         await db.prepare("", `UPDATE discovery_match_requests SET status=?,
           responded_by=CASE WHEN ?='revoke' THEN responded_by ELSE ? END,
           responded_at=CASE WHEN ?='revoke' THEN responded_at ELSE now() END,
