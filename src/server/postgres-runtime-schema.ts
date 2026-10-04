@@ -355,6 +355,13 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "087_discovery_match_decision_notes.sql",
     ],
     [
+      `SELECT 1 AS present WHERE to_regclass('public.platform_ai_input_files') IS NOT NULL
+        AND to_regclass('public.platform_ai_input_files_due') IS NOT NULL
+        AND to_regclass('public.platform_ai_input_files_status') IS NOT NULL
+        AND to_regclass('public.platform_ai_input_files_blocked_status') IS NOT NULL`,
+      "093_ai_input_file_cleanup.sql",
+    ],
+    [
       `SELECT 1 AS present WHERE to_regclass('platform_researchers') IS NOT NULL
         AND to_regclass('platform_role_audit') IS NOT NULL
         AND EXISTS (SELECT 1 FROM pg_trigger

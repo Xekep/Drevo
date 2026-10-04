@@ -9,6 +9,7 @@ export type AiCleanupFailure =
   | "unknown";
 export type AiCleanupJobStatus = {
   id: string;
+  kind: "conversation" | "input_file";
   state: AiCleanupState;
   attempts: number;
   updatedAt: number;

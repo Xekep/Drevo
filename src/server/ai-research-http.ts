@@ -467,6 +467,7 @@ export function aiResearchHttp({
     chats,
     generatedFiles,
     attachments,
+    providerCleanup,
     renderPdf,
     webSearch: (runtime, metrics, assertAiAccess) =>
       runtime.webSearchEnabled && runtime.webSearchProvider === "yandex"

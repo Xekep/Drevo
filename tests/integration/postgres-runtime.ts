@@ -66,6 +66,7 @@ import { verifyAiAttachmentDelivery } from "./postgres-ai-attachment-delivery.ts
 import { verifyDiscussionAttachmentDelivery } from "./postgres-discussion-attachment-delivery.ts";
 import { verifyAiTurnCoordination } from "./postgres-ai-turn-coordination.ts";
 import { verifyAiProviderCleanup, verifyAiProviderDeleteRoute } from "./postgres-ai-provider-cleanup.ts";
+import { verifyAiInputFileCleanup } from "./postgres-ai-input-file-cleanup.ts";
 import { verifyAiProviderActiveOrphanBackfill } from "./postgres-ai-provider-active-orphan-backfill.ts";
 import { verifyDeployAiKeyPreflight } from "./postgres-deploy-ai-key-preflight.ts";
 import { acceptWithDecisionNote, rejectWithStableDecisionNote,
@@ -984,6 +985,7 @@ try {
   assert.equal((await preferences.read("owner")).generationLimits, undefined);
   await verifyAiTurnCoordination(live.db);
   await verifyAiProviderCleanup(live.db, source);
+  await verifyAiInputFileCleanup(live.db, source);
   await verifyAiProviderActiveOrphanBackfill(live.db, source);
   await verifyDeployAiKeyPreflight(live.db, source);
   const chats = aiChatStore(live.db);

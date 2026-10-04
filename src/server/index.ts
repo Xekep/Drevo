@@ -133,18 +133,21 @@ export async function startServer(
       ? await aiProviderCleanup(archive.db, configuredPath, aiFetch)
       : undefined;
     let providerCleanupRun: Promise<void> | null = null;
-    const sweepProviderConversations = !archiveId && providerCleanup
+    const sweepProviderObjects = !archiveId && providerCleanup
       ? () => {
           if (providerCleanupRun) return;
-          providerCleanupRun = providerCleanup.process(2)
+          providerCleanupRun = Promise.all([
+            providerCleanup.process(2), providerCleanup.processInputFiles(2),
+          ].map((run) => run.catch(() => {
+            console.warn(JSON.stringify({ event: "ai.provider_cleanup_failed" }));
+          })))
             .then(() => undefined)
-            .catch(() => console.warn(JSON.stringify({ event: "ai.provider_cleanup_failed" })))
             .finally(() => { providerCleanupRun = null; });
         }
       : null;
-    sweepProviderConversations?.();
-    const providerCleanupTimer = sweepProviderConversations
-      ? setInterval(sweepProviderConversations, 60_000) : null;
+    sweepProviderObjects?.();
+    const providerCleanupTimer = sweepProviderObjects
+      ? setInterval(sweepProviderObjects, 60_000) : null;
     providerCleanupTimer?.unref();
     own(async () => {
       if (providerCleanupTimer) clearInterval(providerCleanupTimer);

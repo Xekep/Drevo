@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { aiProviderCleanupHttp } from "../../src/server/ai-provider-cleanup-http.ts";
+import { aiCleanupStatusSql } from "../../src/server/ai-provider-cleanup-status.ts";
 import { createAuth } from "../../src/server/auth.ts";
 import { userStore } from "../../src/server/users.ts";
 import {
@@ -29,6 +30,7 @@ export async function verifyAiProviderCleanupStatus(
   const initial = (await initialResponse.json()) as AiCleanupStatus;
   assert.equal(initial.supported, true);
   const ids: string[] = [];
+  const inputFileId = randomUUID();
   const stamp = Date.now() + 3_600_000;
   const states = ["binding", "pending", "leased", "blocked"] as const;
   const token = newSessionToken();
@@ -95,6 +97,10 @@ export async function verifyAiProviderCleanupStatus(
           stamp,
         );
     }
+    await db.prepare("", `INSERT INTO platform_ai_input_files
+      (id,key_version,encrypted_snapshot,state,last_error,available_at,created_at,updated_at)
+      VALUES(?,1,'private-file-id-and-key','blocked','provider_auth_403',?,?,?)`)
+      .run(inputFileId, stamp - 1, stamp - 1, stamp - 1);
     const response = await fetch(base + path, { headers: ownerHeaders });
     assert.equal(response.status, 200);
     const text = await response.text();
@@ -112,12 +118,17 @@ export async function verifyAiProviderCleanupStatus(
       ids.includes(job.id),
     );
     assert.equal(selected.length, 27);
+    const file = [...first.jobs, ...second.jobs].find((job) => job.id === inputFileId);
+    assert.equal(file?.kind, "input_file");
+    assert.equal(file?.state, "blocked");
+    assert.equal(file?.canRetry, false);
+    assert.doesNotMatch(JSON.stringify([first, second]), /private-file-id-and-key/);
     assert.equal(
       new Set(selected.map((job) => job.id)).size,
       27,
       "equal timestamps paginate by UUID without omissions or repeats",
     );
-    assert.equal(first.counts.blocked, initial.counts.blocked + 6);
+    assert.equal(first.counts.blocked, initial.counts.blocked + 7);
     assert.equal(
       selected.find((job) => job.id === ids[3])?.error,
       "provider_auth",
@@ -182,9 +193,90 @@ export async function verifyAiProviderCleanupStatus(
           FROM public.platform_ai_conversations WHERE ${condition}
           ORDER BY updated_at DESC,id DESC LIMIT 21`);
         const text = JSON.stringify(plan.rows);
-        assert.ok(text.includes(index), "each filter has an ordered page index");
+        assert.ok(text.includes(index) ||
+          (condition === "state='blocked'" &&
+            text.includes("platform_ai_conversations_status")),
+        "each filter uses an ordered page index (the general index also orders a small blocked page)");
         assert.doesNotMatch(text, /"Node Type":"Sort"/,
           "the page must not sort the complete unfinished queue");
+      }
+      const filePlan = await client.query(`EXPLAIN (FORMAT JSON)
+        SELECT id,updated_at FROM public.platform_ai_input_files
+        WHERE state IN ('binding','pending','leased','blocked')
+        ORDER BY updated_at DESC,id DESC LIMIT 21`);
+      const fileText = JSON.stringify(filePlan.rows);
+      assert.match(fileText, /platform_ai_input_files_status/);
+      assert.doesNotMatch(fileText, /"Node Type":"Sort"/);
+      // Verify the actual combined endpoint query, not only each table in
+      // isolation. Historical completed rows must stay outside its page plan.
+      await client.query("SAVEPOINT cleanup_status_plan");
+      try {
+        await client.query(`INSERT INTO public.platform_ai_conversations
+          (id,key_version,encrypted_snapshot,archive_id,local_chat_id,state,
+            available_at,created_at,updated_at)
+          SELECT md5('conversation-status-plan-'||n)::uuid,1,NULL,
+            'private-archive','private-chat','done',0,0,0
+          FROM generate_series(1,2000) n`);
+        await client.query(`INSERT INTO public.platform_ai_input_files
+          (id,key_version,encrypted_snapshot,state,available_at,created_at,updated_at)
+          SELECT md5('file-status-plan-'||n)::uuid,1,NULL,'done',0,0,0
+          FROM generate_series(1,2000) n`);
+        const combined = await client.query(`EXPLAIN (ANALYZE,FORMAT JSON)
+          ${aiCleanupStatusSql}`, ["all", null, null]);
+        const rawCombined = combined.rows[0]["QUERY PLAN"];
+        const plan = (typeof rawCombined === "string" ? JSON.parse(rawCombined) : rawCombined)[0].Plan as {
+          "Node Type": string; "Relation Name"?: string; "Index Name"?: string;
+          "Actual Rows"?: number; Plans?: Array<unknown>;
+        };
+        const pageIndexes = new Set<string>();
+        const walk = (node: typeof plan, limited = false) => {
+          const onPage = limited || node["Node Type"] === "Limit";
+          if (node["Node Type"] === "Limit")
+            assert.ok(Number(node["Actual Rows"]) <= 21,
+              "each table contributes no more than one bounded page");
+          if (onPage && node["Index Name"])
+            pageIndexes.add(node["Index Name"]);
+          if (onPage && node["Relation Name"] &&
+              ["platform_ai_conversations", "platform_ai_input_files"]
+                .includes(node["Relation Name"])) {
+            assert.notEqual(node["Node Type"], "Seq Scan",
+              "the page must not scan historical completed jobs");
+          }
+          for (const child of node.Plans || []) walk(child as typeof plan, onPage);
+        };
+        walk(plan);
+        assert.ok(pageIndexes.has("platform_ai_conversations_status"));
+        assert.ok(pageIndexes.has("platform_ai_input_files_status"));
+      } finally {
+        await client.query("ROLLBACK TO SAVEPOINT cleanup_status_plan");
+        await client.query("RELEASE SAVEPOINT cleanup_status_plan");
+      }
+      await client.query("SAVEPOINT cleanup_blocked_plan");
+      try {
+        await client.query(`INSERT INTO public.platform_ai_input_files
+          (id,key_version,encrypted_snapshot,state,available_at,created_at,updated_at)
+          SELECT md5('file-pending-plan-'||n)::uuid,1,'synthetic-ciphertext',
+            'pending',0,0,$1 FROM generate_series(1,2000) n`, [stamp + 1000]);
+        await client.query(`INSERT INTO public.platform_ai_input_files
+          (id,key_version,encrypted_snapshot,state,available_at,created_at,updated_at)
+          VALUES(md5('file-blocked-plan')::uuid,1,'synthetic-ciphertext',
+            'blocked',0,0,$1)`, [stamp - 1000]);
+        const blockedPlan = await client.query(`EXPLAIN (ANALYZE,FORMAT JSON)
+          ${aiCleanupStatusSql}`, ["blocked", null, null]);
+        const indexes: string[] = [];
+        const collect = (node: { "Node Type": string; "Index Name"?: string;
+          Plans?: Array<unknown> }, limited = false): void => {
+          const onPage = limited || node["Node Type"] === "Limit";
+          if (onPage && node["Index Name"]) indexes.push(node["Index Name"]);
+          for (const child of node.Plans || []) collect(child as typeof node, onPage);
+        };
+        const rawBlocked = blockedPlan.rows[0]["QUERY PLAN"];
+        collect((typeof rawBlocked === "string" ? JSON.parse(rawBlocked) : rawBlocked)[0].Plan);
+        assert.ok(indexes.includes("platform_ai_input_files_blocked_status"),
+          "blocked page skips a large newer pending backlog");
+      } finally {
+        await client.query("ROLLBACK TO SAVEPOINT cleanup_blocked_plan");
+        await client.query("RELEASE SAVEPOINT cleanup_blocked_plan");
       }
     });
     console.log("runtime_ai_provider_status_privacy_pagination_revocation_ok");
@@ -205,6 +297,7 @@ export async function verifyAiProviderCleanupStatus(
       await db
         .prepare("", "DELETE FROM platform_ai_conversations WHERE id=?")
         .run(id);
+    await db.prepare("", "DELETE FROM platform_ai_input_files WHERE id=?").run(inputFileId);
     if (!previousGrant)
       await db.prepare("", "DELETE FROM platform_admins WHERE account_id='owner'").run();
   }

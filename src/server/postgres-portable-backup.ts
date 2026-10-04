@@ -59,7 +59,8 @@ export async function writePortablePostgresBackup(
           // Platform cleanup credentials and obligations belong to the physical
           // system backup, never to one archive's downloadable TAR.
           if (table === "platform_ai_cleanup_keys" ||
-              table === "platform_ai_conversations") continue;
+              table === "platform_ai_conversations" ||
+              table === "platform_ai_input_files") continue;
           const columns = target
             .prepare(`PRAGMA table_info(${identifier(table)})`)
             .all()

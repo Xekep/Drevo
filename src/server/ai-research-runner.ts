@@ -4,6 +4,7 @@ import {
   type createWebSearchService,
 } from "./web-search.ts";
 import type { aiAttachmentStore } from "./ai-attachments.ts";
+import type { AiProviderCleanup } from "./ai-provider-cleanup.ts";
 import {
   researchAttachmentContext,
   CHAT_ATTACHMENTS_TOOL,
@@ -106,6 +107,7 @@ export function createResearchRunner({
   chats,
   generatedFiles,
   attachments,
+  providerCleanup,
   webSearch,
   renderPdf = researchPdf,
 }: {
@@ -123,6 +125,7 @@ export function createResearchRunner({
   chats: ReturnType<typeof aiChatStore>;
   generatedFiles: ReturnType<typeof generatedResearchFileStore>;
   attachments?: ReturnType<typeof aiAttachmentStore>;
+  providerCleanup?: AiProviderCleanup;
   renderPdf?: typeof researchPdf;
 }) {
   const responses = yandexResponsesClient(fetcher);
@@ -1286,6 +1289,7 @@ export function createResearchRunner({
               assertAiAccess,
               allowPdf: runtime.capabilities.pdf,
               attachments: attachmentContext.files,
+              inputFileCleanup: providerCleanup,
               onCall: () => recordModelCall(metrics, runtime.modelUri),
               onUsage: (input, output) =>
                 recordModelTokens(metrics, runtime.modelUri, input, output),

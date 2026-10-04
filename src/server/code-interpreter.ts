@@ -3,6 +3,7 @@ import {
   calculationData,
 } from "../domain/calculation-data.ts";
 import type { Family } from "../domain/types.ts";
+import type { AiProviderCleanup } from "./ai-provider-cleanup.ts";
 import {
   YandexResponseError,
   type yandexResponsesClient,
@@ -102,10 +103,14 @@ export async function runCodeInterpreter(options: {
   timeoutMs?: number;
   allowPdf: boolean;
   attachments?: Array<{ name: string; type: string; bytes: Buffer }>;
+  inputFileCleanup?: Pick<AiProviderCleanup,
+    "registerInputFile" | "queueInputFile" | "compensateInputFile">;
 }) {
   const { client, runtime } = options;
   const started = Date.now();
+  const bindingUntil = started + (options.timeoutMs ?? 90_000) + 7_000;
   const cleanup = new Set<string>();
+  const registered = new Map<string, string>();
   const signal = AbortSignal.any([
     options.signal,
     AbortSignal.timeout(options.timeoutMs ?? 90_000),
@@ -159,16 +164,33 @@ export async function runCodeInterpreter(options: {
         files: [] as CalculationFile[],
       };
     let fileId: string | undefined;
+    const registerInput = async (id: string) => {
+      if (!options.inputFileCleanup) return;
+      try {
+        const ref = await options.inputFileCleanup.registerInputFile(id, runtime,
+          bindingUntil);
+        registered.set(id, ref);
+      } catch (error) {
+        // The ID has not been used. Try the original credential immediately;
+        // never claim a successful calculation for an untracked input file.
+        await options.inputFileCleanup.compensateInputFile(id, runtime);
+        throw error;
+      }
+    };
     signal.throwIfAborted();
     if (data.fields.length) {
       await assertAiAccess();
       fileId = await client.uploadCalculationData(runtime, serialized, signal);
+      await registerInput(fileId);
+      signal.throwIfAborted();
       cleanup.add(fileId);
     }
     const attachmentIds: string[] = [];
     for (const attachment of options.attachments || []) {
       await assertAiAccess();
       const id = await client.uploadInputFile(runtime, attachment, signal);
+      await registerInput(id);
+      signal.throwIfAborted();
       attachmentIds.push(id);
       cleanup.add(id);
     }
@@ -305,8 +327,13 @@ export async function runCodeInterpreter(options: {
   } finally {
     // Independent short cleanup deadline even when the user cancelled the turn.
     const cleanupSignal = AbortSignal.timeout(5000);
+    const queued = await Promise.allSettled(
+      [...registered.values()].map((ref) => options.inputFileCleanup!.queueInputFile(ref)),
+    );
+    // PostgreSQL inputs are now a durable worker obligation. SQLite and
+    // unregistered generated outputs keep the existing best-effort cleanup.
     const deleted = await Promise.allSettled(
-      [...cleanup].map((id) =>
+      [...cleanup].filter((id) => !registered.has(id)).map((id) =>
         client.deleteCalculationFile(runtime, id, cleanupSignal),
       ),
     );
@@ -318,8 +345,8 @@ export async function runCodeInterpreter(options: {
         fileCount,
         durationMs: Date.now() - started,
         errorType,
-        cleanupFailures: deleted.filter((item) => item.status === "rejected")
-          .length,
+        cleanupFailures: deleted.filter((item) => item.status === "rejected").length +
+          queued.filter((item) => item.status === "rejected").length,
       }),
     );
   }
