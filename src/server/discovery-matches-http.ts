@@ -212,10 +212,18 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       const body = req.method === "POST" ? await readBody(req) : null;
       const personId = req.method === "GET" ? url.searchParams.get("personId") : body?.personId;
       const relationId = body?.relationId;
+      const relationPath = body?.relationPath;
+      const grandparentPath = Array.isArray(relationPath) && relationPath.length === 2 &&
+        relationPath.every((id) => typeof id === "string" && publicPersonId(id)) &&
+        relationPath[0] !== relationPath[1] ? relationPath as [string,string] : null;
+      const directRelation = typeof relationId === "string" && publicPersonId(relationId);
+      const submittedDirect = relationId !== undefined;
+      const submittedPath = relationPath !== undefined;
       const enabled = body?.enabled;
       if (typeof personId !== "string" || !publicPersonId(personId) ||
-          (req.method === "POST" && (typeof relationId !== "string" ||
-            !publicPersonId(relationId) || typeof enabled !== "boolean")))
+          (req.method === "POST" && (submittedDirect === submittedPath ||
+            (submittedDirect && !directRelation) || (submittedPath && !grandparentPath) ||
+            typeof enabled !== "boolean")))
         return json(res, 400, { error: "Некорректная карточка или связь" });
       const session = auth.local ? null : await auth.accountSession(req);
       const relationsSql = `SELECT r.id AS relation_id,other.person_id AS relative_person_id,
@@ -229,6 +237,27 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         WHERE r.archive_id=? AND r.type IN ('parent','spouse')
           AND (r.source=? OR r.target=?) ORDER BY r.id`;
       const args = [personId,personId,personId,archiveId,personId,personId];
+      const grandparentSql = `SELECT first_edge.id AS first_relation_id,
+        second_edge.id AS second_relation_id,via.person_id AS via_person_id,
+        via.name AS via_name,other.person_id AS relative_person_id,
+        other.name AS relative_name,
+        c.first_relation_id IS NOT NULL AS enabled
+        FROM relations first_edge JOIN discovery_people via
+          ON via.archive_id=first_edge.archive_id AND via.person_id=first_edge.source
+        JOIN relations second_edge ON second_edge.archive_id=first_edge.archive_id
+          AND second_edge.target=via.person_id AND second_edge.type='parent'
+        JOIN discovery_people other ON other.archive_id=second_edge.archive_id
+          AND other.person_id=second_edge.source
+        LEFT JOIN discovery_grandparent_consents c ON c.archive_id=first_edge.archive_id
+          AND c.person_id=? AND c.first_relation_id=first_edge.id
+          AND c.second_relation_id=second_edge.id
+        WHERE first_edge.archive_id=? AND first_edge.type='parent'
+          AND first_edge.target=?
+          AND via.person_id<>? AND other.person_id<>?
+          AND other.person_id<>via.person_id
+        ORDER BY first_edge.id COLLATE "C",second_edge.id COLLATE "C"
+        FOR SHARE OF first_edge,second_edge,via,other NOWAIT`;
+      const grandparentArgs = [personId,archiveId,personId,personId,personId];
       const result = await db.transaction(async () => {
         if (!await lockDiscoveryOwnerReadAccess(db,auth.local,session,user) ||
             !await isOwner(user.id,true)) return { status: 403 };
@@ -238,10 +267,36 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
           return { status: 404 };
         if (req.method === "GET") {
           const rows = await db.prepare("", relationsSql).all(...args);
-          await deliverLocked(res, { relatives: rows.map((row) => ({
+          const grandparentRows = await db.prepare("", grandparentSql).all(...grandparentArgs);
+          await deliverLocked(res, { relatives: [...rows.map((row) => ({
             relationId: String(row.relation_id), personId: String(row.relative_person_id),
             name: String(row.relative_name), kind: String(row.kind), enabled: row.enabled === true,
-          })) });
+          })), ...grandparentRows.map((row) => ({
+            relationPath: [String(row.first_relation_id),String(row.second_relation_id)],
+            personId: String(row.relative_person_id), name: String(row.relative_name),
+            viaName: String(row.via_name), kind: "grandparent", enabled: row.enabled === true,
+          }))] });
+          return { status: 200 };
+        }
+        if (grandparentPath) {
+          const eligible = (await db.prepare("", grandparentSql).all(...grandparentArgs))
+            .find((row) => row.first_relation_id === grandparentPath[0] &&
+              row.second_relation_id === grandparentPath[1]);
+          if (!eligible) return { status: 404 };
+          if (enabled) {
+            await db.prepare("", `INSERT INTO discovery_grandparent_consents
+              (archive_id,person_id,first_relation_id,second_relation_id,
+                via_person_id,relative_person_id,relative_name)
+              VALUES(?,?,?,?,?,?,?) ON CONFLICT
+                (archive_id,person_id,first_relation_id,second_relation_id) DO NOTHING`)
+              .run(archiveId,personId,...grandparentPath,
+                String(eligible.via_person_id),String(eligible.relative_person_id),
+                String(eligible.relative_name));
+          } else {
+            await db.prepare("", `DELETE FROM discovery_grandparent_consents
+              WHERE archive_id=? AND person_id=? AND first_relation_id=?
+                AND second_relation_id=?`).run(archiveId,personId,...grandparentPath);
+          }
           return { status: 200 };
         }
         const eligible = (await db.prepare("", relationsSql).all(...args))
@@ -427,6 +482,22 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         archive_id: String(row.archive_id), person_id: String(row.person_id),
         publication_version: String(row.publication_version), row_version: String(row.row_version),
       }));
+      const expectedPaths = relatives.signals.filter((signal) =>
+        signal.kind === "grandparent").map((signal) => ({
+        archive_id: String(signal.archive_id),person_id: String(signal.person_id),
+        first_relation_id: String(signal.first_relation_id),
+        second_relation_id: String(signal.second_relation_id),
+        via_person_id: String(signal.via_person_id),
+        relative_person_id: String(signal.relative_person_id),
+      }));
+      const publishedForDelivery = [...new Map([
+        ...expectedPeople.map((person) => ({ archive_id: person.archive_id,
+          person_id: person.person_id })),
+        ...expectedPaths.flatMap((path) => [
+          { archive_id: path.archive_id, person_id: path.via_person_id },
+          { archive_id: path.archive_id, person_id: path.relative_person_id },
+        ]),
+      ].map((person) => [JSON.stringify([person.archive_id,person.person_id]),person])).values()];
       const result = await db.transaction(async () => {
         if (!await lockDiscoveryOwnerReadAccess(db,auth.local,session,user)) return 403;
         // Publication writes check owner access before touching published rows.
@@ -443,20 +514,59 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
             AS e(archive_id text,person_id text)
             ON e.archive_id=d.archive_id AND e.person_id=d.person_id
           ORDER BY d.archive_id COLLATE "C",d.person_id COLLATE "C" FOR SHARE OF d NOWAIT`)
-          .all(JSON.stringify(expectedPeople));
-        if (locked.length !== expectedPeople.length) return 409;
+          .all(JSON.stringify(publishedForDelivery));
+        if (locked.length !== publishedForDelivery.length) return 409;
         // Every consent UPDATE/DELETE takes its focal discovery row FOR UPDATE
-        // in the trigger. The focal rows above stay SHARE-locked through send.
+        // in the trigger. Compare while those focal rows are SHARE-locked,
+        // before using a consent to enter another archive's RLS scope.
         const currentRelatives = await db.prepare("", `SELECT c.archive_id,c.person_id,
-          c.relation_id,c.kind,c.relative_name,c.xmin::text AS row_version
-          FROM discovery_relative_consents c JOIN jsonb_to_recordset(?::jsonb)
+          c.first_relation_id,c.second_relation_id,c.via_person_id,c.relative_person_id,
+          c.kind,c.relative_name,c.row_version
+          FROM discovery_candidate_relative_consents c JOIN jsonb_to_recordset(?::jsonb)
             AS p(archive_id text,person_id text)
             ON p.archive_id=c.archive_id AND p.person_id=c.person_id
           ORDER BY c.archive_id COLLATE "C",c.person_id COLLATE "C",
-            c.relation_id COLLATE "C"`)
+            c.kind COLLATE "C",c.first_relation_id COLLATE "C",
+            c.second_relation_id COLLATE "C" NULLS FIRST`)
           .all(JSON.stringify(relatives.people));
         if (JSON.stringify(currentRelatives) !== JSON.stringify(relatives.signals))
           return 409;
+        if (expectedPaths.length) {
+          // Relations are archive-scoped by RLS. Inspect only exact paths
+          // already represented by explicit globally readable consent rows.
+          const pathArchives = [...new Set(expectedPaths.map((path) => path.archive_id))].sort();
+          try {
+            for (const pathArchive of pathArchives) {
+              await db.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get(pathArchive);
+              const paths = expectedPaths.filter((path) => path.archive_id === pathArchive);
+              const validPaths = await db.prepare("", `SELECT first_edge.id
+                FROM jsonb_to_recordset(?::jsonb) AS p(archive_id text,person_id text,
+                  first_relation_id text,second_relation_id text,via_person_id text,
+                  relative_person_id text)
+                JOIN relations first_edge ON first_edge.archive_id=p.archive_id
+                  AND first_edge.id=p.first_relation_id AND first_edge.type='parent'
+                  AND first_edge.target=p.person_id AND first_edge.source=p.via_person_id
+                JOIN relations second_edge ON second_edge.archive_id=p.archive_id
+                  AND second_edge.id=p.second_relation_id AND second_edge.type='parent'
+                  AND second_edge.target=p.via_person_id
+                  AND second_edge.source=p.relative_person_id
+                ORDER BY first_edge.archive_id COLLATE "C",first_edge.id COLLATE "C",
+                  second_edge.id COLLATE "C"
+                FOR SHARE OF first_edge,second_edge NOWAIT`)
+                .all(JSON.stringify(paths));
+              if (validPaths.length !== paths.length) return 409;
+            }
+          } finally {
+            // ROLLBACK resets SET LOCAL after NOWAIT aborts the transaction.
+            // Only that expected aborted-transaction error may prevent an
+            // explicit restore; all other failures must stop delivery.
+            await db.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+              .get(archiveId).catch((error: unknown) => {
+                if ((error as { code?: string }).code === "25P02") return undefined;
+                return Promise.reject(error);
+              });
+          }
+        }
         // Other publications may move between pages. The selected published
         // cards themselves must still be the same projection before delivery.
         const current = await db.prepare("", `WITH expected_people AS (

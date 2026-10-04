@@ -3,7 +3,7 @@ export type PublishedCandidate = {
   birthPlace?: string; deathPlace?: string;
   surname?: string; givenName?: string;
 };
-export type PublishedRelative = { kind: "parent" | "child" | "spouse"; name: string };
+export type PublishedRelative = { kind: "parent" | "child" | "spouse" | "grandparent"; name: string };
 
 const words = (value: string): string[] =>
   value.toLocaleLowerCase("ru-RU").replaceAll("ё", "е").match(/[\p{L}\p{N}]+/gu) || [];
@@ -92,7 +92,7 @@ export function candidateEvidence(
     return left.some((word) => right.includes(word));
   });
   const relativeNames = (relative: PublishedRelative) => words(relative.name).join(" ");
-  const sharedRelativeKinds = (["parent","child","spouse"] as const).filter((kind) => {
+  const sharedRelativeKinds = (["parent","child","spouse","grandparent"] as const).filter((kind) => {
     const left = sourceRelatives.filter((relative) => relative.kind === kind)
       .map(relativeNames);
     const right = candidateRelatives.filter((relative) => relative.kind === kind)
@@ -144,7 +144,7 @@ export function candidateEvidence(
     } else conflicts.push(`${label} различается`);
   }
   for (const [kind, label] of [["parent", "родителя"], ["child", "ребёнка"],
-    ["spouse", "супруга"]] as const) {
+    ["spouse", "супруга"], ["grandparent", "деда или бабушки"]] as const) {
     if (sharedRelativeKinds.includes(kind)) {
       reasons.push(`Совпадает опубликованное имя ${label}`);
       score += 3;

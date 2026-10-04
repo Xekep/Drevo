@@ -278,6 +278,32 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT to_regclass('platform_ai_conversations') AS present",
       "082_ai_provider_cleanup.sql",
     ],
+    [
+      `SELECT 1 AS present WHERE
+        EXISTS (SELECT 1 FROM pg_class WHERE oid=to_regclass('discovery_grandparent_consents')
+          AND relrowsecurity AND relforcerowsecurity)
+        AND EXISTS (SELECT 1 FROM pg_class
+          WHERE oid=to_regclass('discovery_candidate_relative_consents')
+            AND reloptions @> ARRAY['security_invoker=true'])
+        AND to_regclass('discovery_grandparent_consents_lookup') IS NOT NULL
+        AND to_regclass('discovery_grandparent_consents_via') IS NOT NULL
+        AND to_regclass('discovery_grandparent_consents_relative') IS NOT NULL
+        AND to_regclass('discovery_grandparent_consents_second_relation') IS NOT NULL
+        AND (SELECT count(*) FROM pg_policies WHERE schemaname=current_schema()
+          AND tablename='discovery_grandparent_consents' AND policyname IN
+            ('discovery_grandparent_consents_read','discovery_grandparent_consents_insert',
+             'discovery_grandparent_consents_update','discovery_grandparent_consents_delete'))=4
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE
+          tgrelid=to_regclass('discovery_grandparent_consents')
+          AND tgname='lock_discovery_grandparent_focal' AND NOT tgisinternal)
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE
+          tgrelid=to_regclass('discovery_people')
+          AND tgname='revoke_renamed_discovery_grandparent_person' AND NOT tgisinternal)
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE
+          tgrelid=to_regclass('relations')
+          AND tgname='revoke_changed_discovery_grandparent_relation' AND NOT tgisinternal)`,
+      "083_discovery_grandparent_consents.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     try {
@@ -299,7 +325,8 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       // this check a fresh catalog snapshot. A complete migration is required;
       // a conflicting partial table/index installation remains fatal.
       if ((file !== "080_discovery_relative_consents.sql" &&
-           file !== "081_discovery_candidate_tiers.sql") ||
+           file !== "081_discovery_candidate_tiers.sql" &&
+           file !== "083_discovery_grandparent_consents.sql") ||
           (error as { code?: string }).code !== "42P07" ||
           !(await db.prepare("", query).get())?.present) throw error;
     }

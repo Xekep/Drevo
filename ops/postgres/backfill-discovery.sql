@@ -40,6 +40,14 @@ BEGIN
       AS SELECT * FROM discovery_relative_consents';
     tables := tables || 'discovery_relative_consents,';
   END IF;
+  IF to_regclass('discovery_grandparent_consents') IS NOT NULL THEN
+    EXECUTE 'CREATE TEMP TABLE discovery_grandparent_consents_backup ON COMMIT DROP
+      AS SELECT c.*,f.name AS focal_name,v.name AS via_name
+      FROM discovery_grandparent_consents c
+      JOIN discovery_people f ON f.archive_id=c.archive_id AND f.person_id=c.person_id
+      JOIN discovery_people v ON v.archive_id=c.archive_id AND v.person_id=c.via_person_id';
+    tables := tables || 'discovery_grandparent_consents,';
+  END IF;
   EXECUTE 'TRUNCATE ' || tables || 'discovery_people';
 END $$;
 DO $$
@@ -70,6 +78,32 @@ BEGIN
           OR (r.target=b.person_id AND r.source=b.relative_person_id))
         AND b.kind=CASE WHEN r.type='spouse' THEN 'spouse'
           WHEN r.source=b.person_id THEN 'child' ELSE 'parent' END$sql$;
+  END IF;
+END $$;
+-- Recreate only the same two-edge choice with the same three published
+-- names. A rebuilt publication alone never opts an owner into a new clue.
+DO $$
+BEGIN
+  IF to_regclass('discovery_grandparent_consents') IS NOT NULL THEN
+    EXECUTE $sql$INSERT INTO discovery_grandparent_consents
+      (archive_id,person_id,first_relation_id,second_relation_id,
+        via_person_id,relative_person_id,relative_name)
+      SELECT b.archive_id,b.person_id,b.first_relation_id,b.second_relation_id,
+        b.via_person_id,b.relative_person_id,b.relative_name
+      FROM pg_temp.discovery_grandparent_consents_backup b
+      JOIN relations first_edge ON first_edge.archive_id=b.archive_id
+        AND first_edge.id=b.first_relation_id AND first_edge.type='parent'
+        AND first_edge.target=b.person_id AND first_edge.source=b.via_person_id
+      JOIN relations second_edge ON second_edge.archive_id=b.archive_id
+        AND second_edge.id=b.second_relation_id AND second_edge.type='parent'
+        AND second_edge.target=b.via_person_id
+        AND second_edge.source=b.relative_person_id
+      JOIN discovery_people focal ON focal.archive_id=b.archive_id
+        AND focal.person_id=b.person_id AND focal.name=b.focal_name
+      JOIN discovery_people via ON via.archive_id=b.archive_id
+        AND via.person_id=b.via_person_id AND via.name=b.via_name
+      JOIN discovery_people relative ON relative.archive_id=b.archive_id
+        AND relative.person_id=b.relative_person_id AND relative.name=b.relative_name$sql$;
   END IF;
 END $$;
 -- Backfill the small public link projection after both published endpoints
