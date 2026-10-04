@@ -215,15 +215,24 @@
   backdrop-filter: blur(18px);
 }
 .pdf-book-sidebar.is-open { display: flex; }
-.pdf-book-sidebar-tabs {
+.pdf-book-sidebar-header {
   display: flex;
   flex: 0 0 auto;
-  gap: 18px;
-  padding: 22px 18px 0;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 4px 4px 0 16px;
   border-bottom: 1px solid rgb(255 255 255 / 10%);
 }
+.pdf-book-sidebar-tabs {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 0 12px;
+}
 .pdf-book-sidebar-tabs button {
-  padding: 0 0 12px;
+  min-height: 44px;
+  padding: 10px 0;
   border: 0;
   border-bottom: 1px solid transparent;
   background: none;
@@ -235,6 +244,23 @@
 .pdf-book-sidebar-tabs button.is-active {
   border-color: #dce5d9;
   color: #f1f3ee;
+}
+.pdf-book-sidebar-close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #d7e2d5;
+  cursor: pointer;
+}
+.pdf-book-sidebar-close:hover {
+  background: rgb(255 255 255 / 8%);
+  color: #fff;
 }
 .pdf-book-outline, .pdf-book-comments {
   flex: 1;

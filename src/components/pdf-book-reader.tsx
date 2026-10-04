@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { MessageSquarePlus, Pencil } from "lucide-react";
+import { MessageSquarePlus, Pencil, X } from "lucide-react";
 import { ConfirmDeleteButton } from "./confirm-delete-button";
 import { DocumentCommentText } from "./document-comment-text";
 import type { ReaderCommand, ReaderEvent } from "./bookreader-frame-messages";
@@ -562,41 +562,56 @@ export function PdfBookReader({
               }
             }}
           >
-            <div className="pdf-book-sidebar-tabs">
+            <header className="pdf-book-sidebar-header">
+              <div className="pdf-book-sidebar-tabs">
+                <button
+                  type="button"
+                  className={sidebarTab === "comments" ? "is-active" : ""}
+                  onClick={() => setSidebarTab("comments")}
+                  aria-pressed={sidebarTab === "comments"}
+                >
+                  Комментарии{annotations.length ? " " + annotations.length : ""}
+                </button>
+                {outline.length > 0 && (
+                  <button
+                    type="button"
+                    className={sidebarTab === "outline" ? "is-active" : ""}
+                    onClick={() => setSidebarTab("outline")}
+                    aria-pressed={sidebarTab === "outline"}
+                  >
+                    Оглавление
+                  </button>
+                )}
+                {(entry.eventLinks.length > 0 ||
+                  entry.pages.length > 0 ||
+                  entry.sources.length > 0) && (
+                  <button
+                    type="button"
+                    className={sidebarTab === "links" ? "is-active" : ""}
+                    onClick={() => {
+                      setSidebarTab("links");
+                      setCommentsOpen(true);
+                    }}
+                    aria-pressed={sidebarTab === "links"}
+                  >
+                    Связи
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
-                className={sidebarTab === "comments" ? "is-active" : ""}
-                onClick={() => setSidebarTab("comments")}
-                aria-pressed={sidebarTab === "comments"}
+                className="pdf-book-sidebar-close"
+                aria-label="Закрыть панель комментариев"
+                title="Закрыть панель комментариев"
+                onClick={() => {
+                  setCommentsOpen(false);
+                  setHoveredAnnotation("");
+                  frame.current?.focus();
+                }}
               >
-                Комментарии{annotations.length ? " " + annotations.length : ""}
+                <X size={18} aria-hidden="true" />
               </button>
-              {outline.length > 0 && (
-                <button
-                  type="button"
-                  className={sidebarTab === "outline" ? "is-active" : ""}
-                  onClick={() => setSidebarTab("outline")}
-                  aria-pressed={sidebarTab === "outline"}
-                >
-                  Оглавление
-                </button>
-              )}
-              {(entry.eventLinks.length > 0 ||
-                entry.pages.length > 0 ||
-                entry.sources.length > 0) && (
-                <button
-                  type="button"
-                  className={sidebarTab === "links" ? "is-active" : ""}
-                  onClick={() => {
-                    setSidebarTab("links");
-                    setCommentsOpen(true);
-                  }}
-                  aria-pressed={sidebarTab === "links"}
-                >
-                  Связи
-                </button>
-              )}
-            </div>
+            </header>
             {sidebarTab === "links" ? (
               <div className="pdf-book-links">
                 {entry.eventLinks.length > 0 && (
