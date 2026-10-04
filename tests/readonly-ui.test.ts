@@ -90,20 +90,22 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       onSettings: noop,
       save: async () => family,
       canEdit: true,
-      aiAvailable: false,
     };
-    assert.doesNotMatch(
-      renderToStaticMarkup(
-        createElement(AdminPanel, { ...adminProps, platformAdmin: false }),
-      ),
-      /Резервные копии/,
+    for (const platformAdmin of [false, true]) {
+      assert.doesNotMatch(
+        renderToStaticMarkup(createElement(AdminPanel, { ...adminProps, platformAdmin })),
+        /Резервные копии|MCP-токены/,
+        "archive management keeps platform tools out even for a global administrator",
+      );
+    }
+    const { default: PlatformSettingsPage } = await server.ssrLoadModule(
+      "/src/components/platform-settings-page.tsx",
     );
-    assert.match(
-      renderToStaticMarkup(
-        createElement(AdminPanel, { ...adminProps, platformAdmin: true }),
-      ),
-      /Резервные копии/,
-    );
+    const platform = renderToStaticMarkup(createElement(PlatformSettingsPage, {
+      accountId: user.id, onOwnRoleChanged: noop, onOwnTierChanged: noop,
+    }));
+    assert.match(platform, /Резервные копии/);
+    assert.match(platform, /MCP-токены/);
     const navigationProps = {
       view: "tree",
       onView: noop,
