@@ -133,7 +133,7 @@ test("person cards have no context menu; tree sharing stays in the toolbar", asy
   await expect(page.getByRole("button", { name: "Поделиться" })).toBeVisible();
 });
 
-test("AI file action downloads the configured tree PDF", async ({ page }) => {
+test("AI file action preserves tree routes when exporting from chronology", async ({ page }, info) => {
   await page.route("**/api/ai/status", (route) =>
     route.fulfill({
       json: { enabled: true, canPropose: false, streaming: true },
@@ -166,6 +166,38 @@ test("AI file action downloads the configured tree PDF", async ({ page }) => {
     .click();
   const download = await pending;
   expect(download.suggestedFilename()).toMatch(/\.pdf$/);
+  const readExport = async (path: string) => {
+    const pdf = await getDocument({ data: new Uint8Array(await readFile(path)) }).promise;
+    try {
+      const first = await pdf.getPage(1);
+      const ops = await first.getOperatorList();
+      return {
+        paths: ops.fnArray.flatMap((op, index) => op === OPS.constructPath ? [ops.argsArray[index]] : []),
+        text: (await first.getTextContent()).items.flatMap((item) => "str" in item ? [item.str] : []).join(" "),
+      };
+    } finally {
+      await pdf.loadingTask.destroy();
+    }
+  };
+  const treePath = info.outputPath("tree-ai.pdf");
+  await download.saveAs(treePath);
+  const tree = await readExport(treePath);
+  expect(tree.paths.length).toBeGreaterThan(0);
+  expect(tree.text).toContain("Пётр");
+  await page.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
+  await page.getByRole("button", { name: "Хронология", exact: true })
+    .or(page.getByRole("switch", { name: "Древо / Хронология" })).click();
+  await expect(page.locator(".horizontal-timeline")).toBeVisible();
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  const pendingTimeline = page.waitForEvent("download");
+  await chat.getByRole("button", { name: "Скачать PDF видимого древа" }).click();
+  const timelinePath = info.outputPath("timeline-ai.pdf");
+  await (await pendingTimeline).saveAs(timelinePath);
+  const timeline = await readExport(timelinePath);
+  // Compare the actual vector paths, including relationship routes. Card text
+  // alone would still pass if a lazy export accidentally omitted every edge.
+  expect(timeline.paths).toEqual(tree.paths);
+  expect(timeline.text).toBe(tree.text);
 });
 
 test("download respects collapsed branches; cancel releases preparation without downloading", async ({
