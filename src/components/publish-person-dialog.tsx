@@ -17,8 +17,12 @@ type Status = {
     deathPlace?: string;
   };
 };
-type RelativeConsent = { relationId: string; personId: string; name: string;
-  kind: "parent" | "child" | "spouse"; enabled: boolean };
+type RelativeConsent = {
+  personId: string; name: string; enabled: boolean;
+} & ({ relationId: string; kind: "parent" | "child" | "spouse" } |
+  { relationPath: [string,string]; viaName: string; kind: "grandparent" });
+const relativeKey = (relative: RelativeConsent) => relative.kind === "grandparent"
+  ? `grandparent:${JSON.stringify(relative.relationPath)}` : `direct:${relative.relationId}`;
 
 export function PublishPersonDialog({
   person,
@@ -77,12 +81,14 @@ export function PublishPersonDialog({
     try {
       const response = await archiveFetch("/api/discovery/matches/relative-consents", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ personId: person.id, relationId: relative.relationId,
+        body: JSON.stringify({ personId: person.id,
+          ...(relative.kind === "grandparent"
+            ? { relationPath: relative.relationPath } : { relationId: relative.relationId }),
           enabled: !relative.enabled }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
-      setRelatives((current) => current.map((item) => item.relationId === relative.relationId
+      setRelatives((current) => current.map((item) => relativeKey(item) === relativeKey(relative)
         ? { ...item, enabled: !relative.enabled } : item));
     } catch (reason) {
       setError((reason as Error).message || "Не удалось изменить согласие");
@@ -150,12 +156,16 @@ export function PublishPersonDialog({
         <p>Фото и документы не раскрываются. Близкие родственные связи открываются отдельно.</p>
         {status?.published && status.archiveId && relatives.length > 0 && <fieldset disabled={busy}>
           <legend>Близкие родственники в поиске</legend>
-          <p>Каждую связь можно разрешить и отозвать отдельно. Обе карточки уже опубликованы.</p>
-          {relatives.map((relative) => <label key={relative.relationId} className="publication-field">
+          <p>Каждую связь можно разрешить и отозвать отдельно. Для деда или бабушки
+            опубликованы все три карточки; выбранный путь виден в подсказках только при
+            отдельном согласии владельцев обоих деревьев.</p>
+          {relatives.map((relative) => <label key={relativeKey(relative)} className="publication-field">
             <input type="checkbox" checked={relative.enabled}
               onChange={() => void updateRelative(relative)} />
-            <span>{relative.kind === "parent" ? "Родитель" : relative.kind === "child"
-              ? "Ребёнок" : "Супруг(а)"}: {relative.name}</span>
+            <span>{relative.kind === "grandparent"
+              ? `Дед/бабушка: ${relative.name} — через опубликованного родителя ${relative.viaName}`
+              : `${relative.kind === "parent" ? "Родитель" : relative.kind === "child"
+                ? "Ребёнок" : "Супруг(а)"}: ${relative.name}`}</span>
           </label>)}
         </fieldset>}
         {status && !status.publishable && (

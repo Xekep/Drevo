@@ -139,3 +139,18 @@ test("close-relative evidence needs separate consent on both published cards", (
     { name: "Сидоров Иван", birthYear: "1910" },parent,parent),null,
   "a shared relative without a close published year cannot suggest a changed surname");
 });
+
+test("a consented grandparent explains a changed surname only with a close published birth year", () => {
+  const source = { name: "Иванов Иван", birthYear: "1900" };
+  const candidate = { name: "Петров Иван", birthYear: "1901" };
+  const grandparent = [{ kind: "grandparent" as const, name: "Сидоров Пётр" }];
+  assert.equal(candidateEvidence(source,candidate),null);
+  assert.equal(candidateEvidence(source,candidate,grandparent),null);
+  const bilateral = candidateEvidence(source,candidate,grandparent,grandparent);
+  assert.ok(bilateral?.reasons.includes("Совпадает опубликованное имя деда или бабушки"));
+  assert.ok(bilateral?.conflicts.includes("Указанные фамилии различаются"));
+  assert.equal(candidateEvidence(source,{ ...candidate,birthYear: "1910" },
+    grandparent,grandparent),null);
+  assert.equal(candidateEvidence({ ...source,birthYear: undefined },candidate,
+    grandparent,grandparent),null);
+});

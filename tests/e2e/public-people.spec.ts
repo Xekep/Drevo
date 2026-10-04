@@ -241,6 +241,54 @@ test("owner opts one already published close relation into matching and can revo
   expect(enabled).toBe(false);
 });
 
+test("owner selects an exact published grandparent path separately from a direct relation", async ({ page, isMobile }) => {
+  test.skip(isMobile, "Desktop publication dialog covers two-edge consent");
+  const updates: { personId: string; relationPath?: string[]; relationId?: string;
+    enabled: boolean }[] = [];
+  const enabled = new Set<string>();
+  await page.route((url) => url.pathname === "/api/admin/published-people/e2e-memorial-person",
+    (route) => route.fulfill({ json: { archiveId: "tree-a", published: true, publishable: true,
+      fields: { birthSurname: false, birthYear: false, deathYear: false,
+        birthPlace: false, deathPlace: false }, person: { name: "Тестов Иван" } } }));
+  await page.route((url) => url.pathname === "/api/discovery/matches/relative-consents", (route) => {
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON() as typeof updates[number];
+      updates.push(body);
+      const key = JSON.stringify(body.relationPath || body.relationId);
+      if (body.enabled) enabled.add(key); else enabled.delete(key);
+      return route.fulfill({ json: { saved: true } });
+    }
+    return route.fulfill({ json: { relatives: [
+      { relationId: "direct-1", personId: "parent-1", name: "Опубликованный родитель",
+        kind: "parent", enabled: false },
+      ...["first-1","first-2"].map((first, index) => ({
+        relationPath: [first,"second-1"], personId: "grandparent-1", name: "Общий предок",
+        viaName: `Опубликованный родитель ${index + 1}`, kind: "grandparent",
+        enabled: enabled.has(JSON.stringify([first,"second-1"])),
+      })),
+    ] } });
+  });
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
+  const card = page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-person");
+  await card.hover();
+  await card.locator(".flow-privacy").click();
+  const dialog = page.getByRole("dialog", { name: "Публикация человека в поиске" });
+  const first = dialog.getByRole("checkbox", { name: /Дед\/бабушка: Общий предок — через опубликованного родителя Опубликованный родитель 1/ });
+  const second = dialog.getByRole("checkbox", { name: /Дед\/бабушка: Общий предок — через опубликованного родителя Опубликованный родитель 2/ });
+  await expect(first).not.toBeChecked();
+  await expect(second).not.toBeChecked();
+  await first.click();
+  await expect(first).toBeChecked();
+  await expect(second).not.toBeChecked();
+  await first.click();
+  expect(updates).toEqual([
+    { personId: "e2e-memorial-person", relationPath: ["first-1","second-1"], enabled: true },
+    { personId: "e2e-memorial-person", relationPath: ["first-1","second-1"], enabled: false },
+  ]);
+  await expect(dialog).not.toContainText("Непубликованный предок");
+});
+
 test("a SQLite publication does not request PostgreSQL-only relative consent", async ({ page, isMobile }) => {
   test.skip(isMobile, "Desktop publication dialog covers the SQLite boundary");
   let relativeRequests = 0;

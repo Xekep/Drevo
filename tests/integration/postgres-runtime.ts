@@ -1,4 +1,4 @@
-﻿import { readStorageLimits, writeStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
+import { readStorageLimits, writeStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
@@ -10846,6 +10846,231 @@ try {
   await otherPublication.publish("relative-undated-exact", "owner");
   await otherPublication.publish("place-match", "owner");
   await otherPublication.publish("region-only", "owner");
+  let sourceRevisionAfterGrandparentFixture = ownSignalWrite.revision;
+  await (async () => {
+    const beforeGrandSource = await app.archive.read();
+    const beforeGrandTarget = await otherApp.archive.read();
+    const grandSourceFamily = structuredClone(beforeGrandSource.family);
+    const grandTargetFamily = structuredClone(beforeGrandTarget.family);
+    const grandSource = grandSourceFamily.people.find((person) => person.id === "person-a")!;
+    const grandTemplate = structuredClone(grandSource);
+    const grandName = { surname: "Родников", name: "Пётр", birth: "1930",
+      deceased: true, parents: [], spouses: [], birthPlace: "", deathPlace: "" };
+    grandSource.parents = [...(grandSource.parents || []), "grand-own-parent-a", "grand-own-parent-b"];
+    grandSourceFamily.people.push({ ...structuredClone(grandTemplate), ...grandName,
+      id: "grand-own-person", column: 300 });
+    grandSourceFamily.people.push({ ...structuredClone(grandTemplate),
+      id: "grand-own-living", surname: "Скрытый", name: "Предок", deceased: false,
+      birth: "1930", death: undefined, parents: [], spouses: [], column: 304 });
+    for (const [index,id] of ["grand-own-parent-a","grand-own-parent-b"].entries())
+      grandSourceFamily.people.push({ ...structuredClone(grandTemplate),
+        id, surname: "Родников", name: `Родитель ${index + 1}`, birth: "1960",
+        deceased: true, parents: index === 0 ? ["grand-own-person","grand-own-living"]
+          : ["grand-own-person"], spouses: [], column: 301 + index });
+    grandTargetFamily.people.push({ ...structuredClone(otherPerson), id: "grand-target",
+      surname: "Петров", name: "Иван", birth: "1991", deceased: true,
+      birthPlace: "", deathPlace: "", parents: ["grand-other-parent-a","grand-other-parent-b"],
+      spouses: [], column: 300 });
+    grandTargetFamily.people.push({ ...structuredClone(otherPerson), ...grandName,
+      id: "grand-other-person", column: 301 });
+    for (const [index,id] of ["grand-other-unique-a","grand-other-unique-b"].entries())
+      grandTargetFamily.people.push({ ...structuredClone(otherPerson),
+        id, surname: "Другой", name: `Предок ${index + 1}`, birth: "1930",
+        deceased: true, parents: [], spouses: [], column: 306 + index });
+    for (const [index,id] of ["grand-other-parent-a","grand-other-parent-b"].entries())
+      grandTargetFamily.people.push({ ...structuredClone(otherPerson),
+        id, surname: "Родников", name: `Родитель ${index + 1}`, birth: "1960",
+        deceased: true, parents: ["grand-other-person",`grand-other-unique-${index === 0 ? "a" : "b"}`],
+        spouses: [], column: 302 + index });
+    await app.archive.write(grandSourceFamily,beforeGrandSource.revision);
+    await otherApp.archive.write(grandTargetFamily,beforeGrandTarget.revision);
+    const grandOwnPublication = publishedPeopleStore(app.archive.db);
+    for (const id of ["grand-own-person","grand-own-parent-a"])
+      await grandOwnPublication.publish(id,"owner");
+    const hiddenPathPreview = await fetch(securedBase + relativePath + "?personId=person-a",
+      { headers: ownerHeaders }).then((response) => response.json());
+    assert.equal(hiddenPathPreview.relatives.filter((item: { kind: string }) =>
+      item.kind === "grandparent").length,1,
+    "an unpublished intermediary and a living ancestor are absent from the preview");
+    assert.doesNotMatch(JSON.stringify(hiddenPathPreview),/grand-own-living|Скрытый Предок/);
+    await grandOwnPublication.publish("grand-own-parent-b","owner");
+    for (const id of ["grand-target","grand-other-person","grand-other-unique-a",
+      "grand-other-unique-b","grand-other-parent-a","grand-other-parent-b"])
+      await otherPublication.publish(id,"owner");
+    const grandSourcePreview = await fetch(securedBase + relativePath + "?personId=person-a",
+      { headers: ownerHeaders }).then((response) => response.json());
+    const grandTargetPreview = await fetch(otherBase + relativePath + "?personId=grand-target",
+      { headers: recipientHeaders }).then((response) => response.json());
+    const grandPaths = (preview: { relatives: { kind: string; personId: string;
+      relationPath?: [string,string]; enabled: boolean }[] }, relativeId: string) =>
+      preview.relatives.filter((item) => item.kind === "grandparent" &&
+        item.personId === relativeId);
+    const ownGrandPaths = grandPaths(grandSourcePreview,"grand-own-person");
+    const otherGrandPaths = grandPaths(grandTargetPreview,"grand-other-person");
+    assert.equal(ownGrandPaths.length,2);
+    assert.equal(otherGrandPaths.length,2);
+    assert.equal(grandTargetPreview.relatives.filter((item: { kind: string }) =>
+      item.kind === "grandparent").length,4,
+    "two published parents expose all four separately selectable grandparent slots");
+    assert.ok([...ownGrandPaths,...otherGrandPaths].every((path) => path.enabled === false),
+      "each published two-edge path starts without consent");
+    const setGrandConsent = (base: string, requestHeaders: Record<string,string>,
+      personId: string, relationPath: [string,string], enabled: boolean) => fetch(base + relativePath, {
+        method: "POST", headers: { ...requestHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ personId,relationPath,enabled }),
+      });
+    const ownGrandPath = ownGrandPaths.map((path) => path.relationPath!);
+    const otherGrandPath = otherGrandPaths.map((path) => path.relationPath!);
+    assert.equal((await fetch(securedBase + relativePath + "?personId=person-a",
+      { headers })).status,403,"a non-owner cannot inspect an unpublished relation path");
+    assert.equal((await fetch(securedBase + relativePath, {
+      method: "POST", headers: { ...ownerHeaders,"Content-Type": "application/json" },
+      body: JSON.stringify({ personId: "person-a", relationId: ownGrandPath[0][0],
+        relationPath: ownGrandPath[0], enabled: true }),
+    })).status,400,"direct and two-edge consent identities cannot be mixed");
+    let grandCall = 0;
+    const grandHeaders = () => ({ ...ownerHeaders,
+      "X-Real-IP": `198.51.100.${130 + Math.floor(grandCall++ / 10)}` });
+    const grandSuggestion = async () => {
+      const response = await fetch(securedBase + candidatePath,{ headers: grandHeaders() });
+      assert.equal(response.status,200);
+      return (await response.json()).candidates.find((item: { id: string }) =>
+        item.id === "grand-target") as { reasons: string[] } | undefined;
+    };
+    assert.equal(await grandSuggestion(),undefined,
+      "three public cards on either side do not imply relationship consent");
+    assert.equal((await setGrandConsent(securedBase,ownerHeaders,"person-a",ownGrandPath[0],true)).status,200);
+    assert.equal(await grandSuggestion(),undefined,"one-sided grandparent consent is not evidence");
+    assert.equal((await setGrandConsent(otherBase,recipientHeaders,"grand-target",otherGrandPath[0],true)).status,200);
+    assert.ok((await grandSuggestion())?.reasons.some((reason) => reason.includes("деда или бабушки")),
+      "bilateral published grandparent and close birth years find a changed surname");
+    assert.equal((await setGrandConsent(securedBase,ownerHeaders,"person-a",ownGrandPath[1],true)).status,200);
+    assert.equal((await setGrandConsent(otherBase,recipientHeaders,"grand-target",otherGrandPath[1],true)).status,200);
+    assert.equal((await setGrandConsent(securedBase,ownerHeaders,"person-a",ownGrandPath[0],false)).status,200);
+    assert.ok(await grandSuggestion(),"revoking one of two consented paths preserves the other");
+    assert.equal((await setGrandConsent(otherBase,recipientHeaders,"grand-target",otherGrandPath[0],false)).status,200);
+    assert.ok(await grandSuggestion(),"two paths to the same ancestor deduplicate without losing evidence");
+    assert.equal((await setGrandConsent(otherBase,recipientHeaders,"grand-target",otherGrandPath[1],false)).status,200);
+    assert.equal(await grandSuggestion(),undefined,"removing the last bilateral path removes evidence");
+    const enableLastPath = async () => {
+      assert.equal((await setGrandConsent(securedBase,ownerHeaders,
+        "person-a",ownGrandPath[1],true)).status,200);
+      assert.equal((await setGrandConsent(otherBase,recipientHeaders,
+        "grand-target",otherGrandPath[1],true)).status,200);
+    };
+    await enableLastPath();
+    const grandNameKey = String((await matchDb.prepare("", `SELECT relative_name_key
+      FROM discovery_grandparent_consents WHERE archive_id=? AND person_id=?
+        AND first_relation_id=? AND second_relation_id=?`)
+      .get("runtime-test","person-a",...ownGrandPath[1]))?.relative_name_key);
+    await client.query("BEGIN");
+    try {
+      await client.query("SET LOCAL enable_seqscan=off");
+      const plan = await client.query(`EXPLAIN (FORMAT JSON)
+        SELECT c.archive_id,c.person_id FROM discovery_candidate_relative_consents c
+        JOIN discovery_people d ON d.archive_id=c.archive_id AND d.person_id=c.person_id
+        WHERE c.kind='grandparent' AND c.relative_name_key=$1
+          AND d.given_part IS NOT NULL LIMIT 24`,[grandNameKey]);
+      assert.match(JSON.stringify(plan.rows),/discovery_grandparent_consents_lookup/,
+        "the consented two-edge clue uses its indexed name lookup");
+    } finally { await client.query("ROLLBACK"); }
+    await runDiscoveryBackfill();
+    assert.ok(await grandSuggestion(),
+      "an administrative rebuild preserves only the already explicit two-edge consent");
+    await client.query("BEGIN");
+    try {
+      await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
+      assert.equal((await client.query(`SELECT 1 FROM relations
+        WHERE archive_id='other-archive' AND id=$1 FOR UPDATE`,
+      [otherGrandPath[1][0]])).rowCount,1);
+      const busyPath = await fetch(securedBase + candidatePath,{ headers: grandHeaders() });
+      assert.equal(busyPath.status,409,"contended cross-archive path fails closed before delivery");
+      assert.equal(JSON.stringify(await busyPath.json()).includes("grand-target"),false);
+    } finally { await client.query("ROLLBACK"); }
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM relations
+        WHERE archive_id='other-archive'`).get())?.count,0,
+      "a failed target-path lock never leaves another archive visible to the source tenant");
+    },true);
+    assert.equal((await setGrandConsent(securedBase,ownerHeaders,"person-a",
+      otherGrandPath[1],true)).status,404,
+    "the source owner cannot opt into a relation ID from the target archive");
+    assert.ok(await grandSuggestion(),"a new request after NOWAIT rollback uses source scope");
+    const sourceFields = await grandOwnPublication.getFields("person-a");
+    assert.ok(sourceFields);
+    for (const { store,id } of [
+      { store: grandOwnPublication,id: "person-a" },
+      { store: grandOwnPublication,id: "grand-own-parent-b" },
+      { store: grandOwnPublication,id: "grand-own-person" },
+      { store: otherPublication,id: "grand-target" },
+      { store: otherPublication,id: "grand-other-parent-b" },
+      { store: otherPublication,id: "grand-other-person" },
+    ]) {
+      await store.unpublish(id);
+      if (id === "person-a")
+        assert.equal((await fetch(securedBase + candidatePath,
+          { headers: grandHeaders() })).status,404);
+      else assert.equal(await grandSuggestion(),undefined);
+      await store.publish(id,"owner",id === "person-a" ? sourceFields : undefined);
+      assert.equal(await grandSuggestion(),undefined,
+        "republishing any one of the three cards on either side does not restore consent");
+      await enableLastPath();
+      assert.ok(await grandSuggestion(),"fresh bilateral consent restores only the selected clue");
+    }
+    const sourceEdgeBefore = await app.archive.read();
+    const sourceWithoutSecondEdge = structuredClone(sourceEdgeBefore.family);
+    sourceWithoutSecondEdge.people.find((person) => person.id === "grand-own-parent-b")!
+      .parents = [];
+    const sourceEdgeWrite = await app.archive.write(sourceWithoutSecondEdge,
+      sourceEdgeBefore.revision);
+    assert.equal(await grandSuggestion(),undefined,
+      "removing the parent-to-grandparent edge revokes that exact path");
+    const sourceEdgeRestored = await app.archive.write(sourceEdgeBefore.family,
+      sourceEdgeWrite.revision);
+    assert.equal(await grandSuggestion(),undefined,"restoring an edge does not restore consent");
+    await enableLastPath();
+    const targetEdgeBefore = await otherApp.archive.read();
+    const targetWithoutFirstEdge = structuredClone(targetEdgeBefore.family);
+    targetWithoutFirstEdge.people.find((person) => person.id === "grand-target")!
+      .parents = ["grand-other-parent-a"];
+    const targetEdgeWrite = await otherApp.archive.write(targetWithoutFirstEdge,
+      targetEdgeBefore.revision);
+    assert.equal(await grandSuggestion(),undefined,
+      "removing the focal-to-parent edge revokes that exact path");
+    const targetEdgeRestored = await otherApp.archive.write(targetEdgeBefore.family,
+      targetEdgeWrite.revision);
+    assert.equal(await grandSuggestion(),undefined,"restoring a second edge does not restore consent");
+    await enableLastPath();
+    let latestSourceRevision = sourceEdgeRestored.revision;
+    let latestTargetRevision = targetEdgeRestored.revision;
+    for (const { archive,id } of [
+      { archive: app.archive,id: "person-a" },
+      { archive: app.archive,id: "grand-own-parent-b" },
+      { archive: otherApp.archive,id: "grand-other-person" },
+    ]) {
+      const beforeRename = await archive.read();
+      const renamed = structuredClone(beforeRename.family);
+      renamed.people.find((person) => person.id === id)!.name = "Новое имя";
+      const renameWrite = await archive.write(renamed,beforeRename.revision);
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_grandparent_consents WHERE archive_id=? AND person_id=?`)
+        .get(id === "grand-other-person" ? "other-archive" : "runtime-test",
+          id === "grand-other-person" ? "grand-target" : "person-a"))?.count,0,
+      "editing any published name in the selected path deletes its old opt-in");
+      const restored = await archive.write(beforeRename.family,renameWrite.revision);
+      if (archive === app.archive) latestSourceRevision = restored.revision;
+      else latestTargetRevision = restored.revision;
+      assert.equal(await grandSuggestion(),undefined,
+        "returning to the old spelling still requires explicit consent");
+      await enableLastPath();
+    }
+    assert.ok(await grandSuggestion());
+    sourceRevisionAfterGrandparentFixture =
+      (await app.archive.write(beforeGrandSource.family,latestSourceRevision)).revision;
+    await otherApp.archive.write(beforeGrandTarget.family,latestTargetRevision);
+    console.log("runtime_discovery_grandparent_consent_paths_ok");
+  })();
   // Earlier scenarios deliberately spend the normal per-client search budget.
   const signalHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.88" };
   const signalIds = async () => {
@@ -11046,6 +11271,7 @@ try {
   const afterRelativePages = await otherApp.archive.write(beforeRelativePages.family,
     relativePageWrite.revision);
   console.log("runtime_discovery_candidate_relative_keyset_ok");
+
   assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
     "relative-only",changedSurnameRelationId,false)).status, 200);
   assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
@@ -11277,7 +11503,7 @@ try {
   "a fresh indexed search cannot return a withdrawn publication");
   assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
     "withdrawing a published parent never reveals a relationship hint");
-  await app.archive.write(ownBeforeSignals.family, ownSignalWrite.revision);
+  await app.archive.write(ownBeforeSignals.family, sourceRevisionAfterGrandparentFixture);
   await otherApp.archive.write(otherBeforeSignals.family, afterRelativePages.revision);
   await otherPublication.unpublish("person-a");
   await otherPublication.unpublish("person-b");

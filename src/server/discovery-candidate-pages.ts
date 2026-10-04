@@ -82,9 +82,12 @@ export async function discoveryCandidatePage(db: StoreDatabase, input: {
     { column: "d.birth_surname_normalized", value },
   ]);
   const birth = String(sourceRow.birth_year || "");
-  const relativeRows = await db.prepare("", `SELECT relation_id,kind,relative_name_key,
-    xmin::text AS row_version FROM discovery_relative_consents
-    WHERE archive_id=? AND person_id=? ORDER BY relation_id LIMIT ${candidateRelativeRowLimit + 1}`)
+  const relativeRows = await db.prepare("", `SELECT first_relation_id,second_relation_id,
+    kind,relative_name_key,row_version FROM discovery_candidate_relative_consents
+    WHERE archive_id=? AND person_id=?
+    ORDER BY kind COLLATE "C",first_relation_id COLLATE "C",
+      second_relation_id COLLATE "C" NULLS FIRST
+    LIMIT ${candidateRelativeRowLimit + 1}`)
     .all(archiveId,sourceId);
   const clues = [...new Map(relativeRows.map((row) =>
     [`${row.kind}:${row.relative_name_key}`, { kind: String(row.kind),
@@ -114,7 +117,7 @@ export async function discoveryCandidatePage(db: StoreDatabase, input: {
   const filterArgs = [archiveId,archiveId,archiveId,sourceId,archiveId,sourceId,
     archiveId,sourceId];
   const clueJson = JSON.stringify(clues);
-  const relativeExists = `EXISTS (SELECT 1 FROM discovery_relative_consents c
+  const relativeExists = `EXISTS (SELECT 1 FROM discovery_candidate_relative_consents c
     JOIN jsonb_to_recordset(?::jsonb) AS s(kind text,key text)
       ON s.kind=c.kind AND s.key=c.relative_name_key
     WHERE c.archive_id=d.archive_id AND c.person_id=d.person_id)`;
@@ -167,13 +170,15 @@ export async function discoveryCandidatePage(db: StoreDatabase, input: {
     ), per_clue AS (
       SELECT found.* FROM clues s CROSS JOIN LATERAL (
         SELECT DISTINCT ON (c.archive_id COLLATE "C",c.person_id COLLATE "C") ${fields}
-        FROM discovery_relative_consents c JOIN discovery_people d
+        FROM discovery_candidate_relative_consents c JOIN discovery_people d
           ON d.archive_id=c.archive_id AND d.person_id=c.person_id
         WHERE c.kind=s.kind AND c.relative_name_key=s.key
           AND (c.archive_id COLLATE "C",c.person_id COLLATE "C") > (?,?)
           AND ${givenKey("d") }=? AND d.birth_year BETWEEN ? AND ?
           AND ${filter}
-        ORDER BY c.archive_id COLLATE "C",c.person_id COLLATE "C",c.relation_id
+        ORDER BY c.archive_id COLLATE "C",c.person_id COLLATE "C",
+          c.kind COLLATE "C",c.first_relation_id COLLATE "C",
+          c.second_relation_id COLLATE "C" NULLS FIRST
         LIMIT ${limit}
       ) found
     ) SELECT DISTINCT ON (archive_id COLLATE "C",person_id COLLATE "C") * FROM per_clue
@@ -234,20 +239,22 @@ export async function discoveryCandidatePage(db: StoreDatabase, input: {
     const people = [sourceRow,...found].map((row) => ({
       archive_id: String(row.archive_id),person_id: String(row.person_id),
     }));
-    const signals = await db.prepare("", `SELECT c.archive_id,c.person_id,c.relation_id,
-      c.kind,c.relative_name,c.xmin::text AS row_version
-      FROM discovery_relative_consents c JOIN jsonb_to_recordset(?::jsonb)
+    const signals = await db.prepare("", `SELECT c.archive_id,c.person_id,
+      c.first_relation_id,c.second_relation_id,c.via_person_id,c.relative_person_id,
+      c.kind,c.relative_name,c.row_version
+      FROM discovery_candidate_relative_consents c JOIN jsonb_to_recordset(?::jsonb)
         AS p(archive_id text,person_id text)
         ON p.archive_id=c.archive_id AND p.person_id=c.person_id
       ORDER BY c.archive_id COLLATE "C",c.person_id COLLATE "C",
-        c.relation_id COLLATE "C"`).all(JSON.stringify(people));
+        c.kind COLLATE "C",c.first_relation_id COLLATE "C",
+        c.second_relation_id COLLATE "C" NULLS FIRST`).all(JSON.stringify(people));
     return { people,signals };
   };
   let candidateRelatives: Awaited<ReturnType<typeof relativesFor>> | null = null;
   const relativesOf = (row: Row) => (candidateRelatives?.signals || [])
     .filter((signal) => signal.archive_id === row.archive_id &&
       signal.person_id === row.person_id)
-    .map((signal) => ({ kind: String(signal.kind) as "parent" | "child" | "spouse",
+    .map((signal) => ({ kind: String(signal.kind) as "parent" | "child" | "spouse" | "grandparent",
       name: String(signal.relative_name) }));
   const evidence = new Map<string, ReturnType<typeof candidateEvidence>>();
   let tier: Tier = input.cursor?.tier ?? 0;
