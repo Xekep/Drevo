@@ -7366,7 +7366,9 @@ try {
   assert.ok(localityPage.candidates.some((item: { id: string }) => item.id === candidateTargetId),
     "a place token outside the selected settlement must not hide a valid candidate page");
   const cappedFamily = structuredClone(localityPageFamily);
-  const additionalLocalityIds = Array.from({ length: 72 }, (_, index) =>
+  // The exact tier no longer consumes the true candidate from the fuzzy
+  // 96-row budget, so retain a 97th false positive to exercise its cursor.
+  const additionalLocalityIds = Array.from({ length: 73 }, (_, index) =>
     `wrong-locality-${String(index + 24).padStart(2, "0")}`);
   cappedFamily.people.push(...additionalLocalityIds.map((id) => ({
     ...structuredClone(cappedFamily.people.find((person) => person.id === wrongLocalityIds[0])!), id,
