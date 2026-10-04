@@ -817,6 +817,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     const deathSources = eventClaimSources(death, parsedDeathDate, parsedDeathPlace, "DEATH");
     const eventNodes = n.children.filter((c) => Object.hasOwn(eventTags, c.tag));
     const events = eventNodes.map((c) => event(c, c.tag === "ADOP" ? "Усыновление" : undefined));
+    const generatedEventNodes = new Set(eventNodes);
     const occupationNode = child(n, "OCCU");
     const occupation = occupationNode?.value || "";
     const occupationEvent = occupationNode && events[eventNodes.indexOf(occupationNode)];
@@ -845,6 +846,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         if (node === birth) parsed.sources = birthSources.general;
         if (node === death) parsed.sources = deathSources.general;
         events.push(parsed);
+        generatedEventNodes.add(node);
       }
     const p: Person = {
       id: ids.get(n.xref)!,
@@ -905,6 +907,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       warnings.add("Дополнительные имена сохранены в биографии.");
     }
     const extension = drevoExtra;
+    let metadataReplacedEvents = false;
     if (extension) {
       try {
         const extra = JSON.parse(extension);
@@ -950,6 +953,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
               value(personSourceNodes[index], "_DREVO_ALTERNATIVE") === alternative.id),
             `альтернативного значения ${alternative.id}`);
         if (Object.hasOwn(extra, "events")) {
+          metadataReplacedEvents = true;
           const eventNodes = n.children.filter((node) =>
             (Object.hasOwn(eventTags, node.tag) || ["BIRT", "DEAT"].includes(node.tag)) &&
             value(node, "_DREVO_EVENT_ID"));
@@ -995,6 +999,10 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     }
     for (const node of [birth, death, ...eventNodes]) {
       if (!node) continue;
+      // A direct parse already attached this exact PLAC to its generated
+      // event, including qualified DATE and DATE.PHRASE. This pass is only
+      // needed when metadata replaces events or BIRT/DEAT had no event.
+      if (!metadataReplacedEvents && generatedEventNodes.has(node)) continue;
       const rawDate = value(node, "DATE");
       const date = gedcomDate(rawDate);
       const datePhrase = child(node, "DATE") ? value(child(node, "DATE")!, "PHRASE") : "";

@@ -82,6 +82,48 @@ test("an empty local FORM does not silently apply the HEAD default", () => {
   assert.ok(imported.warnings.some((warning) => /Пустой локальный PLAC\.FORM/.test(warning)));
 });
 
+test("a first import records qualified dates and DATE.PHRASE place FORM only once", () => {
+  for (const [tag, dateLines] of [
+    ["BIRT", ["2 DATE ABT 1900"]],
+    ["DEAT", ["2 DATE FROM 1900 TO 1910"]],
+    ["RESI", ["2 DATE 1900", "3 PHRASE Old calendar 1900"]],
+    ["OCCU", ["2 DATE ABT 1900"]],
+  ] as const) {
+    const input = ["0 HEAD", "1 GEDC", "2 VERS 7.0", "0 @I1@ INDI",
+      "1 NAME Alex /Example/", `1 ${tag} Y`, ...dateLines,
+      `2 PLAC ${place}`, `3 FORM ${localForm}`, "0 TRLR"].join("\n");
+    const imported = importGedcom(input, `qualified-form-${tag}`);
+    const person = imported.family.people[0];
+    const found = person.events?.find((event) => event.gedcomTag === tag);
+    assert.ok(found, tag);
+    assert.match(found.description || "", new RegExp(localForm));
+    assert.equal(((person.biography || "") + "\n" + (found.description || ""))
+      .split(localForm).length - 1, 1, tag);
+    assert.ok(imported.warnings.some((warning) => /PLAC\.FORM/.test(warning)), tag);
+  }
+});
+
+test("birth place with FORM but no event detail stays with the person once", () => {
+  const input = ["0 HEAD", "1 GEDC", "2 VERS 7.0", "0 @I1@ INDI",
+    "1 NAME Alex /Example/", "1 BIRT Y", `2 PLAC ${place}`,
+    `3 FORM ${localForm}`, "0 TRLR"].join("\n");
+  const person = importGedcom(input, "birth-place-only-form").family.people[0];
+  assert.equal(person.birthPlace, place);
+  assert.equal(person.events, undefined);
+  assert.equal((person.biography || "").split(localForm).length - 1, 1);
+});
+
+test("metadata that does not replace events does not duplicate an already parsed FORM", () => {
+  const input = ["0 HEAD", "1 GEDC", "2 VERS 7.0", "0 @I1@ INDI",
+    "1 NAME Alex /Example/", "1 BIRT Y", "2 DATE ABT 1900",
+    `2 PLAC ${place}`, `3 FORM ${localForm}`,
+    '1 _DREVO {"biography":"Existing note"}', "0 TRLR"].join("\n");
+  const person = importGedcom(input, "metadata-without-events").family.people[0];
+  assert.equal(person.biography, "Existing note");
+  const birth = person.events?.find((event) => event.gedcomTag === "BIRT");
+  assert.equal((birth?.description || "").split(localForm).length - 1, 1);
+});
+
 test("Drevo event metadata keeps a newly added place FORM once", () => {
   const initial = importGedcom(sample("7.0"), "metadata-form");
   const exported = exportGedcom(initial.family, { version: "7.0" });
