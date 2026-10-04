@@ -1,4 +1,5 @@
 import type { ArchiveUser } from "../domain/access.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import { documentSearchText } from "../shared/document-details.ts";
 import { accountCapacity } from "./account-capacity.ts";
 import { auditStore } from "./audit.ts";
@@ -59,7 +60,7 @@ export async function applyPortablePackage(
         await transaction.prepare("", "SELECT 1 FROM archive_memberships WHERE user_id=? FOR SHARE")
           .get(actor.id);
       await assertCurrentArchiveActor(transaction, actor);
-      if (actor.role !== "admin")
+      if (!isArchiveOwner(actor))
         throw new ForbiddenError("Недостаточно прав для импорта");
       if (transaction.kind === "postgres") {
         const owner = await transaction

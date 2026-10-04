@@ -2,7 +2,6 @@ import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
-  Bot,
   BookOpen,
   DatabaseBackup,
   Download,
@@ -18,6 +17,7 @@ import {
 } from "lucide-react";
 import {
   ROLE_NAMES,
+  isArchiveOwner,
   type ArchiveUser,
   type Role,
   type TreeAccess,
@@ -30,10 +30,6 @@ import { AuditLog } from "./audit-log";
 import { PersonSearch } from "./person-search";
 import { GedcomTransfer } from "./gedcom-transfer";
 import { McpTokenAdmin } from "./mcp-token-admin";
-import { AiSettingsAdmin } from "./ai-settings-admin";
-import { StorageLimitsAdmin } from "./storage-limits-admin";
-import { VkAuthAdmin } from "./vk-auth-admin";
-import { ResearchResourcesAdmin } from "./research-resources-admin";
 import { SourceCatalogAdmin } from "./source-catalog-admin";
 import { PublicationAdmin } from "./publication-admin";
 import type { PublicationOwnership } from "../hooks/useArchivePublicationOwner";
@@ -60,7 +56,6 @@ const ADMIN_SECTIONS = [
     items: [
       { id: "users", label: "Участники", icon: Users },
       { id: "invitations", label: "Приглашения", icon: Link2 },
-      { id: "vk", label: "Вход через VK", icon: ShieldCheck },
       { id: "shares", label: "Общий доступ", icon: Link2 },
       { id: "publications", label: "Можно найти", icon: ScanSearch },
       { id: "matches", label: "Связи деревьев", icon: GitCompareArrows },
@@ -75,7 +70,6 @@ const ADMIN_SECTIONS = [
   {
     label: "ИИ и поиск",
     items: [
-      { id: "resources", label: "Ресурсы поиска", icon: BookOpen },
       { id: "mcp", label: "MCP-токены", icon: KeyRound },
     ],
   },
@@ -83,30 +77,15 @@ const ADMIN_SECTIONS = [
     label: "Данные",
     items: [
       { id: "data", label: "Экспорт и импорт", icon: Download },
-      { id: "storage", label: "Хранилище", icon: DatabaseBackup },
+      { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
     ],
   },
   {
     label: "История",
     items: [{ id: "audit", label: "Журнал правок", icon: History }],
   },
-  {
-    label: "Платформа",
-    items: [
-      { id: "ai", label: "Yandex AI", icon: Bot },
-      { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
-    ],
-  },
 ] as const;
 const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
-  storage: {
-    title: "Хранилище",
-    description: "Лимиты фотографий и документов по ролям участников.",
-  },
-  vk: {
-    title: "Вход через VK",
-    description: "Подключение VK ID для входа в архив.",
-  },
   users: {
     title: "Участники",
     description: "Аккаунты, роли и доступ к семейному архиву.",
@@ -122,15 +101,6 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
   backups: {
     title: "Резервные копии",
     description: "Расписание, хранилище и восстановление семейного архива.",
-  },
-  ai: {
-    title: "ИИ и поиск",
-    description: "Доступ по ролям, возможности и подключение провайдера.",
-  },
-  resources: {
-    title: "Ресурсы поиска",
-    description:
-      "Категории и сайты, которые ИИ может предложить для дальнейшего исследования.",
   },
   sources: {
     title: "Источники",
@@ -231,13 +201,15 @@ function AdminUserRow({
         <span>Роль</span>
         <select
           aria-label={`Роль: ${user.name}`}
-          value={user.role}
-          disabled={busy}
+          value={user.treeRole || user.role}
+          disabled={busy || user.archiveOwner === true}
           onChange={(event) =>
             void onPatch({ role: event.target.value as Role })
           }
         >
-          {Object.entries(ROLE_NAMES).map(([role, label]) => (
+          {Object.entries(ROLE_NAMES)
+            .filter(([role]) => !user.treeRole || role === "reader" || role === "relative")
+            .map(([role, label]) => (
             <option key={role} value={role}>
               {label}
             </option>
@@ -276,7 +248,7 @@ function AdminUserRow({
         <select
           aria-label={`Доступ к древу: ${user.name}`}
           value={user.personId ? user.treeAccess || "all" : "all"}
-          disabled={busy || user.role === "admin" || !user.personId}
+          disabled={busy || isArchiveOwner(user) || !user.personId}
           onChange={(event) =>
             void onPatch({
               personId: user.personId || null,
@@ -326,6 +298,7 @@ function AdminUserRow({
 export function AdminPanel({
   family,
   currentUserId,
+  archiveOwner = true,
   platformAdmin,
   aiAvailable,
   publicationOwnership,
@@ -337,6 +310,7 @@ export function AdminPanel({
 }: {
   family: Family;
   currentUserId: string;
+  archiveOwner?: boolean;
   platformAdmin: boolean;
   aiAvailable: boolean;
   publicationOwnership: PublicationOwnership;
@@ -348,7 +322,8 @@ export function AdminPanel({
 }) {
   const [section, setSection] = useState(() => {
     if (typeof window === "undefined") return "users";
-    return (archiveContextAt(window.location.pathname)?.innerPath || window.location.pathname) === adminMatchesPath ||
+    return [adminMatchesPath, "/admin/matches"].includes(
+      archiveContextAt(window.location.pathname)?.innerPath || window.location.pathname) ||
       adminMatchTargetAt(window.location.pathname) ||
       adminMatchSourceAt(window.location.pathname)
       ? "matches" : new URLSearchParams(window.location.search).get("section") || "users";
@@ -368,11 +343,12 @@ export function AdminPanel({
   const visibleGroups = ADMIN_SECTIONS.map((group) => ({
     ...group,
     items: group.items.filter(({ id }) =>
-      id === "backups" || id === "ai" ? platformAdmin :
-      id === "resources" || id === "mcp" ? aiAvailable : true),
+      id === "backups" ? platformAdmin && archiveOwner :
+      id === "mcp" ? platformAdmin && archiveOwner && aiAvailable :
+      archiveOwner),
   })).filter((group) => group.items.length > 0);
   const visibleSection = visibleGroups.some((group) => group.items.some((item) => item.id === section))
-    ? section : "users";
+    ? section : visibleGroups[0]?.items[0]?.id || "users";
   const navigation = useRef<HTMLElement>(null);
   useEffect(() => {
     const nav = navigation.current;
@@ -395,16 +371,17 @@ export function AdminPanel({
     if (!visibleGroups.some((group) => group.items.some((item) => item.id === next))) return;
     setSection(next);
     setNotice("");
-    const path = scopedArchivePath(next === "matches" ? adminMatchesPath : archivePaths.admin);
+    const path = scopedArchivePath(next === "matches" ? adminMatchesPath : archivePaths.manage);
     const url = next === "users" || next === "matches" ? path : `${path}?section=${next}`;
     if (window.location.pathname + window.location.search !== url)
       window.history.replaceState(window.history.state, "", url);
   };
   useEffect(() => {
     if (visibleSection !== section)
-      window.history.replaceState(window.history.state, "", scopedArchivePath(archivePaths.admin));
+      window.history.replaceState(window.history.state, "", scopedArchivePath(archivePaths.manage));
   }, [section, visibleSection]);
   useEffect(() => {
+    if (!archiveOwner) return;
     const controller = new AbortController();
     void archiveFetch("/api/settings", { signal: controller.signal })
       .then(async (response) => {
@@ -415,8 +392,9 @@ export function AdminPanel({
         if (!controller.signal.aborted) setError(e.message);
       });
     return () => controller.abort();
-  }, []);
+  }, [archiveOwner]);
   useEffect(() => {
+    if (!archiveOwner) return;
     const controller = new AbortController();
     const query = new URLSearchParams({ limit: String(USERS_PAGE_SIZE) });
     if (usersCursor) query.set("cursor", usersCursor);
@@ -441,7 +419,7 @@ export function AdminPanel({
         if (!controller.signal.aborted) setUsersLoading(false);
       });
     return () => controller.abort();
-  }, [usersCursor, usersReload]);
+  }, [archiveOwner, usersCursor, usersReload]);
   async function change(url: string, method: string, body?: unknown) {
     setBusy(true);
     setError("");
@@ -512,19 +490,19 @@ export function AdminPanel({
       </aside>
       <div className="admin-content">
         <header className="admin-page-header">
-          <span className="section-label">{visibleSection === "backups" || visibleSection === "ai" ? "УПРАВЛЕНИЕ ПЛАТФОРМОЙ" : "УПРАВЛЕНИЕ ДЕРЕВОМ"}</span>
+          <span className="section-label">УПРАВЛЕНИЕ ДЕРЕВОМ</span>
           <h1>{ADMIN_INTRO[visibleSection].title}</h1>
           {(publicationOwnership === "owner" ||
             (visibleSection !== "publications" && visibleSection !== "matches")) &&
             <p className="admin-subtitle">{ADMIN_INTRO[visibleSection].description}</p>}
         </header>
-        {!settings && !error && <p role="status">Загружаем настройки…</p>}
+        {archiveOwner && !settings && !error && <p role="status">Загружаем настройки…</p>}
         {settings && visibleSection === "users" && (
           <section className="admin-card archive-form">
             <p>
               Новые пользователи ожидают одобрения. Читатель видит закрытый
               архив после допуска, родственник редактирует свои объекты,
-              администратор управляет участниками и содержимым архива.
+              владелец управляет участниками и содержимым архива.
               Публикацией людей и связями деревьев управляет владелец.
             </p>
             {(settings.publicTree || settings.publicAlbums) && (
@@ -703,10 +681,6 @@ export function AdminPanel({
             </footer>
           </form>
         )}
-        {visibleSection === "ai" && <AiSettingsAdmin />}
-        {visibleSection === "storage" && <StorageLimitsAdmin />}
-        {visibleSection === "vk" && <VkAuthAdmin />}
-        {visibleSection === "resources" && <ResearchResourcesAdmin />}
         {visibleSection === "sources" && <SourceCatalogAdmin family={family} onChanged={onChanged} />}
         {visibleSection === "mcp" && <McpTokenAdmin />}
         {visibleSection === "shares" && <ShareCatalog />}
@@ -745,7 +719,7 @@ export function AdminPanel({
             <AuditLog key={auditActor} actorId={auditActor || undefined} />
           </section>
         )}
-        {visibleSection === "backups" && platformAdmin && (
+        {visibleSection === "backups" && platformAdmin && archiveOwner && (
           <BackupAdmin onRestored={onChanged} />
         )}
         {visibleSection === "data" && (

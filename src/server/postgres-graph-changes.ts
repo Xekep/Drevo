@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import type pg from "pg";
 import type { ArchiveUser } from "../domain/access.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import {
   applyArchiveChanges,
   archiveChanges,
@@ -100,9 +101,9 @@ function prepareChanges(changes: Change[], before: Family, actor: ArchiveUser) {
       change.collection === "people"
         ? people.get(change.id!)
         : links.get(change.id!);
-    if (actor.role !== "admin" && existing && existing.createdBy !== actor.id)
+    if (!isArchiveOwner(actor) && existing && existing.createdBy !== actor.id)
       throw new ForbiddenError("Можно изменять только свои карточки и связи");
-    if (actor.role !== "admin" && change.field && !existing)
+    if (!isArchiveOwner(actor) && change.field && !existing)
       throw new ForbiddenError("Можно изменять только свои карточки и связи");
     // Marriage lists are sets, not a second independent ordering of the same
     // undirected SQL edge. Preserve the server order and make retries stable.

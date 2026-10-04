@@ -7,6 +7,7 @@ import {
 } from "../domain/index.ts";
 import { ForbiddenError } from "./users.ts";
 import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
+import { isArchiveOwner, canAssessArchiveEvidence } from "../domain/access.ts";
 import { eventHasEvidence } from "../domain/person-events.ts";
 
 function catalogCitationSlots(family: Family) {
@@ -49,7 +50,7 @@ export function authorizeArchive(
   const next = structuredClone(validateFamily(nextValue));
   if (user.role === "reader")
     throw new ForbiddenError("Доступен только просмотр архива");
-  const admin = user.role === "admin",
+  const admin = isArchiveOwner(user),
     own = (p: { createdBy?: string }) => p.createdBy === user.id;
   const nextPeople = new Map(next.people.map((person) => [person.id, person]));
   const currentPeople = new Map(current.people.map((person) => [person.id, person]));
@@ -93,7 +94,7 @@ export function authorizeArchive(
   owners(next.links || [], current.links || []);
   owners(next.unions || [], current.unions || []);
   const previousLinks = new Map((current.links || []).map((link) => [link.id, link]));
-  const canAssess = user.role === "admin" || user.role === "researcher";
+  const canAssess = canAssessArchiveEvidence(user);
   for (const previousChild of current.people) {
     const child = nextPeople.get(previousChild.id);
     for (const claim of previousChild.parentClaims || []) {
@@ -164,7 +165,7 @@ export function authorizeArchive(
       newSources.some((sources) => sources?.length))
       throw new ForbiddenError("При смене участников или типа союза снимите прежние источники союза и его этапов");
   }
-  if (user.role !== "admin" && user.role !== "researcher") {
+  if (!canAssess) {
     for (const old of current.unions || []) {
       const union = next.unions?.find((item) => item.id === old.id);
       if (!union && (old.confidence ||

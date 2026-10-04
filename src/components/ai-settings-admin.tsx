@@ -100,7 +100,11 @@ type AiAdminStatus = {
   baseUrl: string;
 };
 
-export function AiSettingsAdmin() {
+export function AiSettingsAdmin({ archiveId = null, showCleanup = true }: {
+  archiveId?: string | null;
+  showCleanup?: boolean;
+}) {
+  const url = useCallback((path: string) => archiveId ? `/a/${archiveId}${path}` : path, [archiveId]);
   const [status, setStatus] = useState<AiAdminStatus | null>(null),
     [enabled, setEnabled] = useState(true),
     [webSearchEnabled, setWebSearchEnabled] = useState(false),
@@ -146,12 +150,12 @@ export function AiSettingsAdmin() {
   }, []);
 
   const load = useCallback(async () => {
-    const response = await archiveFetch("/api/admin/ai", { cache: "no-store" }),
+    const response = await archiveFetch(url("/api/admin/ai"), { cache: "no-store" }),
       data = await response.json();
     if (!response.ok)
       throw new Error(data.error || "Не удалось загрузить настройки AI Studio");
     applyStatus(data as AiAdminStatus);
-  }, [applyStatus]);
+  }, [applyStatus, url]);
 
   useEffect(() => {
     let active = true;
@@ -172,7 +176,7 @@ export function AiSettingsAdmin() {
     setError("");
     setNotice("");
     try {
-      const response = await archiveFetch("/api/admin/ai", {
+      const response = await archiveFetch(url("/api/admin/ai"), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -213,7 +217,7 @@ export function AiSettingsAdmin() {
     setNotice("");
     try {
       const response = await archiveFetch(
-          `/api/admin/ai/test${role ? `?role=${role}` : ""}`,
+          url(`/api/admin/ai/test${role ? `?role=${role}` : ""}`),
           { method: "POST" },
         ),
         data = await response.json();
@@ -233,7 +237,7 @@ export function AiSettingsAdmin() {
     setError("");
     setNotice("");
     try {
-      const response = await archiveFetch("/api/admin/ai/models", {
+      const response = await archiveFetch(url("/api/admin/ai/models"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -659,7 +663,7 @@ export function AiSettingsAdmin() {
             </div>
           </details>
 
-          <AiProviderCleanupAdmin />
+          {showCleanup && <AiProviderCleanupAdmin archiveId={archiveId} />}
           <details className="ai-admin-connection ai-usage-details">
             <summary>
               Статистика · сегодня {status.usage.today.requests} запросов

@@ -1,4 +1,5 @@
 import type { ArchiveUser } from "./access.ts";
+import { isArchiveOwner } from "./access.ts";
 import type { Family } from "./types.ts";
 import {
   commonAncestorNetwork,
@@ -7,7 +8,7 @@ import {
 
 export function isScopedUser(user: ArchiveUser | null): user is ArchiveUser {
   return (
-    !!user && user.role !== "admin" && user.treeAccess === "common_ancestors"
+    !!user && !isArchiveOwner(user) && user.treeAccess === "common_ancestors"
   );
 }
 

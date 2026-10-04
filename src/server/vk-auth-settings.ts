@@ -6,6 +6,7 @@ import type {
 } from "../shared/vk-auth-settings.ts";
 import { auditStore } from "./audit.ts";
 import { assertCurrentArchiveActor, ForbiddenError } from "./users.ts";
+import { assertCurrentPlatformAdmin } from "./platform-access.ts";
 
 const validClientId = (value: string) => /^[1-9][0-9]{0,19}$/.test(value);
 export function vkAuthSettingsStore(
@@ -16,7 +17,7 @@ export function vkAuthSettingsStore(
   const audit = auditStore(db);
   const lookup = db.prepare(
     "SELECT enabled,client_id FROM vk_auth_settings WHERE id=1",
-    "SELECT enabled,client_id FROM vk_auth_settings WHERE id=1",
+    "SELECT enabled,client_id FROM platform_vk_auth_settings WHERE id=1",
   );
   async function read(): Promise<VkAuthStatus> {
     const saved = await lookup.get();
@@ -31,13 +32,14 @@ export function vkAuthSettingsStore(
   }
   return {
     read,
-    async write(value: unknown, actor: ArchiveUser) {
-      if (actor.role !== "admin" || !actor.approved)
+    async write(value: unknown, actor: ArchiveUser | null,
+      session?: { accountId: string; tokenHash: string }) {
+      if (db.kind === "sqlite" && (actor?.role !== "admin" || !actor.approved))
         throw new ForbiddenError(
           "Настройки входа доступны только администратору",
         );
       if (!value || typeof value !== "object" || Array.isArray(value))
-        throw new Error("Некорректные настройки VK");
+        throw new RangeError("Некорректные настройки VK");
       const input = value as VkAuthSettings;
       if (
         Object.keys(value).some(
@@ -46,15 +48,34 @@ export function vkAuthSettingsStore(
         typeof input.enabled !== "boolean" ||
         typeof input.clientId !== "string"
       )
-        throw new Error("Укажите состояние входа и ID приложения");
+        throw new RangeError("Укажите состояние входа и ID приложения");
       const clientId = input.clientId.trim();
       if (
         (clientId && !validClientId(clientId)) ||
         (input.enabled && !clientId)
       )
-        throw new Error("Укажите числовой ID приложения VK ID");
+        throw new RangeError("Укажите числовой ID приложения VK ID");
+      if (db.kind === "postgres") {
+        if (!session || !db.postgresTransaction)
+          throw new ForbiddenError("Нет прав на настройки входа");
+        await db.postgresTransaction(async (client) => {
+          await assertCurrentPlatformAdmin(client, session.accountId, session.tokenHash);
+          await client.query(
+            `INSERT INTO platform_vk_auth_settings(id,enabled,client_id)
+             VALUES(1,$1,$2) ON CONFLICT(id) DO UPDATE
+             SET enabled=excluded.enabled,client_id=excluded.client_id`,
+            [Number(input.enabled), clientId],
+          );
+          await client.query(
+            `INSERT INTO platform_config_audit(actor_id,action,item_id)
+             VALUES($1,'vk_auth_changed','vk-auth')`,
+            [session.accountId],
+          );
+        });
+        return read();
+      }
       await db.transaction(async () => {
-        await assertCurrentArchiveActor(db, actor);
+        await assertCurrentArchiveActor(db, actor!);
         const before = await read();
         await db
           .prepare(
@@ -83,7 +104,7 @@ export function vkAuthSettingsStore(
                 },
               ],
             },
-            actor,
+            actor!,
           );
       });
       return read();

@@ -10,6 +10,7 @@ import {
   type Source,
 } from "../domain/index.ts";
 import { authorizeArchive } from "./permissions.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import { ConflictError } from "./archive-errors.ts";
 
 const PERSON_UPDATE_FIELDS = [
@@ -537,7 +538,7 @@ export function researchSuggestionStore(db: StoreDatabase) {
   return {
     async list(actor: ArchiveUser) {
       const rows =
-        actor.role === "admin"
+        isArchiveOwner(actor)
           ? await db
               .prepare(
                 `${select} WHERE status='pending' ORDER BY created_at DESC,id DESC`,
@@ -723,7 +724,7 @@ export function researchSuggestionStore(db: StoreDatabase) {
 
     async get(actor: ArchiveUser, id: string) {
       const row =
-        actor.role === "admin"
+        isArchiveOwner(actor)
           ? await db
               .prepare(`${select} WHERE id=?`, `${select} WHERE id=?`)
               .get(id)

@@ -32,7 +32,7 @@ test("форматы экспорта и импорт GEDCOM с предпрос
     });
     await route.fulfill({ json: { added: 1, photos: 0, documents: 0 } });
   });
-  await page.goto("/admin");
+  await page.goto("/manage");
   await openAdminSection(page, "data", "Экспорт и импорт");
   const panel = page.locator(".gedcom-transfer");
   await expect(
@@ -121,7 +121,7 @@ test("форматы экспорта и импорт GEDCOM с предпрос
 });
 
 test("XML Древа Жизни показывает сохранённые текстом поля до импорта", async ({ page }) => {
-  await page.goto("/admin");
+  await page.goto("/manage");
   await openAdminSection(page, "data", "Экспорт и импорт");
   const panel = page.locator(".gedcom-transfer");
   const xml = `<agelongtree><persons><person id="a" sex="Ж" fn="Анна" sn="Тестова" bdate="1900"><family id="f"/></person></persons><events><event id="e" type="Поездка" date="1920" custom="value"><persons><person id="a" role="Участник" /></persons></event></events><families><family id="f" name="Род Тестовых" fs="Тестов предок" ms="Род Тестовых"/></families></agelongtree>`;

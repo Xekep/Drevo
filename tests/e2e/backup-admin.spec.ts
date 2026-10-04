@@ -79,7 +79,7 @@ test("экспорт отделён от резервных копий; наст
     applied = true;
     await route.fulfill({ json: { backupName: "before-import.sqlite" } });
   });
-  await page.goto("/admin");
+  await page.goto("/manage");
   await openAdminSection(page, "data", "Экспорт и импорт");
   await expect(
     page.getByRole("link", { name: "Экспорт JSON без фото" }),

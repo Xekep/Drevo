@@ -111,11 +111,13 @@ export async function fixture(t: TestContext) {
     "004_archive_audit.sql",
     "005_archive_owner_uniqueness.sql",
     "008_account_tiers.sql",
+    "016_platform_admins.sql",
     "009_person_removals.sql",
     "047_family_unions.sql",
     "060_family_link_sources.sql",
     "078_family_link_confidence.sql",
     "088_parent_confidence.sql",
+    "090_global_staff_roles.sql",
   ]) {
     if (file === "088_parent_confidence.sql") {
       const old = await first.query(`SELECT conname,pg_get_constraintdef(oid) AS definition
@@ -202,6 +204,7 @@ export async function fixture(t: TestContext) {
   await first.query(
     "INSERT INTO archive_owners(archive_id,user_id) VALUES('tree-a','admin'),('tree-b','relative')",
   );
+  await first.query("INSERT INTO platform_admins(account_id) VALUES('admin')");
   return { first, second: clients[1], third: clients[2] };
 }
 

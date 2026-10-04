@@ -1,5 +1,6 @@
 import type pg from "pg";
 import type { ArchiveUser } from "../domain/access.ts";
+import { canEditArchive } from "../domain/access.ts";
 import { archiveAudit } from "../domain/audit.ts";
 import { archiveChanges, inverseChanges } from "../domain/changes.ts";
 import type { Family } from "../domain/types.ts";
@@ -9,12 +10,7 @@ import { sessionTokenHash, validSessionToken } from "./session-token.ts";
 import { ForbiddenError } from "./users.ts";
 
 function canEdit(user: ArchiveUser | null): user is ArchiveUser {
-  return (
-    !!user?.approved &&
-    (user.role === "admin" ||
-      user.role === "researcher" ||
-      user.role === "relative")
-  );
+  return canEditArchive(user);
 }
 
 /** Owns the transaction on a dedicated connection. Never use inside BEGIN.
@@ -50,6 +46,11 @@ export async function withPostgresArchiveWrite<T>(
     );
     if (!locked.rows[0]) throw new ForbiddenError("Нет доступа к архиву");
     const revision = Number(locked.rows[0].revision);
+    const account = await client.query(
+      "SELECT id FROM accounts WHERE id=$1 FOR SHARE NOWAIT",
+      [preliminary.id],
+    );
+    if (!account.rowCount) throw new ForbiddenError("Аккаунт больше не доступен");
     const session = (
       await client.query(
         "SELECT user_id,expires_at FROM account_sessions WHERE token_hash=$1 FOR SHARE",
@@ -60,8 +61,15 @@ export async function withPostgresArchiveWrite<T>(
       throw new ForbiddenError("Сессия завершена");
     const membership = (
       await client.query(
-        `SELECT a.id,a.name,a.created_at,a.last_visit_at,m.role,m.approved,m.person_id,m.tree_access
+        `SELECT a.id,a.name,a.created_at,a.last_visit_at,m.role,m.role AS tree_role,
+                m.approved,m.person_id,m.tree_access,
+                (o.user_id IS NOT NULL) AS archive_owner,
+                CASE WHEN pa.account_id IS NOT NULL THEN 'admin'
+                     WHEN pr.account_id IS NOT NULL THEN 'researcher' ELSE NULL END AS global_role
          FROM archive_memberships m JOIN accounts a ON a.id=m.user_id
+         LEFT JOIN archive_owners o ON o.archive_id=m.archive_id AND o.user_id=m.user_id
+         LEFT JOIN platform_admins pa ON pa.account_id=m.user_id
+         LEFT JOIN platform_researchers pr ON pr.account_id=m.user_id
         WHERE m.archive_id=$1 AND m.user_id=$2 FOR SHARE OF m`,
         [archiveId, session.user_id],
       )
@@ -69,6 +77,13 @@ export async function withPostgresArchiveWrite<T>(
     const actor = membership ? postgresUser(membership) : null;
     if (!canEdit(actor) || Number(session.expires_at) <= Date.now())
       throw new ForbiddenError("Нет доступа к редактированию архива");
+    const [admin, researcher] = [
+      await client.query("SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT", [actor.id]),
+      await client.query("SELECT account_id FROM platform_researchers WHERE account_id=$1 FOR SHARE NOWAIT", [actor.id]),
+    ];
+    if ((admin.rowCount ? "admin" : researcher.rowCount ? "researcher" : null) !==
+        (actor.globalRole ?? null))
+      throw new ForbiddenError("Глобальная роль изменилась");
     if (expectedRevision > revision)
       throw new ConflictError("Некорректная версия архива");
     const result = await write(actor, revision);

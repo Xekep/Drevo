@@ -9,6 +9,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import { ForbiddenError } from "./users.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import { exportGedcom } from "../domain/gedcom.ts";
 import { TRANSFER_PACKAGE_LIMIT } from "../domain/genealogy-transfer.ts";
 import { writeDatabaseBackup } from "./backup.ts";
@@ -140,7 +141,7 @@ export function gedcomHttp(
         return true;
       };
       const actor = await auth.currentUser(req);
-      if (!actor || !actor.approved || actor.role !== "admin")
+      if (!actor || !actor.approved || !isArchiveOwner(actor))
         return json(actor ? 403 : 401, {
           error: "Перенос данных доступен администратору",
         });
@@ -228,7 +229,7 @@ export function gedcomHttp(
                 items,
                 async () => {
                   const current = await auth.currentUser(req);
-                  if (!current?.approved || current.role !== "admin" || current.id !== actor.id)
+                  if (!current?.approved || !isArchiveOwner(current) || current.id !== actor.id)
                     throw new ForbiddenError("Доступ администратора отозван");
                   res.writeHead(200, {
                     "Content-Type": "application/zip",
@@ -249,7 +250,7 @@ export function gedcomHttp(
             media: items,
           });
           const current = await auth.currentUser(req);
-          if (!current?.approved || current.role !== "admin" || current.id !== actor.id)
+          if (!current?.approved || !isArchiveOwner(current) || current.id !== actor.id)
             throw new ForbiddenError("Доступ администратора отозван");
           res.writeHead(200, {
             "Content-Type": "text/vnd.familysearch.gedcom; charset=utf-8",
@@ -330,7 +331,7 @@ export function gedcomHttp(
               randomUUID(),
             );
             const currentActor = await auth.currentUser(req);
-            if (!currentActor?.approved || currentActor.role !== "admin" || currentActor.id !== actor.id)
+            if (!currentActor?.approved || !isArchiveOwner(currentActor) || currentActor.id !== actor.id)
               return json(403, { error: "Доступ администратора отозван" });
             if (
               parsed.family.people.length + current.family.people.length >
@@ -450,7 +451,7 @@ export function gedcomHttp(
             );
           }
           const currentActor = await auth.currentUser(req);
-          if (!currentActor?.approved || currentActor.role !== "admin" || currentActor.id !== actor.id)
+          if (!currentActor?.approved || !isArchiveOwner(currentActor) || currentActor.id !== actor.id)
             throw new Error("Доступ администратора отозван");
           const result = await archive.write(
             {

@@ -7,7 +7,7 @@ import { generatedResearchFileStore } from "./generated-research-files.ts";
 import { yandexWebSearchProvider } from "./yandex-web-search.ts";
 import { recordModelCall, recordModelTokens } from "./ai-research-support.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { ArchiveUser } from "../domain/access.ts";
+import type { ArchiveUser, Role } from "../domain/access.ts";
 import { fullName } from "../domain/dates.ts";
 import { exportGedcom } from "../domain/gedcom.ts";
 import { lineageReport } from "../domain/lineage-report.ts";
@@ -24,7 +24,8 @@ import { type researchSuggestionStore } from "./research-suggestions.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { YandexResponseError } from "./yandex-responses.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
-import { aiChatAccessScope } from "./ai-chat-access-scope.ts";
+import { aiProfileRole } from "../domain/access.ts";
+import { aiChatAccessScope, aiChatAllowedScopes } from "./ai-chat-access-scope.ts";
 import { researchPdf } from "./research-pdf.ts";
 import type { AiProviderCleanup } from "./ai-provider-cleanup.ts";
 
@@ -65,6 +66,7 @@ export function aiResearchHttp({
   beforeGeneratedFileInstall,
   beforeAttachmentCommit,
   beforeAttachmentDelivery,
+  beforeBufferedDelivery,
   attachmentDeliveryDeadlineMs = 30_000,
   renderPdf,
   providerCleanup,
@@ -85,6 +87,7 @@ export function aiResearchHttp({
   beforeGeneratedFileInstall?: () => Promise<void>;
   beforeAttachmentCommit?: () => Promise<void>;
   beforeAttachmentDelivery?: () => Promise<void>;
+  beforeBufferedDelivery?: (path: string) => Promise<void>;
   attachmentDeliveryDeadlineMs?: number;
   renderPdf?: typeof researchPdf;
   providerCleanup?: AiProviderCleanup;
@@ -103,7 +106,7 @@ export function aiResearchHttp({
     string,
     { controller: AbortController; done: Promise<void> }
   >();
-  let activeAttachmentDeliveries = 0;
+  let activeFileDeliveries = 0;
   async function stopChat(id: string, userId: string) {
     await chats.requestStop(id, userId);
     const run = activeRuns.get(id);
@@ -135,12 +138,20 @@ export function aiResearchHttp({
       isScopedUser(user) ? (await archive.read()).family : undefined,
     );
   };
-  const lockedChatReader = async (req: IncomingMessage, expectedUserId?: string) => {
+  const allowedChatScopes = async (user: ArchiveUser) => aiChatAllowedScopes(
+    user, isScopedUser(user) ? (await archive.read()).family : undefined);
+  const canReadChatScope = async (user: ArchiveUser, scope: string) =>
+    (await allowedChatScopes(user)).includes(scope);
+  const lockedChatReader = async (req: IncomingMessage, expectedUserId?: string,
+    expectedProfile?: Role) => {
     const current = await auth.currentUser(req);
     if (!current || (expectedUserId && current.id !== expectedUserId)) return null;
     if (archive.db.kind === "postgres" && !auth.local) {
       const session = await auth.accountSession(req);
       if (!session || session.accountId !== current.id) return null;
+      const account = await archive.db.prepare("", `SELECT id FROM accounts
+        WHERE id=? FOR SHARE NOWAIT`).get(current.id);
+      if (!account) return null;
       // Account deletion locks the session before the archive. Do not wait on
       // it while the archive row is already locked by this transaction.
       const lockedSession = await archive.db.prepare("", `SELECT user_id,expires_at
@@ -154,6 +165,16 @@ export function aiResearchHttp({
       if (!membership?.approved || membership.role !== current.role ||
         (membership.person_id || "") !== (current.personId || "") ||
         membership.tree_access !== (current.treeAccess || "all")) return null;
+      if (expectedProfile) {
+        const admin = await archive.db.prepare("", `SELECT account_id FROM platform_admins
+          WHERE account_id=? FOR SHARE NOWAIT`).get(current.id);
+        const researcher = await archive.db.prepare("", `SELECT account_id FROM platform_researchers
+          WHERE account_id=? FOR SHARE NOWAIT`).get(current.id);
+        const profile = membership.role === "reader" ? "reader" :
+          admin ? "admin" : researcher ? "researcher" :
+          String(membership.role);
+        if (profile !== expectedProfile) return null;
+      }
     }
     return await auth.canRead(req) ? current : null;
   };
@@ -162,28 +183,33 @@ export function aiResearchHttp({
     expectedScope: string,
     expectedUserId?: string,
     lockAccess = false,
+    expectedProfile?: Role,
   ) => {
     const current = lockAccess
-      ? await lockedChatReader(req, expectedUserId)
+      ? await lockedChatReader(req, expectedUserId, expectedProfile)
       : await auth.currentUser(req);
     if (!current || (expectedUserId && current.id !== expectedUserId)) return false;
+    if (expectedProfile && aiProfileRole(current) !== expectedProfile) return false;
     if (lockAccess) {
       // Transactional callers already hold session and membership locks. Keep
       // the established tier-before-scope order; the tier lock lasts through
       // the remaining read and write until that transaction commits.
       return (await accountAiAccess(archive.db, current.id, auth.local, true)) &&
-        (await accessScope(current)) === expectedScope;
+        await canReadChatScope(current, expectedScope);
     }
-    if (!(await auth.canRead(req)) || (await accessScope(current)) !== expectedScope)
+    if (!(await auth.canRead(req)) || !(await canReadChatScope(current, expectedScope)))
       return false;
     // A scoped archive read can wait while the account tier or membership
     // changes. Refresh the actor and leave the tier decision as the final await.
     const latest = await auth.currentUser(req);
     return !!latest?.approved && latest.id === current.id &&
       latest.role === current.role &&
+      latest.archiveOwner === current.archiveOwner &&
+      (!expectedProfile || aiProfileRole(latest) === expectedProfile) &&
       latest.personId === current.personId &&
       latest.treeAccess === current.treeAccess &&
       (await auth.canRead(req)) &&
+      (await canReadChatScope(latest, expectedScope)) &&
       (await accountAiAccess(archive.db, latest.id, auth.local, lockAccess));
   };
   const generatedFiles = generatedResearchFileStore(
@@ -218,7 +244,7 @@ export function aiResearchHttp({
       // A basic account may still see chat IDs to delete old history, but
       // titles and messages require the current locked tier and scope.
       const showPrivate = (await accountAiAccess(archive.db, current.id, auth.local, true)) &&
-        (await accessScope(current)) === expectedScope;
+        await canReadChatScope(current, expectedScope);
       if (!showPrivate && !cleanupValue) return "denied";
       const body = showPrivate ? fullBody : JSON.stringify(await cleanupValue!());
       if (res.destroyed) return "sent";
@@ -281,6 +307,8 @@ export function aiResearchHttp({
         );
         const ownerId = owner.rows[0]?.user_id;
         if (!ownerId) return "access";
+        if ((ownerId === user.id) !== (user.archiveOwner === true))
+          return "access";
         const tiers = await client.query<{ account_id: string; full_access: boolean }>(
           `SELECT account_id,full_access FROM account_tiers
            WHERE account_id=ANY($1::text[]) ORDER BY account_id FOR SHARE NOWAIT`,
@@ -343,6 +371,92 @@ export function aiResearchHttp({
     return json(res, 403, { error: "Доступ к данным изменился" });
   };
 
+  const deliverBufferedAiFile = async (req: IncomingMessage, res: ServerResponse,
+    user: ArchiveUser, expectedRevision: number, bytes: Buffer,
+    headers: Record<string, string | number>, chat?: { id: string; scope: string }) => {
+    const session = await auth.accountSession(req);
+    if (!session || session.accountId !== user.id)
+      return json(res, 401, { error: "Сессия завершена" });
+    let outcome: "sent" | "session" | "access" | "missing" | "changed";
+    try {
+      outcome = await archive.db.postgresTransaction!(async (client) => {
+        const account = await client.query(
+          "SELECT id FROM accounts WHERE id=$1 FOR SHARE NOWAIT", [user.id]);
+        if (!account.rows[0]) return "access";
+        const activeSession = await client.query<{ expires_at: string }>(
+          `SELECT expires_at FROM account_sessions
+           WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+          [session.tokenHash, user.id]);
+        if (!activeSession.rows[0] || Number(activeSession.rows[0].expires_at) <= Date.now())
+          return "session";
+        const membership = await client.query<{
+          role: string; approved: boolean; person_id: string | null; tree_access: string;
+        }>(`SELECT role,approved,person_id,tree_access FROM archive_memberships
+            WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+          [archive.db.archiveId, user.id]);
+        const member = membership.rows[0];
+        if (!member || !member.approved || member.role !== user.role ||
+          (member.person_id || "") !== (user.personId || "") ||
+          member.tree_access !== (user.treeAccess || "all")) return "access";
+        const owner = await client.query<{ user_id: string }>(
+          "SELECT user_id FROM archive_owners WHERE archive_id=$1 FOR SHARE NOWAIT",
+          [archive.db.archiveId]);
+        const ownerId = owner.rows[0]?.user_id;
+        if (!ownerId || (ownerId === user.id) !== (user.archiveOwner === true))
+          return "access";
+        const tiers = await client.query<{ account_id: string; full_access: boolean }>(
+          `SELECT account_id,full_access FROM account_tiers
+           WHERE account_id=ANY($1::text[]) ORDER BY account_id FOR SHARE NOWAIT`,
+          [[user.id, ownerId]]);
+        if (![user.id, ownerId].every((id) => tiers.rows.some((tier) =>
+          tier.account_id === id && tier.full_access))) return "access";
+        if (chat) {
+          const currentChat = await client.query<{ access_scope: string }>(
+            `SELECT access_scope FROM ai_chats WHERE archive_id=$1 AND id=$2
+             AND user_id=$3 FOR SHARE NOWAIT`,
+            [archive.db.archiveId, chat.id, user.id]);
+          if (currentChat.rows[0]?.access_scope !== chat.scope) return "missing";
+        }
+        if (res.destroyed) return "sent";
+        // The archive snapshot is needed only until the first byte is sent.
+        // Access rows and the chat stay locked for the bounded response.
+        await client.query("SAVEPOINT ai_buffered_handoff");
+        const currentArchive = await client.query<{ revision: number }>(
+          "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT",
+          [archive.db.archiveId]);
+        if (Number(currentArchive.rows[0]?.revision) !== expectedRevision)
+          return "changed";
+        const delivered = finished(res, { cleanup: true });
+        const timeout = setTimeout(() => res.destroy(), attachmentDeliveryDeadlineMs);
+        timeout.unref();
+        try {
+          res.writeHead(200, headers);
+          if (bytes.length) res.write(bytes.subarray(0, 1));
+          else res.flushHeaders();
+          await client.query("ROLLBACK TO SAVEPOINT ai_buffered_handoff");
+          await client.query("RELEASE SAVEPOINT ai_buffered_handoff");
+          res.end(bytes.subarray(1));
+          await delivered;
+        } catch (error) {
+          const disconnected = res.destroyed;
+          res.destroy();
+          await delivered.catch(() => {});
+          if (!disconnected && !res.headersSent) throw error;
+        } finally { clearTimeout(timeout); }
+        return "sent";
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === "55P03")
+        return res.destroyed ? true : json(res, 409, { error: "Доступ занят другим действием" });
+      throw error;
+    }
+    if (outcome === "sent" || res.headersSent || res.destroyed) return true;
+    if (outcome === "session") return json(res, 401, { error: "Сессия завершена" });
+    if (outcome === "missing") return json(res, 404, { error: "Файл не найден" });
+    if (outcome === "changed") return json(res, 409, { error: "Архив изменился. Повторите скачивание" });
+    return json(res, 403, { error: "Доступ к данным изменился" });
+  };
+
   const runResearch = createResearchRunner({
     archive,
     suggestions,
@@ -394,8 +508,10 @@ export function aiResearchHttp({
         return json(res, 403, {
           error: "ИИ-функции недоступны этому аккаунту",
         });
-      const requestedScope = await accessScope(actor);
-      const source = (await archive.read()).family;
+      const snapshot = await archive.read();
+      const requestedScope = aiChatAccessScope(actor,
+        isScopedUser(actor) ? snapshot.family : undefined);
+      const source = snapshot.family;
       const family = isScopedUser(actor)
         ? projectFamilyForUser(source, actor)
         : source;
@@ -429,13 +545,22 @@ export function aiResearchHttp({
       const bytes = Buffer.from(content);
       if (!(await canDeliverAiData(req, requestedScope)))
         return json(res, 403, { error: "Доступ к данным изменился" });
-      res.writeHead(200, {
+      const headers = {
         "Content-Type": contentType,
         "Content-Length": bytes.length,
         "Content-Disposition": `attachment; filename="${filename}"`,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
-      });
+      };
+      await beforeBufferedDelivery?.(path);
+      if (archive.db.kind === "postgres" && !auth.local && archive.db.postgresTransaction) {
+        if (activeFileDeliveries >= 3)
+          return json(res, 429, { error: "Слишком много одновременных скачиваний" });
+        activeFileDeliveries++;
+        try { return await deliverBufferedAiFile(req, res, actor, snapshot.revision, bytes, headers); }
+        finally { activeFileDeliveries--; }
+      }
+      res.writeHead(200, headers);
       res.end(bytes);
       return true;
     }
@@ -452,11 +577,12 @@ export function aiResearchHttp({
         return json(res, 403, {
           error: "ИИ-функции недоступны этому аккаунту",
         });
+      const fileRevision = (await archive.meta()).revision;
       const shared = /^\/api\/ai\/files\/([a-f0-9-]{36})\/([a-f0-9-]{36})$/i.exec(path);
       const legacy = shared ? undefined : generatedFiles.local(path.slice("/api/ai/files/".length));
       const chatId = shared?.[1] || legacy?.chatId;
       const chat = chatId && await chats.read(chatId, fileUser.id);
-      if (!chat || chat.accessScope !== (await accessScope(fileUser)))
+      if (!chat || !(await canReadChatScope(fileUser, chat.accessScope)))
         return json(res, 404, {
           error: "Файл не найден или срок ссылки истёк",
         });
@@ -479,7 +605,7 @@ export function aiResearchHttp({
         return json(res, 404, { error: "Файл не найден или срок ссылки истёк" });
       if (!(await canDeliverAiData(req, chat.accessScope)))
         return json(res, 403, { error: "Доступ к данным изменился" });
-      res.writeHead(200, {
+      const headers = {
         "Content-Type": contentType,
         "Content-Length": bytes.length,
         "Content-Disposition": `attachment; filename="drevo-result.${
@@ -490,7 +616,17 @@ export function aiResearchHttp({
         }"; filename*=UTF-8''${encodeURIComponent(name)}`,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
-      });
+      };
+      await beforeBufferedDelivery?.(path);
+      if (archive.db.kind === "postgres" && !auth.local && archive.db.postgresTransaction) {
+        if (activeFileDeliveries >= 3)
+          return json(res, 429, { error: "Слишком много одновременных скачиваний" });
+        activeFileDeliveries++;
+        try { return await deliverBufferedAiFile(req, res, fileUser, fileRevision,
+          bytes, headers, { id: chat.id, scope: chat.accessScope }); }
+        finally { activeFileDeliveries--; }
+      }
+      res.writeHead(200, headers);
       res.end(bytes);
       return true;
     }
@@ -527,7 +663,7 @@ export function aiResearchHttp({
       if (req.method !== "GET")
         return json(res, 405, { error: "Ожидается GET" });
       const user = (await auth.currentUser(req))!;
-      const runtime = await aiRuntimeConfig(aiSettings, user.role);
+      const runtime = await aiRuntimeConfig(aiSettings, aiProfileRole(user));
       return json(res, 200, {
         enabled: runtime.active,
         canPropose: runtime.capabilities.proposals && (await auth.canEdit(req)),
@@ -547,7 +683,7 @@ export function aiResearchHttp({
           path,
         );
       const chat = match && (await chats.read(match[1], aiUser.id));
-      if (!chat || chat.accessScope !== (await accessScope(aiUser)))
+      if (!chat || !(await canReadChatScope(aiUser, chat.accessScope)))
         return json(res, 404, { error: "Вложение не найдено" });
       const item = await attachments
         .download(chat.id, aiUser.id, path)
@@ -558,13 +694,13 @@ export function aiResearchHttp({
         return json(res, 403, { error: "Доступ к данным изменился" });
       await beforeAttachmentDelivery?.();
       if (archive.db.kind === "postgres" && !auth.local && archive.db.postgresTransaction) {
-        if (activeAttachmentDeliveries >= 3)
+        if (activeFileDeliveries >= 3)
           return json(res, 429, { error: "Слишком много одновременных скачиваний" });
-        activeAttachmentDeliveries++;
+        activeFileDeliveries++;
         try {
           return await deliverAttachment(req, res, aiUser, chat.id,
             chat.accessScope, deliveryRevision, item);
-        } finally { activeAttachmentDeliveries--; }
+        } finally { activeFileDeliveries--; }
       }
       res.writeHead(200, {
         "Content-Type": item.file.type,
@@ -582,7 +718,7 @@ export function aiResearchHttp({
       const scope = await accessScope(user);
       const chatsForScope = await chats.list(
         user.id,
-        aiAvailable ? scope : "history-cleanup-only",
+        aiAvailable ? await allowedChatScopes(user) : "history-cleanup-only",
       );
       if (archive.db.kind === "postgres")
         return deliverChatJson(req, res, user, scope, { chats: chatsForScope },
@@ -618,7 +754,7 @@ export function aiResearchHttp({
       }
       if (req.method === "GET") {
         const chat = await chats.read(id, user.id);
-        if (!chat || chat.accessScope !== (await accessScope(user)))
+        if (!chat || !(await canReadChatScope(user, chat.accessScope)))
           return json(res, 404, { error: "Диалог не найден" });
         const busy = !!(await chats.isBusy(id));
         const messages = await chats.messages(id, user.id);
@@ -713,7 +849,8 @@ export function aiResearchHttp({
     // A large attachment may arrive after the owner's tier was downgraded.
     if (!(await accountAiAccess(archive.db, user.id, auth.local)))
       return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
-    const runtime = await aiRuntimeConfig(aiSettings, user.role);
+    const turnProfile = aiProfileRole(user);
+    const runtime = await aiRuntimeConfig(aiSettings, turnProfile);
     if (!runtime.active)
       return json(res, 503, {
         error: runtime.configured
@@ -793,7 +930,7 @@ export function aiResearchHttp({
         return json(res, 409, { code: "AI_CHAT_LIMIT", error: error.message });
       throw error;
     }
-    if (!chat || chat.accessScope !== (await accessScope(user)))
+    if (!chat || !(await canReadChatScope(user, chat.accessScope)))
       return json(res, 404, { error: "Диалог не найден" });
     if (closing)
       return json(res, 503, {
@@ -854,8 +991,20 @@ export function aiResearchHttp({
       // only while the current access rows are locked; a failed admission
       // removes the staged attachments below.
       const accepted = await archive.db.transaction(async () => {
-        if (!(await canDeliverAiData(req, chat.accessScope, user.id, true)))
+        if (!(await canDeliverAiData(req, chat.accessScope, user.id, true, turnProfile)))
           return null;
+        const current = await auth.currentUser(req);
+        if (!current || current.id !== user.id) return null;
+        const currentScope = await accessScope(current);
+        if (chat.accessScope !== currentScope) {
+          // The former remote conversation may hold context from the old
+          // profile. Clear it and rekey under this lease before admission;
+          // the runner rebuilds bounded local history with current rules.
+          if (!(await chats.setRemote(chat.id, null, lockToken)) ||
+            !(await chats.updateScope(chat.id, user.id,
+              chat.accessScope, currentScope, lockToken)))
+            throw new Error("AI chat scope changed during admission");
+        }
         const admitted = await usage.admit(
           user.id,
           runtime.model,
@@ -874,7 +1023,7 @@ export function aiResearchHttp({
                   : {}),
               },
         );
-        return admitted;
+        return { admitted, currentScope };
       });
       if (!accepted) {
         await attachments.removeFiles(savedAttachments);
@@ -883,7 +1032,8 @@ export function aiResearchHttp({
         return json(res, 403, { error: "Доступ к ИИ отключён" });
       }
       appended = true;
-      usageRun = accepted;
+      usageRun = accepted.admitted;
+      chat.accessScope = accepted.currentScope;
       if (closing) throw new Error("Сервер перезапускается");
     } catch (error) {
       if (!appended) await attachments.removeFiles(savedAttachments);
@@ -1014,7 +1164,7 @@ export function aiResearchHttp({
         turnToken: lockToken,
         assertAiAccess: async () => {
           await assertTurnRunning();
-          if (await canDeliverAiData(req, chat.accessScope, user.id)) return;
+          if (await canDeliverAiData(req, chat.accessScope, user.id, false, turnProfile)) return;
           accessRevoked = true;
           controller.abort();
           throw new DOMException("Доступ к ИИ отключён", "AbortError");
@@ -1022,6 +1172,11 @@ export function aiResearchHttp({
         commitSuggestion: async (name, _actor, family, revision, args) =>
           archive.db.transaction(async () => {
             await assertTurnRunning(true);
+            if (!(await canDeliverAiData(req, chat.accessScope, user.id, true, turnProfile))) {
+              accessRevoked = true;
+              controller.abort();
+              throw new DOMException("AI profile changed", "AbortError");
+            }
             const latest = await auth.currentUser(req);
             if (controller.signal.aborted || !latest || latest.id !== user.id ||
               !latest.approved || !(await auth.canEdit(req))) {
@@ -1033,7 +1188,7 @@ export function aiResearchHttp({
               const membership = await archive.db.prepare("", `SELECT role,approved
                 FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
                 .get(archive.db.archiveId || "", user.id);
-              if (!membership?.approved || !["admin", "researcher", "relative"].includes(String(membership.role))) {
+              if (!membership?.approved || String(membership.role) !== "relative") {
                 accessRevoked = true;
                 controller.abort();
                 throw new DOMException("Доступ к предложению отозван", "AbortError");
@@ -1053,7 +1208,7 @@ export function aiResearchHttp({
         throw new DOMException("Запрос остановлен", "AbortError");
       const answerSaved = await archive.db.transaction(async () => {
         await assertTurnRunning(true);
-        if (!(await canDeliverAiData(req, chat.accessScope, user.id, true)))
+        if (!(await canDeliverAiData(req, chat.accessScope, user.id, true, turnProfile)))
           return false;
         await chats.append(chat.id, "assistant", result.answer, {
           references: result.references,
@@ -1086,7 +1241,7 @@ export function aiResearchHttp({
       }
       const assertAnswerDelivery = async () => {
         await assertTurnRunning();
-        const allowed = await canDeliverAiData(req, chat.accessScope, user.id);
+        const allowed = await canDeliverAiData(req, chat.accessScope, user.id, false, turnProfile);
         controller.signal.throwIfAborted();
         if (allowed) return;
         accessRevoked = true;
@@ -1121,26 +1276,45 @@ export function aiResearchHttp({
         }),
       );
 
-      await assertAnswerDelivery();
-      if (stream) {
-        sse(res, "done", {
-          chatId: chat.id,
-          answer: result.answer,
-          references: result.references,
-          suggestionIds: result.suggestionIds,
-          uiActions: result.uiActions,
-          files: result.files,
-        });
-        res.end();
-        return true;
-      }
-      return json(res, 200, { ...result, chatId: chat.id });
+      // The last access decision and HTTP handoff share one short lock window.
+      // A completed role revoke cannot slip between that decision and bytes.
+      await archive.db.transaction(async () => {
+        await assertTurnRunning(true);
+        if (!(await canDeliverAiData(req, chat.accessScope, user.id, true, turnProfile))) {
+          accessRevoked = true;
+          controller.abort();
+          throw new DOMException("AI profile changed", "AbortError");
+        }
+        if (res.destroyed) return;
+        const delivered = finished(res, { cleanup: true });
+        const deadline = setTimeout(() => res.destroy(), 5_000);
+        deadline.unref();
+        try {
+          if (stream) {
+            sse(res, "done", {
+              chatId: chat.id,
+              answer: result.answer,
+              references: result.references,
+              suggestionIds: result.suggestionIds,
+              uiActions: result.uiActions,
+              files: result.files,
+            });
+            res.end();
+          } else json(res, 200, { ...result, chatId: chat.id });
+          await delivered;
+        } catch (error) {
+          res.destroy();
+          await delivered.catch(() => {});
+          throw error;
+        } finally { clearTimeout(deadline); }
+      });
+      return true;
     } catch (error) {
       // A provider can fail immediately after a tier downgrade, before the
       // periodic lease check runs. Error handling is still part of this turn.
       const canReportError = async () => {
         try {
-          return await canDeliverAiData(req, chat.accessScope, user.id);
+          return await canDeliverAiData(req, chat.accessScope, user.id, false, turnProfile);
         } catch {
           return false;
         }
@@ -1208,7 +1382,7 @@ export function aiResearchHttp({
         // Keep a safe operational fact for the next turn, never upstream text.
         // The visible error is delivered separately through HTTP/SSE.
         const recorded = await archive.db.transaction(async () => {
-          if (!(await canDeliverAiData(req, chat.accessScope, user.id, true)))
+          if (!(await canDeliverAiData(req, chat.accessScope, user.id, true, turnProfile)))
             return false;
           await chats.append(
             chat.id,
@@ -1224,11 +1398,13 @@ export function aiResearchHttp({
       const deliveredError = accessRevoked
         ? "Доступ к ИИ отключён. Ответ не сохранён."
         : errorMessage;
+      if (res.destroyed) return true;
       if (stream) {
         sse(res, "error", { error: deliveredError });
         res.end();
         return true;
       }
+      if (res.headersSent) { res.destroy(); return true; }
       return json(res, accessRevoked ? 403 : error instanceof RangeError ? 400 : 502, {
         error: deliveredError,
       });

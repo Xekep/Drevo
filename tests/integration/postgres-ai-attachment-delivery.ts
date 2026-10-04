@@ -43,6 +43,7 @@ export async function verifyAiAttachmentDelivery(
   await chats.append(chat.id, "user", "Attachment delivery", { attachments: [file] });
   const auth = await createAuth(await userStore(db), db, origin);
   let bumpRevisionOnDelivery = false;
+  let transferOwnerOnDelivery = false;
   const handler = aiResearchHttp({
     archive, auth,
     suggestions: researchSuggestionStore(db),
@@ -55,6 +56,11 @@ export async function verifyAiAttachmentDelivery(
     uploadsDirectory,
     attachmentDeliveryDeadlineMs: 2_000,
     beforeAttachmentDelivery: async () => {
+      if (transferOwnerOnDelivery) {
+        transferOwnerOnDelivery = false;
+        await client.query("UPDATE archive_owners SET user_id='reader' WHERE archive_id=$1",
+          [db.archiveId]);
+      }
       if (!bumpRevisionOnDelivery) return;
       bumpRevisionOnDelivery = false;
       await client.query("UPDATE archives SET revision=revision+1 WHERE id=$1", [db.archiveId]);
@@ -182,6 +188,36 @@ export async function verifyAiAttachmentDelivery(
     const baseline = await fetch(base + file.url, { headers: active.headers });
     assert.equal(baseline.status, 200, await baseline.clone().text());
     assert.equal(await baseline.text(), sentinel);
+    const ownerScopeBefore = await client.query<{ tree_access: string; person_id: string | null }>(
+      "SELECT tree_access,person_id FROM archive_memberships WHERE archive_id=$1 AND user_id='owner'",
+      [db.archiveId]);
+    const readerTierBeforeTransfer = await client.query<{ full_access: boolean }>(
+      "SELECT full_access FROM account_tiers WHERE account_id='reader'");
+    try {
+      await client.query(`UPDATE archive_memberships SET tree_access='common_ancestors',
+        person_id='person-a' WHERE archive_id=$1 AND user_id='owner'`, [db.archiveId]);
+      await client.query("UPDATE ai_chats SET access_scope=$1 WHERE id=$2", [
+        JSON.stringify(["admin", "common_ancestors", "person-a"]), chat.id]);
+      await client.query(`INSERT INTO account_tiers(account_id,full_access) VALUES('reader',true)
+        ON CONFLICT(account_id) DO UPDATE SET full_access=true`);
+      transferOwnerOnDelivery = true;
+      const transferred = await fetch(base + file.url, { headers: active.headers });
+      assert.equal(transferred.status, 403,
+        "a former owner with scoped membership cannot receive an old full-tree attachment");
+      assert.doesNotMatch(await transferred.text(), /private-ai-attachment-delivery-marker/);
+      console.log("runtime_ai_attachment_owner_transfer_ok");
+    } finally {
+      transferOwnerOnDelivery = false;
+      await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id=$1", [db.archiveId]);
+      await client.query("UPDATE archive_memberships SET tree_access=$2,person_id=$3 WHERE archive_id=$1 AND user_id='owner'",
+        [db.archiveId, ownerScopeBefore.rows[0].tree_access, ownerScopeBefore.rows[0].person_id]);
+      await client.query("UPDATE ai_chats SET access_scope=$1 WHERE id=$2", [
+        aiChatAccessScope(owner), chat.id]);
+      if (readerTierBeforeTransfer.rows.length)
+        await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='reader'",
+          [readerTierBeforeTransfer.rows[0].full_access]);
+      else await client.query("DELETE FROM account_tiers WHERE account_id='reader'");
+    }
 
     const loggedOut = await session();
     await race(loggedOut.headers,

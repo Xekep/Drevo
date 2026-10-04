@@ -1,5 +1,6 @@
 import type pg from "pg";
 import { projectFamilyForUser } from "../domain/tree-access.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import { postgresAccessReader } from "./postgres-access-read.ts";
 import { readPostgresArchiveInTransaction } from "./postgres-archive-read.ts";
 import { postgresAuditReader } from "./postgres-audit-read.ts";
@@ -45,7 +46,7 @@ async function withSessionArchive<T>(
 }
 
 function canManageArchive(selected: SessionArchive) {
-  return selected.owned || selected.user.role === "admin";
+  return selected.owned || isArchiveOwner(selected.user);
 }
 
 export function readPostgresArchiveForSession(

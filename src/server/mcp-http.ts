@@ -9,6 +9,7 @@ import {
 import { projectFamilyForUser } from "../domain/tree-access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
+import { finished } from "node:stream/promises";
 
 type JsonRpcId = string | number | null;
 type JsonRpcRequest = {
@@ -411,7 +412,35 @@ export function mcpHttp({
         // The tool can take time after its earlier checks. Serialize delivery
         // with token revocation, membership changes and tier downgrade.
         const delivery = await archive.db.transaction(async () => {
+          if (archive.db.kind === "postgres") {
+            // An unbound token exposes the whole archive. Its issuer must
+            // retain both the platform grant and this archive's ownership.
+            // NOWAIT avoids an inverse wait against account deletion or role
+            // changes while this transaction holds the archive row.
+            const issuer = await archive.db.prepare("",
+              "SELECT id FROM accounts WHERE id=? FOR SHARE NOWAIT")
+              .get(grant.createdBy);
+            const membership = await archive.db.prepare("", `SELECT approved FROM archive_memberships
+              WHERE archive_id=? AND user_id=? FOR SHARE NOWAIT`)
+              .get(archive.db.archiveId || "", grant.createdBy);
+            const ownership = await archive.db.prepare("", `SELECT user_id FROM archive_owners
+              WHERE archive_id=? AND user_id=? FOR SHARE NOWAIT`)
+              .get(archive.db.archiveId || "", grant.createdBy);
+            const platform = await archive.db.prepare("", `SELECT account_id FROM platform_admins
+              WHERE account_id=? FOR SHARE NOWAIT`).get(grant.createdBy);
+            if (!issuer || !membership?.approved || !ownership || !platform)
+              return { status: 403, body: { error: "Доступ создателя MCP-токена отозван" } };
+          }
           if (grant.boundUser && archive.db.kind === "postgres") {
+            // Keep the bound account and global grants stable through the
+            // response; a local role alone cannot represent a staff revoke.
+            const account = await archive.db.prepare("",
+              "SELECT id FROM accounts WHERE id=? FOR SHARE NOWAIT")
+              .get(grant.boundUser.id);
+            if (!account) return {
+              status: 403,
+              body: { error: "Доступ к участнику архива изменился" },
+            };
             const current = await archive.db
               .prepare(
                 "",
@@ -419,9 +448,22 @@ export function mcpHttp({
               FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`,
               )
               .get(archive.db.archiveId || "", grant.boundUser.id);
+            const owner = await archive.db.prepare("",
+              `SELECT user_id FROM archive_owners
+               WHERE archive_id=? AND user_id=? FOR SHARE NOWAIT`)
+              .get(archive.db.archiveId || "", grant.boundUser.id);
+            const admin = await archive.db.prepare("",
+              "SELECT account_id FROM platform_admins WHERE account_id=? FOR SHARE NOWAIT")
+              .get(grant.boundUser.id);
+            const researcher = await archive.db.prepare("",
+              "SELECT account_id FROM platform_researchers WHERE account_id=? FOR SHARE NOWAIT")
+              .get(grant.boundUser.id);
+            const globalRole = admin ? "admin" : researcher ? "researcher" : null;
             if (
               !current?.approved ||
               current.role !== grant.boundUser.role ||
+              !!owner !== grant.boundUser.archiveOwner ||
+              globalRole !== (grant.boundUser.globalRole ?? null) ||
               (current.person_id || "") !== (grant.boundUser.personId || "") ||
               current.tree_access !== (grant.boundUser.treeAccess || "all")
             )
@@ -450,6 +492,8 @@ export function mcpHttp({
             finalGrant.scopes.includes("sources:read") !== grant.scopes.includes("sources:read") ||
             finalGrant.boundUser?.id !== grant.boundUser?.id ||
             finalGrant.boundUser?.role !== grant.boundUser?.role ||
+            finalGrant.boundUser?.archiveOwner !== grant.boundUser?.archiveOwner ||
+            finalGrant.boundUser?.globalRole !== grant.boundUser?.globalRole ||
             finalGrant.boundUser?.personId !== grant.boundUser?.personId ||
             finalGrant.boundUser?.treeAccess !== grant.boundUser?.treeAccess
           )
@@ -457,9 +501,7 @@ export function mcpHttp({
               status: 403,
               body: { error: "Доступ MCP-токена изменился" },
             };
-          return {
-            status: 200,
-            body: result(
+          const body = result(
               id,
               modern
                 ? modernResult({
@@ -470,11 +512,24 @@ export function mcpHttp({
                     content: [{ type: "text", text: JSON.stringify(value) }],
                     structuredContent: value,
                   },
-            ),
-          };
+            );
+          const timer = setTimeout(() => res.destroy(new Error("MCP delivery timed out")), 4_000);
+          timer.unref();
+          try {
+            const done = finished(res, { cleanup: true });
+            json(res, 200, body);
+            await done;
+          } finally {
+            clearTimeout(timer);
+          }
+          return { delivered: true };
         });
+        if ("delivered" in delivery) return true;
         return json(res, delivery.status, delivery.body);
       } catch (reason) {
+        if (res.headersSent || res.destroyed) { res.destroy(reason as Error); return true; }
+        if ((reason as { code?: string }).code === "55P03")
+          return json(res, 409, { error: "Доступ к MCP-токену изменяется. Повторите запрос" });
         auditError = true;
         return json(
           res,

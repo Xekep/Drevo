@@ -48,7 +48,9 @@ import { archiveRoutePool } from "./archive-route-pool.ts";
 import { publicShareAccess } from "./public-share-access.ts";
 import { safeRequestRoute } from "./safe-request-route.ts";
 import { sessionHttp } from "./session-http.ts";
+import { platformRolesHttp } from "./platform-roles-http.ts";
 import { sourceCatalogHttp } from "./source-catalog-http.ts";
+import { initializePlatformConfiguration } from "./platform-configuration.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 type StartedServer = {
@@ -124,6 +126,8 @@ export async function startServer(
       archiveId,
     );
     own(() => archive.close());
+    if (!archiveId)
+      await initializePlatformConfiguration(archive.db, process.env.ARCHIVE_ID || "");
     const providerCleanup = archive.db.kind === "postgres"
       ? await aiProviderCleanup(archive.db, configuredPath, aiFetch)
       : undefined;
@@ -213,6 +217,7 @@ export async function startServer(
     const visibility = await settingsStore(archive.db);
     const users = await userStore(archive.db);
     const auth = await createAuth(users, archive.db, publicOrigin);
+    const managePlatformRoles = platformRolesHttp(archive.db, auth, publicOrigin);
     const emailAuth = !archiveId
       ? emailAuthHttp(archive.db, auth, publicOrigin)
       : null;
@@ -414,6 +419,7 @@ export async function startServer(
         return;
       if (path.startsWith("/api/")) await auth.refreshSession(req, res);
       if (emailAuth && (await emailAuth.handle(req, res, parsedUrl))) return;
+      if (await managePlatformRoles(req, res, parsedUrl)) return;
       if (await listAccountArchives(req, res, parsedUrl)) return;
       if (await exportAccountData(req, res, parsedUrl)) return;
       if (await exportAccountAttachments(req, res, parsedUrl)) return;

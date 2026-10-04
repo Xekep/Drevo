@@ -54,13 +54,23 @@ export async function verifyManagedBackupCheckRevocation(
   let ready = new Promise<void>((resolve) => { reached = resolve; });
   let gate = new Promise<void>((resolve) => { release = resolve; });
   let authorizationChecks = 0;
+  let createReads = 0;
   const resetGate = () => {
     ready = new Promise<void>((resolve) => { reached = resolve; });
     gate = new Promise<void>((resolve) => { release = resolve; });
     authorizationChecks = 0;
+    createReads = 0;
   };
   const guardedAuth = {
     ...auth,
+    currentUser: async (...args: Parameters<typeof auth.currentUser>) => {
+      const actor = await auth.currentUser(...args);
+      if (args[0].url === "/api/backups/create" && actor && ++createReads === 2) {
+        reached();
+        await gate;
+      }
+      return actor;
+    },
     isPlatformAdmin: async (...args: Parameters<typeof auth.isPlatformAdmin>) => {
       const allowed = await auth.isPlatformAdmin(...args);
       if (allowed && ++authorizationChecks === 2) {
@@ -138,7 +148,7 @@ export async function verifyManagedBackupCheckRevocation(
       await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [normal.hash]);
     }
 
-    for (const kind of ["logout", "platform-grant", "membership"] as const) {
+    for (const kind of ["logout", "platform-grant", "membership", "owner-transfer"] as const) {
       resetGate();
       const session = await insertSession();
       try {
@@ -150,6 +160,8 @@ export async function verifyManagedBackupCheckRevocation(
           await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [session.hash]);
         else if (kind === "platform-grant")
           await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
+        else if (kind === "owner-transfer")
+          await client.query("UPDATE archive_owners SET user_id='vk:42' WHERE archive_id=$1", [archive.db.archiveId]);
         else
           await client.query("UPDATE archive_memberships SET approved=false WHERE archive_id=$1 AND user_id='owner'",
             [archive.db.archiveId]);
@@ -164,6 +176,8 @@ export async function verifyManagedBackupCheckRevocation(
         await backups.idle();
         if (kind === "platform-grant")
           await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
+        else if (kind === "owner-transfer")
+          await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id=$1", [archive.db.archiveId]);
         else if (kind === "membership")
           await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id=$1 AND user_id='owner'",
             [archive.db.archiveId]);
@@ -175,7 +189,35 @@ export async function verifyManagedBackupCheckRevocation(
       { kind: "logout", status: 401, queued: false, probed: false },
       { kind: "platform-grant", status: 403, queued: false, probed: false },
       { kind: "membership", status: 403, queued: false, probed: false },
+      { kind: "owner-transfer", status: 403, queued: false, probed: false },
     ], "completed revocation before job creation must prevent the remote check");
+
+    for (const kind of ["logout", "owner-transfer"] as const) {
+      resetGate();
+      const session = await insertSession();
+      try {
+        const before = await jobId();
+        const pending = fetch(`${base}/api/backups/create`, {
+          method: "POST", headers: { Cookie: `drevo_session=${session.token}`,
+            Origin: base, "X-Drevo-Backup": "1" },
+        });
+        await waitForCheck(pending);
+        if (kind === "logout")
+          await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [session.hash]);
+        else
+          await client.query("UPDATE archive_owners SET user_id='vk:42' WHERE archive_id=$1", [archive.db.archiveId]);
+        release();
+        const response = await pending;
+        assert.equal(response.status, kind === "logout" ? 401 : 403, await response.text());
+        assert.equal(await jobId(), before, "revocation before create claim must not queue a job");
+      } finally {
+        release();
+        if (kind === "owner-transfer")
+          await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id=$1", [archive.db.archiveId]);
+        await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [session.hash]);
+        await restoreJob();
+      }
+    }
 
     resetGate();
     const contended = await insertSession();

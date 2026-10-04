@@ -13,6 +13,7 @@ import { isInfrastructureError } from "./infrastructure-error.ts";
 import { AccountSessionBusy } from "./account-session-guard.ts";
 import { lockDiscoveryOwnerReadAccess } from "./discovery-owner-read-access.ts";
 import type { Change } from "../domain/changes.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 
 const fields = ["birth", "death", "birthPlace", "deathPlace", "occupation"] as const;
 type Field = typeof fields[number];
@@ -215,7 +216,7 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
       return json(res, 501, { error: "Доступ к связанной карточке доступен с PostgreSQL" });
     const user = await auth.currentUser(req);
     if (!user) return json(res, 401, { error: "Войдите в архив" });
-    if (user.role !== "admin" || user.approved !== true)
+    if (!isArchiveOwner(user) || user.approved !== true)
       return json(res, 403, { error: "Доступно владельцу дерева" });
     if (detail[2]) {
       if (req.method !== "GET" && req.method !== "POST")
@@ -302,7 +303,7 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
           const state = await copyState(detail[1], archiveId, user.id, true);
           if (state.code !== 200) return state;
           const approved = await auth.currentUser(req);
-          if (approved?.id !== user.id || approved.role !== "admin" || approved.approved !== true)
+          if (approved?.id !== user.id || !isArchiveOwner(approved) || approved.approved !== true)
             return { code: 403 as const };
           if (Number(body.revision) !== state.revision || body.reviewToken !== state.reviewToken)
             return { code: 409 as const };
@@ -447,7 +448,7 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
         if (!pair || pairArgs(pair).some((value,index) => value !== pairArgs(preliminary)[index]))
           return { code: 404, error: "Связь не найдена" };
         const approved = await auth.currentUser(req);
-        if (approved?.role !== "admin" || approved.approved !== true)
+        if (!isArchiveOwner(approved) || approved?.approved !== true)
           return { code: 403, error: "Доступ отозван" };
         const snapshot: CardFields = {};
         for (const field of selected) snapshot[field] = available[field];
@@ -471,7 +472,7 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
       const pair = await linkedPair(detail[1],archiveId,true);
       if (!pair) return { code: 404, error: "Связь не найдена" };
       const approved = await auth.currentUser(req);
-      if (approved?.role !== "admin" || approved.approved !== true)
+      if (!isArchiveOwner(approved) || approved?.approved !== true)
         return { code: 403, error: "Доступ отозван" };
       await db.prepare("", `DELETE FROM discovery_linked_card_grants
         WHERE left_archive_id=? AND left_person_id=? AND right_archive_id=? AND right_person_id=?

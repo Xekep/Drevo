@@ -70,7 +70,7 @@ test("an archive admin creates and revokes a one-use invitation", async ({ page 
     revoked = true;
     return route.fulfill({ json: { ok: true } });
   });
-  await page.goto("/admin");
+  await page.goto("/manage");
   await openAdminSection(page, "invitations", "Приглашения");
   await page.getByRole("button", { name: "Создать ссылку" }).click();
   await expect(page.getByRole("textbox", { name: "Ссылка для отправки" }))

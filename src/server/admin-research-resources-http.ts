@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import type { researchCatalogStore } from "./research-catalog.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
+import { PlatformAccessBusy, PlatformAccessDenied } from "./platform-access.ts";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -37,9 +38,10 @@ export function adminResearchResourcesHttp({
     if (url.pathname !== prefix && !url.pathname.startsWith(`${prefix}/`))
       return false;
     const actor = await auth.currentUser(req);
-    if (!actor || !(await auth.isAdmin(req)))
-      return json(res, actor ? 403 : 401, {
-        error: "Только администратор может управлять ресурсами",
+    const session = await auth.accountSession(req);
+    if ((!auth.local && !session) || !(await auth.isPlatformAdmin(req)))
+      return json(res, session || actor ? 403 : 401, {
+        error: "Только администратор платформы может управлять ресурсами",
       });
     if (url.pathname === prefix && req.method === "GET")
       return json(res, 200, { categories: await catalog.list() });
@@ -63,7 +65,7 @@ export function adminResearchResourcesHttp({
         parts[0] === "categories" &&
         req.method === "POST"
       )
-        categories = await catalog.createCategory(body, actor);
+        categories = await catalog.createCategory(body, actor, session || undefined);
       else if (
         parts.length === 2 &&
         parts[0] === "categories" &&
@@ -73,6 +75,7 @@ export function adminResearchResourcesHttp({
           decodeURIComponent(parts[1]),
           body,
           actor,
+          session || undefined,
         );
       else if (
         parts.length === 2 &&
@@ -82,6 +85,7 @@ export function adminResearchResourcesHttp({
         categories = await catalog.deleteCategory(
           decodeURIComponent(parts[1]),
           actor,
+          session || undefined,
         );
       else if (
         parts.length === 3 &&
@@ -93,6 +97,7 @@ export function adminResearchResourcesHttp({
           decodeURIComponent(parts[1]),
           body,
           actor,
+          session || undefined,
         );
       else if (
         parts.length === 2 &&
@@ -103,6 +108,7 @@ export function adminResearchResourcesHttp({
           decodeURIComponent(parts[1]),
           body,
           actor,
+          session || undefined,
         );
       else if (
         parts.length === 2 &&
@@ -112,17 +118,22 @@ export function adminResearchResourcesHttp({
         categories = await catalog.deleteResource(
           decodeURIComponent(parts[1]),
           actor,
+          session || undefined,
         );
       else return json(res, 404, { error: "Неизвестный запрос" });
       return json(res, req.method === "POST" ? 201 : 200, { categories });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Ошибка сохранения";
-      if (/UNIQUE constraint/iu.test(message))
+      if (error instanceof PlatformAccessDenied)
+        return json(res, 403, { error: "Права администратора платформы отозваны" });
+      if (error instanceof PlatformAccessBusy)
+        return json(res, 409, { error: "Проверка прав занята. Повторите запрос" });
+      if ((error as { code?: string }).code === "23505" || /UNIQUE constraint/iu.test(message))
         return json(res, 409, { error: "Такая категория или ссылка уже есть" });
       if (error instanceof RangeError || error instanceof SyntaxError)
         return json(res, 400, { error: message });
-      console.error("Не удалось изменить каталог ресурсов", error);
+      console.error("platform_research_catalog_write_failed");
       return json(res, 500, { error: "Не удалось изменить каталог ресурсов" });
     }
   };

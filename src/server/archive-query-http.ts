@@ -14,6 +14,7 @@ import {
   archivePageSize,
 } from "../domain/archive-projection.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import { DEFAULT_TREE_PREFERENCES } from "../domain/tree-preferences.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
@@ -58,7 +59,7 @@ export function archiveQueryHttp({
   ) => user ? {
     ...user,
     platformAdmin: await auth.isPlatformAdmin(req),
-    aiAvailable: user.approved === true && user.role === "admin"
+    aiAvailable: user.approved === true && isArchiveOwner(user)
       ? await accountAiAccess(archive.db, user.id, auth.local)
       : false,
   } : null;

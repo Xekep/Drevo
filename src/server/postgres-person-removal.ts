@@ -5,6 +5,7 @@ import {
   type Change,
 } from "../domain/changes.ts";
 import { removePerson } from "../domain/mutations.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { authorizeArchive } from "./permissions.ts";
 import { readPostgresArchiveInTransaction } from "./postgres-archive-read.ts";
@@ -50,7 +51,7 @@ export async function removePostgresPersonForSession(
     archiveId,
     expectedRevision,
     async (actor, revision) => {
-      if (actor.role !== "admin")
+      if (!isArchiveOwner(actor))
         throw new ForbiddenError("Удалять людей может только администратор");
       const previous = (
         await client.query(
@@ -147,7 +148,7 @@ export async function restorePostgresPersonForSession(
     archiveId,
     expectedRevision,
     async (actor, revision) => {
-      if (actor.role !== "admin")
+      if (!isArchiveOwner(actor))
         throw new ForbiddenError(
           "Восстанавливать людей может только администратор",
         );

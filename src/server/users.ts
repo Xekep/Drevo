@@ -1,7 +1,9 @@
 import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser, Role, TreeAccess } from "../domain/access.ts";
-import { ROLE_NAMES } from "../domain/access.ts";
+import { ROLE_NAMES, isArchiveOwner } from "../domain/access.ts";
 import { auditStore } from "./audit.ts";
+import { assertActiveAccountSession } from "./account-session-guard.ts";
+import { assertPlatformAdminInArchiveTransaction } from "./platform-access.ts";
 export class ForbiddenError extends Error {}
 
 /** Recheck the HTTP authorization snapshot after acquiring the archive lock.
@@ -16,16 +18,39 @@ export async function assertCurrentArchiveActor(
     (actor.id === "local" && !process.env.PUBLIC_ORIGIN)
   )
     return;
-  const row = await db
-    .prepare(
-      "",
-      "SELECT role,approved,person_id,tree_access FROM archive_memberships WHERE archive_id=current_setting('drevo.archive_id',true) AND user_id=?",
-    )
-    .get(actor.id);
+  let row: Record<string, unknown> | undefined;
+  let owner: Record<string, unknown> | undefined;
+  let admin: Record<string, unknown> | undefined;
+  let researcher: Record<string, unknown> | undefined;
+  try {
+    // Graph writes already hold archives FOR UPDATE. NOWAIT preserves the
+    // account-delete order while retaining each capability through commit.
+    const account = await db.prepare("",
+      "SELECT id FROM accounts WHERE id=? FOR SHARE NOWAIT").get(actor.id);
+    if (!account) throw new ForbiddenError("Аккаунт больше не доступен");
+    row = await db.prepare("", `SELECT role,approved,person_id,tree_access
+      FROM archive_memberships WHERE archive_id=current_setting('drevo.archive_id',true)
+        AND user_id=? FOR SHARE NOWAIT`).get(actor.id);
+    owner = await db.prepare("", `SELECT user_id FROM archive_owners
+      WHERE archive_id=current_setting('drevo.archive_id',true)
+        AND user_id=? FOR SHARE NOWAIT`).get(actor.id);
+    admin = await db.prepare("",
+      "SELECT account_id FROM platform_admins WHERE account_id=? FOR SHARE NOWAIT")
+      .get(actor.id);
+    researcher = await db.prepare("",
+      "SELECT account_id FROM platform_researchers WHERE account_id=? FOR SHARE NOWAIT")
+      .get(actor.id);
+  } catch (error) {
+    if ((error as { code?: string }).code === "55P03")
+      throw new ForbiddenError("Права доступа меняются. Повторите запрос");
+    throw error;
+  }
   if (
     !row ||
     !row.approved ||
     row.role !== actor.role ||
+    !!owner !== actor.archiveOwner ||
+    (admin ? "admin" : researcher ? "researcher" : null) !== (actor.globalRole ?? null) ||
     (row.person_id || "") !== (actor.personId || "") ||
     row.tree_access !== (actor.treeAccess || "all")
   )
@@ -43,7 +68,13 @@ export function archiveUserFromRow(row: Record<string, unknown>): ArchiveUser {
   return {
     id: String(row.id),
     name: String(row.name),
-    role: row.role as Role,
+    role: (row.tree_role || row.role) as Role,
+    ...(row.tree_role ? { treeRole: String(row.tree_role) as ArchiveUser["treeRole"] } : {}),
+    ...(Object.hasOwn(row, "global_role")
+      ? { globalRole: row.global_role ? String(row.global_role) as ArchiveUser["globalRole"] : null }
+      : {}),
+    ...(Object.hasOwn(row, "archive_owner")
+      ? { archiveOwner: row.archive_owner === true } : {}),
     createdAt: String(row.created_at),
     lastVisitAt: row.last_visit_at ? String(row.last_visit_at) : undefined,
     approved: !!row.approved,
@@ -142,37 +173,44 @@ export async function userStore(
       return user;
     });
   }
-  async function setRole(actor: ArchiveUser, id: string, role: Role) {
+  async function setRole(actor: ArchiveUser, id: string, role: Role, sessionTokenHash?: string) {
     return await db.transaction(async () => {
-      if (actor.id !== "local" && (await get(actor.id))?.role !== "admin")
+      if (db.kind === "postgres" && sessionTokenHash)
+        await assertActiveAccountSession(db, actor.id, sessionTokenHash);
+      await assertCurrentArchiveActor(db, actor);
+      if (actor.id !== "local" && !isArchiveOwner(await get(actor.id)))
         throw new ForbiddenError(
           "Управлять доступом может только администратор",
         );
       if (!Object.hasOwn(ROLE_NAMES, role)) throw new Error("Неизвестная роль");
+      if (db.kind === "postgres" && role !== "reader" && role !== "relative")
+        throw new ForbiddenError("Владелец дерева может назначать только читателя или родственника");
       const target = await get(id);
       if (!target) throw new Error("Пользователь не найден");
       if (
         db.kind === "postgres" &&
         role !== "admin" &&
         (await db
-          .prepare("", "SELECT 1 FROM archive_owners WHERE user_id=?")
+          .prepare("", "SELECT 1 FROM archive_owners WHERE archive_id=current_setting('drevo.archive_id',true) AND user_id=?")
           .get(id))
       )
         throw new Error(
           "Нельзя понизить роль владельца архива. Сначала передайте владение.",
         );
       if (
-        target.role === "admin" &&
+        db.kind === "sqlite" && target.role === "admin" &&
         role !== "admin" &&
         (await adminCount()) <= 1
       )
         throw new Error("Нельзя убрать последнего администратора");
-      await db
-        .prepare(
+      if (db.kind === "postgres")
+        await db.prepare("", "UPDATE archive_memberships SET role=?,approved=true WHERE user_id=?")
+          .run(role, id);
+      else
+        await db.prepare(
           "UPDATE users SET role=?,approved=1,tree_access=CASE WHEN ?='admin' THEN 'all' ELSE tree_access END WHERE id=?",
-          "UPDATE archive_memberships SET role=?,approved=true,tree_access=CASE WHEN ?='admin' THEN 'all' ELSE tree_access END WHERE user_id=?",
-        )
-        .run(role, role, id);
+          "",
+        ).run(role, role, id);
       if (target.role !== role || !target.approved)
         await audit.record(
           {
@@ -199,15 +237,19 @@ export async function userStore(
     actor: ArchiveUser,
     id: string,
     approved: boolean,
+    sessionTokenHash?: string,
   ) {
     return await db.transaction(async () => {
-      if (actor.id !== "local" && (await get(actor.id))?.role !== "admin")
+      if (db.kind === "postgres" && sessionTokenHash)
+        await assertActiveAccountSession(db, actor.id, sessionTokenHash);
+      await assertCurrentArchiveActor(db, actor);
+      if (actor.id !== "local" && !isArchiveOwner(await get(actor.id)))
         throw new ForbiddenError(
           "Управлять доступом может только администратор",
         );
       const target = await get(id);
       if (!target) throw new Error("Пользователь не найден");
-      if (target.role === "admin" && !approved)
+      if (isArchiveOwner(target) && !approved)
         throw new Error("Нельзя заблокировать администратора");
       await db
         .prepare(
@@ -232,9 +274,13 @@ export async function userStore(
     id: string,
     personId: string | null,
     treeAccess: TreeAccess,
+    sessionTokenHash?: string,
   ) {
     return await db.transaction(async () => {
-      if (actor.id !== "local" && (await get(actor.id))?.role !== "admin")
+      if (db.kind === "postgres" && sessionTokenHash)
+        await assertActiveAccountSession(db, actor.id, sessionTokenHash);
+      await assertCurrentArchiveActor(db, actor);
+      if (actor.id !== "local" && !isArchiveOwner(await get(actor.id)))
         throw new ForbiddenError(
           "Управлять доступом может только администратор",
         );
@@ -268,7 +314,7 @@ export async function userStore(
         throw new Error(
           "Для доступа по общим предкам сначала выберите человека",
         );
-      if (target.role === "admin" && treeAccess !== "all")
+      if (isArchiveOwner(target) && treeAccess !== "all")
         throw new Error("Администратору нужен доступ ко всему древу");
       if (treeAccess === "common_ancestors") {
         const publicAccess = await db
@@ -373,9 +419,12 @@ export async function userStore(
       ),
     };
   }
-  async function remove(actor: ArchiveUser, id: string) {
+  async function remove(actor: ArchiveUser, id: string, sessionTokenHash?: string) {
     return await db.transaction(async () => {
-      if (actor.id !== "local" && (await get(actor.id))?.role !== "admin")
+      if (db.kind === "postgres" && sessionTokenHash)
+        await assertActiveAccountSession(db, actor.id, sessionTokenHash);
+      await assertCurrentArchiveActor(db, actor);
+      if (actor.id !== "local" && !isArchiveOwner(await get(actor.id)))
         throw new ForbiddenError(
           "Управлять доступом может только администратор",
         );
@@ -386,13 +435,13 @@ export async function userStore(
       if (
         db.kind === "postgres" &&
         (await db
-          .prepare("", "SELECT 1 FROM archive_owners WHERE user_id=?")
+          .prepare("", "SELECT 1 FROM archive_owners WHERE archive_id=current_setting('drevo.archive_id',true) AND user_id=?")
           .get(id))
       )
         throw new Error(
           "Нельзя удалить владельца архива. Сначала передайте владение.",
         );
-      if (target.role === "admin" && (await adminCount()) <= 1)
+      if (db.kind === "sqlite" && target.role === "admin" && (await adminCount()) <= 1)
         throw new Error("Нельзя удалить последнего администратора");
       await audit.record(
         {
@@ -421,17 +470,27 @@ export async function userStore(
         .run(id);
     });
   }
-  async function setFullAccess(actor: ArchiveUser, id: string, enabled: boolean) {
+  async function setFullAccess(
+    actor: ArchiveUser, id: string, enabled: boolean, actorSessionTokenHash?: string,
+  ) {
     if (db.kind !== "postgres")
       throw new Error("Уровни аккаунтов доступны после перехода на PostgreSQL");
     return await db.transaction(async () => {
-      if (
-        !(actor.id === "local" && !process.env.PUBLIC_ORIGIN) &&
-        !(await db
-          .prepare("", "SELECT 1 FROM platform_admins WHERE account_id=?")
-          .get(actor.id))
-      )
-        throw new ForbiddenError("Уровень аккаунта меняет администратор платформы");
+      if (!(actor.id === "local" && !process.env.PUBLIC_ORIGIN)) {
+        if (actorSessionTokenHash) {
+          await assertPlatformAdminInArchiveTransaction(db, actor.id, actorSessionTokenHash);
+        } else {
+          // Direct store callers have no HTTP session, but still retain the
+          // account and global grant until this tier write commits.
+          const account = await db.prepare("",
+            "SELECT id FROM accounts WHERE id=? FOR SHARE NOWAIT").get(actor.id);
+          const admin = await db.prepare("",
+            "SELECT account_id FROM platform_admins WHERE account_id=? FOR SHARE NOWAIT")
+            .get(actor.id);
+          if (!account || !admin)
+            throw new ForbiddenError("Уровень аккаунта меняет администратор платформы");
+        }
+      }
       const target = await get(id);
       if (!target) throw new Error("Пользователь не найден");
       const current = await db

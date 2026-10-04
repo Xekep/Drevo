@@ -1,4 +1,4 @@
-import { readStorageLimits, writeStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
+import { readStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
@@ -11,7 +11,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { DatabaseSync } from "node:sqlite";
-import { gzipSync } from "node:zlib";
 import pg from "pg";
 import PDFDocument from "pdfkit";
 import sharp from "sharp";
@@ -23,12 +22,15 @@ import {
 } from "../../src/server/session-token.ts";
 import { openPostgresDatabase } from "../../src/server/store-database.ts";
 import { initializePostgresRuntimeSchema } from "../../src/server/postgres-runtime-schema.ts";
+import { initializePlatformConfiguration } from "../../src/server/platform-configuration.ts";
 import { backupCoordinator } from "../../src/server/backup-coordinator.ts";
 import { verifyManagedBackupDelivery } from "./postgres-managed-backup-delivery.ts";
 import { verifyManagedBackupStatusDelivery } from "./postgres-managed-backup-status-delivery.ts";
 import { verifyManagedBackupSettingsRevocation } from "./postgres-managed-backup-settings-revocation.ts";
 import { verifyManagedBackupCheckRevocation } from "./postgres-managed-backup-check-revocation.ts";
 import { verifyManagedBackupPreviewRevocation } from "./postgres-managed-backup-preview-revocation.ts";
+import { verifyRestorePreviewDelivery } from "./postgres-restore-preview-delivery.ts";
+import { verifyRestoreGuard } from "./postgres-restore-guard.ts";
 import { databaseBackupHttp } from "../../src/server/database-backup-http.ts";
 import { createAuth } from "../../src/server/auth.ts";
 import { openArchive } from "../../src/server/database.ts";
@@ -72,7 +74,11 @@ import { acceptWithDecisionNote, rejectWithStableDecisionNote,
   verifyWithdrawnDecisionNotes, verifyLegacyDecisionCannotReopen,
   verifyNoteHiddenAfterPublicationChange } from "./postgres-match-decision-notes.ts";
 import { verifyAiProviderCleanupStatus } from "./postgres-ai-provider-status.ts";
+import { verifyPlatformStaffRoles } from "./postgres-platform-staff-roles.ts";
+import { verifyGlobalStaffMigrationStartup } from "./postgres-global-staff-migration-startup.ts";
 import { verifyAiProviderCleanupRetry } from "./postgres-ai-provider-retry.ts";
+import { verifyPlatformConfigurationMigration, verifyPlatformConfigurationRevocation,
+  verifySharedPlatformConfiguration } from "./postgres-platform-configuration.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
@@ -119,10 +125,11 @@ import { verifyAtomicSuggestionAcceptance } from "./postgres-suggestion-accept.t
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { discoveryNamePartsBatch } from "../../ops/postgres/backfill-discovery-name-parts.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
-import { databaseBackupBytes } from "../helpers/database-backup.ts";
 import { restoreStore } from "../../src/server/restore.ts";
 import { startServer } from "../../src/server/index.ts";
 import { adaptLegacyAiFake } from "../legacy-ai-fake.ts";
+import { verifyAiLegacyChatRekey } from "./postgres-ai-legacy-rekey.ts";
+import { verifyAiBufferedDelivery } from "./postgres-ai-buffered-delivery.ts";
 import {
   BASIC_MEDIA_BYTES,
   enforcePostgresMediaQuota,
@@ -195,7 +202,6 @@ const family: Family = {
 let live: Awaited<ReturnType<typeof openArchive>> | undefined;
 let app: Awaited<ReturnType<typeof startServer>> | undefined;
 let otherApp: Awaited<ReturnType<typeof startServer>> | undefined;
-let restoreGuardApp: Awaited<ReturnType<typeof startServer>> | undefined;
 try {
   delete process.env.DATABASE_BACKEND;
   const sqlite = await openArchive(source, family);
@@ -205,6 +211,11 @@ try {
   await users.setRole((await users.get("owner"))!, "vk:42", "researcher");
   await settingsStore(sqlite.db);
   await aiSettingsStore(sqlite.db);
+  const primaryCategory = (await researchCatalogStore(sqlite.db).list())[0];
+  await researchCatalogStore(sqlite.db).createResource(primaryCategory.id, {
+    name: "Primary custom resource", url: "https://primary-resource.invalid/",
+    description: "Custom resource retained during the global catalog migration",
+  }, (await users.get("owner"))!);
   await sqlite.db.prepare("INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,updated_ms) VALUES('person-a','owner','Владелец',1000,'Правка до переноса',2000),('person-a','owner','Владелец',1001,'Без правок',NULL)").run();
   const before = await sqlite.read();
   await sqlite.close();
@@ -232,8 +243,46 @@ try {
   await client.query("DROP TABLE vk_auth_settings");
   await client.query("ALTER TABLE ai_settings DROP COLUMN role_profiles");
   await client.query("ALTER TABLE documents DROP COLUMN annotations");
+  // 090 runs as the non-BYPASSRLS application owner. A legacy grant in a
+  // different archive must not make its global NOT VALID check abort startup.
+  await client.query("BEGIN");
+  await client.query("SELECT set_config('drevo.archive_id','role-legacy-archive',true)");
+  await client.query(`INSERT INTO archives(id,title,description,demo,revision,sqlite_schema_version)
+    VALUES('role-legacy-archive','Legacy roles','',false,0,18)`);
+  await client.query(`INSERT INTO accounts(id,name,created_at) VALUES
+    ('role-legacy-owner','Legacy owner',now()),
+    ('role-legacy-member','Legacy member',now())`);
+  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+    VALUES('role-legacy-archive','role-legacy-owner','admin',true,'all'),
+          ('role-legacy-archive','role-legacy-member','researcher',true,'all')`);
+  await client.query(`INSERT INTO archive_owners(archive_id,user_id)
+    VALUES('role-legacy-archive','role-legacy-owner')`);
+  await client.query("COMMIT");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   live = await openArchive(source, family);
+  await verifyPlatformConfigurationMigration(live.db, client);
   assert.equal(live.db.kind, "postgres");
+  await verifyGlobalStaffMigrationStartup(client, "runtime-test", source);
+  console.log("runtime_global_staff_concurrent_startup_ok");
+  await client.query("SELECT set_config('drevo.archive_id','role-legacy-archive',false)");
+  assert.deepEqual((await client.query(`SELECT user_id,role FROM archive_memberships
+    WHERE archive_id='role-legacy-archive' ORDER BY user_id`)).rows,
+    [{ user_id: "role-legacy-member", role: "researcher" },
+     { user_id: "role-legacy-owner", role: "admin" }]);
+  await client.query(`UPDATE archive_memberships SET approved=false
+    WHERE archive_id='role-legacy-archive' AND user_id='role-legacy-member'`);
+  assert.equal((await client.query(`SELECT role FROM archive_memberships
+    WHERE archive_id='role-legacy-archive' AND user_id='role-legacy-member'`)).rows[0].role,
+    "relative", "the 090 trigger normalizes a legacy role on a non-role update");
+  const legacyRoleArchive = await openPostgresDatabase("role-legacy-archive", source);
+  await legacyRoleArchive.close();
+  assert.equal((await client.query(`SELECT role FROM archive_memberships
+    WHERE archive_id='role-legacy-archive' AND user_id='role-legacy-owner'`)).rows[0].role,
+    "relative", "opening a second archive lazily normalizes its former owner grant");
+  await client.query("DELETE FROM archives WHERE id='role-legacy-archive'");
+  await client.query("DELETE FROM accounts WHERE id IN ('role-legacy-owner','role-legacy-member')");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  console.log("runtime_global_roles_two_archive_migration_ok");
   assert.equal((await client.query(`SELECT 1 FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name='runtime_visible_person_comments'
       AND column_name='updated_ms'`)).rowCount, 1,
@@ -809,8 +858,16 @@ try {
     "SELECT set_config('drevo.archive_id','runtime-test',false)",
   );
   const runtimeUsers = await userStore(live.db);
-  assert.equal((await runtimeUsers.get("owner"))?.role, "admin");
-  assert.equal((await runtimeUsers.get("vk:42"))?.role, "researcher");
+  assert.deepEqual(((await runtimeUsers.get("owner")) && {
+    treeRole: (await runtimeUsers.get("owner"))?.treeRole,
+    globalRole: (await runtimeUsers.get("owner"))?.globalRole,
+    archiveOwner: (await runtimeUsers.get("owner"))?.archiveOwner,
+  }), { treeRole: "relative", globalRole: "admin", archiveOwner: true });
+  assert.deepEqual(((await runtimeUsers.get("vk:42")) && {
+    treeRole: (await runtimeUsers.get("vk:42"))?.treeRole,
+    globalRole: (await runtimeUsers.get("vk:42"))?.globalRole,
+    archiveOwner: (await runtimeUsers.get("vk:42"))?.archiveOwner,
+  }), { treeRole: "relative", globalRole: null, archiveOwner: false });
   assert.deepEqual(await accountCapacity(live.db, "vk:42"), {
     available: true,
     owned: false,
@@ -863,16 +920,19 @@ try {
     /владельца/,
   );
   const preferences = treePreferencesStore(live.db);
-  await live.db.transaction(() => writeStorageLimits(live!.db, { ...DEFAULT_STORAGE_LIMITS, admin: 0 }, owner));
+  await live.db.prepare("", "INSERT INTO platform_upload_limits(id,data) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data")
+    .run(JSON.stringify({ ...DEFAULT_STORAGE_LIMITS, admin: 0 }));
   assert.equal((await readStorageLimits(live.db)).admin, 0);
   await assert.rejects(enforceUserStorageLimit(live.db, "owner", 1), UploadQuotaError);
   const vkSettings = vkAuthSettingsStore(live.db, "https://archive.invalid");
-  assert.equal((await vkSettings.read()).available, false);
-  await vkSettings.write({ enabled: true, clientId: "12345" }, owner);
   assert.equal((await vkSettings.read()).available, true);
   const isolatedVk = await openPostgresDatabase("other-archive", source);
   try {
-    assert.deepEqual(await readStorageLimits(isolatedVk), DEFAULT_STORAGE_LIMITS);
+    await assert.rejects(initializePlatformConfiguration(isolatedVk, "runtime-test"),
+      /primary archive/,
+      "a selected archive cannot become the migration source");
+    assert.equal((await readStorageLimits(isolatedVk)).admin, 0,
+      "the upload cap is shared across archives");
     await assert.rejects(isolatedVk.prepare("", "INSERT INTO upload_limits(archive_id,id,data) VALUES('runtime-test',1,'{}')").run(), /row-level security/);
     const isolatedAi = await aiSettingsStore(isolatedVk);
     assert.equal((await isolatedAi.read()).roleProfiles.researcher, null);
@@ -888,7 +948,8 @@ try {
     assert.equal(
       (await vkAuthSettingsStore(isolatedVk, "https://archive.invalid").read())
         .available,
-      false,
+      true,
+      "VK sign-in configuration is shared across archives",
     );
     await assert.rejects(
       isolatedVk
@@ -902,7 +963,8 @@ try {
   } finally {
     await isolatedVk.close();
   }
-  await live.db.transaction(() => writeStorageLimits(live!.db, DEFAULT_STORAGE_LIMITS, owner));
+  await live.db.prepare("", "UPDATE platform_upload_limits SET data=? WHERE id=1")
+    .run(JSON.stringify(DEFAULT_STORAGE_LIMITS));
   await preferences.write("owner", {
     reverseTimeline: false,
     cardVariant: "portrait",
@@ -1026,6 +1088,7 @@ try {
     (await vkAuthSettingsStore(restored.db, "https://archive.invalid").read())
       .clientId,
     "12345",
+    "the legacy root row remains intact for historical archive backups",
   );
   assert.equal((await restored.read()).revision, snapshot.revision + 1);
   assert.equal(
@@ -1732,6 +1795,7 @@ try {
     );
   }));
   const securedBase = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  await verifyPlatformConfigurationRevocation(app.archive.db, client);
   const token = newSessionToken();
   await app.archive.db
     .prepare(
@@ -1770,11 +1834,13 @@ try {
       "",
       "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'owner',?)",
     )
-    .run(sessionTokenHash(aiOwnerToken), Date.now() + 60000);
+    .run(sessionTokenHash(aiOwnerToken), Date.now() + 10 * 60_000);
   const ownerHeaders = {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
   };
+  await verifyPlatformStaffRoles(client, securedBase,
+    ownerHeaders, process.env.PUBLIC_ORIGIN!);
   await verifyAiProviderCleanupStatus(app.archive.db, securedBase, ownerHeaders, headers);
   await verifyAiProviderCleanupRetry(app.archive.db, headers);
   // A temporary portrait grant must become a permanent citation reference at
@@ -1901,7 +1967,8 @@ try {
   // The HTTP permission snapshot can precede an ownership transfer. Revoke
   // must reject the former admin after that transfer commits.
   const staleShareAdmin = await stagedUsers.get("owner");
-  assert.equal(staleShareAdmin?.role, "admin");
+  assert.equal(staleShareAdmin?.role, "relative");
+  assert.equal(staleShareAdmin?.archiveOwner, true);
   const staleShareId = randomUUID();
   await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   await client.query(
@@ -1910,7 +1977,7 @@ try {
     [staleShareId, createHash("sha256").update(staleShareId).digest("hex"),
       new Date().toISOString(), new Date(Date.now() + 60_000).toISOString()],
   );
-  await client.query("UPDATE archive_memberships SET role='relative' WHERE archive_id='runtime-test' AND user_id='owner'");
+  await client.query("UPDATE archive_owners SET user_id='reader' WHERE archive_id='runtime-test'");
   try {
     const staleAuth = { currentUser: async () => staleShareAdmin } as unknown as Awaited<ReturnType<typeof createAuth>>;
     const handler = adminSharingHttp({
@@ -1942,7 +2009,7 @@ try {
     assert.equal((await client.query("SELECT revoked_at FROM share_links WHERE id=$1", [staleShareId]))
       .rows[0]?.revoked_at, null);
   } finally {
-    await client.query("UPDATE archive_memberships SET role='admin' WHERE archive_id='runtime-test' AND user_id='owner'");
+    await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
     await client.query("DELETE FROM share_links WHERE id=$1", [staleShareId]);
   }
   // A downgrade can commit while a generated file is staged but not installed.
@@ -2047,6 +2114,8 @@ try {
   const ownGenerated = await fetch(generatedUrl, { headers: ownerHeaders });
   assert.equal(ownGenerated.status, 200, await ownGenerated.clone().text());
   assert.deepEqual(Buffer.from(await ownGenerated.arrayBuffer()), generatedBytes);
+  await verifyAiBufferedDelivery(app.archive, client, source, ownerHeaders,
+    generatedLink.url, process.env.PUBLIC_ORIGIN!);
   const generatedHistory = await fetch(securedBase + `/api/ai/chats/${generatedChat.id}`,
     { headers: ownerHeaders });
   assert.equal(generatedHistory.status, 200);
@@ -2178,7 +2247,7 @@ try {
           { provider: "yandex", subject: "reader" }],
       "the account download includes only the reader's linked login identifiers");
     assert.deepEqual(exported.archives.map((item: { id: string }) => item.id), ["runtime-test"]);
-    assert.equal(exported.archives[0].role, index % 2 ? "reader" : "admin");
+    assert.equal(exported.archives[0].role, index % 2 ? "reader" : "relative");
     assert.equal(exported.archives[0].owned, index % 2 === 0);
     assert.equal(exported.archives[0].preferences?.colorScheme, index % 2 ? undefined : "white");
     assert.deepEqual(exported.archives[0].ownComments, []);
@@ -2538,9 +2607,8 @@ try {
   const chatToDeleteAfterDowngrade = await aiChatStore(app.archive.db).create("owner", "[]");
   const aiOwner = await (await userStore(app.archive.db)).get("owner");
   assert.ok(aiOwner);
-  const delayedChat = await aiChatStore(app.archive.db).create("owner", JSON.stringify([
-    aiOwner.role, aiOwner.treeAccess || "all", aiOwner.personId || "",
-  ]));
+  const delayedChat = await aiChatStore(app.archive.db).create("owner",
+    aiChatAccessScope(aiOwner));
   await aiChatStore(app.archive.db).append(delayedChat.id, "assistant", "downgrade-private-answer");
   const visibleBeforeDowngrade = await fetch(
     securedBase + `/api/ai/chats/${delayedChat.id}`, { headers: ownerHeaders },
@@ -2591,9 +2659,8 @@ try {
   await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
   const chatReader = await (await userStore(app.archive.db)).get("reader");
   assert.ok(chatReader);
-  const privateChat = await aiChatStore(app.archive.db).create("reader", JSON.stringify([
-    chatReader.role, chatReader.treeAccess || "all", chatReader.personId || "",
-  ]));
+  const privateChat = await aiChatStore(app.archive.db).create("reader",
+    aiChatAccessScope(chatReader));
   await aiChatStore(app.archive.db).append(privateChat.id, "user", "private-chat-title-marker");
   await aiChatStore(app.archive.db).append(privateChat.id, "assistant", "private-chat-answer-marker");
   const chatReadAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
@@ -3320,8 +3387,9 @@ try {
     await client.query("INSERT INTO account_tiers(account_id,full_access) VALUES($1,true)", [proposalMember]);
     await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
       VALUES('runtime-test',$1,'researcher',true,'all')`, [proposalMember]);
+    await client.query("INSERT INTO platform_researchers(account_id) VALUES($1)", [proposalMember]);
     await app.archive.db.prepare("", "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)")
-      .run(sessionTokenHash(proposalToken), proposalMember, Date.now() + 60000);
+      .run(sessionTokenHash(proposalToken), proposalMember, Date.now() + 10 * 60_000);
     const proposalHeaders = { ...ownerHeaders, Cookie: `drevo_session=${proposalToken}` };
     const runDeferredAnswer = async (
       label: string,
@@ -3485,7 +3553,7 @@ try {
         const actor = await (await userStore(app!.archive.db)).get(proposalMember);
         assert.ok(actor);
         const chat = await aiChatStore(app!.archive.db).create(proposalMember,
-          JSON.stringify([actor.role, actor.treeAccess || "all", actor.personId || ""]));
+          aiChatAccessScope(actor));
         const handler = aiResearchHttp({
           archive: app!.archive,
           auth: await createAuth(await userStore(app!.archive.db), app!.archive.db,
@@ -3618,6 +3686,14 @@ try {
       }, async () => {
         await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
       }, false);
+      await runDeferredAnswer("global-profile-revoked", async () => {
+        await client.query("DELETE FROM platform_researchers WHERE account_id=$1", [proposalMember]);
+      }, async () => {
+        await client.query("INSERT INTO platform_researchers(account_id) VALUES($1) ON CONFLICT DO NOTHING",
+          [proposalMember]);
+      }, false);
+      await verifyAiLegacyChatRekey(app!.archive, client, source,
+        process.env.PUBLIC_ORIGIN!, proposalMember, proposalHeaders);
       {
         let modelCalls = 0;
         const forbiddenAnswer = "Answer from a model called after downgrade";
@@ -3847,6 +3923,13 @@ try {
         await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id=$1",
           [proposalMember]);
       }, false, true);
+      await runDeferredAnswer("global-profile-delivery-revoked", async () => {
+        await client.query("DELETE FROM platform_researchers WHERE account_id=$1", [proposalMember]);
+      }, async () => {
+        await client.query("INSERT INTO platform_researchers(account_id) VALUES($1) ON CONFLICT DO NOTHING",
+          [proposalMember]);
+      }, false, true);
+      console.log("runtime_ai_global_profile_turn_revocation_ok");
       const rollbackReason = proposalReason("rollback");
       const rollbackActor = await (await userStore(app.archive.db)).get("owner");
       const rollbackFamily = await app.archive.read();
@@ -3887,6 +3970,7 @@ try {
       await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
       await client.query("DELETE FROM research_suggestions WHERE reason=$1", [proposalReason("allowed")]);
       await client.query("DELETE FROM archive_memberships WHERE archive_id='runtime-test' AND user_id=$1", [proposalMember]);
+      await client.query("DELETE FROM platform_researchers WHERE account_id=$1", [proposalMember]);
       await client.query("DELETE FROM account_sessions WHERE user_id=$1", [proposalMember]);
       await client.query("DELETE FROM account_tiers WHERE account_id=$1", [proposalMember]);
       await client.query("DELETE FROM accounts WHERE id=$1", [proposalMember]);
@@ -4268,8 +4352,15 @@ try {
   const archiveAdminSession = await fetch(securedBase + "/api/session", {
     headers: archiveAdminHeaders,
   }).then((response) => response.json());
-  assert.equal(archiveAdminSession.user.role, "admin");
+  assert.equal(archiveAdminSession.user.role, "relative",
+    "legacy per-tree admin input normalizes to a local grant, not global admin");
+  assert.equal(archiveAdminSession.user.archiveOwner, false);
   assert.equal(archiveAdminSession.user.platformAdmin, false);
+  for (const path of ["/api/settings/storage", "/api/admin/auth/vk",
+    "/api/admin/research-resources"])
+    assert.equal((await fetch(securedBase + path, {
+      headers: archiveAdminHeaders,
+    })).status, 403, `${path} is platform-only even for a tree administrator`);
   const ownerTierBeforeAdminView = (await client.query<{ full_access: boolean }>(
     "SELECT full_access FROM account_tiers WHERE account_id='owner'",
   )).rows[0].full_access;
@@ -4365,13 +4456,13 @@ try {
   const exportAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
     process.env.PUBLIC_ORIGIN);
   for (const [path, options, revoke] of [
-    ["/api/gedcom/export?format=gedcom7", { headers: archiveAdminHeaders },
-      "UPDATE archive_memberships SET role='reader' WHERE archive_id='runtime-test' AND user_id='vk:42'"],
+    ["/api/gedcom/export?format=gedcom7", { headers: ownerHeaders },
+      "UPDATE archive_owners SET user_id='vk:42' WHERE archive_id='runtime-test'"],
     ["/api/gedcom/export-visible?format=gedcom551", {
       method: "POST",
-      headers: { ...archiveAdminHeaders, "Content-Type": "application/x-www-form-urlencoded" },
+      headers: { ...ownerHeaders, "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ ids: JSON.stringify(["person-a"]) }),
-    }, "UPDATE archive_memberships SET approved=false WHERE archive_id='runtime-test' AND user_id='vk:42'"],
+    }, "UPDATE archive_memberships SET approved=false WHERE archive_id='runtime-test' AND user_id='owner'"],
   ] as const) {
     let reachedRead!: () => void;
     let resumeRead!: () => void;
@@ -4407,11 +4498,12 @@ try {
       resumeRead();
       const response = await pending;
       assert.equal(response.status, 403,
-        "a revoked archive admin cannot receive a prepared plain GEDCOM export");
+        "a former owner or unapproved member cannot receive a prepared plain GEDCOM export");
       assert.doesNotMatch(await response.text(), /0 HEAD|1 NAME/);
     } finally {
       resumeRead();
-      await client.query("UPDATE archive_memberships SET role='admin',approved=true WHERE archive_id='runtime-test' AND user_id='vk:42'");
+      await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
+      await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id='owner'");
       await delayedExport.close();
       await new Promise<void>((resolve) => exportServer.close(() => resolve()));
     }
@@ -4499,6 +4591,49 @@ try {
     await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
     await new Promise<void>((resolve) => backupServer.close(() => resolve()));
   }
+  for (const scenario of [
+    { path: "/api/backup", revoke: "session", status: 401 },
+    { path: "/api/backup/full", revoke: "owner", status: 403 },
+  ] as const) {
+    let reached!: () => void;
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => { reached = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const handler = databaseBackupHttp({ archive: app.archive, auth: backupAuth,
+      beforeSend: async () => { reached(); await gate; } });
+    const server = createServer((req, res) => {
+      void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => res.destroy(error));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+      const pending = fetch(base + scenario.path, { headers: ownerHeaders });
+      await Promise.race([ready, pending.then((response) => {
+        throw new Error(`Raw backup sent before final guard: ${response.status}`);
+      })]);
+      if (scenario.revoke === "session")
+        await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(aiOwnerToken)]);
+      else
+        await client.query("UPDATE archive_owners SET user_id='vk:42' WHERE archive_id='runtime-test'");
+      release();
+      const response = await pending;
+      assert.equal(response.status, scenario.status, "completed revoke before first byte denies raw backup");
+      assert.match(response.headers.get("content-type") || "", /application\/json/);
+      await response.text();
+    } finally {
+      release();
+      if (scenario.revoke === "session")
+        await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2) ON CONFLICT(token_hash) DO UPDATE SET expires_at=excluded.expires_at",
+          [sessionTokenHash(aiOwnerToken), Date.now() + 5 * 60_000]);
+      else
+        await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+  console.log("runtime_raw_backup_final_owner_session_ok");
+  await verifyRestorePreviewDelivery(app.archive, source, restoreBytes,
+    aiOwnerToken, process.env.PUBLIC_ORIGIN!, client);
   await app.archive.db
     .prepare("", "UPDATE archive_memberships SET role='reader' WHERE user_id='vk:42'")
     .run();
@@ -4841,6 +4976,9 @@ try {
   otherApp = await startServer(0, source, true, undefined, undefined, "other-archive");
   const otherBase = `http://127.0.0.1:${(otherApp.server.address() as { port: number }).port}`;
   assert.equal(otherApp.archive.db.archiveId, "other-archive");
+  await verifySharedPlatformConfiguration({ rootDb: app.archive.db,
+    otherDb: otherApp.archive.db, rootBase: securedBase, otherBase,
+    headers: ownerHeaders, client });
   await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
   await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
     VALUES('other-archive','vk:42','admin',true,'all')`);
@@ -4850,12 +4988,24 @@ try {
   await client.query(`INSERT INTO archive_owners(archive_id,user_id)
     VALUES('other-archive','vk:42') ON CONFLICT (archive_id) DO UPDATE SET user_id='vk:42'`);
   await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  const priorGlobalLimits = await readStorageLimits(otherApp.archive.db);
+  await otherApp.archive.db.prepare("", "UPDATE platform_upload_limits SET data=? WHERE id=1")
+    .run(JSON.stringify({ ...priorGlobalLimits, relative: 0 }));
+  try {
+    await assert.rejects(enforceUserStorageLimit(otherApp.archive.db, "vk:42", 1),
+      UploadQuotaError,
+      "a basic tree owner without global staff cannot inherit the admin upload cap");
+  } finally {
+    await otherApp.archive.db.prepare("", "UPDATE platform_upload_limits SET data=? WHERE id=1")
+      .run(JSON.stringify(priorGlobalLimits));
+  }
   try {
     const selectedAdmin = await fetch(securedBase + "/a/other-archive/api/session", {
       headers: archiveAdminHeaders,
     }).then((response) => response.json());
     assert.equal(selectedAdmin.user.id, "vk:42");
-    assert.equal(selectedAdmin.user.role, "admin");
+    assert.equal(selectedAdmin.user.role, "relative");
+    assert.equal(selectedAdmin.user.archiveOwner, true);
     assert.equal(selectedAdmin.user.approved, true);
     assert.equal(selectedAdmin.user.platformAdmin, false);
     const crossArchiveAdmin = selectedAdmin.user;
@@ -4872,7 +5022,7 @@ try {
         const memberships = await app!.archive.db.prepare("", `SELECT archive_id,role
           FROM archive_memberships WHERE user_id=? ORDER BY archive_id`).all("vk:42");
         assert.deepEqual(memberships.map((row) => [row.archive_id,row.role]),
-          [["other-archive","admin"],["runtime-test","reader"]],
+          [["other-archive","relative"],["runtime-test","reader"]],
           "account-level RLS can expose both memberships in the same transaction");
         await assert.rejects(assertCurrentArchiveActor(app!.archive.db, crossArchiveAdmin),
           ForbiddenError, "another archive's admin row cannot authorize this archive");
@@ -4906,6 +5056,16 @@ try {
     await client.query("DELETE FROM archive_memberships WHERE archive_id='other-archive' AND user_id='vk:42'");
     await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   }
+  for (const path of ["/api/backup", "/api/backup/full", "/api/backups"])
+    assert.equal((await fetch(securedBase + "/a/other-archive" + path,
+      { headers: ownerHeaders })).status, 403,
+      `global platform admin without selected-archive ownership cannot download ${path}`);
+  // A single account may own only one tree: move the fixture's ownership
+  // while exercising positive selected-archive system operations.
+  await client.query("UPDATE archive_owners SET user_id='vk:42' WHERE archive_id='runtime-test'");
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query("INSERT INTO archive_owners(archive_id,user_id) VALUES('other-archive','owner')");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   const selectedBackup = await fetch(securedBase + "/a/other-archive/api/backup", {
     headers: ownerHeaders,
   });
@@ -5196,7 +5356,7 @@ try {
   );
   assert.equal(
     ownerArchives.archives.find((archive: { id: string }) => archive.id === "runtime-test").owned,
-    true,
+    false,
   );
   const readerArchives = await fetch(securedBase + "/api/account/archives", {
     headers,
@@ -5204,6 +5364,10 @@ try {
   assert.deepEqual(readerArchives.archives.map((archive: { id: string }) => archive.id), ["runtime-test"]);
   assert.equal(readerArchives.archives[0].owned, false);
   assert.equal((await fetch(securedBase + "/api/account/archives")).status, 401);
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query("DELETE FROM archive_owners WHERE archive_id='other-archive' AND user_id='owner'");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
   // The account download includes only the caller's current comments in trees
   // they can still read. A restricted reader must not recover a hidden branch.
   const hiddenForExport = {
@@ -6630,6 +6794,10 @@ try {
       .then((r) => r.json())).archives.find((archive: { id: string }) => archive.id === "other-archive").current,
     true,
   );
+  await client.query("UPDATE archive_owners SET user_id='vk:42' WHERE archive_id='runtime-test'");
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query("INSERT INTO archive_owners(archive_id,user_id) VALUES('other-archive','owner')");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   await client.query(
     "INSERT INTO accounts(id,name,created_at) VALUES('other-only','Other only',$1)",
     [new Date().toISOString()],
@@ -6918,11 +7086,6 @@ try {
     { headers: otherOnlyHeaders })).status, 404);
   await client.query(`UPDATE archive_memberships SET approved=true
     WHERE archive_id='other-archive' AND user_id='other-only'`);
-  await client.query(`INSERT INTO research_categories(id,name,sort_order)
-    VALUES('query-revoke-category','Query Revoke Category',999)`);
-  await client.query(`INSERT INTO research_resources(id,category_id,name,url,description,sort_order)
-    VALUES('query-revoke-resource','query-revoke-category','Query Revoke Resource',
-      'https://example.org/query-revoke','synthetic source',999)`);
   const setPublicTree = async (publicTree: boolean) => {
     const response = await fetch(securedBase + "/a/other-archive/api/settings", {
       method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
@@ -6930,21 +7093,11 @@ try {
     });
     assert.equal(response.status, 200);
   };
-  await setPublicTree(true);
-  const initialResources = await fetch(otherBase + "/api/research-resources");
-  assert.equal(initialResources.status, 200);
-  assert.ok((await initialResources.json()).categories.some((category: { id: string }) =>
-    category.id === "query-revoke-category"));
-  const staleResources = await raceArchiveQuery("/api/research-resources", undefined,
-    async () => { await setPublicTree(false); },
-    (body) => Array.isArray(body.categories) && body.categories.some(
-      (category: { id: string }) => category.id === "query-revoke-category"));
-  assert.equal((await fetch(otherBase + "/api/research-resources")).status, 401);
-  await client.query(`DELETE FROM research_categories WHERE id='query-revoke-category'`);
-  assert.deepEqual([staleSearch.status, staleSearch.present, staleSearch.hasPrivatePayload,
-    staleResources.status, staleResources.present, staleResources.hasPrivatePayload],
-  [409, false, false, 409, false, false]);
-  console.log("runtime_archive_query_search_resource_revocation_ok");
+  assert.deepEqual([staleSearch.status, staleSearch.present, staleSearch.hasPrivatePayload],
+    [409, false, false]);
+  // The resource catalog is platform-shared since 091; its independent
+  // authorization and cross-archive projection are tested separately.
+  console.log("runtime_archive_query_search_revocation_ok");
   const initialArchiveExport = await fetch(securedBase + "/a/other-archive/api/export",
     { headers: otherOnlyHeaders });
   assert.equal(initialArchiveExport.status, 200);
@@ -7132,6 +7285,10 @@ try {
       .then((r) => r.json())).account.id,
     "other-only",
   );
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query("DELETE FROM archive_owners WHERE archive_id='other-archive' AND user_id='owner'");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
   const primaryDb = app.archive.db;
   assert.equal(
     (await primaryDb.prepare("", "SELECT count(*) AS n FROM archives").get())?.n,
@@ -12002,7 +12159,11 @@ try {
       oauthBase + location.replace(/\/tree$/, "/api/session"),
       { headers: { Cookie: sessionCookie } },
     ).then((response) => response.json());
-    assert.equal(newAccountSession.user.role, "admin");
+    assert.equal(newAccountSession.user.role, "relative");
+    assert.equal(newAccountSession.user.treeRole, "relative");
+    assert.equal(newAccountSession.user.archiveOwner, true);
+    assert.equal(newAccountSession.user.globalRole, null,
+      "creating a personal archive does not grant platform staff authority");
     assert.equal(newAccountSession.user.approved, true);
     assert.equal(newAccountSession.user.fullAccess, false);
     assert.deepEqual(
@@ -12465,22 +12626,30 @@ try {
       { headers: researcherHeaders }).then((response) => response.json());
     assert.equal(importedDocument.items[0].authorName, "Original researcher");
     assert.equal(importedDocument.items[0].canDelete, true,
-      "researchers can moderate imported annotations regardless of original authorship");
+      "global platform staff can moderate imported annotations regardless of original authorship");
     assert.equal(importedDocument.items[0].authorId, "",
       "the source author ID stays detached from local accounts");
     await client.query("UPDATE archive_memberships SET role='relative' WHERE archive_id=$1 AND user_id='owner'",
       [personalArchiveId]);
-    const relativeAnnotations = await fetch(oauthBase + `${documentPath}/annotations`,
-      { headers: researcherHeaders }).then((response) => response.json());
-    assert.equal(relativeAnnotations.items[0].canDelete, false);
-    assert.equal((await fetch(oauthBase + `${documentPath}/annotations/${portableAnnotationId}`, {
-      method: "DELETE", headers: researcherHeaders,
-    })).status, 403, "a relative with a matching source ID cannot delete imported annotations");
-    await client.query("UPDATE archive_memberships SET role='researcher' WHERE archive_id=$1 AND user_id='owner'",
-      [personalArchiveId]);
-    assert.equal((await fetch(oauthBase + `${documentPath}/annotations/${portableAnnotationId}`, {
-      method: "DELETE", headers: researcherHeaders,
-    })).status, 200, "the researcher role grants moderation of accessible imported annotations");
+    await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
+    try {
+      const relativeAnnotations = await fetch(oauthBase + `${documentPath}/annotations`,
+        { headers: researcherHeaders }).then((response) => response.json());
+      assert.equal(relativeAnnotations.items[0].canDelete, false);
+      assert.equal((await fetch(oauthBase + `${documentPath}/annotations/${portableAnnotationId}`, {
+        method: "DELETE", headers: researcherHeaders,
+      })).status, 403, "a relative with a matching source ID cannot delete imported annotations");
+      await client.query("INSERT INTO platform_researchers(account_id) VALUES('owner')");
+      const staffAnnotations = await fetch(oauthBase + `${documentPath}/annotations`,
+        { headers: researcherHeaders }).then((response) => response.json());
+      assert.equal(staffAnnotations.items[0].canDelete, true);
+      assert.equal((await fetch(oauthBase + `${documentPath}/annotations/${portableAnnotationId}`, {
+        method: "DELETE", headers: researcherHeaders,
+      })).status, 200, "an explicit global researcher can moderate accessible imported annotations");
+    } finally {
+      await client.query("DELETE FROM platform_researchers WHERE account_id='owner'");
+      await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
+    }
     await client.query("SELECT set_config('drevo.archive_id',$1,false)", [personalArchiveId]);
     assert.equal((await client.query("SELECT uploaded_by FROM documents WHERE id=$1",
       [portableDocumentId])).rows[0]?.uploaded_by, newAccountSession.user.id,
@@ -12826,7 +12995,7 @@ try {
     assert.equal(transferExportSnapshot.download.archives.find((archive) => archive.id === personalArchiveId)?.owned,
       false, "the recipient's account export starts before accepting ownership");
     assert.equal(transferExportSnapshot.download.archives.find((archive) => archive.id === personalArchiveId)?.role,
-      "admin", "an existing archive admin keeps the same role during acceptance");
+      "relative", "acceptance preserves the recipient's local grant without minting staff authority");
     const transferExportAuth = await createAuth(await userStore(transferExportDb), transferExportDb,
       process.env.PUBLIC_ORIGIN);
     let acceptedOwner!: Response;
@@ -12885,13 +13054,18 @@ try {
     ).rows;
     assert.equal(
       transferRoles.find((row) => row.user_id === "transfer-target")?.role,
-      "admin",
+      "relative",
     );
     assert.equal(
       transferRoles.find((row) => row.user_id === newAccountSession.user.id)
         ?.role,
       "relative",
     );
+    assert.equal((await client.query(`SELECT
+      EXISTS(SELECT 1 FROM platform_admins WHERE account_id='transfer-target') OR
+      EXISTS(SELECT 1 FROM platform_researchers WHERE account_id='transfer-target') AS staff`)
+    ).rows[0].staff, false,
+    "archive ownership transfer must not grant platform staff authority");
     const deletionPath = location.replace(/\/tree$/, "/api/account/archive-deletion");
     assert.equal((await fetch(oauthBase + deletionPath, {
       headers: transferOwnerHeaders,
@@ -13415,7 +13589,10 @@ try {
     const returnedHeaders = { Cookie: `drevo_session=${returnedToken}` };
     const returnedSession = await fetch(securedBase + "/api/session", { headers: returnedHeaders })
       .then((response) => response.json());
-    assert.equal(returnedSession.user.role, "researcher");
+    assert.equal(returnedSession.user.role, "relative");
+    assert.equal(returnedSession.user.treeRole, "relative");
+    assert.equal(returnedSession.user.globalRole, null,
+      "re-registration must not recreate a global staff grant from an old local role");
     assert.equal(returnedSession.canEdit, true);
     const newComment = await fetch(securedBase + "/api/people/person-a/discussion", {
       method: "POST",
@@ -13451,6 +13628,11 @@ try {
       .then((response) => response.json());
     assert.equal(returnedFamily.family.unions.find((union: { id: string }) =>
       union.id === "former-union")?.createdBy, "deleted-account");
+    await client.query("INSERT INTO platform_researchers(account_id) VALUES('former-member')");
+    const returnedStaffSession = await fetch(securedBase + "/api/session", { headers: returnedHeaders })
+      .then((response) => response.json());
+    assert.equal(returnedStaffSession.user.role, "relative");
+    assert.equal(returnedStaffSession.user.globalRole, "researcher");
     const forgedUnion = structuredClone(returnedFamily.family);
     forgedUnion.unions.find((union: { id: string }) => union.id === "former-union").note = "Taken over";
     assert.equal((await fetch(securedBase + "/api/family", {
@@ -13466,7 +13648,7 @@ try {
     assert.deepEqual(annotationItems.find((item) => item.id === formerAnnotationId),
       { ...formerAnnotation, authorId: "deleted-account", authorName: "Удалённый участник", canDelete: true, canEdit: false },
     "researcher moderation leaves the predecessor's author identity anonymized");
-    await client.query("UPDATE archive_memberships SET role='relative' WHERE archive_id='runtime-test' AND user_id='former-member'");
+    await client.query("DELETE FROM platform_researchers WHERE account_id='former-member'");
     const returnedRelativeAnnotations = await fetch(securedBase + annotationPath, { headers: returnedHeaders })
       .then(response => response.json());
     assert.equal(returnedRelativeAnnotations.items.find((item: { id: string }) => item.id === formerAnnotationId)?.canDelete, false,
@@ -13475,7 +13657,7 @@ try {
       method: "DELETE",
       headers: { ...returnedHeaders, Origin: process.env.PUBLIC_ORIGIN! },
     })).status, 403, "a returned relative cannot delete its predecessor's shared annotation");
-    await client.query("UPDATE archive_memberships SET role='researcher' WHERE archive_id='runtime-test' AND user_id='former-member'");
+    await client.query("INSERT INTO platform_researchers(account_id) VALUES('former-member')");
     assert.equal((await fetch(securedBase + `${annotationPath}/${formerAnnotationId}`, {
       method: "DELETE", headers: { ...returnedHeaders, Origin: process.env.PUBLIC_ORIGIN! },
     })).status, 200, "a researcher can moderate an anonymized annotation in an accessible document");
@@ -13483,6 +13665,7 @@ try {
     await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
     await client.query("DELETE FROM documents WHERE id=$1", [otherArchiveAnnotationDocumentId]);
     await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    await client.query("DELETE FROM platform_researchers WHERE account_id='former-member'");
     await client.query("DELETE FROM archive_memberships WHERE user_id='former-member'");
     await client.query("DELETE FROM accounts WHERE id='former-member'");
     await client.query("DELETE FROM family_unions WHERE id IN ('former-union','unrelated-union')");
@@ -13710,270 +13893,10 @@ try {
   const restoredPeople = structuredClone(withoutPeer.family);
   restoredPeople.people = restoredPeople.people.filter((person) => person.id !== "pg-union-identity-peer");
   await app.archive.write(restoredPeople, withoutPeer.revision);
-  // Keep the restore concurrency checks in their own archive: later fixtures
-  // include cards by other authors, which cannot be replaced by this actor.
-  const guardedArchiveId = "restore-guard-test";
-  const guardedOwnerId = "restore-guard-owner";
-  await client.query("SELECT set_config('drevo.archive_id',$1,false)", [guardedArchiveId]);
-  await client.query(`INSERT INTO archives(id,title,description,demo,revision,sqlite_schema_version)
-    VALUES($1,'Restore guard','',false,0,18)`, [guardedArchiveId]);
-  await client.query("INSERT INTO accounts(id,name,created_at) VALUES($1,'Restore guard owner',$2)",
-    [guardedOwnerId, new Date().toISOString()]);
-  await client.query("INSERT INTO account_tiers(account_id,full_access) VALUES($1,true)", [guardedOwnerId]);
-  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
-    VALUES($1,$2,'admin',true,'all')`, [guardedArchiveId, guardedOwnerId]);
-  await client.query("INSERT INTO archive_owners(archive_id,user_id) VALUES($1,$2)",
-    [guardedArchiveId, guardedOwnerId]);
-  // The existing platform administrator is an approved editor here, while
-  // ownership belongs to a different account to respect one-tree-per-owner.
-  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
-    VALUES($1,'owner','admin',true,'all')`, [guardedArchiveId]);
-  await client.query("INSERT INTO people(id,data) VALUES('person-a',$1)",
-    [JSON.stringify(family.people[0])]);
-  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
-  restoreGuardApp = await startServer(0, source, true, undefined, undefined, guardedArchiveId);
-  const guardedApp = restoreGuardApp;
-  const guardedBase = `http://127.0.0.1:${(guardedApp.server.address() as { port: number }).port}`;
-  const guardedUploads = join(dirname(guardedApp.archive.db.file), "uploads");
-  const guardBeforeComments = await guardedApp.archive.read();
-  const guardWithRemovedPerson = structuredClone(guardBeforeComments.family);
-  guardWithRemovedPerson.people.push({ ...family.people[0], id: "restore-comment-removed",
-    name: "Removed" });
-  await guardedApp.archive.write(guardWithRemovedPerson, guardBeforeComments.revision);
-  await guardedApp.archive.db.prepare("",
-    "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'owner',1000,?)")
-    .run("person-a", "restore-comment-retained");
-  await guardedApp.archive.db.prepare("",
-    "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'owner',1000,?)")
-    .run("restore-comment-removed", "restore-comment-lost");
-  // A platform grant can be revoked while a restore is copying staged media.
-  // The final grant check must run inside archive.write's transaction and lock
-  // the grant until commit, without holding that lock during file copying.
-  const securedRestoreHeaders = { ...ownerHeaders, "X-Drevo-Restore": "1" };
-  const guardedPreviewResponse = await fetch(guardedBase + "/api/restore/preview", {
-    method: "POST", headers: securedRestoreHeaders, body: restoreBytes,
-  });
-  assert.equal(guardedPreviewResponse.status, 200, await guardedPreviewResponse.clone().text());
-  const guardedPreview = await guardedPreviewResponse.json() as {
-    token: string; currentCommentsLost: number; backupCommentsSkipped: number;
-  };
-  assert.equal(guardedPreview.currentCommentsLost, 1,
-    "PostgreSQL preview counts only comments cascaded from this archive");
-  assert.equal(guardedPreview.backupCommentsSkipped, 0,
-    "the source backup has no comments after its migration fixture is cleared");
-  const revisionBeforeRevocation = (await guardedApp.archive.read()).revision;
-  const filesBeforeRevocation = readdirSync(guardedUploads).sort();
-  const originalRestoreWrite = guardedApp.archive.write;
-  let restoreAtCommit!: () => void;
-  let resumeRestoreCommit!: () => void;
-  const restoreCommitReady = new Promise<void>((resolve) => { restoreAtCommit = resolve; });
-  const restoreCommitGate = new Promise<void>((resolve) => { resumeRestoreCommit = resolve; });
-  const awaitRestoreBarrier = async (ready: Promise<void>, request: Promise<Response>) => {
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        ready,
-        request.then(async (response) => {
-          throw new Error(`Restore completed before the commit barrier: ${response.status} ${await response.clone().text()}`);
-        }),
-        new Promise<never>((_, reject) => {
-          timeout = setTimeout(() => reject(new Error("Restore did not reach the commit barrier")), 30_000);
-          timeout.unref();
-        }),
-      ]);
-    } finally {
-      if (timeout) clearTimeout(timeout);
-    }
-  };
-  guardedApp.archive.write = async (...args) => {
-    restoreAtCommit();
-    await restoreCommitGate;
-    return originalRestoreWrite(...args);
-  };
-  try {
-    const pendingApply = fetch(guardedBase + "/api/restore/apply", {
-      method: "POST", headers: securedRestoreHeaders,
-      body: JSON.stringify({ token: guardedPreview.token, confirm: true }),
-    });
-    await awaitRestoreBarrier(restoreCommitReady, pendingApply);
-    await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
-    resumeRestoreCommit();
-    const deniedApply = await pendingApply;
-    assert.equal(deniedApply.status, 403, await deniedApply.text());
-    assert.equal((await guardedApp.archive.read()).revision, revisionBeforeRevocation);
-    assert.deepEqual(readdirSync(guardedUploads).sort(), filesBeforeRevocation,
-      "revoked restore removes copies made before the commit check");
-    assert.equal((await guardedApp.archive.db.prepare("", "SELECT count(*)::int AS n FROM workflow_stages WHERE kind='restore' AND token=?")
-      .get(guardedPreview.token))?.n, 1, "the failed stage stays available for an authorized retry");
-  } finally {
-    resumeRestoreCommit();
-    guardedApp.archive.write = originalRestoreWrite;
-    await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
-  }
-  // The seed SQLite has no media or documents, so the successful lock test
-  // does not copy any original files.
-  const noMediaPreviewResponse = await fetch(guardedBase + "/api/restore/preview", {
-    method: "POST", headers: securedRestoreHeaders, body: readFileSync(source),
-  });
-  assert.equal(noMediaPreviewResponse.status, 200, await noMediaPreviewResponse.clone().text());
-  const noMediaPreview = await noMediaPreviewResponse.json() as {
-    token: string; files: number; documents: number;
-  };
-  assert.equal(noMediaPreview.files, 0);
-  assert.equal(noMediaPreview.documents, 0);
-  let platformLockHeld!: () => void;
-  let releasePlatformLock!: () => void;
-  const platformLockReady = new Promise<void>((resolve) => { platformLockHeld = resolve; });
-  const platformLockGate = new Promise<void>((resolve) => { releasePlatformLock = resolve; });
-  guardedApp.archive.write = async (...args) => {
-    const afterWrite = args[6];
-    args[6] = async (db) => {
-      await afterWrite?.(db);
-      platformLockHeld();
-      await platformLockGate;
-    };
-    return originalRestoreWrite(...args);
-  };
-  try {
-    const pendingApply = fetch(guardedBase + "/api/restore/apply", {
-      method: "POST", headers: securedRestoreHeaders,
-      body: JSON.stringify({ token: noMediaPreview.token, confirm: true }),
-    });
-    await awaitRestoreBarrier(platformLockReady, pendingApply);
-    const concurrentRevocation = client.query("DELETE FROM platform_admins WHERE account_id='owner'");
-    try {
-      assert.equal(await Promise.race([
-        concurrentRevocation.then(() => "revoked"),
-        new Promise<string>((resolve) => setTimeout(() => resolve("waiting"), 100)),
-      ]), "waiting", "grant revocation waits for an authorized restore commit");
-    } finally {
-      releasePlatformLock();
-    }
-    const allowedApply = await pendingApply;
-    assert.equal(allowedApply.status, 200, await allowedApply.text());
-    await concurrentRevocation;
-  } finally {
-    releasePlatformLock();
-    guardedApp.archive.write = originalRestoreWrite;
-    await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
-  }
-  // Full TAR discussion restore is explicit. The final zero-comment check is
-  // made under the same archive lock as all live discussion writers.
-  await guardedApp.archive.db.prepare("", "DELETE FROM person_comments").run();
-  const discussionSource = await openArchive(":memory:", family);
-  const discussionFileId = "8f251989-45a6-4b77-8a47-8f0010001111";
-  const discussionOriginal = Buffer.from("PostgreSQL discussion original\n");
-  const tarEntry = (name: string, bytes: Buffer) => {
-    const header = Buffer.alloc(512);
-    header.write(name, 0);
-    header.write("0000600\0", 100);
-    header.write(bytes.length.toString(8).padStart(11, "0") + "\0", 124);
-    header.fill(32, 148, 156);
-    header.write("0", 156);
-    header.write("ustar\0", 257);
-    header.write(header.reduce((sum, byte) => sum + byte, 0)
-      .toString(8).padStart(6, "0") + "\0 ", 148);
-    return Buffer.concat([header, bytes,
-      Buffer.alloc((512 - bytes.length % 512) % 512)]);
-  };
-  let discussionTar: Buffer;
-  try {
-    await discussionSource.db.prepare(
-      "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,attachments) VALUES(?,?,?,?,?,?)",
-    ).run("person-a", "owner", "Автор прежнего сайта", 1000,
-      "Обсуждение из TAR", JSON.stringify([{
-        id: discussionFileId, name: "источник.txt",
-        type: "text/plain", size: discussionOriginal.length,
-      }]));
-    discussionTar = gzipSync(Buffer.concat([
-      tarEntry("drevo.sqlite", await databaseBackupBytes(discussionSource.db)),
-      tarEntry(`uploads/discussion-files/${discussionFileId}`, discussionOriginal),
-      Buffer.alloc(1024),
-    ]));
-  } finally { await discussionSource.close(); }
-  const restoreDiscussionHeaders = {
-    ...securedRestoreHeaders, "X-Drevo-Restore-Comments": "1",
-  };
-  const discussionPreviewResponse = await fetch(guardedBase + "/api/restore/preview", {
-    method: "POST", headers: restoreDiscussionHeaders,
-    body: Uint8Array.from(discussionTar).buffer,
-  });
-  assert.equal(discussionPreviewResponse.status, 200,
-    await discussionPreviewResponse.clone().text());
-  let discussionPreview = await discussionPreviewResponse.json() as {
-    token: string; canRestoreComments: boolean; backupCommentsSkipped: number;
-  };
-  assert.equal(discussionPreview.backupCommentsSkipped, 1);
-  assert.equal(discussionPreview.canRestoreComments, true);
-  const discussionDirectory = join(guardedUploads, "discussion-files");
-  const beforeContested = existsSync(discussionDirectory)
-    ? readdirSync(discussionDirectory).sort() : [];
-  await guardedApp.archive.db.transaction(async () => {
-    await guardedApp.archive.db.prepare("",
-      "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,'owner',1001,'Concurrent comment')")
-      .run("person-a");
-  });
-  const contestedApply = await fetch(guardedBase + "/api/restore/apply", {
-    method: "POST", headers: securedRestoreHeaders,
-    body: JSON.stringify({ token: discussionPreview.token, confirm: true,
-      restoreComments: true }),
-  });
-  assert.equal(contestedApply.status, 409, await contestedApply.clone().text());
-  assert.deepEqual(existsSync(discussionDirectory)
-    ? readdirSync(discussionDirectory).sort() : [], beforeContested,
-  "a comment added after preview blocks restore and cleans the copied original");
-  assert.equal((await guardedApp.archive.db.prepare("",
-    "SELECT count(*)::int AS count FROM person_comments WHERE text='Concurrent comment'")
-    .get())?.count, 1);
-  await guardedApp.archive.db.transaction(async () => {
-    await guardedApp.archive.db.prepare("",
-      "DELETE FROM person_comments WHERE text='Concurrent comment'").run();
-  });
-  const freshDiscussionPreview = await fetch(guardedBase + "/api/restore/preview", {
-    method: "POST", headers: restoreDiscussionHeaders,
-    body: Uint8Array.from(discussionTar).buffer,
-  });
-  assert.equal(freshDiscussionPreview.status, 200,
-    await freshDiscussionPreview.clone().text());
-  discussionPreview = await freshDiscussionPreview.json();
-  assert.equal(discussionPreview.canRestoreComments, true);
-  const discussionApply = await fetch(guardedBase + "/api/restore/apply", {
-    method: "POST", headers: securedRestoreHeaders,
-    body: JSON.stringify({ token: discussionPreview.token, confirm: true,
-      restoreComments: true }),
-  });
-  assert.equal(discussionApply.status, 200, await discussionApply.clone().text());
-  const restoredDiscussion = await guardedApp.archive.db.prepare("",
-    "SELECT author_id,author_name,text,attachments FROM person_comments WHERE text=?")
-    .get("Обсуждение из TAR");
-  assert.equal(restoredDiscussion?.author_name, "Автор прежнего сайта");
-  assert.notEqual(restoredDiscussion?.author_id, "owner");
-  const restoredAttachment = JSON.parse(String(restoredDiscussion?.attachments))[0];
-  assert.notEqual(restoredAttachment.id, discussionFileId);
-  assert.deepEqual(readFileSync(join(guardedUploads, "discussion-files", restoredAttachment.id)),
-    discussionOriginal);
-  const repeatPreviewResponse = await fetch(guardedBase + "/api/restore/preview", {
-    method: "POST", headers: restoreDiscussionHeaders,
-    body: Uint8Array.from(discussionTar).buffer,
-  });
-  assert.equal(repeatPreviewResponse.status, 200,
-    await repeatPreviewResponse.clone().text());
-  const repeatPreview = await repeatPreviewResponse.json() as {
-    token: string; canRestoreComments: boolean;
-  };
-  assert.equal(repeatPreview.canRestoreComments, false);
-  const repeatedApply = await fetch(guardedBase + "/api/restore/apply", {
-    method: "POST", headers: securedRestoreHeaders,
-    body: JSON.stringify({ token: repeatPreview.token, confirm: true,
-      restoreComments: true }),
-  });
-  assert.equal(repeatedApply.status, 409);
-  assert.equal((await guardedApp.archive.db.prepare("",
-    "SELECT count(*)::int AS count FROM person_comments").get())?.count, 1);
+  await verifyRestoreGuard({ client, source, family, ownerHeaders, restoreBytes });
   await verifyPlatformAiOrphanSweep(app!.archive.db, client, source);
   console.log("runtime_http_and_backup_ok");
 } finally {
-  await restoreGuardApp?.close();
   await otherApp?.close();
   await app?.close();
   await live?.close();

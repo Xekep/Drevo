@@ -12,6 +12,8 @@ import {
   fullName,
   suggestConnectionOrder,
   CLAIM_CONFIDENCE_LABELS,
+  canAssessArchiveEvidence,
+  isArchiveOwner,
   type Family,
   type ArchiveUser,
   type ClaimConfidence,
@@ -50,7 +52,7 @@ export function ConnectionInspector({
     [confirm, setConfirm] = useState(false),
     [manualOrder, setManualOrder] = useState(false),
     [assessmentReset, setAssessmentReset] = useState(false);
-  const canAssess = user?.role === "admin" || user?.role === "researcher";
+  const canAssess = canAssessArchiveEvidence(user);
   const readonly =
     !canEdit ||
     (!!draft.original && !canChangeConnection(family, user, draft.original));
@@ -333,7 +335,7 @@ export function ConnectionInspector({
             {changedAssertion &&
               <small>После смены участников или типа прежние источники нужно привязать заново.</small>}
             {!changedAssertion && <CitationSourcesEditor sources={draft.sources || []}
-              isAdmin={user?.role === "admin"}
+              isAdmin={isArchiveOwner(user)}
               onChange={(sources) => update({ sources })} />}
           </details>
         )}

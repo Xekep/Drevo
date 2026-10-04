@@ -1,144 +1,152 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openAdminSection } from "./admin-navigation";
 
-async function accountView(page: Page, options: {
-  approved?: boolean;
-  fullAccess: boolean;
-  platformAdmin: boolean;
-  aiAvailable?: boolean;
+async function treeUser(page: Page, options: {
+  owner: boolean; platformAdmin: boolean; fullAccess?: boolean; approved?: boolean;
 }) {
+  await page.route("**/api/session", (route) => route.fulfill({ json: {
+    user: { id: "fixture-user", name: "Участник", role: options.owner ? "admin" : "reader",
+      archiveOwner: options.owner, approved: options.approved ?? true,
+      platformAdmin: options.platformAdmin, fullAccess: options.fullAccess ?? true },
+    account: { id: "fixture-user", name: "Участник", createdAt: "2026-10-04",
+      fullAccess: options.fullAccess ?? true, globalRole: options.platformAdmin ? "admin" : null,
+      provider: "email" }, local: false, yandex: false,
+  } }));
   await page.route("**/api/family?projection=overview", async (route) => {
-    const response = await route.fetch();
-    const data = await response.json();
-    await route.fulfill({
-      response,
-      json: {
-        ...data,
-        local: false,
-        user: {
-          ...data.user,
-          role: "admin",
-          approved: options.approved ?? true,
-          fullAccess: options.fullAccess,
-          aiAvailable: options.aiAvailable ?? options.fullAccess,
-          platformAdmin: options.platformAdmin,
-        },
-      },
+    const response = await route.fetch({
+      url: route.request().url().replace("/a/tree-a/api/", "/api/"),
     });
+    const data = await response.json();
+    await route.fulfill({ response, json: {
+      ...data, local: false,
+      user: { ...data.user, role: options.owner ? "admin" : "reader",
+        archiveOwner: options.owner, approved: options.approved ?? true,
+        fullAccess: options.fullAccess ?? true,
+        platformAdmin: options.platformAdmin,
+      },
+    } });
   });
 }
 
-test("admin header shortcut follows About and opens the current archive", async ({ page }, info) => {
+test("tree owner has scoped management, and old scoped admin URL becomes manage", async ({ page }, info) => {
   await page.route("**/a/tree-a/api/**", (route) => route.continue({
     url: route.request().url().replace("/a/tree-a/api/", "/api/"),
   }));
+  await treeUser(page, { owner: true, platformAdmin: false, fullAccess: false });
   await page.goto("/a/tree-a/tree");
-  const shortcut = page.locator(".nav-admin");
-  await expect(shortcut).toHaveAttribute("href", "/a/tree-a/admin");
-  await expect(shortcut).toHaveText("Админка");
   if (info.project.name === "mobile") {
-    await expect(shortcut).toBeHidden();
     await page.getByLabel("Меню проекта").click();
     await page.getByRole("link", { name: "Управление деревом", exact: true }).click();
   } else {
-    for (const width of [1280, 1201, 1101, 1024, 900]) {
-      await page.setViewportSize({ width, height: 720 });
-      await expect(shortcut).toBeVisible();
-      const about = (await page.locator(".nav-about").boundingBox())!;
-      const admin = (await shortcut.boundingBox())!;
-      const account = (await page.locator(".nav-account").boundingBox())!;
-      expect(about.x + about.width).toBeLessThanOrEqual(admin.x);
-      expect(admin.x + admin.width).toBeLessThanOrEqual(account.x);
-      expect(account.x + account.width).toBeLessThanOrEqual(width);
-    }
-    await shortcut.click();
+    const link = page.locator(".nav-admin", { hasText: "Управление деревом" });
+    await expect(link).toHaveAttribute("href", "/a/tree-a/manage");
+    await link.click();
   }
-  await expect(page).toHaveURL(/\/a\/tree-a\/admin$/);
-  await expect(shortcut).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveURL(/\/a\/tree-a\/manage$/);
   await expect(page.getByRole("heading", { name: "Участники", exact: true })).toBeVisible();
-});
-
-test("basic owner reaches tree management from the gear without platform or AI sections", async ({ page }) => {
-  await accountView(page, { fullAccess: false, platformAdmin: false });
-  await page.goto("/tree");
-  await page.getByRole("button", { name: "Настройки древа" }).click();
-  const dialog = page.getByRole("dialog", { name: "Вид древа" });
-  await dialog.getByRole("button", { name: "Управление деревом" }).click();
-  await expect(page).toHaveURL(/\/admin$/);
-  await expect(dialog).toHaveCount(0);
-  const navigation = page.locator(".admin-sidebar nav");
-  await expect(navigation.locator("button", { hasText: "Источники" })).toBeAttached();
-  await expect(navigation.locator("button", { hasText: "Вход через VK" })).toBeAttached();
-  await expect(navigation.locator("button", { hasText: "Хранилище" })).toBeAttached();
-  for (const label of ["Yandex AI", "Ресурсы поиска", "MCP-токены", "Резервные копии"]) {
-    await expect(navigation.locator("button", { hasText: label })).toHaveCount(0);
+  if (info.project.name === "desktop") {
+    for (const width of [1024, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.screenshot({ path: info.outputPath(`tree-manage-${width}.png`), fullPage: true });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    }
   }
-  await expect(navigation.locator(".admin-nav-label", { hasText: "Платформа" })).toHaveCount(0);
-  await expect(navigation.locator(".admin-nav-label", { hasText: "ИИ и поиск" })).toHaveCount(0);
-
-  await page.goto("/admin?section=ai");
-  await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByRole("heading", { name: "Участники" })).toBeVisible();
-  await expect(page.getByText("Yandex AI", { exact: true })).toHaveCount(0);
-  await page.goto("/admin?section=unknown");
-  await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByRole("heading", { name: "Участники" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Админка платформы" })).toHaveCount(0);
+  await page.goto("/a/tree-a/admin?section=storage");
+  await expect(page).toHaveURL(/\/a\/tree-a\/manage$/);
+  await expect(page.getByRole("heading", { name: "Участники", exact: true })).toBeVisible();
+  await page.goto("/a/tree-a/admin/matches");
+  await expect(page).toHaveURL(/\/a\/tree-a\/manage\/matches$/);
+  await page.goto("/admin/matches");
+  await expect(page).toHaveURL(/\/manage\/matches$/);
+  await expect(page.getByRole("heading", { name: "Связи деревьев" })).toBeVisible();
 });
 
-test("full owner keeps archive AI tools, while platform settings stay hidden", async ({ page }) => {
-  await accountView(page, { fullAccess: true, platformAdmin: false });
-  await page.goto("/admin");
-  const navigation = page.locator(".admin-sidebar nav");
-  for (const label of ["Ресурсы поиска", "MCP-токены"]) {
-    await expect(navigation.locator("button", { hasText: label })).toBeAttached();
-  }
-  await expect(navigation.locator("button", { hasText: "Yandex AI" })).toHaveCount(0);
-  await expect(navigation.locator("button", { hasText: "Резервные копии" })).toHaveCount(0);
-  await expect(navigation.locator(".admin-nav-label", { hasText: "Платформа" })).toHaveCount(0);
-  await page.goto("/admin?section=ai");
-  await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByRole("heading", { name: "Участники" })).toBeVisible();
-});
-
-test("platform admin gets AI settings even without the archive AI feature tier", async ({ page }) => {
-  await accountView(page, { fullAccess: false, platformAdmin: true });
-  await page.goto("/admin");
-  const navigation = page.locator(".admin-sidebar nav");
-  await expect(navigation.locator(".admin-nav-label", { hasText: "Платформа" })).toBeAttached();
-  await expect(navigation.locator("button", { hasText: "Yandex AI" })).toBeAttached();
-  await expect(navigation.locator("button", { hasText: "Резервные копии" })).toBeAttached();
-  await expect(navigation.locator(".admin-nav-group").filter({
-    has: page.locator(".admin-nav-label", { hasText: "Платформа" }),
-  }).locator("button")).toHaveText(["Yandex AI", "Резервные копии"]);
-  await expect(navigation.locator("button", { hasText: "MCP-токены" })).toHaveCount(0);
-  await openAdminSection(page, "ai", "Yandex AI");
-  await expect(page.locator(".admin-page-header .section-label")).toHaveText("УПРАВЛЕНИЕ ПЛАТФОРМОЙ");
-  await openAdminSection(page, "backups", "Резервные копии");
-  await expect(page.locator(".admin-page-header .section-label")).toHaveText("УПРАВЛЕНИЕ ПЛАТФОРМОЙ");
-});
-
-test("full-tier invited admin cannot see AI tools while the tree owner is basic", async ({ page }) => {
-  await accountView(page, { fullAccess: true, platformAdmin: false, aiAvailable: false });
-  await page.goto("/admin");
-  await expect(page.locator(".admin-sidebar nav button", { hasText: "Yandex AI" })).toHaveCount(0);
-  await expect(page.locator(".admin-sidebar nav button", { hasText: "MCP-токены" })).toHaveCount(0);
-  await expect(page.locator(".admin-sidebar nav button", { hasText: "Источники" })).toBeAttached();
-});
-
-test("unapproved admin has no gear shortcut", async ({ page }) => {
-  await accountView(page, { approved: false, fullAccess: false, platformAdmin: false });
+test("gear opens only owner management; full tier does not grant platform settings", async ({ page }) => {
+  await treeUser(page, { owner: true, platformAdmin: false, fullAccess: true });
   await page.goto("/tree");
-  await page.getByRole("button", { name: "Настройки древа" }).click();
-  await expect(page.getByRole("dialog", { name: "Вид древа" }).getByRole("button", { name: "Управление деревом" })).toHaveCount(0);
-});
-
-test("gear keeps the current tree's archive scope", async ({ page }) => {
-  await page.route("**/a/tree-a/api/**", (route) => route.continue({
-    url: route.request().url().replace("/a/tree-a/api/", "/api/"),
-  }));
-  await page.goto("/a/tree-a/tree");
   await page.getByRole("button", { name: "Настройки древа" }).click();
   await page.getByRole("dialog", { name: "Вид древа" })
     .getByRole("button", { name: "Управление деревом" }).click();
-  await expect(page).toHaveURL(/\/a\/tree-a\/admin$/);
+  await expect(page).toHaveURL(/\/manage$/);
+  for (const label of ["Yandex AI", "Хранилище", "Вход через VK", "Ресурсы поиска"])
+    await expect(page.locator(".admin-sidebar nav").getByRole("button", { name: label })).toHaveCount(0);
+  await page.goto("/admin");
+  await expect(page.getByRole("heading", { name: "Админка платформы" })).toBeVisible();
+  await expect(page.getByText("Доступна только администратору платформы.")).toBeVisible();
+});
+
+test("global admin without membership opens /admin without requesting a private family", async ({ page }) => {
+  let familyRequests = 0;
+  await page.route("**/api/family?projection=overview", (route) => {
+    familyRequests++;
+    return route.fulfill({ status: 401, json: { error: "Private archive" } });
+  });
+  await page.route("**/api/session", (route) => route.fulfill({ json: {
+    user: null,
+    account: { id: "platform-only", name: "Администратор платформы", createdAt: "2026-10-04",
+      fullAccess: false, globalRole: "admin", provider: "email" },
+    local: false, yandex: false, email: true,
+  } }));
+  await page.route("**/api/platform/roles", (route) => route.fulfill({ json: { accounts: [], next: null } }));
+  await page.goto("/admin");
+  await expect(page.getByRole("heading", { name: "Админка платформы" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Глобальные роли" })).toBeVisible();
+  expect(familyRequests).toBe(0);
+  await expect(page.getByRole("link", { name: "Управление деревом" })).toHaveCount(0);
+  await expect(page.getByText("Резервные копии", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("MCP-токены", { exact: true })).toHaveCount(0);
+});
+
+test("legacy local platform admin uses the trusted session flag without an account profile", async ({ page }) => {
+  let familyRequests = 0;
+  await page.route("**/api/family?projection=overview", (route) => {
+    familyRequests++;
+    return route.fulfill({ status: 401, json: { error: "Private archive" } });
+  });
+  await page.route("**/api/session", (route) => route.fulfill({ json: {
+    user: { id: "local-admin", name: "Локальный администратор", role: "admin",
+      platformAdmin: true, approved: true, fullAccess: true },
+    account: null, local: true, yandex: false,
+  } }));
+  await page.route("**/api/account/archives", (route) => route.fulfill({ json: { archives: [] } }));
+  await page.route("**/api/admin/ai", (route) => route.fulfill({ status: 503, json: { error: "Тест" } }));
+  await page.goto("/admin");
+  await expect(page.getByRole("heading", { name: "Админка платформы" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Yandex AI" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Глобальные роли" })).toHaveCount(0);
+  expect(familyRequests).toBe(0);
+});
+
+test("global admin with reader membership has platform entry but no owner controls", async ({ page }) => {
+  await treeUser(page, { owner: false, platformAdmin: true });
+  await page.goto("/tree");
+  if (page.viewportSize()!.width < 700) await page.getByLabel("Меню проекта").click();
+  await expect(page.getByRole("link", { name: "Админка платформы" }).first()).toHaveAttribute("href", "/admin");
+  if (page.viewportSize()!.width < 700) await page.getByLabel("Меню проекта").click();
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  await expect(page.getByRole("dialog", { name: "Вид древа" })
+    .getByRole("button", { name: "Управление деревом" })).toHaveCount(0);
+  await page.goto("/manage");
+  await expect(page.getByText("Панель доступна администратору.")).toBeVisible();
+});
+
+test("combined owner and global admin get two entries and native Back restores the scoped tree", async ({ page }, info) => {
+  await page.route("**/a/tree-a/api/**", (route) => route.continue({
+    url: route.request().url().replace("/a/tree-a/api/", "/api/"),
+  }));
+  await treeUser(page, { owner: true, platformAdmin: true });
+  await page.route("**/api/session", (route) => route.fulfill({ json: {
+    user: null, account: { id: "platform-owner", name: "Администратор", createdAt: "2026-10-04",
+      fullAccess: true, globalRole: "admin", provider: "email" }, local: false, yandex: false,
+  } }));
+  await page.goto("/a/tree-a/tree");
+  if (info.project.name === "mobile") await page.getByLabel("Меню проекта").click();
+  const platform = page.getByRole("link", { name: "Админка платформы" }).last();
+  await expect(platform).toHaveAttribute("href", "/admin");
+  await expect(page.getByRole("link", { name: "Управление деревом" }).last())
+    .toHaveAttribute("href", "/a/tree-a/manage");
+  await platform.click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/a\/tree-a\/tree$/);
 });

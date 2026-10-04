@@ -3,6 +3,7 @@ import { finished } from "node:stream/promises";
 import { accountProfileFromRow, type createAuth } from "./auth.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { archiveUserFromRow } from "./users.ts";
+import { canEditArchive } from "../domain/access.ts";
 
 /** Public session status; authenticated fields are assembled on demand. */
 export function sessionHttp(
@@ -75,22 +76,33 @@ export function sessionHttp(
         const platformAdmin = await client.query(
           "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
           [session.accountId]);
+        const platformResearcher = await client.query(
+          "SELECT account_id FROM platform_researchers WHERE account_id=$1 FOR SHARE NOWAIT",
+          [session.accountId]);
+        const owner = await client.query(
+          "SELECT user_id FROM archive_owners WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT",
+          [db.archiveId, session.accountId]);
         const identities = await client.query<{ provider: string }>(
           "SELECT provider FROM account_identities WHERE account_id=$1 ORDER BY provider FOR SHARE NOWAIT",
           [session.accountId]);
         const accountRow = account.rows[0];
         const user = membership.rows[0]
           ? archiveUserFromRow({ ...accountRow, ...membership.rows[0],
-              full_access: tier.rows[0]?.full_access })
+              full_access: tier.rows[0]?.full_access,
+              tree_role: membership.rows[0].role,
+              global_role: platformAdmin.rowCount ? "admin" :
+                platformResearcher.rowCount ? "researcher" : null,
+              archive_owner: !!owner.rowCount })
           : null;
         const providers = identities.rows.map((row) => row.provider);
         const profile = accountProfileFromRow({ ...accountRow,
           full_access: tier.rows[0]?.full_access,
           provider: providers[0], providers });
         return send(200, { ...enabled,
-          canEdit: user?.approved === true &&
-            ["admin", "researcher", "relative"].includes(user.role),
-          account: profile,
+          canEdit: canEditArchive(user),
+          account: { ...profile,
+            globalRole: platformAdmin.rowCount ? "admin" :
+              platformResearcher.rowCount ? "researcher" : null },
           user: user ? { ...user,
             platformAdmin: user.approved === true && (platformAdmin.rowCount ?? 0) > 0 } : null,
         }, true);

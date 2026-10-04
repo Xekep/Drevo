@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import type {
@@ -34,7 +34,8 @@ const date = (value: number) =>
   });
 
 /** Owns only the lazy operational listing, independently of the settings draft. */
-export function AiProviderCleanupAdmin() {
+export function AiProviderCleanupAdmin({ archiveId = null }: { archiveId?: string | null }) {
+  const url = useCallback((path: string) => archiveId ? `/a/${archiveId}${path}` : path, [archiveId]);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<AiCleanupFilter>("all");
   const [cursor, setCursor] = useState<string | null>(null);
@@ -55,7 +56,7 @@ export function AiProviderCleanupAdmin() {
       setError("");
       const query = new URLSearchParams({ filter });
       if (cursor) query.set("cursor", cursor);
-      void archiveFetch(`/api/admin/ai/cleanup?${query}`, {
+      void archiveFetch(url(`/api/admin/ai/cleanup?${query}`), {
         signal: controller.signal,
         cache: "no-store",
       })
@@ -80,7 +81,7 @@ export function AiProviderCleanupAdmin() {
         });
     });
     return () => controller.abort();
-  }, [open, filter, cursor, reload]);
+  }, [open, filter, cursor, reload, url]);
   const refresh = () => {
     setCursor(null);
     setHistory([]);
@@ -92,7 +93,7 @@ export function AiProviderCleanupAdmin() {
     setRetryMessage("");
     setRetryError("");
     try {
-      const response = await archiveFetch(`/api/admin/ai/cleanup/${id}/retry`, {
+      const response = await archiveFetch(url(`/api/admin/ai/cleanup/${id}/retry`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",

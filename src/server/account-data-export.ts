@@ -5,7 +5,7 @@ import { readArchive } from "./database.ts";
 import { commentFilesFromJson } from "./discussion-attachments.ts";
 import type { CommentAttachmentFile } from "../shared/person-discussion.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
-import { aiChatAccessScope } from "./ai-chat-access-scope.ts";
+import { aiChatAllowedScopes } from "./ai-chat-access-scope.ts";
 import {
   AccountAttachmentExportTooLarge,
   AccountAttachmentExportMissing,
@@ -243,6 +243,8 @@ export function accountDataExport(db: StoreDatabase) {
               name: String(profile.name),
               createdAt: String(profile.created_at),
               role: String(membership.role) as ArchiveUser["role"],
+              treeRole: String(membership.role) as ArchiveUser["treeRole"],
+              archiveOwner: membership.owned === true,
               approved: true,
               treeAccess: String(membership.tree_access) as ArchiveUser["treeAccess"],
               ...(membership.person_id
@@ -332,23 +334,25 @@ export function accountDataExport(db: StoreDatabase) {
               }));
             if ((includeAiChats || includeAiAttachments) &&
                 await accountAiAccess(db, accountId)) {
-              const scope = aiChatAccessScope(user, family);
+              const scopes = aiChatAllowedScopes(user, family);
+              const scopePlaceholders = scopes.map(() => "?").join(",");
               if (includeAiAttachments && !aiAttachmentError) {
                 try {
                   // Fetch only visible attachment metadata, not every message or
                   // its text. The extra row detects an oversized bundle before
                   // materializing a potentially unbounded inventory.
                   const rows = await db.prepare("", `SELECT c.id AS chat_id,
+                      c.access_scope,
                       m.id AS message_id,m.data->'attachments' AS attachments
                     FROM ai_chats c JOIN ai_chat_messages m
                       ON m.archive_id=c.archive_id AND m.chat_id=c.id
-                    WHERE c.user_id=? AND c.access_scope=?
+                    WHERE c.user_id=? AND c.access_scope IN (${scopePlaceholders})
                       AND (m.data->>'hidden') IS DISTINCT FROM 'true'
                       AND m.data->'attachments' IS NOT NULL
                       AND CASE WHEN jsonb_typeof(m.data->'attachments')='array'
                         THEN jsonb_array_length(m.data->'attachments')>0 ELSE true END
                     ORDER BY c.id,m.id LIMIT ?`).all(
-                      accountId, scope, MAX_ACCOUNT_ATTACHMENT_FILES + 1);
+                      accountId, ...scopes, MAX_ACCOUNT_ATTACHMENT_FILES + 1);
                   if (rows.length > MAX_ACCOUNT_ATTACHMENT_FILES)
                     throw new AccountAttachmentExportTooLarge("Too many AI attachment messages");
                   for (const row of rows) {
@@ -358,7 +362,7 @@ export function accountDataExport(db: StoreDatabase) {
                         archiveId: String(membership.archive_id),
                         chatId,
                         messageId: String(row.message_id),
-                        accessScope: scope,
+                        accessScope: String(row.access_scope),
                         file,
                       });
                       if (aiAttachments.length > MAX_ACCOUNT_ATTACHMENT_FILES)
@@ -384,8 +388,8 @@ export function accountDataExport(db: StoreDatabase) {
                     COALESCE(SUM(octet_length(m.content)),0) AS bytes
                   FROM ai_chats c JOIN ai_chat_messages m
                     ON m.archive_id=c.archive_id AND m.chat_id=c.id
-                  WHERE c.user_id=? AND c.access_scope=?
-                    AND (m.data->>'hidden') IS DISTINCT FROM 'true'`).get(accountId, scope);
+                  WHERE c.user_id=? AND c.access_scope IN (${scopePlaceholders})
+                    AND (m.data->>'hidden') IS DISTINCT FROM 'true'`).get(accountId, ...scopes);
                 aiMessageBytes += BigInt(String(size?.bytes ?? 0));
                 aiMessageCount += BigInt(String(size?.messages ?? 0));
                 if (aiMessageBytes > BigInt(MAX_EXPORTED_AI_MESSAGE_BYTES) ||
@@ -399,8 +403,8 @@ export function accountDataExport(db: StoreDatabase) {
                   FROM ai_chats c LEFT JOIN ai_chat_messages m
                     ON m.archive_id=c.archive_id AND m.chat_id=c.id
                    AND (m.data->>'hidden') IS DISTINCT FROM 'true'
-                  WHERE c.user_id=? AND c.access_scope=?
-                  ORDER BY c.created_at,c.id,m.id`).all(accountId, scope);
+                  WHERE c.user_id=? AND c.access_scope IN (${scopePlaceholders})
+                  ORDER BY c.created_at,c.id,m.id`).all(accountId, ...scopes);
                 ownAiChats = [];
                 for (const row of chatRows) {
                   if (ownAiChats.at(-1)?.id !== String(row.id))

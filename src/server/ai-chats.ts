@@ -102,7 +102,8 @@ export function aiChatStore(db: StoreDatabase, cleanup?: AiProviderCleanup) {
         return (await read(id, userId))!;
       });
     },
-    async list(userId: string, accessScope: string) {
+    async list(userId: string, accessScope: string | readonly string[]) {
+      const allowedScopes = new Set(Array.isArray(accessScope) ? accessScope : [accessScope]);
       return (
         (await db
           .prepare(
@@ -125,10 +126,10 @@ export function aiChatStore(db: StoreDatabase, cleanup?: AiProviderCleanup) {
         id: row.id,
         updatedAt: row.updated_at,
         title:
-          row.access_scope === accessScope
+          allowedScopes.has(row.access_scope)
             ? row.title?.slice(0, 80) || "Новый диалог"
             : "Диалог с прежними правами доступа",
-        ...(row.access_scope !== accessScope ? { unavailable: true } : {}),
+        ...(!allowedScopes.has(row.access_scope) ? { unavailable: true } : {}),
       }));
     },
     async messages(
@@ -177,7 +178,7 @@ export function aiChatStore(db: StoreDatabase, cleanup?: AiProviderCleanup) {
         .run(id);
     },
     async setRemote(id: string, conversationId: string | null, token?: string) {
-      return await db.transaction(async () => {
+      const work = async () => {
         const row = await db.prepare(
           "SELECT provider_cleanup_ref FROM ai_chats WHERE id=?" + (token ? " AND busy_token=?" : ""),
           "SELECT provider_cleanup_ref FROM ai_chats WHERE id=?" + (token ? " AND busy_token=?" : "") + " FOR UPDATE",
@@ -193,7 +194,20 @@ export function aiChatStore(db: StoreDatabase, cleanup?: AiProviderCleanup) {
         if (result.changes && row.provider_cleanup_ref && cleanup)
           await cleanup.pending(String(row.provider_cleanup_ref));
         return result.changes === 1;
-      });
+      };
+      // Admission may rekey a legacy chat inside the caller's write transaction.
+      // Keep the remote reset and cleanup registration in that same commit.
+      return db.inTransaction() ? await work() : await db.transaction(work);
+    },
+    async updateScope(id: string, userId: string, before: string, after: string,
+      token: string) {
+      const updated = await db.prepare(
+        `UPDATE ai_chats SET access_scope=? WHERE id=? AND user_id=?
+         AND access_scope=? AND busy_token=?`,
+        `UPDATE ai_chats SET access_scope=? WHERE id=? AND user_id=?
+         AND access_scope=? AND busy_token=?`,
+      ).run(after, id, userId, before, token);
+      return updated.changes === 1;
     },
     async bindNewRemote(id: string, conversationId: string, runtime: {
       baseUrl: string; folderId: string; apiKey: string

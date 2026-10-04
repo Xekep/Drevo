@@ -172,8 +172,9 @@ export async function backupCoordinator(
 
       return true;
     });
-    const acquired = checkAccess && (kind === "check" || kind === "preview") && db.kind === "postgres" && db.postgresTransaction
+    const acquired = checkAccess && db.kind === "postgres" && db.postgresTransaction
       ? await db.postgresTransaction(async (client) => {
+          if (actor?.id !== checkAccess.accountId) throw new BackupAccessError(403);
           const account = await client.query(
             "SELECT id FROM accounts WHERE id=$1 FOR SHARE NOWAIT", [checkAccess.accountId]);
           if (!account.rowCount) throw new BackupAccessError(401);
@@ -185,14 +186,19 @@ export async function backupCoordinator(
             throw new BackupAccessError(401);
           await client.query("SELECT set_config('drevo.account_id',$1,true)",
             [checkAccess.accountId]);
+          await client.query("SELECT set_config('drevo.archive_id',$1,true)",
+            [db.archiveId]);
           const membership = await client.query<{ approved: boolean }>(
             `SELECT approved FROM archive_memberships
              WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
             [db.archiveId, checkAccess.accountId]);
+          const archiveOwner = await client.query(
+            "SELECT user_id FROM archive_owners WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT",
+            [db.archiveId, checkAccess.accountId]);
           const platformGrant = await client.query(
             "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
             [checkAccess.accountId]);
-          if (!membership.rows[0]?.approved || !platformGrant.rowCount)
+          if (!membership.rows[0]?.approved || !archiveOwner.rowCount || !platformGrant.rowCount)
             throw new BackupAccessError(403);
           // Serialize with other launchers even when backup_job has no row yet.
           await client.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE NOWAIT", [db.archiveId]);
@@ -207,6 +213,13 @@ export async function backupCoordinator(
                actor_id=excluded.actor_id,lease_until=excluded.lease_until,data=excluded.data`,
             [db.archiveId, owner, checkAccess.accountId, now() + 90000, JSON.stringify(job)],
           );
+          if (kind === "create") {
+            const config = await client.query<{ interval_hours: string }>(
+              "SELECT data->>'intervalHours' AS interval_hours FROM backup_settings WHERE archive_id=$1 AND id=1", [db.archiveId]);
+            const intervalHours = Number(config.rows[0].interval_hours);
+            await client.query("UPDATE backup_settings SET next_run=$2 WHERE archive_id=$1 AND id=1",
+              [db.archiveId, now() + intervalHours * hour]);
+          }
           return true;
         })
       : await claim();
@@ -303,8 +316,8 @@ export async function backupCoordinator(
   ) {
     return files.withFile(await record(id), signal, consume);
   }
-  async function startCreate(actor?: ArchiveUser, scheduled = false) {
-    return await launch("create", actor, create, scheduled);
+  async function startCreate(actor?: ArchiveUser, scheduled = false, access?: BackupJobAccess) {
+    return await launch("create", actor, create, scheduled, access);
   }
   async function tick() {
     if (closed) return;

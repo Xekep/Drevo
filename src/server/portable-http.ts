@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import { readArchive, type openArchive } from "./database.ts";
 import { ForbiddenError } from "./users.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import { parseCatalogSource } from "../shared/source-catalog.ts";
 import {
   writePortablePackage,
@@ -28,7 +29,7 @@ export function portableExportHttp(
 
   async function mayExport(req: IncomingMessage) {
     const actor = await auth.currentUser(req);
-    if (!actor?.approved || actor.role !== "admin") return false;
+    if (!actor?.approved || !isArchiveOwner(actor)) return false;
     return auth.local || !!(await owner?.get(actor.id));
   }
 

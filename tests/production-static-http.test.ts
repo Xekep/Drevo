@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { productionStaticHttp } from "../src/server/production-static-http.ts";
+import { archiveViewAt } from "../src/domain/archive-routes.ts";
 
 async function listen(
   handler: ReturnType<typeof productionStaticHttp>,
@@ -70,6 +71,10 @@ test("production static streams SPA routes, files and shared page", async () => 
       "/a/family-one/tree",
       "/a/family-one/people/sample-id",
       "/a/family-one/account",
+      "/a/family-one/manage",
+      "/a/family-one/admin",
+      "/manage/matches",
+      "/a/family-one/manage/matches",
       "/admin/matches",
       "/a/family-one/admin/matches",
       `/discover/person/family-one/${encodeURIComponent("family:человек.1")}`,
@@ -83,6 +88,16 @@ test("production static streams SPA routes, files and shared page", async () => 
       );
       assert.equal(response.headers.get("cache-control"), "no-cache");
       assert.equal(await response.text(), html);
+      if (archiveViewAt(path) === "account" || archiveViewAt(path) === "admin" || archiveViewAt(path) === "manage") {
+        assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+        assert.equal(response.headers.get("x-robots-tag"), "noindex, nofollow, noarchive");
+      }
+    }
+    for (const path of ["/admin/", "/account/", "/manage/", "/a/family-one/account/"]) {
+      const response = await fetch(app.base + path);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+      assert.equal(response.headers.get("x-robots-tag"), "noindex, nofollow, noarchive");
     }
     assert.equal((await fetch(app.base + `/discover/search/${encodeURIComponent("И".repeat(101))}`)).status, 404);
 

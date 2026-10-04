@@ -9,6 +9,7 @@ import {
 } from "../shared/storage-limits.ts";
 import { auditStore } from "./audit.ts";
 import { UploadQuotaError } from "./upload-quota-error.ts";
+import type pg from "pg";
 
 export async function readStorageLimits(
   db: StoreDatabase,
@@ -16,7 +17,7 @@ export async function readStorageLimits(
   const row = await db
     .prepare(
       "SELECT data FROM upload_limits WHERE id=1",
-      "SELECT data FROM upload_limits WHERE id=1",
+      "SELECT data FROM platform_upload_limits WHERE id=1",
     )
     .get();
   return row
@@ -30,6 +31,8 @@ export async function writeStorageLimits(
   limits: StorageLimits,
   actor: ArchiveUser,
 ) {
+  if (db.kind === "postgres")
+    throw new Error("Platform storage limits require a platform transaction");
   const before = await readStorageLimits(db);
   await db
     .prepare(
@@ -55,6 +58,24 @@ export async function writeStorageLimits(
         })),
     },
     actor,
+  );
+}
+
+/** The caller holds the current platform grant and session locks. */
+export async function writePlatformStorageLimits(
+  client: pg.PoolClient,
+  limits: StorageLimits,
+  actorId: string,
+) {
+  await client.query(
+    `INSERT INTO platform_upload_limits(id,data) VALUES(1,$1)
+     ON CONFLICT(id) DO UPDATE SET data=excluded.data`,
+    [JSON.stringify(limits)],
+  );
+  await client.query(
+    `INSERT INTO platform_config_audit(actor_id,action,item_id)
+     VALUES($1,'storage_limits_changed','upload-limits')`,
+    [actorId],
   );
 }
 
@@ -99,13 +120,23 @@ export async function enforceUserStorageLimit(
   now = Date.now(),
   previousBytes?: number,
 ) {
-  const row = await db
-    .prepare(
-      "SELECT role FROM users WHERE id=?",
-      "SELECT role FROM runtime_users WHERE id=?",
-    )
-    .get(userId);
-  const role = row?.role as Role | undefined;
+  const row = await db.prepare(
+    "SELECT role FROM users WHERE id=?",
+    `SELECT m.role,
+       o.user_id IS NOT NULL AS owner,
+       pa.account_id IS NOT NULL AS platform_admin,
+       pr.account_id IS NOT NULL AS platform_researcher
+     FROM archive_memberships m
+     LEFT JOIN archive_owners o ON o.archive_id=m.archive_id AND o.user_id=m.user_id
+     LEFT JOIN platform_admins pa ON pa.account_id=m.user_id
+     LEFT JOIN platform_researchers pr ON pr.account_id=m.user_id
+     WHERE m.user_id=?`,
+  ).get(userId);
+  const role: Role | undefined = db.kind === "sqlite" ?
+    row?.role as Role | undefined : !row ? undefined :
+    row.role === "reader" && !row.owner ? "reader" :
+    row.platform_admin ? "admin" :
+    row.platform_researcher ? "researcher" : "relative";
   const limits = await readStorageLimits(db);
   const limit = role ? limits[role] : userId === "local" ? limits.admin : null;
   if (limit === null || limit === undefined) return;

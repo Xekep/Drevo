@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import {
   ROLE_NAMES,
+  isArchiveOwner,
   fullName,
   type ArchiveUser,
   type Family,
@@ -39,6 +40,7 @@ export type AccountSession = {
     name: string;
     createdAt: string;
     fullAccess: boolean;
+    globalRole?: "admin" | "researcher" | null;
     provider: "vk" | "yandex" | "email" | null;
     providers?: ("vk" | "yandex" | "email")[];
   } | null;
@@ -86,7 +88,7 @@ function ArchiveList({ archives }: { archives: AccountArchive[] }) {
         <div className="account-archive-row" key={item.id}>
           <span className="account-archive-name">
             <strong>{item.title}</strong>
-            <small>{ROLE_NAMES[item.role]}</small>
+            <small>{item.owned ? "Владелец архива" : ROLE_NAMES[item.role]}</small>
           </span>
           {item.current ? (
             <span className="account-archive-current">Открыто</span>
@@ -144,6 +146,7 @@ export function AccountPage({
   readTree,
   onPerson,
   onAdmin,
+  onPlatformAdmin,
 }: {
   session: AccountSession | null;
   loading: boolean;
@@ -152,6 +155,7 @@ export function AccountPage({
   readTree: boolean;
   onPerson: (id: string) => void;
   onAdmin: () => void;
+  onPlatformAdmin: () => void;
 }) {
   const user = session?.user;
   const identity = user || session?.account;
@@ -292,11 +296,19 @@ export function AccountPage({
             <h1>Личный кабинет</h1>
             <p>Профиль, доступ к семейному архиву и настройки просмотра.</p>
           </div>
-          {identity && (
-            <a className="account-row-action" href="/discover">
-              <Users size={17} aria-hidden="true" /> Поиск опубликованных людей
-            </a>
-          )}
+          <div className="account-heading-actions">
+            {(session?.account?.globalRole === "admin" ||
+              (!session?.account && user?.platformAdmin === true)) && (
+              <button className="account-row-action" onClick={onPlatformAdmin}>
+                <ShieldCheck size={17} aria-hidden="true" /> Админка платформы
+              </button>
+            )}
+            {identity && (
+              <a className="account-row-action" href="/discover">
+                <Users size={17} aria-hidden="true" /> Поиск опубликованных людей
+              </a>
+            )}
+          </div>
         </div>
         {loading ? (
           <div className="account-card account-empty" role="status">
@@ -387,7 +399,7 @@ export function AccountPage({
                     )}
                     <div>
                       <span>Роль</span>
-                      <strong>{ROLE_NAMES[user.role]}</strong>
+                      <strong>{isArchiveOwner(user) ? "Владелец архива" : ROLE_NAMES[user.treeRole || user.role]}</strong>
                     </div>
                     {capacity?.available && capacity.owned && (
                       <>
@@ -456,7 +468,7 @@ export function AccountPage({
                       Открыть мою карточку <ArrowRight size={17} />
                     </button>
                   )}
-                  {user.role === "admin" && user.approved && (
+                  {isArchiveOwner(user) && user.approved && (
                     <button className="account-row-action" onClick={onAdmin}>
                       Управление архивом <ArrowRight size={17} />
                     </button>
@@ -693,7 +705,7 @@ export function AccountPage({
                   </p>
                   {capacity?.available &&
                     capacity.owned &&
-                    user.role === "admin" &&
+                    isArchiveOwner(user) &&
                     user.approved && (
                       <div className="account-export-actions">
                         <a
@@ -728,7 +740,7 @@ export function AccountPage({
                     )}
                   {capacity?.available &&
                     capacity.owned &&
-                    user.role === "admin" &&
+                    isArchiveOwner(user) &&
                     user.approved &&
                     capacity.emptyArchive && <PortableImport />}
                   {capacity?.available && user.approved && (
@@ -740,7 +752,7 @@ export function AccountPage({
                     window.location.pathname.startsWith("/a/") && (
                       <AccountArchiveDeletion key={window.location.pathname} />
                     )}
-                  {user.role === "admin" && user.approved && (
+                  {isArchiveOwner(user) && user.approved && (
                     <button className="account-row-action" onClick={onAdmin}>
                       <Users size={17} /> Управление архивом{" "}
                       <ArrowRight size={17} />

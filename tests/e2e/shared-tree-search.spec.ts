@@ -24,7 +24,7 @@ test("share catalog shows the last opening and clears it after revocation", asyn
   await page.goto(share.path);
   await expect(page.locator(".tree-canvas")).toBeVisible();
 
-  await page.goto("/admin");
+  await page.goto("/manage");
   await openAdminSection(page, "shares", "Общий доступ");
   const item = page
     .locator(".share-catalog article")

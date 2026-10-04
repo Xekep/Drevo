@@ -343,7 +343,7 @@ test("publication admin refreshes an automatically revoked status on focus", asy
   let published = true;
   await page.route((url) => url.pathname === "/api/admin/published-people/batch", (route) =>
     route.fulfill({ json: { fields: published ? { "e2e-memorial-person": {} } : {} } }));
-  await page.goto("/admin");
+  await page.goto("/manage");
   await openAdminSection(page, "publications", "Можно найти");
   await page.getByRole("searchbox", { name: "Найти человека" }).fill("Тестов Иван");
   const row = page.locator(".publication-admin-row").filter({ hasText: "Тестов Иван" });
@@ -373,7 +373,7 @@ test("admin can review and revoke a selected discovery publication", async ({ pa
     published = route.request().method() === "POST";
     return route.fulfill({ json: { count: 1 } });
   });
-  await page.goto("/admin");
+  await page.goto("/manage");
   await openAdminSection(page, "publications", "Можно найти");
   await page.getByRole("searchbox", { name: "Найти человека" }).fill("Тестов Иван");
   const row = page.locator(".publication-admin-row").filter({ hasText: "Тестов Иван" });
@@ -400,7 +400,7 @@ test("a changed archive requires a fresh server review before batch publication"
     if (route.request().method() === "GET") return route.fulfill({ json: { fields: {} } });
     return route.fulfill({ status: 409, json: { error: "Архив изменился; проверьте публикацию заново" } });
   });
-  await page.goto("/admin");
+  await page.goto("/manage");
   await openAdminSection(page, "publications", "Можно найти");
   const row = page.locator(".publication-admin-row").filter({ hasText: "Тестов Иван" });
   await row.getByRole("checkbox").check();
@@ -421,7 +421,7 @@ test("publication status is not reported as hidden before the server answers", a
     await route.fulfill({ json: { fields: {} } });
   });
   try {
-    await page.goto("/admin");
+    await page.goto("/manage");
     await openAdminSection(page, "publications", "Можно найти");
     await page.getByRole("searchbox", { name: "Найти человека" }).fill("Тестов Иван");
     const row = page.locator(".publication-admin-row").filter({ hasText: "Тестов Иван" });
@@ -450,7 +450,7 @@ test("invited admin sees owner-only publication explanation without forbidden co
     return route.fulfill({ status: 403, json: { error: "Публикация доступна владельцу дерева" } });
   });
 
-  await page.goto("/admin");
+  await page.goto("/manage");
   await openAdminSection(page, "publications", "Можно найти");
   await expect(page.getByText("Публикацией людей управляет владелец дерева.")).toBeVisible();
   await expect(page.locator(".publication-admin-list")).toHaveCount(0);
@@ -473,7 +473,7 @@ test("archive owner retains publication controls in a multi-archive account view
     route.fulfill({ json: { archives: [{ id: "owned-tree", title: "Моё дерево",
       role: "admin", approved: true, owned: true, current: true }] } }));
 
-  await page.goto("/admin");
+  await page.goto("/manage");
   await openAdminSection(page, "publications", "Можно найти");
   await expect(page.getByRole("searchbox", { name: "Найти человека" })).toBeVisible();
   await page.goto("/tree");

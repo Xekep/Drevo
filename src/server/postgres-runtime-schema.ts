@@ -354,8 +354,33 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
             'discovery_match_decision_notes_insert'))=2`,
       "087_discovery_match_decision_notes.sql",
     ],
+    [
+      `SELECT 1 AS present WHERE to_regclass('platform_researchers') IS NOT NULL
+        AND to_regclass('platform_role_audit') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_trigger
+          WHERE tgrelid=to_regclass('archive_memberships')
+            AND tgname='normalize_archive_member_role_before_write' AND NOT tgisinternal)
+        AND EXISTS (SELECT 1 FROM information_schema.columns
+          WHERE table_schema=current_schema() AND table_name='runtime_users'
+            AND column_name='archive_owner')`,
+      "090_global_staff_roles.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
+    if (file === "090_global_staff_roles.sql") {
+      if (!db.postgresTransaction)
+        throw new Error("PostgreSQL transaction unavailable");
+      await db.postgresTransaction(async (client) => {
+        // This migration needs relation-wide DDL locks. Take the global
+        // migration lock before any archive row lock: another backend may
+        // already hold DDL locks while opening this same archive.
+        await client.query("SELECT pg_advisory_xact_lock(186743291)");
+        if ((await client.query(query)).rows[0]?.present) return;
+        await client.query(readFileSync(
+          new URL(`../../ops/postgres/${file}`, import.meta.url), "utf8"));
+      });
+      continue;
+    }
     try {
       await db.transaction(async () => {
         // Serialize DDL across processes/archives, not only this archive's writes.
@@ -383,6 +408,14 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
           !(await db.prepare("", query).get())?.present) throw error;
     }
   }
+  // The schema is global but membership RLS is per archive. Normalize each
+  // archive when its runtime opens, including archives opened after migration.
+  if ((await db.prepare("", `SELECT 1 AS present FROM archive_memberships
+    WHERE role IN ('admin','researcher') LIMIT 1`).get())?.present)
+    await db.transaction(async () => {
+      await db.prepare("", `UPDATE archive_memberships SET role='relative'
+        WHERE role IN ('admin','researcher')`).run();
+    });
   if (!(await db.prepare("", `SELECT 1 AS present FROM discovery_publication_reconciled_archives
     WHERE archive_id=current_setting('drevo.archive_id', true)`).get())?.present)
     await db.transaction(async () => {

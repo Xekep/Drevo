@@ -15,7 +15,7 @@ export async function verifyInvitationPreviewDelivery(db: StoreDatabase, client:
   await client.query("SELECT set_config('drevo.archive_id',$1,false)", [archiveId]);
   const users = await userStore(db);
   const owner = await users.get("owner");
-  assert.ok(owner && owner.role === "admin");
+  assert.ok(owner && owner.archiveOwner && owner.globalRole === "admin" && owner.role === "relative");
   const auth = await createAuth(users, db, origin);
   const invitations = archiveInvitations(db);
   const makeInvitation = async () => {

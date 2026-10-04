@@ -17,7 +17,7 @@ test("администратор сохраняет источник и связ
   });
   expect(uploaded.status()).toBe(201);
   const documentId = (await uploaded.json()).id;
-  await page.goto("/admin");
+  await page.goto("/manage");
   await openAdminSection(page, "sources", "Источники");
   await page.getByRole("button", { name: "Добавить источник" }).click();
   const editor = page.locator(".source-catalog-editor");

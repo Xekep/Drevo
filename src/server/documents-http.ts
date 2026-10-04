@@ -30,7 +30,7 @@ import {
 } from "../shared/document-links.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
-import { owns } from "../domain/access.ts";
+import { owns, canAssessArchiveEvidence, canEditArchive } from "../domain/access.ts";
 import {
   validAnnotationSelection,
   type AnnotationSelection,
@@ -1135,13 +1135,13 @@ export function documentsHttp({
         actor: Awaited<ReturnType<typeof auth.currentUser>>,
         authorId: string,
       ) => actor?.approved === true && (
-        actor.role === "researcher" || owns(actor, { createdBy: authorId })
+        canAssessArchiveEvidence(actor) || owns(actor, { createdBy: authorId })
       );
       const canEditAnnotation = (
         actor: Awaited<ReturnType<typeof auth.currentUser>>,
         authorId: string,
       ) => actor?.approved === true && actor.id === authorId &&
-        ["admin", "researcher", "relative"].includes(actor.role);
+        canEditArchive(actor);
       const visibleItems = (
         items: DocumentAnnotation[],
         actor: Awaited<ReturnType<typeof auth.currentUser>>,

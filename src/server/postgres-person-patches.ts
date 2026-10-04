@@ -5,6 +5,7 @@ import {
   type Change,
 } from "../domain/changes.ts";
 import { isScopedUser } from "../domain/tree-access.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { hydrateArchive } from "./archive-hydration.ts";
 import { authorizeArchive } from "./permissions.ts";
@@ -132,7 +133,7 @@ export async function patchPostgresPeopleForSession(
       for (const id of ids) {
         const person = people.get(id);
         // A restricted editor must not distinguish a hidden ID from a missing ID.
-        if (actor.role !== "admin" && person?.createdBy !== actor.id)
+        if (!isArchiveOwner(actor) && person?.createdBy !== actor.id)
           throw new ForbiddenError("Можно редактировать только свои карточки");
         if (!person)
           throw new ConflictError("Карточка удалена другим участником");

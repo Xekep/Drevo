@@ -11,6 +11,7 @@ import { LazyChunkBoundary } from "./lazy-chunk-boundary";
 import { loadLazyModule } from "./lazy-section-recovery";
 import type { Connection } from "../domain";
 import {
+  isArchiveOwner,
   owns,
   CONNECTION_NAMES,
   type ConnectionType,
@@ -123,7 +124,7 @@ export function PersonInspector({
               <Expand size={16} />
             </button>
           )}
-          {user?.role === "admin" && (
+          {isArchiveOwner(user) && (
             <button
               className="person-history-button"
               title="История изменений"
@@ -135,7 +136,7 @@ export function PersonInspector({
           )}
         </div>
       </InspectorActions>
-      {history && user?.role === "admin" && (
+      {history && isArchiveOwner(user) && (
         <EditorDialog
           title="История изменений человека"
           onClose={() => setHistory(false)}

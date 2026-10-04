@@ -21,7 +21,7 @@ import {
   LibraryBig,
   Info,
 } from "lucide-react";
-import { safeUrl, type Person, type ArchiveUser } from "../domain";
+import { isArchiveOwner, safeUrl, type Person, type ArchiveUser } from "../domain";
 import { mediaPreview } from "../domain/media-preview";
 import { archivePaths, type ArchiveView } from "../domain/archive-routes";
 import { scopedArchivePath } from "../domain/archive-context.ts";
@@ -38,16 +38,18 @@ export function ArchiveNavigation({
   readTree,
   readPhotos,
   onHelp,
+  onPlatformLeave,
 }: {
   view: ArchiveView;
   onView: (view: ArchiveView) => void;
   user: ArchiveUser | null;
-  account?: { id: string; name: string } | null;
+  account?: { id: string; name: string; globalRole?: "admin" | "researcher" | null } | null;
   accountPerson?: Person;
   local: boolean;
   readTree: boolean;
   readPhotos: boolean;
   onHelp: () => void;
+  onPlatformLeave?: () => boolean;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
   const [failedPortrait, setFailedPortrait] = useState<string>();
@@ -71,6 +73,11 @@ export function ArchiveNavigation({
     event.preventDefault();
     if (menu.current) menu.current.open = false;
     onView(next);
+  };
+  const checkPlatformLeave = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.button === 0 && !event.ctrlKey && !event.metaKey &&
+        !event.shiftKey && !event.altKey && onPlatformLeave && !onPlatformLeave())
+      event.preventDefault();
   };
   useEffect(() => {
     const outside = (e: PointerEvent) => {
@@ -163,14 +170,20 @@ export function ArchiveNavigation({
       >
         О проекте
       </button>
-      {user?.role === "admin" && user.approved === true && (
+      {user && isArchiveOwner(user) && user.approved === true && (
         <a
           className="nav-admin"
-          href={scopedArchivePath(archivePaths.admin)}
-          aria-current={view === "admin" ? "page" : undefined}
-          onClick={(event) => navigate(event, "admin")}
+          href={scopedArchivePath(archivePaths.manage)}
+          aria-current={view === "manage" ? "page" : undefined}
+          onClick={(event) => navigate(event, "manage")}
         >
-          Админка
+          Управление деревом
+        </a>
+      )}
+      {(account?.globalRole === "admin" || user?.globalRole === "admin" || user?.platformAdmin === true) && (
+        <a className="nav-admin" href="/admin" aria-current={view === "admin" ? "page" : undefined}
+          onClick={checkPlatformLeave}>
+          Админка платформы
         </a>
       )}
       <a
@@ -244,15 +257,22 @@ export function ArchiveNavigation({
             <Users size={18} />
             <span>Поиск опубликованных людей</span>
           </a>
-          {user?.role === "admin" && (
+          {user && isArchiveOwner(user) && user.approved === true && (
             <a
-              href={scopedArchivePath(archivePaths.admin)}
-              aria-current={view === "admin" ? "page" : undefined}
-              onClick={(event) => navigate(event, "admin")}
+              href={scopedArchivePath(archivePaths.manage)}
+              aria-current={view === "manage" ? "page" : undefined}
+              onClick={(event) => navigate(event, "manage")}
               title="Управление деревом"
             >
               <ShieldCheck size={22} />
               <span>Управление деревом</span>
+            </a>
+          )}
+          {(account?.globalRole === "admin" || user?.globalRole === "admin" || user?.platformAdmin === true) && (
+            <a href="/admin" aria-current={view === "admin" ? "page" : undefined}
+              onClick={checkPlatformLeave}>
+              <ShieldCheck size={22} />
+              <span>Админка платформы</span>
             </a>
           )}
           {identity && !local && (

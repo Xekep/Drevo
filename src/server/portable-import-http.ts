@@ -9,6 +9,7 @@ import type { createAuth } from "./auth.ts";
 import { accountCapacity } from "./account-capacity.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import { applyPortablePackage, portableStoreOccupied } from "./portable-apply.ts";
+import { isArchiveOwner } from "../domain/access.ts";
 import {
   PORTABLE_IMPORT_LIMIT,
   portableUncompressedBytes,
@@ -67,7 +68,7 @@ export function portableImportHttp(
       : null;
   async function mayImport(req: IncomingMessage) {
     const actor = await auth.currentUser(req);
-    if (!actor?.approved || actor.role !== "admin") return null;
+    if (!actor?.approved || !isArchiveOwner(actor)) return null;
     if (!auth.local && !(await owner?.get(actor.id))) return null;
     return actor;
   }

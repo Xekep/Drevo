@@ -5,6 +5,13 @@ import { isSameOriginRequest } from "./same-origin.ts";
 import type { mcpUsageStore } from "./mcp-usage.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
+import { finished } from "node:stream/promises";
+import { isArchiveOwner } from "../domain/access.ts";
+import {
+  assertPlatformAdminInArchiveTransaction,
+  PlatformAccessBusy,
+  PlatformAccessDenied,
+} from "./platform-access.ts";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -47,12 +54,52 @@ export function adminMcpHttp({
     const path = url.pathname;
     if (path !== "/api/mcp/tokens" && !path.startsWith("/api/mcp/tokens/"))
       return false;
-    if (!(await auth.isAdmin(req)))
-      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
+    const actor = await auth.currentUser(req);
+    if (!actor || !actor.approved || !isArchiveOwner(actor) || !(await auth.isPlatformAdmin(req)))
+      return json(res, (await auth.accountId(req)) ? 403 : 401, {
         error: "Только администратор может управлять MCP-токенами",
       });
-    if (!(await accountAiAccess(db, (await auth.currentUser(req))!.id, auth.local)))
+    // MCP bearer tokens remain scoped to this archive. Platform staff without
+    // its own approved membership cannot mint a private-tree credential.
+    const session = auth.local ? null : await auth.accountSession(req);
+    if (!auth.local && !session)
+      return json(res, 401, { error: "Сеанс завершён" });
+    if (!(await accountAiAccess(db, actor.id, auth.local)))
       return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
+
+    const withAccess = async <T>(work: () => Promise<T>): Promise<T> =>
+      db.transaction(async () => {
+        if (!auth.local) {
+          await assertPlatformAdminInArchiveTransaction(db, session!.accountId, session!.tokenHash);
+          const member = await db.prepare("", `SELECT role,approved,person_id,tree_access
+            FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE NOWAIT`)
+            .get(db.archiveId || "", actor.id);
+          if (!member?.approved || member.role !== actor.role ||
+              (member.person_id || "") !== (actor.personId || "") ||
+              member.tree_access !== (actor.treeAccess || "all"))
+            throw new PlatformAccessDenied("Членство в архиве изменилось");
+          const owner = await db.prepare("", `SELECT user_id FROM archive_owners
+            WHERE archive_id=? AND user_id=? FOR SHARE NOWAIT`)
+            .get(db.archiveId || "", actor.id);
+          if (!owner) throw new PlatformAccessDenied("Владение архивом изменилось");
+        }
+        if (!(await accountAiAccess(db, actor.id, auth.local, true)))
+          throw new PlatformAccessDenied("ИИ-функции недоступны этому аккаунту");
+        return work();
+      });
+
+    const guardedJson = async (status: number, value: unknown) => {
+      const timer = setTimeout(() => res.destroy(new Error("MCP admin delivery timed out")), 4_000);
+      timer.unref();
+      try {
+        const done = finished(res, { cleanup: true });
+        json(res, status, value);
+        await done;
+      } finally {
+        clearTimeout(timer);
+      }
+      return true;
+    };
 
     if (path === "/api/mcp/tokens" && req.method === "GET") {
       const items = await Promise.all(
@@ -61,11 +108,15 @@ export function adminMcpHttp({
           usage: await usage.tokenSummary(token.id),
         })),
       );
-      return json(res, 200, {
-        tokens: items,
-        bindings: await tokens.bindingOptions(),
-        recentUsage: await usage.recent(),
-      });
+      const value = { tokens: items,
+        bindings: await tokens.bindingOptions(), recentUsage: await usage.recent() };
+      try {
+        return await withAccess(() => guardedJson(200, value));
+      } catch (error) {
+        if (res.headersSent || res.destroyed) { res.destroy(error as Error); return true; }
+        return json(res, error instanceof PlatformAccessBusy ? 409 : 403,
+          { error: "Доступ к MCP-токенам изменился. Повторите запрос" });
+      }
     }
 
     if (!isSameOriginRequest(req, publicOrigin))
@@ -76,20 +127,13 @@ export function adminMcpHttp({
         return json(res, 415, { error: "JSON required" });
       try {
         const body = await readJson(req);
-        const actor = await auth.currentUser(req);
-        if (!actor || !(await auth.isAdmin(req)))
-          return json(res, 403, { error: "Доступ отозван" });
-        const issued = await db.transaction(async () => {
-          // Hold the tier rows through token insertion. A downgrade after the
-          // initial HTTP check must not create a credential for basic access.
-          if (!(await accountAiAccess(db, actor.id, auth.local, true)))
-            return null;
-          return tokens.issue(actor, body);
-        });
-        if (!issued)
-          return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
-        return json(res, 201, issued);
+        return await withAccess(async () =>
+          guardedJson(201, await tokens.issue(actor, body)));
       } catch (error) {
+        if (res.headersSent || res.destroyed) { res.destroy(error as Error); return true; }
+        if (error instanceof PlatformAccessBusy || error instanceof PlatformAccessDenied)
+          return json(res, error instanceof PlatformAccessBusy ? 409 : 403,
+            { error: "Доступ к MCP-токенам изменился. Повторите запрос" });
         return json(res, error instanceof RangeError ? 413 : 400, {
           error: (error as Error).message,
         });
@@ -98,11 +142,15 @@ export function adminMcpHttp({
 
     if (path.startsWith("/api/mcp/tokens/") && req.method === "DELETE") {
       try {
-        await tokens.revoke(
-          decodeURIComponent(path.slice("/api/mcp/tokens/".length)),
-        );
-        return json(res, 200, { revoked: true });
+        return await withAccess(async () => {
+          await tokens.revoke(decodeURIComponent(path.slice("/api/mcp/tokens/".length)));
+          return guardedJson(200, { revoked: true });
+        });
       } catch (error) {
+        if (res.headersSent || res.destroyed) { res.destroy(error as Error); return true; }
+        if (error instanceof PlatformAccessBusy || error instanceof PlatformAccessDenied)
+          return json(res, error instanceof PlatformAccessBusy ? 409 : 403,
+            { error: "Доступ к MCP-токенам изменился. Повторите запрос" });
         return json(res, 400, { error: (error as Error).message });
       }
     }
