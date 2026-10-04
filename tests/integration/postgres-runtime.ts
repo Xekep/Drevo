@@ -10738,7 +10738,7 @@ try {
     "UNION deduplicates cards matching both birth and death places before pagination");
   assert.equal(pages.filter((person) => bothPlaceIds.includes(person.id)).length, 25,
     "a double-matched card beyond the first page remains reachable exactly once");
-  const afterBothPlaces = await otherApp.archive.write(beforeBothPlaces.family,
+  await otherApp.archive.write(beforeBothPlaces.family,
     bothPlaceWrite.revision);
   await publishedPeopleStore(app.archive.db).publish(parent.id, "owner");
   await otherPublication.publish(parent.id, "owner");
@@ -10863,7 +10863,8 @@ try {
     [...relativePageIds].sort((left,right) =>
       Buffer.compare(Buffer.from(left,"utf8"),Buffer.from(right,"utf8"))),
   "the relative cursor uses the same C byte order as its SQL ORDER BY");
-  await otherApp.archive.write(beforeRelativePages.family,relativePageWrite.revision);
+  const afterRelativePages = await otherApp.archive.write(beforeRelativePages.family,
+    relativePageWrite.revision);
   console.log("runtime_discovery_candidate_relative_keyset_ok");
   assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
     "relative-only",changedSurnameRelationId,false)).status, 200);
@@ -11097,7 +11098,7 @@ try {
   assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
     "withdrawing a published parent never reveals a relationship hint");
   await app.archive.write(ownBeforeSignals.family, ownSignalWrite.revision);
-  await otherApp.archive.write(otherBeforeSignals.family, afterBothPlaces.revision);
+  await otherApp.archive.write(otherBeforeSignals.family, afterRelativePages.revision);
   await otherPublication.unpublish("person-a");
   await otherPublication.unpublish("person-b");
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
@@ -11231,8 +11232,8 @@ try {
   for (const id of [compoundSourceId,spacedSourceId])
     await publishedPeopleStore(app.archive.db).unpublish(id);
   await otherPublication.unpublish(spacedTargetId);
-  await app.archive.write(compoundSourceBefore.family, (await app.archive.meta()).revision);
-  await otherApp.archive.write(compoundTargetBefore.family, (await otherApp.archive.meta()).revision);
+  await app.archive.write(compoundSourceBefore.family, (await app.archive.read()).revision);
+  await otherApp.archive.write(compoundTargetBefore.family, (await otherApp.archive.read()).revision);
   console.log("runtime_discovery_candidate_name_parts_ok");
   const specialMatchHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.241" };
   const specialRecipientHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.242" };
