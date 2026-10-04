@@ -31,6 +31,8 @@ export function PdfBookReader({
   const dialog = useRef<HTMLDialogElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const commentsList = useRef<HTMLDivElement>(null);
+  const sidebarClose = useRef<HTMLButtonElement>(null);
+  const focusSidebarOnOpen = useRef(false);
   const sidebarSwipe = useRef<{
     id: number;
     x: number;
@@ -66,6 +68,12 @@ export function PdfBookReader({
   const [saving, setSaving] = useState(false);
   const [activeAnnotation, setActiveAnnotation] = useState("");
   const [hoveredAnnotation, setHoveredAnnotation] = useState("");
+
+  useEffect(() => {
+    if (!focusSidebarOnOpen.current) return;
+    focusSidebarOnOpen.current = false;
+    if (commentsOpen) sidebarClose.current?.focus();
+  }, [commentsOpen]);
 
   const editingId = editing?.id;
   useEffect(() => {
@@ -191,6 +199,7 @@ export function PdfBookReader({
         setSelection(null);
         setMagnifier((value) => !value);
       } else if (message.type === "toggle-comments") {
+        focusSidebarOnOpen.current = true;
         setCommentsOpen((value) => !value);
       } else if (message.type === "close") {
         closeLatest.current();
@@ -540,6 +549,7 @@ export function PdfBookReader({
               if (dx >= 60 && dx > Math.abs(dy) * 1.5) {
                 setCommentsOpen(false);
                 setHoveredAnnotation("");
+                frame.current?.focus();
               }
             }}
             onPointerCancelCapture={() => {
@@ -599,6 +609,7 @@ export function PdfBookReader({
                 )}
               </div>
               <button
+                ref={sidebarClose}
                 type="button"
                 className="pdf-book-sidebar-close"
                 aria-label="Закрыть панель комментариев"

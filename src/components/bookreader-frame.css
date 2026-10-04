@@ -118,6 +118,9 @@ body {
   outline: 2px solid #fff;
   outline-offset: 2px;
 }
+.BRtoolbar .drevo-toolbar-comments[aria-expanded="true"] {
+  visibility: hidden;
+}
 .br-mode-2up__root,
 .br-mode-1up__root,
 .BRcontainer {

@@ -232,7 +232,7 @@ test("comment deletion needs confirmation and Escape keeps the reader open", asy
   await page.clock.fastForward(8001);
   await expect(remove(last)).toBeVisible();
   await remove(first).click();
-  await toggle.click();
+  await reader.getByRole("button", { name: "Закрыть панель комментариев" }).click();
   await expect(reader.locator(".pdf-book-sidebar")).toBeHidden();
   await toggle.click();
   await expect(remove(first)).toBeVisible();

@@ -46,7 +46,7 @@ test("document Markdown preserves lines, safe links and editing without breaking
   await page.goto(`/documents/${id}`);
   const reader = page.getByRole("dialog", { name: "Документ: Markdown" });
   const book = reader.frameLocator("iframe.pdf-book-frame");
-  const toggle = book.getByRole("button", { name: "Комментарии" });
+  const toggle = book.locator(".drevo-toolbar-comments");
   await toggle.click();
   const card = reader.locator(".pdf-book-comments-list article").last();
   const content = card.locator(".pdf-book-comment-text");

@@ -784,7 +784,7 @@ test("PDF comments remain attached to their pages", async ({ page }, info) => {
   await firstComment.hover();
   await expect(firstMark).toHaveClass(/is-hovered/);
   await expect(firstMark).toHaveCSS("background-color", "rgba(233, 194, 97, 0.3)");
-  await book.getByRole("button", { name: "Комментарии" }).click();
+  await reader.getByRole("button", { name: "Закрыть панель комментариев" }).click();
   await firstMark.hover();
   await expect(firstMark).not.toHaveClass(/is-hovered/);
   await expect(firstMark).toHaveCSS("background-color", "rgba(233, 194, 97, 0.3)");
@@ -792,7 +792,7 @@ test("PDF comments remain attached to their pages", async ({ page }, info) => {
   await expect(reader.locator(".pdf-book-sidebar")).toBeVisible();
   await expect(firstComment).toHaveClass("is-active");
   await expect(firstMark).toHaveAttribute("aria-pressed", "true");
-  await book.getByRole("button", { name: "Комментарии" }).click();
+  await reader.getByRole("button", { name: "Закрыть панель комментариев" }).click();
   await firstMark.focus();
   await firstMark.press("Enter");
   await expect(reader.locator(".pdf-book-sidebar")).toBeVisible();
@@ -847,7 +847,7 @@ test("clicking a document mark opens comments, selects its entry and scrolls pas
   await book.getByRole("button", { name: "Комментарии" }).click();
   const outlineTab = reader.locator(".pdf-book-sidebar-tabs").getByRole("button", { name: "Оглавление", exact: true });
   await outlineTab.click();
-  await book.getByRole("button", { name: "Комментарии" }).click();
+  await reader.getByRole("button", { name: "Закрыть панель комментариев" }).click();
   await mark.click();
   const target = reader.locator(".pdf-book-comments-list article").filter({ hasText: targetText });
   await expect(reader.locator(".pdf-book-sidebar")).toBeVisible();
@@ -861,7 +861,7 @@ test("clicking a document mark opens comments, selects its entry and scrolls pas
   })).toBe(true);
   await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();
   await page.screenshot({ path: info.outputPath("comment-mark-selected.png") });
-  await book.getByRole("button", { name: "Комментарии" }).click();
+  await reader.getByRole("button", { name: "Закрыть панель комментариев" }).click();
   await mark.focus();
   await mark.press("Space");
   await expect(reader.locator(".pdf-book-sidebar")).toBeVisible();
@@ -889,7 +889,7 @@ test("document comment clicks keep the panel open and text selection does not na
   await page.goto(`/documents/${id}`);
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   const book = reader.frameLocator("iframe.pdf-book-frame");
-  const toggle = book.getByRole("button", { name: "Комментарии" });
+  const toggle = book.locator(".drevo-toolbar-comments");
   await toggle.click();
   const sidebar = reader.locator(".pdf-book-sidebar");
   const cards = reader.locator(".pdf-book-comments-list article");
@@ -928,7 +928,7 @@ test("document comment clicks keep the panel open and text selection does not na
   await expect(first).toHaveAttribute("aria-pressed", "true");
   await expect(sidebar).toBeVisible();
   await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();
-  await toggle.click();
+  await reader.getByRole("button", { name: "Закрыть панель комментариев" }).click();
   await expect(sidebar).toBeHidden();
 });
 
