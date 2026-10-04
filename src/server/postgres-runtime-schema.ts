@@ -311,6 +311,11 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "084_ai_provider_cleanup_cascades.sql",
     ],
     [
+      `SELECT to_regclass('public.platform_ai_conversations_status') IS NOT NULL
+        AND to_regclass('public.platform_ai_conversations_blocked_status') IS NOT NULL AS present`,
+      "085_ai_provider_cleanup_status.sql",
+    ],
+    [
       `SELECT 1 AS present WHERE
         EXISTS (SELECT 1 FROM pg_class WHERE oid=to_regclass('discovery_match_confirmations')
           AND relrowsecurity AND relforcerowsecurity)

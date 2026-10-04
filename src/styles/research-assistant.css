@@ -1330,6 +1330,83 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   display: grid;
   gap: 12px;
 }
+.ai-cleanup-admin section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.ai-cleanup-toolbar,
+.ai-cleanup-admin nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ai-cleanup-toolbar label,
+.ai-cleanup-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ai-cleanup-toolbar select {
+  max-width: 100%;
+  min-width: 0;
+}
+.ai-cleanup-admin p,
+.ai-cleanup-jobs {
+  margin: 0;
+}
+.ai-cleanup-admin small,
+.ai-cleanup-counts,
+.ai-cleanup-jobs time,
+.ai-cleanup-admin nav span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ai-cleanup-jobs {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.ai-cleanup-jobs li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #e2e8df;
+  overflow-wrap: anywhere;
+}
+.ai-cleanup-jobs li > div {
+  display: grid;
+  gap: 2px;
+}
+.ai-cleanup-jobs strong {
+  font-size: 13px;
+}
+.ai-cleanup-jobs .is-blocked {
+  color: #98452f;
+}
+.ai-cleanup-jobs li > p,
+.ai-cleanup-jobs li > small {
+  grid-column: 1 / -1;
+}
+.ai-cleanup-jobs time {
+  white-space: nowrap;
+}
+@media (max-width: 420px) {
+  .ai-cleanup-toolbar label {
+    width: 100%;
+  }
+  .ai-cleanup-toolbar select {
+    flex: 1;
+  }
+  .ai-cleanup-jobs li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .ai-role-profiles p,
 .ai-role-profiles > small {
   margin: 0;

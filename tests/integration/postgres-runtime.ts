@@ -65,6 +65,7 @@ import { verifyDiscussionAttachmentDelivery } from "./postgres-discussion-attach
 import { verifyAiTurnCoordination } from "./postgres-ai-turn-coordination.ts";
 import { verifyAiProviderCleanup, verifyAiProviderDeleteRoute } from "./postgres-ai-provider-cleanup.ts";
 import { verifyDeployAiKeyPreflight } from "./postgres-deploy-ai-key-preflight.ts";
+import { verifyAiProviderCleanupStatus } from "./postgres-ai-provider-status.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
@@ -1766,6 +1767,7 @@ try {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
   };
+  await verifyAiProviderCleanupStatus(app.archive.db, securedBase, ownerHeaders, headers);
   // A temporary portrait grant must become a permanent citation reference at
   // attachment time. Removing that last citation must immediately free quota.
   const citationImage = await sharp({ create: { width: 1, height: 1,
