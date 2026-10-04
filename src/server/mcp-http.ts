@@ -405,6 +405,8 @@ export function mcpHttp({
             family,
             definition.name,
             params.arguments,
+            undefined,
+            grant.scopes.includes("sources:read"),
           );
         // The tool can take time after its earlier checks. Serialize delivery
         // with token revocation, membership changes and tier downgrade.
@@ -445,6 +447,7 @@ export function mcpHttp({
           if (
             finalGrant.id !== grant.id ||
             !finalGrant.scopes.includes(definition.scope) ||
+            finalGrant.scopes.includes("sources:read") !== grant.scopes.includes("sources:read") ||
             finalGrant.boundUser?.id !== grant.boundUser?.id ||
             finalGrant.boundUser?.role !== grant.boundUser?.role ||
             finalGrant.boundUser?.personId !== grant.boundUser?.personId ||

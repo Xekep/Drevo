@@ -547,6 +547,16 @@ function minimumTokenSimilarity(token: string) {
   return 0.6;
 }
 
+// Card tools use tree:read/analysis:read. Citations belong to sources:read,
+// including those inside value claims, alternatives and nested event facts.
+function withoutResearchCitations(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutResearchCitations);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => key !== "sources" && key !== "source")
+    .map(([key, nested]) => [key, withoutResearchCitations(nested)]));
+}
+
 function cleanPerson(person: Person) {
   const hidden = new Set([
     "createdBy",
@@ -558,19 +568,7 @@ function cleanPerson(person: Person) {
   const result = Object.fromEntries(
     Object.entries(person).filter(([key]) => !hidden.has(key)),
   ) as Record<string, unknown>;
-  if (person.events)
-    result.events = person.events.map((event) =>
-      Object.fromEntries(
-        Object.entries(event).filter(([key]) => key !== "sources"),
-      ),
-    );
-  if (person.awards)
-    result.awards = person.awards.map((award) =>
-      Object.fromEntries(
-        Object.entries(award).filter(([key]) => key !== "source"),
-      ),
-    );
-  return result;
+  return withoutResearchCitations(result) as Record<string, unknown>;
 }
 
 function personOrThrow(family: Family, id: string) {
@@ -1085,6 +1083,7 @@ export function executeResearchTool(
   name: string,
   rawArgs: unknown,
   referenceDate?: string,
+  sourceAccess = true,
 ) {
   const args =
     rawArgs && typeof rawArgs === "object"
@@ -1655,20 +1654,16 @@ export function executeResearchTool(
           matches.push({
             kind: "event",
             person: { id: person.id, name: fullName(person) },
-            event: Object.fromEntries(
-              Object.entries(event).filter(([key]) => key !== "sources"),
-            ),
+            event: withoutResearchCitations(event),
           });
       for (const award of person.awards || [])
         if (contains([award.name, award.year, award.degreeId]))
           matches.push({
             kind: "award",
             person: { id: person.id, name: fullName(person) },
-            award: Object.fromEntries(
-              Object.entries(award).filter(([key]) => key !== "source"),
-            ),
+            award: withoutResearchCitations(award),
           });
-      for (const source of person.sources)
+      for (const source of sourceAccess ? person.sources : [])
         if (
           contains([source.title, source.type, source.reference, repositorySummary(source), source.note])
         )
@@ -1678,7 +1673,7 @@ export function executeResearchTool(
             source,
           });
     }
-    for (const photo of family.photos || [])
+    for (const photo of sourceAccess ? family.photos || [] : [])
       if (
         contains([
           photo.title,
@@ -1725,13 +1720,11 @@ export function executeResearchTool(
             kind: "event",
             date,
             person: { id: person.id, name: fullName(person) },
-            event: Object.fromEntries(
-              Object.entries(event).filter(([key]) => key !== "sources"),
-            ),
+            event: withoutResearchCitations(event),
           });
       }
     }
-    for (const photo of family.photos || []) {
+    for (const photo of sourceAccess ? family.photos || [] : []) {
       const date = photo.takenAt || photo.year || "";
       if (
         date &&
@@ -1854,7 +1847,7 @@ export function executeResearchTool(
             title: event.title || event.type,
           });
     }
-    for (const photo of family.photos || [])
+    for (const photo of sourceAccess ? family.photos || [] : [])
       if (has(photo.place))
         matches.push({ kind: "photo", photo: cleanPhoto(family, photo.id) });
     return {
