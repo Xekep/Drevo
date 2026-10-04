@@ -12625,22 +12625,30 @@ try {
       { headers: researcherHeaders }).then((response) => response.json());
     assert.equal(importedDocument.items[0].authorName, "Original researcher");
     assert.equal(importedDocument.items[0].canDelete, true,
-      "researchers can moderate imported annotations regardless of original authorship");
+      "global platform staff can moderate imported annotations regardless of original authorship");
     assert.equal(importedDocument.items[0].authorId, "",
       "the source author ID stays detached from local accounts");
     await client.query("UPDATE archive_memberships SET role='relative' WHERE archive_id=$1 AND user_id='owner'",
       [personalArchiveId]);
-    const relativeAnnotations = await fetch(oauthBase + `${documentPath}/annotations`,
-      { headers: researcherHeaders }).then((response) => response.json());
-    assert.equal(relativeAnnotations.items[0].canDelete, false);
-    assert.equal((await fetch(oauthBase + `${documentPath}/annotations/${portableAnnotationId}`, {
-      method: "DELETE", headers: researcherHeaders,
-    })).status, 403, "a relative with a matching source ID cannot delete imported annotations");
-    await client.query("UPDATE archive_memberships SET role='researcher' WHERE archive_id=$1 AND user_id='owner'",
-      [personalArchiveId]);
-    assert.equal((await fetch(oauthBase + `${documentPath}/annotations/${portableAnnotationId}`, {
-      method: "DELETE", headers: researcherHeaders,
-    })).status, 200, "the researcher role grants moderation of accessible imported annotations");
+    await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
+    try {
+      const relativeAnnotations = await fetch(oauthBase + `${documentPath}/annotations`,
+        { headers: researcherHeaders }).then((response) => response.json());
+      assert.equal(relativeAnnotations.items[0].canDelete, false);
+      assert.equal((await fetch(oauthBase + `${documentPath}/annotations/${portableAnnotationId}`, {
+        method: "DELETE", headers: researcherHeaders,
+      })).status, 403, "a relative with a matching source ID cannot delete imported annotations");
+      await client.query("INSERT INTO platform_researchers(account_id) VALUES('owner')");
+      const staffAnnotations = await fetch(oauthBase + `${documentPath}/annotations`,
+        { headers: researcherHeaders }).then((response) => response.json());
+      assert.equal(staffAnnotations.items[0].canDelete, true);
+      assert.equal((await fetch(oauthBase + `${documentPath}/annotations/${portableAnnotationId}`, {
+        method: "DELETE", headers: researcherHeaders,
+      })).status, 200, "an explicit global researcher can moderate accessible imported annotations");
+    } finally {
+      await client.query("DELETE FROM platform_researchers WHERE account_id='owner'");
+      await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
+    }
     await client.query("SELECT set_config('drevo.archive_id',$1,false)", [personalArchiveId]);
     assert.equal((await client.query("SELECT uploaded_by FROM documents WHERE id=$1",
       [portableDocumentId])).rows[0]?.uploaded_by, newAccountSession.user.id,
@@ -13580,7 +13588,10 @@ try {
     const returnedHeaders = { Cookie: `drevo_session=${returnedToken}` };
     const returnedSession = await fetch(securedBase + "/api/session", { headers: returnedHeaders })
       .then((response) => response.json());
-    assert.equal(returnedSession.user.role, "researcher");
+    assert.equal(returnedSession.user.role, "relative");
+    assert.equal(returnedSession.user.treeRole, "relative");
+    assert.equal(returnedSession.user.globalRole, null,
+      "re-registration must not recreate a global staff grant from an old local role");
     assert.equal(returnedSession.canEdit, true);
     const newComment = await fetch(securedBase + "/api/people/person-a/discussion", {
       method: "POST",
@@ -13616,6 +13627,11 @@ try {
       .then((response) => response.json());
     assert.equal(returnedFamily.family.unions.find((union: { id: string }) =>
       union.id === "former-union")?.createdBy, "deleted-account");
+    await client.query("INSERT INTO platform_researchers(account_id) VALUES('former-member')");
+    const returnedStaffSession = await fetch(securedBase + "/api/session", { headers: returnedHeaders })
+      .then((response) => response.json());
+    assert.equal(returnedStaffSession.user.role, "relative");
+    assert.equal(returnedStaffSession.user.globalRole, "researcher");
     const forgedUnion = structuredClone(returnedFamily.family);
     forgedUnion.unions.find((union: { id: string }) => union.id === "former-union").note = "Taken over";
     assert.equal((await fetch(securedBase + "/api/family", {
@@ -13631,7 +13647,7 @@ try {
     assert.deepEqual(annotationItems.find((item) => item.id === formerAnnotationId),
       { ...formerAnnotation, authorId: "deleted-account", authorName: "Удалённый участник", canDelete: true, canEdit: false },
     "researcher moderation leaves the predecessor's author identity anonymized");
-    await client.query("UPDATE archive_memberships SET role='relative' WHERE archive_id='runtime-test' AND user_id='former-member'");
+    await client.query("DELETE FROM platform_researchers WHERE account_id='former-member'");
     const returnedRelativeAnnotations = await fetch(securedBase + annotationPath, { headers: returnedHeaders })
       .then(response => response.json());
     assert.equal(returnedRelativeAnnotations.items.find((item: { id: string }) => item.id === formerAnnotationId)?.canDelete, false,
@@ -13640,7 +13656,7 @@ try {
       method: "DELETE",
       headers: { ...returnedHeaders, Origin: process.env.PUBLIC_ORIGIN! },
     })).status, 403, "a returned relative cannot delete its predecessor's shared annotation");
-    await client.query("UPDATE archive_memberships SET role='researcher' WHERE archive_id='runtime-test' AND user_id='former-member'");
+    await client.query("INSERT INTO platform_researchers(account_id) VALUES('former-member')");
     assert.equal((await fetch(securedBase + `${annotationPath}/${formerAnnotationId}`, {
       method: "DELETE", headers: { ...returnedHeaders, Origin: process.env.PUBLIC_ORIGIN! },
     })).status, 200, "a researcher can moderate an anonymized annotation in an accessible document");
@@ -13648,6 +13664,7 @@ try {
     await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
     await client.query("DELETE FROM documents WHERE id=$1", [otherArchiveAnnotationDocumentId]);
     await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    await client.query("DELETE FROM platform_researchers WHERE account_id='former-member'");
     await client.query("DELETE FROM archive_memberships WHERE user_id='former-member'");
     await client.query("DELETE FROM accounts WHERE id='former-member'");
     await client.query("DELETE FROM family_unions WHERE id IN ('former-union','unrelated-union')");
