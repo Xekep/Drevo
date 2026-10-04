@@ -140,46 +140,63 @@ export async function verifyDocumentWriteSessionRevocation(
     assert.equal((await client.query<{ title: string }>(
       "SELECT title FROM documents WHERE id=$1", [id],
     )).rows[0].title, next.title);
-    const expiresAt = Date.now() + 3_000;
-    await client.query(
-      "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2)",
-      [expiryHash, expiresAt],
-    );
-    await blocker.query("BEGIN");
-    blocking = true;
-    assert.equal((await blocker.query(
-      "SELECT id FROM documents WHERE id=$1 FOR UPDATE", [id],
-    )).rowCount, 1);
-    const expiring = fetch(`${base}/api/documents/${id}`, {
-      method: "PATCH",
-      headers: { Cookie: `drevo_session=${expiryToken}`, Origin: origin,
-        "Content-Type": "application/json" },
-      body: JSON.stringify({ expected: next, next: original }),
+    // The full server renews near-expiry sessions before dispatch. Exercise
+    // the document handler directly to hold an unchanged short-lived session.
+    const expiryAuth = await createAuth(await userStore(archive.db), archive.db, origin);
+    const expiryHandler = documentsHttp({ archive, auth: expiryAuth,
+      media: mediaStore(uploadsDirectory), uploadsDirectory, publicOrigin: origin });
+    const expiryServer = createServer((req, res) => {
+      void expiryHandler(req, res, new URL(req.url || "/", "http://localhost"))
+        .then((handled) => { if (!handled) res.writeHead(404).end(); })
+        .catch((error) => { if (!res.headersSent) res.writeHead(500).end(String(error)); });
     });
-    for (let attempt = 0; attempt < 100; attempt++) {
-      const waiting = await client.query<{ blocked: boolean }>(
-        `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
-          WHERE datname=current_database() AND wait_event_type='Lock'
-            AND $1=ANY(pg_blocking_pids(pid))
-            AND query LIKE 'UPDATE documents SET title=%') AS blocked`,
-        [blockerPid],
+    await new Promise<void>((resolve) => expiryServer.listen(0, "127.0.0.1", resolve));
+    const expiryBase = `http://127.0.0.1:${(expiryServer.address() as { port: number }).port}`;
+    try {
+      const expiresAt = Date.now() + 3_000;
+      await client.query(
+        "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2)",
+        [expiryHash, expiresAt],
       );
-      if (waiting.rows[0].blocked) break;
-      if (attempt === 99) throw new Error("Expiring PATCH did not reach its blocked UPDATE");
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await blocker.query("BEGIN");
+      blocking = true;
+      assert.equal((await blocker.query(
+        "SELECT id FROM documents WHERE id=$1 FOR UPDATE", [id],
+      )).rowCount, 1);
+      const expiring = fetch(`${expiryBase}/api/documents/${id}`, {
+        method: "PATCH",
+        headers: { Cookie: `drevo_session=${expiryToken}`, Origin: origin,
+          "Content-Type": "application/json" },
+        body: JSON.stringify({ expected: next, next: original }),
+      });
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const waiting = await client.query<{ blocked: boolean }>(
+          `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+            WHERE datname=current_database() AND wait_event_type='Lock'
+              AND $1=ANY(pg_blocking_pids(pid))
+              AND query LIKE 'UPDATE documents SET title=%') AS blocked`,
+          [blockerPid],
+        );
+        if (waiting.rows[0].blocked) break;
+        if (attempt === 99) throw new Error("Expiring PATCH did not reach its blocked UPDATE");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      await new Promise((resolve) => setTimeout(resolve,
+        Math.max(0, expiresAt - Date.now() + 200)));
+      assert.ok(Date.now() >= expiresAt,
+        "the held document write continues after its issuing session expires");
+      await blocker.query("COMMIT");
+      blocking = false;
+      const expired = await expiring;
+      assert.equal(expired.status, 401, await expired.clone().text());
+      assert.equal((await client.query<{ title: string }>(
+        "SELECT title FROM documents WHERE id=$1", [id],
+      )).rows[0].title, next.title,
+      "expiry after the first session check rolls the entire document write back");
+    } finally {
+      if (blocking) { await blocker.query("ROLLBACK"); blocking = false; }
+      await new Promise<void>((resolve) => expiryServer.close(() => resolve()));
     }
-    await new Promise((resolve) => setTimeout(resolve,
-      Math.max(0, expiresAt - Date.now() + 200)));
-    assert.ok(Date.now() >= expiresAt,
-    "the held document write continues after its issuing session expires");
-    await blocker.query("COMMIT");
-    blocking = false;
-    const expired = await expiring;
-    assert.equal(expired.status, 401, await expired.clone().text());
-    assert.equal((await client.query<{ title: string }>(
-      "SELECT title FROM documents WHERE id=$1", [id],
-    )).rows[0].title, next.title,
-    "expiry after the first session check rolls the entire document write back");
     await client.query(
       "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2)",
       [handoffHash, Date.now() + 600_000],
