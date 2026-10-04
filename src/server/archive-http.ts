@@ -35,6 +35,7 @@ import { researchSuggestionStore } from "./research-suggestions.ts";
 import { researchSuggestionsHttp } from "./research-suggestions-http.ts";
 import { aiSettingsStore } from "./ai-settings.ts";
 import { adminAiHttp } from "./admin-ai-http.ts";
+import { aiProviderCleanupHttp } from "./ai-provider-cleanup-http.ts";
 import { aiUsageStore } from "./ai-usage.ts";
 import { researchCatalogStore } from "./research-catalog.ts";
 import { adminResearchResourcesHttp } from "./admin-research-resources-http.ts";
@@ -143,6 +144,7 @@ export async function archiveHttp({
     publicOrigin,
     fetcher: aiFetch,
   });
+  const providerCleanupStatus = aiProviderCleanupHttp({ auth, db: archive.db });
   const adminResearchResources = adminResearchResourcesHttp({
     auth,
     catalog: researchCatalog,
@@ -250,6 +252,7 @@ export async function archiveHttp({
     if (await adminAccess(req, res, url)) return true;
     if (await adminMcp(req, res, url)) return true;
     if (await adminAi(req, res, url)) return true;
+    if (await providerCleanupStatus(req, res, url)) return true;
     if (await adminResearchResources(req, res, url)) return true;
     if (await personalTreeSettings(req, res, url)) return true;
     if (await archiveQuery(req, res, url)) return true;

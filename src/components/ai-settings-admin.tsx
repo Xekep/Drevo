@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { AiTokenUsageChart } from "./charts/ai-token-usage-chart";
 import { AiRoleProfilesEditor } from "./ai-role-profiles-editor";
+import { AiProviderCleanupAdmin } from "./ai-provider-cleanup-admin";
 import {
   inheritedAiRoleProfiles,
   type AiRoleProfile,
@@ -658,6 +659,7 @@ export function AiSettingsAdmin() {
             </div>
           </details>
 
+          <AiProviderCleanupAdmin />
           <details className="ai-admin-connection ai-usage-details">
             <summary>
               Статистика · сегодня {status.usage.today.requests} запросов
