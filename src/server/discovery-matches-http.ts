@@ -6,17 +6,14 @@ import type { createAuth } from "./auth.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
-import { candidateEvidence, candidateFuzzyTerms, candidateGivenName, candidateNameRoleQuery,
-  candidatePlaceQueries } from "./discovery-candidate-ranking.ts";
+import { decodeCandidatePageCursor, discoveryCandidatePage,
+  candidateRelativeClueLimit, candidateRelativeRowLimit } from "./discovery-candidate-pages.ts";
 import { publicPersonId } from "./public-person-id.ts";
 import { AccountSessionBusy } from "./account-session-guard.ts";
 import { lockDiscoveryOwnerReadAccess } from "./discovery-owner-read-access.ts";
 
 const archivePattern = /^[A-Za-z0-9-]{3,64}$/;
 const matchPattern = /^[a-f0-9-]{36}$/;
-const candidatePageSize = 24;
-// Rescue an empty evidence page without an unbounded scan of indexed matches.
-const candidateEmptyScanLimit = 96;
 type Row = Record<string, unknown>;
 
 const projection = `SELECT m.id,m.left_archive_id,m.left_person_id,m.right_archive_id,m.right_person_id,
@@ -78,19 +75,6 @@ function reviewToken(row: Row): string | null {
     .digest("hex");
 }
 
-function published(row: Row) {
-  return {
-    archiveId: String(row.archive_id), id: String(row.person_id), name: String(row.name),
-    ...(row.surname_part != null ? { surname: String(row.surname_part) } : {}),
-    ...(row.given_part != null ? { givenName: String(row.given_part) } : {}),
-    ...(row.birth_surname ? { birthSurname: String(row.birth_surname) } : {}),
-    ...(row.birth_year ? { birthYear: String(row.birth_year) } : {}),
-    ...(row.death_year ? { deathYear: String(row.death_year) } : {}),
-    ...(row.birth_place ? { birthPlace: String(row.birth_place) } : {}),
-    ...(row.death_place ? { deathPlace: String(row.death_place) } : {}),
-  };
-}
-
 async function readBody(req: IncomingMessage): Promise<Record<string, unknown> | null> {
   if (!req.headers["content-type"]?.startsWith("application/json")) return null;
   const chunks: Buffer[] = [];
@@ -116,17 +100,6 @@ function cursor(value: string | null): [string,string] | null {
       typeof parsed[0] === "string" && !Number.isNaN(Date.parse(parsed[0])) &&
       typeof parsed[1] === "string" && matchPattern.test(parsed[1])
       ? parsed as [string,string] : null;
-  } catch { return null; }
-}
-
-function candidateCursor(value: string | null): [string,string,string] | null {
-  if (!value) return ["", "", ""];
-  if (value.length > 1500) return null;
-  try {
-    const parsed: unknown = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
-    return Array.isArray(parsed) && parsed.length === 3 &&
-      parsed.every((part) => typeof part === "string" && part.length <= 512)
-      ? parsed as [string,string,string] : null;
   } catch { return null; }
 }
 
@@ -420,166 +393,49 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         return json(res, 429, { error: "Слишком много запросов" });
       const sourceId = url.searchParams.get("sourcePersonId") || "";
       if (!publicPersonId(sourceId)) return json(res, 400, { error: "Выберите опубликованную карточку" });
-      const after = candidateCursor(url.searchParams.get("cursor"));
-      if (!after) return json(res, 400, { error: "Некорректная страница подсказок" });
-      const columns = `archive_id,person_id,name,surname_part,given_part,birth_surname,birth_year,death_year,birth_place,death_place,
-        publication_version::text AS publication_version,xmin::text AS row_version`;
+      const after = decodeCandidatePageCursor(url.searchParams.get("cursor"));
+      if (after === false) return json(res, 400, { error: "Некорректная страница подсказок" });
+      const columns = `archive_id,person_id,name,surname_part,given_part,birth_surname,
+        birth_year,death_year,birth_place,death_place,
+        publication_version::text AS publication_version,xmin::text AS row_version,
+        replace(lower(coalesce(nullif(given_part,''),split_part(name,' ',2))),
+          'ё','е') AS given_key,
+        replace(lower(coalesce(nullif(surname_part,''),split_part(name,' ',1))),
+          'ё','е') AS surname_key,
+        birth_surname_normalized AS birth_surname_key`;
       const sourceRow = await db.prepare("", `SELECT ${columns} FROM discovery_people
         WHERE archive_id=? AND person_id=?`).get(archiveId,sourceId);
       if (!sourceRow) return json(res, 404, { error: "Карточка больше не опубликована" });
-      const source = published(sourceRow);
-      const exactName = candidateNameRoleQuery(source);
-      const fuzzy = candidateFuzzyTerms(source);
-      const places = candidatePlaceQueries(source);
-      const given = candidateGivenName(source);
-      const relativesEnabled = given.length >= 2 && source.birthYear && /^\d{4}$/.test(source.birthYear) &&
-        !!await db.prepare("", `SELECT 1 FROM discovery_relative_consents
-          WHERE archive_id=? AND person_id=? LIMIT 1`).get(archiveId,sourceId);
-      if (!exactName && !fuzzy && !places.length && !relativesEnabled)
-        return json(res, 200, { candidates: [], truncated: false, nextCursor: null });
-      const showIgnored = url.searchParams.get("ignored") === "1";
-      const branches: string[] = [], lookupArgs: string[] = [];
-      if (exactName) {
-        // The GIN vector ignores name roles. Verify them after its indexed
-        // shortlist so swapped names cannot fill an empty page.
-        branches.push(`SELECT archive_id,person_id FROM discovery_people
-          WHERE archive_id<>? AND name_vector @@ to_tsquery('simple',?)
-            AND to_tsvector('simple', replace(lower(coalesce(
-              nullif(given_part,''),split_part(name,' ',2))), 'ё','е'))
-              @@ to_tsquery('simple',?)
-            AND to_tsvector('simple', replace(lower(
-              coalesce(nullif(surname_part,''),split_part(name,' ',1)) || ' ' ||
-              coalesce(birth_surname,'')), 'ё','е')) @@ to_tsquery('simple',?)`);
-        lookupArgs.push(archiveId,exactName.name,exactName.given,exactName.surname);
-      }
-      if (fuzzy) {
-        const surnames = fuzzy.surnames.map(() =>
-          `(surname_normalized % ? OR birth_surname_normalized % ?)`).join(" OR ");
-        branches.push(`SELECT archive_id,person_id FROM discovery_people
-          WHERE archive_id<>? AND given_normalized % ? AND (${surnames})`);
-        lookupArgs.push(archiveId,fuzzy.given,
-          ...fuzzy.surnames.flatMap((value) => [value,value]));
-      }
-      for (const place of places) {
-        const column = place.field === "birthPlace" ? "birth_place" : "death_place";
-        branches.push(`SELECT archive_id,person_id FROM discovery_people
-          WHERE archive_id<>? AND search_vector @@ to_tsquery('simple',?)
-            AND to_tsvector('simple', replace(lower(coalesce(${column},'')), 'ё','е'))
-              @@ to_tsquery('simple',?)
-            AND birth_year BETWEEN ? AND ?`);
-        lookupArgs.push(archiveId,place.terms,place.locality,place.from,place.to);
-      }
-      if (relativesEnabled) {
-        // The own PK and target (kind,name_key) B-tree index retrieve only
-        // separately consented close relatives. Given name and published
-        // birth-year range keep a common relative from asserting identity.
-        branches.push(`SELECT target.archive_id,target.person_id
-          FROM discovery_relative_consents own
-          JOIN discovery_relative_consents target ON target.kind=own.kind
-            AND target.relative_name_key=own.relative_name_key
-          JOIN discovery_people d ON d.archive_id=target.archive_id
-            AND d.person_id=target.person_id
-          WHERE own.archive_id=? AND own.person_id=? AND target.archive_id<>?
-            AND (replace(lower(coalesce(nullif(d.given_part,''),
-              split_part(d.name,' ',2))), 'ё','е')=? OR d.given_normalized % ?)
-            AND d.birth_year BETWEEN ? AND ?`);
-        lookupArgs.push(archiveId,sourceId,archiveId,given,given,
-          String(Math.max(1,Number(source.birthYear)-2)).padStart(4,"0"),
-          String(Math.min(9999,Number(source.birthYear)+2)).padStart(4,"0"));
-      }
-      // Name/place branches use GIN; consented-relative lookup uses its B-tree.
-      // Every branch reads only opt-in publication projections.
-      const candidateSql = (limit: number) => `WITH candidate_keys AS (${branches.join(" UNION ")})
-        SELECT d.archive_id,d.person_id,d.name,d.surname_part,d.given_part,d.birth_surname,
-          d.birth_year,d.death_year,d.birth_place,d.death_place,
-          d.publication_version::text AS publication_version,d.xmin::text AS row_version
-          FROM discovery_people d
-        JOIN candidate_keys k ON k.archive_id=d.archive_id AND k.person_id=d.person_id
-        WHERE d.archive_id<>?
-          AND (d.name,d.archive_id,d.person_id) > (?,?,?)
-          AND NOT EXISTS (SELECT 1 FROM discovery_ignored_archives a
-            WHERE a.archive_id=? AND a.target_archive_id=d.archive_id)
-          AND ${showIgnored ? "EXISTS" : "NOT EXISTS"} (
-            SELECT 1 FROM discovery_ignored_candidates i WHERE i.archive_id=?
-              AND i.source_person_id=? AND i.target_archive_id=d.archive_id
-              AND i.target_person_id=d.person_id)
-          AND NOT EXISTS (
-            SELECT 1 FROM discovery_match_requests m WHERE m.status IN ('pending','linked') AND (
-              (m.left_archive_id=? AND m.left_person_id=?
-                AND m.right_archive_id=d.archive_id AND m.right_person_id=d.person_id)
-              OR (m.right_archive_id=? AND m.right_person_id=?
-                AND m.left_archive_id=d.archive_id AND m.left_person_id=d.person_id)))
-        ORDER BY d.name,d.archive_id,d.person_id LIMIT ${limit}`;
-      const candidateArgs = [...lookupArgs,archiveId,...after,archiveId,archiveId,sourceId,
-        archiveId,sourceId,archiveId,sourceId];
-      let scanLimit = candidatePageSize;
-      let query = candidateSql(scanLimit + 1);
-      let rows = await db.prepare("", query).all(...candidateArgs);
-      const relativesFor = async (found: Row[]) => {
-        const people = [sourceRow,...found].map((row) => ({
-          archive_id: String(row.archive_id), person_id: String(row.person_id),
-        }));
-        const signals = await db.prepare("", `SELECT c.archive_id,c.person_id,c.relation_id,
-          c.kind,c.relative_name,c.xmin::text AS row_version
-          FROM discovery_relative_consents c JOIN jsonb_to_recordset(?::jsonb)
-            AS p(archive_id text,person_id text)
-            ON p.archive_id=c.archive_id AND p.person_id=c.person_id
-          ORDER BY c.archive_id COLLATE "C",c.person_id COLLATE "C",
-            c.relation_id COLLATE "C"`).all(JSON.stringify(people));
-        return { people, signals };
-      };
-      let relativeProjection = await relativesFor(rows);
-      const relativesOf = (row: Row) => relativeProjection.signals
-        .filter((signal) => signal.archive_id === row.archive_id &&
-          signal.person_id === row.person_id)
-        .map((signal) => ({ kind: String(signal.kind) as "parent" | "child" | "spouse",
-          name: String(signal.relative_name) }));
-      const evaluate = (found: typeof rows, limit: number) => found.slice(0, limit).map((row, index) => {
-        const candidate = published(row);
-        const evidence = candidateEvidence(source,candidate,relativesOf(sourceRow),relativesOf(row));
-        return evidence ? { ...candidate, ...evidence, rawIndex: index } : null;
-      }).filter((item) => item !== null);
-      let scored = evaluate(rows,scanLimit);
-      if (!scored.length && rows.length > candidatePageSize) {
-        scanLimit = candidateEmptyScanLimit;
-        query = candidateSql(scanLimit + 1);
-        rows = await db.prepare("", query).all(...candidateArgs);
-        relativeProjection = await relativesFor(rows);
-        scored = evaluate(rows,scanLimit);
-      }
-      const chosen = scored.slice(0,candidatePageSize);
-      const consumed = chosen.length === candidatePageSize
-        ? chosen.at(-1)!.rawIndex + 1 : Math.min(rows.length,scanLimit);
-      const lastRaw = rows[consumed - 1];
-      const nextCursor = rows.length > consumed
-        ? Buffer.from(JSON.stringify([lastRaw.name,lastRaw.archive_id,lastRaw.person_id]))
-          .toString("base64url") : null;
-      const ranked = chosen
-        .sort((a,b) => b.score - a.score || a.name.localeCompare(b.name,"ru-RU"))
-        .map((item) => ({
-          archiveId: item.archiveId, id: item.id, name: item.name,
-          ...(item.birthSurname ? { birthSurname: item.birthSurname } : {}),
-          ...(item.birthYear ? { birthYear: item.birthYear } : {}),
-          ...(item.deathYear ? { deathYear: item.deathYear } : {}),
-          ...(item.birthPlace ? { birthPlace: item.birthPlace } : {}),
-          ...(item.deathPlace ? { deathPlace: item.deathPlace } : {}),
-          reasons: item.reasons, conflicts: item.conflicts,
-        }));
+      const session = auth.local ? null : await auth.accountSession(req);
+      const page = await discoveryCandidatePage(db, { archiveId,sourceId,sourceRow,
+        ignored: url.searchParams.get("ignored") === "1",cursor: after }).catch((error) => {
+        if ((error as { code?: string }).code === "57014") return null;
+        throw error;
+      });
+      if (!page) return json(res, 503, { approximate: true, partial: true,
+        error: "Широкий поиск занял слишком долго. Уточните опубликованные сведения и повторите запрос." });
+      if (page.kind === "stale")
+        return json(res, 409, { error: "Публикация или согласия изменились. Обновите подсказки." });
+      if (page.kind === "refine")
+        return json(res, 422, { refineRequired: true,
+          relativeConsentLimit: candidateRelativeClueLimit,
+          relativeConsentRowLimit: candidateRelativeRowLimit,
+          error: `Выберите не более ${candidateRelativeClueLimit} разных и ${candidateRelativeRowLimit} общих подсказок о близких родственниках в настройках публикации.` });
+      const { rows,relatives, candidates: ranked,nextCursor,approximate,partial } = page;
       await beforeCandidateDelivery?.();
       const expectedPeople = [sourceRow,...rows].map((row) => ({
         archive_id: String(row.archive_id), person_id: String(row.person_id),
         publication_version: String(row.publication_version), row_version: String(row.row_version),
       }));
-      const expectedPage = rows.map((row) => ({ archive_id: String(row.archive_id),
-        person_id: String(row.person_id) }));
       const result = await db.transaction(async () => {
+        if (!await lockDiscoveryOwnerReadAccess(db,auth.local,session,user)) return 403;
         // Publication writes check owner access before touching published rows.
         // Keep that order, and hold ownership through response delivery so a
         // transfer cannot complete before a former owner receives suggestions.
         if (!await db.prepare("", `SELECT 1 FROM archive_owners
           WHERE archive_id=? AND user_id=? FOR SHARE NOWAIT`).get(archiveId,user.id)) return 403;
         // Withdrawal locks a published row before its projection disappears.
-        // Hold the source, page and overflow rows through response completion.
+        // Hold the source and displayed cards through response completion.
         // A published relative-name update may lock its row before the focal
         // consent row; fail fast instead of waiting while holding earlier rows.
         const locked = await db.prepare("", `SELECT d.archive_id,d.person_id
@@ -598,34 +454,28 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
             ON p.archive_id=c.archive_id AND p.person_id=c.person_id
           ORDER BY c.archive_id COLLATE "C",c.person_id COLLATE "C",
             c.relation_id COLLATE "C"`)
-          .all(JSON.stringify(relativeProjection.people));
-        if (JSON.stringify(currentRelatives) !== JSON.stringify(relativeProjection.signals))
+          .all(JSON.stringify(relatives.people));
+        if (JSON.stringify(currentRelatives) !== JSON.stringify(relatives.signals))
           return 409;
-        // One MVCC snapshot checks the indexed page (including its overflow
-        // row) and selected publication versions after the locks are held.
+        // Other publications may move between pages. The selected published
+        // cards themselves must still be the same projection before delivery.
         const current = await db.prepare("", `WITH expected_people AS (
           SELECT * FROM jsonb_to_recordset(?::jsonb) AS e(
             archive_id text,person_id text,publication_version text,row_version text)
-        ), expected_page AS (
-          SELECT * FROM jsonb_to_recordset(?::jsonb) AS e(archive_id text,person_id text)
-        ), current_page AS (${query}
         ) SELECT
           (SELECT count(*) FROM expected_people e JOIN discovery_people d
             ON d.archive_id=e.archive_id AND d.person_id=e.person_id
             AND d.publication_version::text=e.publication_version
-            AND d.xmin::text=e.row_version) AS people_count,
-          (SELECT count(*) FROM current_page c JOIN expected_page e
-            ON c.archive_id=e.archive_id AND c.person_id=e.person_id) AS page_count,
-          (SELECT count(*) FROM current_page) AS current_page_count`)
-          .get(JSON.stringify(expectedPeople),JSON.stringify(expectedPage),...candidateArgs);
-        if (Number(current?.people_count) !== expectedPeople.length ||
-            Number(current?.page_count) !== expectedPage.length ||
-            Number(current?.current_page_count) !== expectedPage.length) return 409;
+            AND d.xmin::text=e.row_version) AS people_count`)
+          .get(JSON.stringify(expectedPeople));
+        if (Number(current?.people_count) !== expectedPeople.length) return 409;
         await beforeCandidateResponse?.();
-        await deliverLocked(res, { candidates: ranked, truncated: nextCursor !== null, nextCursor });
+        await deliverLocked(res, { candidates: ranked, truncated: nextCursor !== null,
+          nextCursor, approximate, partial });
         return 200;
       }).catch((error) => {
-        if ((error as { code?: string }).code === "55P03") return 409;
+        if ((error as { code?: string }).code === "55P03" || error instanceof AccountSessionBusy)
+          return 409;
         throw error;
       });
       return result === 200 ? true

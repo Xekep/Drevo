@@ -7531,7 +7531,9 @@ try {
   assert.ok(localityPage.candidates.some((item: { id: string }) => item.id === candidateTargetId),
     "a place token outside the selected settlement must not hide a valid candidate page");
   const cappedFamily = structuredClone(localityPageFamily);
-  const additionalLocalityIds = Array.from({ length: 72 }, (_, index) =>
+  // The exact tier no longer consumes the true candidate from the fuzzy
+  // 96-row budget, so retain a 97th false positive to exercise its cursor.
+  const additionalLocalityIds = Array.from({ length: 73 }, (_, index) =>
     `wrong-locality-${String(index + 24).padStart(2, "0")}`);
   cappedFamily.people.push(...additionalLocalityIds.map((id) => ({
     ...structuredClone(cappedFamily.people.find((person) => person.id === wrongLocalityIds[0])!), id,
@@ -7543,15 +7545,20 @@ try {
     { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.64" } });
   assert.equal(cappedResponse.status, 200);
   const cappedPage = await cappedResponse.json();
-  assert.deepEqual(cappedPage.candidates, [], "the bounded scan stops after 96 false positives");
+  assert.deepEqual(cappedPage.candidates.map((item: { id: string }) => item.id),
+    [candidateTargetId],
+  "an exact-name candidate is retrieved before 96 unrelated approximate rows");
+  assert.equal(cappedPage.approximate, true);
+  assert.equal(cappedPage.partial, true,
+    "the approximate tail still reports its bounded raw scan");
   assert.equal(typeof cappedPage.nextCursor, "string");
   const afterCapResponse = await fetch(securedBase + revokeCandidatePath +
     `&cursor=${encodeURIComponent(cappedPage.nextCursor)}`,
   { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.65" } });
   assert.equal(afterCapResponse.status, 200);
-  assert.ok((await afterCapResponse.json()).candidates.some(
-    (item: { id: string }) => item.id === candidateTargetId),
-  "the cursor resumes after the last evaluated raw row without skipping a valid candidate");
+  assert.equal((await afterCapResponse.json()).candidates.some(
+    (item: { id: string }) => item.id === candidateTargetId), false,
+  "the approximate cursor cannot repeat a candidate already returned by an exact tier");
   await otherApp.archive.write(beforeLocalityPage.family, cappedWrite.revision);
   console.log("runtime_discovery_candidate_locality_pagination_ok");
   const candidatePriorOwner = (await client.query(`SELECT user_id FROM archive_owners
@@ -10653,7 +10660,8 @@ try {
   const template = pagedFamily.people.find((person) => person.id === "person-b")!;
   const pageIds = Array.from({ length: 25 }, (_, index) => `similar-${String(index).padStart(2, "0")}`);
   pagedFamily.people.push(...pageIds.map((id, index) => ({
-    ...structuredClone(template), id, column: index + 2,
+    ...structuredClone(template), id, birth: index === 24 ? "1990" : "1980",
+    column: index + 2,
   })));
   const paged = await otherApp.archive.write(pagedFamily, beforeCandidatePages.revision);
   for (const id of pageIds)
@@ -10671,6 +10679,43 @@ try {
   assert.equal((await fetch(securedBase + candidatePath + "&cursor=invalid", {
     headers: ownerHeaders,
   })).status, 400);
+  const beforeTierFields = await ownerPublication.getFields("person-a");
+  assert.ok(beforeTierFields);
+  const datedFields = { ...selectedDiscoveryFields, birthYear: true };
+  await ownerPublication.publish("person-a", "owner", datedFields);
+  for (const id of pageIds) await otherPublication.publish(id, "owner", datedFields);
+  // Candidate lookup has an intentional per-client rate limit. Keep this new
+  // regression independent of earlier pagination requests in the same suite.
+  const tierHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.126" };
+  const strongResponse = await fetch(securedBase + candidatePath,
+    { headers: tierHeaders });
+  assert.equal(strongResponse.status, 200);
+  const strongPage = await strongResponse.json();
+  assert.ok(strongPage.candidates.some((candidate: { id: string }) => candidate.id === "similar-24"),
+    "a strong candidate beyond the raw first page reaches the first ranked page");
+  assert.ok(strongPage.candidates.findIndex((candidate: { id: string }) => candidate.id === "similar-24") <
+    strongPage.candidates.findIndex((candidate: { id: string }) => candidate.id === "similar-00"),
+  "published exact name and birth year outrank weak names");
+  await client.query("BEGIN");
+  try {
+    await client.query("SET LOCAL enable_seqscan=off");
+    const tierPlan = await client.query(`EXPLAIN (FORMAT JSON)
+      SELECT person_id FROM discovery_people d
+      WHERE replace(lower(coalesce(nullif(d.given_part,''),split_part(d.name,' ',2))),
+        'ё','е')='иван'
+        AND replace(lower(coalesce(nullif(d.surname_part,''),split_part(d.name,' ',1))),
+          'ё','е')='тестов'
+        AND coalesce(d.birth_year,'9999')='1990'
+      ORDER BY coalesce(d.birth_year,'9999'),d.name COLLATE "C",
+        d.archive_id COLLATE "C",d.person_id COLLATE "C" LIMIT 24`);
+    assert.match(JSON.stringify(tierPlan.rows), /discovery_people_tier_current/,
+      "the exact-name and published-year stream uses its actual B-tree index");
+  } finally { await client.query("ROLLBACK"); }
+  await ownerPublication.publish("person-a", "owner", beforeTierFields);
+  assert.equal((await fetch(securedBase + candidatePath +
+    `&cursor=${encodeURIComponent(strongPage.nextCursor)}`, { headers: tierHeaders })).status,
+  409, "changing the source publication invalidates its tiered cursor");
+  console.log("runtime_discovery_candidate_tiers_ok");
   await client.query("BEGIN");
   try {
     await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
@@ -10706,6 +10751,35 @@ try {
     await client.query("ROLLBACK");
   }
   await otherApp.archive.write(beforeCandidatePages.family, paged.revision);
+  const beforeCrossSource = await app.archive.read();
+  const beforeCrossOther = await otherApp.archive.read();
+  const beforeCrossFields = await ownerPublication.getFields("person-a");
+  assert.ok(beforeCrossFields);
+  const crossSource = structuredClone(beforeCrossSource.family);
+  crossSource.people.find((person) => person.id === "person-a")!.maidenName = "Старов";
+  const crossSourceWrite = await app.archive.write(crossSource, beforeCrossSource.revision);
+  const crossOther = structuredClone(beforeCrossOther.family);
+  const crossTemplate = crossOther.people.find((person) => person.id === "person-b")!;
+  crossOther.people.push({ ...structuredClone(crossTemplate), id: "birth-to-current",
+    surname: "Старов", maidenName: "", name: "Иван", birth: "1990", column: 72 });
+  crossOther.people.push({ ...structuredClone(crossTemplate), id: "current-to-birth",
+    surname: "Другов", maidenName: "Тестов", name: "Иван", birth: "1990", column: 73 });
+  const crossOtherWrite = await otherApp.archive.write(crossOther, beforeCrossOther.revision);
+  await ownerPublication.publish("person-a", "owner", datedFields);
+  for (const id of ["birth-to-current","current-to-birth"])
+    await otherPublication.publish(id, "owner", datedFields);
+  const crossResponse = await fetch(securedBase + candidatePath,
+    { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.127" } });
+  assert.equal(crossResponse.status, 200);
+  const crossIds = (await crossResponse.json()).candidates.map((item: { id: string }) => item.id);
+  assert.ok(crossIds.includes("birth-to-current") && crossIds.includes("current-to-birth"),
+    "both published current/birth surname crossings enter exact-name tiers");
+  assert.equal(new Set(crossIds).size, crossIds.length,
+    "overlapping published surname roles do not duplicate a first-page candidate");
+  await app.archive.write(beforeCrossSource.family, crossSourceWrite.revision);
+  await otherApp.archive.write(beforeCrossOther.family, crossOtherWrite.revision);
+  await ownerPublication.publish("person-a", "owner", beforeCrossFields);
+  console.log("runtime_discovery_candidate_surname_crossing_ok");
   const ownBeforeSignals = await app.archive.read();
   const otherBeforeSignals = await otherApp.archive.read();
   const ownWithRelative = structuredClone(ownBeforeSignals.family);
@@ -10726,6 +10800,9 @@ try {
   otherWithRelative.people.push({ ...structuredClone(otherPerson),
     id: "name-typo", surname: "Тестав", name: "Иван", deceased: true,
     parents: [parent.id], column: 52 });
+  otherWithRelative.people.push({ ...structuredClone(otherPerson),
+    id: "relative-undated-exact", surname: "Тестов", name: "Иван", birth: "",
+    deceased: true, parents: [parent.id], column: 57 });
   otherWithRelative.people.push({ ...structuredClone(otherPerson),
     id: "place-match", surname: "Петров", name: "Иван", birth: "1991",
     birthPlace: "Россия, Свердловская область, Нижний Тагил", deceased: true,
@@ -10751,6 +10828,7 @@ try {
     "the opt-in control does not reveal an unpublished relative's name");
   await otherPublication.publish("relative-only", "owner");
   await otherPublication.publish("name-typo", "owner");
+  await otherPublication.publish("relative-undated-exact", "owner");
   await otherPublication.publish("place-match", "owner");
   await otherPublication.publish("region-only", "owner");
   // Earlier scenarios deliberately spend the normal per-client search budget.
@@ -10825,7 +10903,7 @@ try {
     "UNION deduplicates cards matching both birth and death places before pagination");
   assert.equal(pages.filter((person) => bothPlaceIds.includes(person.id)).length, 25,
     "a double-matched card beyond the first page remains reachable exactly once");
-  const afterBothPlaces = await otherApp.archive.write(beforeBothPlaces.family,
+  await otherApp.archive.write(beforeBothPlaces.family,
     bothPlaceWrite.revision);
   await publishedPeopleStore(app.archive.db).publish(parent.id, "owner");
   await otherPublication.publish(parent.id, "owner");
@@ -10845,6 +10923,27 @@ try {
     });
   assert.equal((await setRelativeConsent(securedBase,ownerHeaders,
     "person-a",ownRelationId,true)).status, 200);
+  assert.equal((await app.archive.db.prepare("", `SELECT birth_year FROM discovery_people
+    WHERE archive_id=? AND person_id=?`).get("runtime-test","person-a"))?.birth_year,
+  "1990", "the source has a published year for the relative exclusion boundary");
+  const undatedRelative = await fetch(otherBase + relativePath +
+    "?personId=relative-undated-exact", { headers: recipientHeaders })
+    .then((response) => response.json());
+  const undatedRelationId = undatedRelative.relatives.find((item: { personId: string }) =>
+    item.personId === parent.id)?.relationId;
+  assert.ok(undatedRelationId);
+  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+    "relative-undated-exact",undatedRelationId,true)).status, 200);
+  assert.equal((await otherApp.archive.db.prepare("", `SELECT birth_year FROM discovery_people
+    WHERE archive_id=? AND person_id=?`).get("other-archive","relative-undated-exact"))?.birth_year,
+  null, "the target has no published birth year");
+  const undatedResponse = await fetch(securedBase + candidatePath,
+    { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.128" } });
+  assert.equal(undatedResponse.status, 200);
+  assert.ok((await undatedResponse.json()).candidates.some(
+    (item: { id: string }) => item.id === "relative-undated-exact"),
+  "a matched relative clue cannot hide an exact-role candidate with unknown birth year");
+  console.log("runtime_discovery_candidate_unknown_year_ok");
   assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
     .some((reason) => reason.includes("родителя")), false,
   "one-sided relation consent does not reveal a shared relative");
@@ -10866,6 +10965,10 @@ try {
   assert.ok(changedSurnameHint?.reasons.some((reason) => reason.includes("родителя")),
     "an indexed bilateral relative plus published given name and close year finds a changed surname");
   assert.ok(changedSurnameHint?.conflicts.includes("Указанные фамилии различаются"));
+  const rankedSignalIds = (await signalIds()).map((item) => item.id);
+  assert.ok(rankedSignalIds.indexOf("relative-only") >= 0 &&
+    rankedSignalIds.indexOf("relative-only") < rankedSignalIds.indexOf("person-b"),
+  "bilateral close-relative evidence precedes exact-name evidence in the tier contract");
   await client.query("BEGIN");
   try {
     await client.query("SET LOCAL enable_seqscan=off");
@@ -10878,6 +10981,56 @@ try {
     assert.match(JSON.stringify(relativePlan.rows), /discovery_relative_consents_lookup/,
       "the consented-relative shortlist has an executable B-tree lookup");
   } finally { await client.query("ROLLBACK"); }
+  const beforeRelativePages = await otherApp.archive.read();
+  const relativePageFamily = structuredClone(beforeRelativePages.family);
+  const relativePageIds = Array.from({ length: 26 }, (_, index) =>
+    `relative-sort-${String(index).padStart(2,"0")}`);
+  relativePageIds.splice(0,4,"relative-sort-A","relative-sort-a",
+    "relative-sort-Ё","relative-sort-я");
+  relativePageFamily.people.push(...relativePageIds.map((id, index) => ({
+    ...structuredClone(otherPerson), id, surname: "Сидоров", name: "Иван",
+    birth: "1991", deceased: true, parents: [parent.id], column: 100 + index,
+  })));
+  const relativePageWrite = await otherApp.archive.write(relativePageFamily,
+    beforeRelativePages.revision);
+  for (const id of relativePageIds) {
+    await otherPublication.publish(id,"owner");
+    const selectable = await fetch(otherBase + relativePath +
+      `?personId=${encodeURIComponent(id)}`, { headers: recipientHeaders })
+      .then((response) => response.json());
+    const relationId = selectable.relatives.find((item: { personId: string }) =>
+      item.personId === parent.id)?.relationId;
+    assert.ok(relationId);
+    assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+      id,relationId,true)).status,200);
+  }
+  const relativePageHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.129" };
+  const allRelativePageIds: string[] = [];
+  let relativePageCursor: string | null = null;
+  for (let pageNumber = 0; pageNumber < 5; pageNumber++) {
+    const response: Response = await fetch(securedBase + candidatePath +
+      (relativePageCursor ? `&cursor=${encodeURIComponent(relativePageCursor)}` : ""),
+    { headers: relativePageHeaders });
+    assert.equal(response.status,200);
+    const body = await response.json() as { candidates: { id: string }[];
+      nextCursor: string | null };
+    allRelativePageIds.push(...body.candidates.map((item) => item.id));
+    if (pageNumber === 0) assert.equal(body.candidates.length,24);
+    relativePageCursor = body.nextCursor;
+    if (!relativePageCursor || relativePageIds.every((id) =>
+      allRelativePageIds.includes(id))) break;
+  }
+  const foundRelativePageIds = allRelativePageIds.filter((id) =>
+    relativePageIds.includes(id));
+  assert.equal(new Set(foundRelativePageIds).size,relativePageIds.length,
+    "relative keyset reaches each consented Unicode and mixed-case ID once");
+  assert.deepEqual(foundRelativePageIds,
+    [...relativePageIds].sort((left,right) =>
+      Buffer.compare(Buffer.from(left,"utf8"),Buffer.from(right,"utf8"))),
+  "the relative cursor uses the same C byte order as its SQL ORDER BY");
+  const afterRelativePages = await otherApp.archive.write(beforeRelativePages.family,
+    relativePageWrite.revision);
+  console.log("runtime_discovery_candidate_relative_keyset_ok");
   assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
     "relative-only",changedSurnameRelationId,false)).status, 200);
   assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
@@ -11110,7 +11263,7 @@ try {
   assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
     "withdrawing a published parent never reveals a relationship hint");
   await app.archive.write(ownBeforeSignals.family, ownSignalWrite.revision);
-  await otherApp.archive.write(otherBeforeSignals.family, afterBothPlaces.revision);
+  await otherApp.archive.write(otherBeforeSignals.family, afterRelativePages.revision);
   await otherPublication.unpublish("person-a");
   await otherPublication.unpublish("person-b");
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count

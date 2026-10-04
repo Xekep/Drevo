@@ -510,8 +510,10 @@ test("candidate suggestions can continue past the first indexed page", async ({ 
   await page.route("**/api/discovery/matches/candidates?**", (route) => {
     const cursor = new URL(route.request().url()).searchParams.get("cursor");
     return route.fulfill({ json: cursor === "next-page"
-      ? { candidates: [{ ...later, reasons: ["Совпадает имя и фамилия"], conflicts: [] }], nextCursor: null }
-      : { candidates: [{ ...first, reasons: ["Совпадает имя и фамилия"], conflicts: [] }], nextCursor: "next-page" } });
+      ? { candidates: [{ ...later, reasons: ["Совпадает имя и фамилия"], conflicts: [] }],
+        nextCursor: null, approximate: true, partial: false }
+      : { candidates: [{ ...first, reasons: ["Совпадает имя и фамилия"], conflicts: [] }],
+        nextCursor: "next-page", approximate: true, partial: true } });
   });
   await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
     route.fulfill({ json: { archives: [], nextPage: null } }));
@@ -522,9 +524,40 @@ test("candidate suggestions can continue past the first indexed page", async ({ 
   await page.getByRole("searchbox", { name: "Человек из этого дерева" }).fill("Иван");
   await page.getByRole("button", { name: /Иван Петров/ }).first().click();
   await expect(page.locator(".match-suggestion")).toHaveCount(1);
+  await expect(page.getByText("Приближённые совпадения проверяются ограниченной порцией", { exact: false })).toBeVisible();
+  await expect(page.getByText("Можно продолжить поиск на следующей странице.", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Показать ещё похожих" }).click();
   await expect(page.locator(".match-suggestion")).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Показать ещё похожих" })).toHaveCount(0);
+  await expect(page.getByText("Можно продолжить поиск на следующей странице.", { exact: false })).toHaveCount(0);
+});
+
+test("a broad relative search asks for publication refinement and retries", async ({ page }) => {
+  const own = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
+  let attempts = 0;
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", people: [own] } }));
+  await page.route("**/api/discovery/matches/candidates?**", (route) => {
+    attempts++;
+    return attempts === 1
+      ? route.fulfill({ status: 422, json: { refineRequired: true,
+        relativeConsentLimit: 32, relativeConsentRowLimit: 128 } })
+      : route.fulfill({ json: { candidates: [], nextCursor: null,
+        approximate: false, partial: false } });
+  });
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", matches: [], nextCursor: null } }));
+  await page.goto("/admin");
+  await openAdminSection(page, "matches", "Связи деревьев");
+  await page.getByRole("searchbox", { name: "Человек из этого дерева" }).fill("Иван");
+  await page.getByRole("button", { name: /Иван Петров/ }).first().click();
+  await expect(page.getByText("Для поиска по родству оставьте не более 32 разных", { exact: false })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Открыть карточку" })).toBeVisible();
+  await page.getByRole("button", { name: "Повторить поиск" }).click();
+  await expect.poll(() => attempts).toBe(2);
+  await expect(page.getByText("Для поиска по родству оставьте не более 32 разных", { exact: false })).toHaveCount(0);
 });
 
 test("an admin reviews and revokes an explicit linked-card snapshot", async ({ page }) => {

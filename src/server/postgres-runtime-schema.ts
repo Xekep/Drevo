@@ -268,6 +268,12 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
           AND tgname='revoke_changed_discovery_relation' AND NOT tgisinternal)`,
       "080_discovery_relative_consents.sql",
     ],
+    [
+      `SELECT 1 AS present WHERE
+        to_regclass('discovery_people_tier_current') IS NOT NULL AND
+        to_regclass('discovery_people_tier_birth_surname') IS NOT NULL`,
+      "081_discovery_candidate_tiers.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     try {
@@ -286,9 +292,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
     } catch (error) {
       // A transaction opened before another process committed DDL can retain
       // a stale catalog lookup even after the advisory lock. Rollback gives
-      // this check a fresh catalog snapshot. Only an entirely installed 080
-      // may satisfy a concurrent duplicate-table error; partial DDL is fatal.
-      if (file !== "080_discovery_relative_consents.sql" ||
+      // this check a fresh catalog snapshot. A complete migration is required;
+      // a conflicting partial table/index installation remains fatal.
+      if ((file !== "080_discovery_relative_consents.sql" &&
+           file !== "081_discovery_candidate_tiers.sql") ||
           (error as { code?: string }).code !== "42P07" ||
           !(await db.prepare("", query).get())?.present) throw error;
     }
