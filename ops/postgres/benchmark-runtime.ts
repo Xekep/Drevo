@@ -67,10 +67,9 @@ try {
   };
   delete process.env.DATABASE_BACKEND;
   const sqlite = await openArchive(source, family);
-  let actor;
   try {
     const users = await userStore(sqlite.db, { initialAdminId: "owner" });
-    actor = await users.register("owner", "Тестовый владелец");
+    await users.register("owner", "Тестовый владелец");
   } finally {
     await sqlite.close();
   }
@@ -84,6 +83,10 @@ try {
   process.env.DATABASE_BACKEND = "postgres";
   process.env.ARCHIVE_ID = "benchmark-archive";
   for (let i = 0; i < 2; i++) archives.push(await openArchive(source, family));
+  const benchmarkActor = await (await userStore(archives[0].db)).get("owner");
+  assert.ok(benchmarkActor?.approved && benchmarkActor.archiveOwner &&
+    benchmarkActor.treeRole === "relative",
+  "the benchmark uses the imported owner's current PostgreSQL grant");
   console.log(
     JSON.stringify({
       environment: {
@@ -195,7 +198,7 @@ try {
       }));
     await measure("independent_card_edits", concurrency, samples, async (i) => {
       assert.ok(
-        await archives[i % 2].patchPeople([changes[i]], before.revision, actor),
+        await archives[i % 2].patchPeople([changes[i]], before.revision, benchmarkActor),
       );
     });
     const after = await archives[1].read();
@@ -223,7 +226,7 @@ try {
     const result = await archives[i % 2].patchPeople(
       changes,
       batchStart.revision,
-      actor,
+      benchmarkActor,
     );
     assert.equal(result?.appliedChanges.length, 500);
     for (const person of batchPeople) person.biography = `Пакет ${i}`;
@@ -242,7 +245,7 @@ try {
       archive.patchPeople(
         [{ ...base, after: `Конкурент ${i}` }],
         before.revision,
-        actor,
+        benchmarkActor,
       ),
     ),
   );
@@ -258,7 +261,7 @@ try {
     after: saved.family.people.find((p) => p.id === "person-0")!.biography,
   };
   await Promise.all(
-    archives.map((a) => a.patchPeople([same], before.revision, actor)),
+    archives.map((a) => a.patchPeople([same], before.revision, benchmarkActor)),
   );
   assert.equal(
     (await archives[0].meta()).revision,
@@ -272,7 +275,7 @@ try {
   await archives[0].patchPeople(
     [{ ...same, before: same.after, after: marker }],
     saved.revision,
-    actor,
+    benchmarkActor,
   );
   await Promise.all([
     (async () => {
@@ -281,7 +284,7 @@ try {
         await archives[0].patchPeople(
           [{ ...base, before: marker, after: next }],
           mixedRevision,
-          actor,
+          benchmarkActor,
         );
         mixedRevision++;
         marker = next;
