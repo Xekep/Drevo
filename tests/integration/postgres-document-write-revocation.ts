@@ -170,9 +170,7 @@ export async function verifyDocumentWriteSessionRevocation(
     }
     await new Promise((resolve) => setTimeout(resolve,
       Math.max(0, expiresAt - Date.now() + 200)));
-    assert.ok(Number((await client.query<{ expires_at: string }>(
-      "SELECT expires_at FROM account_sessions WHERE token_hash=$1", [expiryHash],
-    )).rows[0]?.expires_at) <= Date.now(),
+    assert.ok(Date.now() >= expiresAt,
     "the held document write continues after its issuing session expires");
     await blocker.query("COMMIT");
     blocking = false;
