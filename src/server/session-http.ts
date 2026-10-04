@@ -79,9 +79,14 @@ export function sessionHttp(
         const platformResearcher = await client.query(
           "SELECT account_id FROM platform_researchers WHERE account_id=$1 FOR SHARE NOWAIT",
           [session.accountId]);
-        const owner = await client.query(
-          "SELECT user_id FROM archive_owners WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT",
-          [db.archiveId, session.accountId]);
+        // Account-level platform admins may have no membership in this tree;
+        // their session must not depend on its owner transfer or tier lock.
+        const ownerRows = membership.rowCount
+          ? (await client.query<{ user_id: string; full_access: boolean }>(
+              `SELECT o.user_id,t.full_access FROM archive_owners o
+               JOIN account_tiers t ON t.account_id=o.user_id
+               WHERE o.archive_id=$1 FOR SHARE OF o,t NOWAIT`, [db.archiveId])).rows
+          : [];
         const identities = await client.query<{ provider: string }>(
           "SELECT provider FROM account_identities WHERE account_id=$1 ORDER BY provider FOR SHARE NOWAIT",
           [session.accountId]);
@@ -92,7 +97,7 @@ export function sessionHttp(
               tree_role: membership.rows[0].role,
               global_role: platformAdmin.rowCount ? "admin" :
                 platformResearcher.rowCount ? "researcher" : null,
-              archive_owner: !!owner.rowCount })
+              archive_owner: ownerRows[0]?.user_id === session.accountId })
           : null;
         const providers = identities.rows.map((row) => row.provider);
         const profile = accountProfileFromRow({ ...accountRow,
@@ -104,7 +109,9 @@ export function sessionHttp(
             globalRole: platformAdmin.rowCount ? "admin" :
               platformResearcher.rowCount ? "researcher" : null },
           user: user ? { ...user,
-            platformAdmin: user.approved === true && (platformAdmin.rowCount ?? 0) > 0 } : null,
+            platformAdmin: user.approved === true && (platformAdmin.rowCount ?? 0) > 0,
+            aiAvailable: user.approved === true && tier.rows[0]?.full_access === true &&
+              ownerRows[0]?.full_access === true } : null,
         }, true);
       });
     } catch (error) {

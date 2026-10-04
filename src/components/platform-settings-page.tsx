@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { PlatformStaffRoles } from "./platform-staff-roles";
+import { PlatformAccountTiers } from "./platform-account-tiers";
 import { AiSettingsAdmin } from "./ai-settings-admin";
 import { AiProviderCleanupAdmin } from "./ai-provider-cleanup-admin";
 import { StorageLimitsAdmin } from "./storage-limits-admin";
@@ -19,10 +20,11 @@ const sections: { id: Section; label: string }[] = [
 type AvailableArchive = { id: string; title: string; approved: boolean; current: boolean };
 
 /** Account-scoped entry. Archive-specific AI settings are selected explicitly. */
-export default function PlatformSettingsPage({ accountId, onOwnRoleChanged,
+export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, onOwnTierChanged,
   showRoles = true }: {
   accountId: string;
   onOwnRoleChanged: (role: "admin" | "researcher" | null) => void;
+  onOwnTierChanged: (fullAccess: boolean) => void;
   primaryMembershipApproved?: boolean;
   showRoles?: boolean;
 }) {
@@ -68,8 +70,11 @@ export default function PlatformSettingsPage({ accountId, onOwnRoleChanged,
               }}>{item.label}</button>
           ))}
         </nav>
-        {showRoles && section === "roles" && <PlatformStaffRoles currentAccountId={accountId}
-          onOwnRoleChanged={onOwnRoleChanged} />}
+        {showRoles && section === "roles" && <>
+          <PlatformStaffRoles currentAccountId={accountId}
+            onOwnRoleChanged={onOwnRoleChanged} />
+          <PlatformAccountTiers currentAccountId={accountId} onOwnTierChanged={onOwnTierChanged} />
+        </>}
         {section === "ai" && <div className="platform-ai-settings">
           <AiProviderCleanupAdmin platform />
           {!archivesReady ? <p role="status">Проверяем доступные архивы…</p> : <>

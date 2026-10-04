@@ -50,6 +50,7 @@ import { publicShareAccess } from "./public-share-access.ts";
 import { safeRequestRoute } from "./safe-request-route.ts";
 import { sessionHttp } from "./session-http.ts";
 import { platformRolesHttp } from "./platform-roles-http.ts";
+import { platformTiersHttp } from "./platform-tiers-http.ts";
 import { sourceCatalogHttp } from "./source-catalog-http.ts";
 import { initializePlatformConfiguration } from "./platform-configuration.ts";
 
@@ -225,6 +226,7 @@ export async function startServer(
     const managePlatformCleanup = !archiveId
       ? platformAiProviderCleanupHttp({ auth, db: archive.db, providerCleanup, publicOrigin })
       : null;
+    const managePlatformTiers = platformTiersHttp(archive.db, auth, publicOrigin);
     const emailAuth = !archiveId
       ? emailAuthHttp(archive.db, auth, publicOrigin)
       : null;
@@ -428,6 +430,7 @@ export async function startServer(
       if (emailAuth && (await emailAuth.handle(req, res, parsedUrl))) return;
       if (await managePlatformRoles(req, res, parsedUrl)) return;
       if (managePlatformCleanup && await managePlatformCleanup(req, res, parsedUrl)) return;
+      if (await managePlatformTiers(req, res, parsedUrl)) return;
       if (await listAccountArchives(req, res, parsedUrl)) return;
       if (await exportAccountData(req, res, parsedUrl)) return;
       if (await exportAccountAttachments(req, res, parsedUrl)) return;

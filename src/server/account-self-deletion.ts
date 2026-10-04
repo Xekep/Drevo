@@ -203,6 +203,21 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
           );
         }
 
+        // Audit events survive account deletion, but neither the deleted
+        // subject nor an actor of an older platform change may remain as a
+        // raw account identifier. Keep the event itself for operations.
+        const platformAudit = await client.query(
+          "SELECT to_regclass('public.platform_config_audit') AS installed",
+        );
+        if (platformAudit.rows[0]?.installed) {
+          await client.query(`UPDATE platform_config_audit
+            SET item_id='deleted-account'
+            WHERE item_id=$1 AND action IN
+              ('account_tier_enable_full','account_tier_disable_full')`, [accountId]);
+          await client.query(`UPDATE platform_config_audit
+            SET actor_id='deleted-account' WHERE actor_id=$1`, [accountId]);
+        }
+
         const deleted = await client.query("DELETE FROM accounts WHERE id=$1", [
           accountId,
         ]);

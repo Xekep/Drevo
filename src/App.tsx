@@ -188,21 +188,24 @@ export default function App() {
     [pendingResearchPersonId, setPendingResearchPersonId] = useState<
       string | null
     >(null);
+  const accountSessionVersion = useRef(0);
   useEffect(() => {
     if (view !== "account" && view !== "admin" && !archive.needsLogin) return;
     const controller = new AbortController();
+    const version = ++accountSessionVersion.current;
     archiveFetch("/api/session", { cache: "no-store", signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error("Не удалось загрузить профиль");
         return response.json();
       })
       .then((session: AccountSession) => {
+        if (controller.signal.aborted || version !== accountSessionVersion.current) return;
         setAccountSession(session);
         setAccountError(false);
         setAccountLoading(false);
       })
       .catch(() => {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && version === accountSessionVersion.current) {
           setAccountSession(null);
           setAccountError(true);
           setAccountLoading(false);
@@ -811,6 +814,33 @@ export default function App() {
                     } : null,
                   } : current);
                   if (role !== "admin") navigate("account");
+                }}
+                onOwnTierChanged={(fullAccess) => {
+                  const version = ++accountSessionVersion.current;
+                  setAccountSession((current) => current ? {
+                    ...current,
+                    account: current.account ? { ...current.account, fullAccess } : null,
+                    user: current.user ? { ...current.user, fullAccess,
+                      aiAvailable: false } : null,
+                  } : null);
+                  if (user && user.id === (accountSession.account || accountSession.user)?.id)
+                    archive.syncSessionUser({ ...user, fullAccess,
+                      aiAvailable: false });
+                  void archiveFetch("/api/session", { cache: "no-store" })
+                    .then(async (response) => {
+                      if (!response.ok) throw new Error("Не удалось обновить данные сеанса");
+                      return response.json() as Promise<AccountSession>;
+                    })
+                    .then((session) => {
+                      if (version !== accountSessionVersion.current) return;
+                      setAccountSession(session);
+                      setAccountError(false);
+                      if (user && user.id === (accountSession.account || accountSession.user)?.id)
+                        archive.syncSessionUser(session.user);
+                    })
+                    .catch(() => {
+                      if (version === accountSessionVersion.current) setAccountError(true);
+                    });
                 }} />
               </Suspense>
             </LazyChunkBoundary>
