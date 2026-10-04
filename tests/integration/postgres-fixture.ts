@@ -115,13 +115,23 @@ export async function fixture(t: TestContext) {
     "047_family_unions.sql",
     "060_family_link_sources.sql",
     "078_family_link_confidence.sql",
-  ])
+    "088_parent_confidence.sql",
+  ]) {
+    if (file === "088_parent_confidence.sql") {
+      const old = await first.query(`SELECT conname,pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint WHERE conrelid='relations'::regclass AND contype='c'
+        AND pg_get_constraintdef(oid) LIKE '%confidence = ANY%'`);
+      assert.equal(old.rowCount, 1);
+      assert.equal(old.rows[0].conname, "relations_check2");
+      assert.match(old.rows[0].definition, /parent.*spouse/);
+    }
     await first.query(
       readFileSync(
         new URL(`../../ops/postgres/${file}`, import.meta.url),
         "utf8",
       ),
     );
+  }
   // This focused fixture omits share and research tables. Install the audit
   // portion of migration 041 so its read path uses the production view.
   await first.query(

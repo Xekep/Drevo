@@ -5,6 +5,7 @@ import {
   canChangeConnection,
   connectPeople,
   replaceConnection,
+  setParentClaim,
   removeConnection,
   CONNECTION_NAMES,
   connectionRoleName,
@@ -97,7 +98,7 @@ export function ConnectionInspector({
         throw new Error(
           "Нет прав менять выбранные карточки. Для кровной связи необходимо право на карточку ребёнка.",
         );
-      const next =
+      let next =
         remove && draft.original
           ? removeConnection(family, draft.original)
           : draft.original
@@ -110,6 +111,9 @@ export function ConnectionInspector({
                 draft.note,
                 draft.twinKind,
               );
+      if (!remove && !draft.original && draft.type === "parent" &&
+        (draft.sources?.length || draft.confidence))
+        next = setParentClaim(next, draft.from, draft.to, draft.sources, draft.confidence);
       if (!remove && !draft.original && !["parent", "spouse"].includes(draft.type)) {
         if (draft.sources?.length) next.links!.at(-1)!.sources = draft.sources;
         if (draft.confidence) next.links!.at(-1)!.confidence = draft.confidence;
@@ -308,7 +312,7 @@ export function ConnectionInspector({
             />
           </label>
         )}
-        {!["parent", "spouse"].includes(draft.type) && (
+        {draft.type !== "spouse" && (
           saveIdentityFirst
             ? <p>Сначала сохраните новую связь, затем оцените её заново.</p>
             : <label>
@@ -323,7 +327,7 @@ export function ConnectionInspector({
               </label>
         )}
         {assessmentReset && <p role="status">Прежняя оценка связи снята из черновика. После сохранения оцените новую связь заново.</p>}
-        {!["parent", "spouse"].includes(draft.type) && (
+        {draft.type !== "spouse" && (
           <details className="union-milestone-sources">
             <summary>Источники связи ({draft.sources?.length || 0})</summary>
             {changedAssertion &&

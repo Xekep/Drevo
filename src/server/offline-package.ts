@@ -70,6 +70,7 @@ export function offlineFamily(
     .map((person) => ({
       ...withoutCreator(person),
       parents: person.parents.filter((id) => ids.has(id)),
+      parentClaims: person.parentClaims?.filter((claim) => ids.has(claim.parentId)),
       spouses: person.spouses.filter((id) => ids.has(id)),
       photo: person.photo ? relativeImage(person.photo) : undefined,
     }));

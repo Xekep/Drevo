@@ -141,6 +141,7 @@ function reverseDocumentSources(
   people: Person[],
   unions: FamilyUnion[],
   links: FamilyLink[],
+  parents: Array<{ from: string; to: string; sources: Source[] }> = [],
 ): ReverseSource[] {
   const names = new Map(people.map((person) => [person.id, fullName(person)]));
   const found = new Map<string, ReverseSource>();
@@ -220,6 +221,13 @@ function reverseDocumentSources(
     for (const source of link.sources || [])
       add(`link:${link.id}`, link.from, name, source, CONNECTION_NAMES[link.type]);
   }
+  for (const parent of parents) {
+    if (!names.has(parent.from) || !names.has(parent.to)) continue;
+    const name = `${names.get(parent.from)} · ${names.get(parent.to)}`;
+    for (const source of parent.sources)
+      add(`parent:${parent.from}:${parent.to}`, parent.to, name, source,
+        "Прямое родительство");
+  }
   return [...found.values()];
 }
 
@@ -231,6 +239,7 @@ function listedDocument(
   visiblePeople: Person[] = [],
   visibleUnions: FamilyUnion[] = [],
   visibleLinks: FamilyLink[] = [],
+  visibleParents: Array<{ from: string; to: string; sources: Source[] }> = [],
 ) {
   const eventLinks = (parseDocumentEventLinks(JSON.parse(row.event_links || "[]")) || [])
     .filter((link) => linkedIds.includes(link.personId) &&
@@ -241,7 +250,8 @@ function listedDocument(
       const event = person.events!.find((item) => item.id === link.eventId)!;
       return { ...link, personName: fullName(person), eventTitle: event.title || event.type };
     });
-  const sources = reverseDocumentSources(row.id, visiblePeople, visibleUnions, visibleLinks);
+  const sources = reverseDocumentSources(row.id, visiblePeople, visibleUnions,
+    visibleLinks, visibleParents);
   return {
     id: row.id,
     title: row.title,
@@ -326,6 +336,10 @@ export function documentsHttp({
       people,
       unions: family?.unions || [],
       links: family?.links || [],
+      parents: family?.people.flatMap((child) => (child.parentClaims || [])
+        .filter((claim) => child.parents.includes(claim.parentId))
+        .map((claim) => ({ from: claim.parentId, to: child.id,
+          sources: claim.sources || [] }))) || [],
       ids: people.map((person) => person.id),
     };
   };
@@ -344,7 +358,8 @@ export function documentsHttp({
   };
   const citedEntities = async (documentIds: string[]) => {
     if (!documentIds.length)
-      return { people: [] as Person[], unions: [] as FamilyUnion[], links: [] as FamilyLink[] };
+      return { people: [] as Person[], unions: [] as FamilyUnion[], links: [] as FamilyLink[],
+        parents: [] as Array<{ from: string; to: string; sources: Source[] }> };
     // One candidate scan per page (at most 100 document IDs), never one scan
     // per listed document. The reader checks exact documentId after parsing.
     const matches = (column: string) => documentIds.map(() => `${column} LIKE ?`).join(" OR ");
@@ -366,7 +381,12 @@ export function documentsHttp({
       id: String(row.id), from: String(row.source), to: String(row.target),
       type: row.type as FamilyLink["type"], sources: parse<Source[]>(row.sources),
     }));
-    return { people, unions, links };
+    const parents = (await db.prepare(
+      `SELECT source,target,sources FROM relations WHERE type='parent' AND (${matches("sources")})`,
+      `SELECT source,target,sources FROM relations WHERE type='parent' AND (${matches("sources::text")})`,
+    ).all(...patterns)).map((row) => ({ from: String(row.source), to: String(row.target),
+      sources: parse<Source[]>(row.sources) }));
+    return { people, unions, links, parents };
   };
   const readerCitations = async (
     access: Awaited<ReturnType<typeof visible>>,
@@ -374,12 +394,14 @@ export function documentsHttp({
     linkedIds: string[],
   ) => {
     if (access.scoped)
-      return { people: access.people, unions: access.unions, links: access.links };
+      return { people: access.people, unions: access.unions, links: access.links,
+        parents: access.parents };
     const cited = await citedEntities(documentIds);
     const names = await linkedPersons([
       ...linkedIds,
       ...cited.unions.flatMap((union) => union.participants),
       ...cited.links.flatMap((link) => [link.from, link.to]),
+      ...cited.parents.flatMap((parent) => [parent.from, parent.to]),
     ]);
     return { ...cited, people: [...new Map([...cited.people, ...names]
       .map((person) => [person.id, person])).values()] };
@@ -418,8 +440,8 @@ export function documentsHttp({
         people.push(...union.participants);
     }
     const links = await db.prepare(
-      "SELECT source,target,sources FROM relations WHERE type NOT IN ('parent','spouse') AND sources LIKE ?",
-      "SELECT source,target,sources FROM relations WHERE type NOT IN ('parent','spouse') AND sources::text LIKE ?",
+      "SELECT source,target,sources FROM relations WHERE type <> 'spouse' AND sources LIKE ?",
+      "SELECT source,target,sources FROM relations WHERE type <> 'spouse' AND sources::text LIKE ?",
     ).all(`%${documentId}%`);
     for (const row of links) {
       const sources = (typeof row.sources === "string"
@@ -786,6 +808,7 @@ export function documentsHttp({
             related,
             citations.unions,
             citations.links,
+            citations.parents,
           ),
         ),
       };
@@ -825,6 +848,7 @@ export function documentsHttp({
           related,
           citations.unions,
           citations.links,
+          citations.parents,
         );
       const result = await deliverMetadata(req, res, access, [row],
         new Map([[row.id, linkedIds]]), value);

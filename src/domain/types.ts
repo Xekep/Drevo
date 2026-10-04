@@ -72,6 +72,12 @@ export type PersonFactAlternative = PersonValueClaim & {
   id: string;
   field: "birth" | "death" | "birthPlace" | "deathPlace" | "maidenName";
 };
+/** Evidence for one existing direct parent edge; parents remains authoritative. */
+export type ParentClaim = {
+  parentId: string;
+  sources?: Source[];
+  confidence?: ClaimConfidence;
+};
 export type Person = {
   createdBy?: string;
   id: string;
@@ -110,6 +116,8 @@ export type Person = {
   events?: PersonEvent[];
   photo?: string;
   parents: string[];
+  /** Optional assessment and citations keyed by one ID in parents. */
+  parentClaims?: ParentClaim[];
   /** True only when the complete parent list is known. */
   parentageComplete?: boolean;
   spouses: string[];

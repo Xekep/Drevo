@@ -183,6 +183,7 @@ export function gedcomHttp(
               people: family.people.filter((person) => visible!.has(person.id)).map((person) => ({
                 ...person,
                 parents: person.parents.filter((id) => visible!.has(id)),
+                parentClaims: person.parentClaims?.filter((claim) => visible!.has(claim.parentId)),
                 spouses: person.spouses.filter((id) => visible!.has(id)),
               })),
               links: family.links?.filter((link) => visible!.has(link.from) && visible!.has(link.to)),

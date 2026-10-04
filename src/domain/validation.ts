@@ -238,6 +238,23 @@ export function validateFamily(value: unknown): Family {
       new Set(p.spouses).size !== p.spouses.length
     )
       throw new Error("Семейная связь указана несколько раз");
+    if (p.parentClaims !== undefined) {
+      if (!Array.isArray(p.parentClaims) || p.parentClaims.length > p.parents.length)
+        throw new Error("Некорректные свидетельства родительской связи");
+      const claimed = new Set<string>();
+      for (const claim of p.parentClaims) {
+        if (!claim || typeof claim !== "object" ||
+          typeof claim.parentId !== "string" ||
+          !p.parents.includes(claim.parentId) || claimed.has(claim.parentId) ||
+          (claim.confidence !== undefined && !isClaimConfidence(claim.confidence)) ||
+          (claim.sources !== undefined && (!Array.isArray(claim.sources) ||
+            claim.sources.length > 50 || !claim.sources.every((source) =>
+              validPersonSource(source) && !!(source.catalogId || source.title.trim())))) ||
+          (!claim.confidence && !claim.sources?.length))
+          throw new Error("Некорректные свидетельства родительской связи");
+        claimed.add(claim.parentId);
+      }
+    }
   }
   const map = new Map(data.people.map((p) => [p.id, p]));
   validateUnions(data.unions, ids);

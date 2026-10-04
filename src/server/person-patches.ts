@@ -117,7 +117,17 @@ export async function patchPeople(
     for (const row of relations) {
       const from = String(row.source),
         to = String(row.target);
-      if (row.type === "parent") map.get(to)!.parents.push(from);
+      if (row.type === "parent") {
+        const child = map.get(to)!;
+        child.parents.push(from);
+        const sources = typeof row.sources === "string" ? JSON.parse(row.sources) : row.sources;
+        if ((Array.isArray(sources) && sources.length) || row.confidence) {
+          child.parentClaims ||= [];
+          child.parentClaims.push({ parentId: from,
+            ...(Array.isArray(sources) && sources.length ? { sources } : {}),
+            ...(row.confidence ? { confidence: String(row.confidence) as FamilyLink["confidence"] } : {}) });
+        }
+      }
       else if (row.type === "spouse") {
         map.get(from)!.spouses.push(to);
         map.get(to)!.spouses.push(from);
@@ -167,7 +177,8 @@ export async function patchPeople(
       for (const person of after.people) {
         if (!selected.has(person.id)) continue;
         await update.run(
-          JSON.stringify({ ...person, parents: undefined, spouses: undefined }),
+          JSON.stringify({ ...person, parents: undefined, parentClaims: undefined,
+            spouses: undefined }),
           person.id,
         );
       }

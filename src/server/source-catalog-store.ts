@@ -69,6 +69,7 @@ export function sourceCatalogStore(db: StoreDatabase) {
 export function personCitations(person: Person): Source[] {
   return [
     ...person.sources,
+    ...(person.parentClaims || []).flatMap((claim) => claim.sources || []),
     ...(person.birthDateClaim?.sources || []),
     ...(person.deathDateClaim?.sources || []),
     ...(person.birthPlaceClaim?.sources || []),
@@ -133,6 +134,8 @@ export async function hydrateCatalogCitations(db: StoreDatabase, family: Family)
   };
   for (const person of family.people) {
     person.sources = person.sources.map(resolve);
+    for (const claim of person.parentClaims || [])
+      if (claim.sources) claim.sources = claim.sources.map(resolve);
     if (person.birthDateClaim)
       person.birthDateClaim.sources = person.birthDateClaim.sources.map(resolve);
     if (person.deathDateClaim)

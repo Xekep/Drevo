@@ -716,8 +716,67 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
-  // Nullable metadata is compatible with the previous release. Keep the base
-  // schema version so rollback can still open the database after deployment.
+  const parentConfidenceExtension = "2026-10-parent-confidence";
+  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(parentConfidenceExtension)) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const oldSql = String(db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='relations'")
+        .get()?.sql || "").replace(/\s+/g, " ").toLowerCase();
+      const columns = db.prepare("PRAGMA table_info(relations)").all().map((row) => String(row.name));
+      const indexes = db.prepare("PRAGMA index_list(relations)").all().map((row) => String(row.name));
+      const triggers = db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='relations'").all();
+      if (!oldSql.includes("confidence text check(confidence is null or (type not in ('parent','spouse') and confidence in ('confirmed','probable','tentative','conflicting','unknown')))" ) ||
+          columns.join(",") !== "id,source,target,type,note,twin_kind,created_by,sources,confidence" ||
+          indexes.some((name) => name !== "relations_target" && !name.startsWith("sqlite_autoindex_relations_")) ||
+          triggers.length)
+        throw new Error("Unexpected relations schema before parent confidence migration");
+      db.exec(`
+        CREATE TABLE relations_parent_confidence (
+          id TEXT PRIMARY KEY,
+          source TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+          target TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+          type TEXT NOT NULL CHECK(type IN ('parent','spouse','adoptive_parent','foster_parent','presumed_parent','step_parent','godparent','nurse','sworn_sibling','guardian','twin')),
+          note TEXT NOT NULL DEFAULT '',
+          twin_kind TEXT CHECK(twin_kind IS NULL OR (type='twin' AND twin_kind IN ('identical','fraternal','unknown'))),
+          created_by TEXT,
+          sources TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(sources) AND json_type(sources)='array'),
+          confidence TEXT CHECK(confidence IS NULL OR (type<>'spouse' AND confidence IN ('confirmed','probable','tentative','conflicting','unknown'))),
+          CHECK(source<>target),
+          UNIQUE(source,target,type)
+        ) STRICT;
+        INSERT INTO relations_parent_confidence(id,source,target,type,note,twin_kind,created_by,sources,confidence)
+          SELECT id,source,target,type,note,twin_kind,created_by,sources,confidence FROM relations;
+        DROP TABLE relations;
+        ALTER TABLE relations_parent_confidence RENAME TO relations;
+        CREATE INDEX relations_target ON relations(target);
+        CREATE TRIGGER protect_parent_evidence_delete BEFORE DELETE ON relations
+          WHEN OLD.type='parent' AND (OLD.sources<>'[]' OR OLD.confidence IS NOT NULL)
+          BEGIN
+            SELECT RAISE(ABORT,'Unsupported writer for parent evidence')
+              WHERE NOT EXISTS (SELECT 1 FROM pragma_function_list
+                WHERE name='drevo_parent_evidence_writer' AND narg=0);
+          END;
+        CREATE TRIGGER protect_parent_evidence_update BEFORE UPDATE ON relations
+          WHEN OLD.type='parent' AND (OLD.sources<>'[]' OR OLD.confidence IS NOT NULL)
+            AND (NEW.source<>OLD.source OR NEW.target<>OLD.target OR NEW.type<>OLD.type
+              OR NEW.sources<>OLD.sources OR NEW.confidence IS NOT OLD.confidence)
+          BEGIN
+            SELECT RAISE(ABORT,'Unsupported writer for parent evidence')
+              WHERE NOT EXISTS (SELECT 1 FROM pragma_function_list
+                WHERE name='drevo_parent_evidence_writer' AND narg=0);
+          END;
+      `);
+      if (db.prepare("PRAGMA foreign_key_check").all().length)
+        throw new Error("Нарушены связи после обновления оценки родительства");
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(parentConfidenceExtension);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  // Nullable columns remain readable by the previous release. Its relation
+  // writer cannot change an annotated parent edge after the guard below.
   const visitsExtension = "2026-09-user-last-visit";
   if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(visitsExtension)) {
     db.exec("BEGIN IMMEDIATE");

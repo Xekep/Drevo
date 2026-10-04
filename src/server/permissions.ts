@@ -15,6 +15,8 @@ function catalogCitationSlots(family: Family) {
     (sources || []).filter((source) => source.catalogId));
   for (const person of family.people) {
     add(["person", person.id], person.sources);
+    for (const claim of person.parentClaims || [])
+      add(["person", person.id, "parent", claim.parentId], claim.sources);
     for (const claim of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim", "occupationClaim", "maidenNameClaim"] as const)
       add(["person", person.id, claim], person[claim]?.sources);
     for (const alternative of person.factAlternatives || [])
@@ -49,6 +51,21 @@ export function authorizeArchive(
     throw new ForbiddenError("Доступен только просмотр архива");
   const admin = user.role === "admin",
     own = (p: { createdBy?: string }) => p.createdBy === user.id;
+  const nextPeople = new Map(next.people.map((person) => [person.id, person]));
+  const currentPeople = new Map(current.people.map((person) => [person.id, person]));
+  // An older full-snapshot client does not know this edge annotation. Preserve
+  // metadata on unchanged edges, but require an explicit field to remove a
+  // cited edge; the new editor sends parentClaims: [] for that operation.
+  for (const previous of current.people) {
+    const child = nextPeople.get(previous.id);
+    if (!child || child.parentClaims !== undefined) continue;
+    const retained = (previous.parentClaims || []).filter((claim) =>
+      child.parents.includes(claim.parentId));
+    if ((previous.parentClaims || []).some((claim) =>
+      !child.parents.includes(claim.parentId)))
+      throw new ForbiddenError("Обновите страницу перед изменением связи с источником");
+    if (retained.length) child.parentClaims = structuredClone(retained);
+  }
   const deny = () => {
     throw new ForbiddenError(
       "Можно добавлять и редактировать только свои карточки и фотографии",
@@ -77,6 +94,26 @@ export function authorizeArchive(
   owners(next.unions || [], current.unions || []);
   const previousLinks = new Map((current.links || []).map((link) => [link.id, link]));
   const canAssess = user.role === "admin" || user.role === "researcher";
+  for (const previousChild of current.people) {
+    const child = nextPeople.get(previousChild.id);
+    for (const claim of previousChild.parentClaims || []) {
+      if (!claim.confidence || canAssess) continue;
+      if (!child?.parents.includes(claim.parentId))
+        throw new ForbiddenError("Оценённую связь родителя с ребёнком может удалить только исследователь или администратор");
+    }
+  }
+  for (const child of next.people) {
+    const previousChild = currentPeople.get(child.id);
+    for (const claim of child.parentClaims || []) {
+      const previous = previousChild?.parentClaims?.find((item) => item.parentId === claim.parentId);
+      if (!canAssess && claim.confidence !== previous?.confidence)
+        throw new ForbiddenError("Статус достоверности может менять только исследователь или администратор");
+    }
+    if (!canAssess)
+      for (const previous of previousChild?.parentClaims || [])
+        if (previous.confidence && !child.parentClaims?.some((claim) => claim.parentId === previous.parentId))
+          throw new ForbiddenError("Оценённую связь родителя с ребёнком может удалить только исследователь или администратор");
+  }
   if (!canAssess)
     for (const old of current.links || [])
       if (old.confidence && !next.links?.some((link) => link.id === old.id))

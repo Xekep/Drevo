@@ -26,7 +26,16 @@ export function hydrateRelations(
     const type = String(row.type);
     const sources = typeof row.sources === "string"
       ? JSON.parse(row.sources) : row.sources;
-    if (type === "parent") map.get(to)!.parents.push(from);
+    if (type === "parent") {
+      const child = map.get(to)!;
+      child.parents.push(from);
+      if ((Array.isArray(sources) && sources.length) || row.confidence) {
+        child.parentClaims ||= [];
+        child.parentClaims.push({ parentId: from,
+          ...(Array.isArray(sources) && sources.length ? { sources } : {}),
+          ...(row.confidence ? { confidence: String(row.confidence) as FamilyLink["confidence"] } : {}) });
+      }
+    }
     else if (type === "spouse") {
       map.get(from)!.spouses.push(to);
       map.get(to)!.spouses.push(from);

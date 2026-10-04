@@ -6,6 +6,7 @@ import {
 } from "./mutations.ts";
 import { owns, type ArchiveUser } from "./access.ts";
 import type { ClaimConfidence, Family, Person, Source } from "./types.ts";
+import { validateFamily } from "./validation.ts";
 
 export type GraphConnection = Connection & {
   key: string;
@@ -34,7 +35,11 @@ export function archiveConnections(family: Family): GraphConnection[] {
     edges.set(key, { ...edge, key });
   }
   for (const p of family.people) {
-    for (const id of p.parents) add({ from: id, to: p.id, type: "parent" });
+    for (const id of p.parents) {
+      const claim = p.parentClaims?.find((item) => item.parentId === id);
+      add({ from: id, to: p.id, type: "parent", sources: claim?.sources,
+        confidence: claim?.confidence });
+    }
     for (const id of p.spouses) {
       const [from, to] = [p.id, id].sort();
       add({ from, to, type: "spouse" });
@@ -42,6 +47,26 @@ export function archiveConnections(family: Family): GraphConnection[] {
   }
   for (const edge of family.links || []) add(edge);
   return [...edges.values()];
+}
+/** Annotate an existing edge without changing biological parentage. */
+export function setParentClaim(
+  family: Family,
+  parentId: string,
+  childId: string,
+  sources?: Source[],
+  confidence?: ClaimConfidence,
+) {
+  const next = structuredClone(family);
+  const child = next.people.find((person) => person.id === childId);
+  if (!child?.parents.includes(parentId))
+    throw new Error("Родительская связь уже изменена. Обновите данные.");
+  const claims = (child.parentClaims || []).filter((item) => item.parentId !== parentId);
+  if (sources?.length || confidence)
+    claims.push({ parentId, ...(sources?.length ? { sources } : {}),
+      ...(confidence ? { confidence } : {}) });
+  if (claims.length || child.parentClaims !== undefined)
+    child.parentClaims = claims;
+  return validateFamily(next);
 }
 export function canChangeConnection(
   family: Family,
@@ -84,7 +109,11 @@ export function replaceConnection(
     old.type === replacement.type &&
     ["parent", "spouse"].includes(old.type)
   )
-    return structuredClone(family);
+    return old.type === "parent"
+      ? setParentClaim(family, old.from, old.to,
+        Object.hasOwn(replacement, "sources") ? replacement.sources : actual.sources,
+        Object.hasOwn(replacement, "confidence") ? replacement.confidence : actual.confidence)
+      : structuredClone(family);
   let next = removeConnection(family, actual);
   next = connectPeople(
     next,
