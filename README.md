@@ -156,6 +156,7 @@ npm run build
 - [Архитектура и разработка](docs/architecture.md)
 - [Полотно, жесты, связи и отмена](docs/tree-workspace.md)
 - [Правила работы с исходниками](AGENTS.md)
+- [Локальная память агента](docs/agent-memory.md)
 - [Модель данных и родство](docs/data-model.md)
 - [Короткий список ручных связей](docs/relationship-input.md)
 - [Фотографии, метаданные и разметка](docs/photo-assistant.md)
