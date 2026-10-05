@@ -12,11 +12,14 @@ set +a
 [[ "${DATABASE_BACKEND:-}" == postgres && "${PGDATABASE:-}" =~ ^[a-zA-Z0-9_]{1,63}$ ]] || { echo 'Expected configured PostgreSQL database' >&2; exit 2; }
 [[ "${PGHOST:-}" == /var/run/postgresql && "${PGPORT:-5432}" =~ ^[0-9]{1,5}$ ]] || { echo 'Expected local cluster; review remote provisioning separately' >&2; exit 2; }
 role=drevo_platform_backup
+operator_host=127.0.0.1
 secret=""
 if [[ -e "$operator_config" ]]; then
   [[ -f "$operator_config" && ! -L "$operator_config" && "$(stat -c %u "$operator_config")" == 0 && "$(stat -c %a "$operator_config")" == 600 ]] || { echo 'Unsafe operator environment' >&2; exit 2; }
   source "$operator_config"
   [[ "${PLATFORM_BACKUP_PGUSER:-}" == "$role" && "${PLATFORM_BACKUP_PGPASSWORD:-}" =~ ^[a-f0-9]{64}$ ]] || { echo 'Review existing operator credentials' >&2; exit 2; }
+  operator_host=${PLATFORM_BACKUP_PGHOST:-127.0.0.1}
+  [[ "$operator_host" == 127.0.0.1 || "$operator_host" == /var/run/postgresql ]] || { echo 'Expected loopback TCP or the configured local PostgreSQL socket for the operator' >&2; exit 2; }
   secret=$PLATFORM_BACKUP_PGPASSWORD
 else
   secret=$(openssl rand -hex 32)
@@ -50,13 +53,13 @@ chmod 600 "$stage/setup.sql"
 if ! PGHOST=/var/run/postgresql PGPASSWORD='' runuser -u postgres -- psql -U postgres -X -q -v ON_ERROR_STOP=1 -p "${PGPORT:-5432}" -d "$PGDATABASE" <"$stage/setup.sql" >"$stage/result" 2>&1; then
   echo 'Operator provisioning failed' >&2; exit 1
 fi
-printf 'PLATFORM_BACKUP_PGUSER=%s\nPLATFORM_BACKUP_PGPASSWORD=%s\nPLATFORM_BACKUP_PGHOST=127.0.0.1\nPLATFORM_BACKUP_PGPORT=%s\n' "$role" "$secret" "${PGPORT:-5432}" >"$stage/operator.env"
+printf 'PLATFORM_BACKUP_PGUSER=%s\nPLATFORM_BACKUP_PGPASSWORD=%s\nPLATFORM_BACKUP_PGHOST=%s\nPLATFORM_BACKUP_PGPORT=%s\n' "$role" "$secret" "$operator_host" "${PGPORT:-5432}" >"$stage/operator.env"
 chmod 600 "$stage/operator.env"
 install -m 600 -o root -g root "$stage/operator.env" "$operator_config"
 # Credentials are environment variables, never argv or console output.
-if ! PGHOST=127.0.0.1 PGPORT="${PGPORT:-5432}" PGDATABASE="$PGDATABASE" PGUSER="$role" PGPASSWORD="$secret" \
+if ! PGHOST="$operator_host" PGPORT="${PGPORT:-5432}" PGDATABASE="$PGDATABASE" PGUSER="$role" PGPASSWORD="$secret" \
   runuser -u site_drevo -- psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT CASE WHEN NOT rolsuper AND rolbypassrls AND current_setting('default_transaction_read_only')='on' THEN 'platform_backup_operator_ready' ELSE 'invalid_operator' END FROM pg_roles WHERE rolname=current_user" >"$stage/ready" 2>"$stage/error"; then
-  echo 'Operator login failed; check local TCP authentication' >&2; exit 1
+  echo 'Operator login failed; check the configured local transport and operator-specific authentication' >&2; exit 1
 fi
 grep -qx platform_backup_operator_ready "$stage/ready" || { echo 'Unexpected operator capabilities' >&2; exit 1; }
 echo 'platform_backup_operator_ready'
