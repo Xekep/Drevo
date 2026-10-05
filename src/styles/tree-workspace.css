@@ -50,6 +50,49 @@
   flex-direction: column;
   position: relative;
 }
+.member-preview-banner {
+  position: relative;
+  z-index: 1100;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 6px 20px;
+  background: #fff4db;
+  border-bottom: 1px solid #e7cb88;
+  color: var(--ink);
+}
+.member-preview-banner a { white-space: nowrap; font-weight: 700; }
+.member-preview-banner span { min-width: 0; overflow-wrap: anywhere; }
+.member-preview-banner a { flex: none; }
+.member-preview-modal-exit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: #e8eedf;
+  color: #273d29;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.member-preview-modal-exit:hover,
+.member-preview-modal-exit:focus-visible {
+  background: #d5e5ca;
+  color: #1e3421;
+}
+@media (max-width: 600px) {
+  .member-preview-banner { padding: 6px 12px; font-size: 12px; }
+  .member-preview-banner a { min-height: 44px; display: flex; align-items: center; }
+}
 .archive-header {
   flex: 0 0 58px;
   display: flex;

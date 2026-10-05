@@ -23,10 +23,12 @@ export function PersonDiscussion({
   personId,
   onSelect,
   onCountChange,
+  readOnly = false,
 }: {
   personId: string;
   onSelect: (id: string) => void;
   onCountChange: (total: number) => void;
+  readOnly?: boolean;
 }) {
   const [items, setItems] = useState<Comment[]>([]);
   const [nextBefore, setNextBefore] = useState<number | null>(null);
@@ -225,7 +227,7 @@ export function PersonDiscussion({
 
   return (
     <section className="person-discussion" aria-label="Обсуждение человека">
-      <form
+      {!readOnly && <form
         onSubmit={(event) => {
           event.preventDefault();
           void send();
@@ -261,7 +263,7 @@ export function PersonDiscussion({
             <Send size={15} aria-hidden="true" /> Отправить
           </button>
         </div>
-      </form>
+      </form>}
       {error && (
         <div role="alert" className="person-discussion-error">
           {error}
@@ -439,7 +441,7 @@ export function PersonDiscussion({
                   />
                 </>
               )}
-              {item.canEdit && editing?.original.id !== item.id && (
+              {!readOnly && item.canEdit && editing?.original.id !== item.id && (
                 <button
                   type="button"
                   className="person-discussion-edit"
@@ -459,7 +461,7 @@ export function PersonDiscussion({
                   <Pencil size={14} aria-hidden="true" />
                 </button>
               )}
-              {item.canDelete &&
+              {!readOnly && item.canDelete &&
                 (confirmDelete === item.id ? (
                   <div className="person-discussion-delete-confirm">
                     <span>Удалить сообщение?</span>

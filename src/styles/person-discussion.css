@@ -340,6 +340,19 @@
   background: #10150f;
   color: #fff;
 }
+.discussion-gallery-preview-exit-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: max(4px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 4px;
+}
+.discussion-lightbox:has(.discussion-gallery-preview-exit-bar) {
+  display: flex;
+  flex-direction: column;
+}
+.discussion-lightbox:has(.discussion-gallery-preview-exit-bar) .discussion-gallery-content {
+  flex: 1;
+  min-height: 0;
+}
 .discussion-lightbox::backdrop {
   background: #10150fec;
 }

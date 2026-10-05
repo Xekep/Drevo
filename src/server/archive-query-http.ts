@@ -20,6 +20,7 @@ import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 import { AccountSessionBusy, AccountSessionExpired, assertActiveAccountSession } from "./account-session-guard.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
+import { memberPreviewTarget, assertMemberPreviewStoreDelivery } from "./member-preview-access.ts";
 
 export function archiveQueryHttp({
   archive,
@@ -59,7 +60,7 @@ export function archiveQueryHttp({
   ) => user ? {
     ...user,
     platformAdmin: await auth.isPlatformAdmin(req),
-    aiAvailable: user.approved === true && isArchiveOwner(user)
+    aiAvailable: !memberPreviewTarget(req) && user.approved === true && isArchiveOwner(user)
       ? await accountAiAccess(archive.db, user.id, auth.local)
       : false,
   } : null;
@@ -85,6 +86,7 @@ export function archiveQueryHttp({
     if (!readTree) {
       data.family.people = [];
       data.family.links = [];
+      data.family.unions = [];
       data.family.photos = data.family.photos?.map((photo) => ({
         ...photo,
         tags: [],
@@ -96,8 +98,10 @@ export function archiveQueryHttp({
     return {
       ...data,
       canEdit: await auth.canEdit(req),
-      local: auth.local,
+      local: auth.local && !memberPreviewTarget(req),
       user: await exposedUser(req, user),
+      ...(memberPreviewTarget(req) && user
+        ? { participantPreview: { id: user.id, name: user.name } } : {}),
       readTree,
       readPhotos,
       reverseTimeline:
@@ -127,7 +131,7 @@ export function archiveQueryHttp({
     const memberCanRead = visitor?.approved === true;
     const scoped = isScopedUser(visitor);
     // An unscoped export must not release people removed after its snapshot.
-    const stableRevision = scoped || path === "/api/export" || path === "/api/export.json" ||
+    const stableRevision = !!memberPreviewTarget(req) || scoped || path === "/api/export" || path === "/api/export.json" ||
       (path === "/api/people/search" && !memberCanRead);
     const startRevision = stableRevision
       ? Number((await revisionQuery.get())?.revision)
@@ -144,6 +148,7 @@ export function archiveQueryHttp({
         current?.approved === visitor?.approved &&
         current?.personId === visitor?.personId &&
         current?.treeAccess === visitor?.treeAccess &&
+        current?.archiveOwner === visitor?.archiveOwner &&
         settings.publicTree === access.publicTree &&
         settings.publicAlbums === access.publicAlbums;
     };
@@ -168,23 +173,36 @@ export function archiveQueryHttp({
       const body = JSON.stringify(value);
       await beforeDelivery?.();
       const valid = await archive.db.transaction(async () => {
+        let previewExpiresAt: number | null = null;
         // Archive writes and visibility changes lock this row first. A session
         // deletion may lock its session first, so do not wait for that row.
         if (visitor && !auth.local) {
           const session = await auth.accountSession(req);
-          if (!session || session.accountId !== visitor.id) return false;
-          await assertActiveAccountSession(archive.db, visitor.id, session.tokenHash);
-          const archiveId = archive.db.archiveId;
-          if (!archiveId) return false;
-          const membership = await archive.db.prepare("", `SELECT 1 FROM archive_memberships
-            WHERE archive_id=? AND user_id=? FOR SHARE`).get(archiveId, visitor.id);
-          if (!membership) return false;
+          if (!session) return false;
+          if (memberPreviewTarget(req)) {
+            if (visitor.id !== memberPreviewTarget(req)) return false;
+            previewExpiresAt = await assertMemberPreviewStoreDelivery(archive.db,
+              session, visitor);
+            if (!previewExpiresAt) return false;
+          } else {
+            if (session.accountId !== visitor.id) return false;
+            await assertActiveAccountSession(archive.db, visitor.id, session.tokenHash);
+            const archiveId = archive.db.archiveId;
+            if (!archiveId) return false;
+            const membership = await archive.db.prepare("", `SELECT 1 FROM archive_memberships
+              WHERE archive_id=? AND user_id=? FOR SHARE`).get(archiveId, visitor.id);
+            if (!membership) return false;
+          }
         }
         if (!await accessStillCurrent(expectedRevision)) return false;
         await beforeLockedDelivery?.();
         if (res.destroyed) return true;
+        const remaining = previewExpiresAt
+          ? Math.min(5_000, previewExpiresAt - Date.now()) : 5_000;
+        if (remaining <= 0) return false;
+        if (previewExpiresAt && Date.now() >= previewExpiresAt) return false;
         const delivered = finished(res, { cleanup: true });
-        const timeout = setTimeout(() => res.destroy(), 5_000);
+        const timeout = setTimeout(() => res.destroy(), remaining);
         timeout.unref();
         try {
           res.writeHead(200, {
@@ -336,8 +354,10 @@ export function archiveQueryHttp({
           family: data.family,
           revision: data.revision,
           canEdit,
-          local: auth.local,
+          local: auth.local && !memberPreviewTarget(req),
           user: await exposedUser(req, visitor),
+          ...(memberPreviewTarget(req) && visitor
+            ? { participantPreview: { id: visitor.id, name: visitor.name } } : {}),
           readTree,
           readPhotos,
           reverseTimeline:

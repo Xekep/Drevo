@@ -35,6 +35,9 @@ import { CreatePersonalArchive } from "./create-personal-archive";
 
 export type AccountSession = {
   user: ArchiveUser | null;
+  /** A view-as response describes the selected participant, not a login switch. */
+  preview?: boolean;
+  participantPreview?: { id: string; name: string };
   account?: {
     id: string;
     name: string;

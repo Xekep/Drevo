@@ -7,7 +7,8 @@ import type { ReaderCommand, ReaderEvent } from "./bookreader-frame-messages";
 import type { ListedDocument } from "./documents-catalog";
 import { documentFileTypeFromMime } from "../shared/document-file.ts";
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { archiveResourceUrl } from "../domain/archive-context.ts";
+import { archiveResourceUrl, memberPreviewAt } from "../domain/archive-context.ts";
+import { MemberPreviewExit } from "./member-preview-exit";
 import type {
   AnnotationSelection,
   DocumentAnnotation,
@@ -467,6 +468,11 @@ export function PdfBookReader({
           setMagnifier(false);
         }}
       >
+        {typeof window !== "undefined" && memberPreviewAt(window.location.pathname) && (
+          <div className="pdf-book-preview-exit-bar">
+            <MemberPreviewExit />
+          </div>
+        )}
         <div className="pdf-book-content">
           <div className="pdf-book-stage">
             <div className="pdf-book-host">
@@ -874,7 +880,7 @@ export function PdfBookReader({
                       {editing?.id !== item.id && (
                         <DocumentCommentText text={item.text} />
                       )}
-                      {item.canEdit && (
+                      {mayAnnotate && item.canEdit && (
                         <button
                           type="button"
                           className="pdf-book-comment-edit"
@@ -900,7 +906,7 @@ export function PdfBookReader({
                           <Pencil size={15} />
                         </button>
                       )}
-                      {item.canDelete && (
+                      {mayAnnotate && item.canDelete && (
                         <ConfirmDeleteButton
                           className="pdf-book-comment-delete"
                           disabled={saving || !!editing || !commentsOpen}

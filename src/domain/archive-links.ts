@@ -3,7 +3,7 @@ import {
   archivePaths,
   type ArchiveEntity,
 } from "./archive-routes.ts";
-import { archiveContextAt } from "./archive-context.ts";
+import { archiveContextAt, memberPreviewAt } from "./archive-context.ts";
 
 export type ArchiveTarget = ArchiveEntity;
 
@@ -14,7 +14,7 @@ export function archiveTargetAt(
   const entity = archiveEntityAt(pathname);
   if (entity) return entity;
   // Старые ссылки с параметрами остаются рабочими и затем заменяются на канонический адрес.
-  const route = (archiveContextAt(pathname)?.innerPath || pathname).replace(
+  const route = (memberPreviewAt(pathname)?.innerPath || archiveContextAt(pathname)?.innerPath || pathname).replace(
     /\/$/,
     "",
   );

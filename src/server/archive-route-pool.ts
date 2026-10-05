@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { memberPreviewAt } from "../domain/archive-context.ts";
 
 export type RoutedArchive = {
   handle: (
@@ -106,10 +107,14 @@ export function archiveRoutePool(
   };
   return {
     async route(req: IncomingMessage, res: ServerResponse, url: URL) {
-      const match =
-        /^\/a\/([A-Za-z0-9][A-Za-z0-9-]{2,63})(\/(?:api|media)\/.*)$/.exec(
-          url.pathname,
-        );
+      const direct =
+        /^\/a\/([A-Za-z0-9][A-Za-z0-9-]{2,63})(\/(?:api|media)\/.*)$/.exec(url.pathname);
+      const preview = memberPreviewAt(url.pathname);
+      const match = direct || (preview?.archiveId &&
+        /^\/(?:api|media)\/.*$/.test(preview.innerPath)
+        ? [url.pathname, preview.archiveId,
+          `${preview.prefix.slice(`/a/${preview.archiveId}`.length)}${preview.innerPath}`]
+        : null);
       if (!match) return false;
       let entry: Entry | null;
       try {

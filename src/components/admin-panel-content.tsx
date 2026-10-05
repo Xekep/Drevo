@@ -12,6 +12,7 @@ import {
   Clock3,
   ScanSearch,
   GitCompareArrows,
+  Eye,
 } from "lucide-react";
 import {
   ROLE_NAMES,
@@ -31,7 +32,7 @@ import { PublicationAdmin } from "./publication-admin";
 import type { PublicationOwnership } from "../hooks/useArchivePublicationOwner";
 import { DiscoveryMatchesAdmin } from "./discovery-matches-admin";
 import { adminMatchesPath, adminMatchSourceAt, adminMatchTargetAt, archivePaths } from "../domain/archive-routes";
-import { archiveContextAt, scopedArchivePath } from "../domain/archive-context";
+import { archiveContextAt, memberPreviewPath, scopedArchivePath } from "../domain/archive-context";
 type Settings = {
   publicTree: boolean;
   publicAlbums: boolean;
@@ -244,6 +245,7 @@ function AdminUserRow({
       <div className="admin-user-actions">
         {!user.approved && (
           <button
+            className="admin-user-approve"
             type="button"
             disabled={busy}
             onClick={() => void onPatch({ approved: true })}
@@ -251,6 +253,16 @@ function AdminUserRow({
             Одобрить
           </button>
         )}
+        <a
+          className="admin-user-preview"
+          href={memberPreviewPath(archiveContextAt(window.location.pathname)?.id || null, user.id)}
+          aria-label={`Посмотреть как участник: ${user.name}`}
+          title={`Посмотреть как участник: ${user.name}`}
+          aria-disabled={busy || undefined}
+          onClick={(event) => { if (busy) event.preventDefault(); }}
+        >
+          <Eye size={16} aria-hidden="true" />
+        </a>
         <button
           type="button"
           className="admin-user-delete"

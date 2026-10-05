@@ -1,5 +1,5 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { archiveContextAt } from "../domain/archive-context.ts";
+import { archiveContextAt, memberPreviewAt } from "../domain/archive-context.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   validateFamily,
@@ -164,8 +164,8 @@ export function useArchive(enabled = true) {
             setUndoCount(0);
             setNeedsLogin(false);
             revision.current = result.revision;
-            setCanEdit(result.canEdit === true);
-            setLocal(result.local === true);
+            setCanEdit(!memberPreviewAt(window.location.pathname) && result.canEdit === true);
+            setLocal(!memberPreviewAt(window.location.pathname) && result.local === true);
             setUser(result.user || null);
             setReadTree(result.readTree !== false);
             setReadPhotos(result.readPhotos !== false);
@@ -233,8 +233,8 @@ export function useArchive(enabled = true) {
     revision.current = result.revision;
     history.current = [];
     setFamily(data);
-    setCanEdit(result.canEdit === true);
-    setLocal(result.local === true);
+    setCanEdit(!memberPreviewAt(window.location.pathname) && result.canEdit === true);
+    setLocal(!memberPreviewAt(window.location.pathname) && result.local === true);
     setUser(result.user || null);
     setReadTree(result.readTree !== false);
     setReadPhotos(result.readPhotos !== false);
@@ -554,7 +554,7 @@ export function useArchive(enabled = true) {
     uploadPortrait,
     syncSessionUser: (next: ArchiveUser | null) => {
       setUser(next);
-      setCanEdit(canEditArchive(next));
+      setCanEdit(!memberPreviewAt(window.location.pathname) && canEditArchive(next));
     },
     hasPendingRead: () => loadingController.current !== null,
     closeChangedPrivateView: (revoked: boolean) => {
