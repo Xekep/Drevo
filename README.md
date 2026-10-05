@@ -165,4 +165,3 @@ npm run build
 - [Установка сервера и деплой](docs/deployment.md)
 - [ИИ-исследователь и MCP](docs/ai-research.md)
 - [Дорожная карта](docs/roadmap.md)
-- [План DNA: серверная обработка и защищённое хранение](docs/dna-architecture.md)
