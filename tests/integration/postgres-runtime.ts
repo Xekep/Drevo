@@ -31,6 +31,7 @@ import { verifyManagedBackupCheckRevocation } from "./postgres-managed-backup-ch
 import { verifyManagedBackupPreviewRevocation } from "./postgres-managed-backup-preview-revocation.ts";
 import { verifyRestorePreviewDelivery } from "./postgres-restore-preview-delivery.ts";
 import { verifyRestoreGuard } from "./postgres-restore-guard.ts";
+import { verifyImportRestoreQuota } from "./postgres-import-restore-quota.ts";
 import { databaseBackupHttp } from "../../src/server/database-backup-http.ts";
 import { createAuth } from "../../src/server/auth.ts";
 import { openArchive } from "../../src/server/database.ts";
@@ -14191,6 +14192,7 @@ try {
   await app.archive.write(restoredPeople, withoutPeer.revision);
   await verifyRestoreGuard({ client, source, family, ownerHeaders, restoreBytes,
     selectedBase: securedBase, rootArchive: app.archive });
+  await verifyImportRestoreQuota({ client, source });
   await verifyPlatformAiOrphanSweep(app!.archive.db, client, source);
   await verifyGlobalRoleFinalization();
   await verifyAwardCitationPreparation(app.archive);
