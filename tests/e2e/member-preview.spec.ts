@@ -421,6 +421,9 @@ test("participants have a separate preview action alongside deletion", async ({
           [...group.querySelectorAll("a,button")].map((control) => {
             const rect = control.getBoundingClientRect();
             return {
+              control: control.getAttribute("aria-label") || control.textContent,
+              minHeight: getComputedStyle(control).minHeight,
+              className: control.className,
               x: rect.x,
               right: rect.right,
               width: rect.width,
@@ -432,7 +435,7 @@ test("participants have a separate preview action alongside deletion", async ({
     for (const group of actions)
       for (let index = 0; index < group.length; index++) {
         expect(group[index].width).toBeGreaterThanOrEqual(43.5);
-        expect(group[index].height).toBeGreaterThanOrEqual(43.5);
+        expect(group[index].height, JSON.stringify(group[index])).toBeGreaterThanOrEqual(43.5);
         if (index)
           expect(group[index].x).toBeGreaterThanOrEqual(group[index - 1].right);
       }

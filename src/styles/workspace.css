@@ -649,8 +649,10 @@ body,
   justify-content: flex-end;
   gap: 4px;
 }
-.admin-user-actions button {
+.archive-form .admin-user-actions button {
   white-space: nowrap;
+  min-width: 44px;
+  min-height: 44px;
 }
 .admin-user-actions > * {
   flex: none;
