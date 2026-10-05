@@ -7,6 +7,7 @@ import { MediaTooLargeError, type mediaStore } from "./media.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { assertCurrentArchiveActor, ForbiddenError } from "./users.ts";
 import { projectFamilyForUser } from "../domain/tree-access.ts";
+import { canEditArchive } from "../domain/access.ts";
 import { registerMediaUpload } from "./media-access.ts";
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import {
@@ -74,13 +75,19 @@ export function mediaUploadHttp({
       return json(res, 403, {
         error: "Сохранение разрешено только со страницы архива",
       });
-    if (!(await auth.canEdit(req)))
-      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
-        error: "You do not have editing access",
-      });
-    const requester = (await auth.currentUser(req))!;
+    const initiallyAllowed = await auth.canEdit(req);
+    const requester = await auth.currentUser(req);
     const issuingSession = archive.db.kind === "postgres" && !auth.local
       ? await auth.accountSession(req) : null;
+    if (!requester || !initiallyAllowed || !canEditArchive(requester) ||
+        (archive.db.kind === "postgres" && !auth.local &&
+          (!issuingSession || issuingSession.accountId !== requester?.id)))
+      return json(res,
+        archive.db.kind === "postgres" && !auth.local
+          ? issuingSession ? 403 : 401
+          : requester ? 403 : 401,
+        { error: "You do not have editing access" },
+      );
     if (req.headers["x-drevo-upload"] !== "1")
       return json(res, 400, { error: "Некорректная загрузка" });
 

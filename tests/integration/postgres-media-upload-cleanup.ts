@@ -148,6 +148,73 @@ test("photo uploads keep originals after commit and reject revoked issuing sessi
     Origin: process.env.PUBLIC_ORIGIN!,
     "X-Drevo-Upload": "1",
   });
+  const preflightAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  await (await userStore(app.archive.db)).register("preflight-editor", "Editor");
+  await client.query(`UPDATE archive_memberships SET role='relative',approved=true
+    WHERE archive_id='media-cleanup-test' AND user_id='preflight-editor'`);
+  for (const lostAccess of ["logout", "membership"] as const) {
+    const accountId = lostAccess === "logout" ? "owner" : "preflight-editor";
+    const preflightToken = newSessionToken();
+    const preflightHash = sessionTokenHash(preflightToken);
+    await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)",
+      [preflightHash, accountId, Date.now() + 60_000]);
+    let reached = false;
+    let resume!: () => void;
+    const held = new Promise<void>((resolve) => { resume = resolve; });
+    const gatedAuth = {
+      ...preflightAuth,
+      async canEdit(req: Parameters<typeof preflightAuth.canEdit>[0]) {
+        const allowed = await preflightAuth.canEdit(req);
+        if (allowed) {
+          reached = true;
+          await held;
+        }
+        return allowed;
+      },
+    };
+    const gatedHandler = mediaUploadHttp({ archive: app.archive, auth: gatedAuth,
+      media: mediaStore(uploads), publicOrigin: process.env.PUBLIC_ORIGIN,
+      uploadsDirectory: uploads });
+    const gatedServer = createServer((req, res) => {
+      void gatedHandler(req, res, new URL(req.url || "/", "http://localhost"))
+        .then((handled) => { if (!handled) res.writeHead(404).end(); })
+        .catch((error) => { if (!res.headersSent) res.writeHead(500).end(String(error)); });
+    });
+    await new Promise<void>((resolve) => gatedServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const before = await rows();
+      const fileCount = readdirSync(uploads).length;
+      const preflightRequest = fetch(
+        `http://127.0.0.1:${(gatedServer.address() as { port: number }).port}/api/photos`, {
+          method: "POST",
+          headers: { ...uploadHeaders(preflightToken),
+            "If-Match": String((await app.archive.meta()).revision) },
+          body: png,
+        },
+      );
+      await waitFor(async () => reached, `${lostAccess} after the first edit check`);
+      if (lostAccess === "logout")
+        await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [preflightHash]);
+      else
+        await client.query(`UPDATE archive_memberships SET approved=false
+          WHERE archive_id='media-cleanup-test' AND user_id='preflight-editor'`);
+      resume();
+      const denied = await preflightRequest;
+      assert.equal(denied.status, lostAccess === "logout" ? 401 : 403,
+        `${lostAccess} between preflight lookups must not become an internal error`);
+      assert.deepEqual(await denied.json(), { error: "You do not have editing access" });
+      assert.deepEqual(await rows(), before, "preflight denial creates no photo or grant");
+      assert.equal(readdirSync(uploads).length, fileCount,
+        "preflight denial does not retain an original file");
+    } finally {
+      resume();
+      await new Promise<void>((resolve) => gatedServer.close(() => resolve()));
+      await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [preflightHash]);
+      await client.query(`UPDATE archive_memberships SET approved=true
+        WHERE archive_id='media-cleanup-test' AND user_id='preflight-editor'`);
+    }
+  }
   // The body is deliberately held open after quota reservation. This lets the
   // test take the archive lock before the handler's last user lookup, without
   // a production-only hook in the photo route.
