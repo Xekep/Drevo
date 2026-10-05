@@ -17,6 +17,10 @@ export function AboutProject({ onClose }: { onClose: () => void }) {
           Проект пока развивается: я постепенно добавляю новые возможности и
           одновременно наполняю собственное семейное древо.
         </p>
+        <p>
+          Проект развивается при поддержке моего друга <b>Apakalipses</b>, который
+          внёс значительный вклад в его разработку.
+        </p>
         <p className="about-signature">
           <a href="https://vk.ru/xekep" target="_blank" rel="noreferrer">
             Евгений С.

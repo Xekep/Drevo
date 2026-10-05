@@ -15,6 +15,8 @@ import { newSessionToken, sessionTokenHash } from "../../src/server/session-toke
 import { settingsStore } from "../../src/server/settings.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { userStore } from "../../src/server/users.ts";
+import { fullName } from "../../src/domain/dates.ts";
+import type { Person } from "../../src/domain/types.ts";
 
 /** Real HTTP dispatch must retain the owner's session even for public target reads. */
 export async function verifyMemberPreview(
@@ -228,7 +230,10 @@ export async function verifyMemberPreview(
       const annotations = await fetch(`${prefix}${annotationUrl}`,
         { headers: approvedHeaders });
       assert.equal(annotations.status, 200);
-      assert.deepEqual((await annotations.json()).items.map((item: {
+      const annotationItems = (await annotations.json()).items;
+      assert.equal(annotationItems[0].authorName, fullName(portrait as Person),
+        "document comments use the author's archive-linked full name in participant preview");
+      assert.deepEqual(annotationItems.map((item: {
         canEdit: boolean; canDelete: boolean;
       }) => [item.canEdit, item.canDelete]), [[false, false]]);
       for (const suffix of ["", "/file", "/annotations"])

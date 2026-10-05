@@ -269,7 +269,11 @@ export function analyzeFamilyInsights(
     children = childCounts(people),
     spousePairs = uniqueSpousePairs(people),
     lifespans = completedLifespans(people),
-    adultLifespans = lifespans.filter(({ age }) => age >= 18),
+    recentAdultLifespans = lifespans.filter(({ person, age }) => {
+      const death = yearOf(person.death);
+      return age >= 18 && death !== null &&
+        death >= currentYear - 100 && death <= currentYear;
+    }),
     knownBirths = people.flatMap((person) => {
       const year = yearOf(person.birth);
       return year === null ? [] : [{ person, year }];
@@ -379,7 +383,7 @@ export function analyzeFamilyInsights(
     ["m", "мужчин"],
     ["f", "женщин"],
   ] as const) {
-    const ages = adultLifespans
+    const ages = recentAdultLifespans
       .filter(({ person }) => person.sex === sex)
       .map(({ age }) => age);
     const average = ages.length
@@ -388,7 +392,7 @@ export function analyzeFamilyInsights(
         ) / 10
       : null;
     facts.push({
-      title: `Средняя продолжительность жизни ${label}`,
+      title: `Средняя продолжительность жизни ${label} за последние 100 лет`,
       value:
         average === null
           ? "Нет данных"
