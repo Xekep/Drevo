@@ -602,6 +602,11 @@ body,
 .admin-user-visit svg {
   flex: none;
 }
+.admin-user-visit :is(time, span) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .admin-user-identity b {
   font-size: 13px;
   font-weight: 600;
