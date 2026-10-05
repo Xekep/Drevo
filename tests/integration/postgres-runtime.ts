@@ -3787,6 +3787,11 @@ try {
         const installStarted = new Promise<void>((resolve) => { notifyInstall = resolve; });
         const installGate = new Promise<void>((resolve) => { releaseFileInstall = resolve; });
         let pauseInstall = false;
+        let notifySessionInstall!: () => void;
+        let releaseSessionInstall!: () => void;
+        const sessionInstallStarted = new Promise<void>((resolve) => { notifySessionInstall = resolve; });
+        const sessionInstallGate = new Promise<void>((resolve) => { releaseSessionInstall = resolve; });
+        let pauseSessionInstall = false;
         const calculationFilesRoot = mkdtempSync(join(tmpdir(), "drevo-ai-calculation-tier-"));
         let fileTestUsageBefore = 0;
         const adapted = adaptLegacyAiFake(async (url, init) => {
@@ -3848,9 +3853,8 @@ try {
           publicOrigin: process.env.PUBLIC_ORIGIN, fetcher: fake,
           uploadsDirectory: join(calculationFilesRoot, "uploads"),
           beforeGeneratedFileInstall: async () => {
-            if (!pauseInstall) return;
-            notifyInstall();
-            await installGate;
+            if (pauseInstall) { notifyInstall(); await installGate; }
+            if (pauseSessionInstall) { notifySessionInstall(); await sessionInstallGate; }
           },
         });
         const server = createServer((req, res) => {
@@ -3913,9 +3917,33 @@ try {
           assert.equal(readdirSync(generatedRoot, { recursive: true, withFileTypes: true })
             .filter((entry) => entry.isFile()).length, 0,
           "downgrade during generated file staging cannot persist a file");
+          await client.query("DELETE FROM ai_usage WHERE archive_id='runtime-test' AND user_id=$1 AND id>$2",
+            [proposalMember, fileTestUsageBefore]);
+          await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
+          pauseInstall = false;
+          pauseSessionInstall = true;
+          const waitingForRevokedSession = fetch(`http://127.0.0.1:${port}/api/ai/chat`, {
+            method: "POST", headers: proposalHeaders,
+            body: JSON.stringify({ message: "Сохрани CSV после отзыва сеанса" }),
+          });
+          await Promise.race([sessionInstallStarted, waitingForRevokedSession.then(async (early) => {
+            throw new Error(`Calculation stopped before session install: ${early.status} ${await early.clone().text()}`);
+          }), new Promise<never>((_, reject) => setTimeout(() =>
+            reject(new Error("Calculation file did not reach session barrier")), 15_000))]);
+          await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(proposalToken)]);
+          releaseSessionInstall();
+          const deniedSession = await waitingForRevokedSession;
+          assert.equal(deniedSession.status, 403, await deniedSession.clone().text());
+          assert.equal(readdirSync(generatedRoot, { recursive: true, withFileTypes: true })
+            .filter((entry) => entry.isFile()).length, 0,
+          "a completed session revoke cannot install an unreferenced generated file");
+          console.log("runtime_ai_generated_install_session_revoke_ok");
         } finally {
           releaseCleanup();
           releaseFileInstall();
+          releaseSessionInstall();
+          await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
+            [sessionTokenHash(proposalToken), proposalMember, Date.now() + 60000]);
           await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
           await client.query("UPDATE ai_settings SET code_interpreter_enabled=$1 WHERE id=1", [previousInterpreter]);
           const newChats = (await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))

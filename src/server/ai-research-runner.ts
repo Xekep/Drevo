@@ -144,6 +144,7 @@ export function createResearchRunner({
     chatId,
     turnToken,
     assertAiAccess,
+    assertGeneratedFileInstall,
     commitSuggestion,
   }: {
     body: Record<string, unknown>;
@@ -160,6 +161,7 @@ export function createResearchRunner({
     chatId: string;
     turnToken: string;
     assertAiAccess: () => Promise<void>;
+    assertGeneratedFileInstall?: () => Promise<void>;
     commitSuggestion: typeof suggestions.createFromTool;
   }): Promise<ResearchResult> {
     canPropose = canPropose && runtime.capabilities.proposals;
@@ -1165,6 +1167,10 @@ export function createResearchRunner({
             throw error;
           }
         };
+        const assertInstallAccess = async () => {
+          try { await (assertGeneratedFileInstall || assertAiAccess)(); }
+          catch (error) { accessCheckFailed = true; throw error; }
+        };
         try {
           toolArgs = JSON.parse(call.function.arguments || "{}");
           if (!allowedToolNames.has(call.function.name))
@@ -1303,7 +1309,7 @@ export function createResearchRunner({
                 ownerId: user.id,
                 chatId,
                 expires: Date.now() + 30 * 60_000,
-              });
+              }, assertInstallAccess);
               if (!saved) break;
               links.push(saved);
             }
@@ -1341,7 +1347,7 @@ export function createResearchRunner({
               name,
               bytes,
               expires: Date.now() + 30 * 60_000,
-            });
+            }, assertInstallAccess);
             if (!saved)
               throw new Error("Временное хранилище файлов заполнено. Повторите позже.");
             files.push(saved);

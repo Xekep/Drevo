@@ -143,7 +143,7 @@ export function generatedResearchFileStore(
     return path;
   }
   return {
-    async save(file: GeneratedResearchFile) {
+    async save(file: GeneratedResearchFile, assertInstallAccess?: () => Promise<void>) {
       const id = storeGeneratedResearchFile(files, file);
       if (!id) return null;
       const url = shared
@@ -177,6 +177,10 @@ export function generatedResearchFileStore(
             // Keep the tier row locked only for the final install. A downgrade
             // either commits before this check or waits until rename finishes.
             await db.transaction(async () => {
+              // A turn also needs its issuing session, archive membership and
+              // profile at this boundary. The caller checks them in this same
+              // transaction before the tier lock and the physical rename.
+              await assertInstallAccess?.();
               const trustedLocal = file.ownerId === "local" && !process.env.PUBLIC_ORIGIN;
               if (!(await accountAiAccess(db, file.ownerId, trustedLocal, true)))
                 throw new GeneratedFileAccessError("Доступ к ИИ отозван");
