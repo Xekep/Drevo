@@ -69,7 +69,7 @@ export function useFamilyView(
   );
   const commonVisible = useMemo(() => {
     if (!anchor || view.mode !== "common") return new Set<string>();
-    const blood = bloodRelativesWithPartners(index, anchor);
+    const blood = bloodRelativesWithPartners(index, anchor, family.unions);
     const branch = visibleBranch(family, null, collapsed, [anchor]);
     return new Set([...blood].filter((id) => branch.has(id)));
   }, [anchor, view.mode, index, family, collapsed]);

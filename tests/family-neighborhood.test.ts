@@ -60,6 +60,26 @@ function archive(): Family {
     links: [{ id: "god", type: "godparent", from: "godparent", to: "main" }],
   };
 }
+
+test("blood view adds one step of recorded civil/partner unions without treating their parents as blood", () => {
+  const data: Family = {
+    ...archive(),
+    people: [...archive().people, person("civil-partner", ["outsider"]), person("union-only-partner"),
+      person("next-partner"), person("co-parent", [])],
+    unions: [
+      { id: "civil", type: "civil_union", participants: ["main", "civil-partner"] },
+      { id: "partner", type: "partnership", participants: ["union-only-partner", "sibling"] },
+      { id: "next", type: "partnership", participants: ["civil-partner", "next-partner"] },
+    ],
+  };
+  const index = familyNeighbors(data);
+  const ids = bloodRelativesWithPartners(index, "main", data.unions);
+  assert.ok(ids.has("civil-partner"));
+  assert.ok(ids.has("union-only-partner"));
+  for (const id of ["outsider", "next-partner", "co-parent", "godparent"])
+    assert.equal(ids.has(id), false, id);
+  assert.equal(bloodRelativesWithPartners(index, "missing", data.unions).size, 0);
+});
 test("nearby family includes siblings, exact co-parents, partners and recorded godparents, but not every generation", () => {
   const data = archive(),
     before = structuredClone(data);

@@ -50,7 +50,9 @@ const fullFamily: Family = {
     person("child", "Пётр", ["parent"]),
     { ...person("own-person", "Отдельный"), createdBy: member.id },
     person("hidden", "Скрытый"),
+    person("union-partner", "Партнёр", ["hidden"]),
   ],
+  unions: [{ id: "partner-union", type: "partnership", participants: ["child", "union-partner"] }],
   photos: [
     {
       id: "preview-photo",
@@ -70,7 +72,6 @@ const fullFamily: Family = {
     },
   ],
   links: [],
-  unions: [],
 };
 const family = projectFamilyForUser(fullFamily, member);
 const documentId = "11111111-1111-4111-8111-111111111111";
@@ -291,6 +292,7 @@ test("member preview keeps all archive sections and deep links in the member sco
       await expect(
         page.locator('.flow-person[data-person-id="own-person"]').first(),
       ).toBeVisible();
+      await expect(page.locator('.flow-person[data-person-id="union-partner"]').first()).toBeVisible();
       await expect(
         page.locator('.flow-person[data-person-id="hidden"]'),
       ).toHaveCount(0);
@@ -514,6 +516,8 @@ test("participants have a separate preview action alongside deletion", async ({
     name: `Участник: ${member.name}`,
     exact: true,
   });
+  await expect(row.getByRole("combobox", { name: `Доступ к древу: ${member.name}` })
+    .locator('option[value="common_ancestors"]')).toHaveText("Кровные родственники");
   await expect(
     row.getByRole("link", {
       name: `Посмотреть как участник: ${member.name}`,

@@ -17,7 +17,7 @@ export function visiblePersonIds(family: Family, user: ArchiveUser) {
   if (!isScopedUser(user))
     return new Set(family.people.map((person) => person.id));
   const ids = user.personId
-    ? bloodRelativesWithPartners(familyNeighbors(family), user.personId)
+    ? bloodRelativesWithPartners(familyNeighbors(family), user.personId, family.unions)
     : new Set<string>();
   for (const person of family.people)
     if (person.createdBy === user.id) ids.add(person.id);

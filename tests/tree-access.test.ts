@@ -120,6 +120,32 @@ test("кровные и их супруги доступны без родств
     family.people, "full archive access is unchanged");
 });
 
+test("кровный доступ включает явные партнёрства без открытия других союзов партнёра", () => {
+  const data: Family = {
+    ...family,
+    people: [...family.people, person("civil-partner", ["hidden"]), person("partnership-partner"),
+      person("partner-another-union"), { ...person("own-isolated"), createdBy: "relative" },
+      person("own-isolated-partner")],
+    unions: [
+      ...(family.unions || []),
+      { id: "civil", type: "civil_union", participants: ["me", "civil-partner"] },
+      { id: "partnership", type: "partnership", participants: ["partnership-partner", "sibling"] },
+      { id: "partner-chain", type: "partnership", participants: ["civil-partner", "partner-another-union"] },
+      { id: "own-chain", type: "partnership", participants: ["own-isolated", "own-isolated-partner"] },
+    ],
+  };
+  const before = structuredClone(data);
+  const user = { id: "relative", name: "Relative", role: "reader" as const, approved: true,
+    createdAt: "", personId: "me", treeAccess: "common_ancestors" as const };
+  const projected = projectFamilyForUser(data, user);
+  assert.deepEqual(projected.people.map((person) => person.id),
+    [...bloodIds, "civil-partner", "partnership-partner", "own-isolated"]);
+  assert.deepEqual(projected.people.find((person) => person.id === "civil-partner")?.parents, []);
+  assert.deepEqual(projected.unions?.map((union) => union.id), ["visible-union", "civil", "partnership"]);
+  validateFamily(projected);
+  assert.deepEqual(data, before);
+});
+
 test("привязка аккаунта и область видимости действуют во всех основных HTTP-маршрутах", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-tree-access-"));
   const path = join(dir, "drevo.sqlite");
