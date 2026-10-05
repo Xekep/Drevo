@@ -2,7 +2,6 @@ import { archiveFetch } from "../data/archive-fetch.ts";
 import {
   useEffect,
   useRef,
-  useState,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -22,6 +21,7 @@ import {
 } from "lucide-react";
 import { isArchiveOwner, safeUrl, type Person, type ArchiveUser } from "../domain";
 import { mediaPreview } from "../domain/media-preview";
+import { PortraitImage } from "./portrait-image";
 import { archivePaths, type ArchiveView } from "../domain/archive-routes";
 import { scopedArchivePath } from "../domain/archive-context.ts";
 import { clearLayoutStorage } from "./tree/layout-storage";
@@ -51,7 +51,6 @@ export function ArchiveNavigation({
   onPlatformLeave?: () => boolean;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
-  const [failedPortrait, setFailedPortrait] = useState<string>();
   const portrait = mediaPreview(safeUrl(accountPerson?.photo));
   const identity = user || account;
   const initial =
@@ -176,9 +175,8 @@ export function ArchiveNavigation({
         <summary className="nav-account" aria-label="Меню проекта"
           title={identity ? `Меню: ${identity.name}` : "Меню проекта"}>
           <span className="nav-account-avatar" aria-hidden="true">
-            {portrait && portrait !== failedPortrait ? (
-              <img src={portrait} alt="" onError={() => setFailedPortrait(portrait)} />
-            ) : identity ? initial : <UserRound size={20} />}
+            <PortraitImage src={portrait} loading="eager"
+              fallback={identity ? initial : <UserRound size={20} />} />
           </span>
         </summary>
         <div className="nav-bottom">

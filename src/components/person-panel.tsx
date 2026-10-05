@@ -30,6 +30,7 @@ import {
 } from "../domain";
 import { collectPersonSources, repositorySummary } from "../domain/person-sources.ts";
 import { PortraitPlaceholder } from "./portrait-placeholder";
+import { PortraitImage } from "./portrait-image";
 import { PersonAwards } from "./person-awards";
 import { PersonEvents } from "./person-events";
 import { MemorialName } from "./memorial-name";
@@ -64,18 +65,13 @@ export function Avatar({
   loading?: "eager" | "lazy";
   preview?: "avatar" | "thumb";
 }) {
-  const [failed, setFailed] = useState<string>();
   const src = mediaPreview(safeUrl(person.photo), preview);
   return (
     <span
       className={`${large ? "profile-avatar" : "person-avatar"} ${resolvedSex(person) === "u" ? "unknown" : resolvedSex(person) === "f" ? "female" : "male"}`}
     >
       {/* Native image keeps optional archive photos independent of an image service. */}
-      {src && failed !== src ? (
-        <img src={src} alt="" loading={loading} onError={() => setFailed(src)} />
-      ) : (
-        <PortraitPlaceholder />
-      )}
+      <PortraitImage src={src} loading={loading} fallback={<PortraitPlaceholder />} />
     </span>
   );
 }

@@ -152,6 +152,44 @@ function fixture(t: TestContext) {
   };
 }
 
+function terminalMediaProbes(t: TestContext) {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const previousFetch = Object.getOwnPropertyDescriptor(globalThis, "fetch");
+  const timer = globalThis.setTimeout;
+  const cancelTimer = globalThis.clearTimeout;
+  Object.defineProperty(globalThis, "window", { configurable: true, value: {
+    location: new URL("http://localhost/tree"),
+    setTimeout: (callback: () => void, ms: number) => {
+      if (ms >= 2_500) return timer(callback, ms);
+      queueMicrotask(callback);
+      return 0;
+    },
+    clearTimeout: (id: ReturnType<typeof timer> | 0) => { if (id) cancelTimer(id); },
+  } });
+  Object.defineProperty(globalThis, "fetch", { configurable: true,
+    value: async () => new Response(null, { status: 404 }) });
+  t.after(() => {
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+    else Reflect.deleteProperty(globalThis, "window");
+    if (previousFetch) Object.defineProperty(globalThis, "fetch", previousFetch);
+    else Reflect.deleteProperty(globalThis, "fetch");
+  });
+}
+
+async function failAfterProbes(f: ReturnType<typeof fixture>, count: number) {
+  let failed = 0;
+  const deadline = performance.now() + 15_000;
+  while (failed < count) {
+    failed += f.failAll(count - failed);
+    if (failed < count) {
+      assert.ok(performance.now() < deadline, "terminal probes must release the six load slots");
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  return failed;
+}
+
 test("3313 tiny portraits fit the same two textures with at most six loaders", (t) => {
   const f = fixture(t),
     all = photos(3313),
@@ -383,14 +421,15 @@ test("packing expands through 20px and caps at 10404 slots without exceeding mem
   assert.equal(f.storage.length, 2);
 });
 
-test("all 3313 unavailable portraits settle and retry only after the failure TTL", (t) => {
+test("all 3313 terminally unavailable portraits settle without retrying after the failure TTL", async (t) => {
   const f = fixture(t),
     all = photos(3313);
+  terminalMediaProbes(t);
   let now = 1000;
   t.mock.method(Date, "now", () => now);
   f.cache.update(f.redraw, f.failure, new Set(all));
   f.cache.request(all, 0.1);
-  assert.equal(f.failAll(all.length), all.length);
+  assert.equal(await failAfterProbes(f, all.length), all.length);
   assert.equal(f.images.length, all.length);
   assert.equal(f.cache.ready(), true);
   now += 29_999;
@@ -398,26 +437,25 @@ test("all 3313 unavailable portraits settle and retry only after the failure TTL
   assert.equal(f.images.length, all.length);
   assert.equal(f.cache.ready(), true);
   now++;
-  assert.equal(f.cache.ready(), false);
+  assert.equal(f.cache.ready(), true);
   f.cache.request(all, 0.1);
-  assert.equal(f.pending().length, 6);
-  f.drain();
-  assert.equal(f.images.length, all.length * 2);
-  assert.ok(all.every((photo) => f.cache.get(photo)));
+  assert.equal(f.pending().length, 0);
+  assert.equal(f.images.length, all.length);
   assert.equal(f.cache.ready(), true);
   const loaded = f.images.length;
   f.cache.request(all, 0.1);
   assert.equal(f.images.length, loaded);
 });
 
-test("failure history stays bounded across viewports without evicting current failures", (t) => {
+test("terminal failure history stays bounded across viewports without evicting current failures", async (t) => {
   const f = fixture(t),
     all = photos(12000);
+  terminalMediaProbes(t);
   t.mock.method(Date, "now", () => 1000);
   for (let start = 0; start < all.length; start += 3000) {
     const visible = all.slice(start, start + 3000);
     f.cache.request(visible, 0.1);
-    assert.equal(f.failAll(visible.length), visible.length);
+    assert.equal(await failAfterProbes(f, visible.length), visible.length);
     assert.equal(f.cache.ready(), true);
   }
   assert.equal(f.images.length, all.length);
@@ -427,7 +465,7 @@ test("failure history stays bounded across viewports without evicting current fa
   // The oldest inactive viewport was evicted to make room, not the current one.
   f.cache.request([all[0]], 0.1);
   assert.equal(f.images.length, all.length + 1);
-  f.failAll(1);
+  assert.equal(await failAfterProbes(f, 1), 1);
   f.cache.request(recent, 0.1);
   assert.equal(f.images.length, all.length + 1);
 });
