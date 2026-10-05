@@ -134,3 +134,55 @@ test("the distant portrait layer recovers from one transient tiny response", asy
   await expect.poll(async () => Number(await page.locator(".tree-distant-portraits")
     .getAttribute("data-portrait-count")), { timeout: 20_000 }).toBeGreaterThan(0);
 });
+
+test("stalled distant portraits release their slots for later visible faces", async ({ page }) => {
+  test.setTimeout(50_000);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => {
+    const getContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, ...args) {
+      if (args[0] === "webgl2") return null;
+      return Reflect.apply(getContext, this, args);
+    } as typeof getContext;
+  });
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    const seed = data.family.people[0];
+    data.family.people = Array.from({ length: 600 }, (_, index) => ({
+      ...seed, id: `portrait-stall-${index}`, name: `Visible person ${index}`,
+      birth: `${1700 + (index % 12) * 24}-01-01`,
+      parents: index % 12 ? [`portrait-stall-${index - 1}`] : [],
+      spouses: [], sources: [], photo: `/media/portrait-stall-${index}.jpg`,
+    }));
+    data.family.links = [];
+    data.family.unions = [];
+    data.family.photos = [];
+    data.partial = false;
+    data.user.personId = null;
+    await route.fulfill({ response, json: data });
+  });
+  const image = (await renderPortraits(["distant-stall"])).get("distant-stall-tiny")!;
+  const held: Array<() => Promise<void>> = [];
+  let requests = 0;
+  await page.route("**/media/portrait-stall-*.jpg?variant=tiny*", async (route) => {
+    requests++;
+    if (requests <= 12) {
+      await new Promise<void>((resolve) => {
+        held.push(async () => {
+          await route.fulfill({ contentType: "image/jpeg", body: image });
+          resolve();
+        });
+      });
+    } else await route.fulfill({ contentType: "image/jpeg", body: image });
+  });
+  try {
+    await page.goto("/tree", { waitUntil: "domcontentloaded" });
+    await expect.poll(() => requests, { timeout: 15_000 }).toBeGreaterThanOrEqual(12);
+    await expect.poll(() => requests, { timeout: 25_000 }).toBeGreaterThan(12);
+    await expect.poll(async () => Number(await page.locator(".tree-distant-portraits")
+      .getAttribute("data-portrait-count")), { timeout: 10_000 }).toBeGreaterThan(0);
+  } finally {
+    await Promise.allSettled(held.map((release) => release()));
+  }
+});

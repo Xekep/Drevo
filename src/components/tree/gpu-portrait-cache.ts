@@ -1,6 +1,6 @@
 import { mediaPreview } from "../../domain/media-preview.ts";
 import { safeUrl } from "../../domain/index.ts";
-import { mayRetryPortrait, portraitRetryDelays, retryPortraitUrl, waitForPortraitRetry } from "../portrait-retry.ts";
+import { mayRetryPortrait, portraitLoadTimeoutMs, portraitRetryDelays, retryPortraitUrl, waitForPortraitRetry } from "../portrait-retry.ts";
 
 type Tile = { slot: number; touched: number };
 export type PortraitTile = {
@@ -25,6 +25,7 @@ export class GpuPortraitCache {
     dirty: boolean;
   }[];
   private loading = new Map<string, HTMLImageElement>();
+  private loadDeadlines = new Map<string, ReturnType<typeof setTimeout>>();
   private failed = new Map<string, number>();
   private retries = new Map<string, number>();
   private recovering = new Map<string, AbortController>();
@@ -112,6 +113,7 @@ export class GpuPortraitCache {
     this.setWanted(this.wanted.filter((item) => photos.has(item.photo)));
     for (const [key, image] of this.loading)
       if (!photos.has(key.slice(2))) {
+        this.clearLoadDeadline(key);
         image.onload = image.onerror = null;
         image.src = "";
         this.loading.delete(key);
@@ -163,6 +165,7 @@ export class GpuPortraitCache {
     }
     for (const [key, image] of this.loading)
       if (!this.wantedKeys.has(key)) {
+        this.clearLoadDeadline(key);
         image.onload = image.onerror = null;
         image.src = "";
         this.loading.delete(key);
@@ -241,6 +244,7 @@ export class GpuPortraitCache {
     // pending callbacks cannot insert a tile using the previous packing.
     for (const [key, image] of this.loading)
       if (key.startsWith("0:")) {
+        this.clearLoadDeadline(key);
         image.onload = image.onerror = null;
         image.src = "";
         this.loading.delete(key);
@@ -256,6 +260,12 @@ export class GpuPortraitCache {
     );
     page.dirty = true;
     this.redraw();
+  }
+
+  private clearLoadDeadline(key: string) {
+    const deadline = this.loadDeadlines.get(key);
+    if (deadline !== undefined) clearTimeout(deadline);
+    this.loadDeadlines.delete(key);
   }
 
   private pump() {
@@ -275,6 +285,7 @@ export class GpuPortraitCache {
       this.loading.set(item.key, image);
       image.onload = () => {
         if (this.stopped || this.loading.get(item.key) !== image) return;
+        this.clearLoadDeadline(item.key);
         this.loading.delete(item.key);
         try {
           const columns = Math.floor(SIZE / page.cell);
@@ -345,6 +356,7 @@ export class GpuPortraitCache {
       };
       image.onerror = () => {
         if (this.stopped || this.loading.get(item.key) !== image) return;
+        this.clearLoadDeadline(item.key);
         this.loading.delete(item.key);
         const attempt = this.retries.get(item.key) || 0;
         this.failed.set(item.key, attempt >= portraitRetryDelays.length ? Infinity : Date.now());
@@ -381,6 +393,11 @@ export class GpuPortraitCache {
           }
         });
       };
+      this.loadDeadlines.set(item.key, setTimeout(() => {
+        if (this.stopped || this.loading.get(item.key) !== image) return;
+        image.onerror?.(new Event("error"));
+        image.src = "";
+      }, portraitLoadTimeoutMs));
       image.src = retryPortraitUrl(mediaPreview(
         safeUrl(item.photo),
         item.level ? "thumb" : "tiny",
@@ -395,6 +412,8 @@ export class GpuPortraitCache {
       image.onload = image.onerror = null;
       image.src = "";
     }
+    for (const deadline of this.loadDeadlines.values()) clearTimeout(deadline);
+    this.loadDeadlines.clear();
     this.loading.clear();
     this.wanted = [];
     this.wantedKeys.clear();
