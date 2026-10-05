@@ -59,6 +59,9 @@ export function analysisExport(
         source: a.source
           ? { title: a.source.title, url: a.source.url }
           : undefined,
+        sources: a.sources?.map((source) => ({ title: source.title, type: source.type,
+          reference: source.reference, repository: source.repository, url: source.url,
+          note: source.note })),
       })),
       parents: [...p.parents],
       parentageComplete: p.parentageComplete,

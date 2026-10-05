@@ -19,6 +19,7 @@ import {
   releaseAttachedMediaGrants,
 } from "./postgres-media-quota.ts";
 
+// Sources, events and awards need the full citation/evidence and catalog-link checks.
 const fields = new Set([
   "name",
   "surname",
@@ -36,9 +37,6 @@ const fields = new Set([
   "occupation",
   "biography",
   "photo",
-  "sources",
-  "awards",
-  "events",
   "parentageComplete",
   "generation",
   "column",

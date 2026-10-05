@@ -3,6 +3,8 @@ import { ArrowUpRight, Check, Medal, Plus, Trash2, X } from "lucide-react";
 import type { PersonAward } from "../domain/types";
 import { safeUrl } from "../domain";
 import { archiveResourceUrl } from "../domain/archive-context.ts";
+import { scopedArchivePath } from "../domain/archive-context.ts";
+import { archiveDocumentPath } from "../domain/archive-routes.ts";
 import {
   activeInYear,
   getAwardDefinition,
@@ -642,6 +644,19 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
               )}
             </div>
           )}
+          {active.award.sources?.map((source, index) => {
+            const url = safeUrl(source.url);
+            return <div className="award-focus-source" key={index}>
+              <p>{[source.title, source.reference].filter(Boolean).join(" · ")}</p>
+              {url && <a href={archiveResourceUrl(url)} target="_blank" rel="noopener noreferrer">
+                Открыть источник <ArrowUpRight size={13} />
+              </a>}
+              {source.documentId && <a
+                href={scopedArchivePath(archiveDocumentPath(null, source.documentId, source.documentPage))}
+                target="_blank" rel="noopener noreferrer">Открыть документ{source.documentPage
+                  ? ` · стр. ${source.documentPage}` : ""}</a>}
+            </div>;
+          })}
           {active.visualImage && (
             <a
               className="award-image-credit"

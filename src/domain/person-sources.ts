@@ -85,6 +85,8 @@ export function collectPersonSources(person: Person): PersonSourceEntry[] {
       add(source, `${alternativeName[alternative.field]}: ${alternative.value}`);
 
   for (const award of person.awards || []) {
+    for (const citation of award.sources || [])
+      add(citation, `Награда: ${award.name}`);
     const source = award.source;
     if (!source?.title?.trim() && !source?.url?.trim()) continue;
     add(

@@ -1011,6 +1011,8 @@ export function restoreStore(
               person[key]!.sources = remapCitations(person[key]!.sources);
           for (const alternative of person.factAlternatives || [])
             alternative.sources = remapCitations(alternative.sources);
+          for (const award of person.awards || [])
+            if (award.sources) award.sources = remapCitations(award.sources);
           for (const event of person.events || []) {
             if (event.sources) event.sources = remapCitations(event.sources);
             if (event.dateClaim)

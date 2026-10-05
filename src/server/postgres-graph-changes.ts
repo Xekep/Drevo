@@ -53,6 +53,12 @@ function validateGraphChanges(input: Change[]): Change[] {
         (change.after.photo !== undefined && change.after.photo !== "")
       ) {
         throw new Error("Допустимо только добавление человека без портрета");
+      } else if (Array.isArray(change.after.awards) &&
+        change.after.awards.some((award) => record(award) &&
+          Object.hasOwn(award, "sources"))) {
+        // This raw helper has no source-catalog/document check. Award citations
+        // enter through archive.write, which validates those references.
+        throw new Error("Цитаты наград требуют полной проверки архива");
       }
     } else if (change.collection === "links") {
       if (change.field !== undefined) {

@@ -9,6 +9,7 @@ export function visibleGenealogyHasCatalogLinks(family: Family, visible: Set<str
       person.deathPlaceClaim, person.occupationClaim, person.maidenNameClaim]
       .some((claim) => linked(claim?.sources)) ||
     person.factAlternatives?.some((alternative) => linked(alternative.sources)) ||
+    person.awards?.some((award) => linked(award.sources)) ||
     person.parentClaims?.some((claim) => visible.has(claim.parentId) && linked(claim.sources)) ||
     person.events?.some((event) =>
       linked(event.sources) || linked(event.dateClaim?.sources) || linked(event.placeClaim?.sources) ||

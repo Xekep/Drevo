@@ -28,6 +28,8 @@ export type PersonAward = {
   degreeId?: string;
   year?: string;
   source?: { title: string; url?: string };
+  /** Citations of this award; legacy title/URL above remains independently preserved. */
+  sources?: Source[];
 };
 export type PersonEvent = {
   id: string;

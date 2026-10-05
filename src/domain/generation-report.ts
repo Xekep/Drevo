@@ -309,6 +309,7 @@ export function generationReport(
             "Источник награды",
             [award.source.title, award.source.url].filter(Boolean).join("; "),
           );
+        sources("Источник награды", award.sources);
       }
       sources("Источник", person.sources);
       for (const [label, claim] of [

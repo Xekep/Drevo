@@ -77,13 +77,12 @@ export function mediaUploadHttp({
       });
     const initiallyAllowed = await auth.canEdit(req);
     const requester = await auth.currentUser(req);
-    const issuingSession = archive.db.kind === "postgres" && !auth.local
-      ? await auth.accountSession(req) : null;
+    const issuingSession = !auth.local ? await auth.accountSession(req) : null;
     if (!requester || !initiallyAllowed || !canEditArchive(requester) ||
-        (archive.db.kind === "postgres" && !auth.local &&
-          (!issuingSession || issuingSession.accountId !== requester?.id)))
+        (!auth.local &&
+          (!issuingSession || issuingSession.accountId !== requester.id)))
       return json(res,
-        archive.db.kind === "postgres" && !auth.local
+        !auth.local
           ? issuingSession ? 403 : 401
           : requester ? 403 : 401,
         { error: "Нет прав на изменение архива" },
@@ -118,12 +117,14 @@ export function mediaUploadHttp({
       );
       file = await media.addStream(req, MAX_UPLOAD);
       const actor = await auth.currentUser(req);
+      if (!actor && issuingSession)
+        await assertActiveAccountSession(archive.db, requester.id, issuingSession.tokenHash);
       if (
         !actor?.approved ||
         actor.role === "reader" ||
         actor.id !== requester.id
       )
-        throw new ForbiddenError("Editing access is no longer available");
+        throw new ForbiddenError("Доступ к изменению архива утрачен");
       if ((await archive.meta()).revision !== revision) {
         await file.undo();
         file = undefined;
@@ -159,12 +160,27 @@ export function mediaUploadHttp({
         );
       };
       let value: unknown;
-      if (archive.db.kind === "postgres" && !auth.local) {
+      const assertCurrentActor = async () => {
+        if (archive.db.kind === "postgres") {
+          await assertCurrentArchiveActor(archive.db, actor);
+          return;
+        }
+        // The serialized SQLite transaction retains this user/session snapshot
+        // through commit; the PostgreSQL actor guard does not cover SQLite.
+        const current = await auth.currentUser(req);
+        if (!current || current.id !== actor.id ||
+            current.approved !== actor.approved || current.role !== actor.role ||
+            (current.personId || "") !== (actor.personId || "") ||
+            (current.treeAccess || "all") !== (actor.treeAccess || "all") ||
+            !canEditArchive(current))
+          throw new ForbiddenError("Доступ к изменению архива утрачен");
+      };
+      if (!auth.local) {
         if (!issuingSession || issuingSession.accountId !== actor.id)
           throw new AccountSessionExpired("Сеанс завершён. Войдите снова.");
         value = await archive.db.transaction(async () => {
           await assertActiveAccountSession(archive.db, actor.id, issuingSession.tokenHash);
-          await assertCurrentArchiveActor(archive.db, actor);
+          await assertCurrentActor();
           await registerMediaUpload(archive.db, file!.url, actor.id, file!.size,
             { withinTransaction: true });
           const result = portrait ? null : await writePhoto(true);
@@ -173,6 +189,7 @@ export function mediaUploadHttp({
             family: projectFamilyForUser(result!.family, actor),
           };
           await assertActiveAccountSession(archive.db, actor.id, issuingSession.tokenHash);
+          if (archive.db.kind === "sqlite") await assertCurrentActor();
           return response;
         });
       } else {
@@ -187,12 +204,12 @@ export function mediaUploadHttp({
         }
       }
       committed = true;
-      if (archive.db.kind !== "postgres" || auth.local) return json(res, 201, value);
+      if (auth.local) return json(res, 201, value);
       const body = JSON.stringify(value);
       try {
         return await archive.db.transaction(async () => {
           await assertActiveAccountSession(archive.db, actor.id, issuingSession!.tokenHash);
-          await assertCurrentArchiveActor(archive.db, actor);
+          await assertCurrentActor();
           if (!portrait && (await archive.meta()).revision !==
               (value as { revision: number }).revision)
             throw new ConflictError("Архив изменился до выдачи фотографии");

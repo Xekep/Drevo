@@ -18,6 +18,7 @@ import {
 
 // First write operation for the PostgreSQL cutover. Media attachment, creation,
 // deletion and relations require their own authorization/quota operations.
+// Sources, events and awards need the full citation/evidence and catalog-link checks.
 const fields = new Set([
   "name",
   "surname",
@@ -34,9 +35,6 @@ const fields = new Set([
   "maidenName",
   "occupation",
   "biography",
-  "sources",
-  "awards",
-  "events",
   "parentageComplete",
   "generation",
   "column",

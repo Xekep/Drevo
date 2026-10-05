@@ -217,6 +217,11 @@ export function validateFamily(value: unknown): Family {
                 !safeUrl(award.source.url))))
         )
           throw new Error("Проверьте источник награды и ссылку HTTP/HTTPS");
+        if (award.sources !== undefined &&
+          (!Array.isArray(award.sources) || award.sources.length > 50 ||
+            !award.sources.every((source: Source) => validPersonSource(source) &&
+              !!(source.catalogId || source.title.trim()))))
+          throw new Error("Проверьте источники награды");
         awardIds.add(award.id);
       }
     }

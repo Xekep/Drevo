@@ -80,9 +80,11 @@ import { verifyPlatformTiers } from "./postgres-platform-tiers.ts";
 import { verifyFaceSessionMutation } from "./postgres-face-session.ts";
 import { verifyGlobalStaffMigrationStartup } from "./postgres-global-staff-migration-startup.ts";
 import { verifyGlobalRoleFinalization } from "./postgres-global-role-finalization.ts";
+import { verifyAwardCitationPreparation } from "./postgres-award-citation-runtime.ts";
 import { verifyAiProviderCleanupRetry } from "./postgres-ai-provider-retry.ts";
 import { verifyPlatformAiCleanup } from "./postgres-platform-ai-cleanup.ts";
 import { verifyDocumentWriteSessionRevocation } from "./postgres-document-write-revocation.ts";
+import { verifyPersonSourceFastguard } from "./postgres-person-source-fastguard.ts";
 import { verifyPlatformConfigurationMigration, verifyPlatformConfigurationRevocation,
   verifySharedPlatformConfiguration } from "./postgres-platform-configuration.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
@@ -4992,6 +4994,8 @@ try {
   otherApp = await startServer(0, source, true, undefined, undefined, "other-archive");
   const otherBase = `http://127.0.0.1:${(otherApp.server.address() as { port: number }).port}`;
   assert.equal(otherApp.archive.db.archiveId, "other-archive");
+  await verifyPersonSourceFastguard(app.archive, otherApp.archive, securedBase,
+    process.env.PUBLIC_ORIGIN!);
   await verifySharedPlatformConfiguration({ rootDb: app.archive.db,
     otherDb: otherApp.archive.db, rootBase: securedBase, otherBase,
     headers: ownerHeaders, client });
@@ -14034,6 +14038,8 @@ try {
   await verifyRestoreGuard({ client, source, family, ownerHeaders, restoreBytes });
   await verifyPlatformAiOrphanSweep(app!.archive.db, client, source);
   await verifyGlobalRoleFinalization();
+  await verifyAwardCitationPreparation(app.archive);
+  console.log("runtime_award_citation_preparation_ok");
   console.log("runtime_http_and_backup_ok");
 } finally {
   await otherApp?.close();

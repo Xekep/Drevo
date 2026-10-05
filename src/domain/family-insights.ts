@@ -404,7 +404,7 @@ export function analyzeFamilyInsights(
       (person) =>
         person.sources.length > 0 ||
         (person.events || []).some((event) => event.sources?.length) ||
-        (person.awards || []).some((award) => award.source),
+        (person.awards || []).some((award) => award.source || award.sources?.length),
     ).length;
 
   return {
