@@ -20,17 +20,16 @@ export function PdfBookReader({
   initialPage = 1,
   onClose,
   mayAnnotate = false,
-  annotateOnOpen = false,
 }: {
   document: ListedDocument;
   initialPage?: number;
   onClose: () => void;
   mayAnnotate?: boolean;
-  annotateOnOpen?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const commentsList = useRef<HTMLDivElement>(null);
+  const commentsPanel = useRef<HTMLDivElement>(null);
   const sidebarClose = useRef<HTMLButtonElement>(null);
   const focusSidebarOnOpen = useRef(false);
   const sidebarSwipe = useRef<{
@@ -55,8 +54,8 @@ export function PdfBookReader({
   const [magnifier, setMagnifier] = useState(false);
   const [annotations, setAnnotations] = useState<DocumentAnnotation[]>([]);
   const [annotationError, setAnnotationError] = useState("");
-  const [commentsOpen, setCommentsOpen] = useState(annotateOnOpen);
-  const [annotating, setAnnotating] = useState(annotateOnOpen);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [annotating, setAnnotating] = useState(false);
   const [selection, setSelection] = useState<AnnotationSelection | null>(null);
   const [comment, setComment] = useState("");
   const [editing, setEditing] = useState<{
@@ -228,6 +227,11 @@ export function PdfBookReader({
         ?.querySelector<HTMLElement>("article.is-active")
         ?.scrollIntoView({ block: "nearest", behavior: "auto" });
   }, [activeAnnotation, commentsOpen, sidebarTab]);
+
+  useEffect(() => {
+    if (selection && commentsOpen && sidebarTab === "comments")
+      commentsPanel.current?.scrollTo({ top: 0, behavior: "auto" });
+  }, [selection, commentsOpen, sidebarTab]);
 
   useEffect(() => {
     if (!readerReady) return;
@@ -733,7 +737,7 @@ export function PdfBookReader({
                 ))}
               </nav>
             ) : (
-              <div className="pdf-book-comments">
+              <div className="pdf-book-comments" ref={commentsPanel}>
                 {mayAnnotate && !loading && !error && (
                   <button
                     type="button"
