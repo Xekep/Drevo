@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useId, type FormEvent } from "react";
 import { PersonDocumentsEditor } from "./person-documents-editor";
 import { DocumentSourcePicker } from "./document-source-picker";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
+import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
+import { archiveDocumentPath } from "../domain/archive-routes.ts";
 import { CitationSourcesEditor } from "./union-sources-editor.tsx";
 import { PersonAlternativeClaims } from "./person-alternative-claims.tsx";
 import {
@@ -32,6 +34,7 @@ import {
   birthSurnameHints,
   deceasedStatusSuggestion,
   removePerson,
+  safeUrl,
   type Connection,
   type ConnectionType,
   type Family,
@@ -947,6 +950,18 @@ export function PersonEditor({
             <h3>Источники</h3>
             {draft.sources.map((s, i) => (
               <div className="source-editor" key={i}>
+                {s.catalogId ? <div className="source-catalog-citation">
+                  <small>Источник из каталога{s.type ? ` · ${s.type}` : ""}</small>
+                  <strong>{s.title}</strong>
+                  {s.reference && <span>{s.reference}</span>}
+                  {s.note && <span>{s.note}</span>}
+                  {safeUrl(s.url) && <a href={archiveResourceUrl(safeUrl(s.url) || "")}
+                    target="_blank" rel="noopener noreferrer">Открыть источник</a>}
+                  {s.documentId && <a
+                    href={scopedArchivePath(archiveDocumentPath(null, s.documentId, s.documentPage))}
+                    target="_blank" rel="noopener noreferrer">Открыть документ{s.documentPage
+                      ? ` · стр. ${s.documentPage}` : ""}</a>}
+                </div> : <>
                 <SourceRepositoryEditor source={s} onChange={(next) =>
                   field("sources", draft.sources.map((source, index) =>
                     index === i ? next : source))} />
@@ -1005,6 +1020,7 @@ export function PersonEditor({
                     )
                   }
                 />
+                </>}
                 <button
                   type="button"
                   className="icon-button source-remove"
