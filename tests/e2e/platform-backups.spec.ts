@@ -46,7 +46,10 @@ async function managedTree(page: Page, globalRole: "admin" | "researcher" | null
   const paths: string[] = [];
   const user = { id: "tree-owner", name: "Владелец", role: "relative", treeRole: "relative",
     archiveOwner: true, approved: true, globalRole, fullAccess: true, createdAt: "2026-10-06" };
-  const family = { title: "Отдельное древо", description: "", people: [], photos: [], links: [], unions: [] };
+  const family = { title: "Отдельное древо", description: "", people: [{ id: "synthetic-person",
+    name: "Иван", surname: "Тестов", patronymic: "", sex: "m", birth: "1970", birthPlace: "",
+    parents: [], spouses: [], sources: [], generation: 1, column: 0, photo: "" }],
+    photos: [], links: [], unions: [] };
   const status: BackupStatus = { settings: { enabled: false, keepCount: 5, intervalHours: 24,
     storage: "local", remoteHost: "", remoteDirectory: "" }, nextRunAt: null,
     localDirectory: "/test/tree-backups", sshConfig: "", total: 1, job: null,
@@ -92,7 +95,7 @@ for (const example of [
   { name: "participant preview", role: "researcher" as const, preview: true, allowed: false },
 ]) test(`manual tree backups: ${example.name}`, async ({ page }) => {
   const paths = await managedTree(page, example.role, example.preview);
-  await expect(page.getByRole("heading", { name: "Управление древом" })).toBeVisible();
+  await expect(page.locator(".admin-mark b")).toHaveText("Управление древом");
   const tab = page.getByRole("button", { name: "Резервные копии", exact: true });
   if (!example.allowed) {
     await expect(tab).toHaveCount(0);
