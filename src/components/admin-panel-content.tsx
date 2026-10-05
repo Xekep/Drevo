@@ -286,7 +286,10 @@ function AdminUserRow({
               : deleteArmed ? "Нажмите ещё раз, чтобы закрыть доступ к этому древу" : "Удалить доступ к этому древу"
           }
           onBlur={() => setDeleteArmed(false)}
-          onKeyDown={(event) => { if (event.key === "Escape") setDeleteArmed(false); }}
+          onKeyDown={(event) => {
+            if (event.repeat) event.preventDefault();
+            if (event.key === "Escape") setDeleteArmed(false);
+          }}
           onClick={() => {
             if (!deleteArmed) { setDeleteArmed(true); return; }
             setDeleteArmed(false);

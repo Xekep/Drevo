@@ -54,6 +54,14 @@ test("participant removal needs two presses and can be cancelled without deletin
   await confirm.press("Escape");
   await expect(remove).toBeVisible();
   expect(deletes).toBe(0);
+  await remove.focus();
+  await page.keyboard.down("Enter");
+  await expect(confirm).toBeVisible();
+  await page.keyboard.down("Enter");
+  await page.keyboard.up("Enter");
+  await expect(confirm).toBeVisible();
+  expect(deletes).toBe(0);
+  await confirm.press("Escape");
   await remove.click();
   await confirm.press("Tab");
   await expect(remove).toBeVisible();
