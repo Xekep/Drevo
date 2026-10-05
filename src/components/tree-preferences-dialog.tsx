@@ -112,6 +112,7 @@ export function TreePreferencesDialog({
       title="Вид древа"
       onClose={onClose}
       className="tree-preferences-dialog"
+      dismissOnOutside
       headerActions={
         <button
           className="tree-preferences-reset"
@@ -194,7 +195,7 @@ export function TreePreferencesDialog({
         {!!people.length && (
           <fieldset disabled={saving} className="tree-generation-settings">
             <legend>Поколения</legend>
-            <p className="tree-generation-hint">
+            <p className="tree-generation-hint tree-generation-desktop-hint">
               Нажмите колесо мыши на карточке, чтобы выбрать опорного человека.
             </p>
             {limits && (

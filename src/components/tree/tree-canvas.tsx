@@ -75,6 +75,7 @@ import { useTreeLayout } from "./use-tree-layout";
 import { FamilyViewTools } from "./family-view-tools";
 import "../../styles/family-view.css";
 import { useTreeFullscreen } from "./use-tree-fullscreen";
+import { MemberPreviewExit } from "../member-preview-exit";
 import { ArchiveSummary } from "../archive-summary";
 import { relativeAtHandle } from "../../domain/tree-interactions";
 import { applyTreeEdgePermissions, prepareTreeEdges } from "./tree-edge-adapter";
@@ -150,6 +151,7 @@ type Props = {
   colorScheme?: TreeColorScheme;
   generationLimits?: TreeGenerationLimits | null;
   onGenerationAnchor?: (id: string) => Promise<void>;
+  onResetGenerations?: () => Promise<void>;
   selected: string[];
   selectedEdge?: string;
   onChoose: (id: string, additive?: boolean) => void;
@@ -1208,6 +1210,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     return () => cancelAnimationFrame(frame);
   }, [gpuFocused, gpuActive]);
   const [anchorNotice, setAnchorNotice] = useState("");
+  const [resettingGenerations, setResettingGenerations] = useState(false);
   useEffect(() => {
     if (!anchorNotice) return;
     const timer = window.setTimeout(() => setAnchorNotice(""), 6000);
@@ -1585,6 +1588,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         }}
         aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
       >
+        {screen.fullscreen && <MemberPreviewExit />}
         <div className="tree-mode-bar">
           {narrow ? (
             <button
@@ -1657,6 +1661,23 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 <span className="tree-family-count">
                   {visible.size} из {family.people.length}
                 </span>
+                {props.onResetGenerations && <button type="button"
+                  disabled={resettingGenerations}
+                  title="Сбросить ограничения поколений и показать всё древо"
+                  onClick={async () => {
+                    setResettingGenerations(true);
+                    try {
+                      await props.onResetGenerations!();
+                      props.onClearAssistantFilter?.();
+                      familyView.showAll();
+                    } catch (error: unknown) {
+                      setAnchorNotice(error instanceof Error ? error.message : "Не удалось показать всё древо");
+                    } finally {
+                      setResettingGenerations(false);
+                    }
+                  }}>
+                  Всё древо
+                </button>}
               </div>
             </div>
           )}

@@ -334,7 +334,6 @@ function PhotoViewerContent({
         >
           <X size={22} />
         </button>
-        <MemberPreviewExit />
       </div>
       <div
         className={`photo-viewer ${canEdit ? "is-editing" : "is-viewing"} ${showTags ? "show-tags" : ""} ${infoOpen ? "info-open" : ""} ${viewedPerson ? "person-open" : ""}`}
@@ -1024,6 +1023,7 @@ export function PhotoViewer(props: PhotoViewerProps) {
         close();
       }}
     >
+      <MemberPreviewExit />
       <PhotoViewerContent
         key={props.photo.id}
         {...props}
