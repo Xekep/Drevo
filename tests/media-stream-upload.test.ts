@@ -165,6 +165,41 @@ test("photo upload reserves space shared with pending document uploads", async (
   }
 });
 
+test("a SQLite photo keeps its original if projection fails after the graph commit", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "drevo-photo-projection-"));
+  const app = await startServer(0, join(directory, "archive.sqlite"), true);
+  const originalWrite = app.archive.write;
+  try {
+    app.archive.write = (async (...args: Parameters<typeof originalWrite>) => {
+      const saved = await originalWrite(...args);
+      return Object.defineProperty({ ...saved }, "family", {
+        get() { throw new Error("Synthetic projection failure after commit"); },
+      }) as typeof saved;
+    }) as typeof originalWrite;
+    const image = await sharp({ create: {
+      width: 2, height: 2, channels: 3, background: "green",
+    } }).png().toBuffer();
+    const response = await fetch(`http://127.0.0.1:${(app.server.address() as { port: number }).port}/api/photos`, {
+      method: "POST",
+      headers: { "X-Drevo-Upload": "1",
+        "If-Match": String((await app.archive.meta()).revision) },
+      body: image,
+    });
+    assert.equal(response.status, 500);
+    assert.equal((await response.json()).saved, true);
+    const photo = (await app.archive.read()).family.photos?.at(-1);
+    assert.ok(photo, "the graph committed before projection failed");
+    assert.equal(existsSync(join(directory, "uploads", photo.url.slice("/media/".length))), true);
+    assert.ok(await app.archive.db.prepare(
+      "SELECT 1 FROM media_originals WHERE url=?",
+    ).get(photo.url), "the committed original retains its accounting metadata");
+  } finally {
+    app.archive.write = originalWrite;
+    await app.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("portrait size is recorded once and a referenced original is recovered on restart", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-media-originals-"));
   const path = join(directory, "archive.sqlite");

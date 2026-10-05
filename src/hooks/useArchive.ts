@@ -362,6 +362,12 @@ export function useArchive(enabled = true) {
             setCanEdit(false);
             throw new Error("Сеанс завершён. Войдите в архив ещё раз.");
           }
+          if (result.committed === true && result.accessChanged === true) {
+            setCanEdit(false);
+            throw new Error("Фотография сохранена, но доступ изменился. Откройте архив заново.");
+          }
+          if (result.committed === true && result.refreshRequired === true)
+            throw new Error("Фотография сохранена, но архив изменился. Обновите древо перед следующей правкой.");
           if (!response.ok)
             throw new Error(result.error || "Не удалось сохранить изменения");
           const data = validateFamily(
@@ -456,6 +462,12 @@ export function useArchive(enabled = true) {
           throw reason;
         }
         const data = await response.json();
+        if (data.committed === true && data.accessChanged === true) {
+          setCanEdit(false);
+          throw new Error("Портрет загружен, но доступ изменился. Откройте архив заново.");
+        }
+        if (data.committed === true && data.refreshRequired === true)
+          throw new Error("Портрет загружен, но архив изменился. Обновите древо перед следующей правкой.");
         if (!response.ok)
           throw new Error(data.error || "Не удалось загрузить портрет");
         return data.url as string;
