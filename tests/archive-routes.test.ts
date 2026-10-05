@@ -155,3 +155,15 @@ test("document routes preserve the optional person filter without query paramete
   assert.equal(archiveDocumentAt(`/documents/${id}/page/2001`), null);
   assert.equal(archiveDocumentAt(`/documents/${id}/page/01`), null);
 });
+
+test("a participant preview keeps deep document and person routes inside the preview", () => {
+  const prefix = "/a/family-one/preview/vk%3A42";
+  const id = "14a064a7-6947-4089-9ad2-570b87978914";
+  const document = `${prefix}/documents/person/relative/${id}/page/7`;
+  assert.equal(archiveViewAt(document), "documents");
+  assert.deepEqual(archiveDocumentAt(document), {
+    personId: "relative", documentId: id, pageNumber: 7,
+  });
+  assert.deepEqual(archiveTargetAt(`${prefix}/people/relative`, ""),
+    { kind: "person", id: "relative" });
+});

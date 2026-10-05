@@ -874,7 +874,7 @@ export function PdfBookReader({
                       {editing?.id !== item.id && (
                         <DocumentCommentText text={item.text} />
                       )}
-                      {item.canEdit && (
+                      {mayAnnotate && item.canEdit && (
                         <button
                           type="button"
                           className="pdf-book-comment-edit"
@@ -900,7 +900,7 @@ export function PdfBookReader({
                           <Pencil size={15} />
                         </button>
                       )}
-                      {item.canDelete && (
+                      {mayAnnotate && item.canDelete && (
                         <ConfirmDeleteButton
                           className="pdf-book-comment-delete"
                           disabled={saving || !!editing || !commentsOpen}

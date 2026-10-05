@@ -129,6 +129,7 @@ export function PersonPanel({
   suggestions,
   isCurrentUser = false,
   canDiscuss = false,
+  readOnlyDiscussion = false,
   canLoadDocuments = false,
   idPrefix = "person",
 }: {
@@ -141,6 +142,7 @@ export function PersonPanel({
   suggestions?: ReactNode;
   isCurrentUser?: boolean;
   canDiscuss?: boolean;
+  readOnlyDiscussion?: boolean;
   canLoadDocuments?: boolean;
   idPrefix?: string;
 }) {
@@ -462,7 +464,8 @@ export function PersonPanel({
           </>
         ) : tab === "discussion" && canDiscuss ? (
           <Suspense fallback={<p className="muted-copy">Загружаем обсуждение…</p>}>
-            <PersonDiscussion key={person.id} personId={person.id} onSelect={onSelect} onCountChange={discussionCount.update} />
+            <PersonDiscussion key={person.id} personId={person.id} onSelect={onSelect} onCountChange={discussionCount.update}
+              readOnly={readOnlyDiscussion} />
           </Suspense>
         ) : (
           <>

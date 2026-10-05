@@ -528,7 +528,7 @@ body,
   display: grid;
   grid-template-columns:
     minmax(185px, 1.2fr) minmax(85px, 0.75fr) minmax(125px, 1.2fr)
-    minmax(105px, 1fr) minmax(76px, 0.7fr);
+    minmax(105px, 1fr) minmax(176px, 0.7fr);
   align-items: center;
   gap: 12px;
 }
@@ -536,7 +536,7 @@ body,
 .admin-users-list.with-account-tier .admin-user-row {
   grid-template-columns:
     minmax(165px, 1.2fr) minmax(85px, 0.7fr) minmax(90px, 0.7fr)
-    minmax(125px, 1.2fr) minmax(105px, 1fr) minmax(76px, 0.7fr);
+    minmax(125px, 1.2fr) minmax(105px, 1fr) minmax(176px, 0.7fr);
 }
 .admin-users-head {
   padding: 13px 10px 9px;
@@ -652,6 +652,20 @@ body,
 .admin-user-actions button {
   white-space: nowrap;
 }
+.admin-user-actions > * {
+  flex: none;
+}
+.admin-user-preview {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  color: var(--ink);
+}
+.admin-user-preview:hover,
+.admin-user-preview:focus-visible { background: #e9efe8; }
+.admin-user-preview[aria-disabled="true"] { opacity: .5; pointer-events: none; }
 .admin-user-delete {
   display: grid;
   place-items: center;

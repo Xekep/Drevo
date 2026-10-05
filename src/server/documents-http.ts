@@ -29,6 +29,7 @@ import {
   parseDocumentPages,
 } from "../shared/document-links.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
+import { assertMemberPreviewDelivery, memberPreviewTarget } from "./member-preview-access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { owns, canAssessArchiveEvidence, canEditArchive } from "../domain/access.ts";
 import {
@@ -354,6 +355,7 @@ export function documentsHttp({
       : null;
     const people = family?.people || [];
     return {
+      user,
       userId: user?.id,
       scope,
       scoped,
@@ -543,12 +545,14 @@ export function documentsHttp({
     // Resolve an expired session before acquiring the archive lock: sessionFor
     // may delete it, while account deletion uses the opposite lock order.
     const session = auth.local ? null : await auth.accountSession(req);
-    if (!auth.local && (!session || session.accountId !== access.userId))
+    if (!auth.local && (!session ||
+        (!memberPreviewTarget(req) && session.accountId !== access.userId)))
       return "denied";
     const archiveId = db.archiveId;
     if (!archiveId) return "denied";
     try {
       return await db.postgresTransaction(async (client) => {
+        let previewExpiresAt: number | null = null;
         await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
         // Concurrent downloads can share this row. Archive writes take it
         // FOR UPDATE before graph, membership and document changes.
@@ -556,7 +560,13 @@ export function documentsHttp({
           "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT", [archiveId],
         );
         if (!archiveRow.rowCount) return "denied";
-        if (!auth.local) {
+        if (memberPreviewTarget(req)) {
+          if (!access.user || !session) return "denied";
+          previewExpiresAt = await assertMemberPreviewDelivery(client, archiveId,
+            session, access.user);
+          if (!previewExpiresAt) return "denied";
+        }
+        if (!auth.local && !memberPreviewTarget(req)) {
           await client.query("SELECT set_config('drevo.account_id',$1,true)",
             [session!.accountId]);
           // Account deletion locks the session before the archive. Never wait
@@ -597,6 +607,7 @@ export function documentsHttp({
         }
         await beforeLockedFileDelivery?.();
         if (res.destroyed) return "sent";
+        if (previewExpiresAt && Date.now() >= previewExpiresAt) return "denied";
         // Hand the first bytes to HTTP synchronously while authorization is
         // held. The rest of a large file may stream after commit, without
         // keeping archive writes blocked by a slow reader.
@@ -638,12 +649,14 @@ export function documentsHttp({
     }
     // Do not call the pooled auth/store helpers inside postgresTransaction.
     const session = auth.local ? null : await auth.accountSession(req);
-    if (!auth.local && (!session || session.accountId !== access.userId))
+    if (!auth.local && (!session ||
+        (!memberPreviewTarget(req) && session.accountId !== access.userId)))
       return "denied";
     const archiveId = db.archiveId;
     if (!archiveId) return "denied";
     try {
       return await db.postgresTransaction(async (client) => {
+        let previewExpiresAt: number | null = null;
         await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
         // Only a scoped reader relies on a projected graph snapshot. Ordinary
         // document readers need the membership and selected document rows, not
@@ -654,7 +667,13 @@ export function documentsHttp({
           )
           : null;
         if (access.scoped && !archiveRow?.rowCount) return "denied";
-        if (!auth.local) {
+        if (memberPreviewTarget(req)) {
+          if (!access.user || !session) return "denied";
+          previewExpiresAt = await assertMemberPreviewDelivery(client, archiveId,
+            session, access.user);
+          if (!previewExpiresAt) return "denied";
+        }
+        if (!auth.local && !memberPreviewTarget(req)) {
           await client.query("SELECT set_config('drevo.account_id',$1,true)",
             [session!.accountId]);
           // Account deletion can lock session before archive; never wait on it.
@@ -719,6 +738,7 @@ export function documentsHttp({
         }
         await beforeLockedMetadataDelivery?.();
         if (res.destroyed) return "sent";
+        if (previewExpiresAt && Date.now() >= previewExpiresAt) return "denied";
         send();
         return "sent";
       });
@@ -1208,16 +1228,21 @@ export function documentsHttp({
       ) =>
         items.map((item) => ({
           ...item,
-          canDelete: canDeleteAnnotation(actor, item.authorId),
-          canEdit: canEditAnnotation(actor, item.authorId),
+          canDelete: !memberPreviewTarget(req) && canDeleteAnnotation(actor, item.authorId),
+          canEdit: !memberPreviewTarget(req) && canEditAnnotation(actor, item.authorId),
         }));
       if (req.method === "GET" && !annotations[2]) {
         const actor = await auth.currentUser(req);
         if (!(await accessStillCurrent(req, access)))
           return json(res, 404, { error: "Документ не найден" });
-        return json(res, 200, {
-          items: visibleItems(JSON.parse(row.annotations), actor),
-        });
+        const value = { items: visibleItems(JSON.parse(row.annotations), actor) };
+        const delivered = await deliverMetadata(req, res, access, [row],
+          new Map([[row.id, personIds]]), value);
+        if (delivered === "denied")
+          return json(res, 404, { error: "Документ не найден" });
+        if (delivered === "busy")
+          return json(res, 409, { error: "Доступ к документу временно занят" });
+        return true;
       }
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Недопустимый источник запроса" });

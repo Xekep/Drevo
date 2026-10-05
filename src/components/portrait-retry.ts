@@ -1,4 +1,7 @@
-const mediaPath = /^\/(?:a\/[A-Za-z0-9][A-Za-z0-9-]{2,63}\/)?media\/[a-zA-Z0-9-]+\.(?:jpg|png|webp)$/;
+import { memberPreviewAt } from "../domain/archive-context.ts";
+
+const mediaPath =
+  /^\/(?:a\/[A-Za-z0-9][A-Za-z0-9-]{2,63}\/)?media\/[a-zA-Z0-9-]+\.(?:jpg|png|webp)$/;
 
 export const portraitRetryDelays = [400, 1200] as const;
 
@@ -12,7 +15,11 @@ export function retryPortraitUrl(url: string, attempt: number) {
 /** An img error has no status. Probe only our own media route before retrying. */
 export async function mayRetryPortrait(url: string, signal: AbortSignal) {
   const parsed = new URL(url, window.location.href);
-  if (parsed.origin !== window.location.origin || !mediaPath.test(parsed.pathname))
+  const preview = memberPreviewAt(new URL(window.location.href).pathname);
+  if (preview && !parsed.pathname.startsWith(`${preview.prefix}/media/`))
+    return false;
+  const path = memberPreviewAt(parsed.pathname)?.innerPath || parsed.pathname;
+  if (parsed.origin !== window.location.origin || !mediaPath.test(path))
     return false;
   if (signal.aborted) return false;
   const probe = new AbortController();
@@ -26,8 +33,11 @@ export async function mayRetryPortrait(url: string, signal: AbortSignal) {
       signal: probe.signal,
     });
     void response.body?.cancel().catch(() => {});
-    return (response.ok && response.headers.get("content-type")?.startsWith("image/") === true) ||
-      [409, 429, 503].includes(response.status);
+    return (
+      (response.ok &&
+        response.headers.get("content-type")?.startsWith("image/") === true) ||
+      [409, 429, 503].includes(response.status)
+    );
   } catch {
     return false;
   } finally {

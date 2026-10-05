@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ArchiveUser } from "../domain/access.ts";
 import { canEditArchive, isArchiveOwner } from "../domain/access.ts";
 import { hasCurrentPlatformAdmin } from "./platform-access.ts";
+import { memberPreviewTarget } from "./member-preview-access.ts";
 import type { userStore } from "./users.ts";
 import {
   newSessionToken,
@@ -157,14 +158,24 @@ export async function createAuth(
   async function currentUser(
     req: IncomingMessage,
   ): Promise<ArchiveUser | null> {
-    if (local)
-      return {
+    const localUser: ArchiveUser = {
         id: "local",
         name: "На этом компьютере",
         role: "admin",
         createdAt: "",
         approved: true,
       };
+    const previewId = memberPreviewTarget(req);
+    if (previewId) {
+      const owner = local ? localUser :
+        await (async () => {
+          const session = await sessionFor(req);
+          return session ? await users.get(session.userId) : null;
+        })();
+      if (!owner?.approved || !isArchiveOwner(owner)) return null;
+      return await users.get(previewId);
+    }
+    if (local) return localUser;
     const session = await sessionFor(req);
     return session ? await users.get(session.userId) : null;
   }
@@ -440,11 +451,12 @@ export async function createAuth(
     canRead: async (req: IncomingMessage) =>
       (await currentUser(req))?.approved === true,
     canEdit: async (req: IncomingMessage) =>
-      canEditArchive(await currentUser(req)),
+      !memberPreviewTarget(req) && canEditArchive(await currentUser(req)),
     isAdmin: async (req: IncomingMessage) =>
-      (await currentUser(req))?.approved === true &&
+      !memberPreviewTarget(req) && (await currentUser(req))?.approved === true &&
       isArchiveOwner(await currentUser(req)),
     isPlatformAdmin: async (req: IncomingMessage) => {
+      if (memberPreviewTarget(req)) return false;
       if (local) return true;
       // SQLite remains a single-archive installation without platform grants.
       // Its approved owner retains the legacy administrator settings path.

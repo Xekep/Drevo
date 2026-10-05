@@ -131,6 +131,7 @@ import { verifyEmailAccounts } from "./postgres-email.ts";
 import { verifyAccountSessionManagement } from "./postgres-account-sessions.ts";
 import { verifyCoreAccountGetRevocation } from "./postgres-core-account-reads.ts";
 import { verifyPostgresMediaReadDelivery } from "./postgres-media-read-delivery.ts";
+import { verifyMemberPreview } from "./postgres-member-preview.ts";
 import { verifyPostgresScopedCitationMedia } from "./postgres-scoped-citation-media.ts";
 import { verifyPostgresCommentEdits } from "./postgres-comment-edits.ts";
 import { verifyAtomicSuggestionAcceptance } from "./postgres-suggestion-accept.ts";
@@ -1978,6 +1979,7 @@ try {
   await verifyAccountSessionManagement(app.archive.db, securedBase, ownerHeaders, headers);
   await verifyCoreAccountGetRevocation(app.archive, client);
   await verifyPostgresMediaReadDelivery(app.archive, client);
+  await verifyMemberPreview(app, client, securedBase, uploads);
   await verifyPostgresScopedCitationMedia(app.archive);
   const generatedChats = aiChatStore(app.archive.db);
   const generatedStore = generatedResearchFileStore(

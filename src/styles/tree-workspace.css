@@ -50,6 +50,27 @@
   flex-direction: column;
   position: relative;
 }
+.member-preview-banner {
+  position: relative;
+  z-index: 1100;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 6px 20px;
+  background: #fff4db;
+  border-bottom: 1px solid #e7cb88;
+  color: var(--ink);
+}
+.member-preview-banner a { white-space: nowrap; font-weight: 700; }
+.member-preview-banner span { min-width: 0; overflow-wrap: anywhere; }
+.member-preview-banner a { flex: none; }
+@media (max-width: 600px) {
+  .member-preview-banner { padding: 6px 12px; font-size: 12px; }
+  .member-preview-banner a { min-height: 44px; display: flex; align-items: center; }
+}
 .archive-header {
   flex: 0 0 58px;
   display: flex;

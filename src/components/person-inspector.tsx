@@ -43,6 +43,7 @@ export function PersonInspector({
   family,
   user,
   canEdit,
+  readOnlyPreview = false,
   readPhotos,
   onSelect,
   onUrlPerson,
@@ -61,6 +62,7 @@ export function PersonInspector({
   family: Family;
   user: ArchiveUser | null;
   canEdit: boolean;
+  readOnlyPreview?: boolean;
   readPhotos: boolean;
   onSelect: (id: string) => void;
   onUrlPerson?: (id: string) => void;
@@ -240,6 +242,7 @@ export function PersonInspector({
         person={person}
         isCurrentUser={user?.personId === person.id}
         canDiscuss={user?.approved === true}
+        readOnlyDiscussion={readOnlyPreview}
         canLoadDocuments={user?.approved === true}
         people={family.people}
         links={family.links}

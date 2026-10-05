@@ -1,4 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { finished } from "node:stream/promises";
+import { memberPreviewAt } from "../domain/archive-context.ts";
+import { archiveViewAt } from "../domain/archive-routes.ts";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import type { mediaStore } from "./media.ts";
@@ -50,6 +53,8 @@ import { publishedPeopleHttp } from "./published-people-http.ts";
 import { discoveryMatchesHttp } from "./discovery-matches-http.ts";
 import { discoveryCardShareHttp } from "./discovery-card-share-http.ts";
 import { discoveryBranchShareHttp } from "./discovery-branch-share-http.ts";
+import { assertMemberPreviewDelivery,
+  setMemberPreviewTarget } from "./member-preview-access.ts";
 
 export async function archiveHttp({
   archive,
@@ -249,6 +254,87 @@ export async function archiveHttp({
     res: ServerResponse,
     url: URL,
   ): Promise<boolean> => {
+    if (url.pathname === "/preview" || url.pathname.startsWith("/preview/")) {
+      const preview = memberPreviewAt(url.pathname);
+      const path = preview?.innerPath;
+      const deny = (status: number) => {
+        res.writeHead(status, { "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "private, no-store" });
+        res.end(JSON.stringify({ error: status === 405 ? "Ожидается GET" :
+          "Предпросмотр недоступен" }));
+        return true;
+      };
+      if (!preview || preview.archiveId) return deny(404);
+      if (req.method !== "GET") return deny(405);
+      const previewView = archiveViewAt(url.pathname);
+      if (previewView && ["tree", "list", "families", "gallery", "documents",
+        "places", "insights", "resources", "quality"].includes(previewView) &&
+        path && !path.startsWith("/api/") && !path.startsWith("/media/"))
+        return serveStatic(req, res, url);
+      if (!path || !/^(?:\/api\/|\/media\/)/.test(path)) return deny(404);
+      setMemberPreviewTarget(req, preview.memberId);
+      const target = await auth.currentUser(req);
+      if (!target) return deny(403);
+      const allowed = path === "/api/session" || path === "/api/family" ||
+        path === "/api/people/search" || path === "/api/research-resources" ||
+        path === "/api/places/locate" ||
+        /^\/api\/documents(?:\/[a-f0-9-]{36}(?:\/file|\/annotations(?:\/[a-f0-9-]{36})?)?)?$/.test(path) ||
+        /^\/api\/people\/[^/]+\/discussion(?:\/[1-9][0-9]*(?:\/attachments\/[a-f0-9-]{36}(?:\/preview)?)?)?$/.test(path) ||
+        /^\/media\/[A-Za-z0-9-]+\.(?:jpg|jpeg|jfif|png|webp|gif|tif|tiff|pdf)$/.test(path);
+      if (!allowed) return deny(404);
+      const inner = new URL(url);
+      inner.pathname = path;
+      if (path === "/api/session") {
+        const session = await auth.accountSession(req);
+        if (!auth.local && !session) return deny(403);
+        const body = JSON.stringify({ local: false, canEdit: false, account: null,
+          user: { ...target, platformAdmin: false, aiAvailable: false }, preview: true,
+          participantPreview: { id: target.id, name: target.name } });
+        if (auth.local || archive.db.kind !== "postgres" || !archive.db.postgresTransaction) {
+          res.writeHead(200, { "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "private, no-store" });
+          res.end(body);
+          return true;
+        }
+        if (!archive.db.archiveId) return deny(403);
+        try {
+          const delivered = await archive.db.postgresTransaction(async (client) => {
+            const expiresAt = await assertMemberPreviewDelivery(client,
+              archive.db.archiveId!, session!, target);
+            if (!expiresAt) return false;
+            const remaining = Math.min(4_000, expiresAt - Date.now());
+            if (remaining <= 0) return false;
+            if (Date.now() >= expiresAt) return false;
+            const done = finished(res, { cleanup: true });
+            const timer = setTimeout(() => res.destroy(), remaining);
+            timer.unref();
+            try {
+              res.writeHead(200, { "Content-Type": "application/json; charset=utf-8",
+                "Cache-Control": "private, no-store" });
+              res.end(body);
+              await done;
+            } finally { clearTimeout(timer); }
+            return true;
+          });
+          return delivered ? true : deny(409);
+        } catch (error) {
+          if (res.headersSent || res.destroyed) { res.destroy(); return true; }
+          if ((error as { code?: string }).code === "55P03") return deny(409);
+          throw error;
+        }
+      }
+      if (path === "/api/places/locate") return await places(req, res, inner) || deny(404);
+      if (path === "/api/family" || path === "/api/people/search" ||
+          path === "/api/research-resources")
+        return await archiveQuery(req, res, inner) || deny(404);
+      if (path.startsWith("/api/documents"))
+        return await documents(req, res, inner) || deny(404);
+      if (path.includes("/discussion"))
+        return await personDiscussion(req, res, inner) || deny(404);
+      if (path.startsWith("/media/"))
+        return await serveMedia(req, res, inner) || deny(404);
+      return deny(404);
+    }
     if (await core(req, res, url)) return true;
     if (await serveBackup(req, res, url)) return true;
     if (await adminAccess(req, res, url)) return true;

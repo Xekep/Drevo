@@ -20,7 +20,7 @@ import {
   archiveTargetPath,
   type ArchiveTarget,
 } from "./domain/archive-links";
-import { archiveContextAt, scopedArchivePath } from "./domain/archive-context.ts";
+import { archiveContextAt, memberPreviewAt, scopedArchivePath } from "./domain/archive-context.ts";
 import { adminMatchSourcePath, archiveDocumentAt, archiveDocumentPath } from "./domain/archive-routes.ts";
 import {
   ArchiveNavigation,
@@ -93,6 +93,8 @@ function sameCachedReadProjection(previous: ArchiveUser, current: ArchiveUser) {
 }
 
 export default function App() {
+  const participantPreview = memberPreviewAt(window.location.pathname);
+  const previewActive = Boolean(participantPreview);
   const [emailAuthLink] = useState(() =>
     /^#email-(verify|reset|link)=[A-Za-z0-9_-]{43}$/.test(window.location.hash),
   );
@@ -122,9 +124,9 @@ export default function App() {
       upload: uploadArchive,
     } = archive;
   const desktop = useDesktopEditing(),
-    canEdit = allowedEdit;
+    canEdit = !participantPreview && allowedEdit;
   const publicationOwnership = useArchivePublicationOwner(
-    isArchiveOwner(user) ? user!.id : null,
+    !participantPreview && isArchiveOwner(user) ? user!.id : null,
     archiveContextAt(window.location.pathname)?.id || "",
     archive.local,
     Boolean(family) && !archive.loadingDetails,
@@ -228,7 +230,7 @@ export default function App() {
   const finishRestoredSession = useCallback((session: AccountSession) => {
     const previous = archiveSessionActions.current;
     if (previous.user) {
-      if (!session.user?.approved || (!session.local && !session.account))
+      if (!session.user?.approved || (!session.local && !session.account && !session.preview))
         previous.closeChanged(true);
       else if (!sameCachedReadProjection(previous.user, session.user))
         previous.closeChanged(false);
@@ -288,7 +290,7 @@ export default function App() {
     return () => { if (dialog.open) dialog.close(); };
   }, [restoredSessionState]);
   useEffect(() => {
-    if (view !== "account" && view !== "admin" && !archive.needsLogin) return;
+    if (view !== "account" && view !== "admin" && !archive.needsLogin && !previewActive) return;
     const controller = new AbortController();
     const version = ++accountSessionVersion.current;
     archiveFetch("/api/session", { cache: "no-store", signal: controller.signal })
@@ -319,7 +321,7 @@ export default function App() {
         }
       });
     return () => controller.abort();
-  }, [view, archive.needsLogin, finishRestoredSession]);
+  }, [view, archive.needsLogin, finishRestoredSession, previewActive]);
   const [entryPending, setEntryPending] = useState(shouldPlayEntrySequence);
   useEffect(() => {
     const preventPageZoom = (event: WheelEvent) => {
@@ -815,6 +817,12 @@ export default function App() {
         />
       )}
       <div className="archive-main">
+        {participantPreview && (
+          <div className="member-preview-banner" role="status">
+            <span>Просмотр как участник: <strong>{accountSession?.participantPreview?.name || user?.name || "загрузка"}</strong></span>
+            <a href={`${participantPreview.archiveId ? `/a/${participantPreview.archiveId}` : ""}/manage`}>Выйти из просмотра</a>
+          </div>
+        )}
         {view === "admin" ? <header className="archive-header">
           <ArchiveNavigation
             view={view}
@@ -838,6 +846,7 @@ export default function App() {
               readTree={readTree}
               readPhotos={readPhotos}
               onHelp={() => setHelp(true)}
+              participantPreview={Boolean(participantPreview)}
               onPlatformLeave={() => {
                 const leave = confirmDiscardChanges(navigationDirty.current);
                 if (leave) navigationDirty.current = false;
@@ -991,8 +1000,9 @@ export default function App() {
                   >
                     <TreeCanvas
                       ref={treeCanvas}
-                      onPreferences={() => setTreePreferencesOpen(true)}
-                      onExport={() => setTreeExportOpen(true)}
+                      restricted={Boolean(participantPreview)}
+                      onPreferences={participantPreview ? undefined : () => setTreePreferencesOpen(true)}
+                      onExport={participantPreview ? undefined : () => setTreeExportOpen(true)}
                       onImport={canEdit && isArchiveOwner(user) ? () => setTreeImportOpen(true) : undefined}
                       onRename={canEdit && isArchiveOwner(user) ? () => setSettings(true) : undefined}
                       onAddSelf={canEdit && user && isArchiveOwner(user) && !user.personId ? newSelf : undefined}
@@ -1050,7 +1060,7 @@ export default function App() {
                       reverse={archive.reverseTimeline}
                       colorScheme={archive.treePreferences.colorScheme}
                       generationLimits={archive.treePreferences.generationLimits}
-                      onGenerationAnchor={async (id) => {
+                      onGenerationAnchor={participantPreview ? undefined : async (id) => {
                         await archive.saveTreePreferences(
                           withGenerationAnchor(archive.treePreferences, id),
                         );
@@ -1163,6 +1173,7 @@ export default function App() {
                               family={family}
                               user={user}
                               canEdit={canEdit}
+                              readOnlyPreview={Boolean(participantPreview)}
                               readPhotos={readPhotos}
                               save={save}
                               uploadPortrait={archive.uploadPortrait}
@@ -1212,7 +1223,7 @@ export default function App() {
                   query={query}
                   user={user}
                   canEdit={canEdit && desktop}
-                  mayEdit={allowedEdit}
+                  mayEdit={!participantPreview && allowedEdit}
                   busy={busy}
                   loadingDetails={archive.loadingDetails}
                   save={save}
@@ -1255,7 +1266,7 @@ export default function App() {
           <main className="archive-status">
             <h1>Семейный архив</h1>
             <p>{archive.error}</p>
-            {user || accountSession?.account ? (
+            {participantPreview ? null : user || accountSession?.account ? (
               <button
                 className="primary-action"
                 onClick={() => navigate("account")}
@@ -1295,7 +1306,7 @@ export default function App() {
           Подгружаем сведения и фотографии…
         </div>
       )}
-      {entryPending &&
+      {entryPending && !participantPreview &&
         !archive.error &&
         !archive.needsLogin &&
         view !== "account" && view !== "admin" && view !== "manage" &&
@@ -1323,7 +1334,7 @@ export default function App() {
           }}
         />
       )}
-      {family && readTree && user && view !== "admin" && view !== "manage" && view !== "account" && (
+      {family && readTree && user && !participantPreview && view !== "admin" && view !== "manage" && view !== "account" && (
         <ResearchAssistant
           view={view}
           onOpenChange={setAssistantOpen}
@@ -1398,7 +1409,7 @@ export default function App() {
           onClose={() => setSettings(false)}
         />
       )}
-      {treePreferencesOpen && family && readTree && (
+      {treePreferencesOpen && !participantPreview && family && readTree && (
         <TreePreferencesDialog
           preferences={archive.treePreferences}
           people={family.people}
@@ -1411,7 +1422,7 @@ export default function App() {
           } : undefined}
         />
       )}
-      {treeExportOpen && family && readTree && (
+      {treeExportOpen && !participantPreview && family && readTree && (
         <TreeExportDialog
           onCheckExportWarnings={checkExportWarnings}
           onExportPdf={(signal) => treeCanvas.current!.exportPdf(signal, "current")}

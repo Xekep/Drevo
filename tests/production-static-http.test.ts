@@ -99,6 +99,17 @@ test("production static streams SPA routes, files and shared page", async () => 
       assert.equal(response.headers.get("referrer-policy"), "no-referrer");
       assert.equal(response.headers.get("x-robots-tag"), "noindex, nofollow, noarchive");
     }
+    for (const path of [
+      "/preview/member%3A42/tree", "/preview/member%3A42/people/sample-id",
+      "/a/family-one/preview/member%3A42/documents/12345678-1234-1234-1234-123456789abc",
+      "/a/family-one/preview/member%3A42/photos/sample-id",
+    ]) {
+      const response = await fetch(app.base + path);
+      assert.equal(response.status, 200, path);
+      assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
+      assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+      assert.equal(response.headers.get("x-robots-tag"), "noindex, nofollow, noarchive");
+    }
     assert.equal((await fetch(app.base + `/discover/search/${encodeURIComponent("И".repeat(101))}`)).status, 404);
 
     const favicon = await fetch(app.base + "/favicon.svg");

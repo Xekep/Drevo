@@ -29,6 +29,7 @@ import "./styles/design-refinement.css";
 import "./styles/entry-sequence.css";
 import "./styles/public-people.css";
 import { ArchiveLoading } from "./components/archive-loading";
+import { memberPreviewAt } from "./domain/archive-context.ts";
 
 const App = lazy(() => import("./App"));
 const SharedTree = lazy(() => import("./components/shared-tree"));
@@ -76,7 +77,7 @@ const pendingInvite = (() => {
 
 function Entry() {
   const [ready, setReady] = useState(
-    !!join || !pendingInvite || pendingInvite === location.pathname,
+    !!join || !!memberPreviewAt(location.pathname) || !pendingInvite || pendingInvite === location.pathname,
   );
   useEffect(() => {
     if (ready) return;
