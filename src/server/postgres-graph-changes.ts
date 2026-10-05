@@ -17,6 +17,8 @@ import {
   rememberPostgresArchiveChange,
 } from "./postgres-archive-write.ts";
 import { checkPostgresPeopleGrowth } from "./postgres-people-quota.ts";
+import { allCitations } from "./source-catalog-store.ts";
+import { parseCatalogSource, type CatalogSource } from "../shared/source-catalog.ts";
 import { ForbiddenError } from "./users.ts";
 
 const personFields = new Set([
@@ -28,6 +30,36 @@ const personFields = new Set([
 const linkFields = new Set(["from", "to", "type", "note", "twinKind", "sources"]);
 const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
+
+/** The raw delta writer has neither StoreDatabase catalog checks nor media quota.
+ * Keep its narrower write contract inside the same archive-locked transaction. */
+async function assertGraphCitations(client: pg.Client, archiveId: string, before: Family, after: Family) {
+  const mediaPath = (url?: string) => url?.split(/[?#]/, 1)[0];
+  const existingMedia = new Set([
+    ...before.people.map((person) => person.photo),
+    ...(before.photos || []).map((photo) => photo.url),
+    ...allCitations(before).map((citation) => mediaPath(citation.url)),
+  ].filter((url): url is string => !!url?.startsWith("/media/")));
+  const catalog = new Map<string, CatalogSource>();
+  for (const citation of allCitations(after)) {
+    const media = mediaPath(citation.url);
+    if (media?.startsWith("/media/") && !existingMedia.has(media))
+      throw new Error("Новые медиацитаты не поддерживаются этой операцией");
+    if (!citation.catalogId) continue;
+    if (!catalog.has(citation.catalogId)) {
+      const row = (await client.query(
+        "SELECT data FROM source_catalog WHERE archive_id=$1 AND id=$2",
+        [archiveId, citation.catalogId],
+      )).rows[0];
+      if (!row) throw new Error("Источник отсутствует в этом архиве");
+      const source = parseCatalogSource(typeof row.data === "string" ? JSON.parse(row.data) : row.data);
+      if (!source) throw new Error("Повреждён источник в каталоге");
+      catalog.set(citation.catalogId, source);
+    }
+    if (citation.documentId && !catalog.get(citation.catalogId)!.documentIds.includes(citation.documentId))
+      throw new Error("Документ цитаты отсутствует у источника");
+  }
+}
 
 function validateGraphChanges(input: Change[]): Change[] {
   if (!Array.isArray(input) || !input.length || input.length > 10_000)
@@ -219,6 +251,7 @@ export async function changePostgresGraphForSession(
       validateTopology(before, after);
       if (!archiveChanges(before, after).length)
         return { revision, baseRevision: revision, appliedChanges: [] };
+      await assertGraphCitations(client, archiveId, before, after);
       await checkPostgresPeopleGrowth(
         client,
         archiveId,

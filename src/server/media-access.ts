@@ -3,6 +3,7 @@ import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import type { Family, Person } from "../domain/types.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
+import { allCitations, personCitations, unionCitations } from "./source-catalog-store.ts";
 import { ForbiddenError } from "./users.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
@@ -75,11 +76,46 @@ export async function authorizeMediaReferences(
 ) {
   if (!isScopedUser(user)) return;
   const visible = projectFamilyForUser(before, user);
+  const citationUrl = (url?: string) => {
+    const original = url?.split(/[?#]/, 1)[0];
+    return original?.startsWith("/media/") ? original : undefined;
+  };
   const allowed = new Set([
     ...visible.people.map((p) => p.photo).filter((url): url is string => !!url),
     ...(visible.photos || []).map((p) => p.url),
+    ...allCitations(visible).map((source) => citationUrl(source.url))
+      .filter((url): url is string => !!url),
   ]);
-  const check = async (url?: string, previousPerson?: Person) => {
+  const ownHistoricalPersonSource = async (personId: string, url: string) =>
+    !!(await db.prepare(
+      `SELECT 1 FROM media_originals m WHERE m.url=? AND m.uploaded_by=?
+       AND EXISTS (
+         SELECT 1 FROM history h,json_each(h.data,'$.people') p,
+           json_each(p.value,'$.sources') s
+         WHERE json_extract(p.value,'$.id')=?
+           AND json_extract(p.value,'$.createdBy')=?
+           AND (json_extract(s.value,'$.url')=m.url
+             OR substr(json_extract(s.value,'$.url'),1,length(m.url)+1)
+               IN (m.url||'#',m.url||'?'))
+       ) LIMIT 1`,
+      `SELECT 1 FROM media_originals m WHERE m.url=? AND m.uploaded_by=?
+       AND EXISTS (
+         SELECT 1 FROM history h
+         CROSS JOIN LATERAL jsonb_array_elements(CASE
+           WHEN jsonb_typeof(h.data->'people')='array' THEN h.data->'people'
+           ELSE '[]'::jsonb END) p(value)
+         CROSS JOIN LATERAL jsonb_array_elements(CASE
+           WHEN jsonb_typeof(p.value->'sources')='array' THEN p.value->'sources'
+           ELSE '[]'::jsonb END) s(value)
+         WHERE p.value->>'id'=? AND p.value->>'createdBy'=?
+           AND split_part(split_part(s.value->>'url','#',1),'?',1)=m.url
+       ) LIMIT 1`,
+    ).get(url, user.id, personId, user.id));
+  const check = async (
+    url?: string,
+    previousPerson?: Person,
+    ownPersonSourceRestore?: () => Promise<boolean>,
+  ) => {
     if (
       url?.startsWith("/media/") &&
       !allowed.has(url) &&
@@ -102,6 +138,7 @@ export async function authorizeMediaReferences(
           .get(previousPerson.id, user.id, url))
       )
         return;
+      if (ownPersonSourceRestore && await ownPersonSourceRestore()) return;
       throw new ForbiddenError("Нет доступа к выбранному изображению");
     }
   };
@@ -112,4 +149,51 @@ export async function authorizeMediaReferences(
   const photos = new Map((before.photos || []).map((p) => [p.id, p.url]));
   for (const p of after.photos || [])
     if (p.url !== photos.get(p.id)) await check(p.url);
+
+  // A citation on one hidden entity must not be transferable to another
+  // entity merely because both live in the same full archive snapshot.
+  const addedCitations = async (
+    previous: Array<{ url?: string }>,
+    next: Array<{ url?: string }>,
+    ownPersonSourceRestore?: (url: string) => Promise<boolean>,
+  ) => {
+    const existing = new Set(previous.map((source) => citationUrl(source.url)));
+    for (const url of new Set(next.map((source) => citationUrl(source.url)))) {
+      if (url && !existing.has(url))
+        await check(url, undefined, ownPersonSourceRestore
+          ? () => ownPersonSourceRestore(url) : undefined);
+    }
+  };
+  const previousPeople = new Map(before.people.map((person) => [person.id, person]));
+  for (const person of after.people) {
+    const previous = previousPeople.get(person.id);
+    // A visible child can retain a citation on a hidden parent edge. That
+    // binding stays with the edge, not with every citation on the child card.
+    await addedCitations(
+      previous ? personCitations({ ...previous, parentClaims: [] }) : [],
+      personCitations({ ...person, parentClaims: [] }),
+      async (url) => {
+        if (previous?.createdBy !== user.id || person.createdBy !== user.id ||
+          !person.sources.some((source) => citationUrl(source.url) === url))
+          return false;
+        // A URL restored on the card may not be introduced on an event,
+        // award, claim, or other slot in the same write.
+        const otherSlots = personCitations({ ...person, sources: [], parentClaims: [] });
+        if (otherSlots.some((source) => citationUrl(source.url) === url)) return false;
+        return await ownHistoricalPersonSource(person.id, url);
+      },
+    );
+    const previousParents = new Map((previous?.parentClaims || [])
+      .map((claim) => [claim.parentId, claim]));
+    for (const claim of person.parentClaims || [])
+      await addedCitations(previousParents.get(claim.parentId)?.sources || [], claim.sources || []);
+  }
+  const previousUnions = new Map((before.unions || []).map((union) => [union.id, union]));
+  for (const union of after.unions || []) {
+    const previous = previousUnions.get(union.id);
+    await addedCitations(previous ? unionCitations(previous) : [], unionCitations(union));
+  }
+  const previousLinks = new Map((before.links || []).map((link) => [link.id, link]));
+  for (const link of after.links || [])
+    await addedCitations(previousLinks.get(link.id)?.sources || [], link.sources || []);
 }
