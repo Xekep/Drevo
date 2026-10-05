@@ -2,6 +2,12 @@ import { expect, test } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/index.ts";
 
+test.afterEach(async ({ page }) => {
+  // The overview may refetch as the final person is saved. Let route.fetch
+  // handlers finish before Playwright closes the page and its request context.
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 test("an owner can name an empty tree and bind its first person to their account", async ({ page }, testInfo) => {
   let family: Family | null = null;
   let boundPersonId = "";
