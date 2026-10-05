@@ -108,11 +108,10 @@ export function archiveReport(
     add("Биография", person.biography ? [person.biography] : []);
     add(
       "Награды",
-      (person.awards || []).map((award) =>
-        [award.name, award.year, award.source?.title]
-          .filter(Boolean)
-          .join(" · "),
-      ),
+      (person.awards || []).flatMap((award) => [
+        [award.name, award.year, award.source?.title].filter(Boolean).join(" · "),
+        ...(award.sources || []).map((source) => `Источник награды: ${sourceLine(source)}`),
+      ]),
     );
   }
 

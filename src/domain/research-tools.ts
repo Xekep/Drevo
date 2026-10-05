@@ -858,7 +858,7 @@ function hasSources(person: Person) {
   return (
     person.sources.length > 0 ||
     (person.events || []).some((event) => event.sources?.length) ||
-    (person.awards || []).some((award) => award.source)
+    (person.awards || []).some((award) => award.source || award.sources?.length)
   );
 }
 
@@ -1137,7 +1137,7 @@ export function executeResearchTool(
       awards: (person.awards || []).map((award) => ({
         id: award.id,
         title: award.name,
-        sourceCount: award.source ? 1 : 0,
+        sourceCount: (award.source ? 1 : 0) + (award.sources?.length || 0),
       })),
     }));
     if (name === "get_evidence_coverage") {
@@ -1539,12 +1539,13 @@ export function executeResearchTool(
           sources: event.sources,
         })),
       awards: (person.awards || [])
-        .filter((award) => award.source)
+        .filter((award) => award.source || award.sources?.length)
         .map((award) => ({
           id: award.id,
           name: award.name,
           year: award.year,
           source: award.source,
+          sources: award.sources,
         })),
     };
   }
@@ -1949,7 +1950,7 @@ export function executeResearchTool(
         (person) =>
           person.sources.length > 0 ||
           (person.events || []).some((event) => event.sources?.length) ||
-          (person.awards || []).some((award) => award.source),
+          (person.awards || []).some((award) => award.source || award.sources?.length),
       ).length;
     return {
       anchor: { id: anchor.id, name: fullName(anchor) },

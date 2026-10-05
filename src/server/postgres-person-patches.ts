@@ -35,7 +35,6 @@ const fields = new Set([
   "occupation",
   "biography",
   "sources",
-  "awards",
   "events",
   "parentageComplete",
   "generation",

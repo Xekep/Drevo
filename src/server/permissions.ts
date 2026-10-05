@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { prepareAwardCitationWrite } from "./award-citation-write.ts";
 import {
   validateFamily,
   type Family,
@@ -22,6 +23,8 @@ function catalogCitationSlots(family: Family) {
       add(["person", person.id, claim], person[claim]?.sources);
     for (const alternative of person.factAlternatives || [])
       add(["person", person.id, "factAlternative", alternative.id], alternative.sources);
+    for (const award of person.awards || [])
+      add(["person", person.id, "award", award.id], award.sources);
     for (const event of person.events || []) {
       add(["person", person.id, "event", event.id], event.sources);
       add(["person", person.id, "event", event.id, "dateClaim"], event.dateClaim?.sources);
@@ -50,6 +53,7 @@ export function authorizeArchive(
   const next = structuredClone(validateFamily(nextValue));
   if (user.role === "reader")
     throw new ForbiddenError("Доступен только просмотр архива");
+  prepareAwardCitationWrite(next, current);
   const admin = isArchiveOwner(user),
     own = (p: { createdBy?: string }) => p.createdBy === user.id;
   const nextPeople = new Map(next.people.map((person) => [person.id, person]));

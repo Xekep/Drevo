@@ -946,6 +946,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         }
         for (const item of extra.factAlternatives || [])
           stripArchiveSourceIds(item.sources);
+        for (const award of extra.awards || [])
+          stripArchiveSourceIds(award.sources);
         for (const key of [
           "name",
           "surname",
@@ -977,6 +979,11 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             personCitations.filter((_source, index) =>
               value(personSourceNodes[index], "_DREVO_ALTERNATIVE") === alternative.id),
             `альтернативного значения ${alternative.id}`);
+        for (const award of p.awards || []) {
+          const matching = personCitations.filter((_source, index) =>
+            value(personSourceNodes[index], "_DREVO_AWARD_ID") === award.id);
+          restoreCitationMedia(award.sources, matching, `награды ${award.id}`);
+        }
         if (Object.hasOwn(extra, "events")) {
           metadataReplacedEvents = true;
           const eventNodes = n.children.filter((node) =>
@@ -1022,6 +1029,14 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         throw new Error("Повреждены дополнительные сведения Drevo в GEDCOM");
       }
     }
+    personSourceNodes.forEach((node, index) => {
+      const awardId = value(node, "_DREVO_AWARD_ID");
+      if (!awardId) return;
+      if (p.awards?.some((award) => award.id === awardId && award.sources?.length)) return;
+      const source = personCitations[index];
+      if (!p.sources.includes(source)) p.sources.push(source);
+      warnings.add("Источник награды без соответствующей записи Drevo сохранён как общий источник человека; привязка к награде не восстановлена.");
+    });
     for (const node of [birth, death, ...eventNodes]) {
       if (!node) continue;
       // A direct parse already attached this exact PLAC to its generated
@@ -1696,6 +1711,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     retain(person.deathPlaceClaim?.sources);
     retain(person.occupationClaim?.sources);
     retain(person.maidenNameClaim?.sources);
+    for (const award of person.awards || []) retain(award.sources);
     for (const event of person.events || []) {
       retain(event.sources);
       retain(event.dateClaim?.sources);
@@ -1939,12 +1955,13 @@ export function exportGedcom(
       `@M${index + 1}@`] as const] : []));
   function citation(level: number, source: Source,
     claim?: "BIRTH_DATE" | "DEATH_DATE" | "BIRTH_PLACE" | "DEATH_PLACE" | "OCCUPATION" | "BIRTH_SURNAME" | "EVENT_DATE" | "EVENT_PLACE",
-    alternativeId?: string) {
+    alternativeId?: string, awardId?: string) {
     sourceRecords.push(source);
     emit(level, "SOUR", `@S${sourceRecords.length}@`, true);
     if (source.reference) emit(level + 1, "PAGE", source.reference);
     if (claim) emit(level + 1, "_DREVO_CLAIM", claim);
     if (alternativeId) emit(level + 1, "_DREVO_ALTERNATIVE", alternativeId);
+    if (awardId) emit(level + 1, "_DREVO_AWARD_ID", awardId);
     const object = source.documentId
       ? documentMedia.get(source.documentId) : undefined;
     if (options.media && source.documentId && !object)
@@ -2011,6 +2028,7 @@ export function exportGedcom(
       "_DREVO_TWIN",
       "_DREVO_CLAIM",
       "_DREVO_ALTERNATIVE",
+      "_DREVO_AWARD_ID",
       "_DREVO_DOCUMENT_PAGE",
       "_DREVO_CATALOG_LINK_LOST",
       ...CLAIM_CONFIDENCE_TAGS,
@@ -2104,6 +2122,9 @@ export function exportGedcom(
     for (const alternative of p.factAlternatives || [])
       for (const source of alternative.sources)
         citation(1, source, undefined, alternative.id);
+    for (const award of p.awards || [])
+      for (const source of award.sources || [])
+        citation(1, source, undefined, undefined, award.id);
     for (const original of p.events || []) {
       const kind =
         original.gedcomTag === "BIRT"
@@ -2297,6 +2318,12 @@ export function exportGedcom(
     }
     for (const alternative of portableExtra.factAlternatives || [])
       for (const source of alternative.sources || []) {
+        delete source.catalogId;
+        delete source.documentId;
+        delete source.documentPage;
+      }
+    for (const award of portableExtra.awards || [])
+      for (const source of award.sources || []) {
         delete source.catalogId;
         delete source.documentId;
         delete source.documentPage;

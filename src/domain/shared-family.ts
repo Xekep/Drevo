@@ -80,6 +80,7 @@ export function sharedFamily(
           degreeId: award.degreeId,
           year: award.year,
           source: award.source && { title: award.source.title, url: award.source.url },
+          sources: award.sources?.map(publicSource),
         })),
         events: p.events?.map((event) => ({
           id: event.id,

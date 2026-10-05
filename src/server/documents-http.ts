@@ -188,6 +188,9 @@ function reverseDocumentSources(
     for (const alternative of person.factAlternatives || [])
       for (const source of alternative.sources)
         cite(source, `${alternativeNames[alternative.field]}: ${alternative.value}`);
+    for (const award of person.awards || [])
+      for (const source of award.sources || [])
+        cite(source, `Награда: ${award.name}`);
     for (const event of person.events || []) {
       const title = event.title?.trim() || event.type;
       const identity = { id: event.id, title };

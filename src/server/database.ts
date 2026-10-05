@@ -29,6 +29,7 @@ import {
 } from "./archive-rows.ts";
 import { initializeArchiveSchema } from "./schema.ts";
 import { ConflictError } from "./archive-errors.ts";
+import { prepareAwardCitationWrite } from "./award-citation-write.ts";
 import { patchPeople } from "./person-patches.ts";
 import { archiveSnapshotReader } from "./archive-read-cache.ts";
 import { hydrateArchive, hydrateRelations } from "./archive-hydration.ts";
@@ -434,7 +435,7 @@ export async function openArchive(
       const family =
         actor && previous
           ? authorizeArchive(value, previous, actor)
-          : validateFamily(value);
+          : prepareAwardCitationWrite(structuredClone(validateFamily(value)), previous);
       await checkStorePostgresPeopleGrowth(
         db,
         family.people.length - (previous?.people.length || 0),
