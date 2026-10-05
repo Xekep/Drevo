@@ -20,6 +20,7 @@ test("media inventory separates current, historical, pending and unreferenced fi
       CREATE TABLE people(archive_id text NOT NULL, data jsonb NOT NULL);
       CREATE TABLE family_unions(archive_id text NOT NULL, data jsonb NOT NULL);
       CREATE TABLE relations(archive_id text NOT NULL, sources jsonb NOT NULL);
+      CREATE TABLE source_catalog(archive_id text NOT NULL, data jsonb NOT NULL);
       CREATE TABLE photos(archive_id text NOT NULL, data jsonb NOT NULL);
       CREATE TABLE history(archive_id text NOT NULL, data jsonb NOT NULL);
       CREATE TABLE media_upload_grants(archive_id text NOT NULL, url text NOT NULL, expires_ms bigint NOT NULL);
@@ -45,6 +46,14 @@ test("media inventory separates current, historical, pending and unreferenced fi
       { url: "/media/link-source.jpg" },
     ])]);
     await client.query("INSERT INTO history VALUES('tree-a',$1)", [JSON.stringify({ people: [{ photo: "/media/old.webp" }] })]);
+    await client.query("INSERT INTO history VALUES('tree-a',$1)", [JSON.stringify({ sources: [
+      { url: "https://archive.invalid/media/not-local-history.jpg" },
+      { url: "/media/not-an-original.jpg-extra" },
+    ] })]);
+    await client.query("INSERT INTO source_catalog VALUES('tree-a',$1),('tree-a',$2)", [
+      JSON.stringify({ url: "/media/legacy-catalog.pdf#page=7" }),
+      JSON.stringify({ url: "https://archive.invalid/media/not-local-catalog.pdf" }),
+    ]);
     await client.query("INSERT INTO media_upload_grants VALUES('tree-a','/media/pending.gif',$1)", [Date.now() + 60_000]);
     await client.query(`INSERT INTO media_originals VALUES
       ('tree-a','/media/current.jpg',10),('tree-a','/media/photo.png',20),
@@ -112,6 +121,8 @@ test("media inventory separates current, historical, pending and unreferenced fi
       JSON.parse(String(row.json_build_object)) as Record<string, unknown>) || [];
     assert.equal(manifest.filter((row) => row.kind === "archive").length, 2);
     assert.ok(manifest.some((row) => row.source === "document" && row.name === "document.pdf"));
+    assert.ok(manifest.some((row) => row.source === "citation" && row.name === "legacy-catalog.pdf"));
+    assert.ok(manifest.every((row) => !String(row.name || "").startsWith("not-local-") && row.name !== "not-an-original.jpg"));
     for (const name of ["citation.pdf", "citation.tif", "link-source.jpg", "missing-citation.pdf"])
       assert.ok(manifest.some((row) => row.source === "citation" && row.name === name),
         `direct citation retains ${name} even without original metadata`);

@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { lstat, link, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { documentFileTypeFromName } from "../shared/document-file.ts";
 
 /** A portable family copy is not a transport for sessions or provider credentials. */
 export function sanitizeTreeBackup(file: string) {
@@ -23,7 +24,24 @@ export async function stageTreeBackupFiles(snapshot: string, root: string, desti
   const names = new Set<string>();
   const expected = new Map<string, number>();
   const addMedia = (text: string) => {
-    for (const match of text.matchAll(/\/media\/([a-zA-Z0-9-]+\.(?:jpg|jpeg|png|webp|gif|tif|pdf))/g)) names.add(match[1]);
+    let saved: unknown = text;
+    if (text.startsWith("{") || text.startsWith("[")) {
+      try { saved = JSON.parse(text); } catch { /* A plain text column. */ }
+    }
+    const pending: unknown[] = [saved];
+    while (pending.length) {
+      const value = pending.pop();
+      if (typeof value === "string") {
+        // Whole root-relative URLs only: external /media paths and a .jpg
+        // prefix inside another filename are not local originals.
+        const match = /^\/media\/([a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|tif|pdf))(?:[?#].*)?$/.exec(value);
+        if (match) names.add(match[1]);
+      } else if (Array.isArray(value)) {
+        for (const child of value) pending.push(child);
+      } else if (value && typeof value === "object") {
+        for (const child of Object.values(value)) pending.push(child);
+      }
+    }
   };
   try {
     const tables = new Set(db.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all().map((r) => String(r.name)));
@@ -34,7 +52,8 @@ export async function stageTreeBackupFiles(snapshot: string, root: string, desti
     if (tables.has("documents"))
       for (const row of db.prepare("SELECT file_name,file_size FROM documents").iterate()) {
         const name = String(row.file_name);
-        if (!/^[a-zA-Z0-9-]+\.pdf$/.test(name)) throw new Error("Некорректный путь документа в копии");
+        if (!/^[a-zA-Z0-9-]+\.[a-z]+$/.test(name) || !documentFileTypeFromName(name))
+          throw new Error("Некорректный путь документа в копии");
         names.add(name); expected.set(name, Number(row.file_size));
       }
     if (tables.has("person_comments"))

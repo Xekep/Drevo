@@ -21,7 +21,7 @@ export class BackupBusyError extends Error {}
 export class BackupAccessError extends Error {
   readonly status: 401 | 403;
   constructor(status: 401 | 403) {
-    super("Доступ администратора отозван.");
+    super("Доступ к резервным копиям древа отозван.");
     this.status = status;
   }
 }

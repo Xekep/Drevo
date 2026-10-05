@@ -15,7 +15,9 @@
   перед dump. Full restore offline/maintenance; tree restore preview/confirm/
   revision. Удалённая текущая ссылка не отменяет оригинал, указанный в history:
   такой файл обязателен для копии; integration fixtures не должны удалять его
-  до завершения проверок бэкапа. [Бэкапы](backup.md).
+  до завершения проверок бэкапа. Медиа-ссылки распознаются целыми локальными
+  URL, а не подстрокой /media в HTTP(S)-ссылке; документные оригиналы включают
+  все форматы из document-file.ts, не только PDF. [Бэкапы](backup.md).
 
 - Drevo остаётся веб-приложением: React/Vite, Node.js, React Flow и ELK в Worker.
   Переписывание стека, Electron/Tauri и микросервисы не входят в текущий план.
