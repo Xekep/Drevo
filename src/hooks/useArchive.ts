@@ -55,6 +55,7 @@ export function useArchive(enabled = true) {
   );
   const [family, setFamily] = useState<Family | null>(null),
     [error, setError] = useState(""),
+    [committedUploadNotice, setCommittedUploadNotice] = useState(""),
     [canEdit, setCanEdit] = useState(false),
     [busy, setBusy] = useState(false),
     [attempt, setAttempt] = useState(0);
@@ -99,6 +100,7 @@ export function useArchive(enabled = true) {
           signal: controller.signal,
           cache: "no-store",
         });
+        if (current()) setCommittedUploadNotice("");
         const json = response.headers
           .get("content-type")
           ?.includes("application/json");
@@ -363,6 +365,7 @@ export function useArchive(enabled = true) {
             throw new Error("Сеанс завершён. Войдите в архив ещё раз.");
           }
           if (result.committed === true && result.accessChanged === true) {
+            setCommittedUploadNotice("Фотография сохранена, но доступ изменился. Откройте архив заново.");
             setCanEdit(false);
             throw new Error("Фотография сохранена, но доступ изменился. Откройте архив заново.");
           }
@@ -421,20 +424,23 @@ export function useArchive(enabled = true) {
     [write],
   );
   const upload = useCallback(
-    (file: File, metadata?: PhotoMetadata) =>
-      write("/api/photos", file, {
+    (file: File, metadata?: PhotoMetadata) => {
+      setCommittedUploadNotice("");
+      return write("/api/photos", file, {
         "Content-Type": file.type,
         "X-Drevo-Upload": "1",
         ...(metadata
           ? { "X-Photo-Metadata": encodeURIComponent(JSON.stringify(metadata)) }
           : {}),
-      }),
+      });
+    },
     [write],
   );
   const uploadPortrait = useCallback(
     async (file: File) => {
       if (saving.current || !canEdit)
         throw new Error("Загрузка сейчас недоступна");
+      setCommittedUploadNotice("");
       saving.current = true;
       setBusy(true);
       try {
@@ -463,6 +469,7 @@ export function useArchive(enabled = true) {
         }
         const data = await response.json();
         if (data.committed === true && data.accessChanged === true) {
+          setCommittedUploadNotice("Портрет загружен, но доступ изменился. Откройте архив заново.");
           setCanEdit(false);
           throw new Error("Портрет загружен, но доступ изменился. Откройте архив заново.");
         }
@@ -537,6 +544,8 @@ export function useArchive(enabled = true) {
     family,
     loadingDetails,
     error,
+    committedUploadNotice,
+    dismissCommittedUploadNotice: () => setCommittedUploadNotice(""),
     canEdit,
     local,
     busy,
@@ -569,6 +578,9 @@ export function useArchive(enabled = true) {
         ? "Доступ к семейному архиву изменился. Войдите снова или выберите доступный архив."
         : "Права просмотра архива изменились. Откройте архив заново.");
     },
-    reload: () => setAttempt((n) => n + 1),
+    reload: () => {
+      setCommittedUploadNotice("");
+      setAttempt((n) => n + 1);
+    },
   };
 }
