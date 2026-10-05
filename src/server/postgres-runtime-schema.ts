@@ -382,7 +382,8 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
     ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
-    if (file === "090_global_staff_roles.sql" || file === "092_discovery_branch_depth.sql") {
+    if (file === "090_global_staff_roles.sql" || file === "092_discovery_branch_depth.sql" ||
+        file === "094_archive_invitation_scope.sql") {
       if (!db.postgresTransaction)
         throw new Error("PostgreSQL transaction unavailable");
       await db.postgresTransaction(async (client) => {
