@@ -468,7 +468,7 @@ export function PdfBookReader({
           setMagnifier(false);
         }}
       >
-        {memberPreviewAt(window.location.pathname) && (
+        {typeof window !== "undefined" && memberPreviewAt(window.location.pathname) && (
           <div className="pdf-book-preview-exit-bar">
             <MemberPreviewExit />
           </div>

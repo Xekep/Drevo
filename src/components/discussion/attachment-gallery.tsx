@@ -167,7 +167,7 @@ export function AttachmentGallery({
         }
       }}
     >
-      {memberPreviewAt(window.location.pathname) && (
+      {typeof window !== "undefined" && memberPreviewAt(window.location.pathname) && (
         <div className="discussion-gallery-preview-exit-bar">
           <MemberPreviewExit />
         </div>
