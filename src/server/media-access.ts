@@ -3,6 +3,7 @@ import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import type { Family, Person } from "../domain/types.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
+import { allCitations, personCitations, unionCitations } from "./source-catalog-store.ts";
 import { ForbiddenError } from "./users.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
@@ -75,9 +76,15 @@ export async function authorizeMediaReferences(
 ) {
   if (!isScopedUser(user)) return;
   const visible = projectFamilyForUser(before, user);
+  const citationUrl = (url?: string) => {
+    const original = url?.split(/[?#]/, 1)[0];
+    return original?.startsWith("/media/") ? original : undefined;
+  };
   const allowed = new Set([
     ...visible.people.map((p) => p.photo).filter((url): url is string => !!url),
     ...(visible.photos || []).map((p) => p.url),
+    ...allCitations(visible).map((source) => citationUrl(source.url))
+      .filter((url): url is string => !!url),
   ]);
   const check = async (url?: string, previousPerson?: Person) => {
     if (
@@ -112,4 +119,38 @@ export async function authorizeMediaReferences(
   const photos = new Map((before.photos || []).map((p) => [p.id, p.url]));
   for (const p of after.photos || [])
     if (p.url !== photos.get(p.id)) await check(p.url);
+
+  // A citation on one hidden entity must not be transferable to another
+  // entity merely because both live in the same full archive snapshot.
+  const addedCitations = async (
+    previous: Array<{ url?: string }>,
+    next: Array<{ url?: string }>,
+  ) => {
+    const existing = new Set(previous.map((source) => citationUrl(source.url)));
+    for (const url of new Set(next.map((source) => citationUrl(source.url)))) {
+      if (url && !existing.has(url)) await check(url);
+    }
+  };
+  const previousPeople = new Map(before.people.map((person) => [person.id, person]));
+  for (const person of after.people) {
+    const previous = previousPeople.get(person.id);
+    // A visible child can retain a citation on a hidden parent edge. That
+    // binding stays with the edge, not with every citation on the child card.
+    await addedCitations(
+      previous ? personCitations({ ...previous, parentClaims: [] }) : [],
+      personCitations({ ...person, parentClaims: [] }),
+    );
+    const previousParents = new Map((previous?.parentClaims || [])
+      .map((claim) => [claim.parentId, claim]));
+    for (const claim of person.parentClaims || [])
+      await addedCitations(previousParents.get(claim.parentId)?.sources || [], claim.sources || []);
+  }
+  const previousUnions = new Map((before.unions || []).map((union) => [union.id, union]));
+  for (const union of after.unions || []) {
+    const previous = previousUnions.get(union.id);
+    await addedCitations(previous ? unionCitations(previous) : [], unionCitations(union));
+  }
+  const previousLinks = new Map((before.links || []).map((link) => [link.id, link]));
+  for (const link of after.links || [])
+    await addedCitations(previousLinks.get(link.id)?.sources || [], link.sources || []);
 }

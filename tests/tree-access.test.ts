@@ -37,7 +37,9 @@ const family: Family = {
     person("me", ["ancestor"]),
     person("sibling", ["ancestor"]),
     person("niece", ["sibling"]),
-    { ...person("hidden"), photo: "/media/secret.png" },
+    { ...person("hidden"), photo: "/media/secret.png",
+      sources: [{ title: "Hidden record", type: "архив", reference: "",
+        url: "/media/secret.pdf#page=2" }] },
   ],
   links: [{ id: "god", type: "godparent", from: "hidden", to: "me" }],
   photos: [],
@@ -94,6 +96,7 @@ test("привязка аккаунта и область видимости д�
       join(dir, "uploads", "secret.png"),
       Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
     );
+    writeFileSync(join(dir, "uploads", "secret.pdf"), "%PDF-1.4\n%%EOF\n");
     const provider: typeof fetch = async (url, options) =>
       String(url).includes("/token")
         ? Response.json({
@@ -263,6 +266,7 @@ test("привязка аккаунта и область видимости д�
       4,
     );
     assert.equal((await request("/media/secret.png", relative)).status, 401);
+    assert.equal((await request("/media/secret.pdf", relative)).status, 401);
     assert.equal((await request("/media/secret.png", admin)).status, 200);
     assert.equal((await request("/media/secret.png", reader)).status, 200);
     await app.archive.db
@@ -352,6 +356,26 @@ test("привязка аккаунта и область видимости д�
       );
       assert.equal((await app.archive.meta()).revision, own.revision);
     }
+    const historyBeforeCitations = (await app.archive.db.prepare(
+      "SELECT count(*) AS count FROM history",
+    ).get())?.count;
+    for (const url of ["/media/secret.png", "/media/secret.pdf#page=2"]) {
+      const denied = await request(
+        "/api/family/changes", relative, "POST",
+        { changes: [{ collection: "people", id: "new-branch", field: "sources",
+          before: [], after: [{ title: "Forged", type: "архив", reference: "", url }] }] },
+        own.revision,
+      );
+      assert.equal(denied.status, 403,
+        "an own inline citation must not attach previously hidden media");
+      assert.equal((await app.archive.meta()).revision, own.revision);
+      assert.equal((await request(url.split(/[?#]/, 1)[0], relative)).status, 401);
+    }
+    assert.equal((await app.archive.db.prepare(
+      "SELECT count(*) AS count FROM history",
+    ).get())?.count, historyBeforeCitations);
+    assert.deepEqual((await app.archive.read()).family.people.find(
+      (item) => item.id === "new-branch")?.sources, []);
     assert.equal((await request("/media/secret.png", relative)).status, 401);
     assert.equal(
       (
