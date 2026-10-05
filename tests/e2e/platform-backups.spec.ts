@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { BackupStatus } from "../../src/shared/backup-management";
+import type { Family } from "../../src/domain/types.ts";
 
 test("platform backups have a global endpoint and no archive picker or live restore", async ({ page }, info) => {
   const paths: string[] = [];
@@ -46,7 +47,7 @@ async function managedTree(page: Page, globalRole: "admin" | "researcher" | null
   const paths: string[] = [];
   const user = { id: "tree-owner", name: "Владелец", role: "relative", treeRole: "relative",
     archiveOwner: true, approved: true, globalRole, fullAccess: true, createdAt: "2026-10-06" };
-  const family = { title: "Отдельное древо", description: "", people: [{ id: "synthetic-person",
+  const family: Family = { title: "Отдельное древо", description: "", demo: false, people: [{ id: "synthetic-person",
     name: "Иван", surname: "Тестов", patronymic: "", sex: "m", birth: "1970", birthPlace: "",
     parents: [], spouses: [], sources: [], generation: 1, column: 0, photo: "" }],
     photos: [], links: [], unions: [] };
