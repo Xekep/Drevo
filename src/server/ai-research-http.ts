@@ -1170,6 +1170,13 @@ export function aiResearchHttp({
           controller.abort();
           throw new DOMException("Доступ к ИИ отключён", "AbortError");
         },
+        assertGeneratedFileInstall: async () => {
+          await assertTurnRunning(true);
+          if (await canDeliverAiData(req, chat.accessScope, user.id, true, turnProfile)) return;
+          accessRevoked = true;
+          controller.abort();
+          throw new DOMException("Доступ к ИИ отключён", "AbortError");
+        },
         commitSuggestion: async (name, _actor, family, revision, args) =>
           archive.db.transaction(async () => {
             await assertTurnRunning(true);
