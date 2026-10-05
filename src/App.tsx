@@ -47,6 +47,7 @@ import { TreePreferencesDialog } from "./components/tree-preferences-dialog";
 import { withGenerationAnchor } from "./domain/tree-preferences";
 import { TreeExportDialog } from "./components/tree-export-dialog";
 import { downloadVisibleGenealogy } from "./components/tree/visible-genealogy-download";
+import { visibleGenealogyHasCatalogLinks } from "./domain/visible-genealogy-catalog-warning";
 import { TreeImportDialog } from "./components/tree-import-dialog";
 import { AboutProject } from "./components/about-project";
 import { useDesktopEditing } from "./hooks/useDesktopEditing";
@@ -160,11 +161,14 @@ export default function App() {
       dispatch,
     } = selection;
   const treeCanvas = useRef<TreeCanvasHandle>(null);
-  const checkParentEvidence = useCallback(async (signal: AbortSignal) => {
-    if (!family) return false;
+  const checkExportWarnings = useCallback(async (signal: AbortSignal) => {
+    if (!family) return { parentEvidence: false, catalogLinks: false };
     const visible = new Set(await treeCanvas.current!.visiblePersonIds(signal));
-    return family.people.some((person) => visible.has(person.id) &&
-      person.parentClaims?.some((claim) => visible.has(claim.parentId)));
+    return {
+      parentEvidence: family.people.some((person) => visible.has(person.id) &&
+        person.parentClaims?.some((claim) => visible.has(claim.parentId))),
+      catalogLinks: visibleGenealogyHasCatalogLinks(family, visible),
+    };
   }, [family]);
   const view =
     requestedView === "admin" || requestedView === "manage" || requestedView === "account"
@@ -1406,7 +1410,7 @@ export default function App() {
       )}
       {treeExportOpen && family && readTree && (
         <TreeExportDialog
-          onCheckParentEvidence={checkParentEvidence}
+          onCheckExportWarnings={checkExportWarnings}
           onExportPdf={(signal) => treeCanvas.current!.exportPdf(signal, "current")}
           onExportText={async (signal) => {
             const ids = await treeCanvas.current!.visiblePersonIds(signal);

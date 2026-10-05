@@ -5,43 +5,44 @@ import { EditorDialog } from "./editor-dialog";
 import "../styles/tree-preferences.css";
 
 type ExportFormat = "pdf" | "generation-text" | GenealogyExportFormat;
-const noParentEvidence = async () => false;
+type ExportWarnings = { parentEvidence: boolean; catalogLinks: boolean };
+const noExportWarnings = async (): Promise<ExportWarnings> => ({ parentEvidence: false, catalogLinks: false });
 
 export function TreeExportDialog({
   onClose,
   onExportPdf,
   onExportText,
   onExportGenealogy,
-  onCheckParentEvidence = noParentEvidence,
+  onCheckExportWarnings = noExportWarnings,
 }: {
   onClose: () => void;
   onExportPdf: (signal: AbortSignal) => Promise<void>;
   onExportText: (signal: AbortSignal) => Promise<void>;
   onExportGenealogy?: (format: GenealogyExportFormat, signal: AbortSignal, onError: (message: string) => void) => Promise<void>;
-  onCheckParentEvidence?: (signal: AbortSignal) => Promise<boolean>;
+  onCheckExportWarnings?: (signal: AbortSignal) => Promise<ExportWarnings>;
 }) {
   const [format, setFormat] = useState<ExportFormat>("pdf");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
-  const [parentEvidenceCheck, setParentEvidenceCheck] = useState<{
-    callback: typeof onCheckParentEvidence; value: boolean;
+  const [warningCheck, setWarningCheck] = useState<{
+    callback: typeof onCheckExportWarnings; value: ExportWarnings;
   } | null>(null);
-  const hasParentEvidence = parentEvidenceCheck?.callback === onCheckParentEvidence
-    ? parentEvidenceCheck.value : null;
+  const warnings = warningCheck?.callback === onCheckExportWarnings
+    ? warningCheck.value : null;
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
   useEffect(() => {
     if (!format.startsWith("ged")) return;
     const check = new AbortController();
-    void onCheckParentEvidence(check.signal).then((value) => {
-      if (!check.signal.aborted) setParentEvidenceCheck({ callback: onCheckParentEvidence, value });
+    void onCheckExportWarnings(check.signal).then((value) => {
+      if (!check.signal.aborted) setWarningCheck({ callback: onCheckExportWarnings, value });
     }).catch((reason) => {
       if (!check.signal.aborted)
         setError(reason instanceof Error ? reason.message : "Не удалось проверить состав экспорта.");
     });
     return () => check.abort();
-  }, [format, onCheckParentEvidence]);
+  }, [format, onCheckExportWarnings]);
 
   const exportTree = async () => {
     controller.current?.abort();
@@ -75,7 +76,7 @@ export function TreeExportDialog({
               value={format}
               disabled={busy}
               onChange={(event) => {
-                setParentEvidenceCheck(null);
+                setWarningCheck(null);
                 setFormat(event.target.value as ExportFormat);
               }}
             >
@@ -87,13 +88,15 @@ export function TreeExportDialog({
                 <option value="gedcom551">GEDCOM 5.5.1</option>
               </>}
             </select>
-            <button type="button" disabled={busy || (format.startsWith("ged") && hasParentEvidence === null)} onClick={() => void exportTree()}>
+            <button type="button" disabled={busy || (format.startsWith("ged") && warnings === null)} onClick={() => void exportTree()}>
               <Download size={16} aria-hidden="true" /> Скачать
             </button>
           </div>
-          {format.startsWith("ged") && hasParentEvidence &&
+          {format.startsWith("ged") && warnings?.parentEvidence &&
             <p role="note">Свидетельства и оценки прямого родительства передаются через расширение Drevo.
               Другие программы GEDCOM могут пропустить источники и оценки конкретного родительского ребра.</p>}
+          {format.startsWith("ged") && warnings?.catalogLinks &&
+            <p role="note">Текст цитат и указанные URL сохранятся, но связь с записью каталога источников Drevo не перенесётся в GEDCOM или GEDZIP. Для полного переноса между древами Drevo используйте .drevo.</p>}
         </div>
         <p className="tree-preferences-status" role="status">
           {busy ? "Подготавливаем древо…" : status}
