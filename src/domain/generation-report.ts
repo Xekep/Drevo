@@ -207,6 +207,11 @@ export function generationReport(
           sex === "m" ? "Отец" : sex === "f" ? "Мать" : "Родитель",
           reference(id),
         );
+        const claim = person.parentClaims?.find((item) => item.parentId === id);
+        if (claim?.confidence)
+          write(`Оценка родительства с ${reference(id)}`,
+            CLAIM_CONFIDENCE_LABELS[claim.confidence]);
+        sources(`Источник родительства с ${reference(id)}`, claim?.sources);
       }
       for (const link of [...personLinks.get(person.id)!].sort((a, b) =>
         compareText(a.id, b.id),

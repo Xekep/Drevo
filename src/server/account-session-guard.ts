@@ -18,7 +18,7 @@ export async function assertActiveAccountSession(
     // could form a cross-transaction cycle.
     session = await db
       .prepare(
-        "",
+        "SELECT user_id,expires_at FROM auth_sessions WHERE token_hash=? AND user_id=?",
         `SELECT expires_at FROM account_sessions
          WHERE token_hash=? AND user_id=? FOR SHARE NOWAIT`,
       )

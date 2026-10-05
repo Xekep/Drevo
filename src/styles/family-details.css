@@ -369,6 +369,34 @@
 .award-source-editor[open] summary {
   margin-bottom: 10px;
 }
+.award-source-choice {
+  padding: 10px;
+  border: 1px solid #d4c79e;
+  border-radius: 8px;
+  background: #fff9e9;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.award-source-choice p {
+  margin: 0 0 9px;
+}
+.award-source-choice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.award-source-choice-actions button {
+  max-width: 100%;
+  padding: 6px 9px;
+  border: 1px solid #d4c79e;
+  border-radius: 6px;
+  background: #fff;
+  text-align: left;
+}
+.award-source-choice-actions button:hover,
+.award-source-choice-actions button:focus-visible {
+  background: #f3ecd8;
+}
 .award-inline-actions {
   display: flex;
   align-items: center;

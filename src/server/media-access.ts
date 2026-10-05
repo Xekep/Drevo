@@ -13,8 +13,9 @@ export async function registerMediaUpload(
   url: string,
   userId: string,
   sizeBytes: number,
+  options: { withinTransaction?: boolean } = {},
 ) {
-  await db.transaction(async () => {
+  const register = async () => {
     await db
       .prepare(
         "DELETE FROM media_upload_grants WHERE expires_ms<?",
@@ -30,7 +31,11 @@ export async function registerMediaUpload(
       .run(url, userId, Date.now() + 24 * 60 * 60_000);
     await enforcePostgresMediaQuota(db);
     await enforceUserStorageLimit(db, userId);
-  });
+  };
+  if (options.withinTransaction) {
+    if (!db.inTransaction()) throw new Error("Media registration requires an archive transaction");
+    await register();
+  } else await db.transaction(register);
   return async () =>
     await db.transaction(async () => {
       await db

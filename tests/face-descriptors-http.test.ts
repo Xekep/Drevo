@@ -2,9 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { Family } from "../src/domain/types.ts";
-import type { createAuth } from "../src/server/auth.ts";
+import { createAuth } from "../src/server/auth.ts";
 import { openArchive } from "../src/server/database.ts";
 import { faceDescriptorsHttp } from "../src/server/face-descriptors-http.ts";
+import { newSessionToken, sessionTokenHash } from "../src/server/session-token.ts";
+import { userStore } from "../src/server/users.ts";
 import type { ArchiveUser } from "../src/domain/access.ts";
 
 const person = (id: string) => ({
@@ -56,6 +58,7 @@ test("face matching stays server-side and saving still requires confirmation", a
     );
   let canEdit = true;
   const auth = {
+    local: true,
     canEdit: () => canEdit,
     currentUser: () =>
       canEdit ? { id: "editor", role: "admin", approved: true } : null,
@@ -210,9 +213,106 @@ test("face matching stays server-side and saving still requires confirmation", a
   }
 });
 
+test("a missing actor after edit admission never deletes or saves a face sample", async () => {
+  const archive = await openArchive(":memory:", family);
+  await archive.db.prepare(
+    "INSERT INTO face_descriptors(id,person_id,data,created_by) VALUES(?,?,?,?)",
+  ).run("guarded", "first", "[]", "editor");
+  const editor = { id: "editor", role: "admin" as const, approved: true };
+  try {
+    for (const stage of ["preflight", "afterBody"] as const) {
+      let lookups = 0;
+      const auth = {
+        local: true,
+        canEdit: () => true,
+        currentUser: () => ++lookups === (stage === "preflight" ? 1 : 2)
+          ? null : editor,
+      } as unknown as Awaited<ReturnType<typeof createAuth>>;
+      const handler = faceDescriptorsHttp({ archive, auth });
+      const server = createServer(async (req, res) => {
+        if (!await handler(req, res, new URL(req.url || "/", "http://localhost")))
+          res.writeHead(404).end();
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      assert.ok(address && typeof address !== "string");
+      try {
+        const response = stage === "preflight"
+          ? await fetch(`http://127.0.0.1:${address.port}/api/faces/descriptors/guarded`,
+            { method: "DELETE" })
+          : await fetch(`http://127.0.0.1:${address.port}/api/faces/descriptors`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: "not-saved", personId: "first",
+              sourcePhotoId: "source-photo", sourceTagId: "tag-first",
+              model: "face-api-1.7.15", descriptor: Array(128).fill(0) }),
+          });
+        assert.equal(response.status, 401);
+        assert.ok(await archive.db.prepare("SELECT id FROM face_descriptors WHERE id=?")
+          .get("guarded"));
+        assert.equal(await archive.db.prepare("SELECT id FROM face_descriptors WHERE id=?")
+          .get("not-saved"), undefined);
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    }
+  } finally { await archive.close(); }
+});
+
+test("a completed SQLite logout after face-delete preflight cannot delete the sample", async () => {
+  const archive = await openArchive(":memory:", family);
+  const users = await userStore(archive.db, {
+    initialAdminId: "editor", requireInitialAdmin: false,
+  });
+  const editor = await users.register("editor", "Editor");
+  assert.equal(editor.role, "admin");
+  const auth = await createAuth(users, archive.db, "https://archive.test");
+  const token = newSessionToken();
+  const tokenHash = sessionTokenHash(token);
+  await archive.db.prepare(
+    "INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
+  ).run(tokenHash, editor.id, Date.now() + 60_000);
+  await archive.db.prepare(
+    "INSERT INTO face_descriptors(id,person_id,data,created_by) VALUES(?,?,?,?)",
+  ).run("session-guarded", "first", "[]", editor.id);
+  const handler = faceDescriptorsHttp({ archive, auth, publicOrigin: "https://archive.test" });
+  const server = createServer(async (req, res) => {
+    if (!await handler(req, res, new URL(req.url || "/", "https://archive.test")))
+      res.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const transaction = archive.db.transaction.bind(archive.db);
+  let revokeBeforeMutation = false;
+  archive.db.transaction = async (work, readOnly) => {
+    if (revokeBeforeMutation) {
+      revokeBeforeMutation = false;
+      await archive.db.prepare("DELETE FROM auth_sessions WHERE token_hash=?")
+        .run(tokenHash);
+    }
+    return transaction(work, readOnly);
+  };
+  const remove = () => fetch(
+    `http://127.0.0.1:${address.port}/api/faces/descriptors/session-guarded`,
+    { method: "DELETE", headers: { Cookie: `drevo_session=${token}` } },
+  );
+  try {
+    revokeBeforeMutation = true;
+    const response = await remove();
+    assert.equal(response.status, 401);
+    assert.ok(await archive.db.prepare("SELECT id FROM face_descriptors WHERE id=?")
+      .get("session-guarded"));
+  } finally {
+    archive.db.transaction = transaction;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await archive.close();
+  }
+});
+
 test("a face template is not saved after its photo tag changes during detection", async () => {
   const archive = await openArchive(":memory:", family);
   const auth = {
+    local: true,
     canEdit: () => true,
     currentUser: () => ({ id: "editor", role: "admin", approved: true }),
   } as unknown as Awaited<ReturnType<typeof createAuth>>;

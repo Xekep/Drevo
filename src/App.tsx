@@ -1276,11 +1276,14 @@ export default function App() {
           <ArchiveLoading />
         )}
       </div>
-      {notice && (
+      {(archive.committedUploadNotice || notice) && (
         <div className="archive-toast" role="status">
-          {notice}
+          {archive.committedUploadNotice || notice}
           <button
-            onClick={() => setNotice("")}
+            onClick={() => {
+              archive.dismissCommittedUploadNotice();
+              setNotice("");
+            }}
             aria-label="Закрыть уведомление"
           >
             <X size={17} />
