@@ -120,7 +120,18 @@ test("direct GEDCOM warns about visible catalog links without claiming citation 
   test.skip(isMobile, "Canvas export is available on desktop");
   const response = await page.request.get("/api/family");
   const snapshot = await response.json();
-  const family = structuredClone(snapshot.family) as Family;
+  // Other E2E scenarios persist catalog citations in this server. Keep this
+  // visibility scenario independent of those people and their evidence.
+  const ids = ["e2e-parent", "e2e-child", "e2e-grandchild"];
+  const family: Family = {
+    title: "Проверка предупреждения экспорта", description: "", demo: false,
+    people: ids.map((id, index) => ({
+      id, name: ["Иван", "Пётр", "Анна"][index], surname: "Тестов", patronymic: "",
+      sex: index === 2 ? "f" : "m", birth: ["1940", "1970", "2000"][index], birthPlace: "",
+      parents: index ? [ids[index - 1]] : [], spouses: [],
+      generation: index + 1, column: 0, sources: [],
+    })),
+  };
   const grandchild = family.people.find((person) => person.id === "e2e-grandchild")!;
   grandchild.sources = [{
     catalogId: "catalog-entry", title: "Register", type: "archive", reference: "p. 7",
