@@ -184,6 +184,11 @@ export default function SharedTree({ token }: { token: string }) {
                 }
                 colorScheme={preferences?.colorScheme}
                 generationLimits={preferences?.generationLimits}
+                onResetGenerations={async () => {
+                  const value = { ...(preferences ?? DEFAULT_TREE_PREFERENCES), generationLimits: null };
+                  writeGuestTreePreferences(value);
+                  setPreferences(value);
+                }}
                 onGenerationAnchor={async (id) => {
                   const value = withGenerationAnchor(
                     preferences ?? DEFAULT_TREE_PREFERENCES,

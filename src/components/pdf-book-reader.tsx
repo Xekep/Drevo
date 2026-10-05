@@ -468,11 +468,7 @@ export function PdfBookReader({
           setMagnifier(false);
         }}
       >
-        {typeof window !== "undefined" && memberPreviewAt(window.location.pathname) && (
-          <div className="pdf-book-preview-exit-bar">
-            <MemberPreviewExit />
-          </div>
-        )}
+        <MemberPreviewExit />
         <div className="pdf-book-content">
           <div className="pdf-book-stage">
             <div className="pdf-book-host">
@@ -480,6 +476,9 @@ export function PdfBookReader({
                 ref={frame}
                 className="pdf-book-frame"
                 src="/bookreader-frame.html"
+                // The reader's full-window fallback stays inside the dialog.
+                // Native iframe fullscreen would hide the participant exit.
+                allow={memberPreviewAt(window.location.pathname) ? "fullscreen 'none'" : undefined}
                 title="Страницы документа"
                 aria-busy={loading}
                 style={{

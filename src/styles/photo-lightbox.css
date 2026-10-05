@@ -400,6 +400,16 @@
 .photo-lightbox-content {
   height: 100%;
 }
+.photo-lightbox:has(> .member-preview-banner) {
+  display: flex;
+  flex-direction: column;
+}
+.photo-lightbox:has(> .member-preview-banner) > .photo-lightbox-content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
 .photo-image-space {
   overflow: hidden;
   touch-action: pan-y pinch-zoom;

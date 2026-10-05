@@ -125,6 +125,12 @@ test("reference autocomplete keeps the saved anchor while typing and finds peopl
   await expect(canvas).not.toHaveClass(/is-layout-settling/);
   await page.screenshot({ path: testInfo.outputPath("anchor-status.png") });
   expect(searchRequests).toEqual([]);
+  rejectSave = false;
+  await anchorStatus.getByRole("button", { name: "Всё древо", exact: true }).click();
+  await expect(anchorStatus).toHaveCount(0);
+  await expect(canvas).toHaveAttribute("data-layout-people", "6");
+  await expect.poll(() => writes.length).toBe(2);
+  expect(writes[1].generationLimits).toBeNull();
 });
 
 test("generation settings trim the visible tree and survive reload without changing genealogy", async ({

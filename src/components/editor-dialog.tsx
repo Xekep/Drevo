@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
+import { MemberPreviewExit } from "./member-preview-exit";
 export function EditorDialog({
   title,
   onClose,
@@ -9,6 +10,7 @@ export function EditorDialog({
   suspended = false,
   className = "",
   headerActions,
+  dismissOnOutside = false,
 }: {
   title: string;
   onClose: () => void;
@@ -18,8 +20,10 @@ export function EditorDialog({
   suspended?: boolean;
   className?: string;
   headerActions?: ReactNode;
+  dismissOnOutside?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const backdropPress = useRef(false);
   useLayoutEffect(() => {
     const dialog = ref.current;
     if (!inline) {
@@ -29,6 +33,26 @@ export function EditorDialog({
       return () => dialog?.close();
     }
   }, [inline, suspended]);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dismissOnOutside || !dialog || inline) return;
+    const press = (event: PointerEvent) => {
+      const bounds = dialog.getBoundingClientRect();
+      backdropPress.current = event.target === dialog &&
+        (event.clientX < bounds.left || event.clientX > bounds.right ||
+          event.clientY < bounds.top || event.clientY > bounds.bottom);
+    };
+    const click = (event: MouseEvent) => {
+      if (backdropPress.current && event.target === dialog) onClose();
+      backdropPress.current = false;
+    };
+    dialog.addEventListener("pointerdown", press);
+    dialog.addEventListener("click", click);
+    return () => {
+      dialog.removeEventListener("pointerdown", press);
+      dialog.removeEventListener("click", click);
+    };
+  }, [dismissOnOutside, inline, onClose]);
   if (inline)
     return (
       <section className={`inline-editor ${className}`} aria-label={title}>
@@ -58,6 +82,7 @@ export function EditorDialog({
       }}
       aria-label={title}
     >
+      <MemberPreviewExit />
       <header>
         <h2>{title}</h2>
         {headerActions}

@@ -46,6 +46,11 @@
   min-width: 0;
   max-width: 360px;
 }
+.tree-generation-status .tree-family-count,
+.tree-generation-status button {
+  flex: none;
+}
+.tree-generation-status button { white-space: nowrap; }
 .tree-family-tools button {
   min-height: 34px;
   padding: 5px 8px;

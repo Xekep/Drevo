@@ -163,15 +163,8 @@
   min-height: 0;
   color: #f1f3ee;
 }
-.pdf-book-dialog:has(.pdf-book-preview-exit-bar) {
+.pdf-book-dialog:has(.member-preview-banner) {
   flex-direction: column;
-}
-.pdf-book-preview-exit-bar {
-  display: flex;
-  flex: 0 0 auto;
-  justify-content: flex-end;
-  padding: max(4px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 4px;
-  background: #171c19;
 }
 .pdf-book-dialog::backdrop {
   background: transparent;
