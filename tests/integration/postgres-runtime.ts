@@ -12514,7 +12514,10 @@ try {
       const reservations = await importArchive.db.prepare("", "SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests WHERE reserved_bytes>0").get();
       const platformReservations = await client.query("SELECT coalesce(sum(reserved_bytes),0)::bigint AS bytes FROM platform_upload_reservations");
       const uploads = join(dirname(selectedDbPath), "uploads");
-      const files = () => existsSync(uploads) ? readdirSync(uploads, { recursive: true }).sort() : [];
+      // Empty support directories may remain after rollback; original bytes,
+      // symlinks and temporary files must not. Keep each entry's full path.
+      const files = () => existsSync(uploads) ? readdirSync(uploads, { recursive: true, withFileTypes: true })
+        .filter((entry) => !entry.isDirectory()).map((entry) => join(entry.parentPath, entry.name)).sort() : [];
       const beforeFiles = files();
       const denied = await fetch(oauthBase + location.replace(/\/tree$/, "/api/drevo/import"), {
         method: "POST", headers: { ...transferHeaders, "Content-Type": "application/json" },
