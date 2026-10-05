@@ -74,7 +74,7 @@ test("participants paginate by stable cursor and deleting a member revokes sessi
     );
     await assert.rejects(
       async () => await store.remove(admin, admin.id),
-      /собственный аккаунт/,
+      /свой доступ к древу/,
     );
     db.prepare(
       "INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
