@@ -4,14 +4,19 @@ import { TreePublicationStatuses } from "./tree-publication-statuses.ts";
 
 const PublicationStatuses = createContext<TreePublicationStatuses | null>(null);
 
-export function TreePublicationProvider({ enabled, update, children }: {
+export function TreePublicationProvider({ enabled, scope, update, children }: {
   enabled: boolean;
+  scope: string;
   update?: { personId: string; published: boolean } | null;
   children: ReactNode;
 }) {
   const endpoint = archiveResourceUrl("/api/admin/published-people/batch");
-  const statuses = useMemo(() => enabled
-    ? new TreePublicationStatuses(endpoint, (input, init) => fetch(input, init)) : null, [enabled, endpoint]);
+  const statuses = useMemo(() => {
+    // Reset only the private cache when access changes; retain the canvas subtree.
+    void scope;
+    return enabled
+      ? new TreePublicationStatuses(endpoint, (input, init) => fetch(input, init)) : null;
+  }, [enabled, endpoint, scope]);
   useEffect(() => {
     statuses?.start();
     return () => statuses?.stop();

@@ -1481,7 +1481,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   return (
     <TreeActions.Provider value={gpuActions}>
-      <TreePublicationProvider key={gpuScope} enabled={!!props.onPublishPerson}
+      <TreePublicationProvider scope={gpuScope} enabled={!!props.onPublishPerson}
         update={props.publicationUpdate?.archiveId === (gpuArchiveContext?.id || null)
           ? props.publicationUpdate : null}>
       <div
