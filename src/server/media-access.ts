@@ -86,7 +86,36 @@ export async function authorizeMediaReferences(
     ...allCitations(visible).map((source) => citationUrl(source.url))
       .filter((url): url is string => !!url),
   ]);
-  const check = async (url?: string, previousPerson?: Person) => {
+  const ownHistoricalPersonSource = async (personId: string, url: string) =>
+    !!(await db.prepare(
+      `SELECT 1 FROM media_originals m WHERE m.url=? AND m.uploaded_by=?
+       AND EXISTS (
+         SELECT 1 FROM history h,json_each(h.data,'$.people') p,
+           json_each(p.value,'$.sources') s
+         WHERE json_extract(p.value,'$.id')=?
+           AND json_extract(p.value,'$.createdBy')=?
+           AND (json_extract(s.value,'$.url')=m.url
+             OR substr(json_extract(s.value,'$.url'),1,length(m.url)+1)
+               IN (m.url||'#',m.url||'?'))
+       ) LIMIT 1`,
+      `SELECT 1 FROM media_originals m WHERE m.url=? AND m.uploaded_by=?
+       AND EXISTS (
+         SELECT 1 FROM history h
+         CROSS JOIN LATERAL jsonb_array_elements(CASE
+           WHEN jsonb_typeof(h.data->'people')='array' THEN h.data->'people'
+           ELSE '[]'::jsonb END) p(value)
+         CROSS JOIN LATERAL jsonb_array_elements(CASE
+           WHEN jsonb_typeof(p.value->'sources')='array' THEN p.value->'sources'
+           ELSE '[]'::jsonb END) s(value)
+         WHERE p.value->>'id'=? AND p.value->>'createdBy'=?
+           AND split_part(split_part(s.value->>'url','#',1),'?',1)=m.url
+       ) LIMIT 1`,
+    ).get(url, user.id, personId, user.id));
+  const check = async (
+    url?: string,
+    previousPerson?: Person,
+    ownPersonSourceRestore?: () => Promise<boolean>,
+  ) => {
     if (
       url?.startsWith("/media/") &&
       !allowed.has(url) &&
@@ -109,6 +138,7 @@ export async function authorizeMediaReferences(
           .get(previousPerson.id, user.id, url))
       )
         return;
+      if (ownPersonSourceRestore && await ownPersonSourceRestore()) return;
       throw new ForbiddenError("Нет доступа к выбранному изображению");
     }
   };
@@ -125,10 +155,13 @@ export async function authorizeMediaReferences(
   const addedCitations = async (
     previous: Array<{ url?: string }>,
     next: Array<{ url?: string }>,
+    ownPersonSourceRestore?: (url: string) => Promise<boolean>,
   ) => {
     const existing = new Set(previous.map((source) => citationUrl(source.url)));
     for (const url of new Set(next.map((source) => citationUrl(source.url)))) {
-      if (url && !existing.has(url)) await check(url);
+      if (url && !existing.has(url))
+        await check(url, undefined, ownPersonSourceRestore
+          ? () => ownPersonSourceRestore(url) : undefined);
     }
   };
   const previousPeople = new Map(before.people.map((person) => [person.id, person]));
@@ -139,6 +172,16 @@ export async function authorizeMediaReferences(
     await addedCitations(
       previous ? personCitations({ ...previous, parentClaims: [] }) : [],
       personCitations({ ...person, parentClaims: [] }),
+      async (url) => {
+        if (previous?.createdBy !== user.id || person.createdBy !== user.id ||
+          !person.sources.some((source) => citationUrl(source.url) === url))
+          return false;
+        // A URL restored on the card may not be introduced on an event,
+        // award, claim, or other slot in the same write.
+        const otherSlots = personCitations({ ...person, sources: [], parentClaims: [] });
+        if (otherSlots.some((source) => citationUrl(source.url) === url)) return false;
+        return await ownHistoricalPersonSource(person.id, url);
+      },
     );
     const previousParents = new Map((previous?.parentClaims || [])
       .map((claim) => [claim.parentId, claim]));
