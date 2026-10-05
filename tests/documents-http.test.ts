@@ -675,7 +675,7 @@ test("document deletion enforces ownership, scope and origin, removes files and 
         title: "Test",
         description: "",
         demo: false,
-        people: ["anna", "hidden", "outsider"].map((id) => ({
+        people: ["anna", "hidden", "outsider", "partner"].map((id) => ({
           id,
           name: id,
           surname: "Test",
@@ -823,9 +823,17 @@ test("document deletion enforces ownership, scope and origin, removes files and 
     cited.family.people[1].birthDateClaim = { value: "1950", sources: [
       { title: "Hidden birth record", type: "archive", reference: "", documentId: id },
     ] };
-    cited.family.unions = [{ id: "anna-hidden-union", participants: ["anna", "hidden"],
+    cited.family.people[3].birthDateClaim = { value: "1950", sources: [
+      { title: "Partner birth record", type: "archive", reference: "", documentId: id },
+    ] };
+    // A union partner of the anchor belongs to the blood-family scope. Keep
+    // genuinely hidden citations on a different couple, without a union to Anna.
+    cited.family.unions = [{ id: "hidden-outsider-union", participants: ["hidden", "outsider"],
       type: "marriage", sources: [{ title: "Hidden union record", type: "archive",
-        reference: "", documentId: id }] }];
+        reference: "", documentId: id }] },
+      { id: "anna-partner-union", participants: ["anna", "partner"],
+        type: "partnership", sources: [{ title: "Partner union record", type: "archive",
+          reference: "", documentId: id }] }];
     cited.family.links = [{ id: "anna-hidden-link", from: "anna", to: "hidden",
       type: "guardian", sources: [{ title: "Hidden link record", type: "archive",
         reference: "", documentId: id }] }];
@@ -836,17 +844,24 @@ test("document deletion enforces ownership, scope and origin, removes files and 
     assert.ok(adminSources.sources.some((source) => source.title === "Hidden birth record"));
     assert.ok(adminSources.sources.some((source) => source.title === "Hidden union record"));
     assert.ok(adminSources.sources.some((source) => source.title === "Hidden link record"));
+    assert.ok(adminSources.sources.some((source) => source.title === "Partner union record"));
     await db
       .prepare(
         "UPDATE users SET person_id='anna',tree_access='common_ancestors' WHERE id='owner'",
       )
       .run();
+    const scopedFamily = (await (await request("/api/family", "owner")).json()).family as Family;
+    assert.deepEqual(scopedFamily.people.map((person) => person.id), ["anna", "partner"]);
+    assert.deepEqual(scopedFamily.people.find((person) => person.id === "anna")!.spouses, [],
+      "the union record alone grants the one-hop partner visibility");
     const scopedDocument = (await (await request(path, "owner")).json()) as {
       eventLinks: Array<{ personId: string }>;
       sources: Array<{ title: string; personName: string }>;
     };
     assert.deepEqual(scopedDocument.eventLinks.map((link) => link.personId), ["anna"]);
-    assert.deepEqual(scopedDocument.sources.map((source) => source.title), ["Visible birth record"]);
+    assert.deepEqual(scopedDocument.sources.map((source) => source.title), [
+      "Visible birth record", "Partner birth record", "Partner union record",
+    ]);
     assert.ok(scopedDocument.sources.every((source) => !source.personName.includes("hidden")));
     const scopedList = (await (await request("/api/documents", "owner")).json()) as {
       items: Array<{ sources: typeof scopedDocument.sources }>;
