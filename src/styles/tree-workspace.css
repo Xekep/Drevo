@@ -2273,6 +2273,7 @@
   outline: 2px solid #315d3b;
   outline-offset: 2px;
 }
+.flow-person.is-portrait-card .flow-privacy[data-publication-state="unknown"] svg,
 .flow-person.is-portrait-card .flow-privacy[data-publication-state="loading"] svg {
   animation: archive-loader-spin 760ms linear infinite;
 }
