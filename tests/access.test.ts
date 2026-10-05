@@ -372,6 +372,55 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       ).reverseTimeline,
       false,
     );
+    const settingsBeforeReaderReset = await request(
+      "/api/settings",
+      admin,
+    ).then((response) => response.json());
+    assert.equal(
+      (
+        await request("/api/tree-preferences", reader, "PUT", {
+          reverseTimeline: true,
+          colorScheme: "white",
+          generationLimits: {
+            anchorId: "person",
+            ancestors: 3,
+            descendants: 1,
+            collateral: 0,
+          },
+        })
+      ).status,
+      200,
+    );
+    assert.deepEqual(
+      await request("/api/tree-preferences", reader, "PUT", {
+        reverseTimeline: false,
+        cardVariant: "portrait",
+        colorScheme: "warm",
+        generationLimits: null,
+      }).then((response) => response.json()),
+      { reverseTimeline: false, cardVariant: "portrait", colorScheme: "warm" },
+    );
+    assert.deepEqual(
+      await request("/api/settings", admin).then((response) => response.json()),
+      settingsBeforeReaderReset,
+      "сброс личного вида читателя не изменяет настройки архива",
+    );
+    assert.deepEqual(
+      await request("/api/tree-preferences", admin).then((response) =>
+        response.json(),
+      ),
+      portraitPreferences,
+      "сброс личного вида читателя не изменяет выбор владельца",
+    );
+    assert.equal(
+      (
+        await request("/api/family?projection=overview", reader).then(
+          (response) => response.json(),
+        )
+      ).canEdit,
+      false,
+      "личные настройки не дают читателю права редактировать архив",
+    );
     for (const cookie of [admin, reader]) {
       assert.equal((await request("/api/documents", cookie)).status, 200);
       const exported = await request("/api/export.json", cookie);
@@ -483,24 +532,49 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     assert.equal(minimal.birth, "");
     assert.equal(minimal.sex, "u");
     const createdSource = await request("/api/sources", admin, "POST", {
-      title: "Закрытая архивная запись", archive: "ГАСО",
+      title: "Закрытая архивная запись",
+      archive: "ГАСО",
     });
     assert.equal(createdSource.status, 201);
     const sourceId = (await createdSource.json()).source.id as string;
     assert.equal((await request("/api/sources", reader)).status, 403);
     data = await request("/api/family", reader).then((r) => r.json());
-    const guessedCitation = { catalogId: sourceId, title: "Угаданная запись",
-      type: "", reference: "" };
+    const guessedCitation = {
+      catalogId: sourceId,
+      title: "Угаданная запись",
+      type: "",
+      reference: "",
+    };
     const guessedPerson = structuredClone(data.family) as Family;
-    guessedPerson.people.find((p) => p.id === "own")!.sources.push(guessedCitation);
-    assert.equal((await request("/api/family", reader, "PUT", guessedPerson, data.revision)).status,
-      403, "direct archive writes cannot bypass the admin-only catalog");
+    guessedPerson.people
+      .find((p) => p.id === "own")!
+      .sources.push(guessedCitation);
+    assert.equal(
+      (
+        await request(
+          "/api/family",
+          reader,
+          "PUT",
+          guessedPerson,
+          data.revision,
+        )
+      ).status,
+      403,
+      "direct archive writes cannot bypass the admin-only catalog",
+    );
     const guessedPlace = structuredClone(data.family) as Family;
     const ownWithPlace = guessedPlace.people.find((p) => p.id === "own")!;
     ownWithPlace.birthPlace = "Тула";
-    ownWithPlace.birthPlaceClaim = { value: "Тула", sources: [guessedCitation] };
-    assert.equal((await request("/api/family", reader, "PUT", guessedPlace, data.revision)).status,
-      403, "a place claim cannot reveal an admin-only catalog entry");
+    ownWithPlace.birthPlaceClaim = {
+      value: "Тула",
+      sources: [guessedCitation],
+    };
+    assert.equal(
+      (await request("/api/family", reader, "PUT", guessedPlace, data.revision))
+        .status,
+      403,
+      "a place claim cannot reveal an admin-only catalog entry",
+    );
     const original = structuredClone(data.family) as Family;
     const bad = structuredClone(original);
     bad.people[0].name = "Подмена";

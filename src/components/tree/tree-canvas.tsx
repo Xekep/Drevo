@@ -49,6 +49,7 @@ import { archiveContextAt } from "../../domain/archive-context.ts";
 import { mediaPreview } from "../../domain/media-preview.ts";
 import { familyNeighbors, withoutReviewPeople } from "../../domain/family-neighborhood.ts";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
+import { TreePublicationProvider } from "./tree-publication-provider";
 import { DistantPortraits } from "./distant-portraits";
 import { TreeGpuScene } from "./tree-gpu-scene";
 import { GpuPortraitCache } from "./gpu-portrait-cache";
@@ -1480,6 +1481,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   return (
     <TreeActions.Provider value={gpuActions}>
+      <TreePublicationProvider key={gpuScope} enabled={!!props.onPublishPerson}
+        update={props.publicationUpdate?.archiveId === (gpuArchiveContext?.id || null)
+          ? props.publicationUpdate : null}>
       <div
         ref={container}
         data-layout-ready={ready}
@@ -2063,6 +2067,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           </div>
         )}
       </div>
+      </TreePublicationProvider>
     </TreeActions.Provider>
   );
 });

@@ -30,6 +30,7 @@ import "./styles/entry-sequence.css";
 import "./styles/public-people.css";
 import { ArchiveLoading } from "./components/archive-loading";
 import { memberPreviewAt } from "./domain/archive-context.ts";
+import { archiveViewAt } from "./domain/archive-routes.ts";
 
 const App = lazy(() => import("./App"));
 const SharedTree = lazy(() => import("./components/shared-tree"));
@@ -135,7 +136,7 @@ class RootErrorBoundary extends Component<
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RootErrorBoundary>
-      <Suspense fallback={<ArchiveLoading />}>
+      <Suspense fallback={<ArchiveLoading canvas={!!sharedToken || archiveViewAt(location.pathname) === "tree"} />}>
         <Entry />
       </Suspense>
     </RootErrorBoundary>

@@ -229,6 +229,7 @@ function AdminUserRow({
         <span>Показывать</span>
         <select
           aria-label={`Доступ к древу: ${user.name}`}
+          title="Кровные: кровные родственники привязанного человека и их супруги"
           value={user.personId ? user.treeAccess || "all" : "all"}
           disabled={busy || isArchiveOwner(user) || !user.personId}
           onChange={(event) =>
@@ -239,7 +240,7 @@ function AdminUserRow({
           }
         >
           <option value="all">Всё древо</option>
-          <option value="common_ancestors">Общие предки</option>
+          <option value="common_ancestors">Кровные</option>
         </select>
       </label>
       <div className="admin-user-actions">
@@ -493,7 +494,7 @@ export function AdminPanel({
             </p>
             {(settings.publicTree || settings.publicAlbums) && (
               <p role="note" className="form-error">
-                Для доступа по общим предкам сначала закройте публичное древо и
+                Для доступа только к кровным родственникам и их супругам сначала закройте публичное древо и
                 альбомы в разделе «Общий доступ».
               </p>
             )}

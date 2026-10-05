@@ -207,6 +207,37 @@ test.afterEach(async ({ page }) => {
   await page.unrouteAll({ behavior: "wait" });
 });
 
+test("member preview exposes view settings without writing either account or guest preferences", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem(
+    "drevo:guest-tree-preferences:v1", JSON.stringify({ reverseTimeline: true, colorScheme: "white" }),
+  ));
+  const { requests, unscoped } = await mockPreview(page);
+  await page.goto(`${prefix}/tree`);
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).not.toHaveClass(/theme-white/);
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  const dialog = page.getByRole("dialog", { name: "Вид древа" });
+  await expect(dialog.getByRole("radio", { name: "Предки сверху" })).toBeChecked();
+  await expect(dialog.getByRole("button", { name: "Управление древом" })).toHaveCount(0);
+  await dialog.getByRole("radio", { name: "Белая" }).check();
+  await expect(canvas).toHaveClass(/theme-white/);
+  await dialog.getByRole("radio", { name: "Потомки сверху" }).check();
+  await expect(dialog.getByRole("radio", { name: "Потомки сверху" })).toBeChecked();
+  await dialog.getByRole("button", { name: "Сбросить вид" }).click();
+  await expect(dialog.getByRole("radio", { name: "Предки сверху" })).toBeChecked();
+  await expect(canvas).not.toHaveClass(/theme-white/);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("drevo:guest-tree-preferences:v1")!)))
+    .toEqual({ reverseTimeline: true, colorScheme: "white" });
+  await page.reload();
+  await expect(page.locator('.flow-person[data-person-id="child"] .portrait-card-info small').first())
+    .toHaveText("Это вы");
+  await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  await expect(dialog.getByRole("radio", { name: "Предки сверху" })).toBeChecked();
+  expect(unscoped).toEqual([]);
+  expect(requests.every((request) => request.method === "GET")).toBe(true);
+});
+
 test("member preview keeps all archive sections and deep links in the member scope", async ({
   page,
 }, info) => {

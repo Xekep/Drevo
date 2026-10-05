@@ -218,6 +218,26 @@
   cursor: wait;
   opacity: 0.7;
 }
+.tree-preferences-reset {
+  margin-left: auto;
+  flex: none;
+  min-height: 32px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: #596a58;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tree-preferences-reset:hover {
+  color: #365b40;
+  text-decoration: underline;
+}
+.tree-preferences-reset:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
 .tree-admin-link {
   min-height: 36px;
   border: 1px solid #dce3d6;

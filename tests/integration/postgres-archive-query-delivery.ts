@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { IncomingMessage } from "node:http";
-import { fixture, tokens } from "./postgres-fixture.ts";
+import { fixture, tokens, person } from "./postgres-fixture.ts";
 import { sessionTokenHash } from "../../src/server/session-token.ts";
 import { postgresBindings, type StoreDatabase } from "../../src/server/store-database.ts";
 import { readPostgresArchive } from "../../src/server/postgres-archive-read.ts";
@@ -23,6 +23,15 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
   await first.query(`UPDATE archive_memberships
     SET tree_access='common_ancestors',person_id='child'
     WHERE archive_id='tree-a' AND user_id='relative'`);
+  for (const [ordinal, id] of [[3, "partner"], [4, "partner-parent"],
+    [5, "partner-other-spouse"]] as const)
+    await first.query(`INSERT INTO people(archive_id,id,ordinal,data)
+      VALUES('tree-a',$1,$2,$3::jsonb)`, [id, ordinal,
+      JSON.stringify(person(id, "1980"))]);
+  await first.query(`INSERT INTO relations(archive_id,id,source,target,type,ordinal)
+    VALUES('tree-a','blood-partner','child','partner','spouse',10),
+          ('tree-a','partner-parent','partner-parent','partner','parent',11),
+          ('tree-a','partner-other-spouse','partner','partner-other-spouse','spouse',12)`);
   await first.query(`CREATE TABLE request_rate_limits (
     scope text NOT NULL, key_hash text NOT NULL, started_at bigint NOT NULL,
     attempts integer NOT NULL, PRIMARY KEY(scope,key_hash))`);
@@ -154,8 +163,16 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
 
   const unchanged = await get("/api/export.json");
   assert.equal(unchanged.status, 200);
-  assert.equal((await unchanged.json()).people.some((person: { id: string }) =>
+  const unchangedPeople = (await unchanged.json()).people as Array<{ id: string;
+    parents: string[]; spouses: string[] }>;
+  assert.equal(unchangedPeople.some((person) =>
     person.id === "father"), true, "unchanged scoped access still returns an ancestor");
+  const visiblePartner = unchangedPeople.find((person) => person.id === "partner");
+  assert.ok(visiblePartner, "a recorded spouse of a blood relative is visible");
+  assert.deepEqual(visiblePartner.parents, [], "a partner's unrelated parents remain private");
+  assert.deepEqual(visiblePartner.spouses, ["child"], "a partner's other spouse remains private");
+  assert.ok(!unchangedPeople.some((person) =>
+    ["partner-parent", "partner-other-spouse"].includes(person.id)));
 
 
   async function race(path: string, update: () => Promise<unknown>, token = tokens.relative) {
@@ -178,6 +195,21 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
     }
     return await pending;
   }
+
+  const removedPartner = await race("/api/export.json", async () => {
+    await second.query("DELETE FROM relations WHERE archive_id='tree-a' AND id='blood-partner'");
+    await second.query("UPDATE archives SET revision=revision+1 WHERE id='tree-a'");
+  });
+  assert.equal(removedPartner.status, 409,
+    "removing the marriage before delivery withholds the prepared spouse data");
+  assert.doesNotMatch(await removedPartner.text(), /partner/);
+  const afterPartnerRemoval = await get("/api/export.json");
+  assert.equal(afterPartnerRemoval.status, 200);
+  assert.ok(!(await afterPartnerRemoval.json()).people.some((person: { id: string }) =>
+    person.id === "partner"), "a fresh read no longer opens the former access path");
+  await second.query(`INSERT INTO relations(archive_id,id,source,target,type,ordinal)
+    VALUES('tree-a','blood-partner','child','partner','spouse',10)`);
+  await second.query("UPDATE archives SET revision=revision+1 WHERE id='tree-a'");
 
   const staleAdminExport = await race("/api/export.json", async () => {
     await second.query(`UPDATE people SET data=jsonb_set(data,'{name}',

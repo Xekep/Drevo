@@ -20,6 +20,7 @@ import {
 import { TreePreferencesDialog } from "./tree-preferences-dialog";
 import { TreeExportDialog } from "./tree-export-dialog";
 import { TreeSearch } from "./tree-search";
+import { ArchiveLoading } from "./archive-loading";
 const noop = () => {};
 type SharedData = {
   family: Family;
@@ -247,12 +248,12 @@ export default function SharedTree({ token }: { token: string }) {
               )}
             </div>
           </main>
-        ) : (
+        ) : error ? (
           <main className="archive-status">
-            <h1>{error ? "Ссылка недоступна" : "Открываем семью…"}</h1>
-            {error && <p role="alert">{error}</p>}
+            <h1>Ссылка недоступна</h1>
+            <p role="alert">{error}</p>
           </main>
-        )}
+        ) : <ArchiveLoading canvas />}
       </div>
       {data && preferences && preferencesOpen && (
         <TreePreferencesDialog

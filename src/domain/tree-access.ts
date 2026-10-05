@@ -2,7 +2,7 @@ import type { ArchiveUser } from "./access.ts";
 import { isArchiveOwner } from "./access.ts";
 import type { Family } from "./types.ts";
 import {
-  commonAncestorNetwork,
+  bloodRelativesWithPartners,
   familyNeighbors,
 } from "./family-neighborhood.ts";
 
@@ -17,7 +17,7 @@ export function visiblePersonIds(family: Family, user: ArchiveUser) {
   if (!isScopedUser(user))
     return new Set(family.people.map((person) => person.id));
   const ids = user.personId
-    ? commonAncestorNetwork(familyNeighbors(family), user.personId)
+    ? bloodRelativesWithPartners(familyNeighbors(family), user.personId)
     : new Set<string>();
   for (const person of family.people)
     if (person.createdBy === user.id) ids.add(person.id);

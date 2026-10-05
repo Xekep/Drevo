@@ -203,9 +203,42 @@ test("privacy eye opens with one tap on mobile", async ({ page, isMobile }) => {
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
   const privacy = page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-privacy");
   await expect(privacy).toBeVisible();
+  await expect(privacy).toHaveAttribute("data-publication-state", /hidden|published/);
   await privacy.click();
   await expect(page.getByRole("dialog", { name: "Публикация человека в поиске" })).toBeVisible();
   await expect(privacy).toHaveAttribute("data-publication-state", /hidden|published/);
+});
+
+test("visible tree privacy icons resolve in batches without hovering or tapping", async ({ page }) => {
+  let release!: () => void;
+  const delayed = new Promise<void>((resolve) => { release = resolve; });
+  const batches: string[][] = [];
+  let singleReads = 0;
+  await page.route((url) => url.pathname.startsWith("/api/admin/published-people/"), async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/admin/published-people/batch") {
+      singleReads++;
+      return route.fulfill({ json: { published: true } });
+    }
+    batches.push(url.searchParams.getAll("id"));
+    await delayed;
+    return route.fulfill({ json: { fields: { "e2e-memorial-person": {} } } });
+  });
+  try {
+    await page.goto("/tree");
+    const privacy = page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-privacy");
+    await expect(privacy).toHaveAttribute("data-publication-state", "loading");
+    await expect(privacy.locator("svg.lucide-loader-circle")).toHaveCount(1);
+    release();
+    await expect(privacy).toHaveAttribute("data-publication-state", "published");
+    await expect(privacy.locator("svg.lucide-eye")).toHaveCount(1);
+    expect(batches.flat()).toContain("e2e-memorial-person");
+    expect(batches.every((ids) => ids.length <= 50)).toBe(true);
+    expect(singleReads).toBe(0);
+    await expect(page.locator(".flow-privacy svg.lucide-circle-help")).toHaveCount(0);
+  } finally {
+    release();
+  }
 });
 
 test("owner opts one already published close relation into matching and can revoke it", async ({ page, isMobile }) => {

@@ -312,7 +312,7 @@ export async function userStore(
         throw new Error("Неизвестный режим доступа");
       if (treeAccess === "common_ancestors" && !personId)
         throw new Error(
-          "Для доступа по общим предкам сначала выберите человека",
+          "Для доступа к кровным родственникам и их супругам сначала выберите человека",
         );
       if (isArchiveOwner(target) && treeAccess !== "all")
         throw new Error("Администратору нужен доступ ко всему древу");

@@ -281,7 +281,7 @@ export function McpTokenAdmin({ archiveId }: { archiveId: string | null }) {
                   {token.boundUser
                     ? `${token.boundUser.name} · ${
                         token.boundUser.treeAccess === "common_ancestors"
-                          ? "общие предки"
+                          ? "кровные и их супруги"
                           : "весь архив"
                       }`
                     : "весь архив"}

@@ -507,6 +507,14 @@ export function useArchive(enabled = true) {
   }, [write, publishHistory]);
   const saveTreePreferences = useCallback(
     async (value: TreePreferences) => {
+      if (memberPreviewAt(window.location.pathname)) {
+        // Inspect the same controls without changing either participant's
+        // saved preferences or the owner's guest browser preferences.
+        const preview = { ...value };
+        if (preview.generationLimits === null) delete preview.generationLimits;
+        setTreePreferences(preview);
+        return preview;
+      }
       if (!user?.approved) {
         writeGuestTreePreferences(value);
         setTreePreferences(value);
