@@ -1171,6 +1171,29 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   color: #586b59;
   font-size: 12px;
 }
+.ai-role-kind { font-size: 10px; color: #687969; }
+.ai-role-profile-main {
+  display: grid;
+  grid-template-columns: minmax(140px, .7fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 8px 14px;
+}
+.ai-role-profile-main > label:not(.setting-toggle) { display: grid; gap: 4px; font-size: 12px; }
+.admin-card.archive-form .ai-role-profile-main > .setting-toggle {
+  border: 0;
+  padding: 7px 4px;
+  margin: 0;
+}
+.ai-role-profile-main select { width: 100%; }
+.ai-role-profile-custom > small { color: var(--muted); font-size: 11px; }
+.ai-role-profile-custom .ai-role-limits {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 6px 0 0;
+  border: 0;
+  gap: 8px;
+}
+.ai-role-profile-custom .ai-role-limits label { font-size: 11px; }
 .ai-role-capabilities {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1357,6 +1380,7 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   .ai-role-capabilities {
     grid-template-columns: 1fr;
   }
+  .ai-role-profile-main { grid-template-columns: minmax(0, 1fr); }
   .ai-role-choices {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

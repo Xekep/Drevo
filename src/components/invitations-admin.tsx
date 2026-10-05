@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import "../styles/invitations-admin.css";
+import { PersonSearch } from "./person-search";
+import { fullName, type Person, type TreeAccess } from "../domain";
 
 type Invitation = {
   id: string;
@@ -9,12 +11,16 @@ type Invitation = {
   expiresAt: string;
   usedAt: string | null;
   revokedAt: string | null;
+  personId?: string | null;
+  treeAccess?: TreeAccess;
 };
 
-export function InvitationsAdmin() {
+export function InvitationsAdmin({ people }: { people: Person[] }) {
   const [items, setItems] = useState<Invitation[]>([]);
   const [role, setRole] = useState<Invitation["role"]>("reader");
   const [hours, setHours] = useState(168);
+  const [personId, setPersonId] = useState("");
+  const [treeAccess, setTreeAccess] = useState<TreeAccess>("all");
   const [createdLink, setCreatedLink] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -64,7 +70,12 @@ export function InvitationsAdmin() {
       const response = await archiveFetch("/api/invitations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role, durationHours: hours }),
+        body: JSON.stringify({
+          role,
+          durationHours: hours,
+          personId: personId || null,
+          treeAccess: personId ? treeAccess : "all",
+        }),
       });
       const result = await response.json();
       if (!response.ok)
@@ -107,9 +118,38 @@ export function InvitationsAdmin() {
         вошедший участник принимает приглашение.
       </p>
       <div className="invitations-controls">
+        <PersonSearch
+          label="Кто это в древе"
+          value={personId}
+          selected={people.find((person) => person.id === personId)}
+          people={people}
+          disabled={busy}
+          onChange={(id) => {
+            setPersonId(id);
+            if (!id) setTreeAccess("all");
+          }}
+        />
+        {personId && (
+          <label>
+            Доступ к древу
+            <select
+              aria-label="Доступ к древу"
+              value={treeAccess}
+              disabled={busy}
+              onChange={(event) =>
+                setTreeAccess(event.target.value as TreeAccess)
+              }
+            >
+              <option value="all">Всё древо</option>
+              <option value="common_ancestors">Кровные родственники</option>
+            </select>
+            <small>Кровные родственники и их супруги или партнёры.</small>
+          </label>
+        )}
         <label>
           Роль
           <select
+            aria-label="Роль"
             value={role}
             onChange={(event) =>
               setRole(event.target.value as Invitation["role"])
@@ -178,6 +218,15 @@ export function InvitationsAdmin() {
                 </strong>
                 <small>
                   до {new Date(item.expiresAt).toLocaleString("ru-RU")}
+                </small>
+                <small>
+                  {item.treeAccess === "common_ancestors"
+                    ? "Кровные родственники и партнёры"
+                    : "Всё древо"}
+                  {item.personId &&
+                  people.some((person) => person.id === item.personId)
+                    ? ` · ${fullName(people.find((person) => person.id === item.personId)!)}`
+                    : ""}
                 </small>
               </span>
               <span

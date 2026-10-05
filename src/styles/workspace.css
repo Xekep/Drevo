@@ -688,6 +688,12 @@ body,
 .admin-user-delete:hover:not(:disabled) {
   background: #fbefeb;
 }
+.admin-user-delete-confirm {
+  grid-column: 1 / -1;
+  color: #8c4d42;
+  padding: 0 4px 4px;
+  line-height: 1.4;
+}
 .admin-users-pagination {
   justify-content: flex-end;
 }

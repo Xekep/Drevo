@@ -55,13 +55,15 @@ test("admin configures independent AI profiles and can restore inheritance", asy
   await page.getByLabel("Поиск по всему интернету", { exact: true }).uncheck();
   await page.getByLabel("Создание PDF-отчётов", { exact: true }).uncheck();
   await page.locator("#ai-profile-codeInterpreterEnabled").uncheck();
-  await page.getByText("Модель фото, лимиты и контекст").click();
   await page
     .getByLabel("Запросов в день на пользователя", { exact: true })
     .fill("25");
   await page
     .getByRole("button", { name: /Родственник.*Общие настройки/ })
     .click();
+  await expect(
+    page.getByRole("group", { name: "Настройки ИИ: Родственник", exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByRole("checkbox", {
       name: "Использовать общие настройки",
@@ -74,6 +76,18 @@ test("admin configures independent AI profiles and can restore inheritance", asy
       exact: true,
     })
     .uncheck();
+  await page
+    .getByRole("button", { name: /Исследователь.*Свои настройки/ })
+    .click();
+  await expect(
+    page.getByLabel("Запросов в день на пользователя", { exact: true }),
+  ).toHaveValue("25");
+  await expect(
+    page.getByLabel("Модель для этой роли", { exact: true }),
+  ).toHaveValue("gpt://folder/research");
+  await page
+    .getByRole("button", { name: /Родственник.*Свои настройки/ })
+    .click();
   await page
     .getByRole("checkbox", { name: "Доступ к ИИ", exact: true })
     .uncheck();
