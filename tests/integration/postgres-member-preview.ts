@@ -145,16 +145,28 @@ export async function verifyMemberPreview(
       const ownPerson = { ...(previousPerson as Record<string, unknown>),
         id: "member-preview-own-person", name: "Own", createdBy: targetId,
         photo: "", parents: [], spouses: [] };
+      const partnerPerson = { ...(previousPerson as Record<string, unknown>),
+        id: "member-preview-partner-person", name: "Partner", createdBy: "owner",
+        photo: "", parents: [], spouses: [] };
       await client.query(`INSERT INTO people(archive_id,id,ordinal,data)
         VALUES($1,$2,(SELECT COALESCE(max(ordinal),0)+1 FROM people WHERE archive_id=$1),$3::jsonb),
               ($1,$4,(SELECT COALESCE(max(ordinal),0)+2 FROM people WHERE archive_id=$1),$5::jsonb)`, [archiveId,
         hiddenPerson.id, JSON.stringify(hiddenPerson), ownPerson.id, JSON.stringify(ownPerson)]);
+      await client.query(`INSERT INTO people(archive_id,id,ordinal,data)
+        VALUES($1,$2,(SELECT COALESCE(max(ordinal),0)+1 FROM people WHERE archive_id=$1),$3::jsonb)`,
+      [archiveId, partnerPerson.id, JSON.stringify(partnerPerson)]);
       await client.query(`INSERT INTO family_unions
         (archive_id,id,participant_a,participant_b,data)
         VALUES($1,'member-preview-hidden-union',$2,$3,$4::jsonb)`, [archiveId,
-        personId, hiddenPerson.id, JSON.stringify({ id: "member-preview-hidden-union",
-          participants: [personId, hiddenPerson.id], type: "partnership",
+        ownPerson.id, hiddenPerson.id, JSON.stringify({ id: "member-preview-hidden-union",
+          participants: [ownPerson.id, hiddenPerson.id], type: "partnership",
           note: "Private union note", createdBy: "owner" })]);
+      await client.query(`INSERT INTO family_unions
+        (archive_id,id,participant_a,participant_b,data)
+        VALUES($1,'member-preview-partner-union',$2,$3,$4::jsonb)`, [archiveId,
+        personId, partnerPerson.id, JSON.stringify({ id: "member-preview-partner-union",
+          participants: [personId, partnerPerson.id], type: "civil_union",
+          createdBy: "owner" })]);
       await client.query(`UPDATE archive_access_settings
         SET public_tree=false,public_albums=true WHERE archive_id=$1`, [archiveId]);
       const albumsOnly = await fetch(`${prefix}/api/family`, { headers: approvedHeaders });
@@ -194,6 +206,7 @@ export async function verifyMemberPreview(
       const scopedIds = scopedFamily.family.people.map((person: { id: string }) => person.id);
       assert.ok(scopedIds.includes(personId));
       assert.ok(scopedIds.includes(ownPerson.id), "target-authored branch stays visible");
+      assert.ok(scopedIds.includes(partnerPerson.id), "recorded blood-relative partner stays visible without spouses duplication");
       assert.ok(!scopedIds.includes(hiddenPerson.id), "owner-only branch stays hidden");
       assert.equal((await fetch(`${prefix}${hiddenPhotoUrl}`,
         { headers: approvedHeaders })).status, 401);
@@ -311,10 +324,10 @@ export async function verifyMemberPreview(
   } finally {
     await client.query("DELETE FROM documents WHERE archive_id=$1 AND id=ANY($2::text[])",
       [archiveId, [visibleDocumentId, hiddenDocumentId]]);
-    await client.query("DELETE FROM family_unions WHERE archive_id=$1 AND id='member-preview-hidden-union'",
-      [archiveId]);
+    await client.query("DELETE FROM family_unions WHERE archive_id=$1 AND id=ANY($2::text[])",
+      [archiveId, ["member-preview-hidden-union", "member-preview-partner-union"]]);
     await client.query("DELETE FROM people WHERE archive_id=$1 AND id=ANY($2::text[])",
-      [archiveId, ["member-preview-hidden-person", "member-preview-own-person"]]);
+      [archiveId, ["member-preview-hidden-person", "member-preview-own-person", "member-preview-partner-person"]]);
     for (const name of [`${visibleDocumentId}.pdf`, `${hiddenDocumentId}.pdf`,
       "member-preview-hidden.png", "member-preview-portrait.png"])
       await unlink(join(uploads, name)).catch(() => {});
