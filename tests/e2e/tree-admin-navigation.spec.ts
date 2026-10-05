@@ -1,5 +1,52 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test("platform header keeps the menu right aligned and loads only the linked portrait", async ({ page }, info) => {
+  let familyRequests = 0;
+  let portraitRequests = 0;
+  await page.route("**/api/family?projection=overview", (route) => {
+    familyRequests++;
+    return route.fulfill({ status: 401, json: {} });
+  });
+  await page.route("**/api/session", (route) => route.fulfill({ json: {
+    user: { id: "admin", name: "Администратор", role: "reader", approved: true,
+      personId: "self", platformAdmin: true },
+    account: { id: "admin", name: "Администратор", globalRole: "admin" },
+    local: false,
+  } }));
+  await page.route("**/api/account/portrait", (route) => {
+    portraitRequests++;
+    return route.fulfill({ json: { personId: "self", photo: "/media/admin-avatar.jpg" } });
+  });
+  await page.route("**/media/admin-avatar.jpg?variant=thumb", (route) => route.fulfill({
+    contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="20" fill="#688a70"/></svg>',
+  }));
+  await page.route("**/api/platform/roles", (route) => route.fulfill({ json: { accounts: [], next: null } }));
+  await page.goto("/admin");
+  await expect(page.locator(".nav-account-avatar img")).toBeVisible();
+  for (const width of [320, 390, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const menu = page.locator(".archive-more");
+    const bounds = (await menu.boundingBox())!;
+    const padding = await page.locator(".archive-header").evaluate((header) => {
+      const style = getComputedStyle(header);
+      return { left: parseFloat(style.paddingLeft), right: parseFloat(style.paddingRight) };
+    });
+    expect(width - bounds.x - bounds.width).toBeCloseTo(padding.right, 0);
+    const brand = (await page.locator(".nav-brand").boundingBox())!;
+    expect(brand.x).toBeCloseTo(padding.left, 0);
+    await page.getByLabel("Меню проекта").click();
+    await expect(menu.locator(".nav-bottom")).toBeVisible();
+    const popup = (await menu.locator(".nav-bottom").boundingBox())!;
+    expect(popup.x).toBeGreaterThanOrEqual(0);
+    expect(popup.x + popup.width).toBeLessThanOrEqual(width);
+    await page.screenshot({ path: info.outputPath(`platform-header-${width}.png`) });
+    await page.keyboard.press("Escape");
+  }
+  expect(familyRequests).toBe(0);
+  expect(portraitRequests).toBe(1);
+});
+
 async function treeUser(page: Page, options: {
   owner: boolean; platformAdmin: boolean; fullAccess?: boolean; approved?: boolean;
 }) {
@@ -26,6 +73,29 @@ async function treeUser(page: Page, options: {
     } });
   });
 }
+
+test("platform portrait retries a superseded read once without reopening the family", async ({ page }) => {
+  await treeUser(page, { owner: false, platformAdmin: true });
+  await page.route("**/api/session", (route) => route.fulfill({ json: {
+    user: { id: "admin", name: "Администратор", role: "reader", approved: true,
+      personId: "self", platformAdmin: true },
+    account: { id: "admin", name: "Администратор", globalRole: "admin" }, local: false,
+  } }));
+  let attempts = 0;
+  await page.route("**/api/account/portrait", (route) => {
+    attempts++;
+    return route.fulfill(attempts === 1
+      ? { status: 409, json: { error: "Archive changed" } }
+      : { json: { personId: "self", photo: "/media/retried-avatar.jpg" } });
+  });
+  await page.route("**/media/retried-avatar.jpg?variant=thumb", (route) => route.fulfill({
+    contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="20" fill="#688a70"/></svg>',
+  }));
+  await page.goto("/admin");
+  await expect(page.locator(".nav-account-avatar img")).toBeVisible();
+  expect(attempts).toBe(2);
+});
 
 test("tree owner reaches scoped management from the avatar menu, and old scoped admin URL becomes manage", async ({ page }, info) => {
   await page.route("**/a/tree-a/api/**", (route) => route.continue({

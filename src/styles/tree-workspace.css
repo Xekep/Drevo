@@ -1403,6 +1403,14 @@
   position: relative;
   margin-left: 0;
 }
+.is-platform-header .nav-about {
+  margin-left: auto;
+}
+@media (max-width: 899px) {
+  .is-platform-header .archive-more {
+    margin-left: auto;
+  }
+}
 .archive-nav .nav-account {
   width: 44px;
   height: 44px;

@@ -823,7 +823,7 @@ export default function App() {
             <a href={`${participantPreview.archiveId ? `/a/${participantPreview.archiveId}` : ""}/manage`}>Выйти из просмотра</a>
           </div>
         )}
-        {view === "admin" ? <header className="archive-header">
+        {view === "admin" ? <header className="archive-header is-platform-header">
           <ArchiveNavigation
             view={view}
             onView={navigate}

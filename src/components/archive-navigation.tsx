@@ -19,9 +19,8 @@ import {
   LibraryBig,
   Info,
 } from "lucide-react";
-import { isArchiveOwner, safeUrl, type Person, type ArchiveUser } from "../domain";
-import { mediaPreview } from "../domain/media-preview";
-import { PortraitImage } from "./portrait-image";
+import { isArchiveOwner, type Person, type ArchiveUser } from "../domain";
+import { AccountPortrait } from "./account-portrait";
 import { archivePaths, type ArchiveView } from "../domain/archive-routes";
 import { scopedArchivePath } from "../domain/archive-context.ts";
 import { clearLayoutStorage } from "./tree/layout-storage";
@@ -53,7 +52,9 @@ export function ArchiveNavigation({
   participantPreview?: boolean;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
-  const portrait = mediaPreview(safeUrl(accountPerson?.photo));
+  useEffect(() => {
+    if (menu.current) menu.current.open = false;
+  }, [view]);
   const identity = user || account;
   const initial =
     identity?.name.trim().charAt(0).toLocaleUpperCase("ru-RU") || "Д";
@@ -173,11 +174,11 @@ export function ArchiveNavigation({
       >
         О проекте
       </button>
-      <details ref={menu} className="archive-more" key={view}>
+      <details ref={menu} className="archive-more">
         <summary className="nav-account" aria-label={participantPreview ? "Разделы предпросмотра" : "Меню проекта"}
           title={identity ? `Меню: ${identity.name}` : "Меню проекта"}>
           <span className="nav-account-avatar" aria-hidden="true">
-            {participantPreview ? <Users size={20} /> : <PortraitImage src={portrait} loading="eager"
+            {participantPreview ? <Users size={20} /> : <AccountPortrait user={user} person={accountPerson}
               fallback={identity ? initial : <UserRound size={20} />} />}
           </span>
         </summary>

@@ -182,6 +182,12 @@ test("account avatar uses the linked person's portrait when available", async ({
   await expect
     .poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth))
     .toBeGreaterThan(0);
+  const originalImage = await image.elementHandle();
+  await page.getByLabel("Меню проекта").click();
+  await page.locator(".nav-menu-account").click();
+  await expect(page).toHaveURL(/\/account$/);
+  expect(await originalImage!.evaluate((node) => node.isConnected)).toBe(true);
+  await expect(image).toHaveAttribute("src", "/media/nav-avatar.jpg?variant=thumb");
 });
 
 test("a failed portrait falls back to the account initial without hiding the menu", async ({ page }) => {

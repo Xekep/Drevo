@@ -119,6 +119,7 @@ export function archiveQueryHttp({
     const path = url.pathname;
     if (
       path !== "/api/people/search" &&
+      path !== "/api/account/portrait" &&
       path !== "/api/research-resources" &&
       path !== "/api/export.json" &&
       path !== "/api/family" &&
@@ -131,7 +132,7 @@ export function archiveQueryHttp({
     const memberCanRead = visitor?.approved === true;
     const scoped = isScopedUser(visitor);
     // An unscoped export must not release people removed after its snapshot.
-    const stableRevision = !!memberPreviewTarget(req) || scoped || path === "/api/export" || path === "/api/export.json" ||
+    const stableRevision = !!memberPreviewTarget(req) || scoped || path === "/api/account/portrait" || path === "/api/export" || path === "/api/export.json" ||
       (path === "/api/people/search" && !memberCanRead);
     const startRevision = stableRevision
       ? Number((await revisionQuery.get())?.revision)
@@ -226,6 +227,21 @@ export function archiveQueryHttp({
       });
       return valid || res.headersSent || res.destroyed ? true : changed();
     };
+
+    if (path === "/api/account/portrait") {
+      if (req.method !== "GET") {
+        res.setHeader("Allow", "GET");
+        return json(res, 405, { error: "Ожидается GET" });
+      }
+      if (!memberCanRead || memberPreviewTarget(req))
+        return json(res, 401, { error: "Войдите для просмотра своего портрета" });
+      const row = visitor?.personId ? await archive.db.prepare(
+        "SELECT json_extract(data,'$.photo') AS photo FROM people WHERE id=?",
+        "SELECT data->>'photo' AS photo FROM people WHERE id=? AND archive_id=current_setting('drevo.archive_id',true)",
+      ).get(visitor.personId) : undefined;
+      return deliverArchiveJson({ personId: visitor?.personId || null,
+        photo: typeof row?.photo === "string" ? row.photo : null });
+    }
 
     if (path === "/api/research-resources") {
       if (!memberCanRead && !access.publicTree)
