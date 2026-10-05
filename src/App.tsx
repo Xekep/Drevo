@@ -1001,7 +1001,7 @@ export default function App() {
                     <TreeCanvas
                       ref={treeCanvas}
                       restricted={Boolean(participantPreview)}
-                      onPreferences={participantPreview ? undefined : () => setTreePreferencesOpen(true)}
+                      onPreferences={() => setTreePreferencesOpen(true)}
                       onExport={participantPreview ? undefined : () => setTreeExportOpen(true)}
                       onImport={canEdit && isArchiveOwner(user) ? () => setTreeImportOpen(true) : undefined}
                       onRename={canEdit && isArchiveOwner(user) ? () => setSettings(true) : undefined}
@@ -1409,14 +1409,14 @@ export default function App() {
           onClose={() => setSettings(false)}
         />
       )}
-      {treePreferencesOpen && !participantPreview && family && readTree && (
+      {treePreferencesOpen && family && readTree && (
         <TreePreferencesDialog
           preferences={archive.treePreferences}
           people={family.people}
           anchorId={selected[0] || user?.personId}
           onChange={archive.saveTreePreferences}
           onClose={() => setTreePreferencesOpen(false)}
-          onAdmin={isArchiveOwner(user) && user?.approved === true ? () => {
+          onAdmin={!participantPreview && isArchiveOwner(user) && user?.approved === true ? () => {
             setTreePreferencesOpen(false);
             navigate("manage");
           } : undefined}
