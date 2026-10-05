@@ -219,7 +219,7 @@ export async function verifyManagedBackupPreviewRevocation(
       const completed = await archive.db.prepare("", "SELECT data FROM backup_job WHERE id=1").get();
       const job = JSON.parse(String(completed?.data)) as { state: string; error?: string };
       assert.equal(job.state, "failed");
-      assert.equal(job.error, "Доступ администратора отозван.",
+      assert.equal(job.error, "Доступ к резервным копиям древа отозван.",
         "the post-download access check rejects the revoked administrator");
       assert.equal(Number((await archive.db.prepare("", `SELECT count(*) AS count
         FROM workflow_stages WHERE kind='restore' AND actor_id='owner'`).get())?.count),

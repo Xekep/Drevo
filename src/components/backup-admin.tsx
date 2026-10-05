@@ -240,13 +240,13 @@ export function BackupAdmin({ archiveId, scope = "tree" }: { archiveId: string |
                 field("storage", e.target.value as BackupSettings["storage"])
               }
             >
-              <option value="local">Локально, на сервере архива</option>
+              <option value="local">Локально, на сервере платформы</option>
               <option value="remote">Отдельный сервер по SSH</option>
             </select>
           </label>
           {draft.storage === "local" ? (
             <details className="backup-location">
-              <summary>Локально на сервере архива · показать путь</summary>
+              <summary>Локально на сервере платформы · показать путь</summary>
               <code>{status.localDirectory}</code>
             </details>
           ) : (
@@ -391,7 +391,7 @@ export function BackupAdmin({ archiveId, scope = "tree" }: { archiveId: string |
                 <small>
                   {bytes(item.size)} ·{" "}
                   {item.storage === "local"
-                    ? "На сервере архива"
+                    ? "На сервере"
                     : item.remoteHost}
                 </small>
               </div>
