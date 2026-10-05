@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
 import type pg from "pg";
@@ -10,13 +10,15 @@ import { newSessionToken, sessionTokenHash } from "../../src/server/session-toke
 import { databaseBackupBytes } from "../helpers/database-backup.ts";
 
 export async function verifyRestoreGuard({
-  client, source, family, ownerHeaders, restoreBytes,
+  client, source, family, ownerHeaders, restoreBytes, selectedBase, rootArchive,
 }: {
   client: pg.Client;
   source: string;
   family: Family;
   ownerHeaders: Record<string, string>;
   restoreBytes: Buffer<ArrayBuffer>;
+  selectedBase: string;
+  rootArchive: Awaited<ReturnType<typeof openArchive>>;
 }) {
   const guardedOwnerId = "restore-guard-owner";
   let guardedOwnerToken: string | undefined;
@@ -174,6 +176,55 @@ export async function verifyRestoreGuard({
       await client.query("UPDATE archive_owners SET user_id=$1 WHERE archive_id=$2 AND user_id=$3",
         [guardedOwnerId, guardedArchiveId, guardedSuccessorId]);
       await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    }
+    for (const kind of ["session", "membership"] as const) {
+      let reached!: () => void;
+      let release!: () => void;
+      const ready = new Promise<void>((resolve) => { reached = resolve; });
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      guardedApp.archive.write = async (...args) => {
+        reached();
+        await gate;
+        return originalRestoreWrite(...args);
+      };
+      try {
+        const pending = fetch(guardedBase + "/api/restore/apply", {
+          method: "POST", headers: securedRestoreHeaders,
+          body: JSON.stringify({ token: guardedPreview.token, confirm: true }),
+        });
+        await awaitRestoreBarrier(ready, pending);
+        if (kind === "session")
+          await client.query("DELETE FROM account_sessions WHERE token_hash=$1 AND user_id=$2",
+            [sessionTokenHash(guardedOwnerToken), guardedOwnerId]);
+        else {
+          await client.query("SELECT set_config('drevo.archive_id',$1,false)", [guardedArchiveId]);
+          await client.query("UPDATE archive_memberships SET approved=false WHERE archive_id=$1 AND user_id=$2",
+            [guardedArchiveId, guardedOwnerId]);
+          await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+        }
+        release();
+        const denied = await pending;
+        assert.equal(denied.status, kind === "session" ? 401 : 403, await denied.text());
+        assert.equal((await guardedApp.archive.read()).revision, revisionBeforeRevocation);
+        assert.deepEqual(readdirSync(guardedUploads).sort(), filesBeforeRevocation,
+          "revoked restore leaves no installed original");
+        assert.equal((await guardedApp.archive.db.prepare("",
+          "SELECT count(*)::int AS n FROM workflow_stages WHERE kind='restore' AND token=?")
+          .get(guardedPreview.token))?.n, 1);
+      } finally {
+        release();
+        guardedApp.archive.write = originalRestoreWrite;
+        if (kind === "session")
+          await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
+            VALUES($1,$2,$3) ON CONFLICT(token_hash) DO UPDATE SET expires_at=excluded.expires_at`,
+            [sessionTokenHash(guardedOwnerToken), guardedOwnerId, Date.now() + 10 * 60_000]);
+        else {
+          await client.query("SELECT set_config('drevo.archive_id',$1,false)", [guardedArchiveId]);
+          await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id=$1 AND user_id=$2",
+            [guardedArchiveId, guardedOwnerId]);
+          await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+        }
+      }
     }
     // The seed SQLite has no media or documents, so the successful lock test
     // does not copy any original files.
@@ -335,6 +386,39 @@ export async function verifyRestoreGuard({
     assert.equal(repeatedApply.status, 409);
     assert.equal((await guardedApp.archive.db.prepare("",
       "SELECT count(*)::int AS count FROM person_comments").get())?.count, 1);
+
+    // Exercise the real /a/{id} dispatcher after all guarded-archive fixtures:
+    // apply may rebuild its graph, so it must not disturb later root tests.
+    const rootBeforeSelected = await rootArchive.read();
+    const guardedBeforeSelected = await guardedApp.archive.read();
+    const rootStagesBefore = Number((await rootArchive.db.prepare("",
+      "SELECT count(*) AS n FROM workflow_stages WHERE kind='restore'").get())?.n);
+    const selectedPath = selectedBase + `/a/${guardedArchiveId}`;
+    const selectedPreviewResponse = await fetch(selectedPath + "/api/restore/preview", {
+      method: "POST", headers: securedRestoreHeaders, body: readFileSync(source),
+    });
+    assert.equal(selectedPreviewResponse.status, 200, await selectedPreviewResponse.clone().text());
+    const selectedPreview = await selectedPreviewResponse.json() as { token: string; revision: number };
+    assert.equal(selectedPreview.revision, guardedBeforeSelected.revision);
+    assert.equal(Number((await rootArchive.db.prepare("",
+      "SELECT count(*) AS n FROM workflow_stages WHERE kind='restore'").get())?.n), rootStagesBefore,
+    "selected preview does not stage private data in the root archive");
+    assert.equal(Number((await guardedApp.archive.db.prepare("",
+      "SELECT count(*) AS n FROM workflow_stages WHERE kind='restore' AND token=?")
+      .get(selectedPreview.token))?.n), 1);
+    const selectedApplyResponse = await fetch(selectedPath + "/api/restore/apply", {
+      method: "POST", headers: securedRestoreHeaders,
+      body: JSON.stringify({ token: selectedPreview.token, confirm: true }),
+    });
+    assert.equal(selectedApplyResponse.status, 200, await selectedApplyResponse.clone().text());
+    const selectedApplied = await selectedApplyResponse.json() as { backupName: string };
+    assert.equal((await guardedApp.archive.read()).revision, guardedBeforeSelected.revision + 1);
+    assert.equal((await rootArchive.read()).revision, rootBeforeSelected.revision,
+      "selected apply never writes the root archive");
+    assert.equal(Number((await guardedApp.archive.db.prepare("",
+      "SELECT count(*) AS n FROM workflow_stages WHERE kind='restore' AND token=?")
+      .get(selectedPreview.token))?.n), 0);
+    rmSync(join(dirname(guardedApp.archive.db.file), "backups", selectedApplied.backupName), { force: true });
   } finally {
     await started?.close();
     await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");

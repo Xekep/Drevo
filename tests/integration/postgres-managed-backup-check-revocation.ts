@@ -16,8 +16,11 @@ export async function verifyManagedBackupCheckRevocation(
   client: pg.Client,
 ) {
   let probes = 0;
+  let uploads = 0;
   let probeGate: Promise<void> | undefined;
   let probeReached: (() => void) | undefined;
+  let uploadGate: Promise<void> | undefined;
+  let uploadReached: (() => void) | undefined;
   const remote: BackupRemote = {
     config: "test-only-ssh-config",
     async check() {
@@ -25,7 +28,11 @@ export async function verifyManagedBackupCheckRevocation(
       probeReached?.();
       await probeGate;
     },
-    async upload() { throw new Error("Unexpected backup upload"); },
+    async upload() {
+      uploads++;
+      uploadReached?.();
+      await uploadGate;
+    },
     async download() { throw new Error("Unexpected backup download"); },
     async remove() { throw new Error("Unexpected backup removal"); },
   };
@@ -192,7 +199,7 @@ export async function verifyManagedBackupCheckRevocation(
       { kind: "owner-transfer", status: 403, queued: false, probed: false },
     ], "completed revocation before job creation must prevent the remote check");
 
-    for (const kind of ["logout", "owner-transfer"] as const) {
+    for (const kind of ["logout", "platform-grant", "membership", "owner-transfer"] as const) {
       resetGate();
       const session = await insertSession();
       try {
@@ -204,15 +211,26 @@ export async function verifyManagedBackupCheckRevocation(
         await waitForCheck(pending);
         if (kind === "logout")
           await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [session.hash]);
+        else if (kind === "platform-grant")
+          await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
+        else if (kind === "membership")
+          await client.query("UPDATE archive_memberships SET approved=false WHERE archive_id=$1 AND user_id='owner'",
+            [archive.db.archiveId]);
         else
           await client.query("UPDATE archive_owners SET user_id='vk:42' WHERE archive_id=$1", [archive.db.archiveId]);
         release();
         const response = await pending;
         assert.equal(response.status, kind === "logout" ? 401 : 403, await response.text());
         assert.equal(await jobId(), before, "revocation before create claim must not queue a job");
+        assert.equal(uploads, 0, "revoked create never reaches the injected backup upload");
       } finally {
         release();
-        if (kind === "owner-transfer")
+        if (kind === "platform-grant")
+          await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
+        else if (kind === "membership")
+          await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id=$1 AND user_id='owner'",
+            [archive.db.archiveId]);
+        else if (kind === "owner-transfer")
           await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id=$1", [archive.db.archiveId]);
         await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [session.hash]);
         await restoreJob();
@@ -272,6 +290,59 @@ export async function verifyManagedBackupCheckRevocation(
       probeReached = undefined;
       await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
       await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [authorized.hash]);
+      await restoreJob();
+    }
+
+    // The real create endpoint may continue an already committed job after
+    // revocation. Block only the synthetic remote upload, never a live provider.
+    resetGate();
+    const createSession = await insertSession();
+    const originalSettings = await archive.db.prepare("", "SELECT data,next_run FROM backup_settings WHERE id=1").get();
+    const originalCatalog = new Set((await archive.db.prepare("", "SELECT id FROM backup_catalog").all())
+      .map((row) => String(row.id)));
+    let resumeUpload!: () => void;
+    let startedUpload!: () => void;
+    uploadGate = new Promise<void>((resolve) => { resumeUpload = resolve; });
+    const uploadStarted = new Promise<void>((resolve) => { startedUpload = resolve; });
+    uploadReached = startedUpload;
+    try {
+      await archive.db.prepare("", "UPDATE backup_settings SET data=? WHERE id=1")
+        .run(JSON.stringify({ enabled: false, intervalHours: 24, keepCount: 10,
+          storage: "remote", remoteHost: "fixture-host", remoteDirectory: "/fixture-backups" }));
+      const pending = fetch(`${base}/api/backups/create`, {
+        method: "POST", headers: { Cookie: `drevo_session=${createSession.token}`,
+          Origin: base, "X-Drevo-Backup": "1" },
+      });
+      await waitForCheck(pending);
+      release();
+      const response = await pending;
+      assert.equal(response.status, 202, await response.text());
+      await Promise.race([uploadStarted, new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => reject(new Error("Synthetic backup upload did not start")), 30_000);
+        timer.unref();
+      })]);
+      await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
+      assert.ok(await jobId(), "create job remains durably claimed after grant revocation");
+      resumeUpload();
+      await backups.idle();
+      const completed = await archive.db.prepare("", "SELECT data FROM backup_job WHERE id=1").get();
+      assert.equal((JSON.parse(String(completed?.data)) as { state: string }).state, "succeeded",
+        "a previously authorized create is not falsely rolled back after revocation");
+      assert.equal(uploads, 1);
+    } finally {
+      release();
+      resumeUpload();
+      await backups.idle();
+      uploadGate = undefined;
+      uploadReached = undefined;
+      await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
+      await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [createSession.hash]);
+      if (originalSettings)
+        await archive.db.prepare("", "UPDATE backup_settings SET data=?,next_run=? WHERE id=1")
+          .run(String(originalSettings.data), Number(originalSettings.next_run));
+      for (const row of await archive.db.prepare("", "SELECT id FROM backup_catalog").all())
+        if (!originalCatalog.has(String(row.id)))
+          await archive.db.prepare("", "DELETE FROM backup_catalog WHERE id=?").run(String(row.id));
       await restoreJob();
     }
   } finally {

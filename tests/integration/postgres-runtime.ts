@@ -3,7 +3,7 @@ import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { createServer, get as httpGet } from "node:http";
+import { createServer, get as httpGet, type IncomingMessage } from "node:http";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
 import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { statfs, symlink, unlink, utimes } from "node:fs/promises";
@@ -4613,7 +4613,12 @@ try {
   }
   for (const scenario of [
     { path: "/api/backup", revoke: "session", status: 401 },
+    { path: "/api/backup", revoke: "owner", status: 403 },
+    { path: "/api/backup", revoke: "platform-grant", status: 403 },
+    { path: "/api/backup", revoke: "membership", status: 403 },
+    { path: "/api/backup/full", revoke: "session", status: 401 },
     { path: "/api/backup/full", revoke: "owner", status: 403 },
+    { path: "/api/backup/full", revoke: "membership", status: 403 },
   ] as const) {
     let reached!: () => void;
     let release!: () => void;
@@ -4634,20 +4639,74 @@ try {
       })]);
       if (scenario.revoke === "session")
         await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(aiOwnerToken)]);
-      else
+      else if (scenario.revoke === "owner")
         await client.query("UPDATE archive_owners SET user_id='vk:42' WHERE archive_id='runtime-test'");
+      else if (scenario.revoke === "platform-grant")
+        await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
+      else
+        await client.query("UPDATE archive_memberships SET approved=false WHERE archive_id='runtime-test' AND user_id='owner'");
       release();
       const response = await pending;
       assert.equal(response.status, scenario.status, "completed revoke before first byte denies raw backup");
       assert.match(response.headers.get("content-type") || "", /application\/json/);
-      await response.text();
+      const denial = await response.text();
+      assert.ok(denial.length > 0 && !denial.startsWith("SQLite format 3"),
+        "denied backup has no prepared database/TAR bytes");
     } finally {
       release();
       if (scenario.revoke === "session")
         await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2) ON CONFLICT(token_hash) DO UPDATE SET expires_at=excluded.expires_at",
           [sessionTokenHash(aiOwnerToken), Date.now() + 5 * 60_000]);
-      else
+      else if (scenario.revoke === "owner")
         await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
+      else if (scenario.revoke === "platform-grant")
+        await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
+      else
+        await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id='owner'");
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+  for (const path of ["/api/backup", "/api/backup/full"] as const) {
+    const handler = databaseBackupHttp({ archive: app.archive, auth: backupAuth });
+    const server = createServer((req, res) => {
+      void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => res.destroy(error));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    let response: IncomingMessage | undefined;
+    let firstReceived!: () => void;
+    const firstByte = new Promise<void>((resolve) => { firstReceived = resolve; });
+    const chunks: Buffer[] = [];
+    try {
+      const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+      const delivered = new Promise<Buffer>((resolve, reject) => {
+        const request = httpGet(base + path, { headers: ownerHeaders }, (incoming) => {
+          response = incoming;
+          assert.equal(incoming.statusCode, 200);
+          incoming.once("data", () => { incoming.pause(); firstReceived(); });
+          incoming.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+          incoming.once("end", () => resolve(Buffer.concat(chunks)));
+          incoming.once("error", reject);
+        });
+        request.once("error", reject);
+      });
+      await Promise.race([firstByte, new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => reject(new Error(`${path} did not deliver its first byte`)), 30_000);
+        timer.unref();
+      })]);
+      await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
+      response?.resume();
+      const bytes = await delivered;
+      assert.ok(bytes.length > 0, "an already authorized backup remains a complete snapshot");
+      assert.equal(bytes.length, Number(response?.headers["content-length"]));
+      if (path === "/api/backup") assert.equal(bytes.subarray(0, 16).toString(), "SQLite format 3\0");
+      else assert.deepEqual([...bytes.subarray(0, 2)], [31, 139]);
+      assert.equal((await fetch(base + path, { headers: ownerHeaders })).status, 403,
+        "a later request cannot use the completed first-byte authorization");
+    } finally {
+      response?.resume();
+      await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
+      server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   }
@@ -14037,7 +14096,8 @@ try {
   const restoredPeople = structuredClone(withoutPeer.family);
   restoredPeople.people = restoredPeople.people.filter((person) => person.id !== "pg-union-identity-peer");
   await app.archive.write(restoredPeople, withoutPeer.revision);
-  await verifyRestoreGuard({ client, source, family, ownerHeaders, restoreBytes });
+  await verifyRestoreGuard({ client, source, family, ownerHeaders, restoreBytes,
+    selectedBase: securedBase, rootArchive: app.archive });
   await verifyPlatformAiOrphanSweep(app!.archive.db, client, source);
   await verifyGlobalRoleFinalization();
   await verifyAwardCitationPreparation(app.archive);
