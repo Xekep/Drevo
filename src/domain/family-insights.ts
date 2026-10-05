@@ -357,7 +357,7 @@ export function analyzeFamilyInsights(
     facts.push({
       title: "Самая частая фамилия",
       value: topSurnames[0].label,
-      detail: `${topSurnames[0].count} ${plural(topSurnames[0].count, "человек", "человека", "человек")} в дереве`,
+      detail: `${topSurnames[0].count} ${plural(topSurnames[0].count, "человек", "человека", "человек")} в древе`,
     });
 
   const places = topValues(

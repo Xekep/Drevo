@@ -2,6 +2,7 @@ import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
 import { getDocument, OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
 import sharp from "sharp";
+import type { Family } from "../../src/domain/types.ts";
 
 async function openExport(page: Page) {
   await page
@@ -113,6 +114,52 @@ test("GEDCOM from the tree dialog contains only visible people", async ({ page, 
   const text = await readFile(path, "utf8");
   expect(text).toContain("Пётр");
   expect(text).not.toContain("Анна");
+});
+
+test("direct GEDCOM warns about visible catalog links without claiming citation loss", async ({ page, isMobile }) => {
+  test.skip(isMobile, "Canvas export is available on desktop");
+  const response = await page.request.get("/api/family");
+  const snapshot = await response.json();
+  // Other E2E scenarios persist catalog citations in this server. Keep this
+  // visibility scenario independent of those people and their evidence.
+  const ids = ["e2e-parent", "e2e-child", "e2e-grandchild"];
+  const family: Family = {
+    title: "Проверка предупреждения экспорта", description: "", demo: false,
+    people: ids.map((id, index) => ({
+      id, name: ["Иван", "Пётр", "Анна"][index], surname: "Тестов", patronymic: "",
+      sex: index === 2 ? "f" : "m", birth: ["1940", "1970", "2000"][index], birthPlace: "",
+      parents: index ? [ids[index - 1]] : [], spouses: [],
+      generation: index + 1, column: 0, sources: [],
+    })),
+  };
+  const grandchild = family.people.find((person) => person.id === "e2e-grandchild")!;
+  grandchild.sources = [{
+    catalogId: "catalog-entry", title: "Register", type: "archive", reference: "p. 7",
+    url: "https://example.test/register",
+  }];
+  await page.route("**/api/family?projection=overview", (route) =>
+    route.fulfill({ response, json: { ...snapshot, family, partial: false } }));
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
+  const dialog = await openExport(page);
+  const format = dialog.getByRole("combobox", { name: "Формат экспорта" });
+  await format.selectOption("gedcom7");
+  const warning = dialog.getByRole("note").filter({ hasText: "каталога источников Drevo" });
+  await expect(warning).toContainText("Текст цитат и указанные URL сохранятся");
+  await expect(warning).toContainText("между древами Drevo");
+  await expect(warning).toContainText(".drevo");
+  await format.selectOption("gedzip7");
+  await expect(warning).toBeVisible();
+  await format.selectOption("pdf");
+  await expect(warning).toHaveCount(0);
+
+  await dialog.getByRole("button", { name: "Закрыть" }).click();
+  await page.getByTestId("rf__node-e2e-child")
+    .getByRole("button", { name: /Свернуть (потомков|ветвь)/ }).click();
+  await expect(page.getByTestId("rf__node-e2e-grandchild")).toHaveCount(0);
+  const collapsed = await openExport(page);
+  await collapsed.getByRole("combobox", { name: "Формат экспорта" }).selectOption("gedcom551");
+  await expect(collapsed.getByRole("note").filter({ hasText: "каталога источников Drevo" })).toHaveCount(0);
 });
 
 test("person cards have no context menu; tree sharing stays in the toolbar", async ({

@@ -217,7 +217,7 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
     const user = await auth.currentUser(req);
     if (!user) return json(res, 401, { error: "Войдите в архив" });
     if (!isArchiveOwner(user) || user.approved !== true)
-      return json(res, 403, { error: "Доступно владельцу дерева" });
+      return json(res, 403, { error: "Доступно владельцу древа" });
     if (detail[2]) {
       if (req.method !== "GET" && req.method !== "POST")
         return json(res, 405, { error: "Метод не поддерживается" });
@@ -284,7 +284,7 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
         });
         if (result.code === 200) return true;
         return json(res, result.code, { error: result.code === 403
-          ? "Доступно владельцу дерева" : result.code === 409
+          ? "Доступно владельцу древа" : result.code === 409
             ? "Доступ изменяется. Повторите запрос" : "Связь не найдена" });
       }
       if (!isSameOriginRequest(req, publicOrigin))
@@ -413,7 +413,7 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
       if (result && "busy" in result)
         return json(res, 409, { error: "Доступ изменяется. Повторите запрос" });
       if (result && "forbidden" in result)
-        return json(res, 403, { error: "Доступно владельцу дерева" });
+        return json(res, 403, { error: "Доступно владельцу древа" });
       return result ? true : json(res, 404, { error: "Связь не найдена" });
     }
     if (req.method === "PUT") {
@@ -428,7 +428,7 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
       const result = await db.transaction(async () => {
         if (!await db.prepare("", `SELECT 1 FROM archive_owners
           WHERE archive_id=? AND user_id=? FOR SHARE`).get(archiveId,user.id))
-          return { code: 403, error: "Доступно владельцу дерева" };
+          return { code: 403, error: "Доступно владельцу древа" };
         const preliminary = await linkedPair(detail[1],archiveId);
         if (!preliminary) return { code: 404, error: "Связь не найдена" };
         if (body.recipientArchiveId !== recipient(preliminary,archiveId).archiveId)
@@ -468,7 +468,7 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin,
     const result = await db.transaction(async () => {
       if (!await db.prepare("", `SELECT 1 FROM archive_owners
         WHERE archive_id=? AND user_id=? FOR SHARE`).get(archiveId,user.id))
-        return { code: 403, error: "Доступно владельцу дерева" };
+        return { code: 403, error: "Доступно владельцу древа" };
       const pair = await linkedPair(detail[1],archiveId,true);
       if (!pair) return { code: 404, error: "Связь не найдена" };
       const approved = await auth.currentUser(req);

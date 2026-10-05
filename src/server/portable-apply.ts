@@ -47,7 +47,7 @@ export async function applyPortablePackage(
     current.family.photos?.length
   )
     throw new ConflictError(
-      "Импорт возможен только в пустое неизменённое дерево",
+      "Импорт возможен только в пустое неизменённое древо",
     );
   const sizes = new Map(installed.copies.map((file) => [file.name, file.size]));
   const documentFiles = new Set(
@@ -81,10 +81,10 @@ export async function applyPortablePackage(
             .prepare("", "SELECT 1 FROM archive_owners WHERE user_id=?")
             .get(actor.id);
           if (!owner)
-            throw new ForbiddenError("Импорт доступен владельцу дерева");
+            throw new ForbiddenError("Импорт доступен владельцу древа");
         }
         if (await portableStoreOccupied(transaction))
-          throw new ConflictError("Импорт возможен только в пустое дерево");
+          throw new ConflictError("Импорт возможен только в пустое древо");
         const consumed = await transaction
           .prepare(
             "DELETE FROM workflow_stages WHERE kind='drevo' AND token=? AND actor_id=? AND expires_at>?",

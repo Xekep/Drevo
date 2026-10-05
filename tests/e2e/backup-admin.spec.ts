@@ -103,21 +103,9 @@ test("экспорт отделён от резервных копий; наст
   const archiveSettings = page.getByRole("button", {
     name: "Изменить название и описание",
   });
-  if (testInfo.project.name === "mobile") {
-    await expect(archiveSettings).toBeDisabled();
-  } else {
-    await archiveSettings.click();
-    await expect(
-      page.getByRole("dialog", { name: "Настройки архива" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("dialog").getByLabel("Выберите экспорт архива"),
-    ).toHaveCount(0);
-    await page
-      .getByRole("dialog")
-      .getByRole("button", { name: "Закрыть" })
-      .click();
-  }
+  await expect(archiveSettings).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Название и описание архива" })).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: "Всё древо по ссылке" })).toBeVisible();
   await openAdminSection(page, "data", "Экспорт и импорт");
   await expect(archiveSettings).toHaveCount(0);
   await expect(

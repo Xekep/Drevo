@@ -87,7 +87,6 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       currentUserId: user.id,
       onClose: noop,
       onChanged: noop,
-      onSettings: noop,
       save: async () => family,
       canEdit: true,
     };
@@ -122,7 +121,7 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
     assert.doesNotMatch(navigation, /export\.json|Экспорт JSON без фото/);
     assert.match(navigation, /Семьи/);
     assert.match(navigation, /Фото/);
-    assert.match(navigation, /Управление деревом/);
+    assert.match(navigation, /Управление древом/);
     assert.match(navigation, /class="nav-menu-manage" href="\/manage"/);
     assert.match(navigation, /class="nav-menu-account" href="\/account"/);
     assert.doesNotMatch(navigation, /class="nav-admin"/);

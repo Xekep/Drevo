@@ -27,7 +27,7 @@ async function readTarget(req: IncomingMessage) {
       ? (body as { targetId: unknown }).targetId
       : null;
   if (typeof targetId !== "string" || !targetId || targetId.length > 200)
-    throw new SyntaxError("Выберите участника дерева");
+    throw new SyntaxError("Выберите участника древа");
   return targetId;
 }
 
@@ -58,7 +58,7 @@ export function archiveOwnerTransferHttp(
       return true;
     };
     const actor = await auth.currentUser(req);
-    if (!actor) return respond(401, { error: "Требуется вход в дерево" });
+    if (!actor) return respond(401, { error: "Требуется вход в древо" });
     const session = await auth.accountSession(req);
     if (!session || session.accountId !== actor.id)
       return respond(401, { error: "Сессия завершена. Войдите снова" });
@@ -117,7 +117,7 @@ export function archiveOwnerTransferHttp(
       return respond(status, {
         error:
           status === 500
-            ? "Не удалось изменить владельца дерева"
+            ? "Не удалось изменить владельца древа"
             : (error as Error).message,
       });
     }

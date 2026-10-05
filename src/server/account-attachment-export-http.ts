@@ -115,7 +115,7 @@ export function accountAttachmentExportHttp(
         : (client) => ownAttachmentsStillCurrent(client, session.accountId, attachments),
     );
     if (delivery === "session-expired") return send(401, "Сеанс завершён. Войдите снова");
-    if (delivery === "access-changed") return send(409, "Доступ к дереву изменился. Повторите экспорт");
+    if (delivery === "access-changed") return send(409, "Доступ к древу изменился. Повторите экспорт");
     if (delivery === "access-busy") return send(409, "Права доступа меняются. Повторите экспорт");
     return true;
     } catch (error) {

@@ -170,7 +170,7 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
       await page.getByRole("button", { name: "Увеличить", exact: true }).click();
     await expect.poll(() => page.locator(".react-flow__node").count()).toBeGreaterThan(0);
     await expect.poll(() => page.locator(".react-flow__edge").count()).toBeGreaterThan(0);
-    await page.getByRole("button", { name: "Вписать видимую часть дерева" }).click();
+    await page.getByRole("button", { name: "Вписать видимую часть древа" }).click();
     await expect.poll(zoom).toBeLessThan(0.18);
     await expect.poll(() => page.locator(".react-flow__node").count()).toBe(0);
     await expect.poll(() => page.locator(".react-flow__edge").count()).toBe(0);

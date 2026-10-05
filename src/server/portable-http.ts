@@ -120,7 +120,7 @@ export function portableExportHttp(
     if (!(await mayExport(req)))
       return json(
         (await auth.currentUser(req)) ? 403 : 401,
-        "Экспорт доступен владельцу дерева",
+        "Экспорт доступен владельцу древа",
     );
     if (exporting) return json(429, "Другой экспорт уже выполняется");
     const performExport = async () => {

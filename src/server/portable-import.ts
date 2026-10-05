@@ -116,7 +116,7 @@ function manifestFrom(value: unknown): PortableManifest {
       invalid("Некорректный список вложений пакета Drevo");
     paths.add(entry.path);
   }
-  if (!paths.has("archive.json")) invalid("Нет данных дерева в пакете Drevo");
+  if (!paths.has("archive.json")) invalid("Нет данных древа в пакете Drevo");
   return data as PortableManifest;
 }
 
@@ -337,7 +337,7 @@ export async function readPortablePackage(
   const manifestFile = files.get("manifest.json");
   const archiveFile = files.get("archive.json");
   if (!manifestFile || !archiveFile)
-    invalid("Нет манифеста или данных дерева в пакете Drevo");
+    invalid("Нет манифеста или данных древа в пакете Drevo");
   let manifest: PortableManifest;
   let snapshot: PortableSnapshot;
   try {

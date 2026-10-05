@@ -102,11 +102,11 @@ export function accountArchiveDirectory(db: StoreDatabase) {
                WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
               [archiveId, userId]);
             if (!archive.rowCount || !membership.rowCount)
-              throw new AccountArchiveListChanged("Список деревьев изменился. Обновите страницу");
+              throw new AccountArchiveListChanged("Список древ изменился. Обновите страницу");
           }
           const rows = await client.query(membershipSql, [userId]);
           if (JSON.stringify(mapArchives(rows.rows)) !== JSON.stringify(expected))
-            throw new AccountArchiveListChanged("Список деревьев изменился. Обновите страницу");
+            throw new AccountArchiveListChanged("Список древ изменился. Обновите страницу");
           await deliver();
         });
       } catch (error) {

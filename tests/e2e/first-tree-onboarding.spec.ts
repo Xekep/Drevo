@@ -26,7 +26,7 @@ test("an owner can name an empty tree and bind its first person to their account
   });
 
   await page.goto("/tree");
-  await page.getByRole("button", { name: "Назвать дерево" }).click();
+  await page.getByRole("button", { name: "Назвать древо" }).click();
   await expect(page.getByRole("dialog", { name: "Настройки архива" })).toBeVisible();
   await page.getByRole("textbox", { name: "Название" }).fill("История семьи Тестовых");
   await page.getByRole("button", { name: "Сохранить настройки" }).click();

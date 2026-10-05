@@ -169,7 +169,7 @@ export async function writePortablePackage(
   const data = Buffer.from(JSON.stringify(snapshot));
   if (data.length > MAX_ARCHIVE_JSON_BYTES)
     throw new PortablePackageError(
-      "Данные дерева слишком велики для одного пакета",
+      "Данные древа слишком велики для одного пакета",
     );
   const names = fileNames(snapshot);
   // The ZIP also contains manifest.json and archive.json.

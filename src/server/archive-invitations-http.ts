@@ -30,7 +30,7 @@ export function archiveInvitationsHttp(
     const actor = await auth.currentUser(req);
     if (!actor?.approved || !isArchiveOwner(actor))
       return json(res, actor ? 403 : 401, {
-        error: "Доступно администратору дерева.",
+        error: "Доступно администратору древа.",
       });
     if (db.kind !== "postgres")
       return json(res, 501, { error: "Приглашения доступны с PostgreSQL." });

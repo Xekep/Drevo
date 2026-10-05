@@ -48,7 +48,7 @@ test("account without membership in the current archive can open another tree", 
     page.getByRole("heading", { name: "Личный кабинет" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Мои деревья" }),
+    page.getByRole("heading", { name: "Мои древа" }),
   ).toBeVisible();
   await expect(page.getByText("Дерево семьи")).toBeVisible();
   await expect(
@@ -88,7 +88,7 @@ test("signed-in account without a tree can download its account data", async ({ 
   );
   await page.goto("/account");
   const link = page.getByRole("link", { name: "Скачать данные аккаунта" });
-  await expect(page.getByText(/свои текущие комментарии в доступных частях деревьев/)).toBeVisible();
+  await expect(page.getByText(/свои текущие комментарии в доступных частях древ/)).toBeVisible();
   await expect(page.getByText(/Тексты из закрытых ветвей и архивов без действующего доступа/)).toBeVisible();
   await expect(link).toBeVisible();
   await expect(link).toHaveAttribute("href", "/api/account/export");

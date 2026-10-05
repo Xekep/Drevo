@@ -1651,7 +1651,7 @@ test("the initial tree grows from roots toward descendants", async ({
   expect(Math.abs(toolsAfterCard!.x - toolsBeforeCard!.x)).toBeGreaterThan(10);
   // After focusing a person, offscreen edges may be unmounted by React Flow.
   await page
-    .getByRole("button", { name: "Вписать видимую часть дерева" })
+    .getByRole("button", { name: "Вписать видимую часть древа" })
     .click();
   const extra = page.getByRole("button", { name: "Доп. связи" });
   await expect(extra).toHaveAttribute("aria-pressed", "false");
