@@ -1912,7 +1912,10 @@ try {
     .run(citationUrl);
   await app.archive.db.prepare("", "DELETE FROM media_originals WHERE url=?")
     .run(pendingUrl);
-  await citationFile.undo();
+  // The live citation is gone, but archive history still references this
+  // original. Keep it until the outer disposable-directory cleanup: a tree
+  // backup must preserve historical evidence, not silently omit missing files.
+  assert.equal(existsSync(join(uploads, citationUrl.slice("/media/".length))), true);
   await pendingFile.undo();
   // A scoped AI export awaits archive.read() again while checking its final
   // scope. Downgrading the account during that await must prevent delivery.
@@ -5222,7 +5225,7 @@ try {
   assert.equal(managedStatus.job?.state, "succeeded", managedStatus.job?.error);
   const managedName = managedStatus.records?.[0]?.name;
   assert.ok(managedName, "selected archive has a managed backup record");
-  const managedFile = join(directory, "archives", "other-archive", "backups", managedName);
+  const managedFile = join(directory, "archives", "other-archive", "tree-backups", managedName);
   const managedSqlite = join(directory, "selected-managed-backup.sqlite");
   writeFileSync(managedSqlite, execFileSync("tar", ["-xOf", managedFile, "drevo.sqlite"], {
     maxBuffer: 64 * 1024 * 1024,

@@ -11,6 +11,8 @@ import { platformBackupCoordinator } from "../src/server/platform-backup-coordin
 import { canManageTreeBackups, type ArchiveUser } from "../src/domain/access.ts";
 import { assertPlatformBackupRole } from "../src/server/platform-backup-snapshot.ts";
 import { lockBackupStaff } from "../src/server/tree-backup-access.ts";
+import { writeDatabaseBackup } from "../src/server/backup.ts";
+import { stageTreeBackupFiles } from "../src/server/tree-backup-files.ts";
 import type pg from "pg";
 
 const owner: ArchiveUser = { id: "local", name: "Владелец", role: "admin",
@@ -86,6 +88,27 @@ test("manual tree copies pin only selected originals, scrub credentials, never s
       } finally { db.close(); }
     });
   } finally { await backups.close(); await f.close(); }
+});
+
+test("a historical citation keeps its original required after removal from the live family", async () => {
+  const f = await fixture();
+  try {
+    const historicalName = "22222222-2222-4222-8222-222222222222.png";
+    await f.archive.db.prepare("INSERT INTO history(revision,data) VALUES(?,?)")
+      .run(100, JSON.stringify({ ...seed, photos: [], people: [{
+        id: "historical-person", sources: [{ url: "/media/" + historicalName + "#page=1" }],
+      }] }));
+    const snapshot = join(f.root, "historical.sqlite");
+    await writeDatabaseBackup(f.archive.db, snapshot);
+    assert.equal((await f.archive.read()).family.people.length, 0,
+      "the original is referenced only by history, not the current cards");
+    await assert.rejects(stageTreeBackupFiles(snapshot, f.root, join(f.root, "incomplete")),
+      { code: "ENOENT" }, "a missing historical original cannot produce a successful backup");
+    await writeFile(join(f.root, "uploads", historicalName), "historical evidence");
+    const complete = join(f.root, "complete");
+    await stageTreeBackupFiles(snapshot, f.root, complete);
+    assert.equal(await readFile(join(complete, historicalName), "utf8"), "historical evidence");
+  } finally { await f.close(); }
 });
 
 test("platform native SQLite copy includes keys and originals, has a distinct catalog, and restores in isolation", async () => {

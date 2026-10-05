@@ -13,7 +13,9 @@
   с explicit global admin/researcher. Архивные автотаймеры не включать.
   Runtime PG не получает BYPASSRLS; отдельный read-only оператор проверяется
   перед dump. Full restore offline/maintenance; tree restore preview/confirm/
-  revision. [Бэкапы](backup.md).
+  revision. Удалённая текущая ссылка не отменяет оригинал, указанный в history:
+  такой файл обязателен для копии; integration fixtures не должны удалять его
+  до завершения проверок бэкапа. [Бэкапы](backup.md).
 
 - Drevo остаётся веб-приложением: React/Vite, Node.js, React Flow и ELK в Worker.
   Переписывание стека, Electron/Tauri и микросервисы не входят в текущий план.

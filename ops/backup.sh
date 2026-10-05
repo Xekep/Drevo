@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# App and systemd share the persisted schedule and SQLite lease.
+# App and systemd share the platform catalog, persisted schedule and PG advisory lock.
 # Configure retention/storage in the admin UI, not BACKUP_REMOTE.
 base=/var/www/drevo.kiiko.ru
 if ! printenv DATABASE_PATH >/dev/null; then
