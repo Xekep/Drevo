@@ -52,12 +52,12 @@ export function restoreHttp({
     const archiveActor = await auth.currentUser(req);
     if (!canManageTreeBackups(archiveActor) || !!memberPreviewTarget(req))
       return json(res, (await auth.accountId(req)) ? 403 : 401, {
-        error: "Системное восстановление доступно администратору платформы",
+        error: "Восстановление древа доступно его владельцу с ролью администратора или исследователя платформы",
       });
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
     if (req.headers["x-drevo-restore"] !== "1")
-      return json(res, 400, { error: "Откройте импорт в админке" });
+      return json(res, 400, { error: "Откройте восстановление в управлении древом" });
 
     const preview = url.pathname.endsWith("preview");
     if (preview && previewBusy)
@@ -72,7 +72,7 @@ export function restoreHttp({
         const result = await restores.previewStream(req, actor, async () => {
           const current = await auth.currentUser(req);
           if (!canManageTreeBackups(current) || (!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
-            throw new ForbiddenError("Доступ администратора отозван");
+            throw new ForbiddenError("Доступ к резервным копиям древа отозван");
         }, { restoreComments: req.headers["x-drevo-restore-comments"] === "1" });
         await beforePreviewDelivery?.();
         if (!auth.local && db.kind === "postgres" && db.postgresTransaction) {
@@ -121,7 +121,7 @@ export function restoreHttp({
       }
       const actor = await auth.currentUser(req);
       if (!actor || (!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
-        return json(res, 403, { error: "Доступ администратора отозван" });
+        return json(res, 403, { error: "Доступ к резервным копиям древа отозван" });
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       if (body.confirm !== true || typeof body.token !== "string")
         return json(res, 400, { error: "Подтвердите замену данных" });

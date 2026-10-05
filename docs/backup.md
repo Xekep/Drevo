@@ -34,7 +34,7 @@ Runtime PG остаётся NOSUPERUSER/NOBYPASSRLS. pg_dump от него ил�
 
 После review root запускает ops/postgres/setup-platform-backup.sh --apply. Он проверяет root-owned /etc/drevo.env, существующий локальный кластер и PGDATABASE; создаёт/проверяет отдельную LOGIN NOSUPERUSER BYPASSRLS роль с pg_read_all_data, read-only по умолчанию, CONNECTION LIMIT 2. Не меняет runtime/HBA/данные. Пароль без вывода, root-owned /etc/drevo-platform-backup.env 0600.
 
-PLATFORM_BACKUP_PGUSER/PGPASSWORD/PGHOST/PGPORT — отдельные параметры оператора. TCP 127.0.0.1/SCRAM используется оператором; runtime остаётся на Unix socket/PEER. Второй EnvironmentFile добавляется в существующие app/backup systemd units; перезапуск в релизное окно. Нужны pg_dump/pg_restore не старше сервера, tar, свободный диск. Скрипт проверяет вход от site_drevo, выводит только readiness; секреты не передаются через argv или браузер.
+PLATFORM_BACKUP_PGUSER, PLATFORM_BACKUP_PGPASSWORD, PLATFORM_BACKUP_PGHOST и PLATFORM_BACKUP_PGPORT — отдельные параметры оператора. TCP 127.0.0.1/SCRAM используется оператором; runtime остаётся на Unix socket/PEER. Второй EnvironmentFile добавляется в существующие app/backup systemd units; перезапуск в релизное окно. Нужны pg_dump/pg_restore не старше сервера, tar, свободный диск. Скрипт проверяет вход от site_drevo, выводит только readiness; секреты не передаются через argv или браузер.
 
 Каталоги 0700; TAR/checksum/catalog/ключи 0600. Копии содержат приватные данные и действующие секреты. Для SSH: shared/backup-ssh/config, приватный ключ, закреплённый known_hosts, SFTP и Python 3.8+ на удалённом сервере. Не отключать StrictHostKeyChecking. Ошибка загрузки не удаляет прежние копии.
 

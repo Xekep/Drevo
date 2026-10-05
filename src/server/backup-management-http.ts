@@ -98,19 +98,19 @@ export function backupManagementHttp({
         if (!auth.local && db.kind === "postgres" && db.postgresTransaction) {
           const session = await auth.accountSession(req);
           if (!session)
-            return json(res, 401, { error: "Доступ администратора отозван." });
+            return json(res, 401, { error: "Доступ к резервным копиям древа отозван." });
           return await db.postgresTransaction(async (client) => {
             // Account deletion locks account before session; use the same order.
             const account = await client.query(
               "SELECT id FROM accounts WHERE id=$1 FOR SHARE NOWAIT", [session.accountId]);
             if (!account.rowCount)
-              return json(res, 401, { error: "Доступ администратора отозван." });
+              return json(res, 401, { error: "Доступ к резервным копиям древа отозван." });
             const active = await client.query<{ expires_at: string }>(
               `SELECT expires_at FROM account_sessions
                WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
               [session.tokenHash, session.accountId]);
             if (!active.rows[0] || Number(active.rows[0].expires_at) <= Date.now())
-              return json(res, 401, { error: "Доступ администратора отозван." });
+              return json(res, 401, { error: "Доступ к резервным копиям древа отозван." });
             await client.query("SELECT set_config('drevo.account_id',$1,true)",
               [session.accountId]);
             const membership = await client.query<{ approved: boolean }>(
@@ -122,27 +122,27 @@ export function backupManagementHttp({
               [db.archiveId, session.accountId]);
             const platformGrant = await lockBackupStaff(client, session.accountId);
             if (!membership.rows[0]?.approved || !platformGrant || !owner.rowCount)
-              return json(res, 403, { error: "Доступ администратора отозван." });
+              return json(res, 403, { error: "Доступ к резервным копиям древа отозван." });
             return await jsonLocked(res, 200, status);
           });
         }
         if ((!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
           return json(res, (await auth.currentUser(req)) ? 403 : 401,
-            { error: "Доступ администратора отозван." });
+            { error: "Доступ к резервным копиям древа отозван." });
         return json(res, 200, status);
       }
       if (path === "/api/backups/settings" && req.method === "PUT") {
         const body = await readJson(req);
         if ((!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
-          return json(res, 403, { error: "Доступ администратора отозван." });
+          return json(res, 403, { error: "Доступ к резервным копиям древа отозван." });
         if (!auth.local && db.kind === "postgres" && db.postgresTransaction) {
           const checked = validateBackupSettings(body);
           const session = await auth.accountSession(req);
           if (!session)
-            return json(res, 401, { error: "Доступ администратора отозван." });
+            return json(res, 401, { error: "Доступ к резервным копиям древа отозван." });
           const actor = await auth.currentUser(req);
           if (!actor || actor.id !== session.accountId)
-            return json(res, 403, { error: "Доступ администратора отозван." });
+            return json(res, 403, { error: "Доступ к резервным копиям древа отозван." });
           const result = await db.postgresTransaction(async (client) => {
             // Match account deletion's account -> session order. Keep the
             // rights locked through the settings UPDATE and audit insertion.
@@ -171,7 +171,7 @@ export function backupManagementHttp({
               settings: await backups.savePostgres(checked, actor, client) };
           });
           return json(res, result.status,
-            result.status === 200 ? result.settings : { error: "Доступ администратора отозван." });
+            result.status === 200 ? result.settings : { error: "Доступ к резервным копиям древа отозван." });
         }
         return json(
           res,
@@ -182,14 +182,14 @@ export function backupManagementHttp({
       if (path === "/api/backups/check" && req.method === "POST") {
         const body = await readJson(req);
         if ((!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
-          return json(res, 403, { error: "Доступ администратора отозван." });
+          return json(res, 403, { error: "Доступ к резервным копиям древа отозван." });
         if (!auth.local && db.kind === "postgres" && db.postgresTransaction) {
           const session = await auth.accountSession(req);
           if (!session)
-            return json(res, 401, { error: "Доступ администратора отозван." });
+            return json(res, 401, { error: "Доступ к резервным копиям древа отозван." });
           const actor = await auth.currentUser(req);
           if (!actor || actor.id !== session.accountId)
-            return json(res, 403, { error: "Доступ администратора отозван." });
+            return json(res, 403, { error: "Доступ к резервным копиям древа отозван." });
           return json(res, 202, await backups.check(body, actor, session));
         }
         return json(
@@ -221,7 +221,7 @@ export function backupManagementHttp({
         const inspect = async (file: string, signal: AbortSignal) => {
           const assertAccess = async () => {
             if ((!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
-              throw new BackupInputError("Доступ администратора отозван.");
+              throw new BackupInputError("Доступ к резервным копиям древа отозван.");
           };
           await assertAccess();
           return await restores.previewStream(
@@ -234,10 +234,10 @@ export function backupManagementHttp({
         if (!auth.local && db.kind === "postgres" && db.postgresTransaction) {
           const session = await auth.accountSession(req);
           if (!session)
-            return json(res, 401, { error: "Доступ администратора отозван." });
+            return json(res, 401, { error: "Доступ к резервным копиям древа отозван." });
           const actor = await auth.currentUser(req);
           if (!actor || actor.id !== session.accountId)
-            return json(res, 403, { error: "Доступ администратора отозван." });
+            return json(res, 403, { error: "Доступ к резервным копиям древа отозван." });
           return json(res, 202, await backups.preview(match[1], actor, inspect, session));
         }
         return json(res, 202, await backups.preview(match[1],
@@ -256,7 +256,7 @@ export function backupManagementHttp({
         try {
           await backups.withFile(match[1], async (file, item) => {
             if ((!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
-              throw new BackupInputError("Доступ администратора отозван.");
+              throw new BackupInputError("Доступ к резервным копиям древа отозван.");
             const handle = await open(file, "r");
             const abort = new AbortController();
             const stop = () => {
@@ -297,20 +297,20 @@ export function backupManagementHttp({
               if (db.kind === "postgres" && db.postgresTransaction) {
                 const session = await auth.accountSession(req);
                 if (!session)
-                  return json(res, 401, { error: "Доступ администратора отозван." });
+                  return json(res, 401, { error: "Доступ к резервным копиям древа отозван." });
                 const delivered = await db.postgresTransaction(async (client) => {
                   // Match account deletion's account -> session order, then hold
                   // membership and platform grant through the first body write.
                   const account = await client.query(
                     "SELECT id FROM accounts WHERE id=$1 FOR SHARE NOWAIT", [session.accountId]);
                   if (!account.rowCount)
-                    return json(res, 401, { error: "Доступ администратора отозван." });
+                    return json(res, 401, { error: "Доступ к резервным копиям древа отозван." });
                   const active = await client.query<{ expires_at: string }>(
                     `SELECT expires_at FROM account_sessions
                      WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
                     [session.tokenHash, session.accountId]);
                   if (!active.rows[0] || Number(active.rows[0].expires_at) <= Date.now())
-                    return json(res, 401, { error: "Доступ администратора отозван." });
+                    return json(res, 401, { error: "Доступ к резервным копиям древа отозван." });
                   await client.query("SELECT set_config('drevo.account_id',$1,true)",
                     [session.accountId]);
                   const membership = await client.query<{ approved: boolean }>(
@@ -322,7 +322,7 @@ export function backupManagementHttp({
                     [db.archiveId, session.accountId]);
                   const platformGrant = await lockBackupStaff(client, session.accountId);
                   if (!membership.rows[0]?.approved || !platformGrant || !owner.rowCount)
-                    return json(res, 403, { error: "Доступ администратора отозван." });
+                    return json(res, 403, { error: "Доступ к резервным копиям древа отозван." });
                   await beforeLockedDelivery?.();
                   sendFirst();
                   return true;
@@ -331,7 +331,7 @@ export function backupManagementHttp({
               } else {
                 if ((!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
                   return json(res, (await auth.currentUser(req)) ? 403 : 401,
-                    { error: "Доступ администратора отозван." });
+                    { error: "Доступ к резервным копиям древа отозван." });
                 sendFirst();
               }
               if (res.destroyed) return;
