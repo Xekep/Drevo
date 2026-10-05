@@ -37,6 +37,7 @@ import {
   type DocumentAnnotation,
 } from "../shared/document-annotations.ts";
 import { auditStore } from "./audit.ts";
+import { assertActiveAccountSession, AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
 import { personCitations, sourceCatalogStore, unionCitations } from "./source-catalog-store.ts";
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
@@ -305,6 +306,26 @@ export function documentsHttp({
   const renderTiff = tiffDocumentRenderer();
   const readPdfPages = pdfPages ?? pdfDocumentPages(join(uploadsDirectory, ".reader-cache"));
   const audit = auditStore(db);
+  const checkedWriteSession = async (
+    actorId: string,
+    session: Awaited<ReturnType<typeof auth.accountSession>>,
+  ) => {
+    if (db.kind !== "postgres" || auth.local) return;
+    if (!session || session.accountId !== actorId)
+      throw new AccountSessionExpired("Сессия завершена. Войдите снова");
+    await assertActiveAccountSession(db, actorId, session.tokenHash);
+  };
+  const writeWithSession = async <T>(work: () => Promise<T>) => {
+    try {
+      return await db.transaction(work);
+    } catch (error) {
+      if (error instanceof AccountSessionExpired)
+        return { status: 401 as const, error: error.message };
+      if (error instanceof AccountSessionBusy)
+        return { status: 409 as const, error: error.message };
+      throw error;
+    }
+  };
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -592,13 +613,14 @@ export function documentsHttp({
     links: Map<string, string[]>,
     value: unknown,
     countCheck?: { where: string; args: string[]; total: number },
+    status = 200,
   ) => {
     // Build the entire bounded page before locking. res.end only hands the
     // bytes to HTTP; a slow socket does not retain a PostgreSQL connection.
     const body = JSON.stringify(value);
     await beforeMetadataDelivery?.();
     const send = () => {
-      res.writeHead(200, {
+      res.writeHead(status, {
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "private, no-store",
       });
@@ -700,6 +722,27 @@ export function documentsHttp({
       if ((error as { code?: string }).code === "55P03") return "busy";
       throw error;
     }
+  };
+  const deliverCommittedDocument = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    access: Awaited<ReturnType<typeof visible>>,
+    row: Row,
+    personIds: string[],
+    value: unknown,
+    status = 200,
+  ) => {
+    try {
+      const delivery = await deliverMetadata(req, res, access, [row],
+        new Map([[row.id, personIds]]), value, undefined, status);
+      if (delivery === "sent") return true;
+    } catch (error) {
+      console.error("Не удалось проверить доступ к сохранённому документу", error);
+    }
+    // The write already committed. Never imply a rollback or invite a retry,
+    // but withhold its private document body after a completed access change.
+    if (res.destroyed || res.headersSent) return true;
+    return json(res, status, { committed: true, accessChanged: true });
   };
 
   return async (
@@ -905,13 +948,16 @@ export function documentsHttp({
         (pageInput && (!expectedPages || !requestedPages))
       )
         return json(res, 400, { error: "Некорректные привязки документа" });
-      const result = await db.transaction(async () => {
+      const issuingSession = db.kind === "postgres" && !auth.local
+        ? await auth.accountSession(req) : null;
+      const result = await writeWithSession(async () => {
         const actor = await auth.currentUser(req);
         if (!actor?.approved || !(await auth.canEdit(req)))
           return {
             status: 403 as const,
             error: "Нет прав на изменение документа",
           };
+        await checkedWriteSession(actor.id, issuingSession);
         const row = (await db
           .prepare(
             "SELECT * FROM documents WHERE id=?",
@@ -1002,9 +1048,13 @@ export function documentsHttp({
           !eventsChanged &&
           !pagesChanged &&
           editableFields.every(([field]) => previous[field] === next[field])
-        )
+        ) {
+          await checkedWriteSession(actor.id, issuingSession);
           return {
             status: 200 as const,
+            access,
+            row,
+            personIds,
             item: listedDocument(
               row,
               personIds,
@@ -1015,6 +1065,7 @@ export function documentsHttp({
               access.people,
             ),
           };
+        }
         if (linksChanged) {
           const citedBy = await referencingPeople(row.id);
           if (citedBy.some((id) => personIds.includes(id) && !nextIds.includes(id)))
@@ -1101,8 +1152,12 @@ export function documentsHttp({
           event_links: JSON.stringify(nextEvents),
           pages: JSON.stringify(nextPages),
         };
+        await checkedWriteSession(actor.id, issuingSession);
         return {
           status: 200 as const,
+          access,
+          row: updated,
+          personIds: nextIds,
           item: listedDocument(
             updated,
             nextIds,
@@ -1116,7 +1171,8 @@ export function documentsHttp({
       });
       return "error" in result
         ? json(res, result.status, { error: result.error })
-        : json(res, result.status, result.item);
+        : deliverCommittedDocument(req, res, result.access, result.row,
+          result.personIds, result.item);
     }
 
     if (annotations) {
@@ -1194,7 +1250,9 @@ export function documentsHttp({
         edit = { expected: body.expected, text: body.text.trim() };
       } else if (req.method !== "DELETE" || !annotations[2])
         return json(res, 405, { error: "Метод не поддерживается" });
-      const result = await db.transaction(async () => {
+      const issuingSession = db.kind === "postgres" && !auth.local
+        ? await auth.accountSession(req) : null;
+      const result = await writeWithSession(async () => {
         const current = (await db
           .prepare(
             "SELECT * FROM documents WHERE id=?",
@@ -1205,6 +1263,7 @@ export function documentsHttp({
         const latest = await auth.currentUser(req);
         if (!latest?.approved || !(await auth.canEdit(req)))
           return { status: 403, error: "Нет прав на комментарии" };
+        await checkedWriteSession(latest.id, issuingSession);
         const latestAccess = await visible(req, false);
         const linked = (await associations([row.id])).get(row.id) || [];
         if (!canSee(latestAccess, current, linked))
@@ -1237,7 +1296,9 @@ export function documentsHttp({
             if (!edit)
               return { status: 400, error: "Некорректный комментарий" };
             if (items[index].text !== edit.expected)
-              return { status: 409, error: "Комментарий уже изменён. Отмените правку и откройте редактор заново.", current: items[index].text };
+              return { status: 409, error: "Комментарий уже изменён. Отмените правку и откройте редактор заново.",
+                current: items[index].text, access: latestAccess, row: current,
+                personIds: linked };
             items[index] = { ...items[index], text: edit.text };
           } else {
             if (!canDeleteAnnotation(latest, items[index].authorId))
@@ -1271,16 +1332,21 @@ export function documentsHttp({
           },
           latest,
         );
-        return { status, items };
+        await checkedWriteSession(latest.id, issuingSession);
+        return { status, items: visibleItems(items, latest), access: latestAccess,
+          row: { ...current, annotations: JSON.stringify(items) }, personIds: linked };
       });
-      return "error" in result
-        ? json(res, result.status, {
-            error: result.error,
-            ...("current" in result ? { current: result.current } : {}),
-          })
-        : json(res, result.status, {
-            items: visibleItems(result.items, await auth.currentUser(req)),
-          });
+      if ("error" in result) {
+        if ("current" in result && result.access && result.row && result.personIds) {
+          const delivered = await deliverMetadata(req, res, result.access,
+            [result.row], new Map([[result.row.id, result.personIds]]),
+            { error: result.error, current: result.current }, undefined, result.status);
+          if (delivered === "sent" || res.destroyed) return true;
+        }
+        return json(res, result.status, { error: result.error });
+      }
+      return deliverCommittedDocument(req, res, result.access, result.row,
+        result.personIds, { items: result.items }, result.status);
     }
 
     if (item && req.method === "DELETE") {
@@ -1288,7 +1354,9 @@ export function documentsHttp({
         return json(res, 403, { error: "Нет прав на удаление документа" });
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Недопустимый источник запроса" });
-      const result = await db.transaction(async () => {
+      const issuingSession = db.kind === "postgres" && !auth.local
+        ? await auth.accountSession(req) : null;
+      const result = await writeWithSession(async () => {
         // Recheck access and existence after acquiring the archive write lock.
         // Another request can delete the document or revoke access while we wait.
         if (!(await auth.canEdit(req)))
@@ -1313,6 +1381,7 @@ export function documentsHttp({
             status: 403 as const,
             error: "Удалить документ может его автор или администратор",
           };
+        await checkedWriteSession(actor!.id, issuingSession);
         if ((await referencingPeople(row.id)).length || await referencedByCatalog(row.id))
           return {
             status: 409 as const,
@@ -1337,6 +1406,7 @@ export function documentsHttp({
           },
           actor!,
         );
+        await checkedWriteSession(actor!.id, issuingSession);
         return { status: 200 as const, row };
       });
       if (result.status !== 200)
@@ -1544,6 +1614,8 @@ export function documentsHttp({
         name = `${id}.${fileType.extension}`,
         temporary = join(uploadsDirectory, `.${id}.upload`),
         target = join(uploadsDirectory, name);
+      const issuingSession = db.kind === "postgres" && !auth.local
+        ? await auth.accountSession(req) : null;
       let size = 0;
       let release: (() => Promise<unknown>) | undefined;
       const header: Buffer[] = [];
@@ -1616,9 +1688,10 @@ export function documentsHttp({
           return json(res, 403, {
             error: "Доступ к выбранным людям изменился",
           });
-        const committed = await db.transaction(async () => {
+        const committed = await writeWithSession(async () => {
           const current = await auth.currentUser(req);
-          const currentPeople = (await visible(req)).people;
+          const currentAccess = await visible(req);
+          const currentPeople = currentAccess.people;
           const currentVisible = new Set(currentPeople.map((person) => person.id));
           if (
             !current?.approved ||
@@ -1629,6 +1702,7 @@ export function documentsHttp({
               person.events?.some((event) => event.id === link.eventId)))
           )
             return false;
+          await checkedWriteSession(current.id, issuingSession);
           await db
             .prepare(
               "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -1657,14 +1731,22 @@ export function documentsHttp({
           for (const personId of ids as string[]) await link.run(id, personId);
           await enforcePostgresMediaQuota(db);
           await enforceUserStorageLimit(db, uploader.id);
-          return true;
+          await checkedWriteSession(current.id, issuingSession);
+          const row = (await db.prepare(
+            "SELECT * FROM documents WHERE id=?",
+            "SELECT * FROM documents WHERE id=?",
+          ).get(id)) as Row;
+          return { access: currentAccess, row };
         });
+        if (committed && typeof committed === "object" && "error" in committed)
+          return json(res, committed.status, { error: committed.error });
         if (!committed)
           return json(res, 403, { error: "Доступ к документу изменился" });
         // Prepare once at upload. Older originals fill the same cache on demand.
         // A damaged or encrypted PDF retains the existing upload behaviour.
         if (fileType.extension === "pdf") await readPdfPages(target).catch(() => {});
-        return json(res, 201, { id });
+        return deliverCommittedDocument(req, res, committed.access, committed.row,
+          ids as string[], { id }, 201);
       } catch (error) {
         if (res.destroyed) return true;
         if (error instanceof UploadQuotaError) {

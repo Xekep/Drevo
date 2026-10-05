@@ -124,9 +124,14 @@ export function PersonDocumentsEditor({
       });
       const data = (await response.json()) as ListedDocument & {
         error?: string;
+        accessChanged?: boolean;
       };
       if (!response.ok)
         throw new Error(data.error || "Не удалось изменить привязку");
+      if (data.accessChanged) {
+        setError("Привязка сохранена, но доступ изменился. Не повторяйте запрос; войдите снова.");
+        return;
+      }
       setLinked((current) =>
         attach
           ? [...current.filter((item) => item.id !== entry.id), data]

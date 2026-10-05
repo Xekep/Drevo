@@ -319,7 +319,12 @@ export function DocumentsCatalog({
         const result = (await response.json()) as { error?: string };
         throw new Error(result.error || "Не удалось загрузить документ");
       }
-      const created = (await response.json()) as { id: string };
+      const created = (await response.json()) as { id?: string; accessChanged?: boolean };
+      if (created.accessChanged || !created.id) {
+        setFile(null);
+        setUploadError("Документ сохранён, но доступ изменился. Не загружайте его повторно; войдите снова.");
+        return;
+      }
       setAnnotateOnOpen(true);
       setSelected({
         id: created.id,
@@ -414,9 +419,15 @@ export function DocumentsCatalog({
       });
       const result = (await response.json()) as ListedDocument & {
         error?: string;
+        accessChanged?: boolean;
       };
       if (!response.ok)
         throw new Error(result.error || "Не удалось сохранить документ");
+      if (result.accessChanged) {
+        setEditing(null);
+        setError("Изменения сохранены, но доступ изменился. Не повторяйте запрос; войдите снова.");
+        return;
+      }
       setEditing(null);
       await load(0);
     } catch (reason) {
