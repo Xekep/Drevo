@@ -77,6 +77,7 @@ import { acceptWithDecisionNote, rejectWithStableDecisionNote,
 import { verifyAiProviderCleanupStatus } from "./postgres-ai-provider-status.ts";
 import { verifyPlatformStaffRoles } from "./postgres-platform-staff-roles.ts";
 import { verifyPlatformTiers } from "./postgres-platform-tiers.ts";
+import { verifyFaceSessionMutation } from "./postgres-face-session.ts";
 import { verifyGlobalStaffMigrationStartup } from "./postgres-global-staff-migration-startup.ts";
 import { verifyGlobalRoleFinalization } from "./postgres-global-role-finalization.ts";
 import { verifyAiProviderCleanupRetry } from "./postgres-ai-provider-retry.ts";
@@ -1847,6 +1848,7 @@ try {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
   };
+  await verifyFaceSessionMutation(app.archive, client, process.env.PUBLIC_ORIGIN!, source);
   await verifyPlatformTiers(client, app.archive.db, securedBase,
     process.env.PUBLIC_ORIGIN!, ownerHeaders);
   await verifyDocumentWriteSessionRevocation(app.archive, client,

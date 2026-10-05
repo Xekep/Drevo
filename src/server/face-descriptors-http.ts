@@ -1,12 +1,14 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
-import { isArchiveOwner } from "../domain/access.ts";
+import { canEditArchive, isArchiveOwner } from "../domain/access.ts";
 import type { openArchive } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
+import { assertActiveAccountSession, AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
+import { assertCurrentArchiveActor, ForbiddenError } from "./users.ts";
 
 const MODELS = {
   "face-api-1.7.15": { dimensions: 128, maxValue: 2 },
@@ -225,11 +227,33 @@ export function faceDescriptorsHttp({
       url.pathname,
     );
     if (!saving && !matching && !deleting) return false;
+    const missingActorStatus = async () =>
+      archive.db.kind === "postgres" && !auth.local && await auth.accountSession(req)
+        ? 403 : 401;
     if (!(await auth.canEdit(req)))
-      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
+      return json(res, (await auth.currentUser(req)) ? 403 : await missingActorStatus(), {
         error: "You do not have editing access",
       });
-    const actor = (await auth.currentUser(req))!;
+    const actor = await auth.currentUser(req);
+    if (!actor) return json(res, await missingActorStatus(), {
+      error: "Доступ к архиву изменился. Обновите страницу",
+    });
+    if (!canEditArchive(actor)) return json(res, 403, {
+      error: "Нет прав на изменение архива",
+    });
+    // Keep the issuing token, rather than accepting a later session lookup as
+    // authority for a mutation that started under this request.
+    const issuingSession = !matching && !auth.local
+      ? await auth.accountSession(req) : null;
+    if (!matching && !auth.local &&
+        (!issuingSession || issuingSession.accountId !== actor.id))
+      return json(res, 401, { error: "Сессия завершена. Войдите снова" });
+    const assertIssuingSession = async () => {
+      if (!issuingSession) return;
+      // SQLite serializes writers in BEGIN IMMEDIATE; PostgreSQL retains the
+      // session row with NOWAIT until this short mutation commits.
+      await assertActiveAccountSession(archive.db, actor.id, issuingSession.tokenHash);
+    };
     if (!deleting && !(await accountAiAccess(archive.db, actor.id, auth.local)))
       return json(res, 403, { error: "Распознавание лиц недоступно этому аккаунту" });
     if (deleting && req.method !== "DELETE")
@@ -243,29 +267,40 @@ export function faceDescriptorsHttp({
     try {
       if (deleting) {
         const id = decodeURIComponent(url.pathname.split("/").at(-1)!);
-        const row = await archive.db
-          .prepare(
+        const beforeDelete = await auth.currentUser(req);
+        if (!beforeDelete)
+          return json(res, await missingActorStatus(), { error: "Доступ к архиву изменился" });
+        if (beforeDelete.id !== actor.id || !canEditArchive(beforeDelete))
+          return json(res, 403, { error: "Доступ к архиву изменился" });
+        const deleted = await archive.db.transaction(async () => {
+          await assertIssuingSession();
+          await assertCurrentArchiveActor(archive.db, actor);
+          if (archive.db.kind === "sqlite" && !auth.local) {
+            const latest = await auth.currentUser(req);
+            if (!latest || latest.id !== actor.id || !canEditArchive(latest) ||
+                latest.role !== actor.role || latest.personId !== actor.personId ||
+                latest.treeAccess !== actor.treeAccess ||
+                isArchiveOwner(latest) !== isArchiveOwner(actor)) return "access";
+          }
+          const current = await archive.db.prepare(
             "SELECT created_by,person_id FROM face_descriptors WHERE id=?",
-            "SELECT created_by,person_id FROM face_descriptors WHERE id=?",
-          )
-          .get(id);
-        if (!row) return json(res, 404, { error: "Образец не найден" });
-        const actor = (await auth.currentUser(req))!;
-        if (
-          isScopedUser(actor) &&
-          !visiblePersonIds((await archive.read()).family, actor).has(
-            String(row.person_id),
-          )
-        )
-          return json(res, 403, { error: "Нет доступа к человеку" });
-        if (!isArchiveOwner(actor) && row.created_by !== actor.id)
-          return json(res, 403, { error: "Нет доступа к образцу" });
-        await archive.db
-          .prepare(
+            "SELECT created_by,person_id FROM face_descriptors WHERE id=? FOR UPDATE",
+          ).get(id);
+          if (!current) return "missing";
+          if (isScopedUser(actor) &&
+              !visiblePersonIds((await archive.read()).family, actor).has(String(current.person_id)))
+            return "access";
+          if (!isArchiveOwner(actor) && current.created_by !== actor.id)
+            return "access";
+          await archive.db.prepare(
             "DELETE FROM face_descriptors WHERE id=?",
             "DELETE FROM face_descriptors WHERE id=?",
-          )
-          .run(id);
+          ).run(id);
+          await assertIssuingSession();
+          return "deleted";
+        });
+        if (deleted === "missing") return json(res, 404, { error: "Образец не найден" });
+        if (deleted === "access") return json(res, 403, { error: "Нет доступа к образцу" });
         return json(res, 200, { ok: true });
       }
       const body = await readJson(req);
@@ -311,10 +346,14 @@ export function faceDescriptorsHttp({
         return true;
       }
       const sample = parseDescriptor(body);
-      const actor = (await auth.currentUser(req))!;
+      const saveActor = await auth.currentUser(req);
+      if (!saveActor)
+        return json(res, await missingActorStatus(), { error: "Доступ к архиву изменился" });
+      if (saveActor.id !== actor.id || !canEditArchive(saveActor))
+        return json(res, 403, { error: "Доступ к архиву изменился" });
       if (
-        isScopedUser(actor) &&
-        !visiblePersonIds((await archive.read()).family, actor).has(
+        isScopedUser(saveActor) &&
+        !visiblePersonIds((await archive.read()).family, saveActor).has(
           sample.personId,
         )
       )
@@ -339,7 +378,7 @@ export function faceDescriptorsHttp({
               AND (? IS NULL OR photo_tags.id=?)
             ORDER BY photo_tags.rowid DESC
             LIMIT 1`,
-          "SELECT photo_tags.id AS tag_id, photo_tags.data AS tag, photos.data AS photo\n             FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id\n            WHERE photos.id=?\n              AND photo_tags.person_id=?\n              AND (? IS NULL OR photo_tags.id=?)\n            ORDER BY photo_tags.ordinal DESC\n            LIMIT 1",
+          "SELECT photo_tags.id AS tag_id, photo_tags.data AS tag, photos.data AS photo\n             FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id\n            WHERE photos.id=?\n              AND photo_tags.person_id=?\n              AND (?::text IS NULL OR photo_tags.id=?)\n            ORDER BY photo_tags.ordinal DESC\n            LIMIT 1",
         )
         .get(
           sample.sourcePhotoId,
@@ -353,10 +392,10 @@ export function faceDescriptorsHttp({
         });
       const sourceTagRowId = String(source.tag_id);
       const photo = JSON.parse(String(source.photo)) as { createdBy?: string };
-      if (!isArchiveOwner(actor) && photo.createdBy !== actor.id)
+      if (!isArchiveOwner(saveActor) && photo.createdBy !== saveActor.id)
         return json(res, 403, { error: "Нет доступа к исходной фотографии" });
       const saved = await archive.db.transaction(async () => {
-        const currentActor = await currentWriter(req, actor);
+        const currentActor = await currentWriter(req, saveActor);
         if (!currentActor) return "access";
         if (isScopedUser(currentActor) &&
             !visiblePersonIds((await archive.read()).family, currentActor).has(sample.personId))
@@ -380,10 +419,10 @@ export function faceDescriptorsHttp({
         const currentPhoto = JSON.parse(String(currentSource.photo)) as { createdBy?: string };
         if (!isArchiveOwner(currentActor) && currentPhoto.createdBy !== currentActor.id)
           return "access";
-        const count = Number((await archive.db.prepare(
-          `SELECT count(*) AS n FROM face_descriptors WHERE person_id=? AND model=?
-            AND (source_tag_id IS NULL OR source_tag_id<>?)`,
-        ).get(sample.personId, sample.model, sourceTagRowId))!.n);
+        const sampleCountSql = `SELECT count(*) AS n FROM face_descriptors WHERE person_id=? AND model=?
+            AND (source_tag_id IS NULL OR source_tag_id<>?)`;
+        const count = Number((await archive.db.prepare(sampleCountSql, sampleCountSql)
+          .get(sample.personId, sample.model, sourceTagRowId))!.n);
         if (count >= 20) return "limit";
         await archive.db
           .prepare(
@@ -407,6 +446,7 @@ export function faceDescriptorsHttp({
             sourceTagRowId,
             sample.model,
           );
+        await assertIssuingSession();
         return "saved";
       });
       if (saved === "access") return json(res, 403, { error: "Доступ к распознаванию лиц изменился" });
@@ -414,6 +454,12 @@ export function faceDescriptorsHttp({
       if (saved === "limit") return json(res, 409, { error: "Для этого человека уже сохранено максимальное число образцов" });
       return json(res, 201, { ok: true });
     } catch (error) {
+      if (error instanceof AccountSessionExpired)
+        return json(res, 401, { error: error.message });
+      if (error instanceof AccountSessionBusy)
+        return json(res, 409, { error: error.message });
+      if (error instanceof ForbiddenError)
+        return json(res, 403, { error: error.message });
       if (isInfrastructureError(error)) throw error;
       return json(res, 400, {
         error:
