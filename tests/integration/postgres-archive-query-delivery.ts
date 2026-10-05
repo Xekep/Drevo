@@ -161,6 +161,39 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
     headers: { Cookie: `drevo_session=${token}` },
   });
 
+  await first.query(`UPDATE people SET data=jsonb_set(data,'{photo}',
+    '"/media/self.jpg"'::jsonb) WHERE archive_id='tree-a' AND id='child'`);
+  const portrait = await get("/api/account/portrait?personId=father");
+  assert.equal(portrait.status, 200);
+  assert.deepEqual(await portrait.json(), { personId: "child", photo: "/media/self.jpg" });
+  assert.equal((await get("/api/account/portrait", "")).status, 401);
+  for (const update of [
+    () => second.query(`UPDATE archive_memberships SET person_id=NULL
+      WHERE archive_id='tree-a' AND user_id='relative'`),
+    () => second.query(`UPDATE archive_memberships SET approved=false
+      WHERE archive_id='tree-a' AND user_id='relative'`),
+    () => second.query("UPDATE archives SET revision=revision+1 WHERE id='tree-a'"),
+  ]) {
+    let reached!: () => void;
+    let resume!: () => void;
+    const ready = new Promise<void>((resolve) => { reached = resolve; });
+    const wait = new Promise<void>((resolve) => { resume = resolve; });
+    pauseDelivery = { reached, wait };
+    const pending = get("/api/account/portrait");
+    let timer!: ReturnType<typeof setTimeout>;
+    try {
+      await Promise.race([ready, new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("portrait delivery not reached")), 10_000);
+      })]);
+      await update();
+    } finally { clearTimeout(timer); resume(); }
+    const stale = await pending;
+    assert.equal(stale.status, 409);
+    assert.doesNotMatch(await stale.text(), /self\.jpg/);
+    await second.query(`UPDATE archive_memberships SET person_id='child',approved=true
+      WHERE archive_id='tree-a' AND user_id='relative'`);
+  }
+
   const unchanged = await get("/api/export.json");
   assert.equal(unchanged.status, 200);
   const unchangedPeople = (await unchanged.json()).people as Array<{ id: string;
