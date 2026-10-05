@@ -1,3 +1,4 @@
+import { BackupAdmin } from "./backup-admin";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -13,6 +14,7 @@ import {
   ScanSearch,
   GitCompareArrows,
   Eye,
+  DatabaseBackup,
 } from "lucide-react";
 import {
   ROLE_NAMES,
@@ -67,6 +69,7 @@ const ADMIN_SECTIONS = [
   {
     label: "Данные",
     items: [
+      { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
       { id: "data", label: "Экспорт и импорт", icon: Download },
     ],
   },
@@ -76,6 +79,7 @@ const ADMIN_SECTIONS = [
   },
 ] as const;
 const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
+  backups: { title: "Резервные копии древа", description: "Ручные копии этого архива. Сохраняются пять последних." },
   users: {
     title: "Участники",
     description: "Аккаунты, роли и доступ к семейному архиву.",
@@ -293,6 +297,7 @@ export function AdminPanel({
   family,
   currentUserId,
   archiveOwner = true,
+  backupAccess = false,
   platformAdmin,
   publicationOwnership,
   onClose,
@@ -303,6 +308,7 @@ export function AdminPanel({
   family: Family;
   currentUserId: string;
   archiveOwner?: boolean;
+  backupAccess?: boolean;
   platformAdmin: boolean;
   publicationOwnership: PublicationOwnership;
   onClose: () => void;
@@ -332,7 +338,7 @@ export function AdminPanel({
   const [auditActor, setAuditActor] = useState("");
   const visibleGroups = ADMIN_SECTIONS.map((group) => ({
     ...group,
-    items: group.items.filter(() => archiveOwner),
+    items: group.items.filter((item) => archiveOwner && (item.id !== "backups" || backupAccess)),
   })).filter((group) => group.items.length > 0);
   const visibleSection = visibleGroups.some((group) => group.items.some((item) => item.id === section))
     ? section : visibleGroups[0]?.items[0]?.id || "users";
@@ -696,6 +702,7 @@ export function AdminPanel({
             <AuditLog key={auditActor} actorId={auditActor || undefined} />
           </section>
         )}
+        {visibleSection === "backups" && backupAccess && <BackupAdmin archiveId={archiveContextAt(window.location.pathname)?.id || null} />}
         {visibleSection === "data" && (
           <section className="admin-card archive-form">
             <GedcomTransfer

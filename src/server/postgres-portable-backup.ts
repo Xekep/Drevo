@@ -1,4 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
+import { statfs } from "node:fs/promises";
+import { dirname } from "node:path";
 import { initializeArchiveSchema } from "./schema.ts";
 import type { StoreDatabase } from "./store-database.ts";
 
@@ -82,6 +84,9 @@ export async function writePortablePostgresBackup(
           );
           try {
             for (;;) {
+              const disk = await statfs(dirname(file));
+              if (disk.bavail * disk.bsize < 256 * 1024 ** 2)
+                throw new Error("Недостаточно места для переносимой копии. Запись остановлена до заполнения диска");
               const rows = await source
                 .prepare("", "FETCH FORWARD 500 FROM portable_backup_rows")
                 .all();

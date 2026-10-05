@@ -1,3 +1,4 @@
+import { BackupAdmin } from "./backup-admin";
 import { useEffect, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { PlatformStaffRoles } from "./platform-staff-roles";
@@ -95,7 +96,8 @@ export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, onOw
             showCleanup={false} />
           </>}
         </div>}
-        {(section === "mcp" || section === "backups") && (
+        {section === "backups" && <BackupAdmin scope="platform" archiveId={null} />}
+        {section === "mcp" && (
           <PlatformArchiveTools key={section} kind={section} accountId={accountId}
             primaryUser={primaryUser} local={local} />
         )}

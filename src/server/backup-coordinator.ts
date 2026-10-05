@@ -1,3 +1,4 @@
+import { lockBackupStaff } from "./tree-backup-access.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { randomUUID } from "node:crypto";
 import type { ArchiveUser } from "../domain/access.ts";
@@ -32,15 +33,16 @@ export async function backupCoordinator(
     remote?: BackupRemote;
     now?: () => number;
     schedule?: boolean;
+    treeOnly?: boolean;
   } = {},
 ) {
   const now = options.now || Date.now;
-  const store = await backupStore(db, now),
+  const store = await backupStore(db, now, options.treeOnly),
     files = backupFiles(
       databasePath,
       options.remote,
       now,
-      db.kind === "postgres"
+      options.treeOnly && db.kind === "postgres" ? async () => 256 * 1024 ** 2 : db.kind === "postgres"
         ? async () =>
             Number(
               (await db
@@ -52,6 +54,7 @@ export async function backupCoordinator(
             )
         : undefined,
       db.archiveId,
+      options.treeOnly,
     );
   const audit = auditStore(db),
     settings = store.settings,
@@ -100,7 +103,7 @@ export async function backupCoordinator(
     if (job && row?.actor_id !== actorId) delete job.preview;
     return {
       settings: config.value,
-      nextRunAt: config.value.enabled
+      nextRunAt: !options.treeOnly && config.value.enabled
         ? new Date(config.next).toISOString()
         : null,
       localDirectory: files.directory,
@@ -167,7 +170,7 @@ export async function backupCoordinator(
         )
         .run(owner, actor?.id || "system", now() + 90000, JSON.stringify(job));
       // Persist before starting: another instance/restart must not repeat the interval.
-      if (kind === "create")
+      if (kind === "create" && !options.treeOnly)
         await store.schedule(now() + config.value.intervalHours * hour);
 
       return true;
@@ -195,10 +198,8 @@ export async function backupCoordinator(
           const archiveOwner = await client.query(
             "SELECT user_id FROM archive_owners WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT",
             [db.archiveId, checkAccess.accountId]);
-          const platformGrant = await client.query(
-            "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
-            [checkAccess.accountId]);
-          if (!membership.rows[0]?.approved || !archiveOwner.rowCount || !platformGrant.rowCount)
+          const platformGrant = await lockBackupStaff(client, checkAccess.accountId);
+          if (!membership.rows[0]?.approved || !archiveOwner.rowCount || !platformGrant)
             throw new BackupAccessError(403);
           // Serialize with other launchers even when backup_job has no row yet.
           await client.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE NOWAIT", [db.archiveId]);
@@ -213,7 +214,7 @@ export async function backupCoordinator(
                actor_id=excluded.actor_id,lease_until=excluded.lease_until,data=excluded.data`,
             [db.archiveId, owner, checkAccess.accountId, now() + 90000, JSON.stringify(job)],
           );
-          if (kind === "create") {
+          if (kind === "create" && !options.treeOnly) {
             const config = await client.query<{ interval_hours: string }>(
               "SELECT data->>'intervalHours' AS interval_hours FROM backup_settings WHERE archive_id=$1 AND id=1", [db.archiveId]);
             const intervalHours = Number(config.rows[0].interval_hours);
@@ -272,7 +273,7 @@ export async function backupCoordinator(
           }),
         );
         await log("Ошибка резервного копирования", job.error, actor);
-        if (kind === "create") await store.retryBy(now() + hour);
+        if (kind === "create" && !options.treeOnly) await store.retryBy(now() + hour);
       })
       .finally(async () => {
         clearInterval(heartbeat);
@@ -317,10 +318,11 @@ export async function backupCoordinator(
     return files.withFile(await record(id), signal, consume);
   }
   async function startCreate(actor?: ArchiveUser, scheduled = false, access?: BackupJobAccess) {
+    if (options.treeOnly && scheduled) throw new BackupInputError("Автоматические копии доступны только для платформы.");
     return await launch("create", actor, create, scheduled, access);
   }
   async function tick() {
-    if (closed) return;
+    if (closed || options.treeOnly) return;
     try {
       const config = await settings();
       if (config.value.enabled && config.next <= now())
@@ -330,9 +332,10 @@ export async function backupCoordinator(
         console.error("backup_scheduler_failed");
     }
   }
-  const timer = options.schedule === false ? null : setInterval(tick, 30000);
+  const timer = options.treeOnly || options.schedule === false ? null : setInterval(tick, 30000);
   timer?.unref();
   return {
+    treeOnly: options.treeOnly === true,
     status,
     save: store.save,
     savePostgres: store.savePostgres,

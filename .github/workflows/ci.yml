@@ -54,6 +54,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:postgres
+      - name: Verify a native full-platform backup and isolated restore
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release; echo "$VERSION_CODENAME")-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client-18
+          PATH="/usr/lib/postgresql/18/bin:$PATH" node --experimental-strip-types tests/integration/platform-native-backup-smoke.ts
       - name: Test HTTP runtime with a non-superuser PostgreSQL role
         run: |
           node --input-type=module <<'NODE'

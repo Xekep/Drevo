@@ -8,6 +8,13 @@
 
 ## Принятые решения
 
+- Бэкапы разделены: /admin — native full-platform без выбора архива;
+  /manage — manual portable выбранного древа, последние пять, approved owner
+  с explicit global admin/researcher. Архивные автотаймеры не включать.
+  Runtime PG не получает BYPASSRLS; отдельный read-only оператор проверяется
+  перед dump. Full restore offline/maintenance; tree restore preview/confirm/
+  revision. [Бэкапы](backup.md).
+
 - Drevo остаётся веб-приложением: React/Vite, Node.js, React Flow и ELK в Worker.
   Переписывание стека, Electron/Tauri и микросервисы не входят в текущий план.
   Композиция следует владельцу состояния и причине изменения; универсальный

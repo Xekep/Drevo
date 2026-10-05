@@ -16,9 +16,11 @@ import type {
 } from "../shared/backup-management";
 import { BackupRestore } from "./backup-restore";
 
-async function request(archiveId: string | null, path: string, method = "GET", body?: unknown) {
-  const response = await archiveFetch(archiveResourceUrl("/api/backups" + path,
-    archiveId ? `/a/${archiveId}` : "/"), {
+function backupUrl(scope: "tree" | "platform", archiveId: string | null, path: string) {
+  return scope === "platform" ? "/api/platform/backups" + path : archiveResourceUrl("/api/backups" + path, archiveId ? `/a/${archiveId}` : "/");
+}
+async function request(scope: "tree" | "platform", archiveId: string | null, path: string, method = "GET", body?: unknown) {
+  const response = await (scope === "platform" ? fetch : archiveFetch)(backupUrl(scope, archiveId, path), {
     method,
     headers: { "Content-Type": "application/json", "X-Drevo-Backup": "1" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -38,7 +40,7 @@ const bytes = (value: number) =>
     ? (value / 1024 ** 3).toFixed(1) + " ГиБ"
     : Math.max(0.1, value / 1024 ** 2).toFixed(1) + " МиБ";
 
-export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
+export function BackupAdmin({ archiveId, scope = "tree" }: { archiveId: string | null; scope?: "tree" | "platform" }) {
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [draft, setDraft] = useState<BackupSettings | null>(null);
   const [offset, setOffset] = useState(0);
@@ -55,8 +57,7 @@ export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
     async function poll() {
       let delay = 15000;
       try {
-        const response = await archiveFetch(archiveResourceUrl("/api/backups/?offset=" + offset,
-          archiveId ? `/a/${archiveId}` : "/"), {
+        const response = await (scope === "platform" ? fetch : archiveFetch)(backupUrl(scope, archiveId, "/?offset=" + offset), {
           signal: controller.signal,
         });
         const data = (await response.json()) as BackupStatus & {
@@ -80,11 +81,11 @@ export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [archiveId, offset, refresh]);
+  }, [scope, archiveId, offset, refresh]);
 
   const running = busy || status?.job?.state === "running";
   const dirty =
-    !!draft && JSON.stringify(draft) !== JSON.stringify(status?.settings);
+    scope === "platform" && !!draft && JSON.stringify(draft) !== JSON.stringify(status?.settings);
   const preview =
     status?.job?.id === previewJobId ? status.job.preview : undefined;
   function field<K extends keyof BackupSettings>(
@@ -99,7 +100,7 @@ export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
     setError("");
     setNotice("");
     try {
-      const job = (await request(archiveId, path, "POST", body)) as BackupJob;
+      const job = (await request(scope, archiveId, path, "POST", body)) as BackupJob;
       if (path.endsWith("/preview")) setPreviewJobId(job.id);
       setStatus((current) => (current ? { ...current, job } : current));
       setRefresh((value) => value + 1);
@@ -116,6 +117,7 @@ export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
     setNotice("");
     try {
       const saved = (await request(
+        scope,
         archiveId,
         "/settings",
         "PUT",
@@ -157,7 +159,7 @@ export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
     );
   return (
     <div className="backup-admin">
-      <section className="admin-card archive-form">
+      {scope === "platform" && <section className="admin-card archive-form">
         <form
           onSubmit={(event) => void save(event)}
           className="backup-settings"
@@ -316,17 +318,19 @@ export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
             </small>
           </div>
         </form>
-      </section>
+      </section>}
       <section className="admin-card archive-form">
         <div className="backup-heading">
           <div>
             <h2>Сохранённые копии</h2>
-            <p>База, фотографии, документы и ключ настроек.</p>
+            <p>{scope === "platform"
+              ? "Данные всей платформы: все древа, аккаунты, настройки, оригиналы и ключи."
+              : "Данные и оригиналы этого древа. Пять последних ручных копий."}</p>
           </div>
           <button
             type="button"
             className="primary-action"
-            disabled={running || dirty}
+            disabled={running || dirty || status.available === false}
             onClick={() => void act("/create")}
           >
             <DatabaseBackup size={17} aria-hidden="true" />
@@ -334,6 +338,11 @@ export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
           </button>
         </div>
         {dirty && <small>Сохраните настройки перед созданием копии.</small>}
+        {status.available === false && <p role="status">{status.unavailableReason}</p>}
+        {scope === "platform" && <p>Полное восстановление выполняет администратор сервера в режиме обслуживания.</p>}
+        {scope === "tree" && <details><summary>Прежние резервные копии</summary>
+          <p>Копии full-* остаются в прежнем хранилище. Их можно загрузить через «Восстановить из файла на компьютере». Они сохраняют один архив.</p>
+        </details>}
         {status.job && (
           <p
             className={"backup-job " + status.job.state}
@@ -362,11 +371,11 @@ export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
                       : "Копия проверена. Для замены данных требуется подтверждение.")}
           </p>
         )}
-        <label className="restore-confirm">
+        {scope === "tree" && <label className="restore-confirm">
           <input type="checkbox" checked={prepareComments} disabled={running}
             onChange={(event) => setPrepareComments(event.target.checked)} />
           При проверке копии подготовить восстановление комментариев и вложений
-        </label>
+        </label>}
         <ul className="backup-list" aria-label="Резервные копии">
           {status.records.map((item) => (
             <li key={item.id}>
@@ -388,15 +397,14 @@ export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
               </div>
               <div className="backup-list-actions">
                 <a
-                  href={archiveResourceUrl("/api/backups/" + item.id + "/download",
-                    archiveId ? `/a/${archiveId}` : "/")}
+                  href={backupUrl(scope, archiveId, "/" + item.id + "/download")}
                   download
                   aria-label={"Скачать копию от " + date(item.createdAt)}
                   title="Скачать"
                 >
                   <Download size={17} />
                 </a>
-                <button
+                {scope === "tree" && <button
                   type="button"
                   disabled={running}
                   onClick={() => void act("/" + item.id + "/preview",
@@ -405,14 +413,14 @@ export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
                 >
                   <RotateCcw size={15} aria-hidden="true" />
                   Восстановить
-                </button>
+                </button>}
               </div>
             </li>
           ))}
         </ul>
         {!status.total && (
           <p className="backup-empty">
-            Копий пока нет. Создайте первую или дождитесь запуска по расписанию.
+            {scope === "platform" ? "Копий пока нет. Создайте первую или дождитесь запуска по расписанию." : "Копий пока нет. Создайте первую вручную."}
           </p>
         )}
         {status.total > 20 && (
@@ -438,7 +446,7 @@ export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
             </button>
           </nav>
         )}
-        {preview && (
+        {scope === "tree" && preview && (
           <BackupRestore
             key={preview.token}
             archiveId={archiveId}
@@ -452,7 +460,7 @@ export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
           />
         )}
       </section>
-      <section className="admin-card archive-form">
+      {scope === "tree" && <section className="admin-card archive-form">
         <details>
           <summary>Восстановить из файла на компьютере</summary>
           <BackupRestore archiveId={archiveId} onRestored={() => {
@@ -460,7 +468,7 @@ export function BackupAdmin({ archiveId }: { archiveId: string | null }) {
             setRefresh((value) => value + 1);
           }} />
         </details>
-      </section>
+      </section>}
       {error && (
         <p role="alert" className="form-error">
           {error}

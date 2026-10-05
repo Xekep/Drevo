@@ -1,3 +1,4 @@
+import { verifyPlatformBackupsHttp } from "./postgres-platform-backups-http.ts";
 import { readStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
@@ -1853,6 +1854,7 @@ try {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
   };
+  await verifyPlatformBackupsHttp(securedBase, ownerHeaders, headers, client);
   await verifyFaceSessionMutation(app.archive, client, process.env.PUBLIC_ORIGIN!, source);
   await verifyPlatformTiers(client, app.archive.db, securedBase,
     process.env.PUBLIC_ORIGIN!, ownerHeaders);
