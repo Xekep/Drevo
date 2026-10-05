@@ -45,14 +45,20 @@ export async function platformBackupCoordinator(db: StoreDatabase, databasePath:
       await rename(temp, statePath);
     } finally { await rm(temp, { force: true }); }
   }
-  await withLock(async () => {
-    try { await read(); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      const existing = await (await backupStore(db)).settings();
-      await write({ settings: existing.value, next: existing.next, records: [], job: null, lease: 0 });
-    }
-  });
+  // Existing catalogs are replaced atomically, so reading them must not wait
+  // for a CLI backup's potentially long session lock during application startup.
+  try { await read(); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    await withLock(async () => {
+      try { await read(); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        const existing = await (await backupStore(db)).settings();
+        await write({ settings: existing.value, next: existing.next, records: [], job: null, lease: 0 });
+      }
+    });
+  }
   const configured = () => db.kind !== "postgres" || !!process.env.PLATFORM_BACKUP_PGUSER;
   async function status(_actor?: string, offset = 0): Promise<BackupStatus> {
     const state = await read();
