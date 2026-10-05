@@ -3,6 +3,7 @@ import { useStoreApi } from "@xyflow/react";
 import { resolvedSex, safeUrl } from "../../domain";
 import { fullName } from "../../domain/dates.ts";
 import { mediaPreview } from "../../domain/media-preview.ts";
+import { mayRetryPortrait, portraitRetryDelays, retryPortraitUrl, waitForPortraitRetry } from "../portrait-retry.ts";
 import { roundedRoute, Spatial } from "../../domain/edge-routing.ts";
 import type { HouseholdNodeType } from "./household-node.tsx";
 import type { PersonNodeType } from "./person-node";
@@ -127,6 +128,8 @@ export function DistantPortraits({
     let wantedSet = new Set<string>();
     const loading = new Map<string, HTMLImageElement>();
     const failed = new Map<string, number>();
+    const retries = new Map<string, number>();
+    const recovering = new Map<string, AbortController>();
     const available = new Set(portraitBounds.bounds.map(({ url }) => url));
     for (const url of previews.current.keys())
       if (!available.has(url)) previews.current.delete(url);
@@ -141,22 +144,45 @@ export function DistantPortraits({
     };
     const pump = () => {
       if (!active) return;
-      while (nextWanted < wanted.length && loading.size < MAX_PARALLEL_LOADS) {
+      while (nextWanted < wanted.length && loading.size + recovering.size < MAX_PARALLEL_LOADS) {
         const url = wanted[nextWanted++];
-        if (previews.current.has(url) || loading.has(url) ||
+        if (previews.current.has(url) || loading.has(url) || recovering.has(url) ||
             Date.now() - (failed.get(url) ?? -Infinity) < 30_000) continue;
         const image = new Image();
         loading.set(url, image);
-        image.src = url;
+        image.src = retryPortraitUrl(url, retries.get(url) || 0);
         void image.decode().then(() => {
           // Aborted decodes can resolve late. Never create a detached canvas
           // after a camera change, projection change or GPU handoff.
           if (!active || loading.get(url) !== image || !wantedSet.has(url)) return;
           previews.current.set(url, circularPreview(image));
+          failed.delete(url);
+          retries.delete(url);
           prune();
           requestDraw.current();
         }).catch(() => {
-          if (active && loading.get(url) === image) failed.set(url, Date.now());
+          if (!active || loading.get(url) !== image) return;
+          const attempt = retries.get(url) || 0;
+          failed.set(url, attempt >= portraitRetryDelays.length ? Infinity : Date.now());
+          if (attempt >= portraitRetryDelays.length) return;
+          const controller = new AbortController();
+          recovering.set(url, controller);
+          void (async () => {
+            await waitForPortraitRetry(portraitRetryDelays[attempt], controller.signal);
+            if (controller.signal.aborted) return;
+            const retry = await mayRetryPortrait(url, controller.signal);
+            if (controller.signal.aborted || !active || !wantedSet.has(url)) return;
+            if (retry) {
+              retries.set(url, attempt + 1);
+              failed.delete(url);
+              nextWanted = 0;
+            } else failed.set(url, Infinity);
+          })().finally(() => {
+            if (recovering.get(url) === controller) {
+              recovering.delete(url);
+              pump();
+            }
+          });
         }).finally(() => {
           if (loading.get(url) === image) loading.delete(url);
           pump();
@@ -183,6 +209,15 @@ export function DistantPortraits({
           loading.delete(url);
           image.src = "";
         }
+      for (const [url, controller] of recovering)
+        if (!wantedSet.has(url)) {
+          controller.abort();
+          recovering.delete(url);
+        }
+      for (const url of retries.keys())
+        if (!wantedSet.has(url)) retries.delete(url);
+      for (const url of failed.keys())
+        if (!wantedSet.has(url)) failed.delete(url);
       for (const url of wanted) {
         const preview = previews.current.get(url);
         if (preview) {
@@ -204,6 +239,8 @@ export function DistantPortraits({
       cancelAnimationFrame(frame);
       for (const image of loading.values()) image.src = "";
       loading.clear();
+      for (const controller of recovering.values()) controller.abort();
+      recovering.clear();
     };
   }, [store, portraitBounds, width, height, growing, cameraReady]);
 

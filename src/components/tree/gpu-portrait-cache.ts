@@ -1,5 +1,6 @@
 import { mediaPreview } from "../../domain/media-preview.ts";
 import { safeUrl } from "../../domain/index.ts";
+import { mayRetryPortrait, portraitRetryDelays, retryPortraitUrl, waitForPortraitRetry } from "../portrait-retry.ts";
 
 type Tile = { slot: number; touched: number };
 export type PortraitTile = {
@@ -25,6 +26,8 @@ export class GpuPortraitCache {
   }[];
   private loading = new Map<string, HTMLImageElement>();
   private failed = new Map<string, number>();
+  private retries = new Map<string, number>();
+  private recovering = new Map<string, AbortController>();
   private wanted: { key: string; photo: string; level: number }[] = [];
   private wantedKeys = new Set<string>();
   private nextWanted = 0;
@@ -115,6 +118,13 @@ export class GpuPortraitCache {
       }
     for (const key of this.failed.keys())
       if (!photos.has(key.slice(2))) this.failed.delete(key);
+    for (const key of this.retries.keys())
+      if (!photos.has(key.slice(2))) this.retries.delete(key);
+    for (const [key, controller] of this.recovering)
+      if (!photos.has(key.slice(2))) {
+        controller.abort();
+        this.recovering.delete(key);
+      }
     this.pump();
   }
 
@@ -156,6 +166,13 @@ export class GpuPortraitCache {
         image.onload = image.onerror = null;
         image.src = "";
         this.loading.delete(key);
+      }
+    for (const [key, controller] of this.recovering)
+      if (!this.wantedKeys.has(key)) {
+        controller.abort();
+        this.recovering.delete(key);
+        this.failed.delete(key);
+        this.retries.delete(key);
       }
     this.pump();
   }
@@ -243,12 +260,13 @@ export class GpuPortraitCache {
 
   private pump() {
     if (this.stopped) return;
-    while (this.nextWanted < this.wanted.length && this.loading.size < 6) {
+    while (this.nextWanted < this.wanted.length && this.loading.size + this.recovering.size < 6) {
       const item = this.wanted[this.nextWanted++];
       const page = this.pages[item.level];
       if (
         page.tiles.has(item.photo) ||
         this.loading.has(item.key) ||
+        this.recovering.has(item.key) ||
         (this.failed.has(item.key) &&
           Date.now() - this.failed.get(item.key)! < RETRY_MS)
       )
@@ -317,6 +335,7 @@ export class GpuPortraitCache {
           page.dirty = true;
           page.tiles.set(item.photo, { slot, touched: ++this.clock });
           this.failed.delete(item.key);
+          this.retries.delete(item.key);
           this.redraw();
         } catch {
           this.failure();
@@ -327,7 +346,8 @@ export class GpuPortraitCache {
       image.onerror = () => {
         if (this.stopped || this.loading.get(item.key) !== image) return;
         this.loading.delete(item.key);
-        this.failed.set(item.key, Date.now());
+        const attempt = this.retries.get(item.key) || 0;
+        this.failed.set(item.key, attempt >= portraitRetryDelays.length ? Infinity : Date.now());
         // Keep failures for the entire active packing, including all-404 trees.
         // Historical viewport failures may be evicted, active ones retain TTL.
         for (const key of this.failed.keys()) {
@@ -336,12 +356,35 @@ export class GpuPortraitCache {
         }
         image.onload = image.onerror = null;
         this.redraw();
+        if (attempt >= portraitRetryDelays.length) {
+          this.pump();
+          return;
+        }
+        const controller = new AbortController();
+        this.recovering.set(item.key, controller);
         this.pump();
+        void (async () => {
+          await waitForPortraitRetry(portraitRetryDelays[attempt], controller.signal);
+          if (controller.signal.aborted) return;
+          const url = mediaPreview(safeUrl(item.photo), item.level ? "thumb" : "tiny")!;
+          const retry = await mayRetryPortrait(url, controller.signal);
+          if (controller.signal.aborted || this.stopped || !this.wantedKeys.has(item.key)) return;
+          if (retry) {
+            this.retries.set(item.key, attempt + 1);
+            this.failed.delete(item.key);
+            this.nextWanted = 0;
+          } else this.failed.set(item.key, Infinity);
+        })().finally(() => {
+          if (this.recovering.get(item.key) === controller) {
+            this.recovering.delete(item.key);
+            this.pump();
+          }
+        });
       };
-      image.src = mediaPreview(
+      image.src = retryPortraitUrl(mediaPreview(
         safeUrl(item.photo),
         item.level ? "thumb" : "tiny",
-      )!;
+      )!, this.retries.get(item.key) || 0);
     }
   }
 
@@ -357,6 +400,9 @@ export class GpuPortraitCache {
     this.wantedKeys.clear();
     this.nextWanted = 0;
     this.failed.clear();
+    this.retries.clear();
+    for (const controller of this.recovering.values()) controller.abort();
+    this.recovering.clear();
     for (const page of this.pages) {
       this.gl.deleteTexture(page.texture);
       page.tiles.clear();
