@@ -176,7 +176,16 @@ async function mockPreview(
               editedAt: null,
               canEdit: false,
               canDelete: false,
-              attachments: [],
+              attachments: [
+                {
+                  id: "22222222-2222-4222-8222-222222222222",
+                  name: "Фото обсуждения.png",
+                  type: "image/png",
+                  size: image.length,
+                  url: "/media/discussion-photo.png",
+                  previewUrl: "/media/discussion-photo.png",
+                },
+              ],
             },
           ],
           nextBefore: null,
@@ -313,6 +322,82 @@ test("profile discussion and document reader use preview requests without editin
   ).toBe(true);
   expect(unscoped).toEqual([]);
   expect(requests.every((request) => request.method === "GET")).toBe(true);
+});
+
+test("native photo, attachment, and document dialogs offer a usable preview exit", async ({
+  page,
+}, info) => {
+  for (const width of info.project.name === "desktop" ? [1024] : [320, 390]) {
+    for (const kind of ["photo", "attachment", "document"] as const) {
+      const tab = await page.context().newPage();
+      try {
+        await tab.setViewportSize({ width, height: 800 });
+        const { unscoped } = await mockPreview(tab);
+        if (kind === "photo") {
+          await tab.goto(`${prefix}/photos`);
+          await tab.getByRole("button", { name: /Все · по добавлению/ }).click();
+          await tab.locator(".photo-tile").first().click();
+        } else if (kind === "attachment") {
+          await tab.goto(`${prefix}/people/child`);
+          await tab.getByRole("tab", { name: /Обсуждение/ }).click();
+          await tab.getByRole("button", { name: "Открыть изображение: Фото обсуждения.png" }).click();
+        } else {
+          await tab.goto(`${prefix}/documents/${documentId}`);
+        }
+        const dialog = tab.locator(
+          kind === "photo" ? "dialog.photo-lightbox" :
+          kind === "attachment" ? "dialog.discussion-lightbox" : "dialog.pdf-book-dialog",
+        );
+        await expect(dialog).toBeVisible();
+        const exit = dialog.getByRole("link", { name: "Выйти из просмотра", exact: true });
+        await expect(exit).toHaveAttribute("href", "/a/preview-archive/manage");
+        await exit.click({ trial: true });
+        const box = await exit.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.width).toBeGreaterThanOrEqual(44);
+        expect(box!.height).toBeGreaterThanOrEqual(44);
+        expect(box!.x + box!.width).toBeGreaterThan(width * 0.7);
+        expect(box!.x).toBeGreaterThanOrEqual(0);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(width + 1);
+        if (kind !== "document") {
+          const close = dialog.getByRole("button", {
+            name: kind === "photo" ? "Закрыть просмотр фото" : "Закрыть просмотр изображений",
+          });
+          const closeBox = await close.boundingBox();
+          expect(closeBox).not.toBeNull();
+          expect(
+            box!.x + box!.width <= closeBox!.x ||
+            closeBox!.x + closeBox!.width <= box!.x ||
+            box!.y + box!.height <= closeBox!.y ||
+            closeBox!.y + closeBox!.height <= box!.y,
+          ).toBe(true);
+          if (kind === "photo") {
+            if (width < 900)
+              await dialog.getByRole("button", { name: "О снимке" }).click();
+            await dialog.locator(".photo-person-name").first().click();
+            await expect(dialog.locator(".photo-person-sidebar")).toBeVisible();
+            await exit.click({ trial: true });
+            const personActions = await dialog.locator(".photo-person-sidebar-actions").boundingBox();
+            expect(personActions).not.toBeNull();
+            const profileHead = await dialog.locator(".photo-person-sidebar .profile-head").boundingBox();
+            expect(profileHead).not.toBeNull();
+            expect(personActions!.y + personActions!.height).toBeLessThanOrEqual(profileHead!.y + 1);
+          }
+        } else {
+          const frameBox = await dialog.locator("iframe.pdf-book-frame").boundingBox();
+          expect(frameBox).not.toBeNull();
+          expect(box!.y + box!.height).toBeLessThanOrEqual(frameBox!.y + 1);
+        }
+        if (width === 320 || width === 1024)
+          await tab.screenshot({ path: info.outputPath(`preview-${kind}-${width}.png`) });
+        expect(unscoped).toEqual([]);
+        await exit.click();
+        await expect(tab).toHaveURL(/\/a\/preview-archive\/manage$/);
+      } finally {
+        await tab.close();
+      }
+    }
+  }
 });
 
 test("revoked preview keeps a visible exit and never falls back to owner data", async ({

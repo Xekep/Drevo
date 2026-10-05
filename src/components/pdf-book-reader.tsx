@@ -7,7 +7,8 @@ import type { ReaderCommand, ReaderEvent } from "./bookreader-frame-messages";
 import type { ListedDocument } from "./documents-catalog";
 import { documentFileTypeFromMime } from "../shared/document-file.ts";
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { archiveResourceUrl } from "../domain/archive-context.ts";
+import { archiveResourceUrl, memberPreviewAt } from "../domain/archive-context.ts";
+import { MemberPreviewExit } from "./member-preview-exit";
 import type {
   AnnotationSelection,
   DocumentAnnotation,
@@ -467,6 +468,11 @@ export function PdfBookReader({
           setMagnifier(false);
         }}
       >
+        {memberPreviewAt(window.location.pathname) && (
+          <div className="pdf-book-preview-exit-bar">
+            <MemberPreviewExit />
+          </div>
+        )}
         <div className="pdf-book-content">
           <div className="pdf-book-stage">
             <div className="pdf-book-host">

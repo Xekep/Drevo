@@ -33,6 +33,7 @@ import { PersonSearch } from "./person-search";
 import { usePhotoSwipe } from "./use-photo-swipe";
 import { useDockSwipe } from "../hooks/useDockSwipe";
 import { mediaPreview } from "../domain/media-preview";
+import { MemberPreviewExit } from "./member-preview-exit";
 import { archiveResourceUrl } from "../domain/archive-context.ts";
 import { PlaceField } from "./place-field";
 import { CopyArchiveLink } from "./copy-archive-link";
@@ -333,6 +334,7 @@ function PhotoViewerContent({
         >
           <X size={22} />
         </button>
+        <MemberPreviewExit />
       </div>
       <div
         className={`photo-viewer ${canEdit ? "is-editing" : "is-viewing"} ${showTags ? "show-tags" : ""} ${infoOpen ? "info-open" : ""} ${viewedPerson ? "person-open" : ""}`}

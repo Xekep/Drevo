@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import type { CommentAttachment } from "../../shared/person-discussion";
-import { archiveResourceUrl } from "../../domain/archive-context";
+import { archiveResourceUrl, memberPreviewAt } from "../../domain/archive-context";
 import { usePhotoSwipe } from "../use-photo-swipe";
+import { MemberPreviewExit } from "../member-preview-exit";
 
 function GallerySlide({
   files,
@@ -166,6 +167,11 @@ export function AttachmentGallery({
         }
       }}
     >
+      {memberPreviewAt(window.location.pathname) && (
+        <div className="discussion-gallery-preview-exit-bar">
+          <MemberPreviewExit />
+        </div>
+      )}
       <GallerySlide
         key={id}
         files={files}
