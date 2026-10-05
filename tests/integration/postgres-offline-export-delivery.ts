@@ -108,8 +108,18 @@ export async function verifyOfflineExportDelivery(
   });
   let reachedStall: (() => void) | null = null;
   const server = createServer((req, res) => {
-    if (req.headers["x-test-stall"] === "1")
-      res.write = (() => { reachedStall?.(); return false; }) as typeof res.write;
+    if (req.headers["x-test-stall"] === "1") {
+      const originalWrite = res.write.bind(res);
+      let wroteFirstByte = false;
+      res.write = ((chunk: Uint8Array) => {
+        if (!wroteFirstByte && chunk.length) {
+          wroteFirstByte = true;
+          originalWrite(chunk.subarray(0, 1));
+          reachedStall?.();
+        }
+        return false;
+      }) as typeof res.write;
+    }
     void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
       .catch((error) => res.destroy(error));
   });
