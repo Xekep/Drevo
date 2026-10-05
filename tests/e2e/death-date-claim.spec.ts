@@ -25,6 +25,7 @@ test("каталожный источник относится к дате см�
   await page.goto("/tree");
   await page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-person-content").click();
   await page.locator(".inspector-person-actions .person-edit-button").click();
+  await page.getByText("Точные источники и варианты смерти").click();
   await page.getByText("Источники даты смерти").click();
   const claim = page.locator(".death-date-claim");
   await claim.getByRole("button", { name: "Выбрать из каталога" }).click();
@@ -42,6 +43,7 @@ test("каталожный источник относится к дате см�
   await expect(page.getByText(`Источники даты: ${title} · Оценка: Вероятно`)).toBeVisible();
 
   await page.locator(".inspector-person-actions .person-edit-button").click();
+  await page.locator(".person-date-group").last().locator(".person-evidence-details > summary").click();
   await page.locator(".death-date-claim > summary").click();
   await page.locator("[data-field=death]").fill("2021");
   await expect(page.getByRole("alert").filter({ hasText: "Источники относятся к прежней дате" })).toBeVisible();
