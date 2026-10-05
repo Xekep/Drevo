@@ -7,6 +7,7 @@ import { sessionTokenHash } from "../../src/server/session-token.ts";
 import { postgresBindings, type StoreDatabase } from "../../src/server/store-database.ts";
 import { readPostgresArchive } from "../../src/server/postgres-archive-read.ts";
 import { archiveQueryHttp } from "../../src/server/archive-query-http.ts";
+import { archiveOverview } from "../../src/domain/archive-projection.ts";
 import type { openArchive } from "../../src/server/database.ts";
 import type { createAuth } from "../../src/server/auth.ts";
 import type { settingsStore } from "../../src/server/settings.ts";
@@ -22,6 +23,9 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
   await first.query(`UPDATE archive_memberships
     SET tree_access='common_ancestors',person_id='child'
     WHERE archive_id='tree-a' AND user_id='relative'`);
+  await first.query(`CREATE TABLE request_rate_limits (
+    scope text NOT NULL, key_hash text NOT NULL, started_at bigint NOT NULL,
+    attempts integer NOT NULL, PRIMARY KEY(scope,key_hash))`);
 
   let inTransaction = false;
   const db = {
@@ -32,7 +36,9 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
       const sql = postgresBindings(postgres);
       return {
         get: async (...values: unknown[]) => (await first.query(sql, values)).rows[0],
-        all: async (...values: unknown[]) => (await first.query(sql, values)).rows,
+        all: async (...values: unknown[]) => (await first.query(sql, values)).rows.map(
+          (row) => row.data && typeof row.data === "object"
+            ? { ...row, data: JSON.stringify(row.data) } : row),
       };
     },
     transaction: async <T>(work: () => Promise<T>, readOnly = false) => {
@@ -50,10 +56,21 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
         inTransaction = false;
       }
     },
-    postgresTransaction: async () => { throw new Error("not used by authenticated requests"); },
+    postgresTransaction: async <T>(work: (client: typeof second) => Promise<T>) => {
+      await second.query("BEGIN");
+      try {
+        const value = await work(second);
+        await second.query("COMMIT");
+        return value;
+      } catch (error) {
+        await second.query("ROLLBACK");
+        throw error;
+      }
+    },
   } as unknown as StoreDatabase;
 
   let pauseRead: { reached: () => void; wait: Promise<void> } | undefined;
+  let pauseDelivery: { reached: () => void; wait: Promise<void> } | undefined;
   const archive = {
     db,
     read: async () => {
@@ -66,6 +83,18 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
       }
       return snapshot;
     },
+    overview: async () => {
+      const snapshot = await archive.read();
+      return { family: archiveOverview(snapshot.family), revision: snapshot.revision,
+        totals: { people: snapshot.family.people.length, photos: snapshot.family.photos?.length || 0 } };
+    },
+    meta: async () => {
+      const snapshot = await readPostgresArchive(first, "tree-a");
+      return { revision: snapshot.revision, people: snapshot.family.people.length,
+        photos: snapshot.family.photos?.length || 0 };
+    },
+    peoplePage: async (offset: number, limit: number) =>
+      (await archive.read()).family.people.slice(offset, offset + limit),
   } as unknown as Awaited<ReturnType<typeof openArchive>>;
   const currentUser = async (req: IncomingMessage) => {
     const token = req.headers.cookie?.split("drevo_session=")[1]?.split(";")[0];
@@ -106,6 +135,11 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
   const handler = archiveQueryHttp({ archive, auth, visibility,
     treePreferences: { read: async () => null } as unknown as ReturnType<typeof treePreferencesStore>,
     researchCatalog: { list: async () => [] } as unknown as ReturnType<typeof researchCatalogStore>,
+    beforeDelivery: async () => {
+      const pause = pauseDelivery;
+      pauseDelivery = undefined;
+      if (pause) { pause.reached(); await pause.wait; }
+    },
   });
   const server = createServer((req, res) => {
     void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
@@ -122,6 +156,7 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
   assert.equal(unchanged.status, 200);
   assert.equal((await unchanged.json()).people.some((person: { id: string }) =>
     person.id === "father"), true, "unchanged scoped access still returns an ancestor");
+
 
   async function race(path: string, update: () => Promise<unknown>, token = tokens.relative) {
     let reached!: () => void;
@@ -180,4 +215,108 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
   ));
   assert.equal(loggedOut.status, 409);
   assert.doesNotMatch(await loggedOut.text(), /father|child/);
+
+  // A public tree does not require a session. Deleting a person after the
+  // prepared snapshot but before HTTP delivery must withhold that snapshot.
+  await second.query(`UPDATE archive_access_settings SET public_tree=true
+    WHERE archive_id='tree-a'`);
+  const publicFamily = await get("/api/family", "");
+  assert.equal(publicFamily.status, 200);
+  assert.equal((await publicFamily.json()).family.people.some(
+    (person: { id: string }) => person.id === "father"), true);
+  let overviewReached!: () => void;
+  let releaseOverview!: () => void;
+  const overviewReady = new Promise<void>((resolve) => { overviewReached = resolve; });
+  const overviewGate = new Promise<void>((resolve) => { releaseOverview = resolve; });
+  pauseRead = { reached: overviewReached, wait: overviewGate };
+  const pendingOverview = get("/api/family?projection=overview", "");
+  try {
+    await Promise.race([overviewReady,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("public overview read was not reached")), 10_000))]);
+    await second.query(`UPDATE people SET data=jsonb_set(data,'{name}',
+      '"Changed Public Name"'::jsonb) WHERE archive_id='tree-a' AND id='father'`);
+    await second.query("UPDATE archives SET revision=revision+1 WHERE id='tree-a'");
+  } finally {
+    releaseOverview();
+  }
+  const staleOverview = await pendingOverview;
+  assert.equal(staleOverview.status, 409,
+    "a prepared overview must not reveal a card changed before delivery");
+  assert.doesNotMatch(await staleOverview.text(), /father|Changed Public Name/);
+  const freshOverview = await get("/api/family?projection=overview", "");
+  assert.equal(freshOverview.status, 200);
+  const pageToken = (await freshOverview.json()).pageToken as string;
+  let pageReached!: () => void;
+  let releasePage!: () => void;
+  const pageReady = new Promise<void>((resolve) => { pageReached = resolve; });
+  const pageGate = new Promise<void>((resolve) => { releasePage = resolve; });
+  pauseRead = { reached: pageReached, wait: pageGate };
+  const pagePath = `/api/family?projection=page&collection=people&offset=0&token=${encodeURIComponent(pageToken)}`;
+  const pendingPage = get(pagePath, "");
+  try {
+    await Promise.race([pageReady,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("public page read was not reached")), 10_000))]);
+    await second.query(`UPDATE people SET data=jsonb_set(data,'{name}',
+      '"Changed Again"'::jsonb) WHERE archive_id='tree-a' AND id='father'`);
+    await second.query("UPDATE archives SET revision=revision+1 WHERE id='tree-a'");
+  } finally {
+    releasePage();
+  }
+  const stalePage = await pendingPage;
+  assert.equal(stalePage.status, 409,
+    "a prepared public page must not reveal a changed card");
+  assert.doesNotMatch(await stalePage.text(), /father|Changed Again/);
+  let publicReadReached!: () => void;
+  let releasePublicRead!: () => void;
+  const publicReady = new Promise<void>((resolve) => { publicReadReached = resolve; });
+  const publicGate = new Promise<void>((resolve) => { releasePublicRead = resolve; });
+  pauseRead = { reached: publicReadReached, wait: publicGate };
+  const pendingPublic = get("/api/family", "");
+  try {
+    await Promise.race([publicReady,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("public family read was not reached")), 10_000))]);
+    await second.query(`DELETE FROM relations WHERE archive_id='tree-a'
+      AND (source='father' OR target='father')`);
+    await second.query(`DELETE FROM people WHERE archive_id='tree-a' AND id='father'`);
+    await second.query("UPDATE archives SET revision=revision+1 WHERE id='tree-a'");
+  } finally {
+    releasePublicRead();
+  }
+  const stalePublic = await pendingPublic;
+  assert.equal(stalePublic.status, 409,
+    "a prepared public tree must not reveal a person deleted before delivery");
+  assert.doesNotMatch(await stalePublic.text(), /father|child/);
+  const freshPublic = await get("/api/family", "");
+  assert.equal(freshPublic.status, 200);
+  assert.equal((await freshPublic.json()).family.people.some(
+    (person: { id: string }) => person.id === "father"), false);
+
+  const publicSearch = await get("/api/people/search?q=child", "");
+  const publicSearchBody = await publicSearch.text();
+  assert.equal(publicSearch.status, 200, publicSearchBody);
+  assert.equal(JSON.parse(publicSearchBody).people.some(
+    (person: { id: string }) => person.id === "child"), true);
+  let searchReached!: () => void;
+  let releaseSearch!: () => void;
+  const searchReady = new Promise<void>((resolve) => { searchReached = resolve; });
+  const searchGate = new Promise<void>((resolve) => { releaseSearch = resolve; });
+  pauseDelivery = { reached: searchReached, wait: searchGate };
+  const pendingSearch = get("/api/people/search?q=child", "");
+  try {
+    await Promise.race([searchReady,
+      new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("public search did not reach delivery")), 10_000))]);
+    await second.query(`UPDATE people SET data=jsonb_set(data,'{name}',
+      '"Changed Child"'::jsonb) WHERE archive_id='tree-a' AND id='child'`);
+    await second.query("UPDATE archives SET revision=revision+1 WHERE id='tree-a'");
+  } finally {
+    releaseSearch();
+  }
+  const staleSearch = await pendingSearch;
+  assert.equal(staleSearch.status, 409,
+    "public search must not return a prepared card after its revision changes");
+  assert.doesNotMatch(await staleSearch.text(), /child|Changed Child/);
 });
