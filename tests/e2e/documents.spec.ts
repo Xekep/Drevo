@@ -581,6 +581,16 @@ test("участник загружает PDF и читает страницы �
   await form.getByRole("button", { name: "Добавить документ" }).click();
   const newReader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await expect(newReader).toBeVisible();
+  const newBook = newReader.frameLocator("iframe.pdf-book-frame");
+  await expect(newReader.locator(".pdf-book-sidebar")).toBeHidden();
+  await expect(newBook.locator("body")).not.toHaveClass(/drevo-annotating/);
+  await newBook.getByRole("button", { name: "Комментарии" }).click();
+  await expect(
+    newReader.getByRole("button", { name: "Выделить фрагмент" }),
+  ).toBeVisible();
+  await newReader.getByRole("button", { name: "Выделить фрагмент" }).click();
+  await expect(newBook.locator("body")).toHaveClass(/drevo-annotating/);
+  await newBook.getByRole("button", { name: "Комментарии" }).click();
   await expect(
     newReader.getByRole("button", { name: "Отменить выделение" }),
   ).toBeVisible();
