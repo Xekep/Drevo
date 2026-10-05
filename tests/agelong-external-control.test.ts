@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { importGedcom } from "../src/domain/gedcom.ts";
 
 const fixture = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "agelong-control");
@@ -30,5 +31,18 @@ test("the fictional GEDCOM 5.5.1 control carries the external roundtrip checklis
     ["media/portrait.png", "media/record.pdf"]);
   assert.ok((await readFile(join(fixture, "media", "portrait.png"))).subarray(0, 8)
     .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])));
-  assert.match((await readFile(join(fixture, "media", "record.pdf"))).subarray(0, 8).toString(), /^%PDF-/);
+  const pdf = await getDocument({
+    data: new Uint8Array(await readFile(join(fixture, "media", "record.pdf"))),
+    useSystemFonts: true,
+  }).promise;
+  try {
+    assert.equal(pdf.numPages, 7);
+    const lastPage = await pdf.getPage(7);
+    const lastPageText = (await lastPage.getTextContent()).items
+      .map((item) => "str" in item ? item.str : "").join(" ");
+    assert.match(lastPageText, /Page 7 of 7/);
+    assert.match(lastPageText, /Anna Petrova/);
+  } finally {
+    await pdf.loadingTask.destroy();
+  }
 });
