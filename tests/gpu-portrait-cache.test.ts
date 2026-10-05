@@ -500,3 +500,30 @@ test("queue preserves requested priority across out-of-order completions and can
   assert.equal(f.cache.ready(), true);
   assert.ok(f.cache.get(all[10]));
 });
+
+test("a stalled image releases its load slot and cannot upload after its deadline", async (t) => {
+  const realSetTimeout = globalThis.setTimeout;
+  const deadlines: Array<() => void> = [];
+  t.mock.method(globalThis, "setTimeout", ((callback: () => void, delay: number) => {
+    if (delay === 15_000) {
+      deadlines.push(callback);
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    }
+    return realSetTimeout(callback, delay);
+  }) as typeof setTimeout);
+  terminalMediaProbes(t);
+  const f = fixture(t), all = photos(9);
+  f.cache.request(all, 0.1);
+  assert.equal(f.pending().length, 6);
+  assert.equal(deadlines.length, 6, "each in-flight image needs a bounded deadline");
+  const stalled = f.pending()[0], lateLoad = stalled.onload!;
+  deadlines[0]();
+  assert.equal(stalled.src, "");
+  for (let i = 0; i < 20 && f.images.length < 7; i++)
+    await new Promise<void>((resolve) => realSetTimeout(resolve, 0));
+  assert.equal(f.images[6].src, `${all[6]}?variant=tiny`);
+  const uploads = f.uploads.length;
+  lateLoad();
+  assert.equal(f.uploads.length, uploads);
+  assert.equal(f.pending().length, 6);
+});
