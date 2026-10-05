@@ -35,6 +35,8 @@ export async function verifyPostgresMediaReadDelivery(
   assert.ok(archiveId, "media delivery regression requires a selected archive");
   const directory = await mkdtemp(join(tmpdir(), "drevo-media-delivery-"));
   const url = "/media/private-original.jpg";
+  const portraitUrl = "/media/tree-portrait.jpg";
+  const evidenceUrl = "/media/private-evidence.pdf";
   const bytes = Buffer.alloc(1024 * 1024, 0x5a);
   const photoData = JSON.stringify({
     id: "media-delivery-photo", title: "Private", url, tags: [],
@@ -107,8 +109,21 @@ export async function verifyPostgresMediaReadDelivery(
       .finally(() => { if (slow) streamCompleted(); });
   });
   await writeFile(join(directory, "private-original.jpg"), bytes);
+  await writeFile(join(directory, "tree-portrait.jpg"), bytes);
+  await writeFile(join(directory, "private-evidence.pdf"), "%PDF-1.4\n%%EOF\n");
   assert.equal(media.openOriginal(url)?.path, join(directory, "private-original.jpg"));
   assert.deepEqual(await readFile(media.openOriginal(url)!.path), bytes);
+  const portraitPersonId = (await archive.read()).family.people[0].id;
+  const originalPersonData = (await archive.db.prepare("", "SELECT data FROM people WHERE id=?")
+    .get(portraitPersonId))?.data as string;
+  assert.ok(originalPersonData);
+  const portraitPersonData = JSON.parse(originalPersonData);
+  portraitPersonData.photo = portraitUrl;
+  portraitPersonData.sources = [...(portraitPersonData.sources || []),
+    { title: "Private evidence", type: "archive", reference: "",
+      url: `${evidenceUrl}#page=1` }];
+  await archive.db.prepare("", "UPDATE people SET data=?::jsonb WHERE id=?")
+    .run(JSON.stringify(portraitPersonData), portraitPersonId);
   await archive.db.prepare("", "INSERT INTO photos(id,data) VALUES(?,?::jsonb)")
     .run("media-delivery-photo", photoData);
   await client.query(
@@ -163,6 +178,10 @@ export async function verifyPostgresMediaReadDelivery(
     const publicControl = await fetch(base + url);
     assert.equal(publicControl.status, 200);
     assert.deepEqual(Buffer.from(await publicControl.arrayBuffer()), bytes);
+    assert.equal((await fetch(base + portraitUrl)).status, 401,
+      "albums alone do not publish an unrelated tree portrait");
+    assert.equal((await fetch(base + evidenceUrl)).status, 401,
+      "a citation is not a public media grant");
     for (const kind of ["visibility", "reference"] as const) {
       const atDelivery = new Promise<void>((resolve) => { deliveryReached = resolve; });
       deliveryGate = new Promise<void>((resolve) => { deliveryResume = resolve; });
@@ -223,6 +242,44 @@ export async function verifyPostgresMediaReadDelivery(
       pauseLockedDelivery = false;
       lockedResume();
       await toggle?.catch(() => {});
+      await visibility.write({ ...initialVisibility, publicTree: false, publicAlbums: false });
+    }
+    await visibility.write({ ...initialVisibility, publicTree: true, publicAlbums: false });
+    const portraitControl = await fetch(base + portraitUrl);
+    assert.equal(portraitControl.status, 200,
+      "a public tree serves its portrait without publishing the album");
+    assert.deepEqual(Buffer.from(await portraitControl.arrayBuffer()), bytes);
+    assert.equal((await fetch(base + url)).status, 401,
+      "a gallery-only URL remains private when albums are closed");
+    assert.equal((await fetch(base + evidenceUrl)).status, 401);
+    await archive.db.prepare("", "INSERT INTO photos(id,data) VALUES(?,?::jsonb)")
+      .run("media-delivery-dual", JSON.stringify({ id: "media-delivery-dual",
+        title: "Dual reference", url: portraitUrl, tags: [] }));
+    await visibility.write({ ...initialVisibility, publicTree: false, publicAlbums: true });
+    assert.equal((await fetch(base + portraitUrl)).status, 200,
+      "the album independently publishes a dual-reference URL");
+    await visibility.write({ ...initialVisibility, publicTree: true, publicAlbums: false });
+    assert.equal((await fetch(base + portraitUrl)).status, 200,
+      "the tree independently publishes a dual-reference URL");
+    await archive.db.prepare("", "DELETE FROM photos WHERE id=?")
+      .run("media-delivery-dual");
+    const atPortraitDelivery = new Promise<void>((resolve) => { deliveryReached = resolve; });
+    deliveryGate = new Promise<void>((resolve) => { deliveryResume = resolve; });
+    pauseDelivery = true;
+    const pendingPortrait = fetch(base + portraitUrl);
+    try {
+      await within(Promise.race([atPortraitDelivery,
+        pendingPortrait.then(() => { throw new Error("Portrait passed the delivery barrier"); })]),
+      10_000, "Public portrait delivery barrier missing");
+      await visibility.write({ ...initialVisibility, publicTree: false, publicAlbums: false });
+      deliveryResume();
+      const response = await pendingPortrait;
+      assert.equal(response.status, 401,
+        "completed tree-visibility revocation must withhold the portrait");
+      assert.notDeepEqual(Buffer.from(await response.arrayBuffer()), bytes);
+    } finally {
+      pauseDelivery = false;
+      deliveryResume();
       await visibility.write({ ...initialVisibility, publicTree: false, publicAlbums: false });
     }
     const pendingUrl = "/media/pending-original.jpg";
@@ -288,6 +345,9 @@ export async function verifyPostgresMediaReadDelivery(
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [tokenHash]);
     await archive.db.prepare("", "DELETE FROM photos WHERE id=?").run("media-delivery-photo");
+    await archive.db.prepare("", "DELETE FROM photos WHERE id=?").run("media-delivery-dual");
+    await archive.db.prepare("", "UPDATE people SET data=?::jsonb WHERE id=?")
+      .run(originalPersonData, portraitPersonId);
     await visibility.write(initialVisibility);
     await rm(directory, { recursive: true, force: true });
   }

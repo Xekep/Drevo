@@ -92,10 +92,6 @@ export function archiveQueryHttp({
     }
     if (!readPhotos) {
       data.family.photos = [];
-      data.family.people = data.family.people.map((person) => ({
-        ...person,
-        photo: undefined,
-      }));
     }
     return {
       ...data,
@@ -302,24 +298,14 @@ export function archiveQueryHttp({
           if (isScopedUser(visitor)) {
             const { family: scoped, revision } = await scopedSnapshot(visitor);
             data = {
-              family: archiveOverview(
-                readPhotos
-                  ? scoped
-                  : {
-                      ...scoped,
-                      people: scoped.people.map((person) => ({
-                        ...person,
-                        photo: undefined,
-                      })),
-                    },
-              ),
+              family: archiveOverview(scoped),
               revision,
               totals: {
                 people: scoped.people.length,
                 photos: scoped.photos?.length || 0,
               },
             };
-          } else data = await archive.overview(readPhotos);
+          } else data = await archive.overview(readTree);
         } else {
           const meta = await archive.meta();
           data = {
