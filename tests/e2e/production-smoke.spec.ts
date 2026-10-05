@@ -1107,10 +1107,12 @@ test("участники загружаются страницами и удал
   await page.getByRole("button", { name: "Назад" }).click();
   await expect(page.locator(".admin-user-row")).toHaveCount(20);
   expect(requestedPages).toEqual([0, 20, 40, 20, 0]);
-  page.once("dialog", (dialog) => dialog.accept());
   await page
     .getByRole("button", { name: "Удалить участника: Участник 00" })
     .click();
+  expect(participants).toHaveLength(45);
+  await expect(page.getByText("Аккаунт и данные в древе сохранятся.", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Подтвердить удаление участника: Участник 00" }).click();
   await expect(page.getByText(/Всего участников\s*44/)).toBeVisible();
   await expect(
     page.getByRole("article", { name: "Участник: Участник 00" }),

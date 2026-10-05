@@ -59,6 +59,7 @@ import { verifyPlatformAiOrphanSweep } from "./platform-ai-orphan-sweep.ts";
 import { verifyOwnerTransferGetRevocation } from "./postgres-owner-transfer-reads.ts";
 import { verifyInvitationAcceptSessionRevocation } from "./postgres-invitation-accept-session.ts";
 import { verifyInvitationPreviewDelivery } from "./postgres-invitation-preview-delivery.ts";
+import { verifyInvitationScopeAndMembershipRemoval } from "./postgres-invitation-scope.ts";
 import { verifyAccountArchiveCreateSessionRevocation } from "./postgres-account-archive-create-session.ts";
 import { verifyAccountArchivesReadSessionRevocation } from "./postgres-account-archives-read-session.ts";
 import { verifySessionDelivery } from "./postgres-session-delivery.ts";
@@ -1116,6 +1117,7 @@ try {
   await verifyOwnerTransferGetRevocation(app.archive.db, client);
   await verifyInvitationAcceptSessionRevocation(app.archive.db, client);
   await verifyInvitationPreviewDelivery(app.archive.db, client);
+  await verifyInvitationScopeAndMembershipRemoval(app.archive.db, client);
   await verifyAccountArchiveCreateSessionRevocation(app.archive.db, client);
   await verifyAccountArchivesReadSessionRevocation(app.archive.db, client);
   await verifyOfflineExportDelivery(app.archive, client, uploads);

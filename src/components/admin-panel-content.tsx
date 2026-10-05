@@ -15,6 +15,7 @@ import {
   GitCompareArrows,
   Eye,
   DatabaseBackup,
+  Check,
 } from "lucide-react";
 import {
   ROLE_NAMES,
@@ -134,6 +135,12 @@ function AdminUserRow({
   onDelete: () => Promise<void>;
 }) {
   const [personId, setPersonId] = useState(user.personId || "");
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  useEffect(() => {
+    if (!deleteArmed) return;
+    const timer = window.setTimeout(() => setDeleteArmed(false), 8000);
+    return () => window.clearTimeout(timer);
+  }, [deleteArmed]);
   const lastVisit = user.lastVisitAt ? new Date(user.lastVisitAt) : null;
   const visitText =
     lastVisit && Number.isFinite(lastVisit.getTime())
@@ -271,25 +278,27 @@ function AdminUserRow({
         <button
           type="button"
           className="admin-user-delete"
-          disabled={busy || user.id === currentUserId}
-          aria-label={`Удалить участника: ${user.name}`}
+          disabled={busy || user.id === currentUserId || isArchiveOwner(user)}
+          aria-label={`${deleteArmed ? "Подтвердить удаление участника" : "Удалить участника"}: ${user.name}`}
           title={
-            user.id === currentUserId
-              ? "Свой аккаунт удалить нельзя"
-              : "Удалить участника"
+            user.id === currentUserId || isArchiveOwner(user)
+              ? "Владельца древа удалить нельзя"
+              : deleteArmed ? "Нажмите ещё раз, чтобы закрыть доступ к этому древу" : "Удалить доступ к этому древу"
           }
+          onBlur={() => setDeleteArmed(false)}
+          onKeyDown={(event) => { if (event.key === "Escape") setDeleteArmed(false); }}
           onClick={() => {
-            if (
-              window.confirm(
-                `Удалить участника «${user.name}»? Его данные в древе сохранятся. При новом входе он снова появится и будет ждать одобрения.`,
-              )
-            )
-              void onDelete();
+            if (!deleteArmed) { setDeleteArmed(true); return; }
+            setDeleteArmed(false);
+            void onDelete();
           }}
         >
-          <Trash2 size={16} />
+          {deleteArmed ? <Check size={16} /> : <Trash2 size={16} />}
         </button>
       </div>
+      {deleteArmed && <small className="admin-user-delete-confirm" role="status">
+        Нажмите ✓ ещё раз, чтобы закрыть доступ. Аккаунт и данные в древе сохранятся. Esc — отмена.
+      </small>}
     </article>
   );
 }
@@ -681,7 +690,7 @@ export function AdminPanel({
               : publicationOwnership === "unavailable" ? "Не удалось проверить право на сопоставление. Обновите страницу и повторите попытку."
                 : "Связями с другими древами управляет владелец древа."
           }</p></section>)}
-        {visibleSection === "invitations" && <InvitationsAdmin />}
+        {visibleSection === "invitations" && <InvitationsAdmin people={family.people} />}
         {visibleSection === "audit" && (
           <section className="admin-card archive-form">
             <label>

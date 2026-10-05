@@ -56,7 +56,7 @@ export function archiveInvitationsHttp(
         return json(
           res,
           201,
-          await invitations.create(actor, input.role, input.durationHours),
+          await invitations.create(actor, input.role, input.durationHours, input.personId, input.treeAccess),
         );
       }
       const id = /^\/api\/invitations\/([a-f0-9-]{36})$/.exec(path)?.[1];
