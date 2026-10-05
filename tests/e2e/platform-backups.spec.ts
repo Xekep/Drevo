@@ -85,7 +85,7 @@ async function managedTree(page: Page, globalRole: "admin" | "researcher" | null
     expect(route.request().postDataJSON()).toMatchObject({ token: "scoped-preview", confirm: true });
     return route.fulfill({ json: { backupName: "before-restore.sqlite" } });
   });
-  await page.goto(preview ? "/a/tree-a/preview/tree-owner/manage" : "/a/tree-a/manage");
+  await page.goto(preview ? "/a/tree-a/preview/tree-owner/tree" : "/a/tree-a/manage");
   return paths;
 }
 
@@ -96,7 +96,13 @@ for (const example of [
   { name: "participant preview", role: "researcher" as const, preview: true, allowed: false },
 ]) test(`manual tree backups: ${example.name}`, async ({ page }) => {
   const paths = await managedTree(page, example.role, example.preview);
-  await expect(page.locator(".admin-mark b")).toHaveText("Управление древом");
+  if (example.preview) {
+    await expect(page.getByRole("link", { name: "Выйти из просмотра", exact: true }))
+      .toHaveAttribute("href", "/a/tree-a/manage");
+    await expect(page.locator(".admin-mark")).toHaveCount(0);
+  } else {
+    await expect(page.locator(".admin-mark b")).toHaveText("Управление древом");
+  }
   const tab = page.getByRole("button", { name: "Резервные копии", exact: true });
   if (!example.allowed) {
     await expect(tab).toHaveCount(0);
