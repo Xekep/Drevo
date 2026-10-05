@@ -528,9 +528,9 @@ export function AwardsEditor({
           <details className="award-source-editor">
             <summary>Цитаты и документы ({draftAward.sources?.length || 0})</summary>
             <CitationSourcesEditor sources={draftAward.sources || []}
-              isAdmin={isAdmin} onChange={(sources) => patchDraft({ sources })} />
-            {(draftAward.sources || []).map((source, index) =>
-              <div key={`${draftAward.id}-${index}`} aria-label={`Документ цитаты ${index + 1}`}>
+              isAdmin={isAdmin} onChange={(sources) => patchDraft({ sources })}
+              renderDocument={(source, index) =>
+              <div aria-label={`Документ цитаты ${index + 1}`}>
                 {source.catalogId ? <>
                   {source.documentId && <a
                     href={scopedArchivePath(archiveDocumentPath(null, source.documentId, source.documentPage))}
@@ -553,7 +553,7 @@ export function AwardsEditor({
                       documentPage: document?.id === item.documentId ? item.documentPage : undefined } : item) })}
                   onPageChange={(documentPage) => patchDraft({ sources: draftAward.sources?.map((item, i) =>
                     i === index ? { ...item, documentPage } : item) })} />}
-              </div>)}
+              </div>} />
           </details>
 
           {sourceChoiceOpen && (

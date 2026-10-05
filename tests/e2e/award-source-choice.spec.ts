@@ -151,6 +151,32 @@ test("catalog award citation only offers its own PDF and an administrator page c
   expect(fixture.read().source?.url).toBe("https://example.test/courage");
 });
 
+test("each award citation keeps its document controls beside its own source", async ({ page }) => {
+  const firstId = "d0c00000-0000-4000-8000-000000000001";
+  const secondId = "d0c00000-0000-4000-8000-000000000002";
+  const fixture = await isolatedAward(page, [
+    { catalogId: "first-record", title: "Первая книга", type: "архив", reference: "л. 2",
+      documentId: firstId, documentPage: 2 },
+    { catalogId: "second-record", title: "Вторая книга", type: "архив", reference: "л. 7",
+      documentId: secondId, documentPage: 7 },
+  ]);
+  await page.goto("/tree");
+  const editor = await openAward(page);
+  await editor.getByText("Цитаты и документы (2)", { exact: true }).click();
+  const first = editor.locator(".union-catalog-citation").filter({ hasText: "Первая книга" });
+  const second = editor.locator(".union-catalog-citation").filter({ hasText: "Вторая книга" });
+  await expect(first.getByRole("link", { name: "Открыть документ источника" }))
+    .toHaveAttribute("href", new RegExp(firstId));
+  await expect(second.getByRole("link", { name: "Открыть документ источника" }))
+    .toHaveAttribute("href", new RegExp(secondId));
+  await first.getByLabel("Страница документа источника").fill("4");
+  await expect(second.getByLabel("Страница документа источника")).toHaveValue("7");
+  expect(fixture.writes()).toBe(0);
+  await editor.locator(".award-inline-actions").getByRole("button", { name: "Готово" }).click();
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect.poll(() => fixture.read().sources?.map((source) => source.documentPage)).toEqual([4, 7]);
+});
+
 test("changing an award degree requires a choice for retained citations", async ({ page }) => {
   const fixture = await isolatedAward(page, [{ title: "Орденская запись", type: "архив",
     reference: "л. 5" }], { name: "Орден Славы", awardDefinitionId: "ussr-order-glory",
