@@ -37,19 +37,6 @@ test("PostgreSQL matches SQLite patches, audit and inverse changes without rewri
   const changes = [
     ...change("birth", "1950", "1951"),
     ...change("maidenName", undefined, "Иванов"),
-    ...change(
-      "sources",
-      [],
-      [
-        {
-          title: "Метрическая книга",
-          type: "archive",
-          reference: "Ф.6",
-          url: "https://example.org/source",
-          note: "Лист 12",
-        },
-      ],
-    ),
   ];
   const pgResult = await patch(first, tokens.admin, "tree-a", changes, 0);
   const sqliteResult = await sqlite.patchPeople(changes, 0, actor);
@@ -94,6 +81,21 @@ test("PostgreSQL matches SQLite patches, audit and inverse changes without rewri
     await readPostgresArchive(first, "tree-a"),
     await sqlite.read(),
   );
+});
+
+test("standalone PostgreSQL card patch rejects citation and event fields without catalog checks", async (t) => {
+  const { first } = await fixture(t);
+  const before = await fingerprint(first);
+  for (const [field, after] of [
+    ["sources", [{ catalogId: "missing-register", title: "", type: "", reference: "" }]],
+    ["events", [{ id: "new-event", type: "move", sources: [] }]],
+  ] as const) {
+    await assert.rejects(patch(first, tokens.admin, "tree-a",
+      change(field, undefined, after), 0),
+    /Ожидаются изменения полей существующих карточек/);
+    assert.deepEqual(await fingerprint(first), before,
+      `${field} must not bypass the full archive catalog and event policy`);
+  }
 });
 
 test("write rejects readers, missing/expired sessions, unapproved or unrelated memberships", async (t) => {

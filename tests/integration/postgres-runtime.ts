@@ -84,6 +84,7 @@ import { verifyAwardCitationPreparation } from "./postgres-award-citation-runtim
 import { verifyAiProviderCleanupRetry } from "./postgres-ai-provider-retry.ts";
 import { verifyPlatformAiCleanup } from "./postgres-platform-ai-cleanup.ts";
 import { verifyDocumentWriteSessionRevocation } from "./postgres-document-write-revocation.ts";
+import { verifyPersonSourceFastguard } from "./postgres-person-source-fastguard.ts";
 import { verifyPlatformConfigurationMigration, verifyPlatformConfigurationRevocation,
   verifySharedPlatformConfiguration } from "./postgres-platform-configuration.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
@@ -4993,6 +4994,8 @@ try {
   otherApp = await startServer(0, source, true, undefined, undefined, "other-archive");
   const otherBase = `http://127.0.0.1:${(otherApp.server.address() as { port: number }).port}`;
   assert.equal(otherApp.archive.db.archiveId, "other-archive");
+  await verifyPersonSourceFastguard(app.archive, otherApp.archive, securedBase,
+    process.env.PUBLIC_ORIGIN!);
   await verifySharedPlatformConfiguration({ rootDb: app.archive.db,
     otherDb: otherApp.archive.db, rootBase: securedBase, otherBase,
     headers: ownerHeaders, client });
