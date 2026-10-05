@@ -45,6 +45,8 @@ export type BackupJob = {
 };
 
 export type BackupStatus = {
+  available?: boolean;
+  unavailableReason?: string;
   settings: BackupSettings;
   nextRunAt: string | null;
   localDirectory: string;

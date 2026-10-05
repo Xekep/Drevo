@@ -1,12 +1,13 @@
 // Isolate snapshot creation and validation from the HTTP event loop.
 import { DatabaseSync } from "node:sqlite";
 import { writeDatabaseBackup } from "./backup.ts";
+import { sanitizeTreeBackup } from "./tree-backup-files.ts";
 import {
   storeDatabase,
   openPostgresDatabase,
   configuredDatabaseBackend,
 } from "./store-database.ts";
-const [source, destination, archiveId] = process.argv.slice(2);
+const [source, destination, archiveId, scope] = process.argv.slice(2);
 if (!source || !destination) throw new Error("Missing backup paths");
 const db =
   configuredDatabaseBackend(source) === "postgres"
@@ -14,6 +15,7 @@ const db =
     : storeDatabase(new DatabaseSync(source, { readOnly: true }));
 try {
   await writeDatabaseBackup(db, destination);
+  if (scope === "tree") sanitizeTreeBackup(destination);
 } finally {
   await db.close();
 }

@@ -1,10 +1,12 @@
+import { memberPreviewTarget } from "./member-preview-access.ts";
+import { lockBackupStaff } from "./tree-backup-access.ts";
 import { BackupInputError, validateBackupSettings } from "./backup-store.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createReadStream } from "node:fs";
 import { open } from "node:fs/promises";
 import { finished, pipeline } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
-import { isArchiveOwner } from "../domain/access.ts";
+import { canManageTreeBackups } from "../domain/access.ts";
 import {
   BackupAccessError,
   BackupBusyError,
@@ -75,17 +77,19 @@ export function backupManagementHttp({
     if (path !== "/api/backups" && !path.startsWith("/api/backups/"))
       return false;
     const archiveActor = await auth.currentUser(req);
-    if (!archiveActor || !isArchiveOwner(archiveActor) || !archiveActor.approved || !(await auth.isPlatformAdmin(req)))
+    if (!canManageTreeBackups(archiveActor) || !!memberPreviewTarget(req))
       return json(res, (await auth.accountId(req)) ? 403 : 401, {
-        error: "Системные резервные копии доступны администратору платформы.",
+        error: "Копии древа доступны его владельцу с глобальной ролью администратора или исследователя.",
       });
     if (
       req.method !== "GET" &&
       (!isSameOriginRequest(req, publicOrigin) ||
         req.headers["x-drevo-backup"] !== "1")
     )
-      return json(res, 403, { error: "Откройте резервные копии в админке." });
+      return json(res, 403, { error: "Откройте резервные копии в управлении древом." });
     try {
+      if (backups.treeOnly && (path.endsWith("/settings") || path.endsWith("/check")))
+        return json(res, 403, { error: "Расписание и хранилище настраиваются только для платформы." });
       if ((path === "/api/backups" || path === "/api/backups/") && req.method === "GET") {
         const offset = Number(url.searchParams.get("offset") || 0);
         if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000)
@@ -116,22 +120,20 @@ export function backupManagementHttp({
             const owner = await client.query(
               "SELECT user_id FROM archive_owners WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT",
               [db.archiveId, session.accountId]);
-            const platformGrant = await client.query(
-              "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
-              [session.accountId]);
-            if (!membership.rows[0]?.approved || !platformGrant.rowCount || !owner.rowCount)
+            const platformGrant = await lockBackupStaff(client, session.accountId);
+            if (!membership.rows[0]?.approved || !platformGrant || !owner.rowCount)
               return json(res, 403, { error: "Доступ администратора отозван." });
             return await jsonLocked(res, 200, status);
           });
         }
-        if (!(await auth.isPlatformAdmin(req)))
+        if ((!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
           return json(res, (await auth.currentUser(req)) ? 403 : 401,
             { error: "Доступ администратора отозван." });
         return json(res, 200, status);
       }
       if (path === "/api/backups/settings" && req.method === "PUT") {
         const body = await readJson(req);
-        if (!(await auth.isPlatformAdmin(req)))
+        if ((!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
           return json(res, 403, { error: "Доступ администратора отозван." });
         if (!auth.local && db.kind === "postgres" && db.postgresTransaction) {
           const checked = validateBackupSettings(body);
@@ -162,10 +164,8 @@ export function backupManagementHttp({
             const owner = await client.query(
               "SELECT user_id FROM archive_owners WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT",
               [db.archiveId, session.accountId]);
-            const platformGrant = await client.query(
-              "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
-              [session.accountId]);
-            if (!membership.rows[0]?.approved || !platformGrant.rowCount || !owner.rowCount)
+            const platformGrant = await lockBackupStaff(client, session.accountId);
+            if (!membership.rows[0]?.approved || !platformGrant || !owner.rowCount)
               return { status: 403 as const };
             return { status: 200 as const,
               settings: await backups.savePostgres(checked, actor, client) };
@@ -181,7 +181,7 @@ export function backupManagementHttp({
       }
       if (path === "/api/backups/check" && req.method === "POST") {
         const body = await readJson(req);
-        if (!(await auth.isPlatformAdmin(req)))
+        if ((!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
           return json(res, 403, { error: "Доступ администратора отозван." });
         if (!auth.local && db.kind === "postgres" && db.postgresTransaction) {
           const session = await auth.accountSession(req);
@@ -220,7 +220,7 @@ export function backupManagementHttp({
           throw new BackupInputError("Некорректный режим восстановления комментариев.");
         const inspect = async (file: string, signal: AbortSignal) => {
           const assertAccess = async () => {
-            if (!(await auth.isPlatformAdmin(req)))
+            if ((!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
               throw new BackupInputError("Доступ администратора отозван.");
           };
           await assertAccess();
@@ -255,7 +255,7 @@ export function backupManagementHttp({
         downloading = true;
         try {
           await backups.withFile(match[1], async (file, item) => {
-            if (!(await auth.isPlatformAdmin(req)))
+            if ((!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
               throw new BackupInputError("Доступ администратора отозван.");
             const handle = await open(file, "r");
             const abort = new AbortController();
@@ -320,10 +320,8 @@ export function backupManagementHttp({
                   const owner = await client.query(
                     "SELECT user_id FROM archive_owners WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT",
                     [db.archiveId, session.accountId]);
-                  const platformGrant = await client.query(
-                    "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
-                    [session.accountId]);
-                  if (!membership.rows[0]?.approved || !platformGrant.rowCount || !owner.rowCount)
+                  const platformGrant = await lockBackupStaff(client, session.accountId);
+                  if (!membership.rows[0]?.approved || !platformGrant || !owner.rowCount)
                     return json(res, 403, { error: "Доступ администратора отозван." });
                   await beforeLockedDelivery?.();
                   sendFirst();
@@ -331,7 +329,7 @@ export function backupManagementHttp({
                 });
                 if (delivered !== true) return;
               } else {
-                if (!(await auth.isPlatformAdmin(req)))
+                if ((!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
                   return json(res, (await auth.currentUser(req)) ? 403 : 401,
                     { error: "Доступ администратора отозван." });
                 sendFirst();

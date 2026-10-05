@@ -6,10 +6,8 @@ import {
   storeDatabase,
 } from "../src/server/store-database.ts";
 import { resolve } from "node:path";
-import {
-  backupCoordinator,
-  BackupBusyError,
-} from "../src/server/backup-coordinator.ts";
+import { platformBackupCoordinator } from "../src/server/platform-backup-coordinator.ts";
+import { BackupBusyError } from "../src/server/backup-coordinator.ts";
 
 const database = resolve(
   process.env.DATABASE_PATH || "/var/www/drevo.kiiko.ru/shared/drevo.sqlite",
@@ -23,7 +21,7 @@ const db =
         initializeArchiveSchema(sqlite);
         return storeDatabase(sqlite);
       })();
-const backups = await backupCoordinator(db, database, { schedule: false });
+const backups = await platformBackupCoordinator(db, database, { schedule: false });
 try {
   if (process.argv.includes("--now")) await backups.startCreate();
   else await backups.tick();
