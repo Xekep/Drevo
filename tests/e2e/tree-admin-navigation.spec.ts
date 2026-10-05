@@ -74,6 +74,29 @@ async function treeUser(page: Page, options: {
   });
 }
 
+test("platform portrait retries a superseded read once without reopening the family", async ({ page }) => {
+  await treeUser(page, { owner: false, platformAdmin: true });
+  await page.route("**/api/session", (route) => route.fulfill({ json: {
+    user: { id: "admin", name: "Администратор", role: "reader", approved: true,
+      personId: "self", platformAdmin: true },
+    account: { id: "admin", name: "Администратор", globalRole: "admin" }, local: false,
+  } }));
+  let attempts = 0;
+  await page.route("**/api/account/portrait", (route) => {
+    attempts++;
+    return route.fulfill(attempts === 1
+      ? { status: 409, json: { error: "Archive changed" } }
+      : { json: { personId: "self", photo: "/media/retried-avatar.jpg" } });
+  });
+  await page.route("**/media/retried-avatar.jpg?variant=thumb", (route) => route.fulfill({
+    contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="20" fill="#688a70"/></svg>',
+  }));
+  await page.goto("/admin");
+  await expect(page.locator(".nav-account-avatar img")).toBeVisible();
+  expect(attempts).toBe(2);
+});
+
 test("tree owner reaches scoped management from the avatar menu, and old scoped admin URL becomes manage", async ({ page }, info) => {
   await page.route("**/a/tree-a/api/**", (route) => route.continue({
     url: route.request().url().replace("/a/tree-a/api/", "/api/"),
