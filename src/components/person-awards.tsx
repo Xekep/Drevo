@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ArrowUpRight, Check, Medal, Plus, Trash2, X } from "lucide-react";
 import type { PersonAward } from "../domain/types";
 import { safeUrl } from "../domain";
@@ -119,6 +119,17 @@ function resolveStoredAward(award: PersonAward) {
   return resolveAwardName(award.name, award.year);
 }
 
+function needsSourceChoice(previous: PersonAward | undefined, next: PersonAward) {
+  if (!previous?.source) return false;
+  const before = resolveStoredAward(previous)?.award.id;
+  const after = resolveStoredAward(next)?.award.id;
+  const original = previous.source;
+  return Boolean(before && after && before !== after &&
+    (original.title.trim() || original.url?.trim()) &&
+    original.title.trim() === (next.source?.title || "").trim() &&
+    (original.url || "").trim() === (next.source?.url || "").trim());
+}
+
 export function AwardsEditor({
   awards,
   onChange,
@@ -127,10 +138,22 @@ export function AwardsEditor({
   onChange: (awards: PersonAward[]) => void;
 }) {
   const [draftAward, setDraftAward] = useState<PersonAward | null>(null);
+  const [sourceChoiceOpen, setSourceChoiceOpen] = useState(false);
+  const retainSourceRef = useRef<HTMLButtonElement>(null);
+  const doneRef = useRef<HTMLButtonElement>(null);
+  const returnToDoneRef = useRef(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestion, setActiveSuggestion] = useState(0);
   const nameInputId = useId();
+  const sourceQuestionId = useId();
   const suggestionsId = `${nameInputId}-suggestions`;
+  useEffect(() => {
+    if (sourceChoiceOpen) retainSourceRef.current?.focus();
+    else if (returnToDoneRef.current) {
+      returnToDoneRef.current = false;
+      doneRef.current?.focus();
+    }
+  }, [sourceChoiceOpen]);
   const isExisting =
     !!draftAward && awards.some((award) => award.id === draftAward.id);
   const resolvedDraft = draftAward ? resolveStoredAward(draftAward) : undefined;
@@ -145,6 +168,7 @@ export function AwardsEditor({
 
   function startNew() {
     setDraftAward({ id: crypto.randomUUID(), name: "" });
+    setSourceChoiceOpen(false);
     setShowSuggestions(false);
   }
 
@@ -154,10 +178,12 @@ export function AwardsEditor({
       return;
     }
     setDraftAward(structuredClone(award));
+    setSourceChoiceOpen(false);
     setShowSuggestions(false);
   }
 
   function patchDraft(patch: Partial<PersonAward>) {
+    setSourceChoiceOpen(false);
     setDraftAward((current) => (current ? { ...current, ...patch } : current));
   }
 
@@ -214,13 +240,17 @@ export function AwardsEditor({
     });
   }
 
-  function commitDraft() {
+  function commitDraft(sourceDecision?: "retain" | "remove") {
     if (!draftAward?.name.trim()) return;
+    if (!sourceDecision && needsSourceChoice(awards.find((award) => award.id === draftAward.id), draftAward)) {
+      setSourceChoiceOpen(true);
+      return;
+    }
     const normalized: PersonAward = {
       ...draftAward,
       name: draftAward.name.trim(),
       source:
-        draftAward.source?.title?.trim() || draftAward.source?.url?.trim()
+        sourceDecision !== "remove" && (draftAward.source?.title?.trim() || draftAward.source?.url?.trim())
           ? {
               title: draftAward.source?.title?.trim() || "",
               url: draftAward.source?.url?.trim() || undefined,
@@ -235,12 +265,14 @@ export function AwardsEditor({
         : [...awards, normalized],
     );
     setDraftAward(null);
+    setSourceChoiceOpen(false);
   }
 
   function removeDraft() {
     if (draftAward && isExisting)
       onChange(awards.filter((award) => award.id !== draftAward.id));
     setDraftAward(null);
+    setSourceChoiceOpen(false);
   }
 
   return (
@@ -466,12 +498,26 @@ export function AwardsEditor({
             </label>
           </details>
 
-          <div className="award-inline-actions">
+          {sourceChoiceOpen && (
+            <div className="award-source-choice" role="group" aria-label="Источник прежней награды" aria-describedby={sourceQuestionId}>
+              <p id={sourceQuestionId}>Вы выбрали другую награду. Прежний источник мог подтверждать только старую. Оставить его для новой награды?</p>
+              <div className="award-source-choice-actions">
+                <button ref={retainSourceRef} type="button" onClick={() => commitDraft("retain")}>Оставить источник</button>
+                <button type="button" onClick={() => commitDraft("remove")}>Убрать источник</button>
+                <button type="button" onClick={() => {
+                  returnToDoneRef.current = true;
+                  setSourceChoiceOpen(false);
+                }}>Вернуться к награде</button>
+              </div>
+            </div>
+          )}
+          {!sourceChoiceOpen && <div className="award-inline-actions">
             <button
+              ref={doneRef}
               type="button"
               className="award-inline-primary"
               disabled={!draftAward.name.trim()}
-              onClick={commitDraft}
+              onClick={() => commitDraft()}
             >
               <Check size={15} /> {isExisting ? "Готово" : "Добавить"}
             </button>
@@ -484,7 +530,7 @@ export function AwardsEditor({
                 <Trash2 size={14} /> Удалить
               </button>
             )}
-          </div>
+          </div>}
         </div>
       )}
     </section>
