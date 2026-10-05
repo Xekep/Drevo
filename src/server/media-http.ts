@@ -45,8 +45,8 @@ export function mediaHttp({
 }) {
   let cachedKey = "",
     cachedUrls = new Set<string>();
-  const referenced = async (url: string, includePortraits: boolean) => {
-    if (
+  const referenced = async (url: string, albums: boolean, portraits: boolean) => {
+    if (albums &&
       await archive.db
         .prepare(
           "SELECT 1 FROM photos WHERE json_extract(data,'$.url')=? LIMIT 1",
@@ -56,7 +56,7 @@ export function mediaHttp({
     )
       return true;
     return (
-      includePortraits &&
+      portraits &&
       !!(await archive.db
         .prepare(
           "SELECT 1 FROM people WHERE json_extract(data,'$.photo')=? LIMIT 1",
@@ -67,22 +67,23 @@ export function mediaHttp({
   };
   const permitted = async (req: IncomingMessage, url?: string): Promise<MediaAccess | null> => {
     const canRead = await auth.canRead(req);
-    if (!canRead && !(await visibility.read()).publicAlbums) return null;
+    const publicAccess = canRead ? null : await visibility.read();
+    if (!canRead && !publicAccess?.publicTree && !publicAccess?.publicAlbums) return null;
     if (!url) return null;
     if (!canRead) {
       // Public albums expose only regular gallery images, never originals
       // attached solely as archive evidence.
       if (!media.open(url)) return null;
       // UUID is an identifier, not permission to view an unpublished upload.
-      const settings = await visibility.read();
-      return await referenced(url, settings.publicTree) ? "public" : null;
+      return await referenced(url, !!publicAccess?.publicAlbums,
+        !!publicAccess?.publicTree) ? "public" : null;
     }
     const user = await auth.currentUser(req);
     if (!user?.approved) return null;
     if (await ownsPendingMedia(archive.db, url, user.id))
       return { user, pending: true };
     if (!isScopedUser(user))
-      return (await referenced(url, true) ||
+      return (await referenced(url, true, true) ||
         citationUrls((await archive.read()).family).includes(url))
         ? { user, pending: false } : null;
     const key = `${(await archive.meta()).revision}:${user.id}:${user.personId || ""}`;
@@ -146,13 +147,14 @@ export function mediaHttp({
             const visible = await client.query<{ public_tree: boolean; public_albums: boolean }>(
               `SELECT public_tree,public_albums FROM archive_access_settings
                WHERE archive_id=$1 FOR SHARE NOWAIT`, [archive.db.archiveId]);
-            if (!visible.rows[0]?.public_albums) return false;
+            if (!visible.rows[0]?.public_tree && !visible.rows[0]?.public_albums) return false;
             const reference = await client.query<{ allowed: boolean }>(
-              `SELECT (EXISTS(SELECT 1 FROM photos
-                WHERE archive_id=$1 AND data->>'url'=$2) OR
-                ($3::boolean AND EXISTS(SELECT 1 FROM people
+              `SELECT (($3::boolean AND EXISTS(SELECT 1 FROM photos
+                WHERE archive_id=$1 AND data->>'url'=$2)) OR
+                ($4::boolean AND EXISTS(SELECT 1 FROM people
                 WHERE archive_id=$1 AND data->>'photo'=$2))) AS allowed`,
-              [archive.db.archiveId, url, visible.rows[0].public_tree],
+              [archive.db.archiveId, url, visible.rows[0].public_albums,
+                visible.rows[0].public_tree],
             );
             if (!reference.rows[0]?.allowed) return false;
           } else {

@@ -1,6 +1,15 @@
 .person-editor-shell {
   background: #f7f8f3;
 }
+.person-editor-form .source-catalog-citation {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.person-editor-form .source-catalog-citation small {
+  color: var(--muted);
+}
 .person-editor-shell > header {
   padding: 17px 20px;
   border-bottom: 1px solid #e0e6db;

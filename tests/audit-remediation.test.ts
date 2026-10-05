@@ -115,6 +115,12 @@ test("public albums do not publish orphan uploads or portraits from a private tr
     assert.equal((await fetch(url + "/api/family")).status, 401);
     const data = family();
     data.people[0].photo = "/media/portrait.png";
+    data.people[0].sources = [
+      { title: "Unpublished PDF", type: "архив", reference: "",
+        url: "/media/evidence.pdf#page=1" },
+      { title: "Unpublished image", type: "архив", reference: "",
+        url: "/media/evidence.png" },
+    ];
     data.photos = [
       { id: "album", title: "Снимок", url: "/media/album.png", tags: [] },
     ];
@@ -124,16 +130,50 @@ test("public albums do not publish orphan uploads or portraits from a private tr
     })
       .png()
       .toBuffer();
-    for (const name of ["portrait", "album", "orphan"])
+    for (const name of ["portrait", "album", "orphan", "evidence"])
       writeFileSync(join(dir, "uploads", name + ".png"), png);
+    writeFileSync(join(dir, "uploads", "evidence.pdf"), "%PDF-1.4\n%%EOF\n");
     await settings.write({ publicTree: false, publicAlbums: true });
     assert.equal((await fetch(url + "/media/album.png")).status, 200);
+    const albumOnly = await fetch(url + "/api/family").then((response) => response.json());
+    assert.deepEqual(albumOnly.family.people, []);
+    assert.deepEqual(albumOnly.family.photos.map((photo: { id: string }) => photo.id), ["album"]);
     for (const name of ["portrait", "orphan"])
       for (const suffix of ["", "?variant=thumb"])
         assert.equal(
           (await fetch(url + `/media/${name}.png${suffix}`)).status,
           401,
         );
+    assert.equal((await fetch(url + "/media/evidence.pdf")).status, 401);
+    assert.equal((await fetch(url + "/media/evidence.png")).status, 401);
+    await settings.write({ publicTree: true, publicAlbums: false });
+    const publicFamily = await fetch(url + "/api/family");
+    assert.equal(publicFamily.status, 200);
+    const treeOnly = await publicFamily.json();
+    assert.equal(treeOnly.family.people[0].photo, "/media/portrait.png");
+    assert.deepEqual(treeOnly.family.photos, []);
+    const overview = await fetch(url + "/api/family?projection=overview")
+      .then((response) => response.json());
+    assert.equal(overview.family.people[0].photo, "/media/portrait.png");
+    assert.equal(overview.totals.photos, 0);
+    const page = await fetch(url + `/api/family?projection=page&collection=people&offset=0&token=${encodeURIComponent(overview.pageToken)}`)
+      .then((response) => response.json());
+    assert.equal(page.items[0].id, data.people[0].id);
+    for (const suffix of ["", "?variant=thumb"])
+      assert.equal((await fetch(url + `/media/portrait.png${suffix}`)).status, 200,
+        "a public tree must deliver its referenced portrait");
+    for (const name of ["album.png", "orphan.png", "evidence.png", "evidence.pdf"])
+      assert.equal((await fetch(url + `/media/${name}`)).status, 401,
+        "tree visibility alone must not publish albums, orphans, or evidence");
+    data.photos.push({ id: "dual", title: "Портрет в альбоме",
+      url: "/media/portrait.png", tags: [] });
+    await app.archive.write(data, (await app.archive.meta()).revision);
+    await settings.write({ publicTree: false, publicAlbums: true });
+    assert.equal((await fetch(url + "/media/portrait.png")).status, 200,
+      "an album can independently publish a portrait URL");
+    await settings.write({ publicTree: true, publicAlbums: false });
+    assert.equal((await fetch(url + "/media/portrait.png")).status, 200,
+      "a tree can independently publish a URL also used in an album");
     await settings.write({ publicTree: true, publicAlbums: true });
     assert.equal(
       (await fetch(url + "/media/portrait.png?variant=thumb")).status,

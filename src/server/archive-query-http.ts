@@ -92,10 +92,6 @@ export function archiveQueryHttp({
     }
     if (!readPhotos) {
       data.family.photos = [];
-      data.family.people = data.family.people.map((person) => ({
-        ...person,
-        photo: undefined,
-      }));
     }
     return {
       ...data,
@@ -131,16 +127,17 @@ export function archiveQueryHttp({
     const memberCanRead = visitor?.approved === true;
     const scoped = isScopedUser(visitor);
     // An unscoped export must not release people removed after its snapshot.
-    const stableRevision = scoped || path === "/api/export" || path === "/api/export.json";
+    const stableRevision = scoped || path === "/api/export" || path === "/api/export.json" ||
+      (path === "/api/people/search" && !memberCanRead);
     const startRevision = stableRevision
       ? Number((await revisionQuery.get())?.revision)
       : null;
-    const accessStillCurrent = async () => {
+    const accessStillCurrent = async (expectedRevision = startRevision) => {
       const current = await auth.currentUser(req);
       const settings = await visibility.read();
-      const revisionCurrent = !stableRevision ||
-        (Number.isSafeInteger(startRevision) &&
-          Number((await revisionQuery.get())?.revision) === startRevision);
+      const revisionCurrent = expectedRevision === null ||
+        (Number.isSafeInteger(expectedRevision) &&
+          Number((await revisionQuery.get())?.revision) === expectedRevision);
       return revisionCurrent &&
         current?.id === visitor?.id &&
         current?.role === visitor?.role &&
@@ -150,9 +147,9 @@ export function archiveQueryHttp({
         settings.publicTree === access.publicTree &&
         settings.publicAlbums === access.publicAlbums;
     };
-    const canDeliver = async () => {
+    const canDeliver = async (expectedRevision: number | null) => {
       const valid = await archive.db.transaction(async () => {
-        return await accessStillCurrent();
+        return await accessStillCurrent(expectedRevision);
       }, true);
       await beforeDelivery?.();
       return valid;
@@ -160,9 +157,10 @@ export function archiveQueryHttp({
     const changed = () => json(res, 409, {
       error: "Архив или доступ к нему изменились. Повторите запрос.",
     });
-    const deliverArchiveJson = async (value: unknown, contentDisposition?: string) => {
+    const deliverArchiveJson = async (value: unknown, contentDisposition?: string,
+      expectedRevision = startRevision) => {
       if (archive.db.kind !== "postgres") {
-        if (!await canDeliver()) return changed();
+        if (!await canDeliver(expectedRevision)) return changed();
         if (contentDisposition) res.setHeader("Content-Disposition", contentDisposition);
         return json(res, 200, value);
       }
@@ -182,7 +180,7 @@ export function archiveQueryHttp({
             WHERE archive_id=? AND user_id=? FOR SHARE`).get(archiveId, visitor.id);
           if (!membership) return false;
         }
-        if (!await accessStillCurrent()) return false;
+        if (!await accessStillCurrent(expectedRevision)) return false;
         await beforeLockedDelivery?.();
         if (res.destroyed) return true;
         const delivered = finished(res, { cleanup: true });
@@ -265,6 +263,7 @@ export function archiveQueryHttp({
             : null;
           if (collection === "people")
             return {
+              revision: meta.revision,
               pageToken,
               items: readTree
                 ? (scoped
@@ -275,6 +274,7 @@ export function archiveQueryHttp({
               total: readTree ? (scoped?.people.length ?? meta.people) : 0,
             };
           return {
+            revision: meta.revision,
             pageToken,
             items: readPhotos
               ? (scoped
@@ -292,7 +292,9 @@ export function archiveQueryHttp({
           return json(res, 409, {
             error: "Архив или доступ к нему изменились. Обновите данные.",
           });
-        return deliverArchiveJson(page);
+        const { revision: preparedRevision, ...publicPage } = page;
+        return deliverArchiveJson(publicPage, undefined,
+          memberCanRead ? startRevision : preparedRevision);
       }
       if (projection === "overview") {
         const readTree = memberCanRead || access.publicTree,
@@ -302,24 +304,14 @@ export function archiveQueryHttp({
           if (isScopedUser(visitor)) {
             const { family: scoped, revision } = await scopedSnapshot(visitor);
             data = {
-              family: archiveOverview(
-                readPhotos
-                  ? scoped
-                  : {
-                      ...scoped,
-                      people: scoped.people.map((person) => ({
-                        ...person,
-                        photo: undefined,
-                      })),
-                    },
-              ),
+              family: archiveOverview(scoped),
               revision,
               totals: {
                 people: scoped.people.length,
                 photos: scoped.photos?.length || 0,
               },
             };
-          } else data = await archive.overview(readPhotos);
+          } else data = await archive.overview(readTree);
         } else {
           const meta = await archive.meta();
           data = {
@@ -358,10 +350,11 @@ export function archiveQueryHttp({
             people: readTree ? data.totals.people : 0,
             photos: readPhotos ? data.totals.photos : 0,
           },
-        });
+        }, undefined, memberCanRead ? startRevision : data.revision);
       }
       const prepared = await snapshot(req, visitor, access);
-      return deliverArchiveJson(prepared);
+      return deliverArchiveJson(prepared, undefined,
+        memberCanRead ? startRevision : prepared.revision);
     }
 
     if (path === "/api/export") {
