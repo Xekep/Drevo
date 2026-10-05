@@ -828,7 +828,7 @@ test("администратор выбирает себя в древе и пр
     });
   await page
     .getByRole("combobox", { name: "Доступ к древу: Участник" })
-    .selectOption({ label: "Кровные" });
+    .selectOption({ label: "Кровные родственники" });
   await expect
     .poll(() => submitted[1])
     .toEqual({
