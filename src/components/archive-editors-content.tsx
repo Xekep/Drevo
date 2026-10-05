@@ -532,6 +532,8 @@ export function PersonEditor({
               </div>
               <AwardsEditor
                 awards={draft.awards || []}
+                personId={person?.id}
+                isAdmin={isAdmin}
                 onChange={(awards) => field("awards", awards)}
               />
             </div>

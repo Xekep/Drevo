@@ -25,7 +25,7 @@ const withCitation = () => {
   return data;
 };
 
-test("release A preserves omitted award citations on independent writes without mutating input", () => {
+test("award citations survive omitted old-client fields on independent writes", () => {
   const current = withCitation();
   const oldClient = family();
   oldClient.people[0].surname = "Уточнён";
@@ -39,41 +39,51 @@ test("release A preserves omitted award citations on independent writes without 
   assert.equal(archiveOverview(authorized).people[0].awards, undefined);
 });
 
-test("release A refuses every award citation delta, including removal and identity transfer", () => {
+test("award citations allow explicit edits and deletion but never silently move with identity", () => {
   const current = withCitation();
-  const denied = (next: Family) => {
-    assert.throws(() => authorizeArchive(next, current, actor),
-      /Цитаты наград пока доступны только для чтения|Обновите страницу/);
-    assert.throws(() => prepareAwardCitationWrite(structuredClone(next), current),
-      /Цитаты наград пока доступны только для чтения|Обновите страницу/);
-  };
   const changed = structuredClone(current);
   changed.people[0].awards![0].sources![0].reference = "л. 3";
-  denied(changed);
+  assert.equal(authorizeArchive(changed, current, actor).people[0].awards?.[0].sources?.[0].reference, "л. 3");
   const removed = structuredClone(current);
   removed.people[0].awards![0].sources = [];
-  denied(removed);
+  assert.deepEqual(authorizeArchive(removed, current, actor).people[0].awards?.[0].sources, []);
   const newIdentity = structuredClone(current);
   newIdentity.people[0].awards![0].name = "Другая медаль";
-  denied(newIdentity);
+  assert.equal(authorizeArchive(newIdentity, current, actor).people[0].awards?.[0].name, "Другая медаль",
+    "explicitly retained citations require deliberate client choice");
   const omittedMoved = structuredClone(newIdentity);
   delete omittedMoved.people[0].awards![0].sources;
-  denied(omittedMoved);
+  assert.throws(() => authorizeArchive(omittedMoved, current, actor), /Обновите страницу/);
+  assert.throws(() => prepareAwardCitationWrite(structuredClone(omittedMoved), current), /Обновите страницу/);
+  const changedDegree = structuredClone(current);
+  changedDegree.people[0].awards![0].degreeId = "second";
+  delete changedDegree.people[0].awards![0].sources;
+  assert.throws(() => authorizeArchive(changedDegree, current, actor), /Обновите страницу/);
   const removedAward = structuredClone(current);
   removedAward.people[0].awards = [];
-  denied(removedAward);
+  assert.deepEqual(authorizeArchive(removedAward, current, actor).people[0].awards, []);
   const removedPerson = structuredClone(current);
   removedPerson.people = [];
-  denied(removedPerson);
-  const added = withCitation();
-  added.people[0].awards![0].sources![0].catalogId = "foreign-catalog";
-  assert.throws(() => authorizeArchive(added, family(), actor),
-    /Цитаты наград пока доступны только для чтения/);
-  assert.throws(() => prepareAwardCitationWrite(structuredClone(added), null),
-    /Цитаты наград пока доступны только для чтения/);
+  assert.deepEqual(prepareAwardCitationWrite(removedPerson, current).people, []);
+  // Catalog existence is checked by the database-backed writer, not this pure guard.
 });
 
-test("SQLite startup reads preexisting citations; unchanged write works and new refs fail closed", async () => {
+test("a relative may edit their own inline award citation but cannot add a catalog citation", () => {
+  const current = family();
+  current.people[0].createdBy = "relative";
+  const relative = { ...actor, id: "relative", role: "relative" as const };
+  const inline = structuredClone(current);
+  inline.people[0].awards![0].sources = [{ title: "Местная запись", type: "архив",
+    reference: "л. 2" }];
+  assert.equal(authorizeArchive(inline, current, relative).people[0].awards?.[0]
+    .sources?.[0].reference, "л. 2");
+  const catalog = structuredClone(inline);
+  catalog.people[0].awards![0].sources!.push(structuredClone(source));
+  assert.throws(() => authorizeArchive(catalog, current, relative),
+    /Привязать каталожный источник может только администратор/);
+});
+
+test("SQLite accepts valid award citations, preserves old-client fields and rejects foreign catalog refs", async () => {
   const root = await mkdtemp(join(tmpdir(), "award-prep-"));
   const archive = await openArchive(join(root, "archive.sqlite"), family());
   try {
@@ -82,11 +92,8 @@ test("SQLite startup reads preexisting citations; unchanged write works and new 
       sheet: "", reference: "л. 2", url: "", accessedAt: "", description: "",
       documentIds: [] };
     await sourceCatalogStore(archive.db).insert(record);
-    // Synthetic row represents a database written after activation then read
-    // by the previous backend. The public writer must never seed this field.
-    const seeded = withCitation();
-    await archive.db.prepare("UPDATE people SET data=? WHERE id=?")
-      .run(JSON.stringify({ ...seeded.people[0], parents: undefined, spouses: undefined }), "person");
+    const initial = await archive.read();
+    await archive.write(withCitation(), initial.revision);
     const before = await archive.read();
     assert.deepEqual(before.family.people[0].awards?.[0].sources?.[0].catalogId,
       "award-record");
@@ -100,7 +107,7 @@ test("SQLite startup reads preexisting citations; unchanged write works and new 
     const next = structuredClone((await archive.read()).family);
     next.people[0].awards![0].sources![0].catalogId = "foreign-catalog";
     await assert.rejects(archive.write(next, saved.revision),
-      /Цитаты наград пока доступны только для чтения/);
+      /Источник отсутствует|каталожный/i);
     assert.equal((await archive.read()).revision, saved.revision);
     const patch = await archive.patchPeople([{ collection: "people", id: "person",
       field: "awards", before: next.people[0].awards,

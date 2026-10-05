@@ -4,7 +4,7 @@ import { fixture, tokens, person } from "./postgres-fixture.ts";
 import { patchPostgresPeopleForSession } from "../../src/server/postgres-person-patches.ts";
 import { changePostgresGraphForSession } from "../../src/server/postgres-graph-changes.ts";
 
-test("raw PostgreSQL fast writers cannot bypass the award-citation release gate", async (t) => {
+test("raw PostgreSQL fast writers cannot bypass full award-citation validation", async (t) => {
   const { first } = await fixture(t);
   const award = { id: "award", name: "Медаль", sources: [{
     title: "Чужой документ", type: "архив", reference: "л. 1",

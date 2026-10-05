@@ -80,7 +80,7 @@ import { verifyPlatformTiers } from "./postgres-platform-tiers.ts";
 import { verifyFaceSessionMutation } from "./postgres-face-session.ts";
 import { verifyGlobalStaffMigrationStartup } from "./postgres-global-staff-migration-startup.ts";
 import { verifyGlobalRoleFinalization } from "./postgres-global-role-finalization.ts";
-import { verifyAwardCitationPreparation } from "./postgres-award-citation-runtime.ts";
+import { verifyAwardCitationActivation } from "./postgres-award-citation-runtime.ts";
 import { verifyAiProviderCleanupRetry } from "./postgres-ai-provider-retry.ts";
 import { verifyPlatformAiCleanup } from "./postgres-platform-ai-cleanup.ts";
 import { verifyDocumentWriteSessionRevocation } from "./postgres-document-write-revocation.ts";
@@ -14040,8 +14040,8 @@ try {
   await verifyRestoreGuard({ client, source, family, ownerHeaders, restoreBytes });
   await verifyPlatformAiOrphanSweep(app!.archive.db, client, source);
   await verifyGlobalRoleFinalization();
-  await verifyAwardCitationPreparation(app.archive);
-  console.log("runtime_award_citation_preparation_ok");
+  await verifyAwardCitationActivation(app.archive);
+  console.log("runtime_award_citation_activation_ok");
   console.log("runtime_http_and_backup_ok");
 } finally {
   await otherApp?.close();

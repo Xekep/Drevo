@@ -5,6 +5,8 @@ import { safeUrl } from "../domain";
 import { archiveResourceUrl } from "../domain/archive-context.ts";
 import { scopedArchivePath } from "../domain/archive-context.ts";
 import { archiveDocumentPath } from "../domain/archive-routes.ts";
+import { CitationSourcesEditor } from "./union-sources-editor.tsx";
+import { DocumentSourcePicker } from "./document-source-picker.tsx";
 import {
   activeInYear,
   getAwardDefinition,
@@ -122,22 +124,35 @@ function resolveStoredAward(award: PersonAward) {
 }
 
 function needsSourceChoice(previous: PersonAward | undefined, next: PersonAward) {
-  if (!previous?.source) return false;
-  const before = resolveStoredAward(previous)?.award.id;
-  const after = resolveStoredAward(next)?.award.id;
-  const original = previous.source;
-  return Boolean(before && after && before !== after &&
-    (original.title.trim() || original.url?.trim()) &&
-    original.title.trim() === (next.source?.title || "").trim() &&
-    (original.url || "").trim() === (next.source?.url || "").trim());
+  if (!previous) return false;
+  const before = resolveStoredAward(previous);
+  const after = resolveStoredAward(next);
+  const sameIdentity = before?.award.id && after?.award.id
+    ? before.award.id === after.award.id &&
+      (previous.degreeId || before.degreeId || "") === (next.degreeId || after.degreeId || "")
+    : previous.name.trim().replace(/\s+/g, " ").toLocaleLowerCase("ru") ===
+      next.name.trim().replace(/\s+/g, " ").toLocaleLowerCase("ru");
+  return !sameIdentity && (retainedLegacySource(previous, next) ||
+    (next.sources || []).some((source) => (previous.sources || []).some((old) =>
+      JSON.stringify(old) === JSON.stringify(source))));
+}
+
+function retainedLegacySource(previous: PersonAward, next: PersonAward) {
+  return Boolean(previous.source && (previous.source.title.trim() || previous.source.url?.trim()) &&
+    previous.source.title.trim() === (next.source?.title || "").trim() &&
+    (previous.source.url || "").trim() === (next.source?.url || "").trim());
 }
 
 export function AwardsEditor({
   awards,
   onChange,
+  personId,
+  isAdmin,
 }: {
   awards: PersonAward[];
   onChange: (awards: PersonAward[]) => void;
+  personId?: string;
+  isAdmin: boolean;
 }) {
   const [draftAward, setDraftAward] = useState<PersonAward | null>(null);
   const [sourceChoiceOpen, setSourceChoiceOpen] = useState(false);
@@ -158,6 +173,8 @@ export function AwardsEditor({
   }, [sourceChoiceOpen]);
   const isExisting =
     !!draftAward && awards.some((award) => award.id === draftAward.id);
+  const choiceHasCitations = Boolean(draftAward && awards.find((award) =>
+    award.id === draftAward.id)?.sources?.length);
   const resolvedDraft = draftAward ? resolveStoredAward(draftAward) : undefined;
   const definition = resolvedDraft?.award;
   const suggestions =
@@ -244,15 +261,23 @@ export function AwardsEditor({
 
   function commitDraft(sourceDecision?: "retain" | "remove") {
     if (!draftAward?.name.trim()) return;
-    if (!sourceDecision && needsSourceChoice(awards.find((award) => award.id === draftAward.id), draftAward)) {
+    const previous = awards.find((award) => award.id === draftAward.id);
+    if (!sourceDecision && needsSourceChoice(previous, draftAward)) {
       setSourceChoiceOpen(true);
       return;
     }
+    const removeLegacy = sourceDecision === "remove" && previous &&
+      retainedLegacySource(previous, draftAward);
+    const sources = sourceDecision === "remove" && previous
+      ? draftAward.sources?.filter((source) => !(previous.sources || []).some((old) =>
+          JSON.stringify(old) === JSON.stringify(source)))
+      : draftAward.sources;
     const normalized: PersonAward = {
       ...draftAward,
       name: draftAward.name.trim(),
+      sources,
       source:
-        sourceDecision !== "remove" && (draftAward.source?.title?.trim() || draftAward.source?.url?.trim())
+        !removeLegacy && (draftAward.source?.title?.trim() || draftAward.source?.url?.trim())
           ? {
               title: draftAward.source?.title?.trim() || "",
               url: draftAward.source?.url?.trim() || undefined,
@@ -462,7 +487,7 @@ export function AwardsEditor({
           )}
 
           <details className="award-source-editor">
-            <summary>Источник</summary>
+            <summary>Описание и ссылка</summary>
             <label>
               Описание
               <input
@@ -500,12 +525,45 @@ export function AwardsEditor({
             </label>
           </details>
 
+          <details className="award-source-editor">
+            <summary>Цитаты и документы ({draftAward.sources?.length || 0})</summary>
+            <CitationSourcesEditor sources={draftAward.sources || []}
+              isAdmin={isAdmin} onChange={(sources) => patchDraft({ sources })} />
+            {(draftAward.sources || []).map((source, index) =>
+              <div key={`${draftAward.id}-${index}`} aria-label={`Документ цитаты ${index + 1}`}>
+                {source.catalogId ? <>
+                  {source.documentId && <a
+                    href={scopedArchivePath(archiveDocumentPath(null, source.documentId, source.documentPage))}
+                    target="_blank" rel="noopener noreferrer">Открыть документ источника</a>}
+                  {isAdmin && source.documentId && <label>Страница документа источника
+                    <input type="number" min={1} max={2000} value={source.documentPage ?? ""}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        patchDraft({ sources: draftAward.sources?.map((item, i) => i === index
+                          ? { ...item, documentPage: event.target.value && Number.isInteger(value) &&
+                            value >= 1 && value <= 2000 ? value : undefined }
+                          : item) });
+                      }} />
+                  </label>}
+                </> : <DocumentSourcePicker personId={personId}
+                  documentId={source.documentId} pageNumber={source.documentPage}
+                  onChange={(document) => patchDraft({ sources: draftAward.sources?.map((item, i) =>
+                    i === index ? { ...item, title: item.title || document?.title || "",
+                      documentId: document?.id,
+                      documentPage: document?.id === item.documentId ? item.documentPage : undefined } : item) })}
+                  onPageChange={(documentPage) => patchDraft({ sources: draftAward.sources?.map((item, i) =>
+                    i === index ? { ...item, documentPage } : item) })} />}
+              </div>)}
+          </details>
+
           {sourceChoiceOpen && (
             <div className="award-source-choice" role="group" aria-label="Источник прежней награды" aria-describedby={sourceQuestionId}>
-              <p id={sourceQuestionId}>Вы выбрали другую награду. Прежний источник мог подтверждать только старую. Оставить его для новой награды?</p>
+              <p id={sourceQuestionId}>{choiceHasCitations
+                ? "Вы выбрали другую награду. Прежние цитаты могли подтверждать только старую. Оставить их для новой награды?"
+                : "Вы выбрали другую награду. Прежний источник мог подтверждать только старую. Оставить его для новой награды?"}</p>
               <div className="award-source-choice-actions">
-                <button ref={retainSourceRef} type="button" onClick={() => commitDraft("retain")}>Оставить источник</button>
-                <button type="button" onClick={() => commitDraft("remove")}>Убрать источник</button>
+                <button ref={retainSourceRef} type="button" onClick={() => commitDraft("retain")}>{choiceHasCitations ? "Оставить цитаты" : "Оставить источник"}</button>
+                <button type="button" onClick={() => commitDraft("remove")}>{choiceHasCitations ? "Убрать прежние цитаты" : "Убрать источник"}</button>
                 <button type="button" onClick={() => {
                   returnToDoneRef.current = true;
                   setSourceChoiceOpen(false);

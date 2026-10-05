@@ -280,6 +280,12 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     citedPerson.events![0].alternatives = [{ id: "alternate-move-date", field: "date",
       value: "1888", sources: [{ title: "Другая дата переезда", type: "archive",
         reference: "", documentId: id }] }];
+    citedPerson.awards = [{ id: "award-anna", name: "Медаль за отвагу",
+      source: { title: "Прежняя запись", url: "https://example.test/legacy" },
+      sources: [{ catalogId: catalog.source.id, title: catalog.source.title,
+        type: "", reference: "", documentId: id, documentPage: 2 },
+      { title: "Наградное удостоверение", type: "archive", reference: "л. 3",
+        documentId: id, documentPage: 3 }] }];
     citedSnapshot.family.unions = [{ id: "anna-boris", participants: ["anna", "boris"],
       type: "marriage", sources: [{ title: "Семейная запись", type: "archive", reference: "", documentId: id }],
       formation: { date: "1970", sources: [{ title: "Запись о браке", type: "archive", reference: "", documentId: id }] },
@@ -295,10 +301,12 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     const expectedSources = [
       ["Дело 104", 2, ["Карточка"]],
       ["Метрическая книга", 2, ["Дата рождения", "Дата смерти",
-        "Место рождения", "Место смерти", "Дата события: Переезд"]],
+        "Место рождения", "Место смерти", "Награда: Медаль за отвагу",
+        "Дата события: Переезд"]],
       ["Фамилия по записи", undefined, ["Фамилия при рождении"]],
       ["Занятие по записи", undefined, ["Занятие"]],
       ["Другое место по записи", undefined, ["Другое место рождения: Пермь"]],
+      ["Наградное удостоверение", 3, ["Награда: Медаль за отвагу"]],
       ["Другая дата переезда", undefined, ["Другая дата события: 1888"]],
       ["Семейная запись", undefined, ["Брак"]],
       ["Запись о браке", undefined, ["Брак · образование"]],

@@ -2,10 +2,9 @@ import { isDeepStrictEqual } from "node:util";
 import type { Family, PersonAward } from "../domain/types.ts";
 import { ConflictError } from "./archive-errors.ts";
 
-// Release A accepts existing citations for reading and unchanged writes. The
-// editor and new citation writes are enabled only after this backend is the
-// previous release in the deployment pair.
-const awardCitationWritesEnabled = false;
+// Release B follows the read-compatible backend. Omitted citations still hydrate
+// only when the award identity is unchanged.
+const awardCitationWritesEnabled = true;
 
 function sameAwardIdentity(before: PersonAward, after: PersonAward) {
   return before.awardDefinitionId === after.awardDefinitionId &&
