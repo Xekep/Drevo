@@ -171,7 +171,6 @@ jobs:
       - run: bash -n ops/postgres/setup-local-media-backup.sh
       - run: bash -n ops/postgres/deploy-maintenance.sh
       - run: bash -n ops/postgres/cutover.sh
-      - run: bash -n ops/check-mcp.sh
       - name: Restore prepared award images
         id: award-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -195,7 +194,3 @@ jobs:
             node --experimental-strip-types "$test_file"
           done
       - run: npm run test:worker
-      - name: Install official MCP client for compatibility smoke
-        run: npm install --no-save --package-lock=false @modelcontextprotocol/client@2.0.0
-      - name: Test MCP with official TypeScript client
-        run: node --experimental-strip-types tests/mcp-official-client-smoke.mjs

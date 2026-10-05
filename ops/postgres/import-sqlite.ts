@@ -149,8 +149,6 @@ const serviceTables = [
   "document_upload_requests",
   "face_descriptors",
   "geocode_cache",
-  "mcp_tokens",
-  "mcp_usage",
   "media_originals",
   "media_upload_grants",
   "migrations",

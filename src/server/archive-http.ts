@@ -28,10 +28,6 @@ import type { productionStaticHttp } from "./production-static-http.ts";
 import { restoreHttp } from "./restore-http.ts";
 import type { RestoreStore } from "./restore.ts";
 import { faceDescriptorsHttp } from "./face-descriptors-http.ts";
-import { mcpTokenStore } from "./mcp-tokens.ts";
-import { adminMcpHttp } from "./admin-mcp-http.ts";
-import { mcpHttp } from "./mcp-http.ts";
-import { mcpUsageStore } from "./mcp-usage.ts";
 import { aiResearchHttp } from "./ai-research-http.ts";
 import type { AiProviderCleanup } from "./ai-provider-cleanup.ts";
 import { researchSuggestionStore } from "./research-suggestions.ts";
@@ -85,8 +81,6 @@ export async function archiveHttp({
   restores: RestoreStore;
   providerCleanup?: AiProviderCleanup;
 }) {
-  const tokens = mcpTokenStore(archive.db);
-  const mcpUsage = mcpUsageStore(archive.db);
   const suggestions = researchSuggestionStore(archive.db);
   const aiSettings = await aiSettingsStore(archive.db);
   const aiUsage = aiUsageStore(archive.db);
@@ -107,19 +101,6 @@ export async function archiveHttp({
     publicOrigin,
   });
   const core = coreHttp({ archive, auth, publicOrigin });
-  const adminMcp = adminMcpHttp({
-    auth,
-    db: archive.db,
-    tokens,
-    usage: mcpUsage,
-    publicOrigin,
-  });
-  const researchMcp = mcpHttp({
-    archive,
-    tokens,
-    usage: mcpUsage,
-    publicOrigin,
-  });
   const researchAi = aiResearchHttp({
     archive,
     auth,
@@ -338,7 +319,6 @@ export async function archiveHttp({
     if (await core(req, res, url)) return true;
     if (await serveBackup(req, res, url)) return true;
     if (await adminAccess(req, res, url)) return true;
-    if (await adminMcp(req, res, url)) return true;
     if (await adminAi(req, res, url)) return true;
     if (await providerCleanupStatus(req, res, url)) return true;
     if (await adminResearchResources(req, res, url)) return true;
@@ -361,7 +341,6 @@ export async function archiveHttp({
     if (await faceDescriptors(req, res, url)) return true;
     if (await researchAi(req, res, url)) return true;
     if (await researchSuggestions(req, res, url)) return true;
-    if (await researchMcp(req, res, url)) return true;
     if (await serveMedia(req, res, url)) return true;
     if (await publicSharing(req, res, url)) return true;
     return await serveStatic(req, res, url);
@@ -370,7 +349,6 @@ export async function archiveHttp({
     async close() {
       clearInterval(shareCleanupTimer);
       await researchAi.close();
-      await researchMcp.close();
       await pdfPages.close();
     },
   });
