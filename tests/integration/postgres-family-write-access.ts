@@ -10,19 +10,12 @@ import {
   newSessionToken,
   sessionTokenHash,
 } from "../../src/server/session-token.ts";
-import { openPostgresDatabase } from "../../src/server/store-database.ts";
-import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
-import {
-  mcpUsageStore,
-  McpRateLimitError,
-} from "../../src/server/mcp-usage.ts";
 
 export async function verifyFamilyWriteAccess(
   archive: Awaited<ReturnType<typeof openArchive>>,
   client: pg.Client,
 ) {
-  const users = await userStore(archive.db),
-    actor = (await users.get("owner"))!;
+  const users = await userStore(archive.db);
   const origin = process.env.PUBLIC_ORIGIN!,
     auth = await createAuth(users, archive.db, origin);
   const original = await archive.read(),
@@ -116,46 +109,5 @@ export async function verifyFamilyWriteAccess(
       );
       await archive.write(original.family, (await archive.meta()).revision);
     }
-  }
-  const second = await openPostgresDatabase(
-    archive.db.archiveId!,
-    archive.db.file,
-  );
-  const issued = await mcpTokenStore(archive.db).issue(actor, {
-    name: "Isolated budget check",
-    scopes: ["tree:read"],
-    rateLimitPerMinute: 5,
-  });
-  try {
-    const stores = [mcpUsageStore(archive.db), mcpUsageStore(second)];
-    const results = await Promise.allSettled(
-      Array.from({ length: 12 }, (_, index) =>
-        stores[index % 2].begin(issued.item.id, "tools/list", undefined, 5),
-      ),
-    );
-    assert.equal(
-      results.filter((result) => result.status === "fulfilled").length,
-      5,
-    );
-    for (const result of results)
-      if (result.status === "rejected")
-        assert.ok(result.reason instanceof McpRateLimitError);
-    assert.equal((await stores[0].tokenSummary(issued.item.id)).callsToday, 5);
-  } finally {
-    await second.close();
-    await archive.db.transaction(async () => {
-      await archive.db
-        .prepare(
-          "DELETE FROM mcp_usage WHERE token_id=?",
-          "DELETE FROM mcp_usage WHERE token_id=?",
-        )
-        .run(issued.item.id);
-      await archive.db
-        .prepare(
-          "DELETE FROM mcp_tokens WHERE id=?",
-          "DELETE FROM mcp_tokens WHERE id=?",
-        )
-        .run(issued.item.id);
-    });
   }
 }

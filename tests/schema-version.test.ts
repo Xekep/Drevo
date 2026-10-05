@@ -90,12 +90,12 @@ test("fresh SQLite archive gets current schema version", () => {
     assert.ok(columns(db, "ai_settings").includes("api_key_ciphertext"));
     assert.ok(columns(db, "ai_settings").includes("folder_id"));
     assert.ok(columns(db, "ai_chats").includes("stop_token"));
-    assert.ok(columns(db, "mcp_tokens").includes("rate_limit_per_minute"));
-    assert.ok(columns(db, "mcp_tokens").includes("bound_user_id"));
     assert.ok(columns(db, "face_descriptors").includes("source_tag_id"));
     for (const field of ["document_type", "document_date", "place", "description", "provenance"])
       assert.ok(columns(db, "documents").includes(field));
     const tables = tableNames(db);
+    assert.equal(tables.has("mcp_tokens"), false);
+    assert.equal(tables.has("mcp_usage"), false);
     for (const table of [
       "archive",
       "people",
@@ -115,12 +115,10 @@ test("fresh SQLite archive gets current schema version", () => {
       "share_link_activity",
       "geocode_cache",
       "migrations",
-      "mcp_tokens",
       "research_suggestions",
       "ai_settings",
       "ai_usage",
       "ai_usage_models",
-      "mcp_usage",
       "research_categories",
       "research_resources",
     ])

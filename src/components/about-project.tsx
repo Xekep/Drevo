@@ -78,9 +78,6 @@ export function AboutProject({ onClose }: { onClose: () => void }) {
                 интеллекта.
               </li>
               <li>
-                <b>MCP</b> — подключение внешних ИИ-инструментов к данным Drevo.
-              </li>
-              <li>
                 <b>GEDCOM</b> — импорт и экспорт генеалогических данных.
               </li>
             </ul>

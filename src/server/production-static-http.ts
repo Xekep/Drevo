@@ -62,8 +62,6 @@ export function productionStaticHttp(
     const pathname = url.pathname;
     if (pathname.startsWith("/api/") || pathname.startsWith("/auth/"))
       return false;
-    if (req.method !== "GET" && req.method !== "HEAD")
-      return jsonError(res, 405, "Метод не поддерживается");
 
     let decoded: string;
     try {
@@ -113,6 +111,12 @@ export function productionStaticHttp(
       if (!stat.isFile()) {
         await handle.close();
         return jsonError(res, 404, "Страница не найдена");
+      }
+      // A removed or unknown route remains 404 for every method. Only an
+      // existing page/file can reject an otherwise unsupported method.
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        await handle.close();
+        return jsonError(res, 405, "Метод не поддерживается");
       }
       if (shared || invitation || linkedBranch || previewView ||
           privateView === "account" || privateView === "admin" || privateView === "manage") {

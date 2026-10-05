@@ -549,23 +549,6 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   await expect(tokenPlot).toHaveAttribute("aria-label", /2.?700/);
   await expect(page.locator(".ai-token-model-legend")).toHaveCount(0);
 
-  await page.goto("/admin");
-  await openAdminSection(page, "mcp", "MCP-токены");
-  const permissions = page.getByLabel("Разрешения");
-  await expect(permissions).toHaveValue("all");
-  await expect(permissions.locator("option")).toContainText([
-    "Все инструменты",
-    "Древо и источники",
-    "Древо и анализ",
-    "Источники и анализ",
-    "Только древо",
-    "Только источники",
-    "Только анализ",
-  ]);
-  await expect(page.getByLabel("Доступ к древу")).toHaveCount(0);
-  await expect(page.getByText("Срок, дней")).not.toBeVisible();
-  await page.getByText("Срок и лимит запросов").click();
-  await expect(page.getByText("Срок, дней")).toBeVisible();
 });
 
 test("ИИ-исследователь не перекрывает навигацию, перетаскивается и рисует Markdown", async ({

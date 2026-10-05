@@ -3,25 +3,21 @@ import { archiveFetch } from "../data/archive-fetch.ts";
 import { isArchiveOwner, type ArchiveUser } from "../domain/access.ts";
 import { archiveResourceUrl } from "../domain/archive-context.ts";
 import { BackupAdmin } from "./backup-admin";
-import { McpTokenAdmin } from "./mcp-token-admin";
 
 type OwnedArchive = { id: string; title: string; current: boolean };
 type DirectoryArchive = OwnedArchive & { approved: boolean; owned: boolean };
 type Access = {
   key: string;
   status: "ready" | "denied" | "error";
-  ai: boolean;
   error?: string;
 };
 
 /** Archive tools live in the platform UI but retain their archive ownership boundary. */
 export function PlatformArchiveTools({
-  kind,
   accountId,
   primaryUser,
   local = false,
 }: {
-  kind: "mcp" | "backups";
   accountId: string;
   primaryUser?: ArchiveUser | null;
   local?: boolean;
@@ -112,7 +108,6 @@ export function PlatformArchiveTools({
         setAccess({
           key,
           status: allowed ? "ready" : "denied",
-          ai: body.local === true || body.user?.aiAvailable === true,
         });
       })
       .catch((error: unknown) => {
@@ -120,7 +115,6 @@ export function PlatformArchiveTools({
           setAccess({
             key,
             status: "error",
-            ai: false,
             error:
               error instanceof Error
                 ? error.message
@@ -141,7 +135,7 @@ export function PlatformArchiveTools({
     <div className="platform-archive-tools">
       <section className="account-card">
         <div className="account-card-title">
-          <h2>{kind === "mcp" ? "MCP-токены" : "Резервные копии"}</h2>
+          <h2>Резервные копии</h2>
         </div>
         {!directoryReady ? (
           <p role="status">Загружаем архивы…</p>
@@ -158,7 +152,7 @@ export function PlatformArchiveTools({
           <p role="status">Нет доступных архивов для этой операции.</p>
         ) : (
           <label className="platform-archive-select">
-            {kind === "mcp" ? "Архив для MCP" : "Архив для резервных копий"}
+            Архив для резервных копий
             <select
               value={selectedId}
               onChange={(event) => setSelectedId(event.target.value)}
@@ -188,13 +182,6 @@ export function PlatformArchiveTools({
           </section>
         ) : currentAccess.status === "denied" ? (
           <p role="status">Доступ к управлению этим архивом изменился.</p>
-        ) : kind === "mcp" && !currentAccess.ai ? (
-          <p role="status">ИИ-функции недоступны в выбранном архиве.</p>
-        ) : kind === "mcp" ? (
-          <McpTokenAdmin
-            key={key}
-            archiveId={selected.current ? null : selected.id}
-          />
         ) : (
           <BackupAdmin
             key={key}

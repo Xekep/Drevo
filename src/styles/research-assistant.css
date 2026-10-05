@@ -840,98 +840,6 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   place-items: center;
   border-radius: 50%;
 }
-.mcp-token-create {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(180px, 230px);
-  gap: 12px;
-  margin: 8px 0 12px;
-}
-.mcp-token-options {
-  grid-column: 1 / -1;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-}
-.mcp-token-options summary {
-  padding: 12px 14px;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-}
-.mcp-token-options > div {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  padding: 0 14px 14px;
-}
-.mcp-token-create > .primary-action {
-  grid-column: 1 / -1;
-  justify-self: start;
-}
-.mcp-secret {
-  margin: 18px 0 24px;
-  padding: 16px;
-  border: 1px solid #b9cfaf;
-  border-radius: 10px;
-  background: #f0f6eb;
-}
-.mcp-secret > div {
-  display: flex;
-  gap: 8px;
-  align-items: stretch;
-}
-.mcp-secret code {
-  flex: 1;
-  min-width: 0;
-  padding: 10px;
-  border-radius: 7px;
-  background: white;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-}
-.mcp-secret button {
-  width: 40px;
-  display: grid;
-  place-items: center;
-  border-radius: 7px;
-  background: white;
-}
-.mcp-token-list {
-  display: grid;
-}
-.mcp-token-list article {
-  display: grid;
-  grid-template-columns: 28px 1fr 38px;
-  gap: 10px;
-  align-items: start;
-  padding: 14px 0;
-  border-top: 1px solid var(--line);
-}
-.mcp-token-list article.revoked {
-  opacity: 0.55;
-}
-.mcp-token-list article > svg {
-  margin-top: 3px;
-  color: #718768;
-}
-.mcp-token-list article > div {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-.mcp-token-list code,
-.mcp-token-list small {
-  color: var(--muted);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.mcp-token-list article > button {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  color: #965f57;
-}
 @media (max-width: 600px) {
   .research-assistant-trigger {
     right: 18px;
@@ -973,16 +881,6 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
     width: 44px;
     min-width: 44px;
     height: 44px;
-  }
-  .mcp-token-create {
-    grid-template-columns: 1fr;
-  }
-  .mcp-token-options,
-  .mcp-token-create > .primary-action {
-    grid-column: 1;
-  }
-  .mcp-token-options > div {
-    grid-template-columns: 1fr;
   }
 }
 
@@ -1650,58 +1548,6 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   }
 }
 
-.mcp-usage-list {
-  display: grid;
-  gap: 5px;
-  margin-top: 22px;
-}
-.mcp-usage-list h3 {
-  margin: 0 0 5px;
-  font-size: 12px;
-}
-.mcp-usage-list article {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
-  gap: 9px;
-  align-items: center;
-  padding: 8px 0;
-  border-top: 1px solid var(--line);
-}
-.mcp-usage-list article > span {
-  padding: 3px 5px;
-  border-radius: 999px;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 700;
-}
-.mcp-usage-list article > span.ok {
-  background: #edf5e9;
-  color: #46653f;
-}
-.mcp-usage-list article > span.error {
-  background: #f8e9e7;
-  color: #8c5149;
-}
-.mcp-usage-list article > div {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-.mcp-usage-list article b {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 12px;
-  white-space: nowrap;
-}
-.mcp-usage-list article small,
-.mcp-usage-list > p {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-.mcp-usage-list > p {
-  margin: 5px 0 0;
-}
 
 .ai-credential-settings {
   display: grid;

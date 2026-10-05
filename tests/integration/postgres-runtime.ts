@@ -105,12 +105,7 @@ import { archiveDeletionHttp } from "../../src/server/archive-deletion-http.ts";
 import { accountDataExportHttp } from "../../src/server/account-data-export-http.ts";
 import { accountAttachmentExportHttp } from "../../src/server/account-attachment-export-http.ts";
 import { gedcomHttp } from "../../src/server/gedcom-http.ts";
-import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
-import { verifyMcpIssuanceVisibility } from "./postgres-mcp-issuance-visibility.ts";
-import { mcpHttp } from "../../src/server/mcp-http.ts";
-import { mcpUsageStore } from "../../src/server/mcp-usage.ts";
 import { verifyFamilyWriteAccess } from "./postgres-family-write-access.ts";
-import { adminMcpHttp } from "../../src/server/admin-mcp-http.ts";
 import { sharesStore } from "../../src/server/shares.ts";
 import { adminSharingHttp } from "../../src/server/admin-sharing-http.ts";
 import { archiveInvitationsHttp } from "../../src/server/archive-invitations-http.ts";
@@ -1211,7 +1206,6 @@ try {
     "/api/shares",
     "/api/admin/ai",
     "/api/admin/research-resources",
-    "/api/mcp/tokens",
     "/api/tree-preferences",
     "/api/people/search?q=Иван",
   ]) {
@@ -4104,177 +4098,6 @@ try {
     true,
   );
   await verifyFamilyWriteAccess(app.archive, client);
-  const boundToken = await mcpTokenStore(app.archive.db).issue(owner, {
-    name: "Проверка уровня",
-    scopes: ["tree:read"],
-    boundUserId: "vk:42",
-  });
-  await app.archive.db
-    .prepare("", "UPDATE account_tiers SET full_access=false WHERE account_id=?")
-    .run("vk:42");
-  assert.equal(await accountAiAccess(app.archive.db, "vk:42"), false);
-  assert.equal(
-    (await fetch(securedBase + "/mcp", {
-      method: "POST",
-      headers: {
-        Origin: process.env.PUBLIC_ORIGIN,
-        Authorization: `Bearer ${boundToken.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
-    })).status,
-    403,
-  );
-  await app.archive.db
-    .prepare("", "UPDATE account_tiers SET full_access=true WHERE account_id=?")
-    .run("vk:42");
-  {
-    const tokenStore = mcpTokenStore(app.archive.db);
-    const issued = await tokenStore.issue(owner, {
-      name: "MCP queued tier regression", scopes: ["tree:read"],
-    });
-    const usageStore = mcpUsageStore(app.archive.db);
-    let notify!: () => void;
-    let release!: () => void;
-    const entered = new Promise<void>((resolve) => { notify = resolve; });
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const endpoint = mcpHttp({ archive: app.archive, tokens: tokenStore,
-      usage: { ...usageStore,
-        begin: async (...args: Parameters<typeof usageStore.begin>) => {
-          const auditRun = await usageStore.begin(...args);
-          notify();
-          await gate;
-          return auditRun;
-        } },
-      publicOrigin: process.env.PUBLIC_ORIGIN });
-    const server = createServer((req, res) => {
-      void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-        .catch((error) => { res.destroy(error); });
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    try {
-      const port = (server.address() as { port: number }).port;
-      const listing = fetch(`http://127.0.0.1:${port}/mcp`, {
-        method: "POST", headers: {
-          Origin: process.env.PUBLIC_ORIGIN!,
-          Authorization: `Bearer ${issued.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 12, method: "tools/list" }),
-      });
-      await Promise.race([entered,
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("MCP listing did not reach audit queue")), 15_000))]);
-      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
-      release();
-      const response = await listing;
-      const body = await response.text();
-      assert.equal(response.status, 403,
-        `a downgraded account cannot receive MCP tools after the audit queue: ${body}`);
-      assert.doesNotMatch(body, /search_people|tools"/);
-    } finally {
-      release();
-      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-    }
-  }
-  {
-    const tokenStore = mcpTokenStore(app.archive.db);
-    const issued = await tokenStore.issue(owner, {
-      name: "MCP delayed revoke regression", scopes: ["tree:read"],
-    });
-    let authenticationCount = 0;
-    let notify!: () => void;
-    let release!: () => void;
-    const entered = new Promise<void>((resolve) => { notify = resolve; });
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const gatedTokens = {
-      ...tokenStore,
-      authenticate: async (authorization?: string, lockRow = false) => {
-        const grant = await tokenStore.authenticate(authorization, lockRow);
-        if (++authenticationCount === 3) {
-          notify();
-          await gate;
-        }
-        return grant;
-      },
-    };
-    const endpoint = mcpHttp({ archive: app.archive, tokens: gatedTokens,
-      usage: mcpUsageStore(app.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN });
-    const server = createServer((req, res) => {
-      void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-        .catch((error) => { res.destroy(error); });
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    try {
-      const port = (server.address() as { port: number }).port;
-      const request = fetch(`http://127.0.0.1:${port}/mcp`, {
-        method: "POST", headers: {
-          Origin: process.env.PUBLIC_ORIGIN!,
-          Authorization: `Bearer ${issued.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 11, method: "tools/call",
-          params: { name: "search_people", arguments: { query: "Иван" } } }),
-      });
-      await Promise.race([entered,
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("MCP tool did not reach final authentication")), 15_000))]);
-      await tokenStore.revoke(issued.item.id);
-      release();
-      const response = await request;
-      const body = await response.text();
-      assert.equal(response.status, 401,
-        `a revoked MCP token cannot receive a prepared tool result: ${body}`);
-      assert.doesNotMatch(body, /structuredContent|person-a/);
-    } finally {
-      release();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-    }
-  }
-  const guardedTokens = adminMcpHttp({
-    auth: await createAuth(await userStore(app.archive.db), app.archive.db,
-      process.env.PUBLIC_ORIGIN),
-    db: app.archive.db,
-    tokens: mcpTokenStore(app.archive.db),
-    usage: mcpUsageStore(app.archive.db),
-    publicOrigin: process.env.PUBLIC_ORIGIN,
-  });
-  let notifyTokenBody!: () => void;
-  let releaseTokenBody!: () => void;
-  const tokenBodyStarted = new Promise<void>((resolve) => { notifyTokenBody = resolve; });
-  const tokenBodyGate = new Promise<void>((resolve) => { releaseTokenBody = resolve; });
-  const tokenServer = createServer((req, res) => {
-    const originalIterator = req[Symbol.asyncIterator].bind(req);
-    req[Symbol.asyncIterator] = async function* () {
-      notifyTokenBody();
-      await tokenBodyGate;
-      yield* originalIterator();
-    };
-    void guardedTokens(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => tokenServer.listen(0, "127.0.0.1", resolve));
-  try {
-    const tokenCount = Number((await app.archive.db.prepare("", "SELECT count(*) AS n FROM mcp_tokens")
-      .get())!.n);
-    const tokenPort = (tokenServer.address() as { port: number }).port;
-    const issuing = fetch(`http://127.0.0.1:${tokenPort}/api/mcp/tokens`, {
-      method: "POST", headers: ownerHeaders,
-      body: JSON.stringify({ name: "downgraded-request", scopes: ["tree:read"] }),
-    });
-    await Promise.race([tokenBodyStarted,
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("MCP token body was not read")), 15_000))]);
-    await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
-    releaseTokenBody();
-    assert.equal((await issuing).status, 403,
-      "a downgraded admin cannot issue an MCP token after the request body was received");
-    assert.equal(Number((await app.archive.db.prepare("", "SELECT count(*) AS n FROM mcp_tokens")
-      .get())!.n), tokenCount, "the rejected request creates no credential");
-  } finally {
-    releaseTokenBody();
-    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
-    await new Promise<void>((resolve) => tokenServer.close(() => resolve()));
-  }
-  await verifyMcpIssuanceVisibility(app.archive, client, securedBase, process.env.PUBLIC_ORIGIN!);
   await app.archive.db
     .prepare("", "UPDATE account_tiers SET full_access=false WHERE account_id=?")
     .run("owner");
@@ -4331,23 +4154,11 @@ try {
   assert.equal(
     (await fetch(securedBase + "/api/mcp/tokens", { headers: ownerHeaders }))
       .status,
-    403,
+    404,
   );
   assert.equal(
     (await fetch(securedBase + "/api/research/suggestions", {
       headers: ownerHeaders,
-    })).status,
-    403,
-  );
-  assert.equal(
-    (await fetch(securedBase + "/mcp", {
-      method: "POST",
-      headers: {
-        Origin: process.env.PUBLIC_ORIGIN,
-        Authorization: `Bearer ${boundToken.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
     })).status,
     403,
   );
@@ -4462,7 +4273,7 @@ try {
       settingsBeforeDeniedWrite, "denied archive administrators cannot change provider settings");
     assert.equal((await fetch(securedBase + "/api/mcp/tokens", {
       headers: archiveAdminHeaders,
-    })).status, 403);
+    })).status, 404);
   } finally {
     await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='owner'", [ownerTierBeforeAdminView]);
     await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='vk:42'", [viewerTierBeforeAdminView]);
@@ -13998,8 +13809,10 @@ try {
       "a share created by a former member stops working when their account is deleted");
     assert.equal(await publicShareAccess(app.archive.db)("runtime-test", oldShareToken), false,
       "a deleted creator cannot use a share to open the archive runtime");
-    assert.equal((await mcpTokenStore(app.archive.db).authenticate(`Bearer ${oldMcpToken}`)), null,
-      "an unbound MCP token from a deleted account stops working");
+    assert.equal((await fetch(securedBase + "/mcp", { method: "POST",
+      headers: { ...ownerHeaders, Authorization: `Bearer ${oldMcpToken}` },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    })).status, 404, "legacy credentials cannot re-enable the removed transport");
     assert.equal((await auditStore(app.archive.db).list({ before: 987656 })).items.find((entry) => entry.id === 987655)?.actorName, "Удалённый участник");
     const portableAfterDeletion = await fetch(securedBase + "/api/drevo/export", { headers: ownerHeaders });
     assert.equal(portableAfterDeletion.status, 200);

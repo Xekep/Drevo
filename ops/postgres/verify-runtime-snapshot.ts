@@ -113,7 +113,6 @@ try {
     "/api/backups",
     "/api/admin/ai",
     "/api/admin/research-resources",
-    "/api/mcp/tokens",
   ]) {
     const response = await fetch(base + path);
     assert.equal(response.status, 200, path);

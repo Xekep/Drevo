@@ -11,11 +11,10 @@ import { PlatformArchiveTools } from "./platform-archive-tools";
 import type { ArchiveUser } from "../domain/access.ts";
 import "../styles/account.css";
 
-type Section = "roles" | "ai" | "mcp" | "backups" | "storage" | "vk" | "resources";
+type Section = "roles" | "ai" | "backups" | "storage" | "vk" | "resources";
 const sections: { id: Section; label: string }[] = [
   { id: "roles", label: "Глобальные роли" },
   { id: "ai", label: "Yandex AI" },
-  { id: "mcp", label: "MCP-токены" },
   { id: "backups", label: "Резервные копии" },
   { id: "storage", label: "Хранилище" },
   { id: "vk", label: "Вход через VK" },
@@ -95,8 +94,8 @@ export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, onOw
             showCleanup={false} />
           </>}
         </div>}
-        {(section === "mcp" || section === "backups") && (
-          <PlatformArchiveTools key={section} kind={section} accountId={accountId}
+        {section === "backups" && (
+          <PlatformArchiveTools key={section} accountId={accountId}
             primaryUser={primaryUser} local={local} />
         )}
         {section === "storage" && <section className="account-card">

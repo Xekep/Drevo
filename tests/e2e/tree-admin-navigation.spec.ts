@@ -165,7 +165,7 @@ test("global admin without membership opens /admin without requesting a private 
   await expect(page.locator(".nav-menu-manage")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Управление древом" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Резервные копии", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "MCP-токены", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "MCP-токены", exact: true })).toHaveCount(0);
 });
 
 test("legacy local platform admin uses the trusted session flag without an account profile", async ({ page }) => {

@@ -1660,7 +1660,7 @@ export function createResearchRunner({
           result &&
           typeof result === "object"
         ) {
-          // MCP keeps its machine-readable discriminator. The model needs the
+          // Research Tools keep their machine-readable discriminator. The model needs the
           // human explanation, otherwise it tends to quote the enum to users.
           const familyResult = result as {
             siblings?: Array<Record<string, unknown>>;
