@@ -38,6 +38,7 @@ for (const { kind, personId, label, place } of [
     await placeInput.blur();
     await expect(group.getByRole("status")).toBeVisible();
     const claim = group.locator(`.${kind}-place-claim`);
+    await group.locator(".person-evidence-details > summary").click();
     await claim.locator("summary").click();
     await expect(claim).toHaveAttribute("open", "");
     await claim.getByRole("button", { name: "Выбрать из каталога" }).click();
@@ -58,6 +59,7 @@ for (const { kind, personId, label, place } of [
     await page.locator(".inspector-person-actions .person-edit-button").click();
     const changedGroup = page.locator(".person-date-group")
       .filter({ has: page.getByRole("heading", { name: kind === "birth" ? "Рождение" : "Смерть" }) });
+    await changedGroup.locator(".person-evidence-details > summary").click();
     await changedGroup.locator(`.${kind}-place-claim > summary`).click();
     await changedGroup.locator('input[placeholder="Название в то время"]').fill("Другое место");
     await expect(page.getByRole("alert").filter({ hasText: "Источники относятся к прежнему месту" })).toBeVisible();

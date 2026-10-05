@@ -18,6 +18,7 @@ test("другую запись о рождении можно сохранит�
   await page.goto("/tree");
   await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").click();
   await page.locator(".inspector-person-actions .person-edit-button").click();
+  await page.getByText("Точные источники и варианты рождения").click();
   const alternatives = page.locator(".fact-alternatives").first();
   await alternatives.locator("summary").click();
   await alternatives.getByRole("button", { name: "Добавить другую дату" }).click();
@@ -36,6 +37,7 @@ test("другую запись о рождении можно сохранит�
   await expect(page.getByText(/Другая дата рождения: 1966.*Вторая запись о рождении/))
     .toBeVisible();
   await page.locator(".inspector-person-actions .person-edit-button").click();
+  await page.locator(".person-date-group").first().locator(".person-evidence-details > summary").click();
   const saved = page.locator(".fact-alternatives").first();
   await saved.locator("summary").click();
   await expect(saved.getByLabel("Другая дата рождения")).toHaveAttribute("readonly", "");
