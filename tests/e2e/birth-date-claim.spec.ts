@@ -25,6 +25,7 @@ test("каталожный источник относится к дате ро�
   await page.goto("/tree");
   await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").click();
   await page.locator(".inspector-person-actions .person-edit-button").click();
+  await page.getByText("Точные источники и варианты рождения").click();
   await page.getByText("Источники даты рождения").click();
   const claim = page.locator(".birth-date-claim");
   await claim.getByRole("button", { name: "Выбрать из каталога" }).click();
@@ -42,11 +43,23 @@ test("каталожный источник относится к дате ро�
   await expect(page.getByText(`Источники даты: ${title} · Оценка: Подтверждено`)).toBeVisible();
 
   await page.locator(".inspector-person-actions .person-edit-button").click();
+  await page.locator(".person-date-group").first().locator(".person-evidence-details > summary").click();
   await page.locator(".birth-date-claim > summary").click();
   await page.locator("[data-field=birth]").fill("1966");
+  await expect(page.locator(".person-date-group").first()
+    .locator(".person-evidence-details > summary")).toContainText("требуется решение");
   await expect(page.getByRole("alert").filter({ hasText: "Источники относятся к прежней дате" })).toBeVisible();
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect(page.getByText(/Источник даты рождения относится к другому значению/)).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Закрыть", exact: true }).click();
+  expect(family.people.find((item) => item.id === "e2e-child")?.birth).toBe(person.birth);
+  expect(family.people.find((item) => item.id === "e2e-child")?.birthDateClaim?.sources[0].catalogId)
+    .toBe(source.id);
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  await page.locator(".person-date-group").first().locator(".person-evidence-details > summary").click();
+  await page.locator(".birth-date-claim > summary").click();
+  await page.locator("[data-field=birth]").fill("1966");
   await page.getByRole("button", { name: "Снять связи с прежней датой" }).click();
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect.poll(() => family.people.find((item) => item.id === "e2e-child")?.birth).toBe("1966");
