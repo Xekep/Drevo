@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import type { BackupStatus } from "../../src/shared/backup-management";
 
 test("platform backups have a global endpoint and no archive picker or live restore", async ({ page }, info) => {
@@ -40,4 +40,79 @@ test("platform backups have a global endpoint and no archive picker or live rest
     await page.screenshot({ path: info.outputPath("global-backups-" + width + ".png") });
   }
   expect(familyReads).toBe(0);
+});
+
+async function managedTree(page: Page, globalRole: "admin" | "researcher" | null, preview = false) {
+  const paths: string[] = [];
+  const user = { id: "tree-owner", name: "Владелец", role: "relative", treeRole: "relative",
+    archiveOwner: true, approved: true, globalRole, fullAccess: true, createdAt: "2026-10-06" };
+  const family = { title: "Отдельное древо", description: "", people: [], photos: [], links: [], unions: [] };
+  const status: BackupStatus = { settings: { enabled: false, keepCount: 5, intervalHours: 24,
+    storage: "local", remoteHost: "", remoteDirectory: "" }, nextRunAt: null,
+    localDirectory: "/test/tree-backups", sshConfig: "", total: 1, job: null,
+    records: [{ id: "11111111-1111-4111-8111-111111111111", name: "tree-copy.tar.gz",
+      createdAt: "2026-10-06T00:00:00Z", size: 100, sha256: "a".repeat(64), storage: "local",
+      remoteHost: "", remoteDirectory: "" }] };
+  await page.route("**/api/session", (route) => route.fulfill({ json: { user,
+    account: preview ? null : { id: user.id, name: user.name, globalRole, fullAccess: true },
+    participantPreview: preview ? { id: user.id, name: user.name } : undefined,
+    local: false, canEdit: !preview, yandex: false, vk: false } }));
+  await page.route("**/api/family**", (route) => route.fulfill({ json: {
+    family, user, canEdit: !preview, local: false, revision: 1, treePreferences: {},
+  } }));
+  await page.route("**/api/settings", (route) => route.fulfill({ json: {
+    publicTree: false, publicAlbums: false, reverseTimeline: false,
+  } }));
+  await page.route("**/api/users**", (route) => route.fulfill({ json: { users: [user], total: 1, next: null } }));
+  await page.route("**/api/backups**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    paths.push(route.request().method() + " " + path);
+    if (path.endsWith("/create")) status.job = {
+      id: "created", kind: "create", state: "succeeded", startedAt: "2026-10-06T00:00:00Z",
+    };
+    if (path.endsWith("/preview")) status.job = { id: "preview", kind: "preview", state: "succeeded",
+      startedAt: "2026-10-06T00:00:00Z", preview: { token: "scoped-preview", title: "Копия древа",
+        people: 0, photos: 0, files: 0, missing: 0, currentPeople: 0, currentPhotos: 0,
+        currentCommentsLost: 0, backupCommentsSkipped: 0 } };
+    return route.fulfill({ json: path.endsWith("/create") || path.endsWith("/preview") ? status.job : status });
+  });
+  await page.route("**/api/restore/apply", (route) => {
+    paths.push("POST " + new URL(route.request().url()).pathname);
+    expect(route.request().postDataJSON()).toMatchObject({ token: "scoped-preview", confirm: true });
+    return route.fulfill({ json: { backupName: "before-restore.sqlite" } });
+  });
+  await page.goto(preview ? "/a/tree-a/preview/tree-owner/manage" : "/a/tree-a/manage");
+  return paths;
+}
+
+for (const example of [
+  { name: "researcher owner", role: "researcher" as const, preview: false, allowed: true },
+  { name: "admin owner", role: "admin" as const, preview: false, allowed: true },
+  { name: "ordinary owner", role: null, preview: false, allowed: false },
+  { name: "participant preview", role: "researcher" as const, preview: true, allowed: false },
+]) test(`manual tree backups: ${example.name}`, async ({ page }) => {
+  const paths = await managedTree(page, example.role, example.preview);
+  await expect(page.getByRole("heading", { name: "Управление древом" })).toBeVisible();
+  const tab = page.getByRole("button", { name: "Резервные копии", exact: true });
+  if (!example.allowed) {
+    await expect(tab).toHaveCount(0);
+    expect(paths).toEqual([]);
+    return;
+  }
+  await tab.click();
+  await expect(page.getByRole("button", { name: "Создать копию", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Количество копий")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Автоматические копии" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Скачать копию от/ })).toHaveAttribute("href",
+    "/a/tree-a/api/backups/11111111-1111-4111-8111-111111111111/download");
+  if (example.role === "researcher") {
+    await page.getByRole("button", { name: "Создать копию", exact: true }).click();
+    await expect.poll(() => paths).toContain("POST /a/tree-a/api/backups/create");
+    await page.getByRole("button", { name: /Восстановить копию от/ }).click();
+    await expect(page.getByRole("heading", { name: "Копия древа" })).toBeVisible();
+    await page.getByLabel("Заменить текущие данные содержимым этого бэкапа").check();
+    await page.getByRole("button", { name: "Восстановить архив", exact: true }).click();
+    await expect.poll(() => paths).toContain("POST /a/tree-a/api/restore/apply");
+  }
+  expect(paths.every((path) => path.includes("/a/tree-a/api/"))).toBe(true);
 });
