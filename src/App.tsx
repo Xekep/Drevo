@@ -1,5 +1,5 @@
 import { archiveFetch } from "./data/archive-fetch.ts";
-import { isArchiveOwner, type ArchiveUser } from "./domain/access.ts";
+import { canManageTreeBackups, isArchiveOwner, type ArchiveUser } from "./domain/access.ts";
 import { isScopedUser } from "./domain/tree-access.ts";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { confirmDiscardChanges } from "./hooks/useUnsavedChanges";
@@ -920,8 +920,6 @@ export default function App() {
               <Suspense fallback={<main className="archive-status" role="status">Загружаем админку платформы…</main>}>
                 <PlatformSettingsPage accountId={(accountSession.account || accountSession.user)!.id}
                 showRoles={Boolean(accountSession.account)}
-                primaryUser={accountSession.user}
-                local={accountSession.local === true}
                 onOwnRoleChanged={(role) => {
                   setAccountSession((current) => current?.account ? {
                     ...current,
@@ -975,6 +973,7 @@ export default function App() {
                   currentUserId={user.id}
                   platformAdmin={user.platformAdmin === true}
                   archiveOwner={isArchiveOwner(user)}
+                  backupAccess={!previewActive && canManageTreeBackups(user)}
                   publicationOwnership={publicationOwnership}
                   onClose={() => navigate("tree")}
                   onChanged={archive.reload}
