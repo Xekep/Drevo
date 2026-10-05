@@ -12417,6 +12417,21 @@ try {
     assert.equal(overLimitSummary.canImport, false);
     assert.match(overLimitSummary.warning, /150/);
     const previewArchive = await openArchive(selectedDbPath, family, personalArchiveId);
+    // A preview is advice, not the write boundary: posting its token directly
+    // must still enforce the basic owner's quota and leave the stage retryable.
+    const beforeOverLimitApply = await previewArchive.read();
+    const capacityBeforeOverLimitApply = await accountCapacity(previewArchive.db, newAccountSession.user.id);
+    const deniedOverLimitApply = await fetch(oauthBase + location.replace(/\/tree$/, "/api/drevo/import"), {
+      method: "POST", headers: { ...transferHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ token: overLimitSummary.token, confirm: true }),
+    });
+    assert.equal(deniedOverLimitApply.status, 403, await deniedOverLimitApply.text());
+    assert.deepEqual(await previewArchive.read(), beforeOverLimitApply,
+      "an over-quota apply cannot insert a partial family or advance its revision");
+    assert.deepEqual(await accountCapacity(previewArchive.db, newAccountSession.user.id),
+      capacityBeforeOverLimitApply, "a denied apply cannot charge the owner's quota");
+    assert.equal((await previewArchive.db.prepare("", "SELECT data->>'status' AS status FROM workflow_stages WHERE kind='drevo' AND token=?")
+      .get(overLimitSummary.token))?.status, "ready", "quota denial must preserve the checked stage for an authorized retry");
     const previewAuth = await createAuth(await userStore(previewArchive.db), previewArchive.db,
       process.env.PUBLIC_ORIGIN);
     let previewReadReady!: () => void;
@@ -12476,6 +12491,53 @@ try {
     assert.equal(transferSummary.canImport, true);
     const transferToken = transferSummary.token;
     const importArchive = await openArchive(selectedDbPath, family, personalArchiveId);
+    // Capacity can be consumed after an otherwise valid preview. The import
+    // must recheck the owner at apply time and release all temporary resources.
+    const portableQuotaCapacity = await accountCapacity(importArchive.db, newAccountSession.user.id);
+    assert.ok(portableQuotaCapacity.available && portableQuotaCapacity.owned);
+    assert.equal(portableQuotaCapacity.fullAccess, false);
+    assert.notEqual(portableQuotaCapacity.mediaBytes, null);
+    assert.ok(transferSummary.bytes > 0, "this package contains original media");
+    const portableQuotaUrl = "/media/portable-quota-after-preview.png";
+    await importArchive.db.transaction(async () => {
+      await importArchive.db.prepare("", "INSERT INTO media_originals(url,size_bytes) VALUES(?,?)")
+        .run(portableQuotaUrl, BASIC_MEDIA_BYTES - portableQuotaCapacity.mediaBytes!);
+      await importArchive.db.prepare("", "INSERT INTO media_upload_grants(url,user_id,expires_ms) VALUES(?,?,?)")
+        .run(portableQuotaUrl, newAccountSession.user.id, Date.now() + 600_000);
+    });
+    try {
+      const before = await importArchive.read();
+      const capacity = await accountCapacity(importArchive.db, newAccountSession.user.id);
+      assert.ok(capacity.available && capacity.owned);
+      assert.equal(capacity.mediaBytes, BASIC_MEDIA_BYTES);
+      const originals = await importArchive.db.prepare("", "SELECT count(*)::int AS n FROM media_originals").get();
+      const reservations = await importArchive.db.prepare("", "SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests WHERE reserved_bytes>0").get();
+      const platformReservations = await client.query("SELECT coalesce(sum(reserved_bytes),0)::bigint AS bytes FROM platform_upload_reservations");
+      const uploads = join(dirname(selectedDbPath), "uploads");
+      const files = () => existsSync(uploads) ? readdirSync(uploads, { recursive: true }).sort() : [];
+      const beforeFiles = files();
+      const denied = await fetch(oauthBase + location.replace(/\/tree$/, "/api/drevo/import"), {
+        method: "POST", headers: { ...transferHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ token: transferToken, confirm: true }),
+      });
+      assert.equal(denied.status, 507, await denied.text());
+      assert.deepEqual(await importArchive.read(), before, "over-quota import cannot partially write a family");
+      assert.deepEqual(await accountCapacity(importArchive.db, newAccountSession.user.id), capacity);
+      assert.equal((await importArchive.db.prepare("", "SELECT data->>'status' AS status FROM workflow_stages WHERE kind='drevo' AND token=?")
+        .get(transferToken))?.status, "ready", "quota denial leaves the checked package retryable");
+      assert.deepEqual(await importArchive.db.prepare("", "SELECT count(*)::int AS n FROM media_originals").get(), originals);
+      assert.deepEqual(await importArchive.db.prepare("", "SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests WHERE reserved_bytes>0").get(), reservations);
+      assert.deepEqual((await client.query("SELECT coalesce(sum(reserved_bytes),0)::bigint AS bytes FROM platform_upload_reservations")).rows,
+        platformReservations.rows, "quota denial releases its platform reservation");
+      assert.deepEqual(files(), beforeFiles, "quota denial removes copied originals");
+    } finally {
+      await importArchive.db.transaction(async () => {
+        await importArchive.db.prepare("", "DELETE FROM media_upload_grants WHERE url=?").run(portableQuotaUrl);
+        await importArchive.db.prepare("", "DELETE FROM media_originals WHERE url=?").run(portableQuotaUrl);
+      });
+    }
+    assert.deepEqual(await accountCapacity(importArchive.db, newAccountSession.user.id), portableQuotaCapacity);
+    console.log("runtime_portable_import_quota_apply_ok");
     const importAuth = await createAuth(await userStore(importArchive.db), importArchive.db,
       process.env.PUBLIC_ORIGIN);
     let importReadBarrier: { remaining: number; reached: () => void; gate: Promise<void> } | null = null;
