@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import pg from "pg";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { backupProcess } from "../../src/server/backup-process.ts";
@@ -33,6 +33,7 @@ try {
     CREATE TABLE history(archive_id text,data jsonb);
     CREATE TABLE family_unions(archive_id text,data jsonb);
     CREATE TABLE relations(archive_id text,sources jsonb);
+    CREATE TABLE source_catalog(archive_id text,data jsonb);
     CREATE TABLE workflow_stages(archive_id text,kind text,expires_at bigint,data jsonb,directory text);
     CREATE TABLE documents(archive_id text,file_name text,file_size bigint);
     CREATE TABLE media_upload_grants(archive_id text,url text,expires_ms bigint);
@@ -48,10 +49,16 @@ try {
     ALTER TABLE people ENABLE ROW LEVEL SECURITY; ALTER TABLE people FORCE ROW LEVEL SECURITY;
     CREATE POLICY selected_tree ON people USING(archive_id=current_setting('drevo.archive_id',true));
     INSERT INTO documents VALUES('primary-smoke','main.pdf',4),('second-smoke','other.pdf',5);
+    INSERT INTO source_catalog VALUES('second-smoke','{"url":"/media/catalog-only.pdf#page=1"}'),
+      ('second-smoke','{"url":"https://archive.invalid/media/not-local.pdf"}');
+    INSERT INTO history VALUES('second-smoke','{"sources":[{"url":"/media/history-only.pdf?page=2"},{"url":"https://archive.invalid/media/not-local-history.pdf"}]}');
   `);
   await mkdir(join(root, "uploads")); await writeFile(join(root, "uploads/main.pdf"), "main");
   await mkdir(join(root, "archives/second-smoke/uploads"), { recursive: true });
   await writeFile(join(root, "archives/second-smoke/uploads/other.pdf"), "other");
+  const catalogOriginal = join(root, "archives/second-smoke/uploads/catalog-only.pdf");
+  await writeFile(catalogOriginal, "catalog");
+  await writeFile(join(root, "archives/second-smoke/uploads/history-only.pdf"), "history");
   const stage = join(root, "snapshot"); await mkdir(stage);
   Object.assign(process.env, { DATABASE_BACKEND: "postgres", PGDATABASE: sourceName, PGUSER: operator,
     PGPASSWORD: password, PLATFORM_BACKUP_PGUSER: operator, PLATFORM_BACKUP_PGPASSWORD: password });
@@ -67,9 +74,16 @@ try {
   assert.equal((await recovered.query("SELECT count(*) AS n FROM accounts")).rows[0].n, "2");
   assert.equal((await recovered.query("SELECT value FROM platform_test_config")).rows[0].value, "global configuration");
   assert.equal((await recovered.query("SELECT count(*) AS n FROM documents")).rows[0].n, "2");
+  assert.equal((await recovered.query("SELECT count(*) AS n FROM source_catalog")).rows[0].n, "2");
+  assert.equal(await readFile(join(stage, "shared/archives/second-smoke/uploads/catalog-only.pdf"), "utf8"), "catalog");
+  assert.equal(await readFile(join(stage, "shared/archives/second-smoke/uploads/history-only.pdf"), "utf8"), "history");
+  process.env.PGUSER = operator; process.env.PGPASSWORD = password;
+  await unlink(catalogOriginal);
+  await assert.rejects(platformBackupSnapshot(join(root, "drevo.sqlite"), "primary-smoke", join(root, "missing-catalog-original"), signal),
+    { code: "ENOENT" }, "a catalog-only original cannot be silently omitted from a full-platform copy");
+  await writeFile(catalogOriginal, "catalog");
   // A scoped runtime role must not be accepted as a global operator.
   await admin.query('ALTER ROLE "' + operator + '" NOBYPASSRLS');
-  process.env.PGUSER = operator; process.env.PGPASSWORD = password;
   await assert.rejects(platformBackupSnapshot(join(root, "drevo.sqlite"), "primary-smoke", join(root, "denied"), signal),
     /Runtime-роль/);
   console.log("platform_native_multiple_archives_restore_and_role_guard_ok");

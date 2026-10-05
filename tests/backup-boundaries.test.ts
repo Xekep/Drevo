@@ -96,7 +96,11 @@ test("a historical citation keeps its original required after removal from the l
     const historicalName = "22222222-2222-4222-8222-222222222222.png";
     await f.archive.db.prepare("INSERT INTO history(revision,data) VALUES(?,?)")
       .run(100, JSON.stringify({ ...seed, photos: [], people: [{
-        id: "historical-person", sources: [{ url: "/media/" + historicalName + "#page=1" }],
+        id: "historical-person", biography: '{"url":"/media/plain-biography-text.pdf"}',
+        sources: [{ url: "/media/" + historicalName + "#page=1" },
+          { url: "https://archive.invalid/media/remote-scan.pdf" },
+          { url: "https://archive.invalid/media/remote-portrait.jpg" },
+          { url: "/media/not-a-local-original.jpg-extra" }],
       }] }));
     const snapshot = join(f.root, "historical.sqlite");
     await writeDatabaseBackup(f.archive.db, snapshot);
@@ -108,6 +112,8 @@ test("a historical citation keeps its original required after removal from the l
     const complete = join(f.root, "complete");
     await stageTreeBackupFiles(snapshot, f.root, complete);
     assert.equal(await readFile(join(complete, historicalName), "utf8"), "historical evidence");
+    await assert.rejects(readFile(join(complete, "remote-scan.pdf")), { code: "ENOENT" });
+    await assert.rejects(readFile(join(complete, "not-a-local-original.jpg")), { code: "ENOENT" });
   } finally { await f.close(); }
 });
 

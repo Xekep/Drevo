@@ -117,11 +117,9 @@ export function databaseBackupHttp({
     if ((!full && url.pathname !== "/api/backup") || req.method !== "GET")
       return false;
     const actor = await auth.currentUser(req);
-    if (!canManageTreeBackups(actor) || (!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
-      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
-        error: full
-          ? "Системную копию может скачать администратор платформы"
-          : "Копию базы может скачать администратор платформы",
+    if (!canManageTreeBackups(actor) || !!memberPreviewTarget(req))
+      return json(res, actor ? 403 : 401, {
+        error: "Копии древа доступны его владельцу с ролью администратора или исследователя платформы",
       });
 
     if (full) {

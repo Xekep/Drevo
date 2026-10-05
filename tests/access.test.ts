@@ -101,7 +101,7 @@ test("participants paginate by stable cursor and deleting a member revokes sessi
   }
 });
 
-test("OAuth roles, ownership, public sections and complete backup work through HTTP", async () => {
+test("OAuth roles, ownership, public sections and selected tree backup work through HTTP", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-access-"));
   process.env.PUBLIC_ORIGIN = "https://drevo.kiiko.ru";
   process.env.YANDEX_CLIENT_ID = "test-client";
@@ -857,7 +857,10 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     const listing = execFileSync("tar", ["-tzf", full], { encoding: "utf8" });
     assert.match(listing, /drevo.sqlite/);
     assert.ok(listing.includes(photo.url.replace("/media/", "uploads/")));
-    assert.ok(listing.includes(portrait.replace("/media/", "uploads/")));
+    assert.ok(listing.includes(newPhoto.url.replace("/media/", "uploads/")));
+    assert.equal(listing.includes(portrait.replace("/media/", "uploads/")), false,
+      "an uploaded portrait without a live or historical reference is excluded from the tree copy");
+    assert.doesNotMatch(listing, /secrets\.key|ai-chat-files|archives\//);
     assert.equal(
       listing.includes("previews/"),
       false,
@@ -873,6 +876,8 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       "ok",
     );
     assert.equal(db.prepare("SELECT count(*) AS n FROM users").get()!.n, 2);
+    assert.equal(db.prepare("SELECT count(*) AS n FROM auth_sessions").get()!.n, 0,
+      "tree copies do not transport active login sessions");
     db.close();
     await request("/api/users/second", admin, "PATCH", { role: "reader" });
     assert.equal(

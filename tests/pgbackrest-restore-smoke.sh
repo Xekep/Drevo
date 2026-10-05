@@ -62,6 +62,7 @@ CREATE TABLE archives(id text NOT NULL);
 CREATE TABLE people(archive_id text NOT NULL, data jsonb NOT NULL);
 CREATE TABLE family_unions(archive_id text NOT NULL, data jsonb NOT NULL);
 CREATE TABLE relations(archive_id text NOT NULL, sources jsonb NOT NULL);
+CREATE TABLE source_catalog(archive_id text NOT NULL, data jsonb NOT NULL);
 CREATE TABLE photos(archive_id text NOT NULL, data jsonb NOT NULL);
 CREATE TABLE history(archive_id text NOT NULL, data jsonb NOT NULL);
 CREATE TABLE media_upload_grants(archive_id text NOT NULL, url text NOT NULL, expires_ms bigint NOT NULL);
