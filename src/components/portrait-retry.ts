@@ -4,6 +4,8 @@ const mediaPath =
   /^\/(?:a\/[A-Za-z0-9][A-Za-z0-9-]{2,63}\/)?media\/[a-zA-Z0-9-]+\.(?:jpg|png|webp)$/;
 
 export const portraitRetryDelays = [400, 1200] as const;
+// A pending img/decode has no error event on some stalled connections.
+export const portraitLoadTimeoutMs = 15_000;
 
 export function retryPortraitUrl(url: string, attempt: number) {
   if (!attempt) return url;
