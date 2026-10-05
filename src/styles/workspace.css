@@ -520,23 +520,27 @@ body,
   font-size: 12px;
 }
 .admin-users-list {
+  --admin-user-actions-width: 92px;
   min-width: 0;
   border-top: 1px solid #e8ede6;
+}
+.admin-users-list:has(.admin-user-approve) {
+  --admin-user-actions-width: 180px;
 }
 .admin-users-head,
 .admin-user-row {
   display: grid;
   grid-template-columns:
-    minmax(185px, 1.2fr) minmax(85px, 0.75fr) minmax(125px, 1.2fr)
-    minmax(105px, 1fr) minmax(176px, 0.7fr);
+    minmax(0, 1.2fr) minmax(85px, 0.75fr) minmax(0, 1.2fr)
+    minmax(105px, 1fr) minmax(var(--admin-user-actions-width), 0.7fr);
   align-items: center;
   gap: 12px;
 }
 .admin-users-list.with-account-tier .admin-users-head,
 .admin-users-list.with-account-tier .admin-user-row {
   grid-template-columns:
-    minmax(165px, 1.2fr) minmax(85px, 0.7fr) minmax(90px, 0.7fr)
-    minmax(125px, 1.2fr) minmax(105px, 1fr) minmax(176px, 0.7fr);
+    minmax(0, 1.2fr) minmax(85px, 0.7fr) minmax(90px, 0.7fr)
+    minmax(0, 1.2fr) minmax(105px, 1fr) minmax(var(--admin-user-actions-width), 0.7fr);
 }
 .admin-users-head {
   padding: 13px 10px 9px;

@@ -411,9 +411,12 @@ test("participants have a separate preview action alongside deletion", async ({
     }),
   ).toBeVisible();
   for (const width of info.project.name === "desktop"
-    ? [1024, 1440]
+    ? [1000, 1024, 1440]
     : [320, 390]) {
     await page.setViewportSize({ width, height: 900 });
+    for (const participant of await page.locator(".admin-user-row").all())
+      expect(await participant.evaluate((element) =>
+        element.scrollWidth <= element.clientWidth + 1)).toBe(true);
     const actions = await page
       .locator(".admin-user-actions")
       .evaluateAll((groups) =>

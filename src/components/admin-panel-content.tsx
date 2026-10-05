@@ -245,6 +245,7 @@ function AdminUserRow({
       <div className="admin-user-actions">
         {!user.approved && (
           <button
+            className="admin-user-approve"
             type="button"
             disabled={busy}
             onClick={() => void onPatch({ approved: true })}
