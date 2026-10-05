@@ -7,6 +7,55 @@ import { treePreferencesStore } from "../src/server/tree-preferences.ts";
 import { userStore } from "../src/server/users.ts";
 import { DEFAULT_TREE_PREFERENCES } from "../src/domain/tree-preferences.ts";
 
+test("resetting a reader's view clears limits without changing another viewer or archive direction", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(db);
+    db.exec(
+      "INSERT OR REPLACE INTO tree_settings(id,reverse_timeline) VALUES(1,1)",
+    );
+    const store = treePreferencesStore(storeDatabase(db));
+    const owner = {
+      ...DEFAULT_TREE_PREFERENCES,
+      reverseTimeline: true,
+      colorScheme: "white" as const,
+    };
+    await store.write("owner", owner);
+    assert.deepEqual(
+      await store.read("new-reader"),
+      DEFAULT_TREE_PREFERENCES,
+      "new readers use ancestors above rather than the archive's old direction",
+    );
+    await store.write("reader", {
+      ...owner,
+      generationLimits: {
+        anchorId: "parent",
+        ancestors: 3,
+        descendants: 1,
+        collateral: 0,
+      },
+    });
+    assert.deepEqual(
+      await store.write("reader", {
+        ...DEFAULT_TREE_PREFERENCES,
+        generationLimits: null,
+      }),
+      DEFAULT_TREE_PREFERENCES,
+    );
+    assert.deepEqual(await store.read("owner"), owner);
+    assert.equal(
+      db.prepare("SELECT reverse_timeline FROM tree_settings WHERE id=1").get()!
+        .reverse_timeline,
+      1,
+    );
+    initializeArchiveSchema(db);
+    assert.deepEqual(await store.read("reader"), DEFAULT_TREE_PREFERENCES);
+    assert.deepEqual(await store.read("owner"), owner);
+  } finally {
+    db.close();
+  }
+});
+
 test("generation limits are personal, validated, retained by legacy writes and removable", async () => {
   const db = new DatabaseSync(":memory:");
   try {

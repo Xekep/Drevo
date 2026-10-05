@@ -433,7 +433,7 @@ export function AccountPage({
                           : family && !readTree
                             ? "Нет доступа"
                             : user.treeAccess === "common_ancestors"
-                              ? "Общие предки"
+                              ? "Кровные"
                               : "По роли в архиве"}
                       </strong>
                     </div>

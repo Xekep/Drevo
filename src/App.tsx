@@ -1284,7 +1284,7 @@ export default function App() {
             <button onClick={archive.reload}>Повторить загрузку</button>
           </main>
         ) : (
-          <ArchiveLoading />
+          <ArchiveLoading canvas={view === "tree"} />
         )}
       </div>
       {(archive.committedUploadNotice || notice) && (

@@ -1,6 +1,7 @@
 export type Role = "admin" | "researcher" | "relative" | "reader";
 export type TreeRole = "relative" | "reader";
 export type GlobalRole = "admin" | "researcher" | null;
+/** common_ancestors is the persisted key for blood relatives and their partners. */
 export type TreeAccess = "all" | "common_ancestors";
 export type ArchiveUser = {
   id: string;

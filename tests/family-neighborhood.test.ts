@@ -114,7 +114,7 @@ test("common ancestors include the full blood branch but exclude spouses, stepfa
   assert.deepEqual([...commonAncestorNetwork(index, "outsider")], ["outsider"]);
   assert.equal(commonAncestorNetwork(index, "missing").size, 0);
 });
-test("blood view adds recorded partners once without extending the blood or access network", () => {
+test("blood view adds recorded partners once without extending their blood branch", () => {
   const data = archive();
   data.people.find((p) => p.id === "sibling")!.spouses = [];
   data.people.find((p) => p.id === "stepmother")!.spouses.push("outsider");

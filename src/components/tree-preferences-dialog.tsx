@@ -3,6 +3,7 @@ import {
   ANCESTOR_GENERATIONS,
   DESCENDANT_GENERATIONS,
   COLLATERAL_GENERATIONS,
+  DEFAULT_TREE_PREFERENCES,
   type Person,
   type TreePreferences,
 } from "../domain";
@@ -111,6 +112,21 @@ export function TreePreferencesDialog({
       title="Вид древа"
       onClose={onClose}
       className="tree-preferences-dialog"
+      headerActions={
+        <button
+          className="tree-preferences-reset"
+          type="button"
+          disabled={saving}
+          onClick={() =>
+            void choose({
+              ...DEFAULT_TREE_PREFERENCES,
+              generationLimits: null,
+            })
+          }
+        >
+          Сбросить вид
+        </button>
+      }
     >
       <div className="tree-preferences">
         <fieldset disabled={saving}>

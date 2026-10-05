@@ -8,6 +8,7 @@ export function EditorDialog({
   inline = false,
   suspended = false,
   className = "",
+  headerActions,
 }: {
   title: string;
   onClose: () => void;
@@ -16,6 +17,7 @@ export function EditorDialog({
   inline?: boolean;
   suspended?: boolean;
   className?: string;
+  headerActions?: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useLayoutEffect(() => {
@@ -32,6 +34,7 @@ export function EditorDialog({
       <section className={`inline-editor ${className}`} aria-label={title}>
         <header>
           <h2>{title}</h2>
+          {headerActions}
           <button
             type="button"
             className="icon-button"
@@ -57,6 +60,7 @@ export function EditorDialog({
     >
       <header>
         <h2>{title}</h2>
+        {headerActions}
         <button
           type="button"
           className="icon-button"
