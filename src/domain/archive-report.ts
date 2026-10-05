@@ -1,4 +1,5 @@
 import { analyzeArchiveWarnings } from "./archive-quality.ts";
+import { CLAIM_CONFIDENCE_LABELS } from "./claim-confidence.ts";
 import { fullName } from "./dates.ts";
 import { familyNeighbors } from "./family-neighborhood.ts";
 import { lineageReport } from "./lineage-report.ts";
@@ -70,6 +71,21 @@ export function archiveReport(
       .filter((item): item is Person => Boolean(item))
       .sort((a, b) => fullName(a).localeCompare(fullName(b), "ru"));
   const personLine = (item: Person) => `${fullName(item)} (${life(item)})`;
+  const parentClaim = (child: Person, parent: Person) =>
+    child.parents.includes(parent.id)
+      ? child.parentClaims?.find((claim) => claim.parentId === parent.id)
+      : undefined;
+  const parentEvidence = (child: Person, parent: Person) => {
+    const claim = parentClaim(child, parent);
+    const edge = `${fullName(parent)} → ${fullName(child)}`;
+    return [
+      ...(claim?.confidence
+        ? [`  Оценка родительства (${edge}): ${CLAIM_CONFIDENCE_LABELS[claim.confidence]}`]
+        : []),
+      ...[...new Set((claim?.sources || []).map(sourceLine).filter(Boolean))]
+        .map((source) => `  Источник родительства (${edge}): ${source}`),
+    ];
+  };
 
   if (kind === "person") {
     add("Основное", [
@@ -81,15 +97,13 @@ export function archiveReport(
       ...(person.occupation ? [`Занятие: ${person.occupation}`] : []),
     ]);
     add("Семья", [
-      ...relatives(person.parents).map(
-        (item) => `Родитель: ${personLine(item)}`,
-      ),
+      ...relatives(person.parents).flatMap((item) =>
+        [`Родитель: ${personLine(item)}`, ...parentEvidence(person, item)]),
       ...relatives(person.spouses).map(
         (item) => `Супруг(а): ${personLine(item)}`,
       ),
-      ...relatives(index.children.get(anchorId) || []).map(
-        (item) => `Ребёнок: ${personLine(item)}`,
-      ),
+      ...relatives(index.children.get(anchorId) || []).flatMap((item) =>
+        [`Ребёнок: ${personLine(item)}`, ...parentEvidence(item, person)]),
     ]);
     add("Биография", person.biography ? [person.biography] : []);
     add(
@@ -109,7 +123,11 @@ export function archiveReport(
       ["Партнёры", person.spouses],
       ["Дети", [...(index.children.get(anchorId) || [])]],
     ] as const)
-      add(heading, relatives(ids).map(personLine));
+      add(heading, relatives(ids).flatMap((item) => [
+        personLine(item),
+        ...(heading === "Родители" ? parentEvidence(person, item)
+          : heading === "Дети" ? parentEvidence(item, person) : []),
+      ]));
     const siblings = new Set<string>();
     for (const parentId of person.parents)
       for (const childId of index.children.get(parentId) || [])
@@ -215,6 +233,15 @@ export function archiveReport(
         (warning) => `${warning.title}: ${warning.detail}`,
       ),
     );
+    add("Оценки родительства", scope.people.flatMap((child) =>
+      child.parents.flatMap((parentId) => {
+        if (!ids.has(parentId)) return [];
+        const parent = index.people.get(parentId);
+        const confidence = parent && parentClaim(child, parent)?.confidence;
+        return confidence && parent
+          ? [`${fullName(parent)} → ${fullName(child)}: ${CLAIM_CONFIDENCE_LABELS[confidence]}`]
+          : [];
+      })));
     add(
       "Источники ветки",
       [
@@ -223,6 +250,14 @@ export function archiveReport(
             ...item.sources.map(
               (source) => `${fullName(item)}: ${sourceLine(source)}`,
             ),
+            ...item.parents.flatMap((parentId) => {
+              if (!ids.has(parentId)) return [];
+              const parent = index.people.get(parentId);
+              if (!parent) return [];
+              const edge = `${fullName(parent)} → ${fullName(item)}`;
+              return (parentClaim(item, parent)?.sources || []).map((source) =>
+                `${edge}: ${sourceLine(source)}`);
+            }),
             ...(item.events || []).flatMap((event) =>
               (event.sources || []).map(
                 (source) =>

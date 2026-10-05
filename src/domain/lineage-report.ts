@@ -1,7 +1,13 @@
 import { fullName } from "./dates.ts";
 import { familyNeighbors } from "./family-neighborhood.ts";
+import { CLAIM_CONFIDENCE_LABELS } from "./claim-confidence.ts";
 import { repositorySummary } from "./person-sources.ts";
-import type { Family } from "./types.ts";
+import type { Family, Source } from "./types.ts";
+
+const sourceLine = (source: Source) =>
+  [source.title, source.reference, repositorySummary(source), source.url]
+    .filter(Boolean)
+    .join(" · ");
 
 export type LineageDirection = "ancestors" | "descendants";
 
@@ -57,14 +63,18 @@ export function lineageReport(
         lines.push(`   Место смерти: ${person.deathPlace}`);
       const parents = person.parents
         .filter((parentId) => index.people.has(parentId))
-        .map((parentId) => fullName(index.people.get(parentId)!));
-      if (parents.length) lines.push(`   Родители: ${parents.join(", ")}`);
+        .map((parentId) => index.people.get(parentId)!);
+      if (parents.length) lines.push(`   Родители: ${parents.map(fullName).join(", ")}`);
+      for (const parent of parents) {
+        const claim = person.parentClaims?.find((item) => item.parentId === parent.id);
+        const edge = `${fullName(parent)} → ${fullName(person)}`;
+        if (claim?.confidence)
+          lines.push(`   Оценка родительства (${edge}): ${CLAIM_CONFIDENCE_LABELS[claim.confidence]}`);
+        for (const source of new Set((claim?.sources || []).map(sourceLine).filter(Boolean)))
+          lines.push(`   Источник родительства (${edge}): ${source}`);
+      }
       for (const source of person.sources)
-        lines.push(
-          `   Источник: ${[source.title, source.reference, repositorySummary(source), source.url]
-            .filter(Boolean)
-            .join(" · ")}`,
-        );
+        lines.push(`   Источник: ${sourceLine(source)}`);
     }
   }
   return lines.join("\n") + "\n";
