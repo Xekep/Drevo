@@ -232,7 +232,7 @@ export function faceDescriptorsHttp({
         ? 403 : 401;
     if (!(await auth.canEdit(req)))
       return json(res, (await auth.currentUser(req)) ? 403 : await missingActorStatus(), {
-        error: "You do not have editing access",
+        error: "Нет прав на изменение архива",
       });
     const actor = await auth.currentUser(req);
     if (!actor) return json(res, await missingActorStatus(), {

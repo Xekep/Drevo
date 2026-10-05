@@ -203,7 +203,7 @@ test("photo uploads keep originals after commit and reject revoked issuing sessi
       const denied = await preflightRequest;
       assert.equal(denied.status, lostAccess === "logout" ? 401 : 403,
         `${lostAccess} between preflight lookups must not become an internal error`);
-      assert.deepEqual(await denied.json(), { error: "You do not have editing access" });
+      assert.deepEqual(await denied.json(), { error: "Нет прав на изменение архива" });
       assert.deepEqual(await rows(), before, "preflight denial creates no photo or grant");
       assert.equal(readdirSync(uploads).length, fileCount,
         "preflight denial does not retain an original file");

@@ -86,7 +86,7 @@ export function mediaUploadHttp({
         archive.db.kind === "postgres" && !auth.local
           ? issuingSession ? 403 : 401
           : requester ? 403 : 401,
-        { error: "You do not have editing access" },
+        { error: "Нет прав на изменение архива" },
       );
     if (req.headers["x-drevo-upload"] !== "1")
       return json(res, 400, { error: "Некорректная загрузка" });
