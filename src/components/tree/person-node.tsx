@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useMemo } from "react";
+import { createContext, memo, useContext, useMemo, type CSSProperties } from "react";
 import {
   Handle,
   Position,
@@ -96,9 +96,9 @@ export const PersonNode = memo(function PersonNode({
   const person = currentPeople?.get(nodeData.person.id) || nodeData.person;
   const data = person === nodeData.person ? nodeData : { ...nodeData, person };
   const longPress = useLongPress(() => selectOnly(data.person.id));
-  // Preserve a usable screen target at overview zoom without changing layout.
-  const controlScale = useStore((state) =>
-    Math.min(6, Math.max(1, Math.ceil((1 / state.transform[2]) * 4) / 4)),
+  // Expand only the transparent hit area; the pill scales with its portrait.
+  const controlTarget = useStore((state) =>
+    24 * Math.min(6, Math.max(1, Math.ceil((1 / state.transform[2]) * 4) / 4)),
   );
   const detail = useStore((s) =>
     s.transform[2] < 0.18
@@ -285,9 +285,8 @@ export const PersonNode = memo(function PersonNode({
         <button
           className="flow-collapse nodrag nopan"
           style={{
-            transform: `scale(${controlScale})`,
-            transformOrigin: "center top",
-          }}
+            "--branch-target": `${controlTarget}px`,
+          } as CSSProperties}
           aria-label={`${branchTitle}: ${data.childrenCount} потомков`}
           title={branchTitle}
           onClick={() => collapse(data.person.id, id)}

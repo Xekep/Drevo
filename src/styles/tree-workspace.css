@@ -2394,11 +2394,10 @@
   fill: #fff;
 }
 .flow-person.is-portrait-card .flow-collapse {
-  top: auto;
-  right: -3px;
-  bottom: -30px;
+  top: 116px;
+  right: 22px;
+  bottom: auto;
   min-height: 30px;
-  min-width: 34px;
   padding: 4px 8px;
   border: 1px solid #cbdcc4;
   border-radius: 999px;
@@ -2411,13 +2410,15 @@
   border-color: #72986e;
   background: #f1f7eb;
 }
-.flow-person.is-overview .flow-collapse {
-  min-width: 30px;
-  padding: 4px;
-  justify-content: center;
-}
-.flow-person.is-overview .flow-collapse span {
-  display: none;
+.flow-person.is-portrait-card .flow-collapse::before {
+  content: "";
+  position: absolute;
+  /* Extra width grows away from the centre of the portrait and its name. */
+  left: 0;
+  top: 50%;
+  width: max(100%, var(--branch-target, 24px));
+  height: max(100%, var(--branch-target, 24px));
+  transform: translateY(-50%);
 }
 /* The shared wash hugs the photos; the names remain on the open canvas. */
 .tree-canvas.has-portrait-cards
