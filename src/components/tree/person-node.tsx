@@ -139,7 +139,7 @@ export const PersonNode = memo(function PersonNode({
     [detail, getRelationLabel, data.person],
   );
   const lifespan = years(data.person);
-  const cardLabel = `${fullName(data.person)}${lifespan ? ` ${lifespan}` : ""}${relationLabel ? ` ${relationLabel}` : ""}${data.person.needsReview ? ", требует проверки" : ""}`;
+  const cardLabel = `${fullName(data.person)}${lifespan ? `, ${lifespan}` : ""}${relationLabel ? `, ${relationLabel}` : ""}${data.person.needsReview ? ", требует проверки" : ""}`;
   const branchAction = data.collapsed ? "Развернуть" : "Свернуть";
   const branchTitle = `${branchAction} ветвь`;
   const privacyLabel =
@@ -286,7 +286,7 @@ export const PersonNode = memo(function PersonNode({
           className="flow-collapse nodrag nopan"
           style={{
             transform: `scale(${controlScale})`,
-            transformOrigin: "left center",
+            transformOrigin: "center top",
           }}
           aria-label={`${branchTitle}: ${data.childrenCount} потомков`}
           title={branchTitle}

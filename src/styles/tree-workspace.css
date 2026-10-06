@@ -2394,9 +2394,9 @@
   fill: #fff;
 }
 .flow-person.is-portrait-card .flow-collapse {
-  top: 116px;
-  right: 22px;
-  bottom: auto;
+  top: auto;
+  right: -3px;
+  bottom: -30px;
   min-height: 30px;
   min-width: 34px;
   padding: 4px 8px;
