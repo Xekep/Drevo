@@ -9,7 +9,7 @@ import { canEditArchive } from "../domain/access.ts";
 export function sessionHttp(
   auth: Awaited<ReturnType<typeof createAuth>>,
   db: StoreDatabase,
-  providers: { yandex: boolean; vk: () => Promise<boolean>; email: boolean },
+  providers: { yandex: boolean; vk: () => Promise<boolean>; email: boolean | (() => Promise<boolean>) },
   beforeDelivery?: () => Promise<void>,
 ) {
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
@@ -18,7 +18,7 @@ export function sessionHttp(
       local: auth.local,
       yandex: providers.yandex,
       vk: await providers.vk(),
-      email: providers.email,
+      email: typeof providers.email === "function" ? await providers.email() : providers.email,
     };
     const guest = { ...enabled, canEdit: false, account: null, user: null };
     const localBody = async () => {

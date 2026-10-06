@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import nodemailer from "nodemailer";
+import { environmentSmtpConfiguration, smtpSender, type EmailSender } from "./email-sender.ts";
 import type { createAuth } from "./auth.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import {
@@ -16,35 +16,12 @@ import {
 } from "./request-rate-limit.ts";
 import { postgresEmailRateLimit } from "./postgres-email-rate-limit.ts";
 
-type EmailSender = (to: string, subject: string, text: string) => Promise<void>;
-
 function configuredSender(): EmailSender | null {
   const { SMTP_HOST, SMTP_PORT, SMTP_FROM, SMTP_USER, SMTP_PASSWORD } =
     process.env;
   if (!SMTP_HOST || !SMTP_PORT || !SMTP_FROM || !SMTP_USER || !SMTP_PASSWORD)
     return null;
-  const port = Number(SMTP_PORT);
-  if (
-    !/^[A-Za-z0-9.-]{1,253}$/.test(SMTP_HOST) ||
-    !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(SMTP_FROM) ||
-    !Number.isInteger(port) ||
-    port < 1 ||
-    port > 65535
-  )
-    throw new Error("Некорректная конфигурация SMTP.");
-  const transport = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port,
-    secure: port === 465,
-    requireTLS: port !== 465,
-    auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
-    connectionTimeout: 10_000,
-    greetingTimeout: 10_000,
-    socketTimeout: 15_000,
-  });
-  return async (to, subject, text) => {
-    await transport.sendMail({ from: SMTP_FROM, to, subject, text });
-  };
+  return smtpSender(environmentSmtpConfiguration());
 }
 
 export function emailAuthHttp(
@@ -54,6 +31,7 @@ export function emailAuthHttp(
   sender: EmailSender | null = process.env.EMAIL_AUTH_ENABLED === "1"
     ? configuredSender()
     : null,
+  configuration?: () => Promise<{ enabled: boolean; sender: EmailSender | null }>,
 ) {
   const enabled =
     process.env.EMAIL_AUTH_ENABLED === "1" &&
@@ -107,9 +85,19 @@ export function emailAuthHttp(
 
   return {
     enabled,
+    async isEnabled() {
+      if (!configuration) return enabled;
+      const current = await configuration();
+      return current.enabled && !!current.sender && db.kind === "postgres" && !!db.postgresTransaction && !!origin;
+    },
     async handle(req: IncomingMessage, res: ServerResponse, url: URL) {
       if (!url.pathname.startsWith("/api/auth/email/")) return false;
-      if (!credentials)
+      const current = configuration ? await configuration() : null;
+      const requestEnabled = current?.enabled && !!current.sender && db.kind === "postgres" && !!db.postgresTransaction && !!origin;
+      const requestCredentials = configuration
+        ? requestEnabled ? emailCredentials(db, current!.sender!, origin!) : null
+        : credentials;
+      if (!requestCredentials)
         return json(res, 503, { error: "Вход по почте пока не настроен." });
       if (req.method !== "POST")
         return json(res, 405, { error: "Метод не поддерживается." });
@@ -134,12 +122,12 @@ export function emailAuthHttp(
           return json(res, 429, {
             error: "Слишком много попыток. Повторите позже.",
           });
-        if (!(await sharedLimit!.allow(client, address)))
+        if (!(await (sharedLimit || postgresEmailRateLimit(db)).allow(client, address)))
           return json(res, 429, {
             error: "Слишком много попыток. Повторите позже.",
           });
         if (url.pathname === "/api/auth/email/register") {
-          await credentials.requestRegistration({
+          await requestCredentials.requestRegistration({
             email: body.email,
             name: body.name,
             password: body.password,
@@ -147,12 +135,12 @@ export function emailAuthHttp(
           return json(res, 202, registrationRequested);
         }
         if (url.pathname === "/api/auth/email/verify") {
-          const account = await credentials.verifyRegistration(body.token);
+          const account = await requestCredentials.verifyRegistration(body.token);
           await auth.issueAccountSession(req, res, account.accountId);
           return json(res, 200, { archiveId: account.archiveId });
         }
         if (url.pathname === "/api/auth/email/login") {
-          const account = await credentials.login({
+          const account = await requestCredentials.login({
             email: body.email,
             password: body.password,
           });
@@ -168,18 +156,18 @@ export function emailAuthHttp(
           });
         }
         if (url.pathname === "/api/auth/email/reset/request") {
-          await credentials.requestReset(body.email);
+          await requestCredentials.requestReset(body.email);
           return json(res, 202, resetRequested);
         }
         if (url.pathname === "/api/auth/email/reset/complete") {
-          await credentials.resetPassword(body.token, body.password);
+          await requestCredentials.resetPassword(body.token, body.password);
           return json(res, 200, { message: "Пароль изменён. Войдите заново." });
         }
         if (url.pathname === "/api/auth/email/password/change") {
           const session = await auth.accountSession(req);
           if (!session)
             return json(res, 401, { error: "Сначала войдите в аккаунт." });
-          const revoked = await credentials.changePassword(
+          const revoked = await requestCredentials.changePassword(
             session.accountId,
             session.tokenHash,
             body.currentPassword,
@@ -198,7 +186,7 @@ export function emailAuthHttp(
             return json(res, 403, {
               error: "Для подключения почты снова войдите через Яндекс или VK.",
             });
-          await credentials.requestLink(
+          await requestCredentials.requestLink(
             session.accountId,
             {
               email: body.email,
@@ -221,7 +209,7 @@ export function emailAuthHttp(
               error:
                 "Снова войдите через Яндекс или VK и откройте ссылку из письма.",
             });
-          await credentials.verifyLink(
+          await requestCredentials.verifyLink(
             session.accountId,
             body.token,
             session.tokenHash,

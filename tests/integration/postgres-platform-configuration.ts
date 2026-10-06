@@ -4,6 +4,8 @@ import type pg from "pg";
 import type { StoreDatabase } from "../../src/server/store-database.ts";
 import { adminAccessHttp } from "../../src/server/admin-access-http.ts";
 import { adminVkAuthHttp } from "../../src/server/admin-vk-auth-http.ts";
+import { adminEmailAuthHttp } from "../../src/server/admin-email-auth-http.ts";
+import { emailAuthSettingsStore } from "../../src/server/email-auth-settings.ts";
 import { adminResearchResourcesHttp } from "../../src/server/admin-research-resources-http.ts";
 import { createAuth } from "../../src/server/auth.ts";
 import { userStore } from "../../src/server/users.ts";
@@ -166,6 +168,7 @@ export async function verifyPlatformConfigurationRevocation(
     adminAccessHttp({ db, auth: guardedAuth, users,
       visibility: await settingsStore(db), publicOrigin: origin }),
     adminVkAuthHttp(guardedAuth, vkAuthSettingsStore(db, origin), origin),
+    adminEmailAuthHttp(guardedAuth, emailAuthSettingsStore(db, origin), origin),
     adminResearchResourcesHttp({ auth: guardedAuth,
       catalog: researchCatalogStore(db), publicOrigin: origin }),
   ];
@@ -188,6 +191,8 @@ export async function verifyPlatformConfigurationRevocation(
     return {
       storage: JSON.stringify(await readStorageLimits(db)),
       vk: JSON.stringify(await vkAuthSettingsStore(db, origin).read()),
+      email: JSON.stringify(await emailAuthSettingsStore(db, origin).read()),
+      emailAudit: (await client.query("SELECT count(*)::int AS n FROM platform_config_audit WHERE item_id='email-auth'")).rows[0].n,
       categories: JSON.stringify(await researchCatalogStore(db).list()),
     };
   }
@@ -200,7 +205,7 @@ export async function verifyPlatformConfigurationRevocation(
     gate = { reached, wait };
     const before = await snapshot();
     const pending = fetch(base + path, {
-      method: path === "/api/settings/storage" || path === "/api/admin/auth/vk" ? "PUT" : "POST",
+      method: path === "/api/settings/storage" || path === "/api/admin/auth/vk" || path === "/api/admin/auth/email" ? "PUT" : "POST",
       headers,
       body: JSON.stringify(body),
     });
@@ -232,7 +237,7 @@ export async function verifyPlatformConfigurationRevocation(
   }
   try {
     // Platform access comes from the account, not a root-archive membership.
-    for (const path of ["/api/settings/storage", "/api/admin/auth/vk",
+    for (const path of ["/api/settings/storage", "/api/admin/auth/vk", "/api/admin/auth/email",
       "/api/admin/research-resources"])
       assert.equal((await fetch(base + path, { headers })).status, 200,
         `${path} is available to a platform admin without archive membership`);
@@ -243,6 +248,31 @@ export async function verifyPlatformConfigurationRevocation(
     await revokedWrite("/api/admin/auth/vk", {
       enabled: true, clientId: "67890",
     }, "grant");
+    const email = emailAuthSettingsStore(db, origin);
+    const smtp = { enabled: false, host: "smtp.example.org", port: 587,
+      user: "mail-user", from: "mail@example.org", password: "smtp-fixture-secret" };
+    const emailSession = { accountId: actorId, tokenHash };
+    assert.equal((await email.write(smtp, emailSession)).hasPassword, true);
+    const cipher = (await client.query("SELECT password_cipher FROM platform_email_auth_settings WHERE id=1")).rows[0].password_cipher;
+    assert.ok(cipher.startsWith("v1."));
+    assert.ok(!cipher.includes(smtp.password));
+    const otherStore = emailAuthSettingsStore(db, origin);
+    assert.equal((await otherStore.runtime()).enabled, false);
+    const withoutSecret = { enabled: smtp.enabled, host: smtp.host, port: smtp.port,
+      user: smtp.user, from: smtp.from };
+    assert.equal((await email.write({ ...withoutSecret, enabled: true }, emailSession)).available, true);
+    assert.equal((await otherStore.runtime()).enabled, true,
+      "another runtime reads changes without a restart");
+    assert.equal((await client.query("SELECT password_cipher FROM platform_email_auth_settings WHERE id=1")).rows[0].password_cipher, cipher,
+      "omitting a password preserves the current ciphertext");
+    assert.ok(!JSON.stringify(await email.read()).includes(smtp.password));
+    await assert.rejects(email.write({ ...withoutSecret, enabled: true, password: null }, emailSession), /включения/);
+    assert.equal((await email.read()).available, true, "failed validation leaves the stored configuration intact");
+    await revokedWrite("/api/admin/auth/email", { ...withoutSecret, enabled: false }, "grant");
+    await revokedWrite("/api/admin/auth/email/test", { to: "test@example.org" }, "grant");
+    assert.equal((await email.write({ ...withoutSecret, password: null }, emailSession)).hasPassword, false);
+    assert.equal((await otherStore.runtime()).enabled, false);
+    await client.query("DELETE FROM platform_email_auth_settings WHERE id=1");
     await revokedWrite("/api/admin/research-resources/categories", {
       name: "Revoked category",
     }, "grant");
@@ -265,6 +295,10 @@ export async function verifyPlatformConfigurationRevocation(
       body: JSON.stringify({ expected: afterRace, next: expected }),
     });
     assert.equal(reset.status, 200, await reset.text());
+    await revokedWrite("/api/admin/auth/email", withoutSecret, "session");
+    // Restore the fixture session for the existing session-revocation case.
+    await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)",
+      [tokenHash, actorId, Date.now() + 600_000]);
     await revokedWrite("/api/admin/research-resources/categories", {
       name: "Logged-out category",
     }, "session");
