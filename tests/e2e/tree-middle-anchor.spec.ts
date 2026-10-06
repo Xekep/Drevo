@@ -24,6 +24,8 @@ for (const mode of ["Близкие", "Кровные"]) {
     const canvas = page.locator(".tree-canvas");
     await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
     await page.locator('.flow-person[data-person-id="e2e-child"] .flow-person-content').first().click();
+    if (info.project.name === "mobile")
+      await page.getByRole("button", { name: "Свернуть панель" }).click();
     await familyViewAction(page, mode);
     await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
     const scope = page.locator('.tree-family-name[title^="' + mode + ':"]');
