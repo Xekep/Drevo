@@ -58,3 +58,24 @@ HTTP не выполняет DROP/замену работающей платфо
 SQLite: остановить приложение, убрать старые WAL/SHM; platform.sqlite установить под именем из manifest вместе с тем же shared/ и ключами. Замена старого drevo.sqlite на PostgreSQL ничего не восстанавливает.
 
 RPO определяется возрастом согласованной копии и доступностью off-host storage. RTO подтверждается измеренным восстановлением; цифр пока нет. Физические pgBackRest/WAL-копии и pre-deploy snapshots сохраняют собственные runbook и не удаляются этой подсистемой.
+
+## Проверка production — 6 октября 2026 года
+
+[Релиз #817](https://github.com/Xekep/Drevo/pull/817) опубликован через успешный
+[deploy workflow](https://github.com/Xekep/Drevo/actions/runs/37394471452).
+Публичный `/api/health` подтвердил `e5933c0eebab66db754fe6534b73a38248b2039c-1`.
+Оператор использует локальный socket/SCRAM; PostgreSQL остаётся без TCP listener.
+Оператор — NOSUPERUSER/BYPASSRLS, CONNECTION LIMIT 2; runtime —
+NOSUPERUSER/NOBYPASSRLS. Operator EnvironmentFile подключён к app/backup units.
+
+Ручной `ops/backup.sh --now` выполнен от пользователя сервиса с app/operator
+окружением. Локальная копия содержит два архива и 172 оригинальных файла;
+размер 278 479 470 байт. Проверены тип и размер файла, совпадение SHA-256 с
+каталогом, PostgreSQL manifest с тем же release ID и source database,
+читаемость `platform.pgdump` через `pg_restore --list` и наличие таблиц
+archives/accounts/archive_memberships/people/documents и оригиналов.
+
+Это подтверждает создание и целостность локальной копии, **не восстановление
+production**. Изолированное восстановление синтетической multi-archive копии
+прошло в [CI](https://github.com/Xekep/Drevo/actions/runs/37392262483).
+Off-host storage, внешний DR и измеренный production RPO/RTO не подтверждены.
