@@ -1,4 +1,5 @@
-import { ageLabel, dateYear, hasRecordedDeath } from "./dates.ts";
+import { ageLabel, dateYear, hasRecordedDeath, plural, validDate } from "./dates.ts";
+import { averageAdultLifespansBySex } from "./lifespan-statistics.ts";
 import { ERAS } from "./layout.ts";
 import { EVENT_NAMES } from "./person-events.ts";
 import type { Person } from "./types.ts";
@@ -16,6 +17,8 @@ export type TimelineItem = {
   place?: string;
   age?: string;
   kind: "birth" | "death" | "event" | "award";
+  estimated?: boolean;
+  description?: string;
 };
 export type TimelineGroup = {
   year: number;
@@ -31,22 +34,58 @@ export type TimelineRow = {
   height: number;
   birthYear: number | null;
   deathYear: number | null;
+  estimatedDeath?: { year: number; averageYears: number; sampleSize: number };
 };
 
-/** Only a recorded death removes a person from a historical year. */
+/** Display estimates affect chronology only, never stored dates or statistics. */
 export function timelineRowsAtYear(
   rows: readonly TimelineRow[],
   year: number,
+  currentYear = new Date().getFullYear(),
 ): TimelineRow[] {
-  return rows.filter(
-    (row) =>
-      row.birthYear !== null &&
+  return rows.filter((row) => {
+    const end = row.deathYear ?? row.estimatedDeath?.year ?? null;
+    return row.birthYear !== null &&
       row.birthYear <= year &&
-      (row.deathYear === null || row.deathYear >= year),
-  );
+      (end === null ? !hasRecordedDeath(row.person) || year < currentYear : end >= year);
+  });
 }
 
-function personItems(person: Person): TimelineItem[] {
+function estimatedDeath(
+  person: Person,
+  currentYear: number,
+  averages: ReturnType<typeof averageAdultLifespansBySex>,
+  lastChildBirth?: number,
+): TimelineRow["estimatedDeath"] {
+  if (!hasRecordedDeath(person) || person.death || !validDate(person.birth) ||
+    (person.sex !== "m" && person.sex !== "f")) return;
+  const { averageYears, sampleSize } = averages[person.sex];
+  if (averageYears === null) return;
+  const birth = dateYear(person.birth);
+  let earliest = Math.max(birth, lastChildBirth === undefined ? birth
+    : lastChildBirth - Number(person.sex === "m")), latest = currentYear;
+  for (const event of person.events || []) {
+    if (event.type === "other") continue;
+    if (event.type === "burial") {
+      const date = validDate(event.endDate) ? event.endDate : event.date;
+      if (validDate(date)) latest = Math.min(latest, dateYear(date));
+      continue;
+    }
+    for (const date of [event.date, event.endDate]) {
+      if (!validDate(date)) continue;
+      const year = dateYear(date);
+      earliest = Math.max(earliest, year);
+    }
+  }
+  if (earliest > latest) return;
+  return {
+    year: Math.max(earliest, Math.min(latest, birth + Math.round(averageYears + 10))),
+    averageYears,
+    sampleSize,
+  };
+}
+
+function personItems(person: Person, estimate: TimelineRow["estimatedDeath"]): TimelineItem[] {
   const items: TimelineItem[] = [];
   if (person.birth)
     items.push({
@@ -60,7 +99,7 @@ function personItems(person: Person): TimelineItem[] {
   for (const event of person.events || [])
     items.push({
       id: `${person.id}:event:${event.id}`,
-      year: event.date ? dateYear(event.date) : null,
+      year: validDate(event.date) ? dateYear(event.date) : null,
       date: event.dateText || event.date || "Без даты",
       title: event.title || EVENT_NAMES[event.type],
       place: event.place,
@@ -77,11 +116,21 @@ function personItems(person: Person): TimelineItem[] {
   if (person.death)
     items.push({
       id: `${person.id}:death`,
-      year: dateYear(person.death),
+      year: validDate(person.death) ? dateYear(person.death) : null,
       date: person.death,
       title: "Смерть",
       place: person.deathPlace || undefined,
       kind: "death",
+    });
+  else if (estimate)
+    items.push({
+      id: `${person.id}:estimated-death`,
+      year: estimate.year,
+      date: String(estimate.year),
+      title: "Предположительная смерть",
+      kind: "death",
+      estimated: true,
+      description: `Оценка по архиву: средняя продолжительность жизни ${person.sex === "f" ? "женщин" : "мужчин"} за последние 100 лет — ${estimate.averageYears.toLocaleString("ru-RU")} лет (${estimate.sampleSize} ${plural(estimate.sampleSize, "запись", "записи", "записей")}) + 10 лет. Учтены известные даты и текущий год. Это расчётная отметка; дата смерти неизвестна.`,
     });
   const born = person.birth ? dateYear(person.birth) : null;
   for (const item of items) {
@@ -118,14 +167,20 @@ export function horizontalTimeline(
   reverse = false,
   currentYear = new Date().getFullYear(),
 ) {
+  const averages = averageAdultLifespansBySex(people, currentYear);
+  const childBirths = new Map<string, number>();
+  for (const child of people)
+    if (validDate(child.birth))
+      for (const parent of child.parents)
+        childBirths.set(parent, Math.max(childBirths.get(parent) ?? 0, dateYear(child.birth)));
   const prepared = people
-    .filter((person) => !!person.birth)
-    .map((person) => ({
-      person,
-      items: personItems(person),
-    }));
+    .filter((person) => validDate(person.birth))
+    .map((person) => {
+      const estimate = estimatedDeath(person, currentYear, averages, childBirths.get(person.id));
+      return { person, estimate, items: personItems(person, estimate) };
+    });
   let earliest = currentYear - 100,
-    latest = currentYear;
+    latest = currentYear + 20;
   for (const { items } of prepared)
     for (const item of items) {
       if (item.year === null) continue;
@@ -155,7 +210,7 @@ export function horizontalTimeline(
         a.person.name.localeCompare(b.person.name, "ru")
       );
     })
-    .map(({ person, items }) => {
+    .map(({ person, items, estimate }) => {
       const byYear = new Map<number, TimelineItem[]>();
       const undated: TimelineItem[] = [];
       for (const item of items) {
@@ -183,7 +238,8 @@ export function horizontalTimeline(
         undated,
         height: Math.max(142, 80 + laneEnds.length * EVENT_LANE_HEIGHT),
         birthYear: person.birth ? dateYear(person.birth) : null,
-        deathYear: person.death ? dateYear(person.death) : null,
+        deathYear: validDate(person.death) ? dateYear(person.death) : null,
+        ...(estimate ? { estimatedDeath: estimate } : {}),
       };
     });
   const eras = ERAS.filter((era) => era.end > start && era.start < end).map(
@@ -202,6 +258,7 @@ export function horizontalTimeline(
     (_, index) => start + index * 10,
   ).map((year) => ({ year, x: yearX(year) }));
   return {
+    currentYear,
     start,
     end,
     width,

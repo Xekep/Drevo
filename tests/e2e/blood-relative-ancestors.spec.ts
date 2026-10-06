@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Family, Person } from "../../src/domain/types.ts";
 
-test("blood view includes unmarried co-parent ancestry but leaves lateral relatives hidden", async ({ page, isMobile }) => {
+test("blood view includes an unmarried co-parent but leaves their ancestors and lateral relatives hidden", async ({ page, isMobile }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const snapshot = await (await page.request.get("/api/family")).json();
   const family = structuredClone(snapshot.family) as Family;
@@ -42,10 +42,10 @@ test("blood view includes unmarried co-parent ancestry but leaves lateral relati
   if (isMobile) await page.getByLabel("Область просмотра", { exact: true }).click();
   await page.getByRole("button", { name: "Кровные", exact: true }).click();
   if (isMobile) await page.getByLabel("Область просмотра", { exact: true }).click();
-  await expect(page.locator(".tree-family-count")).toHaveText("8 из 11");
-  for (const id of ["co-parent", "co-grandparent"])
+  await expect(page.locator(".tree-family-count")).toHaveText("7 из 11");
+  for (const id of ["co-parent"])
     await expect(page.getByTestId(`rf__node-${id}`)).toBeAttached();
-  for (const id of ["co-sibling", "co-other-child", "co-other"])
+  for (const id of ["co-grandparent", "co-sibling", "co-other-child", "co-other"])
     await expect(page.getByTestId(`rf__node-${id}`)).toHaveCount(0);
   await page.getByRole("button", { name: "Всё древо", exact: true }).click();
   await expect(page.locator(".tree-family-count")).toHaveCount(0);

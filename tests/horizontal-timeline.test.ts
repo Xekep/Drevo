@@ -108,11 +108,12 @@ test("chronology excludes people without a birth date even when they have dated 
   assert.ok(model.yearX(1900) < model.yearX(2026));
 });
 
-test("chronology ends at the current year unless a recorded event is later", () => {
+test("chronology extends twenty years ahead and keeps later recorded events", () => {
   const current = horizontalTimeline([person("dated", "1940")], false, 2026);
-  assert.equal(current.end, 2026);
-  assert.equal(current.ticks.at(-1)?.year, 2020);
-  assert.equal(current.yearAtX(current.width), 2026);
+  assert.equal(current.end, 2046);
+  assert.equal(current.currentYear, 2026);
+  assert.equal(current.ticks.at(-1)?.year, 2040);
+  assert.equal(current.yearAtX(current.width), 2046);
 
   const future = horizontalTimeline(
     [
@@ -123,8 +124,12 @@ test("chronology ends at the current year unless a recorded event is later", () 
     false,
     2026,
   );
-  assert.equal(future.end, 2032);
-  assert.equal(future.yearAtX(future.width), 2032);
+  assert.equal(future.end, 2046);
+  assert.equal(future.yearAtX(future.width), 2046);
+  const later = horizontalTimeline([person("later", "2000", {
+    events: [{ id: "later-event", type: "work", date: "2060" }],
+  })], false, 2026);
+  assert.equal(later.end, 2060);
 });
 
 test("historical year reveals births and removes people only after a recorded death", () => {
@@ -163,7 +168,7 @@ test("dense chronology preserves bounds and same-year event order beyond the arg
   for (const item of people) Object.freeze(item);
   const model = horizontalTimeline(people, false, 2026);
   assert.equal(model.start, 1870);
-  assert.equal(model.end, 2032);
+  assert.equal(model.end, 2046);
   assert.equal(model.rows.length, 1000);
   assert.ok(Number.isFinite(model.width));
   for (const row of model.rows) {
@@ -173,4 +178,83 @@ test("dense chronology preserves bounds and same-year event order beyond the arg
     assert.equal(grouped.items.at(-1)!.id, `${row.person.id}:event:event-148`);
     assert.equal(row.person.events, events);
   }
+});
+
+test("marked deaths without dates use the recorded adult average for their own sex only", () => {
+  const people = [
+    person("male-sixty", "1900", { death: "1960" }),
+    person("male-eighty", "1900", { death: "1980" }),
+    person("female-ninety", "1900", { sex: "f", death: "1990" }),
+    person("estimated-male", "1850", { deceased: true }),
+    person("estimated-female", "1880", { sex: "f", deceased: true }),
+    person("unknown-sex", "1850", { sex: "u", deceased: true }),
+    person("living", "1850"),
+    person("young-deceased", "2000", { deceased: true }),
+  ];
+  const before = structuredClone(people);
+  const model = horizontalTimeline(people, false, 2026);
+  const row = (id: string) => model.rows.find((item) => item.person.id === id)!;
+  assert.deepEqual(row("estimated-male").estimatedDeath,
+    { year: 1930, averageYears: 70, sampleSize: 2 });
+  assert.deepEqual(row("estimated-female").estimatedDeath,
+    { year: 1980, averageYears: 90, sampleSize: 1 });
+  assert.equal(row("estimated-male").deathYear, null, "the estimate is not a recorded death");
+  const item = row("estimated-male").groups.find((group) => group.year === 1930)?.items[0];
+  assert.equal(item?.title, "Предположительная смерть");
+  assert.equal(item?.estimated, true);
+  assert.match(item?.description || "", /100 лет.*70 лет.*2 записи.*10 лет.*расчётная отметка/);
+  assert.equal(row("unknown-sex").estimatedDeath, undefined);
+  assert.equal(row("living").estimatedDeath, undefined);
+  assert.equal(row("young-deceased").estimatedDeath?.year, 2026,
+    "a person already marked deceased cannot receive a future death estimate");
+  const ids = (year: number) => timelineRowsAtYear(model.rows, year, model.currentYear)
+    .map((item) => item.person.id);
+  assert.ok(ids(1930).includes("estimated-male"));
+  assert.ok(!ids(1931).includes("estimated-male"));
+  assert.ok(ids(1979).includes("estimated-female"));
+  assert.ok(!ids(1981).includes("estimated-female"));
+  assert.ok(!ids(2026).includes("unknown-sex"));
+  assert.deepEqual(ids(2046), ["living"]);
+  assert.deepEqual(people, before, "display estimates never mutate archive dates or events");
+});
+
+test("death estimates respect life events and burial, but not posthumous awards", () => {
+  const model = horizontalTimeline([
+    person("sample", "1900", { death: "1960" }),
+    person("work", "1850", { deceased: true,
+      events: [{ id: "work", type: "work", date: "1935", endDate: "1940" }] }),
+    person("burial", "1850", { deceased: true,
+      events: [{ id: "burial", type: "burial", date: "1900" }] }),
+    person("award", "1850", { deceased: true,
+      awards: [{ id: "award", name: "Посмертная награда", year: "2000" }] }),
+    person("contradictory", "1850", { deceased: true,
+      events: [
+        { id: "work", type: "work", date: "1940" },
+        { id: "burial", type: "burial", date: "1900" },
+      ] }),
+    person("father", "1850", { deceased: true }),
+    person("daughter", "1945", { parents: ["father"] }),
+  ], false, 2026);
+  const estimate = (id: string) => model.rows.find((row) => row.person.id === id)?.estimatedDeath;
+  assert.equal(estimate("work")?.year, 1940);
+  assert.equal(estimate("burial")?.year, 1900);
+  assert.equal(estimate("award")?.year, 1920);
+  assert.equal(estimate("contradictory"), undefined);
+  assert.equal(estimate("father")?.year, 1944,
+    "a later recorded child's birth constrains the father's estimate, allowing a posthumous birth");
+});
+
+test("missing lifespan samples never produce a death year or keep known deceased people in the future", () => {
+  const model = horizontalTimeline([
+    person("no-sample", "1900", { deceased: true }),
+    person("death-place", "1900", { deathPlace: "Москва" }),
+    person("no-birth", "", { deceased: true }),
+    person("invalid-birth", "unknown", { deceased: true }),
+    person("living", "1900"),
+  ], false, 2026);
+  assert.equal(model.rows.length, 3);
+  assert.ok(model.rows.every((row) => row.estimatedDeath === undefined));
+  assert.equal(timelineRowsAtYear(model.rows, 1950, model.currentYear).length, 3);
+  assert.deepEqual(timelineRowsAtYear(model.rows, 2046, model.currentYear)
+    .map((row) => row.person.id), ["living"]);
 });

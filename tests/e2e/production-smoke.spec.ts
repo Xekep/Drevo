@@ -306,7 +306,7 @@ test("близкие и кровные центрируют человека, а
   const bloodButton = page.getByRole("button", { name: "Кровные" });
   await expect(bloodButton).toHaveAttribute(
     "title",
-    "Кровные родственники\n\nРодственники, с которыми есть кровное родство, их предки и партнеры (муж/жена).",
+    "Кровные родственники\n\nРодственники, с которыми есть кровное родство, их партнеры и вторые родители кровных потомков, даже без брака.",
   );
   await bloodButton.click();
   await page.getByRole("button", { name: "Всё древо" }).click();

@@ -308,6 +308,22 @@ test("simultaneous living peak excludes people without a recorded birth", () => 
   );
 });
 
+test("overlapping generations exclude known deceased people without death dates", () => {
+  const family: Family = { title: "Тест", description: "", demo: false, people: [
+    person("dated-one", "Анна", "1850", 1, { death: "1920" }),
+    person("dated-two", "Иван", "1900", 2, { death: "1970" }),
+    person("marked", "Мария", "1850", 3, { deceased: true }),
+    person("death-place", "Пётр", "1870", 4, { deathPlace: "Москва" }),
+    person("unknown-birth", "Нина", "", 5, { deceased: true }),
+  ] };
+  const facts = analyzeFamilyInsights(family, 2026).facts;
+  assert.equal(facts.find((fact) => fact.title === "Поколений одновременно")?.value, "2");
+  assert.equal(facts.find((fact) => fact.title === "Больше всего родственников жили одновременно")?.value, "2");
+  const onlyUnknownDeaths = analyzeFamilyInsights({ ...family,
+    people: family.people.filter((item) => !item.death) }, 2026).facts;
+  assert.ok(!onlyUnknownDeaths.some((fact) => fact.title === "Поколений одновременно"));
+});
+
 test("average lifespan by sex counts only known birth and death years", () => {
   const people = [
     person("m1", "Пётр", "1900", 1, { sex: "m", death: "1970" }),
