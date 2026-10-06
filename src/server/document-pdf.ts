@@ -1,7 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { decodePdfPages } from "./document-pdf-decoder.ts";
+import {
+  pdfDecodeCoordinator,
+  PdfDecodeBusyError,
+} from "./pdf-decode-coordinator.ts";
 
 export type PdfPageSize = { width: number; height: number };
 const validPages = (pages: unknown): pages is PdfPageSize[] =>
@@ -19,9 +22,13 @@ const validPages = (pages: unknown): pages is PdfPageSize[] =>
   );
 
 /** Immutable originals share a small disk manifest; decoding stays serialized. */
-export function pdfDocumentPages(directory: string, decode = decodePdfPages) {
+export function pdfDocumentPages(
+  directory: string,
+  decode?: ReturnType<typeof pdfDecodeCoordinator>["decode"],
+) {
   const pending = new Map<string, Promise<PdfPageSize[]>>();
-  let tail = Promise.resolve();
+  const ownedDecoder = decode ? undefined : pdfDecodeCoordinator();
+  const decodePages = decode ?? ownedDecoder!.decode;
   const controller = new AbortController();
   const pages = async (path: string) => {
     if (controller.signal.aborted) throw new Error("Подготовка PDF отменена");
@@ -41,9 +48,8 @@ export function pdfDocumentPages(directory: string, decode = decodePdfPages) {
         throw error;
     }
     if (pending.has(key)) return await pending.get(key)!;
-    if (pending.size >= 8) throw new Error("Очередь подготовки PDF заполнена");
-    const task = tail.then(async () => {
-      const result = await decode(path, controller.signal);
+    if (pending.size >= 8) throw new PdfDecodeBusyError();
+    const task = decodePages(path, controller.signal).then(async (result) => {
       if (!validPages(result))
         throw new Error("Некорректные размеры страниц PDF");
       await mkdir(directory, { recursive: true });
@@ -57,10 +63,6 @@ export function pdfDocumentPages(directory: string, decode = decodePdfPages) {
       return result;
     });
     pending.set(key, task);
-    tail = task.then(
-      () => {},
-      () => {},
-    );
     try {
       return await task;
     } finally {
@@ -70,7 +72,8 @@ export function pdfDocumentPages(directory: string, decode = decodePdfPages) {
   return Object.assign(pages, {
     async close() {
       controller.abort();
-      await tail;
+      await Promise.allSettled([...pending.values()]);
+      await ownedDecoder?.close();
     },
   });
 }
