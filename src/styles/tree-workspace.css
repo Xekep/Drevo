@@ -2411,6 +2411,14 @@
   border-color: #72986e;
   background: #f1f7eb;
 }
+.flow-person.is-overview .flow-collapse {
+  min-width: 30px;
+  padding: 4px;
+  justify-content: center;
+}
+.flow-person.is-overview .flow-collapse span {
+  display: none;
+}
 /* The shared wash hugs the photos; the names remain on the open canvas. */
 .tree-canvas.has-portrait-cards
   .flow-household:not(.flow-household--siblings)::before {

@@ -19,7 +19,7 @@ const validPages = (pages: unknown): pages is PdfPageSize[] =>
   );
 
 /** Immutable originals share a small disk manifest; decoding stays serialized. */
-export function pdfDocumentPages(directory: string) {
+export function pdfDocumentPages(directory: string, decode = decodePdfPages) {
   const pending = new Map<string, Promise<PdfPageSize[]>>();
   let tail = Promise.resolve();
   const controller = new AbortController();
@@ -43,18 +43,18 @@ export function pdfDocumentPages(directory: string) {
     if (pending.has(key)) return await pending.get(key)!;
     if (pending.size >= 8) throw new Error("Очередь подготовки PDF заполнена");
     const task = tail.then(async () => {
-        const result = await decodePdfPages(path, controller.signal);
-        if (!validPages(result))
-          throw new Error("Некорректные размеры страниц PDF");
-        await mkdir(directory, { recursive: true });
-        const temporary = join(directory, `.${randomUUID()}.tmp`);
-        try {
-          await writeFile(temporary, JSON.stringify(result));
-          await rename(temporary, cachedPath);
-        } finally {
-          await rm(temporary, { force: true });
-        }
-        return result;
+      const result = await decode(path, controller.signal);
+      if (!validPages(result))
+        throw new Error("Некорректные размеры страниц PDF");
+      await mkdir(directory, { recursive: true });
+      const temporary = join(directory, `.${randomUUID()}.tmp`);
+      try {
+        await writeFile(temporary, JSON.stringify(result));
+        await rename(temporary, cachedPath);
+      } finally {
+        await rm(temporary, { force: true });
+      }
+      return result;
     });
     pending.set(key, task);
     tail = task.then(

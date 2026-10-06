@@ -28,6 +28,10 @@ import { assertProductionOrigin } from "./runtime-config.ts";
 import { imagePreviews } from "./image-previews.ts";
 import { requestMetrics } from "./request-metrics.ts";
 import { derivedCacheMaintenance } from "./derived-cache-maintenance.ts";
+import {
+  pdfDecodeCoordinator,
+  PdfDecodeBusyError,
+} from "./pdf-decode-coordinator.ts";
 import { archiveHttp } from "./archive-http.ts";
 import { gedcomHttp } from "./gedcom-http.ts";
 import { portableExportHttp } from "./portable-http.ts";
@@ -38,7 +42,10 @@ import { platformBackupCoordinator } from "./platform-backup-coordinator.ts";
 import { platformBackupHttp } from "./platform-backup-http.ts";
 import { backupManagementHttp } from "./backup-management-http.ts";
 import { indexReferencedMediaOriginals } from "./media-originals.ts";
-import { configuredDatabaseBackend, type StoreDatabase } from "./store-database.ts";
+import {
+  configuredDatabaseBackend,
+  type StoreDatabase,
+} from "./store-database.ts";
 import { accountArchiveDirectory } from "./account-archives.ts";
 import { accountArchivesHttp } from "./account-archives-http.ts";
 import { accountDataExportHttp } from "./account-data-export-http.ts";
@@ -71,7 +78,9 @@ type StartedServer = {
     path?: string,
   ) => Promise<void>;
   close: () => Promise<void>;
-  poolDiagnostics: () => ReturnType<NonNullable<StoreDatabase["poolDiagnostics"]>> | null;
+  poolDiagnostics: () => ReturnType<
+    NonNullable<StoreDatabase["poolDiagnostics"]>
+  > | null;
 };
 
 export async function startServer(
@@ -81,6 +90,7 @@ export async function startServer(
   oauthFetch?: typeof fetch,
   aiFetch?: typeof fetch,
   archiveId?: string,
+  sharedPdfDecoder?: ReturnType<typeof pdfDecodeCoordinator>,
 ): Promise<StartedServer> {
   assertProductionOrigin(
     process.env.NODE_ENV === "production",
@@ -90,7 +100,8 @@ export async function startServer(
     databasePath ||
     process.env.DATABASE_PATH ||
     resolve(root, "data/drevo.sqlite");
-  const configuredPath = selectedPath === ":memory:" ? selectedPath : resolve(selectedPath);
+  const configuredPath =
+    selectedPath === ":memory:" ? selectedPath : resolve(selectedPath);
   if (archiveId && !/^[a-zA-Z0-9][a-zA-Z0-9-]{2,63}$/.test(archiveId))
     throw new Error("Некорректный archive_id");
   if (archiveId && configuredDatabaseBackend(configuredPath) !== "postgres")
@@ -126,6 +137,8 @@ export async function startServer(
       throw new AggregateError(errors, "Не удалось закрыть ресурсы сервера");
   };
   try {
+    const pdfDecoder = sharedPdfDecoder ?? pdfDecodeCoordinator();
+    if (!sharedPdfDecoder) own(() => pdfDecoder.close());
     const archive = await openArchive(
       dbPath,
       validateFamily(
@@ -137,26 +150,41 @@ export async function startServer(
     );
     own(() => archive.close());
     if (!archiveId)
-      await initializePlatformConfiguration(archive.db, process.env.ARCHIVE_ID || "");
-    const providerCleanup = archive.db.kind === "postgres"
-      ? await aiProviderCleanup(archive.db, configuredPath, aiFetch)
-      : undefined;
+      await initializePlatformConfiguration(
+        archive.db,
+        process.env.ARCHIVE_ID || "",
+      );
+    const providerCleanup =
+      archive.db.kind === "postgres"
+        ? await aiProviderCleanup(archive.db, configuredPath, aiFetch)
+        : undefined;
     let providerCleanupRun: Promise<void> | null = null;
-    const sweepProviderObjects = !archiveId && providerCleanup
-      ? () => {
-          if (providerCleanupRun) return;
-          providerCleanupRun = Promise.all([
-            providerCleanup.process(2), providerCleanup.processInputFiles(2),
-          ].map((run) => run.catch(() => {
-            console.warn(JSON.stringify({ event: "ai.provider_cleanup_failed" }));
-          })))
-            .then(() => undefined)
-            .finally(() => { providerCleanupRun = null; });
-        }
-      : null;
+    const sweepProviderObjects =
+      !archiveId && providerCleanup
+        ? () => {
+            if (providerCleanupRun) return;
+            providerCleanupRun = Promise.all(
+              [
+                providerCleanup.process(2),
+                providerCleanup.processInputFiles(2),
+              ].map((run) =>
+                run.catch(() => {
+                  console.warn(
+                    JSON.stringify({ event: "ai.provider_cleanup_failed" }),
+                  );
+                }),
+              ),
+            )
+              .then(() => undefined)
+              .finally(() => {
+                providerCleanupRun = null;
+              });
+          }
+        : null;
     sweepProviderObjects?.();
     const providerCleanupTimer = sweepProviderObjects
-      ? setInterval(sweepProviderObjects, 60_000) : null;
+      ? setInterval(sweepProviderObjects, 60_000)
+      : null;
     providerCleanupTimer?.unref();
     own(async () => {
       if (providerCleanupTimer) clearInterval(providerCleanupTimer);
@@ -232,16 +260,39 @@ export async function startServer(
     const visibility = await settingsStore(archive.db);
     const users = await userStore(archive.db);
     const auth = await createAuth(users, archive.db, publicOrigin);
-    const managePlatformRoles = platformRolesHttp(archive.db, auth, publicOrigin);
+    const managePlatformRoles = platformRolesHttp(
+      archive.db,
+      auth,
+      publicOrigin,
+    );
     const managePlatformCleanup = !archiveId
-      ? platformAiProviderCleanupHttp({ auth, db: archive.db, providerCleanup, publicOrigin })
+      ? platformAiProviderCleanupHttp({
+          auth,
+          db: archive.db,
+          providerCleanup,
+          publicOrigin,
+        })
       : null;
-    const managePlatformTiers = platformTiersHttp(archive.db, auth, publicOrigin);
+    const managePlatformTiers = platformTiersHttp(
+      archive.db,
+      auth,
+      publicOrigin,
+    );
     const listPlatformAccounts = platformAccountsHttp(archive.db, auth);
-    const emailSettings = !archiveId ? emailAuthSettingsStore(archive.db, publicOrigin) : null;
-    const manageEmailAuth = emailSettings ? adminEmailAuthHttp(auth, emailSettings, publicOrigin) : null;
+    const emailSettings = !archiveId
+      ? emailAuthSettingsStore(archive.db, publicOrigin)
+      : null;
+    const manageEmailAuth = emailSettings
+      ? adminEmailAuthHttp(auth, emailSettings, publicOrigin)
+      : null;
     const emailAuth = emailSettings
-      ? emailAuthHttp(archive.db, auth, publicOrigin, null, emailSettings.runtime)
+      ? emailAuthHttp(
+          archive.db,
+          auth,
+          publicOrigin,
+          null,
+          emailSettings.runtime,
+        )
       : null;
     const listAccountArchives = accountArchivesHttp(
       auth,
@@ -308,17 +359,29 @@ export async function startServer(
                 oauthFetch,
                 aiFetch,
                 id,
+                pdfDecoder,
               ),
           )
         : null;
     own(async () => {
       await routedArchives?.close();
     });
-    const backups = await backupCoordinator(archive.db, dbPath, { treeOnly: true, schedule: false });
-    const platformBackups = !archiveId ? await platformBackupCoordinator(archive.db, configuredPath) : null;
+    const backups = await backupCoordinator(archive.db, dbPath, {
+      treeOnly: true,
+      schedule: false,
+    });
+    const platformBackups = !archiveId
+      ? await platformBackupCoordinator(archive.db, configuredPath)
+      : null;
     if (platformBackups) own(() => platformBackups.close());
     const managePlatformBackups = platformBackups
-      ? platformBackupHttp({ backups: platformBackups, auth, db: archive.db, publicOrigin }) : null;
+      ? platformBackupHttp({
+          backups: platformBackups,
+          auth,
+          db: archive.db,
+          publicOrigin,
+        })
+      : null;
     own(() => backups.close());
     const manageBackups = backupManagementHttp({
       backups,
@@ -340,6 +403,7 @@ export async function startServer(
       uploadsDirectory: resolve(dirname(dbPath), "uploads"),
       selectedArchiveId: archiveId,
       providerCleanup,
+      decodePdf: pdfDecoder.decode,
       serveStatic,
     });
     const stopRequests = own(() => handleArchive.close());
@@ -443,25 +507,45 @@ export async function startServer(
         ),
         path = parsedUrl.pathname;
       if (path === "/api/admin/runtime" && req.method === "GET") {
-        if (!await auth.isPlatformAdmin(req))
+        if (!(await auth.isPlatformAdmin(req)))
           return json(res, 403, { error: "Требуется администратор платформы" });
         const rootPool = archive.db.poolDiagnostics?.();
         const scoped = routedArchives?.diagnostics();
-        return json(res, 200, { requests: metrics.snapshot(),
-          process: { uptimeSeconds: Math.floor(process.uptime()), memory: process.memoryUsage(),
-            cpuMicroseconds: process.cpuUsage() },
-          archives: scoped ? { open: scoped.open, active: scoped.active, queued: scoped.queued } : null,
+        return json(res, 200, {
+          requests: metrics.snapshot(),
+          process: {
+            uptimeSeconds: Math.floor(process.uptime()),
+            memory: process.memoryUsage(),
+            cpuMicroseconds: process.cpuUsage(),
+          },
+          archives: scoped
+            ? {
+                open: scoped.open,
+                active: scoped.active,
+                queued: scoped.queued,
+              }
+            : null,
           pools: [...(rootPool ? [rootPool] : []), ...(scoped?.pools || [])],
+          pdf: pdfDecoder.diagnostics(),
         });
       }
       if (routedArchives && (await routedArchives.route(req, res, parsedUrl)))
         return;
       if (path.startsWith("/api/")) await auth.refreshSession(req, res);
       if (emailAuth && (await emailAuth.handle(req, res, parsedUrl))) return;
-      if (manageEmailAuth && (await manageEmailAuth(req, res, parsedUrl))) return;
+      if (manageEmailAuth && (await manageEmailAuth(req, res, parsedUrl)))
+        return;
       if (await managePlatformRoles(req, res, parsedUrl)) return;
-      if (managePlatformBackups && await managePlatformBackups(req, res, parsedUrl)) return;
-      if (managePlatformCleanup && await managePlatformCleanup(req, res, parsedUrl)) return;
+      if (
+        managePlatformBackups &&
+        (await managePlatformBackups(req, res, parsedUrl))
+      )
+        return;
+      if (
+        managePlatformCleanup &&
+        (await managePlatformCleanup(req, res, parsedUrl))
+      )
+        return;
       if (await managePlatformTiers(req, res, parsedUrl)) return;
       if (await listPlatformAccounts(req, res, parsedUrl)) return;
       if (await listAccountArchives(req, res, parsedUrl)) return;
@@ -508,6 +592,11 @@ export async function startServer(
       activeRequests++;
       void handle(req, res)
         .catch((error) => {
+          if (error instanceof PdfDecodeBusyError && !res.headersSent) {
+            res.setHeader("Retry-After", "2");
+            json(res, 503, { error: error.message });
+            return;
+          }
           console.error(
             JSON.stringify({
               level: "error",

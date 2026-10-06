@@ -25,14 +25,14 @@ CREATE POLICY archive_scope ON document_citation_index_state
   WITH CHECK (archive_id=current_setting('drevo.archive_id',true));
 
 CREATE OR REPLACE FUNCTION sync_document_citation_refs() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SET search_path=pg_catalog AS $$
 BEGIN
   IF TG_OP <> 'INSERT' THEN
-    DELETE FROM document_citation_refs
+    DELETE FROM public.document_citation_refs
       WHERE archive_id=OLD.archive_id AND kind=TG_ARGV[0] AND entity_id=OLD.id;
   END IF;
   IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
-  INSERT INTO document_citation_refs(archive_id,document_id,kind,entity_id)
+  INSERT INTO public.document_citation_refs(archive_id,document_id,kind,entity_id)
     SELECT DISTINCT NEW.archive_id,ref #>> '{}',TG_ARGV[0],NEW.id
     FROM jsonb_path_query(to_jsonb(NEW)->TG_ARGV[1],'$.**.documentId') AS ref
     WHERE jsonb_typeof(ref)='string' AND ref #>> '{}' <> ''

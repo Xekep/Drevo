@@ -6,7 +6,16 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { ChevronDown, ChevronUp, CircleAlert, Copy, Eye, EyeOff, LoaderCircle, Plus } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  CircleAlert,
+  Copy,
+  Eye,
+  EyeOff,
+  LoaderCircle,
+  Plus,
+} from "lucide-react";
 import { fullName, resolvedSex, years, type Person } from "../../domain";
 import { useTreePublicationStatus } from "./tree-publication-provider";
 import { Avatar } from "../person-panel";
@@ -29,7 +38,11 @@ export const TreeActions = createContext<{
   expand: (id: string, occurrenceId?: string) => void;
   reference: (personId: string, occurrenceId: string) => void;
   publishPerson?: (personId: string) => void;
-  publicationUpdate?: { personId: string; published: boolean; archiveId: string | null } | null;
+  publicationUpdate?: {
+    personId: string;
+    published: boolean;
+    archiveId: string | null;
+  } | null;
   relationLabel: (person: Person) => string;
 }>({
   choose: () => {},
@@ -85,7 +98,7 @@ export const PersonNode = memo(function PersonNode({
   const longPress = useLongPress(() => selectOnly(data.person.id));
   // Preserve a usable screen target at overview zoom without changing layout.
   const controlScale = useStore((state) =>
-    Math.min(6, Math.max(1, Math.ceil(1 / state.transform[2] * 4) / 4)),
+    Math.min(6, Math.max(1, Math.ceil((1 / state.transform[2]) * 4) / 4)),
   );
   const detail = useStore((s) =>
     s.transform[2] < 0.18
@@ -107,27 +120,38 @@ export const PersonNode = memo(function PersonNode({
     const y = ty + node.internals.positionAbsolute.y * zoom;
     const right = x + (node.measured?.width || node.width || width) * zoom;
     const bottom = y + (node.measured?.height || node.height || height) * zoom;
-    return right >= -128 && bottom >= -128 &&
-      x <= state.width + 128 && y <= state.height + 128;
+    return (
+      right >= -128 &&
+      bottom >= -128 &&
+      x <= state.width + 128 &&
+      y <= state.height + 128
+    );
   });
-  const { status: publicationStatus, refresh: checkPublication } = useTreePublicationStatus(
-    data.person.id, !!publishPerson && portraitVisible,
-  );
+  const { status: publicationStatus, refresh: checkPublication } =
+    useTreePublicationStatus(
+      data.person.id,
+      !!publishPerson && portraitVisible,
+    );
   const compact = detail !== "full";
   const overview = detail === "overview" || detail === "distant";
   const relationLabel = useMemo(
-    () => detail === "distant" ? "" : getRelationLabel(data.person),
+    () => (detail === "distant" ? "" : getRelationLabel(data.person)),
     [detail, getRelationLabel, data.person],
   );
   const lifespan = years(data.person);
   const cardLabel = `${fullName(data.person)}${lifespan ? ` ${lifespan}` : ""}${relationLabel ? ` ${relationLabel}` : ""}${data.person.needsReview ? ", требует проверки" : ""}`;
   const branchAction = data.collapsed ? "Развернуть" : "Свернуть";
   const branchTitle = `${branchAction} ветвь`;
-  const privacyLabel = publicationStatus === "published" ? "Доступен для поиска"
-    : publicationStatus === "hidden" ? "Недоступен для поиска"
-    : publicationStatus === "error" ? "Не удалось проверить доступность для поиска"
-    : publicationStatus === "loading" ? "Проверяем доступность для поиска"
-    : "Проверить доступность для поиска";
+  const privacyLabel =
+    publicationStatus === "published"
+      ? "Доступен для поиска"
+      : publicationStatus === "hidden"
+        ? "Недоступен для поиска"
+        : publicationStatus === "error"
+          ? "Не удалось проверить доступность для поиска"
+          : publicationStatus === "loading"
+            ? "Проверяем доступность для поиска"
+            : "Проверить доступность для поиска";
   return (
     <div
       className={`flow-person is-portrait-card ${selected ? "is-selected" : ""} ${data.spotlit ? "is-spotlit" : ""} ${data.person.needsReview ? "is-needs-review" : ""} ${data.outsideSpotlight ? "is-outside-spotlight" : ""} ${compact ? "is-compact" : ""} ${overview ? "is-overview" : ""} ${detail === "distant" ? "is-distant" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
@@ -187,13 +211,22 @@ export const PersonNode = memo(function PersonNode({
             className={`person-avatar ${resolvedSex(data.person) === "f" ? "female" : resolvedSex(data.person) === "m" ? "male" : "unknown"}`}
             aria-hidden="true"
           >
-            {detail === "distant" && !gpu && !deferPortraits && <PortraitPlaceholder compact />}
+            {detail === "distant" && !gpu && !deferPortraits && (
+              <PortraitPlaceholder compact />
+            )}
           </span>
-        ) : <Avatar person={data.person} loading="eager" />}
+        ) : (
+          <Avatar person={data.person} loading="eager" />
+        )}
         <span className="portrait-card-info">
           <strong>{fullName(data.person)}</strong>{" "}
           {lifespan && <span className="portrait-card-years">{lifespan}</span>}
-          {relationLabel && <>{" "}<small>{relationLabel}</small></>}
+          {relationLabel && (
+            <>
+              {" "}
+              <small>{relationLabel}</small>
+            </>
+          )}
         </span>
       </button>
       {publishPerson && (
@@ -209,10 +242,15 @@ export const PersonNode = memo(function PersonNode({
             publishPerson(data.person.id);
           }}
         >
-          {publicationStatus === "published" ? <Eye size={18} aria-hidden="true" />
-            : publicationStatus === "hidden" ? <EyeOff size={18} aria-hidden="true" />
-            : publicationStatus === "error" ? <CircleAlert size={18} aria-hidden="true" />
-            : <LoaderCircle size={18} aria-hidden="true" />}
+          {publicationStatus === "published" ? (
+            <Eye size={18} aria-hidden="true" />
+          ) : publicationStatus === "hidden" ? (
+            <EyeOff size={18} aria-hidden="true" />
+          ) : publicationStatus === "error" ? (
+            <CircleAlert size={18} aria-hidden="true" />
+          ) : (
+            <LoaderCircle size={18} aria-hidden="true" />
+          )}
         </button>
       )}
       {(data.occurrences || 0) > 1 && (
@@ -246,7 +284,10 @@ export const PersonNode = memo(function PersonNode({
       {!data.familyFocus && detail !== "distant" && data.childrenCount > 0 && (
         <button
           className="flow-collapse nodrag nopan"
-          style={{ transform: `scale(${controlScale})`, transformOrigin: "right bottom" }}
+          style={{
+            transform: `scale(${controlScale})`,
+            transformOrigin: "left center",
+          }}
           aria-label={`${branchTitle}: ${data.childrenCount} потомков`}
           title={branchTitle}
           onClick={() => collapse(data.person.id, id)}
