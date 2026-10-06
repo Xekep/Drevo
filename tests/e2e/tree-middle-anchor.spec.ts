@@ -30,7 +30,7 @@ for (const mode of ["Близкие", "Кровные"]) {
     await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
     const scope = page.locator('.tree-family-name[title^="' + mode + ':"]');
     await expect(scope).toHaveCount(1);
-    await expect(canvas.getByRole("button", { name: "Всё древо", exact: true })).toHaveCount(1);
+    await expect(canvas.getByRole("button", { name: "Всё древо", exact: true, includeHidden: true })).toHaveCount(1);
     const anchor = page.getByRole("status", { name: "Опорный человек" });
     await anchor.getByRole("button", { name: "Снять ограничения поколений" }).click();
     await expect(anchor).toHaveCount(0);
