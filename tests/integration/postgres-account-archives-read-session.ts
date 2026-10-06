@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { Client } from "pg";
+import pg from "pg";
 import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import { accountArchivesHttp } from "../../src/server/account-archives-http.ts";
 import { createAuth } from "../../src/server/auth.ts";
@@ -143,6 +144,7 @@ export async function verifyAccountArchivesReadSessionRevocation(db: StoreDataba
       }
     }
   };
+  const competingWriter = new pg.Client();
   try {
     const current = await list(activeToken);
     const currentBody = await current.json();
@@ -221,9 +223,14 @@ export async function verifyAccountArchivesReadSessionRevocation(db: StoreDataba
     ]);
     // Owner transfer and membership revocation both acquire the archive row
     // before changing roles; they must wait for the response's archive lock.
-    const ownerTransferLock = db.postgresTransaction!(async (lockClient) => {
-      await lockClient.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE", [archiveId]);
-    });
+    // The third actor is an independent writer. A pool of two intentionally
+    // queues a third local request before SQL, which cannot prove row locking.
+    await competingWriter.connect();
+    await competingWriter.query("SELECT set_config('drevo.archive_id',$1,false)", [archiveId]);
+    await competingWriter.query("SET lock_timeout='5s'");
+    const ownerTransferLock = competingWriter.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE", [archiveId]);
+    // Keep failure observable below without an unhandled rejection at the gate.
+    void ownerTransferLock.catch(() => {});
     await waitForBlockedQuery("SELECT id FROM archives WHERE id=$1 FOR UPDATE");
     const logout = fetch(base + "/auth/logout", {
       method: "POST", headers: { Origin: origin, Cookie: `drevo_session=${activeToken}` },
@@ -252,6 +259,7 @@ export async function verifyAccountArchivesReadSessionRevocation(db: StoreDataba
   } finally {
     resumeAuth();
     resumeDelivery();
+    await competingWriter.end();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await client.query("DELETE FROM account_sessions WHERE token_hash IN ($1,$2,$3)",
