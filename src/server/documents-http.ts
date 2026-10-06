@@ -1234,9 +1234,10 @@ export function documentsHttp({
           `SELECT u.id,p.id AS person_id,p.data FROM users u
            JOIN people p ON p.id=u.person_id
            WHERE u.id IN (SELECT value FROM json_each(?))`,
-          `SELECT u.id,p.id AS person_id,p.data FROM runtime_users u
-           JOIN people p ON p.archive_id=current_setting('drevo.archive_id',true) AND p.id=u.person_id
-           WHERE u.id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))`,
+          `SELECT m.user_id AS id,p.id AS person_id,p.data FROM archive_memberships m
+           JOIN people p ON p.archive_id=m.archive_id AND p.id=m.person_id
+           WHERE m.archive_id=current_setting('drevo.archive_id',true)
+             AND m.user_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))`,
         ).all(JSON.stringify(ids)) : [];
         const allowed = new Set(currentAccess.ids);
         const names = new Map(rows.flatMap((row) => {
