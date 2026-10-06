@@ -86,7 +86,9 @@ test("a local couple swap reroutes ancestry without moving the surrounding block
     routes: [],
   };
   assert.deepEqual([...invertedCoupleBlocks(geometry, 220)], ["couple"]);
-  assert.deepEqual(coupleBlocksWithContactedAncestry(geometry, 220), ["couple"]);
+  assert.deepEqual(coupleBlocksWithContactedAncestry(geometry, 220), [
+    "couple",
+  ]);
   const improved = locallyReverseCouples(geometry, [], [], {
     width: 220,
     height: 264,
@@ -141,6 +143,39 @@ test("a local couple swap reroutes ancestry without moving the surrounding block
   assert.equal(linkedSwap.routes?.length, 1);
   assert.equal(linkedSwap.routes?.[0][1].points[0].x, 362);
 
+  const coParents: TreeGeometry = {
+    ...linked,
+    blocks: [],
+    branches: linked.branches!.map((branch) =>
+      branch.id.startsWith("pair:")
+        ? {
+            ...branch,
+            relations: [
+              { from: "A", to: "child", type: "parent" },
+              { from: "B", to: "child", type: "parent" },
+            ],
+          }
+        : branch,
+    ),
+  };
+  const coParentsBefore = structuredClone(coParents);
+  assert.deepEqual([...invertedCoupleBlocks(coParents, 220)], ["couple"]);
+  assert.deepEqual(coupleBlocksWithContactedAncestry(coParents, 220), [
+    "couple",
+  ]);
+  const coParentSwap = locallyReverseCouples(coParents, people, [link], {
+    width: 220,
+    height: 264,
+  });
+  assert.ok(coParentSwap);
+  assert.equal(branchContactCounts(coParentSwap.branches!).distinct, 0);
+  assert.deepEqual(coParentSwap.blocks, []);
+  assert.deepEqual(
+    coParentSwap.branches!.map((branch) => branch.relations),
+    coParents.branches!.map((branch) => branch.relations),
+  );
+  assert.deepEqual(coParents, coParentsBefore);
+
   const mirror = (handle: "top" | "bottom" | "left" | "right") =>
     handle === "top" ? "bottom" : handle === "bottom" ? "top" : handle;
   const reverse: TreeGeometry = {
@@ -179,7 +214,10 @@ test("a local couple swap reroutes ancestry without moving the surrounding block
 
 test("contacted ancestry remains eligible without an inverted origin order", () => {
   const geometry: TreeGeometry = {
-    mode: "generations", reverse: false, start: 1700, offset: 0,
+    mode: "generations",
+    reverse: false,
+    start: 1700,
+    offset: 0,
     positions: [
       ["A", { x: 0, y: 500 }],
       ["B", { x: 252, y: 500 }],
@@ -187,22 +225,65 @@ test("contacted ancestry remains eligible without an inverted origin order", () 
       ["D", { x: 952, y: 500 }],
     ],
     blocks: [
-      { id: "candidate", members: ["A", "B"], x: 0, y: 500, width: 472, height: 264 },
-      { id: "untouched", members: ["C", "D"], x: 700, y: 500, width: 472, height: 264 },
+      {
+        id: "candidate",
+        members: ["A", "B"],
+        x: 0,
+        y: 500,
+        width: 472,
+        height: 264,
+      },
+      {
+        id: "untouched",
+        members: ["C", "D"],
+        x: 700,
+        y: 500,
+        width: 472,
+        height: 264,
+      },
     ],
     branches: [
-      { id: 'child:"A"', source: "p", target: "A", union: "first", relations: [],
-        route: { sourceHandle: "bottom", targetHandle: "top", points: [
-          { x: -90, y: 264 }, { x: -90, y: 380 }, { x: 110, y: 380 }, { x: 110, y: 500 },
-        ] } },
-      { id: 'child:"B"', source: "q", target: "B", union: "second", relations: [],
-        route: { sourceHandle: "bottom", targetHandle: "top", points: [
-          { x: 500, y: 264 }, { x: 500, y: 450 }, { x: 0, y: 450 }, { x: 0, y: 480 },
-          { x: 362, y: 480 }, { x: 362, y: 500 },
-        ] } },
+      {
+        id: 'child:"A"',
+        source: "p",
+        target: "A",
+        union: "first",
+        relations: [],
+        route: {
+          sourceHandle: "bottom",
+          targetHandle: "top",
+          points: [
+            { x: -90, y: 264 },
+            { x: -90, y: 380 },
+            { x: 110, y: 380 },
+            { x: 110, y: 500 },
+          ],
+        },
+      },
+      {
+        id: 'child:"B"',
+        source: "q",
+        target: "B",
+        union: "second",
+        relations: [],
+        route: {
+          sourceHandle: "bottom",
+          targetHandle: "top",
+          points: [
+            { x: 500, y: 264 },
+            { x: 500, y: 450 },
+            { x: 0, y: 450 },
+            { x: 0, y: 480 },
+            { x: 362, y: 480 },
+            { x: 362, y: 500 },
+          ],
+        },
+      },
     ],
   };
   assert.equal(invertedCoupleBlocks(geometry, 220).size, 0);
   assert.ok(branchContactCounts(geometry.branches!).distinct > 0);
-  assert.deepEqual(coupleBlocksWithContactedAncestry(geometry, 220), ["candidate"]);
+  assert.deepEqual(coupleBlocksWithContactedAncestry(geometry, 220), [
+    "candidate",
+  ]);
 });

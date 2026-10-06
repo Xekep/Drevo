@@ -300,7 +300,7 @@ test("fractional length accumulation and repeated turns retain strict legacy ari
   );
 });
 
-test("geometry scorer preserves branch-only and extra-route semantics in either call order", () => {
+test("geometry scorer evaluates primary branches even when additional routes are present", () => {
   const edges = [
     edge("family", [
       [0, 50],
@@ -334,24 +334,17 @@ test("geometry scorer preserves branch-only and extra-route semantics in either 
     },
   ]) {
     const before = structuredClone(current);
-    const all = [
-      ...edges,
-      ...(current.routes || []).map(([group, route]) => ({ group, route })),
-    ];
     for (const qualityFirst of [false, true]) {
       const scorer = createGeometryContactScorer();
       if (qualityFirst)
-        assert.deepEqual(scorer.quality(current), legacyQuality(all));
+        assert.deepEqual(scorer.quality(current), legacyQuality(edges));
       assert.deepEqual(
         scorer.contacts(current),
         branchContactCounts(current.branches!),
       );
-      assert.deepEqual(scorer.quality(current), legacyQuality(all));
+      assert.deepEqual(scorer.quality(current), legacyQuality(edges));
       assert.deepEqual(scorer.contacts(current), { distinct: 1, segments: 1 });
-      assert.equal(
-        scorer.quality(current).contacts,
-        current.routes?.length ? 2 : 1,
-      );
+      assert.equal(scorer.quality(current).contacts, 1);
     }
     assert.deepEqual(current, before);
   }
@@ -359,6 +352,45 @@ test("geometry scorer preserves branch-only and extra-route semantics in either 
     scorer = createGeometryContactScorer();
   assert.deepEqual(scorer.contacts(empty), { distinct: 0, segments: 0 });
   assert.deepEqual(scorer.quality(empty), legacyQuality([]));
+});
+
+test("layout comparison prefers fewer real crossings at equal contact counts and ignores extra links", () => {
+  const rail = edge("a", [
+    [0, 0],
+    [100, 0],
+  ]);
+  const crossing = geometry([
+    rail,
+    edge("b", [
+      [50, -50],
+      [50, 50],
+    ]),
+  ]);
+  const touch = geometry([
+    rail,
+    edge("b", [
+      [50, -50],
+      [50, 0],
+    ]),
+  ]);
+  const scorer = createGeometryContactScorer();
+  assert.deepEqual(scorer.contacts(crossing), scorer.contacts(touch));
+  assert.ok(scorer.compare(touch, crossing) < 0);
+  assert.ok(scorer.compare(crossing, touch) > 0);
+  const withExtra: TreeGeometry = {
+    ...touch,
+    routes: [
+      [
+        "godparent",
+        edge("extra", [
+          [25, -50],
+          [25, 50],
+        ]).route,
+      ],
+    ],
+  };
+  assert.equal(scorer.compare(withExtra, touch), 0);
+  assert.deepEqual(scorer.quality(withExtra), scorer.quality(touch));
 });
 
 test("deterministic orthogonal walks agree with both historical scores across duplicates and order changes", () => {
