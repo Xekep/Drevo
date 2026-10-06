@@ -16,7 +16,7 @@ test("platform backups have a global endpoint and no archive picker or live rest
     account: { id: "operator", name: "Оператор", globalRole: "admin", fullAccess: true },
   } }));
   await page.route("**/api/account/archives", (route) => route.fulfill({ json: { archives: [] } }));
-  await page.route("**/api/platform/roles**", (route) => route.fulfill({ json: { accounts: [], next: null } }));
+  await page.route("**/api/platform/accounts**", (route) => route.fulfill({ json: { accounts: [], next: null } }));
   await page.route("**/api/platform/backups**", (route) => {
     const path = new URL(route.request().url()).pathname;
     paths.push(route.request().method() + " " + path);

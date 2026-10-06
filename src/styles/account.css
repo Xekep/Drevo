@@ -292,13 +292,6 @@
 .account-archive-row a:hover {
   text-decoration: underline;
 }
-.account-tier-entry .account-row-action {
-  flex: none;
-  margin-top: 0;
-}
-.account-tier-entry > .account-card-copy {
-  margin: 2px 0 10px;
-}
 .account-ai-chat-list {
   border-top: 1px solid #ecede7;
 }
@@ -614,42 +607,6 @@
   .account-card {
     padding: 23px;
     border-radius: 17px;
-  }
-  .platform-role-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-  .platform-role-row .account-archive-name strong {
-    overflow: visible;
-    overflow-wrap: anywhere;
-    text-overflow: clip;
-    white-space: normal;
-  }
-  .platform-role-row .account-archive-name small {
-    overflow-wrap: anywhere;
-  }
-  .platform-role-row label,
-  .platform-role-row select {
-    width: 100%;
-  }
-  .platform-role-row select {
-    min-height: 44px;
-  }
-  .account-tier-entry .platform-role-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(96px, 112px);
-    align-items: center;
-    gap: 5px 10px;
-  }
-  .account-tier-entry .platform-role-row .account-archive-name {
-    grid-row: 1 / 3;
-    align-self: center;
-  }
-  .account-tier-entry .platform-role-row .account-row-action {
-    min-height: 44px;
-    width: 100%;
-    justify-content: center;
   }
   .account-owner-transfer button,
   .account-owner-transfer input {
