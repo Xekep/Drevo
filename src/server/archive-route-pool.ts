@@ -8,11 +8,13 @@ export type RoutedArchive = {
     path: string,
   ) => Promise<void>;
   close: () => Promise<void>;
+  poolDiagnostics?: () => { total: number; idle: number; waiting: number; limit: number } | null;
 };
 
 type Entry = { runtime: RoutedArchive; active: number; usedAt: number };
 const MAX_OPEN_ARCHIVES = 4;
 const WAIT_FOR_IDLE_MS = 5000;
+const MAX_QUEUED_OPENS = 32;
 class ArchivePoolBusyError extends Error {}
 
 /** Keep explicitly selected archive runtimes bounded and never evict an active one. */
@@ -23,12 +25,21 @@ export function archiveRoutePool(
     path: string,
   ) => Promise<boolean>,
   open: (archiveId: string) => Promise<RoutedArchive>,
+  options: { maxOpen?: number } = {},
 ) {
+  const maxOpen = options.maxOpen ?? MAX_OPEN_ARCHIVES;
+  if (!Number.isInteger(maxOpen) || maxOpen < 1 || maxOpen > MAX_OPEN_ARCHIVES)
+    throw new Error("Invalid archive runtime limit");
   const entries = new Map<string, Entry>();
   const idleWaiters = new Set<() => void>();
   let lastUse = 0;
   let queue = Promise.resolve();
+  let queued = 0;
+  let closing = false;
   const exclusive = async <T>(work: () => Promise<T>): Promise<T> => {
+    if (closing || queued >= MAX_QUEUED_OPENS) throw new ArchivePoolBusyError();
+    queued++;
+    const deadline = Date.now() + WAIT_FOR_IDLE_MS;
     const previous = queue;
     let release!: () => void;
     queue = new Promise<void>((resolve) => {
@@ -36,8 +47,10 @@ export function archiveRoutePool(
     });
     await previous;
     try {
+      if (closing || Date.now() >= deadline) throw new ArchivePoolBusyError();
       return await work();
     } finally {
+      queued--;
       release();
     }
   };
@@ -60,7 +73,7 @@ export function archiveRoutePool(
         existing.usedAt = ++lastUse;
         return existing;
       }
-      if (entries.size >= MAX_OPEN_ARCHIVES) {
+      if (entries.size >= maxOpen) {
         const oldestIdle = () =>
           [...entries]
             .filter(([, entry]) => entry.active === 0)
@@ -106,6 +119,11 @@ export function archiveRoutePool(
     });
   };
   return {
+    diagnostics: () => ({ open: entries.size,
+      active: [...entries.values()].reduce((sum, entry) => sum + entry.active, 0), queued,
+      pools: [...entries.values()].flatMap(entry => {
+        const pool = entry.runtime.poolDiagnostics?.(); return pool ? [pool] : [];
+      }) }),
     async route(req: IncomingMessage, res: ServerResponse, url: URL) {
       const direct =
         /^\/a\/([A-Za-z0-9][A-Za-z0-9-]{2,63})(\/(?:api|media)\/.*)$/.exec(url.pathname);
@@ -147,21 +165,29 @@ export function archiveRoutePool(
         return true;
       }
       let released = false;
+      let handlerDone = false;
+      let responseDone = res.writableEnded || res.destroyed;
       const release = () => {
-        if (released) return;
+        if (released || !handlerDone || !responseDone) return;
         released = true;
         entry.active--;
         if (entry.active === 0) for (const wake of idleWaiters) wake();
       };
-      res.once("close", release);
+      res.once("close", () => {
+        responseDone = true;
+        release();
+      });
       try {
         await entry.runtime.handle(req, res, match[2] + url.search);
       } finally {
-        if (res.writableEnded || res.destroyed) release();
+        handlerDone = true;
+        responseDone ||= res.writableEnded || res.destroyed;
+        release();
       }
       return true;
     },
     async close() {
+      closing = true;
       await queue;
       await Promise.all(
         [...entries.values()].map((entry) => entry.runtime.close()),

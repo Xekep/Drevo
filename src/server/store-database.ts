@@ -8,6 +8,12 @@ import { setTimeout as delay } from "node:timers/promises";
 import { initializePostgresRuntimeSchema } from "./postgres-runtime-schema.ts";
 
 type Row = Record<string, unknown>;
+export function postgresPoolSize(value = process.env.DREVO_PG_POOL_SIZE): number {
+  if (value === undefined || value === "") return 3;
+  if (!/^[3-9]$|^10$/.test(value))
+    throw new Error("DREVO_PG_POOL_SIZE должен быть целым числом от 3 до 10");
+  return Number(value);
+}
 export function configuredDatabaseBackend(file: string): "sqlite" | "postgres" {
   const backend = process.env.DATABASE_BACKEND || "sqlite";
   if (backend !== "sqlite" && backend !== "postgres")
@@ -52,6 +58,7 @@ export type StoreDatabase = {
   /** One host-wide session lock for filesystem tasks shared by all archives. */
   withExclusivePlatformTask?<T>(task: string, work: () => Promise<T>): Promise<T>;
   inTransaction(): boolean;
+  poolDiagnostics?(): { total: number; idle: number; waiting: number; limit: number };
   close(): Promise<void>;
 };
 
@@ -177,7 +184,9 @@ export async function openPostgresDatabase(
   if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{2,63}$/.test(archiveId))
     throw new Error("Некорректный идентификатор архива PostgreSQL");
   const pool = new pg.Pool({
-    max: 10,
+    // Root + four scoped runtimes use at most ten slots per process by default.
+    // Two processes leave room within production's 27 ordinary PG connections.
+    max: postgresPoolSize(),
     connectionTimeoutMillis: 5000,
     idleTimeoutMillis: 30000,
     statement_timeout: 15000,
@@ -249,6 +258,8 @@ export async function openPostgresDatabase(
   }
   const database: StoreDatabase = {
     kind: "postgres",
+    poolDiagnostics: () => ({ total: pool.totalCount, idle: pool.idleCount,
+      waiting: pool.waitingCount, limit: pool.options.max! }),
     archiveId,
     file,
     inTransaction: () => !!context.getStore(),

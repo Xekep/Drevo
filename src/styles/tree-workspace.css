@@ -133,7 +133,7 @@
   border: 1px solid #e4eade;
   border-radius: 12px;
   width: clamp(170px, 24vw, 330px);
-  color: #7b8872;
+  color: #58695b;
 }
 .archive-search:focus-within {
   border-color: #839e78;
@@ -1349,7 +1349,7 @@
 .nav-sections a {
   position: relative;
   font-size: 13px;
-  color: #7c877c;
+  color: #58695d;
   padding: 0;
   border-radius: 0;
 }
@@ -2394,10 +2394,11 @@
   fill: #fff;
 }
 .flow-person.is-portrait-card .flow-collapse {
-  top: 116px;
-  right: 22px;
-  bottom: auto;
+  top: auto;
+  right: -3px;
+  bottom: -30px;
   min-height: 30px;
+  min-width: 34px;
   padding: 4px 8px;
   border: 1px solid #cbdcc4;
   border-radius: 999px;
@@ -2409,6 +2410,14 @@
 .flow-person.is-portrait-card .flow-collapse:focus-visible {
   border-color: #72986e;
   background: #f1f7eb;
+}
+.flow-person.is-overview .flow-collapse {
+  min-width: 30px;
+  padding: 4px;
+  justify-content: center;
+}
+.flow-person.is-overview .flow-collapse span {
+  display: none;
 }
 /* The shared wash hugs the photos; the names remain on the open canvas. */
 .tree-canvas.has-portrait-cards

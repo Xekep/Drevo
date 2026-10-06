@@ -79,7 +79,7 @@
 }
 .insights-summary p {
   margin-left: auto;
-  color: #839082;
+  color: #58695b;
   font-size: 11px;
 }
 
@@ -259,7 +259,7 @@ button.insight-fact {
 
 .name-ranking h3 {
   margin: 0 0 10px;
-  color: #6e7b6c;
+  color: #58695b;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
@@ -299,7 +299,7 @@ button.insight-fact {
   gap: 10px;
   padding: 11px 0;
   border-bottom: 1px solid #e9eee7;
-  color: #71836d;
+  color: #58695b;
 }
 .archive-materials > span:last-child {
   border-bottom: 0;

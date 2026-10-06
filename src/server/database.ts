@@ -364,10 +364,15 @@ export async function openArchive(
     ),
     overview = (includePortraits = true) =>
       includePortraits ? portraitOverview() : anonymousOverview(),
-    peoplePage = async (offset: number, limit: number) =>
-      await readPeoplePage(db, offset, limit),
-    photoPage = async (offset: number, limit: number) =>
-      await db.transaction(() => readPhotoPage(db, offset, limit), true);
+    peoplePage = async (offset: number, limit: number, visible?: ReadonlySet<string>) =>
+      await readPeoplePage(db, offset, limit, visible),
+    photoPage = async (offset: number, limit: number, scope?: PhotoReadScope) =>
+      await db.transaction(() => readPhotoPage(db, offset, limit, scope), true),
+    photoCount = async (scope: PhotoReadScope) => {
+      const where = photoReadWhere(scope);
+      return Number((await db.prepare(`SELECT count(*) AS count FROM photos${where.sqlite}`,
+        `SELECT count(*) AS count FROM photos${where.postgres}`).get(...where.args))?.count || 0);
+    };
 
   const checkRevision = async (expected: number) => {
     const old = await db
@@ -598,6 +603,7 @@ export async function openArchive(
     overview,
     peoplePage,
     photoPage,
+    photoCount,
     write,
     patchPeople: async (
       changes: Parameters<typeof patchPeople>[1],
@@ -731,14 +737,16 @@ async function readPeoplePage(
   db: StoreDatabase,
   offset: number,
   limit: number,
+  visible?: ReadonlySet<string>,
 ): Promise<Person[]> {
+  const args = visible ? [JSON.stringify([...visible])] : [];
   const people = (
     await db
       .prepare(
-        "SELECT data FROM people ORDER BY rowid LIMIT ? OFFSET ?",
-        "SELECT data FROM people ORDER BY ordinal LIMIT ? OFFSET ?",
+        `SELECT data FROM people${visible ? " WHERE id IN (SELECT value FROM json_each(?))" : ""} ORDER BY rowid LIMIT ? OFFSET ?`,
+        `SELECT data FROM people${visible ? " WHERE id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))" : ""} ORDER BY ordinal LIMIT ? OFFSET ?`,
       )
-      .all(limit, offset)
+      .all(...args, limit, offset)
   ).map(
     (row) =>
       ({
@@ -753,17 +761,28 @@ async function readPeoplePage(
   return people;
 }
 
+type PhotoReadScope = { visible: ReadonlySet<string>; userId: string };
+function photoReadWhere(scope?: PhotoReadScope) {
+  if (!scope) return { sqlite: "", postgres: "", args: [] as string[] };
+  return {
+    sqlite: " WHERE json_extract(photos.data,'$.createdBy')=? OR EXISTS (SELECT 1 FROM photo_tags t WHERE t.photo_id=photos.id AND t.person_id IN (SELECT value FROM json_each(?)))",
+    postgres: " WHERE photos.data->>'createdBy'=? OR EXISTS (SELECT 1 FROM photo_tags t WHERE t.archive_id=photos.archive_id AND t.photo_id=photos.id AND t.person_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb)))",
+    args: [scope.userId, JSON.stringify([...scope.visible])],
+  };
+}
 async function readPhotoPage(
   db: StoreDatabase,
   offset: number,
   limit: number,
+  scope?: PhotoReadScope,
 ): Promise<ArchivePhoto[]> {
+  const where = photoReadWhere(scope);
   const rows = await db
       .prepare(
-        "SELECT id,data FROM photos ORDER BY rowid LIMIT ? OFFSET ?",
-        "SELECT id,data FROM photos ORDER BY ordinal LIMIT ? OFFSET ?",
+        `SELECT id,data FROM photos${where.sqlite} ORDER BY rowid LIMIT ? OFFSET ?`,
+        `SELECT id,data FROM photos${where.postgres} ORDER BY ordinal LIMIT ? OFFSET ?`,
       )
-      .all(limit, offset),
+      .all(...where.args, limit, offset),
     photos = rows.map(
       (row) => ({ ...JSON.parse(String(row.data)), tags: [] }) as ArchivePhoto,
     );
@@ -777,7 +796,10 @@ async function readPhotoPage(
       )
       .all(...photos.map((photo) => photo.id));
   for (const row of tags)
-    photoMap.get(String(row.photo_id))?.tags.push(JSON.parse(String(row.data)));
+    {
+      const tag = JSON.parse(String(row.data));
+      if (!scope || scope.visible.has(tag.personId)) photoMap.get(String(row.photo_id))?.tags.push(tag);
+    }
   return photos;
 }
 

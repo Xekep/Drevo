@@ -41,6 +41,14 @@ export function sourceCatalogStore(db: StoreDatabase) {
     ).get(id);
     return row ? parsed(row) : null;
   };
+  const getMany = async (ids: Iterable<string>) => {
+    const unique = [...new Set(ids)];
+    if (!unique.length) return [];
+    return (await db.prepare(
+      "SELECT data,version FROM source_catalog WHERE id IN (SELECT value FROM json_each(?))",
+      "SELECT data,version FROM source_catalog WHERE id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))",
+    ).all(JSON.stringify(unique))).map(parsed);
+  };
   const insert = async (source: CatalogSource, version = 1) => await db.prepare(
     "INSERT INTO source_catalog(id,data,version) VALUES(?,?,?)",
     "INSERT INTO source_catalog(archive_id,id,data,version) VALUES(current_setting('drevo.archive_id', true),?,?,?)",
@@ -54,16 +62,19 @@ export function sourceCatalogStore(db: StoreDatabase) {
     "DELETE FROM source_catalog WHERE id=? AND version=?",
   ).run(id, expected);
   const documentIdsExist = async (ids: string[]) => {
-    for (const id of ids)
-      if (!await db.prepare("SELECT 1 FROM documents WHERE id=?", "SELECT 1 FROM documents WHERE id=?").get(id))
-        return false;
-    return true;
+    const unique = [...new Set(ids)];
+    if (!unique.length) return true;
+    const row = await db.prepare(
+      "SELECT count(*) AS count FROM documents WHERE id IN (SELECT value FROM json_each(?))",
+      "SELECT count(*) AS count FROM documents WHERE id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))",
+    ).get(JSON.stringify(unique));
+    return Number(row?.count) === unique.length;
   };
   const usesDocument = async (id: string) => !!await db.prepare(
     "SELECT 1 FROM source_catalog WHERE EXISTS (SELECT 1 FROM json_each(data, '$.documentIds') WHERE value=?) LIMIT 1",
     "SELECT 1 FROM source_catalog WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(data->'documentIds') AS document_id(value) WHERE document_id.value=?) LIMIT 1",
   ).get(id);
-  return { list, page, get, insert, update, remove, documentIdsExist, usesDocument };
+  return { list, page, get, getMany, insert, update, remove, documentIdsExist, usesDocument };
 }
 
 export function personCitations(person: Person): Source[] {
@@ -106,12 +117,12 @@ export function allCitations(family: Family): Source[] {
 
 /** Archive writes may retain legacy inline citations, but catalog links must be local. */
 export async function assertCatalogLinks(db: StoreDatabase, family: Family) {
-  const catalog = sourceCatalogStore(db);
-  const entries = new Map<string, Awaited<ReturnType<typeof catalog.get>>>();
-  for (const citation of allCitations(family)) {
+  const citations = allCitations(family);
+  const entries = new Map((await sourceCatalogStore(db).getMany(
+    citations.flatMap(citation => citation.catalogId ? [citation.catalogId] : []),
+  )).map(source => [source.id, source]));
+  for (const citation of citations) {
     if (!citation.catalogId) continue;
-    if (!entries.has(citation.catalogId))
-      entries.set(citation.catalogId, await catalog.get(citation.catalogId));
     const entry = entries.get(citation.catalogId);
     if (!entry) throw new Error("Источник отсутствует в этом архиве");
     if (citation.documentId && !entry.documentIds.includes(citation.documentId))
@@ -120,8 +131,9 @@ export async function assertCatalogLinks(db: StoreDatabase, family: Family) {
 }
 
 export async function hydrateCatalogCitations(db: StoreDatabase, family: Family) {
-  if (!allCitations(family).some((source) => source.catalogId)) return family;
-  const entries = new Map((await sourceCatalogStore(db).list()).map((source) => [source.id, source]));
+  const ids = allCitations(family).flatMap(source => source.catalogId ? [source.catalogId] : []);
+  if (!ids.length) return family;
+  const entries = new Map((await sourceCatalogStore(db).getMany(ids)).map((source) => [source.id, source]));
   const resolve = (source: Source): Source => {
     const entry = source.catalogId && entries.get(source.catalogId);
     if (!entry) return source;

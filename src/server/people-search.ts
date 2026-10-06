@@ -6,6 +6,12 @@ import { createPeopleSearch } from "../domain/people-search.ts";
 export function peopleSearchStore(db: StoreDatabase) {
   let revision = -1,
     search = createPeopleSearch([]);
+  let pending:
+    | {
+        revision: number;
+        value: Promise<ReturnType<typeof createPeopleSearch>>;
+      }
+    | undefined;
   return async (query: string, visible?: ReadonlySet<string>) => {
     const current = Number(
       (await db
@@ -16,13 +22,44 @@ export function peopleSearchStore(db: StoreDatabase) {
         .get())!.revision,
     );
     if (current !== revision) {
-      const people = (
-        await db
-          .prepare("SELECT data FROM people", "SELECT data FROM people")
+      if (!pending || pending.revision !== current) {
+        const fields = [
+          "id",
+          "surname",
+          "name",
+          "patronymic",
+          "birth",
+          "death",
+          "deceased",
+          "maidenName",
+        ];
+        const value = db
+          .prepare(
+            `SELECT json_object(${fields.map((field) => `'${field}',json_extract(data,'$.${field}')`).join(",")}) AS data FROM people`,
+            `SELECT jsonb_build_object(${fields.map((field) => `'${field}',data->'${field}'`).join(",")}) AS data FROM people`,
+          )
           .all()
-      ).map((row) => JSON.parse(String(row.data)) as Person);
-      search = createPeopleSearch(people);
-      revision = current;
+          .then((rows) =>
+            createPeopleSearch(
+              rows.map((row) => JSON.parse(String(row.data)) as Person),
+            ),
+          );
+        pending = { revision: current, value };
+      }
+      const entry = pending;
+      let built: ReturnType<typeof createPeopleSearch>;
+      try {
+        built = await entry.value;
+      } catch (error) {
+        if (pending === entry) pending = undefined;
+        throw error;
+      }
+      if (pending === entry) {
+        search = built;
+        revision = current;
+        pending = undefined;
+      }
+      return built(query, visible);
     }
     return search(query, visible);
   };

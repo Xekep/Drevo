@@ -64,7 +64,7 @@
 }
 .account-eyebrow {
   display: block;
-  color: #71866e;
+  color: #58695b;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -77,7 +77,7 @@
 }
 .account-heading p,
 .account-card-copy {
-  color: #6e7d74;
+  color: #58695b;
   font-size: 14px;
   line-height: 1.6;
 }
@@ -185,7 +185,7 @@
   font-size: 13px;
 }
 .account-facts span {
-  color: #79877c;
+  color: #58695b;
 }
 .account-facts strong {
   display: inline-flex;
@@ -219,7 +219,7 @@
 }
 .account-session-item span,
 .account-session-more {
-  color: #79877c;
+  color: #58695b;
   font-size: 11px;
 }
 .account-session-revoke {
@@ -277,7 +277,7 @@
 }
 .account-archive-name small,
 .account-archive-current {
-  color: #79877c;
+  color: #58695b;
   font-size: 11px;
 }
 .account-archive-row a {
@@ -317,7 +317,7 @@
   white-space: nowrap;
 }
 .account-ai-chat-name small {
-  color: #79877c;
+  color: #58695b;
   font-size: 11px;
 }
 .account-ai-chat-delete,
@@ -565,7 +565,7 @@
   font: 400 29px var(--serif);
 }
 .account-empty p {
-  color: #6e7d74;
+  color: #58695b;
   line-height: 1.6;
 }
 .account-primary {

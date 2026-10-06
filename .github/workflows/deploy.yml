@@ -9,6 +9,8 @@ on:
 permissions:
   contents: read
 jobs:
+  postgres:
+    uses: ./.github/workflows/postgres.yml
   prepare:
     if: github.event_name == 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -100,7 +102,7 @@ jobs:
           retention-days: 2
 
   deploy:
-    needs: prepare
+    needs: [prepare, postgres]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:

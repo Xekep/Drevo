@@ -7,6 +7,7 @@ import type { treePreferencesStore } from "./tree-preferences.ts";
 import type { researchCatalogStore } from "./research-catalog.ts";
 import type { ResearchDirectoryCategory } from "../shared/research-catalog.ts";
 import { peopleSearchStore } from "./people-search.ts";
+import { scopedArchiveReader } from "./scoped-archive-reader.ts";
 import { analysisExport } from "../domain/analysis-export.ts";
 import {
   archiveOverview,
@@ -40,6 +41,7 @@ export function archiveQueryHttp({
   beforeLockedDelivery?: () => Promise<void>;
 }) {
   const searchPeople = peopleSearchStore(archive.db);
+  const scopedIds = scopedArchiveReader(archive);
   const publicSearchLimiter = createSharedRequestLimiter(archive.db, "public-people-search", {
     windowMs: 60_000,
     limit: 60,
@@ -293,7 +295,7 @@ export function archiveQueryHttp({
           const pageToken = `${meta.revision}:${Number(readTree)}:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
           if (url.searchParams.get("token") !== pageToken) return null;
           const scoped = isScopedUser(visitor)
-            ? (await scopedSnapshot(visitor)).family
+            ? await scopedIds(visitor)
             : null;
           if (collection === "people")
             return {
@@ -301,25 +303,22 @@ export function archiveQueryHttp({
               pageToken,
               items: readTree
                 ? (scoped
-                    ? scoped.people.slice(offset, offset + archivePageSize)
+                    ? await archive.peoplePage(offset, archivePageSize, scoped)
                     : await archive.peoplePage(offset, archivePageSize)
                   ).map(personDetails)
                 : [],
-              total: readTree ? (scoped?.people.length ?? meta.people) : 0,
+              total: readTree ? (scoped?.size ?? meta.people) : 0,
             };
           return {
             revision: meta.revision,
             pageToken,
             items: readPhotos
               ? (scoped
-                  ? (scoped.photos || []).slice(
-                      offset,
-                      offset + archivePageSize,
-                    )
+                  ? await archive.photoPage(offset, archivePageSize, { visible: scoped, userId: visitor!.id })
                   : await archive.photoPage(offset, archivePageSize)
                 ).map((photo) => (readTree ? photo : { ...photo, tags: [] }))
               : [],
-            total: readPhotos ? (scoped?.photos?.length ?? meta.photos) : 0,
+            total: readPhotos ? (scoped ? await archive.photoCount({ visible: scoped, userId: visitor!.id }) : meta.photos) : 0,
           };
         }, true);
         if (!page)
@@ -336,13 +335,15 @@ export function archiveQueryHttp({
         let data: Awaited<ReturnType<typeof archive.overview>>;
         if (readTree) {
           if (isScopedUser(visitor)) {
-            const { family: scoped, revision } = await scopedSnapshot(visitor);
+            const overview = await archive.overview();
+            const scoped = projectFamilyForUser(overview.family, visitor);
+            const ids = new Set(scoped.people.map(person => person.id));
             data = {
               family: archiveOverview(scoped),
-              revision,
+              revision: overview.revision,
               totals: {
                 people: scoped.people.length,
-                photos: scoped.photos?.length || 0,
+                photos: await archive.photoCount({ visible: ids, userId: visitor.id }),
               },
             };
           } else data = await archive.overview(readTree);
@@ -426,11 +427,7 @@ export function archiveQueryHttp({
       if (query.length > 100)
         return json(res, 400, { error: "Слишком длинный поисковый запрос" });
       const visible = isScopedUser(visitor)
-        ? new Set(
-            (await scopedSnapshot(visitor)).family.people.map(
-              (person) => person.id,
-            ),
-          )
+        ? await scopedIds(visitor)
         : undefined;
       const matches = await searchPeople(query, visible);
       return deliverArchiveJson(matches);

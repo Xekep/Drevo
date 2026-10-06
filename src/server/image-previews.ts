@@ -19,11 +19,14 @@ export const IMAGE_PREVIEW_SETTINGS = {
 
 export const IMAGE_PREVIEW_CACHE_VERSION = 3;
 const MAX_PENDING_PREVIEWS = 32;
+export class ImagePreviewBusyError extends Error {
+  constructor() { super("Очередь подготовки фотографий заполнена"); }
+}
 
 export function imagePreviews(directory: string) {
   const pending = new Map<string, Promise<Buffer>>();
   let tail = Promise.resolve();
-  return (original: ImagePreviewSource, variant: ImagePreviewVariant) => {
+  return async (original: ImagePreviewSource, variant: ImagePreviewVariant) => {
     const settings = IMAGE_PREVIEW_SETTINGS[variant];
     const sourceKey = Buffer.isBuffer(original)
       ? createHash("sha256").update(original).digest("hex")
@@ -31,16 +34,15 @@ export function imagePreviews(directory: string) {
     const extension = variant === "ai" ? "jpg" : "webp";
     const key = `${sourceKey}-${variant}-v${IMAGE_PREVIEW_CACHE_VERSION}.${extension}`;
     if (pending.has(key)) return pending.get(key)!;
+    try {
+      return await readFile(join(directory, key));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (pending.has(key)) return pending.get(key)!;
     if (pending.size >= MAX_PENDING_PREVIEWS)
-      return Promise.reject(
-        new Error("Очередь подготовки фотографий заполнена"),
-      );
+      throw new ImagePreviewBusyError();
     const run = (async () => {
-      try {
-        return await readFile(join(directory, key));
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      }
       const result = tail.then(async () => {
         const source = Buffer.isBuffer(original)
           ? original

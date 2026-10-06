@@ -645,7 +645,13 @@ function cardOverlapCount(
 }
 
 /** Кэш живёт один расчёт; готовые геометрии кандидатов больше не изменяются. */
-export function createGeometryContactScorer() {
+export function createGeometryContactScorer(width = TREE_NODE_WIDTH, height = TREE_NODE_HEIGHT) {
+  const cardScores = new WeakMap<TreeGeometry, { contacts?: number; overlaps?: number }>();
+  const cards = (geometry: TreeGeometry) => {
+    let result = cardScores.get(geometry);
+    if (!result) { result = {}; cardScores.set(geometry, result); }
+    return result;
+  };
   const scores = new WeakMap<
     TreeGeometry,
     ReturnType<typeof routingContactScore>
@@ -664,6 +670,10 @@ export function createGeometryContactScorer() {
     return result;
   };
   return {
+    cardContacts: (geometry: TreeGeometry) =>
+      cards(geometry).contacts ??= routeCardContacts(geometry, width, height),
+    cardOverlaps: (geometry: TreeGeometry) =>
+      cards(geometry).overlaps ??= cardOverlapCount(geometry, width, height),
     contacts: (geometry: TreeGeometry) => score(geometry).contacts,
     quality: (geometry: TreeGeometry) => score(geometry).quality,
     // Additional relationships do not choose positions of the primary family.
@@ -694,7 +704,9 @@ export async function unionGeometry(
     contacts: geometryContacts,
     quality: geometryQuality,
     compare,
-  } = createGeometryContactScorer();
+    cardContacts: routeCardContacts,
+    cardOverlaps: cardOverlapCount,
+  } = createGeometryContactScorer(W, H);
   const initialProfile =
     people.length > 900 && largeDecross ? "greedy" : undefined;
   let best = await geometryForSeed(
@@ -712,8 +724,8 @@ export async function unionGeometry(
   let bestSeed = 1;
   let contacts = geometryContacts(best);
   let profileQuality = initialProfile && geometryQuality(best);
-  let profileCardContacts = initialProfile ? routeCardContacts(best, W, H) : 0;
-  let profileOverlaps = initialProfile ? cardOverlapCount(best, W, H) : 0;
+  let profileCardContacts = initialProfile ? routeCardContacts(best) : 0;
+  let profileOverlaps = initialProfile ? cardOverlapCount(best) : 0;
   const seedCandidates =
     previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE
       ? [{ geometry: best, contacts }]
@@ -793,8 +805,8 @@ export async function unionGeometry(
           quality.bends > profileQuality.bends * 1.15 + 2
         )
           continue;
-        const cardContacts = routeCardContacts(candidate, W, H);
-        const overlaps = cardOverlapCount(candidate, W, H);
+        const cardContacts = routeCardContacts(candidate);
+        const overlaps = cardOverlapCount(candidate);
         if (cardContacts > profileCardContacts || overlaps > profileOverlaps)
           continue;
         profileQuality = quality;
@@ -844,8 +856,8 @@ export async function unionGeometry(
           nextRoutes.contacts > currentRoutes.contacts + delta ||
           nextRoutes.crossings > currentRoutes.crossings + delta ||
           nextRoutes.length > currentRoutes.length * 1.15 ||
-          routeCardContacts(item.geometry, W, H) >
-            routeCardContacts(best, W, H) ||
+          routeCardContacts(item.geometry) >
+            routeCardContacts(best) ||
           Math.max(nextSize.width, nextSize.height) >
             Math.max(
               oldSize.width,
@@ -893,7 +905,7 @@ export async function unionGeometry(
           nextRoutes.crossings <= currentRoutes.crossings &&
           nextRoutes.length <= currentRoutes.length * 1.15 &&
           nextRoutes.bends <= currentRoutes.bends * 1.15 + 2 &&
-          routeCardContacts(candidate, W, H) <= routeCardContacts(best, W, H) &&
+          routeCardContacts(candidate) <= routeCardContacts(best) &&
           Math.max(nextSize.width, nextSize.height) <=
             Math.max(
               oldSize.width,
@@ -949,7 +961,7 @@ export async function unionGeometry(
             Math.max(bestExtent.width, bestExtent.height) * 1.2 &&
           candidateExtent.width * candidateExtent.height <=
             bestExtent.width * bestExtent.height * 1.35 &&
-          routeCardContacts(candidate, W, H) <= routeCardContacts(best, W, H)
+          routeCardContacts(candidate) <= routeCardContacts(best)
         ) {
           best = candidate;
           contacts = next;
@@ -963,7 +975,7 @@ export async function unionGeometry(
     // Keep ELK block coordinates; reject each local spouse swap unless its rerouted
     // ancestry improves primary family routes.
     let currentRoutes = geometryQuality(best);
-    let cardContacts = routeCardContacts(best, W, H);
+    let cardContacts = routeCardContacts(best);
     let currentPositions = new Map(best.positions);
     const priorPositions = previous && new Map(previous.positions);
     const blocksById = new Map(
@@ -1017,7 +1029,7 @@ export async function unionGeometry(
           nextRoutes.bends > currentRoutes.bends + 2
         )
           continue;
-        const nextCardContacts = routeCardContacts(candidate, W, H);
+        const nextCardContacts = routeCardContacts(candidate);
         if (nextCardContacts > cardContacts) continue;
         best = candidate;
         contacts = next;
@@ -1040,8 +1052,8 @@ export async function unionGeometry(
     let currentRoutes = geometryQuality(best);
     const originalLength = currentRoutes.length;
     const initialMovement = previous && axisDisplacement(previous, best, "x");
-    let cardContacts = routeCardContacts(best, W, H);
-    let cardOverlaps = cardOverlapCount(best, W, H);
+    let cardContacts = routeCardContacts(best);
+    let cardOverlaps = cardOverlapCount(best);
     // A preceding swap can expose a new neighbor. Revisit at most three times
     // while limiting added mean displacement to one card width.
     for (let pass = 0; pass < (previous ? 3 : 1); pass++) {
@@ -1088,9 +1100,9 @@ export async function unionGeometry(
           nextRoutes.bends > currentRoutes.bends + 4
         )
           continue;
-        const nextCardContacts = routeCardContacts(candidate, W, H);
+        const nextCardContacts = routeCardContacts(candidate);
         if (nextCardContacts > cardContacts) continue;
-        const nextCardOverlaps = cardOverlapCount(candidate, W, H);
+        const nextCardOverlaps = cardOverlapCount(candidate);
         if (nextCardOverlaps > cardOverlaps) continue;
         best = candidate;
         contacts = next;

@@ -1,6 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  pdfDecodeCoordinator,
+  PdfDecodeBusyError,
+} from "./pdf-decode-coordinator.ts";
 
 export type PdfPageSize = { width: number; height: number };
 const validPages = (pages: unknown): pages is PdfPageSize[] =>
@@ -18,10 +22,16 @@ const validPages = (pages: unknown): pages is PdfPageSize[] =>
   );
 
 /** Immutable originals share a small disk manifest; decoding stays serialized. */
-export function pdfDocumentPages(directory: string) {
+export function pdfDocumentPages(
+  directory: string,
+  decode?: ReturnType<typeof pdfDecodeCoordinator>["decode"],
+) {
   const pending = new Map<string, Promise<PdfPageSize[]>>();
-  let tail = Promise.resolve();
+  const ownedDecoder = decode ? undefined : pdfDecodeCoordinator();
+  const decodePages = decode ?? ownedDecoder!.decode;
+  const controller = new AbortController();
   const pages = async (path: string) => {
+    if (controller.signal.aborted) throw new Error("Подготовка PDF отменена");
     const info = await stat(path);
     const key = createHash("sha256")
       .update(`${path}:${info.size}:${info.mtimeMs}`)
@@ -38,45 +48,21 @@ export function pdfDocumentPages(directory: string) {
         throw error;
     }
     if (pending.has(key)) return await pending.get(key)!;
-    if (pending.size >= 8) throw new Error("Очередь подготовки PDF заполнена");
-    const task = tail.then(async () => {
-      const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
-      const loading = getDocument({
-        data: new Uint8Array(await readFile(path)),
-        useSystemFonts: false,
-        verbosity: 0,
-      });
+    if (pending.size >= 8) throw new PdfDecodeBusyError();
+    const task = decodePages(path, controller.signal).then(async (result) => {
+      if (!validPages(result))
+        throw new Error("Некорректные размеры страниц PDF");
+      await mkdir(directory, { recursive: true });
+      const temporary = join(directory, `.${randomUUID()}.tmp`);
       try {
-        const pdf = await loading.promise;
-        if (pdf.numPages < 1 || pdf.numPages > 2000)
-          throw new Error("PDF должен содержать от 1 до 2000 страниц");
-        const result: PdfPageSize[] = [];
-        for (let index = 1; index <= pdf.numPages; index++) {
-          const page = await pdf.getPage(index);
-          const viewport = page.getViewport({ scale: 1 });
-          result.push({ width: viewport.width, height: viewport.height });
-          page.cleanup();
-        }
-        if (!validPages(result))
-          throw new Error("Некорректные размеры страниц PDF");
-        await mkdir(directory, { recursive: true });
-        const temporary = join(directory, `.${randomUUID()}.tmp`);
-        try {
-          await writeFile(temporary, JSON.stringify(result));
-          await rename(temporary, cachedPath);
-        } finally {
-          await rm(temporary, { force: true });
-        }
-        return result;
+        await writeFile(temporary, JSON.stringify(result));
+        await rename(temporary, cachedPath);
       } finally {
-        await loading.destroy();
+        await rm(temporary, { force: true });
       }
+      return result;
     });
     pending.set(key, task);
-    tail = task.then(
-      () => {},
-      () => {},
-    );
     try {
       return await task;
     } finally {
@@ -85,7 +71,9 @@ export function pdfDocumentPages(directory: string) {
   };
   return Object.assign(pages, {
     async close() {
-      await tail;
+      controller.abort();
+      await Promise.allSettled([...pending.values()]);
+      await ownedDecoder?.close();
     },
   });
 }

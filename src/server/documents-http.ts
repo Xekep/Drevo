@@ -11,6 +11,7 @@ import {
 } from "./document-images.ts";
 import sharp from "sharp";
 import { pdfDocumentPages } from "./document-pdf.ts";
+import { documentReferenceStore } from "./document-reference-store.ts";
 import { randomUUID } from "node:crypto";
 import { createWriteStream, mkdirSync } from "node:fs";
 import { open, readFile, rename, stat, statfs, unlink } from "node:fs/promises";
@@ -39,7 +40,7 @@ import {
 } from "../shared/document-annotations.ts";
 import { auditStore } from "./audit.ts";
 import { assertActiveAccountSession, AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
-import { personCitations, sourceCatalogStore, unionCitations } from "./source-catalog-store.ts";
+import { sourceCatalogStore } from "./source-catalog-store.ts";
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
 import {
@@ -374,47 +375,7 @@ export function documentsHttp({
     req: IncomingMessage,
     access: Awaited<ReturnType<typeof visible>>,
   ) => !!access.scope && accessScope(await auth.currentUser(req)) === access.scope;
-  const linkedPersons = async (ids: string[]) => {
-    if (!ids.length) return [] as Person[];
-    const rows = await db.prepare(
-      "SELECT id,data FROM people WHERE id IN (SELECT value FROM json_each(?))",
-      "SELECT id,data FROM people WHERE id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))",
-    ).all(JSON.stringify([...new Set(ids)]));
-    return rows.map((row) => (typeof row.data === "string"
-      ? JSON.parse(row.data) : row.data) as Person);
-  };
-  const citedEntities = async (documentIds: string[]) => {
-    if (!documentIds.length)
-      return { people: [] as Person[], unions: [] as FamilyUnion[], links: [] as FamilyLink[],
-        parents: [] as Array<{ from: string; to: string; sources: Source[] }> };
-    // One candidate scan per page (at most 100 document IDs), never one scan
-    // per listed document. The reader checks exact documentId after parsing.
-    const matches = (column: string) => documentIds.map(() => `${column} LIKE ?`).join(" OR ");
-    const patterns = documentIds.map((id) => `%${id}%`);
-    const parse = <T>(value: unknown): T =>
-      (typeof value === "string" ? JSON.parse(value) : value) as T;
-    const people = (await db.prepare(
-      `SELECT data FROM people WHERE ${matches("data")}`,
-      `SELECT data FROM people WHERE ${matches("data::text")}`,
-    ).all(...patterns)).map((row) => parse<Person>(row.data));
-    const unions = (await db.prepare(
-      `SELECT data FROM family_unions WHERE ${matches("data")}`,
-      `SELECT data FROM family_unions WHERE ${matches("data::text")}`,
-    ).all(...patterns)).map((row) => parse<FamilyUnion>(row.data));
-    const links = (await db.prepare(
-      `SELECT id,source,target,type,sources FROM relations WHERE type NOT IN ('parent','spouse') AND (${matches("sources")})`,
-      `SELECT id,source,target,type,sources FROM relations WHERE type NOT IN ('parent','spouse') AND (${matches("sources::text")})`,
-    ).all(...patterns)).map((row) => ({
-      id: String(row.id), from: String(row.source), to: String(row.target),
-      type: row.type as FamilyLink["type"], sources: parse<Source[]>(row.sources),
-    }));
-    const parents = (await db.prepare(
-      `SELECT source,target,sources FROM relations WHERE type='parent' AND (${matches("sources")})`,
-      `SELECT source,target,sources FROM relations WHERE type='parent' AND (${matches("sources::text")})`,
-    ).all(...patterns)).map((row) => ({ from: String(row.source), to: String(row.target),
-      sources: parse<Source[]>(row.sources) }));
-    return { people, unions, links, parents };
-  };
+  const { linkedPersons, citedEntities, referencingPeople } = documentReferenceStore(db);
   const readerCitations = async (
     access: Awaited<ReturnType<typeof visible>>,
     documentIds: string[],
@@ -443,40 +404,6 @@ export function documentsHttp({
         ? JSON.parse(row.data) : row.data) as Person;
       return fullName(person).toLocaleLowerCase("ru").includes(query);
     }).map((row) => String(row.id));
-  };
-  const referencingPeople = async (documentId: string) => {
-    // The citation lives inside person JSON until sources become first-class rows.
-    // Narrow the occasional delete check before inspecting nested sources.
-    const rows = await db.prepare(
-      "SELECT id,data FROM people WHERE data LIKE ?",
-      "SELECT id,data FROM people WHERE data::text LIKE ?",
-    ).all(`%${documentId}%`);
-    const people = rows.flatMap((row) => {
-      const person = (typeof row.data === "string"
-        ? JSON.parse(row.data) : row.data) as Person;
-      const linked = personCitations(person).some((source) => source.documentId === documentId);
-      return linked ? [String(row.id)] : [];
-    });
-    const unions = await db.prepare(
-      "SELECT data FROM family_unions WHERE data LIKE ?",
-      "SELECT data FROM family_unions WHERE data::text LIKE ?",
-    ).all(`%${documentId}%`);
-    for (const row of unions) {
-      const union = (typeof row.data === "string" ? JSON.parse(row.data) : row.data) as FamilyUnion;
-      if (unionCitations(union).some((source) => source.documentId === documentId))
-        people.push(...union.participants);
-    }
-    const links = await db.prepare(
-      "SELECT source,target,sources FROM relations WHERE type <> 'spouse' AND sources LIKE ?",
-      "SELECT source,target,sources FROM relations WHERE type <> 'spouse' AND sources::text LIKE ?",
-    ).all(`%${documentId}%`);
-    for (const row of links) {
-      const sources = (typeof row.sources === "string"
-        ? JSON.parse(row.sources) : row.sources) as Source[];
-      if (sources.some((source) => source.documentId === documentId))
-        people.push(String(row.source), String(row.target));
-    }
-    return [...new Set(people)];
   };
   const referencedByCatalog = (documentId: string) =>
     sourceCatalogStore(db).usesDocument(documentId);
