@@ -376,9 +376,14 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT 1 AS present FROM pg_constraint WHERE conrelid=to_regclass('discovery_branch_members') AND conname='discovery_branch_members_relation_check' AND pg_get_constraintdef(oid) LIKE '%relative%'",
       "092_discovery_branch_depth.sql",
     ],
+    [
+      "SELECT 1 AS present FROM pg_constraint WHERE conrelid=to_regclass('archive_invitations') AND conname='archive_invitation_scope_check'",
+      "094_archive_invitation_scope.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
-    if (file === "090_global_staff_roles.sql" || file === "092_discovery_branch_depth.sql") {
+    if (file === "090_global_staff_roles.sql" || file === "092_discovery_branch_depth.sql" ||
+        file === "094_archive_invitation_scope.sql") {
       if (!db.postgresTransaction)
         throw new Error("PostgreSQL transaction unavailable");
       await db.postgresTransaction(async (client) => {

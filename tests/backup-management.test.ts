@@ -461,6 +461,19 @@ test("HTTP selected-backup preview requires explicit restore confirmation and re
       assert.equal((await response.json()).total, 0);
     }
     await app.archive.write(seed, (await app.archive.read()).revision);
+    const settingsBefore = await app.archive.db.prepare("SELECT data,next_run FROM backup_settings WHERE id=1").get();
+    const initialTreeStatus = await fetch(base + "/api/backups").then((response) => response.json());
+    assert.equal(initialTreeStatus.settings.enabled, false);
+    assert.equal(initialTreeStatus.settings.keepCount, 5);
+    assert.equal(initialTreeStatus.settings.storage, "local");
+    assert.equal(initialTreeStatus.nextRunAt, null);
+    assert.equal((await fetch(base + "/api/backups/settings", {
+      method: "PUT", headers: { "X-Drevo-Backup": "1", "Content-Type": "application/json" },
+      body: JSON.stringify({ ...initialTreeStatus.settings, enabled: true, keepCount: 30 }),
+    })).status, 403, "even an authorized tree owner cannot enable per-tree scheduling");
+    assert.deepEqual(await app.archive.db.prepare("SELECT data,next_run FROM backup_settings WHERE id=1").get(), settingsBefore);
+    assert.equal((await post("/api/backups/check", { ...initialTreeStatus.settings,
+      storage: "remote", remoteHost: "vault", remoteDirectory: "/backup" })).status, 403);
     assert.equal(
       (await fetch(base + "/api/backups/create", { method: "POST" })).status,
       403,

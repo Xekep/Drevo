@@ -18,7 +18,7 @@ const person = (id: string, name: string, parents: string[] = []): Person => ({
   sources: [],
   generation: parents.length ? 2 : 1,
   column: 0,
-  photo: "/media/preview-portrait.png",
+  photo: id === "child" ? "/media/member-linked-portrait.png" : "/media/preview-portrait.png",
 });
 const member: ArchiveUser = {
   id: "member:test",
@@ -50,7 +50,9 @@ const fullFamily: Family = {
     person("child", "Пётр", ["parent"]),
     { ...person("own-person", "Отдельный"), createdBy: member.id },
     person("hidden", "Скрытый"),
+    person("union-partner", "Партнёр", ["hidden"]),
   ],
+  unions: [{ id: "partner-union", type: "partnership", participants: ["child", "union-partner"] }],
   photos: [
     {
       id: "preview-photo",
@@ -70,7 +72,6 @@ const fullFamily: Family = {
     },
   ],
   links: [],
-  unions: [],
 };
 const family = projectFamilyForUser(fullFamily, member);
 const documentId = "11111111-1111-4111-8111-111111111111";
@@ -207,7 +208,8 @@ test.afterEach(async ({ page }) => {
   await page.unrouteAll({ behavior: "wait" });
 });
 
-test("member preview exposes view settings without writing either account or guest preferences", async ({ page }) => {
+test("member preview exposes view settings without writing either account or guest preferences", async ({ page }, info) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() => localStorage.setItem(
     "drevo:guest-tree-preferences:v1", JSON.stringify({ reverseTimeline: true, colorScheme: "white" }),
   ));
@@ -226,6 +228,25 @@ test("member preview exposes view settings without writing either account or gue
   await dialog.getByRole("button", { name: "Сбросить вид" }).click();
   await expect(dialog.getByRole("radio", { name: "Предки сверху" })).toBeChecked();
   await expect(canvas).not.toHaveClass(/theme-white/);
+  const wheelHint = dialog.getByText("Нажмите колесо мыши на карточке, чтобы выбрать опорного человека.");
+  if (info.project.name === "mobile") await expect(wheelHint).toBeHidden();
+  else await expect(wheelHint).toBeVisible();
+  await dialog.getByRole("switch", { name: "Ограничить видимое древо" }).check();
+  await dialog.getByRole("button", { name: "Закрыть" }).click();
+  const anchor = page.getByRole("status", { name: "Опорный человек" });
+  await expect(anchor).toBeVisible();
+  const viewport = page.locator(".react-flow__viewport");
+  const mountedViewport = await viewport.elementHandle();
+  if (info.project.name === "desktop") {
+    await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
+    await page.locator('.flow-person[data-person-id="parent"]').first().click({ button: "middle" });
+    await expect(anchor).toContainText("Опорный: Тестов Иван");
+    await expect(page.getByRole("tablist", { name: "Сведения о человеке" })).toHaveCount(0);
+  }
+  await anchor.getByRole("button", { name: "Всё древо", exact: true }).click();
+  await expect(anchor).toHaveCount(0);
+  await expect(canvas).toHaveAttribute("data-layout-people", "4");
+  expect(await mountedViewport!.evaluate((element) => element.isConnected)).toBe(true);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("drevo:guest-tree-preferences:v1")!)))
     .toEqual({ reverseTimeline: true, colorScheme: "white" });
   await page.reload();
@@ -234,8 +255,83 @@ test("member preview exposes view settings without writing either account or gue
   await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
   await page.getByRole("button", { name: "Настройки древа" }).click();
   await expect(dialog.getByRole("radio", { name: "Предки сверху" })).toBeChecked();
+  await expect(dialog.locator(".member-preview-banner")).toContainText(member.name);
+  await expect(dialog.getByRole("link", { name: "Выйти из просмотра" })).toBeVisible();
+  // Clicking padding within the dialog is not a backdrop dismissal.
+  await dialog.locator("h2").click();
+  await expect(dialog).toBeVisible();
+  await page.mouse.click(2, 2);
+  await expect(dialog).toHaveCount(0);
   expect(unscoped).toEqual([]);
   expect(requests.every((request) => request.method === "GET")).toBe(true);
+});
+
+test("preview avatar opens a populated scoped menu with the participant portrait", async ({ page }, info) => {
+  const { requests, unscoped } = await mockPreview(page);
+  await page.goto(`${prefix}/tree`);
+  const trigger = page.getByLabel("Разделы предпросмотра", { exact: true });
+  await expect(trigger.locator("img")).toHaveAttribute("src", `${prefix}/media/member-linked-portrait.png?variant=thumb`);
+  await trigger.click();
+  const menu = page.locator(".archive-more .nav-bottom");
+  await expect(menu.getByRole("link", { name: "Фото", exact: true })).toBeVisible();
+  await expect(menu.getByRole("button", { name: "Вид древа", exact: true })).toBeVisible();
+  await expect(menu.getByRole("link", { name: "Выйти из просмотра", exact: true }))
+    .toHaveAttribute("href", "/a/preview-archive/manage");
+  await expect(menu.getByRole("link", { name: "Управление древом" })).toHaveCount(0);
+  await expect(menu.getByRole("link", { name: "Админка платформы" })).toHaveCount(0);
+  await expect(menu.getByRole("link", { name: "Личный кабинет" })).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath("preview-menu.png") });
+  await menu.getByRole("link", { name: "Фото", exact: true }).click();
+  await expect(page).toHaveURL(`${prefix}/photos`);
+  await expect(page.locator(".archive-more")).not.toHaveAttribute("open", "");
+  await trigger.click();
+  await menu.getByRole("button", { name: "Вид древа" }).click();
+  await expect(page.getByRole("dialog", { name: "Вид древа" })).toBeVisible();
+  expect(unscoped).toEqual([]);
+  expect(requests.every((request) => request.method === "GET")).toBe(true);
+});
+
+test("mobile tree fullscreen retains the participant banner and a reachable exit", async ({ page }, info) => {
+  test.skip(info.project.name !== "mobile", "Fullscreen canvas control is mobile-only");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const { requests, unscoped } = await mockPreview(page);
+  await page.goto(`${prefix}/tree`);
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await page.getByRole("button", { name: "Развернуть на весь экран" }).click();
+  await expect(canvas).toHaveClass(/is-fullscreen/);
+  const banner = canvas.locator(".member-preview-banner");
+  await expect(banner).toContainText(member.name);
+  const exit = banner.getByRole("link", { name: "Выйти из просмотра", exact: true });
+  await exit.click({ trial: true });
+  expect((await banner.boundingBox())!.y).toBeLessThanOrEqual(1);
+  // Chromium supports native fullscreen; the banner belongs to that subtree.
+  expect(await banner.evaluate((element) =>
+    !document.fullscreenElement || document.fullscreenElement.contains(element))).toBe(true);
+  expect(unscoped).toEqual([]);
+  expect(requests.every((request) => request.method === "GET")).toBe(true);
+});
+
+test("preview exit stays available while restored-session access is being checked", async ({ page }) => {
+  await mockPreview(page);
+  await page.goto(`${prefix}/tree`);
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("data-layout-ready", "true");
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/session", async (route) => {
+    await pending;
+    await route.fulfill({ json: { user: member, account: null, local: false, preview: true } });
+  });
+  try {
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+    const gate = page.getByRole("dialog", { name: "Проверка доступа" });
+    await expect(gate).toBeVisible();
+    await expect(gate.locator(".member-preview-banner")).toContainText(member.name);
+    await gate.getByRole("link", { name: "Выйти из просмотра", exact: true }).click({ trial: true });
+  } finally {
+    release();
+  }
+  await expect(page.getByRole("dialog", { name: "Проверка доступа" })).toHaveCount(0);
 });
 
 test("member preview keeps all archive sections and deep links in the member scope", async ({
@@ -291,6 +387,7 @@ test("member preview keeps all archive sections and deep links in the member sco
       await expect(
         page.locator('.flow-person[data-person-id="own-person"]').first(),
       ).toBeVisible();
+      await expect(page.locator('.flow-person[data-person-id="union-partner"]').first()).toBeVisible();
       await expect(
         page.locator('.flow-person[data-person-id="hidden"]'),
       ).toHaveCount(0);
@@ -380,6 +477,14 @@ test("native photo, attachment, and document dialogs offer a usable preview exit
           kind === "attachment" ? "dialog.discussion-lightbox" : "dialog.pdf-book-dialog",
         );
         await expect(dialog).toBeVisible();
+        const banner = dialog.locator(".member-preview-banner");
+        await expect(banner).toContainText(`Просмотр как участник: ${member.name}`);
+        const bannerBox = (await banner.boundingBox())!;
+        expect(bannerBox.y).toBeLessThanOrEqual(1);
+        expect(bannerBox.x).toBeGreaterThanOrEqual(0);
+        expect(bannerBox.x + bannerBox.width).toBeLessThanOrEqual(width + 1);
+        expect(await banner.evaluate((element) => getComputedStyle(element).backgroundColor))
+          .toBe("rgb(255, 244, 219)");
         const exit = dialog.getByRole("link", { name: "Выйти из просмотра", exact: true });
         await expect(exit).toHaveAttribute("href", "/a/preview-archive/manage");
         await exit.click({ trial: true });
@@ -415,6 +520,10 @@ test("native photo, attachment, and document dialogs offer a usable preview exit
             expect(personActions!.y + personActions!.height).toBeLessThanOrEqual(profileHead!.y + 1);
           }
         } else {
+          const frame = dialog.locator("iframe.pdf-book-frame");
+          await expect(frame).toHaveAttribute("allow", "fullscreen 'none'");
+          const contentFrame = await (await frame.elementHandle())!.contentFrame();
+          expect(await contentFrame!.evaluate(() => document.fullscreenEnabled)).toBe(false);
           const frameBox = await dialog.locator("iframe.pdf-book-frame").boundingBox();
           expect(frameBox).not.toBeNull();
           expect(box!.y + box!.height).toBeLessThanOrEqual(frameBox!.y + 1);
@@ -514,6 +623,8 @@ test("participants have a separate preview action alongside deletion", async ({
     name: `Участник: ${member.name}`,
     exact: true,
   });
+  await expect(row.getByRole("combobox", { name: `Доступ к древу: ${member.name}` })
+    .locator('option[value="common_ancestors"]')).toHaveText("Кровные родственники");
   await expect(
     row.getByRole("link", {
       name: `Посмотреть как участник: ${member.name}`,

@@ -1,5 +1,5 @@
 import { archiveFetch } from "./data/archive-fetch.ts";
-import { isArchiveOwner, type ArchiveUser } from "./domain/access.ts";
+import { canManageTreeBackups, isArchiveOwner, type ArchiveUser } from "./domain/access.ts";
 import { isScopedUser } from "./domain/tree-access.ts";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { confirmDiscardChanges } from "./hooks/useUnsavedChanges";
@@ -44,6 +44,8 @@ import { LoginButtons } from "./components/login-buttons";
 import { AdminPanel } from "./components/admin-panel";
 import { ArchiveSettings } from "./components/archive-settings";
 import { TreePreferencesDialog } from "./components/tree-preferences-dialog";
+import { MemberPreviewBanner } from "./components/member-preview-exit";
+import { MemberPreviewName } from "./components/member-preview-context";
 import { withGenerationAnchor } from "./domain/tree-preferences";
 import { TreeExportDialog } from "./components/tree-export-dialog";
 import { downloadVisibleGenealogy } from "./components/tree/visible-genealogy-download";
@@ -805,6 +807,7 @@ export default function App() {
     ? family?.people.find((person) => person.id === navigationUser.personId)
     : undefined;
   return (
+    <MemberPreviewName.Provider value={accountSession?.participantPreview?.name || user?.name || ""}>
     <div className={`archive-app${restoredSessionState === "ready" ? "" : " is-validating-restored-session"}`}>
       {shareDraft && (
         <ShareDialog {...shareDraft} onClose={() => setShareDraft(null)} />
@@ -817,12 +820,7 @@ export default function App() {
         />
       )}
       <div className="archive-main">
-        {participantPreview && (
-          <div className="member-preview-banner" role="status">
-            <span>Просмотр как участник: <strong>{accountSession?.participantPreview?.name || user?.name || "загрузка"}</strong></span>
-            <a href={`${participantPreview.archiveId ? `/a/${participantPreview.archiveId}` : ""}/manage`}>Выйти из просмотра</a>
-          </div>
-        )}
+        <MemberPreviewBanner />
         {view === "admin" ? <header className="archive-header is-platform-header">
           <ArchiveNavigation
             view={view}
@@ -847,6 +845,7 @@ export default function App() {
               readPhotos={readPhotos}
               onHelp={() => setHelp(true)}
               participantPreview={Boolean(participantPreview)}
+              onTreePreferences={readTree ? () => setTreePreferencesOpen(true) : undefined}
               onPlatformLeave={() => {
                 const leave = confirmDiscardChanges(navigationDirty.current);
                 if (leave) navigationDirty.current = false;
@@ -920,8 +919,6 @@ export default function App() {
               <Suspense fallback={<main className="archive-status" role="status">Загружаем админку платформы…</main>}>
                 <PlatformSettingsPage accountId={(accountSession.account || accountSession.user)!.id}
                 showRoles={Boolean(accountSession.account)}
-                primaryUser={accountSession.user}
-                local={accountSession.local === true}
                 onOwnRoleChanged={(role) => {
                   setAccountSession((current) => current?.account ? {
                     ...current,
@@ -975,6 +972,7 @@ export default function App() {
                   currentUserId={user.id}
                   platformAdmin={user.platformAdmin === true}
                   archiveOwner={isArchiveOwner(user)}
+                  backupAccess={!previewActive && canManageTreeBackups(user)}
                   publicationOwnership={publicationOwnership}
                   onClose={() => navigate("tree")}
                   onChanged={archive.reload}
@@ -1060,10 +1058,15 @@ export default function App() {
                       reverse={archive.reverseTimeline}
                       colorScheme={archive.treePreferences.colorScheme}
                       generationLimits={archive.treePreferences.generationLimits}
-                      onGenerationAnchor={participantPreview ? undefined : async (id) => {
+                      onGenerationAnchor={async (id) => {
                         await archive.saveTreePreferences(
                           withGenerationAnchor(archive.treePreferences, id),
                         );
+                      }}
+                      onResetGenerations={async () => {
+                        await archive.saveTreePreferences({
+                          ...archive.treePreferences, generationLimits: null,
+                        });
                       }}
                       selected={selected}
                       selectedEdge={connectionDraft?.original?.key}
@@ -1391,6 +1394,7 @@ export default function App() {
       {restoredSessionState !== "ready" && (
         <dialog ref={restoredSessionDialog} className="restored-session-gate" aria-label="Проверка доступа"
           onCancel={(event) => event.preventDefault()}>
+          <MemberPreviewBanner modal />
           {restoredSessionState === "checking" ? (
             <p>Проверяем доступ к архиву…</p>
           ) : (
@@ -1451,5 +1455,6 @@ export default function App() {
         <ConflictDialog conflict={archive.conflict} family={family} />
       )}
     </div>
+    </MemberPreviewName.Provider>
   );
 }

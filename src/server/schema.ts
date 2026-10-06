@@ -212,19 +212,6 @@ function migrate(db: DatabaseSync, target: number) {
   }
   if (target === 5) {
     db.exec(`
-      CREATE TABLE IF NOT EXISTS mcp_tokens (
-        id TEXT PRIMARY KEY,
-        token_hash TEXT UNIQUE NOT NULL,
-        token_hint TEXT NOT NULL,
-        name TEXT NOT NULL,
-        scopes TEXT NOT NULL CHECK(json_valid(scopes)),
-        created_at TEXT NOT NULL,
-        expires_at INTEGER,
-        created_by TEXT NOT NULL,
-        revoked_at TEXT,
-        last_used_at INTEGER
-      ) STRICT;
-      CREATE INDEX IF NOT EXISTS mcp_tokens_active ON mcp_tokens(revoked_at,expires_at);
     `);
     return;
   }
@@ -333,41 +320,9 @@ function migrate(db: DatabaseSync, target: number) {
     `);
     return;
   }
-  if (target === 10) {
-    if (!tableHasColumn(db, "mcp_tokens", "rate_limit_per_minute"))
-      db.exec(`
-        ALTER TABLE mcp_tokens
-          ADD COLUMN rate_limit_per_minute INTEGER NOT NULL DEFAULT 60
-          CHECK(rate_limit_per_minute BETWEEN 0 AND 600);
-      `);
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS mcp_usage (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        at TEXT NOT NULL,
-        started_ms INTEGER NOT NULL,
-        token_id TEXT NOT NULL REFERENCES mcp_tokens(id) ON DELETE CASCADE,
-        method TEXT NOT NULL,
-        tool_name TEXT,
-        status TEXT NOT NULL CHECK(status IN ('ok','error')),
-        latency_ms INTEGER NOT NULL
-      ) STRICT;
-      CREATE INDEX IF NOT EXISTS mcp_usage_token_started
-        ON mcp_usage(token_id,started_ms DESC);
-      CREATE INDEX IF NOT EXISTS mcp_usage_started
-        ON mcp_usage(started_ms DESC);
-    `);
-    return;
-  }
-  if (target === 11) {
-    if (!tableHasColumn(db, "mcp_tokens", "bound_user_id"))
-      db.exec(`
-        ALTER TABLE mcp_tokens
-          ADD COLUMN bound_user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
-        CREATE INDEX IF NOT EXISTS mcp_tokens_bound_user
-          ON mcp_tokens(bound_user_id);
-      `);
-    return;
-  }
+  // Versions 10 and 11 belonged to the removed MCP transport. Existing tables
+  // remain untouched; new archives do not create token or usage tables.
+  if (target === 10 || target === 11) return;
   if (target === 12) {
     if (!tableHasColumn(db, "ai_settings", "api_key_ciphertext"))
       db.exec(`

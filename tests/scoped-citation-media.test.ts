@@ -26,12 +26,13 @@ test("scoped citation binding checks every supported entity without changing old
   child.birth = "1900";
   child.events = [{ id: "event", type: "residence", date: "1920", place: "Москва" }];
   const other = person("other", user.id);
+  const outsider = person("outsider", "another-user");
   const hidden = person("hidden", "another-user");
   hidden.sources = [citation("/media/secret.pdf#page=2")];
   hidden.photo = "/media/secret.png";
   const before: Family = {
     title: "Тест", description: "", demo: false,
-    people: [anchor, child, other, hidden], photos: [],
+    people: [anchor, child, other, hidden, outsider], photos: [],
     links: [
       { id: "own-link", createdBy: user.id, type: "godparent", from: "anchor", to: "other" },
       { id: "hidden-link", type: "godparent", from: "hidden", to: "anchor",
@@ -40,10 +41,12 @@ test("scoped citation binding checks every supported entity without changing old
     unions: [
       { id: "own-union", createdBy: user.id, type: "partnership",
         participants: ["anchor", "other"] },
-      { id: "hidden-union", type: "partnership", participants: ["hidden", "anchor"],
+      { id: "hidden-union", type: "partnership", participants: ["hidden", "outsider"],
         sources: [citation("/media/secret.pdf")] },
     ],
   };
+  assert.ok(!projectFamilyForUser(before, user).people.some((item) => item.id === hidden.id),
+    "the denied citation belongs to a person outside the blood-and-partners scope");
   const archive = await openArchive(":memory:", before);
   const changed = (update: (family: Family) => void) => {
     const family = structuredClone(before);

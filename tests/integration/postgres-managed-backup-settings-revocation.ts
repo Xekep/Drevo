@@ -8,6 +8,7 @@ import type { openArchive } from "../../src/server/database.ts";
 import { restoreStore } from "../../src/server/restore.ts";
 import { newSessionToken, sessionTokenHash } from "../../src/server/session-token.ts";
 import { userStore } from "../../src/server/users.ts";
+import { canManageTreeBackups } from "../../src/domain/access.ts";
 
 export async function verifyManagedBackupSettingsRevocation(
   archive: Awaited<ReturnType<typeof openArchive>>,
@@ -39,13 +40,15 @@ export async function verifyManagedBackupSettingsRevocation(
   };
   const guardedAuth = {
     ...auth,
-    isPlatformAdmin: async (...args: Parameters<typeof auth.isPlatformAdmin>) => {
-      const allowed = await auth.isPlatformAdmin(...args);
-      if (allowed && ++authorizationChecks === 2) {
+    // This coordinator deliberately tests the retained legacy internal settings
+    // path; production treeOnly coordinators reject settings before this path.
+    currentUser: async (...args: Parameters<typeof auth.currentUser>) => {
+      const actor = await auth.currentUser(...args);
+      if (canManageTreeBackups(actor) && ++authorizationChecks === 2) {
         reached();
         await gate;
       }
-      return allowed;
+      return actor;
     },
   };
   const endpoint = backupManagementHttp({

@@ -29,6 +29,8 @@ import { portableExportHttp } from "./portable-http.ts";
 import { portableImportHttp } from "./portable-import-http.ts";
 import { productionStaticHttp } from "./production-static-http.ts";
 import { backupCoordinator } from "./backup-coordinator.ts";
+import { platformBackupCoordinator } from "./platform-backup-coordinator.ts";
+import { platformBackupHttp } from "./platform-backup-http.ts";
 import { backupManagementHttp } from "./backup-management-http.ts";
 import { indexReferencedMediaOriginals } from "./media-originals.ts";
 import { configuredDatabaseBackend } from "./store-database.ts";
@@ -301,7 +303,11 @@ export async function startServer(
     own(async () => {
       await routedArchives?.close();
     });
-    const backups = await backupCoordinator(archive.db, dbPath);
+    const backups = await backupCoordinator(archive.db, dbPath, { treeOnly: true, schedule: false });
+    const platformBackups = !archiveId ? await platformBackupCoordinator(archive.db, configuredPath) : null;
+    if (platformBackups) own(() => platformBackups.close());
+    const managePlatformBackups = platformBackups
+      ? platformBackupHttp({ backups: platformBackups, auth, db: archive.db, publicOrigin }) : null;
     own(() => backups.close());
     const manageBackups = backupManagementHttp({
       backups,
@@ -429,6 +435,7 @@ export async function startServer(
       if (path.startsWith("/api/")) await auth.refreshSession(req, res);
       if (emailAuth && (await emailAuth.handle(req, res, parsedUrl))) return;
       if (await managePlatformRoles(req, res, parsedUrl)) return;
+      if (managePlatformBackups && await managePlatformBackups(req, res, parsedUrl)) return;
       if (managePlatformCleanup && await managePlatformCleanup(req, res, parsedUrl)) return;
       if (await managePlatformTiers(req, res, parsedUrl)) return;
       if (await listAccountArchives(req, res, parsedUrl)) return;

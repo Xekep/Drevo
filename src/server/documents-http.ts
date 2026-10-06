@@ -1222,20 +1222,42 @@ export function documentsHttp({
         authorId: string,
       ) => actor?.approved === true && actor.id === authorId &&
         canEditArchive(actor);
-      const visibleItems = (
+      const visibleItems = async (
         items: DocumentAnnotation[],
         actor: Awaited<ReturnType<typeof auth.currentUser>>,
-      ) =>
-        items.map((item) => ({
+        currentAccess: Awaited<ReturnType<typeof visible>>,
+      ) => {
+        const ids = [...new Set(items.map((item) => item.authorId).filter(Boolean))];
+        // Resolve all authors in one archive-scoped query; document reads do
+        // not need to load the entire graph for unrestricted participants.
+        const rows = ids.length ? await db.prepare(
+          `SELECT u.id,p.id AS person_id,p.data FROM users u
+           JOIN people p ON p.id=u.person_id
+           WHERE u.id IN (SELECT value FROM json_each(?))`,
+          `SELECT m.user_id AS id,p.id AS person_id,p.data FROM archive_memberships m
+           JOIN people p ON p.archive_id=m.archive_id AND p.id=m.person_id
+           WHERE m.archive_id=current_setting('drevo.archive_id',true)
+             AND m.user_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))`,
+        ).all(JSON.stringify(ids)) : [];
+        const allowed = new Set(currentAccess.ids);
+        const names = new Map(rows.flatMap((row) => {
+          if (currentAccess.scoped && !allowed.has(String(row.person_id))) return [];
+          const person = (typeof row.data === "string" ? JSON.parse(row.data) : row.data) as Person;
+          const name = fullName(person).trim();
+          return name ? [[String(row.id), name] as const] : [];
+        }));
+        return items.map((item) => ({
           ...item,
+          authorName: names.get(item.authorId) || item.authorName,
           canDelete: !memberPreviewTarget(req) && canDeleteAnnotation(actor, item.authorId),
           canEdit: !memberPreviewTarget(req) && canEditAnnotation(actor, item.authorId),
         }));
+      };
       if (req.method === "GET" && !annotations[2]) {
         const actor = await auth.currentUser(req);
         if (!(await accessStillCurrent(req, access)))
           return json(res, 404, { error: "Документ не найден" });
-        const value = { items: visibleItems(JSON.parse(row.annotations), actor) };
+        const value = { items: await visibleItems(JSON.parse(row.annotations), actor, access) };
         const delivered = await deliverMetadata(req, res, access, [row],
           new Map([[row.id, personIds]]), value);
         if (delivered === "denied")
@@ -1362,7 +1384,7 @@ export function documentsHttp({
           latest,
         );
         await checkedWriteSession(latest.id, issuingSession);
-        return { status, items: visibleItems(items, latest), access: latestAccess,
+        return { status, items: await visibleItems(items, latest, latestAccess), access: latestAccess,
           row: { ...current, annotations: JSON.stringify(items) }, personIds: linked };
       });
       if ("error" in result) {

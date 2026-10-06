@@ -1,3 +1,5 @@
+import { memberPreviewTarget } from "./member-preview-access.ts";
+import { lockBackupStaff, assertTreeBackupInTransaction } from "./tree-backup-access.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import { ConflictError } from "./database.ts";
@@ -7,10 +9,10 @@ import { ForbiddenError } from "./users.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
 import { UploadQuotaError } from "./upload-quota.ts";
 import type { StoreDatabase } from "./store-database.ts";
-import { isArchiveOwner } from "../domain/access.ts";
+import { canManageTreeBackups } from "../domain/access.ts";
 import { finished } from "node:stream/promises";
 import { assertActiveAccountSession, AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
-import { assertPlatformAdminInArchiveTransaction, PlatformAccessBusy, PlatformAccessDenied } from "./platform-access.ts";
+import { PlatformAccessBusy, PlatformAccessDenied } from "./platform-access.ts";
 
 export function restoreHttp({
   restores,
@@ -48,14 +50,14 @@ export function restoreHttp({
     if (req.method !== "POST")
       return json(res, 405, { error: "Ожидается POST" });
     const archiveActor = await auth.currentUser(req);
-    if (!archiveActor || !isArchiveOwner(archiveActor) || !archiveActor.approved || !(await auth.isPlatformAdmin(req)))
+    if (!canManageTreeBackups(archiveActor) || !!memberPreviewTarget(req))
       return json(res, (await auth.accountId(req)) ? 403 : 401, {
-        error: "Системное восстановление доступно администратору платформы",
+        error: "Восстановление древа доступно его владельцу с ролью администратора или исследователя платформы",
       });
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
     if (req.headers["x-drevo-restore"] !== "1")
-      return json(res, 400, { error: "Откройте импорт в админке" });
+      return json(res, 400, { error: "Откройте восстановление в управлении древом" });
 
     const preview = url.pathname.endsWith("preview");
     if (preview && previewBusy)
@@ -69,8 +71,8 @@ export function restoreHttp({
         const actor = (await auth.currentUser(req))!;
         const result = await restores.previewStream(req, actor, async () => {
           const current = await auth.currentUser(req);
-          if (!current?.approved || !isArchiveOwner(current) || !(await auth.isPlatformAdmin(req)))
-            throw new ForbiddenError("Доступ администратора отозван");
+          if (!canManageTreeBackups(current) || (!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
+            throw new ForbiddenError("Доступ к резервным копиям древа отозван");
         }, { restoreComments: req.headers["x-drevo-restore-comments"] === "1" });
         await beforePreviewDelivery?.();
         if (!auth.local && db.kind === "postgres" && db.postgresTransaction) {
@@ -89,11 +91,10 @@ export function restoreHttp({
             const owner = await client.query(
               "SELECT user_id FROM archive_owners WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT",
               [db.archiveId, actor.id]);
-            const admin = await client.query(
-              "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT", [actor.id]);
+            const admin = await lockBackupStaff(client, actor.id);
             if (!account.rowCount || !active.rows[0] || Number(active.rows[0].expires_at) <= Date.now())
               throw new AccountSessionExpired("Сессия завершена");
-            if (!member.rows[0]?.approved || !owner.rowCount || !admin.rowCount)
+            if (!member.rows[0]?.approved || !owner.rowCount || !admin)
               throw new ForbiddenError("Доступ к архиву отозван");
             const completed = finished(res, { cleanup: true }).catch(() => {});
             const timeout = setTimeout(() => res.destroy(), 5000);
@@ -119,8 +120,8 @@ export function restoreHttp({
         chunks.push(Buffer.from(chunk));
       }
       const actor = await auth.currentUser(req);
-      if (!actor || !(await auth.isPlatformAdmin(req)))
-        return json(res, 403, { error: "Доступ администратора отозван" });
+      if (!actor || (!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
+        return json(res, 403, { error: "Доступ к резервным копиям древа отозван" });
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       if (body.confirm !== true || typeof body.token !== "string")
         return json(res, 400, { error: "Подтвердите замену данных" });
@@ -131,11 +132,11 @@ export function restoreHttp({
           if (!actorSession || actorSession.accountId !== actor.id)
             throw new AccountSessionExpired("Сессия завершена");
           await assertActiveAccountSession(transaction, actor.id, actorSession.tokenHash);
-          await assertPlatformAdminInArchiveTransaction(transaction, actor.id, actorSession.tokenHash);
+          await assertTreeBackupInTransaction(transaction, actor.id);
           return;
         }
         const current = await auth.currentUser(req);
-        if (!current?.approved || !isArchiveOwner(current) || current.id !== actor.id || !(await auth.isPlatformAdmin(req)))
+        if (!canManageTreeBackups(current) || current.id !== actor.id || (!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
           throw new ForbiddenError("Доступ администратора платформы отозван");
       };
       if (body.restoreComments !== undefined && typeof body.restoreComments !== "boolean")

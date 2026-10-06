@@ -2,29 +2,29 @@ import { test, expect } from "@playwright/test";
 import { openAdminSection } from "./admin-navigation";
 import type { BackupStatus } from "../../src/shared/backup-management";
 
-test("экспорт отделён от резервных копий; настройки и восстановление помещаются на экране", async ({
+test("ручные копии выбранного древа отделены от экспорта и платформенного расписания", async ({
   page,
 }, testInfo) => {
   let applied = false;
   const listRequests: string[] = [];
   const state: BackupStatus = {
     settings: {
-      enabled: true,
+      enabled: false,
       intervalHours: 24,
-      keepCount: 30,
+      keepCount: 5,
       storage: "local",
       remoteHost: "",
       remoteDirectory: "",
     },
-    nextRunAt: "2026-09-26T10:00:00Z",
-    localDirectory: "/var/www/drevo.kiiko.ru/shared/backups",
+    nextRunAt: null,
+    localDirectory: "/var/www/drevo.kiiko.ru/shared/tree-backups",
     sshConfig: "/var/www/drevo.kiiko.ru/shared/backup-ssh/config",
     total: 1,
     job: null,
     records: [
       {
         id: "d6688201-4f30-47a2-a99b-39d0bb5ec2cf",
-        name: "full-20260925T100000Z.tar.gz",
+        name: "tree-20260925T100000Z-d6688201-4f30-47a2-a99b-39d0bb5ec2cf.tar.gz",
         createdAt: "2026-09-25T10:00:00Z",
         size: 120000000,
         sha256: "a".repeat(64),
@@ -39,10 +39,7 @@ test("экспорт отделён от резервных копий; наст
       url = new URL(request.url());
     if (request.method() === "GET" && url.searchParams.has("offset"))
       listRequests.push(url.pathname);
-    if (url.pathname.endsWith("/settings")) {
-      state.settings = request.postDataJSON();
-      return route.fulfill({ json: state.settings });
-    }
+    expect(url.pathname.endsWith("/settings") || url.pathname.endsWith("/check")).toBe(false);
     if (url.pathname.endsWith("/preview")) {
       expect(request.postDataJSON()).toEqual({ restoreComments: true });
       state.job = {
@@ -111,31 +108,15 @@ test("экспорт отделён от резервных копий; наст
   await expect(
     page.getByRole("button", { name: "Создать копию", exact: true }),
   ).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Резервные копии", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Резервные копии", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "MCP-токены", exact: true })).toHaveCount(0);
-  await page.goto("/admin");
   await openAdminSection(page, "backups", "Резервные копии");
   await expect.poll(() => listRequests).toContain("/api/backups/");
-  await page.getByLabel("Как часто").selectOption("12");
-  await page.getByLabel("Количество копий").fill("7");
-  await expect(
-    page.getByRole("button", { name: "Создать копию", exact: true }),
-  ).toBeDisabled();
-  await page.getByRole("button", { name: "Сохранить настройки" }).click();
-  await expect(
-    page.getByText("Настройки сохранены.", { exact: true }),
-  ).toBeVisible();
-  expect(state.settings.intervalHours).toBe(12);
-  expect(state.settings.keepCount).toBe(7);
-  await page.getByLabel("Хранилище", { exact: true }).selectOption("remote");
-  await page.getByLabel("SSH-подключение", { exact: true }).fill("vault");
-  await page
-    .getByLabel("Каталог на сервере", { exact: true })
-    .fill("/srv/backups/drevo");
-  await expect(
-    page.getByRole("button", { name: "Проверить подключение" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Сохранить настройки" }).click();
+  await expect(page.getByRole("heading", { name: "Автоматические копии" })).toHaveCount(0);
+  await expect(page.getByLabel("Как часто")).toHaveCount(0);
+  await expect(page.getByLabel("Хранилище", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Сохранить настройки" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Создать копию", exact: true })).toBeEnabled();
   await page.getByLabel("При проверке копии подготовить восстановление комментариев и вложений").check();
   await page.getByRole("button", { name: /Восстановить копию от/ }).click();
   await expect(
@@ -159,7 +140,7 @@ test("экспорт отделён от резервных копий; наст
       .evaluate((el) => el.scrollWidth - el.clientWidth);
     expect(overflow, "backup panel width " + width).toBeLessThanOrEqual(1);
     await page
-      .getByRole("heading", { name: "Автоматические копии" })
+      .getByRole("heading", { name: "Резервные копии" })
       .scrollIntoViewIfNeeded();
     await page.screenshot({
       path: testInfo.outputPath("backup-admin-" + width + ".png"),

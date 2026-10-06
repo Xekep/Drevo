@@ -88,7 +88,9 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     assert.equal(snapshot.rows.get("documents")?.[0]?.event_links, "[]");
     assert.equal(snapshot.rows.get("documents")?.[0]?.pages, "[]");
     assert.equal(snapshot.rows.get("person_comments")?.length, 1);
-    assert.equal(snapshot.services.length, 33);
+    assert.equal(snapshot.services.length, 31);
+    assert.ok(!snapshot.services.some((table) =>
+      table.name === "mcp_tokens" || table.name === "mcp_usage"));
     assert.equal(
       snapshot.services.find((table) => table.name === "media_originals")
         ?.rows[0]?.data.size_bytes,

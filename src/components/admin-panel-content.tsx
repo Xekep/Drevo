@@ -1,3 +1,4 @@
+import { BackupAdmin } from "./backup-admin";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -13,6 +14,8 @@ import {
   ScanSearch,
   GitCompareArrows,
   Eye,
+  DatabaseBackup,
+  Check,
 } from "lucide-react";
 import {
   ROLE_NAMES,
@@ -67,6 +70,7 @@ const ADMIN_SECTIONS = [
   {
     label: "Данные",
     items: [
+      { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
       { id: "data", label: "Экспорт и импорт", icon: Download },
     ],
   },
@@ -76,6 +80,7 @@ const ADMIN_SECTIONS = [
   },
 ] as const;
 const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
+  backups: { title: "Резервные копии древа", description: "Ручные копии этого архива. Сохраняются пять последних." },
   users: {
     title: "Участники",
     description: "Аккаунты, роли и доступ к семейному архиву.",
@@ -130,6 +135,12 @@ function AdminUserRow({
   onDelete: () => Promise<void>;
 }) {
   const [personId, setPersonId] = useState(user.personId || "");
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  useEffect(() => {
+    if (!deleteArmed) return;
+    const timer = window.setTimeout(() => setDeleteArmed(false), 8000);
+    return () => window.clearTimeout(timer);
+  }, [deleteArmed]);
   const lastVisit = user.lastVisitAt ? new Date(user.lastVisitAt) : null;
   const visitText =
     lastVisit && Number.isFinite(lastVisit.getTime())
@@ -229,7 +240,7 @@ function AdminUserRow({
         <span>Показывать</span>
         <select
           aria-label={`Доступ к древу: ${user.name}`}
-          title="Кровные: кровные родственники привязанного человека и их супруги"
+          title="Кровные родственники привязанного человека и их супруги или партнёры"
           value={user.personId ? user.treeAccess || "all" : "all"}
           disabled={busy || isArchiveOwner(user) || !user.personId}
           onChange={(event) =>
@@ -240,7 +251,7 @@ function AdminUserRow({
           }
         >
           <option value="all">Всё древо</option>
-          <option value="common_ancestors">Кровные</option>
+          <option value="common_ancestors">Кровные родственники</option>
         </select>
       </label>
       <div className="admin-user-actions">
@@ -267,25 +278,30 @@ function AdminUserRow({
         <button
           type="button"
           className="admin-user-delete"
-          disabled={busy || user.id === currentUserId}
-          aria-label={`Удалить участника: ${user.name}`}
+          disabled={busy || user.id === currentUserId || isArchiveOwner(user)}
+          aria-label={`${deleteArmed ? "Подтвердить удаление участника" : "Удалить участника"}: ${user.name}`}
           title={
-            user.id === currentUserId
-              ? "Свой аккаунт удалить нельзя"
-              : "Удалить участника"
+            user.id === currentUserId || isArchiveOwner(user)
+              ? "Владельца древа удалить нельзя"
+              : deleteArmed ? "Нажмите ещё раз, чтобы закрыть доступ к этому древу" : "Удалить доступ к этому древу"
           }
+          onBlur={() => setDeleteArmed(false)}
+          onKeyDown={(event) => {
+            if (event.repeat) event.preventDefault();
+            if (event.key === "Escape") setDeleteArmed(false);
+          }}
           onClick={() => {
-            if (
-              window.confirm(
-                `Удалить участника «${user.name}»? Его данные в древе сохранятся. При новом входе он снова появится и будет ждать одобрения.`,
-              )
-            )
-              void onDelete();
+            if (!deleteArmed) { setDeleteArmed(true); return; }
+            setDeleteArmed(false);
+            void onDelete();
           }}
         >
-          <Trash2 size={16} />
+          {deleteArmed ? <Check size={16} /> : <Trash2 size={16} />}
         </button>
       </div>
+      {deleteArmed && <small className="admin-user-delete-confirm" role="status">
+        Нажмите ✓ ещё раз, чтобы закрыть доступ. Аккаунт и данные в древе сохранятся. Esc — отмена.
+      </small>}
     </article>
   );
 }
@@ -293,6 +309,7 @@ export function AdminPanel({
   family,
   currentUserId,
   archiveOwner = true,
+  backupAccess = false,
   platformAdmin,
   publicationOwnership,
   onClose,
@@ -303,6 +320,7 @@ export function AdminPanel({
   family: Family;
   currentUserId: string;
   archiveOwner?: boolean;
+  backupAccess?: boolean;
   platformAdmin: boolean;
   publicationOwnership: PublicationOwnership;
   onClose: () => void;
@@ -332,7 +350,7 @@ export function AdminPanel({
   const [auditActor, setAuditActor] = useState("");
   const visibleGroups = ADMIN_SECTIONS.map((group) => ({
     ...group,
-    items: group.items.filter(() => archiveOwner),
+    items: group.items.filter((item) => archiveOwner && (item.id !== "backups" || backupAccess)),
   })).filter((group) => group.items.length > 0);
   const visibleSection = visibleGroups.some((group) => group.items.some((item) => item.id === section))
     ? section : visibleGroups[0]?.items[0]?.id || "users";
@@ -675,7 +693,7 @@ export function AdminPanel({
               : publicationOwnership === "unavailable" ? "Не удалось проверить право на сопоставление. Обновите страницу и повторите попытку."
                 : "Связями с другими древами управляет владелец древа."
           }</p></section>)}
-        {visibleSection === "invitations" && <InvitationsAdmin />}
+        {visibleSection === "invitations" && <InvitationsAdmin people={family.people} />}
         {visibleSection === "audit" && (
           <section className="admin-card archive-form">
             <label>
@@ -696,6 +714,7 @@ export function AdminPanel({
             <AuditLog key={auditActor} actorId={auditActor || undefined} />
           </section>
         )}
+        {visibleSection === "backups" && backupAccess && <BackupAdmin archiveId={archiveContextAt(window.location.pathname)?.id || null} />}
         {visibleSection === "data" && (
           <section className="admin-card archive-form">
             <GedcomTransfer

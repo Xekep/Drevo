@@ -324,12 +324,12 @@ test("average lifespan by sex counts only known birth and death years", () => {
     description: "",
     demo: false,
     people,
-  }).facts;
+  }, 2026).facts;
   const men = facts.find(
-    (fact) => fact.title === "Средняя продолжительность жизни мужчин",
+    (fact) => fact.title === "Средняя продолжительность жизни мужчин за последние 100 лет",
   );
   const women = facts.find(
-    (fact) => fact.title === "Средняя продолжительность жизни женщин",
+    (fact) => fact.title === "Средняя продолжительность жизни женщин за последние 100 лет",
   );
   assert.equal(men?.value, "≈ 60,5 года");
   assert.match(men?.detail || "", /^2 человека/);
@@ -346,6 +346,25 @@ test("average lifespan by sex counts only known birth and death years", () => {
   }).facts;
   assert.equal(empty.at(-2)?.value, "Нет данных");
   assert.equal(empty.at(-1)?.value, "Нет данных");
+});
+
+test("recent lifespan uses the death period without excluding older birth cohorts", () => {
+  const people = [
+    person("historic", "Пётр", "1800", 1, { sex: "m", death: "1900" }),
+    person("boundary", "Иван", "1866", 1, { sex: "m", death: "1926" }),
+    person("recent", "Алексей", "1916", 1, { sex: "m", death: "2006" }),
+    person("future", "Николай", "2000", 1, { sex: "m", death: "2070" }),
+    person("living", "Сергей", "1930", 1, { sex: "m" }),
+    person("unknown", "Михаил", "", 1, { sex: "m", death: "2000" }),
+  ];
+  const family: Family = { title: "Тест", description: "", demo: false, people };
+  const men = analyzeFamilyInsights(family, 2026).facts.find((fact) =>
+    fact.title === "Средняя продолжительность жизни мужчин за последние 100 лет");
+  assert.equal(men?.value, "≈ 75 лет");
+  assert.match(men?.detail || "", /^2 человека/);
+  const nextYear = analyzeFamilyInsights(family, 2027).facts.find((fact) =>
+    fact.title === men?.title);
+  assert.equal(nextYear?.value, "≈ 90 лет", "the period advances with the current year");
 });
 
 test("surname ranking combines feminine and masculine forms", () => {

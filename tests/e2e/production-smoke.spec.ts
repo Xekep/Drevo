@@ -549,23 +549,6 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   await expect(tokenPlot).toHaveAttribute("aria-label", /2.?700/);
   await expect(page.locator(".ai-token-model-legend")).toHaveCount(0);
 
-  await page.goto("/admin");
-  await openAdminSection(page, "mcp", "MCP-токены");
-  const permissions = page.getByLabel("Разрешения");
-  await expect(permissions).toHaveValue("all");
-  await expect(permissions.locator("option")).toContainText([
-    "Все инструменты",
-    "Древо и источники",
-    "Древо и анализ",
-    "Источники и анализ",
-    "Только древо",
-    "Только источники",
-    "Только анализ",
-  ]);
-  await expect(page.getByLabel("Доступ к древу")).toHaveCount(0);
-  await expect(page.getByText("Срок, дней")).not.toBeVisible();
-  await page.getByText("Срок и лимит запросов").click();
-  await expect(page.getByText("Срок, дней")).toBeVisible();
 });
 
 test("ИИ-исследователь не перекрывает навигацию, перетаскивается и рисует Markdown", async ({
@@ -845,7 +828,7 @@ test("администратор выбирает себя в древе и пр
     });
   await page
     .getByRole("combobox", { name: "Доступ к древу: Участник" })
-    .selectOption({ label: "Кровные" });
+    .selectOption({ label: "Кровные родственники" });
   await expect
     .poll(() => submitted[1])
     .toEqual({
@@ -1124,10 +1107,12 @@ test("участники загружаются страницами и удал
   await page.getByRole("button", { name: "Назад" }).click();
   await expect(page.locator(".admin-user-row")).toHaveCount(20);
   expect(requestedPages).toEqual([0, 20, 40, 20, 0]);
-  page.once("dialog", (dialog) => dialog.accept());
   await page
     .getByRole("button", { name: "Удалить участника: Участник 00" })
     .click();
+  expect(participants).toHaveLength(45);
+  await expect(page.getByText("Аккаунт и данные в древе сохранятся.", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Подтвердить удаление участника: Участник 00" }).click();
   await expect(page.getByText(/Всего участников\s*44/)).toBeVisible();
   await expect(
     page.getByRole("article", { name: "Участник: Участник 00" }),

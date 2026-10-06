@@ -9,6 +9,7 @@ import type { openArchive } from "../../src/server/database.ts";
 import { restoreStore } from "../../src/server/restore.ts";
 import { newSessionToken, sessionTokenHash } from "../../src/server/session-token.ts";
 import { userStore } from "../../src/server/users.ts";
+import { canManageTreeBackups } from "../../src/domain/access.ts";
 
 export async function verifyManagedBackupCheckRevocation(
   archive: Awaited<ReturnType<typeof openArchive>>,
@@ -76,15 +77,11 @@ export async function verifyManagedBackupCheckRevocation(
         reached();
         await gate;
       }
-      return actor;
-    },
-    isPlatformAdmin: async (...args: Parameters<typeof auth.isPlatformAdmin>) => {
-      const allowed = await auth.isPlatformAdmin(...args);
-      if (allowed && ++authorizationChecks === 2) {
+      if (args[0].url === "/api/backups/check" && canManageTreeBackups(actor) && ++authorizationChecks === 2) {
         reached();
         await gate;
       }
-      return allowed;
+      return actor;
     },
   };
   const endpoint = backupManagementHttp({

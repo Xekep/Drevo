@@ -1,3 +1,4 @@
+import { BackupAdmin } from "./backup-admin";
 import { useEffect, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { PlatformStaffRoles } from "./platform-staff-roles";
@@ -7,15 +8,12 @@ import { AiProviderCleanupAdmin } from "./ai-provider-cleanup-admin";
 import { StorageLimitsAdmin } from "./storage-limits-admin";
 import { VkAuthAdmin } from "./vk-auth-admin";
 import { ResearchResourcesAdmin } from "./research-resources-admin";
-import { PlatformArchiveTools } from "./platform-archive-tools";
-import type { ArchiveUser } from "../domain/access.ts";
 import "../styles/account.css";
 
-type Section = "roles" | "ai" | "mcp" | "backups" | "storage" | "vk" | "resources";
+type Section = "roles" | "ai" | "backups" | "storage" | "vk" | "resources";
 const sections: { id: Section; label: string }[] = [
   { id: "roles", label: "Глобальные роли" },
   { id: "ai", label: "Yandex AI" },
-  { id: "mcp", label: "MCP-токены" },
   { id: "backups", label: "Резервные копии" },
   { id: "storage", label: "Хранилище" },
   { id: "vk", label: "Вход через VK" },
@@ -25,12 +23,10 @@ type AvailableArchive = { id: string; title: string; approved: boolean; current:
 
 /** Account-scoped entry. Archive-specific AI settings are selected explicitly. */
 export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, onOwnTierChanged,
-  primaryUser, local = false, showRoles = true }: {
+  showRoles = true }: {
   accountId: string;
   onOwnRoleChanged: (role: "admin" | "researcher" | null) => void;
   onOwnTierChanged: (fullAccess: boolean) => void;
-  primaryUser?: ArchiveUser | null;
-  local?: boolean;
   showRoles?: boolean;
 }) {
   const [section, setSection] = useState<Section>(showRoles ? "roles" : "ai");
@@ -95,10 +91,7 @@ export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, onOw
             showCleanup={false} />
           </>}
         </div>}
-        {(section === "mcp" || section === "backups") && (
-          <PlatformArchiveTools key={section} kind={section} accountId={accountId}
-            primaryUser={primaryUser} local={local} />
-        )}
+        {section === "backups" && <BackupAdmin scope="platform" archiveId={null} />}
         {section === "storage" && <section className="account-card">
           <div className="account-card-title"><div><span className="account-eyebrow">Платформа</span>
             <h2>Лимиты хранилища</h2></div></div>

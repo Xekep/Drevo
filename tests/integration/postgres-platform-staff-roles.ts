@@ -75,9 +75,6 @@ export async function verifyPlatformStaffRoles(
     await roles.arrayBuffer();
     assert.ok([401, 403].includes(
       (await fetch(`${base}/api/family`, { headers: targetHeaders })).status));
-    assert.equal((await fetch(`${base}/api/mcp/tokens`, { headers: targetHeaders })).status, 403,
-      "a global admin without approved archive ownership cannot manage full-tree MCP tokens");
-
     await client.query("SELECT id FROM accounts WHERE id=$1 FOR UPDATE", [id]);
     assert.equal((await patch(ownerHeaders, null)).status, 200);
     assert.equal((await fetch(`${base}/api/platform/roles`, { headers: targetHeaders })).status, 403);
@@ -96,44 +93,6 @@ export async function verifyPlatformStaffRoles(
     });
     assert.equal(selfDemotion.status, 403, "the final platform administrator remains assigned");
     assert.equal((await client.query("SELECT count(*) AS n FROM platform_admins")).rows[0].n, "1");
-    const issued = await fetch(`${base}/api/mcp/tokens`, {
-      method: "POST", headers: ownerHeaders,
-      body: JSON.stringify({ name: "Issuer revoke fixture", scopes: ["tree:read"] }),
-    });
-    assert.equal(issued.status, 201);
-    const credential = await issued.json() as { item: { id: string }; token: string };
-    const mcp = () => fetch(`${base}/mcp`, {
-      method: "POST", headers: { Origin: origin,
-        Authorization: `Bearer ${credential.token}`,
-        "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
-    });
-    try {
-      assert.equal((await mcp()).status, 200);
-      await client.query("UPDATE archive_owners SET user_id='reader' WHERE archive_id='runtime-test'");
-      try {
-        const denied = await mcp();
-        assert.equal(denied.status, 401);
-        assert.doesNotMatch(await denied.text(), /person-a|structuredContent/);
-      } finally {
-        await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
-      }
-      await client.query("INSERT INTO platform_admins(account_id) VALUES($1)", [id]);
-      await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
-      try {
-        const denied = await mcp();
-        assert.equal(denied.status, 401);
-        assert.doesNotMatch(await denied.text(), /person-a|structuredContent/);
-      } finally {
-        await client.query("INSERT INTO platform_admins(account_id) VALUES('owner')");
-        await client.query("DELETE FROM platform_admins WHERE account_id=$1", [id]);
-      }
-      assert.equal((await mcp()).status, 200);
-    } finally {
-      const revoked = await fetch(`${base}/api/mcp/tokens/${credential.item.id}`,
-        { method: "DELETE", headers: ownerHeaders });
-      assert.equal(revoked.status, 200);
-    }
     await verifyTierRevocationBarrier(client, base, origin);
     console.log("runtime_platform_staff_roles_isolation_ok");
   } finally {

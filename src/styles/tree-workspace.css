@@ -62,7 +62,22 @@
   padding: 6px 20px;
   background: #fff4db;
   border-bottom: 1px solid #e7cb88;
-  color: var(--ink);
+  color: #293e34;
+}
+.member-preview-banner.is-modal {
+  position: sticky;
+  top: 0;
+  width: 100%;
+  z-index: 1100;
+  padding-top: max(6px, env(safe-area-inset-top));
+}
+.editor-dialog > .member-preview-banner {
+  border-radius: 14px 14px 0 0;
+}
+.tree-canvas.is-fullscreen > .member-preview-banner,
+.restored-session-gate > .member-preview-banner {
+  position: absolute;
+  inset: 0 0 auto;
 }
 .member-preview-banner a { white-space: nowrap; font-weight: 700; }
 .member-preview-banner span { min-width: 0; overflow-wrap: anywhere; }
@@ -1785,6 +1800,10 @@
 }
 .mobile-sections {
   display: none;
+}
+.preview-sections {
+  display: flex;
+  flex-direction: column;
 }
 @media (max-width: 600px) {
   .archive-header:has(.nav-about) {
