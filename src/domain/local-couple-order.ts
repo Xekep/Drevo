@@ -10,6 +10,29 @@ import {
 } from "./edge-routing.ts";
 import type { UnionBranch } from "./union-layout.ts";
 
+/** Layout groups are independent of a marriage's decorative background. */
+export function familyPairBlocks(geometry: TreeGeometry) {
+  if (!geometry.occurrences?.length)
+    return (geometry.blocks || []).filter(
+      (block) => block.members.length === 2,
+    );
+  const groups = new Map<string, string[]>();
+  for (const occurrence of geometry.occurrences) {
+    const members = groups.get(occurrence.block) || [];
+    members.push(occurrence.id);
+    groups.set(occurrence.block, members);
+  }
+  const positions = new Map(geometry.positions);
+  return [...groups]
+    .filter(
+      ([, members]) =>
+        members.length === 2 &&
+        members.every((id) => positions.has(id)) &&
+        positions.get(members[0])!.y === positions.get(members[1])!.y,
+    )
+    .map(([id, members]) => ({ id, members }));
+}
+
 /** Pair blocks whose ancestral junctions arrive in the opposite horizontal order. */
 export function invertedCoupleBlocks(
   geometry: TreeGeometry,
@@ -23,7 +46,7 @@ export function invertedCoupleBlocks(
     if (source) arrivals.set(branch.target, source.x);
   }
   const flipped = new Set<string>();
-  for (const block of geometry.blocks || []) {
+  for (const block of familyPairBlocks(geometry)) {
     if (block.members.length !== 2) continue;
     const [left, right] = [...block.members].sort(
       (a, b) => positions.get(a)!.x - positions.get(b)!.x,
@@ -59,24 +82,34 @@ export function coupleBlocksWithContactedAncestry(
     const child = branch.id.startsWith("child:") ? branch.target : undefined;
     const points = branch.route.points;
     for (let i = 1; i < points.length; i++) {
-      const a = points[i - 1], b = points[i];
+      const a = points[i - 1],
+        b = points[i];
       if (a.x === b.x && a.y === b.y) continue;
       const box = bounds(a, b);
       for (const other of segments.query(box)) {
-        if (branch.union === other.union ||
-            !segmentContact(a, b, other.a, other.b)) continue;
+        if (
+          branch.union === other.union ||
+          !segmentContact(a, b, other.a, other.b)
+        )
+          continue;
         if (child) contacted.add(child);
         if (other.child) contacted.add(other.child);
       }
       segments.add({ ...box, a, b, union: branch.union, child });
     }
   }
-  const candidates = (geometry.blocks || []).filter((block) =>
-    block.members.length === 2 &&
-    block.members.some((member) => contacted.has(member)));
+  const candidates = familyPairBlocks(geometry).filter(
+    (block) =>
+      block.members.length === 2 &&
+      block.members.some((member) => contacted.has(member)),
+  );
   return [
-    ...candidates.filter((block) => inverted.has(block.id)).map((block) => block.id),
-    ...candidates.filter((block) => !inverted.has(block.id)).map((block) => block.id),
+    ...candidates
+      .filter((block) => inverted.has(block.id))
+      .map((block) => block.id),
+    ...candidates
+      .filter((block) => !inverted.has(block.id))
+      .map((block) => block.id),
   ];
 }
 
@@ -88,7 +121,7 @@ export function locallyReverseCouples(
   size: TreeNodeSize,
   requested: ReadonlySet<string> = invertedCoupleBlocks(geometry, size.width),
 ): TreeGeometry | undefined {
-  const flipped = (geometry.blocks || []).filter(
+  const flipped = familyPairBlocks(geometry).filter(
     (block) => requested.has(block.id) && block.members.length === 2,
   );
   if (!flipped.length) return;

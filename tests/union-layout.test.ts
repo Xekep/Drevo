@@ -17,7 +17,11 @@ import {
   treeNodeSize,
   TREE_NODE_HEIGHT,
 } from "../src/domain/tree-layout-constants.ts";
-import { editedAncestorFamily, editedFamily, randomFamily } from "./layout-fixtures.ts";
+import {
+  editedAncestorFamily,
+  editedFamily,
+  randomFamily,
+} from "./layout-fixtures.ts";
 const unionGeometry = (
   people: LayoutPerson[],
   reverse = false,
@@ -38,8 +42,61 @@ const person = (
   spouses: string[] = [],
 ): LayoutPerson => ({ id, parents, spouses, birth: "" });
 
+test("asymmetric partner ancestry keeps siblings and their direct parents on the right floors", async () => {
+  const people = [
+    person("parent"),
+    person("a", ["parent"], ["partner"]),
+    person("b", ["parent"]),
+    person("partner", ["partner-parent"], ["a"]),
+    person("partner-parent", ["grandparent"]),
+    person("grandparent", ["great"]),
+    person("great"),
+  ];
+  const before = structuredClone(people);
+  for (const reverse of [false, true]) {
+    const g = await unionGeometry(people, reverse);
+    verify(people, g);
+    const bands = new Map(
+      g.generationBands!.flatMap((band) =>
+        band.members.map((id) => [id, band.level]),
+      ),
+    );
+    assert.equal(bands.get("a"), bands.get("b"));
+    assert.equal(bands.get("a"), bands.get("partner"));
+    assert.equal(bands.get("a")! - bands.get("parent")!, 1);
+    const positions = new Map(g.positions);
+    assert.ok(Math.abs(positions.get("a")!.y - positions.get("b")!.y) <= 60);
+    assert.equal(positions.get("a")!.y, positions.get("partner")!.y);
+  }
+  assert.deepEqual(people, before);
+});
+
+test("a godparent route does not change card placement or primary branch geometry", async () => {
+  const people = randomFamily(1, 2),
+    size = treeNodeSize();
+  const calculate = (links: Pick<FamilyLink, "type" | "from" | "to">[]) =>
+    calculateUnions(
+      people,
+      (graph) => new ELK({ algorithms: ["layered"] }).layout(graph),
+      false,
+      links,
+      size,
+    );
+  const plain = await calculate([]);
+  const withExtra = await calculate([
+    { type: "godparent", from: people[0].id, to: people.at(-1)!.id },
+  ]);
+  assert.deepEqual(withExtra.positions, plain.positions);
+  assert.deepEqual(withExtra.branches, plain.branches);
+  assert.equal(withExtra.routes!.length, 1);
+  verify(people, withExtra);
+});
+
 test("a shared contact at a segment joint counts once when choosing a layout", () => {
-  const branch = (union: string, points: { x: number; y: number }[]): UnionBranch => ({
+  const branch = (
+    union: string,
+    points: { x: number; y: number }[],
+  ): UnionBranch => ({
     id: union,
     source: union,
     target: union,
@@ -47,26 +104,38 @@ test("a shared contact at a segment joint counts once when choosing a layout", (
     relations: [],
     route: { sourceHandle: "bottom", targetHandle: "top", points },
   });
-  assert.deepEqual(branchContactCounts([
-    branch("family-a", [{ x: 0, y: 0 }, { x: 100, y: 0 }]),
-    branch("family-b", [
-      { x: 50, y: -10 },
-      { x: 50, y: 0 },
-      { x: 50, y: 10 },
+  assert.deepEqual(
+    branchContactCounts([
+      branch("family-a", [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ]),
+      branch("family-b", [
+        { x: 50, y: -10 },
+        { x: 50, y: 0 },
+        { x: 50, y: 10 },
+      ]),
     ]),
-  ]), { distinct: 1, segments: 2 });
+    { distinct: 1, segments: 2 },
+  );
 });
 
 test("a couple may reverse when its parent families arrive in opposite order", async () => {
   const people = randomFamily(3, 2);
   const size = treeNodeSize();
   const seenSeeds = new Set<string>();
-  const baseline = await calculateUnions(people, async (graph) => {
-    const seed = graph.layoutOptions?.["elk.randomSeed"] || "";
-    if (seenSeeds.has(seed)) throw new Error("skip alternative couple order");
-    seenSeeds.add(seed);
-    return new ELK({ algorithms: ["layered"] }).layout(graph);
-  }, false, [], size);
+  const baseline = await calculateUnions(
+    people,
+    async (graph) => {
+      const seed = graph.layoutOptions?.["elk.randomSeed"] || "";
+      if (seenSeeds.has(seed)) throw new Error("skip alternative couple order");
+      seenSeeds.add(seed);
+      return new ELK({ algorithms: ["layered"] }).layout(graph);
+    },
+    false,
+    [],
+    size,
+  );
   const improved = await calculateUnions(
     people,
     (graph) => new ELK({ algorithms: ["layered"] }).layout(graph),
@@ -76,22 +145,37 @@ test("a couple may reverse when its parent families arrive in opposite order", a
   );
   const before = new Map(baseline.positions);
   const after = new Map(improved.positions);
-  const reversed = (improved.blocks || []).filter((block) => block.members.length === 2 &&
-    Math.sign(before.get(block.members[0])!.x - before.get(block.members[1])!.x) !==
-      Math.sign(after.get(block.members[0])!.x - after.get(block.members[1])!.x));
+  const reversed = (improved.blocks || []).filter(
+    (block) =>
+      block.members.length === 2 &&
+      Math.sign(
+        before.get(block.members[0])!.x - before.get(block.members[1])!.x,
+      ) !==
+        Math.sign(
+          after.get(block.members[0])!.x - after.get(block.members[1])!.x,
+        ),
+  );
   assert.ok(reversed.length > 0);
-  assert.ok(branchContactCounts(improved.branches || []).distinct <=
-    branchContactCounts(baseline.branches || []).distinct);
+  assert.ok(
+    branchContactCounts(improved.branches || []).distinct <=
+      branchContactCounts(baseline.branches || []).distinct,
+  );
   verify(people, improved);
 });
 
 test("small trees refine individual couples after choosing an ELK layout", async () => {
   const people = randomFamily(1, 2);
   let elkCalls = 0;
-  const geometry = await calculateUnions(people, (graph) => {
-    elkCalls++;
-    return new ELK({ algorithms: ["layered"] }).layout(graph);
-  }, false, [], treeNodeSize());
+  const geometry = await calculateUnions(
+    people,
+    (graph) => {
+      elkCalls++;
+      return new ELK({ algorithms: ["layered"] }).layout(graph);
+    },
+    false,
+    [],
+    treeNodeSize(),
+  );
   assert.equal(elkCalls, 7);
   assert.equal(branchContactCounts(geometry.branches || []).distinct, 16);
   verify(people, geometry);
@@ -110,14 +194,19 @@ test("adding a founder's parent preserves the previous horizontal family order",
       .map(([id, point]) => point[axis] - old.get(id)![axis])
       .sort((a, b) => a - b);
     const center = shifts[Math.floor(shifts.length / 2)];
-    return shifts.reduce((sum, shift) => sum + Math.abs(shift - center), 0) / shifts.length;
+    return (
+      shifts.reduce((sum, shift) => sum + Math.abs(shift - center), 0) /
+      shifts.length
+    );
   };
 
   verify(edited, incremental);
   assert.ok(drift(incremental, "x") < drift(plain, "x") * 0.3);
   assert.ok(drift(incremental, "y") <= Math.max(drift(plain, "y"), 32) + 32);
   const plainContacts = branchContactCounts(plain.branches || []).distinct;
-  const incrementalContacts = branchContactCounts(incremental.branches || []).distinct;
+  const incrementalContacts = branchContactCounts(
+    incremental.branches || [],
+  ).distinct;
   assert.ok(incrementalContacts <= plainContacts + 1);
   if (incrementalContacts > plainContacts)
     assert.ok(drift(incremental, "x") < drift(plain, "x") * 0.1);
@@ -128,12 +217,17 @@ test("an ancestor edit keeps existing couples from flipping for a local gain", a
   const before = await unionGeometry(original);
   const edited = editedAncestorFamily(original, 5);
   const after = await unionGeometry(edited, false, [], before);
-  const old = new Map(before.positions), next = new Map(after.positions);
-  const reversed = (before.blocks || []).filter((block) =>
-    block.members.length === 2 &&
-    block.members.every((id) => next.has(id)) &&
-    Math.sign(old.get(block.members[0])!.x - old.get(block.members[1])!.x) !==
-      Math.sign(next.get(block.members[0])!.x - next.get(block.members[1])!.x));
+  const old = new Map(before.positions),
+    next = new Map(after.positions);
+  const reversed = (before.blocks || []).filter(
+    (block) =>
+      block.members.length === 2 &&
+      block.members.every((id) => next.has(id)) &&
+      Math.sign(old.get(block.members[0])!.x - old.get(block.members[1])!.x) !==
+        Math.sign(
+          next.get(block.members[0])!.x - next.get(block.members[1])!.x,
+        ),
+  );
   assert.ok(reversed.length <= 2);
   verify(edited, after);
 });
@@ -156,7 +250,10 @@ test("incremental ordering also protects edited families above one hundred peopl
         .map(([id, point]) => point.x - old.get(id)!.x)
         .sort((a, b) => a - b);
       const center = shifts[Math.floor(shifts.length / 2)];
-      return shifts.reduce((sum, shift) => sum + Math.abs(shift - center), 0) / shifts.length;
+      return (
+        shifts.reduce((sum, shift) => sum + Math.abs(shift - center), 0) /
+        shifts.length
+      );
     };
     verify(edited, incremental);
     assert.ok(drift(incremental) < drift(plain) * 0.2);
@@ -417,7 +514,7 @@ test("two spouses flank one shared parent and half-siblings keep distinct family
         (graph) => new ELK().layout(graph),
         reverse,
         [],
-        (variant === "portrait" ? treeNodeSize() : { width: 220, height: 84 }),
+        variant === "portrait" ? treeNodeSize() : { width: 220, height: 84 },
       );
       verify(people, g);
       assert.equal(g.occurrences!.length, people.length);
@@ -653,21 +750,36 @@ test("large portrait layouts preserve the legacy geometry when generation ranks 
   const before = structuredClone(people);
   const engine = new ELK({ algorithms: ["layered"] });
   let directCalls = 0;
-  const direct = await calculateUnions(people, (graph) => {
-    assert.equal(graph.layoutOptions!["elk.partitioning.activate"], "false");
-    assert.equal(graph.layoutOptions!["elk.layered.layering.strategy"], "INTERACTIVE");
-    directCalls++;
-    return engine.layout(graph);
-  }, false, [], treeNodeSize());
-  const legacy = await calculateUnions(people, (graph) => {
-    graph.layoutOptions!["elk.partitioning.activate"] = "true";
-    graph.layoutOptions!["elk.layered.layering.strategy"] = "NETWORK_SIMPLEX";
-    for (const node of graph.children!) {
-      delete node.x;
-      delete node.y;
-    }
-    return engine.layout(graph);
-  }, false, [], treeNodeSize());
+  const direct = await calculateUnions(
+    people,
+    (graph) => {
+      assert.equal(graph.layoutOptions!["elk.partitioning.activate"], "false");
+      assert.equal(
+        graph.layoutOptions!["elk.layered.layering.strategy"],
+        "INTERACTIVE",
+      );
+      directCalls++;
+      return engine.layout(graph);
+    },
+    false,
+    [],
+    treeNodeSize(),
+  );
+  const legacy = await calculateUnions(
+    people,
+    (graph) => {
+      graph.layoutOptions!["elk.partitioning.activate"] = "true";
+      graph.layoutOptions!["elk.layered.layering.strategy"] = "NETWORK_SIMPLEX";
+      for (const node of graph.children!) {
+        delete node.x;
+        delete node.y;
+      }
+      return engine.layout(graph);
+    },
+    false,
+    [],
+    treeNodeSize(),
+  );
   assert.ok(directCalls > 0);
   assert.deepEqual(direct, legacy);
   assert.deepEqual(people, before);
