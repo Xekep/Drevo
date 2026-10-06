@@ -78,6 +78,72 @@ test("middle click preserves generation depths, while middle drag only pans", as
   ).toHaveValue("Тестова Мария Ивановна");
 });
 
+for (const firstOperation of ["reset", "anchor"] as const) {
+  test(`serialize generation ${firstOperation} with a pending preference write`, async ({ page, isMobile }) => {
+    test.skip(isMobile, "Shortcut for a mouse with a wheel");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    let preferences: TreePreferences = {
+      ...DEFAULT_TREE_PREFERENCES,
+      generationLimits: { anchorId: "e2e-child", ancestors: 3, descendants: 1, collateral: 0 },
+    };
+    const writes: TreePreferences[] = [];
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    await page.route("**/api/family?projection=overview", async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), treePreferences: preferences } });
+    });
+    await page.route("**/api/tree-preferences", async (route) => {
+      if (route.request().method() === "PUT") {
+        const value = route.request().postDataJSON() as TreePreferences;
+        writes.push(value);
+        if (writes.length === 1) await pending;
+        preferences = value;
+      }
+      await route.fulfill({ json: preferences });
+    });
+    await page.goto("/tree");
+    const canvas = page.locator(".tree-canvas");
+    const anchor = canvas.getByRole("status", { name: "Опорный человек" });
+    const reset = anchor.getByRole("button", { name: "Всё древо", exact: true });
+    const parent = page.locator('.flow-person[data-person-id="e2e-memorial-person"] .flow-person-content').first();
+    await expect(canvas).toHaveAttribute("data-layout-people", "4");
+    await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
+    try {
+      if (firstOperation === "reset") await reset.click();
+      else await parent.click({ button: "middle" });
+      await expect.poll(() => writes.length).toBe(1);
+      await expect(anchor).toHaveAttribute("aria-busy", "true");
+      await expect(reset).toBeDisabled();
+      await expect(canvas.locator(".tree-notice")).toHaveText("Сохраняем вид древа…");
+      if (firstOperation === "reset") {
+        // The card gesture remains available for panning, but its anchor write
+        // must not race the held reset or revive the previous generation range.
+        await parent.click({ button: "middle" });
+      } else {
+        // Native disabled controls ignore activation while the anchor is saving.
+        await reset.evaluate((element: HTMLButtonElement) => element.click());
+      }
+      expect(writes).toHaveLength(1);
+      expect(preferences.generationLimits?.anchorId).toBe("e2e-child");
+    } finally {
+      release();
+    }
+    await expect(canvas.locator(".tree-notice")).not.toHaveText("Сохраняем вид древа…");
+    if (firstOperation === "anchor") {
+      await expect(anchor).toContainText("Опорный: Тестов Иван Петрович");
+      expect(preferences.generationLimits?.anchorId).toBe("e2e-memorial-person");
+      await expect(reset).toBeEnabled();
+      await reset.click();
+    }
+    await expect(anchor).toHaveCount(0);
+    await expect(canvas).toHaveAttribute("data-layout-people", "6");
+    await expect(page.locator('.flow-person[data-person-id="e2e-sibling-child"]')).toBeVisible();
+    expect(preferences.generationLimits).toBeNull();
+    expect(writes).toHaveLength(firstOperation === "reset" ? 1 : 2);
+  });
+}
+
 for (const mode of ["shared", "public"] as const) {
   test(`middle click enables defaults locally on a ${mode} tree`, async ({
     page,

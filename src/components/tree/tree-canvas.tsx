@@ -1210,17 +1210,20 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     return () => cancelAnimationFrame(frame);
   }, [gpuFocused, gpuActive]);
   const [anchorNotice, setAnchorNotice] = useState("");
-  const [resettingGenerations, setResettingGenerations] = useState(false);
+  const [savingGenerationPreferences, setSavingGenerationPreferences] = useState(false);
   useEffect(() => {
     if (!anchorNotice) return;
     const timer = window.setTimeout(() => setAnchorNotice(""), 6000);
     return () => window.clearTimeout(timer);
   }, [anchorNotice]);
-  const savingAnchor = useRef(false);
-  const { onGenerationAnchor } = props;
+  // Claim synchronously: React's busy state alone cannot serialize two events
+  // before it commits. Anchor changes and reset write the same preferences.
+  const savingGenerations = useRef(false);
+  const { onGenerationAnchor, onResetGenerations, onClearAssistantFilter } = props;
   const saveGenerationAnchor = useCallback(async (id: string) => {
-    if (savingAnchor.current || !onGenerationAnchor) return false;
-    savingAnchor.current = true;
+    if (savingGenerations.current || !onGenerationAnchor) return false;
+    savingGenerations.current = true;
+    setSavingGenerationPreferences(true);
     const person = currentPeople.get(id);
     try {
       await onGenerationAnchor(id);
@@ -1230,9 +1233,26 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       setAnchorNotice(error instanceof Error ? error.message : "Не удалось сохранить опорного человека");
       return false;
     } finally {
-      savingAnchor.current = false;
+      savingGenerations.current = false;
+      setSavingGenerationPreferences(false);
     }
   }, [onGenerationAnchor, currentPeople]);
+  const resetGenerations = useCallback(async () => {
+    if (savingGenerations.current || !onResetGenerations) return;
+    savingGenerations.current = true;
+    setSavingGenerationPreferences(true);
+    try {
+      await onResetGenerations();
+      onClearAssistantFilter?.();
+      showAllBranches();
+      setAnchorNotice("Показано всё древо");
+    } catch (error: unknown) {
+      setAnchorNotice(error instanceof Error ? error.message : "Не удалось показать всё древо");
+    } finally {
+      savingGenerations.current = false;
+      setSavingGenerationPreferences(false);
+    }
+  }, [onResetGenerations, onClearAssistantFilter, showAllBranches]);
   const reanchorHiddenPerson = useCallback(async (id: string) => {
     // Only exclusion by the generation window changes its anchor. Assistant
     // filters, collapsed branches and ordinary card selection keep their policy.
@@ -1649,6 +1669,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               className="tree-family-row tree-generation-status"
               role="status"
               aria-label="Опорный человек"
+              aria-busy={savingGenerationPreferences}
             >
               <div className="tree-family-tools">
                 <span
@@ -1662,20 +1683,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                   {visible.size} из {family.people.length}
                 </span>
                 {props.onResetGenerations && <button type="button"
-                  disabled={resettingGenerations}
+                  disabled={savingGenerationPreferences}
                   title="Сбросить ограничения поколений и показать всё древо"
-                  onClick={async () => {
-                    setResettingGenerations(true);
-                    try {
-                      await props.onResetGenerations!();
-                      props.onClearAssistantFilter?.();
-                      familyView.showAll();
-                    } catch (error: unknown) {
-                      setAnchorNotice(error instanceof Error ? error.message : "Не удалось показать всё древо");
-                    } finally {
-                      setResettingGenerations(false);
-                    }
-                  }}>
+                  onClick={() => { void resetGenerations(); }}>
                   Всё древо
                 </button>}
               </div>
@@ -2031,9 +2041,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             onChoose={actions.choose}
           />
         )}
-        {anchorNotice && !problem && (
+        {(savingGenerationPreferences || anchorNotice) && !problem && (
           <div className="tree-notice" role="status">
-            {anchorNotice}
+            {savingGenerationPreferences ? "Сохраняем вид древа…" : anchorNotice}
           </div>
         )}
         {!activeFanAnchor && problem && (
