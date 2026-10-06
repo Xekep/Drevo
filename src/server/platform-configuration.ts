@@ -19,6 +19,10 @@ export async function initializePlatformConfiguration(
       new URL("../../ops/postgres/091_platform_configuration.sql", import.meta.url),
       "utf8",
     ));
+    await client.query(readFileSync(
+      new URL("../../ops/postgres/095_platform_email_auth.sql", import.meta.url),
+      "utf8",
+    ));
     const installed = await client.query(
       "SELECT 1 FROM platform_config_migrations WHERE version=91",
     );

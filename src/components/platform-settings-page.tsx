@@ -1,6 +1,6 @@
 import { BackupAdmin } from "./backup-admin";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Bot, DatabaseBackup, HardDrive, KeyRound, ScanSearch, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, Bot, DatabaseBackup, HardDrive, KeyRound, Mail, ScanSearch, ShieldCheck, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { AdminNavigation } from "./admin-navigation";
 import { archiveFetch } from "../data/archive-fetch.ts";
@@ -10,16 +10,18 @@ import { AiSettingsAdmin } from "./ai-settings-admin";
 import { AiProviderCleanupAdmin } from "./ai-provider-cleanup-admin";
 import { StorageLimitsAdmin } from "./storage-limits-admin";
 import { VkAuthAdmin } from "./vk-auth-admin";
+import { EmailAuthAdmin } from "./email-auth-admin";
 import { ResearchResourcesAdmin } from "./research-resources-admin";
 import "../styles/account.css";
 
-type Section = "roles" | "ai" | "backups" | "storage" | "vk" | "resources";
+type Section = "roles" | "ai" | "backups" | "storage" | "vk" | "email" | "resources";
 const sections: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "roles", label: "Глобальные роли", icon: Users },
   { id: "ai", label: "Yandex AI", icon: Bot },
   { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
   { id: "storage", label: "Хранилище", icon: HardDrive },
   { id: "vk", label: "Вход через VK", icon: KeyRound },
+  { id: "email", label: "Вход по email", icon: Mail },
   { id: "resources", label: "Ресурсы поиска", icon: ScanSearch },
 ];
 type AvailableArchive = { id: string; title: string; approved: boolean; current: boolean };
@@ -108,6 +110,11 @@ export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, onOw
           <div className="account-card-title"><div><span className="account-eyebrow">Платформа</span>
             <h2>Вход через VK</h2></div></div>
           <VkAuthAdmin />
+        </section>}
+        {section === "email" && <section className="account-card">
+          <div className="account-card-title"><div><span className="account-eyebrow">Платформа</span>
+            <h2>Вход по email</h2></div></div>
+          <EmailAuthAdmin />
         </section>}
         {section === "resources" && <section className="account-card account-card-wide">
           <div className="account-card-title"><div><span className="account-eyebrow">Платформа</span>

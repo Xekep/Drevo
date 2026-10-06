@@ -17,6 +17,8 @@ import { createYandexOAuth } from "./yandex-oauth.ts";
 import { userStore } from "./users.ts";
 import { createAuth } from "./auth.ts";
 import { emailAuthHttp } from "./email-auth-http.ts";
+import { emailAuthSettingsStore } from "./email-auth-settings.ts";
+import { adminEmailAuthHttp } from "./admin-email-auth-http.ts";
 import { settingsStore } from "./settings.ts";
 import { mediaStore } from "./media.ts";
 import { restoreStore } from "./restore.ts";
@@ -229,8 +231,10 @@ export async function startServer(
       ? platformAiProviderCleanupHttp({ auth, db: archive.db, providerCleanup, publicOrigin })
       : null;
     const managePlatformTiers = platformTiersHttp(archive.db, auth, publicOrigin);
-    const emailAuth = !archiveId
-      ? emailAuthHttp(archive.db, auth, publicOrigin)
+    const emailSettings = !archiveId ? emailAuthSettingsStore(archive.db, publicOrigin) : null;
+    const manageEmailAuth = emailSettings ? adminEmailAuthHttp(auth, emailSettings, publicOrigin) : null;
+    const emailAuth = emailSettings
+      ? emailAuthHttp(archive.db, auth, publicOrigin, null, emailSettings.runtime)
       : null;
     const listAccountArchives = accountArchivesHttp(
       auth,
@@ -377,7 +381,7 @@ export async function startServer(
     const showSession = sessionHttp(auth, archive.db, {
       yandex: yandex.enabled,
       vk: () => vk.isEnabled(),
-      email: emailAuth?.enabled === true,
+      email: emailAuth ? () => emailAuth.isEnabled() : false,
     });
     const vite = production
       ? null
@@ -434,6 +438,7 @@ export async function startServer(
         return;
       if (path.startsWith("/api/")) await auth.refreshSession(req, res);
       if (emailAuth && (await emailAuth.handle(req, res, parsedUrl))) return;
+      if (manageEmailAuth && (await manageEmailAuth(req, res, parsedUrl))) return;
       if (await managePlatformRoles(req, res, parsedUrl)) return;
       if (managePlatformBackups && await managePlatformBackups(req, res, parsedUrl)) return;
       if (managePlatformCleanup && await managePlatformCleanup(req, res, parsedUrl)) return;
