@@ -178,7 +178,7 @@ export function ArchiveNavigation({
       >
         О проекте
       </button>
-      <details ref={menu} className="archive-more">
+      {identity && <details ref={menu} className="archive-more">
         <summary className="nav-account" aria-label={participantPreview ? "Разделы предпросмотра" : "Меню проекта"}
           title={identity ? `Меню: ${identity.name}` : "Меню проекта"}>
           <span className="nav-account-avatar" aria-hidden="true">
@@ -270,7 +270,7 @@ export function ArchiveNavigation({
             </button>
           )}
         </div>
-      </details>
+      </details>}
     </nav>
   );
 }

@@ -211,7 +211,7 @@ test("a failed portrait falls back to the account initial without hiding the men
   await expect(page.locator(".nav-menu-account")).toBeVisible();
 });
 
-test("a guest can reach sign-in and public discovery from the avatar menu", async ({
+test("a guest has no avatar menu and can still sign in", async ({
   page,
 }) => {
   await page.route("**/api/family?projection=overview", async (route) => {
@@ -225,14 +225,7 @@ test("a guest can reach sign-in and public discovery from the avatar menu", asyn
     }),
   );
   await page.goto("/account");
-  await expect(page.locator(".nav-account")).toBeVisible();
-  await expect(page.locator(".nav-account")).toHaveAttribute(
-    "aria-label",
-    "Меню проекта",
-  );
-  await page.locator(".nav-account").click();
-  await expect(page.locator(".nav-menu-account")).toHaveAttribute("href", "/account");
-  await expect(page.locator(".nav-bottom").getByRole("button", { name: "Выйти" })).toHaveCount(0);
+  await expect(page.locator(".archive-more, .nav-account")).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Войдите в Drevo" }),
   ).toBeVisible();
@@ -242,9 +235,8 @@ test("a guest can reach sign-in and public discovery from the avatar menu", asyn
   await expect(
     page.getByRole("button", { name: "Выйти из этого сеанса" }),
   ).toHaveCount(0);
-  await expect(
-    page.locator(".nav-bottom").getByRole("link", { name: "Поиск опубликованных людей" }),
-  ).toHaveAttribute("href", "/discover");
+  await expect(page.getByRole("button", { name: "Войти через Яндекс", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Войти через VK", exact: true })).toBeEnabled();
 });
 
 test("account cabinet shows the owner's current tier and quotas", async ({
