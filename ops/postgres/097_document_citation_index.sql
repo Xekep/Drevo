@@ -26,17 +26,21 @@ CREATE POLICY archive_scope ON document_citation_index_state
 
 CREATE OR REPLACE FUNCTION sync_document_citation_refs() RETURNS trigger
 LANGUAGE plpgsql SET search_path=pg_catalog AS $$
+DECLARE
+  target_table text := format('%I.document_citation_refs', TG_TABLE_SCHEMA);
 BEGIN
   IF TG_OP <> 'INSERT' THEN
-    DELETE FROM public.document_citation_refs
-      WHERE archive_id=OLD.archive_id AND kind=TG_ARGV[0] AND entity_id=OLD.id;
+    EXECUTE format('DELETE FROM %s WHERE archive_id=$1 AND kind=$2 AND entity_id=$3', target_table)
+      USING OLD.archive_id, TG_ARGV[0], OLD.id;
   END IF;
   IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
-  INSERT INTO public.document_citation_refs(archive_id,document_id,kind,entity_id)
-    SELECT DISTINCT NEW.archive_id,ref #>> '{}',TG_ARGV[0],NEW.id
-    FROM jsonb_path_query(to_jsonb(NEW)->TG_ARGV[1],'$.**.documentId') AS ref
+  EXECUTE format($query$
+    INSERT INTO %s(archive_id,document_id,kind,entity_id)
+    SELECT DISTINCT $1,ref #>> '{}',$2,$3
+    FROM jsonb_path_query($4,'$.**.documentId') AS ref
     WHERE jsonb_typeof(ref)='string' AND ref #>> '{}' <> ''
-    ON CONFLICT DO NOTHING;
+    ON CONFLICT DO NOTHING
+  $query$, target_table) USING NEW.archive_id, TG_ARGV[0], NEW.id, to_jsonb(NEW)->TG_ARGV[1];
   RETURN NEW;
 END $$;
 DROP TRIGGER IF EXISTS sync_document_citations ON people;
