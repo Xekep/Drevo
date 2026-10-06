@@ -46,7 +46,7 @@
 }
 .platform-ai-archive {
   display: grid;
-  grid-template-columns: minmax(140px, auto) minmax(0, 420px);
+  grid-template-columns: 160px minmax(0, 420px);
   align-items: center;
   gap: 5px 14px;
   font-size: 13px;
