@@ -44,6 +44,10 @@ function treePreferencesFromResponse(data: {
       ? { generationLimits: data.treePreferences.generationLimits }
       : {}),
   };
+  // Preview starts with the default direction, including participants with
+  // legacy inverted preferences. Its controls stay local to this tab.
+  if (memberPreviewAt(window.location.pathname))
+    return { ...preferences, reverseTimeline: DEFAULT_TREE_PREFERENCES.reverseTimeline };
   return data.user?.approved
     ? preferences
     : readGuestTreePreferences(preferences);
@@ -51,7 +55,9 @@ function treePreferencesFromResponse(data: {
 
 export function useArchive(enabled = true) {
   const [treePreferences, setTreePreferences] = useState<TreePreferences>(() =>
-    readGuestTreePreferences(DEFAULT_TREE_PREFERENCES),
+    memberPreviewAt(window.location.pathname)
+      ? { ...DEFAULT_TREE_PREFERENCES }
+      : readGuestTreePreferences(DEFAULT_TREE_PREFERENCES),
   );
   const [family, setFamily] = useState<Family | null>(null),
     [error, setError] = useState(""),

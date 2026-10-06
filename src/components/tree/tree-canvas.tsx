@@ -1219,7 +1219,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   // Claim synchronously: React's busy state alone cannot serialize two events
   // before it commits. Anchor changes and reset write the same preferences.
   const savingGenerations = useRef(false);
-  const { onGenerationAnchor, onResetGenerations, onClearAssistantFilter } = props;
+  const { onGenerationAnchor, onResetGenerations } = props;
   const saveGenerationAnchor = useCallback(async (id: string) => {
     if (savingGenerations.current || !onGenerationAnchor) return false;
     savingGenerations.current = true;
@@ -1243,16 +1243,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     setSavingGenerationPreferences(true);
     try {
       await onResetGenerations();
-      onClearAssistantFilter?.();
-      showAllBranches();
-      setAnchorNotice("Показано всё древо");
+      setAnchorNotice("Ограничения поколений сняты");
     } catch (error: unknown) {
-      setAnchorNotice(error instanceof Error ? error.message : "Не удалось показать всё древо");
+      setAnchorNotice(error instanceof Error ? error.message : "Не удалось снять ограничения поколений");
     } finally {
       savingGenerations.current = false;
       setSavingGenerationPreferences(false);
     }
-  }, [onResetGenerations, onClearAssistantFilter, showAllBranches]);
+  }, [onResetGenerations]);
   const reanchorHiddenPerson = useCallback(async (id: string) => {
     // Only exclusion by the generation window changes its anchor. Assistant
     // filters, collapsed branches and ordinary card selection keep their policy.
@@ -1683,10 +1681,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                   {visible.size} из {family.people.length}
                 </span>
                 {props.onResetGenerations && <button type="button"
+                  className="tree-family-reset"
                   disabled={savingGenerationPreferences}
-                  title="Сбросить ограничения поколений и показать всё древо"
+                  aria-label="Снять ограничения поколений"
+                  title="Снять ограничения поколений"
                   onClick={() => { void resetGenerations(); }}>
-                  Всё древо
+                  <RotateCcw size={16} aria-hidden="true" />
                 </button>}
               </div>
             </div>
