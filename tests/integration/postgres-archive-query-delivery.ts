@@ -32,6 +32,16 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
     VALUES('tree-a','blood-partner','child','partner','spouse',10),
           ('tree-a','partner-parent','partner-parent','partner','parent',11),
           ('tree-a','partner-other-spouse','partner','partner-other-spouse','spouse',12)`);
+  for (const [ordinal, id, birth] of [[6, "descendant", "2000"], [7, "co-parent", "1980"],
+    [8, "co-grandparent", "1950"], [9, "co-sibling", "1985"], [10, "co-other", "1980"]] as const)
+    await first.query(`INSERT INTO people(archive_id,id,ordinal,data)
+      VALUES('tree-a',$1,$2,$3::jsonb)`, [id, ordinal, JSON.stringify(person(id, birth))]);
+  await first.query(`INSERT INTO relations(archive_id,id,source,target,type,ordinal)
+    VALUES('tree-a','descendant-parent','child','descendant','parent',13),
+          ('tree-a','descendant-coparent','co-parent','descendant','parent',14),
+          ('tree-a','coparent-ancestor','co-grandparent','co-parent','parent',15),
+          ('tree-a','coparent-sibling','co-grandparent','co-sibling','parent',16),
+          ('tree-a','coparent-other-union','co-parent','co-other','spouse',17)`);
   await first.query(`CREATE TABLE request_rate_limits (
     scope text NOT NULL, key_hash text NOT NULL, started_at bigint NOT NULL,
     attempts integer NOT NULL, PRIMARY KEY(scope,key_hash))`);
@@ -206,6 +216,12 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
   assert.deepEqual(visiblePartner.spouses, ["child"], "a partner's other spouse remains private");
   assert.ok(!unchangedPeople.some((person) =>
     ["partner-parent", "partner-other-spouse"].includes(person.id)));
+  assert.deepEqual(unchangedPeople.find((p) => p.id === "descendant")?.parents,
+    ["child", "co-parent"]);
+  assert.deepEqual(unchangedPeople.find((p) => p.id === "co-parent")?.parents,
+    ["co-grandparent"]);
+  assert.deepEqual(unchangedPeople.find((p) => p.id === "co-parent")?.spouses, []);
+  assert.ok(!unchangedPeople.some((p) => ["co-sibling", "co-other"].includes(p.id)));
 
 
   async function race(path: string, update: () => Promise<unknown>, token = tokens.relative) {
@@ -228,6 +244,19 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
     }
     return await pending;
   }
+
+  const removedCoParent = await race("/api/export.json", async () => {
+    await second.query("DELETE FROM relations WHERE archive_id='tree-a' AND id='descendant-coparent'");
+    await second.query("UPDATE archives SET revision=revision+1 WHERE id='tree-a'");
+  });
+  assert.equal(removedCoParent.status, 409, "a removed parent path withholds its prepared ancestors");
+  const afterCoParentRemoval = await get("/api/export.json");
+  assert.equal(afterCoParentRemoval.status, 200);
+  assert.ok(!(await afterCoParentRemoval.json()).people.some((p: { id: string }) =>
+    ["co-parent", "co-grandparent", "co-sibling", "co-other"].includes(p.id)));
+  await second.query(`INSERT INTO relations(archive_id,id,source,target,type,ordinal)
+    VALUES('tree-a','descendant-coparent','co-parent','descendant','parent',14)`);
+  await second.query("UPDATE archives SET revision=revision+1 WHERE id='tree-a'");
 
   const removedPartner = await race("/api/export.json", async () => {
     await second.query("DELETE FROM relations WHERE archive_id='tree-a' AND id='blood-partner'");

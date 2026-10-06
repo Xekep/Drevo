@@ -80,6 +80,35 @@ test("blood view adds one step of recorded civil/partner unions without treating
     assert.equal(ids.has(id), false, id);
   assert.equal(bloodRelativesWithPartners(index, "missing", data.unions).size, 0);
 });
+
+test("blood view completes an unmarried blood relative's ancestry without opening lateral families", () => {
+  const data = archive();
+  data.people.find((p) => p.id === "niece")!.parents.push("co-parent");
+  data.people.push(
+    person("co-parent", ["co-grandparent"], ["co-other-spouse"]),
+    person("co-grandparent", ["co-great-grandparent"]),
+    person("co-great-grandparent"),
+    person("co-sibling", ["co-grandparent"]),
+    person("co-other-child", ["co-parent"]),
+    person("co-other-spouse", [], ["co-parent"]),
+    person("spouse-parent"),
+    person("childless-partner", ["childless-parent"], ["main"]),
+    person("childless-parent"),
+  );
+  data.people.find((p) => p.id === "spouse")!.parents = ["spouse-parent"];
+  const before = structuredClone(data);
+  const index = familyNeighbors(data);
+  const blood = commonAncestorNetwork(index, "main");
+  const visible = bloodRelativesWithPartners(index, "main");
+  for (const id of ["co-parent", "co-grandparent", "co-great-grandparent", "spouse-parent"])
+    assert.ok(visible.has(id) && !blood.has(id), id);
+  for (const id of ["co-sibling", "co-other-child", "co-other-spouse", "childless-parent"])
+    assert.equal(visible.has(id), false, id);
+  assert.deepEqual(data, before);
+  // Missing records and corrupt cyclic ancestry must not hang a scope read.
+  data.people.find((p) => p.id === "co-great-grandparent")!.parents = ["co-parent", "missing"];
+  assert.deepEqual(bloodRelativesWithPartners(familyNeighbors(data), "main"), visible);
+});
 test("nearby family includes siblings, exact co-parents, partners and recorded godparents, but not every generation", () => {
   const data = archive(),
     before = structuredClone(data);

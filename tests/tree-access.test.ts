@@ -30,6 +30,8 @@ const person = (id: string, parents: string[] = []): Person => ({
 });
 const partnerImageName = "11111111-1111-4111-8111-111111111111.png";
 const partnerDocumentName = "11111111-1111-4111-8111-111111111112.pdf";
+const coParentImageName = "11111111-1111-4111-8111-111111111113.png";
+const coParentDocumentName = "11111111-1111-4111-8111-111111111114.pdf";
 const family: Family = {
   title: "Проверка доступа",
   description: "",
@@ -38,7 +40,8 @@ const family: Family = {
     person("ancestor"),
     { ...person("me", ["ancestor"]), spouses: ["partner"] },
     person("sibling", ["ancestor"]),
-    person("niece", ["sibling"]),
+    { ...person("niece", ["sibling", "co-parent"]),
+      parentClaims: [{ parentId: "co-parent", confidence: "confirmed" }] },
     { ...person("partner", ["partner-parent"]), spouses: ["me", "partner-other"],
       photo: `/media/${partnerImageName}`,
       sources: [{ title: "Partner record", type: "архив", reference: "",
@@ -47,6 +50,14 @@ const family: Family = {
     person("partner-parent"),
     person("partner-child", ["partner"]),
     { ...person("partner-other"), spouses: ["partner"] },
+    { ...person("co-parent", ["co-grandparent"]), spouses: ["co-other"],
+      photo: `/media/${coParentImageName}`,
+      sources: [{ title: "Co-parent record", type: "архив", reference: "",
+        url: `/media/${coParentDocumentName}#page=1` }] },
+    person("co-grandparent"),
+    person("co-sibling", ["co-grandparent"]),
+    person("co-other-child", ["co-parent"]),
+    { ...person("co-other"), spouses: ["co-parent"] },
     { ...person("hidden"), photo: "/media/secret.png",
       sources: [{ title: "Hidden record", type: "архив", reference: "",
         url: "/media/secret.pdf#page=2" }] },
@@ -70,9 +81,9 @@ const family: Family = {
   ],
 };
 
-const bloodIds = ["ancestor", "me", "sibling", "niece", "partner"];
+const bloodIds = ["ancestor", "me", "sibling", "niece", "partner", "co-parent", "co-grandparent"];
 
-test("кровные и их супруги доступны без родственников и других супругов добавленного супруга", () => {
+test("кровные доступны с предками без брака, без боковых ветвей и родственников добавленного супруга", () => {
   const user = {
     id: "relative",
     name: "Участник",
@@ -88,6 +99,11 @@ test("кровные и их супруги доступны без родств
     bloodIds,
   );
   const partner = projected.people.find((p) => p.id === "partner")!;
+  assert.deepEqual(projected.people.find((p) => p.id === "niece")!.parents, ["sibling", "co-parent"]);
+  assert.deepEqual(projected.people.find((p) => p.id === "niece")!.parentClaims,
+    [{ parentId: "co-parent", confidence: "confirmed" }]);
+  assert.deepEqual(projected.people.find((p) => p.id === "co-parent")!.parents, ["co-grandparent"]);
+  assert.deepEqual(projected.people.find((p) => p.id === "co-parent")!.spouses, []);
   assert.deepEqual(partner.parents, []);
   assert.deepEqual(partner.parentClaims, []);
   assert.deepEqual(partner.spouses, ["me"]);
@@ -174,6 +190,9 @@ test("привязка аккаунта и область видимости д�
       await sharp({ create: { width: 2, height: 2, channels: 3, background: "blue" } })
         .png().toBuffer());
     writeFileSync(join(dir, "uploads", partnerDocumentName), "%PDF-1.4\n%%EOF\n");
+    writeFileSync(join(dir, "uploads", coParentImageName),
+      await sharp({ create: { width: 4, height: 4, channels: 3, background: "#aabfa0" } }).png().toBuffer());
+    writeFileSync(join(dir, "uploads", coParentDocumentName), "%PDF-1.4\n%%EOF\n");
     const provider: typeof fetch = async (url, options) =>
       String(url).includes("/token")
         ? Response.json({
@@ -301,6 +320,8 @@ test("привязка аккаунта и область видимости д�
       res.json(),
     );
     assert.deepEqual(complete.family.people.map((p: Person) => p.id), bloodIds);
+    assert.deepEqual(complete.family.people.find((p: Person) => p.id === "co-parent").parents,
+      ["co-grandparent"], "unmarried co-parent ancestry is preserved in the HTTP snapshot");
     assert.deepEqual(complete.family.people.find((p: Person) => p.id === "partner")
       .parents, []);
     assert.deepEqual(complete.family.people.find((p: Person) => p.id === "partner")
@@ -353,11 +374,23 @@ test("привязка аккаунта и область видимости д�
       "a visible spouse's original photograph is exported");
     assert.ok(exportedEntries.some((name) => name.endsWith(partnerDocumentName)),
       "a visible spouse's cited PDF is exported");
+    for (const name of [coParentImageName, coParentDocumentName])
+      assert.ok(exportedEntries.some((entry) => entry.endsWith(name)),
+        "an unmarried ancestor's portrait and source are included in the scoped export");
     assert.ok(exportedEntries.every((name) => !name.includes("secret")),
       "hidden media is excluded from the exported archive");
     const partnerSearch = await request("/api/people/search?q=partner", relative)
       .then((res) => res.json());
     assert.deepEqual(partnerSearch.people.map((p: Person) => p.id), ["partner"]);
+    for (const id of ["co-parent", "co-grandparent"])
+      assert.ok((await request(`/api/people/search?q=${id}`, relative)
+        .then((res) => res.json())).people.some((p: Person) => p.id === id),
+      `${id} is searchable without a recorded marriage`);
+    for (const id of ["co-sibling", "co-other-child", "co-other"])
+      assert.ok((await request(`/api/people/search?q=${id}`, relative)
+        .then((res) => res.json())).people.every((p: Person) =>
+        !["co-sibling", "co-other-child", "co-other"].includes(p.id)),
+      `${id} does not open a lateral family through the added ancestor`);
     for (const id of ["hidden", "partner-parent", "partner-child", "partner-other"])
       assert.equal((await request(`/api/people/search?q=${id}`, relative)
         .then((res) => res.json())).people.length, 0,
@@ -373,6 +406,8 @@ test("привязка аккаунта и область видимости д�
     assert.deepEqual(fullExport.photos[0].tags.map((tag: { personId: string }) => tag.personId), ["partner"]);
     assert.equal((await request(`/media/${partnerImageName}`, relative)).status, 200);
     assert.equal((await request(`/media/${partnerDocumentName}`, relative)).status, 200);
+    assert.equal((await request(`/media/${coParentImageName}`, relative)).status, 200);
+    assert.equal((await request(`/media/${coParentDocumentName}`, relative)).status, 200);
     assert.equal((await request("/media/secret.png", relative)).status, 401);
     assert.equal((await request("/media/secret.pdf", relative)).status, 401);
     assert.equal((await request("/media/secret.png", admin)).status, 200);
