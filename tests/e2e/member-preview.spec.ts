@@ -98,6 +98,7 @@ async function mockPreview(
   page: Page,
   denied = false,
   expectedPrefix = prefix,
+  initial: { approved?: boolean; reverseTimeline?: boolean } = {},
 ) {
   const requests: Array<{ path: string; method: string }> = [];
   const unscoped: string[] = [];
@@ -130,7 +131,7 @@ async function mockPreview(
     if (path === "/api/session")
       return route.fulfill({
         json: {
-          user: member,
+          user: { ...member, approved: initial.approved ?? member.approved },
           account: null,
           local: false,
           preview: true,
@@ -140,13 +141,13 @@ async function mockPreview(
       return route.fulfill({
         json: {
           family,
-          user: member,
+          user: { ...member, approved: initial.approved ?? member.approved },
           revision: 1,
           canEdit: false,
           local: false,
           readTree: true,
           readPhotos: true,
-          treePreferences: {},
+          treePreferences: { reverseTimeline: initial.reverseTimeline },
           participantPreview: {
             id: member.id,
             name: member.name,
@@ -213,10 +214,15 @@ test("member preview exposes view settings without writing either account or gue
   await page.addInitScript(() => localStorage.setItem(
     "drevo:guest-tree-preferences:v1", JSON.stringify({ reverseTimeline: true, colorScheme: "white" }),
   ));
-  const { requests, unscoped } = await mockPreview(page);
+  const { requests, unscoped } = await mockPreview(page, false, prefix, { reverseTimeline: true });
   await page.goto(`${prefix}/tree`);
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).not.toHaveClass(/theme-white/);
+  await expect.poll(async () => {
+    const parent = await page.locator('.flow-person[data-person-id="parent"]').first().boundingBox();
+    const child = await page.locator('.flow-person[data-person-id="child"]').first().boundingBox();
+    return !!parent && !!child && parent.y < child.y;
+  }).toBe(true);
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
   await expect(dialog.getByRole("radio", { name: "Предки сверху" })).toBeChecked();
@@ -243,7 +249,7 @@ test("member preview exposes view settings without writing either account or gue
     await expect(anchor).toContainText("Опорный: Тестов Иван");
     await expect(page.getByRole("tablist", { name: "Сведения о человеке" })).toHaveCount(0);
   }
-  await anchor.getByRole("button", { name: "Всё древо", exact: true }).click();
+  await anchor.getByRole("button", { name: "Снять ограничения поколений", exact: true }).click();
   await expect(anchor).toHaveCount(0);
   await expect(canvas).toHaveAttribute("data-layout-people", "4");
   expect(await mountedViewport!.evaluate((element) => element.isConnected)).toBe(true);
@@ -264,6 +270,33 @@ test("member preview exposes view settings without writing either account or gue
   await expect(dialog).toHaveCount(0);
   expect(unscoped).toEqual([]);
   expect(requests.every((request) => request.method === "GET")).toBe(true);
+});
+
+test("public preview for a pending participant ignores inverted guest settings", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => localStorage.setItem(
+    "drevo:guest-tree-preferences:v1", JSON.stringify({ reverseTimeline: true, colorScheme: "white" }),
+  ));
+  const { requests } = await mockPreview(page, false, prefix, { approved: false });
+  await page.goto(`${prefix}/tree`);
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling|theme-white/);
+  await expect.poll(async () => {
+    const parent = await page.locator('.flow-person[data-person-id="parent"]').first().boundingBox();
+    const child = await page.locator('.flow-person[data-person-id="child"]').first().boundingBox();
+    return !!parent && !!child && parent.y < child.y;
+  }).toBe(true);
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  const dialog = page.getByRole("dialog", { name: "Вид древа" });
+  await expect(dialog.getByRole("radio", { name: "Предки сверху" })).toBeChecked();
+  await dialog.getByRole("radio", { name: "Потомки сверху" }).check();
+  await expect(dialog.getByRole("radio", { name: "Потомки сверху" })).toBeChecked();
+  await page.reload();
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  await expect(dialog.getByRole("radio", { name: "Предки сверху" })).toBeChecked();
+  expect(requests.every((request) => request.method === "GET")).toBe(true);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("drevo:guest-tree-preferences:v1")!)))
+    .toEqual({ reverseTimeline: true, colorScheme: "white" });
 });
 
 test("preview avatar opens a populated scoped menu with the participant portrait", async ({ page }, info) => {

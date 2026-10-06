@@ -18,7 +18,7 @@ export function AboutProject({ onClose }: { onClose: () => void }) {
           одновременно наполняю собственное семейное древо.
         </p>
         <p>
-          Проект развивается при поддержке моего друга <b>Apakalipses</b>, который
+          Отдельно хочу отметить моего друга <b>Apakalipses</b>, который
           внёс значительный вклад в его разработку.
         </p>
         <p className="about-signature">

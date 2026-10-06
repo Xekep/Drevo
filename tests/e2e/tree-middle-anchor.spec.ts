@@ -3,6 +3,44 @@ import {
   DEFAULT_TREE_PREFERENCES,
   type TreePreferences,
 } from "../../src/domain/tree-preferences";
+import { familyViewAction } from "./tree-toolbar-actions";
+
+for (const mode of ["Близкие", "Кровные"]) {
+  test(`cancelling generation limits preserves the ${mode} view`, async ({ page }, info) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    let preferences: TreePreferences = {
+      ...DEFAULT_TREE_PREFERENCES,
+      generationLimits: { anchorId: "e2e-child", ancestors: 7, descendants: 50, collateral: 2 },
+    };
+    await page.route("**/api/family?projection=overview", async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), treePreferences: preferences } });
+    });
+    await page.route("**/api/tree-preferences", async (route) => {
+      if (route.request().method() === "PUT") preferences = route.request().postDataJSON();
+      await route.fulfill({ json: preferences });
+    });
+    await page.goto("/tree");
+    const canvas = page.locator(".tree-canvas");
+    await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
+    await page.locator('.flow-person[data-person-id="e2e-child"] .flow-person-content').first().click();
+    if (info.project.name === "mobile")
+      await page.getByRole("button", { name: "Свернуть панель" }).click();
+    await familyViewAction(page, mode);
+    await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
+    const scope = page.locator('.tree-family-name[title^="' + mode + ':"]');
+    await expect(scope).toHaveCount(1);
+    await expect(canvas.getByRole("button", { name: "Всё древо", exact: true, includeHidden: true })).toHaveCount(1);
+    const anchor = page.getByRole("status", { name: "Опорный человек" });
+    await anchor.getByRole("button", { name: "Снять ограничения поколений" }).click();
+    await expect(anchor).toHaveCount(0);
+    await expect(scope).toHaveCount(1);
+    expect(preferences.generationLimits).toBeNull();
+    await page.screenshot({ path: info.outputPath("scoped-generation-reset.png") });
+    await familyViewAction(page, "Всё древо");
+    await expect(scope).toHaveCount(0);
+  });
+}
 
 test("middle click preserves generation depths, while middle drag only pans", async ({
   page,
@@ -105,7 +143,7 @@ for (const firstOperation of ["reset", "anchor"] as const) {
     await page.goto("/tree");
     const canvas = page.locator(".tree-canvas");
     const anchor = canvas.getByRole("status", { name: "Опорный человек" });
-    const reset = anchor.getByRole("button", { name: "Всё древо", exact: true });
+    const reset = anchor.getByRole("button", { name: "Снять ограничения поколений", exact: true });
     const parent = page.locator('.flow-person[data-person-id="e2e-memorial-person"] .flow-person-content').first();
     await expect(canvas).toHaveAttribute("data-layout-people", "4");
     await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);

@@ -38,6 +38,20 @@ test("a filter preserves all other cards, supports an empty result and resets to
   );
   await expect(child).toHaveCount(0);
   await expect(parent).toBeAttached();
+  // Cancelling the independent generation window must keep the AI projection.
+  await assistant.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  const preferences = page.getByRole("dialog", { name: "Вид древа" });
+  await preferences.getByRole("switch", { name: "Ограничить видимое древо" }).check();
+  await preferences.getByRole("button", { name: "Закрыть" }).click();
+  const anchor = page.getByRole("status", { name: "Опорный человек" });
+  await anchor.getByRole("button", { name: "Снять ограничения поколений" }).click();
+  await expect(anchor).toHaveCount(0);
+  await expect(page.locator(".tree-filter-status")).toContainText(
+    `${kept.length} из ${family.people.length}`,
+  );
+  await expect(child).toHaveCount(0);
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
   await assistant.getByRole("textbox").fill("Оставь только совпавших");
   await assistant.getByRole("button", { name: "Отправить запрос" }).click();
   await expect(page.locator(".tree-filter-status")).toContainText(
