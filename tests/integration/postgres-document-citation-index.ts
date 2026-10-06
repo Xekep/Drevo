@@ -14,6 +14,8 @@ test("document reference projection follows nested edits, deletions and archive 
   );
   await first.query(migration);
   await first.query(migration);
+  // The projection must use the established parent-evidence writer boundary.
+  await first.query("SELECT set_config('drevo.parent_evidence_write','on',false)");
   await first.query("SELECT set_config('drevo.archive_id','tree-a',false)");
   await first.query(`UPDATE people SET data = data || '{"sources":[{"documentId":"doc-a"}],"events":[{"sources":[{"documentId":"doc-a"},{"documentId":"doc-b"}]}]}'::jsonb
     WHERE archive_id='tree-a' AND id='own'`);
