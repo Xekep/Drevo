@@ -1,6 +1,7 @@
 import { BackupAdmin } from "./backup-admin";
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { AdminNavigation } from "./admin-navigation";
 import {
   ArrowLeft,
   BookOpen,
@@ -354,24 +355,6 @@ export function AdminPanel({
   })).filter((group) => group.items.length > 0);
   const visibleSection = visibleGroups.some((group) => group.items.some((item) => item.id === section))
     ? section : visibleGroups[0]?.items[0]?.id || "users";
-  const navigation = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const nav = navigation.current;
-    if (!nav) return;
-    const revealSelected = () => {
-      if (nav.scrollWidth <= nav.clientWidth) return;
-      const selected = nav.querySelector('[aria-current="page"]');
-      if (!selected) return;
-      const bounds = nav.getBoundingClientRect();
-      const item = selected.getBoundingClientRect();
-      if (item.left < bounds.left) nav.scrollLeft += item.left - bounds.left;
-      else if (item.right > bounds.right) nav.scrollLeft += item.right - bounds.right;
-    };
-    revealSelected();
-    const observer = new ResizeObserver(revealSelected);
-    observer.observe(nav);
-    return () => observer.disconnect();
-  }, [visibleSection]);
   const selectSection = (next: string) => {
     if (!visibleGroups.some((group) => group.items.some((item) => item.id === next))) return;
     setSection(next);
@@ -462,26 +445,8 @@ export function AdminPanel({
             <b>Управление древом</b>
           </span>
         </div>
-        <nav ref={navigation} aria-label="Разделы админки">
-          {visibleGroups.map((group) => (
-            <div className="admin-nav-group" key={group.label}>
-              <span className="admin-nav-label">{group.label}</span>
-              {group.items.map(({ id, label, icon: Icon }) => (
-                  <button
-                    key={id}
-                    type="button"
-                    aria-current={visibleSection === id ? "page" : undefined}
-                    onClick={() => {
-                      selectSection(id);
-                    }}
-                  >
-                    <Icon size={17} aria-hidden="true" />
-                    {label}
-                  </button>
-                ))}
-            </div>
-          ))}
-        </nav>
+        <AdminNavigation groups={visibleGroups} selected={visibleSection}
+          onSelect={selectSection} label="Разделы админки" />
         <button
           className="admin-back"
           type="button"
@@ -504,12 +469,13 @@ export function AdminPanel({
         {archiveOwner && !settings && !error && <p role="status">Загружаем настройки…</p>}
         {settings && visibleSection === "users" && (
           <section className="admin-card archive-form">
-            <p>
-              Новые пользователи ожидают одобрения. Читатель видит закрытый
-              архив после допуска, родственник редактирует свои объекты,
-              владелец управляет участниками и содержимым архива.
-              Публикацией людей и связями древ управляет владелец.
-            </p>
+            <details className="admin-access-help">
+              <summary>Как работают роли и доступ</summary>
+              <p>Новые пользователи ожидают одобрения. Читатель видит закрытый
+                архив после допуска, родственник редактирует свои объекты,
+                владелец управляет участниками и содержимым архива.
+                Публикацией людей и связями древ управляет владелец.</p>
+            </details>
             {(settings.publicTree || settings.publicAlbums) && (
               <p role="note" className="form-error">
                 Для доступа только к кровным родственникам и их супругам сначала закройте публичное древо и

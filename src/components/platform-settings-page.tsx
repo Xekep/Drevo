@@ -1,5 +1,8 @@
 import { BackupAdmin } from "./backup-admin";
 import { useEffect, useState } from "react";
+import { ArrowLeft, Bot, DatabaseBackup, HardDrive, KeyRound, ScanSearch, ShieldCheck, Users } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { AdminNavigation } from "./admin-navigation";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { PlatformStaffRoles } from "./platform-staff-roles";
 import { PlatformAccountTiers } from "./platform-account-tiers";
@@ -11,13 +14,13 @@ import { ResearchResourcesAdmin } from "./research-resources-admin";
 import "../styles/account.css";
 
 type Section = "roles" | "ai" | "backups" | "storage" | "vk" | "resources";
-const sections: { id: Section; label: string }[] = [
-  { id: "roles", label: "Глобальные роли" },
-  { id: "ai", label: "Yandex AI" },
-  { id: "backups", label: "Резервные копии" },
-  { id: "storage", label: "Хранилище" },
-  { id: "vk", label: "Вход через VK" },
-  { id: "resources", label: "Ресурсы поиска" },
+const sections: { id: Section; label: string; icon: LucideIcon }[] = [
+  { id: "roles", label: "Глобальные роли", icon: Users },
+  { id: "ai", label: "Yandex AI", icon: Bot },
+  { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
+  { id: "storage", label: "Хранилище", icon: HardDrive },
+  { id: "vk", label: "Вход через VK", icon: KeyRound },
+  { id: "resources", label: "Ресурсы поиска", icon: ScanSearch },
 ];
 type AvailableArchive = { id: string; title: string; approved: boolean; current: boolean };
 
@@ -55,22 +58,26 @@ export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, onOw
   }, [section]);
 
   return (
-    <main className="account-page platform-settings-page">
-      <div className="account-shell">
-        <div className="account-heading">
-          <span className="account-eyebrow">Drevo</span>
-          <h1>Админка платформы</h1>
-          <p>Глобальные роли и настройки платформы. Управление конкретным древом открывается из его меню.</p>
+    <main className="account-page admin-page platform-settings-page">
+      <aside className="admin-sidebar">
+        <div className="admin-mark">
+          <span className="admin-mark-icon"><ShieldCheck size={20} aria-hidden="true" /></span>
+          <span><small>DREVO</small><b>Админка платформы</b></span>
         </div>
-        <nav className="platform-settings-tabs" aria-label="Разделы админки платформы">
-          {sections.filter((item) => showRoles || item.id !== "roles").map((item) => (
-            <button key={item.id} type="button" aria-current={section === item.id ? "page" : undefined}
-              onClick={() => {
-                if (item.id === "ai" && section !== "ai") setArchivesReady(false);
-                setSection(item.id);
-              }}>{item.label}</button>
-          ))}
-        </nav>
+        <AdminNavigation groups={[{ label: "Настройки", items: sections.filter((item) => showRoles || item.id !== "roles") }]}
+          selected={section} label="Разделы админки платформы" onSelect={(next) => {
+            if (next === "ai" && section !== "ai") setArchivesReady(false);
+            setSection(next);
+          }} />
+        <a className="admin-back" href="/account" aria-label="Вернуться в профиль" title="Вернуться в профиль">
+          <ArrowLeft size={16} aria-hidden="true" /><span>Вернуться в профиль</span>
+        </a>
+      </aside>
+      <div className="admin-content platform-settings-content">
+        <header className="admin-page-header">
+          <h1>Админка платформы</h1>
+          <p className="admin-subtitle">Глобальные роли и настройки платформы. Управление конкретным древом открывается из его меню.</p>
+        </header>
         {showRoles && section === "roles" && <>
           <PlatformStaffRoles currentAccountId={accountId}
             onOwnRoleChanged={onOwnRoleChanged} />
@@ -79,7 +86,7 @@ export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, onOw
         {section === "ai" && <div className="platform-ai-settings">
           <AiProviderCleanupAdmin platform />
           {!archivesReady ? <p role="status">Проверяем доступные архивы…</p> : <>
-          <label className="account-card platform-ai-archive">
+          <label className="platform-ai-archive">
             Архив для Yandex AI
             <select value={aiArchiveId} onChange={(event) => setAiArchiveId(event.target.value)}>
               <option value="">Основной архив</option>

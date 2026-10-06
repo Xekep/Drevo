@@ -874,8 +874,17 @@ test("поля участника не разъезжаются на разны�
     await expect(card).toBeVisible();
     const layout = await card.evaluate((element) => {
       const fields = [...element.children] as HTMLElement[];
+      const controls = [...element.querySelectorAll("input, select")].map((field) =>
+        field.getBoundingClientRect());
+      const headings = element.closest(".admin-users-list")!.querySelector(".admin-users-head")!;
       return {
         overflows: element.scrollWidth > element.clientWidth + 1,
+        singleRow: getComputedStyle(headings).display !== "none",
+        labelsVisible: [...element.querySelectorAll(".admin-user-select > span")].every((label) =>
+          label.getBoundingClientRect().width > 10),
+        separate: controls.every((field, index) => controls.slice(index + 1).every((other) =>
+          field.right <= other.left + 1 || other.right <= field.left + 1 ||
+          field.bottom <= other.top + 1 || other.bottom <= field.top + 1)),
         centers: fields.map((field) => {
           const rect = field.getBoundingClientRect();
           return Math.round(rect.top + rect.height / 2);
@@ -883,9 +892,12 @@ test("поля участника не разъезжаются на разны�
       };
     });
     expect(layout.overflows).toBe(false);
-    expect(
-      Math.max(...layout.centers) - Math.min(...layout.centers),
-    ).toBeLessThan(12);
+    expect(layout.separate).toBe(true);
+    if (layout.singleRow) {
+      expect(Math.max(...layout.centers) - Math.min(...layout.centers)).toBeLessThan(12);
+    } else {
+      expect(layout.labelsVisible).toBe(true);
+    }
   }
 });
 

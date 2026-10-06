@@ -19,7 +19,7 @@ export function AboutProject({ onClose }: { onClose: () => void }) {
         </p>
         <p>
           Отдельно хочу отметить моего друга <b>Apakalipses</b>, который
-          внёс значительный вклад в его разработку.
+          внёс значительный вклад в разработку.
         </p>
         <p className="about-signature">
           <a href="https://vk.ru/xekep" target="_blank" rel="noreferrer">
