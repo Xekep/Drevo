@@ -23,10 +23,12 @@ test("platform admin without membership opens global settings, with archive-scop
   await page.route("**/api/account/sessions", (route) => route.fulfill({ json: {
     currentExpiresAt: null, otherCount: 0,
   } }));
-  await page.route("**/api/platform/roles", (route) => route.fulfill({ json: {
+  await page.route("**/api/platform/accounts", (route) => route.fulfill({ json: {
     accounts: [
-      { id: "staff-1", name: "Александра Петрова", role: "researcher" },
-      { id: "staff-2", name: "Константин Александров", role: "admin" },
+      { id: "staff-1", name: "Александра Петрова", role: "researcher", fullAccess: false, lastVisitAt: null },
+      { id: "staff-2", name: "Константин Александров", role: "admin", fullAccess: true, lastVisitAt: null },
+      { id: "new-account", name: "Новый владелец", role: null, fullAccess, lastVisitAt: null },
+      { id: "platform-only", name: "Администратор платформы", role: "admin", fullAccess: ownFullAccess, lastVisitAt: null },
     ], next: null,
   } }));
   let fullAccess = false;
@@ -81,12 +83,12 @@ test("platform admin without membership opens global settings, with archive-scop
   });
 
   await page.goto("/account");
-  await expect(page.getByRole("heading", { name: "Глобальные роли" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Пользователи", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Управление древом" })).toHaveCount(0);
   await page.getByRole("button", { name: "Админка платформы" }).click();
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole("heading", { name: "Админка платформы" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Глобальные роли" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Пользователи", exact: true })).toBeVisible();
   const tier = page.getByLabel("Уровень доступа Новый владелец");
   await expect(tier).toHaveValue("basic");
   await tier.selectOption("full");
@@ -96,12 +98,12 @@ test("platform admin without membership opens global settings, with archive-scop
   await expect(tier).toHaveValue("full");
   await tier.selectOption("basic");
   await expect(tier).toHaveValue("basic");
-  await expect(page.getByLabel("Сводка уровней доступа")).toContainText("Полный: 0");
-  await page.locator(".account-tier-entry").filter({ hasText: "Новый владелец" })
-    .getByRole("button", { name: "Расход" }).click();
-  await expect(page.getByText(/Людей: 12; файлы: 20 МБ/)).toBeVisible();
+  await expect(page.getByLabel("Сводка уровней доступа")).toHaveCount(0);
+  await page.getByRole("button", { name: "Расход Новый владелец", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Расход: Новый владелец" })).toContainText("20 МБ");
+  await page.getByRole("dialog").getByRole("button", { name: "Закрыть", exact: true }).click();
   await page.getByLabel("Уровень доступа Администратор платформы").selectOption("full");
-  await expect(page.getByLabel("Сводка уровней доступа")).toContainText("Полный: 1");
+  await expect(page.getByLabel("Уровень доступа Администратор платформы")).toHaveValue("full");
   if (info.project.name === "mobile") {
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 844 });
@@ -161,8 +163,8 @@ test("own tier downgrade and upgrade refresh the locked session without a family
         aiAvailable: true },
     } });
   });
-  await page.route("**/api/platform/roles", (route) => route.fulfill({ json: {
-    accounts: [], next: null,
+  await page.route("**/api/platform/accounts", (route) => route.fulfill({ json: {
+    accounts: [{ id: "owner", name: "Владелец", role: "admin", fullAccess, lastVisitAt: null }], next: null,
   } }));
   await page.route(/\/api\/platform\/tiers(?:\/owner)?$/, (route) => {
     if (route.request().method() === "PATCH") {

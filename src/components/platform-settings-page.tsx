@@ -4,8 +4,7 @@ import { ArrowLeft, Bot, DatabaseBackup, HardDrive, KeyRound, Mail, ScanSearch, 
 import type { LucideIcon } from "lucide-react";
 import { AdminNavigation } from "./admin-navigation";
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { PlatformStaffRoles } from "./platform-staff-roles";
-import { PlatformAccountTiers } from "./platform-account-tiers";
+import { PlatformAccountsAdmin } from "./platform-accounts-admin";
 import { AiSettingsAdmin } from "./ai-settings-admin";
 import { AiProviderCleanupAdmin } from "./ai-provider-cleanup-admin";
 import { StorageLimitsAdmin } from "./storage-limits-admin";
@@ -16,7 +15,7 @@ import "../styles/account.css";
 
 type Section = "roles" | "ai" | "backups" | "storage" | "vk" | "email" | "resources";
 const sections: { id: Section; label: string; icon: LucideIcon }[] = [
-  { id: "roles", label: "Глобальные роли", icon: Users },
+  { id: "roles", label: "Пользователи", icon: Users },
   { id: "ai", label: "Yandex AI", icon: Bot },
   { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
   { id: "storage", label: "Хранилище", icon: HardDrive },
@@ -80,11 +79,8 @@ export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, onOw
           <h1>Админка платформы</h1>
           <p className="admin-subtitle">Глобальные роли и настройки платформы. Управление конкретным древом открывается из его меню.</p>
         </header>
-        {showRoles && section === "roles" && <>
-          <PlatformStaffRoles currentAccountId={accountId}
-            onOwnRoleChanged={onOwnRoleChanged} />
-          <PlatformAccountTiers currentAccountId={accountId} onOwnTierChanged={onOwnTierChanged} />
-        </>}
+        {showRoles && section === "roles" && <PlatformAccountsAdmin currentAccountId={accountId}
+          onOwnRoleChanged={onOwnRoleChanged} onOwnTierChanged={onOwnTierChanged} />}
         {section === "ai" && <div className="platform-ai-settings">
           <AiProviderCleanupAdmin platform />
           {!archivesReady ? <p role="status">Проверяем доступные архивы…</p> : <>

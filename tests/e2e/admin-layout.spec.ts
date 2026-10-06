@@ -6,8 +6,8 @@ test("platform sections stay reachable and forms fit desktop and mobile screens"
       fullAccess: true, provider: "email", createdAt: "2026-01-01" },
     local: false, email: true, yandex: false, vk: false,
   } }));
-  await page.route("**/api/platform/roles", (route) => route.fulfill({ json: {
-    accounts: [{ id: "member", name: "Александра Константиновна Петрова", role: "researcher" }], next: null,
+  await page.route("**/api/platform/accounts", (route) => route.fulfill({ json: {
+    accounts: [{ id: "member", name: "Александра Константиновна Петрова", role: "researcher", fullAccess: true, lastVisitAt: null }], next: null,
   } }));
   await page.route("**/api/platform/tiers", (route) => route.fulfill({ json: {
     accounts: [{ id: "member", name: "Александра Константиновна Петрова", fullAccess: true }],
@@ -16,7 +16,7 @@ test("platform sections stay reachable and forms fit desktop and mobile screens"
   await page.route("**/api/admin/research-resources", (route) => route.fulfill({ json: { categories: [] } }));
   await page.goto("/admin");
   const navigation = page.getByRole("navigation", { name: "Разделы админки платформы" });
-  await expect(page.getByRole("heading", { name: "Глобальные роли", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Пользователи", exact: true })).toBeVisible();
   for (const width of info.project.name === "desktop" ? [1440, 1024, 768] : [390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     const bounds = await page.getByLabel("Роль Александра Константиновна Петрова").boundingBox();

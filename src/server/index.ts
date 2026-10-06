@@ -19,6 +19,7 @@ import { createAuth } from "./auth.ts";
 import { emailAuthHttp } from "./email-auth-http.ts";
 import { emailAuthSettingsStore } from "./email-auth-settings.ts";
 import { adminEmailAuthHttp } from "./admin-email-auth-http.ts";
+import { platformAccountsHttp } from "./platform-accounts-http.ts";
 import { settingsStore } from "./settings.ts";
 import { mediaStore } from "./media.ts";
 import { restoreStore } from "./restore.ts";
@@ -231,6 +232,7 @@ export async function startServer(
       ? platformAiProviderCleanupHttp({ auth, db: archive.db, providerCleanup, publicOrigin })
       : null;
     const managePlatformTiers = platformTiersHttp(archive.db, auth, publicOrigin);
+    const listPlatformAccounts = platformAccountsHttp(archive.db, auth);
     const emailSettings = !archiveId ? emailAuthSettingsStore(archive.db, publicOrigin) : null;
     const manageEmailAuth = emailSettings ? adminEmailAuthHttp(auth, emailSettings, publicOrigin) : null;
     const emailAuth = emailSettings
@@ -443,6 +445,7 @@ export async function startServer(
       if (managePlatformBackups && await managePlatformBackups(req, res, parsedUrl)) return;
       if (managePlatformCleanup && await managePlatformCleanup(req, res, parsedUrl)) return;
       if (await managePlatformTiers(req, res, parsedUrl)) return;
+      if (await listPlatformAccounts(req, res, parsedUrl)) return;
       if (await listAccountArchives(req, res, parsedUrl)) return;
       if (await exportAccountData(req, res, parsedUrl)) return;
       if (await exportAccountAttachments(req, res, parsedUrl)) return;

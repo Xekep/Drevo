@@ -6,6 +6,7 @@ import { adminAccessHttp } from "../../src/server/admin-access-http.ts";
 import { adminVkAuthHttp } from "../../src/server/admin-vk-auth-http.ts";
 import { adminEmailAuthHttp } from "../../src/server/admin-email-auth-http.ts";
 import { emailAuthSettingsStore } from "../../src/server/email-auth-settings.ts";
+import { platformAccountsHttp } from "../../src/server/platform-accounts-http.ts";
 import { adminResearchResourcesHttp } from "../../src/server/admin-research-resources-http.ts";
 import { createAuth } from "../../src/server/auth.ts";
 import { userStore } from "../../src/server/users.ts";
@@ -169,6 +170,7 @@ export async function verifyPlatformConfigurationRevocation(
       visibility: await settingsStore(db), publicOrigin: origin }),
     adminVkAuthHttp(guardedAuth, vkAuthSettingsStore(db, origin), origin),
     adminEmailAuthHttp(guardedAuth, emailAuthSettingsStore(db, origin), origin),
+    platformAccountsHttp(db, guardedAuth),
     adminResearchResourcesHttp({ auth: guardedAuth,
       catalog: researchCatalogStore(db), publicOrigin: origin }),
   ];
@@ -242,6 +244,55 @@ export async function verifyPlatformConfigurationRevocation(
       assert.equal((await fetch(base + path, { headers })).status, 200,
         `${path} is available to a platform admin without archive membership`);
     const current = await readStorageLimits(db);
+    const statisticsBefore = await fetch(base + "/api/platform/accounts/statistics", { headers }).then((response) => response.json());
+    const directoryIds: string[] = [];
+    try {
+      for (let index = 0; index < 35; index++) {
+        const id = `platform-directory-${String(index).padStart(3, "0")}`;
+        directoryIds.push(id);
+        await client.query("INSERT INTO accounts(id,name,created_at) VALUES($1,$2,$3)",
+          [id, `Ёж каталога${index === 34 ? " 100%_тест" : ""}`, new Date().toISOString()]);
+      }
+      await client.query("INSERT INTO platform_admins(account_id) VALUES($1)", [directoryIds[0]]);
+      await client.query("INSERT INTO platform_researchers(account_id) VALUES($1)", [directoryIds[1]]);
+      await client.query("INSERT INTO account_tiers(account_id,full_access) VALUES($1,true)", [directoryIds[2]]);
+      const getDirectory = async (query: string) => {
+        const response = await fetch(base + "/api/platform/accounts" + query, { headers });
+        assert.equal(response.status, 200, await response.clone().text());
+        return response.json();
+      };
+      const first = await getDirectory("?q=" + encodeURIComponent("ЕЖ КАТАЛОГА"));
+      assert.equal(first.accounts.length, 30);
+      assert.ok(first.next);
+      assert.ok(!Object.hasOwn(first, "totals"), "paging never counts statistics");
+      const second = await getDirectory("?q=" + encodeURIComponent("ЕЖ КАТАЛОГА") + "&after=" + first.next);
+      assert.equal(second.accounts.length, 5);
+      assert.equal(second.next, null);
+      assert.deepEqual([...first.accounts, ...second.accounts].map((row: { id: string }) => row.id), directoryIds,
+        "equal name prefixes have a stable ID tie-break, without duplicate or missing accounts");
+      assert.deepEqual(first.accounts[0], { id: directoryIds[0], name: "Ёж каталога", role: "admin",
+        fullAccess: false, lastVisitAt: null });
+      assert.equal(first.accounts[1].role, "researcher");
+      assert.equal(first.accounts[2].role, null);
+      assert.equal(first.accounts[2].fullAccess, true);
+      const literal = await getDirectory("?q=" + encodeURIComponent("%_"));
+      assert.deepEqual(literal.accounts.map((row: { id: string }) => row.id), [directoryIds[34]],
+        "LIKE wildcards are literal search characters");
+      assert.equal((await fetch(base + "/api/platform/accounts?after=bad-cursor", { headers })).status, 400);
+      const statisticsAfter = await fetch(base + "/api/platform/accounts/statistics", { headers }).then((response) => response.json());
+      assert.equal(statisticsAfter.accounts, statisticsBefore.accounts + 35);
+      assert.equal(statisticsAfter.basic, statisticsBefore.basic + 34);
+      assert.equal(statisticsAfter.full, statisticsBefore.full + 1);
+      assert.equal(statisticsAfter.admins, statisticsBefore.admins + 1);
+      assert.equal(statisticsAfter.researchers, statisticsBefore.researchers + 1);
+      await client.query("DELETE FROM platform_admins WHERE account_id=$1", [actorId]);
+      for (const path of ["/api/platform/accounts", "/api/platform/accounts/statistics"])
+        assert.equal((await fetch(base + path, { headers })).status, 403);
+      await client.query("INSERT INTO platform_admins(account_id) VALUES($1)", [actorId]);
+    } finally {
+      await client.query("DELETE FROM accounts WHERE id=ANY($1::text[])", [directoryIds]);
+      await client.query("INSERT INTO platform_admins(account_id) VALUES($1) ON CONFLICT DO NOTHING", [actorId]);
+    }
     await revokedWrite("/api/settings/storage", {
       expected: current, next: { ...current, relative: 1 },
     }, "grant");

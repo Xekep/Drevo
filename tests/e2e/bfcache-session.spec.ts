@@ -68,8 +68,8 @@ test("Back from platform settings revalidates a cached account and ignores late 
       route.fulfill({ json: { archives: [] } }));
     await page.route("**/api/account/sessions", (route) =>
       route.fulfill({ json: { currentExpiresAt: null, otherCount: 0 } }));
-    await page.route("**/api/platform/roles", (route) =>
-      route.fulfill({ json: { accounts: [], next: null } }));
+    await page.route("**/api/platform/accounts", (route) =>
+      route.fulfill({ json: { accounts: [{ id: "platform-only", name: "Synthetic administrator", role: "admin", fullAccess, lastVisitAt: null }], next: null } }));
     await page.route(/\/api\/platform\/tiers(?:\/[^/?]+)?(?:\?.*)?$/, (route) => {
       if (route.request().method() === "PATCH") {
         fullAccess = (route.request().postDataJSON() as { fullAccess: boolean }).fullAccess;
@@ -164,8 +164,8 @@ test("cached scoped tree stays hidden on busy validation, then retains its graph
     });
     await page.route("**/api/account/archives", (route) =>
       route.fulfill({ json: { archives: [] } }));
-    await page.route("**/api/platform/roles", (route) =>
-      route.fulfill({ json: { accounts: [], next: null } }));
+    await page.route("**/api/platform/accounts", (route) =>
+      route.fulfill({ json: { accounts: [{ id: "owner", name: "Synthetic owner", role: "admin", fullAccess, lastVisitAt: null }], next: null } }));
     await page.route(/\/api\/platform\/tiers(?:\/[^/?]+)?(?:\?.*)?$/, (route) => {
       if (route.request().method() === "PATCH") {
         fullAccess = (route.request().postDataJSON() as { fullAccess: boolean }).fullAccess;
@@ -209,7 +209,7 @@ test("cached scoped tree stays hidden on busy validation, then retains its graph
     expect(sessionPaths).toContain("/a/tree-a/api/session");
 
     await page.evaluate(() => window.location.assign("/admin"));
-    await page.locator("#platform-tiers-title").waitFor();
+    await page.getByRole("heading", { name: "Пользователи", exact: true }).waitFor();
     archiveOwner = false;
     treeRole = "reader";
     await page.goBack({ waitUntil: "commit" });
@@ -219,7 +219,7 @@ test("cached scoped tree stays hidden on busy validation, then retains its graph
     expect(familyReads).toBe(beforeBackFamily);
 
     await page.evaluate(() => window.location.assign("/admin"));
-    await page.locator("#platform-tiers-title").waitFor();
+    await page.getByRole("heading", { name: "Пользователи", exact: true }).waitFor();
     treeAccess = "common_ancestors";
     await page.goBack({ waitUntil: "commit" });
     await expectRestored(page);
@@ -255,7 +255,7 @@ test("cached unscoped private tree closes after completed logout", async () => {
     } }));
     await page.route("**/api/account/archives", (route) =>
       route.fulfill({ json: { archives: [] } }));
-    await page.route("**/api/platform/roles", (route) =>
+    await page.route("**/api/platform/accounts", (route) =>
       route.fulfill({ json: { accounts: [], next: null } }));
     await page.goto(`${origin}/tree`);
     const graph = page.locator(".react-flow__viewport");

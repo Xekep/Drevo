@@ -6,7 +6,7 @@ test("platform email settings keep the secret out of the form and fit mobile", a
       fullAccess: true, provider: "yandex", createdAt: "2026-01-01" },
     local: false, email: false, yandex: true, vk: false,
   } }));
-  await page.route("**/api/platform/roles", (route) => route.fulfill({ json: { accounts: [], next: null } }));
+  await page.route("**/api/platform/accounts", (route) => route.fulfill({ json: { accounts: [], next: null } }));
   await page.route("**/api/platform/tiers", (route) => route.fulfill({ json: {
     accounts: [], next: null, totals: { basic: 0, full: 0 },
   } }));

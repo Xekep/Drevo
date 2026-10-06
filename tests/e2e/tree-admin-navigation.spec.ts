@@ -21,7 +21,7 @@ test("platform header keeps the menu right aligned and loads only the linked por
     contentType: "image/svg+xml",
     body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="20" fill="#688a70"/></svg>',
   }));
-  await page.route("**/api/platform/roles", (route) => route.fulfill({ json: { accounts: [], next: null } }));
+  await page.route("**/api/platform/accounts", (route) => route.fulfill({ json: { accounts: [], next: null } }));
   await page.goto("/admin");
   await expect(page.locator(".nav-account-avatar img")).toBeVisible();
   for (const width of [320, 390, 768, 1024, 1440]) {
@@ -154,10 +154,10 @@ test("global admin without membership opens /admin without requesting a private 
       fullAccess: false, globalRole: "admin", provider: "email" },
     local: false, yandex: false, email: true,
   } }));
-  await page.route("**/api/platform/roles", (route) => route.fulfill({ json: { accounts: [], next: null } }));
+  await page.route("**/api/platform/accounts", (route) => route.fulfill({ json: { accounts: [], next: null } }));
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Админка платформы" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Глобальные роли" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Пользователи", exact: true })).toBeVisible();
   expect(familyRequests).toBe(0);
   await page.getByLabel("Меню проекта").click();
   await expect(page.locator(".nav-menu-account")).toHaveAttribute("href", "/account");
@@ -184,7 +184,7 @@ test("legacy local platform admin uses the trusted session flag without an accou
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Админка платформы" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Yandex AI" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Глобальные роли" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Пользователи", exact: true })).toHaveCount(0);
   expect(familyRequests).toBe(0);
 });
 
