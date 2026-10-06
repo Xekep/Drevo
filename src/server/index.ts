@@ -361,6 +361,7 @@ export async function startServer(
                 id,
                 pdfDecoder,
               ),
+            { maxOpen: 3 },
           )
         : null;
     own(async () => {

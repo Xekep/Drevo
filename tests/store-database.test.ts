@@ -12,10 +12,10 @@ import {
 } from "../src/server/store-database.ts";
 
 test("PostgreSQL pools default to a bounded two-process connection budget", () => {
-  assert.equal(postgresPoolSize(""), 2);
-  assert.equal(5 * postgresPoolSize(""), 10);
+  assert.equal(postgresPoolSize(""), 3);
+  assert.equal(2 * 4 * postgresPoolSize(""), 24);
   assert.equal(postgresPoolSize("3"), 3);
-  for (const value of ["1", "0", "11", "2.5", "2junk", "-2"])
+  for (const value of ["1", "2", "0", "11", "2.5", "2junk", "-2"])
     assert.throws(() => postgresPoolSize(value), /DREVO_PG_POOL_SIZE/);
 });
 

@@ -18,7 +18,7 @@ test("disconnect does not evict a runtime whose background handler is still runn
       } else res.end(id);
     },
     async close() { if (id === "tree-1") firstClosed = true; },
-  }));
+  }), { maxOpen: 3 });
   const server = createServer((req, res) => {
     void pool.route(req, res, new URL(req.url!, "http://localhost"));
   });

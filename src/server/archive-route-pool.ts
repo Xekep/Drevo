@@ -25,7 +25,11 @@ export function archiveRoutePool(
     path: string,
   ) => Promise<boolean>,
   open: (archiveId: string) => Promise<RoutedArchive>,
+  options: { maxOpen?: number } = {},
 ) {
+  const maxOpen = options.maxOpen ?? MAX_OPEN_ARCHIVES;
+  if (!Number.isInteger(maxOpen) || maxOpen < 1 || maxOpen > MAX_OPEN_ARCHIVES)
+    throw new Error("Invalid archive runtime limit");
   const entries = new Map<string, Entry>();
   const idleWaiters = new Set<() => void>();
   let lastUse = 0;
@@ -69,7 +73,7 @@ export function archiveRoutePool(
         existing.usedAt = ++lastUse;
         return existing;
       }
-      if (entries.size >= MAX_OPEN_ARCHIVES) {
+      if (entries.size >= maxOpen) {
         const oldestIdle = () =>
           [...entries]
             .filter(([, entry]) => entry.active === 0)

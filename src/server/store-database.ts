@@ -9,9 +9,9 @@ import { initializePostgresRuntimeSchema } from "./postgres-runtime-schema.ts";
 
 type Row = Record<string, unknown>;
 export function postgresPoolSize(value = process.env.DREVO_PG_POOL_SIZE): number {
-  if (value === undefined || value === "") return 2;
-  if (!/^[2-9]$|^10$/.test(value))
-    throw new Error("DREVO_PG_POOL_SIZE должен быть целым числом от 2 до 10");
+  if (value === undefined || value === "") return 3;
+  if (!/^[3-9]$|^10$/.test(value))
+    throw new Error("DREVO_PG_POOL_SIZE должен быть целым числом от 3 до 10");
   return Number(value);
 }
 export function configuredDatabaseBackend(file: string): "sqlite" | "postgres" {
