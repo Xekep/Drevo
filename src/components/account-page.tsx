@@ -1,3 +1,4 @@
+import type { AccountSession } from "../shared/account-session.ts";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useState } from "react";
 import {
@@ -16,7 +17,6 @@ import {
   ROLE_NAMES,
   isArchiveOwner,
   fullName,
-  type ArchiveUser,
   type Family,
   type Role,
 } from "../domain";
@@ -33,25 +33,8 @@ import { AccountArchiveDeletion } from "./account-archive-deletion";
 import { AccountSelfDeletion } from "./account-self-deletion";
 import { CreatePersonalArchive } from "./create-personal-archive";
 
-export type AccountSession = {
-  user: ArchiveUser | null;
-  /** A view-as response describes the selected participant, not a login switch. */
-  preview?: boolean;
-  participantPreview?: { id: string; name: string };
-  account?: {
-    id: string;
-    name: string;
-    createdAt: string;
-    fullAccess: boolean;
-    globalRole?: "admin" | "researcher" | null;
-    provider: "vk" | "yandex" | "email" | null;
-    providers?: ("vk" | "yandex" | "email")[];
-  } | null;
-  local: boolean;
-  yandex: boolean;
-  vk?: boolean;
-  email?: boolean;
-};
+export type { AccountSession } from "../shared/account-session.ts";
+
 type SessionSummary = {
   currentExpiresAt: string | null;
   otherCount: number;

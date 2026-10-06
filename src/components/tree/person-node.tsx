@@ -83,6 +83,10 @@ export const PersonNode = memo(function PersonNode({
   const person = currentPeople?.get(nodeData.person.id) || nodeData.person;
   const data = person === nodeData.person ? nodeData : { ...nodeData, person };
   const longPress = useLongPress(() => selectOnly(data.person.id));
+  // Preserve a usable screen target at overview zoom without changing layout.
+  const controlScale = useStore((state) =>
+    Math.min(6, Math.max(1, Math.ceil(1 / state.transform[2] * 4) / 4)),
+  );
   const detail = useStore((s) =>
     s.transform[2] < 0.18
       ? "distant"
@@ -116,7 +120,7 @@ export const PersonNode = memo(function PersonNode({
     [detail, getRelationLabel, data.person],
   );
   const lifespan = years(data.person);
-  const cardLabel = `${fullName(data.person)}${lifespan ? `, ${lifespan}` : ""}${relationLabel ? `, ${relationLabel}` : ""}${data.person.needsReview ? ", требует проверки" : ""}`;
+  const cardLabel = `${fullName(data.person)}${lifespan ? ` ${lifespan}` : ""}${relationLabel ? ` ${relationLabel}` : ""}${data.person.needsReview ? ", требует проверки" : ""}`;
   const branchAction = data.collapsed ? "Развернуть" : "Свернуть";
   const branchTitle = `${branchAction} ветвь`;
   const privacyLabel = publicationStatus === "published" ? "Доступен для поиска"
@@ -148,7 +152,7 @@ export const PersonNode = memo(function PersonNode({
           position={position as Position}
           type="source"
           isConnectable={isConnectable}
-          aria-label={`Связать: ${fullName(data.person)}`}
+          aria-hidden="true"
         />
       ))}
       <button
@@ -187,9 +191,9 @@ export const PersonNode = memo(function PersonNode({
           </span>
         ) : <Avatar person={data.person} loading="eager" />}
         <span className="portrait-card-info">
-          <strong>{fullName(data.person)}</strong>
+          <strong>{fullName(data.person)}</strong>{" "}
           {lifespan && <span className="portrait-card-years">{lifespan}</span>}
-          {relationLabel && <small>{relationLabel}</small>}
+          {relationLabel && <>{" "}<small>{relationLabel}</small></>}
         </span>
       </button>
       {publishPerson && (
@@ -239,10 +243,11 @@ export const PersonNode = memo(function PersonNode({
           </span>
         </button>
       )}
-      {!data.familyFocus && data.childrenCount > 0 && (
+      {!data.familyFocus && detail !== "distant" && data.childrenCount > 0 && (
         <button
           className="flow-collapse nodrag nopan"
-          aria-label={branchTitle}
+          style={{ transform: `scale(${controlScale})`, transformOrigin: "right bottom" }}
+          aria-label={`${branchTitle}: ${data.childrenCount} потомков`}
           title={branchTitle}
           onClick={() => collapse(data.person.id, id)}
         >

@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { open as openFile, type FileHandle } from "node:fs/promises";
 import { finished, pipeline } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
-import type { imagePreviews, ImagePreviewVariant } from "./image-previews.ts";
+import { ImagePreviewBusyError, type imagePreviews, type ImagePreviewVariant } from "./image-previews.ts";
 import type { mediaStore } from "./media.ts";
 import type { settingsStore } from "./settings.ts";
 import type { openArchive } from "./database.ts";
@@ -271,7 +271,12 @@ export function mediaHttp({
           { path: file.path, cacheKey: file.name },
           variant,
         );
-      } catch {
+      } catch (error) {
+        if (error instanceof ImagePreviewBusyError) {
+          res.writeHead(503, { "Cache-Control": "private, no-store", "Retry-After": "2" });
+          res.end();
+          return true;
+        }
         /* Если превью не удалось получить, отдаём исходный снимок. */
       }
       if (bytes) {

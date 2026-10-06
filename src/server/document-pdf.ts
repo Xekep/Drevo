@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { decodePdfPages } from "./document-pdf-decoder.ts";
 
 export type PdfPageSize = { width: number; height: number };
 const validPages = (pages: unknown): pages is PdfPageSize[] =>
@@ -21,7 +22,9 @@ const validPages = (pages: unknown): pages is PdfPageSize[] =>
 export function pdfDocumentPages(directory: string) {
   const pending = new Map<string, Promise<PdfPageSize[]>>();
   let tail = Promise.resolve();
+  const controller = new AbortController();
   const pages = async (path: string) => {
+    if (controller.signal.aborted) throw new Error("Подготовка PDF отменена");
     const info = await stat(path);
     const key = createHash("sha256")
       .update(`${path}:${info.size}:${info.mtimeMs}`)
@@ -40,23 +43,7 @@ export function pdfDocumentPages(directory: string) {
     if (pending.has(key)) return await pending.get(key)!;
     if (pending.size >= 8) throw new Error("Очередь подготовки PDF заполнена");
     const task = tail.then(async () => {
-      const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
-      const loading = getDocument({
-        data: new Uint8Array(await readFile(path)),
-        useSystemFonts: false,
-        verbosity: 0,
-      });
-      try {
-        const pdf = await loading.promise;
-        if (pdf.numPages < 1 || pdf.numPages > 2000)
-          throw new Error("PDF должен содержать от 1 до 2000 страниц");
-        const result: PdfPageSize[] = [];
-        for (let index = 1; index <= pdf.numPages; index++) {
-          const page = await pdf.getPage(index);
-          const viewport = page.getViewport({ scale: 1 });
-          result.push({ width: viewport.width, height: viewport.height });
-          page.cleanup();
-        }
+        const result = await decodePdfPages(path, controller.signal);
         if (!validPages(result))
           throw new Error("Некорректные размеры страниц PDF");
         await mkdir(directory, { recursive: true });
@@ -68,9 +55,6 @@ export function pdfDocumentPages(directory: string) {
           await rm(temporary, { force: true });
         }
         return result;
-      } finally {
-        await loading.destroy();
-      }
     });
     pending.set(key, task);
     tail = task.then(
@@ -85,6 +69,7 @@ export function pdfDocumentPages(directory: string) {
   };
   return Object.assign(pages, {
     async close() {
+      controller.abort();
       await tail;
     },
   });

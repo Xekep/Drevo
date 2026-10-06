@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import sharp from "sharp";
+import { imageExtension } from "./media.ts";
 import {
   MAX_COMMENT_FILES,
   MAX_COMMENT_FILE_BYTES,
@@ -57,6 +58,9 @@ export async function prepareCommentFile(
   let preview: Buffer | undefined;
   if (type.startsWith("image/")) {
     try {
+      const extension = imageExtension(bytes);
+      if (type !== `image/${extension === "jpg" ? "jpeg" : extension}`)
+        throw new Error("format");
       const image = sharp(bytes, { limitInputPixels: 40_000_000 });
       const metadata = await image.metadata();
       if (metadata.format !== (type === "image/jpeg" ? "jpeg" : type.slice(6)))

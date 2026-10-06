@@ -13,7 +13,50 @@ import {
   IMAGE_PREVIEW_CACHE_VERSION,
   IMAGE_PREVIEW_SETTINGS,
   imagePreviews,
+  ImagePreviewBusyError,
 } from "../src/server/image-previews.ts";
+
+test("ready cache remains available while 32 distinct previews are queued", async () => {
+  const root = await mkdtemp(join(tmpdir(), "drevo-preview-admission-"));
+  const directory = join(root, "previews"), path = join(root, "source.png");
+  const image = await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png().toBuffer();
+  await writeFile(path, image);
+  const previews = imagePreviews(directory);
+  const ready = await previews({ path, cacheKey: "ready" }, "thumb");
+  const realWrite = fsPromises.writeFile, realRead = fsPromises.readFile;
+  let release!: () => void, reached!: () => void, missesReady!: () => void;
+  const barrier = new Promise<void>(resolve => { release = resolve; });
+  const written = new Promise<void>(resolve => { reached = resolve; });
+  const misses = new Promise<void>(resolve => { missesReady = resolve; });
+  let count = 0;
+  const tasks: Promise<Buffer>[] = [];
+  let settled: Promise<PromiseSettledResult<Buffer>[]> | undefined;
+  try {
+    fsPromises.writeFile = (async (...args: Parameters<typeof realWrite>) => {
+      reached(); await barrier; return realWrite(...args);
+    }) as typeof realWrite;
+    fsPromises.readFile = (async (...args: Parameters<typeof realRead>) => {
+      try { return await realRead(...args); }
+      catch (error) {
+        if (String(args[0]).includes("file-queued-") && ++count === 32) missesReady();
+        throw error;
+      }
+    }) as typeof realRead;
+    syncBuiltinESMExports();
+    for (let i = 0; i < 32; i++) tasks.push(previews({ path, cacheKey: `queued-${i}` }, "thumb"));
+    settled = Promise.allSettled(tasks);
+    await Promise.all([written, misses]);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.deepEqual(await previews({ path, cacheKey: "ready" }, "thumb"), ready);
+    await assert.rejects(previews({ path, cacheKey: "overflow" }, "thumb"), ImagePreviewBusyError);
+  } finally {
+    release();
+    await settled;
+    fsPromises.writeFile = realWrite; fsPromises.readFile = realRead;
+    syncBuiltinESMExports();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("photo previews use lossy webp settings and a new cache generation", () => {
   assert.equal(IMAGE_PREVIEW_CACHE_VERSION, 3);

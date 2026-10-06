@@ -383,7 +383,7 @@ body,
   gap: 2px;
 }
 .admin-mark small {
-  color: #7d8b7b;
+  color: #58695b;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 1.4px;
@@ -403,7 +403,7 @@ body,
 }
 .admin-nav-label {
   padding: 0 11px 8px;
-  color: #89958a;
+  color: #58695b;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 1px;

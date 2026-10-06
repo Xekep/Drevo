@@ -224,7 +224,7 @@ p {
 .eyebrow {
   font-size: 12px;
   letter-spacing: 2px;
-  color: #899185;
+  color: #58695b;
   margin-bottom: 10px;
   font-weight: 600;
 }
@@ -686,7 +686,7 @@ h1 {
 }
 .life-event p {
   font-size: 12px;
-  color: #929b89;
+  color: #58695b;
   line-height: 1.6;
   margin-top: 4px;
 }
@@ -1491,7 +1491,7 @@ h1 {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #7a8e68;
+  color: #58695b;
   margin-bottom: 23px;
 }
 .lifespan {
@@ -1575,7 +1575,7 @@ h1 {
 .relatives small {
   display: block;
   font-size: 12px;
-  color: #8c9a7d;
+  color: #58695b;
   margin-top: 3px;
 }
 .relatives svg {
@@ -1592,7 +1592,7 @@ h1 {
   background: #f6f8f2;
   padding: 11px 8px;
   font-size: 12px;
-  color: #7b8f68;
+  color: #58695b;
   margin-top: 22px;
   line-height: 1.5;
   min-height: 44px;

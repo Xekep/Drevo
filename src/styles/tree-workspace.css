@@ -133,7 +133,7 @@
   border: 1px solid #e4eade;
   border-radius: 12px;
   width: clamp(170px, 24vw, 330px);
-  color: #7b8872;
+  color: #58695b;
 }
 .archive-search:focus-within {
   border-color: #839e78;
@@ -1349,7 +1349,7 @@
 .nav-sections a {
   position: relative;
   font-size: 13px;
-  color: #7c877c;
+  color: #58695d;
   padding: 0;
   border-radius: 0;
 }
@@ -2398,6 +2398,7 @@
   right: 22px;
   bottom: auto;
   min-height: 30px;
+  min-width: 34px;
   padding: 4px 8px;
   border: 1px solid #cbdcc4;
   border-radius: 999px;

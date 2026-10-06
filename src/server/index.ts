@@ -26,6 +26,8 @@ import { restoreStore } from "./restore.ts";
 import { geocodingStore } from "./geocoding.ts";
 import { assertProductionOrigin } from "./runtime-config.ts";
 import { imagePreviews } from "./image-previews.ts";
+import { requestMetrics } from "./request-metrics.ts";
+import { derivedCacheMaintenance } from "./derived-cache-maintenance.ts";
 import { archiveHttp } from "./archive-http.ts";
 import { gedcomHttp } from "./gedcom-http.ts";
 import { portableExportHttp } from "./portable-http.ts";
@@ -36,7 +38,7 @@ import { platformBackupCoordinator } from "./platform-backup-coordinator.ts";
 import { platformBackupHttp } from "./platform-backup-http.ts";
 import { backupManagementHttp } from "./backup-management-http.ts";
 import { indexReferencedMediaOriginals } from "./media-originals.ts";
-import { configuredDatabaseBackend } from "./store-database.ts";
+import { configuredDatabaseBackend, type StoreDatabase } from "./store-database.ts";
 import { accountArchiveDirectory } from "./account-archives.ts";
 import { accountArchivesHttp } from "./account-archives-http.ts";
 import { accountDataExportHttp } from "./account-data-export-http.ts";
@@ -69,6 +71,7 @@ type StartedServer = {
     path?: string,
   ) => Promise<void>;
   close: () => Promise<void>;
+  poolDiagnostics: () => ReturnType<NonNullable<StoreDatabase["poolDiagnostics"]>> | null;
 };
 
 export async function startServer(
@@ -218,6 +221,8 @@ export async function startServer(
         }),
       );
     const previewImage = imagePreviews(resolve(dirname(dbPath), "previews"));
+    const cacheMaintenance = derivedCacheMaintenance(dirname(dbPath));
+    own(() => cacheMaintenance.close());
     const restores = restoreStore(archive, dbPath);
     own(() => restores.close());
     const geocoding = geocodingStore(archive.db);
@@ -419,6 +424,7 @@ export async function startServer(
       res.end(JSON.stringify(data));
     };
 
+    const metrics = requestMetrics();
     async function handle(
       req: IncomingMessage,
       res: ServerResponse,
@@ -436,6 +442,18 @@ export async function startServer(
           `http://${host}`,
         ),
         path = parsedUrl.pathname;
+      if (path === "/api/admin/runtime" && req.method === "GET") {
+        if (!await auth.isPlatformAdmin(req))
+          return json(res, 403, { error: "Требуется администратор платформы" });
+        const rootPool = archive.db.poolDiagnostics?.();
+        const scoped = routedArchives?.diagnostics();
+        return json(res, 200, { requests: metrics.snapshot(),
+          process: { uptimeSeconds: Math.floor(process.uptime()), memory: process.memoryUsage(),
+            cpuMicroseconds: process.cpuUsage() },
+          archives: scoped ? { open: scoped.open, active: scoped.active, queued: scoped.queued } : null,
+          pools: [...(rootPool ? [rootPool] : []), ...(scoped?.pools || [])],
+        });
+      }
       if (routedArchives && (await routedArchives.route(req, res, parsedUrl)))
         return;
       if (path.startsWith("/api/")) await auth.refreshSession(req, res);
@@ -485,6 +503,8 @@ export async function startServer(
       const requestId = randomUUID(),
         started = Date.now();
       res.setHeader("X-Request-ID", requestId);
+      const completed = metrics.begin();
+      res.once("close", () => completed(res.statusCode, res.writableFinished));
       activeRequests++;
       void handle(req, res)
         .catch((error) => {
@@ -537,6 +557,7 @@ export async function startServer(
       server,
       archive,
       handle,
+      poolDiagnostics: () => archive.db.poolDiagnostics?.() ?? null,
       close: () =>
         (closing ??= (async () => {
           try {

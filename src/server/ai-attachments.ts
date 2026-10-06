@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rm, stat, open } from "node:fs/promises";
 import { join } from "node:path";
 import sharp from "sharp";
+import { imageExtension } from "./media.ts";
 import {
   AI_ATTACHMENT_BYTES,
   AI_ATTACHMENT_COUNT,
@@ -75,6 +76,9 @@ export async function validateAttachments(
       if (!capabilities.photoAnalysis)
         throw new RangeError("Анализ фотографий отключён для вашей роли.");
       try {
+        const extension = imageExtension(bytes);
+        if (type !== `image/${extension === "jpg" ? "jpeg" : extension}`)
+          throw new Error("format");
         const meta = await sharp(bytes, {
           limitInputPixels: 40_000_000,
         }).metadata();
