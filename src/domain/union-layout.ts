@@ -969,7 +969,9 @@ export async function unionGeometry(
     const blocksById = new Map(
       familyPairBlocks(best).map((block) => [block.id, block]),
     );
-    for (let pass = 0; pass < (previous ? 3 : 1); pass++) {
+    const passes =
+      previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE ? 3 : 1;
+    for (let pass = 0; pass < passes; pass++) {
       let changed = false;
       for (const id of coupleBlocksWithContactedAncestry(best, W).slice(
         0,
