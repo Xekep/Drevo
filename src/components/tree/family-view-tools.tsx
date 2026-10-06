@@ -94,7 +94,7 @@ export function FamilyViewTools({
       {selected && (mode !== "common" || selected.id !== anchor?.id) && (
         <button
           onClick={() => runAction(onCommon)}
-          title={"Кровные родственники\n\nРодственники, с которыми есть кровное родство, и их партнеры (муж/жена)."}
+          title={"Кровные родственники\n\nРодственники, с которыми есть кровное родство, их предки и партнеры (муж/жена)."}
           aria-pressed={false}
         >
           Кровные
