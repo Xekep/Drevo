@@ -81,9 +81,9 @@ const family: Family = {
   ],
 };
 
-const bloodIds = ["ancestor", "me", "sibling", "niece", "partner", "co-parent", "co-grandparent"];
+const bloodIds = ["ancestor", "me", "sibling", "niece", "partner", "co-parent"];
 
-test("кровные доступны с предками без брака, без боковых ветвей и родственников добавленного супруга", () => {
+test("кровные доступны со вторым родителем без брака, без его предков и боковых ветвей", () => {
   const user = {
     id: "relative",
     name: "Участник",
@@ -102,7 +102,7 @@ test("кровные доступны с предками без брака, б�
   assert.deepEqual(projected.people.find((p) => p.id === "niece")!.parents, ["sibling", "co-parent"]);
   assert.deepEqual(projected.people.find((p) => p.id === "niece")!.parentClaims,
     [{ parentId: "co-parent", confidence: "confirmed" }]);
-  assert.deepEqual(projected.people.find((p) => p.id === "co-parent")!.parents, ["co-grandparent"]);
+  assert.deepEqual(projected.people.find((p) => p.id === "co-parent")!.parents, []);
   assert.deepEqual(projected.people.find((p) => p.id === "co-parent")!.spouses, []);
   assert.deepEqual(partner.parents, []);
   assert.deepEqual(partner.parentClaims, []);
@@ -321,7 +321,7 @@ test("привязка аккаунта и область видимости д�
     );
     assert.deepEqual(complete.family.people.map((p: Person) => p.id), bloodIds);
     assert.deepEqual(complete.family.people.find((p: Person) => p.id === "co-parent").parents,
-      ["co-grandparent"], "unmarried co-parent ancestry is preserved in the HTTP snapshot");
+      [], "an unmarried co-parent does not expose their own ancestry in the HTTP snapshot");
     assert.deepEqual(complete.family.people.find((p: Person) => p.id === "partner")
       .parents, []);
     assert.deepEqual(complete.family.people.find((p: Person) => p.id === "partner")
@@ -376,21 +376,21 @@ test("привязка аккаунта и область видимости д�
       "a visible spouse's cited PDF is exported");
     for (const name of [coParentImageName, coParentDocumentName])
       assert.ok(exportedEntries.some((entry) => entry.endsWith(name)),
-        "an unmarried ancestor's portrait and source are included in the scoped export");
+        "an unmarried co-parent's portrait and source are included in the scoped export");
     assert.ok(exportedEntries.every((name) => !name.includes("secret")),
       "hidden media is excluded from the exported archive");
     const partnerSearch = await request("/api/people/search?q=partner", relative)
       .then((res) => res.json());
     assert.deepEqual(partnerSearch.people.map((p: Person) => p.id), ["partner"]);
-    for (const id of ["co-parent", "co-grandparent"])
+    for (const id of ["co-parent"])
       assert.ok((await request(`/api/people/search?q=${id}`, relative)
         .then((res) => res.json())).people.some((p: Person) => p.id === id),
       `${id} is searchable without a recorded marriage`);
-    for (const id of ["co-sibling", "co-other-child", "co-other"])
+    for (const id of ["co-grandparent", "co-sibling", "co-other-child", "co-other"])
       assert.ok((await request(`/api/people/search?q=${id}`, relative)
         .then((res) => res.json())).people.every((p: Person) =>
-        !["co-sibling", "co-other-child", "co-other"].includes(p.id)),
-      `${id} does not open a lateral family through the added ancestor`);
+        !["co-grandparent", "co-sibling", "co-other-child", "co-other"].includes(p.id)),
+      `${id} remains private through the added co-parent`);
     for (const id of ["hidden", "partner-parent", "partner-child", "partner-other"])
       assert.equal((await request(`/api/people/search?q=${id}`, relative)
         .then((res) => res.json())).people.length, 0,

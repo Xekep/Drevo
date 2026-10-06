@@ -219,9 +219,9 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
   assert.deepEqual(unchangedPeople.find((p) => p.id === "descendant")?.parents,
     ["child", "co-parent"]);
   assert.deepEqual(unchangedPeople.find((p) => p.id === "co-parent")?.parents,
-    ["co-grandparent"]);
+    []);
   assert.deepEqual(unchangedPeople.find((p) => p.id === "co-parent")?.spouses, []);
-  assert.ok(!unchangedPeople.some((p) => ["co-sibling", "co-other"].includes(p.id)));
+  assert.ok(!unchangedPeople.some((p) => ["co-grandparent", "co-sibling", "co-other"].includes(p.id)));
 
 
   async function race(path: string, update: () => Promise<unknown>, token = tokens.relative) {
@@ -249,7 +249,7 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
     await second.query("DELETE FROM relations WHERE archive_id='tree-a' AND id='descendant-coparent'");
     await second.query("UPDATE archives SET revision=revision+1 WHERE id='tree-a'");
   });
-  assert.equal(removedCoParent.status, 409, "a removed parent path withholds its prepared ancestors");
+  assert.equal(removedCoParent.status, 409, "a removed parent path withholds its prepared co-parent");
   const afterCoParentRemoval = await get("/api/export.json");
   assert.equal(afterCoParentRemoval.status, 200);
   assert.ok(!(await afterCoParentRemoval.json()).people.some((p: { id: string }) =>

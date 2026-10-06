@@ -171,10 +171,9 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
   await timeline.evaluate((element) => {
     element.scrollLeft = element.scrollWidth;
   });
-  await expect(marker).toHaveText(String(new Date().getFullYear()));
-  await expect(timeline.locator(".timeline-axis-track")).not.toContainText(
-    "2040",
-  );
+  await expect(marker).toHaveText(String(new Date().getFullYear() + 20));
+  await expect(timeline.locator(".timeline-future-range")).toContainText("Будущее");
+  await expect(page.locator(".timeline-center-marker")).toHaveClass(/is-future/);
 
   await timeline.screenshot({
     path: testInfo.outputPath("timeline-desktop.png"),

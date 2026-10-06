@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { ChevronLeft, ChevronRight, Sprout, Minus } from "lucide-react";
-import { dateLabel, fullName, type Person } from "../../domain";
+import { dateLabel, fullName, hasRecordedDeath, type Person } from "../../domain";
 import { counted } from "../../domain/archive-summary";
 import {
   horizontalTimeline,
@@ -50,10 +50,12 @@ function EventText({ item }: { item: TimelineItem }) {
     <>
       <strong>{item.title}</strong>
       <small>
+        {item.estimated ? "≈ " : ""}
         {dateLabel(item.date)}
         {item.age ? ` · ${item.age}` : ""}
       </small>
       {item.place && <span>{item.place}</span>}
+      {item.description && <span>{item.description}</span>}
     </>
   );
 }
@@ -72,11 +74,12 @@ function EventGroup({
   onOpenChange: (open: boolean) => void;
 }) {
   const kind = group.items.length === 1 ? group.items[0].kind : "group";
+  const estimated = group.items.some((item) => item.estimated);
   return (
     <details
       open={open}
       onToggle={(event) => onOpenChange(event.currentTarget.open)}
-      className={`timeline-event is-${kind}${current ? " is-current" : ""}`}
+      className={`timeline-event is-${kind}${estimated ? " is-estimated" : ""}${current ? " is-current" : ""}`}
       style={{ left: `calc(var(--timeline-pad) + ${group.x}px)` }}
     >
       <summary
@@ -88,7 +91,7 @@ function EventGroup({
         ) : kind === "birth" ? (
           <Sprout size={15} aria-hidden="true" />
         ) : kind === "death" ? (
-          <Minus size={15} aria-hidden="true" />
+          estimated ? "≈" : <Minus size={15} aria-hidden="true" />
         ) : (
           "•"
         )}
@@ -131,22 +134,24 @@ const TimelinePersonRow = memo(function TimelinePersonRow({
 }) {
   const contentWidth = model.width;
   const birthYear = row.birthYear ?? year;
+  const endYear = row.deathYear ?? row.estimatedDeath?.year ?? null;
+  const unknownDeath = hasRecordedDeath(row.person) && endYear === null;
   const lifeWidth = Math.max(
     4,
-    model.yearX(row.deathYear ?? model.end) - model.yearX(birthYear),
+    model.yearX(endYear ?? (unknownDeath ? model.currentYear : model.end)) - model.yearX(birthYear),
   );
   const age = year - birthYear;
   const status =
-    row.deathYear === year
-      ? "Год смерти"
-      : age > 110 && row.deathYear === null
-        ? "Нет даты смерти"
+    endYear === year
+      ? row.estimatedDeath ? "≈ Смерть" : "Год смерти"
+      : unknownDeath || (age > 110 && endYear === null)
+        ? "Дата смерти неизвестна"
         : year === birthYear
           ? "Год рождения"
           : `≈ ${age} лет`;
   return (
     <div
-      className={`timeline-person-row${selected ? " is-selected" : ""}${exiting ? " is-exiting" : ""}${row.deathYear === null && age > 110 ? " is-uncertain" : ""}`}
+      className={`timeline-person-row${selected ? " is-selected" : ""}${exiting ? " is-exiting" : ""}${unknownDeath || (endYear === null && age > 110) ? " is-uncertain" : ""}`}
       data-person-id={row.person.id}
       role="listitem"
       aria-setsize={count}
@@ -170,7 +175,7 @@ const TimelinePersonRow = memo(function TimelinePersonRow({
                   .join(" ")
               : row.person.patronymic}
           </span>
-          <small>{status}</small>
+          <small title={row.estimatedDeath?.year === year ? "Предположительный год смерти" : status}>{status}</small>
         </span>
       </button>
       <div
@@ -180,14 +185,14 @@ const TimelinePersonRow = memo(function TimelinePersonRow({
         }}
       >
         <div
-          className={`timeline-life${row.deathYear === null ? " is-open" : ""}`}
+          className={`timeline-life${endYear === null ? " is-open" : ""}${row.estimatedDeath ? " is-estimated" : ""}`}
           data-start-x={model.yearX(birthYear)}
           data-life-width={lifeWidth}
           style={{
             left: `calc(var(--timeline-pad) + ${model.yearX(birthYear)}px)`,
             width: lifeWidth,
           }}
-          title={`${row.person.birth} — ${row.person.death || "дата смерти не указана"}`}
+          title={`${row.person.birth} — ${row.person.death || (row.estimatedDeath ? `≈ ${row.estimatedDeath.year} (предположительная смерть)` : "дата смерти не указана")}`}
         />
         {row.groups
           .filter((group) => group.year <= year)
@@ -244,7 +249,7 @@ export function HorizontalTimeline({
   const firstYear = model.rows[0]?.birthYear ?? model.start;
   const [year, setYear] = useState(firstYear);
   const visibleRows = useMemo(
-    () => timelineRowsAtYear(model.rows, year),
+    () => timelineRowsAtYear(model.rows, year, model.currentYear),
     [model, year],
   );
   const visibleRowIds = useMemo(
@@ -768,7 +773,7 @@ export function HorizontalTimeline({
   /* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */
   return (
     <>
-      <div className="timeline-center-marker">
+      <div className={`timeline-center-marker${year > model.currentYear ? " is-future" : ""}`}>
         <div className="timeline-year-controls">
           <button
             type="button"
@@ -797,6 +802,7 @@ export function HorizontalTimeline({
           {year}
         </output>
         <span>
+          {year > model.currentYear && <strong>Будущее · </strong>}
           {counted(visibleRows.length, ["человек", "человека", "человек"])} ·{" "}
           {counted(currentEventCount, ["событие", "события", "событий"])}
         </span>
@@ -970,6 +976,22 @@ export function HorizontalTimeline({
                 width: `calc(${contentWidth}px + var(--timeline-pad) + var(--timeline-pad))`,
               }}
             >
+              <div
+                className="timeline-future-range"
+                style={{
+                  left: `calc(var(--timeline-pad) + ${model.yearX(model.currentYear)}px)`,
+                  width: model.yearX(model.end) - model.yearX(model.currentYear),
+                }}
+              >
+                <strong>Будущее</strong>
+                <small>{model.currentYear + 1}–{model.end}</small>
+              </div>
+              <span
+                className="timeline-present"
+                style={{ left: `calc(var(--timeline-pad) + ${model.yearX(model.currentYear)}px)` }}
+              >
+                Сейчас · {model.currentYear}
+              </span>
               {model.ticks.map((tick) => (
                 <span
                   key={tick.year}

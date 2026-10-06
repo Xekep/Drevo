@@ -83,7 +83,7 @@ export function commonAncestorNetwork(
   return visible;
 }
 
-/** Предки кровных родственников и один шаг по их союзам, без обхода боковых ветвей. */
+/** Кровные, их непосредственные вторые родители и один шаг по союзам. */
 export function bloodRelativesWithPartners(
   index: ReturnType<typeof familyNeighbors>,
   anchor: string,
@@ -91,15 +91,11 @@ export function bloodRelativesWithPartners(
 ) {
   const blood = commonAncestorNetwork(index, anchor);
   const visible = new Set(blood);
-  // Complete every blood relative's recorded ancestry, including an unmarried
-  // co-parent. These extra ancestors do not seed descendants or partner chains.
-  const ancestors = [...blood];
-  for (let i = 0; i < ancestors.length; i++)
-    for (const parent of index.people.get(ancestors[i])!.parents)
-      if (index.people.has(parent) && !visible.has(parent)) {
-        visible.add(parent);
-        ancestors.push(parent);
-      }
+  // Add the other parent of a blood descendant even without a recorded union.
+  // Iterate the blood set only: a co-parent never opens their own ancestors.
+  for (const id of blood)
+    for (const parent of index.people.get(id)!.parents)
+      if (index.people.has(parent)) visible.add(parent);
   for (const person of index.people.values()) {
     if (blood.has(person.id)) {
       for (const spouse of person.spouses)

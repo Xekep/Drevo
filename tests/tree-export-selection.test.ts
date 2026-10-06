@@ -62,7 +62,7 @@ test("export scopes use recorded parentage, depth and authorized people", () => 
   );
 });
 
-test("blood export includes unmarried ancestors and explicit partners without lateral branches", () => {
+test("blood export includes unmarried co-parents and explicit partners without their ancestors", () => {
   const data: Family = {
     ...family,
     people: family.people.map((p) => p.id === "child"
@@ -75,9 +75,9 @@ test("blood export includes unmarried ancestors and explicit partners without la
   };
   const before = structuredClone(data);
   const selected = treeExportPeople(data, "blood", "root");
-  for (const id of ["child", "co-parent", "co-grandparent", "civil-partner"])
+  for (const id of ["child", "co-parent", "civil-partner"])
     assert.ok(selected.has(id), id);
-  for (const id of ["co-sibling", "unrelated"])
+  for (const id of ["co-grandparent", "co-sibling", "unrelated"])
     assert.equal(selected.has(id), false, id);
   assert.deepEqual(data, before);
 });
