@@ -197,6 +197,88 @@ export function defaultAiRoleProfile(
   };
 }
 
+function settingsInput(value: unknown, before: AiSettings) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Некорректные настройки AI Studio");
+  const raw = value as Record<string, unknown>;
+  if (
+    raw.webSearchEnabled !== undefined &&
+    typeof raw.webSearchEnabled !== "boolean"
+  )
+    throw new Error("Укажите, включён ли веб-поиск");
+  if (typeof raw.enabled !== "boolean")
+    throw new Error("Укажите, включён ли ИИ-исследователь");
+  if (
+    raw.codeInterpreterEnabled !== undefined &&
+    typeof raw.codeInterpreterEnabled !== "boolean"
+  )
+    throw new Error("Укажите, включён ли Code Interpreter");
+  if (raw.clearApiKey !== undefined && typeof raw.clearApiKey !== "boolean")
+    throw new Error("Некорректная команда удаления API-ключа");
+  if (
+    (raw.compactionEnabled !== undefined &&
+      typeof raw.compactionEnabled !== "boolean") ||
+    (raw.automaticTruncation !== undefined &&
+      typeof raw.automaticTruncation !== "boolean")
+  )
+    throw new Error("Некорректные настройки контекста AI Studio");
+
+  const newApiKey = raw.apiKey === undefined ? "" : apiKeyValue(raw.apiKey);
+  const clearApiKey = raw.clearApiKey === true;
+  const afterInput = {
+    roleProfiles:
+      raw.roleProfiles === undefined
+        ? before.roleProfiles
+        : roleProfilesValue(raw.roleProfiles),
+    enabled: raw.enabled,
+    codeInterpreterEnabled:
+      raw.codeInterpreterEnabled === undefined
+        ? before.codeInterpreterEnabled
+        : raw.codeInterpreterEnabled,
+    webSearchEnabled:
+      raw.webSearchEnabled === undefined
+        ? before.webSearchEnabled
+        : raw.webSearchEnabled === true,
+    model: modelValue(raw.model),
+    folderId: folderIdValue(raw.folderId),
+    requestsPerMinute: integerValue(
+      raw.requestsPerMinute,
+      "Запросов в минуту",
+      0,
+      120,
+    ),
+    dailyRequests: integerValue(
+      raw.dailyRequests,
+      "Запросов в день",
+      0,
+      100000,
+    ),
+    dailyTokens: integerValue(raw.dailyTokens, "Токенов в день", 0, 1000000000),
+    compactionEnabled:
+      raw.compactionEnabled === undefined
+        ? before.compactionEnabled
+        : raw.compactionEnabled === true,
+    compactThresholdTokens:
+      raw.compactThresholdTokens === undefined
+        ? before.compactThresholdTokens
+        : integerValue(
+            raw.compactThresholdTokens,
+            "Порог сжатия",
+            1000,
+            1000000,
+          ),
+    automaticTruncation:
+      raw.automaticTruncation === undefined
+        ? before.automaticTruncation
+        : raw.automaticTruncation === true,
+    maxToolIterations:
+      raw.maxToolIterations === undefined
+        ? before.maxToolIterations
+        : integerValue(raw.maxToolIterations, "Шагов инструментов", 1, 20),
+  };
+  return { afterInput, newApiKey, clearApiKey };
+}
+
 export async function aiSettingsStore(db: StoreDatabase) {
   const audit = auditStore(db);
   await db
@@ -271,96 +353,38 @@ export async function aiSettingsStore(db: StoreDatabase) {
   return {
     read,
     savedApiKey,
-    async write(value: unknown, actor: ArchiveUser | Pick<ArchiveUser, "id" | "name">) {
-      if (!value || typeof value !== "object" || Array.isArray(value))
-        throw new Error("Некорректные настройки AI Studio");
-      const raw = value as Record<string, unknown>;
-      if (
-        raw.webSearchEnabled !== undefined &&
-        typeof raw.webSearchEnabled !== "boolean"
-      )
-        throw new Error("Укажите, включён ли веб-поиск");
-      if (typeof raw.enabled !== "boolean")
-        throw new Error("Укажите, включён ли ИИ-исследователь");
-      if (
-        raw.codeInterpreterEnabled !== undefined &&
-        typeof raw.codeInterpreterEnabled !== "boolean"
-      )
-        throw new Error("Укажите, включён ли Code Interpreter");
-      if (raw.clearApiKey !== undefined && typeof raw.clearApiKey !== "boolean")
-        throw new Error("Некорректная команда удаления API-ключа");
-      if (
-        (raw.compactionEnabled !== undefined &&
-          typeof raw.compactionEnabled !== "boolean") ||
-        (raw.automaticTruncation !== undefined &&
-          typeof raw.automaticTruncation !== "boolean")
-      )
-        throw new Error("Некорректные настройки контекста AI Studio");
-
+    async preview(value: unknown) {
+      const before = await read();
+      const { afterInput, newApiKey, clearApiKey } = settingsInput(
+        value,
+        before,
+      );
+      const secret = newApiKey
+        ? { value: newApiKey, stored: true, error: "" }
+        : clearApiKey
+          ? { value: "", stored: false, error: "" }
+          : await savedApiKey();
+      return {
+        read: async (): Promise<AiSettings> => ({
+          ...afterInput,
+          apiKeyStored: secret.stored,
+        }),
+        savedApiKey: async () => secret,
+      };
+    },
+    async write(
+      value: unknown,
+      actor: ArchiveUser | Pick<ArchiveUser, "id" | "name">,
+    ) {
       const before = await read(),
-        current = await row(),
-        newApiKey = raw.apiKey === undefined ? "" : apiKeyValue(raw.apiKey),
-        clearApiKey = raw.clearApiKey === true;
+        current = await row();
+      const { afterInput, newApiKey, clearApiKey } = settingsInput(
+        value,
+        before,
+      );
       let ciphertext = String(current.api_key_ciphertext || "");
       if (clearApiKey) ciphertext = "";
       if (newApiKey) ciphertext = encryptAiSecret(db, newApiKey);
-
-      const afterInput = {
-        roleProfiles:
-          raw.roleProfiles === undefined
-            ? before.roleProfiles
-            : roleProfilesValue(raw.roleProfiles),
-        enabled: raw.enabled,
-        codeInterpreterEnabled:
-          raw.codeInterpreterEnabled === undefined
-            ? before.codeInterpreterEnabled
-            : raw.codeInterpreterEnabled,
-        webSearchEnabled:
-          raw.webSearchEnabled === undefined
-            ? before.webSearchEnabled
-            : raw.webSearchEnabled === true,
-        model: modelValue(raw.model),
-        folderId: folderIdValue(raw.folderId),
-        requestsPerMinute: integerValue(
-          raw.requestsPerMinute,
-          "Запросов в минуту",
-          0,
-          120,
-        ),
-        dailyRequests: integerValue(
-          raw.dailyRequests,
-          "Запросов в день",
-          0,
-          100000,
-        ),
-        dailyTokens: integerValue(
-          raw.dailyTokens,
-          "Токенов в день",
-          0,
-          1000000000,
-        ),
-        compactionEnabled:
-          raw.compactionEnabled === undefined
-            ? before.compactionEnabled
-            : raw.compactionEnabled === true,
-        compactThresholdTokens:
-          raw.compactThresholdTokens === undefined
-            ? before.compactThresholdTokens
-            : integerValue(
-                raw.compactThresholdTokens,
-                "Порог сжатия",
-                1000,
-                1000000,
-              ),
-        automaticTruncation:
-          raw.automaticTruncation === undefined
-            ? before.automaticTruncation
-            : raw.automaticTruncation === true,
-        maxToolIterations:
-          raw.maxToolIterations === undefined
-            ? before.maxToolIterations
-            : integerValue(raw.maxToolIterations, "Шагов инструментов", 1, 20),
-      };
 
       await db
         .prepare(
@@ -478,7 +502,10 @@ export async function aiSettingsStore(db: StoreDatabase) {
 }
 
 export async function aiRuntimeConfig(
-  settings: Awaited<ReturnType<typeof aiSettingsStore>>,
+  settings: Pick<
+    Awaited<ReturnType<typeof aiSettingsStore>>,
+    "read" | "savedApiKey"
+  >,
   role?: Role,
 ) {
   const common = await settings.read(),

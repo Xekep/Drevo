@@ -49,7 +49,7 @@ test("platform cleanup list loads lazily, paginates and shows actionable errors 
   });
   await page.goto("/admin");
   await openAdminSection(page, "ai", "Yandex AI");
-  await expect(page.getByLabel("Архив для Yandex AI")).toHaveValue("");
+  await expect(page.getByLabel("Древо для Yandex AI")).toHaveValue("");
   await expect(
     page.getByText("Очистка данных у провайдера", { exact: true }),
   ).toBeVisible();
@@ -124,7 +124,9 @@ test("manual retry reports a queued attempt without losing the AI settings draft
   });
   await page.goto("/admin");
   await openAdminSection(page, "ai", "Yandex AI");
-  await page.getByText("Подключение Yandex, общие лимиты и контекст", { exact: true }).click();
+  await expect(page.locator(".ai-connection-editor")).toBeVisible();
+  if (await page.locator(".ai-connection-editor").getAttribute("open") === null)
+    await page.locator(".ai-connection-editor > summary").click();
   const folder = page.getByRole("textbox", { name: "Folder ID" });
   await folder.fill("unsaved-draft-folder");
   await page.getByText("Очистка данных у провайдера", { exact: true }).click();
