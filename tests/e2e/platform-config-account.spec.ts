@@ -117,7 +117,7 @@ test("platform admin without membership opens global settings, with archive-scop
   await page.getByRole("button", { name: "Вход через VK" }).click();
   await page.getByRole("button", { name: "Ресурсы поиска" }).click();
   await page.getByRole("button", { name: "Yandex AI" }).click();
-  const aiArchive = page.getByLabel("Архив для Yandex AI");
+  const aiArchive = page.getByLabel("Древо для Yandex AI");
   await expect(aiArchive.getByRole("option")).toHaveText(["Основной архив", "Другое дерево"]);
   await expect.poll(() => paths.filter((path) => path === "/api/admin/ai").length).toBe(1);
   await aiArchive.selectOption("other-tree");
