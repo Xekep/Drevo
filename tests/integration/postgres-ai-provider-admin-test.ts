@@ -133,6 +133,34 @@ export async function verifyAiProviderAdminTest(db: StoreDatabase, configuredPat
     assert.ok(seen.some((call) => call.url.endsWith("/conversations/admin-fixture-3") &&
       call.authorization === "Api-Key fake-admin-original-key"));
 
+    // A draft key belongs only to the test's cleanup snapshot, not the settings.
+    failResponse = false;
+    const beforePreview = await storedSettings.read();
+    const previewKey = "fake-admin-draft-key";
+    const preview = await fetch(base + "/api/admin/ai/test", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true, apiKey: previewKey,
+        folderId: "draft-folder", model: "gpt://draft-folder/draft-model",
+        requestsPerMinute: 6, dailyRequests: 10, dailyTokens: 1000 }),
+    });
+    assert.equal(preview.status, 200);
+    const previewText = await preview.text();
+    assert.equal(JSON.parse(previewText).model, "gpt://draft-folder/draft-model");
+    assert.equal(previewText.includes(previewKey), false);
+    assert.deepEqual(await storedSettings.read(), beforePreview);
+    const previewRow = await db.prepare("", `SELECT id,state,encrypted_snapshot
+      FROM platform_ai_conversations WHERE local_chat_id LIKE 'admin-test:%'
+        AND state='pending' ORDER BY created_at DESC,id DESC LIMIT 1`).get();
+    assert.ok(previewRow);
+    assert.equal(String(previewRow.encrypted_snapshot).includes(previewKey), false);
+    assert.equal(await cleanup.process(1), 1);
+    const previewDone = await db.prepare("", `SELECT state,encrypted_snapshot
+      FROM platform_ai_conversations WHERE id=?`).get(String(previewRow.id));
+    assert.equal(previewDone?.state, "done");
+    assert.equal(previewDone?.encrypted_snapshot, null);
+    assert.ok(seen.some((call) => call.url.endsWith("/conversations/admin-fixture-4") &&
+      call.authorization === "Api-Key " + previewKey));
+
     // A process exit has no finally: expired provisional work is reclaimed.
     const crashRef = await cleanup.registerTest("admin-fixture-crash", {
       baseUrl: "https://fake-provider.invalid/v1", folderId: "fake-admin-folder",
