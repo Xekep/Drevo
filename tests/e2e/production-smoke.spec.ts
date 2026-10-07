@@ -525,7 +525,9 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   await expect(
     page.getByRole("heading", { name: "Админка платформы" }),
   ).toBeVisible();
-  await page.getByText("Подключение Yandex, общие лимиты и контекст").click();
+  await expect(page.locator(".ai-connection-editor")).toBeVisible();
+  if (await page.locator(".ai-connection-editor").getAttribute("open") === null)
+    await page.locator(".ai-connection-editor > summary").click();
 
   const apiKey = page.getByLabel("API-ключ"),
     folderId = page.getByLabel("Folder ID"),
@@ -538,7 +540,7 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
     "yandexgpt-5.1",
     "deepseek-v4-flash",
   ]);
-  await page.getByText(/Статистика · сегодня/).click();
+  await page.getByText(/Расход · сегодня/).click();
   await expect(
     page.getByRole("img", {
       name: /Расход токенов за последние 14 дней/,

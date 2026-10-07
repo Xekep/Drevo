@@ -100,6 +100,9 @@ export default function App() {
   );
   const [treeGrowing, setTreeGrowing] = useState(!initialPersonLink);
   const navigationDirty = useRef(false);
+  const onPlatformSettingsDirtyChange = useCallback((dirty: boolean) => {
+    navigationDirty.current = dirty;
+  }, []);
   const [requestedView, setView, currentPath] = useArchiveView(
     useCallback(() => {
       const leave = confirmDiscardChanges(navigationDirty.current);
@@ -792,6 +795,7 @@ export default function App() {
             <LazyChunkBoundary message="Админка платформы не загрузилась. Обновите страницу и повторите вход.">
               <Suspense fallback={<main className="archive-status" role="status">Загружаем админку платформы…</main>}>
                 <PlatformSettingsPage accountId={(accountSession.account || accountSession.user)!.id}
+                onDirtyChange={onPlatformSettingsDirtyChange}
                 showRoles={Boolean(accountSession.account)}
                 onOwnRoleChanged={(role) => {
                   updateOwnRole(role);
