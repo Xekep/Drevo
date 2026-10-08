@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import type { Source } from "../domain/types.ts";
 import { sourceCitation, type CatalogSource } from "../shared/source-catalog.ts";
@@ -72,11 +72,12 @@ export function CatalogPicker({ existing, onChoose }: {
   </div>;
 }
 
-export function CitationSourcesEditor({ sources, onChange, isAdmin, canRemoveLast = true, allowAdd = true }: {
+export function CitationSourcesEditor({ sources, onChange, isAdmin, canRemoveLast = true, allowAdd = true, renderDocument }: {
   sources: Source[];
   onChange: (sources: Source[]) => void;
   isAdmin: boolean;
   canRemoveLast?: boolean;
+  renderDocument?: (source: Source, index: number) => ReactNode;
   allowAdd?: boolean;
 }) {
   const remove = (index: number) => onChange(sources.filter((_, i) => i !== index));
@@ -84,6 +85,7 @@ export function CitationSourcesEditor({ sources, onChange, isAdmin, canRemoveLas
     {sources.map((source, index) => source.catalogId
       ? <div className="union-catalog-citation" key={`${source.catalogId}-${index}`}>
           <strong>{source.title}</strong><small>{source.reference}</small>
+          {renderDocument?.(source, index)}
           <button type="button" disabled={!canRemoveLast && sources.length === 1}
             onClick={() => remove(index)}>Убрать источник</button>
         </div>
@@ -95,6 +97,7 @@ export function CitationSourcesEditor({ sources, onChange, isAdmin, canRemoveLas
               <input value={source[field] || ""} onChange={(event) => onChange(sources.map((item, i) =>
                 i === index ? { ...item, [field]: event.target.value } : item))} />
             </label>)}
+          {renderDocument?.(source, index)}
           <button type="button" disabled={!canRemoveLast && sources.length === 1}
             onClick={() => remove(index)}>Удалить источник</button>
         </div>)}

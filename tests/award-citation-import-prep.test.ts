@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createWriteStream } from "node:fs";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Family } from "../src/domain/types.ts";
@@ -27,12 +27,16 @@ const withCitation = (): Family => ({ ...empty(), people: [{
     documentId, documentPage: 2,
   }] }],
 }] });
+const catalog = { id: "award-register", title: "Наградная книга", type: "архив",
+  author: "", institution: "", archive: "", fond: "", opis: "", delo: "",
+  sheet: "", reference: "л. 2", url: "", accessedAt: "", description: "",
+  documentIds: [documentId] };
 const document = { id: documentId, title: "Наградной лист", fileName: originalName,
   uploadedBy: "owner", createdAt: "2026-01-01T00:00:00Z", documentType: "",
   documentDate: "", place: "", description: "", provenance: "",
   annotations: [], personIds: ["person"] };
 
-test("release A refuses a new award citation in portable apply and removes copied originals", async () => {
+test("portable apply retains an award PDF citation and original bytes", async () => {
   const root = await mkdtemp(join(tmpdir(), "award-prep-portable-"));
   const source = join(root, "source"), target = join(root, "target");
   await Promise.all([mkdir(source), mkdir(target)]);
@@ -45,8 +49,11 @@ test("release A refuses a new award citation in portable apply and removes copie
   });
   try {
     await writeFile(join(source, originalName), pdf);
-    const snapshot: PortableSnapshot = { family: withCitation(), documents: [document],
-      comments: [] };
+    const packaged = withCitation();
+    packaged.people[0].awards![0].sources![0].catalogId = catalog.id;
+    packaged.people[0].awards![0].sources![0].title = catalog.title;
+    const snapshot: PortableSnapshot = { family: packaged, documents: [document],
+      comments: [], sources: [catalog] };
     await writePortablePackage(createWriteStream(packagePath), source, snapshot,
       async () => {});
     archive = await openArchive(archivePath, empty());
@@ -63,16 +70,22 @@ test("release A refuses a new award citation in portable apply and removes copie
     });
     assert.equal(previewResponse.status, 200, await previewResponse.clone().text());
     const preview = await previewResponse.json() as { token: string };
-    const before = await archive.read();
     const apply = await fetch(`${base}/api/drevo/import`, {
       method: "POST", headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({ token: preview.token, confirm: true }),
     });
-    assert.equal(apply.status, 409, await apply.text());
-    assert.equal((await archive.read()).revision, before.revision);
-    assert.deepEqual((await archive.read()).family.people, []);
-    assert.equal(Number((await archive.db.prepare("SELECT count(*) AS n FROM documents").get())?.n), 0);
-    assert.deepEqual(await readdir(join(target, "uploads")), []);
+    assert.equal(apply.status, 200, await apply.text());
+    const result = await archive.read();
+    assert.equal(result.family.people[0].awards?.[0].sources?.[0].documentId, documentId);
+    assert.equal(result.family.people[0].awards?.[0].sources?.[0].documentPage, 2);
+    assert.equal(result.family.people[0].awards?.[0].sources?.[0].catalogId, catalog.id);
+    assert.equal((await archive.db.prepare("SELECT count(*) AS n FROM source_catalog WHERE id=?")
+      .get(catalog.id))?.n, 1);
+    const storedDocument = await archive.db.prepare("SELECT file_name FROM documents WHERE id=?")
+      .get(documentId);
+    assert.ok(storedDocument?.file_name);
+    assert.notEqual(storedDocument.file_name, originalName, "portable originals get fresh names");
+    assert.deepEqual(await readFile(join(target, "uploads", String(storedDocument.file_name))), pdf);
   } finally {
     server.closeAllConnections();
     if (server.listening)
@@ -83,7 +96,7 @@ test("release A refuses a new award citation in portable apply and removes copie
   }
 });
 
-test("release A rejects a TAR restore with new award citations without persisted files", async () => {
+test("TAR restore remaps an award PDF citation and retains original bytes", async () => {
   const root = await mkdtemp(join(tmpdir(), "award-prep-restore-"));
   const sourceRoot = join(root, "source"), targetRoot = join(root, "target");
   await Promise.all([
@@ -120,13 +133,13 @@ test("release A rejects a TAR restore with new award citations without persisted
     const admin = { id: "admin", name: "Admin", role: "admin" as const,
       createdAt: "2026-01-01T00:00:00Z" };
     const preview = await restores.preview(Buffer.from(await response.arrayBuffer()), admin);
-    const before = await target.read();
-    await assert.rejects(restores.apply(preview.token, admin, async () => {}),
-      /Цитаты наград пока доступны только для чтения/);
-    assert.equal((await target.read()).revision, before.revision);
-    assert.deepEqual((await target.read()).family.people, []);
-    assert.equal(Number((await target.db.prepare("SELECT count(*) AS n FROM documents").get())?.n), 0);
-    assert.deepEqual(await readdir(join(targetRoot, "uploads")), []);
+    await restores.apply(preview.token, admin, async () => {});
+    const restored = await target.read();
+    const remappedId = restored.family.people[0].awards?.[0].sources?.[0].documentId;
+    assert.ok(remappedId);
+    assert.notEqual(remappedId, documentId);
+    assert.equal(restored.family.people[0].awards?.[0].sources?.[0].documentPage, 2);
+    assert.deepEqual(await readFile(join(targetRoot, "uploads", `${remappedId}.pdf`)), pdf);
   } finally {
     server.closeAllConnections();
     if (server.listening)

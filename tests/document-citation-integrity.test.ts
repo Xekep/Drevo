@@ -39,6 +39,8 @@ test("a document remains attached while any exact claim, union citation, or cata
       ["death date", (next) => { next.people[0].deathDateClaim = { value: "1950", sources: [citation] }; }],
       ["birth place", (next) => { next.people[0].birthPlaceClaim = { value: "Реж", sources: [citation] }; }],
       ["death place", (next) => { next.people[0].deathPlaceClaim = { value: "Екатеринбург", sources: [citation] }; }],
+      ["award", (next) => { next.people[0].awards = [{ id: "medal", name: "Медаль",
+        sources: [citation] }]; }],
       ["union", (next) => { next.unions![0].sources = [citation]; }],
       ["formation", (next) => { next.unions![0].formation = { date: "1900", sources: [citation] }; }],
       ["ending", (next) => { next.unions![0].ending = { date: "1940", sources: [citation] }; }],
