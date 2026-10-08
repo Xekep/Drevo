@@ -24,6 +24,12 @@ const input = (name: string, content: string | Buffer) => ({
   data: Buffer.from(content).toString("base64"),
 });
 
+test("image attachments reject a mismatched signature before raster decoding", async () => {
+  const png = await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png().toBuffer();
+  await assert.rejects(validateAttachments([input("wrong.jpg", png)], capabilities), RangeError);
+  await assert.rejects(validateAttachments([input("vector.png", '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"></svg>')], capabilities), RangeError);
+});
+
 test("attachment orphan pruning ignores a missing root but reports filesystem errors", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-attachment-prune-"));
   const chats = {} as ReturnType<typeof aiChatStore>;

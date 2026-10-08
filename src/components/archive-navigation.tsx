@@ -18,12 +18,12 @@ import {
   ChartNoAxesCombined,
   LibraryBig,
   Info,
+  Settings,
 } from "lucide-react";
-import { isArchiveOwner, safeUrl, type Person, type ArchiveUser } from "../domain";
-import { mediaPreview } from "../domain/media-preview";
-import { PortraitImage } from "./portrait-image";
+import { isArchiveOwner, type Person, type ArchiveUser } from "../domain";
+import { AccountPortrait } from "./account-portrait";
 import { archivePaths, type ArchiveView } from "../domain/archive-routes";
-import { scopedArchivePath } from "../domain/archive-context.ts";
+import { memberPreviewAt, scopedArchivePath } from "../domain/archive-context.ts";
 import { clearLayoutStorage } from "./tree/layout-storage";
 import { TreeSearch } from "./tree-search";
 export type { ArchiveView } from "../domain/archive-routes";
@@ -38,6 +38,8 @@ export function ArchiveNavigation({
   readPhotos,
   onHelp,
   onPlatformLeave,
+  participantPreview = false,
+  onTreePreferences,
 }: {
   view: ArchiveView;
   onView: (view: ArchiveView) => void;
@@ -49,10 +51,15 @@ export function ArchiveNavigation({
   readPhotos: boolean;
   onHelp: () => void;
   onPlatformLeave?: () => boolean;
+  participantPreview?: boolean;
+  onTreePreferences?: () => void;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
-  const portrait = mediaPreview(safeUrl(accountPerson?.photo));
+  useEffect(() => {
+    if (menu.current) menu.current.open = false;
+  }, [view]);
   const identity = user || account;
+  const previewArchive = participantPreview ? memberPreviewAt(window.location.pathname)?.archiveId : null;
   const initial =
     identity?.name.trim().charAt(0).toLocaleUpperCase("ru-RU") || "Д";
   const navigate = (
@@ -171,22 +178,22 @@ export function ArchiveNavigation({
       >
         О проекте
       </button>
-      <details ref={menu} className="archive-more" key={view}>
-        <summary className="nav-account" aria-label="Меню проекта"
+      {identity && <details ref={menu} className="archive-more">
+        <summary className="nav-account" aria-label={participantPreview ? "Разделы предпросмотра" : "Меню проекта"}
           title={identity ? `Меню: ${identity.name}` : "Меню проекта"}>
           <span className="nav-account-avatar" aria-hidden="true">
-            <PortraitImage src={portrait} loading="eager"
+            <AccountPortrait user={user} person={accountPerson}
               fallback={identity ? initial : <UserRound size={20} />} />
           </span>
         </summary>
         <div className="nav-bottom">
-          <a className="nav-menu-account" href={scopedArchivePath(archivePaths.account)}
+          {!participantPreview && <a className="nav-menu-account" href={scopedArchivePath(archivePaths.account)}
             aria-current={view === "account" ? "page" : undefined}
             onClick={(event) => navigate(event, "account")}>
             <UserRound size={18} aria-hidden="true" />
             <span>Личный кабинет</span>
-          </a>
-          {user && isArchiveOwner(user) && user.approved === true && (
+          </a>}
+          {!participantPreview && user && isArchiveOwner(user) && user.approved === true && (
             <a
               className="nav-menu-manage"
               href={scopedArchivePath(archivePaths.manage)}
@@ -197,7 +204,7 @@ export function ArchiveNavigation({
               <span>Управление древом</span>
             </a>
           )}
-          {(account?.globalRole === "admin" || user?.globalRole === "admin" || user?.platformAdmin === true) && (
+          {!participantPreview && (account?.globalRole === "admin" || user?.globalRole === "admin" || user?.platformAdmin === true) && (
             <a className="nav-menu-platform" href="/admin"
               aria-current={view === "admin" ? "page" : undefined}
               onClick={checkPlatformLeave}>
@@ -205,7 +212,7 @@ export function ArchiveNavigation({
               <span>Админка платформы</span>
             </a>
           )}
-          <div className="mobile-sections">
+          <div className={participantPreview ? "preview-sections" : "mobile-sections"}>
             {(
               [
                 ["tree", "Древо", TreeDeciduous],
@@ -239,22 +246,31 @@ export function ArchiveNavigation({
                 </a>
               ))}
           </div>
+          {participantPreview && onTreePreferences && <button type="button" onClick={() => {
+            if (menu.current) menu.current.open = false;
+            onTreePreferences();
+          }}>
+            <Settings size={18} aria-hidden="true" /><span>Вид древа</span>
+          </button>}
+          {participantPreview && <a href={`${previewArchive ? `/a/${previewArchive}` : ""}/manage`}>
+            <LogOut size={18} aria-hidden="true" /><span>Выйти из просмотра</span>
+          </a>}
           <button className="nav-about-menu" type="button" onClick={showAbout}>
             <Info size={18} aria-hidden="true" />
             <span>О проекте</span>
           </button>
-          <a href="/discover">
+          {!participantPreview && <a href="/discover">
             <Users size={18} />
             <span>Поиск опубликованных людей</span>
-          </a>
-          {identity && !local && (
+          </a>}
+          {identity && !local && !participantPreview && (
             <button title="Выйти" onClick={() => void logout()}>
               <LogOut size={20} />
               <span>Выйти</span>
             </button>
           )}
         </div>
-      </details>
+      </details>}
     </nav>
   );
 }

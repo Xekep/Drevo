@@ -11,7 +11,7 @@ export type TreeExportScope =
 
 /** Select only people already present in the caller's authorized family view. */
 export function treeExportPeople(
-  family: Pick<Family, "people" | "links">,
+  family: Pick<Family, "people" | "links" | "unions">,
   scope: Exclude<TreeExportScope, "current">,
   anchorId?: string,
   generations = 5,
@@ -20,7 +20,7 @@ export function treeExportPeople(
   if (scope === "all") return new Set(index.people.keys());
   if (!anchorId || !index.people.has(anchorId)) return new Set<string>();
   if (scope === "family") return familyNeighborhood(index, anchorId).visible;
-  if (scope === "blood") return bloodRelativesWithPartners(index, anchorId);
+  if (scope === "blood") return bloodRelativesWithPartners(index, anchorId, family.unions);
 
   const selected = new Set<string>();
   const queue: Array<{ id: string; depth: number }> = [

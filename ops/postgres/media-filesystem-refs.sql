@@ -20,6 +20,11 @@ current_citations AS (
     UNION ALL
     SELECT r.archive_id, split_part(split_part(cited.value #>> '{}', '#', 1), '?', 1)
     FROM relations r CROSS JOIN LATERAL jsonb_path_query(r.sources, '$[*].url') cited(value)
+    UNION ALL
+    -- Current catalog input allows HTTP(S) plus documentIds; imported legacy
+    -- catalog records may retain an original /media URL and must remain intact.
+    SELECT s.archive_id, split_part(split_part(s.data->>'url', '#', 1), '?', 1)
+    FROM source_catalog s
   ) citations
   WHERE url ~ '^/media/[A-Za-z0-9-]+\.(jpg|png|webp|gif|tif|pdf)$'
 ),
@@ -61,12 +66,13 @@ refs AS (
     'photo', NULL::bigint
   FROM photos WHERE data->>'url' LIKE '/media/%'
   UNION ALL
-  SELECT h.archive_id, (match.parts)[1], 'history', NULL::bigint
+  SELECT h.archive_id, substring(original.url FROM '^/media/(.+)$'), 'history', NULL::bigint
   FROM history h
-  CROSS JOIN LATERAL regexp_matches(
-    h.data::text, '/media/([A-Za-z0-9-]+\.(jpg|png|webp|gif|tif|pdf))', 'g'
-  ) AS match(parts)
-  WHERE h.data::text LIKE '%/media/%'
+  CROSS JOIN LATERAL jsonb_path_query(h.data, '$.** ? (@.type() == "string")') cited(value)
+  CROSS JOIN LATERAL (
+    SELECT split_part(split_part(cited.value #>> '{}', '#', 1), '?', 1) AS url
+  ) original
+  WHERE original.url ~ '^/media/[A-Za-z0-9-]+\.(jpg|png|webp|gif|tif|pdf)$'
   UNION ALL
   SELECT archive_id, substring(url FROM '^/media/(.+)$'),
     'citation', NULL::bigint

@@ -4,7 +4,8 @@ import { DocumentSourcePicker } from "./document-source-picker";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
 import { archiveDocumentPath } from "../domain/archive-routes.ts";
-import { CitationSourcesEditor } from "./union-sources-editor.tsx";
+import { CatalogPicker, CitationSourcesEditor } from "./union-sources-editor.tsx";
+import { sourceCitation } from "../shared/source-catalog.ts";
 import { PersonAlternativeClaims } from "./person-alternative-claims.tsx";
 import {
   Pencil,
@@ -72,6 +73,9 @@ function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange,
   isAdmin: boolean;
   canAssess: boolean;
 }) {
+  // Imported and previously recorded claims remain editable, but ordinary
+  // person fields no longer offer creation of a field-specific citation.
+  if (!claim) return null;
   const occupation = subject === "occupation";
   const surname = subject === "surname";
   const label = kind === "birth" ? "рождения" : "смерти";
@@ -103,6 +107,7 @@ function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange,
       : value.trim()
         ? <>
             <CitationSourcesEditor
+              allowAdd={false}
               sources={claim?.sources || []}
               onChange={(sources) => onChange(sources.length
                 ? { ...claim, value, sources } : undefined)}
@@ -479,6 +484,17 @@ export function PersonEditor({
       ),
     ...(family.links || []),
   ].filter((e) => e.from === draft.id || e.to === draft.id);
+  function dateEvidenceStatus(kind: "birth" | "death") {
+    const dateClaim = kind === "birth" ? draft.birthDateClaim : draft.deathDateClaim;
+    const placeClaim = kind === "birth" ? draft.birthPlaceClaim : draft.deathPlaceClaim;
+    const date = hintDate(kind === "birth" ? birthText : deathText);
+    const place = kind === "birth" ? draft.birthPlace : draft.deathPlace || "";
+    if ((dateClaim && dateClaim.value !== date) ||
+        (placeClaim && placeClaim.value !== place)) return " · требуется решение";
+    if (dateClaim || placeClaim || draft.factAlternatives?.some((item) =>
+      item.field === kind || item.field === `${kind}Place`)) return " · есть записи";
+    return "";
+  }
   return (
     <EditorDialog
       className="person-editor-shell"
@@ -643,6 +659,18 @@ export function PersonEditor({
               </select>
             </label>
           </div>
+          <div className="person-editor-facts">
+            <label>
+              Фамилия при рождении
+              <input value={draft.maidenName || ""}
+                onChange={(e) => field("maidenName", e.target.value)} />
+            </label>
+            <label>
+              Занятие
+              <input value={draft.occupation || ""}
+                onChange={(e) => field("occupation", e.target.value)} />
+            </label>
+          </div>
         </div>
         <label className="check-field person-review-status">
           <input
@@ -652,7 +680,7 @@ export function PersonEditor({
           />
           Требует проверки
         </label>
-        <details className="form-details person-extra" open={!!person}>
+        <details className="form-details person-extra" open>
           <summary>
             <CalendarDays size={17} aria-hidden="true" />
             Рождение и смерть
@@ -717,31 +745,40 @@ export function PersonEditor({
                   }
                 />
               </div>
-              <ValueClaimSourcesEditor
-                kind={kind}
-                subject="date"
-                value={hintDate(kind === "birth" ? birthText : deathText)}
-                claim={kind === "birth" ? draft.birthDateClaim : draft.deathDateClaim}
-                onChange={(claim) => field(kind === "birth" ? "birthDateClaim" : "deathDateClaim", claim)}
-                isAdmin={isAdmin}
-                canAssess={canAssessArchiveEvidence(user)}
-              />
-              <ValueClaimSourcesEditor
-                kind={kind}
-                subject="place"
-                value={kind === "birth" ? draft.birthPlace : draft.deathPlace || ""}
-                claim={kind === "birth" ? draft.birthPlaceClaim : draft.deathPlaceClaim}
-                onChange={(claim) => field(kind === "birth" ? "birthPlaceClaim" : "deathPlaceClaim", claim)}
-                isAdmin={isAdmin}
-                canAssess={canAssessArchiveEvidence(user)}
-              />
-              <PersonAlternativeClaims kind={kind}
-                alternatives={draft.factAlternatives || []}
-                savedIds={new Set(person?.factAlternatives?.map((item) => item.id) || [])}
-                onChange={(alternatives) => field("factAlternatives", alternatives)}
-                isAdmin={isAdmin}
-                canAssess={canAssessArchiveEvidence(user)}
-              />
+              {(draft[kind === "birth" ? "birthDateClaim" : "deathDateClaim"] ||
+                draft[kind === "birth" ? "birthPlaceClaim" : "deathPlaceClaim"] ||
+                draft.factAlternatives?.some((item) => item.field === kind || item.field === `${kind}Place`)) &&
+              <details className="form-details person-evidence-details">
+                <summary>
+                  Точные источники и варианты {kind === "birth" ? "рождения" : "смерти"}
+                  {dateEvidenceStatus(kind)}
+                </summary>
+                <ValueClaimSourcesEditor
+                  kind={kind}
+                  subject="date"
+                  value={hintDate(kind === "birth" ? birthText : deathText)}
+                  claim={kind === "birth" ? draft.birthDateClaim : draft.deathDateClaim}
+                  onChange={(claim) => field(kind === "birth" ? "birthDateClaim" : "deathDateClaim", claim)}
+                  isAdmin={isAdmin}
+                  canAssess={canAssessArchiveEvidence(user)}
+                />
+                <ValueClaimSourcesEditor
+                  kind={kind}
+                  subject="place"
+                  value={kind === "birth" ? draft.birthPlace : draft.deathPlace || ""}
+                  claim={kind === "birth" ? draft.birthPlaceClaim : draft.deathPlaceClaim}
+                  onChange={(claim) => field(kind === "birth" ? "birthPlaceClaim" : "deathPlaceClaim", claim)}
+                  isAdmin={isAdmin}
+                  canAssess={canAssessArchiveEvidence(user)}
+                />
+                <PersonAlternativeClaims kind={kind}
+                  alternatives={draft.factAlternatives || []}
+                  savedIds={new Set(person?.factAlternatives?.map((item) => item.id) || [])}
+                  onChange={(alternatives) => field("factAlternatives", alternatives)}
+                  isAdmin={isAdmin}
+                  canAssess={canAssessArchiveEvidence(user)}
+                />
+              </details>}
               {kind === "death" &&
                 !deathText.trim() &&
                 !draft.deathPlace?.trim() && (
@@ -867,7 +904,6 @@ export function PersonEditor({
                 ["surname", "Фамилия"],
                 ["name", "Имя"],
                 ["patronymic", "Отчество"],
-                ["maidenName", "Фамилия при рождении"],
               ] as const
             ).map(([key, label]) => (
               <label key={key}>
@@ -902,13 +938,6 @@ export function PersonEditor({
             <BookOpen size={17} aria-hidden="true" />
             Жизнь и занятия
           </summary>
-          <label>
-            Занятие
-            <input
-              value={draft.occupation || ""}
-              onChange={(e) => field("occupation", e.target.value)}
-            />
-          </label>
           <ValueClaimSourcesEditor
             kind="occupation"
             subject="occupation"
@@ -1041,6 +1070,7 @@ export function PersonEditor({
             ))}
             <button
               type="button"
+              disabled={draft.sources.length >= 50}
               onClick={() =>
                 field("sources", [
                   ...draft.sources,
@@ -1050,6 +1080,10 @@ export function PersonEditor({
             >
               + Источник
             </button>
+            {isAdmin && draft.sources.length < 50 && <CatalogPicker
+              existing={draft.sources}
+              onChoose={(entry) => field("sources", [...draft.sources, sourceCitation(entry)])}
+            />}
           </section>
           <PersonDocumentsEditor personId={person?.id} disabled={busy} />
         </details>

@@ -7,6 +7,7 @@ import { pipeline } from "node:stream/promises";
 import type { ServerResponse } from "node:http";
 import type { StoreDatabase } from "./store-database.ts";
 import { writeDatabaseBackup } from "./backup.ts";
+import { sanitizeTreeBackup, stageTreeBackupFiles } from "./tree-backup-files.ts";
 
 function databasePath(db: StoreDatabase) {
   const path = db.file;
@@ -20,6 +21,7 @@ export async function fullBackup(
   legacyResponse?: ServerResponse,
   beforeSend?: () => Promise<void>,
   deliverPrepared?: (path: string, res: ServerResponse) => Promise<void>,
+  treeOnly = false,
 ) {
   const dbPath =
       typeof pathOrResponse === "string" ? pathOrResponse : databasePath(db),
@@ -27,6 +29,10 @@ export async function fullBackup(
   const directory = await mkdtemp(join(tmpdir(), "drevo-full-"));
   try {
     await writeDatabaseBackup(db, join(directory, "drevo.sqlite"));
+    if (treeOnly) {
+      sanitizeTreeBackup(join(directory, "drevo.sqlite"));
+      await stageTreeBackupFiles(join(directory, "drevo.sqlite"), dirname(dbPath), join(directory, "uploads"));
+    }
     const destination = join(directory, "drevo.tar.gz");
     await new Promise<void>((done, reject) => {
       const process = spawn(
@@ -39,7 +45,7 @@ export async function fullBackup(
           directory,
           "drevo.sqlite",
           "-C",
-          dirname(dbPath),
+          treeOnly ? directory : dirname(dbPath),
           "uploads",
         ],
         { windowsHide: true, stdio: "ignore" },

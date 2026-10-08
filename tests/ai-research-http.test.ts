@@ -1307,7 +1307,7 @@ test("web researcher uses Yandex AI Studio function calling through server only"
         },
         false,
       ),
-      /только людей из области общих предков.*доступ только для чтения/,
+      /кровных родственников, непосредственных вторых родителей.*родителей без брака.*не приписывай им кровное родство.*Их предки, другие дети.*сами по себе не открываются.*доступ только для чтения/,
     );
 
     const status = await fetch(base + "/api/ai/status").then((response) =>

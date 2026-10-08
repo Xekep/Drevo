@@ -49,10 +49,10 @@ function drawing(lanes: number, height = 84): ElkNode {
 test("large empty vertical gaps compact while every routing lane keeps its order", () => {
   const original = drawing(4),
     before = structuredClone(original);
-  const { graph, bands, offsets } = alignGenerationBands(
-    original,
-    { width: 220, height: 84 },
-  );
+  const { graph, bands, offsets } = alignGenerationBands(original, {
+    width: 220,
+    height: 84,
+  });
   assert.deepEqual(original, before);
   assert.equal(bands[1].targetY - bands[0].targetY, 204);
   assert.ok(offsets.get("parent")! > 0);
@@ -86,7 +86,8 @@ test("large empty vertical gaps compact while every routing lane keeps its order
 
 test("simple generations use 180px pitch and portrait cards reserve their actual height", () => {
   for (const variant of ["classic", "portrait"] as const) {
-    const size = (variant === "portrait" ? treeNodeSize() : { width: 220, height: 84 }),
+    const size =
+        variant === "portrait" ? treeNodeSize() : { width: 220, height: 84 },
       graph = drawing(1, size.height);
     const { bands } = alignGenerationBands(graph, size);
     assert.equal(bands[1].targetY - bands[0].targetY, size.height + 96);
@@ -94,7 +95,10 @@ test("simple generations use 180px pitch and portrait cards reserve their actual
 });
 
 test("a dense routing corridor keeps necessary space instead of collapsing lines", () => {
-  const { graph, bands } = alignGenerationBands(drawing(30), { width: 220, height: 84 });
+  const { graph, bands } = alignGenerationBands(drawing(30), {
+    width: 220,
+    height: 84,
+  });
   assert.equal(bands[1].targetY - bands[0].targetY, 144 + 31 * 12);
   const ys = graph.edges!.map((e) => e.sections![0].bendPoints![0].y);
   for (let i = 1; i < ys.length; i++) assert.equal(ys[i] - ys[i - 1], 12);
@@ -106,4 +110,76 @@ test("empty input has no bands", () => {
     bands: [],
     offsets: new Map(),
   });
+});
+
+test("independent components use a narrow floor's free space while preserving all routing corridors", () => {
+  const node = (
+    id: string,
+    rank: number,
+    x: number,
+    y: number,
+    width = 220,
+  ): ElkNode => ({
+    id,
+    x,
+    y,
+    width,
+    height: 144,
+    layoutOptions: { "elk.partitioning.partition": String(rank) },
+  });
+  const input: ElkNode = {
+    id: "tree",
+    children: [
+      node("wide", 0, 0, 0, 1000),
+      node("narrow", 1, 0, 500),
+      node("other", 1, 2000, 500),
+      node("other-child", 2, 2000, 1000),
+    ],
+    edges: [
+      {
+        id: "a",
+        sources: ["wide"],
+        targets: ["narrow"],
+        sections: [
+          {
+            id: "a-route",
+            startPoint: { x: 110, y: 144 },
+            endPoint: { x: 110, y: 500 },
+          },
+        ],
+      },
+      {
+        id: "b",
+        sources: ["other"],
+        targets: ["other-child"],
+        sections: [
+          {
+            id: "b-route",
+            startPoint: { x: 2110, y: 644 },
+            endPoint: { x: 2110, y: 1000 },
+          },
+        ],
+      },
+    ],
+  };
+  const before = structuredClone(input);
+  const { graph } = alignGenerationBands(input, { width: 220, height: 84 });
+  const nodes = new Map(graph.children!.map((n) => [n.id, n]));
+  assert.equal(nodes.get("other")!.x, 332);
+  assert.ok(nodes.get("other")!.x! + 220 < nodes.get("wide")!.x! + 1000);
+  assert.ok(nodes.get("narrow")!.x! + 220 + 100 <= nodes.get("other")!.x!);
+  for (const edge of graph.edges!) {
+    const section = edge.sections![0];
+    for (const n of graph.children!)
+      assert.equal(
+        segmentHitsBox(section.startPoint, section.endPoint, {
+          left: n.x!,
+          right: n.x! + n.width!,
+          top: n.y!,
+          bottom: n.y! + n.height!,
+        }),
+        false,
+      );
+  }
+  assert.deepEqual(input, before);
 });

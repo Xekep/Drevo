@@ -8,6 +8,8 @@
   overflow: hidden;
   isolation: isolate;
   outline: none;
+  /* This replaces the canvas while the archive is opening. */
+  touch-action: none;
   color: #f4efdf;
   background:
     radial-gradient(ellipse at 50% 38%, #29453966, transparent 62%),

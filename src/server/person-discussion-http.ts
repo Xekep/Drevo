@@ -1,6 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
+import { finished } from "node:stream/promises";
+import { assertMemberPreviewDelivery, memberPreviewTarget,
+  samePreviewMember } from "./member-preview-access.ts";
 import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
 import { isArchiveOwner } from "../domain/access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
@@ -148,6 +151,8 @@ export function personDiscussionHttp({
     if (!initialUser || !(await auth.canRead(req)))
       return json(res, 401, { error: "Войдите, чтобы открыть обсуждение" });
     let user = initialUser;
+    const preview = memberPreviewTarget(req);
+    const previewRevision = preview ? (await archive.meta()).revision : null;
     let personId: string;
     try {
       personId = decodeURIComponent(match[1]);
@@ -212,8 +217,8 @@ export function personDiscussionHttp({
           row.updated_ms == null
             ? null
             : new Date(row.updated_ms).toISOString(),
-        canDelete: isArchiveOwner(user) || row.author_id === user.id,
-        canEdit: row.author_id === user.id,
+        canDelete: !preview && (isArchiveOwner(user) || row.author_id === user.id),
+        canEdit: !preview && row.author_id === user.id,
         attachments: commentFilesFromJson(row.attachments).map((file) => {
           const url = `/api/people/${encodeURIComponent(personId)}/discussion/${row.id}/attachments/${file.id}`;
           const type = commentFileMimeType(file.name) === file.type
@@ -273,12 +278,13 @@ export function personDiscussionHttp({
           return true;
         }
         const session = await auth.accountSession(req);
-        if (!session || session.accountId !== user.id)
+        if (!session || (!preview && session.accountId !== user.id))
           return json(res, 401, { error: "Сеанс завершён. Войдите снова" });
         if (!db.archiveId) return json(res, 404, { error: "Вложение не найдено" });
         let delivery: "sent" | "denied";
         try {
           delivery = await db.postgresTransaction(async (client) => {
+            let previewExpiresAt: number | null = null;
             // Keep the archive, session, membership and comment stable until
             // the in-memory attachment is handed to HTTP. A slow reader then
             // cannot hold ordinary archive edits through the whole transfer.
@@ -288,23 +294,28 @@ export function personDiscussionHttp({
             );
             if (Number(archiveRow.rows[0]?.revision) !== expectedRevision)
               return "denied";
-            const active = await client.query<{ expires_at: string }>(
+            if (preview) {
+              previewExpiresAt = await assertMemberPreviewDelivery(client,
+                db.archiveId!, session, user);
+              if (!previewExpiresAt) return "denied";
+            }
+            const active = !preview ? await client.query<{ expires_at: string }>(
               `SELECT expires_at FROM account_sessions WHERE token_hash=$1 AND user_id=$2
                FOR SHARE NOWAIT`, [session.tokenHash, user.id],
-            );
-            if (!active.rows[0] || Number(active.rows[0].expires_at) <= Date.now())
+            ) : null;
+            if (!preview && (!active?.rows[0] || Number(active.rows[0].expires_at) <= Date.now()))
               return "denied";
-            const members = await client.query<{
+            const members = !preview ? await client.query<{
               role: string; approved: boolean; tree_access: string; person_id: string | null;
             }>(
               `SELECT role,approved,tree_access,person_id FROM archive_memberships
                WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
               [db.archiveId, user.id],
-            );
-            const member = members.rows[0];
-            if (!member?.approved || member.role !== user.role ||
+            ) : null;
+            const member = members?.rows[0];
+            if (!preview && (!member?.approved || member.role !== user.role ||
                 (member.tree_access || "all") !== (user.treeAccess || "all") ||
-                (member.person_id || null) !== (user.personId || null))
+                (member.person_id || null) !== (user.personId || null)))
               return "denied";
             const comments = await client.query<{ attachments: unknown }>(
               `SELECT attachments FROM person_comments WHERE id=$1 AND person_id=$2
@@ -315,6 +326,7 @@ export function personDiscussionHttp({
                 item.name === file.name && item.size === file.size))
               return "denied";
             await beforeLockedAttachmentDelivery?.();
+            if (previewExpiresAt && Date.now() >= previewExpiresAt) return "denied";
             if (!res.destroyed) send();
             return "sent";
           });
@@ -340,9 +352,53 @@ export function personDiscussionHttp({
       }
     }
     if (match[3]) return json(res, 405, { error: "Метод не поддерживается" });
+    const previewJson = async (value: unknown) => {
+      if (!preview) return json(res, 200, value);
+      const body = JSON.stringify(value);
+      const current = await auth.currentUser(req);
+      if (!samePreviewMember(current, user))
+        return json(res, 409, { error: "Права предпросмотра изменились" });
+      if (db.kind !== "postgres" || !db.postgresTransaction || auth.local) {
+        if ((await archive.meta()).revision !== previewRevision)
+          return json(res, 409, { error: "Древо изменилось" });
+        return json(res, 200, value);
+      }
+      const session = await auth.accountSession(req);
+      if (!session || !db.archiveId)
+        return json(res, 403, { error: "Предпросмотр недоступен" });
+      try {
+        const delivered = await db.postgresTransaction(async (client) => {
+          await client.query("SELECT set_config('drevo.archive_id',$1,true)", [db.archiveId]);
+          const archiveRow = await client.query<{ revision: string }>(
+            "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT", [db.archiveId]);
+          if (Number(archiveRow.rows[0]?.revision) !== previewRevision) return false;
+          const expiresAt = await assertMemberPreviewDelivery(client,
+            db.archiveId!, session, user);
+          if (!expiresAt) return false;
+          const remaining = Math.min(4_000, expiresAt - Date.now());
+          if (remaining <= 0 || Date.now() >= expiresAt) return false;
+          const done = finished(res, { cleanup: true });
+          const timer = setTimeout(() => res.destroy(), remaining);
+          timer.unref();
+          try {
+            res.writeHead(200, { "Content-Type": "application/json; charset=utf-8",
+              "Cache-Control": "private, no-store" });
+            res.end(body);
+            await done;
+          } finally { clearTimeout(timer); }
+          return true;
+        });
+        return delivered ? true : json(res, 409, { error: "Права предпросмотра изменились" });
+      } catch (error) {
+        if (res.headersSent || res.destroyed) { res.destroy(); return true; }
+        if ((error as { code?: string }).code === "55P03")
+          return json(res, 409, { error: "Права предпросмотра меняются" });
+        throw error;
+      }
+    };
     if (req.method === "GET" && !match[2]) {
       if (url.searchParams.get("count") === "1")
-        return json(res, 200, { total: await total() });
+        return previewJson({ total: await total() });
       const rawBefore = url.searchParams.get("before");
       if (rawBefore && !/^[1-9][0-9]*$/.test(rawBefore))
         return json(res, 400, { error: "Некорректная страница" });
@@ -356,7 +412,7 @@ export function personDiscussionHttp({
         )
         .all(personId, before, PAGE_SIZE + 1)) as CommentRow[];
       const page = rows.slice(0, PAGE_SIZE);
-      return json(res, 200, {
+      return previewJson({
         items: page.map(present),
         nextBefore: rows.length > PAGE_SIZE ? page.at(-1)!.id : null,
         total: await total(),

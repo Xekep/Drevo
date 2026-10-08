@@ -1839,6 +1839,14 @@ export function exportGedcom(
 ): string {
   const modern = options.version === "7.0";
   const media = options.media || familyMedia(family);
+  const eventObjects = new Map<string, Set<number>>();
+  media.forEach((item, index) => {
+    for (const link of item.document?.eventLinks || []) {
+      const key = JSON.stringify([link.personId, link.eventId]);
+      const ids = eventObjects.get(key) || new Set<number>();
+      ids.add(index + 1); eventObjects.set(key, ids);
+    }
+  });
   const lines: string[] = [];
   function emit(level: number, tag: string, text = "", pointer = false) {
     if (
@@ -2217,6 +2225,8 @@ export function exportGedcom(
       } else if (e.endDate) emit(2, "DATE", `TO ${exportDate(e.endDate)}`);
       emitPlace(2, e.place, e.location);
       if (e.description) emit(2, "NOTE", e.description);
+      for (const index of eventObjects.get(JSON.stringify([p.id, e.id])) || [])
+        emit(2, "OBJE", `@M${index}@`, true);
       for (const source of e.sources || []) citation(2, source);
       for (const source of e.dateClaim?.sources || []) citation(2, source, "EVENT_DATE");
       for (const source of e.placeClaim?.sources || []) citation(2, source, "EVENT_PLACE");

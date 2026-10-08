@@ -306,7 +306,7 @@ test("близкие и кровные центрируют человека, а
   const bloodButton = page.getByRole("button", { name: "Кровные" });
   await expect(bloodButton).toHaveAttribute(
     "title",
-    "Кровные родственники\n\nРодственники, с которыми есть кровное родство, и их партнеры (муж/жена).",
+    "Кровные родственники\n\nРодственники, с которыми есть кровное родство, их партнеры и вторые родители кровных потомков, даже без брака.",
   );
   await bloodButton.click();
   await page.getByRole("button", { name: "Всё древо" }).click();
@@ -525,7 +525,9 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   await expect(
     page.getByRole("heading", { name: "Админка платформы" }),
   ).toBeVisible();
-  await page.getByText("Подключение Yandex, общие лимиты и контекст").click();
+  await expect(page.locator(".ai-connection-editor")).toBeVisible();
+  if (await page.locator(".ai-connection-editor").getAttribute("open") === null)
+    await page.locator(".ai-connection-editor > summary").click();
 
   const apiKey = page.getByLabel("API-ключ"),
     folderId = page.getByLabel("Folder ID"),
@@ -538,7 +540,7 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
     "yandexgpt-5.1",
     "deepseek-v4-flash",
   ]);
-  await page.getByText(/Статистика · сегодня/).click();
+  await page.getByText(/Расход · сегодня/).click();
   await expect(
     page.getByRole("img", {
       name: /Расход токенов за последние 14 дней/,
@@ -549,23 +551,6 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   await expect(tokenPlot).toHaveAttribute("aria-label", /2.?700/);
   await expect(page.locator(".ai-token-model-legend")).toHaveCount(0);
 
-  await page.goto("/admin");
-  await openAdminSection(page, "mcp", "MCP-токены");
-  const permissions = page.getByLabel("Разрешения");
-  await expect(permissions).toHaveValue("all");
-  await expect(permissions.locator("option")).toContainText([
-    "Все инструменты",
-    "Древо и источники",
-    "Древо и анализ",
-    "Источники и анализ",
-    "Только древо",
-    "Только источники",
-    "Только анализ",
-  ]);
-  await expect(page.getByLabel("Доступ к древу")).toHaveCount(0);
-  await expect(page.getByText("Срок, дней")).not.toBeVisible();
-  await page.getByText("Срок и лимит запросов").click();
-  await expect(page.getByText("Срок, дней")).toBeVisible();
 });
 
 test("ИИ-исследователь не перекрывает навигацию, перетаскивается и рисует Markdown", async ({
@@ -845,7 +830,7 @@ test("администратор выбирает себя в древе и пр
     });
   await page
     .getByRole("combobox", { name: "Доступ к древу: Участник" })
-    .selectOption("common_ancestors");
+    .selectOption({ label: "Кровные родственники" });
   await expect
     .poll(() => submitted[1])
     .toEqual({
@@ -891,8 +876,17 @@ test("поля участника не разъезжаются на разны�
     await expect(card).toBeVisible();
     const layout = await card.evaluate((element) => {
       const fields = [...element.children] as HTMLElement[];
+      const controls = [...element.querySelectorAll("input, select")].map((field) =>
+        field.getBoundingClientRect());
+      const headings = element.closest(".admin-users-list")!.querySelector(".admin-users-head")!;
       return {
         overflows: element.scrollWidth > element.clientWidth + 1,
+        singleRow: getComputedStyle(headings).display !== "none",
+        labelsVisible: [...element.querySelectorAll(".admin-user-select > span")].every((label) =>
+          label.getBoundingClientRect().width > 10),
+        separate: controls.every((field, index) => controls.slice(index + 1).every((other) =>
+          field.right <= other.left + 1 || other.right <= field.left + 1 ||
+          field.bottom <= other.top + 1 || other.bottom <= field.top + 1)),
         centers: fields.map((field) => {
           const rect = field.getBoundingClientRect();
           return Math.round(rect.top + rect.height / 2);
@@ -900,9 +894,12 @@ test("поля участника не разъезжаются на разны�
       };
     });
     expect(layout.overflows).toBe(false);
-    expect(
-      Math.max(...layout.centers) - Math.min(...layout.centers),
-    ).toBeLessThan(12);
+    expect(layout.separate).toBe(true);
+    if (layout.singleRow) {
+      expect(Math.max(...layout.centers) - Math.min(...layout.centers)).toBeLessThan(12);
+    } else {
+      expect(layout.labelsVisible).toBe(true);
+    }
   }
 });
 
@@ -1124,10 +1121,12 @@ test("участники загружаются страницами и удал
   await page.getByRole("button", { name: "Назад" }).click();
   await expect(page.locator(".admin-user-row")).toHaveCount(20);
   expect(requestedPages).toEqual([0, 20, 40, 20, 0]);
-  page.once("dialog", (dialog) => dialog.accept());
   await page
     .getByRole("button", { name: "Удалить участника: Участник 00" })
     .click();
+  expect(participants).toHaveLength(45);
+  await expect(page.getByText("Аккаунт и данные в древе сохранятся.", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Подтвердить удаление участника: Участник 00" }).click();
   await expect(page.getByText(/Всего участников\s*44/)).toBeVisible();
   await expect(
     page.getByRole("article", { name: "Участник: Участник 00" }),

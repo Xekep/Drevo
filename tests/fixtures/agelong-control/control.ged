@@ -1,0 +1,105 @@
+0 HEAD
+1 SOUR DREVO
+2 DATA Synthetic control
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 NOTE Fictional external roundtrip fixture
+1 _DREVO_ARCHIVE {"title":"Synthetic control","description":"Fictio
+2 CONC nal external roundtrip fixture"}
+1 SUBM @SUB1@
+0 @SUB1@ SUBM
+1 NAME Семейный архив Drevo
+0 @I1@ INDI
+1 NAME Павел /Петров/
+2 GIVN Павел
+2 SURN Петров
+1 SEX M
+1 BIRT Y
+2 DATE 1899
+1 FAMS @F1@
+1 FAMS @F2@
+1 _DREVO {"name":"Павел","surname":"Петров","patronymic":""
+2 CONC ,"birth":"1899","birthPlace":"","sources":[],"sex"
+2 CONC :"m"}
+0 @I2@ INDI
+1 NAME Анна /Петрова/
+2 GIVN Анна
+2 SURN Петрова
+1 NAME Анна /Иванова/
+2 TYPE birth
+2 GIVN Анна
+2 SURN Иванова
+1 SEX F
+1 BIRT Y
+2 DATE MAY 1901
+2 PLAC Тверь
+3 MAP
+4 LATI N56.85
+4 LONG E35.91
+1 SOUR @S1@
+2 PAGE leaf 7
+2 OBJE @M2@
+2 _DREVO_DOCUMENT_PAGE 7
+1 FAMS @F1@
+1 FAMS @F2@
+1 OBJE @M1@
+2 _PRIM Y
+1 OBJE @M2@
+1 _DREVO {"name":"Анна","surname":"Петрова","patronymic":""
+2 CONC ,"birth":"1901-05","birthPlace":"Тверь","sources":
+2 CONC [{"title":"Synthetic register","type":"archive","r
+2 CONC eference":"leaf 7","url":"https://example.org/synt
+2 CONC hetic/register","note":"Synthetic source comment"}
+2 CONC ],"sex":"f","maidenName":"Иванова","birthLocation"
+2 CONC :{"place":"Тверь","lat":56.85,"lon":35.91}}
+0 @I3@ INDI
+1 NAME Лина /Петрова/
+2 GIVN Лина
+2 SURN Петрова
+1 SEX F
+1 BIRT Y
+2 DATE 1930
+1 FAMC @F1@
+2 PEDI birth
+1 _DREVO {"name":"Лина","surname":"Петрова","patronymic":""
+2 CONC ,"birth":"1930","birthPlace":"","sources":[],"sex"
+2 CONC :"f"}
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 _DREVO_SPOUSE Y
+1 CHIL @I3@
+0 @F2@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 _DREVO_UNION {"id":"union-1","participants":["father","mother"]
+2 CONC ,"type":"marriage","formation":{"date":"1928","pla
+2 CONC ce":"Тверь"}}
+1 _DREVO_SPOUSE Y
+1 MARR Y
+2 DATE 1928
+2 PLAC Тверь
+0 @S1@ SOUR
+1 TITL Synthetic register
+1 _TYPE archive
+1 _URL https://example.org/synthetic/register
+1 NOTE URL: https://example.org/synthetic/register
+1 NOTE Synthetic source comment
+0 @M1@ OBJE
+1 FILE media/portrait.png
+2 FORM png
+2 TITL Synthetic portrait
+1 _DREVO_MEDIA {"tags":[{"id":"tag-1","personId":"@@I2@@","x":0,"y"
+2 CONC :0,"width":1,"height":1}],"portraitIds":["@@I2@@"]}
+0 @M2@ OBJE
+1 FILE media/record.pdf
+2 FORM pdf
+2 TITL Synthetic register scan
+1 _DREVO_MEDIA {"portraitIds":[],"document":{"documentType":"regi
+2 CONC ster","documentDate":"1901","place":"Тверь","descr
+2 CONC iption":"Fictional page 7","provenance":"Syntheti
+2 CONC c archive","pages":[{"number":7,"description":"Ann
+2 CONC a Example record"}]}}
+0 TRLR

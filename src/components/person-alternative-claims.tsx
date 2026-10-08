@@ -28,19 +28,13 @@ export function PersonAlternativeClaims({ kind, alternatives, savedIds, onChange
   const update = (id: string, changes: Partial<PersonFactAlternative>) =>
     onChange(alternatives.map((alternative) => alternative.id === id
       ? { ...alternative, ...changes } : alternative));
-  const add = (field: Fact) => onChange([...alternatives, {
-    id: crypto.randomUUID(), field, value: "", sources: [],
-  }]);
+  if (!visible.length) return null;
   return <details className="form-details fact-alternatives">
     <summary>{kind === "occupation" ? "Другие записи о занятии" :
       kind === "maidenName" ? "Другие фамилии при рождении" :
       `Другие записи о ${kind === "birth" ? "рождении" : "смерти"}`}
       {visible.length ? ` · ${visible.length}` : ""}</summary>
-    <p>{kind === "occupation"
-      ? "Если документы называют другое занятие, сохраните его отдельно с источником. Текущее занятие останется без изменений."
-      : kind === "maidenName"
-      ? "Если документы называют другую фамилию при рождении, сохраните каждый вариант с его источником. Текущая фамилия останется без изменений."
-      : "Если документы называют другую дату или место, сохраните каждый вариант с его источником. Основная дата и место останутся без изменений."}</p>
+    <p>Ранее сохранённые варианты. Основные сведения остаются без изменений.</p>
     {visible.map((alternative) => {
       const isDate = alternative.field === "birth" || alternative.field === "death";
       const locked = savedIds.has(alternative.id);
@@ -61,8 +55,8 @@ export function PersonAlternativeClaims({ kind, alternatives, savedIds, onChange
             }}
           />
         </label>
-        {locked && <small>Чтобы изменить сам вариант, удалите его и добавьте новую запись с нужным источником.</small>}
-        <CitationSourcesEditor sources={alternative.sources}
+        {locked && <small>Значение сохранено вместе с прежним источником.</small>}
+        <CitationSourcesEditor sources={alternative.sources} allowAdd={false}
           onChange={(sources) => update(alternative.id, { sources })}
           isAdmin={isAdmin} canRemoveLast={false} />
         <label>
@@ -84,12 +78,5 @@ export function PersonAlternativeClaims({ kind, alternatives, savedIds, onChange
         {!mayRemove && <small>Оценённый вариант может удалить исследователь или администратор.</small>}
       </section>;
     })}
-    <div className="fact-alternative-actions">
-      <button type="button" onClick={() => add(kind)}>{kind === "occupation"
-        ? "Добавить другое занятие" : kind === "maidenName"
-          ? "Добавить другую фамилию" : "Добавить другую дату"}</button>
-      {(kind === "birth" || kind === "death") && <button type="button" onClick={() => add(`${kind}Place`)}>
-        Добавить другое место</button>}
-    </div>
   </details>;
 }

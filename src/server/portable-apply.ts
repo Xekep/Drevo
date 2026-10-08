@@ -9,7 +9,7 @@ import {
 import { auditStore } from "./audit.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
-import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
+import { enforcePostgresMediaQuota, postgresMediaBytes } from "./postgres-media-quota.ts";
 import type { installPortableOriginals } from "./portable-install.ts";
 import { enforceUserStorageLimit } from "./storage-limits.ts";
 import { assertCurrentArchiveActor, ForbiddenError } from "./users.ts";
@@ -53,6 +53,8 @@ export async function applyPortablePackage(
   const documentFiles = new Set(
     installed.snapshot.documents.map((doc) => doc.fileName),
   );
+  let previousMediaBytes: number | undefined;
+  let measuredAt: number | undefined;
   const assertSession = async (transaction: StoreDatabase) => {
     if (transaction.kind !== "postgres" || session?.local) return;
     if (!session?.tokenHash)
@@ -160,7 +162,7 @@ export async function applyPortablePackage(
               comment.editedMs ?? null,
               JSON.stringify(comment.attachments || []),
             );
-        await enforcePostgresMediaQuota(transaction);
+        await enforcePostgresMediaQuota(transaction, previousMediaBytes, measuredAt);
         await enforceUserStorageLimit(transaction, actor.id);
         await auditStore(transaction).record(
           {
@@ -175,7 +177,12 @@ export async function applyPortablePackage(
           revision + 1,
         );
       },
-      undefined,
+      async (transaction) => {
+        // archive.write holds the archive row here. Compare the final quota
+        // with the same locked snapshot after replacing imported records.
+        measuredAt = Date.now();
+        previousMediaBytes = await postgresMediaBytes(transaction, measuredAt);
+      },
       { withinTransaction: true },
     );
     // Expiration can pass while importing many records even though the row is

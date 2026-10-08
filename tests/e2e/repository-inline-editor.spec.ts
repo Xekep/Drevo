@@ -2,15 +2,19 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
 
-async function isolatedFamily(page: Page) {
+async function isolatedFamily(page: Page, legacyEvent = false) {
   const response = await page.request.get("/api/family?projection=overview");
   const initial = await response.json();
   const complete = await page.request.get("/api/family");
   const full = await complete.json();
   let family = structuredClone(full.family) as Family;
+  if (legacyEvent) family.people.find((person) => person.id === "e2e-child")!.events = [{
+    id: "legacy-repository-event", type: "residence", date: "1901",
+    sources: [{ title: "Перепись", type: "", reference: "" }],
+  }];
   let revision = full.revision as number;
   await page.route("**/api/family?projection=overview", (route) =>
-    route.fulfill({ response, json: { ...initial, family, revision } }),
+    route.fulfill({ response, json: { ...initial, family, revision, partial: false } }),
   );
   await page.route("**/api/family/changes", (route) => {
     const changes = route.request().postDataJSON().changes as Change[];
@@ -56,7 +60,7 @@ async function ensureOpen(details: Locator) {
 test("inline хранилище сохраняется у источника человека и события", async ({
   page,
 }) => {
-  const readFamily = await isolatedFamily(page);
+  const readFamily = await isolatedFamily(page, true);
   await page.goto("/tree");
   await page
     .getByTestId("rf__node-e2e-child")
@@ -73,13 +77,11 @@ test("inline хранилище сохраняется у источника ч�
   await fillRepository(personSource, "12");
 
   await ensureOpen(page.locator(".event-editor"));
-  await page.getByRole("button", { name: "Добавить событие" }).click();
   const event = page.locator(".life-event-editor").last();
+  await event.locator(":scope > summary").click();
   await event.getByLabel("Дата", { exact: true }).fill("1901");
   await event.locator(".event-extra > summary").click();
-  await event
-    .getByRole("button", { name: "Добавить источник", exact: true })
-    .click();
+  await expect(event.getByRole("button", { name: "Добавить источник", exact: true })).toHaveCount(0);
   const eventSource = event.locator(".event-source-editor").last();
   await eventSource.getByLabel("Источник").fill("Перепись");
   await fillRepository(eventSource, "13");

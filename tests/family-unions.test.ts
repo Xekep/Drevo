@@ -205,7 +205,20 @@ test("union validation and scoped projections protect participants", () => {
     treeAccess: "common_ancestors",
     personId: "c",
   });
+  assert.deepEqual(projected.people.map((entry) => entry.id), ["a", "c"],
+    "the linked person sees their spouse, but not that spouse's other spouse");
+  assert.deepEqual(projected.people.find((entry) => entry.id === "a")?.spouses, ["c"]);
   assert.equal(projected.unions?.length, 0);
+  const visibleUnion: FamilyUnion = {
+    id: "third", type: "partnership", participants: ["a", "c"],
+  };
+  const withVisible = projectFamilyForUser({ ...data, unions: [...data.unions, visibleUnion] }, {
+    id: "other", name: "Other", role: "relative", createdAt: "2020-01-01",
+    treeAccess: "common_ancestors", personId: "c",
+  });
+  assert.deepEqual(withVisible.unions, [visibleUnion],
+    "a visible couple's union survives while both unions with the hidden participant are removed");
+  validateFamily(withVisible);
 });
 
 test("union edits participate in revision changes and undo", () => {

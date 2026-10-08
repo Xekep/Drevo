@@ -63,6 +63,23 @@
   font-size: 11px;
   white-space: nowrap;
 }
+.timeline-center-marker.is-future {
+  border-left-color: #587b9e99;
+}
+.timeline-center-marker.is-future output {
+  background: #365b7b;
+}
+.timeline-center-marker.is-future > span {
+  color: #365b7b;
+  background: #f0f5fb;
+  width: max-content;
+  max-width: calc(100vw - var(--timeline-person-width) - 16px);
+  white-space: normal;
+  text-align: center;
+}
+.timeline-center-marker:has(+ .horizontal-timeline .timeline-event[open]) {
+  border-left-color: transparent;
+}
 .timeline-year-controls {
   position: absolute;
   top: 10px;
@@ -221,6 +238,36 @@
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
+.timeline-future-range {
+  position: absolute;
+  inset-block: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 12px;
+  border-left: 2px dashed #6686a8;
+  background: repeating-linear-gradient(135deg, #e5edf7 0 8px, #eef3fa 8px 16px);
+  color: #365b7b;
+  pointer-events: none;
+}
+.timeline-future-range strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.timeline-future-range small {
+  font-size: 10px;
+}
+.timeline-axis-track > .timeline-present {
+  bottom: 29px;
+  padding: 3px 6px;
+  border: 1px solid #b2bea9;
+  border-radius: 4px;
+  background: #f4f8f0;
+  color: #365c3d;
+  font-size: 10px;
+  white-space: nowrap;
+}
 .timeline-person-row {
   position: relative;
   display: flex;
@@ -348,6 +395,9 @@
   background: #7c9b73;
   border-right: 4px dotted #496d45;
 }
+.timeline-life.is-estimated {
+  background: repeating-linear-gradient(to right, #9c8068 0 8px, transparent 8px 12px);
+}
 .timeline-event {
   position: absolute;
   z-index: 2;
@@ -381,6 +431,11 @@
 .timeline-event.is-death summary {
   background: #f0e3d8;
   border-color: #b89b87;
+}
+.timeline-event.is-estimated summary {
+  border-style: dashed;
+  color: #785d43;
+  font-size: 15px;
 }
 .timeline-event.is-current summary {
   box-shadow: 0 0 0 5px #9ab78b80;
@@ -570,6 +625,10 @@
   }
   .timeline-era-segment small {
     display: none;
+  }
+  .timeline-event-list {
+    min-width: 0;
+    width: min(240px, calc(100vw - var(--timeline-person-width) - 16px));
   }
 }
 @media (prefers-reduced-motion: reduce) {

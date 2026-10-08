@@ -33,6 +33,7 @@ import { PersonSearch } from "./person-search";
 import { usePhotoSwipe } from "./use-photo-swipe";
 import { useDockSwipe } from "../hooks/useDockSwipe";
 import { mediaPreview } from "../domain/media-preview";
+import { MemberPreviewExit } from "./member-preview-exit";
 import { archiveResourceUrl } from "../domain/archive-context.ts";
 import { PlaceField } from "./place-field";
 import { CopyArchiveLink } from "./copy-archive-link";
@@ -1022,6 +1023,7 @@ export function PhotoViewer(props: PhotoViewerProps) {
         close();
       }}
     >
+      <MemberPreviewExit />
       <PhotoViewerContent
         key={props.photo.id}
         {...props}

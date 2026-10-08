@@ -1,6 +1,7 @@
 export type Role = "admin" | "researcher" | "relative" | "reader";
 export type TreeRole = "relative" | "reader";
 export type GlobalRole = "admin" | "researcher" | null;
+/** Persisted key for blood relatives, their direct co-parents and partners. */
 export type TreeAccess = "all" | "common_ancestors";
 export type ArchiveUser = {
   id: string;
@@ -28,6 +29,14 @@ export const ROLE_NAMES: Record<Role, string> = {
 };
 export const isArchiveOwner = (user: ArchiveUser | null | undefined) =>
   !!user && (user.archiveOwner ?? user.role === "admin");
+export const canManageTreeBackups = (user: ArchiveUser | null | undefined): user is ArchiveUser => {
+  if (!user?.approved || !isArchiveOwner(user)) return false;
+  const explicit = user.globalRole !== undefined || user.treeRole !== undefined ||
+    user.archiveOwner !== undefined;
+  return explicit
+    ? user.globalRole === "admin" || user.globalRole === "researcher"
+    : user.role === "admin";
+};
 export const canEditArchive = (user: ArchiveUser | null | undefined) =>
   !!user?.approved && (isArchiveOwner(user) ||
     (user.treeRole ?? user.role) !== "reader");

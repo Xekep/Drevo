@@ -312,7 +312,7 @@ export async function userStore(
         throw new Error("Неизвестный режим доступа");
       if (treeAccess === "common_ancestors" && !personId)
         throw new Error(
-          "Для доступа по общим предкам сначала выберите человека",
+          "Для доступа к кровным родственникам и их супругам сначала выберите человека",
         );
       if (isArchiveOwner(target) && treeAccess !== "all")
         throw new Error("Администратору нужен доступ ко всему древу");
@@ -429,7 +429,7 @@ export async function userStore(
           "Управлять доступом может только администратор",
         );
       if (actor.id === id)
-        throw new Error("Нельзя удалить собственный аккаунт");
+        throw new Error("Нельзя удалить свой доступ к древу");
       const target = await get(id);
       if (!target) throw new Error("Пользователь не найден");
       if (
@@ -459,13 +459,13 @@ export async function userStore(
       await db
         .prepare(
           "DELETE FROM user_tree_preferences WHERE user_id=?",
-          "DELETE FROM user_tree_preferences WHERE user_id=?",
+          "DELETE FROM user_tree_preferences WHERE archive_id=current_setting('drevo.archive_id',true) AND user_id=?",
         )
         .run(id);
       await db
         .prepare(
           "DELETE FROM users WHERE id=?",
-          "DELETE FROM archive_memberships WHERE user_id=?",
+          "DELETE FROM archive_memberships WHERE archive_id=current_setting('drevo.archive_id',true) AND user_id=?",
         )
         .run(id);
     });

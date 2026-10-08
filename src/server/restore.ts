@@ -39,7 +39,7 @@ import { mediaPattern, originalMediaPattern } from "./media.ts";
 import { portableCitationMedia } from "./portable-package.ts";
 import { verifyPortableMediaFile } from "./portable-media-check.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
-import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
+import { enforcePostgresMediaQuota, postgresMediaBytes } from "./postgres-media-quota.ts";
 import { reservePlatformDisk } from "./platform-disk-reservation.ts";
 import {
   documentSearchText,
@@ -1044,6 +1044,11 @@ export function restoreStore(
           ...source,
           documentIds: source.documentIds.map((id) => documentIdMap.get(id)!),
         }));
+        // archive.write owns the archive row here. Measure the old attachment
+        // usage on its transaction client before any restored rows are written;
+        // a downgraded owner may replace already-counted bytes without growth.
+        let measuredAt: number | undefined;
+        let previousMediaBytes: number | undefined;
         result = await archive.write(
           family,
           stage.revision,
@@ -1126,16 +1131,20 @@ export function restoreStore(
                     installedDiscussionFiles.get(file.id)!)));
               }
             }
-            await enforcePostgresMediaQuota(db);
+            await enforcePostgresMediaQuota(db, previousMediaBytes, measuredAt);
           },
-          restoreComments ? async (db) => {
-            const current = await db.prepare(
-              "SELECT count(*) AS count FROM person_comments",
-              "SELECT count(*) AS count FROM person_comments",
-            ).get();
-            if (Number(current?.count) !== 0)
-              throw new ConflictError("В архиве уже есть комментарии; импорт из копии может создать дубликаты.");
-          } : undefined,
+          async (db) => {
+            measuredAt = Date.now();
+            previousMediaBytes = await postgresMediaBytes(db, measuredAt);
+            if (restoreComments) {
+              const current = await db.prepare(
+                "SELECT count(*) AS count FROM person_comments",
+                "SELECT count(*) AS count FROM person_comments",
+              ).get();
+              if (Number(current?.count) !== 0)
+                throw new ConflictError("В архиве уже есть комментарии; импорт из копии может создать дубликаты.");
+            }
+          },
         );
       } catch (error) {
         await Promise.allSettled(

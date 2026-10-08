@@ -11,6 +11,7 @@ import {
 } from "./document-images.ts";
 import sharp from "sharp";
 import { pdfDocumentPages } from "./document-pdf.ts";
+import { documentReferenceStore } from "./document-reference-store.ts";
 import { randomUUID } from "node:crypto";
 import { createWriteStream, mkdirSync } from "node:fs";
 import { open, readFile, rename, stat, statfs, unlink } from "node:fs/promises";
@@ -29,6 +30,7 @@ import {
   parseDocumentPages,
 } from "../shared/document-links.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
+import { assertMemberPreviewDelivery, memberPreviewTarget } from "./member-preview-access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { owns, canAssessArchiveEvidence, canEditArchive } from "../domain/access.ts";
 import {
@@ -38,7 +40,7 @@ import {
 } from "../shared/document-annotations.ts";
 import { auditStore } from "./audit.ts";
 import { assertActiveAccountSession, AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
-import { personCitations, sourceCatalogStore, unionCitations } from "./source-catalog-store.ts";
+import { sourceCatalogStore } from "./source-catalog-store.ts";
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
 import {
@@ -354,6 +356,7 @@ export function documentsHttp({
       : null;
     const people = family?.people || [];
     return {
+      user,
       userId: user?.id,
       scope,
       scoped,
@@ -372,47 +375,7 @@ export function documentsHttp({
     req: IncomingMessage,
     access: Awaited<ReturnType<typeof visible>>,
   ) => !!access.scope && accessScope(await auth.currentUser(req)) === access.scope;
-  const linkedPersons = async (ids: string[]) => {
-    if (!ids.length) return [] as Person[];
-    const rows = await db.prepare(
-      "SELECT id,data FROM people WHERE id IN (SELECT value FROM json_each(?))",
-      "SELECT id,data FROM people WHERE id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))",
-    ).all(JSON.stringify([...new Set(ids)]));
-    return rows.map((row) => (typeof row.data === "string"
-      ? JSON.parse(row.data) : row.data) as Person);
-  };
-  const citedEntities = async (documentIds: string[]) => {
-    if (!documentIds.length)
-      return { people: [] as Person[], unions: [] as FamilyUnion[], links: [] as FamilyLink[],
-        parents: [] as Array<{ from: string; to: string; sources: Source[] }> };
-    // One candidate scan per page (at most 100 document IDs), never one scan
-    // per listed document. The reader checks exact documentId after parsing.
-    const matches = (column: string) => documentIds.map(() => `${column} LIKE ?`).join(" OR ");
-    const patterns = documentIds.map((id) => `%${id}%`);
-    const parse = <T>(value: unknown): T =>
-      (typeof value === "string" ? JSON.parse(value) : value) as T;
-    const people = (await db.prepare(
-      `SELECT data FROM people WHERE ${matches("data")}`,
-      `SELECT data FROM people WHERE ${matches("data::text")}`,
-    ).all(...patterns)).map((row) => parse<Person>(row.data));
-    const unions = (await db.prepare(
-      `SELECT data FROM family_unions WHERE ${matches("data")}`,
-      `SELECT data FROM family_unions WHERE ${matches("data::text")}`,
-    ).all(...patterns)).map((row) => parse<FamilyUnion>(row.data));
-    const links = (await db.prepare(
-      `SELECT id,source,target,type,sources FROM relations WHERE type NOT IN ('parent','spouse') AND (${matches("sources")})`,
-      `SELECT id,source,target,type,sources FROM relations WHERE type NOT IN ('parent','spouse') AND (${matches("sources::text")})`,
-    ).all(...patterns)).map((row) => ({
-      id: String(row.id), from: String(row.source), to: String(row.target),
-      type: row.type as FamilyLink["type"], sources: parse<Source[]>(row.sources),
-    }));
-    const parents = (await db.prepare(
-      `SELECT source,target,sources FROM relations WHERE type='parent' AND (${matches("sources")})`,
-      `SELECT source,target,sources FROM relations WHERE type='parent' AND (${matches("sources::text")})`,
-    ).all(...patterns)).map((row) => ({ from: String(row.source), to: String(row.target),
-      sources: parse<Source[]>(row.sources) }));
-    return { people, unions, links, parents };
-  };
+  const { linkedPersons, citedEntities, referencingPeople } = documentReferenceStore(db);
   const readerCitations = async (
     access: Awaited<ReturnType<typeof visible>>,
     documentIds: string[],
@@ -441,40 +404,6 @@ export function documentsHttp({
         ? JSON.parse(row.data) : row.data) as Person;
       return fullName(person).toLocaleLowerCase("ru").includes(query);
     }).map((row) => String(row.id));
-  };
-  const referencingPeople = async (documentId: string) => {
-    // The citation lives inside person JSON until sources become first-class rows.
-    // Narrow the occasional delete check before inspecting nested sources.
-    const rows = await db.prepare(
-      "SELECT id,data FROM people WHERE data LIKE ?",
-      "SELECT id,data FROM people WHERE data::text LIKE ?",
-    ).all(`%${documentId}%`);
-    const people = rows.flatMap((row) => {
-      const person = (typeof row.data === "string"
-        ? JSON.parse(row.data) : row.data) as Person;
-      const linked = personCitations(person).some((source) => source.documentId === documentId);
-      return linked ? [String(row.id)] : [];
-    });
-    const unions = await db.prepare(
-      "SELECT data FROM family_unions WHERE data LIKE ?",
-      "SELECT data FROM family_unions WHERE data::text LIKE ?",
-    ).all(`%${documentId}%`);
-    for (const row of unions) {
-      const union = (typeof row.data === "string" ? JSON.parse(row.data) : row.data) as FamilyUnion;
-      if (unionCitations(union).some((source) => source.documentId === documentId))
-        people.push(...union.participants);
-    }
-    const links = await db.prepare(
-      "SELECT source,target,sources FROM relations WHERE type <> 'spouse' AND sources LIKE ?",
-      "SELECT source,target,sources FROM relations WHERE type <> 'spouse' AND sources::text LIKE ?",
-    ).all(`%${documentId}%`);
-    for (const row of links) {
-      const sources = (typeof row.sources === "string"
-        ? JSON.parse(row.sources) : row.sources) as Source[];
-      if (sources.some((source) => source.documentId === documentId))
-        people.push(String(row.source), String(row.target));
-    }
-    return [...new Set(people)];
   };
   const referencedByCatalog = (documentId: string) =>
     sourceCatalogStore(db).usesDocument(documentId);
@@ -543,12 +472,14 @@ export function documentsHttp({
     // Resolve an expired session before acquiring the archive lock: sessionFor
     // may delete it, while account deletion uses the opposite lock order.
     const session = auth.local ? null : await auth.accountSession(req);
-    if (!auth.local && (!session || session.accountId !== access.userId))
+    if (!auth.local && (!session ||
+        (!memberPreviewTarget(req) && session.accountId !== access.userId)))
       return "denied";
     const archiveId = db.archiveId;
     if (!archiveId) return "denied";
     try {
       return await db.postgresTransaction(async (client) => {
+        let previewExpiresAt: number | null = null;
         await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
         // Concurrent downloads can share this row. Archive writes take it
         // FOR UPDATE before graph, membership and document changes.
@@ -556,7 +487,13 @@ export function documentsHttp({
           "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT", [archiveId],
         );
         if (!archiveRow.rowCount) return "denied";
-        if (!auth.local) {
+        if (memberPreviewTarget(req)) {
+          if (!access.user || !session) return "denied";
+          previewExpiresAt = await assertMemberPreviewDelivery(client, archiveId,
+            session, access.user);
+          if (!previewExpiresAt) return "denied";
+        }
+        if (!auth.local && !memberPreviewTarget(req)) {
           await client.query("SELECT set_config('drevo.account_id',$1,true)",
             [session!.accountId]);
           // Account deletion locks the session before the archive. Never wait
@@ -597,6 +534,7 @@ export function documentsHttp({
         }
         await beforeLockedFileDelivery?.();
         if (res.destroyed) return "sent";
+        if (previewExpiresAt && Date.now() >= previewExpiresAt) return "denied";
         // Hand the first bytes to HTTP synchronously while authorization is
         // held. The rest of a large file may stream after commit, without
         // keeping archive writes blocked by a slow reader.
@@ -638,12 +576,14 @@ export function documentsHttp({
     }
     // Do not call the pooled auth/store helpers inside postgresTransaction.
     const session = auth.local ? null : await auth.accountSession(req);
-    if (!auth.local && (!session || session.accountId !== access.userId))
+    if (!auth.local && (!session ||
+        (!memberPreviewTarget(req) && session.accountId !== access.userId)))
       return "denied";
     const archiveId = db.archiveId;
     if (!archiveId) return "denied";
     try {
       return await db.postgresTransaction(async (client) => {
+        let previewExpiresAt: number | null = null;
         await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
         // Only a scoped reader relies on a projected graph snapshot. Ordinary
         // document readers need the membership and selected document rows, not
@@ -654,7 +594,13 @@ export function documentsHttp({
           )
           : null;
         if (access.scoped && !archiveRow?.rowCount) return "denied";
-        if (!auth.local) {
+        if (memberPreviewTarget(req)) {
+          if (!access.user || !session) return "denied";
+          previewExpiresAt = await assertMemberPreviewDelivery(client, archiveId,
+            session, access.user);
+          if (!previewExpiresAt) return "denied";
+        }
+        if (!auth.local && !memberPreviewTarget(req)) {
           await client.query("SELECT set_config('drevo.account_id',$1,true)",
             [session!.accountId]);
           // Account deletion can lock session before archive; never wait on it.
@@ -719,6 +665,7 @@ export function documentsHttp({
         }
         await beforeLockedMetadataDelivery?.();
         if (res.destroyed) return "sent";
+        if (previewExpiresAt && Date.now() >= previewExpiresAt) return "denied";
         send();
         return "sent";
       });
@@ -1202,22 +1149,49 @@ export function documentsHttp({
         authorId: string,
       ) => actor?.approved === true && actor.id === authorId &&
         canEditArchive(actor);
-      const visibleItems = (
+      const visibleItems = async (
         items: DocumentAnnotation[],
         actor: Awaited<ReturnType<typeof auth.currentUser>>,
-      ) =>
-        items.map((item) => ({
-          ...item,
-          canDelete: canDeleteAnnotation(actor, item.authorId),
-          canEdit: canEditAnnotation(actor, item.authorId),
+        currentAccess: Awaited<ReturnType<typeof visible>>,
+      ) => {
+        const ids = [...new Set(items.map((item) => item.authorId).filter(Boolean))];
+        // Resolve all authors in one archive-scoped query; document reads do
+        // not need to load the entire graph for unrestricted participants.
+        const rows = ids.length ? await db.prepare(
+          `SELECT u.id,p.id AS person_id,p.data FROM users u
+           JOIN people p ON p.id=u.person_id
+           WHERE u.id IN (SELECT value FROM json_each(?))`,
+          `SELECT m.user_id AS id,p.id AS person_id,p.data FROM archive_memberships m
+           JOIN people p ON p.archive_id=m.archive_id AND p.id=m.person_id
+           WHERE m.archive_id=current_setting('drevo.archive_id',true)
+             AND m.user_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))`,
+        ).all(JSON.stringify(ids)) : [];
+        const allowed = new Set(currentAccess.ids);
+        const names = new Map(rows.flatMap((row) => {
+          if (currentAccess.scoped && !allowed.has(String(row.person_id))) return [];
+          const person = (typeof row.data === "string" ? JSON.parse(row.data) : row.data) as Person;
+          const name = fullName(person).trim();
+          return name ? [[String(row.id), name] as const] : [];
         }));
+        return items.map((item) => ({
+          ...item,
+          authorName: names.get(item.authorId) || item.authorName,
+          canDelete: !memberPreviewTarget(req) && canDeleteAnnotation(actor, item.authorId),
+          canEdit: !memberPreviewTarget(req) && canEditAnnotation(actor, item.authorId),
+        }));
+      };
       if (req.method === "GET" && !annotations[2]) {
         const actor = await auth.currentUser(req);
         if (!(await accessStillCurrent(req, access)))
           return json(res, 404, { error: "Документ не найден" });
-        return json(res, 200, {
-          items: visibleItems(JSON.parse(row.annotations), actor),
-        });
+        const value = { items: await visibleItems(JSON.parse(row.annotations), actor, access) };
+        const delivered = await deliverMetadata(req, res, access, [row],
+          new Map([[row.id, personIds]]), value);
+        if (delivered === "denied")
+          return json(res, 404, { error: "Документ не найден" });
+        if (delivered === "busy")
+          return json(res, 409, { error: "Доступ к документу временно занят" });
+        return true;
       }
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Недопустимый источник запроса" });
@@ -1337,7 +1311,7 @@ export function documentsHttp({
           latest,
         );
         await checkedWriteSession(latest.id, issuingSession);
-        return { status, items: visibleItems(items, latest), access: latestAccess,
+        return { status, items: await visibleItems(items, latest, latestAccess), access: latestAccess,
           row: { ...current, annotations: JSON.stringify(items) }, personIds: linked };
       });
       if ("error" in result) {

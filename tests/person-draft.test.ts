@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyPersonDraft } from "../src/domain/person-draft.ts";
+import { applyPersonDraft, rebasePersonDraft } from "../src/domain/person-draft.ts";
 import type { Family, Person } from "../src/domain/types.ts";
 
 const person = (id: string): Person => ({
@@ -16,6 +16,18 @@ const person = (id: string): Person => ({
   generation: 1,
   column: 0,
   sources: [],
+});
+
+test("general sources preserve independent edits and reject competing list replacements", () => {
+  const base = person("a");
+  const fresh = { ...base, sources: [{ title: "Other editor", type: "", reference: "1" }] };
+  const independent = { ...base, birth: "1991" };
+  assert.deepEqual(rebasePersonDraft(base, fresh, independent).sources, fresh.sources);
+  const draft = { ...base, sources: [{ title: "My source", type: "", reference: "2" }] };
+  assert.throws(() => rebasePersonDraft(base, fresh, draft), /Источники изменились/);
+  assert.deepEqual(draft.sources, [{ title: "My source", type: "", reference: "2" }]);
+  assert.deepEqual(rebasePersonDraft(base, { ...base, name: "Changed" }, draft).sources, draft.sources);
+  assert.deepEqual(rebasePersonDraft(base, fresh, fresh).sources, fresh.sources);
 });
 
 test("person draft saves fields and staged parent, spouse and extra link removals together without mutating the archive", () => {

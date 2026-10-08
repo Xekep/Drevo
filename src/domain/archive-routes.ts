@@ -1,4 +1,7 @@
-import { archiveContextAt } from "./archive-context.ts";
+import { archiveContextAt, memberPreviewAt } from "./archive-context.ts";
+
+const innerViewPath = (pathname: string) =>
+  memberPreviewAt(pathname)?.innerPath || archiveContextAt(pathname)?.innerPath || pathname;
 
 export const archivePaths = {
   tree: "/tree",
@@ -86,7 +89,7 @@ type ArchiveDocumentRoute = {
   pageNumber?: number;
 };
 export function archiveDocumentAt(pathname: string): ArchiveDocumentRoute | null {
-  const path = (archiveContextAt(pathname)?.innerPath || pathname).replace(/\/$/, "");
+  const path = innerViewPath(pathname).replace(/\/$/, "");
   if (path === archivePaths.documents)
     return { personId: null, documentId: null };
   const direct = /^\/documents\/([a-f0-9-]{36})(?:\/page\/([1-9]\d{0,3}))?$/i.exec(path);
@@ -123,7 +126,7 @@ export function archiveDocumentAt(pathname: string): ArchiveDocumentRoute | null
 /** Один закодированный сегмент после /people или /photos. */
 export function archiveEntityAt(pathname: string): ArchiveEntity | null {
   const match = /^\/(people|photos)\/([^/]+)\/?$/.exec(
-    archiveContextAt(pathname)?.innerPath || pathname,
+    innerViewPath(pathname),
   );
   if (!match) return null;
   let id: string;
@@ -148,12 +151,15 @@ export function archiveEntityAt(pathname: string): ArchiveEntity | null {
 
 /** Адреса разделов и карточек; неизвестный путь не становится файловым маршрутом. */
 export function archiveViewAt(pathname: string): ArchiveView | null {
+  if (memberPreviewAt(pathname) &&
+      /^\/(?:account|admin|manage)(?:\/|$)/.test(innerViewPath(pathname)))
+    return null;
   if (archiveContextAt(pathname)?.innerPath.replace(/\/$/, "") === archivePaths.admin)
     return "manage";
   const entity = archiveEntityAt(pathname);
   if (entity) return entity.kind === "person" ? "tree" : "gallery";
   if (archiveDocumentAt(pathname)) return "documents";
-  const innerPath = archiveContextAt(pathname)?.innerPath || pathname;
+  const innerPath = innerViewPath(pathname);
   const path = innerPath.length > 1 ? innerPath.replace(/\/$/, "") : innerPath;
   if (path === "/") return "tree";
   if (path === adminMatchesPath || path === legacyAdminMatchesPath) return "manage";

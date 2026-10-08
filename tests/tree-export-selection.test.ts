@@ -61,3 +61,23 @@ test("export scopes use recorded parentage, depth and authorized people", () => 
     !treeExportPeople(restricted, "ancestors", "root", 5).has("grandmother"),
   );
 });
+
+test("blood export includes unmarried co-parents and explicit partners without their ancestors", () => {
+  const data: Family = {
+    ...family,
+    people: family.people.map((p) => p.id === "child"
+      ? { ...p, parents: ["root", "co-parent"] } : p).concat([
+      person("co-parent", ["co-grandparent"]),
+      person("co-grandparent"), person("co-sibling", ["co-grandparent"]),
+      person("civil-partner", ["unrelated"]),
+    ]),
+    unions: [{ id: "civil", type: "civil_union", participants: ["root", "civil-partner"] }],
+  };
+  const before = structuredClone(data);
+  const selected = treeExportPeople(data, "blood", "root");
+  for (const id of ["child", "co-parent", "civil-partner"])
+    assert.ok(selected.has(id), id);
+  for (const id of ["co-grandparent", "co-sibling", "unrelated"])
+    assert.equal(selected.has(id), false, id);
+  assert.deepEqual(data, before);
+});

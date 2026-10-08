@@ -104,7 +104,7 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       accountId: user.id, onOwnRoleChanged: noop, onOwnTierChanged: noop,
     }));
     assert.match(platform, /Резервные копии/);
-    assert.match(platform, /MCP-токены/);
+    assert.doesNotMatch(platform, /MCP-токены/);
     const navigationProps = {
       view: "tree",
       onView: noop,

@@ -1,52 +1,91 @@
-import { useEffect, useState } from "react";
+import { BackupAdmin } from "./backup-admin";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { confirmDiscardChanges } from "../hooks/useUnsavedChanges";
+import {
+  ArrowLeft,
+  Bot,
+  DatabaseBackup,
+  HardDrive,
+  KeyRound,
+  Mail,
+  ScanSearch,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { AdminNavigation } from "./admin-navigation";
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { PlatformStaffRoles } from "./platform-staff-roles";
-import { PlatformAccountTiers } from "./platform-account-tiers";
+import { PlatformAccountsAdmin } from "./platform-accounts-admin";
 import { AiSettingsAdmin } from "./ai-settings-admin";
 import { AiProviderCleanupAdmin } from "./ai-provider-cleanup-admin";
 import { StorageLimitsAdmin } from "./storage-limits-admin";
 import { VkAuthAdmin } from "./vk-auth-admin";
+import { EmailAuthAdmin } from "./email-auth-admin";
 import { ResearchResourcesAdmin } from "./research-resources-admin";
-import { PlatformArchiveTools } from "./platform-archive-tools";
-import type { ArchiveUser } from "../domain/access.ts";
 import "../styles/account.css";
 
-type Section = "roles" | "ai" | "mcp" | "backups" | "storage" | "vk" | "resources";
-const sections: { id: Section; label: string }[] = [
-  { id: "roles", label: "Глобальные роли" },
-  { id: "ai", label: "Yandex AI" },
-  { id: "mcp", label: "MCP-токены" },
-  { id: "backups", label: "Резервные копии" },
-  { id: "storage", label: "Хранилище" },
-  { id: "vk", label: "Вход через VK" },
-  { id: "resources", label: "Ресурсы поиска" },
+type Section =
+  "roles" | "ai" | "backups" | "storage" | "vk" | "email" | "resources";
+const sections: { id: Section; label: string; icon: LucideIcon }[] = [
+  { id: "roles", label: "Пользователи", icon: Users },
+  { id: "ai", label: "Yandex AI", icon: Bot },
+  { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
+  { id: "storage", label: "Хранилище", icon: HardDrive },
+  { id: "vk", label: "Вход через VK", icon: KeyRound },
+  { id: "email", label: "Вход по email", icon: Mail },
+  { id: "resources", label: "Ресурсы поиска", icon: ScanSearch },
 ];
-type AvailableArchive = { id: string; title: string; approved: boolean; current: boolean };
+type AvailableArchive = {
+  id: string;
+  title: string;
+  approved: boolean;
+  current: boolean;
+};
 
 /** Account-scoped entry. Archive-specific AI settings are selected explicitly. */
-export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, onOwnTierChanged,
-  primaryUser, local = false, showRoles = true }: {
+export default function PlatformSettingsPage({
+  accountId,
+  onOwnRoleChanged,
+  onOwnTierChanged,
+  showRoles = true,
+  onDirtyChange,
+}: {
   accountId: string;
   onOwnRoleChanged: (role: "admin" | "researcher" | null) => void;
   onOwnTierChanged: (fullAccess: boolean) => void;
-  primaryUser?: ArchiveUser | null;
-  local?: boolean;
   showRoles?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [section, setSection] = useState<Section>(showRoles ? "roles" : "ai");
   const [archives, setArchives] = useState<AvailableArchive[]>([]);
   const [archivesReady, setArchivesReady] = useState(false);
   const [aiArchiveId, setAiArchiveId] = useState("");
+  const aiDirty = useRef(false);
+  const reportAiDirty = useCallback(
+    (dirty: boolean) => {
+      aiDirty.current = dirty;
+      onDirtyChange?.(dirty);
+    },
+    [onDirtyChange],
+  );
   useEffect(() => {
     if (section !== "ai") return;
     const controller = new AbortController();
-    void archiveFetch("/api/account/archives", { cache: "no-store", signal: controller.signal })
-      .then(async (response) => response.ok ? response.json() : null)
+    void archiveFetch("/api/account/archives", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => (response.ok ? response.json() : null))
       .then((body: { archives?: AvailableArchive[] } | null) => {
         if (controller.signal.aborted) return;
-        const available = body?.archives?.filter((archive) => archive.approved && !archive.current) || [];
+        const available =
+          body?.archives?.filter(
+            (archive) => archive.approved && !archive.current,
+          ) || [];
         setArchives(available);
-        setAiArchiveId((current) => available.some((archive) => archive.id === current) ? current : "");
+        setAiArchiveId((current) =>
+          available.some((archive) => archive.id === current) ? current : "",
+        );
         setArchivesReady(true);
       })
       .catch(() => {
@@ -59,61 +98,155 @@ export default function PlatformSettingsPage({ accountId, onOwnRoleChanged, onOw
   }, [section]);
 
   return (
-    <main className="account-page platform-settings-page">
-      <div className="account-shell">
-        <div className="account-heading">
-          <span className="account-eyebrow">Drevo</span>
-          <h1>Админка платформы</h1>
-          <p>Глобальные роли и настройки платформы. Управление конкретным древом открывается из его меню.</p>
+    <main className="account-page admin-page platform-settings-page">
+      <aside className="admin-sidebar">
+        <div className="admin-mark">
+          <span className="admin-mark-icon">
+            <ShieldCheck size={20} aria-hidden="true" />
+          </span>
+          <span>
+            <small>DREVO</small>
+            <b>Админка платформы</b>
+          </span>
         </div>
-        <nav className="platform-settings-tabs" aria-label="Разделы админки платформы">
-          {sections.filter((item) => showRoles || item.id !== "roles").map((item) => (
-            <button key={item.id} type="button" aria-current={section === item.id ? "page" : undefined}
-              onClick={() => {
-                if (item.id === "ai" && section !== "ai") setArchivesReady(false);
-                setSection(item.id);
-              }}>{item.label}</button>
-          ))}
-        </nav>
-        {showRoles && section === "roles" && <>
-          <PlatformStaffRoles currentAccountId={accountId}
-            onOwnRoleChanged={onOwnRoleChanged} />
-          <PlatformAccountTiers currentAccountId={accountId} onOwnTierChanged={onOwnTierChanged} />
-        </>}
-        {section === "ai" && <div className="platform-ai-settings">
-          <AiProviderCleanupAdmin platform />
-          {!archivesReady ? <p role="status">Проверяем доступные архивы…</p> : <>
-          <label className="account-card platform-ai-archive">
-            Архив для Yandex AI
-            <select value={aiArchiveId} onChange={(event) => setAiArchiveId(event.target.value)}>
-              <option value="">Основной архив</option>
-              {archives.map((archive) => <option key={archive.id} value={archive.id}>{archive.title}</option>)}
-            </select>
-            <small>Настройки ИИ задаются отдельно для выбранного архива.</small>
-          </label>
-          <AiSettingsAdmin key={aiArchiveId} archiveId={aiArchiveId || null}
-            showCleanup={false} />
-          </>}
-        </div>}
-        {(section === "mcp" || section === "backups") && (
-          <PlatformArchiveTools key={section} kind={section} accountId={accountId}
-            primaryUser={primaryUser} local={local} />
+        <AdminNavigation
+          groups={[
+            {
+              label: "Настройки",
+              items: sections.filter(
+                (item) => showRoles || item.id !== "roles",
+              ),
+            },
+          ]}
+          selected={section}
+          label="Разделы админки платформы"
+          onSelect={(next) => {
+            if (next !== section && !confirmDiscardChanges(aiDirty.current))
+              return;
+            if (next === "ai" && section !== "ai") setArchivesReady(false);
+            setSection(next);
+          }}
+        />
+        <a
+          className="admin-back"
+          href="/account"
+          aria-label="Вернуться в профиль"
+          title="Вернуться в профиль"
+          onClick={(event) => {
+            if (
+              !event.ctrlKey &&
+              !event.metaKey &&
+              !event.shiftKey &&
+              !event.altKey &&
+              !confirmDiscardChanges(aiDirty.current)
+            )
+              event.preventDefault();
+          }}
+        >
+          <ArrowLeft size={16} aria-hidden="true" />
+          <span>Вернуться в профиль</span>
+        </a>
+      </aside>
+      <div className="admin-content platform-settings-content">
+        <header className="admin-page-header">
+          <h1>Админка платформы</h1>
+          <p className="admin-subtitle">
+            Глобальные роли и настройки платформы. Управление конкретным древом
+            открывается из его меню.
+          </p>
+        </header>
+        {showRoles && section === "roles" && (
+          <PlatformAccountsAdmin
+            currentAccountId={accountId}
+            onOwnRoleChanged={onOwnRoleChanged}
+            onOwnTierChanged={onOwnTierChanged}
+          />
         )}
-        {section === "storage" && <section className="account-card">
-          <div className="account-card-title"><div><span className="account-eyebrow">Платформа</span>
-            <h2>Лимиты хранилища</h2></div></div>
-          <StorageLimitsAdmin />
-        </section>}
-        {section === "vk" && <section className="account-card">
-          <div className="account-card-title"><div><span className="account-eyebrow">Платформа</span>
-            <h2>Вход через VK</h2></div></div>
-          <VkAuthAdmin />
-        </section>}
-        {section === "resources" && <section className="account-card account-card-wide">
-          <div className="account-card-title"><div><span className="account-eyebrow">Платформа</span>
-            <h2>Ресурсы поиска</h2></div></div>
-          <ResearchResourcesAdmin />
-        </section>}
+        {section === "ai" && (
+          <div className="platform-ai-settings">
+            {!archivesReady ? (
+              <p role="status">Проверяем доступные архивы…</p>
+            ) : (
+              <>
+                <label className="platform-ai-archive">
+                  Древо
+                  <select
+                    aria-label="Древо для Yandex AI"
+                    value={aiArchiveId}
+                    onChange={(event) => {
+                      if (!confirmDiscardChanges(aiDirty.current)) return;
+                      setAiArchiveId(event.target.value);
+                    }}
+                  >
+                    <option value="">Основной архив</option>
+                    {archives.map((archive) => (
+                      <option key={archive.id} value={archive.id}>
+                        {archive.title}
+                      </option>
+                    ))}
+                  </select>
+                  <small>
+                    Настройки ИИ задаются отдельно для выбранного архива.
+                  </small>
+                </label>
+                <AiSettingsAdmin
+                  key={aiArchiveId}
+                  archiveId={aiArchiveId || null}
+                  showCleanup={false}
+                  onDirtyChange={reportAiDirty}
+                />
+              </>
+            )}
+            <AiProviderCleanupAdmin platform />
+          </div>
+        )}
+        {section === "backups" && (
+          <BackupAdmin scope="platform" archiveId={null} />
+        )}
+        {section === "storage" && (
+          <section className="account-card">
+            <div className="account-card-title">
+              <div>
+                <span className="account-eyebrow">Платформа</span>
+                <h2>Лимиты хранилища</h2>
+              </div>
+            </div>
+            <StorageLimitsAdmin />
+          </section>
+        )}
+        {section === "vk" && (
+          <section className="account-card">
+            <div className="account-card-title">
+              <div>
+                <span className="account-eyebrow">Платформа</span>
+                <h2>Вход через VK</h2>
+              </div>
+            </div>
+            <VkAuthAdmin />
+          </section>
+        )}
+        {section === "email" && (
+          <section className="account-card">
+            <div className="account-card-title">
+              <div>
+                <span className="account-eyebrow">Платформа</span>
+                <h2>Вход по email</h2>
+              </div>
+            </div>
+            <EmailAuthAdmin />
+          </section>
+        )}
+        {section === "resources" && (
+          <section className="account-card account-card-wide">
+            <div className="account-card-title">
+              <div>
+                <span className="account-eyebrow">Платформа</span>
+                <h2>Ресурсы поиска</h2>
+              </div>
+            </div>
+            <ResearchResourcesAdmin />
+          </section>
+        )}
       </div>
     </main>
   );

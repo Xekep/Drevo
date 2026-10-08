@@ -29,6 +29,8 @@ import "./styles/design-refinement.css";
 import "./styles/entry-sequence.css";
 import "./styles/public-people.css";
 import { ArchiveLoading } from "./components/archive-loading";
+import { memberPreviewAt } from "./domain/archive-context.ts";
+import { archiveViewAt } from "./domain/archive-routes.ts";
 
 const App = lazy(() => import("./App"));
 const SharedTree = lazy(() => import("./components/shared-tree"));
@@ -76,7 +78,7 @@ const pendingInvite = (() => {
 
 function Entry() {
   const [ready, setReady] = useState(
-    !!join || !pendingInvite || pendingInvite === location.pathname,
+    !!join || !!memberPreviewAt(location.pathname) || !pendingInvite || pendingInvite === location.pathname,
   );
   useEffect(() => {
     if (ready) return;
@@ -134,7 +136,7 @@ class RootErrorBoundary extends Component<
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RootErrorBoundary>
-      <Suspense fallback={<ArchiveLoading />}>
+      <Suspense fallback={<ArchiveLoading canvas={!!sharedToken || archiveViewAt(location.pathname) === "tree"} />}>
         <Entry />
       </Suspense>
     </RootErrorBoundary>

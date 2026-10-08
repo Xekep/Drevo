@@ -59,7 +59,7 @@ export function validateBackupSettings(value: unknown): BackupSettings {
   };
 }
 
-export async function backupStore(db: StoreDatabase, now = Date.now) {
+export async function backupStore(db: StoreDatabase, now = Date.now, treeOnly = false) {
   const audit = auditStore(db);
   await db
     .prepare(
@@ -75,7 +75,7 @@ export async function backupStore(db: StoreDatabase, now = Date.now) {
       )
       .get())!;
     return {
-      value: JSON.parse(String(row.data)) as BackupSettings,
+      value: treeOnly ? { ...defaults, enabled: false, keepCount: 5 } : JSON.parse(String(row.data)) as BackupSettings,
       next: Number(row.next_run),
     };
   }
@@ -149,6 +149,7 @@ export async function backupStore(db: StoreDatabase, now = Date.now) {
         "Резервная копия не найдена. Обновите список.",
       );
     const r = JSON.parse(String(row.data)) as BackupRecord;
+    if (treeOnly && !r.name.startsWith("tree-")) throw new BackupInputError("Копия не относится к ручным копиям древа.");
     return r;
   }
 
@@ -164,12 +165,13 @@ export async function backupStore(db: StoreDatabase, now = Date.now) {
     return (
       await db
         .prepare(
-          "SELECT data FROM backup_catalog ORDER BY created_at DESC,id DESC",
-          "SELECT data FROM backup_catalog ORDER BY created_at DESC,id DESC",
+          `SELECT data FROM backup_catalog WHERE name LIKE '${treeOnly ? "tree-%" : "%"}' ORDER BY created_at DESC,id DESC`,
+          `SELECT data FROM backup_catalog WHERE name LIKE '${treeOnly ? "tree-%" : "%"}' ORDER BY created_at DESC,id DESC`,
         )
         .all()
     )
       .map((row) => JSON.parse(String(row.data)) as BackupRecord)
+      .filter((item) => !treeOnly || item.name.startsWith("tree-"))
       .filter(
         (item) =>
           item.storage === config.storage &&
@@ -191,16 +193,16 @@ export async function backupStore(db: StoreDatabase, now = Date.now) {
         records: (
           await db
             .prepare(
-              "SELECT data FROM backup_catalog ORDER BY created_at DESC,id DESC LIMIT 20 OFFSET ?",
-              "SELECT data FROM backup_catalog ORDER BY created_at DESC,id DESC LIMIT 20 OFFSET ?",
+              `SELECT data FROM backup_catalog WHERE name LIKE '${treeOnly ? "tree-%" : "%"}' ORDER BY created_at DESC,id DESC LIMIT 20 OFFSET ?`,
+              `SELECT data FROM backup_catalog WHERE name LIKE '${treeOnly ? "tree-%" : "%"}' ORDER BY created_at DESC,id DESC LIMIT 20 OFFSET ?`,
             )
             .all(offset)
         ).map((row) => JSON.parse(String(row.data)) as BackupRecord),
         total: Number(
           (await db
             .prepare(
-              "SELECT count(*) AS n FROM backup_catalog",
-              "SELECT count(*) AS n FROM backup_catalog",
+              `SELECT count(*) AS n FROM backup_catalog WHERE name LIKE '${treeOnly ? "tree-%" : "%"}'`,
+              `SELECT count(*) AS n FROM backup_catalog WHERE name LIKE '${treeOnly ? "tree-%" : "%"}'`,
             )
             .get())!.n,
         ),

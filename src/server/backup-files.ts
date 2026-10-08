@@ -28,6 +28,7 @@ import type {
 import { BackupInputError } from "./backup-store.ts";
 import { backupProcess } from "./backup-process.ts";
 import { backupRemote, type BackupRemote } from "./backup-remote.ts";
+import { stageTreeBackupFiles } from "./tree-backup-files.ts";
 const hour = 3600000;
 const filePattern = /^full-\d{8}T\d{6}Z(?:-[a-f0-9-]{36})?\.tar\.gz$/;
 const maxSize = 12 * 1024 ** 3;
@@ -44,18 +45,19 @@ export function backupFiles(
   now = Date.now,
   databaseBytes = async () => (await stat(databasePath)).size,
   archiveId?: string,
+  treeOnly = false,
 ) {
   const root = dirname(databasePath),
-    directory = join(root, "backups");
+    directory = join(root, treeOnly ? "tree-backups" : "backups");
   const remote = suppliedRemote || backupRemote(root);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   function assertName(name: string) {
-    if (!filePattern.test(name))
+    if (!(treeOnly ? /^tree-\d{8}T\d{6}Z-[a-f0-9-]{36}\.tar\.gz$/ : filePattern).test(name))
       throw new BackupInputError("Недопустимое имя резервной копии.");
   }
   function* existingCopies(): Generator<BackupRecord> {
     for (const name of readdirSync(directory)) {
-      if (!filePattern.test(name)) continue;
+      if (!(treeOnly ? /^tree-\d{8}T\d{6}Z-[a-f0-9-]{36}\.tar\.gz$/ : filePattern).test(name)) continue;
       try {
         const info = lstatSync(join(directory, name));
         if (!info.isFile()) continue;
@@ -86,7 +88,7 @@ export function backupFiles(
         .toISOString()
         .replace(/[-:]/g, "")
         .replace(/\.\d{3}Z$/, "Z");
-    const name = "full-" + stamp + "-" + id + ".tar.gz",
+    const name = (treeOnly ? "tree-" : "full-") + stamp + "-" + id + ".tar.gz",
       file = join(stage, name);
     try {
       await chmod(stage, 0o700);
@@ -104,7 +106,7 @@ export function backupFiles(
           await rm(abandoned, { recursive: true, force: true });
       }
       let needed = (await databaseBytes()) * 2;
-      for (const entry of await readdir(join(root, "uploads"), {
+      for (const entry of treeOnly ? [] : await readdir(join(root, "uploads"), {
         withFileTypes: true,
       })) {
         if (entry.isFile() && !entry.name.startsWith("."))
@@ -122,12 +124,13 @@ export function backupFiles(
           fileURLToPath(new URL("./backup-worker.mjs", import.meta.url)),
           databasePath,
           join(stage, "drevo.sqlite"),
-          ...(archiveId ? [archiveId] : []),
+          archiveId || "",
+          treeOnly ? "tree" : "legacy",
         ],
         signal,
       );
       const files = ["drevo.sqlite"];
-      try {
+      if (!treeOnly) try {
         const key = await lstat(databasePath + ".secrets.key");
         if (!key.isFile() || key.size !== 32)
           throw new BackupInputError(
@@ -141,6 +144,7 @@ export function backupFiles(
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
+      if (treeOnly) await stageTreeBackupFiles(join(stage, "drevo.sqlite"), root, join(stage, "uploads"));
       await backupProcess(
         "tar",
         [
@@ -151,7 +155,7 @@ export function backupFiles(
           stage,
           ...files,
           "-C",
-          root,
+          treeOnly ? stage : root,
           "uploads",
         ],
         signal,

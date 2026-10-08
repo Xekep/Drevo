@@ -322,8 +322,9 @@ export function portableImportHttp(
         if (capacity.people + summary.people > capacity.peopleLimit)
           limits.push(`Лимит людей: ${capacity.peopleLimit}`);
         if (
-          capacity.mediaBytes === null ||
-          capacity.mediaBytes + summary.bytes > capacity.mediaLimitBytes
+          summary.bytes > 0 &&
+          (capacity.mediaBytes === null ||
+            capacity.mediaBytes + summary.bytes > capacity.mediaLimitBytes)
         )
           limits.push("Лимит фотографий и документов: 500 МБ");
       }

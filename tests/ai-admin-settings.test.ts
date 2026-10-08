@@ -164,6 +164,57 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
     assert.equal(requests.at(-1)?.project, "folder-1");
     assert.equal(requests.at(-1)?.body.model, yandexModel);
 
+    // Preview validates the same draft as save, but does not persist credentials,
+    // role profiles or common settings, and uses the role's unsaved model.
+    const draftSecret = "AQVN-preview-only-secret-12345";
+    const draft = {
+      enabled: true,
+      folderId: "folder-1",
+      model: yandexModel,
+      apiKey: draftSecret,
+      requestsPerMinute: 6,
+      dailyRequests: 40,
+      dailyTokens: 4000,
+      roleProfiles: {
+        ...saved.roleProfiles,
+        researcher: {
+          ...saved.defaultRoleProfile,
+          model: deepseekModel,
+        },
+      },
+    };
+    const preview = await fetch(base + "/api/admin/ai/test?role=researcher", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    });
+    assert.equal(preview.status, 200);
+    const previewText = await preview.text();
+    assert.equal(JSON.parse(previewText).model, deepseekModel);
+    assert.equal(previewText.includes(draftSecret), false);
+    assert.equal(requests.at(-1)?.authorization, "Api-Key " + draftSecret);
+    assert.equal(requests.at(-1)?.body.model, deepseekModel);
+    const unchanged = await fetch(base + "/api/admin/ai").then((r) => r.json());
+    assert.equal(unchanged.model, yandexModel);
+    assert.equal(unchanged.roleProfiles.researcher, null);
+    assert.equal(unchanged.limits.dailyRequests, 10);
+    assert.equal(
+      (
+        await app.archive.db
+          .prepare("SELECT api_key_ciphertext FROM ai_settings WHERE id=1")
+          .get()
+      )?.api_key_ciphertext,
+      row.api_key_ciphertext,
+    );
+    const callCount = requests.length;
+    const invalidDraft = await fetch(base + "/api/admin/ai/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...draft, dailyTokens: -1 }),
+    });
+    assert.equal(invalidDraft.status, 400);
+    assert.equal(requests.length, callCount);
+
     const chat = await fetch(base + "/api/ai/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

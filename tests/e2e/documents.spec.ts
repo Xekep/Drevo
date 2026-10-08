@@ -47,6 +47,10 @@ test("PDF без привязки остаётся в общем каталог�
   await expect.poll(async () =>
     (await book.locator(".BRpagecontainer").first().boundingBox())?.width || 0,
   ).toBeGreaterThan(testInfo.project.name === "mobile" ? 190 : 350);
+  await expect(reader.locator(".pdf-book-sidebar")).toBeHidden();
+  await expect(book.locator("body")).not.toHaveClass(/drevo-annotating/);
+  await expect(book.getByRole("button", { name: "Комментарии" }))
+    .toHaveAttribute("aria-expanded", "false");
   await expect(page).toHaveURL(/\/documents\/[a-f0-9-]{36}$/);
   const documentUrl = page.url();
   const documentId = new URL(documentUrl).pathname.split("/").at(-1);
@@ -110,6 +114,8 @@ test(`скан ${format} открывается в ридере и по пост
   await expect(image).toBeVisible();
   await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth))
     .toBe(360);
+  await expect(reader.locator(".pdf-book-sidebar")).toBeHidden();
+  await expect(book.locator("body")).not.toHaveClass(/drevo-annotating/);
   await expect(page).toHaveURL(/\/documents\/[a-f0-9-]{36}$/);
   const url = page.url();
   await expect(book.getByRole("button", { name: "Лупа" })).toBeVisible();
@@ -285,24 +291,10 @@ test("источник карточки связывается с PDF без к�
   await page.getByRole("button", { name: "Добавить событие" }).click();
   const event = page.locator(".life-event-editor").last();
   await event.locator(".event-extra > summary").click();
-  await event.getByRole("button", { name: "Добавить источник" }).click();
-  const eventSource = event.locator(".event-source-editor").last();
-  await eventSource.getByRole("button", { name: "Связать с документом" }).click();
-  await eventSource.getByLabel("Найти документ человека").fill(title);
-  await eventSource.getByRole("button", { name: title, exact: true }).click();
-  await eventSource.getByRole("spinbutton", { name: "Страница документа" }).fill("2");
+  await expect(event.getByRole("button", { name: "Добавить источник" })).toHaveCount(0);
+  await event.getByLabel("Дата", { exact: true }).fill("1991");
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
-  await page
-    .locator(".life-event")
-    .last()
-    .locator(".event-sources > summary")
-    .click();
-  await expect(
-    page
-      .locator(".life-event")
-      .last()
-      .getByRole("link", { name: "Открыть документ" }),
-  ).toHaveAttribute("href", `/documents/${id}/page/2`);
+  await expect(page.locator(".life-event").last()).toContainText("1991");
   await page.getByRole("tab", { name: /Источники/ }).click();
   const card = page.locator(".source-card").filter({ hasText: title });
   await expect(card.getByRole("link", { name: "Открыть документ" })).toHaveAttribute(
@@ -575,6 +567,16 @@ test("участник загружает PDF и читает страницы �
   await form.getByRole("button", { name: "Добавить документ" }).click();
   const newReader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await expect(newReader).toBeVisible();
+  const newBook = newReader.frameLocator("iframe.pdf-book-frame");
+  await expect(newReader.locator(".pdf-book-sidebar")).toBeHidden();
+  await expect(newBook.locator("body")).not.toHaveClass(/drevo-annotating/);
+  await newBook.getByRole("button", { name: "Комментарии" }).click();
+  await expect(
+    newReader.getByRole("button", { name: "Выделить фрагмент" }),
+  ).toBeVisible();
+  await newReader.getByRole("button", { name: "Выделить фрагмент" }).click();
+  await expect(newBook.locator("body")).toHaveClass(/drevo-annotating/);
+  await newBook.getByRole("button", { name: "Комментарии" }).click();
   await expect(
     newReader.getByRole("button", { name: "Отменить выделение" }),
   ).toBeVisible();
@@ -867,6 +869,29 @@ test("clicking a document mark opens comments, selects its entry and scrolls pas
   await expect(reader.locator(".pdf-book-sidebar")).toBeVisible();
   await expect(target).toHaveClass("is-active");
   await expect(mark).toBeFocused();
+
+  // A new fragment must reveal its form, rather than the previously active
+  // comment at the bottom of the long list.
+  await reader.locator(".pdf-book-add-comment").click();
+  await expect(reader.locator(".pdf-book-sidebar")).toBeHidden();
+  await expect(book.locator("body")).toHaveClass(/drevo-annotating/);
+  const layer = book.locator('.BRpage-visible[data-index="0"] .drevo-page-layer').first();
+  const bounds = (await layer.boundingBox())!;
+  await page.mouse.move(bounds.x + bounds.width * 0.2, bounds.y + bounds.height * 0.35);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width * 0.45, bounds.y + bounds.height * 0.48, { steps: 5 });
+  await page.mouse.up();
+  const form = reader.locator(".pdf-book-comment-form");
+  await expect(form).toBeVisible();
+  await expect.poll(() => form.evaluate((node) => {
+    const panel = node.closest(".pdf-book-comments")!;
+    const viewport = panel.getBoundingClientRect();
+    const field = node.getBoundingClientRect();
+    return panel.scrollTop === 0 && field.top >= viewport.top && field.bottom <= viewport.bottom;
+  })).toBe(true);
+  await form.getByRole("textbox", { name: "Комментарий к фрагменту" }).fill("Новый комментарий");
+  await expect(form.getByRole("button", { name: "Сохранить", exact: true })).toBeEnabled();
+  await page.screenshot({ path: info.outputPath("comment-form-at-top.png") });
 });
 
 test("document comment clicks keep the panel open and text selection does not navigate", async ({ page }, info) => {

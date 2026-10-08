@@ -7,6 +7,7 @@ import type { treePreferencesStore } from "./tree-preferences.ts";
 import type { researchCatalogStore } from "./research-catalog.ts";
 import type { ResearchDirectoryCategory } from "../shared/research-catalog.ts";
 import { peopleSearchStore } from "./people-search.ts";
+import { scopedArchiveReader } from "./scoped-archive-reader.ts";
 import { analysisExport } from "../domain/analysis-export.ts";
 import {
   archiveOverview,
@@ -20,6 +21,7 @@ import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 import { AccountSessionBusy, AccountSessionExpired, assertActiveAccountSession } from "./account-session-guard.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
+import { memberPreviewTarget, assertMemberPreviewStoreDelivery } from "./member-preview-access.ts";
 
 export function archiveQueryHttp({
   archive,
@@ -39,6 +41,7 @@ export function archiveQueryHttp({
   beforeLockedDelivery?: () => Promise<void>;
 }) {
   const searchPeople = peopleSearchStore(archive.db);
+  const scopedIds = scopedArchiveReader(archive);
   const publicSearchLimiter = createSharedRequestLimiter(archive.db, "public-people-search", {
     windowMs: 60_000,
     limit: 60,
@@ -59,7 +62,7 @@ export function archiveQueryHttp({
   ) => user ? {
     ...user,
     platformAdmin: await auth.isPlatformAdmin(req),
-    aiAvailable: user.approved === true && isArchiveOwner(user)
+    aiAvailable: !memberPreviewTarget(req) && user.approved === true && isArchiveOwner(user)
       ? await accountAiAccess(archive.db, user.id, auth.local)
       : false,
   } : null;
@@ -85,6 +88,7 @@ export function archiveQueryHttp({
     if (!readTree) {
       data.family.people = [];
       data.family.links = [];
+      data.family.unions = [];
       data.family.photos = data.family.photos?.map((photo) => ({
         ...photo,
         tags: [],
@@ -96,8 +100,10 @@ export function archiveQueryHttp({
     return {
       ...data,
       canEdit: await auth.canEdit(req),
-      local: auth.local,
+      local: auth.local && !memberPreviewTarget(req),
       user: await exposedUser(req, user),
+      ...(memberPreviewTarget(req) && user
+        ? { participantPreview: { id: user.id, name: user.name } } : {}),
       readTree,
       readPhotos,
       reverseTimeline:
@@ -115,6 +121,7 @@ export function archiveQueryHttp({
     const path = url.pathname;
     if (
       path !== "/api/people/search" &&
+      path !== "/api/account/portrait" &&
       path !== "/api/research-resources" &&
       path !== "/api/export.json" &&
       path !== "/api/family" &&
@@ -127,7 +134,7 @@ export function archiveQueryHttp({
     const memberCanRead = visitor?.approved === true;
     const scoped = isScopedUser(visitor);
     // An unscoped export must not release people removed after its snapshot.
-    const stableRevision = scoped || path === "/api/export" || path === "/api/export.json" ||
+    const stableRevision = !!memberPreviewTarget(req) || scoped || path === "/api/account/portrait" || path === "/api/export" || path === "/api/export.json" ||
       (path === "/api/people/search" && !memberCanRead);
     const startRevision = stableRevision
       ? Number((await revisionQuery.get())?.revision)
@@ -144,6 +151,7 @@ export function archiveQueryHttp({
         current?.approved === visitor?.approved &&
         current?.personId === visitor?.personId &&
         current?.treeAccess === visitor?.treeAccess &&
+        current?.archiveOwner === visitor?.archiveOwner &&
         settings.publicTree === access.publicTree &&
         settings.publicAlbums === access.publicAlbums;
     };
@@ -168,23 +176,36 @@ export function archiveQueryHttp({
       const body = JSON.stringify(value);
       await beforeDelivery?.();
       const valid = await archive.db.transaction(async () => {
+        let previewExpiresAt: number | null = null;
         // Archive writes and visibility changes lock this row first. A session
         // deletion may lock its session first, so do not wait for that row.
         if (visitor && !auth.local) {
           const session = await auth.accountSession(req);
-          if (!session || session.accountId !== visitor.id) return false;
-          await assertActiveAccountSession(archive.db, visitor.id, session.tokenHash);
-          const archiveId = archive.db.archiveId;
-          if (!archiveId) return false;
-          const membership = await archive.db.prepare("", `SELECT 1 FROM archive_memberships
-            WHERE archive_id=? AND user_id=? FOR SHARE`).get(archiveId, visitor.id);
-          if (!membership) return false;
+          if (!session) return false;
+          if (memberPreviewTarget(req)) {
+            if (visitor.id !== memberPreviewTarget(req)) return false;
+            previewExpiresAt = await assertMemberPreviewStoreDelivery(archive.db,
+              session, visitor);
+            if (!previewExpiresAt) return false;
+          } else {
+            if (session.accountId !== visitor.id) return false;
+            await assertActiveAccountSession(archive.db, visitor.id, session.tokenHash);
+            const archiveId = archive.db.archiveId;
+            if (!archiveId) return false;
+            const membership = await archive.db.prepare("", `SELECT 1 FROM archive_memberships
+              WHERE archive_id=? AND user_id=? FOR SHARE`).get(archiveId, visitor.id);
+            if (!membership) return false;
+          }
         }
         if (!await accessStillCurrent(expectedRevision)) return false;
         await beforeLockedDelivery?.();
         if (res.destroyed) return true;
+        const remaining = previewExpiresAt
+          ? Math.min(5_000, previewExpiresAt - Date.now()) : 5_000;
+        if (remaining <= 0) return false;
+        if (previewExpiresAt && Date.now() >= previewExpiresAt) return false;
         const delivered = finished(res, { cleanup: true });
-        const timeout = setTimeout(() => res.destroy(), 5_000);
+        const timeout = setTimeout(() => res.destroy(), remaining);
         timeout.unref();
         try {
           res.writeHead(200, {
@@ -208,6 +229,21 @@ export function archiveQueryHttp({
       });
       return valid || res.headersSent || res.destroyed ? true : changed();
     };
+
+    if (path === "/api/account/portrait") {
+      if (req.method !== "GET") {
+        res.setHeader("Allow", "GET");
+        return json(res, 405, { error: "Ожидается GET" });
+      }
+      if (!memberCanRead || memberPreviewTarget(req))
+        return json(res, 401, { error: "Войдите для просмотра своего портрета" });
+      const row = visitor?.personId ? await archive.db.prepare(
+        "SELECT json_extract(data,'$.photo') AS photo FROM people WHERE id=?",
+        "SELECT data->>'photo' AS photo FROM people WHERE id=? AND archive_id=current_setting('drevo.archive_id',true)",
+      ).get(visitor.personId) : undefined;
+      return deliverArchiveJson({ personId: visitor?.personId || null,
+        photo: typeof row?.photo === "string" ? row.photo : null });
+    }
 
     if (path === "/api/research-resources") {
       if (!memberCanRead && !access.publicTree)
@@ -259,7 +295,7 @@ export function archiveQueryHttp({
           const pageToken = `${meta.revision}:${Number(readTree)}:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
           if (url.searchParams.get("token") !== pageToken) return null;
           const scoped = isScopedUser(visitor)
-            ? (await scopedSnapshot(visitor)).family
+            ? await scopedIds(visitor)
             : null;
           if (collection === "people")
             return {
@@ -267,25 +303,22 @@ export function archiveQueryHttp({
               pageToken,
               items: readTree
                 ? (scoped
-                    ? scoped.people.slice(offset, offset + archivePageSize)
+                    ? await archive.peoplePage(offset, archivePageSize, scoped)
                     : await archive.peoplePage(offset, archivePageSize)
                   ).map(personDetails)
                 : [],
-              total: readTree ? (scoped?.people.length ?? meta.people) : 0,
+              total: readTree ? (scoped?.size ?? meta.people) : 0,
             };
           return {
             revision: meta.revision,
             pageToken,
             items: readPhotos
               ? (scoped
-                  ? (scoped.photos || []).slice(
-                      offset,
-                      offset + archivePageSize,
-                    )
+                  ? await archive.photoPage(offset, archivePageSize, { visible: scoped, userId: visitor!.id })
                   : await archive.photoPage(offset, archivePageSize)
                 ).map((photo) => (readTree ? photo : { ...photo, tags: [] }))
               : [],
-            total: readPhotos ? (scoped?.photos?.length ?? meta.photos) : 0,
+            total: readPhotos ? (scoped ? await archive.photoCount({ visible: scoped, userId: visitor!.id }) : meta.photos) : 0,
           };
         }, true);
         if (!page)
@@ -302,13 +335,15 @@ export function archiveQueryHttp({
         let data: Awaited<ReturnType<typeof archive.overview>>;
         if (readTree) {
           if (isScopedUser(visitor)) {
-            const { family: scoped, revision } = await scopedSnapshot(visitor);
+            const overview = await archive.overview();
+            const scoped = projectFamilyForUser(overview.family, visitor);
+            const ids = new Set(scoped.people.map(person => person.id));
             data = {
               family: archiveOverview(scoped),
-              revision,
+              revision: overview.revision,
               totals: {
                 people: scoped.people.length,
-                photos: scoped.photos?.length || 0,
+                photos: await archive.photoCount({ visible: ids, userId: visitor.id }),
               },
             };
           } else data = await archive.overview(readTree);
@@ -336,8 +371,10 @@ export function archiveQueryHttp({
           family: data.family,
           revision: data.revision,
           canEdit,
-          local: auth.local,
+          local: auth.local && !memberPreviewTarget(req),
           user: await exposedUser(req, visitor),
+          ...(memberPreviewTarget(req) && visitor
+            ? { participantPreview: { id: visitor.id, name: visitor.name } } : {}),
           readTree,
           readPhotos,
           reverseTimeline:
@@ -390,11 +427,7 @@ export function archiveQueryHttp({
       if (query.length > 100)
         return json(res, 400, { error: "Слишком длинный поисковый запрос" });
       const visible = isScopedUser(visitor)
-        ? new Set(
-            (await scopedSnapshot(visitor)).family.people.map(
-              (person) => person.id,
-            ),
-          )
+        ? await scopedIds(visitor)
         : undefined;
       const matches = await searchPeople(query, visible);
       return deliverArchiveJson(matches);

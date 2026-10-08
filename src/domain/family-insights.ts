@@ -7,6 +7,7 @@ import {
   validDate,
 } from "./dates.ts";
 import { archiveSummary } from "./archive-summary.ts";
+import { averageAdultLifespansBySex } from "./lifespan-statistics.ts";
 import {
   analyzeArchiveWarnings,
   type ArchiveWarning,
@@ -269,7 +270,7 @@ export function analyzeFamilyInsights(
     children = childCounts(people),
     spousePairs = uniqueSpousePairs(people),
     lifespans = completedLifespans(people),
-    adultLifespans = lifespans.filter(({ age }) => age >= 18),
+    averageLifespans = averageAdultLifespansBySex(people, currentYear),
     knownBirths = people.flatMap((person) => {
       const year = yearOf(person.birth);
       return year === null ? [] : [{ person, year }];
@@ -379,22 +380,15 @@ export function analyzeFamilyInsights(
     ["m", "мужчин"],
     ["f", "женщин"],
   ] as const) {
-    const ages = adultLifespans
-      .filter(({ person }) => person.sex === sex)
-      .map(({ age }) => age);
-    const average = ages.length
-      ? Math.round(
-          (ages.reduce((sum, age) => sum + age, 0) / ages.length) * 10,
-        ) / 10
-      : null;
+    const { averageYears: average, sampleSize } = averageLifespans[sex];
     facts.push({
-      title: `Средняя продолжительность жизни ${label}`,
+      title: `Средняя продолжительность жизни ${label} за последние 100 лет`,
       value:
         average === null
           ? "Нет данных"
           : `≈ ${average.toLocaleString("ru-RU")} ${Number.isInteger(average) ? plural(average, "год", "года", "лет") : "года"}`,
-      detail: ages.length
-        ? `${ages.length} ${plural(ages.length, "человек", "человека", "человек")} с известными годами рождения и смерти`
+      detail: sampleSize
+        ? `${sampleSize} ${plural(sampleSize, "человек", "человека", "человек")} с известными годами рождения и смерти`
         : "Нет записей с известными годами рождения и смерти",
     });
   }

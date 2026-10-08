@@ -10,10 +10,8 @@ export const runtimeServiceTables = [
   "geocode_cache",
   "migrations",
   "face_descriptors",
-  "mcp_tokens",
   "ai_settings",
   "ai_usage",
-  "mcp_usage",
   "research_suggestions",
   "ai_usage_models",
   "ai_chats",
@@ -151,7 +149,7 @@ export async function backfillRuntimeServicesInTransaction(
     counts[table] = rows.length;
     const sequenceColumn = ordinal
       ? "ordinal"
-      : ["ai_usage", "mcp_usage", "ai_chat_messages"].includes(table)
+      : ["ai_usage", "ai_chat_messages"].includes(table)
         ? "id"
         : null;
     if (sequenceColumn)

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
 
-test("каталожный источник относится к дате рождения и не переносится на новую дату", async ({ page }, info) => {
+test("прежний каталожный источник относится к дате рождения и не переносится на новую дату", async ({ page }, info) => {
   const title = `Запись о рождении ${info.project.name}`;
   const source = { id: `birth-claim-${info.project.name}`, title, version: 1,
     type: "архив", author: "", institution: "", archive: "ГАСО", fond: "6",
@@ -13,9 +13,12 @@ test("каталожный источник относится к дате ро�
   const response = await page.request.get("/api/family?projection=overview");
   const initial = await response.json();
   let family = structuredClone(initial.family) as Family;
+  const legacyPerson = family.people.find((item) => item.id === "e2e-child")!;
+  legacyPerson.birthDateClaim = { value: legacyPerson.birth,
+    sources: [{ catalogId: source.id, title, type: "архив", reference: "" }] };
   let revision = initial.revision as number;
   await page.route("**/api/family?projection=overview", async (route) =>
-    route.fulfill({ response, json: { ...initial, family, revision } }));
+    route.fulfill({ response, json: { ...initial, family, revision, partial: false } }));
   await page.route("**/api/family/changes", async (route) => {
     const changes = route.request().postDataJSON().changes as Change[];
     family = applyArchiveChanges(family, changes).family;
@@ -25,11 +28,10 @@ test("каталожный источник относится к дате ро�
   await page.goto("/tree");
   await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").click();
   await page.locator(".inspector-person-actions .person-edit-button").click();
+  await page.getByText("Точные источники и варианты рождения").click();
   await page.getByText("Источники даты рождения").click();
   const claim = page.locator(".birth-date-claim");
-  await claim.getByRole("button", { name: "Выбрать из каталога" }).click();
-  await claim.getByLabel("Поиск источника").fill(title);
-  await claim.locator(".union-catalog-results").getByRole("button", { name: title }).click();
+  await expect(claim.getByRole("button", { name: "Выбрать из каталога" })).toHaveCount(0);
   await expect(claim.getByRole("combobox", { name: /Достоверность/ })).toHaveValue("");
   await claim.getByRole("combobox", { name: /Достоверность/ }).selectOption("confirmed");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
@@ -42,11 +44,23 @@ test("каталожный источник относится к дате ро�
   await expect(page.getByText(`Источники даты: ${title} · Оценка: Подтверждено`)).toBeVisible();
 
   await page.locator(".inspector-person-actions .person-edit-button").click();
+  await page.locator(".person-date-group").first().locator(".person-evidence-details > summary").click();
   await page.locator(".birth-date-claim > summary").click();
   await page.locator("[data-field=birth]").fill("1966");
+  await expect(page.locator(".person-date-group").first()
+    .locator(".person-evidence-details > summary")).toContainText("требуется решение");
   await expect(page.getByRole("alert").filter({ hasText: "Источники относятся к прежней дате" })).toBeVisible();
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect(page.getByText(/Источник даты рождения относится к другому значению/)).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Закрыть", exact: true }).click();
+  expect(family.people.find((item) => item.id === "e2e-child")?.birth).toBe(person.birth);
+  expect(family.people.find((item) => item.id === "e2e-child")?.birthDateClaim?.sources[0].catalogId)
+    .toBe(source.id);
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  await page.locator(".person-date-group").first().locator(".person-evidence-details > summary").click();
+  await page.locator(".birth-date-claim > summary").click();
+  await page.locator("[data-field=birth]").fill("1966");
   await page.getByRole("button", { name: "Снять связи с прежней датой" }).click();
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect.poll(() => family.people.find((item) => item.id === "e2e-child")?.birth).toBe("1966");

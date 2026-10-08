@@ -28,24 +28,62 @@ const person = (id: string, parents: string[] = []): Person => ({
   generation: 1,
   column: 0,
 });
+const partnerImageName = "11111111-1111-4111-8111-111111111111.png";
+const partnerDocumentName = "11111111-1111-4111-8111-111111111112.pdf";
+const coParentImageName = "11111111-1111-4111-8111-111111111113.png";
+const coParentDocumentName = "11111111-1111-4111-8111-111111111114.pdf";
 const family: Family = {
   title: "Проверка доступа",
   description: "",
   demo: false,
   people: [
     person("ancestor"),
-    person("me", ["ancestor"]),
+    { ...person("me", ["ancestor"]), spouses: ["partner"] },
     person("sibling", ["ancestor"]),
-    person("niece", ["sibling"]),
+    { ...person("niece", ["sibling", "co-parent"]),
+      parentClaims: [{ parentId: "co-parent", confidence: "confirmed" }] },
+    { ...person("partner", ["partner-parent"]), spouses: ["me", "partner-other"],
+      photo: `/media/${partnerImageName}`,
+      sources: [{ title: "Partner record", type: "архив", reference: "",
+        url: `/media/${partnerDocumentName}#page=2` }],
+      parentClaims: [{ parentId: "partner-parent", confidence: "confirmed" }] },
+    person("partner-parent"),
+    person("partner-child", ["partner"]),
+    { ...person("partner-other"), spouses: ["partner"] },
+    { ...person("co-parent", ["co-grandparent"]), spouses: ["co-other"],
+      photo: `/media/${coParentImageName}`,
+      sources: [{ title: "Co-parent record", type: "архив", reference: "",
+        url: `/media/${coParentDocumentName}#page=1` }] },
+    person("co-grandparent"),
+    person("co-sibling", ["co-grandparent"]),
+    person("co-other-child", ["co-parent"]),
+    { ...person("co-other"), spouses: ["co-parent"] },
     { ...person("hidden"), photo: "/media/secret.png",
       sources: [{ title: "Hidden record", type: "архив", reference: "",
         url: "/media/secret.pdf#page=2" }] },
   ],
-  links: [{ id: "god", type: "godparent", from: "hidden", to: "me" }],
-  photos: [],
+  links: [
+    { id: "god", type: "godparent", from: "hidden", to: "me" },
+    { id: "visible-god", type: "godparent", from: "sibling", to: "partner" },
+    { id: "hidden-step", type: "step_parent", from: "me", to: "partner-child" },
+  ],
+  unions: [
+    { id: "visible-union", type: "marriage", participants: ["me", "partner"] },
+    { id: "hidden-union", type: "marriage", participants: ["partner", "partner-other"] },
+  ],
+  photos: [
+    { id: "partner-photo", title: "Супруг на общем снимке", url: `/media/${partnerImageName}`,
+      tags: ["partner", "hidden"].map((personId) => ({
+        id: `tag-${personId}`, personId, x: 0, y: 0, width: 0.1, height: 0.1,
+      })) },
+    { id: "hidden-photo", title: "Закрытая ветвь", url: "/media/secret.png",
+      tags: [{ id: "secret-tag", personId: "hidden", x: 0, y: 0, width: 0.1, height: 0.1 }] },
+  ],
 };
 
-test("область общих предков не раскрывает другие ветви и сохраняет собственные новые карточки", () => {
+const bloodIds = ["ancestor", "me", "sibling", "niece", "partner", "co-parent"];
+
+test("кровные доступны со вторым родителем без брака, без его предков и боковых ветвей", () => {
   const user = {
     id: "relative",
     name: "Участник",
@@ -58,19 +96,70 @@ test("область общих предков не раскрывает дру�
   const projected = projectFamilyForUser(family, user);
   assert.deepEqual(
     projected.people.map((p) => p.id),
-    ["ancestor", "me", "sibling", "niece"],
+    bloodIds,
   );
-  assert.deepEqual(projected.links, []);
+  const partner = projected.people.find((p) => p.id === "partner")!;
+  assert.deepEqual(projected.people.find((p) => p.id === "niece")!.parents, ["sibling", "co-parent"]);
+  assert.deepEqual(projected.people.find((p) => p.id === "niece")!.parentClaims,
+    [{ parentId: "co-parent", confidence: "confirmed" }]);
+  assert.deepEqual(projected.people.find((p) => p.id === "co-parent")!.parents, []);
+  assert.deepEqual(projected.people.find((p) => p.id === "co-parent")!.spouses, []);
+  assert.deepEqual(partner.parents, []);
+  assert.deepEqual(partner.parentClaims, []);
+  assert.deepEqual(partner.spouses, ["me"]);
+  assert.deepEqual(projected.links?.map((link) => link.id), ["visible-god"]);
+  assert.deepEqual(projected.unions?.map((union) => union.id), ["visible-union"]);
+  assert.deepEqual(projected.photos?.map((photo) => photo.id), ["partner-photo"]);
+  assert.deepEqual(projected.photos?.[0].tags.map((tag) => tag.personId), ["partner"]);
   validateFamily(projected);
+  assert.deepEqual(family.people.find((p) => p.id === "partner")?.parents, ["partner-parent"]);
+  assert.deepEqual(family.people.find((p) => p.id === "partner")?.spouses, ["me", "partner-other"]);
+  assert.equal(family.photos?.[0].tags.length, 2,
+    "projection removes inaccessible references without changing archive records");
   const withOwn = {
     ...family,
-    people: [...family.people, { ...person("new-branch"), createdBy: user.id }],
+    people: [...family.people, { ...person("new-branch", ["hidden"]),
+      createdBy: user.id, spouses: ["partner-other"],
+      parentClaims: [{ parentId: "hidden", confidence: "confirmed" as const }] }],
   };
-  assert.ok(
-    projectFamilyForUser(withOwn, user).people.some(
-      (p) => p.id === "new-branch",
-    ),
-  );
+  const ownProjection = projectFamilyForUser(withOwn, user);
+  assert.deepEqual(ownProjection.people.map((p) => p.id), [...bloodIds, "new-branch"]);
+  const own = ownProjection.people.at(-1)!;
+  assert.deepEqual(own.parents, []);
+  assert.deepEqual(own.parentClaims, []);
+  assert.deepEqual(own.spouses, []);
+  validateFamily(ownProjection);
+  assert.deepEqual(projectFamilyForUser(withOwn, { ...user, personId: undefined })
+    .people.map((p) => p.id), ["new-branch"],
+  "an unlinked own card does not seed a blood or spouse network");
+  assert.deepEqual(projectFamilyForUser(family, { ...user, treeAccess: "all" }).people,
+    family.people, "full archive access is unchanged");
+});
+
+test("кровный доступ включает явные партнёрства без открытия других союзов партнёра", () => {
+  const data: Family = {
+    ...family,
+    people: [...family.people, person("civil-partner", ["hidden"]), person("partnership-partner"),
+      person("partner-another-union"), { ...person("own-isolated"), createdBy: "relative" },
+      person("own-isolated-partner")],
+    unions: [
+      ...(family.unions || []),
+      { id: "civil", type: "civil_union", participants: ["me", "civil-partner"] },
+      { id: "partnership", type: "partnership", participants: ["partnership-partner", "sibling"] },
+      { id: "partner-chain", type: "partnership", participants: ["civil-partner", "partner-another-union"] },
+      { id: "own-chain", type: "partnership", participants: ["own-isolated", "own-isolated-partner"] },
+    ],
+  };
+  const before = structuredClone(data);
+  const user = { id: "relative", name: "Relative", role: "reader" as const, approved: true,
+    createdAt: "", personId: "me", treeAccess: "common_ancestors" as const };
+  const projected = projectFamilyForUser(data, user);
+  assert.deepEqual(projected.people.map((person) => person.id),
+    [...bloodIds, "civil-partner", "partnership-partner", "own-isolated"]);
+  assert.deepEqual(projected.people.find((person) => person.id === "civil-partner")?.parents, []);
+  assert.deepEqual(projected.unions?.map((union) => union.id), ["visible-union", "civil", "partnership"]);
+  validateFamily(projected);
+  assert.deepEqual(data, before);
 });
 
 test("привязка аккаунта и область видимости действуют во всех основных HTTP-маршрутах", async () => {
@@ -97,6 +186,13 @@ test("привязка аккаунта и область видимости д�
       Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
     );
     writeFileSync(join(dir, "uploads", "secret.pdf"), "%PDF-1.4\n%%EOF\n");
+    writeFileSync(join(dir, "uploads", partnerImageName),
+      await sharp({ create: { width: 2, height: 2, channels: 3, background: "blue" } })
+        .png().toBuffer());
+    writeFileSync(join(dir, "uploads", partnerDocumentName), "%PDF-1.4\n%%EOF\n");
+    writeFileSync(join(dir, "uploads", coParentImageName),
+      await sharp({ create: { width: 4, height: 4, channels: 3, background: "#aabfa0" } }).png().toBuffer());
+    writeFileSync(join(dir, "uploads", coParentDocumentName), "%PDF-1.4\n%%EOF\n");
     const provider: typeof fetch = async (url, options) =>
       String(url).includes("/token")
         ? Response.json({
@@ -209,22 +305,42 @@ test("привязка аккаунта и область видимости д�
     ).then((res) => res.json());
     assert.deepEqual(
       overview.family.people.map((p: Person) => p.id),
-      ["ancestor", "me", "sibling", "niece"],
+      bloodIds,
     );
-    assert.equal(overview.totals.people, 4);
+    assert.equal(overview.totals.people, bloodIds.length);
     const page = await request(
       `/api/family?projection=page&collection=people&offset=0&token=${encodeURIComponent(overview.pageToken)}`,
       relative,
     ).then((res) => res.json());
     assert.deepEqual(
       page.items.map((p: Person) => p.id),
-      ["ancestor", "me", "sibling", "niece"],
+      bloodIds,
     );
     const complete = await request("/api/family", relative).then((res) =>
       res.json(),
     );
-    assert.equal(complete.family.people.length, 4);
-    assert.deepEqual(complete.family.links, []);
+    assert.deepEqual(complete.family.people.map((p: Person) => p.id), bloodIds);
+    assert.deepEqual(complete.family.people.find((p: Person) => p.id === "co-parent").parents,
+      [], "an unmarried co-parent does not expose their own ancestry in the HTTP snapshot");
+    assert.deepEqual(complete.family.people.find((p: Person) => p.id === "partner")
+      .parents, []);
+    assert.deepEqual(complete.family.people.find((p: Person) => p.id === "partner")
+      .spouses, ["me"]);
+    assert.deepEqual(complete.family.links.map((link: { id: string }) => link.id),
+      ["visible-god"]);
+    assert.deepEqual(complete.family.unions.map((union: { id: string }) => union.id),
+      ["visible-union"]);
+    assert.deepEqual(complete.family.photos.map((photo: { id: string }) => photo.id),
+      ["partner-photo"]);
+    assert.deepEqual(complete.family.photos[0].tags.map((tag: { personId: string }) => tag.personId),
+      ["partner"]);
+    validateFamily(complete.family);
+    assert.equal((await request("/api/family/changes", relative, "POST", {
+      changes: [{ collection: "people", id: "partner", field: "name",
+        before: "partner", after: "Подмена имени супруга" }],
+    }, complete.revision)).status, 403,
+    "being allowed to read a spouse does not grant ownership of their record");
+    assert.equal((await app.archive.meta()).revision, complete.revision);
     assert.equal(
       (
         await request(
@@ -240,7 +356,9 @@ test("привязка аккаунта и область видимости д�
     writeFileSync(offlinePath, Buffer.from(await offline.arrayBuffer()));
     const zip = await openPromise(offlinePath);
     let exportedFamily: Family | undefined;
+    const exportedEntries: string[] = [];
     for await (const entry of zip.eachEntry()) {
+      exportedEntries.push(entry.fileName);
       if (entry.fileName !== "family.json") continue;
       const chunks: Buffer[] = [];
       for await (const chunk of await zip.openReadStreamPromise(entry))
@@ -249,22 +367,47 @@ test("привязка аккаунта и область видимости д�
     }
     assert.deepEqual(
       exportedFamily?.people.map((p) => p.id),
-      ["ancestor", "me", "sibling", "niece"],
+      bloodIds,
     );
     assert.ok(!JSON.stringify(exportedFamily).includes("hidden"));
-    assert.equal(
-      (
-        await request("/api/people/search?q=hidden", relative).then((res) =>
-          res.json(),
-        )
-      ).people.length,
-      0,
-    );
-    assert.equal(
-      (await request("/api/export.json", relative).then((res) => res.json()))
-        .people.length,
-      4,
-    );
+    assert.ok(exportedEntries.some((name) => name.endsWith(partnerImageName)),
+      "a visible spouse's original photograph is exported");
+    assert.ok(exportedEntries.some((name) => name.endsWith(partnerDocumentName)),
+      "a visible spouse's cited PDF is exported");
+    for (const name of [coParentImageName, coParentDocumentName])
+      assert.ok(exportedEntries.some((entry) => entry.endsWith(name)),
+        "an unmarried co-parent's portrait and source are included in the scoped export");
+    assert.ok(exportedEntries.every((name) => !name.includes("secret")),
+      "hidden media is excluded from the exported archive");
+    const partnerSearch = await request("/api/people/search?q=partner", relative)
+      .then((res) => res.json());
+    assert.deepEqual(partnerSearch.people.map((p: Person) => p.id), ["partner"]);
+    for (const id of ["co-parent"])
+      assert.ok((await request(`/api/people/search?q=${id}`, relative)
+        .then((res) => res.json())).people.some((p: Person) => p.id === id),
+      `${id} is searchable without a recorded marriage`);
+    for (const id of ["co-grandparent", "co-sibling", "co-other-child", "co-other"])
+      assert.ok((await request(`/api/people/search?q=${id}`, relative)
+        .then((res) => res.json())).people.every((p: Person) =>
+        !["co-grandparent", "co-sibling", "co-other-child", "co-other"].includes(p.id)),
+      `${id} remains private through the added co-parent`);
+    for (const id of ["hidden", "partner-parent", "partner-child", "partner-other"])
+      assert.equal((await request(`/api/people/search?q=${id}`, relative)
+        .then((res) => res.json())).people.length, 0,
+      `${id} must remain inaccessible in person search`);
+    const exported = await request("/api/export.json", relative).then((res) => res.json());
+    assert.deepEqual(exported.people.map((p: Person) => p.id), bloodIds);
+    assert.deepEqual(exported.people.find((p: Person) => p.id === "partner").parents, []);
+    assert.deepEqual(exported.people.find((p: Person) => p.id === "partner").spouses, ["me"]);
+    const fullExport = await request("/api/export", relative).then((res) => res.json());
+    assert.deepEqual(fullExport.people.map((p: Person) => p.id), bloodIds);
+    validateFamily(fullExport);
+    assert.deepEqual(fullExport.unions.map((union: { id: string }) => union.id), ["visible-union"]);
+    assert.deepEqual(fullExport.photos[0].tags.map((tag: { personId: string }) => tag.personId), ["partner"]);
+    assert.equal((await request(`/media/${partnerImageName}`, relative)).status, 200);
+    assert.equal((await request(`/media/${partnerDocumentName}`, relative)).status, 200);
+    assert.equal((await request(`/media/${coParentImageName}`, relative)).status, 200);
+    assert.equal((await request(`/media/${coParentDocumentName}`, relative)).status, 200);
     assert.equal((await request("/media/secret.png", relative)).status, 401);
     assert.equal((await request("/media/secret.pdf", relative)).status, 401);
     assert.equal((await request("/media/secret.png", admin)).status, 200);
@@ -321,7 +464,7 @@ test("привязка аккаунта и область видимости д�
     const own = await saved.json();
     assert.deepEqual(
       own.family.people.map((p: Person) => p.id),
-      ["ancestor", "me", "sibling", "niece", "new-branch"],
+      [...bloodIds, "new-branch"],
     );
     assert.equal(own.family.people.at(-1).createdBy, "relative");
     for (const change of [
@@ -493,7 +636,7 @@ test("привязка аккаунта и область видимости д�
     assert.equal(
       (await request("/api/family", relative).then((res) => res.json())).family
         .people.length,
-      6,
+      family.people.length + 1,
     );
     assert.equal(
       (

@@ -2,15 +2,20 @@ import { expect, test, type Page } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
 
-async function isolatedFamily(page: Page) {
+async function isolatedFamily(page: Page, sourceTitle: string) {
   const response = await page.request.get("/api/family?projection=overview");
   const initial = await response.json();
   const complete = await page.request.get("/api/family");
   const full = await complete.json();
   let family = structuredClone(full.family) as Family;
+  family.people.find((person) => person.id === "e2e-child")!.events = [{
+    id: "legacy-alternative-event", type: "residence", date: "1901", place: "Москва",
+    alternatives: [{ id: "legacy-alternative", field: "date", value: "1902",
+      sources: [{ title: sourceTitle, type: "", reference: "л. 9" }] }],
+  }];
   let revision = full.revision as number;
   await page.route("**/api/family?projection=overview", (route) =>
-    route.fulfill({ response, json: { ...initial, family, revision } }));
+    route.fulfill({ response, json: { ...initial, family, revision, partial: false } }));
   await page.route("**/api/family/changes", (route) => {
     const changes = route.request().postDataJSON().changes as Change[];
     const applied = applyArchiveChanges(family, changes);
@@ -23,24 +28,22 @@ async function isolatedFamily(page: Page) {
 }
 
 test("разные даты события остаются рядом с отдельными источниками", async ({ page }, info) => {
-  const readFamily = await isolatedFamily(page);
   const sourceTitle = `Адресная книга ${info.project.name}`;
+  const readFamily = await isolatedFamily(page, sourceTitle);
   await page.goto("/tree");
   await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").click();
   await page.locator(".inspector-person-actions .person-edit-button").click();
   await page.locator(".event-editor > summary").click();
-  await page.getByRole("button", { name: "Добавить событие" }).click();
   const event = page.locator(".life-event-editor").last();
+  await event.locator(":scope > summary").click();
   await event.getByLabel("Дата", { exact: true }).fill("1901");
   await event.getByLabel("Место", { exact: true }).fill("Москва");
   const alternatives = event.locator(".event-alternatives");
   await alternatives.locator(":scope > summary").click();
-  await alternatives.getByRole("button", { name: "Добавить другую дату" }).click();
+  await expect(alternatives.getByRole("button", { name: "Добавить другую дату" })).toHaveCount(0);
   const alternative = alternatives.locator(".fact-alternative").first();
-  await alternative.getByLabel("Другая дата события").fill("1902");
-  await alternative.getByRole("button", { name: "Добавить источник вручную" }).click();
-  await alternative.getByLabel("Название").fill(sourceTitle);
-  await alternative.getByLabel("Ссылка в источнике").fill("л. 9");
+  await expect(alternative.getByLabel("Другая дата события")).toHaveValue("1902");
+  await expect(alternative.getByLabel("Название")).toHaveValue(sourceTitle);
   await alternative.getByLabel("Достоверность").selectOption("probable");
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect.poll(() => readFamily().people.find((person) => person.id === "e2e-child")

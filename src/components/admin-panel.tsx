@@ -9,6 +9,7 @@ type AdminPanelProps = {
   currentUserId: string;
   platformAdmin: boolean;
   archiveOwner: boolean;
+  backupAccess?: boolean;
   publicationOwnership: PublicationOwnership;
   onClose: () => void;
   onChanged: () => void;

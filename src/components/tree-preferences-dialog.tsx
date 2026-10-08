@@ -3,6 +3,7 @@ import {
   ANCESTOR_GENERATIONS,
   DESCENDANT_GENERATIONS,
   COLLATERAL_GENERATIONS,
+  DEFAULT_TREE_PREFERENCES,
   type Person,
   type TreePreferences,
 } from "../domain";
@@ -111,6 +112,22 @@ export function TreePreferencesDialog({
       title="Вид древа"
       onClose={onClose}
       className="tree-preferences-dialog"
+      dismissOnOutside
+      headerActions={
+        <button
+          className="tree-preferences-reset"
+          type="button"
+          disabled={saving}
+          onClick={() =>
+            void choose({
+              ...DEFAULT_TREE_PREFERENCES,
+              generationLimits: null,
+            })
+          }
+        >
+          Сбросить вид
+        </button>
+      }
     >
       <div className="tree-preferences">
         <fieldset disabled={saving}>
@@ -178,7 +195,7 @@ export function TreePreferencesDialog({
         {!!people.length && (
           <fieldset disabled={saving} className="tree-generation-settings">
             <legend>Поколения</legend>
-            <p className="tree-generation-hint">
+            <p className="tree-generation-hint tree-generation-desktop-hint">
               Нажмите колесо мыши на карточке, чтобы выбрать опорного человека.
             </p>
             {limits && (

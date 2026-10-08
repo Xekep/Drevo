@@ -101,7 +101,9 @@ export function adminAiHttp({
         error: "Только администратор может управлять AI Studio",
       });
     const platformOnly = db.kind === "postgres" && !auth.local;
-    const admin = platformOnly ? await auth.accountProfile(req) : await auth.currentUser(req);
+    const admin = platformOnly
+      ? await auth.accountProfile(req)
+      : await auth.currentUser(req);
     if (!admin)
       return json(res, 401, { error: "Сеанс завершён. Войдите снова." });
     const session = platformOnly ? await auth.accountSession(req) : null;
@@ -109,11 +111,17 @@ export function adminAiHttp({
       return json(res, 401, { error: "Сеанс завершён" });
     const adminId = admin.id;
     const stillAdmin = async () => {
-      const current = platformOnly ? await auth.accountProfile(req) : await auth.currentUser(req);
-      const activeSession = platformOnly ? await auth.accountSession(req) : null;
-      return current?.id === adminId &&
+      const current = platformOnly
+        ? await auth.accountProfile(req)
+        : await auth.currentUser(req);
+      const activeSession = platformOnly
+        ? await auth.accountSession(req)
+        : null;
+      return (
+        current?.id === adminId &&
         (!platformOnly || activeSession?.tokenHash === session?.tokenHash) &&
-        (await auth.isPlatformAdmin(req));
+        (await auth.isPlatformAdmin(req))
+      );
     };
     const deliver = async (status: number, value: unknown) => {
       if (!platformOnly || !db.postgresTransaction)
@@ -121,7 +129,10 @@ export function adminAiHttp({
       try {
         return await db.postgresTransaction(async (client) => {
           await assertCurrentPlatformAdmin(client, adminId, session!.tokenHash);
-          const timer = setTimeout(() => res.destroy(new Error("AI settings delivery timed out")), 4_000);
+          const timer = setTimeout(
+            () => res.destroy(new Error("AI settings delivery timed out")),
+            4_000,
+          );
           timer.unref();
           try {
             const done = finished(res, { cleanup: true });
@@ -133,10 +144,17 @@ export function adminAiHttp({
           }
         });
       } catch (error) {
-        if (res.headersSent || res.destroyed) { res.destroy(error as Error); return true; }
-        if (error instanceof PlatformAccessDenied || error instanceof PlatformAccessBusy)
-          return json(res, error instanceof PlatformAccessBusy ? 409 : 403,
-            { error: "Права администратора платформы изменились" });
+        if (res.headersSent || res.destroyed) {
+          res.destroy(error as Error);
+          return true;
+        }
+        if (
+          error instanceof PlatformAccessDenied ||
+          error instanceof PlatformAccessBusy
+        )
+          return json(res, error instanceof PlatformAccessBusy ? 409 : 403, {
+            error: "Права администратора платформы изменились",
+          });
         throw error;
       }
     };
@@ -160,7 +178,11 @@ export function adminAiHttp({
           return json(res, 403, { error: "Доступ отозван" });
         await db.transaction(async () => {
           if (platformOnly)
-            await assertPlatformAdminInArchiveTransaction(db, adminId, session!.tokenHash);
+            await assertPlatformAdminInArchiveTransaction(
+              db,
+              adminId,
+              session!.tokenHash,
+            );
           await settings.write(body, admin);
         });
         const status = await statusValue(req);
@@ -168,9 +190,13 @@ export function adminAiHttp({
           return json(res, 403, { error: "Доступ отозван" });
         return deliver(200, status);
       } catch (error) {
-        if (error instanceof PlatformAccessBusy || error instanceof PlatformAccessDenied)
-          return json(res, error instanceof PlatformAccessBusy ? 409 : 403,
-            { error: "Права администратора платформы изменились" });
+        if (
+          error instanceof PlatformAccessBusy ||
+          error instanceof PlatformAccessDenied
+        )
+          return json(res, error instanceof PlatformAccessBusy ? 409 : 403, {
+            error: "Права администратора платформы изменились",
+          });
         return json(res, error instanceof RangeError ? 413 : 400, {
           error: (error as Error).message,
         });
@@ -218,10 +244,28 @@ export function adminAiHttp({
       const role = url.searchParams.get("role");
       if (role !== null && !Object.hasOwn(ROLE_NAMES, role))
         return json(res, 400, { error: "Неизвестная роль" });
-      const runtime = await aiRuntimeConfig(
-        settings,
-        (role as Role | undefined) || undefined,
-      );
+      let runtime: Awaited<ReturnType<typeof aiRuntimeConfig>>;
+      try {
+        const hasBody =
+          Number(req.headers["content-length"] || 0) > 0 ||
+          req.headers["transfer-encoding"] !== undefined;
+        if (
+          hasBody &&
+          !req.headers["content-type"]?.startsWith("application/json")
+        )
+          return json(res, 415, { error: "JSON required" });
+        runtime = await aiRuntimeConfig(
+          hasBody ? await settings.preview(await readJson(req)) : settings,
+          (role as Role | undefined) || undefined,
+        );
+      } catch (error) {
+        return json(res, error instanceof RangeError ? 413 : 400, {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Некорректные настройки AI Studio",
+        });
+      }
       if (!runtime.configured)
         return json(res, 400, {
           error:
@@ -244,7 +288,10 @@ export function adminAiHttp({
         let cleanupRef: string | null = null;
         try {
           if (providerCleanup)
-            cleanupRef = await providerCleanup.registerTest(conversationId, runtime);
+            cleanupRef = await providerCleanup.registerTest(
+              conversationId,
+              runtime,
+            );
           // Creating the remote conversation can outlive a platform grant.
           if (!(await stillAdmin()))
             return json(res, 403, { error: "Доступ отозван" });
@@ -274,7 +321,9 @@ export function adminAiHttp({
         } finally {
           if (cleanupRef) await providerCleanup!.pending(cleanupRef);
           else if (db.kind !== "postgres")
-            void client.deleteConversation(runtime, conversationId).catch(() => {});
+            void client
+              .deleteConversation(runtime, conversationId)
+              .catch(() => {});
         }
         if (!(await stillAdmin()))
           return json(res, 403, { error: "Доступ отозван" });

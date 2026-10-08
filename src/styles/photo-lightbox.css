@@ -136,9 +136,16 @@
 .photo-toolbar > button {
   flex-shrink: 0;
 }
+.photo-toolbar .member-preview-modal-exit {
+  flex-shrink: 0;
+}
 .photo-lightbox button:hover:not(:disabled),
 .photo-lightbox a:hover {
   background-color: #ffffff18;
+}
+.photo-lightbox .member-preview-modal-exit:is(:hover, :focus-visible) {
+  background-color: #d5e5ca;
+  color: #1e3421;
 }
 .photo-lightbox .photo-tools :is(button, a):hover:not(:disabled) {
   background-color: #e6eedd;
@@ -261,6 +268,12 @@
   align-items: center;
   gap: 8px;
 }
+.photo-lightbox:has(.member-preview-modal-exit) .photo-person-sidebar-actions {
+  position: static;
+  align-self: flex-end;
+  flex: 0 0 auto;
+  margin-bottom: 12px;
+}
 .photo-lightbox .photo-person-sidebar-actions button {
   display: inline-flex;
   align-items: center;
@@ -343,6 +356,10 @@
     color: #fff;
     background: #ffffff1c;
   }
+  .photo-lightbox:has(.member-preview-modal-exit) .photo-person-sidebar-actions button {
+    color: #405738;
+    background: #e8eedf;
+  }
   .photo-person-sidebar-actions button span {
     display: none;
   }
@@ -382,6 +399,16 @@
 /* The dialog stays mounted while its keyed photo contents change. */
 .photo-lightbox-content {
   height: 100%;
+}
+.photo-lightbox:has(> .member-preview-banner) {
+  display: flex;
+  flex-direction: column;
+}
+.photo-lightbox:has(> .member-preview-banner) > .photo-lightbox-content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 .photo-image-space {
   overflow: hidden;

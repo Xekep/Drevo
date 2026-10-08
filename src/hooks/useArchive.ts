@@ -1,5 +1,5 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { archiveContextAt } from "../domain/archive-context.ts";
+import { archiveContextAt, memberPreviewAt } from "../domain/archive-context.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   validateFamily,
@@ -44,6 +44,10 @@ function treePreferencesFromResponse(data: {
       ? { generationLimits: data.treePreferences.generationLimits }
       : {}),
   };
+  // Preview starts with the default direction, including participants with
+  // legacy inverted preferences. Its controls stay local to this tab.
+  if (memberPreviewAt(window.location.pathname))
+    return { ...preferences, reverseTimeline: DEFAULT_TREE_PREFERENCES.reverseTimeline };
   return data.user?.approved
     ? preferences
     : readGuestTreePreferences(preferences);
@@ -51,7 +55,9 @@ function treePreferencesFromResponse(data: {
 
 export function useArchive(enabled = true) {
   const [treePreferences, setTreePreferences] = useState<TreePreferences>(() =>
-    readGuestTreePreferences(DEFAULT_TREE_PREFERENCES),
+    memberPreviewAt(window.location.pathname)
+      ? { ...DEFAULT_TREE_PREFERENCES }
+      : readGuestTreePreferences(DEFAULT_TREE_PREFERENCES),
   );
   const [family, setFamily] = useState<Family | null>(null),
     [error, setError] = useState(""),
@@ -164,8 +170,8 @@ export function useArchive(enabled = true) {
             setUndoCount(0);
             setNeedsLogin(false);
             revision.current = result.revision;
-            setCanEdit(result.canEdit === true);
-            setLocal(result.local === true);
+            setCanEdit(!memberPreviewAt(window.location.pathname) && result.canEdit === true);
+            setLocal(!memberPreviewAt(window.location.pathname) && result.local === true);
             setUser(result.user || null);
             setReadTree(result.readTree !== false);
             setReadPhotos(result.readPhotos !== false);
@@ -233,8 +239,8 @@ export function useArchive(enabled = true) {
     revision.current = result.revision;
     history.current = [];
     setFamily(data);
-    setCanEdit(result.canEdit === true);
-    setLocal(result.local === true);
+    setCanEdit(!memberPreviewAt(window.location.pathname) && result.canEdit === true);
+    setLocal(!memberPreviewAt(window.location.pathname) && result.local === true);
     setUser(result.user || null);
     setReadTree(result.readTree !== false);
     setReadPhotos(result.readPhotos !== false);
@@ -507,6 +513,14 @@ export function useArchive(enabled = true) {
   }, [write, publishHistory]);
   const saveTreePreferences = useCallback(
     async (value: TreePreferences) => {
+      if (memberPreviewAt(window.location.pathname)) {
+        // Inspect the same controls without changing either participant's
+        // saved preferences or the owner's guest browser preferences.
+        const preview = { ...value };
+        if (preview.generationLimits === null) delete preview.generationLimits;
+        setTreePreferences(preview);
+        return preview;
+      }
       if (!user?.approved) {
         writeGuestTreePreferences(value);
         setTreePreferences(value);
@@ -554,7 +568,7 @@ export function useArchive(enabled = true) {
     uploadPortrait,
     syncSessionUser: (next: ArchiveUser | null) => {
       setUser(next);
-      setCanEdit(canEditArchive(next));
+      setCanEdit(!memberPreviewAt(window.location.pathname) && canEditArchive(next));
     },
     hasPendingRead: () => loadingController.current !== null,
     closeChangedPrivateView: (revoked: boolean) => {

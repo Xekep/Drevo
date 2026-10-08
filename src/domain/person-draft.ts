@@ -54,12 +54,14 @@ export function rebasePersonDraft(
         edited[key] as PersonValueClaim | undefined);
       if (claim) next[key] = claim;
       else delete next[key];
-    } else if ((key === "events" || key === "factAlternatives" || key === "parentClaims" ||
+    } else if ((key === "sources" || key === "events" || key === "factAlternatives" || key === "parentClaims" ||
       key === "awards") &&
       !sameValue(old[key], next[key]) && !sameValue(edited[key], next[key])) {
       // These arrays contain independent values, citations, and assessments.
       // Replacing a concurrently edited array could discard another editor's
       // source even when neither editor assigned a confidence status.
+      if (key === "sources")
+        throw new Error("Источники изменились в архиве. Обновите карточку и повторите правку.");
       claimChanged();
     } else if (key in edited) next[key] = structuredClone(edited[key]);
     else delete next[key];

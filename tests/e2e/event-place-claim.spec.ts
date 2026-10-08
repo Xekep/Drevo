@@ -2,15 +2,19 @@ import { expect, test, type Page } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
 
-async function isolatedFamily(page: Page) {
+async function isolatedFamily(page: Page, title: string) {
   const response = await page.request.get("/api/family?projection=overview");
   const initial = await response.json();
   const complete = await page.request.get("/api/family");
   const full = await complete.json();
   let family = structuredClone(full.family) as Family;
+  family.people.find((person) => person.id === "e2e-child")!.events = [{
+    id: "legacy-place-event", type: "residence", date: "1909", place: "Москва",
+    placeClaim: { value: "Москва", sources: [{ title, type: "", reference: "л. 7" }] },
+  }];
   let revision = full.revision as number;
   await page.route("**/api/family?projection=overview", (route) =>
-    route.fulfill({ response, json: { ...initial, family, revision } }),
+    route.fulfill({ response, json: { ...initial, family, revision, partial: false } }),
   );
   await page.route("**/api/family/changes", (route) => {
     const changes = route.request().postDataJSON().changes as Change[];
@@ -24,21 +28,20 @@ async function isolatedFamily(page: Page) {
 }
 
 test("источник точного места события сохраняется и не переносится при смене места", async ({ page }, info) => {
-  const readFamily = await isolatedFamily(page);
   const title = `Перепись места события ${info.project.name}`;
+  const readFamily = await isolatedFamily(page, title);
   await page.goto("/tree");
   await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").click();
   await page.locator(".inspector-person-actions .person-edit-button").click();
   await page.locator(".event-editor > summary").click();
-  await page.getByRole("button", { name: "Добавить событие" }).click();
   const event = page.locator(".life-event-editor").last();
+  await event.locator(":scope > summary").click();
   await event.getByLabel("Дата", { exact: true }).fill("1909");
   await event.getByLabel("Место", { exact: true }).fill("Москва");
   const claim = event.locator(".event-place-claim");
   await claim.locator(":scope > summary").click();
-  await claim.getByRole("button", { name: "Добавить источник вручную" }).click();
-  await claim.getByLabel("Название").fill(title);
-  await claim.getByLabel("Ссылка в источнике").fill("л. 7");
+  await expect(claim.getByLabel("Название")).toHaveValue(title);
+  await expect(claim.getByRole("button", { name: "Добавить источник вручную" })).toHaveCount(0);
   await claim.getByLabel("Достоверность").selectOption("conflicting");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();

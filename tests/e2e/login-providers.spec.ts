@@ -28,6 +28,7 @@ for (const path of ["/tree", "/account"])
       await page.goto(path);
       const group = page.getByRole("group", { name: "Способ входа" });
       await expect(group.getByRole("button")).toHaveCount(2);
+      await expect(page.locator(".archive-more, .nav-account")).toHaveCount(0);
       await expect(
         group.getByRole("button", { name: "Войти через VK", exact: true }),
       ).toBeEnabled();

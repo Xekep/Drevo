@@ -13,6 +13,8 @@ export function AiRoleProfilesEditor({
   disabled,
   onChange,
   onTest,
+  codeInterpreterAllowed,
+  globallyEnabled,
 }: {
   profiles: AiRoleProfiles;
   defaults: AiRoleProfile;
@@ -20,6 +22,8 @@ export function AiRoleProfilesEditor({
   disabled: boolean;
   onChange: (profiles: AiRoleProfiles) => void;
   onTest: (role: Role) => void;
+  codeInterpreterAllowed: boolean;
+  globallyEnabled: boolean;
 }) {
   const [role, setRole] = useState<Role>("relative");
   const inherited = profiles[role] === null;
@@ -42,7 +46,7 @@ export function AiRoleProfilesEditor({
 
   return (
     <fieldset className="ai-role-profiles" disabled={disabled}>
-      <legend>Доступ по ролям</legend>
+      <legend>Доступ и лимиты по ролям</legend>
       <div
         className="ai-role-choices"
         role="group"
@@ -51,7 +55,7 @@ export function AiRoleProfilesEditor({
         {Object.entries(ROLE_NAMES).map(([key, label]) => {
           const selectedRole = key as Role;
           const configured = profiles[selectedRole];
-          const accessible = configured?.enabled ?? defaults.enabled;
+          const accessible = globallyEnabled && (configured?.enabled ?? true);
           return (
             <button
               key={key}
@@ -64,8 +68,8 @@ export function AiRoleProfilesEditor({
                 {!accessible
                   ? "Нет доступа"
                   : configured
-                    ? "Доступ · Свои настройки"
-                    : "Доступ · Общие настройки"}
+                    ? "Свои настройки"
+                    : "Общие настройки"}
               </small>
             </button>
           );
@@ -91,36 +95,80 @@ export function AiRoleProfilesEditor({
           }
         />
       </label>
-      {!inherited && (
-        <fieldset className="ai-role-profile-custom">
-          <legend>Доступ и возможности · {ROLE_NAMES[role]}</legend>
-          <label
-            className="setting-toggle"
-            htmlFor="ai-profile-enabled"
-            aria-label="Доступ к ИИ"
-          >
+      {inherited ? (
+        <div
+          className="ai-inherited-profile"
+          aria-label={`Настройки ИИ: ${ROLE_NAMES[role]}`}
+        >
+          <p>
+            <b>
+              {models.find((model) => model.id === profile.model)?.label ||
+                profile.model ||
+                "Общая модель"}
+            </b>
             <span>
-              <b>Доступ к ИИ</b>
-              <small>Главный выключатель выше действует на все роли.</small>
+              {role === "admin" || role === "researcher"
+                ? "Роль платформы"
+                : "Роль в древе"}
             </span>
-            <input
-              id="ai-profile-enabled"
-              type="checkbox"
-              checked={profile.enabled}
-              onChange={(event) => update({ enabled: event.target.checked })}
-            />
-          </label>
-          <label htmlFor="ai-profile-model">
-            Модель для этой роли
-            <select
-              id="ai-profile-model"
-              aria-label="Модель для этой роли"
-              value={profile.model}
-              onChange={(event) => update({ model: event.target.value })}
+          </p>
+          <div className="ai-capability-summary">
+            {Object.entries(AI_CAPABILITY_LABELS).map(([key, label]) => {
+              const allowed =
+                globallyEnabled &&
+                profile[key as keyof typeof AI_CAPABILITY_LABELS] &&
+                (key !== "codeInterpreterEnabled" || codeInterpreterAllowed) &&
+                (key !== "globalSearchEnabled" || profile.webSearchEnabled) &&
+                (key !== "proposalsEnabled" || role !== "reader");
+              return (
+                <span key={key} className={allowed ? "is-enabled" : ""}>
+                  {allowed ? "✓" : "—"} {label}
+                </span>
+              );
+            })}
+          </div>
+          <small>
+            {profile.requestsPerMinute
+              ? `${profile.requestsPerMinute} запросов в минуту на человека`
+              : "Без минутного лимита"}
+            . Личные дневные лимиты не заданы; действует общий бюджет древа.
+          </small>
+        </div>
+      ) : (
+        <fieldset
+          className="ai-role-profile-custom"
+          disabled={inherited}
+          aria-label={`Настройки ИИ: ${ROLE_NAMES[role]}`}
+        >
+          <legend>{ROLE_NAMES[role]}</legend>
+          <div className="ai-role-profile-main">
+            <label
+              className="setting-toggle"
+              htmlFor="ai-profile-enabled"
+              aria-label="Доступ к ИИ"
             >
-              {modelOptions(profile.model, "Общая модель")}
-            </select>
-          </label>
+              <span>
+                <b>Доступ к ИИ</b>
+              </span>
+              <input
+                id="ai-profile-enabled"
+                type="checkbox"
+                checked={profile.enabled}
+                onChange={(event) => update({ enabled: event.target.checked })}
+              />
+            </label>
+            <label htmlFor="ai-profile-model">
+              Модель для этой роли
+              <select
+                id="ai-profile-model"
+                aria-label="Модель для этой роли"
+                value={profile.model}
+                onChange={(event) => update({ model: event.target.value })}
+              >
+                {modelOptions(profile.model, "Общая модель")}
+              </select>
+            </label>
+          </div>
           <div className="ai-role-capabilities">
             {Object.entries(AI_CAPABILITY_LABELS).map(([key, label]) => {
               const capability = key as keyof typeof AI_CAPABILITY_LABELS;
@@ -130,31 +178,32 @@ export function AiRoleProfilesEditor({
                   className="setting-toggle"
                   htmlFor={`ai-profile-${key}`}
                 >
-                  <span>
-                    <b>{label}</b>
-                    {capability === "codeInterpreterEnabled" && (
-                      <small>
-                        Расчёты и графики в изолированной среде Yandex, на
-                        модели этой роли. Используются только доступные человеку
-                        данные; расходуется бюджет ИИ.
-                      </small>
-                    )}
-                    {capability === "proposalsEnabled" && (
-                      <small>
-                        Только в пределах прав пользователя; каждое изменение
-                        требует подтверждения. Читателю недоступно.
-                      </small>
-                    )}
-                  </span>
+                  <span>{label}</span>
                   <input
                     id={`ai-profile-${key}`}
                     type="checkbox"
+                    title={
+                      capability === "proposalsEnabled"
+                        ? "Только в пределах прав пользователя, после подтверждения. Читателю недоступно."
+                        : capability === "globalSearchEnabled"
+                          ? "Доступен при включённом поиске по доверенным ресурсам."
+                          : capability === "codeInterpreterEnabled"
+                            ? "Расчёты и файлы в изолированной среде Yandex; расходуют бюджет ИИ."
+                            : undefined
+                    }
                     checked={
-                      capability === "proposalsEnabled" && role === "reader"
+                      (capability === "proposalsEnabled" &&
+                        role === "reader") ||
+                      (capability === "globalSearchEnabled" &&
+                        !profile.webSearchEnabled) ||
+                      (capability === "codeInterpreterEnabled" &&
+                        !codeInterpreterAllowed)
                         ? false
                         : profile[capability]
                     }
                     disabled={
+                      (capability === "codeInterpreterEnabled" &&
+                        !codeInterpreterAllowed) ||
                       (capability === "globalSearchEnabled" &&
                         !profile.webSearchEnabled) ||
                       (capability === "proposalsEnabled" && role === "reader")
@@ -163,12 +212,59 @@ export function AiRoleProfilesEditor({
                       update({ [capability]: event.target.checked })
                     }
                   />
+                  {capability === "codeInterpreterEnabled" &&
+                    !codeInterpreterAllowed && (
+                      <small>Общий доступ выключен</small>
+                    )}
                 </label>
               );
             })}
           </div>
+          <div className="ai-limit-settings ai-role-limits">
+            {(
+              [
+                [
+                  "requestsPerMinute",
+                  "Запросов в минуту на пользователя",
+                  "Запросов / мин",
+                  120,
+                ],
+                [
+                  "dailyRequests",
+                  "Запросов в день на пользователя",
+                  "Запросов / день",
+                  100000,
+                ],
+                [
+                  "dailyTokens",
+                  "Токенов в день на пользователя",
+                  "Токенов / день",
+                  1000000000,
+                ],
+              ] as const
+            ).map(([key, label, caption, max]) => (
+              <label key={key} htmlFor={`ai-profile-${key}`}>
+                {caption}
+                <input
+                  id={`ai-profile-${key}`}
+                  aria-label={label}
+                  type="number"
+                  min={0}
+                  max={max}
+                  value={profile[key]}
+                  onChange={(event) =>
+                    update({ [key]: Number(event.target.value) })
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          <small>
+            0 — без личного лимита. Общий бюджет и права на данные продолжают
+            действовать.
+          </small>
           <details className="ai-context-settings ai-role-advanced">
-            <summary>Модель фото, лимиты и контекст</summary>
+            <summary>Модель фото и контекст</summary>
             <label htmlFor="ai-profile-vision-model">
               Модель анализа фотографий
               <select
@@ -186,37 +282,6 @@ export function AiRoleProfilesEditor({
                 Yandex не сообщает все возможности моделей.
               </small>
             </label>
-            <div className="ai-limit-settings">
-              {(
-                [
-                  [
-                    "requestsPerMinute",
-                    "Запросов в минуту на пользователя",
-                    120,
-                  ],
-                  ["dailyRequests", "Запросов в день на пользователя", 100000],
-                  ["dailyTokens", "Токенов в день на пользователя", 1000000000],
-                ] as const
-              ).map(([key, label, max]) => (
-                <label key={key} htmlFor={`ai-profile-${key}`}>
-                  {label}
-                  <input
-                    id={`ai-profile-${key}`}
-                    type="number"
-                    min={0}
-                    max={max}
-                    value={profile[key]}
-                    onChange={(event) =>
-                      update({ [key]: Number(event.target.value) })
-                    }
-                  />
-                </label>
-              ))}
-            </div>
-            <small>
-              Ноль отключает личный лимит. Общие дневные лимиты архива действуют
-              для всех ролей.
-            </small>
             <details className="ai-context-settings">
               <summary>Контекст и шаги инструментов</summary>
               <label

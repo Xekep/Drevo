@@ -111,6 +111,7 @@ export function alignGenerationBands(input: ElkNode, size: TreeNodeSize) {
         id,
         members,
         points,
+        routes,
         corridors,
         rows: ordered,
       };
@@ -168,26 +169,24 @@ export function alignGenerationBands(input: ElkNode, size: TreeNodeSize) {
     previousMaxOffset = Math.max(...members.map((n) => offsets.get(n.id)!));
   }
 
-  const rightByLevel = new Map<number, number>();
+  const rightBySlice = new Map<number, number>();
+  const tops = bands.map((band) => band.minY);
+  const sliceAt = (y: number) => {
+    let lo = 0,
+      hi = tops.length - 1;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (tops[mid] <= y) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  };
   for (const component of components) {
     const { points } = component;
     const left = Math.min(
       ...component.members.map((n) => n.x!),
       ...points.map((p) => p.x),
     );
-    const right = Math.max(
-      ...component.members.map((n) => n.x! + n.width!),
-      ...points.map((p) => p.x),
-    );
-    const first = component.rows[0][0],
-      last = component.rows.at(-1)![0];
-    let x = 12;
-    // Компоненты с непересекающимися поколениями могут использовать тот же X.
-    // Это также сохраняет ограниченные части очень длинных цепочек ELK.
-    for (let rank = first; rank <= last; rank++)
-      x = Math.max(x, (rightByLevel.get(rank) ?? -88) + 100);
-    for (let rank = first; rank <= last; rank++)
-      rightByLevel.set(rank, x + right - left);
     const knots = component.rows.flatMap(([rank, oldY]) => {
       const newY = targets.get(rank)! - GENERATION_DEVIATION;
       const height = heights.get(rank)!;
@@ -225,13 +224,59 @@ export function alignGenerationBands(input: ElkNode, size: TreeNodeSize) {
       if (!b || y < a.from) return a.to + y - a.from;
       return a.to + ((y - a.from) * (b.to - a.to)) / (b.from - a.from);
     };
+    // Pack the actual outline on each floor and its routing corridor, rather
+    // than reserving the widest family on every generation it touches.
+    const outline = new Map<number, { left: number; right: number }>();
+    const occupy = (x1: number, x2: number, y1: number, y2: number) => {
+      const first = sliceAt(Math.min(y1, y2)),
+        last = sliceAt(Math.max(y1, y2));
+      const left = Math.min(x1, x2),
+        right = Math.max(x1, x2);
+      for (let slice = first; slice <= last; slice++) {
+        const previous = outline.get(slice);
+        outline.set(slice, {
+          left: Math.min(previous?.left ?? Infinity, left),
+          right: Math.max(previous?.right ?? -Infinity, right),
+        });
+      }
+    };
     for (const node of component.members) {
-      node.x = node.x! + x - left;
+      const y = mapY(node.y!);
+      occupy(node.x!, node.x! + node.width!, y, y + node.height!);
+    }
+    for (const edge of component.routes)
+      for (const section of edge.sections || []) {
+        const path = [
+          section.startPoint,
+          ...(section.bendPoints || []),
+          section.endPoint,
+        ];
+        for (let i = 1; i < path.length; i++)
+          occupy(
+            path[i - 1].x,
+            path[i].x,
+            mapY(path[i - 1].y),
+            mapY(path[i].y),
+          );
+      }
+    let shift = 12 - left;
+    for (const [slice, span] of outline)
+      shift = Math.max(
+        shift,
+        (rightBySlice.get(slice) ?? -88) + 100 - span.left,
+      );
+    for (const [slice, span] of outline)
+      rightBySlice.set(
+        slice,
+        Math.max(rightBySlice.get(slice) ?? -Infinity, span.right + shift),
+      );
+    for (const node of component.members) {
+      node.x = node.x! + shift;
       node.y = mapY(node.y!);
     }
     // Один и тот же объект точки может принадлежать нескольким sections.
     for (const point of new Set(points)) {
-      point.x += x - left;
+      point.x += shift;
       point.y = mapY(point.y);
     }
   }

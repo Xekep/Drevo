@@ -19,7 +19,7 @@ export function archiveInvitations(db: StoreDatabase) {
     db.kind === "postgres"
       ? db.prepare(
           "",
-          `SELECT id,role,created_by,created_at,expires_at,used_by,used_at,revoked_at
+          `SELECT id,role,person_id,tree_access,created_by,created_at,expires_at,used_by,used_at,revoked_at
         FROM archive_invitations
         ORDER BY (used_at IS NULL AND revoked_at IS NULL AND expires_at>?) DESC,
                  created_at DESC,id DESC LIMIT 150`,
@@ -38,8 +38,8 @@ export function archiveInvitations(db: StoreDatabase) {
       ? db.prepare(
           "",
           `INSERT INTO archive_invitations
-        (archive_id,id,token_hash,role,created_by,created_at,expires_at)
-        VALUES(?,?,?,?,?,?,?)`,
+        (archive_id,id,token_hash,role,created_by,created_at,expires_at,person_id,tree_access)
+        VALUES(?,?,?,?,?,?,?,?,?)`,
         )
       : null;
   const revoke =
@@ -66,6 +66,8 @@ export function archiveInvitations(db: StoreDatabase) {
         return (await list.all(new Date().toISOString())).map((row) => ({
           id: String(row.id),
           role: String(row.role),
+          personId: row.person_id ? String(row.person_id) : null,
+          treeAccess: String(row.tree_access),
           createdAt: String(row.created_at),
           expiresAt: String(row.expires_at),
           usedAt: row.used_at ? String(row.used_at) : null,
@@ -73,7 +75,8 @@ export function archiveInvitations(db: StoreDatabase) {
         }));
       }, db.kind !== "postgres");
     },
-    async create(actor: ArchiveUser, role: unknown, durationHours: unknown) {
+    async create(actor: ArchiveUser, role: unknown, durationHours: unknown,
+      personId: unknown = null, treeAccess: unknown = "all") {
       requireAdmin(actor);
       const archiveId = db.archiveId;
       if (!insert || !activeCount || !archiveId)
@@ -83,6 +86,10 @@ export function archiveInvitations(db: StoreDatabase) {
         ![24, 168, 720].includes(durationHours as number)
       )
         throw new InvalidInvitationError("Выберите роль и срок приглашения.");
+      if ((personId !== null && (typeof personId !== "string" || !personId || personId.length > 200)) ||
+          (treeAccess !== "all" && treeAccess !== "common_ancestors") ||
+          (treeAccess === "common_ancestors" && !personId))
+        throw new InvalidInvitationError("Для доступа к кровным родственникам выберите человека в этом древе.");
       const now = new Date();
       const expiresAt = new Date(
         now.getTime() + Number(durationHours) * 3600000,
@@ -91,6 +98,10 @@ export function archiveInvitations(db: StoreDatabase) {
       const id = randomUUID();
       await db.transaction(async () => {
         await assertCurrentArchiveActor(db, actor);
+        if (personId && !await db.prepare("", "SELECT id FROM people WHERE id=? FOR SHARE").get(personId))
+          throw new InvalidInvitationError("Человек не найден в этом древе.");
+        if (personId && await db.prepare("", "SELECT user_id FROM archive_memberships WHERE person_id=?").get(personId))
+          throw new InvalidInvitationError("Этот человек уже привязан к аккаунту в древе.");
         const count = await activeCount.get(now.toISOString());
         if (Number(count?.n || 0) >= 100)
           throw new InvalidInvitationError(
@@ -104,11 +115,15 @@ export function archiveInvitations(db: StoreDatabase) {
           actor.id,
           now.toISOString(),
           expiresAt,
+          personId,
+          treeAccess,
         );
       });
       return {
         id,
         role,
+        personId,
+        treeAccess,
         expiresAt,
         path: `/join/${archiveId}/${token}`,
       };
@@ -154,7 +169,7 @@ export function accountInvitations(db: StoreDatabase) {
     token: string,
     work: (
       client: pg.PoolClient,
-      invite: { id: string; role: string; used_by: string | null },
+      invite: { id: string; role: string; person_id: string | null; tree_access: string; used_by: string | null },
     ) => Promise<T>,
     lock = false,
     session?: { accountId: string; tokenHash: string },
@@ -194,9 +209,11 @@ export function accountInvitations(db: StoreDatabase) {
       const result = await client.query<{
         id: string;
         role: string;
+        person_id: string | null;
+        tree_access: string;
         used_by: string | null;
       }>(
-        `SELECT id,role,used_by FROM archive_invitations
+        `SELECT id,role,person_id,tree_access,used_by FROM archive_invitations
          WHERE archive_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>$3
          ${lock ? "FOR UPDATE" : ""}`,
         [archiveId, hash(token), new Date().toISOString()],
@@ -229,19 +246,38 @@ export function accountInvitations(db: StoreDatabase) {
           if (invite.used_by && invite.used_by !== accountId)
             throw new InvalidInvitationError("Приглашение уже использовано.");
           if (!invite.used_by) {
+            // A deleted or foreign anchor cannot silently widen a blood grant.
+            if (invite.person_id && !(await client.query(
+              "SELECT id FROM people WHERE archive_id=$1 AND id=$2 FOR SHARE",
+              [archiveId, invite.person_id],
+            )).rowCount)
+              throw new InvalidInvitationError("Привязанный человек больше не доступен. Попросите новое приглашение.");
+            const existing = await client.query<{ person_id: string | null }>(
+              "SELECT person_id FROM archive_memberships WHERE archive_id=$1 AND user_id=$2 FOR UPDATE",
+              [archiveId, accountId],
+            );
+            if (invite.person_id && existing.rows[0]?.person_id && existing.rows[0].person_id !== invite.person_id)
+              throw new InvalidInvitationError("Аккаунт уже привязан к другому человеку в этом древе. Попросите владельца проверить привязку.");
+            if (invite.person_id && (await client.query(
+              "SELECT user_id FROM archive_memberships WHERE archive_id=$1 AND person_id=$2 AND user_id<>$3 FOR SHARE",
+              [archiveId, invite.person_id, accountId],
+            )).rowCount)
+              throw new InvalidInvitationError("Этот человек уже привязан к другому аккаунту. Попросите новое приглашение.");
             await client.query(
               `INSERT INTO archive_memberships
               (archive_id,user_id,role,approved,person_id,tree_access)
-             VALUES($1,$2,$3,true,NULL,'all')
+             VALUES($1,$2,$3,true,$4,$5)
              ON CONFLICT (archive_id,user_id) DO UPDATE SET
                approved=true,
                role=CASE
                  WHEN archive_memberships.approved
                    THEN archive_memberships.role
                  ELSE EXCLUDED.role END,
+               person_id=CASE WHEN archive_memberships.approved
+                 THEN archive_memberships.person_id ELSE COALESCE(archive_memberships.person_id,EXCLUDED.person_id) END,
                tree_access=CASE WHEN archive_memberships.approved
-                 THEN archive_memberships.tree_access ELSE 'all' END`,
-              [archiveId, accountId, invite.role],
+                 THEN archive_memberships.tree_access ELSE EXCLUDED.tree_access END`,
+              [archiveId, accountId, invite.role, invite.person_id, invite.tree_access],
             );
             await client.query(
               "UPDATE archive_invitations SET used_by=$2,used_at=$3 WHERE id=$1::uuid",

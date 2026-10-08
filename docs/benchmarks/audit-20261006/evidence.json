@@ -1,0 +1,2607 @@
+{
+  "auditDate": "2026-10-06",
+  "repositoryCommit": "b6659cdbd7243efc89864e2efe40bbd9f73e895f",
+  "applicationCommit": "e266267069a89c1bd9d70d53b83d3c9d2d205850",
+  "productionRelease": "e266267069a89c1bd9d70d53b83d3c9d2d205850-1",
+  "boundaries": {
+    "productionReadOnly": true,
+    "syntheticBrowserData": true,
+    "noSourceFixes": true,
+    "noMaliciousPayloads": true,
+    "noProductionLoadTesting": true
+  },
+  "freshChecks": {
+    "typecheck": "pass",
+    "lint": "pass",
+    "build": "pass",
+    "worker": {
+      "passed": 3
+    },
+    "browserRegression": {
+      "passed": 46,
+      "conditionalSkipped": 26
+    }
+  },
+  "baselineChecksOnIdenticalCode": {
+    "unit": {
+      "passed": 1259,
+      "skipped": 1
+    },
+    "deployBrowser": {
+      "passed": 733,
+      "flakyOnRetry": 2,
+      "skipped": 163
+    },
+    "postgres": "pass",
+    "pgbackrestRestore": "pass"
+  },
+  "dependencyAudit": {
+    "root": {
+      "counts": {
+        "info": 0,
+        "low": 5,
+        "moderate": 0,
+        "high": 1,
+        "critical": 0,
+        "total": 6
+      },
+      "packages": {
+        "katex": {
+          "severity": "low",
+          "range": "0.11.0 - 0.18.1",
+          "isDirect": true,
+          "via": [
+            {
+              "name": "katex",
+              "title": "KaTeX: Existing prototype pollution can bypass trust restrictions",
+              "url": "https://github.com/advisories/GHSA-238p-pmpm-9mq7",
+              "range": ">=0.11.0 <0.18.2"
+            }
+          ],
+          "fixAvailable": {
+            "name": "katex",
+            "version": "0.19.0",
+            "isSemVerMajor": true
+          }
+        },
+        "mermaid": {
+          "severity": "low",
+          "range": ">=10.9.0-rc.1",
+          "isDirect": true,
+          "via": [
+            "katex"
+          ],
+          "fixAvailable": {
+            "name": "mermaid",
+            "version": "10.8.0",
+            "isSemVerMajor": true
+          }
+        },
+        "micromark-extension-math": {
+          "severity": "low",
+          "range": "*",
+          "isDirect": false,
+          "via": [
+            "katex"
+          ],
+          "fixAvailable": {
+            "name": "remark-math",
+            "version": "3.0.1",
+            "isSemVerMajor": true
+          }
+        },
+        "rehype-katex": {
+          "severity": "low",
+          "range": ">=2.0.0",
+          "isDirect": true,
+          "via": [
+            "katex"
+          ],
+          "fixAvailable": {
+            "name": "rehype-katex",
+            "version": "1.2.0",
+            "isSemVerMajor": true
+          }
+        },
+        "remark-math": {
+          "severity": "low",
+          "range": ">=4.0.0",
+          "isDirect": true,
+          "via": [
+            "micromark-extension-math"
+          ],
+          "fixAvailable": {
+            "name": "remark-math",
+            "version": "3.0.1",
+            "isSemVerMajor": true
+          }
+        },
+        "sharp": {
+          "severity": "high",
+          "range": "<0.35.5",
+          "isDirect": true,
+          "via": [
+            {
+              "name": "sharp",
+              "title": "sharp : Vulnerability in librsvg dependency CVE-2026-96889",
+              "url": "https://github.com/advisories/GHSA-wq5f-xc86-pv6w",
+              "range": "<0.35.5"
+            }
+          ],
+          "fixAvailable": {
+            "name": "sharp",
+            "version": "0.35.5",
+            "isSemVerMajor": false
+          }
+        }
+      }
+    },
+    "runtime": {
+      "counts": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 1,
+        "critical": 0,
+        "total": 1
+      },
+      "packages": {
+        "sharp": {
+          "severity": "high",
+          "range": "<0.35.5",
+          "isDirect": true,
+          "via": [
+            {
+              "name": "sharp",
+              "title": "sharp : Vulnerability in librsvg dependency CVE-2026-96889",
+              "url": "https://github.com/advisories/GHSA-wq5f-xc86-pv6w",
+              "range": "<0.35.5"
+            }
+          ],
+          "fixAvailable": {
+            "name": "sharp",
+            "version": "0.35.5",
+            "isSemVerMajor": false
+          }
+        }
+      }
+    }
+  },
+  "browser": {
+    "date": "2026-10-06T15:34:06.842Z",
+    "browser": "155.0.8059.26",
+    "errors": [],
+    "checks": [
+      {
+        "route": "/tree",
+        "status": 200,
+        "width": 1440,
+        "overflow": 0,
+        "title": "Древо — история начинается с семьи",
+        "headings": [],
+        "violations": [
+          {
+            "id": "aria-prohibited-attr",
+            "impact": "serious",
+            "help": "Elements must only use permitted ARIA attributes",
+            "nodes": [
+              {
+                "target": [
+                  ".react-flow__handle-top[data-nodeid=\"e2e-memorial-person\"][aria-label=\"Связать: Тестов Иван Петрович\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"top\" data-nodeid=\"e2e-memorial-person\" data-handlepos=\"top\" data-id=\"1-e2e-memorial-person-top-source\" class=\"react-flow__handle react-flow__handle-top nodrag nopan source connectable connectablestart connectableend connectionindicator\" ...>"
+              },
+              {
+                "target": [
+                  ".react-flow__handle-bottom[data-nodeid=\"e2e-memorial-person\"][aria-label=\"Связать: Тестов Иван Петрович\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"bottom\" data-nodeid=\"e2e-memorial-person\" data-handlepos=\"bottom\" data-id=\"1-e2e-memorial-perso...\" class=\"react-flow__handle r...\" aria-label=\"Связать: Тестов Иван...\">"
+              },
+              {
+                "target": [
+                  ".react-flow__handle-left[data-nodeid=\"e2e-memorial-person\"][aria-label=\"Связать: Тестов Иван Петрович\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"left\" data-nodeid=\"e2e-memorial-person\" data-handlepos=\"left\" data-id=\"1-e2e-memorial-perso...\" class=\"react-flow__handle r...\" aria-label=\"Связать: Тестов Иван...\">"
+              },
+              {
+                "target": [
+                  ".react-flow__handle-right[data-nodeid=\"e2e-memorial-person\"][aria-label=\"Связать: Тестов Иван Петрович\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"right\" data-nodeid=\"e2e-memorial-person\" data-handlepos=\"right\" data-id=\"1-e2e-memorial-perso...\" class=\"react-flow__handle r...\" aria-label=\"Связать: Тестов Иван...\">"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-sibling-top-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"top\" data-nodeid=\"e2e-sibling\" data-handlepos=\"top\" data-id=\"1-e2e-sibling-top-source\" class=\"react-flow__handle react-flow__handle-top nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Мария Ивановна\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-sibling-bottom-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"bottom\" data-nodeid=\"e2e-sibling\" data-handlepos=\"bottom\" data-id=\"1-e2e-sibling-bottom-source\" class=\"react-flow__handle react-flow__handle-bottom nodrag nopan source connectable connectablestart connectableend connectionindicator\" ...>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-sibling-left-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"left\" data-nodeid=\"e2e-sibling\" data-handlepos=\"left\" data-id=\"1-e2e-sibling-left-source\" class=\"react-flow__handle react-flow__handle-left nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Мария Ивановна\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-sibling-right-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"right\" data-nodeid=\"e2e-sibling\" data-handlepos=\"right\" data-id=\"1-e2e-sibling-right-source\" class=\"react-flow__handle react-flow__handle-right nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Мария Ивановна\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-child-top-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"top\" data-nodeid=\"e2e-child\" data-handlepos=\"top\" data-id=\"1-e2e-child-top-source\" class=\"react-flow__handle react-flow__handle-top nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестов Пётр Иванович\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-child-bottom-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"bottom\" data-nodeid=\"e2e-child\" data-handlepos=\"bottom\" data-id=\"1-e2e-child-bottom-source\" class=\"react-flow__handle react-flow__handle-bottom nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестов Пётр Иванович\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-child-left-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"left\" data-nodeid=\"e2e-child\" data-handlepos=\"left\" data-id=\"1-e2e-child-left-source\" class=\"react-flow__handle react-flow__handle-left nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестов Пётр Иванович\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-child-right-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"right\" data-nodeid=\"e2e-child\" data-handlepos=\"right\" data-id=\"1-e2e-child-right-source\" class=\"react-flow__handle react-flow__handle-right nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестов Пётр Иванович\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-spouse-top-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"top\" data-nodeid=\"e2e-spouse\" data-handlepos=\"top\" data-id=\"1-e2e-spouse-top-source\" class=\"react-flow__handle react-flow__handle-top nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Елена Сергеевна\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-spouse-bottom-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"bottom\" data-nodeid=\"e2e-spouse\" data-handlepos=\"bottom\" data-id=\"1-e2e-spouse-bottom-source\" class=\"react-flow__handle react-flow__handle-bottom nodrag nopan source connectable connectablestart connectableend connectionindicator\" ...>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-spouse-left-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"left\" data-nodeid=\"e2e-spouse\" data-handlepos=\"left\" data-id=\"1-e2e-spouse-left-source\" class=\"react-flow__handle react-flow__handle-left nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Елена Сергеевна\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-spouse-right-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"right\" data-nodeid=\"e2e-spouse\" data-handlepos=\"right\" data-id=\"1-e2e-spouse-right-source\" class=\"react-flow__handle react-flow__handle-right nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Елена Сергеевна\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-grandchild-top-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"top\" data-nodeid=\"e2e-grandchild\" data-handlepos=\"top\" data-id=\"1-e2e-grandchild-top-source\" class=\"react-flow__handle react-flow__handle-top nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Анна Петровна\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-grandchild-bottom-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"bottom\" data-nodeid=\"e2e-grandchild\" data-handlepos=\"bottom\" data-id=\"1-e2e-grandchild-bot...\" class=\"react-flow__handle r...\" aria-label=\"Связать: Тестова Анн...\">"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-grandchild-left-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"left\" data-nodeid=\"e2e-grandchild\" data-handlepos=\"left\" data-id=\"1-e2e-grandchild-left-source\" class=\"react-flow__handle react-flow__handle-left nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Анна Петровна\">"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-grandchild-right-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"right\" data-nodeid=\"e2e-grandchild\" data-handlepos=\"right\" data-id=\"1-e2e-grandchild-right-source\" class=\"react-flow__handle react-flow__handle-right nodrag nopan source connectable connectablestart connectableend connectionindicator\" ...>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-sibling-child-top-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"top\" data-nodeid=\"e2e-sibling-child\" data-handlepos=\"top\" data-id=\"1-e2e-sibling-child-top-source\" class=\"react-flow__handle react-flow__handle-top nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Ольга\"></div>"
+              },
+              {
+                "target": [
+                  ".react-flow__handle-bottom[data-nodeid=\"e2e-sibling-child\"][aria-label=\"Связать: Тестова Ольга\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"bottom\" data-nodeid=\"e2e-sibling-child\" data-handlepos=\"bottom\" data-id=\"1-e2e-sibling-child-...\" class=\"react-flow__handle r...\" aria-label=\"Связать: Тестова Оль...\">"
+              },
+              {
+                "target": [
+                  ".react-flow__handle-left[data-nodeid=\"e2e-sibling-child\"][aria-label=\"Связать: Тестова Ольга\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"left\" data-nodeid=\"e2e-sibling-child\" data-handlepos=\"left\" data-id=\"1-e2e-sibling-child-left-source\" class=\"react-flow__handle react-flow__handle-left nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Ольга\"></div>"
+              },
+              {
+                "target": [
+                  ".react-flow__handle-right[data-nodeid=\"e2e-sibling-child\"][aria-label=\"Связать: Тестова Ольга\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"right\" data-nodeid=\"e2e-sibling-child\" data-handlepos=\"right\" data-id=\"1-e2e-sibling-child-right-source\" class=\"react-flow__handle react-flow__handle-right nodrag nopan source connectable connectablestart connectableend connectionindicator\" ...>"
+              }
+            ]
+          },
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "nodes": [
+              {
+                "target": [
+                  "a[href$=\"people\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Люди</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"families\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Семьи</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"photos\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Фото</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"documents\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Документы</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"places\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Места</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"insights\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Сводка</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"resources\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Ресурсы</span>"
+              },
+              {
+                "target": [
+                  ".tree-extra-toggle > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.7 (foreground color: #777b71, background color: #eeeee6, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Доп. связи</span>"
+              }
+            ]
+          },
+          {
+            "id": "label-content-name-mismatch",
+            "impact": "serious",
+            "help": "Elements must have their visible text as part of their accessible name",
+            "nodes": [
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-memorial-person\"] > .flow-person-content"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-person-content\" aria-label=\"Тестов Иван Петрович, 1940 — 2020\" title=\"Тестов Иван Петрович, 1940 — 2020\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-memorial-person\"] > .flow-collapse[aria-label=\"Свернуть ветвь\"][title=\"Свернуть ветвь\"]"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-collapse nodrag nopan\" aria-label=\"Свернуть ветвь\" title=\"Свернуть ветвь\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-sibling\"] > .flow-person-content"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-person-content\" aria-label=\"Тестова Мария Ивановна, 1968 — н. в.\" title=\"Тестова Мария Ивановна, 1968 — н. в.\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-sibling\"] > .flow-collapse[aria-label=\"Свернуть ветвь\"][title=\"Свернуть ветвь\"]"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-collapse nodrag nopan\" aria-label=\"Свернуть ветвь\" title=\"Свернуть ветвь\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-child\"] > .flow-person-content"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-person-content\" aria-label=\"Тестов Пётр Иванович, 1965 — н. в.\" title=\"Тестов Пётр Иванович, 1965 — н. в.\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-child\"] > .flow-collapse[aria-label=\"Свернуть ветвь\"][title=\"Свернуть ветвь\"]"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-collapse nodrag nopan\" aria-label=\"Свернуть ветвь\" title=\"Свернуть ветвь\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-spouse\"] > .flow-person-content"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-person-content\" aria-label=\"Тестова Елена Сергеевна, 1967 — н. в.\" title=\"Тестова Елена Сергеевна, 1967 — н. в.\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-grandchild\"] > .flow-person-content"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-person-content\" aria-label=\"Тестова Анна Петровна, 1990 — н. в.\" title=\"Тестова Анна Петровна, 1990 — н. в.\">"
+              },
+              {
+                "target": [
+                  "button[aria-label=\"Тестова Ольга, 1992 — н. в.\"]"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-person-content\" aria-label=\"Тестова Ольга, 1992 — н. в.\" title=\"Тестова Ольга, 1992 — н. в.\">"
+              }
+            ]
+          },
+          {
+            "id": "target-size",
+            "impact": "serious",
+            "help": "All touch targets must be 24px large, or leave sufficient space",
+            "nodes": [
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-memorial-person\"] > .flow-collapse[aria-label=\"Свернуть ветвь\"][title=\"Свернуть ветвь\"]"
+                ],
+                "summary": "Fix any of the following:\n  Target has insufficient size (30.1px by 21.8px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 21.8px instead of at least 24px.",
+                "html": "<button class=\"flow-collapse nodrag nopan\" aria-label=\"Свернуть ветвь\" title=\"Свернуть ветвь\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-sibling\"] > .flow-collapse[aria-label=\"Свернуть ветвь\"][title=\"Свернуть ветвь\"]"
+                ],
+                "summary": "Fix any of the following:\n  Target has insufficient size (30.1px by 21.8px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 21.8px instead of at least 24px.",
+                "html": "<button class=\"flow-collapse nodrag nopan\" aria-label=\"Свернуть ветвь\" title=\"Свернуть ветвь\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-child\"] > .flow-collapse[aria-label=\"Свернуть ветвь\"][title=\"Свернуть ветвь\"]"
+                ],
+                "summary": "Fix any of the following:\n  Target has insufficient size (30.1px by 21.8px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 21.8px instead of at least 24px.",
+                "html": "<button class=\"flow-collapse nodrag nopan\" aria-label=\"Свернуть ветвь\" title=\"Свернуть ветвь\">"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "route": "/people",
+        "status": 200,
+        "width": 1440,
+        "overflow": 0,
+        "title": "Древо — история начинается с семьи",
+        "headings": [
+          "Люди 6"
+        ],
+        "violations": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "nodes": [
+              {
+                "target": [
+                  ".nav-sections > a[href$=\"tree\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Древо</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"families\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Семьи</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"photos\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Фото</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"documents\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Документы</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"places\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Места</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"insights\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Сводка</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"resources\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Ресурсы</span>"
+              },
+              {
+                "target": [
+                  "label"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.49 (foreground color: #7b8872, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<label>Порядок<select><option value=\"name\">Фамилия: А — Я</option><option value=\"name-desc\">Фамилия: Я — А</option><option value=\"birth\">Рождение: раньше → позже</option><option value=\"birth-desc\">Рождение: позже → раньше</option><option value=\"death\">По году смерти</option></select></label>"
+              },
+              {
+                "target": [
+                  ".directory-columns > span:nth-child(1)"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.82 (foreground color: #8c9882, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Человек</span>"
+              },
+              {
+                "target": [
+                  ".directory-columns > span:nth-child(2)"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.82 (foreground color: #8c9882, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Годы жизни</span>"
+              },
+              {
+                "target": [
+                  ".directory-columns > span:nth-child(3)"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.82 (foreground color: #8c9882, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Места</span>"
+              },
+              {
+                "target": [
+                  ".directory-columns > span:nth-child(4)"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.82 (foreground color: #8c9882, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Семья</span>"
+              },
+              {
+                "target": [
+                  "li:nth-child(1) > .directory-person > .directory-places > small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.14 (foreground color: #839078, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>"
+              },
+              {
+                "target": [
+                  "li:nth-child(1) > .directory-person > .directory-family > small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.14 (foreground color: #839078, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>2 ребёнка</small>"
+              },
+              {
+                "target": [
+                  "li:nth-child(2) > .directory-person > .directory-places > small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.14 (foreground color: #839078, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>"
+              },
+              {
+                "target": [
+                  "li:nth-child(2) > .directory-person > .directory-family > small:nth-child(1)"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.14 (foreground color: #839078, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>1 ребёнок</small>"
+              },
+              {
+                "target": [
+                  "li:nth-child(2) > .directory-person > .directory-family > small:nth-child(2)"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.14 (foreground color: #839078, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>Указан родитель</small>"
+              },
+              {
+                "target": [
+                  "li:nth-child(3) > .directory-person > .directory-places > small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.14 (foreground color: #839078, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>"
+              },
+              {
+                "target": [
+                  "li:nth-child(3) > .directory-person > .directory-family > small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.14 (foreground color: #839078, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>Указан родитель</small>"
+              },
+              {
+                "target": [
+                  "li:nth-child(4) > .directory-person > .directory-places > small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.14 (foreground color: #839078, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>"
+              },
+              {
+                "target": [
+                  "li:nth-child(5) > .directory-person > .directory-places > small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.14 (foreground color: #839078, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>"
+              },
+              {
+                "target": [
+                  "li:nth-child(5) > .directory-person > .directory-family > small:nth-child(1)"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.14 (foreground color: #839078, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>1 ребёнок</small>"
+              },
+              {
+                "target": [
+                  "li:nth-child(5) > .directory-person > .directory-family > small:nth-child(2)"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.14 (foreground color: #839078, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>Указан родитель</small>"
+              },
+              {
+                "target": [
+                  "li:nth-child(6) > .directory-person > .directory-places > small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.14 (foreground color: #839078, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>"
+              },
+              {
+                "target": [
+                  "li:nth-child(6) > .directory-person > .directory-family > small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.14 (foreground color: #839078, background color: #f8f7f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>Указан родитель</small>"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "route": "/families",
+        "status": 200,
+        "width": 1440,
+        "overflow": 0,
+        "title": "Древо — история начинается с семьи",
+        "headings": [
+          "Семьи"
+        ],
+        "violations": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "nodes": [
+              {
+                "target": [
+                  ".nav-sections > a[href$=\"tree\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Древо</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"people\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Люди</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"photos\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Фото</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"documents\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Документы</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"places\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Места</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"insights\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Сводка</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"resources\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Ресурсы</span>"
+              },
+              {
+                "target": [
+                  "article:nth-child(1) > .full-button"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.28 (foreground color: #7b8f68, background color: #f6f8f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<button class=\"full-button\">Показать семью на древе</button>"
+              },
+              {
+                "target": [
+                  "article:nth-child(2) > .full-button"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.28 (foreground color: #7b8f68, background color: #f6f8f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<button class=\"full-button\">Показать семью на древе</button>"
+              },
+              {
+                "target": [
+                  "article:nth-child(3) > .full-button"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.28 (foreground color: #7b8f68, background color: #f6f8f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<button class=\"full-button\">Показать семью на древе</button>"
+              },
+              {
+                "target": [
+                  "article:nth-child(4) > .full-button"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.28 (foreground color: #7b8f68, background color: #f6f8f2, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<button class=\"full-button\">Показать семью на древе</button>"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "route": "/photos",
+        "status": 200,
+        "width": 1440,
+        "overflow": 0,
+        "title": "Древо — история начинается с семьи",
+        "headings": [
+          "Семейный альбом"
+        ],
+        "violations": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "nodes": [
+              {
+                "target": [
+                  ".nav-sections > a[href$=\"tree\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Древо</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"people\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Люди</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"families\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Семьи</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"documents\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Документы</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"places\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Места</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"insights\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Сводка</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"resources\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Ресурсы</span>"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "route": "/places",
+        "status": 200,
+        "width": 1440,
+        "overflow": 0,
+        "title": "Древо — история начинается с семьи",
+        "headings": [
+          "Места, которые нас связывают"
+        ],
+        "violations": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "nodes": [
+              {
+                "target": [
+                  ".nav-sections > a[href$=\"tree\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Древо</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"people\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Люди</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"families\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Семьи</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"photos\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Фото</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"documents\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Документы</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"insights\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Сводка</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"resources\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Ресурсы</span>"
+              },
+              {
+                "target": [
+                  ".eyebrow"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.92 (foreground color: #899185, background color: #f5f3eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span class=\"eyebrow\">География семьи</span>"
+              },
+              {
+                "target": [
+                  ".places-heading > p"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.21 (foreground color: #68786b, background color: #f5f3eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<p>1 мест · 0 на карте · ищем остальные…</p>"
+              },
+              {
+                "target": [
+                  "small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.91 (foreground color: #748172, background color: #fbfaf4, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>6 чел.· Ожидает поиска</small>"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "route": "/insights",
+        "status": 200,
+        "width": 1440,
+        "overflow": 0,
+        "title": "Древо — история начинается с семьи",
+        "headings": [
+          "Сводка архива",
+          "В архиве",
+          "Фамилии и имена",
+          "Материалы"
+        ],
+        "violations": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "nodes": [
+              {
+                "target": [
+                  ".nav-sections > a[href$=\"tree\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Древо</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"people\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Люди</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"families\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Семьи</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"photos\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Фото</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"documents\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Документы</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"places\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Места</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"resources\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Ресурсы</span>"
+              },
+              {
+                "target": [
+                  ".insights-summary > p"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.31 (foreground color: #839082, background color: #fffefa, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<p>Годы указаны по сохранившимся датам.</p>"
+              },
+              {
+                "target": [
+                  "div:nth-child(1) > h3"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.41 (foreground color: #6e7b6c, background color: #fffefa, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<h3>Фамилии</h3>"
+              },
+              {
+                "target": [
+                  "div:nth-child(2) > h3"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.41 (foreground color: #6e7b6c, background color: #fffefa, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<h3>Имена</h3>"
+              },
+              {
+                "target": [
+                  "span:nth-child(1) > small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.02 (foreground color: #71836d, background color: #fffefa, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>фотографий</small>"
+              },
+              {
+                "target": [
+                  ".archive-materials > span:nth-child(2) > small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.02 (foreground color: #71836d, background color: #fffefa, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>событий жизни</small>"
+              },
+              {
+                "target": [
+                  "span:nth-child(3) > small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.02 (foreground color: #71836d, background color: #fffefa, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>источников</small>"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "route": "/documents",
+        "status": 200,
+        "width": 1440,
+        "overflow": 0,
+        "title": "Древо — история начинается с семьи",
+        "headings": [
+          "Документы",
+          "Документов пока нет"
+        ],
+        "violations": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "nodes": [
+              {
+                "target": [
+                  ".nav-sections > a[href$=\"tree\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Древо</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"people\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Люди</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"families\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Семьи</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"photos\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Фото</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"places\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Места</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"insights\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Сводка</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"resources\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Ресурсы</span>"
+              },
+              {
+                "target": [
+                  ".documents-eyebrow"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.15 (foreground color: #819079, background color: #f8f7f2, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1",
+                "html": "<span class=\"documents-eyebrow\">Семейный архив</span>"
+              },
+              {
+                "target": [
+                  "div:nth-child(1) > p"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.23 (foreground color: #687b69, background color: #f8f7f2, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<p>Загруженные участниками документы, связанные с людьми в архиве.</p>"
+              },
+              {
+                "target": [
+                  ".documents-state > p"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.38 (foreground color: #697b67, background color: #f9fcf7, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<p>Загруженные документы появятся здесь.</p>"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "route": "/manage",
+        "status": 200,
+        "width": 1440,
+        "overflow": 0,
+        "title": "Древо — история начинается с семьи",
+        "headings": [
+          "Участники"
+        ],
+        "violations": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "nodes": [
+              {
+                "target": [
+                  ".nav-sections > a[href$=\"tree\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Древо</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"people\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Люди</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"families\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Семьи</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"photos\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Фото</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"documents\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Документы</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"places\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Места</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"insights\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Сводка</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"resources\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Ресурсы</span>"
+              },
+              {
+                "target": [
+                  "small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.54 (foreground color: #7d8b7b, background color: #fdfefb, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1",
+                "html": "<small>DREVO</small>"
+              },
+              {
+                "target": [
+                  ".admin-nav-group:nth-child(1) > .admin-nav-label"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.08 (foreground color: #89958a, background color: #fdfefb, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1",
+                "html": "<span class=\"admin-nav-label\">Доступ</span>"
+              },
+              {
+                "target": [
+                  ".admin-nav-group:nth-child(2) > .admin-nav-label"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.08 (foreground color: #89958a, background color: #fdfefb, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1",
+                "html": "<span class=\"admin-nav-label\">Источники</span>"
+              },
+              {
+                "target": [
+                  ".admin-nav-group:nth-child(3) > .admin-nav-label"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.08 (foreground color: #89958a, background color: #fdfefb, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1",
+                "html": "<span class=\"admin-nav-label\">Данные</span>"
+              },
+              {
+                "target": [
+                  ".admin-nav-group:nth-child(4) > .admin-nav-label"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.08 (foreground color: #89958a, background color: #fdfefb, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1",
+                "html": "<span class=\"admin-nav-label\">История</span>"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "route": "/admin",
+        "status": 200,
+        "width": 1440,
+        "overflow": 0,
+        "title": "Древо — история начинается с семьи",
+        "headings": [
+          "Админка платформы"
+        ],
+        "violations": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "nodes": [
+              {
+                "target": [
+                  "a[href$=\"documents\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Документы</span>"
+              },
+              {
+                "target": [
+                  "span:nth-child(2) > small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.54 (foreground color: #7d8b7b, background color: #fdfefb, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1",
+                "html": "<small>DREVO</small>"
+              },
+              {
+                "target": [
+                  ".admin-nav-label"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.08 (foreground color: #89958a, background color: #fdfefb, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1",
+                "html": "<span class=\"admin-nav-label\">Настройки</span>"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "route": "/account",
+        "status": 200,
+        "width": 1440,
+        "overflow": 0,
+        "title": "Древо — история начинается с семьи",
+        "headings": [
+          "Личный кабинет",
+          "На этом компьютере",
+          "Доступ и роль",
+          "Вход и сеансы",
+          "Сведения архива"
+        ],
+        "violations": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "nodes": [
+              {
+                "target": [
+                  ".nav-sections > a[href$=\"tree\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Древо</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"people\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Люди</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"families\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Семьи</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"photos\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Фото</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"documents\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Документы</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"places\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Места</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"insights\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Сводка</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"resources\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Ресурсы</span>"
+              },
+              {
+                "target": [
+                  "section[aria-labelledby=\"account-access-title\"] > .account-card-title > div > .account-eyebrow"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.89 (foreground color: #71866e, background color: #fffefa, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1",
+                "html": "<span class=\"account-eyebrow\">Семейный архив</span>"
+              },
+              {
+                "target": [
+                  ".account-facts > div:nth-child(1) > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.73 (foreground color: #79877c, background color: #fffefa, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Роль</span>"
+              },
+              {
+                "target": [
+                  ".account-facts > div:nth-child(2) > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.73 (foreground color: #79877c, background color: #fffefa, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Доступ к древу</span>"
+              },
+              {
+                "target": [
+                  "div:nth-child(3) > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.73 (foreground color: #79877c, background color: #fffefa, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Карточка в древе</span>"
+              },
+              {
+                "target": [
+                  "section[aria-labelledby=\"account-security-title\"] > .account-card-title > div > .account-eyebrow"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.89 (foreground color: #71866e, background color: #fffefa, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1",
+                "html": "<span class=\"account-eyebrow\">Безопасность</span>"
+              },
+              {
+                "target": [
+                  "section[aria-labelledby=\"account-security-title\"] > .account-card-copy"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.29 (foreground color: #6e7d74, background color: #fffefa, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<p class=\"account-card-copy\">Вы работаете в локальном режиме без отдельного аккаунта и сеансов входа.</p>"
+              },
+              {
+                "target": [
+                  "section[aria-labelledby=\"account-data-title\"] > .account-card-title > div > .account-eyebrow"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.89 (foreground color: #71866e, background color: #fffefa, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1",
+                "html": "<span class=\"account-eyebrow\">Данные</span>"
+              },
+              {
+                "target": [
+                  "section[aria-labelledby=\"account-data-title\"] > .account-card-copy"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.29 (foreground color: #6e7d74, background color: #fffefa, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<p class=\"account-card-copy\">Сведения и экспорт выбранного древа доступны в пределах вашей роли.</p>"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "route": "/people/e2e-child",
+        "status": 200,
+        "width": 1440,
+        "overflow": 0,
+        "title": "Древо — история начинается с семьи",
+        "headings": [
+          "ТестовПётр Иванович"
+        ],
+        "violations": [
+          {
+            "id": "aria-prohibited-attr",
+            "impact": "serious",
+            "help": "Elements must only use permitted ARIA attributes",
+            "nodes": [
+              {
+                "target": [
+                  ".react-flow__handle-top[data-nodeid=\"e2e-memorial-person\"][aria-label=\"Связать: Тестов Иван Петрович\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"top\" data-nodeid=\"e2e-memorial-person\" data-handlepos=\"top\" data-id=\"1-e2e-memorial-person-top-source\" class=\"react-flow__handle react-flow__handle-top nodrag nopan source connectable connectablestart connectableend connectionindicator\" ...>"
+              },
+              {
+                "target": [
+                  ".react-flow__handle-bottom[data-nodeid=\"e2e-memorial-person\"][aria-label=\"Связать: Тестов Иван Петрович\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"bottom\" data-nodeid=\"e2e-memorial-person\" data-handlepos=\"bottom\" data-id=\"1-e2e-memorial-perso...\" class=\"react-flow__handle r...\" aria-label=\"Связать: Тестов Иван...\">"
+              },
+              {
+                "target": [
+                  ".react-flow__handle-left[data-nodeid=\"e2e-memorial-person\"][aria-label=\"Связать: Тестов Иван Петрович\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"left\" data-nodeid=\"e2e-memorial-person\" data-handlepos=\"left\" data-id=\"1-e2e-memorial-perso...\" class=\"react-flow__handle r...\" aria-label=\"Связать: Тестов Иван...\">"
+              },
+              {
+                "target": [
+                  ".react-flow__handle-right[data-nodeid=\"e2e-memorial-person\"][aria-label=\"Связать: Тестов Иван Петрович\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"right\" data-nodeid=\"e2e-memorial-person\" data-handlepos=\"right\" data-id=\"1-e2e-memorial-perso...\" class=\"react-flow__handle r...\" aria-label=\"Связать: Тестов Иван...\">"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-sibling-top-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"top\" data-nodeid=\"e2e-sibling\" data-handlepos=\"top\" data-id=\"1-e2e-sibling-top-source\" class=\"react-flow__handle react-flow__handle-top nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Мария Ивановна\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-sibling-bottom-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"bottom\" data-nodeid=\"e2e-sibling\" data-handlepos=\"bottom\" data-id=\"1-e2e-sibling-bottom-source\" class=\"react-flow__handle react-flow__handle-bottom nodrag nopan source connectable connectablestart connectableend connectionindicator\" ...>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-sibling-left-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"left\" data-nodeid=\"e2e-sibling\" data-handlepos=\"left\" data-id=\"1-e2e-sibling-left-source\" class=\"react-flow__handle react-flow__handle-left nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Мария Ивановна\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-sibling-right-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"right\" data-nodeid=\"e2e-sibling\" data-handlepos=\"right\" data-id=\"1-e2e-sibling-right-source\" class=\"react-flow__handle react-flow__handle-right nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Мария Ивановна\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-child-top-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"top\" data-nodeid=\"e2e-child\" data-handlepos=\"top\" data-id=\"1-e2e-child-top-source\" class=\"react-flow__handle react-flow__handle-top nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестов Пётр Иванович\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-child-bottom-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"bottom\" data-nodeid=\"e2e-child\" data-handlepos=\"bottom\" data-id=\"1-e2e-child-bottom-source\" class=\"react-flow__handle react-flow__handle-bottom nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестов Пётр Иванович\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-child-left-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"left\" data-nodeid=\"e2e-child\" data-handlepos=\"left\" data-id=\"1-e2e-child-left-source\" class=\"react-flow__handle react-flow__handle-left nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестов Пётр Иванович\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-child-right-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"right\" data-nodeid=\"e2e-child\" data-handlepos=\"right\" data-id=\"1-e2e-child-right-source\" class=\"react-flow__handle react-flow__handle-right nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестов Пётр Иванович\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-spouse-top-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"top\" data-nodeid=\"e2e-spouse\" data-handlepos=\"top\" data-id=\"1-e2e-spouse-top-source\" class=\"react-flow__handle react-flow__handle-top nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Елена Сергеевна\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-spouse-bottom-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"bottom\" data-nodeid=\"e2e-spouse\" data-handlepos=\"bottom\" data-id=\"1-e2e-spouse-bottom-source\" class=\"react-flow__handle react-flow__handle-bottom nodrag nopan source connectable connectablestart connectableend connectionindicator\" ...>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-spouse-left-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"left\" data-nodeid=\"e2e-spouse\" data-handlepos=\"left\" data-id=\"1-e2e-spouse-left-source\" class=\"react-flow__handle react-flow__handle-left nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Елена Сергеевна\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-spouse-right-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"right\" data-nodeid=\"e2e-spouse\" data-handlepos=\"right\" data-id=\"1-e2e-spouse-right-source\" class=\"react-flow__handle react-flow__handle-right nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Елена Сергеевна\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-grandchild-top-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"top\" data-nodeid=\"e2e-grandchild\" data-handlepos=\"top\" data-id=\"1-e2e-grandchild-top-source\" class=\"react-flow__handle react-flow__handle-top nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Анна Петровна\"></div>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-grandchild-bottom-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"bottom\" data-nodeid=\"e2e-grandchild\" data-handlepos=\"bottom\" data-id=\"1-e2e-grandchild-bot...\" class=\"react-flow__handle r...\" aria-label=\"Связать: Тестова Анн...\">"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-grandchild-left-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"left\" data-nodeid=\"e2e-grandchild\" data-handlepos=\"left\" data-id=\"1-e2e-grandchild-left-source\" class=\"react-flow__handle react-flow__handle-left nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Анна Петровна\">"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-grandchild-right-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"right\" data-nodeid=\"e2e-grandchild\" data-handlepos=\"right\" data-id=\"1-e2e-grandchild-right-source\" class=\"react-flow__handle react-flow__handle-right nodrag nopan source connectable connectablestart connectableend connectionindicator\" ...>"
+              },
+              {
+                "target": [
+                  "div[data-id=\"1-e2e-sibling-child-top-source\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"top\" data-nodeid=\"e2e-sibling-child\" data-handlepos=\"top\" data-id=\"1-e2e-sibling-child-top-source\" class=\"react-flow__handle react-flow__handle-top nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Ольга\"></div>"
+              },
+              {
+                "target": [
+                  ".react-flow__handle-bottom[data-nodeid=\"e2e-sibling-child\"][aria-label=\"Связать: Тестова Ольга\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"bottom\" data-nodeid=\"e2e-sibling-child\" data-handlepos=\"bottom\" data-id=\"1-e2e-sibling-child-...\" class=\"react-flow__handle r...\" aria-label=\"Связать: Тестова Оль...\">"
+              },
+              {
+                "target": [
+                  ".react-flow__handle-left[data-nodeid=\"e2e-sibling-child\"][aria-label=\"Связать: Тестова Ольга\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"left\" data-nodeid=\"e2e-sibling-child\" data-handlepos=\"left\" data-id=\"1-e2e-sibling-child-left-source\" class=\"react-flow__handle react-flow__handle-left nodrag nopan source connectable connectablestart connectableend connectionindicator\" aria-label=\"Связать: Тестова Ольга\"></div>"
+              },
+              {
+                "target": [
+                  ".react-flow__handle-right[data-nodeid=\"e2e-sibling-child\"][aria-label=\"Связать: Тестова Ольга\"]"
+                ],
+                "summary": "Fix all of the following:\n  aria-label attribute cannot be used on \"div\" elements with no valid role attribute.",
+                "html": "<div data-handleid=\"right\" data-nodeid=\"e2e-sibling-child\" data-handlepos=\"right\" data-id=\"1-e2e-sibling-child-right-source\" class=\"react-flow__handle react-flow__handle-right nodrag nopan source connectable connectablestart connectableend connectionindicator\" ...>"
+              }
+            ]
+          },
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "nodes": [
+              {
+                "target": [
+                  "a[href$=\"people\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Люди</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"families\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Семьи</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"photos\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Фото</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"documents\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Документы</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"places\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Места</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"insights\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Сводка</span>"
+              },
+              {
+                "target": [
+                  "a[href$=\"resources\"] > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #7c877c, background color: #fafbf7, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Ресурсы</span>"
+              },
+              {
+                "target": [
+                  ".tree-extra-toggle > span"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.7 (foreground color: #777b71, background color: #eeeee6, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<span>Доп. связи</span>"
+              },
+              {
+                "target": [
+                  ".life-event > div > p"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.88 (foreground color: #929b89, background color: #ffffff, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<p>Москва</p>"
+              },
+              {
+                "target": [
+                  ".living-note"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.56 (foreground color: #7a8e68, background color: #ffffff, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<div class=\"living-note\"><span class=\"tiny-dot\"></span>История продолжается</div>"
+              },
+              {
+                "target": [
+                  "button:nth-child(2) > span:nth-child(2) > small"
+                ],
+                "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.98 (foreground color: #8c9a7d, background color: #ffffff, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+                "html": "<small>отец</small>"
+              }
+            ]
+          },
+          {
+            "id": "label-content-name-mismatch",
+            "impact": "serious",
+            "help": "Elements must have their visible text as part of their accessible name",
+            "nodes": [
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-memorial-person\"] > .flow-person-content"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-person-content\" aria-label=\"Тестов Иван Петрович, 1940 — 2020\" title=\"Тестов Иван Петрович, 1940 — 2020\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-memorial-person\"] > .flow-collapse[aria-label=\"Свернуть ветвь\"][title=\"Свернуть ветвь\"]"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-collapse nodrag nopan\" aria-label=\"Свернуть ветвь\" title=\"Свернуть ветвь\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-sibling\"] > .flow-person-content"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-person-content\" aria-label=\"Тестова Мария Ивановна, 1968 — н. в.\" title=\"Тестова Мария Ивановна, 1968 — н. в.\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-sibling\"] > .flow-collapse[aria-label=\"Свернуть ветвь\"][title=\"Свернуть ветвь\"]"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-collapse nodrag nopan\" aria-label=\"Свернуть ветвь\" title=\"Свернуть ветвь\">"
+              },
+              {
+                "target": [
+                  ".is-selected > .flow-person-content"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-person-content\" aria-label=\"Тестов Пётр Иванович, 1965 — н. в.\" title=\"Тестов Пётр Иванович, 1965 — н. в.\">"
+              },
+              {
+                "target": [
+                  ".is-selected > .flow-collapse[aria-label=\"Свернуть ветвь\"][title=\"Свернуть ветвь\"]"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-collapse nodrag nopan\" aria-label=\"Свернуть ветвь\" title=\"Свернуть ветвь\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-spouse\"] > .flow-person-content"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-person-content\" aria-label=\"Тестова Елена Сергеевна, 1967 — н. в.\" title=\"Тестова Елена Сергеевна, 1967 — н. в.\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-grandchild\"] > .flow-person-content"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-person-content\" aria-label=\"Тестова Анна Петровна, 1990 — н. в.\" title=\"Тестова Анна Петровна, 1990 — н. в.\">"
+              },
+              {
+                "target": [
+                  "button[aria-label=\"Тестова Ольга, 1992 — н. в.\"]"
+                ],
+                "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name",
+                "html": "<button class=\"flow-person-content\" aria-label=\"Тестова Ольга, 1992 — н. в.\" title=\"Тестова Ольга, 1992 — н. в.\">"
+              }
+            ]
+          },
+          {
+            "id": "target-size",
+            "impact": "serious",
+            "help": "All touch targets must be 24px large, or leave sufficient space",
+            "nodes": [
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-memorial-person\"] > .flow-collapse[aria-label=\"Свернуть ветвь\"][title=\"Свернуть ветвь\"]"
+                ],
+                "summary": "Fix any of the following:\n  Target has insufficient size (22.8px by 16.5px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 16.6px instead of at least 24px.",
+                "html": "<button class=\"flow-collapse nodrag nopan\" aria-label=\"Свернуть ветвь\" title=\"Свернуть ветвь\">"
+              },
+              {
+                "target": [
+                  "div[data-person-id=\"e2e-sibling\"] > .flow-collapse[aria-label=\"Свернуть ветвь\"][title=\"Свернуть ветвь\"]"
+                ],
+                "summary": "Fix any of the following:\n  Target has insufficient size (22.8px by 16.5px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 16.6px instead of at least 24px.",
+                "html": "<button class=\"flow-collapse nodrag nopan\" aria-label=\"Свернуть ветвь\" title=\"Свернуть ветвь\">"
+              },
+              {
+                "target": [
+                  ".is-selected > .flow-collapse[aria-label=\"Свернуть ветвь\"][title=\"Свернуть ветвь\"]"
+                ],
+                "summary": "Fix any of the following:\n  Target has insufficient size (22.8px by 16.5px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 16.6px instead of at least 24px.",
+                "html": "<button class=\"flow-collapse nodrag nopan\" aria-label=\"Свернуть ветвь\" title=\"Свернуть ветвь\">"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "route": "profile-width-check",
+        "width": 320,
+        "overflow": 0,
+        "buttons": [
+          {
+            "text": "Скопировать ссылку",
+            "width": 36,
+            "height": 44
+          },
+          {
+            "text": "Изменить человека",
+            "width": 36,
+            "height": 44
+          },
+          {
+            "text": "Добавить родственника",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "История изменений человека",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "Свернуть панель",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "Закрыть панель",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "За отвагу, СССР",
+            "width": 54,
+            "height": 56
+          },
+          {
+            "text": "Ветеран труда, СССР",
+            "width": 54,
+            "height": 56
+          },
+          {
+            "text": "О человеке",
+            "width": 68.921875,
+            "height": 48.390625
+          },
+          {
+            "text": "Источники 0",
+            "width": 86.140625,
+            "height": 48.390625
+          },
+          {
+            "text": "Обсуждение 0",
+            "width": 96.125,
+            "height": 48.390625
+          },
+          {
+            "text": "Иван Тестовотец",
+            "width": 280,
+            "height": 61.484375
+          },
+          {
+            "text": "Елена Тестовасупруг / супруга (статус неизвестен)",
+            "width": 280,
+            "height": 61.484375
+          },
+          {
+            "text": "Анна Тестовадочь",
+            "width": 280,
+            "height": 61.484375
+          },
+          {
+            "text": "Мария Тестовасестра по отцу",
+            "width": 280,
+            "height": 61.484375
+          },
+          {
+            "text": "Узнать родство с другим человеком",
+            "width": 280,
+            "height": 44
+          },
+          {
+            "text": "Открыть фотоальбом человека: 0 фото",
+            "width": 276,
+            "height": 81
+          }
+        ]
+      },
+      {
+        "route": "profile-width-check",
+        "width": 360,
+        "overflow": 0,
+        "buttons": [
+          {
+            "text": "Скопировать ссылку",
+            "width": 36,
+            "height": 44
+          },
+          {
+            "text": "Изменить человека",
+            "width": 36,
+            "height": 44
+          },
+          {
+            "text": "Добавить родственника",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "История изменений человека",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "Свернуть панель",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "Закрыть панель",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "За отвагу, СССР",
+            "width": 54,
+            "height": 56
+          },
+          {
+            "text": "Ветеран труда, СССР",
+            "width": 54,
+            "height": 56
+          },
+          {
+            "text": "О человеке",
+            "width": 68.921875,
+            "height": 48.390625
+          },
+          {
+            "text": "Источники 0",
+            "width": 86.140625,
+            "height": 48.390625
+          },
+          {
+            "text": "Обсуждение 0",
+            "width": 96.125,
+            "height": 48.390625
+          },
+          {
+            "text": "Иван Тестовотец",
+            "width": 320,
+            "height": 61.484375
+          },
+          {
+            "text": "Елена Тестовасупруг / супруга (статус неизвестен)",
+            "width": 320,
+            "height": 61.484375
+          },
+          {
+            "text": "Анна Тестовадочь",
+            "width": 320,
+            "height": 61.484375
+          },
+          {
+            "text": "Мария Тестовасестра по отцу",
+            "width": 320,
+            "height": 61.484375
+          },
+          {
+            "text": "Узнать родство с другим человеком",
+            "width": 320,
+            "height": 44
+          },
+          {
+            "text": "Открыть фотоальбом человека: 0 фото",
+            "width": 316,
+            "height": 81
+          }
+        ]
+      },
+      {
+        "route": "profile-width-check",
+        "width": 390,
+        "overflow": 0,
+        "buttons": [
+          {
+            "text": "Скопировать ссылку",
+            "width": 36,
+            "height": 44
+          },
+          {
+            "text": "Изменить человека",
+            "width": 36,
+            "height": 44
+          },
+          {
+            "text": "Добавить родственника",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "История изменений человека",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "Свернуть панель",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "Закрыть панель",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "За отвагу, СССР",
+            "width": 54,
+            "height": 56
+          },
+          {
+            "text": "Ветеран труда, СССР",
+            "width": 54,
+            "height": 56
+          },
+          {
+            "text": "О человеке",
+            "width": 68.921875,
+            "height": 48.390625
+          },
+          {
+            "text": "Источники 0",
+            "width": 86.140625,
+            "height": 48.390625
+          },
+          {
+            "text": "Обсуждение 0",
+            "width": 96.125,
+            "height": 48.390625
+          },
+          {
+            "text": "Иван Тестовотец",
+            "width": 350,
+            "height": 61.484375
+          },
+          {
+            "text": "Елена Тестовасупруг / супруга (статус неизвестен)",
+            "width": 350,
+            "height": 61.484375
+          },
+          {
+            "text": "Анна Тестовадочь",
+            "width": 350,
+            "height": 61.484375
+          },
+          {
+            "text": "Мария Тестовасестра по отцу",
+            "width": 350,
+            "height": 61.484375
+          },
+          {
+            "text": "Узнать родство с другим человеком",
+            "width": 350,
+            "height": 44
+          },
+          {
+            "text": "Открыть фотоальбом человека: 0 фото",
+            "width": 346,
+            "height": 81
+          }
+        ]
+      },
+      {
+        "route": "profile-width-check",
+        "width": 768,
+        "overflow": 0,
+        "buttons": [
+          {
+            "text": "Скопировать ссылку",
+            "width": 36,
+            "height": 44
+          },
+          {
+            "text": "Изменить человека",
+            "width": 36,
+            "height": 44
+          },
+          {
+            "text": "Добавить родственника",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "История изменений человека",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "Свернуть панель",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "Закрыть панель",
+            "width": 44,
+            "height": 44
+          },
+          {
+            "text": "За отвагу, СССР",
+            "width": 54,
+            "height": 56
+          },
+          {
+            "text": "Ветеран труда, СССР",
+            "width": 54,
+            "height": 56
+          },
+          {
+            "text": "О человеке",
+            "width": 68.921875,
+            "height": 48.390625
+          },
+          {
+            "text": "Источники 0",
+            "width": 86.140625,
+            "height": 48.390625
+          },
+          {
+            "text": "Обсуждение 0",
+            "width": 96.125,
+            "height": 48.390625
+          },
+          {
+            "text": "Иван Тестовотец",
+            "width": 728,
+            "height": 61.484375
+          },
+          {
+            "text": "Елена Тестовасупруг / супруга (статус неизвестен)",
+            "width": 728,
+            "height": 61.484375
+          },
+          {
+            "text": "Анна Тестовадочь",
+            "width": 728,
+            "height": 61.484375
+          },
+          {
+            "text": "Мария Тестовасестра по отцу",
+            "width": 728,
+            "height": 61.484375
+          },
+          {
+            "text": "Узнать родство с другим человеком",
+            "width": 728,
+            "height": 44
+          },
+          {
+            "text": "Открыть фотоальбом человека: 0 фото",
+            "width": 724,
+            "height": 81
+          }
+        ]
+      },
+      {
+        "route": "profile-width-check",
+        "width": 1024,
+        "overflow": 0,
+        "buttons": [
+          {
+            "text": "Скопировать ссылку",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "Изменить человека",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "Добавить родственника",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "Развернуть карточку на весь экран",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "История изменений человека",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "Закрыть панель",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "За отвагу, СССР",
+            "width": 54,
+            "height": 56
+          },
+          {
+            "text": "Ветеран труда, СССР",
+            "width": 54,
+            "height": 56
+          },
+          {
+            "text": "О человеке",
+            "width": 68.921875,
+            "height": 48.390625
+          },
+          {
+            "text": "Источники 0",
+            "width": 86.140625,
+            "height": 48.390625
+          },
+          {
+            "text": "Обсуждение 0",
+            "width": 96.125,
+            "height": 48.390625
+          },
+          {
+            "text": "Иван Тестовотец",
+            "width": 299,
+            "height": 61.484375
+          },
+          {
+            "text": "Елена Тестовасупруг / супруга (статус неизвестен)",
+            "width": 299,
+            "height": 61.484375
+          },
+          {
+            "text": "Анна Тестовадочь",
+            "width": 299,
+            "height": 61.484375
+          },
+          {
+            "text": "Мария Тестовасестра по отцу",
+            "width": 299,
+            "height": 61.484375
+          },
+          {
+            "text": "Узнать родство с другим человеком",
+            "width": 299,
+            "height": 44
+          },
+          {
+            "text": "Открыть фотоальбом человека: 0 фото",
+            "width": 295,
+            "height": 81
+          }
+        ]
+      },
+      {
+        "route": "profile-width-check",
+        "width": 1440,
+        "overflow": 0,
+        "buttons": [
+          {
+            "text": "Скопировать ссылку",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "Изменить человека",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "Добавить родственника",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "Развернуть карточку на весь экран",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "История изменений человека",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "Закрыть панель",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "За отвагу, СССР",
+            "width": 54,
+            "height": 56
+          },
+          {
+            "text": "Ветеран труда, СССР",
+            "width": 54,
+            "height": 56
+          },
+          {
+            "text": "О человеке",
+            "width": 68.921875,
+            "height": 48.390625
+          },
+          {
+            "text": "Источники 0",
+            "width": 86.140625,
+            "height": 48.390625
+          },
+          {
+            "text": "Обсуждение 0",
+            "width": 96.125,
+            "height": 48.390625
+          },
+          {
+            "text": "Иван Тестовотец",
+            "width": 333.390625,
+            "height": 61.484375
+          },
+          {
+            "text": "Елена Тестовасупруг / супруга (статус неизвестен)",
+            "width": 333.390625,
+            "height": 61.484375
+          },
+          {
+            "text": "Анна Тестовадочь",
+            "width": 333.390625,
+            "height": 61.484375
+          },
+          {
+            "text": "Мария Тестовасестра по отцу",
+            "width": 333.390625,
+            "height": 61.484375
+          },
+          {
+            "text": "Узнать родство с другим человеком",
+            "width": 333.390625,
+            "height": 44
+          },
+          {
+            "text": "Открыть фотоальбом человека: 0 фото",
+            "width": 329.390625,
+            "height": 81
+          }
+        ]
+      },
+      {
+        "route": "profile-width-check",
+        "width": 1920,
+        "overflow": 0,
+        "buttons": [
+          {
+            "text": "Скопировать ссылку",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "Изменить человека",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "Добавить родственника",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "Развернуть карточку на весь экран",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "История изменений человека",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "Закрыть панель",
+            "width": 36,
+            "height": 36
+          },
+          {
+            "text": "За отвагу, СССР",
+            "width": 54,
+            "height": 56
+          },
+          {
+            "text": "Ветеран труда, СССР",
+            "width": 54,
+            "height": 56
+          },
+          {
+            "text": "О человеке",
+            "width": 68.921875,
+            "height": 48.390625
+          },
+          {
+            "text": "Источники 0",
+            "width": 86.140625,
+            "height": 48.390625
+          },
+          {
+            "text": "Обсуждение 0",
+            "width": 96.125,
+            "height": 48.390625
+          },
+          {
+            "text": "Иван Тестовотец",
+            "width": 339,
+            "height": 61.484375
+          },
+          {
+            "text": "Елена Тестовасупруг / супруга (статус неизвестен)",
+            "width": 339,
+            "height": 61.484375
+          },
+          {
+            "text": "Анна Тестовадочь",
+            "width": 339,
+            "height": 61.484375
+          },
+          {
+            "text": "Мария Тестовасестра по отцу",
+            "width": 339,
+            "height": 61.484375
+          },
+          {
+            "text": "Узнать родство с другим человеком",
+            "width": 339,
+            "height": 44
+          },
+          {
+            "text": "Открыть фотоальбом человека: 0 фото",
+            "width": 335,
+            "height": 81
+          }
+        ]
+      }
+    ]
+  },
+  "browserCaveats": [
+    "Fixture names and images are synthetic.",
+    "label-content-name-mismatch was not counted as a confirmed finding.",
+    "Axe results are not a full WCAG certification."
+  ],
+  "coldLayouts": {
+    "host": "Windows, Node 22.14",
+    "includesDomOrNetwork": false,
+    "geometry": "production",
+    "fixtures": "synthetic seeded graphs",
+    "results": [
+      {
+        "seed": 1,
+        "people": 66,
+        "contacts": 16,
+        "crossings": 16,
+        "cardHits": 0,
+        "width": 9702,
+        "elkCalls": 7,
+        "elkMs": 878,
+        "layoutMs": 955,
+        "qualityMs": 3,
+        "totalMs": 958,
+        "cardOverlaps": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "missingPeople": 0,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "generationMode": "production",
+        "decrossMode": "production",
+        "geometrySha256": "ff414f83c77cb58ed3dc9183ea92d2f5877c46f28f1e0a80bdf38d88efba1bec"
+      },
+      {
+        "seed": 2,
+        "people": 57,
+        "contacts": 8,
+        "crossings": 8,
+        "cardHits": 0,
+        "width": 8108,
+        "elkCalls": 7,
+        "elkMs": 461,
+        "layoutMs": 496,
+        "qualityMs": 1,
+        "totalMs": 497,
+        "cardOverlaps": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "missingPeople": 0,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "generationMode": "production",
+        "decrossMode": "production",
+        "geometrySha256": "a5c41fe621fa0e563218aca358002a181e2cfd38d30d7167e71dee2f8366bf58"
+      },
+      {
+        "seed": 1,
+        "people": 194,
+        "contacts": 217,
+        "crossings": 217,
+        "cardHits": 0,
+        "width": 22890,
+        "elkCalls": 7,
+        "elkMs": 4055,
+        "layoutMs": 4287,
+        "qualityMs": 6,
+        "totalMs": 4293,
+        "cardOverlaps": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "missingPeople": 0,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "generationMode": "production",
+        "decrossMode": "production",
+        "geometrySha256": "419ca4a1d5d790f27396d28252c11cba398301bcce33a75d14d96c75d302a42b"
+      },
+      {
+        "seed": 2,
+        "people": 166,
+        "contacts": 140,
+        "crossings": 140,
+        "cardHits": 0,
+        "width": 19798,
+        "elkCalls": 7,
+        "elkMs": 2130,
+        "layoutMs": 2258,
+        "qualityMs": 6,
+        "totalMs": 2264,
+        "cardOverlaps": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "missingPeople": 0,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "generationMode": "production",
+        "decrossMode": "production",
+        "geometrySha256": "f9a0065cb609a10528e5af9a411c994355d93384385b4c50228c52f41de0fd08"
+      }
+    ]
+  },
+  "runtimeOwnershipProof": {
+    "implementation": "actual archive-route-pool",
+    "clientDisconnected": true,
+    "fifthArchiveOpened": true,
+    "handlerStillRunningAtEviction": true,
+    "task": "synthetic pending handler",
+    "liveAiProviderUsed": false
+  },
+  "productionAggregates": {
+    "cpuLogical": 3,
+    "ramMiB": 3398,
+    "swapMiB": 2047,
+    "diskSizeGBApprox": 30,
+    "diskFreeGBApprox": 14,
+    "idleAppCgroupBytes": 90939392,
+    "postgresVersion": "18.6",
+    "maxConnections": 30,
+    "reservedSuperuserConnections": 3,
+    "observedApplicationConnections": 4,
+    "roleSuperuser": false,
+    "roleBypassRls": false,
+    "forcedRlsTables": 60,
+    "archives": 2,
+    "people": 162,
+    "photos": 99,
+    "documents": 13,
+    "databaseSizeMBApprox": 29,
+    "pgBackrestOffHost": false,
+    "archiveTimeoutSeconds": 0,
+    "walArchivedCount": 442,
+    "walArchiveFailedCount": 0,
+    "backupHealthOnFailureConfigured": false,
+    "mainProtected": false,
+    "githubRulesets": 0
+  }
+}

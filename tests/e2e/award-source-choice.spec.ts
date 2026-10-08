@@ -28,7 +28,9 @@ async function isolatedAward(page: Page, citations?: Source[], initial?: Partial
     revision++;
     return route.fulfill({ json: { family, revision, appliedChanges: changes } });
   });
-  return { read: () => family.people.find((person) => person.id === "e2e-child")!.awards![0], writes: () => writes };
+  return { read: () => family.people.find((person) => person.id === "e2e-child")!.awards![0],
+    readAwards: () => family.people.find((person) => person.id === "e2e-child")!.awards!,
+    writes: () => writes };
 }
 
 async function openAward(page: Page, name = courage.name) {
@@ -44,6 +46,32 @@ async function chooseAward(editor: ReturnType<Page["locator"]>, name: string) {
   await editor.getByRole("option", { name: new RegExp(name) }).click();
   await editor.locator(".award-inline-actions").getByRole("button", { name: "Готово" }).click();
 }
+
+test("new award saves without a source; its optional source belongs only to that award", async ({ page }) => {
+  const fixture = await isolatedAward(page);
+  await page.goto("/tree");
+  await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").click();
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  const editor = page.locator(".person-editor-portrait-awards");
+  await editor.getByRole("button", { name: "Добавить награду", exact: true }).click();
+  await editor.getByRole("combobox", { name: "Название" }).fill(labour.name);
+  await editor.getByRole("option", { name: new RegExp(labour.name) }).click();
+  await editor.locator(".award-inline-actions").getByRole("button", { name: "Добавить", exact: true }).click();
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect.poll(() => fixture.readAwards().length).toBe(2);
+  expect(fixture.readAwards()[1].source).toBeUndefined();
+  expect(fixture.read().source?.url).toBe("https://example.test/courage");
+
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  await editor.getByRole("button", { name: `Редактировать: ${labour.name}` }).click();
+  await editor.getByText("Описание и ссылка", { exact: true }).click();
+  await editor.getByLabel("Описание").fill("Удостоверение ветерана труда");
+  await editor.getByLabel("Ссылка", { exact: true }).fill("https://example.test/labour");
+  await editor.locator(".award-inline-actions").getByRole("button", { name: "Готово" }).click();
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect.poll(() => fixture.readAwards()[1].source?.url).toBe("https://example.test/labour");
+  expect(fixture.read().source?.url).toBe("https://example.test/courage");
+});
 
 test("changing a recognized award makes retaining its old source an explicit local choice", async ({ page }) => {
   const fixture = await isolatedAward(page);
@@ -152,6 +180,7 @@ test("catalog award citation only offers its own PDF and an administrator page c
 });
 
 test("each award citation keeps its document controls beside its own source", async ({ page }) => {
+  if (test.info().project.name === "mobile") await page.setViewportSize({ width: 320, height: 844 });
   const firstId = "d0c00000-0000-4000-8000-000000000001";
   const secondId = "d0c00000-0000-4000-8000-000000000002";
   const fixture = await isolatedAward(page, [
@@ -171,6 +200,8 @@ test("each award citation keeps its document controls beside its own source", as
     .toHaveAttribute("href", new RegExp(secondId));
   await first.getByLabel("Страница документа источника").fill("4");
   await expect(second.getByLabel("Страница документа источника")).toHaveValue("7");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath("award-citations.png") });
   expect(fixture.writes()).toBe(0);
   await editor.locator(".award-inline-actions").getByRole("button", { name: "Готово" }).click();
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();

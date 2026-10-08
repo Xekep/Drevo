@@ -376,9 +376,14 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT 1 AS present FROM pg_constraint WHERE conrelid=to_regclass('discovery_branch_members') AND conname='discovery_branch_members_relation_check' AND pg_get_constraintdef(oid) LIKE '%relative%'",
       "092_discovery_branch_depth.sql",
     ],
+    [
+      "SELECT 1 AS present FROM pg_constraint WHERE conrelid=to_regclass('archive_invitations') AND conname='archive_invitation_scope_check'",
+      "094_archive_invitation_scope.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
-    if (file === "090_global_staff_roles.sql" || file === "092_discovery_branch_depth.sql") {
+    if (file === "090_global_staff_roles.sql" || file === "092_discovery_branch_depth.sql" ||
+        file === "094_archive_invitation_scope.sql") {
       if (!db.postgresTransaction)
         throw new Error("PostgreSQL transaction unavailable");
       await db.postgresTransaction(async (client) => {
@@ -436,6 +441,23 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
                    nullif(p.data->>'death', '') IS NOT NULL)`);
       await db.exec("", `INSERT INTO discovery_publication_reconciled_archives(archive_id)
         VALUES(current_setting('drevo.archive_id', true)) ON CONFLICT DO NOTHING`);
+    });
+  if (!(await db.prepare("", "SELECT to_regclass('document_citation_refs') AS present").get())?.present)
+    await db.transaction(async () => {
+      await db.exec("", "SELECT pg_advisory_xact_lock(186743294)");
+      await db.exec("", readFileSync(new URL("../../ops/postgres/097_document_citation_index.sql", import.meta.url), "utf8"));
+    });
+  if (!(await db.prepare("", `SELECT 1 AS present FROM document_citation_index_state
+    WHERE archive_id=current_setting('drevo.archive_id',true)`).get())?.present)
+    await db.transaction(async () => {
+      for (const [table, kind, field] of [["people", "person", "data"],
+        ["family_unions", "union", "data"], ["relations", "relation", "sources"]])
+        await db.exec("", `INSERT INTO document_citation_refs(archive_id,document_id,kind,entity_id)
+          SELECT DISTINCT entity.archive_id,ref #>> '{}','${kind}',entity.id
+          FROM ${table} entity CROSS JOIN LATERAL jsonb_path_query(entity.${field},'$.**.documentId') ref
+          WHERE jsonb_typeof(ref)='string' AND ref #>> '{}' <> '' ON CONFLICT DO NOTHING`);
+      await db.exec("", `INSERT INTO document_citation_index_state(archive_id)
+        VALUES(current_setting('drevo.archive_id',true)) ON CONFLICT DO NOTHING`);
     });
   // A preview staged before the additive migration still occupies capacity
   // when its archive starts. RLS keeps this backfill within the active archive.

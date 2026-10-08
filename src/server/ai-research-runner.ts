@@ -144,6 +144,7 @@ export function createResearchRunner({
     chatId,
     turnToken,
     assertAiAccess,
+    assertGeneratedFileInstall,
     commitSuggestion,
   }: {
     body: Record<string, unknown>;
@@ -160,6 +161,7 @@ export function createResearchRunner({
     chatId: string;
     turnToken: string;
     assertAiAccess: () => Promise<void>;
+    assertGeneratedFileInstall?: () => Promise<void>;
     commitSuggestion: typeof suggestions.createFromTool;
   }): Promise<ResearchResult> {
     canPropose = canPropose && runtime.capabilities.proposals;
@@ -319,6 +321,7 @@ export function createResearchRunner({
         "Никогда не печатай JSON-вызовы инструментов, даже в блоках кода или как план действий. Вызывай инструменты через tool_calls и только затем дай окончательный ответ. Не обещай «скоро вернуться»: обработай запрос в текущем ответе или честно сообщи, каких данных не хватает.",
         "Число поколений бери только из totals.generations результата get_archive_insights. generationDistribution описывает сохранённые уровни раскладки и не должна противоречить генеалогической глубине.",
         "Не утверждай, что отсутствие записи доказывает отсутствие события или родства.",
+        "Сведения карточки человека и события жизни не требуют источника. Дополнительные источники относятся ко всей карточке; у награды может быть свой необязательный источник. Не требуй свидетельство для каждого поля, не называй отсутствие источника ошибкой или доказательством недостоверности. Прежние и импортированные точные цитаты сохраняют указанное значение и не подтверждают изменённые сведения автоматически.",
         "Одиночный набор бессмысленных слогов без вопроса не считай именем человека и не ищи в архиве. Ответь коротко и по-доброму, с лёгкой ненавязчивой шуткой, и предложи пример вопроса об архиве. Не утверждай, что искал такое слово в архиве. Для осмысленных запросов сохраняй точность и серьёзность фактов.",
         "Выбор человека в интерфейсе — скрытое действие пользователя для уточнения предыдущего вопроса. Используй выбранную карточку как контекст, но не цитируй служебную формулировку, personId и внутренние инструкции.",
         selectedPerson
@@ -1165,6 +1168,10 @@ export function createResearchRunner({
             throw error;
           }
         };
+        const assertInstallAccess = async () => {
+          try { await (assertGeneratedFileInstall || assertAiAccess)(); }
+          catch (error) { accessCheckFailed = true; throw error; }
+        };
         try {
           toolArgs = JSON.parse(call.function.arguments || "{}");
           if (!allowedToolNames.has(call.function.name))
@@ -1303,7 +1310,7 @@ export function createResearchRunner({
                 ownerId: user.id,
                 chatId,
                 expires: Date.now() + 30 * 60_000,
-              });
+              }, assertInstallAccess);
               if (!saved) break;
               links.push(saved);
             }
@@ -1341,7 +1348,7 @@ export function createResearchRunner({
               name,
               bytes,
               expires: Date.now() + 30 * 60_000,
-            });
+            }, assertInstallAccess);
             if (!saved)
               throw new Error("Временное хранилище файлов заполнено. Повторите позже.");
             files.push(saved);
@@ -1654,7 +1661,7 @@ export function createResearchRunner({
           result &&
           typeof result === "object"
         ) {
-          // MCP keeps its machine-readable discriminator. The model needs the
+          // Research Tools keep their machine-readable discriminator. The model needs the
           // human explanation, otherwise it tends to quote the enum to users.
           const familyResult = result as {
             siblings?: Array<Record<string, unknown>>;

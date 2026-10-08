@@ -42,7 +42,9 @@ test("medium tree edits pass the previous geometry to the layout worker", async 
   const requests = () => page.evaluate(() =>
     (window as typeof window & { __layoutHistoryRequests: { people: number; previous: number }[] })
       .__layoutHistoryRequests);
-  await page.goto("/tree");
+  // Open the ancestor at a readable scale: the distant overview deliberately
+  // omits individual branch controls, so it is not an editing surface.
+  await page.goto("/people/g-0-0");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/, { timeout: 30_000 });
   await expect.poll(async () => (await requests()).length).toBe(1);
   const collapse = page.getByTestId("rf__node-g-0-0").getByRole("button", { name: /Свернуть/ });
@@ -126,10 +128,8 @@ test("selection does not recalculate and reopening a branch reuses complete geom
   await expect(page.locator(".inspector-dock")).toContainText("Пётр");
   expect(await requests(page)).toBe(1);
   const child = page.getByTestId("rf__node-e2e-child");
-  const collapsePanel = page
-    .locator(".inspector-dock")
-    .getByRole("button", { name: "Свернуть панель" });
-  if (await collapsePanel.isVisible()) await collapsePanel.click();
+  await page.locator(".inspector-dock")
+    .getByRole("button", { name: "Закрыть панель", exact: true }).click();
   await child
     .getByRole("button", { name: /Свернуть (потомков|ветвь)/ })
     .click();

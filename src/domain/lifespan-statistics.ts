@@ -1,5 +1,25 @@
-import { dateBound, validDate } from "./dates.ts";
-import type { Family } from "./types.ts";
+import { dateBound, dateYear, validDate } from "./dates.ts";
+import type { Family, Person } from "./types.ts";
+
+/** The same recorded adult sample powers the summary and chronology hints. */
+export function averageAdultLifespansBySex(people: readonly Person[], currentYear: number) {
+  const samples = { m: { total: 0, count: 0 }, f: { total: 0, count: 0 } };
+  for (const person of people) {
+    if ((person.sex !== "m" && person.sex !== "f") ||
+      !validDate(person.birth) || !validDate(person.death)) continue;
+    const death = dateYear(person.death);
+    const age = death - dateYear(person.birth);
+    if (age < 18 || death < currentYear - 100 || death > currentYear) continue;
+    samples[person.sex].total += age;
+    samples[person.sex].count++;
+  }
+  const result = (sex: "m" | "f") => ({
+    averageYears: samples[sex].count
+      ? Math.round(samples[sex].total / samples[sex].count * 10) / 10 : null,
+    sampleSize: samples[sex].count,
+  });
+  return { m: result("m"), f: result("f") };
+}
 
 /** Completed lives only. Partial dates keep their age uncertainty explicit. */
 export function lifespanStatistics(family: Family, adultsOnly = false) {

@@ -840,98 +840,6 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   place-items: center;
   border-radius: 50%;
 }
-.mcp-token-create {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(180px, 230px);
-  gap: 12px;
-  margin: 8px 0 12px;
-}
-.mcp-token-options {
-  grid-column: 1 / -1;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-}
-.mcp-token-options summary {
-  padding: 12px 14px;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-}
-.mcp-token-options > div {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  padding: 0 14px 14px;
-}
-.mcp-token-create > .primary-action {
-  grid-column: 1 / -1;
-  justify-self: start;
-}
-.mcp-secret {
-  margin: 18px 0 24px;
-  padding: 16px;
-  border: 1px solid #b9cfaf;
-  border-radius: 10px;
-  background: #f0f6eb;
-}
-.mcp-secret > div {
-  display: flex;
-  gap: 8px;
-  align-items: stretch;
-}
-.mcp-secret code {
-  flex: 1;
-  min-width: 0;
-  padding: 10px;
-  border-radius: 7px;
-  background: white;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-}
-.mcp-secret button {
-  width: 40px;
-  display: grid;
-  place-items: center;
-  border-radius: 7px;
-  background: white;
-}
-.mcp-token-list {
-  display: grid;
-}
-.mcp-token-list article {
-  display: grid;
-  grid-template-columns: 28px 1fr 38px;
-  gap: 10px;
-  align-items: start;
-  padding: 14px 0;
-  border-top: 1px solid var(--line);
-}
-.mcp-token-list article.revoked {
-  opacity: 0.55;
-}
-.mcp-token-list article > svg {
-  margin-top: 3px;
-  color: #718768;
-}
-.mcp-token-list article > div {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-.mcp-token-list code,
-.mcp-token-list small {
-  color: var(--muted);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.mcp-token-list article > button {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  color: #965f57;
-}
 @media (max-width: 600px) {
   .research-assistant-trigger {
     right: 18px;
@@ -973,16 +881,6 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
     width: 44px;
     min-width: 44px;
     height: 44px;
-  }
-  .mcp-token-create {
-    grid-template-columns: 1fr;
-  }
-  .mcp-token-options,
-  .mcp-token-create > .primary-action {
-    grid-column: 1;
-  }
-  .mcp-token-options > div {
-    grid-template-columns: 1fr;
   }
 }
 
@@ -1224,6 +1122,68 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   display: grid;
   gap: 12px;
 }
+.ai-settings-fields {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.ai-settings-section { min-width: 0; }
+.ai-budget-settings .ai-limit-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ai-settings-fields :is(input, select, button) { scroll-margin-bottom: 90px; }
+.ai-settings-admin .ai-settings-fields > .setting-toggle {
+  border: 0;
+  border-bottom: 1px solid #e2e8df;
+  border-radius: 0;
+  padding: 6px 0 12px;
+  margin: 0;
+}
+.ai-inherited-profile {
+  padding: 12px;
+  border: 1px solid #e2e8df;
+  border-radius: 8px;
+  display: grid;
+  gap: 9px;
+}
+.ai-inherited-profile p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 0;
+}
+.ai-inherited-profile b { overflow-wrap: anywhere; }
+.ai-inherited-profile p > span, .ai-inherited-profile > small {
+  color: #58695d;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ai-capability-summary { display: flex; flex-wrap: wrap; gap: 5px 14px; }
+.ai-capability-summary span { color: #6a756b; font-size: 12px; line-height: 1.5; }
+.ai-capability-summary .is-enabled { color: #3b6347; }
+.ai-default-settings > .setting-toggle { border: 0; padding: 8px 0; margin: 0; }
+.ai-default-settings > label:not(.setting-toggle) { display: grid; gap: 6px; max-width: 300px; }
+.ai-role-capabilities .setting-toggle { flex-wrap: wrap; }
+.ai-role-capabilities .setting-toggle > small { flex-basis: 100%; font-size: 12px; color: #58695d; }
+.ai-settings-admin .ai-settings-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0 4px;
+  border-top: 1px solid #e2e8df;
+  background: #fff;
+}
+.ai-settings-actions > p { grid-column: 1 / -1; margin: 0; overflow-wrap: anywhere; }
+.ai-settings-actions .ai-draft-state { text-align: right; }
+.ai-draft-state { font-size: 12px; color: #58695d; }
 .ai-role-profiles,
 .ai-role-profiles > fieldset {
   display: grid;
@@ -1238,13 +1198,6 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   color: #394d3d;
   font-weight: 600;
 }
-.ai-role-profile-intro {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  justify-content: space-between;
-  gap: 10px;
-}
 .ai-role-choices {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1254,7 +1207,8 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   display: grid;
   gap: 2px;
   min-width: 0;
-  padding: 8px 10px;
+  padding: 9px 10px;
+  min-height: 44px;
   border: 1px solid #dfe8da;
   border-radius: 8px;
   background: #fff;
@@ -1267,12 +1221,34 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   background: #edf5e9;
 }
 .ai-role-choices b {
-  font-size: 12px;
+  font-size: 13px;
 }
 .ai-role-choices small {
   color: #586b59;
-  font-size: 12px;
+  font-size: 11px;
 }
+.ai-role-profile-main {
+  display: grid;
+  grid-template-columns: minmax(140px, .7fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 8px 14px;
+}
+.ai-role-profile-main > label:not(.setting-toggle) { display: grid; gap: 4px; font-size: 12px; }
+.admin-card.archive-form .ai-role-profile-main > .setting-toggle {
+  border: 0;
+  padding: 7px 4px;
+  margin: 0;
+}
+.ai-role-profile-main select { width: 100%; }
+.ai-role-profile-custom > small { color: var(--muted); font-size: 11px; }
+.ai-role-profile-custom .ai-role-limits {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 6px 0 0;
+  border: 0;
+  gap: 8px;
+}
+.ai-role-profile-custom .ai-role-limits label { font-size: 11px; }
 .ai-role-capabilities {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1449,6 +1425,9 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   align-items: center;
   gap: 7px;
 }
+@media (max-width: 900px) {
+  .ai-role-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 600px) {
   .ai-settings-title {
     gap: 8px;
@@ -1459,9 +1438,8 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   .ai-role-capabilities {
     grid-template-columns: 1fr;
   }
-  .ai-role-choices {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+  .ai-role-profile-main { grid-template-columns: minmax(0, 1fr); }
+  .ai-budget-settings .ai-limit-settings { grid-template-columns: minmax(0, 1fr); }
   .ai-settings-actions {
     position: sticky;
     bottom: 0;
@@ -1650,58 +1628,6 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   }
 }
 
-.mcp-usage-list {
-  display: grid;
-  gap: 5px;
-  margin-top: 22px;
-}
-.mcp-usage-list h3 {
-  margin: 0 0 5px;
-  font-size: 12px;
-}
-.mcp-usage-list article {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
-  gap: 9px;
-  align-items: center;
-  padding: 8px 0;
-  border-top: 1px solid var(--line);
-}
-.mcp-usage-list article > span {
-  padding: 3px 5px;
-  border-radius: 999px;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 700;
-}
-.mcp-usage-list article > span.ok {
-  background: #edf5e9;
-  color: #46653f;
-}
-.mcp-usage-list article > span.error {
-  background: #f8e9e7;
-  color: #8c5149;
-}
-.mcp-usage-list article > div {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-.mcp-usage-list article b {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 12px;
-  white-space: nowrap;
-}
-.mcp-usage-list article small,
-.mcp-usage-list > p {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-.mcp-usage-list > p {
-  margin: 5px 0 0;
-}
 
 .ai-credential-settings {
   display: grid;

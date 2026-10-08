@@ -17,6 +17,45 @@ import type { TransferMedia } from "../src/domain/genealogy-transfer.ts";
 
 const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF");
 
+for (const version of ["5.5.1", "7.0"] as const)
+  test(`standard-only ${version} export retains each document's event association`, async () => {
+    const family: Family = { title: "Example", description: "", demo: false, photos: [], people: [{
+      id: "person", name: "Ada", surname: "Example", patronymic: "", sex: "f", birth: "",
+      birthPlace: "", parents: [], spouses: [], sources: [], generation: 1, column: 0,
+      events: [{ id: "first", type: "residence", date: "1900" }, { id: "second", type: "residence", date: "1910" }],
+    }] };
+    const media: TransferMedia[] = [{ id: "record", file: "media/record.pdf", title: "Record",
+      mime: "application/pdf", personIds: ["person"], portraitIds: [], document: {
+        documentType: "record", documentDate: "", place: "", description: "", provenance: "",
+        eventLinks: [{ personId: "person", eventId: "second" }],
+      } }];
+    let omittedLevel: number | undefined;
+    const standard = exportGedcom(family, { version, media }).split(/\r?\n/).filter(line => {
+      const match = /^(\d+) (?:@[^@]+@ )?(\S+)/.exec(line);
+      if (!match) return true;
+      const level = Number(match[1]);
+      if (omittedLevel !== undefined && level > omittedLevel) return false;
+      omittedLevel = match[2].startsWith("_") ? level : undefined;
+      return omittedLevel === undefined;
+    }).join("\n");
+    if (version === "5.5.1") {
+      const parsed = importGedcom(standard, "standard-551");
+      const person = parsed.family.people[0];
+      const second = person.events!.find(event => event.date === "1910")!;
+      assert.deepEqual(parsed.eventMedia, [{ mediaId: parsed.media[0].id,
+        personId: person.id, eventId: second.id }]);
+      return;
+    }
+    const { root, parsed } = await prepared(standard, ["record.pdf"]);
+    try {
+      const person = parsed.family.people[0];
+      const second = person.events!.find(event => event.date === "1910")!;
+      assert.ok(second);
+      assert.deepEqual(parsed.files[0].document?.eventLinks, [{ personId: person.id, eventId: second.id }]);
+      assert.equal(person.events!.filter(event => event.type === "residence").length, 2);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
 async function prepared(text: string, files: string[], extras: Array<{ name: string; bytes: Buffer }> = []) {
   const root = await mkdtemp(join(tmpdir(), "drevo-standard-event-media-"));
   const zipPath = join(root, "source.gdz"), stage = join(root, "stage");

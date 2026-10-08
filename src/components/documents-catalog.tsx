@@ -82,7 +82,6 @@ export function DocumentsCatalog({
   const [total, setTotal] = useState(0);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<ListedDocument | null>(null);
-  const [annotateOnOpen, setAnnotateOnOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [directFailure, setDirectFailure] = useState<{
@@ -267,7 +266,6 @@ export function DocumentsCatalog({
         )
           throw new Error("Документ больше не связан с этим человеком");
         if (!request.signal.aborted) {
-          setAnnotateOnOpen(false);
           setSelected(entry);
         }
       } catch (reason) {
@@ -325,7 +323,6 @@ export function DocumentsCatalog({
         setUploadError("Документ сохранён, но доступ изменился. Не загружайте его повторно; войдите снова.");
         return;
       }
-      setAnnotateOnOpen(true);
       setSelected({
         id: created.id,
         title: title.trim(),
@@ -778,7 +775,6 @@ export function DocumentsCatalog({
                     className="document-item"
                     onClick={() => {
                       setDeleteError("");
-                      setAnnotateOnOpen(false);
                       setSelected(document);
                       onSelectDocument(document.id);
                     }}
@@ -843,7 +839,6 @@ export function DocumentsCatalog({
           document={activeSelected}
           initialPage={documentPage}
           mayAnnotate={mayEdit}
-          annotateOnOpen={annotateOnOpen}
           onClose={() => {
             setSelected(null);
             onSelectDocument(null);

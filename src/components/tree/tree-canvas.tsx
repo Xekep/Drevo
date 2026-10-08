@@ -49,6 +49,7 @@ import { archiveContextAt } from "../../domain/archive-context.ts";
 import { mediaPreview } from "../../domain/media-preview.ts";
 import { familyNeighbors, withoutReviewPeople } from "../../domain/family-neighborhood.ts";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
+import { TreePublicationProvider } from "./tree-publication-provider";
 import { DistantPortraits } from "./distant-portraits";
 import { TreeGpuScene } from "./tree-gpu-scene";
 import { GpuPortraitCache } from "./gpu-portrait-cache";
@@ -74,6 +75,7 @@ import { useTreeLayout } from "./use-tree-layout";
 import { FamilyViewTools } from "./family-view-tools";
 import "../../styles/family-view.css";
 import { useTreeFullscreen } from "./use-tree-fullscreen";
+import { MemberPreviewExit } from "../member-preview-exit";
 import { ArchiveSummary } from "../archive-summary";
 import { relativeAtHandle } from "../../domain/tree-interactions";
 import { applyTreeEdgePermissions, prepareTreeEdges } from "./tree-edge-adapter";
@@ -149,6 +151,7 @@ type Props = {
   colorScheme?: TreeColorScheme;
   generationLimits?: TreeGenerationLimits | null;
   onGenerationAnchor?: (id: string) => Promise<void>;
+  onResetGenerations?: () => Promise<void>;
   selected: string[];
   selectedEdge?: string;
   onChoose: (id: string, additive?: boolean) => void;
@@ -1207,16 +1210,20 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     return () => cancelAnimationFrame(frame);
   }, [gpuFocused, gpuActive]);
   const [anchorNotice, setAnchorNotice] = useState("");
+  const [savingGenerationPreferences, setSavingGenerationPreferences] = useState(false);
   useEffect(() => {
     if (!anchorNotice) return;
     const timer = window.setTimeout(() => setAnchorNotice(""), 6000);
     return () => window.clearTimeout(timer);
   }, [anchorNotice]);
-  const savingAnchor = useRef(false);
-  const { onGenerationAnchor } = props;
+  // Claim synchronously: React's busy state alone cannot serialize two events
+  // before it commits. Anchor changes and reset write the same preferences.
+  const savingGenerations = useRef(false);
+  const { onGenerationAnchor, onResetGenerations } = props;
   const saveGenerationAnchor = useCallback(async (id: string) => {
-    if (savingAnchor.current || !onGenerationAnchor) return false;
-    savingAnchor.current = true;
+    if (savingGenerations.current || !onGenerationAnchor) return false;
+    savingGenerations.current = true;
+    setSavingGenerationPreferences(true);
     const person = currentPeople.get(id);
     try {
       await onGenerationAnchor(id);
@@ -1226,9 +1233,24 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       setAnchorNotice(error instanceof Error ? error.message : "Не удалось сохранить опорного человека");
       return false;
     } finally {
-      savingAnchor.current = false;
+      savingGenerations.current = false;
+      setSavingGenerationPreferences(false);
     }
   }, [onGenerationAnchor, currentPeople]);
+  const resetGenerations = useCallback(async () => {
+    if (savingGenerations.current || !onResetGenerations) return;
+    savingGenerations.current = true;
+    setSavingGenerationPreferences(true);
+    try {
+      await onResetGenerations();
+      setAnchorNotice("Ограничения поколений сняты");
+    } catch (error: unknown) {
+      setAnchorNotice(error instanceof Error ? error.message : "Не удалось снять ограничения поколений");
+    } finally {
+      savingGenerations.current = false;
+      setSavingGenerationPreferences(false);
+    }
+  }, [onResetGenerations]);
   const reanchorHiddenPerson = useCallback(async (id: string) => {
     // Only exclusion by the generation window changes its anchor. Assistant
     // filters, collapsed branches and ordinary card selection keep their policy.
@@ -1480,6 +1502,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   return (
     <TreeActions.Provider value={gpuActions}>
+      <TreePublicationProvider scope={gpuScope} enabled={!!props.onPublishPerson}
+        update={props.publicationUpdate?.archiveId === (gpuArchiveContext?.id || null)
+          ? props.publicationUpdate : null}>
       <div
         ref={container}
         data-layout-ready={ready}
@@ -1581,6 +1606,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         }}
         aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
       >
+        {screen.fullscreen && <MemberPreviewExit />}
         <div className="tree-mode-bar">
           {narrow ? (
             <button
@@ -1641,6 +1667,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               className="tree-family-row tree-generation-status"
               role="status"
               aria-label="Опорный человек"
+              aria-busy={savingGenerationPreferences}
             >
               <div className="tree-family-tools">
                 <span
@@ -1653,6 +1680,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 <span className="tree-family-count">
                   {visible.size} из {family.people.length}
                 </span>
+                {props.onResetGenerations && <button type="button"
+                  className="tree-family-reset"
+                  disabled={savingGenerationPreferences}
+                  aria-label="Снять ограничения поколений"
+                  title="Снять ограничения поколений"
+                  onClick={() => { void resetGenerations(); }}>
+                  <RotateCcw size={16} aria-hidden="true" />
+                </button>}
               </div>
             </div>
           )}
@@ -2006,9 +2041,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             onChoose={actions.choose}
           />
         )}
-        {anchorNotice && !problem && (
+        {(savingGenerationPreferences || anchorNotice) && !problem && (
           <div className="tree-notice" role="status">
-            {anchorNotice}
+            {savingGenerationPreferences ? "Сохраняем вид древа…" : anchorNotice}
           </div>
         )}
         {!activeFanAnchor && problem && (
@@ -2063,6 +2098,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           </div>
         )}
       </div>
+      </TreePublicationProvider>
     </TreeActions.Provider>
   );
 });

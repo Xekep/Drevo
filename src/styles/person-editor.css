@@ -38,6 +38,14 @@
 .person-editor-form .person-editor-basics {
   gap: 13px;
 }
+.person-editor-form .person-editor-facts {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.person-editor-form .person-editor-primary.is-existing .person-editor-facts {
+  grid-column: 2;
+}
 .person-editor-form .name-entry input {
   min-height: 42px;
   padding: 9px 10px;
@@ -168,6 +176,20 @@
 }
 .person-editor-form .person-date-group .form-grid {
   gap: 10px;
+}
+.person-editor-form .person-evidence-details {
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid #e2e8df;
+  border-radius: 10px;
+  background: #fbfcf9;
+}
+.person-editor-form .person-evidence-details > summary {
+  color: #3e5846;
+  cursor: pointer;
+}
+.person-editor-form .person-evidence-details > .form-details {
+  margin-top: 10px;
 }
 .person-editor-form .fact-alternatives {
   margin-top: 10px;

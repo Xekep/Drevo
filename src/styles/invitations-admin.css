@@ -5,6 +5,8 @@
 .invitations-controls label, .invitations-created { display: grid; gap: 6px; font-size: .86rem; }
 .invitations-controls select { min-width: 140px; min-height: 42px; }
 .invitations-controls .primary-action { min-height: 42px; }
+.invitations-controls .person-search { flex: 1 1 220px; min-width: 0; }
+.invitations-controls small { font-size: 11px; color: var(--muted); max-width: 240px; }
 .invitations-created { max-width: 100%; }
 .invitations-created input { width: 100%; min-width: 0; }
 .invitations-list { display: grid; gap: 8px; }

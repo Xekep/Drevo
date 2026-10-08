@@ -24,6 +24,7 @@ export function householdLevels(people: LayoutPerson[]) {
   function rank() {
     const nodes = new Set(groups.values()),
       children = new Map([...nodes].map((id) => [id, new Set<string>()])),
+      parents = new Map([...nodes].map((id) => [id, new Set<string>()])),
       incoming = new Map([...nodes].map((id) => [id, 0]));
     for (const p of people)
       for (const parent of p.parents) {
@@ -31,6 +32,7 @@ export function householdLevels(people: LayoutPerson[]) {
           to = groups.get(p.id)!;
         if (from !== undefined && !children.get(from)!.has(to)) {
           children.get(from)!.add(to);
+          parents.get(to)!.add(from);
           incoming.set(to, incoming.get(to)! + 1);
         }
       }
@@ -48,6 +50,41 @@ export function householdLevels(people: LayoutPerson[]) {
         incoming.set(child, incoming.get(child)! - 1);
         if (!incoming.get(child)) queue.push(child);
       }
+    }
+    // Missing ancestors do not put every founder on the oldest floor. Solve
+    // relative generations in both directions: parent -> child is one step.
+    // An inconsistent pedigree keeps its safe DAG ranks and reference cards;
+    // never force a genuine cross-generation relationship onto one floor.
+    const visited = new Set<string>();
+    for (const root of queue) {
+      if (visited.has(root)) continue;
+      const component = [root];
+      const relative = new Map([[root, 0]]);
+      let coherent = true,
+        minimum = 0;
+      visited.add(root);
+      for (let i = 0; i < component.length; i++) {
+        const id = component[i],
+          current = relative.get(id)!;
+        for (const [neighbors, step] of [
+          [children.get(id)!, 1],
+          [parents.get(id)!, -1],
+        ] as const)
+          for (const next of neighbors) {
+            if (!processed.has(next)) coherent = false;
+            const desired = current + step;
+            if (relative.has(next)) {
+              if (relative.get(next) !== desired) coherent = false;
+            } else {
+              relative.set(next, desired);
+              minimum = Math.min(minimum, desired);
+              visited.add(next);
+              component.push(next);
+            }
+          }
+      }
+      if (coherent)
+        for (const id of component) levels.set(id, relative.get(id)! - minimum);
     }
     return {
       levels,

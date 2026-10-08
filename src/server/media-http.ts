@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { open as openFile, type FileHandle } from "node:fs/promises";
 import { finished, pipeline } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
-import type { imagePreviews, ImagePreviewVariant } from "./image-previews.ts";
+import { ImagePreviewBusyError, type imagePreviews, type ImagePreviewVariant } from "./image-previews.ts";
 import type { mediaStore } from "./media.ts";
 import type { settingsStore } from "./settings.ts";
 import type { openArchive } from "./database.ts";
@@ -12,6 +12,7 @@ import { allCitations } from "./source-catalog-store.ts";
 import type { Family } from "../domain/types.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import type { pdfDocumentPages } from "./document-pdf.ts";
+import { assertMemberPreviewDelivery, memberPreviewTarget } from "./member-preview-access.ts";
 
 type MediaAccess = "public" | { user: ArchiveUser; pending: boolean };
 
@@ -86,7 +87,7 @@ export function mediaHttp({
       return (await referenced(url, true, true) ||
         citationUrls((await archive.read()).family).includes(url))
         ? { user, pending: false } : null;
-    const key = `${(await archive.meta()).revision}:${user.id}:${user.personId || ""}`;
+    const key = `${(await archive.meta()).revision}:${user.id}:${user.personId || ""}:${user.treeAccess || "all"}`;
     if (key !== cachedKey) {
       const scoped = projectFamilyForUser((await archive.read()).family, user);
       cachedUrls = new Set([
@@ -125,14 +126,18 @@ export function mediaHttp({
     if (beforeDelivery) await beforeDelivery();
     if (!auth.local && archive.db.kind === "postgres") {
       const actor = access === "public" ? null : access.user;
-      const session = actor ? await auth.accountSession(req) : null;
-      if (actor && (!session || session.accountId !== actor.id))
+      const preview = memberPreviewTarget(req);
+      const previewUser = preview ? await auth.currentUser(req) : null;
+      const session = actor || preview ? await auth.accountSession(req) : null;
+      if (preview && (!previewUser || previewUser.id !== preview)) return denied(res);
+      if ((actor || preview) && (!session || (!preview && session.accountId !== actor?.id)))
         return denied(res);
       if (!archive.db.postgresTransaction || !archive.db.archiveId)
         throw new Error("PostgreSQL media delivery requires an archive transaction");
       try {
         let changed = false;
         const valid = await archive.db.postgresTransaction(async (client) => {
+          let previewExpiresAt: number | null = null;
           // Family and source-catalog writes both bump archive revision.
           // Hold the archive/session/member rows only until the first write.
           // A long original continues as an already-authorized HTTP request.
@@ -142,6 +147,12 @@ export function mediaHttp({
           if (Number(archived.rows[0].revision) !== expectedRevision) {
             changed = true;
             return false;
+          }
+          if (preview) {
+            if (!session || !previewUser) return false;
+            previewExpiresAt = await assertMemberPreviewDelivery(client,
+              archive.db.archiveId!, session, actor || previewUser);
+            if (!previewExpiresAt) return false;
           }
           if (!actor) {
             const visible = await client.query<{ public_tree: boolean; public_albums: boolean }>(
@@ -157,7 +168,7 @@ export function mediaHttp({
                 visible.rows[0].public_tree],
             );
             if (!reference.rows[0]?.allowed) return false;
-          } else {
+          } else if (!preview) {
             const active = await client.query<{ expires_at: string }>(
               `SELECT expires_at FROM account_sessions
                WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
@@ -183,7 +194,17 @@ export function mediaHttp({
                 return false;
             }
           }
+          if (preview && actor && access !== "public" && access.pending) {
+            const grant = await client.query<{ expires_ms: string }>(
+              `SELECT expires_ms FROM media_upload_grants
+               WHERE archive_id=$1 AND url=$2 AND user_id=$3 FOR SHARE NOWAIT`,
+              [archive.db.archiveId, url, actor.id],
+            );
+            if (!grant.rows[0] || Number(grant.rows[0].expires_ms) <= Date.now())
+              return false;
+          }
           if (beforeLockedDelivery) await beforeLockedDelivery();
+          if (previewExpiresAt && Date.now() >= previewExpiresAt) return false;
           start();
           return true;
         });
@@ -250,7 +271,12 @@ export function mediaHttp({
           { path: file.path, cacheKey: file.name },
           variant,
         );
-      } catch {
+      } catch (error) {
+        if (error instanceof ImagePreviewBusyError) {
+          res.writeHead(503, { "Cache-Control": "private, no-store", "Retry-After": "2" });
+          res.end();
+          return true;
+        }
         /* Если превью не удалось получить, отдаём исходный снимок. */
       }
       if (bytes) {

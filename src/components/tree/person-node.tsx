@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, memo, useContext, useMemo, type CSSProperties } from "react";
 import {
   Handle,
   Position,
@@ -6,10 +6,18 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { ChevronDown, ChevronUp, CircleHelp, Copy, Eye, EyeOff, LoaderCircle, Plus } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  CircleAlert,
+  Copy,
+  Eye,
+  EyeOff,
+  LoaderCircle,
+  Plus,
+} from "lucide-react";
 import { fullName, resolvedSex, years, type Person } from "../../domain";
-import { archiveFetch } from "../../data/archive-fetch.ts";
-import { archiveContextAt, archiveResourceUrl } from "../../domain/archive-context.ts";
+import { useTreePublicationStatus } from "./tree-publication-provider";
 import { Avatar } from "../person-panel";
 import { PortraitPlaceholder } from "../portrait-placeholder";
 import { useLongPress } from "./use-long-press";
@@ -30,7 +38,11 @@ export const TreeActions = createContext<{
   expand: (id: string, occurrenceId?: string) => void;
   reference: (personId: string, occurrenceId: string) => void;
   publishPerson?: (personId: string) => void;
-  publicationUpdate?: { personId: string; published: boolean; archiveId: string | null } | null;
+  publicationUpdate?: {
+    personId: string;
+    published: boolean;
+    archiveId: string | null;
+  } | null;
   relationLabel: (person: Person) => string;
 }>({
   choose: () => {},
@@ -43,7 +55,6 @@ export const TreeActions = createContext<{
   relationLabel: () => "",
 });
 export type PersonNodeType = Node<PersonNodeData, "person">;
-type PublicationStatus = "unknown" | "loading" | "published" | "hidden" | "error";
 
 function samePersonNodeProps(
   a: NodeProps<PersonNodeType>,
@@ -80,69 +91,15 @@ export const PersonNode = memo(function PersonNode({
     expand,
     reference,
     publishPerson,
-    publicationUpdate,
     relationLabel: getRelationLabel,
   } = useContext(TreeActions);
   const person = currentPeople?.get(nodeData.person.id) || nodeData.person;
   const data = person === nodeData.person ? nodeData : { ...nodeData, person };
-  const archiveId = archiveContextAt(window.location.pathname)?.id || null;
-  const publicationEndpoint = archiveResourceUrl(
-    `/api/admin/published-people/${encodeURIComponent(data.person.id)}`,
-  );
-  const [publicationState, setPublicationState] = useState<{
-    endpoint: string;
-    status: PublicationStatus;
-  }>({ endpoint: "", status: "unknown" });
-  const publicationStatus = publicationState.endpoint === publicationEndpoint
-    ? publicationState.status : "unknown";
-  const publicationRequest = useRef<AbortController | null>(null);
-  const lastPublicationCheck = useRef(0);
-  useEffect(() => () => {
-    publicationRequest.current?.abort();
-    publicationRequest.current = null;
-  }, [publicationEndpoint]);
-  useEffect(() => {
-    if (
-      publicationUpdate?.personId !== data.person.id ||
-      publicationUpdate.archiveId !== archiveId
-    ) return;
-    publicationRequest.current?.abort();
-    publicationRequest.current = null;
-    lastPublicationCheck.current = Date.now();
-    setPublicationState({
-      endpoint: publicationEndpoint,
-      status: publicationUpdate.published ? "published" : "hidden",
-    });
-  }, [publicationUpdate, data.person.id, archiveId, publicationEndpoint]);
-  function checkPublication() {
-    if (!publishPerson || publicationRequest.current) return;
-    if (
-      (publicationStatus === "published" || publicationStatus === "hidden") &&
-      Date.now() - lastPublicationCheck.current < 30_000
-    ) return;
-    const controller = new AbortController();
-    publicationRequest.current = controller;
-    setPublicationState({ endpoint: publicationEndpoint, status: "loading" });
-    void archiveFetch(publicationEndpoint, {
-      signal: controller.signal,
-      cache: "no-store",
-    }).then(async (response) => {
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Не удалось проверить доступность");
-      if (controller.signal.aborted) return;
-      lastPublicationCheck.current = Date.now();
-      setPublicationState({
-        endpoint: publicationEndpoint,
-        status: body.published ? "published" : "hidden",
-      });
-    }).catch(() => {
-      if (!controller.signal.aborted)
-        setPublicationState({ endpoint: publicationEndpoint, status: "error" });
-    }).finally(() => {
-      if (publicationRequest.current === controller) publicationRequest.current = null;
-    });
-  }
   const longPress = useLongPress(() => selectOnly(data.person.id));
+  // Expand only the transparent hit area; the pill scales with its portrait.
+  const controlTarget = useStore((state) =>
+    24 * Math.min(6, Math.max(1, Math.ceil((1 / state.transform[2]) * 4) / 4)),
+  );
   const detail = useStore((s) =>
     s.transform[2] < 0.18
       ? "distant"
@@ -163,24 +120,38 @@ export const PersonNode = memo(function PersonNode({
     const y = ty + node.internals.positionAbsolute.y * zoom;
     const right = x + (node.measured?.width || node.width || width) * zoom;
     const bottom = y + (node.measured?.height || node.height || height) * zoom;
-    return right >= -128 && bottom >= -128 &&
-      x <= state.width + 128 && y <= state.height + 128;
+    return (
+      right >= -128 &&
+      bottom >= -128 &&
+      x <= state.width + 128 &&
+      y <= state.height + 128
+    );
   });
+  const { status: publicationStatus, refresh: checkPublication } =
+    useTreePublicationStatus(
+      data.person.id,
+      !!publishPerson && portraitVisible,
+    );
   const compact = detail !== "full";
   const overview = detail === "overview" || detail === "distant";
   const relationLabel = useMemo(
-    () => detail === "distant" ? "" : getRelationLabel(data.person),
+    () => (detail === "distant" ? "" : getRelationLabel(data.person)),
     [detail, getRelationLabel, data.person],
   );
   const lifespan = years(data.person);
   const cardLabel = `${fullName(data.person)}${lifespan ? `, ${lifespan}` : ""}${relationLabel ? `, ${relationLabel}` : ""}${data.person.needsReview ? ", требует проверки" : ""}`;
   const branchAction = data.collapsed ? "Развернуть" : "Свернуть";
   const branchTitle = `${branchAction} ветвь`;
-  const privacyLabel = publicationStatus === "published" ? "Доступен для поиска"
-    : publicationStatus === "hidden" ? "Недоступен для поиска"
-    : publicationStatus === "error" ? "Не удалось проверить доступность для поиска"
-    : publicationStatus === "loading" ? "Проверяем доступность для поиска"
-    : "Проверить доступность для поиска";
+  const privacyLabel =
+    publicationStatus === "published"
+      ? "Доступен для поиска"
+      : publicationStatus === "hidden"
+        ? "Недоступен для поиска"
+        : publicationStatus === "error"
+          ? "Не удалось проверить доступность для поиска"
+          : publicationStatus === "loading"
+            ? "Проверяем доступность для поиска"
+            : "Проверить доступность для поиска";
   return (
     <div
       className={`flow-person is-portrait-card ${selected ? "is-selected" : ""} ${data.spotlit ? "is-spotlit" : ""} ${data.person.needsReview ? "is-needs-review" : ""} ${data.outsideSpotlight ? "is-outside-spotlight" : ""} ${compact ? "is-compact" : ""} ${overview ? "is-overview" : ""} ${detail === "distant" ? "is-distant" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
@@ -205,7 +176,7 @@ export const PersonNode = memo(function PersonNode({
           position={position as Position}
           type="source"
           isConnectable={isConnectable}
-          aria-label={`Связать: ${fullName(data.person)}`}
+          aria-hidden="true"
         />
       ))}
       <button
@@ -240,13 +211,22 @@ export const PersonNode = memo(function PersonNode({
             className={`person-avatar ${resolvedSex(data.person) === "f" ? "female" : resolvedSex(data.person) === "m" ? "male" : "unknown"}`}
             aria-hidden="true"
           >
-            {detail === "distant" && !gpu && !deferPortraits && <PortraitPlaceholder compact />}
+            {detail === "distant" && !gpu && !deferPortraits && (
+              <PortraitPlaceholder compact />
+            )}
           </span>
-        ) : <Avatar person={data.person} loading="eager" />}
+        ) : (
+          <Avatar person={data.person} loading="eager" />
+        )}
         <span className="portrait-card-info">
-          <strong>{fullName(data.person)}</strong>
+          <strong>{fullName(data.person)}</strong>{" "}
           {lifespan && <span className="portrait-card-years">{lifespan}</span>}
-          {relationLabel && <small>{relationLabel}</small>}
+          {relationLabel && (
+            <>
+              {" "}
+              <small>{relationLabel}</small>
+            </>
+          )}
         </span>
       </button>
       {publishPerson && (
@@ -262,10 +242,15 @@ export const PersonNode = memo(function PersonNode({
             publishPerson(data.person.id);
           }}
         >
-          {publicationStatus === "published" ? <Eye size={18} aria-hidden="true" />
-            : publicationStatus === "hidden" ? <EyeOff size={18} aria-hidden="true" />
-            : publicationStatus === "loading" ? <LoaderCircle size={18} aria-hidden="true" />
-            : <CircleHelp size={18} aria-hidden="true" />}
+          {publicationStatus === "published" ? (
+            <Eye size={18} aria-hidden="true" />
+          ) : publicationStatus === "hidden" ? (
+            <EyeOff size={18} aria-hidden="true" />
+          ) : publicationStatus === "error" ? (
+            <CircleAlert size={18} aria-hidden="true" />
+          ) : (
+            <LoaderCircle size={18} aria-hidden="true" />
+          )}
         </button>
       )}
       {(data.occurrences || 0) > 1 && (
@@ -296,10 +281,13 @@ export const PersonNode = memo(function PersonNode({
           </span>
         </button>
       )}
-      {!data.familyFocus && data.childrenCount > 0 && (
+      {!data.familyFocus && detail !== "distant" && data.childrenCount > 0 && (
         <button
           className="flow-collapse nodrag nopan"
-          aria-label={branchTitle}
+          style={{
+            "--branch-target": `${controlTarget}px`,
+          } as CSSProperties}
+          aria-label={`${branchTitle}: ${data.childrenCount} потомков`}
           title={branchTitle}
           onClick={() => collapse(data.person.id, id)}
         >

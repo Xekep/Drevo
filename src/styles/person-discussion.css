@@ -340,6 +340,14 @@
   background: #10150f;
   color: #fff;
 }
+.discussion-lightbox:has(.member-preview-banner) {
+  display: flex;
+  flex-direction: column;
+}
+.discussion-lightbox:has(.member-preview-banner) .discussion-gallery-content {
+  flex: 1;
+  min-height: 0;
+}
 .discussion-lightbox::backdrop {
   background: #10150fec;
 }

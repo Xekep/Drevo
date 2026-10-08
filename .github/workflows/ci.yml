@@ -24,103 +24,7 @@ jobs:
             exec gosu postgres bash /work/tests/pgbackrest-restore-smoke.sh
           '
   postgres:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: drevo_test
-          POSTGRES_PASSWORD: local_ci_test
-          POSTGRES_DB: drevo_migration_person_patches
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U drevo_test -d drevo_migration_person_patches"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      PGHOST: 127.0.0.1
-      PGPORT: 5432
-      PGUSER: drevo_test
-      PGPASSWORD: local_ci_test
-      PGDATABASE: drevo_migration_person_patches
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: "22.23.2"
-          cache: npm
-      - run: npm ci
-      - run: npm run test:postgres
-      - name: Test HTTP runtime with a non-superuser PostgreSQL role
-        run: |
-          node --input-type=module <<'NODE'
-          import pg from 'pg';
-          const client = new pg.Client();
-          await client.connect();
-          await client.query("CREATE ROLE drevo_runtime LOGIN PASSWORD 'local_runtime_test' NOSUPERUSER NOBYPASSRLS");
-          await client.query('CREATE DATABASE drevo_migration_runtime_ci OWNER drevo_runtime');
-          await client.query('CREATE DATABASE drevo_migration_runtime_media_cleanup_ci OWNER drevo_runtime');
-          await client.end();
-          NODE
-          PGUSER=drevo_runtime PGPASSWORD=local_runtime_test PGDATABASE=drevo_migration_runtime_media_cleanup_ci node --experimental-strip-types --test tests/integration/postgres-media-upload-cleanup.ts
-          PGUSER=drevo_runtime PGPASSWORD=local_runtime_test PGADMINUSER=drevo_test PGADMINPASSWORD=local_ci_test PGDATABASE=drevo_migration_runtime_ci node --experimental-strip-types tests/integration/postgres-runtime.ts
-      - name: Backfill the global discovery projection as a database administrator
-        run: |
-          PGDATABASE=drevo_migration_runtime_ci node --input-type=module <<'NODE'
-          import assert from 'node:assert/strict';
-          import { readFileSync } from 'node:fs';
-          import pg from 'pg';
-          const client = new pg.Client();
-          await client.connect();
-          try {
-            await client.query(readFileSync('ops/postgres/backfill-discovery.sql', 'utf8'));
-            const state = await client.query('SELECT ready FROM discovery_index_state WHERE singleton=true');
-            const rows = await client.query('SELECT archive_id,person_id FROM discovery_people');
-            assert.equal(state.rows[0].ready, true);
-            assert.deepEqual(rows.rows, [{ archive_id: 'other-archive', person_id: 'person-a' }]);
-          } finally {
-            await client.end();
-          }
-          NODE
-      - name: Measure concurrent runtime on synthetic archives
-        run: |
-          set -euo pipefail
-          node --input-type=module <<'NODE'
-          import pg from 'pg';
-          const client = new pg.Client();
-          await client.connect();
-          for (const size of [1000, 10000]) {
-            await client.query(`CREATE DATABASE drevo_migration_bench_ci${size} OWNER drevo_runtime`);
-          }
-          await client.end();
-          NODE
-          for size in 1000 10000; do
-            PGUSER=drevo_runtime PGPASSWORD=local_runtime_test PGDATABASE=drevo_migration_bench_ci$size \
-              node --experimental-strip-types ops/postgres/benchmark-runtime.ts "$size" | tee "benchmark-$size.jsonl"
-            echo "### PostgreSQL: $size synthetic people" >> "$GITHUB_STEP_SUMMARY"
-            echo '```json' >> "$GITHUB_STEP_SUMMARY"
-            cat "benchmark-$size.jsonl" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          done
-      - name: Measure mixed HTTP profile across two backend processes
-        run: |
-          set -euo pipefail
-          node --input-type=module <<'NODE'
-          import pg from 'pg';
-          const client = new pg.Client();
-          await client.connect();
-          await client.query('CREATE DATABASE drevo_migration_bench_http_ci OWNER drevo_runtime');
-          await client.end();
-          NODE
-          PGUSER=drevo_runtime PGPASSWORD=local_runtime_test PGDATABASE=drevo_migration_bench_http_ci \
-            node --experimental-strip-types ops/postgres/benchmark-http.ts 1000 45 | tee benchmark-http.jsonl
-          echo '### PostgreSQL: two-process mixed HTTP profile (synthetic)' >> "$GITHUB_STEP_SUMMARY"
-          echo '```json' >> "$GITHUB_STEP_SUMMARY"
-          cat benchmark-http.jsonl >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+    uses: ./.github/workflows/postgres.yml
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -161,6 +65,7 @@ jobs:
       - run: python3 -B -m unittest discover -s tests -p 'test_stage_ai_provider_key.py'
       - run: systemd-analyze calendar '*-*-01 06:30:00 UTC'
       - run: bash -n ops/postgres/setup-local-backup.sh
+      - run: bash -n ops/postgres/setup-platform-backup.sh
       - run: bash -n ops/postgres/local-backup.sh
       - run: bash -n ops/postgres/local-backup-health.sh
       - run: bash -n ops/postgres/local-media-backup.sh
@@ -171,7 +76,6 @@ jobs:
       - run: bash -n ops/postgres/setup-local-media-backup.sh
       - run: bash -n ops/postgres/deploy-maintenance.sh
       - run: bash -n ops/postgres/cutover.sh
-      - run: bash -n ops/check-mcp.sh
       - name: Restore prepared award images
         id: award-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -195,7 +99,3 @@ jobs:
             node --experimental-strip-types "$test_file"
           done
       - run: npm run test:worker
-      - name: Install official MCP client for compatibility smoke
-        run: npm install --no-save --package-lock=false @modelcontextprotocol/client@2.0.0
-      - name: Test MCP with official TypeScript client
-        run: node --experimental-strip-types tests/mcp-official-client-smoke.mjs

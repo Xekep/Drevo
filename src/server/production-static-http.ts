@@ -4,6 +4,7 @@ import { dirname, extname, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { archiveViewAt } from "../domain/archive-routes.ts";
+import { memberPreviewAt } from "../domain/archive-context.ts";
 import { staticAssetsHttp } from "./static-assets-http.ts";
 import { decodePublicPersonId } from "./public-person-id.ts";
 
@@ -61,8 +62,6 @@ export function productionStaticHttp(
     const pathname = url.pathname;
     if (pathname.startsWith("/api/") || pathname.startsWith("/auth/"))
       return false;
-    if (req.method !== "GET" && req.method !== "HEAD")
-      return jsonError(res, 405, "Метод не поддерживается");
 
     let decoded: string;
     try {
@@ -94,6 +93,7 @@ export function productionStaticHttp(
       validDiscoveryPerson ||
       linkedBranch;
     const privateView = archiveViewAt(pathname);
+    const previewView = memberPreviewAt(pathname);
     const filePath =
       privateView ||
       shared ||
@@ -112,7 +112,13 @@ export function productionStaticHttp(
         await handle.close();
         return jsonError(res, 404, "Страница не найдена");
       }
-      if (shared || invitation || linkedBranch ||
+      // A removed or unknown route remains 404 for every method. Only an
+      // existing page/file can reject an otherwise unsupported method.
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        await handle.close();
+        return jsonError(res, 405, "Метод не поддерживается");
+      }
+      if (shared || invitation || linkedBranch || previewView ||
           privateView === "account" || privateView === "admin" || privateView === "manage") {
         res.setHeader("Referrer-Policy", "no-referrer");
         res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");

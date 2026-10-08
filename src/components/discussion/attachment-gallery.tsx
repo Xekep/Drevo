@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import type { CommentAttachment } from "../../shared/person-discussion";
 import { archiveResourceUrl } from "../../domain/archive-context";
 import { usePhotoSwipe } from "../use-photo-swipe";
+import { MemberPreviewExit } from "../member-preview-exit";
 
 function GallerySlide({
   files,
@@ -166,6 +167,7 @@ export function AttachmentGallery({
         }
       }}
     >
+      <MemberPreviewExit />
       <GallerySlide
         key={id}
         files={files}

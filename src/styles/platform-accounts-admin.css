@@ -1,0 +1,49 @@
+.platform-accounts { container-type: inline-size; }
+.platform-directory-button, .platform-directory-icon {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 36px; padding: 7px 10px; border: 1px solid #d7dfd0;
+  border-radius: 7px; background: #f8faf5; color: #3d6044; font: inherit; font-size: 13px; cursor: pointer;
+}
+.platform-directory-button:disabled, .platform-directory-icon:disabled { opacity: .5; cursor: default; }
+.platform-directory-icon { width: 36px; padding: 7px; }
+.platform-account-search { display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+  padding: 0 10px; border: 1px solid #cdd8c8; border-radius: 8px; color: #647b64; }
+.platform-account-search:focus-within { outline: 2px solid #698c62; outline-offset: 1px; }
+.platform-account-search input { flex: 1; min-width: 0; min-height: 40px; border: 0;
+  padding: 8px 0; background: transparent; font: inherit; font-size: 14px; outline: none; }
+.platform-account-search input::-webkit-search-cancel-button { display: none; }
+.platform-account-search button { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border: 0; background: transparent; }
+.platform-account-heading, .platform-account-row { display: grid; grid-template-columns: minmax(140px,1fr) 174px 116px 36px; gap: 10px; align-items: center; }
+.platform-account-heading { padding: 0 0 8px; font-size: 11px; color: #71816e; }
+.platform-account-row { padding: 10px 0; border-top: 1px solid #e9ede3; }
+.platform-account-identity { display: grid; gap: 3px; min-width: 0; }
+.platform-account-identity strong { font-size: 13px; overflow-wrap: anywhere; }
+.platform-account-identity small { font-size: 11px; color: #71816e; }
+.platform-account-row label { min-width: 0; }
+.platform-account-row select { width: 100%; min-height: 36px; border: 1px solid #cdd8c8; border-radius: 7px; padding: 6px 8px; background: #fff; font: inherit; font-size: 13px; }
+.platform-account-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; border-top: 1px solid #e9ede3; }
+.platform-account-pagination span { font-size: 12px; color: #71816e; }
+.platform-directory-empty { min-height: 60px; display: flex; align-items: center; font-size: 13px; }
+.platform-directory-retry { color: #446a49; text-decoration: underline; border: 0; background: transparent; cursor: pointer; }
+.platform-statistics-body { padding: 18px; }
+.platform-statistics-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin: 0; }
+.platform-statistics-grid div { padding: 12px; border-radius: 8px; background: #f3f6ef; }
+.platform-statistics-grid dt { font-size: 12px; color: #647b64; }
+.platform-statistics-grid dd { margin: 6px 0 0; font-size: 24px; font-weight: 600; color: #35533c; overflow-wrap: anywhere; }
+@container (max-width: 530px) {
+  .platform-account-heading { display: none; }
+  .platform-account-row { grid-template-columns: minmax(0,1fr) 96px 36px; gap: 6px; padding: 8px 0; }
+  .platform-account-identity { grid-column: 1/-1; }
+}
+@media (max-width: 600px) {
+  .platform-account-row { position: relative; grid-template-columns: minmax(0,1fr) 88px; gap: 8px; padding: 10px 0; }
+  .platform-account-identity { padding-right: 46px; }
+  .platform-account-row .platform-directory-icon { position: absolute; top: 10px; right: 0; }
+  .platform-account-row select, .platform-directory-button, .platform-directory-icon { min-height: 44px; }
+  .platform-directory-icon { width: 40px; }
+  .platform-account-search input { min-height: 44px; }
+  .platform-account-search button { width: 44px; height: 44px; }
+  .platform-account-row select { font-size: 12px; padding: 6px; }
+  .platform-accounts .account-card-title { align-items: center; }
+  .platform-accounts .account-card-title h2 { font-size: 20px; }
+}

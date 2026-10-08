@@ -1,4 +1,4 @@
-import type { Family, Person } from "./types.ts";
+import type { Family, FamilyUnion, Person } from "./types.ts";
 
 type Archive = Pick<Family, "people" | "links">;
 /** Индекс только записанных связей. По именам или возрасту родство не достраивается. */
@@ -83,13 +83,19 @@ export function commonAncestorNetwork(
   return visible;
 }
 
-/** Один шаг по записанным союзам от кровных родственников, без цепочки супругов супругов. */
+/** Кровные, их непосредственные вторые родители и один шаг по союзам. */
 export function bloodRelativesWithPartners(
   index: ReturnType<typeof familyNeighbors>,
   anchor: string,
+  unions: readonly FamilyUnion[] = [],
 ) {
   const blood = commonAncestorNetwork(index, anchor);
   const visible = new Set(blood);
+  // Add the other parent of a blood descendant even without a recorded union.
+  // Iterate the blood set only: a co-parent never opens their own ancestors.
+  for (const id of blood)
+    for (const parent of index.people.get(id)!.parents)
+      if (index.people.has(parent)) visible.add(parent);
   for (const person of index.people.values()) {
     if (blood.has(person.id)) {
       for (const spouse of person.spouses)
@@ -97,6 +103,12 @@ export function bloodRelativesWithPartners(
     } else if (person.spouses.some((spouse) => blood.has(spouse))) {
       visible.add(person.id);
     }
+  }
+  // Explicit civil unions/partnerships need not duplicate a marriage in spouses.
+  // Test only the original blood set: a partner cannot open their other unions.
+  for (const { participants: [first, second] } of unions) {
+    if (blood.has(first) && index.people.has(second)) visible.add(second);
+    if (blood.has(second) && index.people.has(first)) visible.add(first);
   }
   return visible;
 }

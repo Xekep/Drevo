@@ -1,9 +1,10 @@
+import { verifyPlatformBackupsHttp } from "./postgres-platform-backups-http.ts";
 import { readStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { createServer, get as httpGet } from "node:http";
+import { createServer, get as httpGet, type IncomingMessage } from "node:http";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
 import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { statfs, symlink, unlink, utimes } from "node:fs/promises";
@@ -31,6 +32,7 @@ import { verifyManagedBackupCheckRevocation } from "./postgres-managed-backup-ch
 import { verifyManagedBackupPreviewRevocation } from "./postgres-managed-backup-preview-revocation.ts";
 import { verifyRestorePreviewDelivery } from "./postgres-restore-preview-delivery.ts";
 import { verifyRestoreGuard } from "./postgres-restore-guard.ts";
+import { verifyImportRestoreQuota } from "./postgres-import-restore-quota.ts";
 import { databaseBackupHttp } from "../../src/server/database-backup-http.ts";
 import { createAuth } from "../../src/server/auth.ts";
 import { openArchive } from "../../src/server/database.ts";
@@ -57,6 +59,7 @@ import { verifyPlatformAiOrphanSweep } from "./platform-ai-orphan-sweep.ts";
 import { verifyOwnerTransferGetRevocation } from "./postgres-owner-transfer-reads.ts";
 import { verifyInvitationAcceptSessionRevocation } from "./postgres-invitation-accept-session.ts";
 import { verifyInvitationPreviewDelivery } from "./postgres-invitation-preview-delivery.ts";
+import { verifyInvitationScopeAndMembershipRemoval } from "./postgres-invitation-scope.ts";
 import { verifyAccountArchiveCreateSessionRevocation } from "./postgres-account-archive-create-session.ts";
 import { verifyAccountArchivesReadSessionRevocation } from "./postgres-account-archives-read-session.ts";
 import { verifySessionDelivery } from "./postgres-session-delivery.ts";
@@ -104,12 +107,7 @@ import { archiveDeletionHttp } from "../../src/server/archive-deletion-http.ts";
 import { accountDataExportHttp } from "../../src/server/account-data-export-http.ts";
 import { accountAttachmentExportHttp } from "../../src/server/account-attachment-export-http.ts";
 import { gedcomHttp } from "../../src/server/gedcom-http.ts";
-import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
-import { verifyMcpIssuanceVisibility } from "./postgres-mcp-issuance-visibility.ts";
-import { mcpHttp } from "../../src/server/mcp-http.ts";
-import { mcpUsageStore } from "../../src/server/mcp-usage.ts";
 import { verifyFamilyWriteAccess } from "./postgres-family-write-access.ts";
-import { adminMcpHttp } from "../../src/server/admin-mcp-http.ts";
 import { sharesStore } from "../../src/server/shares.ts";
 import { adminSharingHttp } from "../../src/server/admin-sharing-http.ts";
 import { archiveInvitationsHttp } from "../../src/server/archive-invitations-http.ts";
@@ -130,6 +128,7 @@ import { verifyEmailAccounts } from "./postgres-email.ts";
 import { verifyAccountSessionManagement } from "./postgres-account-sessions.ts";
 import { verifyCoreAccountGetRevocation } from "./postgres-core-account-reads.ts";
 import { verifyPostgresMediaReadDelivery } from "./postgres-media-read-delivery.ts";
+import { verifyMemberPreview } from "./postgres-member-preview.ts";
 import { verifyPostgresScopedCitationMedia } from "./postgres-scoped-citation-media.ts";
 import { verifyPostgresCommentEdits } from "./postgres-comment-edits.ts";
 import { verifyAtomicSuggestionAcceptance } from "./postgres-suggestion-accept.ts";
@@ -1118,6 +1117,7 @@ try {
   await verifyOwnerTransferGetRevocation(app.archive.db, client);
   await verifyInvitationAcceptSessionRevocation(app.archive.db, client);
   await verifyInvitationPreviewDelivery(app.archive.db, client);
+  await verifyInvitationScopeAndMembershipRemoval(app.archive.db, client);
   await verifyAccountArchiveCreateSessionRevocation(app.archive.db, client);
   await verifyAccountArchivesReadSessionRevocation(app.archive.db, client);
   await verifyOfflineExportDelivery(app.archive, client, uploads);
@@ -1209,7 +1209,6 @@ try {
     "/api/shares",
     "/api/admin/ai",
     "/api/admin/research-resources",
-    "/api/mcp/tokens",
     "/api/tree-preferences",
     "/api/people/search?q=Иван",
   ]) {
@@ -1851,6 +1850,7 @@ try {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
   };
+  await verifyPlatformBackupsHttp(securedBase, ownerHeaders, headers, client);
   await verifyFaceSessionMutation(app.archive, client, process.env.PUBLIC_ORIGIN!, source);
   await verifyPlatformTiers(client, app.archive.db, securedBase,
     process.env.PUBLIC_ORIGIN!, ownerHeaders);
@@ -1908,7 +1908,10 @@ try {
     .run(citationUrl);
   await app.archive.db.prepare("", "DELETE FROM media_originals WHERE url=?")
     .run(pendingUrl);
-  await citationFile.undo();
+  // The live citation is gone, but archive history still references this
+  // original. Keep it until the outer disposable-directory cleanup: a tree
+  // backup must preserve historical evidence, not silently omit missing files.
+  assert.equal(existsSync(join(uploads, citationUrl.slice("/media/".length))), true);
   await pendingFile.undo();
   // A scoped AI export awaits archive.read() again while checking its final
   // scope. Downgrading the account during that await must prevent delivery.
@@ -1977,6 +1980,7 @@ try {
   await verifyAccountSessionManagement(app.archive.db, securedBase, ownerHeaders, headers);
   await verifyCoreAccountGetRevocation(app.archive, client);
   await verifyPostgresMediaReadDelivery(app.archive, client);
+  await verifyMemberPreview(app, client, securedBase, uploads);
   await verifyPostgresScopedCitationMedia(app.archive);
   const generatedChats = aiChatStore(app.archive.db);
   const generatedStore = generatedResearchFileStore(
@@ -3787,6 +3791,11 @@ try {
         const installStarted = new Promise<void>((resolve) => { notifyInstall = resolve; });
         const installGate = new Promise<void>((resolve) => { releaseFileInstall = resolve; });
         let pauseInstall = false;
+        let notifySessionInstall!: () => void;
+        let releaseSessionInstall!: () => void;
+        const sessionInstallStarted = new Promise<void>((resolve) => { notifySessionInstall = resolve; });
+        const sessionInstallGate = new Promise<void>((resolve) => { releaseSessionInstall = resolve; });
+        let pauseSessionInstall = false;
         const calculationFilesRoot = mkdtempSync(join(tmpdir(), "drevo-ai-calculation-tier-"));
         let fileTestUsageBefore = 0;
         const adapted = adaptLegacyAiFake(async (url, init) => {
@@ -3848,9 +3857,8 @@ try {
           publicOrigin: process.env.PUBLIC_ORIGIN, fetcher: fake,
           uploadsDirectory: join(calculationFilesRoot, "uploads"),
           beforeGeneratedFileInstall: async () => {
-            if (!pauseInstall) return;
-            notifyInstall();
-            await installGate;
+            if (pauseInstall) { notifyInstall(); await installGate; }
+            if (pauseSessionInstall) { notifySessionInstall(); await sessionInstallGate; }
           },
         });
         const server = createServer((req, res) => {
@@ -3913,9 +3921,33 @@ try {
           assert.equal(readdirSync(generatedRoot, { recursive: true, withFileTypes: true })
             .filter((entry) => entry.isFile()).length, 0,
           "downgrade during generated file staging cannot persist a file");
+          await client.query("DELETE FROM ai_usage WHERE archive_id='runtime-test' AND user_id=$1 AND id>$2",
+            [proposalMember, fileTestUsageBefore]);
+          await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
+          pauseInstall = false;
+          pauseSessionInstall = true;
+          const waitingForRevokedSession = fetch(`http://127.0.0.1:${port}/api/ai/chat`, {
+            method: "POST", headers: proposalHeaders,
+            body: JSON.stringify({ message: "Сохрани CSV после отзыва сеанса" }),
+          });
+          await Promise.race([sessionInstallStarted, waitingForRevokedSession.then(async (early) => {
+            throw new Error(`Calculation stopped before session install: ${early.status} ${await early.clone().text()}`);
+          }), new Promise<never>((_, reject) => setTimeout(() =>
+            reject(new Error("Calculation file did not reach session barrier")), 15_000))]);
+          await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(proposalToken)]);
+          releaseSessionInstall();
+          const deniedSession = await waitingForRevokedSession;
+          assert.equal(deniedSession.status, 403, await deniedSession.clone().text());
+          assert.equal(readdirSync(generatedRoot, { recursive: true, withFileTypes: true })
+            .filter((entry) => entry.isFile()).length, 0,
+          "a completed session revoke cannot install an unreferenced generated file");
+          console.log("runtime_ai_generated_install_session_revoke_ok");
         } finally {
           releaseCleanup();
           releaseFileInstall();
+          releaseSessionInstall();
+          await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
+            [sessionTokenHash(proposalToken), proposalMember, Date.now() + 60000]);
           await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
           await client.query("UPDATE ai_settings SET code_interpreter_enabled=$1 WHERE id=1", [previousInterpreter]);
           const newChats = (await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))
@@ -4073,177 +4105,6 @@ try {
     true,
   );
   await verifyFamilyWriteAccess(app.archive, client);
-  const boundToken = await mcpTokenStore(app.archive.db).issue(owner, {
-    name: "Проверка уровня",
-    scopes: ["tree:read"],
-    boundUserId: "vk:42",
-  });
-  await app.archive.db
-    .prepare("", "UPDATE account_tiers SET full_access=false WHERE account_id=?")
-    .run("vk:42");
-  assert.equal(await accountAiAccess(app.archive.db, "vk:42"), false);
-  assert.equal(
-    (await fetch(securedBase + "/mcp", {
-      method: "POST",
-      headers: {
-        Origin: process.env.PUBLIC_ORIGIN,
-        Authorization: `Bearer ${boundToken.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
-    })).status,
-    403,
-  );
-  await app.archive.db
-    .prepare("", "UPDATE account_tiers SET full_access=true WHERE account_id=?")
-    .run("vk:42");
-  {
-    const tokenStore = mcpTokenStore(app.archive.db);
-    const issued = await tokenStore.issue(owner, {
-      name: "MCP queued tier regression", scopes: ["tree:read"],
-    });
-    const usageStore = mcpUsageStore(app.archive.db);
-    let notify!: () => void;
-    let release!: () => void;
-    const entered = new Promise<void>((resolve) => { notify = resolve; });
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const endpoint = mcpHttp({ archive: app.archive, tokens: tokenStore,
-      usage: { ...usageStore,
-        begin: async (...args: Parameters<typeof usageStore.begin>) => {
-          const auditRun = await usageStore.begin(...args);
-          notify();
-          await gate;
-          return auditRun;
-        } },
-      publicOrigin: process.env.PUBLIC_ORIGIN });
-    const server = createServer((req, res) => {
-      void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-        .catch((error) => { res.destroy(error); });
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    try {
-      const port = (server.address() as { port: number }).port;
-      const listing = fetch(`http://127.0.0.1:${port}/mcp`, {
-        method: "POST", headers: {
-          Origin: process.env.PUBLIC_ORIGIN!,
-          Authorization: `Bearer ${issued.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 12, method: "tools/list" }),
-      });
-      await Promise.race([entered,
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("MCP listing did not reach audit queue")), 15_000))]);
-      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
-      release();
-      const response = await listing;
-      const body = await response.text();
-      assert.equal(response.status, 403,
-        `a downgraded account cannot receive MCP tools after the audit queue: ${body}`);
-      assert.doesNotMatch(body, /search_people|tools"/);
-    } finally {
-      release();
-      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-    }
-  }
-  {
-    const tokenStore = mcpTokenStore(app.archive.db);
-    const issued = await tokenStore.issue(owner, {
-      name: "MCP delayed revoke regression", scopes: ["tree:read"],
-    });
-    let authenticationCount = 0;
-    let notify!: () => void;
-    let release!: () => void;
-    const entered = new Promise<void>((resolve) => { notify = resolve; });
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const gatedTokens = {
-      ...tokenStore,
-      authenticate: async (authorization?: string, lockRow = false) => {
-        const grant = await tokenStore.authenticate(authorization, lockRow);
-        if (++authenticationCount === 3) {
-          notify();
-          await gate;
-        }
-        return grant;
-      },
-    };
-    const endpoint = mcpHttp({ archive: app.archive, tokens: gatedTokens,
-      usage: mcpUsageStore(app.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN });
-    const server = createServer((req, res) => {
-      void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-        .catch((error) => { res.destroy(error); });
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    try {
-      const port = (server.address() as { port: number }).port;
-      const request = fetch(`http://127.0.0.1:${port}/mcp`, {
-        method: "POST", headers: {
-          Origin: process.env.PUBLIC_ORIGIN!,
-          Authorization: `Bearer ${issued.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 11, method: "tools/call",
-          params: { name: "search_people", arguments: { query: "Иван" } } }),
-      });
-      await Promise.race([entered,
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("MCP tool did not reach final authentication")), 15_000))]);
-      await tokenStore.revoke(issued.item.id);
-      release();
-      const response = await request;
-      const body = await response.text();
-      assert.equal(response.status, 401,
-        `a revoked MCP token cannot receive a prepared tool result: ${body}`);
-      assert.doesNotMatch(body, /structuredContent|person-a/);
-    } finally {
-      release();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-    }
-  }
-  const guardedTokens = adminMcpHttp({
-    auth: await createAuth(await userStore(app.archive.db), app.archive.db,
-      process.env.PUBLIC_ORIGIN),
-    db: app.archive.db,
-    tokens: mcpTokenStore(app.archive.db),
-    usage: mcpUsageStore(app.archive.db),
-    publicOrigin: process.env.PUBLIC_ORIGIN,
-  });
-  let notifyTokenBody!: () => void;
-  let releaseTokenBody!: () => void;
-  const tokenBodyStarted = new Promise<void>((resolve) => { notifyTokenBody = resolve; });
-  const tokenBodyGate = new Promise<void>((resolve) => { releaseTokenBody = resolve; });
-  const tokenServer = createServer((req, res) => {
-    const originalIterator = req[Symbol.asyncIterator].bind(req);
-    req[Symbol.asyncIterator] = async function* () {
-      notifyTokenBody();
-      await tokenBodyGate;
-      yield* originalIterator();
-    };
-    void guardedTokens(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => tokenServer.listen(0, "127.0.0.1", resolve));
-  try {
-    const tokenCount = Number((await app.archive.db.prepare("", "SELECT count(*) AS n FROM mcp_tokens")
-      .get())!.n);
-    const tokenPort = (tokenServer.address() as { port: number }).port;
-    const issuing = fetch(`http://127.0.0.1:${tokenPort}/api/mcp/tokens`, {
-      method: "POST", headers: ownerHeaders,
-      body: JSON.stringify({ name: "downgraded-request", scopes: ["tree:read"] }),
-    });
-    await Promise.race([tokenBodyStarted,
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("MCP token body was not read")), 15_000))]);
-    await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
-    releaseTokenBody();
-    assert.equal((await issuing).status, 403,
-      "a downgraded admin cannot issue an MCP token after the request body was received");
-    assert.equal(Number((await app.archive.db.prepare("", "SELECT count(*) AS n FROM mcp_tokens")
-      .get())!.n), tokenCount, "the rejected request creates no credential");
-  } finally {
-    releaseTokenBody();
-    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
-    await new Promise<void>((resolve) => tokenServer.close(() => resolve()));
-  }
-  await verifyMcpIssuanceVisibility(app.archive, client, securedBase, process.env.PUBLIC_ORIGIN!);
   await app.archive.db
     .prepare("", "UPDATE account_tiers SET full_access=false WHERE account_id=?")
     .run("owner");
@@ -4300,23 +4161,11 @@ try {
   assert.equal(
     (await fetch(securedBase + "/api/mcp/tokens", { headers: ownerHeaders }))
       .status,
-    403,
+    404,
   );
   assert.equal(
     (await fetch(securedBase + "/api/research/suggestions", {
       headers: ownerHeaders,
-    })).status,
-    403,
-  );
-  assert.equal(
-    (await fetch(securedBase + "/mcp", {
-      method: "POST",
-      headers: {
-        Origin: process.env.PUBLIC_ORIGIN,
-        Authorization: `Bearer ${boundToken.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
     })).status,
     403,
   );
@@ -4431,7 +4280,7 @@ try {
       settingsBeforeDeniedWrite, "denied archive administrators cannot change provider settings");
     assert.equal((await fetch(securedBase + "/api/mcp/tokens", {
       headers: archiveAdminHeaders,
-    })).status, 403);
+    })).status, 404);
   } finally {
     await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='owner'", [ownerTierBeforeAdminView]);
     await client.query("UPDATE account_tiers SET full_access=$1 WHERE account_id='vk:42'", [viewerTierBeforeAdminView]);
@@ -4613,7 +4462,12 @@ try {
   }
   for (const scenario of [
     { path: "/api/backup", revoke: "session", status: 401 },
+    { path: "/api/backup", revoke: "owner", status: 403 },
+    { path: "/api/backup", revoke: "platform-grant", status: 403 },
+    { path: "/api/backup", revoke: "membership", status: 403 },
+    { path: "/api/backup/full", revoke: "session", status: 401 },
     { path: "/api/backup/full", revoke: "owner", status: 403 },
+    { path: "/api/backup/full", revoke: "membership", status: 403 },
   ] as const) {
     let reached!: () => void;
     let release!: () => void;
@@ -4634,20 +4488,74 @@ try {
       })]);
       if (scenario.revoke === "session")
         await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(aiOwnerToken)]);
-      else
+      else if (scenario.revoke === "owner")
         await client.query("UPDATE archive_owners SET user_id='vk:42' WHERE archive_id='runtime-test'");
+      else if (scenario.revoke === "platform-grant")
+        await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
+      else
+        await client.query("UPDATE archive_memberships SET approved=false WHERE archive_id='runtime-test' AND user_id='owner'");
       release();
       const response = await pending;
       assert.equal(response.status, scenario.status, "completed revoke before first byte denies raw backup");
       assert.match(response.headers.get("content-type") || "", /application\/json/);
-      await response.text();
+      const denial = await response.text();
+      assert.ok(denial.length > 0 && !denial.startsWith("SQLite format 3"),
+        "denied backup has no prepared database/TAR bytes");
     } finally {
       release();
       if (scenario.revoke === "session")
         await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2) ON CONFLICT(token_hash) DO UPDATE SET expires_at=excluded.expires_at",
           [sessionTokenHash(aiOwnerToken), Date.now() + 5 * 60_000]);
-      else
+      else if (scenario.revoke === "owner")
         await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
+      else if (scenario.revoke === "platform-grant")
+        await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
+      else
+        await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id='owner'");
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+  for (const path of ["/api/backup", "/api/backup/full"] as const) {
+    const handler = databaseBackupHttp({ archive: app.archive, auth: backupAuth });
+    const server = createServer((req, res) => {
+      void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => res.destroy(error));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    let response: IncomingMessage | undefined;
+    let firstReceived!: () => void;
+    const firstByte = new Promise<void>((resolve) => { firstReceived = resolve; });
+    const chunks: Buffer[] = [];
+    try {
+      const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+      const delivered = new Promise<Buffer>((resolve, reject) => {
+        const request = httpGet(base + path, { headers: ownerHeaders }, (incoming) => {
+          response = incoming;
+          assert.equal(incoming.statusCode, 200);
+          incoming.once("data", () => { incoming.pause(); firstReceived(); });
+          incoming.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+          incoming.once("end", () => resolve(Buffer.concat(chunks)));
+          incoming.once("error", reject);
+        });
+        request.once("error", reject);
+      });
+      await Promise.race([firstByte, new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => reject(new Error(`${path} did not deliver its first byte`)), 30_000);
+        timer.unref();
+      })]);
+      await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
+      response?.resume();
+      const bytes = await delivered;
+      assert.ok(bytes.length > 0, "an already authorized backup remains a complete snapshot");
+      assert.equal(bytes.length, Number(response?.headers["content-length"]));
+      if (path === "/api/backup") assert.equal(bytes.subarray(0, 16).toString(), "SQLite format 3\0");
+      else assert.deepEqual([...bytes.subarray(0, 2)], [31, 139]);
+      assert.equal((await fetch(base + path, { headers: ownerHeaders })).status, 403,
+        "a later request cannot use the completed first-byte authorization");
+    } finally {
+      response?.resume();
+      await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
+      server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   }
@@ -5130,7 +5038,7 @@ try {
   assert.equal(managedStatus.job?.state, "succeeded", managedStatus.job?.error);
   const managedName = managedStatus.records?.[0]?.name;
   assert.ok(managedName, "selected archive has a managed backup record");
-  const managedFile = join(directory, "archives", "other-archive", "backups", managedName);
+  const managedFile = join(directory, "archives", "other-archive", "tree-backups", managedName);
   const managedSqlite = join(directory, "selected-managed-backup.sqlite");
   writeFileSync(managedSqlite, execFileSync("tar", ["-xOf", managedFile, "drevo.sqlite"], {
     maxBuffer: 64 * 1024 * 1024,
@@ -12417,6 +12325,21 @@ try {
     assert.equal(overLimitSummary.canImport, false);
     assert.match(overLimitSummary.warning, /150/);
     const previewArchive = await openArchive(selectedDbPath, family, personalArchiveId);
+    // A preview is advice, not the write boundary: posting its token directly
+    // must still enforce the basic owner's quota and leave the stage retryable.
+    const beforeOverLimitApply = await previewArchive.read();
+    const capacityBeforeOverLimitApply = await accountCapacity(previewArchive.db, newAccountSession.user.id);
+    const deniedOverLimitApply = await fetch(oauthBase + location.replace(/\/tree$/, "/api/drevo/import"), {
+      method: "POST", headers: { ...transferHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ token: overLimitSummary.token, confirm: true }),
+    });
+    assert.equal(deniedOverLimitApply.status, 403, await deniedOverLimitApply.text());
+    assert.deepEqual(await previewArchive.read(), beforeOverLimitApply,
+      "an over-quota apply cannot insert a partial family or advance its revision");
+    assert.deepEqual(await accountCapacity(previewArchive.db, newAccountSession.user.id),
+      capacityBeforeOverLimitApply, "a denied apply cannot charge the owner's quota");
+    assert.equal((await previewArchive.db.prepare("", "SELECT data->>'status' AS status FROM workflow_stages WHERE kind='drevo' AND token=?")
+      .get(overLimitSummary.token))?.status, "ready", "quota denial must preserve the checked stage for an authorized retry");
     const previewAuth = await createAuth(await userStore(previewArchive.db), previewArchive.db,
       process.env.PUBLIC_ORIGIN);
     let previewReadReady!: () => void;
@@ -12476,6 +12399,56 @@ try {
     assert.equal(transferSummary.canImport, true);
     const transferToken = transferSummary.token;
     const importArchive = await openArchive(selectedDbPath, family, personalArchiveId);
+    // Capacity can be consumed after an otherwise valid preview. The import
+    // must recheck the owner at apply time and release all temporary resources.
+    const portableQuotaCapacity = await accountCapacity(importArchive.db, newAccountSession.user.id);
+    assert.ok(portableQuotaCapacity.available && portableQuotaCapacity.owned);
+    assert.equal(portableQuotaCapacity.fullAccess, false);
+    assert.notEqual(portableQuotaCapacity.mediaBytes, null);
+    assert.ok(transferSummary.bytes > 0, "this package contains original media");
+    const portableQuotaUrl = "/media/portable-quota-after-preview.png";
+    await importArchive.db.transaction(async () => {
+      await importArchive.db.prepare("", "INSERT INTO media_originals(url,size_bytes) VALUES(?,?)")
+        .run(portableQuotaUrl, BASIC_MEDIA_BYTES - portableQuotaCapacity.mediaBytes!);
+      await importArchive.db.prepare("", "INSERT INTO media_upload_grants(url,user_id,expires_ms) VALUES(?,?,?)")
+        .run(portableQuotaUrl, newAccountSession.user.id, Date.now() + 600_000);
+    });
+    try {
+      const before = await importArchive.read();
+      const capacity = await accountCapacity(importArchive.db, newAccountSession.user.id);
+      assert.ok(capacity.available && capacity.owned);
+      assert.equal(capacity.mediaBytes, BASIC_MEDIA_BYTES);
+      const originals = await importArchive.db.prepare("", "SELECT count(*)::int AS n FROM media_originals").get();
+      const reservations = await importArchive.db.prepare("", "SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests WHERE reserved_bytes>0").get();
+      const platformReservations = await client.query("SELECT coalesce(sum(reserved_bytes),0)::bigint AS bytes FROM platform_upload_reservations");
+      const uploads = join(dirname(selectedDbPath), "uploads");
+      // Empty support directories may remain after rollback; original bytes,
+      // symlinks and temporary files must not. Keep each entry's full path.
+      const files = () => existsSync(uploads) ? readdirSync(uploads, { recursive: true, withFileTypes: true })
+        .filter((entry) => !entry.isDirectory()).map((entry) => join(entry.parentPath, entry.name)).sort() : [];
+      const beforeFiles = files();
+      const denied = await fetch(oauthBase + location.replace(/\/tree$/, "/api/drevo/import"), {
+        method: "POST", headers: { ...transferHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ token: transferToken, confirm: true }),
+      });
+      assert.equal(denied.status, 507, await denied.text());
+      assert.deepEqual(await importArchive.read(), before, "over-quota import cannot partially write a family");
+      assert.deepEqual(await accountCapacity(importArchive.db, newAccountSession.user.id), capacity);
+      assert.equal((await importArchive.db.prepare("", "SELECT data->>'status' AS status FROM workflow_stages WHERE kind='drevo' AND token=?")
+        .get(transferToken))?.status, "ready", "quota denial leaves the checked package retryable");
+      assert.deepEqual(await importArchive.db.prepare("", "SELECT count(*)::int AS n FROM media_originals").get(), originals);
+      assert.deepEqual(await importArchive.db.prepare("", "SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests WHERE reserved_bytes>0").get(), reservations);
+      assert.deepEqual((await client.query("SELECT coalesce(sum(reserved_bytes),0)::bigint AS bytes FROM platform_upload_reservations")).rows,
+        platformReservations.rows, "quota denial releases its platform reservation");
+      assert.deepEqual(files(), beforeFiles, "quota denial removes copied originals");
+    } finally {
+      await importArchive.db.transaction(async () => {
+        await importArchive.db.prepare("", "DELETE FROM media_upload_grants WHERE url=?").run(portableQuotaUrl);
+        await importArchive.db.prepare("", "DELETE FROM media_originals WHERE url=?").run(portableQuotaUrl);
+      });
+    }
+    assert.deepEqual(await accountCapacity(importArchive.db, newAccountSession.user.id), portableQuotaCapacity);
+    console.log("runtime_portable_import_quota_apply_ok");
     const importAuth = await createAuth(await userStore(importArchive.db), importArchive.db,
       process.env.PUBLIC_ORIGIN);
     let importReadBarrier: { remaining: number; reached: () => void; gate: Promise<void> } | null = null;
@@ -13843,8 +13816,10 @@ try {
       "a share created by a former member stops working when their account is deleted");
     assert.equal(await publicShareAccess(app.archive.db)("runtime-test", oldShareToken), false,
       "a deleted creator cannot use a share to open the archive runtime");
-    assert.equal((await mcpTokenStore(app.archive.db).authenticate(`Bearer ${oldMcpToken}`)), null,
-      "an unbound MCP token from a deleted account stops working");
+    assert.equal((await fetch(securedBase + "/mcp", { method: "POST",
+      headers: { ...ownerHeaders, Authorization: `Bearer ${oldMcpToken}` },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    })).status, 404, "legacy credentials cannot re-enable the removed transport");
     assert.equal((await auditStore(app.archive.db).list({ before: 987656 })).items.find((entry) => entry.id === 987655)?.actorName, "Удалённый участник");
     const portableAfterDeletion = await fetch(securedBase + "/api/drevo/export", { headers: ownerHeaders });
     assert.equal(portableAfterDeletion.status, 200);
@@ -14037,7 +14012,9 @@ try {
   const restoredPeople = structuredClone(withoutPeer.family);
   restoredPeople.people = restoredPeople.people.filter((person) => person.id !== "pg-union-identity-peer");
   await app.archive.write(restoredPeople, withoutPeer.revision);
-  await verifyRestoreGuard({ client, source, family, ownerHeaders, restoreBytes });
+  await verifyRestoreGuard({ client, source, family, ownerHeaders, restoreBytes,
+    selectedBase: securedBase, rootArchive: app.archive });
+  await verifyImportRestoreQuota({ client, source });
   await verifyPlatformAiOrphanSweep(app!.archive.db, client, source);
   await verifyGlobalRoleFinalization();
   await verifyAwardCitationActivation(app.archive);

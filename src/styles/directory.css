@@ -44,7 +44,7 @@
   padding: 6px 10px;
   font-size: 12px;
   background: #eeeee6;
-  color: #777b71;
+  color: #58695b;
   cursor: pointer;
 }
 .tree-extra-toggle[aria-pressed="true"] {
@@ -156,7 +156,7 @@
   display: grid;
   gap: 7px;
   font-size: 12px;
-  color: #7b8872;
+  color: #58695b;
 }
 .people-directory select {
   border: 1px solid #dae2d3;
@@ -185,7 +185,7 @@
   padding: 0 16px 12px;
   font-size: 12px;
   letter-spacing: 1px;
-  color: #8c9882;
+  color: #58695b;
 }
 .directory-person {
   padding: 17px 16px;
@@ -225,7 +225,7 @@
 .directory-person small {
   font-size: 12px;
   line-height: 1.6;
-  color: #839078;
+  color: #58695b;
 }
 .directory-years {
   font-size: 14px;

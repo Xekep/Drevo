@@ -21,6 +21,12 @@ import { readPortablePackage } from "../src/server/portable-import.ts";
 import { installPortableOriginals } from "../src/server/portable-install.ts";
 import { initializeArchiveSchema } from "../src/server/schema.ts";
 
+test("discussion attachments reject an image whose bytes do not match the extension", async () => {
+  const png = await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png().toBuffer();
+  await assert.rejects(prepareCommentFile("wrong.jpg", png));
+  await assert.rejects(prepareCommentFile("vector.png", Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"></svg>')));
+});
+
 test("discussion files remain private, preserve edit conflicts, count toward quotas and disappear on deletion", async () => {
   const directory = await mkdtemp(join(tmpdir(), "drevo-comment-files-"));
   const originalOrigin = process.env.PUBLIC_ORIGIN;

@@ -26,12 +26,13 @@ test("scoped citation binding checks every supported entity without changing old
   child.birth = "1900";
   child.events = [{ id: "event", type: "residence", date: "1920", place: "Москва" }];
   const other = person("other", user.id);
+  const outsider = person("outsider", "another-user");
   const hidden = person("hidden", "another-user");
   hidden.sources = [citation("/media/secret.pdf#page=2")];
   hidden.photo = "/media/secret.png";
   const before: Family = {
     title: "Тест", description: "", demo: false,
-    people: [anchor, child, other, hidden], photos: [],
+    people: [anchor, child, other, hidden, outsider], photos: [],
     links: [
       { id: "own-link", createdBy: user.id, type: "godparent", from: "anchor", to: "other" },
       { id: "hidden-link", type: "godparent", from: "hidden", to: "anchor",
@@ -40,10 +41,12 @@ test("scoped citation binding checks every supported entity without changing old
     unions: [
       { id: "own-union", createdBy: user.id, type: "partnership",
         participants: ["anchor", "other"] },
-      { id: "hidden-union", type: "partnership", participants: ["hidden", "anchor"],
+      { id: "hidden-union", type: "partnership", participants: ["hidden", "outsider"],
         sources: [citation("/media/secret.pdf")] },
     ],
   };
+  assert.ok(!projectFamilyForUser(before, user).people.some((item) => item.id === hidden.id),
+    "the denied citation belongs to a person outside the blood-and-partners scope");
   const archive = await openArchive(":memory:", before);
   const changed = (update: (family: Family) => void) => {
     const family = structuredClone(before);
@@ -79,20 +82,37 @@ test("scoped citation binding checks every supported entity without changing old
         /Нет доступа/, kind,
       );
 
-    const hiddenParent = changed((family) => {
+    const recordedCoParent = changed((family) => {
       family.people[1].parents.push("hidden");
       family.people[1].parentClaims = [{ parentId: "hidden", sources: [secret] }];
     });
-    assert.deepEqual(projectFamilyForUser(hiddenParent, user).people[1].parentClaims, [],
-      "a visible child's hidden parent citation is not in the reader projection");
+    const coParentView = projectFamilyForUser(recordedCoParent, user);
+    assert.ok(coParentView.people.some((item) => item.id === hidden.id),
+      "a blood child's recorded co-parent is visible without a marriage");
+    assert.deepEqual(coParentView.people.find((item) => item.id === child.id)?.parentClaims,
+      [{ parentId: "hidden", sources: [secret] }],
+      "the visible co-parent edge retains its citation");
+    const copiedFromCoParent = structuredClone(recordedCoParent);
+    copiedFromCoParent.people[1].sources = [secret];
+    await authorizeMediaReferences(archive.db, recordedCoParent, copiedFromCoParent, user);
+
+    const hiddenParent = changed((family) => {
+      family.people[2].parents.push("hidden");
+      family.people[2].parentClaims = [{ parentId: "hidden", sources: [secret] }];
+    });
+    const hiddenParentView = projectFamilyForUser(hiddenParent, user);
+    assert.ok(!hiddenParentView.people.some((item) => item.id === hidden.id),
+      "an own non-blood card and partnership do not open the partner's parent");
+    assert.deepEqual(hiddenParentView.people.find((item) => item.id === other.id)?.parentClaims, [],
+      "an own non-blood card's hidden parent citation is not in the reader projection");
     const copiedFromHiddenParent = structuredClone(hiddenParent);
-    copiedFromHiddenParent.people[1].sources = [secret];
+    copiedFromHiddenParent.people[2].sources = [secret];
     await assert.rejects(
       authorizeMediaReferences(archive.db, hiddenParent, copiedFromHiddenParent, user),
       /Нет доступа/, "a hidden parent citation cannot become a general card citation",
     );
     const retainedHiddenParent = structuredClone(hiddenParent);
-    retainedHiddenParent.people[1].name = "Updated";
+    retainedHiddenParent.people[2].name = "Updated";
     await authorizeMediaReferences(archive.db, hiddenParent, retainedHiddenParent, user);
 
     await authorizeMediaReferences(archive.db, before,

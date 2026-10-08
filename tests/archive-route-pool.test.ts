@@ -3,6 +3,83 @@ import { createServer, type ServerResponse } from "node:http";
 import test from "node:test";
 import { archiveRoutePool } from "../src/server/archive-route-pool.ts";
 
+test("disconnect does not evict a runtime whose background handler is still running", async () => {
+  let finish!: () => void;
+  let disconnected!: () => void;
+  const work = new Promise<void>(resolve => { finish = resolve; });
+  const detached = new Promise<void>(resolve => { disconnected = resolve; });
+  let firstClosed = false;
+  const pool = archiveRoutePool(async () => true, async id => ({
+    async handle(_req, res) {
+      if (id === "tree-1") {
+        res.on("close", disconnected);
+        res.writeHead(200); res.write("started");
+        await work;
+      } else res.end(id);
+    },
+    async close() { if (id === "tree-1") firstClosed = true; },
+  }), { maxOpen: 3 });
+  const server = createServer((req, res) => {
+    void pool.route(req, res, new URL(req.url!, "http://localhost"));
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    const response = await fetch(`${base}/a/tree-1/api/hold`);
+    await response.body!.cancel();
+    await detached;
+    for (const id of [2, 3, 4]) await (await fetch(`${base}/a/tree-${id}/api/ready`)).text();
+    const fifth = await fetch(`${base}/a/tree-5/api/ready`);
+    assert.equal(await fifth.text(), "tree-5");
+    assert.equal(firstClosed, false);
+    finish();
+    await new Promise<void>(resolve => setImmediate(resolve));
+    await (await fetch(`${base}/a/tree-6/api/ready`)).text();
+    assert.equal(firstClosed, true);
+  } finally {
+    finish(); await pool.close(); server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
+test("scoped preview API and media stay in the selected archive runtime", async () => {
+  const seen: Array<{ archiveId: string; path: string }> = [];
+  const pool = archiveRoutePool(
+    async (_req, archiveId, path) => archiveId === "tree-123" &&
+      path.startsWith("/preview/member%3A42/"),
+    async (archiveId) => ({
+      async handle(_req, res, path) {
+        seen.push({ archiveId, path });
+        res.writeHead(200).end("selected");
+      },
+      async close() {},
+    }),
+  );
+  const server = createServer((req, res) => {
+    void pool.route(req, res, new URL(req.url!, "http://localhost"))
+      .then((handled) => { if (!handled) res.writeHead(404).end(); });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    for (const path of ["api/family?projection=overview", "media/portrait.png"]) {
+      assert.equal((await fetch(`${base}/a/tree-123/preview/member%3A42/${path}`)).status, 200);
+    }
+    assert.deepEqual(seen, [
+      { archiveId: "tree-123", path: "/preview/member%3A42/api/family?projection=overview" },
+      { archiveId: "tree-123", path: "/preview/member%3A42/media/portrait.png" },
+    ]);
+    assert.equal((await fetch(`${base}/a/tree-456/preview/member%3A42/api/family`)).status,
+      404, "the selected archive gate still applies");
+    assert.equal((await fetch(`${base}/a/tree-123/preview/%2e%2e/api/family`)).status,
+      404, "invalid preview member IDs never reach a runtime");
+  } finally {
+    await pool.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
 test("a fifth tree waits for an active tree instead of losing the request", async () => {
   const held = new Map<string, ServerResponse>();
   const opened: string[] = [];

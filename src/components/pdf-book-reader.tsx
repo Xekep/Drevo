@@ -7,7 +7,8 @@ import type { ReaderCommand, ReaderEvent } from "./bookreader-frame-messages";
 import type { ListedDocument } from "./documents-catalog";
 import { documentFileTypeFromMime } from "../shared/document-file.ts";
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { archiveResourceUrl } from "../domain/archive-context.ts";
+import { archiveResourceUrl, memberPreviewAt } from "../domain/archive-context.ts";
+import { MemberPreviewExit } from "./member-preview-exit";
 import type {
   AnnotationSelection,
   DocumentAnnotation,
@@ -20,17 +21,16 @@ export function PdfBookReader({
   initialPage = 1,
   onClose,
   mayAnnotate = false,
-  annotateOnOpen = false,
 }: {
   document: ListedDocument;
   initialPage?: number;
   onClose: () => void;
   mayAnnotate?: boolean;
-  annotateOnOpen?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const commentsList = useRef<HTMLDivElement>(null);
+  const commentsPanel = useRef<HTMLDivElement>(null);
   const sidebarClose = useRef<HTMLButtonElement>(null);
   const focusSidebarOnOpen = useRef(false);
   const sidebarSwipe = useRef<{
@@ -55,8 +55,8 @@ export function PdfBookReader({
   const [magnifier, setMagnifier] = useState(false);
   const [annotations, setAnnotations] = useState<DocumentAnnotation[]>([]);
   const [annotationError, setAnnotationError] = useState("");
-  const [commentsOpen, setCommentsOpen] = useState(annotateOnOpen);
-  const [annotating, setAnnotating] = useState(annotateOnOpen);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [annotating, setAnnotating] = useState(false);
   const [selection, setSelection] = useState<AnnotationSelection | null>(null);
   const [comment, setComment] = useState("");
   const [editing, setEditing] = useState<{
@@ -228,6 +228,11 @@ export function PdfBookReader({
         ?.querySelector<HTMLElement>("article.is-active")
         ?.scrollIntoView({ block: "nearest", behavior: "auto" });
   }, [activeAnnotation, commentsOpen, sidebarTab]);
+
+  useEffect(() => {
+    if (selection && commentsOpen && sidebarTab === "comments")
+      commentsPanel.current?.scrollTo({ top: 0, behavior: "auto" });
+  }, [selection, commentsOpen, sidebarTab]);
 
   useEffect(() => {
     if (!readerReady) return;
@@ -463,6 +468,7 @@ export function PdfBookReader({
           setMagnifier(false);
         }}
       >
+        <MemberPreviewExit />
         <div className="pdf-book-content">
           <div className="pdf-book-stage">
             <div className="pdf-book-host">
@@ -470,6 +476,9 @@ export function PdfBookReader({
                 ref={frame}
                 className="pdf-book-frame"
                 src="/bookreader-frame.html"
+                // The reader's full-window fallback stays inside the dialog.
+                // Native iframe fullscreen would hide the participant exit.
+                allow={memberPreviewAt(window.location.pathname) ? "fullscreen 'none'" : undefined}
                 title="Страницы документа"
                 aria-busy={loading}
                 style={{
@@ -733,7 +742,7 @@ export function PdfBookReader({
                 ))}
               </nav>
             ) : (
-              <div className="pdf-book-comments">
+              <div className="pdf-book-comments" ref={commentsPanel}>
                 {mayAnnotate && !loading && !error && (
                   <button
                     type="button"
@@ -870,7 +879,7 @@ export function PdfBookReader({
                       {editing?.id !== item.id && (
                         <DocumentCommentText text={item.text} />
                       )}
-                      {item.canEdit && (
+                      {mayAnnotate && item.canEdit && (
                         <button
                           type="button"
                           className="pdf-book-comment-edit"
@@ -896,7 +905,7 @@ export function PdfBookReader({
                           <Pencil size={15} />
                         </button>
                       )}
-                      {item.canDelete && (
+                      {mayAnnotate && item.canDelete && (
                         <ConfirmDeleteButton
                           className="pdf-book-comment-delete"
                           disabled={saving || !!editing || !commentsOpen}

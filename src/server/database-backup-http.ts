@@ -1,3 +1,5 @@
+import { memberPreviewTarget } from "./member-preview-access.ts";
+import { lockBackupStaff } from "./tree-backup-access.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createReadStream } from "node:fs";
 import { mkdtemp, open, rm, stat } from "node:fs/promises";
@@ -8,8 +10,9 @@ import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import { writeDatabaseBackup } from "./backup.ts";
 import { fullBackup } from "./full-backup.ts";
+import { sanitizeTreeBackup } from "./tree-backup-files.ts";
 import { ForbiddenError } from "./users.ts";
-import { isArchiveOwner } from "../domain/access.ts";
+import { canManageTreeBackups } from "../domain/access.ts";
 
 export function databaseBackupHttp({
   archive,
@@ -71,11 +74,9 @@ export function databaseBackupHttp({
           const owner = await client.query<{ user_id: string }>(
             "SELECT user_id FROM archive_owners WHERE archive_id=$1 FOR SHARE NOWAIT",
             [archive.db.archiveId]);
-          const admin = await client.query(
-            "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
-            [actorId]);
+          const admin = await lockBackupStaff(client, actorId);
           if (!member.rows[0]?.approved || owner.rows[0]?.user_id !== actorId ||
-            !admin.rowCount) return "access";
+            !admin) return "access";
           if (res.destroyed) return "sent";
           // A completed revoke before this byte denies the prepared backup.
           // After the first byte the download has started, so free all PG locks
@@ -95,8 +96,7 @@ export function databaseBackupHttp({
       if (outcome === "access") return json(res, 403, { error: "Доступ к архиву отозван" });
     } else {
       const current = await auth.currentUser(req);
-      if (!current?.approved || !isArchiveOwner(current) || current.id !== actorId ||
-        !(await auth.isPlatformAdmin(req)))
+      if (!canManageTreeBackups(current) || current.id !== actorId || !!memberPreviewTarget(req))
         return json(res, 403, { error: "Доступ к архиву отозван" });
       res.writeHead(200, headers);
       if (first.length) res.write(first);
@@ -117,17 +117,15 @@ export function databaseBackupHttp({
     if ((!full && url.pathname !== "/api/backup") || req.method !== "GET")
       return false;
     const actor = await auth.currentUser(req);
-    if (!actor?.approved || !isArchiveOwner(actor) || !(await auth.isPlatformAdmin(req)))
-      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
-        error: full
-          ? "Системную копию может скачать администратор платформы"
-          : "Копию базы может скачать администратор платформы",
+    if (!canManageTreeBackups(actor) || !!memberPreviewTarget(req))
+      return json(res, actor ? 403 : 401, {
+        error: "Копии древа доступны его владельцу с ролью администратора или исследователя платформы",
       });
 
     if (full) {
       try {
         await fullBackup(archive.db, res, undefined, beforeSend,
-          async (file) => { await deliverPrepared(req, res, actor.id, file, true); });
+          async (file) => { await deliverPrepared(req, res, actor.id, file, true); }, true);
       } catch (error) {
         if (error instanceof ForbiddenError)
           return json(res, 403, { error: error.message });
@@ -140,6 +138,7 @@ export function databaseBackupHttp({
       file = join(directory, "drevo.sqlite");
     try {
       await writeDatabaseBackup(archive.db, file);
+      sanitizeTreeBackup(file);
       await beforeSend?.();
       return await deliverPrepared(req, res, actor.id, file, false);
     } finally {

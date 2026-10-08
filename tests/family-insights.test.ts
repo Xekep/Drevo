@@ -308,6 +308,22 @@ test("simultaneous living peak excludes people without a recorded birth", () => 
   );
 });
 
+test("overlapping generations exclude known deceased people without death dates", () => {
+  const family: Family = { title: "Тест", description: "", demo: false, people: [
+    person("dated-one", "Анна", "1850", 1, { death: "1920" }),
+    person("dated-two", "Иван", "1900", 2, { death: "1970" }),
+    person("marked", "Мария", "1850", 3, { deceased: true }),
+    person("death-place", "Пётр", "1870", 4, { deathPlace: "Москва" }),
+    person("unknown-birth", "Нина", "", 5, { deceased: true }),
+  ] };
+  const facts = analyzeFamilyInsights(family, 2026).facts;
+  assert.equal(facts.find((fact) => fact.title === "Поколений одновременно")?.value, "2");
+  assert.equal(facts.find((fact) => fact.title === "Больше всего родственников жили одновременно")?.value, "2");
+  const onlyUnknownDeaths = analyzeFamilyInsights({ ...family,
+    people: family.people.filter((item) => !item.death) }, 2026).facts;
+  assert.ok(!onlyUnknownDeaths.some((fact) => fact.title === "Поколений одновременно"));
+});
+
 test("average lifespan by sex counts only known birth and death years", () => {
   const people = [
     person("m1", "Пётр", "1900", 1, { sex: "m", death: "1970" }),
@@ -324,12 +340,12 @@ test("average lifespan by sex counts only known birth and death years", () => {
     description: "",
     demo: false,
     people,
-  }).facts;
+  }, 2026).facts;
   const men = facts.find(
-    (fact) => fact.title === "Средняя продолжительность жизни мужчин",
+    (fact) => fact.title === "Средняя продолжительность жизни мужчин за последние 100 лет",
   );
   const women = facts.find(
-    (fact) => fact.title === "Средняя продолжительность жизни женщин",
+    (fact) => fact.title === "Средняя продолжительность жизни женщин за последние 100 лет",
   );
   assert.equal(men?.value, "≈ 60,5 года");
   assert.match(men?.detail || "", /^2 человека/);
@@ -346,6 +362,25 @@ test("average lifespan by sex counts only known birth and death years", () => {
   }).facts;
   assert.equal(empty.at(-2)?.value, "Нет данных");
   assert.equal(empty.at(-1)?.value, "Нет данных");
+});
+
+test("recent lifespan uses the death period without excluding older birth cohorts", () => {
+  const people = [
+    person("historic", "Пётр", "1800", 1, { sex: "m", death: "1900" }),
+    person("boundary", "Иван", "1866", 1, { sex: "m", death: "1926" }),
+    person("recent", "Алексей", "1916", 1, { sex: "m", death: "2006" }),
+    person("future", "Николай", "2000", 1, { sex: "m", death: "2070" }),
+    person("living", "Сергей", "1930", 1, { sex: "m" }),
+    person("unknown", "Михаил", "", 1, { sex: "m", death: "2000" }),
+  ];
+  const family: Family = { title: "Тест", description: "", demo: false, people };
+  const men = analyzeFamilyInsights(family, 2026).facts.find((fact) =>
+    fact.title === "Средняя продолжительность жизни мужчин за последние 100 лет");
+  assert.equal(men?.value, "≈ 75 лет");
+  assert.match(men?.detail || "", /^2 человека/);
+  const nextYear = analyzeFamilyInsights(family, 2027).facts.find((fact) =>
+    fact.title === men?.title);
+  assert.equal(nextYear?.value, "≈ 90 лет", "the period advances with the current year");
 });
 
 test("surname ranking combines feminine and masculine forms", () => {

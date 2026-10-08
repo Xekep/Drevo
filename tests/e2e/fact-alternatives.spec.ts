@@ -2,13 +2,17 @@ import { expect, test } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
 
-test("другую запись о рождении можно сохранить с собственным источником", async ({ page }) => {
+test("прежняя другая запись о рождении сохраняет собственный источник", async ({ page }) => {
   const response = await page.request.get("/api/family?projection=overview");
   const initial = await response.json();
   let family = structuredClone(initial.family) as Family;
+  family.people.find((item) => item.id === "e2e-child")!.factAlternatives = [{
+    id: "legacy-birth", field: "birth", value: "1966",
+    sources: [{ title: "Вторая запись о рождении", type: "Архив", reference: "л. 2" }],
+  }];
   let revision = initial.revision as number;
   await page.route("**/api/family?projection=overview", async (route) =>
-    route.fulfill({ response, json: { ...initial, family, revision } }));
+    route.fulfill({ response, json: { ...initial, family, revision, partial: false } }));
   await page.route("**/api/family/changes", async (route) => {
     const changes = route.request().postDataJSON().changes as Change[];
     family = applyArchiveChanges(family, changes).family;
@@ -18,15 +22,13 @@ test("другую запись о рождении можно сохранит�
   await page.goto("/tree");
   await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").click();
   await page.locator(".inspector-person-actions .person-edit-button").click();
+  await page.getByText("Точные источники и варианты рождения").click();
   const alternatives = page.locator(".fact-alternatives").first();
   await alternatives.locator("summary").click();
-  await alternatives.getByRole("button", { name: "Добавить другую дату" }).click();
+  await expect(alternatives.getByRole("button", { name: "Добавить другую дату" })).toHaveCount(0);
   const variant = alternatives.locator(".fact-alternative");
-  await variant.getByLabel("Другая дата рождения").fill("1966");
-  await variant.getByRole("button", { name: "Добавить источник вручную" }).click();
-  await variant.getByLabel("Название").fill("Вторая запись о рождении");
-  await variant.getByLabel("Тип").fill("Архив");
-  await variant.getByLabel("Ссылка в источнике").fill("л. 2");
+  await expect(variant.getByLabel("Другая дата рождения")).toHaveValue("1966");
+  await expect(variant.getByLabel("Название")).toHaveValue("Вторая запись о рождении");
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect.poll(() => family.people.find((person) => person.id === "e2e-child")
     ?.factAlternatives?.[0].value).toBe("1966");
@@ -36,6 +38,7 @@ test("другую запись о рождении можно сохранит�
   await expect(page.getByText(/Другая дата рождения: 1966.*Вторая запись о рождении/))
     .toBeVisible();
   await page.locator(".inspector-person-actions .person-edit-button").click();
+  await page.locator(".person-date-group").first().locator(".person-evidence-details > summary").click();
   const saved = page.locator(".fact-alternatives").first();
   await saved.locator("summary").click();
   await expect(saved.getByLabel("Другая дата рождения")).toHaveAttribute("readonly", "");
@@ -47,9 +50,13 @@ test("источник прежней фамилии при рождении о�
   const response = await page.request.get("/api/family?projection=overview");
   const initial = await response.json();
   let family = structuredClone(initial.family) as Family;
+  const legacyPerson = family.people.find((item) => item.id === "e2e-child")!;
+  legacyPerson.maidenName = "Иванова";
+  legacyPerson.maidenNameClaim = { value: "Иванова",
+    sources: [{ title: "Первая метрическая книга", type: "Архив", reference: "л. 7" }] };
   let revision = initial.revision as number;
   await page.route("**/api/family?projection=overview", async (route) =>
-    route.fulfill({ response, json: { ...initial, family, revision } }));
+    route.fulfill({ response, json: { ...initial, family, revision, partial: false } }));
   await page.route("**/api/family/changes", async (route) => {
     const changes = route.request().postDataJSON().changes as Change[];
     const applied = applyArchiveChanges(family, changes);
@@ -65,10 +72,7 @@ test("источник прежней фамилии при рождении о�
   await page.getByLabel("Фамилия при рождении", { exact: true }).fill("Иванова");
   const claim = page.locator(".birth-surname-claim");
   await claim.locator("summary").click();
-  await claim.getByRole("button", { name: "Добавить источник вручную" }).click();
-  await claim.getByLabel("Название").fill("Первая метрическая книга");
-  await claim.getByLabel("Тип").fill("Архив");
-  await claim.getByLabel("Ссылка в источнике").fill("л. 7");
+  await expect(claim.getByLabel("Название")).toHaveValue("Первая метрическая книга");
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect.poll(() => family.people.find((person) => person.id === "e2e-child")
     ?.maidenNameClaim?.value).toBe("Иванова");

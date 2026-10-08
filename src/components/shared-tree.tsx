@@ -20,6 +20,7 @@ import {
 import { TreePreferencesDialog } from "./tree-preferences-dialog";
 import { TreeExportDialog } from "./tree-export-dialog";
 import { TreeSearch } from "./tree-search";
+import { ArchiveLoading } from "./archive-loading";
 const noop = () => {};
 type SharedData = {
   family: Family;
@@ -183,6 +184,11 @@ export default function SharedTree({ token }: { token: string }) {
                 }
                 colorScheme={preferences?.colorScheme}
                 generationLimits={preferences?.generationLimits}
+                onResetGenerations={async () => {
+                  const value = { ...(preferences ?? DEFAULT_TREE_PREFERENCES), generationLimits: null };
+                  writeGuestTreePreferences(value);
+                  setPreferences(value);
+                }}
                 onGenerationAnchor={async (id) => {
                   const value = withGenerationAnchor(
                     preferences ?? DEFAULT_TREE_PREFERENCES,
@@ -247,12 +253,12 @@ export default function SharedTree({ token }: { token: string }) {
               )}
             </div>
           </main>
-        ) : (
+        ) : error ? (
           <main className="archive-status">
-            <h1>{error ? "Ссылка недоступна" : "Открываем семью…"}</h1>
-            {error && <p role="alert">{error}</p>}
+            <h1>Ссылка недоступна</h1>
+            <p role="alert">{error}</p>
           </main>
-        )}
+        ) : <ArchiveLoading canvas />}
       </div>
       {data && preferences && preferencesOpen && (
         <TreePreferencesDialog
