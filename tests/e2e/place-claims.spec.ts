@@ -19,9 +19,13 @@ for (const { kind, personId, label, place } of [
     const response = await page.request.get("/api/family?projection=overview");
     const initial = await response.json();
     let family = structuredClone(initial.family) as Family;
+    const legacyPerson = family.people.find((item) => item.id === personId)!;
+    legacyPerson[kind === "birth" ? "birthPlace" : "deathPlace"] = place;
+    legacyPerson[kind === "birth" ? "birthPlaceClaim" : "deathPlaceClaim"] = { value: place,
+      sources: [{ catalogId: source.id, title, type: "архив", reference: "" }] };
     let revision = initial.revision as number;
     await page.route("**/api/family?projection=overview", async (route) =>
-      route.fulfill({ response, json: { ...initial, family, revision } }));
+      route.fulfill({ response, json: { ...initial, family, revision, partial: false } }));
     await page.route("**/api/family/changes", async (route) => {
       const changes = route.request().postDataJSON().changes as Change[];
       family = applyArchiveChanges(family, changes).family;
@@ -34,16 +38,12 @@ for (const { kind, personId, label, place } of [
     const group = page.locator(".person-date-group")
       .filter({ has: page.getByRole("heading", { name: kind === "birth" ? "Рождение" : "Смерть" }) });
     const placeInput = group.locator('input[placeholder="Название в то время"]');
-    await placeInput.fill(place);
-    await placeInput.blur();
-    await expect(group.getByRole("status")).toBeVisible();
+    await expect(placeInput).toHaveValue(place);
     const claim = group.locator(`.${kind}-place-claim`);
     await group.locator(".person-evidence-details > summary").click();
     await claim.locator("summary").click();
     await expect(claim).toHaveAttribute("open", "");
-    await claim.getByRole("button", { name: "Выбрать из каталога" }).click();
-    await claim.getByLabel("Поиск источника").fill(title);
-    await claim.locator(".union-catalog-results").getByRole("button", { name: title }).click();
+    await expect(claim.getByRole("button", { name: "Выбрать из каталога" })).toHaveCount(0);
     await expect(claim.getByRole("combobox", { name: /Достоверность/ })).toHaveValue("");
     const confidence = kind === "birth" ? "tentative" : "conflicting";
     await claim.getByRole("combobox", { name: /Достоверность/ }).selectOption(confidence);

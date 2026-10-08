@@ -4,7 +4,8 @@ import { DocumentSourcePicker } from "./document-source-picker";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
 import { archiveDocumentPath } from "../domain/archive-routes.ts";
-import { CitationSourcesEditor } from "./union-sources-editor.tsx";
+import { CatalogPicker, CitationSourcesEditor } from "./union-sources-editor.tsx";
+import { sourceCitation } from "../shared/source-catalog.ts";
 import { PersonAlternativeClaims } from "./person-alternative-claims.tsx";
 import {
   Pencil,
@@ -72,6 +73,9 @@ function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange,
   isAdmin: boolean;
   canAssess: boolean;
 }) {
+  // Imported and previously recorded claims remain editable, but ordinary
+  // person fields no longer offer creation of a field-specific citation.
+  if (!claim) return null;
   const occupation = subject === "occupation";
   const surname = subject === "surname";
   const label = kind === "birth" ? "рождения" : "смерти";
@@ -103,6 +107,7 @@ function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange,
       : value.trim()
         ? <>
             <CitationSourcesEditor
+              allowAdd={false}
               sources={claim?.sources || []}
               onChange={(sources) => onChange(sources.length
                 ? { ...claim, value, sources } : undefined)}
@@ -738,6 +743,9 @@ export function PersonEditor({
                   }
                 />
               </div>
+              {(draft[kind === "birth" ? "birthDateClaim" : "deathDateClaim"] ||
+                draft[kind === "birth" ? "birthPlaceClaim" : "deathPlaceClaim"] ||
+                draft.factAlternatives?.some((item) => item.field === kind || item.field === `${kind}Place`)) &&
               <details className="form-details person-evidence-details">
                 <summary>
                   Точные источники и варианты {kind === "birth" ? "рождения" : "смерти"}
@@ -768,7 +776,7 @@ export function PersonEditor({
                   isAdmin={isAdmin}
                   canAssess={canAssessArchiveEvidence(user)}
                 />
-              </details>
+              </details>}
               {kind === "death" &&
                 !deathText.trim() &&
                 !draft.deathPlace?.trim() && (
@@ -1060,6 +1068,7 @@ export function PersonEditor({
             ))}
             <button
               type="button"
+              disabled={draft.sources.length >= 50}
               onClick={() =>
                 field("sources", [
                   ...draft.sources,
@@ -1069,6 +1078,10 @@ export function PersonEditor({
             >
               + Источник
             </button>
+            {isAdmin && draft.sources.length < 50 && <CatalogPicker
+              existing={draft.sources}
+              onChoose={(entry) => field("sources", [...draft.sources, sourceCitation(entry)])}
+            />}
           </section>
           <PersonDocumentsEditor personId={person?.id} disabled={busy} />
         </details>

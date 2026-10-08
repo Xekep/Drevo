@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
 
-test("каталожный источник относится к дате рождения и не переносится на новую дату", async ({ page }, info) => {
+test("прежний каталожный источник относится к дате рождения и не переносится на новую дату", async ({ page }, info) => {
   const title = `Запись о рождении ${info.project.name}`;
   const source = { id: `birth-claim-${info.project.name}`, title, version: 1,
     type: "архив", author: "", institution: "", archive: "ГАСО", fond: "6",
@@ -13,9 +13,12 @@ test("каталожный источник относится к дате ро�
   const response = await page.request.get("/api/family?projection=overview");
   const initial = await response.json();
   let family = structuredClone(initial.family) as Family;
+  const legacyPerson = family.people.find((item) => item.id === "e2e-child")!;
+  legacyPerson.birthDateClaim = { value: legacyPerson.birth,
+    sources: [{ catalogId: source.id, title, type: "архив", reference: "" }] };
   let revision = initial.revision as number;
   await page.route("**/api/family?projection=overview", async (route) =>
-    route.fulfill({ response, json: { ...initial, family, revision } }));
+    route.fulfill({ response, json: { ...initial, family, revision, partial: false } }));
   await page.route("**/api/family/changes", async (route) => {
     const changes = route.request().postDataJSON().changes as Change[];
     family = applyArchiveChanges(family, changes).family;
@@ -28,9 +31,7 @@ test("каталожный источник относится к дате ро�
   await page.getByText("Точные источники и варианты рождения").click();
   await page.getByText("Источники даты рождения").click();
   const claim = page.locator(".birth-date-claim");
-  await claim.getByRole("button", { name: "Выбрать из каталога" }).click();
-  await claim.getByLabel("Поиск источника").fill(title);
-  await claim.locator(".union-catalog-results").getByRole("button", { name: title }).click();
+  await expect(claim.getByRole("button", { name: "Выбрать из каталога" })).toHaveCount(0);
   await expect(claim.getByRole("combobox", { name: /Достоверность/ })).toHaveValue("");
   await claim.getByRole("combobox", { name: /Достоверность/ }).selectOption("confirmed");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
 
-test("источник занятия остаётся связанным только с указанным занятием", async ({ page }, info) => {
+test("прежний источник занятия остаётся связанным только с указанным занятием", async ({ page }, info) => {
   const title = `Цеховая книга ${info.project.name}`;
   const source = { id: `occupation-${info.project.name}`, title, version: 1,
     type: "архив", author: "", institution: "", archive: "ГАСО", fond: "6",
@@ -15,9 +15,13 @@ test("источник занятия остаётся связанным тол
   const complete = await page.request.get("/api/family");
   const full = await complete.json();
   let family = structuredClone(full.family) as Family;
+  const legacyPerson = family.people.find((item) => item.id === "e2e-child")!;
+  legacyPerson.occupation = "Столяр";
+  legacyPerson.occupationClaim = { value: "Столяр",
+    sources: [{ catalogId: source.id, title, type: "архив", reference: "" }] };
   let revision = full.revision as number;
   await page.route("**/api/family?projection=overview", (route) =>
-    route.fulfill({ response, json: { ...initial, family, revision } }));
+    route.fulfill({ response, json: { ...initial, family, revision, partial: false } }));
   await page.route("**/api/family/changes", (route) => {
     const changes = route.request().postDataJSON().changes as Change[];
     const applied = applyArchiveChanges(family, changes);
@@ -34,9 +38,7 @@ test("источник занятия остаётся связанным тол
   await page.getByLabel("Занятие", { exact: true }).fill("Столяр");
   const claim = page.locator(".occupation-claim");
   await claim.locator("summary").click();
-  await claim.getByRole("button", { name: "Выбрать из каталога" }).click();
-  await claim.getByLabel("Поиск источника").fill(title);
-  await claim.locator(".union-catalog-results").getByRole("button", { name: title }).click();
+  await expect(claim.getByRole("button", { name: "Выбрать из каталога" })).toHaveCount(0);
   await expect(claim.getByRole("combobox", { name: /Достоверность/ })).toHaveValue("");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
