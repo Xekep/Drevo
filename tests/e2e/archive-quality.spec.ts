@@ -1,14 +1,21 @@
 import { expect, test } from "@playwright/test";
+import { fullName } from "../../src/domain/dates.ts";
 
 test("quality center separates relationship hints from missing evidence", async ({
   page,
 }) => {
+  let childName = "";
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
     const child = data.family.people.find(
       (person: { id: string }) => person.id === "e2e-grandchild",
     );
+    childName = fullName(child);
+    // Another uncited event is valid input, including after the PDF scenario.
+    data.family.people.find((person: { id: string }) => person.id === "e2e-child").events = [
+      { id: "e2e-other-unsourced", type: "residence", date: "1991" },
+    ];
     child.parents = ["e2e-child", "e2e-spouse", "e2e-memorial-person"];
     child.sources = [];
     child.birth = "2000";
@@ -26,8 +33,11 @@ test("quality center separates relationship hints from missing evidence", async 
   ).toBeVisible();
   await expect(page.getByText("Больше двух кровных родителей")).toBeVisible();
   await page.getByRole("button", { name: /Неподтверждённые факты/ }).click();
+  await expect(page.getByRole("heading", { name: "Событие без прикреплённого источника", exact: true })).toHaveCount(2);
   await expect(
-    page.getByText("Событие без прикреплённого источника"),
+    page.locator(".insight-warning")
+      .filter({ has: page.getByRole("button", { name: `${childName} →`, exact: true }) })
+      .getByRole("heading", { name: "Событие без прикреплённого источника", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Цитируемые факты ещё не подтверждены оценкой исследователя")).toBeVisible();
   await expect(page.getByText("Факты с ручной оценкой «Противоречиво»")).toHaveCount(0);
