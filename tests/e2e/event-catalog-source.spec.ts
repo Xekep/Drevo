@@ -37,7 +37,7 @@ test("каталожный источник добавляется ко всей
   await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").click();
   await page.locator(".inspector-person-actions .person-edit-button").click();
   const form = page.locator(".person-editor-form");
-  const section = form.locator(".form-details").filter({ has: page.locator(".form-details > summary").filter({ hasText: /^Источники$/ }) }).last();
+  const section = form.locator(".form-details").filter({ has: page.locator("summary").filter({ hasText: /^Источники$/ }) }).last();
   await section.locator(":scope > summary").click();
   await section.getByRole("button", { name: "Выбрать из каталога" }).click();
   await section.getByLabel("Поиск источника").fill(title);

@@ -52,7 +52,9 @@ test("new award saves without a source; its optional source belongs only to that
   await page.locator(".inspector-person-actions .person-edit-button").click();
   const editor = page.locator(".person-editor-portrait-awards");
   await editor.getByRole("button", { name: "Добавить награду", exact: true }).click();
-  await chooseAward(editor, labour.name);
+  await editor.getByRole("combobox", { name: "Название" }).fill(labour.name);
+  await editor.getByRole("option", { name: new RegExp(labour.name) }).click();
+  await editor.locator(".award-inline-actions").getByRole("button", { name: "Добавить", exact: true }).click();
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect.poll(() => fixture.readAwards().length).toBe(2);
   expect(fixture.readAwards()[1].source).toBeUndefined();
