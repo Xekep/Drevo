@@ -26,7 +26,9 @@ async function isolatedAward(page: Page) {
     revision++;
     return route.fulfill({ json: { family, revision, appliedChanges: changes } });
   });
-  return { read: () => family.people.find((person) => person.id === "e2e-child")!.awards![0], writes: () => writes };
+  return { read: () => family.people.find((person) => person.id === "e2e-child")!.awards![0],
+    readAwards: () => family.people.find((person) => person.id === "e2e-child")!.awards!,
+    writes: () => writes };
 }
 
 async function openAward(page: Page) {
@@ -42,6 +44,30 @@ async function chooseAward(editor: ReturnType<Page["locator"]>, name: string) {
   await editor.getByRole("option", { name: new RegExp(name) }).click();
   await editor.locator(".award-inline-actions").getByRole("button", { name: "Готово" }).click();
 }
+
+test("new award saves without a source; its optional source belongs only to that award", async ({ page }) => {
+  const fixture = await isolatedAward(page);
+  await page.goto("/tree");
+  await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").click();
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  const editor = page.locator(".person-editor-portrait-awards");
+  await editor.getByRole("button", { name: "Добавить награду", exact: true }).click();
+  await chooseAward(editor, labour.name);
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect.poll(() => fixture.readAwards().length).toBe(2);
+  expect(fixture.readAwards()[1].source).toBeUndefined();
+  expect(fixture.read().source?.url).toBe("https://example.test/courage");
+
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  await editor.getByRole("button", { name: `Редактировать: ${labour.name}` }).click();
+  await editor.locator(".award-source-editor > summary").click();
+  await editor.getByLabel("Описание").fill("Удостоверение ветерана труда");
+  await editor.getByLabel("Ссылка", { exact: true }).fill("https://example.test/labour");
+  await editor.locator(".award-inline-actions").getByRole("button", { name: "Готово" }).click();
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect.poll(() => fixture.readAwards()[1].source?.url).toBe("https://example.test/labour");
+  expect(fixture.read().source?.url).toBe("https://example.test/courage");
+});
 
 test("changing a recognized award makes retaining its old source an explicit local choice", async ({ page }) => {
   const fixture = await isolatedAward(page);

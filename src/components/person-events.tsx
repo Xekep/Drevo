@@ -9,8 +9,7 @@ import { dateInputLabel, dateLabel, normalizeDateInput, safeUrl } from "../domai
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
 import { archiveDocumentPath } from "../domain/archive-routes.ts";
 import { DocumentSourcePicker } from "./document-source-picker.tsx";
-import { CatalogPicker, CitationSourcesEditor } from "./union-sources-editor.tsx";
-import { sourceCitation } from "../shared/source-catalog.ts";
+import { CitationSourcesEditor } from "./union-sources-editor.tsx";
 const hasAssessment = (event: PersonEvent) => !!(event.dateClaim?.confidence ||
   event.placeClaim?.confidence || event.alternatives?.some((item) => item.confidence));
 function EventAlternatives({ event, onChange, isAdmin, canAssess, savedIds }: {
@@ -23,11 +22,10 @@ function EventAlternatives({ event, onChange, isAdmin, canAssess, savedIds }: {
   const alternatives = event.alternatives || [];
   const update = (id: string, patch: Partial<EventFactAlternative>) =>
     onChange(alternatives.map((item) => item.id === id ? { ...item, ...patch } : item));
-  const add = (field: EventFactAlternative["field"]) =>
-    onChange([...alternatives, { id: crypto.randomUUID(), field, value: "", sources: [] }]);
+  if (!alternatives.length) return null;
   return <details className="form-details event-alternatives">
     <summary>Другие записи о событии{alternatives.length ? ` · ${alternatives.length}` : ""}</summary>
-    <p>Сохраните отличающуюся дату или место с источником. Показанные дата и место события останутся прежними.</p>
+    <p>Ранее сохранённые варианты. Дата и место события остаются без изменений.</p>
     {alternatives.map((alternative) => {
       const locked = savedIds.has(alternative.id);
       return <section className="fact-alternative" key={alternative.id}>
@@ -42,8 +40,8 @@ function EventAlternatives({ event, onChange, isAdmin, canAssess, savedIds }: {
               catch { /* Сервер проверит дату перед сохранением. */ }
             }} />
         </label>
-        {locked && <small>Чтобы изменить вариант, удалите его и добавьте новую запись с источником.</small>}
-        <CitationSourcesEditor sources={alternative.sources}
+        {locked && <small>Значение сохранено вместе с прежним источником.</small>}
+        <CitationSourcesEditor sources={alternative.sources} allowAdd={false}
           onChange={(sources) => update(alternative.id, { sources })}
           isAdmin={isAdmin} canRemoveLast={false} />
         <label>Достоверность
@@ -61,8 +59,6 @@ function EventAlternatives({ event, onChange, isAdmin, canAssess, savedIds }: {
         </button>
       </section>;
     })}
-    <button type="button" onClick={() => add("date")}>Добавить другую дату</button>
-    <button type="button" onClick={() => add("place")}>Добавить другое место</button>
   </details>;
 }
 export function EventsEditor({
@@ -171,7 +167,7 @@ export function EventsEditor({
                 }
               />
             </label>
-            {!saveTypeFirst(event) && <details className="event-date-claim">
+            {!saveTypeFirst(event) && event.dateClaim && <details className="event-date-claim">
               <summary>Источники даты события{event.dateClaim?.sources.length
                 ? ` · ${event.dateClaim.sources.length}` : ""}</summary>
               {event.dateClaim && event.dateClaim.value !== claimableEventDate(event)
@@ -184,7 +180,7 @@ export function EventsEditor({
                         </button>}
                   </div>
                 : claimableEventDate(event)
-                  ? <><CitationSourcesEditor sources={event.dateClaim?.sources || []}
+                  ? <><CitationSourcesEditor sources={event.dateClaim?.sources || []} allowAdd={false}
                       onChange={(sources) => update(event.id, { dateClaim: sources.length
                         ? { ...event.dateClaim, value: claimableEventDate(event)!, sources } : undefined })}
                       isAdmin={isAdmin} canRemoveLast={!event.dateClaim?.confidence || canAssess} />
@@ -215,7 +211,7 @@ export function EventsEditor({
                 }
               />
             </label>
-            {!saveTypeFirst(event) && <details className="event-place-claim">
+            {!saveTypeFirst(event) && event.placeClaim && <details className="event-place-claim">
               <summary>Источники места события{event.placeClaim?.sources.length
                 ? ` · ${event.placeClaim.sources.length}` : ""}</summary>
               {event.placeClaim && event.placeClaim.value !== event.place
@@ -228,7 +224,7 @@ export function EventsEditor({
                         </button>}
                   </div>
                 : event.place?.trim()
-                  ? <><CitationSourcesEditor sources={event.placeClaim?.sources || []}
+                  ? <><CitationSourcesEditor sources={event.placeClaim?.sources || []} allowAdd={false}
                       onChange={(sources) => update(event.id, { placeClaim: sources.length
                         ? { ...event.placeClaim, value: event.place!, sources } : undefined })}
                       isAdmin={isAdmin} canRemoveLast={!event.placeClaim?.confidence || canAssess} />
@@ -306,7 +302,7 @@ export function EventsEditor({
                     }
                   />
                 </label>
-                {!saveTypeFirst(event) && <>{(event.sources || []).map((source, index) => (
+                {!saveTypeFirst(event) && !!event.sources?.length && <>{(event.sources || []).map((source, index) => (
                   <div key={index} className="event-source-editor">
                     {source.catalogId ? <>
                       <strong>{source.title}</strong>
@@ -403,26 +399,7 @@ export function EventsEditor({
                     </button>
                   </div>
                 ))}
-                <button
-                  type="button"
-                  disabled={(event.sources?.length || 0) >= 50}
-                  onClick={() =>
-                    update(event.id, {
-                      sources: [
-                        ...(event.sources || []),
-                        { title: "", type: "", reference: "" },
-                      ],
-                    })
-                  }
-                >
-                  Добавить источник
-                </button>
-                {isAdmin && (event.sources?.length || 0) < 50 && <CatalogPicker
-                  existing={event.sources || []}
-                  onChoose={(entry) => update(event.id, {
-                    sources: [...(event.sources || []), sourceCitation(entry)],
-                  })}
-                />}</>}
+                </>}
               </div>
             </details>
             <button

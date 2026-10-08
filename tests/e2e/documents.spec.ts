@@ -291,24 +291,10 @@ test("источник карточки связывается с PDF без к�
   await page.getByRole("button", { name: "Добавить событие" }).click();
   const event = page.locator(".life-event-editor").last();
   await event.locator(".event-extra > summary").click();
-  await event.getByRole("button", { name: "Добавить источник" }).click();
-  const eventSource = event.locator(".event-source-editor").last();
-  await eventSource.getByRole("button", { name: "Связать с документом" }).click();
-  await eventSource.getByLabel("Найти документ человека").fill(title);
-  await eventSource.getByRole("button", { name: title, exact: true }).click();
-  await eventSource.getByRole("spinbutton", { name: "Страница документа" }).fill("2");
+  await expect(event.getByRole("button", { name: "Добавить источник" })).toHaveCount(0);
+  await event.getByLabel("Дата", { exact: true }).fill("1991");
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
-  await page
-    .locator(".life-event")
-    .last()
-    .locator(".event-sources > summary")
-    .click();
-  await expect(
-    page
-      .locator(".life-event")
-      .last()
-      .getByRole("link", { name: "Открыть документ" }),
-  ).toHaveAttribute("href", `/documents/${id}/page/2`);
+  await expect(page.locator(".life-event").last()).toContainText("1991");
   await page.getByRole("tab", { name: /Источники/ }).click();
   const card = page.locator(".source-card").filter({ hasText: title });
   await expect(card.getByRole("link", { name: "Открыть документ" })).toHaveAttribute(

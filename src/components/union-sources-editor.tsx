@@ -72,11 +72,12 @@ export function CatalogPicker({ existing, onChoose }: {
   </div>;
 }
 
-export function CitationSourcesEditor({ sources, onChange, isAdmin, canRemoveLast = true }: {
+export function CitationSourcesEditor({ sources, onChange, isAdmin, canRemoveLast = true, allowAdd = true }: {
   sources: Source[];
   onChange: (sources: Source[]) => void;
   isAdmin: boolean;
   canRemoveLast?: boolean;
+  allowAdd?: boolean;
 }) {
   const remove = (index: number) => onChange(sources.filter((_, i) => i !== index));
   return <div className="union-sources-editor">
@@ -97,12 +98,12 @@ export function CitationSourcesEditor({ sources, onChange, isAdmin, canRemoveLas
           <button type="button" disabled={!canRemoveLast && sources.length === 1}
             onClick={() => remove(index)}>Удалить источник</button>
         </div>)}
-    <div className="union-source-actions">
+    {allowAdd && <div className="union-source-actions">
       <button type="button" disabled={sources.length >= 50} onClick={() => onChange([...sources,
         { title: "", type: "", reference: "" }])}>Добавить источник вручную</button>
       {isAdmin && sources.length < 50 && <CatalogPicker existing={sources}
         onChoose={(entry) => onChange([...sources, sourceCitation(entry)])} />}
-    </div>
+    </div>}
   </div>;
 }
 
