@@ -5,10 +5,12 @@ import type { Family } from "../../src/domain/types.ts";
 test("сведения и события не создают привязок к полям, общий источник сохраняется отдельно", async ({ page }, info) => {
   const response = await page.request.get("/api/family?projection=overview");
   const initial = await response.json();
-  let family = structuredClone(initial.family) as Family;
+  const complete = await (await page.request.get("/api/family")).json();
+  let family = structuredClone(complete.family) as Family;
+  const originalAwards = structuredClone(family.people.find((person) => person.id === "e2e-child")!.awards);
   let revision = initial.revision as number;
   await page.route("**/api/family?projection=overview", (route) =>
-    route.fulfill({ response, json: { ...initial, family, revision } }));
+    route.fulfill({ response, json: { ...initial, family, revision, partial: false } }));
   await page.route("**/api/family/changes", (route) => {
     const changes = route.request().postDataJSON().changes as Change[];
     const applied = applyArchiveChanges(family, changes);
@@ -59,6 +61,7 @@ test("сведения и события не создают привязок к
   expect(saved.occupation).toBe("Учитель");
   expect(saved.birthDateClaim).toBeUndefined();
   expect(saved.factAlternatives || []).toEqual([]);
+  expect(saved.awards).toEqual(originalAwards);
   expect(saved.sources.at(-1)).toEqual(expect.objectContaining({
     title: "Семейные воспоминания", url: "https://example.test/memories", note: "Общие сведения о человеке",
   }));
