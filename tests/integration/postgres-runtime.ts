@@ -161,6 +161,7 @@ import { portableExportHttp } from "../../src/server/portable-http.ts";
 import { portableImportHttp } from "../../src/server/portable-import-http.ts";
 import { createSharedRequestLimiter } from "../../src/server/shared-request-rate-limit.ts";
 import { assertPostgresDemandDetails } from "./postgres-demand-details.ts";
+import { verifyPublicationReadConcurrency } from "./postgres-publication-read-concurrency.ts";
 
 if (!/^drevo_migration_runtime_[a-z0-9_]+$/.test(process.env.PGDATABASE || ""))
   throw new Error("Use a NEW disposable drevo_migration_runtime_* database");
@@ -1881,6 +1882,7 @@ try {
   );
   await verifySessionDelivery(app.archive.db, client);
   await verifyAccountExportDelivery(app.archive.db);
+  await verifyPublicationReadConcurrency(app.archive, uploads);
   assert.equal(await accountAiAccess(app.archive.db, "reader"), false);
   assert.equal(
     (await fetch(securedBase + "/api/ai/status", { headers }).then((r) =>

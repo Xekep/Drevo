@@ -47,7 +47,13 @@ export type StoreDatabase = {
   archiveId?: string;
   prepare(sqlite: string, postgres?: string): Statement;
   exec(sqlite: string, postgres?: string): Promise<void>;
-  transaction<T>(work: () => Promise<T>, readOnly?: boolean): Promise<T>;
+  /** Protected delivery reads need row locks, so cannot use SQL READ ONLY.
+   * A shared archive lock permits concurrent readers while excluding writers. */
+  transaction<T>(
+    work: () => Promise<T>,
+    readOnly?: boolean,
+    options?: { archiveLock: "share" },
+  ): Promise<T>;
   /** Global OAuth work uses its own transaction, without locking one tree. */
   postgresTransaction?<T>(
     work: (client: pg.PoolClient) => Promise<T>,
@@ -419,7 +425,7 @@ export async function openPostgresDatabase(
         throw new Error("Для PostgreSQL не задан явный SQL-запрос");
       await query(postgres);
     },
-    async transaction(work, readOnly = false) {
+    async transaction(work, readOnly = false, options) {
       const parent = context.getStore();
       if (parent) {
         if (!parent.active)
@@ -436,13 +442,15 @@ export async function openPostgresDatabase(
               : "BEGIN",
           );
           await client.query("SET LOCAL lock_timeout='5s'");
-          if (!readOnly)
+          if (!readOnly && !options)
             await client.query(
               "SELECT set_config('drevo.parent_evidence_write','on',true)",
             );
           if (!readOnly)
             await client.query(
-              "SELECT id FROM archives WHERE id=$1 FOR UPDATE",
+              options?.archiveLock === "share"
+                ? "SELECT id FROM archives WHERE id=$1 FOR SHARE"
+                : "SELECT id FROM archives WHERE id=$1 FOR UPDATE",
               [archiveId],
             );
           const result = await context.run(owner, work);
