@@ -104,6 +104,85 @@ test("family exchange reroutes an additional link touching a moved person", () =
   assert.notDeepEqual(swapped.routes, original.routes);
 });
 
+test("a couple and a single person exchange space while preserving the gap and generation", () => {
+  const original = geometry();
+  original.positions = original.positions.filter(([id]) => id !== "D");
+  original.occurrences = original.occurrences!.filter((item) => item.id !== "D");
+  original.blocks![1] = { ...original.blocks![1], members: ["C"], width: size.width };
+  original.generationBands![1].members = ["A", "B", "C"];
+  original.branches = original.branches!.filter((branch) => branch.id !== "pair:right");
+  const swapped = locallySwapFamilyBlocks(original, "left", "right", [], [], size);
+  assert.ok(swapped);
+  const before = new Map(original.positions), after = new Map(swapped.positions);
+  assert.equal(branchContactCounts(original.branches || []).distinct, 1);
+  assert.equal(branchContactCounts(swapped.branches || []).distinct, 0);
+  assert.equal(after.get("C")!.x, 0);
+  assert.equal(after.get("A")!.x, 348);
+  assert.equal(after.get("B")!.x, 600);
+  assert.equal(after.get("A")!.x - after.get("C")!.x - size.width, 128);
+  assert.equal(after.get("B")!.x + size.width, before.get("C")!.x + size.width);
+  for (const [id, point] of after) assert.equal(point.y, before.get(id)!.y);
+  assert.deepEqual(after.get("P"), before.get("P"));
+  assert.deepEqual(after.get("Q"), before.get("Q"));
+  assert.deepEqual(swapped.generationBands, original.generationBands);
+  for (const branch of swapped.branches!) {
+    if (branch.id.startsWith("child:"))
+      assert.equal(branch.route.points.at(-1)!.x, after.get(branch.target)!.x + size.width / 2);
+    for (let i = 1; i < branch.route.points.length; i++) {
+      const a = branch.route.points[i - 1], b = branch.route.points[i];
+      assert.ok(a.x === b.x || a.y === b.y);
+    }
+  }
+  assert.equal(before.get("A")!.x, 0);
+});
+
+test("slot exchanges reject different generations and nonadjacent blocks", () => {
+  const original = geometry();
+  assert.equal(locallySwapFamilyBlocks(original, "parent-q", "left", [], [], size), undefined);
+  original.positions.push(["E", { x: 485, y: 500 }]);
+  original.occurrences!.push({ id: "E", personId: "E", block: "middle" });
+  original.generationBands![1].members.push("E");
+  assert.equal(locallySwapFamilyBlocks(original, "left", "right", [], [], size), undefined);
+});
+
+test("cold equal-width family order stays stable for subsequent edits without new ELK passes", async () => {
+  const people = randomFamily(1, 4);
+  const engine = new ELK({ algorithms: ["layered"] });
+  let calls = 0;
+  const result = await unionGeometry(people, (graph) => {
+    calls++;
+    return engine.layout(graph);
+  }, false, [], treeNodeSize());
+  assert.equal(calls, 7);
+  assert.equal(result.positions.length, people.length);
+  // Moving these equal-width blocks reduced fresh contacts but degraded the ancestor edit.
+  assert.equal(branchContactCounts(result.branches || []).distinct, 217);
+});
+
+test("mixed single-parent and couple households improve the cold layout in both directions", async () => {
+  const people = randomFamily(8, 3);
+  const left = people.find((person) => person.id === "f-4")!;
+  const right = people.find((person) => person.id === "f-5")!;
+  left.spouses = [];
+  right.spouses = [];
+  people.filter((person) => person.parents.includes(left.id) && person.parents.includes(right.id))
+    .forEach((person, index) => { person.parents = [index % 2 ? left.id : right.id]; });
+  const original = structuredClone(people);
+  for (const reverse of [false, true]) {
+    const engine = new ELK({ algorithms: ["layered"] });
+    let calls = 0;
+    const result = await unionGeometry(people, (graph) => {
+      calls++;
+      return engine.layout(graph);
+    }, reverse, [], treeNodeSize());
+    assert.equal(calls, 7);
+    assert.equal(result.positions.length, people.length);
+    // The previous layout has 30 contacts. Mixed-width moves remove a crossing.
+    assert.ok(branchContactCounts(result.branches || []).distinct < 30);
+    assert.deepEqual(people, original);
+  }
+});
+
 test("large generation layout keeps routed blocks valid in both directions", async () => {
   const people = randomFamily(1, 5);
   for (const reverse of [false, true]) {

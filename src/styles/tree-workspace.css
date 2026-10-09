@@ -1003,6 +1003,30 @@
   color: #4f763f;
   font-weight: 500;
 }
+.tree-mode-bar .tree-anchor-notice {
+  position: static;
+  transform: none;
+  display: block;
+  min-width: 0;
+  max-width: 260px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+.tree-anchor-notice-mobile {
+  top: 64px;
+  max-width: calc(100% - 24px);
+  width: max-content;
+  padding: 8px 12px;
+  border-radius: 8px;
+  pointer-events: none;
+}
+.tree-anchor-notice-mobile-inline {
+  color: #355a3f;
+}
 .archive-toast {
   position: fixed;
   bottom: 22px;

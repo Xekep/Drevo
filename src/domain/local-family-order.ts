@@ -32,7 +32,7 @@ function placedBlocks(geometry: TreeGeometry, size: TreeNodeSize) {
   }));
 }
 
-/** Neighboring equal-size unions can exchange their slots without shifting another card. */
+/** Neighboring unions can exchange their space without shifting another block. */
 export function adjacentFamilyBlocks(geometry: TreeGeometry, size: TreeNodeSize) {
   const blocks = placedBlocks(geometry, size);
   const result: [string, string][] = [];
@@ -44,9 +44,7 @@ export function adjacentFamilyBlocks(geometry: TreeGeometry, size: TreeNodeSize)
       .sort((a, b) => a.x - b.x);
     for (let i = 1; i < row.length; i++) {
       const left = row[i - 1], right = row[i];
-      if (left.members.length !== right.members.length ||
-          left.width !== right.width ||
-          left.x + left.width > right.x) continue;
+      if (left.x + left.width > right.x) continue;
       result.push([left.id, right.id]);
     }
   }
@@ -102,11 +100,16 @@ export function locallySwapFamilyBlocks(
 ): TreeGeometry | undefined {
   const blocks = placedBlocks(geometry, size);
   const left = blocks.get(leftId), right = blocks.get(rightId);
-  if (!left || !right || left.members.length !== right.members.length ||
-      left.width !== right.width || left.x + left.width > right.x) return;
+  if (!left || !right || left.x + left.width > right.x) return;
+  if (!adjacentFamilyBlocks(geometry, size).some(
+    ([a, b]) => a === leftId && b === rightId,
+  )) return;
+  // Preserve the outer span and the gap even for a couple beside a single card.
+  const leftDelta = right.x + right.width - left.width - left.x;
+  const rightDelta = left.x - right.x;
   const deltas = new Map<string, number>();
-  for (const id of left.members) deltas.set(id, right.x - left.x);
-  for (const id of right.members) deltas.set(id, left.x - right.x);
+  for (const id of left.members) deltas.set(id, leftDelta);
+  for (const id of right.members) deltas.set(id, rightDelta);
   const positions: TreeGeometry["positions"] = geometry.positions.map(([id, point]) => [
     id, deltas.has(id) ? { ...point, x: point.x + deltas.get(id)! } : point,
   ]);
@@ -166,7 +169,7 @@ export function locallySwapFamilyBlocks(
     branches,
     routes,
     blocks: geometry.blocks?.map((block) =>
-      block.id === leftId ? { ...block, x: block.x + right.x - left.x } :
-      block.id === rightId ? { ...block, x: block.x + left.x - right.x } : block),
+      block.id === leftId ? { ...block, x: block.x + leftDelta } :
+      block.id === rightId ? { ...block, x: block.x + rightDelta } : block),
   };
 }

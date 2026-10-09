@@ -1043,10 +1043,10 @@ export async function unionGeometry(
   }
   if (
     contacts.distinct &&
-    ((!previous && people.length > 300 && people.length <= 1200) ||
+    ((!previous && people.length <= 1200) ||
       (previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE))
   ) {
-    // Exchange equal-width neighboring union slots without another ELK pass.
+    // Exchange neighboring union slots within a generation without another ELK pass.
     // Prioritize blocks whose routes already touch foreign family routes.
     const pairKey = ([left, right]: [string, string]) => `${left}\0${right}`;
     let currentRoutes = geometryQuality(best);
@@ -1059,10 +1059,14 @@ export async function unionGeometry(
     for (let pass = 0; pass < (previous ? 3 : 1); pass++) {
       let changed = false;
       const scores = familyBlockContactScores(best);
+      const widths = new Map((best.blocks || []).map((block) => [block.id, block.width]));
       const candidates = adjacentFamilyBlocks(best, size)
         .filter(
           ([left, right]) =>
-            (scores.get(left) || 0) + (scores.get(right) || 0) > 0,
+            (scores.get(left) || 0) + (scores.get(right) || 0) > 0 &&
+            // Keep small cold layouts stable for later incremental edits.
+            // Only the previously unsupported different-width moves are new here.
+            (!!previous || people.length > 300 || widths.get(left) !== widths.get(right)),
         )
         .sort(
           ([a, b], [c, d]) =>
