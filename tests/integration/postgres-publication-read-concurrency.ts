@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { writeFile, unlink } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import pg from "pg";
 import sharp from "sharp";
 import { createAuth } from "../../src/server/auth.ts";
@@ -127,6 +127,7 @@ export async function verifyPublicationReadConcurrency(
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await writer.end();
     await archive.write(previous.family, (await archive.meta()).revision);
-    await unlink(join(uploads, filename));
+    // The original remains referenced by the archive's audit snapshots.
+    // Only the enclosing disposable runtime fixture may remove its directory.
   }
 }
