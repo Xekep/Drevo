@@ -1,14 +1,23 @@
 import { expect, test, type Page } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
-import type { Family, FamilyUnion } from "../../src/domain/types.ts";
+import type {
+  Family,
+  FamilyUnion,
+  PersonAward,
+} from "../../src/domain/types.ts";
 
-async function editor(page: Page, unions: FamilyUnion[] = []) {
+async function editor(
+  page: Page,
+  unions: FamilyUnion[] = [],
+  awards?: PersonAward[],
+) {
   const response = await page.request.get("/api/family?projection=overview");
   const initial = await response.json();
   let family = (await (await page.request.get("/api/family")).json())
     .family as Family;
   family.unions = unions;
   const child = family.people.find((person) => person.id === "e2e-child")!;
+  if (awards) child.awards = awards;
   child.events = [
     {
       id: "school",
@@ -51,6 +60,92 @@ async function editor(page: Page, unions: FamilyUnion[] = []) {
   await page.locator(".inspector-person-actions .person-edit-button").click();
   return () => family;
 }
+
+test("круглый портрет и награды с подписями без перестановки полей", async ({
+  page,
+  isMobile,
+}, info) => {
+  const awards: PersonAward[] = [
+    {
+      id: "courage",
+      name: "Медаль «За отвагу»",
+      year: "1945",
+      awardDefinitionId: "ussr-medal-for-courage",
+    },
+    {
+      id: "labour",
+      name: "Медаль «Ветеран труда»",
+      year: "1980",
+      awardDefinitionId: "ussr-medal-veteran-labour",
+    },
+    {
+      id: "custom",
+      name: "Почётная грамота за многолетнюю работу и вклад в развитие предприятия",
+      year: "1990",
+    },
+  ];
+  const read = await editor(page, [], awards);
+  const form = page.locator(".person-editor-form");
+  const portrait = form.getByRole("button", {
+    name: "Выбрать портрет из фотографий человека",
+  });
+  const name = form.locator('input[data-field="name"]');
+  const awardEditor = form.locator(".person-editor-portrait-awards");
+  for (const width of isMobile ? [320, 390] : [768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await form.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    const circle = (await portrait.boundingBox())!;
+    expect(Math.abs(circle.width - circle.height)).toBeLessThan(1);
+    expect(circle.width).toBe(64);
+    for (const award of awards) {
+      const button = awardEditor.getByRole("button", {
+        name: `Редактировать: ${award.name}`,
+      });
+      await expect(button.locator(".award-editor-label")).toContainText(
+        award.name,
+      );
+      await expect(button.locator("small")).toHaveText(award.year!);
+      const bounds = (await button.boundingBox())!;
+      expect(bounds.width).toBeGreaterThanOrEqual(160);
+      expect(bounds.height).toBeGreaterThanOrEqual(44);
+      const labelFits = await button
+        .locator(".award-editor-label")
+        .evaluate((element) => element.scrollWidth <= element.clientWidth + 1);
+      expect(labelFits).toBe(true);
+    }
+    const before = (await name.boundingBox())!;
+    await awardEditor
+      .getByRole("button", { name: `Редактировать: ${awards[0].name}` })
+      .click();
+    await expect(
+      awardEditor.getByRole("combobox", { name: "Название" }),
+    ).toBeVisible();
+    const after = (await name.boundingBox())!;
+    expect(after.x).toBeCloseTo(before.x);
+    expect(after.width).toBeCloseTo(before.width);
+    expect(
+      await form.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth + 1,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: info.outputPath(`person-awards-edit-${width}.png`),
+    });
+    await awardEditor
+      .getByRole("button", { name: "Закрыть редактирование награды" })
+      .click();
+    await page.screenshot({
+      path: info.outputPath(`person-awards-${width}.png`),
+    });
+  }
+  await form.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect(form).toHaveCount(0);
+  expect(
+    read().people.find((person) => person.id === "e2e-child")!.awards,
+  ).toEqual(awards);
+});
 
 test("отдельные образование и брак, поиск только супругов и единое сохранение", async ({
   page,

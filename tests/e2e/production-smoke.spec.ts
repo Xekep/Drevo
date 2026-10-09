@@ -1153,7 +1153,7 @@ test("награда добавляется под портретом по на�
   await expect(page.getByText("Удаление карточки")).toBeVisible();
   const portraitAwards = page.locator(".person-editor-portrait-awards");
   await expect(
-    portraitAwards.getByRole("button", {
+    page.locator(".person-editor-form").getByRole("button", {
       name: "Выбрать портрет из фотографий человека",
     }),
   ).toBeVisible();

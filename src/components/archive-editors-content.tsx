@@ -530,36 +530,28 @@ export function PersonEditor({
           }
         >
           {person && (
-            <div className="person-editor-portrait-awards">
-              <div className="portrait-picker">
-                <button
-                  type="button"
-                  className="portrait-preview portrait-edit-button"
-                  onClick={() => setGalleryOpen(true)}
-                  disabled={busy}
-                  aria-label="Выбрать портрет из фотографий человека"
-                  aria-haspopup="dialog"
-                  title="Изменить портрет"
-                >
-                  {portraitPreview || draft.photo ? (
-                    <img
-                      src={portraitPreview || mediaPreview(draft.photo)}
-                      alt=""
-                    />
-                  ) : (
-                    <UserRound size={34} strokeWidth={1.2} aria-hidden="true" />
-                  )}
-                  <span className="portrait-edit-overlay" aria-hidden="true">
-                    <Pencil size={22} strokeWidth={1.6} />
-                  </span>
-                </button>
-              </div>
-              <AwardsEditor
-                awards={draft.awards || []}
-                personId={person?.id}
-                isAdmin={isAdmin}
-                onChange={(awards) => field("awards", awards)}
-              />
+            <div className="portrait-picker">
+              <button
+                type="button"
+                className="portrait-preview portrait-edit-button"
+                onClick={() => setGalleryOpen(true)}
+                disabled={busy}
+                aria-label="Выбрать портрет из фотографий человека"
+                aria-haspopup="dialog"
+                title="Изменить портрет"
+              >
+                {portraitPreview || draft.photo ? (
+                  <img
+                    src={portraitPreview || mediaPreview(draft.photo)}
+                    alt=""
+                  />
+                ) : (
+                  <UserRound size={34} strokeWidth={1.2} aria-hidden="true" />
+                )}
+                <span className="portrait-edit-overlay" aria-hidden="true">
+                  <Pencil size={22} strokeWidth={1.6} />
+                </span>
+              </button>
             </div>
           )}
           {relativeTo && !person && (
@@ -679,6 +671,16 @@ export function PersonEditor({
                 onChange={(e) => field("occupation", e.target.value)} />
             </label>
           </div>
+          {person && (
+            <div className="person-editor-portrait-awards">
+              <AwardsEditor
+                awards={draft.awards || []}
+                personId={person.id}
+                isAdmin={isAdmin}
+                onChange={(awards) => field("awards", awards)}
+              />
+            </div>
+          )}
         </div>
         <label className="check-field person-review-status">
           <input
