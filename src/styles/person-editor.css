@@ -93,9 +93,10 @@
 }
 .person-editor-form .person-editor-primary.is-existing .award-editor-chip,
 .person-editor-form .person-editor-primary.is-existing .award-editor-add {
-  width: 32px;
-  height: 36px;
-  min-height: 36px;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 3px;
 }
 .person-editor-form .name-sex-hint {
   display: grid;
@@ -404,5 +405,8 @@
   }
   .person-editor-form .person-editor-facts {
     grid-template-columns: 1fr;
+  }
+  .person-editor-form .person-editor-primary.is-existing .person-editor-facts {
+    grid-column: 1 / -1;
   }
 }

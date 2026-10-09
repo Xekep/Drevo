@@ -60,6 +60,23 @@ test("отдельные образование и брак, поиск толь
   if (isMobile) await page.setViewportSize({ width: 320, height: 720 });
   const form = page.locator(".person-editor-form");
   await expect(form).toBeVisible();
+  for (const chip of await form.locator(".award-editor-chip").all()) {
+    const box = (await chip.boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    const image = chip.locator("img");
+    if (await image.count()) {
+      const imageBox = (await image.boundingBox())!;
+      expect(imageBox.x).toBeGreaterThanOrEqual(box.x);
+      expect(imageBox.y).toBeGreaterThanOrEqual(box.y);
+      expect(imageBox.x + imageBox.width).toBeLessThanOrEqual(
+        box.x + box.width,
+      );
+      expect(imageBox.y + imageBox.height).toBeLessThanOrEqual(
+        box.y + box.height,
+      );
+    }
+  }
   await page.screenshot({
     path: info.outputPath("person-editor-overview.png"),
   });
