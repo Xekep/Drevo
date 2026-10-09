@@ -160,6 +160,7 @@ import { portableDomainFixture, assertPortableSecondPgRoundtrip } from "./portab
 import { portableExportHttp } from "../../src/server/portable-http.ts";
 import { portableImportHttp } from "../../src/server/portable-import-http.ts";
 import { createSharedRequestLimiter } from "../../src/server/shared-request-rate-limit.ts";
+import { assertPostgresDemandDetails } from "./postgres-demand-details.ts";
 
 if (!/^drevo_migration_runtime_[a-z0-9_]+$/.test(process.env.PGDATABASE || ""))
   throw new Error("Use a NEW disposable drevo_migration_runtime_* database");
@@ -1293,6 +1294,7 @@ try {
   const overview = await fetch(base + "/api/family?projection=overview").then(
     (r) => r.json(),
   );
+  await assertPostgresDemandDetails(base, app.archive, owner.id);
   const peoplePage = app.archive.peoplePage;
   let intervened = false;
   app.archive.peoplePage = async (offset, limit) => {
