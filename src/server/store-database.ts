@@ -467,12 +467,19 @@ export async function openPostgresDatabase(
     async postgresTransaction(work) {
       if (context.getStore())
         throw new Error("Вложенная транзакция не поддерживается");
+      const task = tasks.getStore();
       const execute = async (client: pg.PoolClient) => {
         const owner = { client, active: true };
         try {
           await client.query("BEGIN");
           await client.query("SET LOCAL lock_timeout='5s'");
-          const result = await context.run(owner, () => work(client));
+          // Explicit permission transactions outside a task intentionally own
+          // only their callback's raw client. Their work can start an independent
+          // file task; publishing that transaction as archive context would
+          // forbid the existing permission -> file-task execution path.
+          const result = task
+            ? await context.run(owner, () => work(client))
+            : await work(client);
           owner.active = false;
           await client.query("COMMIT");
           return result;
@@ -483,7 +490,7 @@ export async function openPostgresDatabase(
           owner.active = false;
         }
       };
-      if (tasks.getStore()) return await onTaskSession(execute);
+      if (task) return await onTaskSession(execute);
       const client = await pool.connect();
       try {
         return await execute(client);

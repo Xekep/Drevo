@@ -30,9 +30,8 @@ type Index = {
   segments: Segment[];
   contacts: Map<string, Contact>;
   pairs: number;
-  length: number;
   bends: number;
-  measures: Map<string, { length: number; bends: number }>;
+  measures: Map<string, { sizes: number[]; bends: number }>;
   score: ReturnType<typeof routingContactScore>;
 };
 
@@ -44,6 +43,9 @@ export function incrementalRouteScorer() {
   let previous: Index | undefined;
   return (edges: Edge[]): ReturnType<typeof routingContactScore> => {
     const byId = new Map(edges.map((edge) => [edge.id, edge]));
+    const ordered =
+      previous?.edges.size === edges.length &&
+      [...previous.edges.keys()].every((id, i) => id === edges[i].id);
     const changed = new Set<string>();
     if (previous) {
       for (const [id, edge] of previous.edges)
@@ -54,10 +56,11 @@ export function incrementalRouteScorer() {
           changed.add(id);
       for (const edge of edges)
         if (!previous.edges.has(edge.id)) changed.add(edge.id);
-      if (!changed.size) return previous.score;
+      if (!changed.size && ordered) return previous.score;
     }
     const reuse =
       previous &&
+      ordered &&
       edges.length > 200 &&
       changed.size <= 40 &&
       changed.size <= edges.length / 10;
@@ -69,13 +72,12 @@ export function incrementalRouteScorer() {
       segments: Segment[] = [];
     const measures = reuse
       ? new Map(previous!.measures)
-      : new Map<string, { length: number; bends: number }>();
-    let length = reuse ? previous!.length : 0,
+      : new Map<string, { sizes: number[]; bends: number }>();
+    let length = 0,
       bends = reuse ? previous!.bends : 0;
     if (reuse)
       for (const id of changed) {
         const old = measures.get(id);
-        length -= old?.length || 0;
         bends -= old?.bends || 0;
         measures.delete(id);
       }
@@ -88,15 +90,14 @@ export function incrementalRouteScorer() {
         names.push(edge.group);
       }
       let direction = "";
-      const measure = { length: 0, bends: 0 };
+      const measure = { sizes: [] as number[], bends: 0 };
       const points = edge.route.points;
       for (let i = 1; i < points.length; i++) {
         const a = points[i - 1],
           b = points[i];
         const size = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
         if (!size) continue;
-        length += size;
-        measure.length += size;
+        measure.sizes.push(size);
         const next = a.x === b.x ? "v" : "h";
         if (direction && direction !== next) {
           bends++;
@@ -116,6 +117,11 @@ export function incrementalRouteScorer() {
       }
       measures.set(edge.id, measure);
     }
+    // Preserve the full scorer's addition order for fractional coordinates.
+    // Subtracting a changed route from an aggregate changes floating-point
+    // rounding and can otherwise break ties between geometry candidates.
+    for (const edge of edges)
+      for (const size of measures.get(edge.id)!.sizes) length += size;
     const contacts = reuse
       ? new Map(previous!.contacts)
       : new Map<string, Contact>();
@@ -194,7 +200,6 @@ export function incrementalRouteScorer() {
         segments,
         contacts,
         pairs,
-        length,
         bends,
         measures,
         score,

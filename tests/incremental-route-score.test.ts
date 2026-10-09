@@ -98,3 +98,32 @@ test("shared and reversed family buses preserve weighted contacts and T junction
   };
   assert.deepEqual(score(current), routingContactScore(current));
 });
+
+test("fractional coordinates and reordered routes preserve the full scorer's addition order", () => {
+  let current = edges().map((edge, i) => ({
+    ...edge,
+    route: route([
+      { x: i / 7, y: 0 },
+      { x: i / 7, y: 10.1 },
+      { x: 100 + i / 13, y: 10.1 },
+      { x: 100 + i / 13, y: 50.3 },
+    ]),
+  }));
+  const score = incrementalRouteScorer();
+  assert.deepEqual(score(current), routingContactScore(current));
+  current = current.map((edge, i) =>
+    i === 112
+      ? {
+          ...edge,
+          route: route(
+            edge.route.points.map((point, j) =>
+              j < 2 ? point : { ...point, x: point.x + 0.37 },
+            ),
+          ),
+        }
+      : edge,
+  );
+  assert.deepEqual(score(current), routingContactScore(current));
+  current = [...current].reverse();
+  assert.deepEqual(score(current), routingContactScore(current));
+});

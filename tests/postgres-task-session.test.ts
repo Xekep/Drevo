@@ -148,6 +148,31 @@ test("three queued task owners leave a foreground slot and reuse connections for
   }
 });
 
+test("an explicit permission transaction can start an independent file task", async (t) => {
+  const original = pg.Pool;
+  pg.Pool = BoundedPool as unknown as typeof pg.Pool;
+  t.after(() => {
+    pg.Pool = original;
+  });
+  const db = await openPostgresDatabase("test-archive", ":memory:");
+  try {
+    await db.postgresTransaction!(async (permissionClient) => {
+      await permissionClient.query("SELECT 'permission' AS marker");
+      assert.equal(db.inTransaction(), false);
+      await db.withExclusivePlatformTask!("file-settings", async () => {
+        await db.transaction(async () => {
+          assert.equal(db.inTransaction(), true);
+          await db.prepare("", "SELECT 'file-operation' AS marker").get();
+        });
+      });
+    });
+    assert.equal(BoundedPool.latest.peak, 2);
+    assert.equal(BoundedPool.latest.totalCount, 0);
+  } finally {
+    await db.close();
+  }
+});
+
 test("parallel task SQL waits outside another operation's short transaction", async (t) => {
   const original = pg.Pool;
   pg.Pool = BoundedPool as unknown as typeof pg.Pool;
