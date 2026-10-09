@@ -38,6 +38,7 @@ test("a failed collection read shows a retry action instead of an endless spinne
             {
               id: "retry-photo",
               title: "Повторный снимок",
+              event: "Повторный снимок",
               url: "/media/retry.png",
               tags: [],
             },
@@ -52,10 +53,11 @@ test("a failed collection read shows a retry action instead of an endless spinne
     .filter({ hasText: "Временно недоступно" });
   await expect(error).toBeVisible();
   await error.getByRole("button", { name: "Повторить загрузку" }).click();
+  await expect(error).toHaveCount(0);
+  await page.getByRole("button", { name: "Все · по добавлению" }).click();
   await expect(
     page.getByText("Повторный снимок", { exact: true }),
   ).toBeVisible();
-  await expect(error).toHaveCount(0);
   expect(attempts).toBe(2);
 });
 

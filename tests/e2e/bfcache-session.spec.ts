@@ -294,7 +294,7 @@ test("confirmed logout invalidates overview and detail responses that were pendi
         if (heldPart === "overview") { releasePage = fulfill; return; }
         return fulfill();
       });
-      await page.route(/\/a\/tree-a\/api\/family\?projection=page&collection=people/, (route) => {
+      await page.route(/\/a\/tree-a\/api\/family\?projection=details&/, (route) => {
         if (heldPart === "detail") {
           releasePage = () => route.continue({
             url: route.request().url().replace("/a/tree-a/api/", "/api/"),
@@ -304,6 +304,10 @@ test("confirmed logout invalidates overview and detail responses that were pendi
         return route.continue({ url: route.request().url().replace("/a/tree-a/api/", "/api/") });
       });
       await page.goto(`${origin}/a/tree-a/tree`);
+      if (heldPart === "detail") {
+        await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").click();
+        await expect(page.getByRole("status", { name: "Загрузка сведений человека" })).toBeVisible();
+      }
       await expect.poll(() => releasePage !== null).toBe(true);
       await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
       await expect(page.getByText("Доступ к семейному архиву изменился.", { exact: false })).toBeVisible();

@@ -77,3 +77,47 @@ for (const source of ["stream", "history"] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+test("повреждённые метаданные ответа изолированы, следующий ответ остаётся рабочим", async ({
+  page,
+}) => {
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({ json: { enabled: true, streaming: true } }),
+  );
+  await page.route("**/api/ai/chats", (route) =>
+    route.fulfill({ json: { chats: [] } }),
+  );
+  let requests = 0;
+  await page.route("**/api/ai/chat/stream", (route) => {
+    const damagedMetadata = ++requests === 1;
+    return route.fulfill({
+      contentType: "text/event-stream; charset=utf-8",
+      body: `event: done\ndata: ${JSON.stringify({
+        answer: damagedMetadata ? "Сведения о родственнике" : damaged,
+        references: damagedMetadata
+          ? [{ kind: "person", id: "\ud800", label: "Родственник" }]
+          : [],
+        suggestionIds: [],
+        uiActions: [],
+        files: [],
+      })}\n\n`,
+    });
+  });
+  await page.goto("/tree");
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  const panel = page.locator(".research-assistant");
+  await panel.locator("textarea").fill("Расскажи о родственнике");
+  await panel.getByRole("button", { name: "Отправить запрос" }).click();
+  await expect(panel.locator(".research-answer-fallback")).toHaveText(
+    "Сведения о родственнике",
+  );
+  await expect(page.locator(".tree-canvas")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Не удалось открыть архив" }),
+  ).toHaveCount(0);
+  await panel.locator("textarea").fill("Продолжай");
+  await panel.getByRole("button", { name: "Отправить запрос" }).click();
+  await expect(
+    panel.getByRole("button", { name: "Рабочая ссылка" }),
+  ).toBeVisible();
+});

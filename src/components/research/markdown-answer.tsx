@@ -49,17 +49,19 @@ class AnswerBoundary extends Component<
   }
 }
 
-const MarkdownAnswer = memo(function MarkdownAnswer({
-  message,
-  onPerson,
-  onChoosePerson,
-  onPhoto,
-}: {
+type MarkdownAnswerProps = {
   message: ResearchMessage;
   onPerson: (id: string) => void;
   onChoosePerson: (id: string, label: string) => void;
   onPhoto: (id: string) => void;
-}) {
+};
+
+const MarkdownAnswerBody = memo(function MarkdownAnswerBody({
+  message,
+  onPerson,
+  onChoosePerson,
+  onPhoto,
+}: MarkdownAnswerProps) {
   const components = useMemo<Components>(
     () => ({
       a: ({ href = "", children }) => {
@@ -102,52 +104,62 @@ const MarkdownAnswer = memo(function MarkdownAnswer({
     [onChoosePerson, onPerson, onPhoto],
   );
   return (
-    <AnswerBoundary content={message.content}>
-      <div className="research-markdown">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[[rehypeKatex, { trust: false }]]}
-          urlTransform={(url) =>
-            url.startsWith("#drevo-")
-              ? url
-              : archiveResourceUrl(defaultUrlTransform(url))
-          }
-          components={components}
-        >
-          {normalizeResearchMath(
-            linkResearchReferences(
-              message.role === "assistant"
-                ? normalizeResearchMarkdown(message.content)
-                : message.content,
-              message.references,
-            ),
-          )}
-        </ReactMarkdown>
-        {message.references?.some((reference) => reference.kind === "web") && (
-          <details>
-            <summary>Найденные веб-источники</summary>
-            <ul>
-              {message.references
-                .filter((reference) => reference.kind === "web")
-                .map((reference) => (
-                  <li key={reference.url}>
-                    <a
-                      href={reference.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {reference.label}
-                    </a>
-                    {" · "}
-                    {reference.sourceName || reference.domain}
-                    {reference.snippet && <p>{reference.snippet}</p>}
-                  </li>
-                ))}
-            </ul>
-            <small>Результат поиска требует проверки исходной страницы.</small>
-          </details>
+    <div className="research-markdown">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[[rehypeKatex, { trust: false }]]}
+        urlTransform={(url) =>
+          url.startsWith("#drevo-")
+            ? url
+            : archiveResourceUrl(defaultUrlTransform(url))
+        }
+        components={components}
+      >
+        {normalizeResearchMath(
+          linkResearchReferences(
+            message.role === "assistant"
+              ? normalizeResearchMarkdown(message.content)
+              : message.content,
+            message.references,
+          ),
         )}
-      </div>
+      </ReactMarkdown>
+      {message.references?.some((reference) => reference.kind === "web") && (
+        <details>
+          <summary>Найденные веб-источники</summary>
+          <ul>
+            {message.references
+              .filter((reference) => reference.kind === "web")
+              .map((reference) => (
+                <li key={reference.url}>
+                  <a
+                    href={reference.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {reference.label}
+                  </a>
+                  {" · "}
+                  {reference.sourceName || reference.domain}
+                  {reference.snippet && <p>{reference.snippet}</p>}
+                </li>
+              ))}
+          </ul>
+          <small>Результат поиска требует проверки исходной страницы.</small>
+        </details>
+      )}
+    </div>
+  );
+});
+
+const MarkdownAnswer = memo(function MarkdownAnswer(
+  props: MarkdownAnswerProps,
+) {
+  // Preparation runs in a descendant, so malformed reference metadata cannot
+  // throw before the boundary has mounted.
+  return (
+    <AnswerBoundary content={props.message.content}>
+      <MarkdownAnswerBody {...props} />
     </AnswerBoundary>
   );
 });
