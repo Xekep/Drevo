@@ -160,36 +160,8 @@
 .person-editor-primary.is-existing .award-editor-compact {
   margin: 0;
 }
-.person-editor-primary.is-existing .award-editor-strip {
-  gap: 4px;
-}
-.person-editor-primary.is-existing .award-editor-chip,
-.person-editor-primary.is-existing .award-editor-add {
-  width: 42px;
-  height: 42px;
-}
-.person-editor-primary.is-existing:has(.award-inline-form) {
-  display: flex;
-  flex-direction: column;
-}
-.person-editor-primary.is-existing:has(.award-inline-form)
-  .person-editor-basics,
-.person-editor-primary.is-existing:has(.award-inline-form)
-  .person-editor-portrait-awards {
-  width: 100%;
-}
-.person-editor-primary.is-existing:has(.award-inline-form)
-  .person-editor-portrait-awards {
-  order: 2;
-}
 .person-editor-form .person-delete-section .danger-action {
   margin-top: 12px;
-}
-.person-editor-form .portrait-edit-button {
-  width: 72px;
-  height: 72px;
-  min-height: 72px;
-  border-radius: 50%;
 }
 .person-editor-form > .form-details {
   border-top: 1px solid var(--line);

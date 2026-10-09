@@ -47,10 +47,14 @@
 .person-editor-form .person-editor-primary.is-existing .person-editor-facts {
   grid-column: 2;
 }
-@media (min-width: 600px) {
-  .person-editor-form .person-editor-primary.is-existing .person-editor-portrait-awards {
-    grid-row: span 2;
-  }
+.person-editor-form .person-editor-primary.is-existing .person-editor-portrait-awards {
+  grid-column: 1 / -1;
+  padding-top: 8px;
+  border-top: 1px solid #e9ede5;
+}
+.person-editor-form .person-editor-primary.is-existing .portrait-picker {
+  padding: 0;
+  align-self: start;
 }
 .person-editor-form .name-entry input {
   min-height: 42px;
@@ -95,13 +99,9 @@
   width: 64px;
   height: 64px;
   min-height: 64px;
-}
-.person-editor-form .person-editor-primary.is-existing .award-editor-chip,
-.person-editor-form .person-editor-primary.is-existing .award-editor-add {
-  width: 44px;
-  height: 44px;
-  min-height: 44px;
-  padding: 3px;
+  flex: 0 0 64px;
+  border-radius: 50%;
+  box-sizing: border-box;
 }
 .person-editor-form .name-sex-hint {
   display: grid;

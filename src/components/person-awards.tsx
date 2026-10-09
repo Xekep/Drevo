@@ -304,8 +304,21 @@ export function AwardsEditor({
 
   return (
     <section className="award-editor-compact" aria-label="Награды">
-      <span className="award-editor-title">Награды</span>
-      {(awards.length > 0 || !draftAward) && (
+      <div className="award-editor-head">
+        <span className="award-editor-title">Награды</span>
+        {!draftAward && awards.length < 100 && (
+          <button
+            type="button"
+            className="award-editor-add"
+            onClick={startNew}
+            aria-label="Добавить награду"
+          >
+            <Plus size={16} aria-hidden="true" />
+            Добавить
+          </button>
+        )}
+      </div>
+      {awards.length > 0 && (
         <div className="award-editor-strip">
           {awards.map((award) => {
             const resolved = resolveStoredAward(award);
@@ -322,26 +335,22 @@ export function AwardsEditor({
                 onClick={() => startEdit(award)}
                 title={award.name}
                 aria-label={`Редактировать: ${award.name}`}
+                aria-expanded={active}
               >
-                <AwardVisual
-                  definition={itemDefinition}
-                  degreeId={degreeId}
-                  size={38}
-                />
+                <span className="award-editor-image" aria-hidden="true">
+                  <AwardVisual
+                    definition={itemDefinition}
+                    degreeId={degreeId}
+                    size={38}
+                  />
+                </span>
+                <span className="award-editor-label">
+                  <span>{award.name}</span>
+                  {award.year && <small>{award.year}</small>}
+                </span>
               </button>
             );
           })}
-          {!draftAward && awards.length < 100 && (
-            <button
-              type="button"
-              className="award-editor-add"
-              onClick={startNew}
-              aria-label="Добавить награду"
-              title="Добавить награду"
-            >
-              <Plus size={19} />
-            </button>
-          )}
         </div>
       )}
 

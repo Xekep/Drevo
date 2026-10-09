@@ -212,41 +212,41 @@
 .person-editor-portrait-awards .award-editor-compact {
   margin: 0;
 }
-.award-editor-title {
-  display: block;
-  margin-bottom: 7px;
-  color: var(--muted);
-  font-size: 12px;
-  text-align: center;
-}
-.person-editor-portrait-awards .award-editor-strip {
-  justify-content: center;
-}
-.award-editor-strip {
+.award-editor-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
   min-height: 44px;
 }
-.award-editor-chip,
-.award-editor-add {
-  width: 44px;
-  height: 44px;
-  padding: 3px;
+.award-editor-title {
+  color: var(--muted);
+  font-size: 12px;
+}
+.award-editor-strip {
   display: grid;
-  place-items: center;
-  box-sizing: border-box;
-  border-radius: 9px;
-  background: transparent;
-  color: #7e765f;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+.award-editor-strip .award-editor-chip {
+  width: 100%;
+  min-width: 0;
+  min-height: 56px;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #e2e8dd;
+  border-radius: 8px;
+  background: #fff;
+  color: #3e5846;
+  text-align: left;
   transition:
     background 0.14s ease,
     border-color 0.14s ease,
     box-shadow 0.14s ease;
-}
-.award-editor-chip {
-  border: 1px solid transparent;
 }
 .award-editor-chip:hover,
 .award-editor-chip.is-active {
@@ -256,17 +256,40 @@
 .award-editor-chip.is-active {
   box-shadow: 0 0 0 1px #d8d1bb;
 }
-.award-editor-chip > img {
-  display: block;
-  width: auto !important;
-  height: auto !important;
-  max-width: 36px !important;
-  max-height: 38px !important;
-  object-fit: contain;
+.award-editor-chip:focus-visible,
+.award-editor-add:focus-visible {
+  outline: 2px solid #6b8861;
+  outline-offset: 2px;
 }
-.award-editor-add {
-  border: 1px dashed #c8c1ad;
-  color: #77715e;
+.award-editor-image {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 40px;
+}
+.award-editor-label {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.award-editor-label small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.award-editor-head .award-editor-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  color: #4d6342;
+  font-size: 12px;
 }
 .award-editor-add:hover {
   border-color: #969078;
