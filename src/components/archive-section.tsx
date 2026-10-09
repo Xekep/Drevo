@@ -51,6 +51,8 @@ type Props = {
   mayEdit: boolean;
   busy: boolean;
   loadingDetails: boolean;
+  detailsError?: string;
+  onRetryDetails?: () => void;
   save: (family: Family) => Promise<Family>;
   onPerson: (id: string) => void;
   onQuality: () => void;
@@ -112,7 +114,16 @@ export function ArchiveSection(props: Props) {
     props.loadingDetails &&
     ["gallery", "places", "insights", "quality"].includes(props.view)
   )
-    return <ArchiveLoading />;
+    return props.detailsError ? (
+      <main className="archive-status" role="alert">
+        <p>{props.detailsError}</p>
+        <button type="button" onClick={props.onRetryDetails}>
+          Повторить загрузку
+        </button>
+      </main>
+    ) : (
+      <ArchiveLoading />
+    );
   let content: ReactNode = null;
   if (props.view === "list")
     content = (

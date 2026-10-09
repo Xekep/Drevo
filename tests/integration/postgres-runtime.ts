@@ -3396,8 +3396,15 @@ try {
         "platform grant revocation waits until the authorized settings write commits");
       releaseSettingsWrite();
       const savedResponse = await savingSettings;
-      assert.ok([200, 403].includes(savedResponse.status),
-        `settings write failed: ${await savedResponse.text()}`);
+      const savedText = await savedResponse.text();
+      // COMMIT lets the waiting revocation acquire the grant row. Delivery's
+      // FOR SHARE NOWAIT can then report busy (409) before that DELETE commits;
+      // after it commits the same protection reports denied (403).
+      assert.ok([200, 403, 409].includes(savedResponse.status),
+        `settings write failed: ${savedResponse.status} ${savedText}`);
+      if (savedResponse.status !== 200)
+        assert.deepEqual(Object.keys(JSON.parse(savedText)), ["error"],
+          "a busy or revoked admin receives no settings payload");
       assert.equal(settingsWriteCompleted, true,
         "settings persist before a concurrent revocation can commit");
       await revocation;

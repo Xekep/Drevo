@@ -11,6 +11,54 @@ const occupation = "Мастер архивной реставрации";
 const sourceTitle = "Личное дело из догруженной страницы";
 const awardName = "Почётная грамота семейной мастерской";
 
+test("a failed collection read shows a retry action instead of an endless spinner", async ({
+  page,
+}) => {
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.totals.photos = 1;
+    await route.fulfill({ response, json: data });
+  });
+  let attempts = 0;
+  await page.route(
+    "**/api/family?projection=page&collection=photos&**",
+    (route) => {
+      if (++attempts === 1)
+        return route.fulfill({
+          status: 503,
+          json: { error: "Временно недоступно" },
+        });
+      const token = new URL(route.request().url()).searchParams.get("token");
+      return route.fulfill({
+        json: {
+          pageToken: token,
+          total: 1,
+          items: [
+            {
+              id: "retry-photo",
+              title: "Повторный снимок",
+              url: "/media/retry.png",
+              tags: [],
+            },
+          ],
+        },
+      });
+    },
+  );
+  await page.goto("/photos");
+  const error = page
+    .getByRole("alert")
+    .filter({ hasText: "Временно недоступно" });
+  await expect(error).toBeVisible();
+  await error.getByRole("button", { name: "Повторить загрузку" }).click();
+  await expect(
+    page.getByText("Повторный снимок", { exact: true }),
+  ).toBeVisible();
+  await expect(error).toHaveCount(0);
+  expect(attempts).toBe(2);
+});
+
 test("a minimal save reply preserves album pages loaded while the write was in flight", async ({
   page,
 }, info) => {
@@ -89,15 +137,21 @@ test("a minimal save reply preserves album pages loaded while the write was in f
       }),
     ).toBeVisible();
     await dock.locator(".person-edit-button").click();
-    await page.locator('.person-editor-form input[data-field="name"]').fill("Тестов Александр Иванович");
+    await page
+      .locator('.person-editor-form input[data-field="name"]')
+      .fill("Тестов Александр Иванович");
     await page.getByRole("button", { name: "Сохранить", exact: true }).click();
     await expect.poll(() => writeStarted).toBe(true);
     releasePage();
     await expect.poll(() => secondPageFinished).toBe(true);
     // Editing replaces the inspector. Let the completed detail response commit
     // in the browser before releasing the independent write response.
-    await page.evaluate(() => new Promise<void>(resolve =>
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
     releaseSave();
     await expect(
       page.getByRole("heading", { name: "Редактировать человека" }),
@@ -190,9 +244,16 @@ test("a collection revision conflict reloads details of the person already open"
     .getByRole("link", { name: "Фото", exact: true })
     .click();
   await expect.poll(() => details).toBe(2);
-  await expect(dock.getByText("Изменение из другой вкладки", { exact: true })).toHaveCount(1);
-  await page.locator(".nav-sections").getByRole("link", { name: "Древо", exact: true }).click();
-  await expect(dock.getByText("Изменение из другой вкладки", { exact: true })).toBeVisible();
+  await expect(
+    dock.getByText("Изменение из другой вкладки", { exact: true }),
+  ).toHaveCount(1);
+  await page
+    .locator(".nav-sections")
+    .getByRole("link", { name: "Древо", exact: true })
+    .click();
+  await expect(
+    dock.getByText("Изменение из другой вкладки", { exact: true }),
+  ).toBeVisible();
   expect(details).toBe(2);
 });
 

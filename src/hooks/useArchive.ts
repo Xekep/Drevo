@@ -89,6 +89,7 @@ export function useArchive(enabled = true) {
   const [local, setLocal] = useState(false);
   const [needsLogin, setNeedsLogin] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [collectionError, setCollectionError] = useState("");
   const revision = useRef(0),
     saving = useRef(false);
   const accessEpoch = useRef(0);
@@ -672,13 +673,22 @@ export function useArchive(enabled = true) {
         epoch = accessEpoch.current;
       if (!reader || accessClosed.current) return;
       detailPending.current++;
-      if (demand.collections?.length) setLoadingDetails(true);
+      if (demand.collections?.length) {
+        setLoadingDetails(true);
+        setCollectionError("");
+      }
       try {
         if (demand.people?.length) await reader.loadPeople(demand.people);
         if (demand.collections?.length)
           await reader.loadCollections(demand.collections);
       } catch (reason) {
         if (epoch !== accessEpoch.current || details.current !== reader) return;
+        if (demand.collections?.length)
+          setCollectionError(
+            reason instanceof Error
+              ? reason.message
+              : "Не удалось загрузить сведения",
+          );
         if (reason instanceof ArchiveDetailsAccessError) {
           accessEpoch.current++;
           accessClosed.current = true;
@@ -736,6 +746,7 @@ export function useArchive(enabled = true) {
     needsLogin,
     family,
     loadingDetails,
+    collectionError,
     error,
     committedUploadNotice,
     dismissCommittedUploadNotice: () => setCommittedUploadNotice(""),

@@ -314,16 +314,22 @@ export default function App() {
     [loadDetails, detailsGeneration],
   );
   const archiveAvailable = !!family;
+  const needsPeopleDetails = (view === "tree" && timelineDetails) || ["places", "insights", "quality"].includes(view);
+  const needsPhotoDetails = ["gallery", "places", "insights", "quality"].includes(view);
+  const loadViewDetails = useCallback(() => {
+    const collections: Array<"people" | "photos"> = [];
+    if (needsPeopleDetails) collections.push("people");
+    if (needsPhotoDetails) collections.push("photos");
+    return collections.length ? loadDetails({ collections }) : Promise.resolve();
+  }, [needsPeopleDetails, needsPhotoDetails, loadDetails]);
+  const retryViewDetails = () => {
+    void loadViewDetails().catch((reason) =>
+      setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить сведения"));
+  };
   useEffect(() => {
     if (!archiveAvailable) return;
-    const collections: Array<"people" | "photos"> = [];
-    if ((view === "tree" && timelineDetails) || ["places", "insights", "quality"].includes(view))
-      collections.push("people");
-    if (["gallery", "places", "insights", "quality"].includes(view))
-      collections.push("photos");
-    if (!collections.length) return;
     let active = true;
-    void loadDetails({ collections }).catch((reason) => {
+    void loadViewDetails().catch((reason) => {
       if (active)
         setNotice(
           reason instanceof Error
@@ -335,12 +341,10 @@ export default function App() {
       active = false;
     };
   }, [
-    view,
-    timelineDetails,
     archiveAvailable,
     detailsSource,
     detailsGeneration,
-    loadDetails,
+    loadViewDetails,
   ]);
   useEffect(() => {
     if (!archiveAvailable || !selected.length) return;
@@ -1156,11 +1160,10 @@ export default function App() {
                   mayEdit={!participantPreview && allowedEdit}
                   busy={busy}
                   loadingDetails={archive.loadingDetails ||
-                      (["gallery", "places", "insights", "quality"].includes(
-                        view,
-                      ) &&
-                        !archive.hasCollectionDetails("photos"))
-                    }
+                    (needsPeopleDetails && !hasCollectionDetails("people")) ||
+                    (needsPhotoDetails && !hasCollectionDetails("photos"))}
+                  detailsError={archive.collectionError}
+                  onRetryDetails={retryViewDetails}
                   save={save}
                   onPerson={showPerson}
                   onQuality={() => navigate("quality")}
@@ -1239,6 +1242,12 @@ export default function App() {
       {archive.loadingDetails && (
         <div className="archive-loading-details" role="status">
           Подгружаем сведения и фотографии…
+        </div>
+      )}
+      {view === "tree" && timelineDetails && archive.collectionError && (
+        <div className="archive-loading-details" role="alert">
+          {archive.collectionError}{" "}
+          <button type="button" onClick={retryViewDetails}>Повторить загрузку</button>
         </div>
       )}
       {entryPending && !participantPreview &&
