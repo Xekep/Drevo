@@ -1,0 +1,4 @@
+{"seed":1,"generations":2,"people":66,"layoutMs":1218,"elkMs":1128,"elkCalls":7,"crossings":16,"contacts":16,"missingPeople":0,"nonFinitePositions":0,"rssMiB":130}
+{"seed":1,"generations":4,"people":194,"layoutMs":4347,"elkMs":4154,"elkCalls":7,"crossings":217,"contacts":217,"missingPeople":0,"nonFinitePositions":0,"rssMiB":212}
+{"seed":5,"generations":5,"people":202,"layoutMs":3083,"elkMs":2884,"elkCalls":7,"crossings":193,"contacts":193,"missingPeople":0,"nonFinitePositions":0,"rssMiB":239}
+{"seed":5,"generations":9,"people":977,"layoutMs":4808,"elkMs":2772,"elkCalls":4,"crossings":4985,"contacts":4985,"missingPeople":0,"nonFinitePositions":0,"rssMiB":249}

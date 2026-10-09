@@ -1,0 +1,3 @@
+{"width":1440,"people":6,"fixture":"synthetic SQLite","ttfbMs":3,"lcpMs":516,"cls":9.162808641975308e-7,"resources":47,"decodedScriptBytes":1026742,"javascriptRequests":37,"domElements":446,"transport":"localhost HTTP without nginx"}
+{"width":390,"people":6,"fixture":"synthetic SQLite","ttfbMs":3,"lcpMs":392,"cls":0.0035507818930041153,"resources":48,"decodedScriptBytes":1026742,"javascriptRequests":37,"domElements":433,"transport":"localhost HTTP without nginx"}
+{"browser":"155.0.8059.40","INP":"not measured; no field user sample"}
