@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarDays, Plus, Trash2 } from "lucide-react";
+import { CalendarDays, GraduationCap, Plus, Trash2 } from "lucide-react";
 import type { ClaimConfidence, EventFactAlternative, PersonEvent, Source } from "../domain/types";
 import { CLAIM_CONFIDENCE_LABELS } from "../domain/claim-confidence.ts";
 import { repositorySummary } from "../domain/person-sources.ts";
@@ -68,6 +68,7 @@ export function EventsEditor({
   isAdmin,
   canAssess,
   savedEvents,
+  section = "events",
 }: {
   events: PersonEvent[];
   onChange: (events: PersonEvent[]) => void;
@@ -75,6 +76,7 @@ export function EventsEditor({
   isAdmin: boolean;
   canAssess: boolean;
   savedEvents?: PersonEvent[];
+  section?: "events" | "education" | "legacy-marriage";
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [resetEventIds, setResetEventIds] = useState<Set<string>>(() => new Set());
@@ -86,13 +88,23 @@ export function EventsEditor({
     .map((event) => [event.id, event.type]));
   const saveTypeFirst = (event: PersonEvent) =>
     citedSavedTypes.has(event.id) && citedSavedTypes.get(event.id) !== event.type;
+  const allowedTypes = Object.entries(EVENT_NAMES).filter(([key]) =>
+    section === "education" ? key === "education" : section === "legacy-marriage"
+      ? key === "marriage" || key === "divorce"
+      : !["education", "marriage", "divorce"].includes(key));
+  const shown = events.filter((event) => allowedTypes.some(([key]) => key === event.type));
+  if (section === "legacy-marriage" && !shown.length) return null;
+  const title = section === "education" ? "Образование" : section === "legacy-marriage"
+    ? "Прежние записи о браке" : "События жизни";
   return (
-    <details className="form-details event-editor">
+    <details className={`form-details ${section === "events" ? "event-editor" : `${section}-editor`}`}>
       <summary>
-        <CalendarDays size={17} aria-hidden="true" />
-        События жизни{events.length ? ` · ${events.length}` : ""}
+        {section === "education" ? <GraduationCap size={17} aria-hidden="true" />
+          : <CalendarDays size={17} aria-hidden="true" />}
+        {title}{shown.length ? ` · ${shown.length}` : ""}
       </summary>
-      {events.map((event) => (
+      {section === "legacy-marriage" && <p>Записи без указанного супруга сохранены. Даты конкретного союза укажите в разделе «Брак».</p>}
+      {shown.map((event) => (
         <details
           className="life-event-editor"
           key={event.id}
@@ -123,7 +135,14 @@ export function EventsEditor({
             </span>
           </summary>
           <div className="life-event-fields">
-            <label>
+            {section === "education" && <label className="education-school">
+              Учебное заведение
+              <input maxLength={1000} value={event.title || ""}
+                placeholder="Школа, колледж, университет"
+                disabled={!canAssess && hasAssessment(event)}
+                onChange={(change) => update(event.id, { title: change.target.value || undefined })} />
+            </label>}
+            {section !== "education" && <label>
               Событие
               <select
                 value={event.type}
@@ -135,13 +154,13 @@ export function EventsEditor({
                   onChange(events.map((item) => item.id === event.id ? changed.event : item));
                 }}
               >
-                {Object.entries(EVENT_NAMES).map(([key, label]) => (
+                {allowedTypes.map(([key, label]) => (
                   <option key={key} value={key}>
                     {label}
                   </option>
                 ))}
               </select>
-            </label>
+            </label>}
             {(resetEventIds.has(event.id) || saveTypeFirst(event)) && <p role="status">При смене типа из черновика сняты данные прежнего события: источники, оценки, другие значения или исходный тег GEDCOM. Сохраните новый тип, затем добавьте подходящие данные.</p>}
             {event.type === "other" && (
               <label>
@@ -167,6 +186,12 @@ export function EventsEditor({
                 }
               />
             </label>
+            {section === "education" && <label>
+              Окончание учёбы
+              <input value={event.endDate ? dateInputLabel(event.endDate) : ""}
+                placeholder="Год или д.м.г"
+                onChange={(change) => update(event.id, { endDate: change.target.value || undefined })} />
+            </label>}
             {!saveTypeFirst(event) && event.dateClaim && <details className="event-date-claim">
               <summary>Источники даты события{event.dateClaim?.sources.length
                 ? ` · ${event.dateClaim.sources.length}` : ""}</summary>
@@ -253,7 +278,7 @@ export function EventsEditor({
                   : ""}
               </summary>
               <div className="life-event-fields">
-                {event.type !== "other" && (
+                {event.type !== "other" && section !== "education" && (
                   <label>
                     Уточнение названия
                   <input
@@ -266,7 +291,7 @@ export function EventsEditor({
                     />
                   </label>
                 )}
-                <label>
+                {section !== "education" && <label>
                   Конец периода
                   <input
                     value={event.endDate ? dateInputLabel(event.endDate) : ""}
@@ -275,7 +300,7 @@ export function EventsEditor({
                       update(event.id, { endDate: e.target.value || undefined })
                     }
                   />
-                </label>
+                </label>}
                 <label>
                   Приблизительная дата
                   <input
@@ -415,17 +440,18 @@ export function EventsEditor({
           </div>
         </details>
       ))}
-      <button
+      {section !== "legacy-marriage" && <button
+        className="event-add"
         type="button"
         disabled={events.length >= 200}
         onClick={() => {
           const id = crypto.randomUUID();
-          onChange([...events, { id, type: "residence" }]);
+          onChange([...events, { id, type: section === "education" ? "education" : "residence" }]);
           setOpenId(id);
         }}
       >
-        <Plus size={15} /> Добавить событие
-      </button>
+        <Plus size={15} /> {section === "education" ? "Добавить образование" : "Добавить событие"}
+      </button>}
     </details>
   );
 }

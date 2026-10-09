@@ -36,6 +36,52 @@
 .shared-header .archive-search {
   flex: 0 1 360px;
 }
+.shared-search {
+  margin-left: auto;
+  min-width: 0;
+}
+.shared-search-toggle {
+  display: none;
+}
+@media (max-width: 599px) {
+  .shared-app .shared-header {
+    position: relative;
+    flex-wrap: nowrap;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .shared-header-title {
+    flex: 1;
+    min-width: 0;
+  }
+  .shared-search-toggle {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    align-items: center;
+    justify-content: center;
+  }
+  .shared-search-field {
+    display: none;
+  }
+  .shared-search.is-open .shared-search-field {
+    display: block;
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 12px;
+    right: 12px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #fafbf8;
+    box-shadow: 0 8px 24px #29453518;
+  }
+  .shared-header .shared-search .archive-search {
+    width: 100%;
+    margin: 0;
+  }
+}
 .share-members ul {
   max-height: 220px;
   overflow: auto;

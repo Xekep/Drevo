@@ -66,6 +66,16 @@ test("shared search selects only shared people and disappears after revocation",
   await page.goto(share.path);
   const search = page.getByRole("combobox", { name: "Найти человека" });
   const results = page.getByRole("listbox", { name: "Найденные люди" });
+  if (isMobile) {
+    await expect(search).toBeHidden();
+    const header = await page.locator(".shared-header").boundingBox();
+    await page.getByRole("button", { name: "Найти человека", exact: true }).click();
+    await expect(search).toBeFocused();
+    expect((await page.locator(".shared-header").boundingBox())!.height).toBe(header!.height);
+    await page.getByRole("button", { name: "Закрыть поиск человека" }).click();
+    await expect(search).toBeHidden();
+    await page.getByRole("button", { name: "Найти человека", exact: true }).click();
+  }
   await expect(search).toBeVisible();
   await search.fill("Тестов");
   await expect(results.getByRole("option")).toHaveCount(2);

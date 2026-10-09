@@ -11,23 +11,23 @@
   color: var(--muted);
 }
 .person-editor-shell > header {
-  padding: 17px 20px;
+  padding: 12px 16px;
   border-bottom: 1px solid #e0e6db;
   background: #fcfdf9;
 }
 .person-editor-shell > header h2 {
-  font: 400 23px/1.2 var(--serif);
+  font: 400 21px/1.2 var(--serif);
   letter-spacing: -0.025em;
   color: #304c3c;
 }
 .person-editor-shell .person-editor-form {
-  padding: 16px;
-  gap: 10px;
+  padding: 12px;
+  gap: 8px;
 }
 .person-editor-form .person-editor-primary {
   display: grid;
-  gap: 14px;
-  padding: 16px;
+  gap: 10px;
+  padding: 12px;
   border: 1px solid #dce5d6;
   border-radius: 12px;
   background: #fffefa;
@@ -36,11 +36,12 @@
   grid-template-columns: 72px minmax(0, 1fr);
 }
 .person-editor-form .person-editor-basics {
-  gap: 13px;
+  gap: 8px;
 }
 .person-editor-form .person-editor-facts {
   display: grid;
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
   min-width: 0;
 }
 .person-editor-form .person-editor-primary.is-existing .person-editor-facts {
@@ -115,7 +116,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 13px 14px;
+  padding: 10px 12px;
   color: #3e5846;
   font-weight: 500;
   line-height: 1.4;
@@ -156,18 +157,18 @@
   outline-offset: -3px;
 }
 .person-editor-form > .form-details > :not(summary) {
-  margin: 14px;
+  margin: 10px 12px;
 }
 .person-editor-form .person-date-group {
   padding: 0;
   border: 0;
 }
 .person-editor-form .person-date-group + .person-date-group {
-  padding-top: 14px;
+  padding-top: 10px;
   border-top: 1px solid #e9ede5;
 }
 .person-editor-form .person-date-group h3 {
-  margin: 0 0 12px;
+  margin: 0 0 8px;
   color: #7d8a72;
   font-size: 10px;
   font-weight: 600;
@@ -235,7 +236,7 @@
   border-color: #ac5546 !important;
 }
 .person-editor-form textarea {
-  min-height: 140px;
+  min-height: 84px;
   resize: vertical;
   line-height: 1.65;
 }
@@ -258,8 +259,8 @@
   bottom: 0;
   z-index: 3;
   gap: 10px;
-  margin: 2px -16px -16px;
-  padding: 14px 16px;
+  margin: 2px -12px -12px;
+  padding: 10px 12px;
   border-top: 1px solid #dfe5d9;
   background: #f7f8f3f5;
   backdrop-filter: blur(10px);
@@ -326,4 +327,82 @@
 }
 .document-source-page {
   max-width: 160px;
+}
+.person-editor-form label {
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+}
+.person-editor-form .field-error:empty {
+  display: none;
+}
+.person-editor-form :is(input, select):not([type="checkbox"], [type="file"]) {
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.person-editor-form .person-marriage-fields {
+  display: grid;
+  gap: 10px;
+}
+.person-editor-form details.source-editor {
+  display: block;
+  padding: 0;
+  margin: 8px 0;
+  background: #fafcf8;
+  border: 1px solid #e2e8dd;
+  border-radius: 8px;
+}
+.person-editor-form details.source-editor > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.person-editor-form details.source-editor > summary span {
+  min-width: 0;
+  flex: 1;
+}
+.person-editor-form details.source-editor > summary small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 3px;
+}
+.person-editor-form .person-source-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+.person-editor-form .person-source-fields > .source-repository-editor {
+  margin-top: 0;
+}
+.person-editor-form .person-source-fields > :not(.person-source-type, .person-source-reference) {
+  grid-column: 1 / -1;
+}
+.person-editor-form .person-source-note textarea {
+  min-height: 66px;
+}
+.person-editor-form .education-editor .life-event-fields {
+  gap: 8px;
+}
+.person-editor-form :is(.event-add, .event-remove) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+@media (max-width: 599px) {
+  .person-editor-form :is(input, select):not([type="checkbox"], [type="file"]),
+  .person-editor-form > footer button {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .person-editor-form .person-editor-facts {
+    grid-template-columns: 1fr;
+  }
 }

@@ -16,6 +16,7 @@ export function PersonSearch({
   clearLabel = "Выбрать другого человека",
   excludeId,
   people,
+  showAllOnEmpty = false,
 }: {
   value: string;
   selected?: Person;
@@ -29,6 +30,8 @@ export function PersonSearch({
   excludeId?: string;
   /** Search only this accessible pool, without an authenticated API request. */
   people?: Person[];
+  /** A small, already restricted list, such as the person's union partners. */
+  showAllOnEmpty?: boolean;
 }) {
   const id = useId();
   const [query, setQuery] = useState(""),
@@ -48,7 +51,19 @@ export function PersonSearch({
     [people],
   );
   const searchResult = localSearch
-    ? { query: needle, ...localSearch(needle) }
+    ? {
+        query: needle,
+        ...(showAllOnEmpty && !needle
+          ? {
+              people: (people || []).map((person) => ({
+                id: person.id,
+                label: fullName(person),
+                detail: person.birth,
+              })),
+              hasMore: false,
+            }
+          : localSearch(needle)),
+      }
     : result;
   useEffect(() => {
     if (localSearch || !open || disabled || value || needle.length < 2) return;
@@ -206,7 +221,7 @@ export function PersonSearch({
             ))}
           </ul>
           <p id={`${id}-status`} role="status">
-            {needle.length < 2
+            {needle.length < 2 && !(showAllOnEmpty && !needle)
               ? "Введите хотя бы две буквы"
               : searchResult.query !== needle
                 ? "Ищем…"

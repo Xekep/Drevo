@@ -160,6 +160,20 @@ test("production static streams SPA routes, files and shared page", async () => 
     assert.equal((await head.arrayBuffer()).byteLength, 0);
 
     assert.equal((await fetch(app.base + "/missing.txt")).status, 404);
+    for (const method of ["GET", "HEAD"]) {
+      const lost = await fetch(app.base + "/missing-page", {
+        method, headers: { Accept: "text/html" },
+      });
+      assert.equal(lost.status, 404);
+      assert.equal(lost.headers.get("content-type"), "text/html; charset=utf-8");
+      assert.equal(lost.headers.get("cache-control"), "no-store");
+      const body = await lost.text();
+      if (method === "GET") {
+        assert.match(body, /Здесь пока нет ветви/);
+        assert.match(body, /href="\/"/);
+        assert.doesNotMatch(body, /missing-page/);
+      } else assert.equal(body, "");
+    }
     for (const path of ["family%2Fperson.1", "family%5Cperson.1", "family%252Fperson.1", "bad%"])
       assert.equal((await fetch(app.base + `/discover/person/family-one/${path}`)).status, 404);
     const api = await fetch(app.base + "/api/health");
