@@ -10,12 +10,17 @@ test.afterEach(async ({ page }) => {
 
 test("an owner can name an empty tree and bind its first person to their account", async ({ page }, testInfo) => {
   let family: Family | null = null;
+  let revision = 0;
   let boundPersonId = "";
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
-    family ||= { ...data.family, people: [], photos: [], links: [] };
+    if (!family) {
+      family = { ...data.family, people: [], photos: [], links: [] };
+      revision = data.revision;
+    }
     data.family = family;
+    data.revision = revision;
     data.partial = false;
     if (boundPersonId) data.user = { ...data.user, personId: boundPersonId };
     await route.fulfill({ response, json: data });
@@ -23,7 +28,7 @@ test("an owner can name an empty tree and bind its first person to their account
   await page.route("**/api/family/changes", async (route) => {
     const changes = route.request().postDataJSON().changes as Change[];
     family = applyArchiveChanges(family!, changes).family;
-    await route.fulfill({ json: { family, revision: 2, appliedChanges: changes } });
+    await route.fulfill({ json: { family, revision: ++revision, appliedChanges: changes } });
   });
   await page.route("**/api/users/*", async (route) => {
     if (route.request().method() !== "PATCH") return route.continue();
@@ -67,18 +72,23 @@ test("an owner can name an empty tree and bind its first person to their account
 
 test("a two-word first-name-first entry offers an explicit swap before saving sex", async ({ page }) => {
   let family: Family | null = null;
+  let revision = 0;
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
-    family ||= { ...data.family, people: [], photos: [], links: [] };
+    if (!family) {
+      family = { ...data.family, people: [], photos: [], links: [] };
+      revision = data.revision;
+    }
     data.family = family;
+    data.revision = revision;
     data.partial = false;
     await route.fulfill({ response, json: data });
   });
   await page.route("**/api/family/changes", async (route) => {
     const changes = route.request().postDataJSON().changes as Change[];
     family = applyArchiveChanges(family!, changes).family;
-    await route.fulfill({ json: { family, revision: 2, appliedChanges: changes } });
+    await route.fulfill({ json: { family, revision: ++revision, appliedChanges: changes } });
   });
   await page.route("**/api/users/*", async (route) => {
     if (route.request().method() !== "PATCH") return route.continue();

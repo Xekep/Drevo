@@ -20,13 +20,13 @@ test("редактор человека показывает каталожны�
     ? { ...person, sources: [catalog, unsafe, inline] } : person) };
   await page.route("**/api/family?projection=overview", (route) =>
     route.fulfill({ response, json: { ...initial, family, revision } }));
-  await page.route("**/api/family?projection=page&*", async (route) => {
+  await page.route("**/api/family?projection=details&*", async (route) => {
     const response = await route.fetch();
+    if (!response.ok()) return route.fulfill({ response });
     const pageData = await response.json();
-    if (route.request().url().includes("collection=people"))
-      pageData.items = pageData.items.map((item: { id: string }) => item.id === "e2e-child"
-        ? { ...item, sources: family.people.find((person) => person.id === item.id)!.sources }
-        : item);
+    pageData.people = pageData.people.map((item: { id: string }) => item.id === "e2e-child"
+      ? { ...item, sources: family.people.find((person) => person.id === item.id)!.sources }
+      : item);
     await route.fulfill({ response, json: pageData });
   });
   await page.route("**/api/family/changes", (route) => {
