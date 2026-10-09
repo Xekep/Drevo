@@ -51,6 +51,9 @@ import { EditorDialog } from "./editor-dialog";
 import { PlaceField } from "./place-field";
 import { AwardsEditor } from "./person-awards";
 import { EventsEditor } from "./person-events";
+import { PersonMarriagesEditor } from "./person-marriages-editor.tsx";
+import { applyPersonUnionDrafts } from "../domain/person-union-draft.ts";
+import type { FamilyUnion } from "../domain/types.ts";
 import { SiblingSuggestions } from "./sibling-suggestions";
 import { PortraitCropper } from "./portrait-cropper";
 import { photoLabel } from "../domain/photo-metadata";
@@ -215,6 +218,9 @@ export function PersonEditor({
     [],
   );
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [baselineUnions] = useState(() => structuredClone(family.unions || []));
+  const [unionDrafts, setUnionDrafts] = useState<FamilyUnion[]>([]);
+  const [openSourceIndex, setOpenSourceIndex] = useState(-1);
   const formRef = useRef<HTMLFormElement>(null);
   const fieldId = useId();
   const snapshot = JSON.stringify([
@@ -228,6 +234,7 @@ export function PersonEditor({
     accepted,
     removedConnections,
     !!portraitFile,
+    unionDrafts,
   ]);
   const [initialSnapshot] = useState(snapshot);
   const dirty = initialSnapshot !== snapshot;
@@ -455,6 +462,7 @@ export function PersonEditor({
       }
       for (const hint of confirmed)
         next = connectPeople(next, hint.from, hint.to, "parent");
+      next = applyPersonUnionDrafts(next, p.id, baselineUnions, unionDrafts);
       await save(next);
       onDirtyChange?.(false);
       onSaved(p.id);
@@ -965,6 +973,33 @@ export function PersonEditor({
           </label>
         </details>
         <EventsEditor
+          section="education"
+          events={draft.events || []}
+          savedEvents={person?.events}
+          onChange={(events) => field("events", events)}
+          personId={person?.id}
+          isAdmin={isAdmin}
+          canAssess={canAssessArchiveEvidence(user)}
+        />
+        <PersonMarriagesEditor
+          family={family}
+          person={draft}
+          baseline={baselineUnions}
+          drafts={unionDrafts}
+          onChange={setUnionDrafts}
+          user={user}
+          busy={busy}
+        />
+        <EventsEditor
+          section="legacy-marriage"
+          events={draft.events || []}
+          savedEvents={person?.events}
+          onChange={(events) => field("events", events)}
+          personId={person?.id}
+          isAdmin={isAdmin}
+          canAssess={canAssessArchiveEvidence(user)}
+        />
+        <EventsEditor
           events={draft.events || []}
           savedEvents={person?.events}
           onChange={(events) => field("events", events)}
@@ -978,9 +1013,15 @@ export function PersonEditor({
             Источники
           </summary>
           <section>
-            <h3>Источники</h3>
+            <p className="field-hint">Общие источники о человеке.</p>
             {draft.sources.map((s, i) => (
-              <div className="source-editor" key={i}>
+              <details className="source-editor" key={i} open={openSourceIndex === i}>
+                <summary onClick={(event) => {
+                  event.preventDefault();
+                  setOpenSourceIndex(openSourceIndex === i ? -1 : i);
+                }}><BookOpen size={15} aria-hidden="true" /><span>{s.title || "Новый источник"}
+                  {s.reference && <small>{s.reference}</small>}</span></summary>
+                <div className="person-source-fields">
                 {s.catalogId ? <div className="source-catalog-citation">
                   <small>Источник из каталога{s.type ? ` · ${s.type}` : ""}</small>
                   <strong>{s.title}</strong>
@@ -1005,9 +1046,11 @@ export function PersonEditor({
                     ["note", "Примечание"],
                   ] as const
                 ).map(([key, label]) => (
-                  <label key={key}>
+                  <label key={key} className={`person-source-${key}`}>
                     {label}
-                    <input
+                    {key === "note" ? <textarea rows={2} value={s.note || ""}
+                      onChange={(e) => field("sources", draft.sources.map((x, j) =>
+                        i === j ? { ...x, note: e.target.value } : x))} /> : <input
                       value={s[key] || ""}
                       onChange={(e) =>
                         field(
@@ -1017,7 +1060,7 @@ export function PersonEditor({
                           ),
                         )
                       }
-                    />
+                    />}
                   </label>
                 ))}
                 <DocumentSourcePicker
@@ -1066,17 +1109,19 @@ export function PersonEditor({
                 >
                   <Trash2 size={16} />
                 </button>
-              </div>
+                </div>
+              </details>
             ))}
             <button
               type="button"
               disabled={draft.sources.length >= 50}
-              onClick={() =>
+              onClick={() => {
+                setOpenSourceIndex(draft.sources.length);
                 field("sources", [
                   ...draft.sources,
                   { title: "", type: "", reference: "" },
-                ])
-              }
+                ]);
+              }}
             >
               + Источник
             </button>

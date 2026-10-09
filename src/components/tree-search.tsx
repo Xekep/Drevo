@@ -17,6 +17,7 @@ export function TreeSearch({
   onSelect,
   onSelectDocument,
   globalSearch = false,
+  onRequestOpen,
 }: {
   people: Person[];
   query: string;
@@ -24,6 +25,7 @@ export function TreeSearch({
   onSelect: (id: string) => void;
   onSelectDocument?: (id: string) => void;
   globalSearch?: boolean;
+  onRequestOpen?: () => void;
 }) {
   const id = useId();
   const [open, setOpen] = useState(false),
@@ -85,6 +87,7 @@ export function TreeSearch({
         )
       ) {
         e.preventDefault();
+        onRequestOpen?.();
         selectedQuery.current = null;
         setOpen(true);
         ref.current?.focus();
@@ -92,7 +95,7 @@ export function TreeSearch({
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [onQuery]);
+  }, [onQuery, onRequestOpen]);
   const matches = search
     ? people.filter((p) => matchesPerson(p, search)).slice(0, 8)
     : [];

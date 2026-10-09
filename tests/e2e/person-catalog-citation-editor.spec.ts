@@ -45,8 +45,9 @@ test("редактор человека показывает каталожны�
   const sources = page.locator(".source-editor");
   await expect(sources).toHaveCount(3);
   const linked = sources.nth(0);
-  await expect(linked.getByText("Метрическая запись")).toBeVisible();
-  await expect(linked.getByText("Ф. 12, л. 4")).toBeVisible();
+  await linked.locator(":scope > summary").click();
+  await expect(linked.locator(".source-catalog-citation").getByText("Метрическая запись")).toBeVisible();
+  await expect(linked.locator(".source-catalog-citation").getByText("Ф. 12, л. 4")).toBeVisible();
   await expect(linked.getByText("Оцифрованная запись")).toBeVisible();
   await expect(linked.locator("input, textarea, select")).toHaveCount(0);
   await expect(linked.getByRole("link", { name: "Открыть источник" }))
@@ -57,9 +58,11 @@ test("редактор человека показывает каталожны�
   await expect(sources.nth(1).locator("input, textarea, select")).toHaveCount(0);
 
   const manual = sources.nth(2);
+  await manual.locator(":scope > summary").click();
   await manual.getByLabel("Название").fill("Письмо семьи");
   await manual.getByLabel("Ссылка").fill("https://example.org/letter");
   await expect(manual.getByRole("button", { name: "Добавить хранилище источника" })).toBeVisible();
+  await linked.locator(":scope > summary").click();
   await linked.getByRole("button", { name: "Убрать источник 1" }).click();
   await expect(sources).toHaveCount(2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);

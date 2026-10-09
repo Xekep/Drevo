@@ -128,6 +128,7 @@ test("inline хранилище сохраняется у источника ч�
     .filter({ hasText: /^Источники$/ })
     .click();
   const savedPersonSource = page.locator(".source-editor").last();
+  await ensureOpen(savedPersonSource);
   await ensureOpen(savedPersonSource.locator(".source-repository-editor"));
   await savedPersonSource.getByLabel("Шифр хранилища (CALN)").fill("Ф. 12а");
   await ensureOpen(page.locator(".event-editor"));

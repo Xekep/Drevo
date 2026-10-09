@@ -7,6 +7,7 @@ import { archiveViewAt } from "../domain/archive-routes.ts";
 import { memberPreviewAt } from "../domain/archive-context.ts";
 import { staticAssetsHttp } from "./static-assets-http.ts";
 import { decodePublicPersonId } from "./public-person-id.ts";
+import { notFoundHtml } from "../shared/not-found-page.ts";
 
 const defaultDistDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -63,14 +64,30 @@ export function productionStaticHttp(
     if (pathname.startsWith("/api/") || pathname.startsWith("/auth/"))
       return false;
 
+    const missing = () => {
+      if ((req.method === "GET" || req.method === "HEAD") &&
+          (req.headers.accept?.includes("text/html") || req.headers["sec-fetch-dest"] === "document")) {
+        res.writeHead(404, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": String(Buffer.byteLength(notFoundHtml)),
+          "Cache-Control": "no-store",
+          "X-Robots-Tag": "noindex, nofollow",
+          "X-Content-Type-Options": "nosniff",
+        });
+        res.end(req.method === "HEAD" ? undefined : notFoundHtml);
+        return true;
+      }
+      return jsonError(res, 404, "Страница не найдена");
+    };
+
     let decoded: string;
     try {
       decoded = decodeURIComponent(pathname);
     } catch {
-      return jsonError(res, 404, "Страница не найдена");
+      return missing();
     }
     if (decoded.includes("\0"))
-      return jsonError(res, 404, "Страница не найдена");
+      return missing();
 
     const invitation =
       /^\/join\/[A-Za-z0-9][A-Za-z0-9-]{2,63}\/[A-Za-z0-9_-]{43}$/.test(
@@ -85,7 +102,7 @@ export function productionStaticHttp(
     const discoveryPerson = /^\/discover\/person\/(?:[A-Za-z0-9-]{3,64}\/)?([^/]{1,1200})$/.exec(pathname);
     const validDiscoveryPerson = Boolean(discoveryPerson && decodePublicPersonId(discoveryPerson[1]));
     if (pathname.startsWith("/discover/person/") && !validDiscoveryPerson)
-      return jsonError(res, 404, "Страница не найдена");
+      return missing();
     const discovery =
       pathname === "/discover" ||
       (/^\/discover\/search\/[^/]{1,1200}$/.test(pathname) &&
@@ -110,7 +127,7 @@ export function productionStaticHttp(
       const stat = await handle.stat();
       if (!stat.isFile()) {
         await handle.close();
-        return jsonError(res, 404, "Страница не найдена");
+        return missing();
       }
       // A removed or unknown route remains 404 for every method. Only an
       // existing page/file can reject an otherwise unsupported method.
@@ -151,7 +168,7 @@ export function productionStaticHttp(
         if (!res.destroyed) res.destroy();
         return true;
       }
-      return jsonError(res, 404, "Страница не найдена");
+      return missing();
     }
   };
 }

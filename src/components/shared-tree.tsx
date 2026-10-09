@@ -1,6 +1,6 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownUp, Clock3 } from "lucide-react";
+import { ArrowDownUp, Clock3, Search, X } from "lucide-react";
 import type { Family } from "../domain/types";
 import { analyzeKinship } from "../domain/kinship-analysis";
 import { TreeCanvas, type TreeCanvasHandle } from "./tree/tree-canvas";
@@ -35,6 +35,12 @@ export default function SharedTree({ token }: { token: string }) {
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchContainer = useRef<HTMLDivElement>(null);
+  const searchButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (searchOpen) searchContainer.current?.querySelector("input")?.focus();
+  }, [searchOpen]);
   const { selected, compare, selectionOnly, choose, reveal, dispatch, focus } =
     useWorkspaceSelection();
   useEffect(() => {
@@ -143,14 +149,37 @@ export default function SharedTree({ token }: { token: string }) {
             )}
           </div>
           {data && (
-            <TreeSearch
-              people={data.family.people}
-              query={query}
-              onQuery={setQuery}
-              onSelect={(id) => {
-                reveal([id]);
-              }}
-            />
+            <div
+              ref={searchContainer}
+              className={`shared-search${searchOpen ? " is-open" : ""}`}
+            >
+              <button
+                ref={searchButton}
+                type="button"
+                className="shared-search-toggle icon-button"
+                aria-label={searchOpen ? "Закрыть поиск человека" : "Найти человека"}
+                aria-expanded={searchOpen}
+                aria-controls="shared-tree-search"
+                onClick={() => {
+                  if (searchOpen) {
+                    setQuery("");
+                    searchButton.current?.focus();
+                  }
+                  setSearchOpen((open) => !open);
+                }}
+              >
+                {searchOpen ? <X size={20} /> : <Search size={20} />}
+              </button>
+              <div id="shared-tree-search" className="shared-search-field">
+                <TreeSearch
+                  people={data.family.people}
+                  query={query}
+                  onQuery={setQuery}
+                  onRequestOpen={() => setSearchOpen(true)}
+                  onSelect={(id) => reveal([id])}
+                />
+              </div>
+            </div>
           )}
         </header>
         {data ? (

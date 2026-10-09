@@ -31,6 +31,7 @@ import "./styles/public-people.css";
 import { ArchiveLoading } from "./components/archive-loading";
 import { memberPreviewAt } from "./domain/archive-context.ts";
 import { archiveViewAt } from "./domain/archive-routes.ts";
+import { NotFoundPage } from "./components/not-found-page.tsx";
 
 const App = lazy(() => import("./App"));
 const SharedTree = lazy(() => import("./components/shared-tree"));
@@ -107,8 +108,10 @@ function Entry() {
       matchId={linkedBranch[1]} personId={linkedBranch[2]} />
   ) : location.pathname === "/discover" || location.pathname.startsWith("/discover/") ? (
     <PublicPeople />
-  ) : (
+  ) : archiveViewAt(location.pathname) ? (
     <App />
+  ) : (
+    <NotFoundPage />
   );
 }
 
