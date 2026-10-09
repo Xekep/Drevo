@@ -156,8 +156,8 @@ export function publishedPeopleHttp({
         if (!session || session.accountId !== freshUser.id) return 401;
         await assertActiveAccountSession(archive.db, freshUser.id, session.tokenHash);
       }
-      // The transaction locks the archive before these rows, matching owner
-      // transfer and membership writes. Hold all locks through delivery.
+      // Lock the archive for sharing before these rows, matching the writer
+      // order. Media and other reads remain compatible throughout delivery.
       if (!await isOwner(freshUser.id, true)) return 403;
       const archiveId = archive.db.archiveId;
       if (!archiveId) return 403;
@@ -169,7 +169,7 @@ export function publishedPeopleHttp({
       if (payload === null) return 409;
       await deliverLocked(res, payload);
       return 200;
-    }).catch((error) => {
+    }, false, { archiveLock: "share" }).catch((error) => {
       if (error instanceof AccountSessionExpired) return 401;
       if (error instanceof AccountSessionBusy ||
           (error as { code?: string }).code === "55P03") return 409;
@@ -327,7 +327,7 @@ export function publishedPeopleHttp({
           person: publicPerson(freshPerson, fields || defaultPublicationFields),
         });
         return 200;
-      }).catch((error) => {
+      }, false, { archiveLock: "share" }).catch((error) => {
         if (error instanceof AccountSessionExpired) return 401;
         if (error instanceof AccountSessionBusy ||
             (error as { code?: string }).code === "55P03") return 409;
@@ -394,7 +394,7 @@ export function publishedPeopleHttp({
         await beforeSearchDelivery?.();
         await deliverLocked(res, { results: current });
         return true;
-      });
+      }, false, { archiveLock: "share" });
     }
     const personId = decodePublicPersonId(admin?.[1] || detail?.[1] || "");
     if (!personId)
@@ -473,6 +473,6 @@ export function publishedPeopleHttp({
       await beforePublicDelivery?.();
       await deliverLocked(res, { person: publicPerson(currentPerson, currentFields) });
       return true;
-    });
+    }, false, { archiveLock: "share" });
   };
 }
