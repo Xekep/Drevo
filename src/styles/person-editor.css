@@ -47,6 +47,11 @@
 .person-editor-form .person-editor-primary.is-existing .person-editor-facts {
   grid-column: 2;
 }
+@media (min-width: 600px) {
+  .person-editor-form .person-editor-primary.is-existing .person-editor-portrait-awards {
+    grid-row: span 2;
+  }
+}
 .person-editor-form .name-entry input {
   min-height: 42px;
   padding: 9px 10px;
