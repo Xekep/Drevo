@@ -17,6 +17,29 @@ export type ResearchAnswerReference =
       url?: string;
     };
 
+/** Model/history hrefs are untrusted; decode once and never throw in render. */
+export function researchInternalLink(href: string): {
+  kind: "person" | "choose-person" | "photo";
+  id: string;
+} | null {
+  const match = /^#drevo-(person|choose-person|photo)-(.+)$/.exec(href);
+  if (!match || match[2].length > 1200) return null;
+  try {
+    const id = decodeURIComponent(match[2]);
+    if (
+      !id ||
+      id.length > 100 ||
+      id === "." ||
+      id === ".." ||
+      /[\p{Cc}/%\\]/u.test(id)
+    )
+      return null;
+    return { kind: match[1] as "person" | "choose-person" | "photo", id };
+  } catch {
+    return null;
+  }
+}
+
 /** Keep provider tool identifiers out of otherwise valid user-facing prose. */
 export function hideResearchToolNames(
   answer: string,

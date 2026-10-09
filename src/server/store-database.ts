@@ -8,7 +8,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import { initializePostgresRuntimeSchema } from "./postgres-runtime-schema.ts";
 
 type Row = Record<string, unknown>;
-export function postgresPoolSize(value = process.env.DREVO_PG_POOL_SIZE): number {
+export function postgresPoolSize(
+  value = process.env.DREVO_PG_POOL_SIZE,
+): number {
   if (value === undefined || value === "") return 3;
   if (!/^[3-9]$|^10$/.test(value))
     throw new Error("DREVO_PG_POOL_SIZE должен быть целым числом от 3 до 10");
@@ -56,9 +58,17 @@ export type StoreDatabase = {
     work: () => Promise<T>,
   ): Promise<{ acquired: false } | { acquired: true; value: T }>;
   /** One host-wide session lock for filesystem tasks shared by all archives. */
-  withExclusivePlatformTask?<T>(task: string, work: () => Promise<T>): Promise<T>;
+  withExclusivePlatformTask?<T>(
+    task: string,
+    work: () => Promise<T>,
+  ): Promise<T>;
   inTransaction(): boolean;
-  poolDiagnostics?(): { total: number; idle: number; waiting: number; limit: number };
+  poolDiagnostics?(): {
+    total: number;
+    idle: number;
+    waiting: number;
+    limit: number;
+  };
   close(): Promise<void>;
 };
 
@@ -88,10 +98,15 @@ export function storeDatabase(
   if (cached) return cached;
   // SQLite's built-in lower() only folds ASCII without ICU. Catalog searches
   // must also match Cyrillic archive names and abbreviations.
-  source.function("drevo_lower", { deterministic: true },
-    (value: unknown) => String(value ?? "").toLocaleLowerCase("ru"));
+  source.function("drevo_lower", { deterministic: true }, (value: unknown) =>
+    String(value ?? "").toLocaleLowerCase("ru"),
+  );
   // Older binaries lack this function and fail closed at the relation triggers.
-  source.function("drevo_parent_evidence_writer", { deterministic: true }, () => 1);
+  source.function(
+    "drevo_parent_evidence_writer",
+    { deterministic: true },
+    () => 1,
+  );
   // Awaiting SQLite calls yields to other requests too. Serialize complete
   // transactions, not individual statements, and retain ownership across awaits.
   const context = new AsyncLocalStorage<{
@@ -213,53 +228,173 @@ export async function openPostgresDatabase(
     client: pg.PoolClient;
     active: boolean;
   }>();
+  // Long tasks own a session, not a transaction. SQL and short transactions
+  // borrow that same connection, including nested filesystem locks. Serialize
+  // independent operations so they cannot enter another callback's transaction.
+  type TaskSession = {
+    client: pg.PoolClient;
+    tail: Promise<void>;
+    discard: boolean;
+  };
+  const tasks = new AsyncLocalStorage<{
+    session: TaskSession;
+    active: boolean;
+  }>();
+  // Task waiters consume no pool clients. Keep one slot available to ordinary
+  // requests even when filesystem callbacks hold advisory locks for minutes.
+  const taskLimit = pool.options.max! - 1;
+  let taskOwners = 0;
+  const taskWaiters: Array<() => void> = [];
+  function taskSlotRelease() {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const grant = taskWaiters.shift();
+      if (grant) grant();
+      else taskOwners--;
+    };
+  }
+  async function reserveTaskSlot(): Promise<() => void> {
+    if (taskOwners < taskLimit) {
+      taskOwners++;
+      return taskSlotRelease();
+    }
+    return await new Promise((resolve, reject) => {
+      const grant = () => {
+        clearTimeout(timeout);
+        resolve(taskSlotRelease());
+      };
+      const timeout = setTimeout(() => {
+        const index = taskWaiters.indexOf(grant);
+        if (index >= 0) taskWaiters.splice(index, 1);
+        reject(new Error("Background task connection budget is busy"));
+      }, 5000);
+      taskWaiters.push(grant);
+    });
+  }
+  async function onTaskSession<T>(
+    work: (client: pg.PoolClient) => Promise<T>,
+  ): Promise<T> {
+    const task = tasks.getStore();
+    if (!task?.active)
+      throw new Error("Контекст фоновой задачи БД уже завершён");
+    const previous = task.session.tail;
+    let release!: () => void;
+    task.session.tail = new Promise<void>((done) => {
+      release = done;
+    });
+    await previous;
+    try {
+      if (!task.active || task.session.discard)
+        throw new Error("Контекст фоновой задачи БД уже завершён");
+      return await work(task.session.client);
+    } finally {
+      release();
+    }
+  }
   const query = (sql: string, values?: SQLInputValue[]) => {
     const owner = context.getStore();
     if (owner && !owner.active)
       throw new Error("Контекст транзакции БД уже завершён");
-    return (owner?.client || pool).query<Row>(sql, values);
+    if (owner) return owner.client.query<Row>(sql, values);
+    if (tasks.getStore())
+      return onTaskSession((client) => client.query<Row>(sql, values));
+    return pool.query<Row>(sql, values);
   };
   async function withSessionTaskLock<T>(
-    key: string, work: () => Promise<T>,
+    key: string,
+    work: () => Promise<T>,
   ): Promise<{ acquired: false } | { acquired: true; value: T }> {
-    const client = await pool.connect();
-    let acquired = false;
-    let discard = false;
-    let failed = false;
-    let failure: unknown;
-    let value: T | undefined;
-    try {
-      const result = await client.query<{ acquired: boolean }>(
-        "SELECT pg_try_advisory_lock($1::bigint) AS acquired", [key],
-      );
-      acquired = !!result.rows[0]?.acquired;
-      if (acquired) value = await work();
-    } catch (error) {
-      if (!acquired) discard = true;
-      failed = true;
-      failure = error;
-    }
-    try {
-      if (acquired) {
-        const result = await client.query<{ released: boolean }>(
-          "SELECT pg_advisory_unlock($1::bigint) AS released", [key],
-        );
-        if (!result.rows[0]?.released) throw new Error("Task lock was lost");
+    if (context.getStore())
+      throw new Error("Task lock cannot run inside a transaction");
+    const parent = tasks.getStore();
+    if (parent && !parent.active)
+      throw new Error("Контекст фоновой задачи БД уже завершён");
+    let releaseSlot: (() => void) | undefined;
+    let borrowed = parent?.session;
+    if (!borrowed) {
+      releaseSlot = await reserveTaskSlot();
+      try {
+        borrowed = {
+          client: await pool.connect(),
+          tail: Promise.resolve(),
+          discard: false,
+        };
+      } catch (error) {
+        releaseSlot();
+        throw error;
       }
-    } catch (error) {
-      discard = true;
-      failed = true;
-      failure = error;
-    } finally {
-      client.release(discard);
     }
-    if (failed) throw failure;
-    return acquired ? { acquired: true, value: value as T } : { acquired: false };
+    const session = borrowed;
+    const scope = { session, active: true };
+    return await tasks.run(scope, async () => {
+      let acquired = false;
+      let discard = false;
+      let failed = false;
+      let failure: unknown;
+      let value: T | undefined;
+      try {
+        const result = await onTaskSession((client) =>
+          client.query<{ acquired: boolean }>(
+            "SELECT pg_try_advisory_lock($1::bigint) AS acquired",
+            [key],
+          ),
+        );
+        acquired = !!result.rows[0]?.acquired;
+        if (acquired) {
+          const job = { session, active: true };
+          try {
+            value = await tasks.run(job, work);
+          } finally {
+            job.active = false;
+          }
+        }
+      } catch (error) {
+        if (!acquired) discard = true;
+        failed = true;
+        failure = error;
+      }
+      try {
+        if (acquired) {
+          const result = await onTaskSession((client) =>
+            client.query<{ released: boolean }>(
+              "SELECT pg_advisory_unlock($1::bigint) AS released",
+              [key],
+            ),
+          );
+          if (!result.rows[0]?.released) throw new Error("Task lock was lost");
+        }
+      } catch (error) {
+        discard = true;
+        failed = true;
+        failure = error;
+      } finally {
+        scope.active = false;
+        if (discard) session.discard = true;
+        if (!parent) {
+          await session.tail;
+          try {
+            session.client.release(session.discard);
+          } finally {
+            releaseSlot?.();
+          }
+        }
+      }
+      if (failed) throw failure;
+      return acquired
+        ? { acquired: true, value: value as T }
+        : { acquired: false };
+    });
   }
   const database: StoreDatabase = {
     kind: "postgres",
-    poolDiagnostics: () => ({ total: pool.totalCount, idle: pool.idleCount,
-      waiting: pool.waitingCount, limit: pool.options.max! }),
+    poolDiagnostics: () => ({
+      total: pool.totalCount,
+      idle: pool.idleCount,
+      waiting: pool.waitingCount,
+      limit: pool.options.max!,
+    }),
     archiveId,
     file,
     inTransaction: () => !!context.getStore(),
@@ -292,44 +427,73 @@ export async function openPostgresDatabase(
         if (readOnly) return await work();
         throw new Error("Вложенная транзакция не поддерживается");
       }
+      const execute = async (client: pg.PoolClient) => {
+        const owner = { client, active: true };
+        try {
+          await client.query(
+            readOnly
+              ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"
+              : "BEGIN",
+          );
+          await client.query("SET LOCAL lock_timeout='5s'");
+          if (!readOnly)
+            await client.query(
+              "SELECT set_config('drevo.parent_evidence_write','on',true)",
+            );
+          if (!readOnly)
+            await client.query(
+              "SELECT id FROM archives WHERE id=$1 FOR UPDATE",
+              [archiveId],
+            );
+          const result = await context.run(owner, work);
+          owner.active = false;
+          await client.query("COMMIT");
+          return result;
+        } catch (error) {
+          await client.query("ROLLBACK").catch(() => {});
+          throw error;
+        } finally {
+          owner.active = false;
+        }
+      };
+      if (tasks.getStore()) return await onTaskSession(execute);
       const client = await pool.connect();
-      const owner = { client, active: true };
       try {
-        await client.query(
-          readOnly
-            ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"
-            : "BEGIN",
-        );
-        await client.query("SET LOCAL lock_timeout='5s'");
-        if (!readOnly)
-          await client.query("SELECT set_config('drevo.parent_evidence_write','on',true)");
-        if (!readOnly)
-          await client.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE", [
-            archiveId,
-          ]);
-        const result = await context.run(owner, work);
-        owner.active = false;
-        await client.query("COMMIT");
-        return result;
-      } catch (error) {
-        await client.query("ROLLBACK").catch(() => {});
-        throw error;
+        return await execute(client);
       } finally {
-        owner.active = false;
         client.release();
       }
     },
     async postgresTransaction(work) {
+      if (context.getStore())
+        throw new Error("Вложенная транзакция не поддерживается");
+      const task = tasks.getStore();
+      const execute = async (client: pg.PoolClient) => {
+        const owner = { client, active: true };
+        try {
+          await client.query("BEGIN");
+          await client.query("SET LOCAL lock_timeout='5s'");
+          // Explicit permission transactions outside a task intentionally own
+          // only their callback's raw client. Their work can start an independent
+          // file task; publishing that transaction as archive context would
+          // forbid the existing permission -> file-task execution path.
+          const result = task
+            ? await context.run(owner, () => work(client))
+            : await work(client);
+          owner.active = false;
+          await client.query("COMMIT");
+          return result;
+        } catch (error) {
+          await client.query("ROLLBACK").catch(() => {});
+          throw error;
+        } finally {
+          owner.active = false;
+        }
+      };
+      if (task) return await onTaskSession(execute);
       const client = await pool.connect();
       try {
-        await client.query("BEGIN");
-        await client.query("SET LOCAL lock_timeout='5s'");
-        const result = await work(client);
-        await client.query("COMMIT");
-        return result;
-      } catch (error) {
-        await client.query("ROLLBACK").catch(() => {});
-        throw error;
+        return await execute(client);
       } finally {
         client.release();
       }
@@ -360,7 +524,8 @@ export async function openPostgresDatabase(
         // holder still needs a connection for the short disk reservation query.
         const result = await withSessionTaskLock(lockKey, work);
         if (result.acquired) return result.value;
-        if (Date.now() >= deadline) throw new Error("Platform task lock is busy");
+        if (Date.now() >= deadline)
+          throw new Error("Platform task lock is busy");
         await delay(50);
       }
     },

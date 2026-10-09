@@ -169,6 +169,9 @@ export function ResearchVisualChart({ source }: { source: string }) {
   }, [source]);
   const [expanded, setExpanded] = useState(false);
   const chart = useRef<EChartsType | null>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const expandButton = useRef<HTMLButtonElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
   const visual = parsed.visual;
   const inlineOption = useMemo(
     () => (visual ? visualOption(visual, false) : {}),
@@ -181,26 +184,32 @@ export function ResearchVisualChart({ source }: { source: string }) {
 
   useEffect(() => {
     if (!expanded) return;
-    const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setExpanded(false);
+    const modal = dialog.current!;
+    const initiator = expandButton.current;
+    // Native modality makes the background inert and traps keyboard focus.
+    // Keep the initiating button mounted so focus has a destination on close.
+    modal.showModal();
+    closeButton.current?.focus({ preventScroll: true });
+    return () => {
+      modal.close();
+      initiator?.focus({ preventScroll: true });
+      chart.current = null;
     };
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
   }, [expanded]);
 
   if (!visual) return <p className="research-visual-error">{parsed.error}</p>;
   const label = visualLabel(visual);
   return (
     <>
-      {!expanded && (
-        <div className="research-visual">
+      <div className="research-visual" hidden={expanded}>
           <ChartCanvas
             option={inlineOption}
             className="research-visual-plot"
             label={label}
           />
           <button
-            type="button"
+          ref={expandButton}
+          type="button"
             className="research-visual-expand"
             onClick={() => setExpanded(true)}
             aria-label="Развернуть схему"
@@ -209,22 +218,41 @@ export function ResearchVisualChart({ source }: { source: string }) {
             <span aria-hidden="true">⛶</span>
           </button>
         </div>
-      )}
       {expanded &&
         createPortal(
-          <div
+          // Native dialog handles clicks on its own backdrop only.
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
+          <dialog
+            ref={dialog}
             className="research-visual-overlay"
-            role="presentation"
+            aria-label={visual.kind === "graph" ? "Схема родства" : "Диаграмма"}
+            onCancel={(event) => {
+              event.preventDefault();
+              setExpanded(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Tab") return;
+              const items = [
+                ...event.currentTarget.querySelectorAll<HTMLElement>(
+                  'button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex]:not([tabindex="-1"])',
+                ),
+              ].filter((element) => element.getClientRects().length > 0);
+              if (!items.length) return;
+              event.preventDefault();
+              const index = items.indexOf(
+                document.activeElement as HTMLElement,
+              );
+              items[
+                (index + (event.shiftKey ? -1 : 1) + items.length) %
+                  items.length
+              ].focus({ preventScroll: true });
+            }}
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) setExpanded(false);
             }}
           >
             <section
-              className="research-visual-dialog"
-              role="dialog"
-              aria-modal="true"
-              aria-label={visual.kind === "graph" ? "Схема родства" : "Диаграмма"}
-            >
+              className="research-visual-dialog">
               <header>
                 <strong>
                   {visual.kind === "graph" ? "Схема родства" : visual.title}
@@ -261,6 +289,7 @@ export function ResearchVisualChart({ source }: { source: string }) {
                     </>
                   )}
                   <button
+                    ref={closeButton}
                     type="button"
                     aria-label="Закрыть схему"
                     onClick={() => setExpanded(false)}
@@ -278,7 +307,7 @@ export function ResearchVisualChart({ source }: { source: string }) {
                 }}
               />
             </section>
-          </div>,
+          </dialog>,
           document.body,
         )}
     </>

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { confirmDiscardChanges } from "../hooks/useUnsavedChanges";
 import { Pencil } from "lucide-react";
 import type { Family, Person } from "../domain/types";
@@ -17,6 +17,8 @@ import { isArchiveOwner, owns, type ArchiveUser } from "../domain/access";
 const noop = () => {};
 export function PersonFullView({
   person,
+  loadPersonDetails,
+  hasPersonDetails,
   family,
   readPhotos,
   onClose,
@@ -30,6 +32,8 @@ export function PersonFullView({
   onAlbum,
 }: {
   person: Person;
+  loadPersonDetails?: (id: string) => Promise<void>;
+  hasPersonDetails?: (id: string) => boolean;
   family: Family;
   readPhotos: boolean;
   onClose: (id: string) => void;
@@ -52,7 +56,24 @@ export function PersonFullView({
   const [editing, setEditing] = useState(false);
   const dirty = useRef(false);
   const active = family.people.find((p) => p.id === activeId) || person;
-  const editable = canEdit && owns(user, active) && !!save && !!uploadPortrait;
+  const detailsReady = hasPersonDetails?.(active.id) !== false;
+  const [detailsError, setDetailsError] = useState("");
+  useEffect(() => {
+    let current = true;
+    void loadPersonDetails?.(activeId).catch((error) => {
+      if (current)
+        setDetailsError(
+          error instanceof Error
+            ? error.message
+            : "Не удалось загрузить сведения",
+        );
+    });
+    return () => {
+      current = false;
+    };
+  }, [activeId, loadPersonDetails]);
+  const editable =
+    detailsReady && canEdit && owns(user, active) && !!save && !!uploadPortrait;
   const neighborhood = useMemo(() => {
     const ids = familyNeighborhood(familyNeighbors(family), active.id).visible;
     return {
@@ -125,7 +146,17 @@ export function PersonFullView({
                   </button>
                 )}
               </div>
-              <PersonPanel
+              {!detailsReady ? (
+                <div
+                  role="status"
+                  className="archive-status"
+                  aria-label="Загрузка сведений человека"
+                >
+                  {detailsError || (
+                    <span className="archive-loader-ring" aria-hidden="true" />
+                  )}
+                </div>
+              ) : <PersonPanel
                 key={active.id}
                 idPrefix="person-full"
                 person={active}
@@ -140,8 +171,8 @@ export function PersonFullView({
                   onClose(activeId);
                   onCompare(active.id);
                 }}
-              />
-              {readPhotos && (
+              />}
+              {readPhotos && detailsReady && (
                 <section className="full-person-photos">
                   <PersonPhotoAlbum
                     photos={photos}

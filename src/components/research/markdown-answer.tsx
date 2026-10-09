@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { Component, memo, useMemo, type ReactNode } from "react";
 import type { ResearchAttachment } from "../../shared/research-attachments.ts";
 import ReactMarkdown, {
   defaultUrlTransform,
@@ -12,6 +12,7 @@ import { ResearchVisualChart } from "../charts/research-visual-chart";
 import {
   linkResearchReferences,
   normalizeResearchMarkdown,
+  researchInternalLink,
   type ResearchAnswerReference,
 } from "../../domain/research-answer.ts";
 import { normalizeResearchMath } from "../../domain/research-math.ts";
@@ -27,37 +28,61 @@ export type ResearchMessage = {
   attachments?: ResearchAttachment[];
 };
 
-const MarkdownAnswer = memo(function MarkdownAnswer({
-  message,
-  onPerson,
-  onChoosePerson,
-  onPhoto,
-}: {
+class AnswerBoundary extends Component<
+  { content: string; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidUpdate(previous: { content: string }) {
+    if (this.state.failed && previous.content !== this.props.content)
+      this.setState({ failed: false });
+  }
+  render() {
+    return this.state.failed ? (
+      <p className="research-answer-fallback">{this.props.content}</p>
+    ) : (
+      this.props.children
+    );
+  }
+}
+
+type MarkdownAnswerProps = {
   message: ResearchMessage;
   onPerson: (id: string) => void;
   onChoosePerson: (id: string, label: string) => void;
   onPhoto: (id: string) => void;
-}) {
+};
+
+const MarkdownAnswerBody = memo(function MarkdownAnswerBody({
+  message,
+  onPerson,
+  onChoosePerson,
+  onPhoto,
+}: MarkdownAnswerProps) {
   const components = useMemo<Components>(
     () => ({
       a: ({ href = "", children }) => {
-        const match = /^#drevo-(person|choose-person|photo)-(.+)$/.exec(href);
-        if (!match)
+        const link = researchInternalLink(href);
+        if (!link && href.startsWith("#drevo-")) return <span>{children}</span>;
+        if (!link)
           return (
             <a href={href} target="_blank" rel="noreferrer">
               {children}
             </a>
           );
-        const id = decodeURIComponent(match[2]),
+        const { id, kind } = link,
           label = String(children);
         return (
           <button
             type="button"
             className="research-inline-reference"
             onClick={() =>
-              match[1] === "photo"
+              kind === "photo"
                 ? onPhoto(id)
-                : match[1] === "choose-person"
+                : kind === "choose-person"
                   ? onChoosePerson(id, label)
                   : onPerson(id)
             }
@@ -124,6 +149,18 @@ const MarkdownAnswer = memo(function MarkdownAnswer({
         </details>
       )}
     </div>
+  );
+});
+
+const MarkdownAnswer = memo(function MarkdownAnswer(
+  props: MarkdownAnswerProps,
+) {
+  // Preparation runs in a descendant, so malformed reference metadata cannot
+  // throw before the boundary has mounted.
+  return (
+    <AnswerBoundary content={props.message.content}>
+      <MarkdownAnswerBody {...props} />
+    </AnswerBoundary>
   );
 });
 

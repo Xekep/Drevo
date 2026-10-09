@@ -120,6 +120,12 @@ export default function App() {
       readPhotos,
       save: saveArchive,
       upload: uploadArchive,
+      loadDetails,
+      hasCollectionDetails,
+      currentFamily,
+      detailsSource,
+      detailsGeneration,
+      hasPersonDetails,
     } = archive;
   const desktop = useDesktopEditing(),
     canEdit = !participantPreview && allowedEdit;
@@ -163,13 +169,15 @@ export default function App() {
   const treeCanvas = useRef<TreeCanvasHandle>(null);
   const checkExportWarnings = useCallback(async (signal: AbortSignal) => {
     if (!family) return { parentEvidence: false, catalogLinks: false };
+    await loadDetails({ collections: ["people"] });
+    const current = currentFamily() || family;
     const visible = new Set(await treeCanvas.current!.visiblePersonIds(signal));
     return {
-      parentEvidence: family.people.some((person) => visible.has(person.id) &&
+      parentEvidence: current.people.some((person) => visible.has(person.id) &&
         person.parentClaims?.some((claim) => visible.has(claim.parentId))),
-      catalogLinks: visibleGenealogyHasCatalogLinks(family, visible),
+      catalogLinks: visibleGenealogyHasCatalogLinks(current, visible),
     };
-  }, [family]);
+  }, [family, loadDetails, currentFamily]);
   const view =
     requestedView === "admin" || requestedView === "manage" || requestedView === "account"
       ? requestedView
@@ -297,6 +305,68 @@ export default function App() {
   const photoReturnPath = useRef("/photos");
   const people = useMemo(() => family?.people || [], [family]);
   const map = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
+  const [timelineDetails, setTimelineDetails] = useState(false);
+  const loadPersonDetails = useCallback(
+    (id: string) => {
+      if (detailsGeneration === undefined) return Promise.resolve();
+      return loadDetails({ people: [id] });
+    },
+    [loadDetails, detailsGeneration],
+  );
+  const archiveAvailable = !!family;
+  const needsPeopleDetails = (view === "tree" && timelineDetails) || ["places", "insights", "quality"].includes(view);
+  const needsPhotoDetails = ["gallery", "places", "insights", "quality"].includes(view);
+  const loadViewDetails = useCallback(() => {
+    const collections: Array<"people" | "photos"> = [];
+    if (needsPeopleDetails) collections.push("people");
+    if (needsPhotoDetails) collections.push("photos");
+    return collections.length ? loadDetails({ collections }) : Promise.resolve();
+  }, [needsPeopleDetails, needsPhotoDetails, loadDetails]);
+  const retryViewDetails = () => {
+    void loadViewDetails().catch((reason) =>
+      setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить сведения"));
+  };
+  useEffect(() => {
+    if (!archiveAvailable) return;
+    let active = true;
+    void loadViewDetails().catch((reason) => {
+      if (active)
+        setNotice(
+          reason instanceof Error
+            ? reason.message
+            : "Не удалось загрузить сведения",
+        );
+    });
+    return () => {
+      active = false;
+    };
+  }, [
+    archiveAvailable,
+    detailsSource,
+    detailsGeneration,
+    loadViewDetails,
+  ]);
+  useEffect(() => {
+    if (!archiveAvailable || !selected.length) return;
+    let active = true;
+    void loadDetails({ people: selected.slice(0, 2) }).catch((reason) => {
+      if (active)
+        setNotice(
+          reason instanceof Error
+            ? reason.message
+            : "Не удалось загрузить карточку",
+        );
+    });
+    return () => {
+      active = false;
+    };
+  }, [
+    selected,
+    archiveAvailable,
+    detailsSource,
+    detailsGeneration,
+    loadDetails,
+  ]);
   const openPersonPublication = useCallback((personId: string) => {
     setPublishPerson(map.get(personId) || null);
   }, [map]);
@@ -310,6 +380,8 @@ export default function App() {
         window.location.pathname,
         window.location.search,
       );
+      if (
+        target?.kind === "photo" && !hasCollectionDetails("photos")) return;
       if (
         target &&
         window.location.pathname + window.location.search !==
@@ -349,6 +421,7 @@ export default function App() {
   }, [
     family,
     archive.loadingDetails,
+    hasCollectionDetails,
     readTree,
     readPhotos,
     map,
@@ -919,7 +992,10 @@ export default function App() {
                       selected={selected}
                       selectedEdge={connectionDraft?.original?.key}
                       onChoose={choosePerson}
-                      onSelectOnly={selectPersonOnly}
+                        onModeChange={(mode) =>
+                          setTimelineDetails(mode === "timeline")
+                        }
+                        onSelectOnly={selectPersonOnly}
                       onEdge={selectEdge}
                       onConnect={openConnection}
                       onClear={clear}
@@ -1024,6 +1100,13 @@ export default function App() {
                               family={family}
                               user={user}
                               canEdit={canEdit}
+                              detailsLoading={!hasPersonDetails(chosen[0].id)}
+                              loadPersonDetails={loadPersonDetails}
+                              hasPersonDetails={hasPersonDetails}
+                              onRetryDetails={() => {
+                                void archive.loadDetails({ people: [chosen[0].id] }).catch((reason) =>
+                                  setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить карточку"));
+                              }}
                               readOnlyPreview={Boolean(participantPreview)}
                               readPhotos={readPhotos}
                               save={save}
@@ -1076,7 +1159,11 @@ export default function App() {
                   canEdit={canEdit && desktop}
                   mayEdit={!participantPreview && allowedEdit}
                   busy={busy}
-                  loadingDetails={archive.loadingDetails}
+                  loadingDetails={archive.loadingDetails ||
+                    (needsPeopleDetails && !hasCollectionDetails("people")) ||
+                    (needsPhotoDetails && !hasCollectionDetails("photos"))}
+                  detailsError={archive.collectionError}
+                  onRetryDetails={retryViewDetails}
                   save={save}
                   onPerson={showPerson}
                   onQuality={() => navigate("quality")}
@@ -1157,6 +1244,12 @@ export default function App() {
           Подгружаем сведения и фотографии…
         </div>
       )}
+      {view === "tree" && timelineDetails && archive.collectionError && (
+        <div className="archive-loading-details" role="alert">
+          {archive.collectionError}{" "}
+          <button type="button" onClick={retryViewDetails}>Повторить загрузку</button>
+        </div>
+      )}
       {entryPending && !participantPreview &&
         !archive.error &&
         !archive.needsLogin &&
@@ -1172,7 +1265,9 @@ export default function App() {
           family={family}
           user={user}
           workspace={linkedPhotoWorkspace}
-          onDirtyChange={(dirty) => {
+            loadPersonDetails={loadPersonDetails}
+            hasPersonDetails={hasPersonDetails}
+            onDirtyChange={(dirty) => {
             navigationDirty.current = dirty;
           }}
           canEdit={canEdit && desktop}

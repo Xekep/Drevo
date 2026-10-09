@@ -160,6 +160,7 @@ import { portableDomainFixture, assertPortableSecondPgRoundtrip } from "./portab
 import { portableExportHttp } from "../../src/server/portable-http.ts";
 import { portableImportHttp } from "../../src/server/portable-import-http.ts";
 import { createSharedRequestLimiter } from "../../src/server/shared-request-rate-limit.ts";
+import { assertPostgresDemandDetails } from "./postgres-demand-details.ts";
 
 if (!/^drevo_migration_runtime_[a-z0-9_]+$/.test(process.env.PGDATABASE || ""))
   throw new Error("Use a NEW disposable drevo_migration_runtime_* database");
@@ -758,6 +759,56 @@ try {
       "an expired window starts a new budget");
     const sameArchive = await openPostgresDatabase("runtime-test", source);
     try {
+      const taskDb = live.db;
+      let owners = 0,
+        releaseOwners!: () => void;
+      const allOwners = new Promise<void>((resolve) => {
+        releaseOwners = resolve;
+      });
+      let readyOwners!: () => void;
+      const tasksReady = new Promise<void>((resolve) => {
+        readyOwners = resolve;
+      });
+      const pendingTasks = Promise.all(
+        ["task-one", "task-two", "task-three"].map((task) =>
+          taskDb.withExclusivePlatformTask!(task, async () => {
+            if (++owners === 2) readyOwners();
+            await allOwners;
+            assert.equal(taskDb.inTransaction(), false);
+            return await taskDb.withExclusivePlatformTask!(
+              "nested-" + task,
+              async () => {
+                assert.equal(
+                  (await taskDb.prepare("", "SELECT 1 AS value").get())?.value,
+                  1,
+                );
+                return await taskDb.postgresTransaction!(async (session) => {
+                  assert.equal(taskDb.inTransaction(), true);
+                  return (await session.query("SELECT 2 AS value")).rows[0]
+                    .value;
+                });
+              },
+            );
+          }),
+        ),
+      );
+      await tasksReady;
+      try {
+        assert.equal(
+          (await taskDb.prepare("", "SELECT 3 AS value").get())?.value,
+          3,
+          "ordinary requests still execute while two long task locks are held",
+        );
+      } finally {
+        releaseOwners();
+      }
+      const taskResults = await pendingTasks;
+      assert.deepEqual(
+        taskResults,
+        [2, 2, 2],
+        "three advisory task owners perform SQL and nested locks without extra pool clients",
+      );
+      assert.equal(live.db.poolDiagnostics!().waiting, 0);
       let entered!: () => void;
       let release!: () => void;
       const active = new Promise<void>((resolve) => { entered = resolve; });
@@ -1243,6 +1294,7 @@ try {
   const overview = await fetch(base + "/api/family?projection=overview").then(
     (r) => r.json(),
   );
+  await assertPostgresDemandDetails(base, app.archive, owner.id);
   const peoplePage = app.archive.peoplePage;
   let intervened = false;
   app.archive.peoplePage = async (offset, limit) => {
@@ -3346,8 +3398,15 @@ try {
         "platform grant revocation waits until the authorized settings write commits");
       releaseSettingsWrite();
       const savedResponse = await savingSettings;
-      assert.ok([200, 403].includes(savedResponse.status),
-        `settings write failed: ${await savedResponse.text()}`);
+      const savedText = await savedResponse.text();
+      // COMMIT lets the waiting revocation acquire the grant row. Delivery's
+      // FOR SHARE NOWAIT can then report busy (409) before that DELETE commits;
+      // after it commits the same protection reports denied (403).
+      assert.ok([200, 403, 409].includes(savedResponse.status),
+        `settings write failed: ${savedResponse.status} ${savedText}`);
+      if (savedResponse.status !== 200)
+        assert.deepEqual(Object.keys(JSON.parse(savedText)), ["error"],
+          "a busy or revoked admin receives no settings payload");
       assert.equal(settingsWriteCompleted, true,
         "settings persist before a concurrent revocation can commit");
       await revocation;

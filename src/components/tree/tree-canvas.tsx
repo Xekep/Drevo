@@ -173,6 +173,7 @@ type Props = {
   onIntroComplete?: () => void;
   skipInitialGrowth?: boolean;
   onGrowthChange?: (active: boolean) => void;
+  onModeChange?: (mode: TreeMode) => void;
 };
 const nodeTypes = { person: PersonNode, household: HouseholdNode },
   edgeTypes = { relationship: RelationshipEdge };
@@ -1457,6 +1458,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     [onConnect, occurrencePeople],
   );
   function switchMode(next: TreeMode) {
+    props.onModeChange?.(next);
     setScopeFocus(null);
     setManualCameraOverride(true);
     void flow.setViewport(flow.getViewport(), { duration: 0 });
@@ -1646,7 +1648,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             </div>
           )}
           {!narrow && (
-            <ArchiveSummary people={family.people} busy={layoutBusy} />
+            (savingGenerationPreferences || anchorNotice) && !problem ? (
+              <div className="tree-notice tree-anchor-notice" role="status" aria-label="Уведомление древа"
+                title={savingGenerationPreferences ? "Сохраняем вид древа…" : anchorNotice}>
+                {savingGenerationPreferences ? "Сохраняем вид древа…" : anchorNotice}
+              </div>
+            ) : <ArchiveSummary people={family.people} busy={layoutBusy} />
           )}
           {!!family.links?.length && (
             <button
@@ -1671,11 +1678,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             >
               <div className="tree-family-tools">
                 <span
-                  className="tree-family-name"
-                  title={`Опорный: ${fullName(generationAnchor)}`}
+                  className={`tree-family-name${narrow && anchorNotice ? " tree-anchor-notice-mobile-inline" : ""}`}
+                  title={narrow && anchorNotice ? anchorNotice : `Опорный: ${fullName(generationAnchor)}`}
                 >
                   <GitBranch size={15} aria-hidden="true" />
-                  <span>Опорный: {fullName(generationAnchor)}</span>
+                  <span>{narrow && anchorNotice ? anchorNotice : `Опорный: ${fullName(generationAnchor)}`}</span>
                 </span>
                 <span className="tree-family-count">
                   {visible.size} из {family.people.length}
@@ -2041,8 +2048,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             onChoose={actions.choose}
           />
         )}
-        {(savingGenerationPreferences || anchorNotice) && !problem && (
-          <div className="tree-notice" role="status">
+        {narrow && (!generationAnchor || activeFanAnchor) && (savingGenerationPreferences || anchorNotice) && !problem && (
+          <div className="tree-notice tree-anchor-notice-mobile" role="status">
             {savingGenerationPreferences ? "Сохраняем вид древа…" : anchorNotice}
           </div>
         )}

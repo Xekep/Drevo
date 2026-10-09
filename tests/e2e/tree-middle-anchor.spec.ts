@@ -116,6 +116,52 @@ test("middle click preserves generation depths, while middle drag only pans", as
   ).toHaveValue("Тестова Мария Ивановна");
 });
 
+for (const width of [320, 360, 390, 768, 1024, 1440, 1920]) {
+  test(`anchor notification stays near the toolbar without covering controls at ${width}px`, async ({ page, isMobile }, info) => {
+    test.skip(isMobile, "Viewport matrix uses a mouse to set the anchor");
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.route("**/api/family?projection=overview", async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: {
+        ...(await response.json()), user: null, canEdit: false,
+        readTree: true, partial: false, treePreferences: null,
+      } });
+    });
+    await page.goto("/tree");
+    const canvas = page.locator(".tree-canvas");
+    await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+    await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
+    await page.locator('.flow-person[data-person-id="e2e-child"] .flow-person-content').first().click({ button: "middle" });
+    const notice = canvas.locator(".tree-anchor-notice, .tree-anchor-notice-mobile, .tree-anchor-notice-mobile-inline");
+    await expect(notice).toContainText("Опорный человек:");
+    const rect = (await notice.boundingBox())!;
+    const mode = (await page.locator(width >= 900 ? ".tree-mode-bar .segmented" : ".tree-mode-switch").boundingBox())!;
+    if (width >= 900) {
+      expect(Math.abs(rect.y + rect.height / 2 - mode.y - mode.height / 2)).toBeLessThan(2);
+    } else {
+      expect(rect.y).toBeGreaterThanOrEqual(mode.y + mode.height);
+      const status = (await canvas.locator(".tree-generation-status").boundingBox())!;
+      const toolbar = (await canvas.locator(".tree-mode-bar").boundingBox())!;
+      expect(status.y - toolbar.y - toolbar.height).toBeLessThanOrEqual(8);
+      expect(rect.y).toBeGreaterThanOrEqual(status.y);
+      expect(rect.y + rect.height).toBeLessThanOrEqual(status.y + status.height);
+    }
+    expect(rect.x).toBeGreaterThanOrEqual(0);
+    expect(rect.x + rect.width).toBeLessThanOrEqual(width);
+    const controls = await canvas.locator(".tree-mode-bar button, .workspace-actions button").evaluateAll((elements) =>
+      elements.filter((el) => el.getClientRects().length).map((el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      }),
+    );
+    for (const control of controls)
+      expect(rect.x + rect.width <= control.x || control.x + control.width <= rect.x ||
+        rect.y + rect.height <= control.y || control.y + control.height <= rect.y).toBe(true);
+    await page.screenshot({ path: info.outputPath(`anchor-notice-${width}.png`) });
+  });
+}
+
 for (const firstOperation of ["reset", "anchor"] as const) {
   test(`serialize generation ${firstOperation} with a pending preference write`, async ({ page, isMobile }) => {
     test.skip(isMobile, "Shortcut for a mouse with a wheel");

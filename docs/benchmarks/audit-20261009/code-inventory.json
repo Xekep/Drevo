@@ -1,0 +1,26 @@
+{
+  "modules": 546,
+  "cycles": [],
+  "secretCandidateLocations": [],
+  "large": [
+    ["src\\domain\\gedcom.ts", 2486],
+    ["src\\components\\tree\\tree-canvas.tsx", 2115],
+    ["src\\domain\\research-tools.ts", 2109],
+    ["src\\server\\ai-research-runner.ts", 1931],
+    ["src\\server\\documents-http.ts", 1755],
+    ["src\\components\\research-assistant.tsx", 1675],
+    ["src\\server\\ai-research-http.ts", 1444],
+    ["src\\server\\schema.ts", 1355],
+    ["src\\App.tsx", 1309],
+    ["src\\components\\archive-editors-content.tsx", 1292],
+    ["src\\server\\restore.ts", 1190],
+    ["src\\domain\\union-layout.ts", 1120],
+    ["src\\components\\tree\\horizontal-timeline.tsx", 1109],
+    ["src\\components\\photo-viewer.tsx", 1040],
+    ["src\\components\\pdf-book-reader.tsx", 994],
+    ["src\\server\\discovery-matches-http.ts", 923],
+    ["src\\domain\\agelong-xml.ts", 915],
+    ["src\\components\\ai-settings-admin.tsx", 914],
+    ["src\\domain\\kinship.ts", 907]
+  ]
+}

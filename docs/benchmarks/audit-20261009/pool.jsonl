@@ -1,0 +1,1 @@
+{"test":"actual store-database with synthetic bounded pool","poolLimit":3,"lockCallbacks":3,"fulfilled":2,"rejected":["synthetic connection timeout"],"productionDatabaseUsed":false,"timeoutMs":200,"realConfiguredConnectionTimeoutMs":5000}

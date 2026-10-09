@@ -81,6 +81,19 @@ a,
 input {
   -webkit-tap-highlight-color: transparent;
 }
+button,
+[role="button"],
+summary,
+.archive-header {
+  user-select: none;
+  -webkit-user-select: none;
+}
+input,
+textarea,
+[contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
 button {
   cursor: pointer;
   color: inherit;
