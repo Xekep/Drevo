@@ -20,6 +20,7 @@ import { optimizeBranches } from "./branch-routing.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
 import { routingContactScore } from "./routing-quality.ts";
+import { incrementalRouteScorer } from "./incremental-route-score.ts";
 import {
   coupleBlocksWithContactedAncestry,
   familyPairBlocks,
@@ -646,6 +647,7 @@ function cardOverlapCount(
 
 /** Кэш живёт один расчёт; готовые геометрии кандидатов больше не изменяются. */
 export function createGeometryContactScorer(width = TREE_NODE_WIDTH, height = TREE_NODE_HEIGHT) {
+  const routeScore = incrementalRouteScorer();
   const cardScores = new WeakMap<TreeGeometry, { contacts?: number; overlaps?: number }>();
   const cards = (geometry: TreeGeometry) => {
     let result = cardScores.get(geometry);
@@ -659,8 +661,9 @@ export function createGeometryContactScorer(width = TREE_NODE_WIDTH, height = TR
   const score = (geometry: TreeGeometry) => {
     let result = scores.get(geometry);
     if (!result) {
-      result = routingContactScore(
+      result = routeScore(
         (geometry.branches || []).map((branch) => ({
+          id: branch.id,
           group: branch.union,
           route: branch.route,
         })),

@@ -758,6 +758,56 @@ try {
       "an expired window starts a new budget");
     const sameArchive = await openPostgresDatabase("runtime-test", source);
     try {
+      const taskDb = live.db;
+      let owners = 0,
+        releaseOwners!: () => void;
+      const allOwners = new Promise<void>((resolve) => {
+        releaseOwners = resolve;
+      });
+      let readyOwners!: () => void;
+      const tasksReady = new Promise<void>((resolve) => {
+        readyOwners = resolve;
+      });
+      const pendingTasks = Promise.all(
+        ["task-one", "task-two", "task-three"].map((task) =>
+          taskDb.withExclusivePlatformTask!(task, async () => {
+            if (++owners === 2) readyOwners();
+            await allOwners;
+            assert.equal(taskDb.inTransaction(), false);
+            return await taskDb.withExclusivePlatformTask!(
+              "nested-" + task,
+              async () => {
+                assert.equal(
+                  (await taskDb.prepare("", "SELECT 1 AS value").get())?.value,
+                  1,
+                );
+                return await taskDb.postgresTransaction!(async (session) => {
+                  assert.equal(taskDb.inTransaction(), true);
+                  return (await session.query("SELECT 2 AS value")).rows[0]
+                    .value;
+                });
+              },
+            );
+          }),
+        ),
+      );
+      await tasksReady;
+      try {
+        assert.equal(
+          (await taskDb.prepare("", "SELECT 3 AS value").get())?.value,
+          3,
+          "ordinary requests still execute while two long task locks are held",
+        );
+      } finally {
+        releaseOwners();
+      }
+      const taskResults = await pendingTasks;
+      assert.deepEqual(
+        taskResults,
+        [2, 2, 2],
+        "three advisory task owners perform SQL and nested locks without extra pool clients",
+      );
+      assert.equal(live.db.poolDiagnostics!().waiting, 0);
       let entered!: () => void;
       let release!: () => void;
       const active = new Promise<void>((resolve) => { entered = resolve; });

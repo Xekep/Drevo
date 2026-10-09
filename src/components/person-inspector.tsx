@@ -43,6 +43,10 @@ export function PersonInspector({
   family,
   user,
   canEdit,
+  detailsLoading = false,
+  onRetryDetails,
+  loadPersonDetails,
+  hasPersonDetails,
   readOnlyPreview = false,
   readPhotos,
   onSelect,
@@ -62,6 +66,10 @@ export function PersonInspector({
   family: Family;
   user: ArchiveUser | null;
   canEdit: boolean;
+  detailsLoading?: boolean;
+  onRetryDetails?: () => void;
+  loadPersonDetails?: (id: string) => Promise<void>;
+  hasPersonDetails?: (id: string) => boolean;
   readOnlyPreview?: boolean;
   readPhotos: boolean;
   onSelect: (id: string) => void;
@@ -95,7 +103,7 @@ export function PersonInspector({
           {matchPath && <a className="person-action-icon" href={matchPath}
             aria-label="Найти совпадения в других древах"
             title="Найти совпадения в других древах"><Link2 size={16} /></a>}
-          {canEdit && owns(user, person) && (
+          {canEdit && !detailsLoading && owns(user, person) && (
             <button
               onClick={onEdit}
               className="person-edit-button"
@@ -105,7 +113,7 @@ export function PersonInspector({
               <Pencil size={16} />
             </button>
           )}
-          {canEdit && (
+          {canEdit && !detailsLoading && (
             <button
               className="person-action-icon"
               onClick={() => setAdding(!adding)}
@@ -116,7 +124,7 @@ export function PersonInspector({
               <Plus size={18} />
             </button>
           )}
-          {desktop && (
+          {desktop && !detailsLoading && (
             <button
               className="person-expand-button"
               title="Развернуть карточку"
@@ -168,6 +176,8 @@ export function PersonInspector({
           >
             <PersonFullView
               person={person}
+              loadPersonDetails={loadPersonDetails}
+              hasPersonDetails={hasPersonDetails}
               family={family}
               readPhotos={readPhotos}
               onClose={(id) => {
@@ -237,7 +247,18 @@ export function PersonInspector({
           </div>
         </div>
       )}
-      <PersonPanel
+      {detailsLoading ? (
+        <div
+          className="archive-status"
+          role="status"
+          aria-label="Загрузка сведений человека"
+        >
+          <span className="archive-loader-ring" aria-hidden="true" />
+          <button type="button" onClick={onRetryDetails}>
+            Повторить загрузку
+          </button>
+        </div>
+      ) : <PersonPanel
         idPrefix="person-inspector"
         person={person}
         isCurrentUser={user?.personId === person.id}
@@ -264,8 +285,8 @@ export function PersonInspector({
             />
           )
         }
-      />
-      {readPhotos && (
+      />}
+      {readPhotos && !detailsLoading && (
         <section className="person-photos">
           <PersonPhotoAlbum photos={photos} onOpen={() => onAlbum(person.id)} />
         </section>

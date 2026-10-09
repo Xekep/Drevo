@@ -22,6 +22,7 @@ import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 import { AccountSessionBusy, AccountSessionExpired, assertActiveAccountSession } from "./account-session-guard.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
 import { memberPreviewTarget, assertMemberPreviewStoreDelivery } from "./member-preview-access.ts";
+import { publicPersonId } from "./public-person-id.ts";
 
 export function archiveQueryHttp({
   archive,
@@ -279,6 +280,63 @@ export function archiveQueryHttp({
       )
         return json(res, 401, { error: "Sign in to view this archive" });
       const projection = url.searchParams.get("projection");
+      if (projection === "details") {
+        if (!memberCanRead && !access.publicTree)
+          return json(res, 401, { error: "Войдите для просмотра людей" });
+        let ids: unknown;
+        try {
+          ids = JSON.parse(url.searchParams.get("ids") || "null");
+        } catch {
+          return json(res, 400, { error: "Некорректные идентификаторы" });
+        }
+        const offset = Number(url.searchParams.get("offset") || "0");
+        if (
+          !Array.isArray(ids) ||
+          !ids.length ||
+          ids.length > archivePageSize ||
+          !ids.every(publicPersonId) ||
+          new Set(ids).size !== ids.length ||
+          !Number.isSafeInteger(offset) ||
+          offset < 0
+        )
+          return json(res, 400, { error: "Некорректный запрос сведений" });
+        const requested = new Set(ids as string[]);
+        const readPhotos = memberCanRead || access.publicAlbums;
+        const prepared = await archive.db.transaction(async () => {
+          const meta = await archive.meta();
+          const pageToken = `${meta.revision}:1:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
+          if (url.searchParams.get("token") !== pageToken) return null;
+          const visible = isScopedUser(visitor)
+            ? await scopedIds(visitor)
+            : null;
+          if (visible && [...requested].some((id) => !visible.has(id)))
+            return { missing: true } as const;
+          const people = await archive.peoplePage(0, requested.size, requested);
+          if (people.length !== requested.size)
+            return { missing: true } as const;
+          const scope = visible ? { visible, userId: visitor!.id } : undefined;
+          return {
+            revision: meta.revision,
+            pageToken,
+            people: people.map(personDetails),
+            photos: readPhotos
+              ? await archive.photoPage(
+                  offset,
+                  archivePageSize,
+                  scope,
+                  requested,
+                )
+              : [],
+            photoTotal: readPhotos
+              ? await archive.photoCount(scope, requested)
+              : 0,
+          };
+        }, true);
+        if (!prepared) return changed();
+        if ("missing" in prepared)
+          return json(res, 404, { error: "Человек не найден или недоступен" });
+        return deliverArchiveJson(prepared, undefined, prepared.revision);
+      }
       if (projection === "page") {
         const readTree = memberCanRead || access.publicTree,
           readPhotos = memberCanRead || access.publicAlbums;
@@ -434,9 +492,9 @@ export function archiveQueryHttp({
     }
 
     if (req.method !== "GET") {
-      res.setHeader("Allow", "GET");
-      return json(res, 405, { error: "Ожидается GET" });
-    }
+        res.setHeader("Allow", "GET");
+        return json(res, 405, { error: "Ожидается GET" });
+      }
     if (!memberCanRead && !access.publicTree)
       return json(res, 401, { error: "Войдите для экспорта древа" });
     const { family, revision } = isScopedUser(visitor)

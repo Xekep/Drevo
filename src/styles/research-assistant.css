@@ -520,7 +520,20 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   line-height: 1;
   cursor: pointer;
 }
+.research-visual[hidden] {
+  display: none;
+}
+.research-visual-overlay:not([open]) {
+  display: none;
+}
 .research-visual-overlay {
+  margin: 0;
+  border: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  box-sizing: border-box;
   position: fixed;
   inset: 0;
   z-index: 5000;
@@ -1229,7 +1242,7 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
 }
 .ai-role-profile-main {
   display: grid;
-  grid-template-columns: minmax(140px, .7fr) minmax(0, 1fr);
+  grid-template-columns: minmax(140px, 0.7fr) minmax(0, 1fr);
   align-items: end;
   gap: 8px 14px;
 }

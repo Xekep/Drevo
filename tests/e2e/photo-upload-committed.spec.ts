@@ -67,6 +67,16 @@ for (const marker of ["accessChanged", "refreshRequired"] as const) {
         ? { ...person, photo: "/media/existing-portrait.png" } : person);
       await route.fulfill({ response, json: data });
     });
+    await page.route("**/api/family?projection=details&**", async (route) => {
+      const response = await route.fetch();
+      const data = await response.json();
+      if (!response.ok()) return route.fulfill({ response, json: data });
+      data.people = data.people.map((person: { id: string }) => person.id === "e2e-child"
+        ? { ...person, photo: "/media/existing-portrait.png" } : person);
+      data.photos = [source];
+      data.photoTotal = 1;
+      await route.fulfill({ response, json: data });
+    });
     await page.route("**/media/*.png**", (route) =>
       route.fulfill({ contentType: "image/png", body: png }),
     );

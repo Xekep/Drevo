@@ -366,10 +366,14 @@ export async function openArchive(
       includePortraits ? portraitOverview() : anonymousOverview(),
     peoplePage = async (offset: number, limit: number, visible?: ReadonlySet<string>) =>
       await readPeoplePage(db, offset, limit, visible),
-    photoPage = async (offset: number, limit: number, scope?: PhotoReadScope) =>
-      await db.transaction(() => readPhotoPage(db, offset, limit, scope), true),
-    photoCount = async (scope: PhotoReadScope) => {
-      const where = photoReadWhere(scope);
+    photoPage = async (offset: number, limit: number, scope?: PhotoReadScope,
+      tagged?: ReadonlySet<string>,
+    ) =>
+      await db.transaction(() => readPhotoPage(db, offset, limit, scope, tagged), true),
+    photoCount = async (scope?: PhotoReadScope,
+      tagged?: ReadonlySet<string>,
+    ) => {
+      const where = photoReadWhere(scope, tagged);
       return Number((await db.prepare(`SELECT count(*) AS count FROM photos${where.sqlite}`,
         `SELECT count(*) AS count FROM photos${where.postgres}`).get(...where.args))?.count || 0);
     };
@@ -762,12 +766,30 @@ async function readPeoplePage(
 }
 
 type PhotoReadScope = { visible: ReadonlySet<string>; userId: string };
-function photoReadWhere(scope?: PhotoReadScope) {
-  if (!scope) return { sqlite: "", postgres: "", args: [] as string[] };
+function photoReadWhere(scope?: PhotoReadScope, tagged?: ReadonlySet<string>) {
+  const sqlite: string[] = [], postgres: string[] = [], args: string[] = [];
+  if (scope) {
+    sqlite.push(
+      "(json_extract(photos.data,'$.createdBy')=? OR EXISTS (SELECT 1 FROM photo_tags t WHERE t.photo_id=photos.id AND t.person_id IN (SELECT value FROM json_each(?))))",
+    );
+    postgres.push(
+      "(photos.data->>'createdBy'=? OR EXISTS (SELECT 1 FROM photo_tags t WHERE t.archive_id=photos.archive_id AND t.photo_id=photos.id AND t.person_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))))",
+    );
+    args.push(scope.userId, JSON.stringify([...scope.visible]));
+  }
+  if (tagged) {
+    sqlite.push(
+      "EXISTS (SELECT 1 FROM photo_tags t WHERE t.photo_id=photos.id AND t.person_id IN (SELECT value FROM json_each(?)))",
+    );
+    postgres.push(
+      "EXISTS (SELECT 1 FROM photo_tags t WHERE t.archive_id=photos.archive_id AND t.photo_id=photos.id AND t.person_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb)))",
+    );
+    args.push(JSON.stringify([...tagged]));
+  }
   return {
-    sqlite: " WHERE json_extract(photos.data,'$.createdBy')=? OR EXISTS (SELECT 1 FROM photo_tags t WHERE t.photo_id=photos.id AND t.person_id IN (SELECT value FROM json_each(?)))",
-    postgres: " WHERE photos.data->>'createdBy'=? OR EXISTS (SELECT 1 FROM photo_tags t WHERE t.archive_id=photos.archive_id AND t.photo_id=photos.id AND t.person_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb)))",
-    args: [scope.userId, JSON.stringify([...scope.visible])],
+    sqlite: sqlite.length ? " WHERE " + sqlite.join(" AND ") : "",
+    postgres: postgres.length ? " WHERE " + postgres.join(" AND ") : "",
+    args,
   };
 }
 async function readPhotoPage(
@@ -775,8 +797,9 @@ async function readPhotoPage(
   offset: number,
   limit: number,
   scope?: PhotoReadScope,
+  tagged?: ReadonlySet<string>,
 ): Promise<ArchivePhoto[]> {
-  const where = photoReadWhere(scope);
+  const where = photoReadWhere(scope, tagged);
   const rows = await db
       .prepare(
         `SELECT id,data FROM photos${where.sqlite} ORDER BY rowid LIMIT ? OFFSET ?`,

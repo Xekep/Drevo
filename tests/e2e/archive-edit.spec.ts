@@ -1,15 +1,17 @@
 import { expect, test } from "@playwright/test";
 import type { Family } from "../../src/domain/types.ts";
 
-test("startup recovers when a page token is invalidated by another editor", async ({
+test("opening a card recovers a changed token without reading the full archive", async ({
   page,
 }) => {
   let invalidated = false,
-    snapshots = 0;
+    snapshots = 0,
+    overviews = 0;
   await page.route("**/api/family**", async (route) => {
     const url = new URL(route.request().url());
     if (!url.search) snapshots++;
-    if (!invalidated && url.searchParams.get("projection") === "page") {
+    if (url.searchParams.get("projection") === "overview") overviews++;
+    if (!invalidated && url.searchParams.get("projection") === "details") {
       invalidated = true;
       await route.fulfill({
         status: 409,
@@ -19,7 +21,17 @@ test("startup recovers when a page token is invalidated by another editor", asyn
   });
   await page.goto("/tree");
   await expect(page.getByTestId("rf__node-e2e-child")).toBeVisible();
-  await expect.poll(() => snapshots).toBe(1);
+  await page
+    .getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content")
+    .click();
+  await expect(
+    page
+      .locator(".inspector-dock")
+      .getByRole("status", { name: "Загрузка сведений человека" }),
+  ).toHaveCount(0);
+  await expect.poll(() => overviews).toBe(2);
+  expect(snapshots).toBe(0);
   await expect(
     page.getByRole("heading", { name: "Не удалось открыть архив" }),
   ).toHaveCount(0);
@@ -41,16 +53,18 @@ test("card editor accepts minimal replies and preserves an independent concurren
     await page.getByRole("textbox", { name: "История человека" }).fill(text);
   };
   const save = async () => {
-    const response = page.waitForResponse(
-      (r) =>
-        r.url().endsWith("/api/family/changes") &&
-        r.request().method() === "POST",
-    ).then(async (saved) => {
-      expect(saved.status()).toBe(200);
-      // Consume the body as soon as the response arrives. Closing the editor
-      // may navigate before a later CDP body lookup can retrieve it.
-      return saved.json();
-    });
+    const response = page
+      .waitForResponse(
+        (r) =>
+          r.url().endsWith("/api/family/changes") &&
+          r.request().method() === "POST",
+      )
+      .then(async (saved) => {
+        expect(saved.status()).toBe(200);
+        // Consume the body as soon as the response arrives. Closing the editor
+        // may navigate before a later CDP body lookup can retrieve it.
+        return saved.json();
+      });
     await page.getByRole("button", { name: "Сохранить", exact: true }).click();
     const saved = await response;
     await expect(

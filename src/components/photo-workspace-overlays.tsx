@@ -20,6 +20,8 @@ type Props = {
   save: (family: Family) => Promise<Family>;
   upload: (file: File, metadata?: PhotoMetadata) => Promise<Family>;
   onPerson: (id: string) => void;
+  loadPersonDetails?: (id: string) => Promise<void>;
+  hasPersonDetails?: (id: string) => boolean;
   onDirtyChange?: (dirty: boolean) => void;
 };
 
@@ -32,6 +34,8 @@ export function PhotoWorkspaceOverlays({
   save,
   upload,
   onPerson,
+  loadPersonDetails,
+  hasPersonDetails,
   onDirtyChange,
 }: Props) {
   const photo = workspace.photo;
@@ -74,6 +78,8 @@ export function PhotoWorkspaceOverlays({
             save={save}
             onClose={workspace.closePhoto}
             onPerson={onPerson}
+            loadPersonDetails={loadPersonDetails}
+            hasPersonDetails={hasPersonDetails}
             currentUserPersonId={user?.personId}
             canLoadDocuments={user?.approved === true}
             onDirtyChange={onDirtyChange}

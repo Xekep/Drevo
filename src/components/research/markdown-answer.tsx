@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { Component, memo, useMemo, type ReactNode } from "react";
 import type { ResearchAttachment } from "../../shared/research-attachments.ts";
 import ReactMarkdown, {
   defaultUrlTransform,
@@ -12,6 +12,7 @@ import { ResearchVisualChart } from "../charts/research-visual-chart";
 import {
   linkResearchReferences,
   normalizeResearchMarkdown,
+  researchInternalLink,
   type ResearchAnswerReference,
 } from "../../domain/research-answer.ts";
 import { normalizeResearchMath } from "../../domain/research-math.ts";
@@ -27,6 +28,27 @@ export type ResearchMessage = {
   attachments?: ResearchAttachment[];
 };
 
+class AnswerBoundary extends Component<
+  { content: string; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidUpdate(previous: { content: string }) {
+    if (this.state.failed && previous.content !== this.props.content)
+      this.setState({ failed: false });
+  }
+  render() {
+    return this.state.failed ? (
+      <p className="research-answer-fallback">{this.props.content}</p>
+    ) : (
+      this.props.children
+    );
+  }
+}
+
 const MarkdownAnswer = memo(function MarkdownAnswer({
   message,
   onPerson,
@@ -41,23 +63,24 @@ const MarkdownAnswer = memo(function MarkdownAnswer({
   const components = useMemo<Components>(
     () => ({
       a: ({ href = "", children }) => {
-        const match = /^#drevo-(person|choose-person|photo)-(.+)$/.exec(href);
-        if (!match)
+        const link = researchInternalLink(href);
+        if (!link && href.startsWith("#drevo-")) return <span>{children}</span>;
+        if (!link)
           return (
             <a href={href} target="_blank" rel="noreferrer">
               {children}
             </a>
           );
-        const id = decodeURIComponent(match[2]),
+        const { id, kind } = link,
           label = String(children);
         return (
           <button
             type="button"
             className="research-inline-reference"
             onClick={() =>
-              match[1] === "photo"
+              kind === "photo"
                 ? onPhoto(id)
-                : match[1] === "choose-person"
+                : kind === "choose-person"
                   ? onChoosePerson(id, label)
                   : onPerson(id)
             }
@@ -79,51 +102,53 @@ const MarkdownAnswer = memo(function MarkdownAnswer({
     [onChoosePerson, onPerson, onPhoto],
   );
   return (
-    <div className="research-markdown">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[[rehypeKatex, { trust: false }]]}
-        urlTransform={(url) =>
-          url.startsWith("#drevo-")
-            ? url
-            : archiveResourceUrl(defaultUrlTransform(url))
-        }
-        components={components}
-      >
-        {normalizeResearchMath(
-          linkResearchReferences(
-            message.role === "assistant"
-              ? normalizeResearchMarkdown(message.content)
-              : message.content,
-            message.references,
-          ),
+    <AnswerBoundary content={message.content}>
+      <div className="research-markdown">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[[rehypeKatex, { trust: false }]]}
+          urlTransform={(url) =>
+            url.startsWith("#drevo-")
+              ? url
+              : archiveResourceUrl(defaultUrlTransform(url))
+          }
+          components={components}
+        >
+          {normalizeResearchMath(
+            linkResearchReferences(
+              message.role === "assistant"
+                ? normalizeResearchMarkdown(message.content)
+                : message.content,
+              message.references,
+            ),
+          )}
+        </ReactMarkdown>
+        {message.references?.some((reference) => reference.kind === "web") && (
+          <details>
+            <summary>Найденные веб-источники</summary>
+            <ul>
+              {message.references
+                .filter((reference) => reference.kind === "web")
+                .map((reference) => (
+                  <li key={reference.url}>
+                    <a
+                      href={reference.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {reference.label}
+                    </a>
+                    {" · "}
+                    {reference.sourceName || reference.domain}
+                    {reference.snippet && <p>{reference.snippet}</p>}
+                  </li>
+                ))}
+            </ul>
+            <small>Результат поиска требует проверки исходной страницы.</small>
+          </details>
         )}
-      </ReactMarkdown>
-      {message.references?.some((reference) => reference.kind === "web") && (
-        <details>
-          <summary>Найденные веб-источники</summary>
-          <ul>
-            {message.references
-              .filter((reference) => reference.kind === "web")
-              .map((reference) => (
-                <li key={reference.url}>
-                  <a
-                    href={reference.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {reference.label}
-                  </a>
-                  {" · "}
-                  {reference.sourceName || reference.domain}
-                  {reference.snippet && <p>{reference.snippet}</p>}
-                </li>
-              ))}
-          </ul>
-          <small>Результат поиска требует проверки исходной страницы.</small>
-        </details>
-      )}
-    </div>
+      </div>
+    </AnswerBoundary>
   );
 });
 

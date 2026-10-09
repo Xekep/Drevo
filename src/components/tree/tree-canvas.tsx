@@ -173,6 +173,7 @@ type Props = {
   onIntroComplete?: () => void;
   skipInitialGrowth?: boolean;
   onGrowthChange?: (active: boolean) => void;
+  onModeChange?: (mode: TreeMode) => void;
 };
 const nodeTypes = { person: PersonNode, household: HouseholdNode },
   edgeTypes = { relationship: RelationshipEdge };
@@ -1457,6 +1458,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     [onConnect, occurrencePeople],
   );
   function switchMode(next: TreeMode) {
+    props.onModeChange?.(next);
     setScopeFocus(null);
     setManualCameraOverride(true);
     void flow.setViewport(flow.getViewport(), { duration: 0 });

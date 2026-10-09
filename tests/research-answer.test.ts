@@ -1,5 +1,33 @@
 import test from "node:test";
+import { researchInternalLink } from "../src/domain/research-answer.ts";
 import assert from "node:assert/strict";
+test("internal research links decode once and reject damaged or ambiguous IDs", () => {
+  assert.deepEqual(researchInternalLink("#drevo-person-e2e-child"), {
+    kind: "person",
+    id: "e2e-child",
+  });
+  assert.deepEqual(
+    researchInternalLink("#drevo-choose-person-%D0%98%D0%B2%D0%B0%D0%BD"),
+    { kind: "choose-person", id: "Иван" },
+  );
+  assert.deepEqual(researchInternalLink("#drevo-photo-p1"), {
+    kind: "photo",
+    id: "p1",
+  });
+  for (const href of [
+    "#drevo-person-%FF",
+    "#drevo-person-%C3%28",
+    "#drevo-person-%",
+    "#drevo-person-%252F",
+    "#drevo-person-%00",
+    "#drevo-person-..",
+    "#drevo-person-a%2Fb",
+    "#drevo-photo-",
+    "#drevo-person-" + "x".repeat(101),
+    "javascript:alert(1)",
+  ])
+    assert.equal(researchInternalLink(href), null, href);
+});
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";

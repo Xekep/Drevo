@@ -6,6 +6,7 @@ import { useDockSwipe } from "../hooks/useDockSwipe";
 
 type Props = {
   person: Person;
+  detailsLoading?: boolean;
   family: Family;
   isCurrentUser: boolean;
   canLoadDocuments: boolean;
@@ -16,6 +17,7 @@ type Props = {
 
 export function PhotoPersonSidebar({
   person,
+  detailsLoading = false,
   family,
   isCurrentUser,
   canLoadDocuments,
@@ -53,7 +55,15 @@ export function PhotoPersonSidebar({
           <span>Показать в древе</span>
         </button>
       </div>
-      <PersonPanel
+      {detailsLoading ? (
+        <div
+          className="archive-status"
+          role="status"
+          aria-label="Загрузка сведений человека"
+        >
+          <span className="archive-loader-ring" aria-hidden="true" />
+        </div>
+      ) : <PersonPanel
         key={person.id}
         idPrefix="photo-person"
         person={person}
@@ -63,7 +73,7 @@ export function PhotoPersonSidebar({
         isCurrentUser={isCurrentUser}
         canLoadDocuments={canLoadDocuments}
         onSelect={onSelect}
-      />
+      />}
     </aside>
   );
 }

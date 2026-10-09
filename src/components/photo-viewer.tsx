@@ -54,6 +54,8 @@ function PhotoViewerContent({
   save,
   onClose,
   onPerson,
+  loadPersonDetails,
+  hasPersonDetails,
   currentUserPersonId,
   canLoadDocuments,
   initialEditing = false,
@@ -69,6 +71,8 @@ function PhotoViewerContent({
   save: (f: Family) => Promise<Family>;
   onClose: () => void;
   onPerson: (id: string) => void;
+  loadPersonDetails?: (id: string) => Promise<void>;
+  hasPersonDetails?: (id: string) => boolean;
   currentUserPersonId?: string;
   canLoadDocuments: boolean;
   initialEditing?: boolean;
@@ -181,6 +185,21 @@ function PhotoViewerContent({
     [personId, setPersonId] = useState(""),
     [error, setError] = useState(""),
     [confirm, setConfirm] = useState(false);
+  useEffect(() => {
+    if (!viewedPersonId) return;
+    let active = true;
+    void loadPersonDetails?.(viewedPersonId).catch((reason) => {
+      if (active)
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Не удалось загрузить сведения",
+        );
+    });
+    return () => {
+      active = false;
+    };
+  }, [viewedPersonId, loadPersonDetails]);
   const tagging = canEdit && requestedTagging;
   const [takenAt, setTakenAt] = useState(photo.takenAt || ""),
     [place, setPlace] = useState(photo.place || ""),
@@ -957,6 +976,7 @@ function PhotoViewerContent({
         {viewedPerson && (
           <PhotoPersonSidebar
             person={viewedPerson}
+            detailsLoading={hasPersonDetails?.(viewedPerson.id) === false}
             family={family}
             isCurrentUser={currentUserPersonId === viewedPerson.id}
             canLoadDocuments={canLoadDocuments}

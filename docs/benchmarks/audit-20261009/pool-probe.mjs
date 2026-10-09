@@ -73,22 +73,30 @@ try {
   const barrier = new Promise((resolve) => {
     release = resolve;
   });
+  let reached;
+  const ready = new Promise((resolve) => { reached = resolve; });
   const work = async () => {
     entered++;
-    if (entered === 3) release();
+    if (entered === 2) reached();
     await barrier;
     return db.prepare("", "SELECT 1 AS value").get();
   };
-  const results = await Promise.allSettled(
+  const pending = Promise.allSettled(
     ["audit-one", "audit-two", "audit-three"].map((name) =>
       db.withExclusivePlatformTask(name, work),
     ),
   );
+  await ready;
+  let foreground;
+  try { foreground = await db.prepare("", "SELECT 1 AS value").get(); }
+  finally { release(); }
+  const results = await pending;
   console.log(
     JSON.stringify({
       test: "actual store-database with synthetic bounded pool",
       poolLimit: pool.options.max,
       lockCallbacks: entered,
+      foregroundReadSucceeded: foreground?.value === 1,
       fulfilled: results.filter((x) => x.status === "fulfilled").length,
       rejected: results
         .filter((x) => x.status === "rejected")

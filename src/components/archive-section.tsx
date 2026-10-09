@@ -108,6 +108,11 @@ class SectionErrorBoundary extends Component<BoundaryProps, BoundaryState> {
 }
 
 export function ArchiveSection(props: Props) {
+  if (
+    props.loadingDetails &&
+    ["gallery", "places", "insights", "quality"].includes(props.view)
+  )
+    return <ArchiveLoading />;
   let content: ReactNode = null;
   if (props.view === "list")
     content = (

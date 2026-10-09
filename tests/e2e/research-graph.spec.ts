@@ -71,6 +71,18 @@ test("ИИ показывает готовый ответ и раскрывае�
   await expect(
     dialog.locator(".research-visual-dialog-plot canvas"),
   ).toBeVisible();
+  const close = dialog.getByRole("button", { name: "Закрыть схему" });
+  await expect(close).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
+    dialog.getByRole("button", { name: "Уменьшить схему" }),
+  ).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(close).toBeFocused();
+  // Even a script cannot focus the input behind a native modal dialog.
+  await page.locator(".research-assistant textarea")
+    .evaluate((input) => (input as HTMLElement).focus());
+  await expect(close).toBeFocused();
   await expect(dialog.getByRole("img")).toHaveAttribute(
     "aria-label",
     /1900–1980.*родитель → ребёнок/,
@@ -90,6 +102,16 @@ test("ИИ показывает готовый ответ и раскрывае�
   ).toBeVisible();
   await dialog.getByRole("button", { name: "Закрыть схему" }).click();
   await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Развернуть схему" }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Развернуть схему" }),
+  ).toBeFocused();
 });
 
 test("ИИ показывает круговую и временную диаграммы на Canvas", async ({
