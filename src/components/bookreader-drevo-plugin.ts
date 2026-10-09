@@ -91,6 +91,12 @@ export function makeDrevoPlugin(
       if (!section) return;
       // The stock Share dialog links to this iframe rather than to the document.
       section.querySelector(".share")?.remove();
+      const info = section.querySelector<HTMLElement>(".info");
+      if (info) {
+        info.textContent = "О документе";
+        info.title = "О документе";
+        info.setAttribute("aria-label", "О документе");
+      }
       const button = (
         name: string,
         icon: string,

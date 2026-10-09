@@ -149,7 +149,7 @@
 }
 .people-directory h1 small {
   font: 14px var(--sans);
-  color: #89947e;
+  color: var(--muted);
   margin-left: 10px;
 }
 .people-directory header label {

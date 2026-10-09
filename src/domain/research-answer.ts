@@ -92,7 +92,12 @@ export function normalizeResearchMarkdown(
         return `\x60\x60\x60mermaid\n${head}\n\x60\x60\x60`;
       },
     )
-    .replace(/```(?:mermaid)?\s*\n\s*```/giu, "")
+    // Match complete fenced blocks: an empty-block regex must not consume
+    // the closing fence of one graph and the opening fence of the next.
+    .replace(/^```([^\r\n]*)\r?\n([\s\S]*?)^```[ \t]*(?=\r?$)/gm,
+      (block, language: string, body: string) =>
+        (!language.trim() || /^mermaid$/iu.test(language.trim())) && !body.trim()
+          ? "" : block)
     .replace(/^\s*Не удалось построить схему\s*$/gimu, "")
     .replace(
       /^\|\s*ФИОДата рожденияМесто рожденияДата смертиПримечания\s*\|[^\n]*$/gimu,

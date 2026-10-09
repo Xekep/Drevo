@@ -316,7 +316,7 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
       // BookReader assumes 500 ppi scans. Our PDFs use points and small scans
       // may have fewer pixels; 144 keeps them legible on the initial view.
       ppi: 144,
-      defaults: `page/n${initial}/mode/2up`,
+      defaults: `page/n${initial}/mode/${pageCount === 1 || matchMedia("(max-width: 760px)").matches ? "1up" : "2up"}`,
       ui: "full",
       showLogo: false,
       autoResize: true,
@@ -354,6 +354,42 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
       },
     });
     reader.init();
+    // Keep the document page on a responsive change. An explicit choice in
+    // the reader takes precedence over our automatic spread selection.
+    const currentReader = reader;
+    const narrowReader = matchMedia("(max-width: 760px)");
+    let manualMode = false;
+    let changingMode = false;
+    let automaticMode = currentReader.mode;
+    for (const event of ["1PageViewSelected", "2PageViewSelected", "3PageViewSelected"])
+      currentReader.bind(event, () => {
+        if (!changingMode && currentReader.mode !== automaticMode) manualMode = true;
+      });
+    const updateReaderMode = () => {
+      if (manualMode) return;
+      automaticMode = narrowReader.matches || pageCount === 1
+        ? currentReader.constMode1up : currentReader.constMode2up;
+      if (currentReader.mode === automaticMode) return;
+      const page = currentReader.currentIndex();
+      changingMode = true;
+      try {
+        currentReader.switchMode(automaticMode);
+        currentReader.jumpToIndex(page);
+      } finally {
+        changingMode = false;
+      }
+    };
+    narrowReader.addEventListener("change", updateReaderMode);
+    const cleanupBeforeMode = cleanupDocument;
+    cleanupDocument = () => {
+      narrowReader.removeEventListener("change", updateReaderMode);
+      cleanupBeforeMode();
+    };
+    // The pinned BookReader version has no locale option for these strings.
+    const navbar = currentReader._components.navbar;
+    navbar.getNavPageNumString = (index) =>
+      `Страница ${Math.min(pageCount, Math.max(1, index + 1))} из ${pageCount}`;
+    navbar.updateNavPageNum(currentReader.currentIndex());
     const toolbar = document.querySelector<HTMLElement>(".BRtoolbar");
     if (toolbar) {
       const reportToolbarHeight = () =>

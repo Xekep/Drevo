@@ -52,11 +52,22 @@
   font-size: 13px;
 }
 .platform-ai-archive small { grid-column: 2; color: var(--muted); }
-.platform-ai-archive select { max-width: 100%; }
+.platform-ai-archive select {
+  min-width: 0;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #cbd8c5;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
 @media (max-width: 760px) {
   .platform-settings-content .account-card { padding: 16px; }
   .platform-ai-archive { grid-template-columns: minmax(0, 1fr); }
   .platform-ai-archive small { grid-column: 1; }
+  .platform-ai-archive select { min-height: 44px; font-size: 16px; }
 }
 .account-heading .account-row-action {
   min-height: 44px;

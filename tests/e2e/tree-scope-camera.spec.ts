@@ -191,11 +191,22 @@ test("opening a card after scope focus preserves the camera through inspector re
   await dialog.getByRole("button", { name: "Закрыть" }).click();
   await expectCentered(page, "e2e-child");
   await pan(page);
-  const afterScopePan = await viewport.getAttribute("style");
+  const afterScopePan = await viewport.evaluate((element) => {
+    const matrix = new DOMMatrix(getComputedStyle(element).transform);
+    return { x: matrix.e, y: matrix.f, zoom: matrix.a };
+  });
   const size = page.viewportSize()!;
   await page.setViewportSize({ width: size.width - 80, height: size.height });
   await page.waitForTimeout(900);
-  expect(await viewport.getAttribute("style")).toBe(afterScopePan);
+  // A browser resize preserves the viewed world centre, without reviving the
+  // cancelled scope focus. Inspector resizes above preserve translation exactly.
+  const resized = await viewport.evaluate((element) => {
+    const matrix = new DOMMatrix(getComputedStyle(element).transform);
+    return { x: matrix.e, y: matrix.f, zoom: matrix.a };
+  });
+  expect(resized.x).toBeCloseTo(afterScopePan.x - 40, 3);
+  expect(resized.y).toBeCloseTo(afterScopePan.y, 3);
+  expect(resized.zoom).toBeCloseTo(afterScopePan.zoom, 4);
 });
 
 test("opening a card cancels scope focus while its Worker layout is pending", async ({

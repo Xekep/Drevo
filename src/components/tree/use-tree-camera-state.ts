@@ -126,6 +126,7 @@ export function useTreeCameraState({
   const previousContext = useRef("");
   const previousReverse = useRef(reverse);
   const initialViewSent = useRef(false);
+  const lastCanvas = useRef<{ width: number; height: number; windowWidth: number; windowHeight: number } | null>(null);
   const rememberContext = useCallback(() => {
     cameras.current[context] = flow.getViewport();
   }, [context, flow]);
@@ -164,6 +165,7 @@ export function useTreeCameraState({
           initialViewSent.current = true;
           previousContext.current = context;
           previousReverse.current = reverse;
+          lastCanvas.current = { width: canvasWidth, height: canvasHeight, windowWidth: innerWidth, windowHeight: innerHeight };
           onInitialViewReady?.();
           return;
         }
@@ -345,7 +347,26 @@ export function useTreeCameraState({
               ease: contextEase,
             });
           }
+        } else if (lastCanvas.current &&
+          (lastCanvas.current.windowWidth !== innerWidth || lastCanvas.current.windowHeight !== innerHeight)) {
+          // Resize preserves the world point at the viewport centre. Explicit
+          // focus, branch anchors and context changes above keep precedence.
+          // Opening/closing an inspector at the same window size must not pan.
+          const dx = (canvasWidth - lastCanvas.current.width) / 2;
+          const dy = (canvasHeight - lastCanvas.current.height) / 2;
+          if (dx || dy) {
+            const viewport = flow.getViewport();
+            viewportUpdate = flow.setViewport({
+              ...viewport,
+              x: viewport.x + dx,
+              y: viewport.y + dy,
+            }, { duration: 0 });
+          }
         }
+        // React Flow can report a browser resize on the next observer tick.
+        // Do not consume it while its canvas dimensions are still unchanged.
+        if (!lastCanvas.current || lastCanvas.current.width !== canvasWidth || lastCanvas.current.height !== canvasHeight)
+          lastCanvas.current = { width: canvasWidth, height: canvasHeight, windowWidth: innerWidth, windowHeight: innerHeight };
         if (!initialViewSent.current) {
           initialViewSent.current = true;
           void Promise.resolve(viewportUpdate).then(

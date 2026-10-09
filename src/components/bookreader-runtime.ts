@@ -12,6 +12,15 @@ export type BookReaderInstance = {
   removeProgressPopup(): void;
   mode: number;
   constModeThumb: number;
+  constMode1up: number;
+  constMode2up: number;
+  switchMode(mode: number): void;
+  _components: {
+    navbar: {
+      getNavPageNumString(index: number): string;
+      updateNavPageNum(index: number): void;
+    };
+  };
   plugins: Record<string, unknown>;
 };
 

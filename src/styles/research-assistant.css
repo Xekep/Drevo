@@ -79,7 +79,10 @@
   bottom: 18px;
   z-index: 100;
   width: min(430px, calc(100vw - 36px));
-  height: min(680px, calc(100dvh - 36px));
+  height: min(560px, calc(100dvh - 36px));
+  margin: 0;
+  padding: 0;
+  color: var(--ink);
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   overflow: hidden;
@@ -94,7 +97,9 @@
   box-shadow: 0 24px 70px #2638262b;
   transition: opacity 140ms ease;
 }
-
+.research-assistant::backdrop {
+  background: #26382620;
+}
 body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   .research-assistant {
   opacity: 0.45;
@@ -895,6 +900,18 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
     min-width: 44px;
     height: 44px;
   }
+  .research-assistant > header button,
+  .research-visual-expand,
+  .research-visual-controls button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .research-assistant > header .research-library-button {
+    width: 44px;
+    padding: 0;
+  }
+  .research-assistant > header .research-library-button > span { display: none; }
+  .research-attach-button { flex-basis: 44px; height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

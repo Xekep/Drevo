@@ -1,4 +1,5 @@
 export type ResearchGraph = {
+  direction?: "TD" | "TB" | "LR" | "RL" | "BT";
   nodes: Array<{
     id: string;
     name: string;
@@ -148,6 +149,7 @@ export function parseResearchMermaid(source: string): ResearchVisual {
     return {
       kind: "graph",
       graph: {
+        direction: /^(?:graph|flowchart)\s+(TD|TB|LR|RL|BT)\b/i.exec(lines[0])![1].toUpperCase() as ResearchGraph["direction"],
         nodes: [...nodes].map(([id, value]) => ({ id, ...value })),
         edges,
       },

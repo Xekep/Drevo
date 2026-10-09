@@ -1,0 +1,50 @@
+[
+  {
+    "zoom": 0.725756,
+    "class": "flow-person is-portrait-card     is-compact   ",
+    "nameCss": "16px",
+    "nameScreen": 11.612096,
+    "dateCss": "20px",
+    "dateScreen": 14.51512
+  },
+  {
+    "zoom": 0.604797,
+    "class": "flow-person is-portrait-card     is-compact   ",
+    "nameCss": "16px",
+    "nameScreen": 9.676752,
+    "dateCss": "20px",
+    "dateScreen": 12.09594
+  },
+  {
+    "zoom": 0.503997,
+    "class": "flow-person is-portrait-card     is-compact is-overview  ",
+    "nameCss": "22px",
+    "nameScreen": 11.087934,
+    "dateCss": "15px",
+    "dateScreen": 7.559955
+  },
+  {
+    "zoom": 0.419998,
+    "class": "flow-person is-portrait-card     is-compact is-overview  ",
+    "nameCss": "22px",
+    "nameScreen": 9.239956,
+    "dateCss": "15px",
+    "dateScreen": 6.29997
+  },
+  {
+    "zoom": 0.349998,
+    "class": "flow-person is-portrait-card     is-compact is-overview  ",
+    "nameCss": "22px",
+    "nameScreen": 7.699955999999999,
+    "dateCss": "15px",
+    "dateScreen": 5.249969999999999
+  },
+  {
+    "zoom": 0.291665,
+    "class": "flow-person is-portrait-card     is-compact is-overview  ",
+    "nameCss": "22px",
+    "nameScreen": 6.4166300000000005,
+    "dateCss": "15px",
+    "dateScreen": 4.374975
+  }
+]

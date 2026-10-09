@@ -1,0 +1,147 @@
+{
+  "mode": "mobile",
+  "categories": {
+    "accessibility": 0.96,
+    "best-practices": 1,
+    "seo": 1,
+    "agentic-browsing": 1
+  },
+  "contrast": {
+    "id": "color-contrast",
+    "title": "Background and foreground colors have a sufficient contrast ratio",
+    "description": "Low-contrast text is difficult or impossible for many users to read. [Learn how to provide sufficient color contrast](https://dequeuniversity.com/rules/axe/4.12/color-contrast).",
+    "score": 1,
+    "scoreDisplayMode": "binary",
+    "details": {
+      "type": "table",
+      "headings": [
+        {
+          "key": "node",
+          "valueType": "node",
+          "subItemsHeading": {
+            "key": "relatedNode",
+            "valueType": "node"
+          },
+          "label": "Failing Elements"
+        }
+      ],
+      "items": []
+    }
+  },
+  "targetSize": {
+    "id": "target-size",
+    "title": "Touch targets do not have sufficient size or spacing.",
+    "description": "Touch targets with sufficient size and spacing help users who may have difficulty targeting small controls to activate the targets. [Learn more about touch targets](https://dequeuniversity.com/rules/axe/4.12/target-size).",
+    "score": 0,
+    "scoreDisplayMode": "binary",
+    "details": {
+      "type": "table",
+      "headings": [
+        {
+          "key": "node",
+          "valueType": "node",
+          "subItemsHeading": {
+            "key": "relatedNode",
+            "valueType": "node"
+          },
+          "label": "Failing Elements"
+        }
+      ],
+      "items": [
+        {
+          "node": {
+            "type": "node",
+            "lhId": "1-0-BUTTON",
+            "path": "1,HTML,1,BODY,0,DIV,0,DIV,0,DIV,1,MAIN,0,DIV,0,DIV,1,DIV,0,DIV,0,DIV,0,DIV,2,DIV,1,DIV,0,DIV,6,BUTTON",
+            "selector": "div.react-flow__nodes > div.react-flow__node > div.flow-person > button.flow-collapse",
+            "boundingRect": {
+              "top": 252,
+              "bottom": 269,
+              "left": 368,
+              "right": 391,
+              "width": 23,
+              "height": 17
+            },
+            "snippet": "<button class=\"flow-collapse nodrag nopan\" aria-label=\"Свернуть ветвь: 2 потомков\" style=\"--branch-target: 48px;\">",
+            "nodeLabel": "2",
+            "explanation": "Fix any of the following:\n  Target has insufficient size (22.5px by 16.5px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 16.6px instead of at least 24px."
+          },
+          "subItems": {
+            "type": "subitems",
+            "items": [
+              {
+                "relatedNode": {
+                  "type": "node",
+                  "lhId": "1-1-BUTTON",
+                  "path": "1,HTML,1,BODY,0,DIV,0,DIV,0,DIV,1,MAIN,0,DIV,0,DIV,1,DIV,0,DIV,0,DIV,0,DIV,2,DIV,1,DIV,0,DIV,4,BUTTON",
+                  "selector": "div.react-flow__nodes > div.react-flow__node > div.flow-person > button.flow-person-content",
+                  "boundingRect": {
+                    "top": 189,
+                    "bottom": 333,
+                    "left": 282,
+                    "right": 402,
+                    "width": 120,
+                    "height": 144
+                  },
+                  "snippet": "<button class=\"flow-person-content\" aria-label=\"Тестов Иван Петрович, 1940 — 2020\">",
+                  "nodeLabel": "Тестов Иван Петрович\n1940 — 2020"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "node": {
+            "type": "node",
+            "lhId": "1-2-BUTTON",
+            "path": "1,HTML,1,BODY,0,DIV,0,DIV,0,DIV,1,MAIN,0,DIV,0,DIV,1,DIV,0,DIV,0,DIV,0,DIV,2,DIV,2,DIV,0,DIV,6,BUTTON",
+            "selector": "div.react-flow__nodes > div.react-flow__node > div.flow-person > button.flow-collapse",
+            "boundingRect": {
+              "top": 442,
+              "bottom": 459,
+              "left": 221,
+              "right": 243,
+              "width": 23,
+              "height": 17
+            },
+            "snippet": "<button class=\"flow-collapse nodrag nopan\" aria-label=\"Свернуть ветвь: 1 потомков\" style=\"--branch-target: 48px;\">",
+            "nodeLabel": "1",
+            "explanation": "Fix any of the following:\n  Target has insufficient size (22.5px by 16.5px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 16.6px instead of at least 24px."
+          },
+          "subItems": {
+            "type": "subitems",
+            "items": [
+              {
+                "relatedNode": {
+                  "type": "node",
+                  "lhId": "1-3-BUTTON",
+                  "path": "1,HTML,1,BODY,0,DIV,0,DIV,0,DIV,1,MAIN,0,DIV,0,DIV,1,DIV,0,DIV,0,DIV,0,DIV,2,DIV,2,DIV,0,DIV,4,BUTTON",
+                  "selector": "div.react-flow__nodes > div.react-flow__node > div.flow-person > button.flow-person-content",
+                  "boundingRect": {
+                    "top": 379,
+                    "bottom": 523,
+                    "left": 135,
+                    "right": 255,
+                    "width": 120,
+                    "height": 144
+                  },
+                  "snippet": "<button class=\"flow-person-content\" aria-label=\"Тестов Пётр Иванович, 1965 — н. в.\">",
+                  "nodeLabel": "Тестов Пётр Иванович\n1965 — н. в."
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "debugData": {
+        "type": "debugdata",
+        "impact": "serious",
+        "tags": [
+          "cat.sensory-and-visual-cues",
+          "wcag22aa",
+          "wcag258"
+        ]
+      }
+    }
+  }
+}

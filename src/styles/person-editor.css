@@ -1,6 +1,9 @@
 .person-editor-shell {
   background: #f7f8f3;
 }
+.inspector-dock[data-editing="true"] {
+  scroll-padding-block: 56px 84px;
+}
 .person-editor-form .source-catalog-citation {
   display: grid;
   gap: 4px;
@@ -64,9 +67,9 @@
   background: #fff;
 }
 .person-editor-form .name-entry small {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
-  color: #7b8675;
+  color: var(--muted);
 }
 .person-editor-form .name-entry .field-error {
   color: #a04738;
@@ -175,7 +178,7 @@
 }
 .person-editor-form .person-date-group h3 {
   margin: 0 0 8px;
-  color: #7d8a72;
+  color: var(--muted);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.1em;

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { layoutGpuText } from "./gpu-text-layout.ts";
 import { useStoreApi } from "@xyflow/react";
 import { resolvedSex, safeUrl } from "../../domain";
 import { fullName } from "../../domain/dates.ts";
@@ -288,6 +289,8 @@ export function DistantPortraits({
     let base = store.getState().transform;
     let handingOff = false;
     const activePaths = new Set<string>();
+    // Text measurement is scoped to this scene, never repeated on camera frames.
+    const nameLines = new Map<string, ReturnType<typeof layoutGpuText>>();
     const paths = fullScene ? edges.map((edge) => {
       const points = edge.data?.route?.points;
       const path = edge.data?.path || (points?.length ? roundedRoute(points).path : null);
@@ -459,12 +462,19 @@ export function DistantPortraits({
           context.arc(centerX, centerY, PORTRAIT_SIZE / 2 - 2, 0, Math.PI * 2);
           context.stroke();
           context.fillStyle = "#253a2c";
-          context.font = "600 29px Georgia, serif";
+          context.font = "600 22px Georgia, serif";
           context.textAlign = "center";
           context.textBaseline = "top";
           const name = fullName(person);
           const maxWidth = Math.max(20, cardWidth - 8);
-          context.fillText(name, centerX, y + PORTRAIT_TOP + PORTRAIT_SIZE + 10, maxWidth);
+          const textKey = `${maxWidth}\0${name}`;
+          let lines = nameLines.get(textKey);
+          if (!lines) {
+            lines = layoutGpuText(name, maxWidth, 2, (letter) => context.measureText(letter).width);
+            nameLines.set(textKey, lines);
+          }
+          lines.forEach((line, index) => context.fillText(line.value, centerX,
+            y + PORTRAIT_TOP + PORTRAIT_SIZE + 10 + index * 24));
         }
         context.restore();
         context.globalAlpha = 1;
