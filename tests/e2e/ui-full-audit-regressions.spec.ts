@@ -234,6 +234,10 @@ test("каталог людей поддерживает Ctrl и среднюю 
   const person = page.locator(".directory-person").first();
   await expect(person).toHaveAttribute("href", /\/people\/e2e-/);
   for (const gesture of ["control", "middle"] as const) {
+    // A background tab can leave Chromium's native modifier gesture unfocused
+    // after it closes. Activate the originating page before each real click.
+    await page.bringToFront();
+    await person.scrollIntoViewIfNeeded();
     const opened = page.context().waitForEvent("page");
     await person.click(
       gesture === "control" ? { modifiers: ["Control"] } : { button: "middle" },
