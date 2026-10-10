@@ -7,8 +7,6 @@ import {
   useContext,
   type ReactNode,
 } from "react";
-/* eslint-disable jsx-a11y/no-noninteractive-element-interactions -- the aside
-   is a keyboard-modal dialog only in the responsive overlay state. */
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { useDockSwipe } from "../hooks/useDockSwipe";
@@ -57,15 +55,11 @@ export function InspectorDock({
     if (!mobile || !expanded || mobileSuspended) return;
     const previous = document.activeElement as HTMLElement | null;
     const node = ref.current;
-    const siblings = node?.parentElement
-      ? [...node.parentElement.children].filter((item) => item !== node)
-      : [];
-    for (const sibling of siblings) (sibling as HTMLElement).inert = true;
+    // This is a complementary panel: the global navigation stays available.
     node
       ?.querySelector<HTMLElement>("button,input,select,textarea,[tabindex]")
       ?.focus();
     return () => {
-      for (const sibling of siblings) (sibling as HTMLElement).inert = false;
       previous?.focus?.({ preventScroll: true });
     };
   }, [mobile, expanded, mobileSuspended]);
@@ -89,27 +83,19 @@ export function InspectorDock({
         hidden={mobileSuspended}
         aria-label={label}
         data-editing={editing || undefined}
-        role={mobile && expanded && !mobileSuspended ? "dialog" : undefined}
-        aria-modal={mobile && expanded && !mobileSuspended ? true : undefined}
-        tabIndex={mobile && expanded && !mobileSuspended ? -1 : undefined}
-        onKeyDown={(event) => {
-          if (!mobile || !expanded || mobileSuspended || event.key !== "Tab")
-            return;
-          const items = [
-            ...(ref.current?.querySelectorAll<HTMLElement>(
-              'button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex]:not([tabindex="-1"])',
-            ) || []),
-          ].filter((item) => !item.hidden);
-          if (!items.length) return;
-          const first = items[0],
-            last = items.at(-1)!;
-          if (event.shiftKey && document.activeElement === first) {
-            event.preventDefault();
-            last.focus();
-          } else if (!event.shiftKey && document.activeElement === last) {
-            event.preventDefault();
-            first.focus();
-          }
+        onFocusCapture={(event) => {
+          const target = event.target;
+          // Browser focus scrolling does not account for our sticky save bar.
+          // Run after native scrolling, using its actual height (including errors).
+          requestAnimationFrame(() => {
+            const dock = ref.current;
+            if (!editing || !dock || !target.isConnected || document.activeElement !== target) return;
+            const footer = dock.querySelector<HTMLElement>(".person-editor-form > footer");
+            if (!footer || footer.contains(target)) return;
+            const bounds = target.getBoundingClientRect();
+            const bottom = Math.min(dock.getBoundingClientRect().bottom, footer.getBoundingClientRect().top) - 12;
+            if (bounds.bottom > bottom) dock.scrollTop += bounds.bottom - bottom;
+          });
         }}
       >
         {!(mobile && editing) && (

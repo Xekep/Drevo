@@ -1,6 +1,14 @@
 import test from "node:test";
 import { researchInternalLink } from "../src/domain/research-answer.ts";
 import assert from "node:assert/strict";
+test("adjacent diagrams keep separate fences while truly empty diagrams disappear", () => {
+  const first = '```mermaid\ngraph LR\na[Иван] --> b[Пётр]\n```';
+  const second = '```mermaid\ngraph TD\na[Иван] --> b[Пётр]\n```';
+  assert.equal(normalizeResearchMarkdown(`${first}\n\n${second}`), `${first}\n\n${second}`);
+  assert.equal(normalizeResearchMarkdown(`\x60\x60\x60mermaid\n\n\x60\x60\x60\n${second}`), second);
+  const unlabelled = '```\nПример\n```';
+  assert.equal(normalizeResearchMarkdown(`${first}\n\n${unlabelled}`), `${first}\n\n${unlabelled}`);
+});
 test("internal research links decode once and reject damaged or ambiguous IDs", () => {
   assert.deepEqual(researchInternalLink("#drevo-person-e2e-child"), {
     kind: "person",

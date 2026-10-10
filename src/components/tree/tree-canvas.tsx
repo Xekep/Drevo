@@ -25,6 +25,7 @@ import {
   ArrowLeftRight,
   ChartNoAxesGantt,
   Maximize2,
+  Scan,
   Plus,
   GitBranch,
   Link2,
@@ -1986,6 +1987,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           )}
           {narrow ? (
             <Panel position="bottom-right" className="flow-fullscreen-tools">
+              <button
+                disabled={cameraLocked}
+                onClick={() => void fitTree({ padding: 0.2, maxZoom: 1 })}
+                aria-label="Вписать видимую часть древа"
+                title="Показать древо целиком"
+              >
+                <Scan size={20} />
+              </button>
               <button
                 onClick={screen.enter}
                 aria-label="Развернуть на весь экран"

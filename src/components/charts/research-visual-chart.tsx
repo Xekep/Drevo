@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Minus, Plus, X } from "lucide-react";
 import type { EChartsOption, EChartsType } from "echarts";
+import type { ElkNode } from "elkjs";
+import { useResearchGraphLayout } from "./use-research-graph-layout";
 import {
   parseResearchMermaid,
   type ResearchVisual,
@@ -18,7 +20,7 @@ const colors = [
   "#bc8276",
 ];
 
-function visualOption(visual: ResearchVisual, expanded: boolean): EChartsOption {
+function visualOption(visual: ResearchVisual, expanded: boolean, layout?: ElkNode): EChartsOption {
   const base: EChartsOption = {
     color: colors,
     animationDuration: 350,
@@ -79,6 +81,7 @@ function visualOption(visual: ResearchVisual, expanded: boolean): EChartsOption 
   const names = new Map(
     visual.graph.nodes.map((node) => [node.id, node.name]),
   );
+  const positions = new Map(layout?.children?.map((node) => [node.id, node]));
   return {
     ...base,
     tooltip: {
@@ -98,18 +101,19 @@ function visualOption(visual: ResearchVisual, expanded: boolean): EChartsOption 
     series: [
       {
         type: "graph",
-        layout: "force",
+        layout: "none",
+        preserveAspect: "contain",
+        left: expanded ? 95 : 70,
+        right: expanded ? 95 : 70,
+        top: 48,
+        bottom: 48,
         roam: true,
         draggable: true,
-        force: {
-          repulsion: visual.graph.nodes.length > 50 ? 170 : expanded ? 520 : 300,
-          edgeLength: expanded ? 190 : 110,
-          friction: 0.65,
-          initLayout: "circular",
-        },
         data: visual.graph.nodes.map((node) => ({
           id: node.id,
           name: node.label || node.name,
+          x: (positions.get(node.id)?.x || 0) + 70,
+          y: (positions.get(node.id)?.y || 0) + 40,
           symbolSize: expanded ? 25 : 20,
           itemStyle: { color: "#5f8766", borderColor: "#fff", borderWidth: 2 },
         })),
@@ -122,6 +126,8 @@ function visualOption(visual: ResearchVisual, expanded: boolean): EChartsOption 
               : edge.type === "spouse"
                 ? "супруги"
                 : "дополнительная связь"),
+          symbol: ["none", edge.type === "spouse" ? "none" : "arrow"],
+          symbolSize: [0, 9],
           lineStyle: {
             type: edge.type === "parent" ? "solid" : "dashed",
             color: edge.type === "parent" ? "#8da68d" : "#b39b7e",
@@ -137,8 +143,11 @@ function visualOption(visual: ResearchVisual, expanded: boolean): EChartsOption 
           overflow: "break",
         },
         edgeLabel: {
-          show: expanded && visual.graph.edges.length <= 30,
-          color: "#657b65",
+          show: (expanded || visual.graph.edges.length <= 12) && visual.graph.edges.length <= 30,
+          color: "#455b45",
+          opacity: 1,
+          backgroundColor: "#fbfcf9",
+          padding: [2, 4],
           fontSize: 10,
           formatter: (param: unknown) =>
             String((param as { data?: { name?: string } }).data?.name || ""),
@@ -173,13 +182,14 @@ export function ResearchVisualChart({ source }: { source: string }) {
   const expandButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const visual = parsed.visual;
+  const graphLayout = useResearchGraphLayout(visual?.kind === "graph" ? visual.graph : undefined);
   const inlineOption = useMemo(
-    () => (visual ? visualOption(visual, false) : {}),
-    [visual],
+    () => (visual ? visualOption(visual, false, graphLayout?.layout) : {}),
+    [visual, graphLayout],
   );
   const expandedOption = useMemo(
-    () => (visual ? visualOption(visual, true) : {}),
-    [visual],
+    () => (visual ? visualOption(visual, true, graphLayout?.layout) : {}),
+    [visual, graphLayout],
   );
 
   useEffect(() => {
@@ -198,6 +208,8 @@ export function ResearchVisualChart({ source }: { source: string }) {
   }, [expanded]);
 
   if (!visual) return <p className="research-visual-error">{parsed.error}</p>;
+  if (visual.kind === "graph" && !graphLayout?.layout)
+    return <p role="status" className="research-visual-error">{graphLayout?.error || "Готовлю схему…"}</p>;
   const label = visualLabel(visual);
   return (
     <>

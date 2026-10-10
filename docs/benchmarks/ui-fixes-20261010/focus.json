@@ -1,0 +1,30 @@
+{
+  "input": "<input placeholder=\"Название в то время\" value=\"Москва\">",
+  "bounds": {
+    "x": 25,
+    "y": 415.1875,
+    "w": 340,
+    "h": 44
+  },
+  "footer": {
+    "top": 779,
+    "bottom": 844
+  },
+  "points": [
+    {
+      "y": 417.1875,
+      "hit": "<input placeholder=\"Название в то время\" value=\"Москва\">",
+      "hitInput": true
+    },
+    {
+      "y": 437.1875,
+      "hit": "<input placeholder=\"Название в то время\" value=\"Москва\">",
+      "hitInput": true
+    },
+    {
+      "y": 457.1875,
+      "hit": "<input placeholder=\"Название в то время\" value=\"Москва\">",
+      "hitInput": true
+    }
+  ]
+}

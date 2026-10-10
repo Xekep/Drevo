@@ -1,0 +1,112 @@
+{
+  "date": "2026-10-10",
+  "environment": "Disposable local synthetic fixture, production dist, Chrome desktop and Pixel 5 emulation",
+  "browser": {
+    "states": 74,
+    "overflows": [],
+    "pageErrors": [],
+    "sizes": [
+      320,
+      360,
+      390,
+      768,
+      1024,
+      1440,
+      1920
+    ]
+  },
+  "checks": {
+    "fullUnit": {
+      "passed": 1313,
+      "skipped": 2,
+      "failed": 0,
+      "note": "Full run before final UI refinements and adjacent-fence correction; changed paths also tested below"
+    },
+    "focusedDomainAndArchitecture": {
+      "passed": 5,
+      "failed": 0
+    },
+    "gpuText": {
+      "passed": 3,
+      "failed": 0
+    },
+    "researchAnswerAndLayout": {
+      "passed": 13,
+      "failed": 0
+    },
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "builtWorker": {
+      "passed": 3,
+      "failed": 0
+    }
+  },
+  "e2e": {
+    "firstBroad": {
+      "passed": 103,
+      "skipped": 25,
+      "failed": 2,
+      "failedScenarios": [
+        "accepted AI person appears",
+        "nested folds"
+      ],
+      "separateRepeat": {
+        "passed": 2,
+        "failed": 0
+      }
+    },
+    "secondBroad": {
+      "passed": 105,
+      "skipped": 25,
+      "failed": 2,
+      "failedScenarios": [
+        "adjacent two-person graphs desktop",
+        "adjacent two-person graphs mobile"
+      ],
+      "resolution": "Fixed Markdown normalization swallowing adjacent fences; focused final run recorded separately"
+    },
+    "finalChangedPaths": {
+      "passed": 25,
+      "skipped": 3,
+      "failed": 0,
+      "total": 28,
+      "files": [
+        "ui-audit-regressions.spec.ts",
+        "research-graph.spec.ts"
+      ],
+      "durationSeconds": 58.9
+    }
+  },
+  "limitations": [
+    "No production deploy or data changes",
+    "No physical devices, screen readers or Safari/Firefox",
+    "No live AI-provider answer quality test"
+  ],
+  "mergePreparation": {
+    "initialCi": {
+      "runId": 38000631441,
+      "passed": 793,
+      "skipped": 174,
+      "failed": 9
+    },
+    "fixes": [
+      "personal intro owns resize until its flight finishes",
+      "1up search keeps the selected match and navigation index",
+      "complementary panel selectors and Russian page label",
+      "quality fixture owns exactly two uncited events"
+    ],
+    "localFailedScenarioRepeat": {
+      "total": 18,
+      "passed": 14,
+      "skipped": 4,
+      "failed": 0,
+      "durationSeconds": 52.8
+    },
+    "pdfSearchAndCameraUnit": {
+      "passed": 11,
+      "failed": 0
+    },
+    "remoteCi": "rerun after fixes; check before merge"
+  }
+}

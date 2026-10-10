@@ -1,0 +1,28 @@
+{
+  "initial": {
+    "tag": "BODY",
+    "cls": ""
+  },
+  "tabs": [
+    {
+      "tag": "BODY",
+      "cls": "",
+      "inside": false
+    },
+    {
+      "tag": "A",
+      "cls": "nav-brand",
+      "inside": false
+    },
+    {
+      "tag": "SUMMARY",
+      "cls": "nav-account",
+      "inside": false
+    },
+    {
+      "tag": "INPUT",
+      "cls": "",
+      "inside": false
+    }
+  ]
+}

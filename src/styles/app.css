@@ -1490,7 +1490,7 @@ h1 {
   font-size: 12px;
   border-radius: 3px;
   margin-left: 3px;
-  color: #8b987c;
+  color: var(--muted);
 }
 .section-label {
   font-size: 12px;
@@ -1557,7 +1557,7 @@ h1 {
   margin-bottom: 12px;
 }
 .relatives h3 > span {
-  color: #9ba58e;
+  color: var(--muted);
   font-size: 12px;
 }
 .relatives > button {

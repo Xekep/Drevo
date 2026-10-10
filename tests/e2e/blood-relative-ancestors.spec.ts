@@ -37,8 +37,8 @@ test("blood view includes an unmarried co-parent but leaves their ancestors and 
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
   await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content")
     .evaluate((card) => (card as HTMLElement).click());
-  const dock = page.getByRole("dialog", { name: "Выбранный объект" });
-  if (await dock.isVisible()) await dock.getByRole("button", { name: "Свернуть панель" }).click();
+  const dock = page.getByRole("complementary", { name: "Выбранный объект" });
+  if (isMobile && await dock.isVisible()) await dock.getByRole("button", { name: "Свернуть панель" }).click();
   if (isMobile) await page.getByLabel("Область просмотра", { exact: true }).click();
   await page.getByRole("button", { name: "Кровные", exact: true }).click();
   if (isMobile) await page.getByLabel("Область просмотра", { exact: true }).click();

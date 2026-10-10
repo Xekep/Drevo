@@ -1,5 +1,6 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { AttachmentLibrary } from "./research/attachment-library";
+import { ResearchPanelSurface } from "./research/research-panel-surface";
 import {
   AI_ATTACHMENT_ACCEPT,
   AI_CHAT_LIMIT,
@@ -353,14 +354,17 @@ export function ResearchAssistant({
     ),
     [nudgeVisible, setNudgeVisible] = useState(false);
   const end = useRef<HTMLDivElement>(null),
+    launcher = useRef<HTMLButtonElement>(null),
     composer = useRef<HTMLTextAreaElement>(null),
     chatPicker = useRef<HTMLDivElement>(null),
     chatPickerTrigger = useRef<HTMLButtonElement>(null),
     lastNudge = useRef(0),
     chatSelection = useRef(0),
+    newDraftKey = useRef("new:initial"),
     selectedChatKey = useRef("new:initial"),
     activeRequests = useRef(new Map<string, AbortController>()),
     chatMessages = useRef(new Map<string, Message[]>()),
+    chatDrafts = useRef(new Map<string, { text: string; files: File[] }>()),
     chatErrors = useRef(new Map<string, string>()),
     pendingUiActions = useRef(new Map<string, UiAction[]>()),
     sendLatest = useRef<
@@ -393,6 +397,8 @@ export function ResearchAssistant({
   const libraryFiles = messages
     .flatMap((message) => message.attachments || [])
     .filter((file) => file.url);
+  const closeAssistant = useCallback(() => setOpen(false), []);
+  const returnLauncherFocus = useCallback(() => launcher.current?.focus({ preventScroll: true }), []);
 
   useLayoutEffect(() => {
     const field = composer.current;
@@ -423,6 +429,7 @@ export function ResearchAssistant({
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      event.preventDefault();
       setChatMenuOpen(false);
       chatPickerTrigger.current?.focus();
     };
@@ -736,11 +743,18 @@ export function ResearchAssistant({
       return;
     }
     setLibraryOpen(false);
-    attachmentDraft.setFiles([]);
-    setDraft("");
+    chatDrafts.current.set(selectedChatKey.current, { text: draft, files: attachmentDraft.files });
+    const restoreDraft = (key: string) => {
+      const saved = chatDrafts.current.get(key);
+      setDraft(saved?.text || "");
+      attachmentDraft.setFiles(saved?.files || []);
+    };
     const selection = ++chatSelection.current;
     if (!id) {
-      selectedChatKey.current = `new:${crypto.randomUUID()}`;
+      if (activeRequests.current.has(newDraftKey.current))
+        newDraftKey.current = `new:${crypto.randomUUID()}`;
+      selectedChatKey.current = newDraftKey.current;
+      restoreDraft(selectedChatKey.current);
       chatMessages.current.set(selectedChatKey.current, []);
       setChatId("");
       setMessages([]);
@@ -752,6 +766,7 @@ export function ResearchAssistant({
     const previousKey = selectedChatKey.current;
     const previousMessages = messages;
     selectedChatKey.current = id;
+    restoreDraft(id);
     setChatId(id);
     setChatLoading(true);
     const cached = chatMessages.current.get(id);
@@ -778,6 +793,7 @@ export function ResearchAssistant({
       if (selection !== chatSelection.current) return;
       setChatId(previousId);
       selectedChatKey.current = previousKey;
+      restoreDraft(previousKey);
       setMessages(previousMessages);
       setError("Не удалось открыть диалог");
     } finally {
@@ -833,11 +849,14 @@ export function ResearchAssistant({
     chatMessages.current.delete(selectedChatKey.current);
     chatErrors.current.delete(selectedChatKey.current);
     pendingUiActions.current.delete(selectedChatKey.current);
-    selectedChatKey.current = `new:${crypto.randomUUID()}`;
+    chatDrafts.current.delete(deletingKey);
+    if (newDraftKey.current === deletingKey)
+      newDraftKey.current = `new:${crypto.randomUUID()}`;
+    selectedChatKey.current = newDraftKey.current;
     setMessages([]);
-    setDraft("");
+    setDraft(chatDrafts.current.get(newDraftKey.current)?.text || "");
     setLibraryOpen(false);
-    attachmentDraft.setFiles([]);
+    attachmentDraft.setFiles(chatDrafts.current.get(newDraftKey.current)?.files || []);
     setError("");
     setReviewedSuggestions({});
     setChatLoading(false);
@@ -870,6 +889,7 @@ export function ResearchAssistant({
     let accepted = false;
     chatErrors.current.delete(jobKey);
     if (!selectedPersonId) {
+      chatDrafts.current.delete(jobKey);
       const next = [
         ...(chatMessages.current.get(jobKey) || messages),
         {
@@ -947,9 +967,16 @@ export function ResearchAssistant({
           const id = data.chatId;
           if (jobKey !== id) {
             const oldKey = jobKey;
+            if (newDraftKey.current === oldKey)
+              newDraftKey.current = `new:${crypto.randomUUID()}`;
             activeRequests.current.delete(oldKey);
             activeRequests.current.set(id, controller);
             const cached = chatMessages.current.get(oldKey);
+            const savedDraft = chatDrafts.current.get(oldKey);
+            if (savedDraft) {
+              chatDrafts.current.set(id, savedDraft);
+              chatDrafts.current.delete(oldKey);
+            }
             if (cached) {
               chatMessages.current.set(id, cached);
               chatMessages.current.delete(oldKey);
@@ -1174,6 +1201,7 @@ export function ResearchAssistant({
             </span>
           )}
           <button
+            ref={launcher}
             type="button"
             className={`research-assistant-trigger${view === "tree" ? " is-tree-view" : ""}${nudgeVisible ? " is-nudging" : ""}`}
             style={
@@ -1196,11 +1224,11 @@ export function ResearchAssistant({
         </>
       )}
       {open && (
-        <aside
-          {...attachmentDraft.dragEvents}
-          ref={panel}
-          className="research-assistant"
-          aria-label="ИИ-исследователь"
+        <ResearchPanelSurface
+          dragEvents={attachmentDraft.dragEvents}
+          panel={panel}
+          onClose={closeAssistant}
+          returnFocus={returnLauncherFocus}
           style={
             panelPosition
               ? {
@@ -1235,6 +1263,8 @@ export function ResearchAssistant({
             />
           ))}
           <header
+            data-panel-heading
+            tabIndex={-1}
             onPointerDown={startDrag}
             onPointerMove={moveDrag}
             onPointerUp={stopDrag}
@@ -1282,7 +1312,7 @@ export function ResearchAssistant({
                 type="button"
                 aria-label="Закрыть ИИ-исследователя"
                 title="Закрыть"
-                onClick={() => setOpen(false)}
+                onClick={closeAssistant}
               >
                 <X size={18} />
               </button>
@@ -1667,7 +1697,7 @@ export function ResearchAssistant({
               </button>
             )}
           </form>
-        </aside>
+        </ResearchPanelSurface>
       )}
     </>
   );

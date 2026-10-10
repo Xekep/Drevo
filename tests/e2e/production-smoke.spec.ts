@@ -1299,8 +1299,8 @@ test("blood view keeps relatives and their partners", async ({
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
     .evaluate((card) => (card as HTMLElement).click());
-  const dock = page.getByRole("dialog", { name: "Выбранный объект" });
-  if (await dock.isVisible())
+  const dock = page.getByRole("complementary", { name: "Выбранный объект" });
+  if (testInfo.project.name === "mobile" && await dock.isVisible())
     await dock.getByRole("button", { name: "Свернуть панель" }).click();
   if (testInfo.project.name === "mobile")
     await page.getByLabel("Область просмотра", { exact: true }).click();
@@ -1838,7 +1838,7 @@ test("mobile person card stays below the project menu and starts the memorial fl
     .first()
     .click();
 
-  const card = page.getByRole("dialog", { name: "Выбранный объект" });
+  const card = page.getByRole("complementary", { name: "Выбранный объект" });
   await expect(card).toBeVisible();
   const dove = card.locator(".memorial-dove");
   await expect(dove).toHaveCSS("animation-name", "dove-leave");

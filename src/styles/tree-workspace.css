@@ -1932,7 +1932,7 @@
   min-width: 44px;
   height: 44px;
 }
-.flow-person.is-compact .flow-person-content > span > span {
+.flow-person.is-compact:not(.is-portrait-card) .flow-person-content > span > span {
   font-size: 20px;
 }
 .flow-person.is-overview .flow-person-content {
@@ -1942,7 +1942,7 @@
   font-size: 32px;
   line-height: 1.05;
 }
-.flow-person.is-overview .flow-person-content > span > span {
+.flow-person.is-overview:not(.is-portrait-card) .flow-person-content > span > span {
   font-size: 26px;
   line-height: 1.05;
   display: block;
@@ -2190,6 +2190,8 @@
     display: none;
   }
   .tree-canvas .flow-fullscreen-tools {
+    display: flex;
+    gap: 6px;
     right: max(10px, env(safe-area-inset-right));
     bottom: max(18px, env(safe-area-inset-bottom));
     margin: 0;
@@ -2350,11 +2352,11 @@
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   overflow-wrap: anywhere;
   white-space: normal;
-  font-size: 16px;
-  line-height: 18px;
+  font-size: 22px;
+  line-height: 24px;
 }
 .flow-person.is-portrait-card .portrait-card-info small {
   display: -webkit-box;
@@ -2374,24 +2376,24 @@
 .flow-person.is-portrait-card.is-overview .portrait-card-info strong {
   -webkit-line-clamp: 2;
   font-size: 22px;
-  line-height: 23px;
+  line-height: 24px;
 }
 .flow-person.is-portrait-card.is-overview .portrait-card-info small {
   -webkit-line-clamp: 1;
-  font-size: 18px;
-  line-height: 20px;
+  font-size: 14px;
+  line-height: 16px;
 }
 .flow-person.is-portrait-card.is-overview .portrait-card-years {
-  font-size: 15px;
-  line-height: 18px;
+  font-size: 12px;
+  line-height: 16px;
 }
 .flow-person.is-portrait-card.is-distant .portrait-card-years,
 .flow-person.is-portrait-card.is-distant .portrait-card-info small {
   display: none;
 }
 .flow-person.is-portrait-card.is-distant .portrait-card-info strong {
-  font-size: 29px;
-  line-height: 30px;
+  font-size: 22px;
+  line-height: 24px;
 }
 /* A personal white canvas keeps cards and routes legible without the warm tint. */
 .tree-canvas.theme-white {

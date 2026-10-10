@@ -349,23 +349,23 @@ export function createGpuScene(
         dates = years(node.data.person),
         relation = relationLabel(node);
       nodeLabels.set(node.id, [name, dates, relation]);
-      text(name, node, 146, 29, 30, 2, true, 0, 0.18);
-      const overviewLines = text(name, node, 146, 22, 23, 2, true, 0.18, 0.52);
-      const overviewDates = 146 + overviewLines * 23 + 4;
-      text(dates, node, overviewDates, 15, 18, 1, false, 0.18, 0.52);
+      text(name, node, 146, 22, 24, 2, true, 0, 0.18);
+      const overviewLines = text(name, node, 146, 22, 24, 2, true, 0.18, 0.52);
+      const overviewDates = 146 + overviewLines * 24 + 4;
+      text(dates, node, overviewDates, 12, 16, 1, false, 0.18, 0.52);
       text(
         relation,
         node,
-        overviewDates + (dates ? 22 : 0),
-        18,
-        20,
+        overviewDates + (dates ? 20 : 0),
+        14,
+        16,
         1,
         false,
         0.18,
         0.52,
       );
-      const fullLines = text(name, node, 146, 16, 18, 3, true, 0.52, 10);
-      const fullDates = 146 + fullLines * 18 + 4;
+      const fullLines = text(name, node, 146, 22, 24, 2, true, 0.52, 10);
+      const fullDates = 146 + fullLines * 24 + 4;
       text(dates, node, fullDates, 12, 16, 1, false, 0.52, 10);
       text(
         relation,
