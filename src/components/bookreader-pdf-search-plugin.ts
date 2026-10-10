@@ -30,14 +30,30 @@ export function makePdfSearchPlugin(text: PdfTextSearch) {
     }
 
     async jumpToMatch(index: number) {
+      const results = this.searchResults;
       this.activeMatch = index;
       this.highlightActiveMatch();
       await super.jumpToMatch(index);
+      if (results !== this.searchResults || this.activeMatch !== index) return;
+      // In 1up the native view infers the index from pages still entering the
+      // viewport. Keep navigation anchored to the match we actually selected.
+      this.searchView.currentMatchIndex = index;
+      this.searchView.updateResultsPosition();
+      this.searchView.updateSearchNavigationButtons();
       this.highlightActiveMatch();
     }
 
     init() {
       super.init();
+      this.searchView.setCurrentMatchIndex = () => {
+        this.searchView.currentMatchIndex = this.activeMatch;
+      };
+      this.searchView.resultsPosition = () => {
+        const total = this.searchResults?.matches.length || 0;
+        return this.activeMatch >= 0 && this.activeMatch < total
+          ? `${this.activeMatch + 1} / ${total}`
+          : `Найдено: ${total}`;
+      };
       const input = document.querySelector<HTMLInputElement>(".BRsearchInput")!;
       input.placeholder = "Поиск в документе";
       input.setAttribute("aria-label", "Поиск в документе");
@@ -105,13 +121,6 @@ export function makePdfSearchPlugin(text: PdfTextSearch) {
           ?.querySelector(".clear")
           ?.setAttribute("aria-label", "Очистить поиск");
       });
-      const localizeCount = () => {
-        const count = document.querySelector('[data-id="resultsCount"]');
-        if (count?.textContent?.includes("result"))
-          count.textContent = `Найдено: ${count.textContent.match(/\d+/)?.[0] ?? 0}`;
-      };
-      this.br.bind("SearchCallback", localizeCount);
-      this.br.bind("pageChanged", localizeCount);
     }
 
     async search(

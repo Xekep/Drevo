@@ -6,11 +6,17 @@ declare module "@internetarchive/bookreader/src/plugins/search/plugin.search.js"
   export class SearchPlugin extends BookReaderPlugin {
     br: BookReaderInstance;
     searchTerm: string | null;
+    searchResults: SearchResults | null;
     searchCancelled: boolean;
     suppressFragmentChange: boolean;
     _searchBoxesByIndex: Record<number, unknown[]>;
     searchView: {
       clearSearchFieldAndResults(dispatchEventWhenComplete?: boolean): void;
+      currentMatchIndex: number;
+      setCurrentMatchIndex(): void;
+      resultsPosition(): string;
+      updateResultsPosition(): void;
+      updateSearchNavigationButtons(): void;
     };
     search(
       term?: string,

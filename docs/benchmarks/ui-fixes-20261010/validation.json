@@ -82,5 +82,31 @@
     "No production deploy or data changes",
     "No physical devices, screen readers or Safari/Firefox",
     "No live AI-provider answer quality test"
-  ]
+  ],
+  "mergePreparation": {
+    "initialCi": {
+      "runId": 38000631441,
+      "passed": 793,
+      "skipped": 174,
+      "failed": 9
+    },
+    "fixes": [
+      "personal intro owns resize until its flight finishes",
+      "1up search keeps the selected match and navigation index",
+      "complementary panel selectors and Russian page label",
+      "quality fixture owns exactly two uncited events"
+    ],
+    "localFailedScenarioRepeat": {
+      "total": 18,
+      "passed": 14,
+      "skipped": 4,
+      "failed": 0,
+      "durationSeconds": 52.8
+    },
+    "pdfSearchAndCameraUnit": {
+      "passed": 11,
+      "failed": 0
+    },
+    "remoteCi": "rerun after fixes; check before merge"
+  }
 }

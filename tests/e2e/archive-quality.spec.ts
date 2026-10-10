@@ -8,6 +8,9 @@ test("quality center separates relationship hints from missing evidence", async 
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
+    // Other suites write events into the shared fixture; this scenario owns
+    // exactly two uncited events and must not inherit those writes.
+    for (const person of data.family.people) person.events = [];
     const child = data.family.people.find(
       (person: { id: string }) => person.id === "e2e-grandchild",
     );

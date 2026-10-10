@@ -347,11 +347,12 @@ export function useTreeCameraState({
               ease: contextEase,
             });
           }
-        } else if (lastCanvas.current &&
+        } else if (focusReady && lastCanvas.current &&
           (lastCanvas.current.windowWidth !== innerWidth || lastCanvas.current.windowHeight !== innerHeight)) {
           // Resize preserves the world point at the viewport centre. Explicit
           // focus, branch anchors and context changes above keep precedence.
           // Opening/closing an inspector at the same window size must not pan.
+          // The personal intro owns resize until its flight has completed.
           const dx = (canvasWidth - lastCanvas.current.width) / 2;
           const dy = (canvasHeight - lastCanvas.current.height) / 2;
           if (dx || dy) {

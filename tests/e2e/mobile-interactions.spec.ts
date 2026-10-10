@@ -81,7 +81,7 @@ test("long press selects a card without opening a profile or relationship mode",
   await expect(page).toHaveURL(/\/tree$/);
 });
 
-test("mobile relationship form has one close action and a named dialog", async ({
+test("mobile relationship form has one close action and a named complementary panel", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile");
@@ -89,7 +89,7 @@ test("mobile relationship form has one close action and a named dialog", async (
   await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").tap();
   await page.getByRole("button", { name: "Добавить родственника" }).click();
   await page.getByRole("button", { name: "Уже в древе" }).click();
-  const dialog = page.getByRole("dialog", { name: "Новая связь" });
+  const dialog = page.getByRole("complementary", { name: "Новая связь" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Закрыть связь" })).toHaveCount(1);
 });

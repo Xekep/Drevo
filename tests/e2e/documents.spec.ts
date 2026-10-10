@@ -313,7 +313,7 @@ test("источник карточки связывается с PDF без к�
   ).toBeVisible();
   await expect(
     page.frameLocator("iframe.pdf-book-frame").locator(".BRcurrentpage"),
-  ).toContainText("Page 2");
+  ).toContainText("Страница 2");
   await page.goto(`/documents/${id}/page/2000`);
   await expect(
     page

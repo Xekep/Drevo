@@ -44,14 +44,14 @@ test("an owner can name an empty tree and bind its first person to their account
   await expect.poll(() => family?.title).toBe("История семьи Тестовых");
   await page.getByRole("button", { name: "Добавить себя" }).click();
   if (testInfo.project.name === "mobile")
-    await expect(page.getByRole("dialog", { name: "Новый человек" })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Новый человек" })).toBeVisible();
   await page.getByRole("textbox", { name: /ФИО/ }).fill("Анна Тестовая");
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect.poll(() => boundPersonId).not.toBe("");
   await expect(page.getByText("Анна Тестовая").first()).toBeVisible();
   await page.getByRole("button", { name: "Изменить человека" }).click();
   if (testInfo.project.name === "mobile")
-    await expect(page.getByRole("dialog", { name: "Редактировать человека" })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Редактировать человека" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: /ФИО/ })).toBeVisible();
   if (testInfo.project.name === "mobile") await page.setViewportSize({ width: 320, height: 720 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
