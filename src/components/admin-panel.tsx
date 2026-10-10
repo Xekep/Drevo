@@ -15,6 +15,7 @@ type AdminPanelProps = {
   onChanged: () => void;
   save: (family: Family) => Promise<Family>;
   canEdit: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 const AdminPanelContent = lazy(() =>

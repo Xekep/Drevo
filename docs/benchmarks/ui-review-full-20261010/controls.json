@@ -1,0 +1,104 @@
+[
+  {
+    "name": "platform-Пользователи",
+    "width": 1440,
+    "overflow": 0
+  },
+  {
+    "name": "platform-Пользователи",
+    "width": 390,
+    "overflow": 0
+  },
+  {
+    "name": "platform-Yandex AI",
+    "width": 1440,
+    "overflow": 0
+  },
+  {
+    "name": "platform-Yandex AI",
+    "width": 390,
+    "overflow": 0
+  },
+  {
+    "name": "platform-Резервные копии",
+    "width": 1440,
+    "overflow": 0
+  },
+  {
+    "name": "platform-Резервные копии",
+    "width": 390,
+    "overflow": 0
+  },
+  {
+    "name": "platform-Хранилище",
+    "width": 1440,
+    "overflow": 0
+  },
+  {
+    "name": "platform-Хранилище",
+    "width": 390,
+    "overflow": 0
+  },
+  {
+    "name": "platform-Вход через VK",
+    "width": 1440,
+    "overflow": 0
+  },
+  {
+    "name": "platform-Вход через VK",
+    "width": 390,
+    "overflow": 0
+  },
+  {
+    "name": "platform-Вход по email",
+    "width": 1440,
+    "overflow": 0
+  },
+  {
+    "name": "platform-Вход по email",
+    "width": 390,
+    "overflow": 0
+  },
+  {
+    "name": "platform-Ресурсы поиска",
+    "width": 1440,
+    "overflow": 0
+  },
+  {
+    "name": "platform-Ресурсы поиска",
+    "width": 390,
+    "overflow": 0
+  },
+  {
+    "name": "email-draft-switch",
+    "dialogs": 0,
+    "host": "smtp.example.org"
+  },
+  {
+    "name": "person-search-keyboard",
+    "measurement": {
+      "active": "Тестова Анна Петровна1990 — н. в.",
+      "activeTop": 524.171875,
+      "activeBottom": 589.171875,
+      "listTop": 394.171875,
+      "listBottom": 634.171875,
+      "scrollTop": 0,
+      "visible": true
+    }
+  },
+  {
+    "name": "person-search-keyboard",
+    "width": 390,
+    "overflow": 0
+  },
+  {
+    "name": "email-login",
+    "width": 390,
+    "overflow": 0
+  },
+  {
+    "name": "registration",
+    "width": 320,
+    "overflow": 0
+  }
+]

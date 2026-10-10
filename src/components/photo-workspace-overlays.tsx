@@ -16,6 +16,7 @@ type Props = {
   user: ArchiveUser | null;
   workspace: PhotoWorkspace;
   canEdit: boolean;
+  canUpload?: boolean;
   busy: boolean;
   save: (family: Family) => Promise<Family>;
   upload: (file: File, metadata?: PhotoMetadata) => Promise<Family>;
@@ -30,6 +31,7 @@ export function PhotoWorkspaceOverlays({
   user,
   workspace,
   canEdit,
+  canUpload = canEdit,
   busy,
   save,
   upload,
@@ -41,9 +43,11 @@ export function PhotoWorkspaceOverlays({
   const photo = workspace.photo;
   return (
     <>
-      {workspace.uploadOpen && canEdit && (
+      {workspace.uploadOpen && canUpload && (
         <Suspense fallback={null}>
           <PhotoUpload
+            canTag={canEdit}
+            onDirtyChange={onDirtyChange}
             initialFile={workspace.droppedFile}
             upload={upload}
             busy={busy}

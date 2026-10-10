@@ -8,6 +8,9 @@ import {
 } from "../domain/people-directory";
 import { Avatar } from "./person-panel";
 import { LoadMore, useListLimit } from "./load-more";
+import { ArchiveLink } from "./archive-link";
+import { archiveTargetPath } from "../domain/archive-links";
+import { scopedArchivePath } from "../domain/archive-context";
 export function PeopleCatalog({
   people,
   query,
@@ -64,9 +67,12 @@ export function PeopleCatalog({
             life = directoryYears(p);
           return (
             <li key={p.id}>
-              <button
+              <ArchiveLink
                 className="directory-person"
-                onClick={() => onSelect(p.id)}
+                href={scopedArchivePath(
+                  archiveTargetPath({ kind: "person", id: p.id }),
+                )}
+                onNavigate={() => onSelect(p.id)}
               >
                 <span className="directory-name">
                   <Avatar person={p} />
@@ -104,7 +110,7 @@ export function PeopleCatalog({
                   )}
                 </span>
                 <ChevronRight className="directory-arrow" size={17} />
-              </button>
+              </ArchiveLink>
             </li>
           );
         })}

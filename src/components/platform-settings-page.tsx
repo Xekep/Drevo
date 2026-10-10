@@ -60,10 +60,10 @@ export default function PlatformSettingsPage({
   const [archives, setArchives] = useState<AvailableArchive[]>([]);
   const [archivesReady, setArchivesReady] = useState(false);
   const [aiArchiveId, setAiArchiveId] = useState("");
-  const aiDirty = useRef(false);
-  const reportAiDirty = useCallback(
+  const sectionDirty = useRef(false);
+  const reportDirty = useCallback(
     (dirty: boolean) => {
-      aiDirty.current = dirty;
+      sectionDirty.current = dirty;
       onDirtyChange?.(dirty);
     },
     [onDirtyChange],
@@ -121,7 +121,10 @@ export default function PlatformSettingsPage({
           selected={section}
           label="Разделы админки платформы"
           onSelect={(next) => {
-            if (next !== section && !confirmDiscardChanges(aiDirty.current))
+            if (
+              next !== section &&
+              !confirmDiscardChanges(sectionDirty.current)
+            )
               return;
             if (next === "ai" && section !== "ai") setArchivesReady(false);
             setSection(next);
@@ -138,7 +141,7 @@ export default function PlatformSettingsPage({
               !event.metaKey &&
               !event.shiftKey &&
               !event.altKey &&
-              !confirmDiscardChanges(aiDirty.current)
+              !confirmDiscardChanges(sectionDirty.current)
             )
               event.preventDefault();
           }}
@@ -174,7 +177,7 @@ export default function PlatformSettingsPage({
                     aria-label="Древо для Yandex AI"
                     value={aiArchiveId}
                     onChange={(event) => {
-                      if (!confirmDiscardChanges(aiDirty.current)) return;
+                      if (!confirmDiscardChanges(sectionDirty.current)) return;
                       setAiArchiveId(event.target.value);
                     }}
                   >
@@ -193,7 +196,7 @@ export default function PlatformSettingsPage({
                   key={aiArchiveId}
                   archiveId={aiArchiveId || null}
                   showCleanup={false}
-                  onDirtyChange={reportAiDirty}
+                  onDirtyChange={reportDirty}
                 />
               </>
             )}
@@ -233,7 +236,7 @@ export default function PlatformSettingsPage({
                 <h2>Вход по email</h2>
               </div>
             </div>
-            <EmailAuthAdmin />
+            <EmailAuthAdmin onDirtyChange={reportDirty} />
           </section>
         )}
         {section === "resources" && (

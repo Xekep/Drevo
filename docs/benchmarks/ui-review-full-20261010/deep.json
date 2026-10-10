@@ -1,0 +1,135 @@
+{
+  "results": [
+    {
+      "name": "document-upload",
+      "width": 1440,
+      "overflow": 0
+    },
+    {
+      "name": "document-upload",
+      "width": 390,
+      "overflow": 0
+    },
+    {
+      "name": "document-upload-reopen",
+      "title": "Черновик документа",
+      "dialogs": 0
+    },
+    {
+      "name": "manage-Участники",
+      "width": 1440,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Участники",
+      "width": 390,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Приглашения",
+      "width": 1440,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Приглашения",
+      "width": 390,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Общий доступ",
+      "width": 1440,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Общий доступ",
+      "width": 390,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Можно найти",
+      "width": 1440,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Можно найти",
+      "width": 390,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Связи древ",
+      "width": 1440,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Связи древ",
+      "width": 390,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Источники",
+      "width": 1440,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Источники",
+      "width": 390,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Резервные копии",
+      "width": 1440,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Резервные копии",
+      "width": 390,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Экспорт и импорт",
+      "width": 1440,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Экспорт и импорт",
+      "width": 390,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Журнал правок",
+      "width": 1440,
+      "overflow": 0
+    },
+    {
+      "name": "manage-Журнал правок",
+      "width": 390,
+      "overflow": 0
+    },
+    {
+      "name": "source-linked",
+      "width": 1440,
+      "overflow": 0
+    },
+    {
+      "name": "source-linked",
+      "width": 390,
+      "overflow": 0
+    },
+    {
+      "name": "source-draft-switch",
+      "value": "",
+      "dialogs": 0
+    },
+    {
+      "name": "login",
+      "width": 1440,
+      "overflow": 0
+    },
+    {
+      "name": "login",
+      "width": 320,
+      "overflow": 0
+    }
+  ],
+  "dialogs": "see console"
+}

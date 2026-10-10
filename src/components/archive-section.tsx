@@ -48,6 +48,7 @@ type Props = {
   query: string;
   user: ArchiveUser | null;
   canEdit: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
   mayEdit: boolean;
   busy: boolean;
   loadingDetails: boolean;
@@ -178,6 +179,7 @@ export function ArchiveSection(props: Props) {
         documentPage={props.documentPage}
         onSelectDocument={props.onSelectDocument}
         people={props.people}
+        onDirtyChange={props.onDirtyChange}
       />
     );
   else if (props.view === "insights")

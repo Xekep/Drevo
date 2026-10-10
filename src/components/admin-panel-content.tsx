@@ -1,6 +1,7 @@
 import { BackupAdmin } from "./backup-admin";
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { confirmDiscardChanges } from "../hooks/useUnsavedChanges";
 import { AdminNavigation } from "./admin-navigation";
 import {
   ArrowLeft,
@@ -317,6 +318,7 @@ export function AdminPanel({
   onChanged,
   save,
   canEdit,
+  onDirtyChange,
 }: {
   family: Family;
   currentUserId: string;
@@ -328,6 +330,7 @@ export function AdminPanel({
   onChanged: () => void;
   save: (family: Family) => Promise<Family>;
   canEdit: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [section, setSection] = useState(() => {
     if (typeof window === "undefined") return "users";
@@ -349,6 +352,11 @@ export function AdminPanel({
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
   const [auditActor, setAuditActor] = useState("");
+  const sourceDirty = useRef(false);
+  const reportDirty = useCallback((dirty: boolean) => {
+    sourceDirty.current = dirty;
+    onDirtyChange?.(dirty);
+  }, [onDirtyChange]);
   const visibleGroups = ADMIN_SECTIONS.map((group) => ({
     ...group,
     items: group.items.filter((item) => archiveOwner && (item.id !== "backups" || backupAccess)),
@@ -356,6 +364,7 @@ export function AdminPanel({
   const visibleSection = visibleGroups.some((group) => group.items.some((item) => item.id === section))
     ? section : visibleGroups[0]?.items[0]?.id || "users";
   const selectSection = (next: string) => {
+    if (next !== visibleSection && !confirmDiscardChanges(sourceDirty.current)) return;
     if (!visibleGroups.some((group) => group.items.some((item) => item.id === next))) return;
     setSection(next);
     setNotice("");
@@ -450,7 +459,7 @@ export function AdminPanel({
         <button
           className="admin-back"
           type="button"
-          onClick={onClose}
+          onClick={() => { if (confirmDiscardChanges(sourceDirty.current)) onClose(); }}
           aria-label="Вернуться к древу"
           title="Вернуться к древу"
         >
@@ -643,7 +652,7 @@ export function AdminPanel({
             </footer>
           </form>
         )}
-        {visibleSection === "sources" && <SourceCatalogAdmin family={family} onChanged={onChanged} />}
+        {visibleSection === "sources" && <SourceCatalogAdmin family={family} onChanged={onChanged} onDirtyChange={reportDirty} />}
         {visibleSection === "shares" && <ShareCatalog />}
         {visibleSection === "publications" && (publicationOwnership === "owner"
           ? <PublicationAdmin family={family} />

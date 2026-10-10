@@ -7,7 +7,14 @@ export function confirmDiscardChanges(dirty: boolean) {
   );
 }
 
-export function useUnsavedChanges(dirty: boolean) {
+export function useUnsavedChanges(
+  dirty: boolean,
+  onDirtyChange?: (dirty: boolean) => void,
+) {
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => {

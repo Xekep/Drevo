@@ -104,7 +104,7 @@ test("scope and anchor changes center the current anchor, even with unchanged ge
 
   await pan(page);
   dialog = await settings(page);
-  await dialog.getByRole("radio", { name: "Вверх: 4", exact: true }).check();
+  await dialog.getByRole("radio", { name: "Предки: 4", exact: true }).check();
   await dialog.getByRole("button", { name: "Закрыть" }).click();
   await expect(page.locator(".flow-person")).toHaveCount(4);
   await expectCentered(page, "e2e-grandchild");
@@ -187,7 +187,7 @@ test("opening a card after scope focus preserves the camera through inspector re
 
   // Cancelling an old scope request must not disable future explicit scope changes.
   dialog = await settings(page);
-  await dialog.getByRole("radio", { name: "Вверх: 4", exact: true }).check();
+  await dialog.getByRole("radio", { name: "Предки: 4", exact: true }).check();
   await dialog.getByRole("button", { name: "Закрыть" }).click();
   await expectCentered(page, "e2e-child");
   await pan(page);

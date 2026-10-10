@@ -86,8 +86,8 @@ export function TreePreferencesDialog({
     : initialFamilyFocus(people)[0];
   const limits = draft.generationLimits;
   const generationOptions = [
-    { key: "ancestors", label: "Вверх", values: ANCESTOR_GENERATIONS },
-    { key: "descendants", label: "Вниз", values: DESCENDANT_GENERATIONS },
+    { key: "ancestors", label: "Предки", values: ANCESTOR_GENERATIONS },
+    { key: "descendants", label: "Потомки", values: DESCENDANT_GENERATIONS },
     {
       key: "collateral",
       label: "Боковые ветви",

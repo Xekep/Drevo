@@ -1,0 +1,293 @@
+{
+  "states": [
+    {
+      "name": "people",
+      "width": 320,
+      "overflow": 0,
+      "rows": [
+        105.59375,
+        105.59375,
+        105.59375,
+        86.796875,
+        105.59375,
+        105.59375
+      ],
+      "captions": []
+    },
+    {
+      "name": "people",
+      "width": 360,
+      "overflow": 0,
+      "rows": [
+        105.59375,
+        105.59375,
+        105.59375,
+        86.796875,
+        105.59375,
+        105.59375
+      ],
+      "captions": []
+    },
+    {
+      "name": "people",
+      "width": 390,
+      "overflow": 0,
+      "rows": [
+        105.59375,
+        105.59375,
+        105.59375,
+        86.796875,
+        105.59375,
+        105.59375
+      ],
+      "captions": []
+    },
+    {
+      "name": "people",
+      "width": 768,
+      "overflow": 0,
+      "rows": [
+        105.59375,
+        105.59375,
+        105.59375,
+        86.796875,
+        105.59375,
+        105.59375
+      ],
+      "captions": []
+    },
+    {
+      "name": "people",
+      "width": 1024,
+      "overflow": 0,
+      "rows": [
+        69,
+        69,
+        69,
+        69,
+        69,
+        69
+      ],
+      "captions": []
+    },
+    {
+      "name": "people",
+      "width": 1440,
+      "overflow": 0,
+      "rows": [
+        69,
+        69,
+        69,
+        69,
+        69,
+        69
+      ],
+      "captions": []
+    },
+    {
+      "name": "people",
+      "width": 1920,
+      "overflow": 0,
+      "rows": [
+        69,
+        69,
+        69,
+        69,
+        69,
+        69
+      ],
+      "captions": []
+    },
+    {
+      "name": "timeline",
+      "width": 320,
+      "overflow": 0,
+      "rows": [],
+      "captions": [
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "в выбранном году"
+        },
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "Год рождения"
+        }
+      ]
+    },
+    {
+      "name": "timeline",
+      "width": 360,
+      "overflow": 0,
+      "rows": [],
+      "captions": [
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "в выбранном году"
+        },
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "Год рождения"
+        }
+      ]
+    },
+    {
+      "name": "timeline",
+      "width": 390,
+      "overflow": 0,
+      "rows": [],
+      "captions": [
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "в выбранном году"
+        },
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "Год рождения"
+        }
+      ]
+    },
+    {
+      "name": "timeline",
+      "width": 768,
+      "overflow": 0,
+      "rows": [],
+      "captions": [
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "в выбранном году"
+        },
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "Год рождения"
+        }
+      ]
+    },
+    {
+      "name": "timeline",
+      "width": 1024,
+      "overflow": 0,
+      "rows": [],
+      "captions": [
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "11px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "в выбранном году"
+        },
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "Год рождения"
+        },
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "1922–1991"
+        },
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "1991–2046"
+        }
+      ]
+    },
+    {
+      "name": "timeline",
+      "width": 1440,
+      "overflow": 0,
+      "rows": [],
+      "captions": [
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "11px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "в выбранном году"
+        },
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "Год рождения"
+        },
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "1922–1991"
+        },
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "1991–2046"
+        }
+      ]
+    },
+    {
+      "name": "timeline",
+      "width": 1920,
+      "overflow": 0,
+      "rows": [],
+      "captions": [
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "11px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "в выбранном году"
+        },
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "Год рождения"
+        },
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "1922–1991"
+        },
+        {
+          "color": "rgb(82, 99, 78)",
+          "size": "12px",
+          "background": "rgba(0, 0, 0, 0)",
+          "text": "1991–2046"
+        }
+      ]
+    },
+    {
+      "name": "document-search",
+      "width": 390,
+      "overflow": 0,
+      "rows": [],
+      "captions": []
+    },
+    {
+      "name": "photo-upload",
+      "width": 390,
+      "overflow": 0,
+      "rows": [],
+      "captions": []
+    }
+  ],
+  "errors": []
+}

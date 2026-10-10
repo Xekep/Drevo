@@ -231,7 +231,9 @@ export function LoginButtons({
                 onChange={(event) => setPassword(event.target.value)}
                 required
                 minLength={mode === "login" ? undefined : 12}
+                aria-describedby={mode === "login" ? undefined : "new-password-help"}
               />
+              {mode !== "login" && <small id="new-password-help">Не менее 12 символов</small>}
             </label>
           )}
           {message && <p role="status">{message}</p>}

@@ -31,6 +31,12 @@ test("администратор сохраняет источник и связ
   await expect(page.locator(".source-catalog-list")).toContainText(title);
   const catalog = await page.request.get("/api/sources?q=Метрическая").then((response) => response.json());
   expect(catalog.sources.find((source: { title: string }) => source.title === title).documentIds).toContain(documentId);
+  // Existing linked documents keep their titles outside the search page.
+  await page.route("**/api/documents?*", (route) => route.fulfill({ json: { items: [], total: 0 } }));
+  await page.reload();
+  await page.locator(".source-catalog-list").getByRole("button", { name: new RegExp(title) }).click();
+  await expect(editor.locator(".source-document-tags")).toContainText(documentTitle);
+  await page.unroute("**/api/documents?*");
   await editor.getByLabel("Название").fill(`${title} исправленная`);
   await page.route("**/api/sources/*", async (route) => {
     if (route.request().method() === "PUT")
@@ -46,6 +52,7 @@ test("администратор сохраняет источник и связ
 
   await editor.getByLabel("Человек").fill("Иван Тестов");
   await page.getByRole("option", { name: /^Тестов Иван Петрович/ }).click();
+  await expect(editor.getByLabel("Документ источника").locator("option")).toHaveText(documentTitle);
   await editor.getByLabel("Страница документа").fill("1");
   await editor.getByRole("button", { name: "Привязать", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Источник привязан к факту" })).toBeVisible();

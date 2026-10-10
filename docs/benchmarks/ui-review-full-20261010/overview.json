@@ -1,0 +1,1381 @@
+{
+  "sourceHead": "60783787879d0e1ddd64207fc6d019ff38286da8",
+  "mergedMain": "9f3462341c46d770fcfa6d17be6b26d92de6e4cf",
+  "states": [
+    {
+      "name": "tree",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "tree",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "tree",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "tree",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "people",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "people",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "people",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "people",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "families",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "families",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "families",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "families",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "photos",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "photos",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "photos",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "photos",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "documents",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "documents",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "documents",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "documents",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "places",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "places",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "places",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "places",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "insights",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "insights",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "insights",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "insights",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "resources",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "resources",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "resources",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "resources",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "account",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "account",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "account",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "account",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "missing-page",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "missing-page",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "missing-page",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "missing-page",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "profile",
+      "width": 1920,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "profile",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "profile",
+      "width": 1024,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "profile",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "profile",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "profile",
+      "width": 360,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "profile",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "editor",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "editor",
+      "width": 1024,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "editor",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "editor",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "editor",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "timeline",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "timeline",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "timeline",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "timeline",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "ai",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "ai",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "ai",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "ai",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "manage",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "manage",
+      "width": 1024,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "manage",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "manage",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "manage",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "admin",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "admin",
+      "width": 1024,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "admin",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "admin",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "admin",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "admin-ai",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "admin-ai",
+      "width": 768,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "admin-ai",
+      "width": 390,
+      "height": 900,
+      "overflow": 0
+    },
+    {
+      "name": "admin-ai",
+      "width": 320,
+      "height": 900,
+      "overflow": 0
+    }
+  ],
+  "pageErrors": [],
+  "e2e": {
+    "passed": 43,
+    "skipped": 1,
+    "failed": 0
+  },
+  "contrast": [
+    {
+      "screen": "timeline",
+      "width": 1440,
+      "text": "в выбранном году",
+      "font": "11px",
+      "color": "rgb(123, 136, 120)",
+      "background": [
+        250,
+        251,
+        247
+      ],
+      "ratio": 3.585893173660274
+    },
+    {
+      "screen": "timeline",
+      "width": 1440,
+      "text": "1920",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 1440,
+      "text": "1930",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 1440,
+      "text": "1940",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 1440,
+      "text": "1950",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 1440,
+      "text": "1960",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 1440,
+      "text": "1970",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 1440,
+      "text": "1980",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 1440,
+      "text": "1990",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 1440,
+      "text": "Год рождения",
+      "font": "10px",
+      "color": "rgb(120, 133, 114)",
+      "background": [
+        255,
+        255,
+        251
+      ],
+      "ratio": 3.881885232526655
+    },
+    {
+      "screen": "timeline",
+      "width": 1440,
+      "text": "1922–1991",
+      "font": "10px",
+      "color": "rgb(108, 125, 102)",
+      "background": [
+        234,
+        223,
+        210
+      ],
+      "ratio": 3.355951117185024
+    },
+    {
+      "screen": "timeline",
+      "width": 768,
+      "text": "в выбранном году",
+      "font": "10px",
+      "color": "rgb(123, 136, 120)",
+      "background": [
+        250,
+        251,
+        247
+      ],
+      "ratio": 3.585893173660274
+    },
+    {
+      "screen": "timeline",
+      "width": 768,
+      "text": "1920",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 768,
+      "text": "1930",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 768,
+      "text": "1940",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 768,
+      "text": "1950",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 768,
+      "text": "1960",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 768,
+      "text": "Год рождения",
+      "font": "10px",
+      "color": "rgb(120, 133, 114)",
+      "background": [
+        255,
+        255,
+        251
+      ],
+      "ratio": 3.881885232526655
+    },
+    {
+      "screen": "timeline",
+      "width": 390,
+      "text": "в выбранном году",
+      "font": "10px",
+      "color": "rgb(123, 136, 120)",
+      "background": [
+        250,
+        251,
+        247
+      ],
+      "ratio": 3.585893173660274
+    },
+    {
+      "screen": "timeline",
+      "width": 390,
+      "text": "1920",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 390,
+      "text": "1930",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 390,
+      "text": "1940",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 390,
+      "text": "1950",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 390,
+      "text": "Год рождения",
+      "font": "10px",
+      "color": "rgb(120, 133, 114)",
+      "background": [
+        255,
+        255,
+        251
+      ],
+      "ratio": 3.881885232526655
+    },
+    {
+      "screen": "timeline",
+      "width": 320,
+      "text": "в выбранном году",
+      "font": "10px",
+      "color": "rgb(123, 136, 120)",
+      "background": [
+        250,
+        251,
+        247
+      ],
+      "ratio": 3.585893173660274
+    },
+    {
+      "screen": "timeline",
+      "width": 320,
+      "text": "1920",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 320,
+      "text": "1930",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 320,
+      "text": "1940",
+      "font": "12px",
+      "color": "rgb(104, 122, 96)",
+      "background": [
+        250,
+        251.85,
+        245.95
+      ],
+      "ratio": 4.47011631650913
+    },
+    {
+      "screen": "timeline",
+      "width": 320,
+      "text": "Год рождения",
+      "font": "10px",
+      "color": "rgb(120, 133, 114)",
+      "background": [
+        255,
+        255,
+        251
+      ],
+      "ratio": 3.881885232526655
+    },
+    {
+      "screen": "manage",
+      "width": 1440,
+      "text": "Участник",
+      "font": "11px",
+      "color": "rgb(120, 132, 120)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 3.910372203585358
+    },
+    {
+      "screen": "manage",
+      "width": 1440,
+      "text": "Роль",
+      "font": "11px",
+      "color": "rgb(120, 132, 120)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 3.910372203585358
+    },
+    {
+      "screen": "manage",
+      "width": 1440,
+      "text": "Кто это в древе",
+      "font": "11px",
+      "color": "rgb(120, 132, 120)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 3.910372203585358
+    },
+    {
+      "screen": "manage",
+      "width": 1440,
+      "text": "Показывать",
+      "font": "11px",
+      "color": "rgb(120, 132, 120)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 3.910372203585358
+    },
+    {
+      "screen": "manage",
+      "width": 1440,
+      "text": "Действия",
+      "font": "11px",
+      "color": "rgb(120, 132, 120)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 3.910372203585358
+    },
+    {
+      "screen": "admin",
+      "width": 1440,
+      "text": "Пользователь",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1440,
+      "text": "Глобальная роль",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1440,
+      "text": "Уровень доступа",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1440,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1440,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1440,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1440,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1440,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1440,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1440,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1440,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1440,
+      "text": "Страница 1",
+      "font": "12px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1024,
+      "text": "Пользователь",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1024,
+      "text": "Глобальная роль",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1024,
+      "text": "Уровень доступа",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1024,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1024,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1024,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1024,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1024,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1024,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1024,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1024,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 1024,
+      "text": "Страница 1",
+      "font": "12px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 768,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 768,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 768,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 768,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 768,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 768,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 390,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 390,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 390,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 390,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 320,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 320,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    },
+    {
+      "screen": "admin",
+      "width": 320,
+      "text": "Последний визит: 09.10.2026, 21:00",
+      "font": "11px",
+      "color": "rgb(113, 129, 110)",
+      "background": [
+        255,
+        255,
+        255
+      ],
+      "ratio": 4.144134852909136
+    }
+  ]
+}

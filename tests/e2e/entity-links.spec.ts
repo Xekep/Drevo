@@ -132,7 +132,7 @@ test("переход из снимка перестраивает открыты
     "aria-pressed",
     "true",
   );
-  await page.locator(".photo-albums > button").first().click();
+  await page.locator(".photo-albums > a").first().click();
   await page.locator(".photo-tile").first().click();
   await page.getByRole("button", { name: /Показать сведения:.*Иван/ }).click();
   await page.getByRole("button", { name: "Показать в древе" }).click();

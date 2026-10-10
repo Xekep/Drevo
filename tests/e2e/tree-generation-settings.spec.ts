@@ -169,7 +169,7 @@ test("generation settings trim the visible tree and survive reload without chang
     .getByRole("combobox", { name: "Относительно человека" })
     .fill("Пётр");
   await dialog.getByRole("option", { name: /Тестов Пётр Иванович/ }).click();
-  await dialog.getByRole("radio", { name: "Вниз: 1", exact: true }).check();
+  await dialog.getByRole("radio", { name: "Потомки: 1", exact: true }).check();
   await dialog
     .getByRole("radio", { name: "Боковые ветви: 0", exact: true })
     .check();
@@ -207,8 +207,8 @@ test("generation settings trim the visible tree and survive reload without chang
     .getByRole("radio", { name: "Боковые ветви: 2", exact: true })
     .check();
   await expect(card("e2e-sibling-child")).toBeVisible();
-  await dialog.getByRole("radio", { name: "Вверх: 7+", exact: true }).check();
-  await dialog.getByRole("radio", { name: "Вниз: 50", exact: true }).check();
+  await dialog.getByRole("radio", { name: "Предки: 7+", exact: true }).check();
+  await dialog.getByRole("radio", { name: "Потомки: 50", exact: true }).check();
   await dialog
     .getByRole("switch", { name: "Ограничить видимое древо" })
     .uncheck();

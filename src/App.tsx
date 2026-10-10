@@ -2,6 +2,7 @@ import { archiveFetch } from "./data/archive-fetch.ts";
 import { canManageTreeBackups, isArchiveOwner } from "./domain/access.ts";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { confirmDiscardChanges } from "./hooks/useUnsavedChanges";
+import { useNavigationChanges } from "./hooks/useNavigationChanges";
 import { ArrowDownUp, ImagePlus, Link2, Plus, X } from "lucide-react";
 import {
   analyzeKinship,
@@ -99,17 +100,14 @@ export default function App() {
         ?.kind === "person",
   );
   const [treeGrowing, setTreeGrowing] = useState(!initialPersonLink);
-  const navigationDirty = useRef(false);
+  const { reportDirty, canLeave } = useNavigationChanges();
   const onPlatformSettingsDirtyChange = useCallback((dirty: boolean) => {
-    navigationDirty.current = dirty;
-  }, []);
-  const [requestedView, setView, currentPath] = useArchiveView(
-    useCallback(() => {
-      const leave = confirmDiscardChanges(navigationDirty.current);
-      if (leave) navigationDirty.current = false;
-      return leave;
-    }, []),
-  );
+    reportDirty("section", dirty);
+  }, [reportDirty]);
+  const onPhotoDirtyChange = useCallback((dirty: boolean) => {
+    reportDirty("photo", dirty);
+  }, [reportDirty]);
+  const [requestedView, setView, currentPath] = useArchiveView(canLeave);
   const archive = useArchive(requestedView !== "admin"),
     {
       family,
@@ -280,8 +278,8 @@ export default function App() {
     setConnectionDirty(false);
     setConnectionDraft(null);
     setPreview(null);
-    navigationDirty.current = false;
-  }, []);
+    reportDirty("connection", false);
+  }, [reportDirty]);
   const closeConnection = useCallback(() => {
     if (busy || !confirmDiscardChanges(connectionDirty)) return false;
     finishConnection();
@@ -289,15 +287,15 @@ export default function App() {
   }, [busy, connectionDirty, finishConnection]);
   const onPersonDirtyChange = useCallback((dirty: boolean) => {
     personDirty.current = dirty;
-    navigationDirty.current = dirty;
-  }, []);
+    reportDirty("person", dirty);
+  }, [reportDirty]);
   const setPersonDraft = useCallback((next: PersonDraft | null) => {
     if (!confirmDiscardChanges(personDirty.current)) return false;
     personDirty.current = false;
-    navigationDirty.current = false;
+    reportDirty("person", false);
     setPersonDraftState(next);
     return true;
-  }, []);
+  }, [reportDirty]);
   const photoWorkspace = usePhotoWorkspace(family),
     { clearFilter } = photoWorkspace;
   const [urlVersion, setUrlVersion] = useState(0);
@@ -689,10 +687,10 @@ export default function App() {
   }, [canEdit, closeConnection, dispatch, setView, setPersonDraft]);
   const updateConnection = useCallback((draft: ConnectionDraft) => {
     setConnectionDirty(true);
-    navigationDirty.current = true;
+    reportDirty("connection", true);
     setConnectionDraft(draft);
     setPreview(draft);
-  }, []);
+  }, [reportDirty]);
   function closeEditor() {
     if (busy) return;
     setPersonDraft(null);
@@ -796,11 +794,7 @@ export default function App() {
               onHelp={() => setHelp(true)}
               participantPreview={Boolean(participantPreview)}
               onTreePreferences={readTree ? () => setTreePreferencesOpen(true) : undefined}
-              onPlatformLeave={() => {
-                const leave = confirmDiscardChanges(navigationDirty.current);
-                if (leave) navigationDirty.current = false;
-                return leave;
-              }}
+              onPlatformLeave={canLeave}
             />
           }
           people={people}
@@ -899,6 +893,7 @@ export default function App() {
                   onChanged={archive.reload}
                   save={save}
                   canEdit={canEdit && desktop}
+                  onDirtyChange={onPlatformSettingsDirtyChange}
                 />
               ) : (
                 <div className="archive-status">
@@ -1159,6 +1154,7 @@ export default function App() {
                   canEdit={canEdit && desktop}
                   mayEdit={!participantPreview && allowedEdit}
                   busy={busy}
+                  onDirtyChange={onPlatformSettingsDirtyChange}
                   loadingDetails={archive.loadingDetails ||
                     (needsPeopleDetails && !hasCollectionDetails("people")) ||
                     (needsPhotoDetails && !hasCollectionDetails("photos"))}
@@ -1267,10 +1263,9 @@ export default function App() {
           workspace={linkedPhotoWorkspace}
             loadPersonDetails={loadPersonDetails}
             hasPersonDetails={hasPersonDetails}
-            onDirtyChange={(dirty) => {
-            navigationDirty.current = dirty;
-          }}
+            onDirtyChange={onPhotoDirtyChange}
           canEdit={canEdit && desktop}
+          canUpload={canEdit}
           busy={busy}
           save={save}
           upload={upload}
