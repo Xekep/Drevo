@@ -379,8 +379,8 @@ test("PDF можно перетащить, затем привязать из д
   const edit = page.getByRole("form", { name: "Редактировать документ" });
   await edit.getByLabel("Найти человека для документа").fill("Пётр");
   await edit
-    .locator(".documents-person-results")
-    .getByRole("button", { name: /Пётр/ })
+    .locator(".person-search-results")
+    .getByRole("option", { name: /Пётр/ })
     .click();
   await edit.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect(edit).toBeHidden();
@@ -561,9 +561,9 @@ test("участник загружает PDF и читает страницы �
   await form.getByLabel("Название").fill(title);
   await form.getByLabel("Найти человека для документа").fill("Тестов Иван");
   await expect(
-    form.locator(".documents-person-results button").first(),
+    form.locator(".person-search-results [role=option]").first(),
   ).toBeVisible();
-  await form.locator(".documents-person-results button").first().click();
+  await form.locator(".person-search-results [role=option]").first().click();
   await form.getByRole("button", { name: "Добавить документ" }).click();
   const newReader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await expect(newReader).toBeVisible();

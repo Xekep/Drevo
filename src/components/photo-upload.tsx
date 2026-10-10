@@ -15,12 +15,16 @@ export function PhotoUpload({
   onUploaded,
   busy,
   initialFile,
+  canTag = true,
+  onDirtyChange,
 }: {
   upload: (file: File, metadata?: PhotoMetadata) => Promise<Family>;
   onClose: () => void;
   onUploaded: (id: string) => void;
   busy: boolean;
   initialFile?: File | null;
+  canTag?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [file, setFile] = useState<File | null>(() =>
       initialFile && !photoFileError(initialFile) ? initialFile : null,
@@ -29,7 +33,7 @@ export function PhotoUpload({
     [error, setError] = useState("");
   const preview = useRef<HTMLImageElement>(null);
   const dirty = !!file || Object.values(metadata).some(Boolean);
-  useUnsavedChanges(dirty);
+  useUnsavedChanges(dirty, onDirtyChange);
   const close = () => {
     if (!busy && confirmDiscardChanges(dirty)) onClose();
   };
@@ -102,7 +106,9 @@ export function PhotoUpload({
           </label>
           <div className="photo-upload-fields">
             <p className="flow-intro">
-              Сначала снимок и его история. Затем — отметки людей.
+              {canTag
+                ? "Сначала снимок и его история. Затем — отметки людей."
+                : "Добавьте снимок и его историю в семейный архив."}
             </p>
             <div className="form-grid">
               <label>
@@ -151,7 +157,7 @@ export function PhotoUpload({
             <p className="field-hint">
               Неизвестные сведения можно пропустить и добавить позже.
             </p>
-            <div className="scan-explainer">
+            {canTag && <div className="scan-explainer">
               <ScanFace size={22} />
               <p>
                 <b>Поможем отметить людей</b>
@@ -159,7 +165,7 @@ export function PhotoUpload({
                 После сохранения найдём лица и предложим рамки. Выберите
                 человека для каждой отметки.
               </p>
-            </div>
+            </div>}
             {error && (
               <p role="alert" className="form-error">
                 {error}
@@ -170,7 +176,11 @@ export function PhotoUpload({
         <footer>
           <button className="primary-action" disabled={!file || busy}>
             <Upload size={16} />
-            {busy ? "Сохраняем снимок…" : "Сохранить и отметить людей"}
+            {busy
+              ? "Сохраняем снимок…"
+              : canTag
+                ? "Сохранить и отметить людей"
+                : "Сохранить фотографию"}
           </button>
           <button
             type="button"

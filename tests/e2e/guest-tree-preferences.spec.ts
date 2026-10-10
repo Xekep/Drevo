@@ -87,7 +87,7 @@ for (const mode of ["shared", "public"] as const)
       .getByRole("combobox", { name: "Относительно человека" })
       .fill("Пётр");
     await dialog.getByRole("option", { name: /Тестов Пётр Иванович/ }).click();
-    await dialog.getByRole("radio", { name: "Вниз: 1", exact: true }).check();
+    await dialog.getByRole("radio", { name: "Потомки: 1", exact: true }).check();
     await dialog
       .getByRole("radio", { name: "Боковые ветви: 0", exact: true })
       .check();

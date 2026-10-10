@@ -385,6 +385,8 @@ button:disabled,
   gap: 22px;
 }
 .photo-tile {
+  color: inherit;
+  text-decoration: none;
   text-align: left;
   background: white;
   border: 1px solid var(--line);

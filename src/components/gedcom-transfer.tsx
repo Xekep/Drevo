@@ -130,10 +130,15 @@ export function GedcomTransfer({
         GEDCOM и GEDZIP сохраняют текст цитат, а GEDZIP также оригиналы файлов.
         Связи цитат с каталогом источников Drevo не переносятся. Для полного
         переноса между древами Drevo используйте формат .drevo.
-        Название и описание архива записываются в заголовок GEDCOM; длинные
-        значения дополнительно сохраняются в поле Drevo, которое сторонняя
-        программа может удалить при повторном экспорте.
       </p>
+      <details>
+        <summary>Особенности формата</summary>
+        <p>
+          Название и описание архива записываются в заголовок GEDCOM. Длинные
+          значения дополнительно сохраняются в поле Drevo, которое сторонняя
+          программа может удалить при повторном экспорте.
+        </p>
+      </details>
       <a
         className="primary-action"
         href={archiveResourceUrl(`/api/gedcom/export?format=${format}`)}
@@ -154,9 +159,8 @@ export function GedcomTransfer({
       <hr />
       <h2>Импорт</h2>
       <p>
-        GEDCOM 5.5.1 / 7 — до 32 МиБ, GEDZIP — до 512 МиБ, XML с вложениями — до
-        256 МиБ; PDF — до 100 МБ, TIFF — до 50 МБ, фото — до 20 МБ. XML с папкой .files упакуйте в
-        один ZIP.
+        Выберите файл для предварительной проверки. XML с папкой .files упакуйте
+        в один ZIP.
       </p>
       <label>
         Файл GEDCOM, GEDZIP или XML «Древа Жизни 6»
@@ -172,6 +176,21 @@ export function GedcomTransfer({
           }}
         />
       </label>
+      {file && (
+        <p role="status">
+          {/\.(ged|gedcom)$/i.test(file.name)
+            ? "GEDCOM — до 32 МиБ."
+            : /\.(gdz|gedzip)$/i.test(file.name)
+              ? "GEDZIP — до 512 МиБ."
+              : /\.xml$/i.test(file.name)
+                ? "XML — до 256 МиБ."
+                : "ZIP с XML — до 256 МиБ; GEDZIP — до 512 МиБ."}
+        </p>
+      )}
+      <details>
+        <summary>Ограничения вложений</summary>
+        <p>PDF — до 100 МБ, TIFF — до 50 МБ, фото — до 20 МБ.</p>
+      </details>
       <button
         type="button"
         disabled={!file || busy}

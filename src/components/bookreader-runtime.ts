@@ -15,6 +15,15 @@ export type BookReaderInstance = {
   constMode1up: number;
   constMode2up: number;
   switchMode(mode: number): void;
+  resize(): void;
+  _modes: {
+    mode1Up: {
+      mode1UpLit: HTMLElement & {
+        updateVisibleRegion(): void;
+        initFirstRender(index: number): void;
+      };
+    };
+  };
   _components: {
     navbar: {
       getNavPageNumString(index: number): string;

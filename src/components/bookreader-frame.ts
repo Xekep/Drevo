@@ -361,28 +361,56 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
     let manualMode = false;
     let changingMode = false;
     let automaticMode = currentReader.mode;
-    for (const event of ["1PageViewSelected", "2PageViewSelected", "3PageViewSelected"])
+    let resizeFrame = 0;
+    const refreshViewport = () => {
+      cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
+        currentReader.resize();
+        if (currentReader.mode === currentReader.constMode1up) {
+          const view = currentReader._modes.mode1Up.mode1UpLit;
+          // Pinned BookReader reconnects its cached Lit view without refreshing
+          // dimensions. A resize while detached can leave its viewport at 0×0.
+          if (view.isConnected) view.updateVisibleRegion();
+        }
+      });
+    };
+    for (const event of [
+      "1PageViewSelected",
+      "2PageViewSelected",
+      "3PageViewSelected",
+    ])
       currentReader.bind(event, () => {
-        if (!changingMode && currentReader.mode !== automaticMode) manualMode = true;
+        if (!changingMode && currentReader.mode !== automaticMode)
+          manualMode = true;
+        refreshViewport();
       });
     const updateReaderMode = () => {
       if (manualMode) return;
-      automaticMode = narrowReader.matches || pageCount === 1
-        ? currentReader.constMode1up : currentReader.constMode2up;
+      automaticMode =
+        narrowReader.matches || pageCount === 1
+          ? currentReader.constMode1up
+          : currentReader.constMode2up;
       if (currentReader.mode === automaticMode) return;
       const page = currentReader.currentIndex();
       changingMode = true;
       try {
         currentReader.switchMode(automaticMode);
+        if (automaticMode === currentReader.constMode1up)
+          currentReader._modes.mode1Up.mode1UpLit.initFirstRender(page);
         currentReader.jumpToIndex(page);
+        refreshViewport();
       } finally {
         changingMode = false;
       }
     };
     narrowReader.addEventListener("change", updateReaderMode);
+    const viewportObserver = new ResizeObserver(refreshViewport);
+    viewportObserver.observe(document.getElementById("bookreader")!);
     const cleanupBeforeMode = cleanupDocument;
     cleanupDocument = () => {
       narrowReader.removeEventListener("change", updateReaderMode);
+      viewportObserver.disconnect();
+      cancelAnimationFrame(resizeFrame);
       cleanupBeforeMode();
     };
     // The pinned BookReader version has no locale option for these strings.

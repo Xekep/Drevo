@@ -15,19 +15,21 @@ export function PersonSearch({
   inputAriaLabel,
   clearLabel = "Выбрать другого человека",
   excludeId,
+  excludeIds,
   people,
   showAllOnEmpty = false,
 }: {
   value: string;
   selected?: Person;
   onChange: (id: string) => void;
-  onCommit?: (id: string) => void;
+  onCommit?: (id: string, person?: PersonOption) => void;
   onCancel?: () => void;
   disabled?: boolean;
   label?: string;
   inputAriaLabel?: string;
   clearLabel?: string;
   excludeId?: string;
+  excludeIds?: string[];
   /** Search only this accessible pool, without an authenticated API request. */
   people?: Person[];
   /** A small, already restricted list, such as the person's union partners. */
@@ -98,13 +100,26 @@ export function PersonSearch({
   }, [needle, open, disabled, value, attempt, localSearch]);
   const options =
     searchResult.query === needle
-      ? searchResult.people.filter((p) => p.id !== excludeId)
+      ? searchResult.people.filter(
+          (p) => p.id !== excludeId && !excludeIds?.includes(p.id),
+        )
       : [];
   const visible = open && !value && !disabled;
+  useEffect(() => {
+    if (!visible || active < 0) return;
+    const option = document.getElementById(`${id}-${active}`);
+    const list = option?.closest("ul");
+    if (!option || !list) return;
+    const item = option.getBoundingClientRect(), bounds = list.getBoundingClientRect();
+    // Scroll only the results, preserving the page and the combobox focus.
+    if (item.top < bounds.top) list.scrollTop += item.top - bounds.top;
+    else if (item.bottom > bounds.bottom) list.scrollTop += item.bottom - bounds.bottom;
+  }, [visible, active, id]);
   function choose(person: PersonOption) {
     setPicked(person);
     onChange(person.id);
-    onCommit?.(person.id);
+    onCommit?.(person.id, person);
+    setQuery("");
     setOpen(false);
     setActive(-1);
   }

@@ -7,6 +7,9 @@ import { newestPhotos, photoAlbums } from "../domain/photo-albums";
 import { mediaPreview } from "../domain/media-preview";
 import { LoadMore } from "./load-more";
 import { photoFileError } from "../domain/photo-upload";
+import { ArchiveLink } from "./archive-link";
+import { archiveTargetPath } from "../domain/archive-links";
+import { scopedArchivePath } from "../domain/archive-context";
 import {
   faceRecognitionAvailable,
   warmFaceAssistant,
@@ -66,14 +69,14 @@ export function Gallery({
     const onDragEnter = (event: DragEvent) => {
       if (!hasFiles(event) || dialogOpen()) return;
       event.preventDefault();
-      if (canEdit) setDragging(true);
+      if (mayEdit) setDragging(true);
     };
     const onDragOver = (event: DragEvent) => {
       if (!hasFiles(event) || dialogOpen()) return;
       event.preventDefault();
       if (event.dataTransfer)
-        event.dataTransfer.dropEffect = canEdit ? "copy" : "none";
-      if (canEdit) setDragging(true);
+        event.dataTransfer.dropEffect = mayEdit ? "copy" : "none";
+      if (mayEdit) setDragging(true);
     };
     const onDragLeave = (event: DragEvent) => {
       if (
@@ -89,7 +92,7 @@ export function Gallery({
       const alreadyHandled = event.defaultPrevented;
       event.preventDefault();
       reset();
-      if (alreadyHandled || dialogOpen() || !canEdit) return;
+      if (alreadyHandled || dialogOpen() || !mayEdit) return;
       const files = event.dataTransfer?.files;
       const problem =
         files?.length !== 1
@@ -112,7 +115,7 @@ export function Gallery({
       window.removeEventListener("dragend", reset);
       window.removeEventListener("blur", reset);
     };
-  }, [canEdit, onDropPhoto]);
+  }, [mayEdit, onDropPhoto]);
   const available = (family.photos || []).filter(
     (photo) =>
       !personFilter || photo.tags.some((t) => t.personId === personFilter),
@@ -123,7 +126,9 @@ export function Gallery({
       ? "all"
       : mode;
   const albums =
-    activeMode === "all" ? [] : photoAlbums(available, family.people, activeMode);
+    activeMode === "all"
+      ? []
+      : photoAlbums(available, family.people, activeMode);
   const album = yearFilter
     ? albums.find((item) => item.id === yearFilter)
     : null;
@@ -133,7 +138,7 @@ export function Gallery({
   return (
     <section className="gallery-view" aria-label="Галерея семейных фотографий">
       {dragging &&
-        canEdit &&
+        mayEdit &&
         createPortal(
           <div className="gallery-drop-overlay" role="status">
             <ImagePlus size={46} strokeWidth={1.2} />
@@ -207,7 +212,7 @@ export function Gallery({
               </button>
             ))}
           </div>
-          {canEdit && (
+          {mayEdit && (
             <button className="primary-action" onClick={onAdd}>
               <ImagePlus size={18} />
               Добавить фото
@@ -236,19 +241,27 @@ export function Gallery({
           <ImagePlus size={42} strokeWidth={1} />
           <h3>Первые страницы альбома</h3>
           <p>
-            {mayEdit && !canEdit
-              ? "Добавить фотографии можно с компьютера."
-              : canEdit
-                ? "Добавьте семейную фотографию и отметьте на ней людей."
-                : "В архиве пока нет фотографий."}
+            {mayEdit
+              ? canEdit ? "Добавьте семейную фотографию и отметьте на ней людей." : "Добавьте семейную фотографию в архив."
+              : "В архиве пока нет фотографий."}
           </p>
         </div>
       ) : browsingAlbums ? (
         <div className="photo-albums">
           {albums.slice(0, limit).map((item) => (
-            <button
+            <ArchiveLink
               key={item.id}
-              onClick={() => {
+              href={scopedArchivePath(
+                `/photos?${new URLSearchParams({
+                  ...(activeMode === "people"
+                    ? { personId: item.id }
+                    : {
+                        ...(personFilter ? { personId: personFilter } : {}),
+                        year: item.id,
+                      }),
+                })}`,
+              )}
+              onNavigate={() => {
                 if (activeMode === "people") {
                   setMode("all");
                   onSelectAlbum(item.id, null);
@@ -267,16 +280,19 @@ export function Gallery({
                 <b>{item.label}</b>
                 <small>{item.photos.length} фото</small>
               </span>
-            </button>
+            </ArchiveLink>
           ))}
         </div>
       ) : (
         <div className="photo-grid">
           {photos.slice(0, limit).map((photo) => (
-            <button
+            <ArchiveLink
               className="photo-tile"
               key={photo.id}
-              onClick={() =>
+              href={scopedArchivePath(
+                archiveTargetPath({ kind: "photo", id: photo.id }),
+              )}
+              onNavigate={() =>
                 onOpen(
                   photo.id,
                   photos.map((p) => p.id),
@@ -304,7 +320,7 @@ export function Gallery({
                   )}
                 </span>
               )}
-            </button>
+            </ArchiveLink>
           ))}
         </div>
       )}

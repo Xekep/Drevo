@@ -107,8 +107,8 @@ test("locating an already visible person moves the camera without saving generat
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
   await expect(dialog.getByRole("combobox", { name: "Относительно человека" }))
     .toHaveValue("Тестов Пётр Иванович");
-  await expect(dialog.getByRole("radio", { name: "Вверх: 3", exact: true })).toBeChecked();
-  await expect(dialog.getByRole("radio", { name: "Вниз: 1", exact: true })).toBeChecked();
+  await expect(dialog.getByRole("radio", { name: "Предки: 3", exact: true })).toBeChecked();
+  await expect(dialog.getByRole("radio", { name: "Потомки: 1", exact: true })).toBeChecked();
   await expect(dialog.getByRole("radio", { name: "Боковые ветви: 0", exact: true })).toBeChecked();
 });
 

@@ -221,7 +221,7 @@
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0;
-  color: #7b8878;
+  color: #52634e;
 }
 .timeline-axis-track,
 .timeline-era-track,
@@ -234,7 +234,7 @@
   bottom: 8px;
   padding-left: 7px;
   border-left: 1px solid #b2bea9;
-  color: #687a60;
+  color: #52634e;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -247,7 +247,11 @@
   gap: 3px;
   padding: 9px 12px;
   border-left: 2px dashed #6686a8;
-  background: repeating-linear-gradient(135deg, #e5edf7 0 8px, #eef3fa 8px 16px);
+  background: repeating-linear-gradient(
+    135deg,
+    #e5edf7 0 8px,
+    #eef3fa 8px 16px
+  );
   color: #365b7b;
   pointer-events: none;
 }
@@ -354,8 +358,8 @@
   white-space: nowrap;
 }
 .timeline-person small {
-  color: #788572;
-  font-size: 10px;
+  color: #52634e;
+  font-size: 12px;
   font-style: normal;
   line-height: 1.3;
   overflow: hidden;
@@ -396,7 +400,11 @@
   border-right: 4px dotted #496d45;
 }
 .timeline-life.is-estimated {
-  background: repeating-linear-gradient(to right, #9c8068 0 8px, transparent 8px 12px);
+  background: repeating-linear-gradient(
+    to right,
+    #9c8068 0 8px,
+    transparent 8px 12px
+  );
 }
 .timeline-event {
   position: absolute;
@@ -542,8 +550,8 @@
   text-overflow: ellipsis;
 }
 .timeline-era-segment small {
-  color: #6c7d66;
-  font-size: 10px;
+  color: #52634e;
+  font-size: 12px;
 }
 @keyframes timeline-person-enter {
   from {
@@ -612,16 +620,16 @@
     font-size: 12px;
   }
   .timeline-person > span > span {
-    font-size: 11px;
+    font-size: 12px;
   }
   .timeline-axis-title strong {
-    font-size: 11px;
+    font-size: 12px;
   }
   .timeline-axis-title small {
-    font-size: 10px;
+    font-size: 12px;
   }
   .timeline-person small {
-    font-size: 10px;
+    font-size: 12px;
   }
   .timeline-era-segment small {
     display: none;

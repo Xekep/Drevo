@@ -1,0 +1,69 @@
+[
+  {
+    "name": "person-search-last-option",
+    "measurement": {
+      "active": "Тестова Ольга1992 — н. в.",
+      "activeTop": 719.171875,
+      "activeBottom": 784.171875,
+      "listTop": 394.171875,
+      "listBottom": 634.171875,
+      "scrollTop": 0,
+      "visible": false
+    }
+  },
+  {
+    "name": "person-search-last-option",
+    "width": 390,
+    "overflow": 0
+  },
+  {
+    "name": "ctrl-click-person",
+    "before": "http://127.0.0.1:4197/people",
+    "after": "http://127.0.0.1:4197/people/e2e-memorial-person",
+    "tabs": 1
+  },
+  {
+    "name": "photo-view",
+    "width": 1440,
+    "overflow": 0
+  },
+  {
+    "name": "photo-view",
+    "width": 390,
+    "overflow": 0
+  },
+  {
+    "name": "photo-information",
+    "width": 390,
+    "overflow": 0
+  },
+  {
+    "name": "document-person-empty",
+    "text": "К кому относится · необязательно"
+  },
+  {
+    "name": "document-person-empty",
+    "width": 390,
+    "overflow": 0
+  },
+  {
+    "name": "reader",
+    "width": 1440,
+    "overflow": 0
+  },
+  {
+    "name": "reader",
+    "width": 390,
+    "overflow": 0
+  },
+  {
+    "name": "fan",
+    "width": 1440,
+    "overflow": 0
+  },
+  {
+    "name": "fan",
+    "width": 390,
+    "overflow": 0
+  }
+]

@@ -1,4 +1,8 @@
 import { documentFileTypeFromName } from "../shared/document-file.ts";
+import {
+  confirmDiscardChanges,
+  useUnsavedChanges,
+} from "../hooks/useUnsavedChanges";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import {
   useCallback,
@@ -40,19 +44,32 @@ export type ListedDocument = DocumentDetails & {
   createdAt: string;
   canDelete?: boolean;
   people: Array<{ id: string; name: string }>;
-  eventLinks: Array<DocumentEventLink & { personName: string; eventTitle: string }>;
+  eventLinks: Array<
+    DocumentEventLink & { personName: string; eventTitle: string }
+  >;
   pages: DocumentPage[];
-  sources: Array<{ personId: string; personName: string; eventId?: string; eventTitle?: string; title: string; reference: string; page?: number; assertions: string[] }>;
+  sources: Array<{
+    personId: string;
+    personName: string;
+    eventId?: string;
+    eventTitle?: string;
+    title: string;
+    reference: string;
+    page?: number;
+    assertions: string[];
+  }>;
 };
 
 type DocumentCatalogPage = { items: ListedDocument[]; total: number };
 const PAGE_SIZE = 30;
-const documentSize = (bytes: number) => bytes >= 1024 * 1024
-  ? `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} МБ`
-  : `${Math.max(1, Math.round(bytes / 1024))} КБ`;
-const documentFormat = (mimeType?: string) => mimeType?.startsWith("image/")
-  ? mimeType.slice(6).replace("jpeg", "jpg").toUpperCase()
-  : "PDF";
+const documentSize = (bytes: number) =>
+  bytes >= 1024 * 1024
+    ? `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} МБ`
+    : `${Math.max(1, Math.round(bytes / 1024))} КБ`;
+const documentFormat = (mimeType?: string) =>
+  mimeType?.startsWith("image/")
+    ? mimeType.slice(6).replace("jpeg", "jpg").toUpperCase()
+    : "PDF";
 const EMPTY_DETAILS: DocumentDetails = {
   documentType: "",
   documentDate: "",
@@ -69,6 +86,7 @@ export function DocumentsCatalog({
   documentPage,
   onSelectDocument,
   people,
+  onDirtyChange,
 }: {
   mayEdit: boolean;
   allowUnlinked: boolean;
@@ -77,6 +95,7 @@ export function DocumentsCatalog({
   documentPage?: number;
   onSelectDocument: (id: string | null) => void;
   people: Person[];
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [documents, setDocuments] = useState<ListedDocument[]>([]);
   const [total, setTotal] = useState(0);
@@ -111,25 +130,53 @@ export function DocumentsCatalog({
   const [editPages, setEditPages] = useState<DocumentPage[]>([]);
   const [dragging, setDragging] = useState(false);
   const filteredPerson = people.find((person) => person.id === personFilter);
+  const [initialEdit, setInitialEdit] = useState("");
+  const editSnapshot = JSON.stringify([
+    editTitle,
+    editDetails,
+    editPeople,
+    editEvents,
+    editPages,
+  ]);
+  const editDirty = !!editing && editSnapshot !== initialEdit;
+  const uploadDirty =
+    !!file ||
+    !!title.trim() ||
+    Object.values(details).some(Boolean) ||
+    selectedPeople.some((person) => person.id !== personFilter) ||
+    !!eventLinks.length ||
+    !!pages.length;
+  useUnsavedChanges(uploadDirty || editDirty, onDirtyChange);
+  const closeEdit = () => {
+    if (!savingEdit && confirmDiscardChanges(editDirty)) setEditing(null);
+  };
 
   const chooseFile = useCallback(
     (next: File) => {
+      if (!confirmDiscardChanges(editDirty || (!!file && uploadDirty))) return;
       setUploadOpen(true);
       setEditing(null);
       setUploadError("");
       const type = documentFileTypeFromName(next.name);
       if (
         !type ||
-        (next.type && ![type.mime, "application/octet-stream", ...(type.extension === "tif" ? ["image/x-tiff"] : [])].includes(next.type))
+        (next.type &&
+          ![
+            type.mime,
+            "application/octet-stream",
+            ...(type.extension === "tif" ? ["image/x-tiff"] : []),
+          ].includes(next.type))
       ) {
         setUploadError("Поддерживаются PDF, TIFF, JPEG/JFIF, PNG, WebP и GIF");
         setFile(null);
         return;
       }
       if (next.size > type.maxBytes) {
-        setUploadError(["pdf", "tif"].includes(type.extension)
-          ? `${type.extension === "pdf" ? "PDF" : "TIFF"} должен быть не больше ${type.maxBytes / 1024 / 1024} МБ`
-          : "Изображение должно быть не больше 20 МБ");
+        setUploadError(
+          ["pdf", "tif"].includes(type.extension)
+            ? `${type.extension === "pdf" ? "PDF" : "TIFF"} должен быть не больше ${type.maxBytes / 1024 / 1024} МБ`
+            : "Изображение должно быть не больше 20 МБ",
+        );
         setFile(null);
         return;
       }
@@ -142,7 +189,7 @@ export function DocumentsCatalog({
           { id: filteredPerson.id, name: fullName(filteredPerson) },
         ]);
     },
-    [filteredPerson],
+    [filteredPerson, editDirty, file, uploadDirty],
   );
 
   useEffect(() => {
@@ -220,7 +267,7 @@ export function DocumentsCatalog({
           { signal: request.signal },
         );
         if (!response.ok) throw new Error("Не удалось загрузить документы");
-      const page = (await response.json()) as DocumentCatalogPage;
+        const page = (await response.json()) as DocumentCatalogPage;
         if (request.signal.aborted) return;
         setTotal(page.total);
         setDocuments((current) =>
@@ -317,10 +364,15 @@ export function DocumentsCatalog({
         const result = (await response.json()) as { error?: string };
         throw new Error(result.error || "Не удалось загрузить документ");
       }
-      const created = (await response.json()) as { id?: string; accessChanged?: boolean };
+      const created = (await response.json()) as {
+        id?: string;
+        accessChanged?: boolean;
+      };
       if (created.accessChanged || !created.id) {
         setFile(null);
-        setUploadError("Документ сохранён, но доступ изменился. Не загружайте его повторно; войдите снова.");
+        setUploadError(
+          "Документ сохранён, но доступ изменился. Не загружайте его повторно; войдите снова.",
+        );
         return;
       }
       setSelected({
@@ -338,8 +390,14 @@ export function DocumentsCatalog({
         })),
         eventLinks: eventLinks.map((link) => {
           const person = people.find((item) => item.id === link.personId);
-          const event = person?.events?.find((item) => item.id === link.eventId);
-          return { ...link, personName: person ? fullName(person) : "", eventTitle: event?.title || event?.type || "" };
+          const event = person?.events?.find(
+            (item) => item.id === link.eventId,
+          );
+          return {
+            ...link,
+            personName: person ? fullName(person) : "",
+            eventTitle: event?.title || event?.type || "",
+          };
         }),
         pages,
         sources: [],
@@ -365,12 +423,19 @@ export function DocumentsCatalog({
   };
 
   const beginEdit = (entry: ListedDocument) => {
+    if (!confirmDiscardChanges(editDirty)) return;
     setUploadOpen(false);
     setSelected(null);
     onSelectDocument(null);
     setEditing(entry);
     setEditPeople(entry.people);
-    setEditEvents(entry.eventLinks.map(({ personId, eventId, page }) => ({ personId, eventId, ...(page ? { page } : {}) })));
+    setEditEvents(
+      entry.eventLinks.map(({ personId, eventId, page }) => ({
+        personId,
+        eventId,
+        ...(page ? { page } : {}),
+      })),
+    );
     setEditPages(entry.pages);
     setEditTitle(entry.title);
     setEditDetails({
@@ -381,6 +446,25 @@ export function DocumentsCatalog({
       provenance: entry.provenance,
     });
     setEditError("");
+    setInitialEdit(
+      JSON.stringify([
+        entry.title,
+        {
+          documentType: entry.documentType,
+          documentDate: entry.documentDate,
+          place: entry.place,
+          description: entry.description,
+          provenance: entry.provenance,
+        },
+        entry.people,
+        entry.eventLinks.map(({ personId, eventId, page }) => ({
+          personId,
+          eventId,
+          ...(page ? { page } : {}),
+        })),
+        entry.pages,
+      ]),
+    );
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -422,7 +506,9 @@ export function DocumentsCatalog({
         throw new Error(result.error || "Не удалось сохранить документ");
       if (result.accessChanged) {
         setEditing(null);
-        setError("Изменения сохранены, но доступ изменился. Не повторяйте запрос; войдите снова.");
+        setError(
+          "Изменения сохранены, но доступ изменился. Не повторяйте запрос; войдите снова.",
+        );
         return;
       }
       setEditing(null);
@@ -536,6 +622,7 @@ export function DocumentsCatalog({
               type="button"
               className="documents-add"
               onClick={() => {
+                if (!confirmDiscardChanges(editDirty)) return;
                 setEditing(null);
                 if (!uploadOpen && filteredPerson && !selectedPeople.length)
                   setSelectedPeople([
@@ -569,11 +656,14 @@ export function DocumentsCatalog({
             </button>
           </div>
           <label className="documents-drop-zone">
-            <span className="documents-drop-icon"><Upload size={26} aria-hidden="true" /></span>
-            <strong>
-              {file ? file.name : "Перетащите документ сюда"}
-            </strong>
-            <span>PDF до 100 МБ, TIFF до 50 МБ, изображение до 20 МБ · людей можно привязать позже</span>
+            <span className="documents-drop-icon">
+              <Upload size={26} aria-hidden="true" />
+            </span>
+            <strong>{file ? file.name : "Перетащите документ сюда"}</strong>
+            <span>
+              PDF до 100 МБ, TIFF до 50 МБ, изображение до 20 МБ · людей можно
+              привязать позже
+            </span>
             <span className="documents-file-picker">
               {file ? "Выбрать другой файл" : "Выбрать файл"}
             </span>
@@ -602,7 +692,11 @@ export function DocumentsCatalog({
             value={selectedPeople}
             onChange={(next) => {
               setSelectedPeople(next);
-              setEventLinks((current) => current.filter((link) => next.some((person) => person.id === link.personId)));
+              setEventLinks((current) =>
+                current.filter((link) =>
+                  next.some((person) => person.id === link.personId),
+                ),
+              );
             }}
             optional={allowUnlinked}
             disabled={uploading}
@@ -613,8 +707,15 @@ export function DocumentsCatalog({
               setDetails((current) => ({ ...current, [key]: value }))
             }
           />
-          <DocumentRelationsFields people={people} personIds={selectedPeople.map((person) => person.id)}
-            eventLinks={eventLinks} pages={pages} onEventsChange={setEventLinks} onPagesChange={setPages} disabled={uploading} />
+          <DocumentRelationsFields
+            people={people}
+            personIds={selectedPeople.map((person) => person.id)}
+            eventLinks={eventLinks}
+            pages={pages}
+            onEventsChange={setEventLinks}
+            onPagesChange={setPages}
+            disabled={uploading}
+          />
           {uploadError && (
             <p role="alert" className="documents-upload-error">
               {uploadError}
@@ -645,7 +746,7 @@ export function DocumentsCatalog({
             <h2>Сведения о документе</h2>
             <button
               type="button"
-              onClick={() => setEditing(null)}
+              onClick={closeEdit}
               aria-label="Закрыть редактирование"
             >
               <X size={18} />
@@ -664,7 +765,11 @@ export function DocumentsCatalog({
             value={editPeople}
             onChange={(next) => {
               setEditPeople(next);
-              setEditEvents((current) => current.filter((link) => next.some((person) => person.id === link.personId)));
+              setEditEvents((current) =>
+                current.filter((link) =>
+                  next.some((person) => person.id === link.personId),
+                ),
+              );
             }}
             disabled={savingEdit}
           />
@@ -675,8 +780,15 @@ export function DocumentsCatalog({
               setEditDetails((current) => ({ ...current, [key]: value }))
             }
           />
-          <DocumentRelationsFields people={people} personIds={editPeople.map((person) => person.id)}
-            eventLinks={editEvents} pages={editPages} onEventsChange={setEditEvents} onPagesChange={setEditPages} disabled={savingEdit} />
+          <DocumentRelationsFields
+            people={people}
+            personIds={editPeople.map((person) => person.id)}
+            eventLinks={editEvents}
+            pages={editPages}
+            onEventsChange={setEditEvents}
+            onPagesChange={setEditPages}
+            disabled={savingEdit}
+          />
           {editError && (
             <p role="alert" className="documents-upload-error">
               {editError}
@@ -690,11 +802,7 @@ export function DocumentsCatalog({
             >
               {savingEdit ? "Сохраняем…" : "Сохранить"}
             </button>
-            <button
-              type="button"
-              onClick={() => setEditing(null)}
-              disabled={savingEdit}
-            >
+            <button type="button" onClick={closeEdit} disabled={savingEdit}>
               Отмена
             </button>
           </div>
@@ -780,9 +888,11 @@ export function DocumentsCatalog({
                     }}
                   >
                     <span className="document-item-icon">
-                      {document.mimeType?.startsWith("image/")
-                        ? <ImageIcon size={25} strokeWidth={1.5} />
-                        : <BookOpenText size={25} strokeWidth={1.5} />}
+                      {document.mimeType?.startsWith("image/") ? (
+                        <ImageIcon size={25} strokeWidth={1.5} />
+                      ) : (
+                        <BookOpenText size={25} strokeWidth={1.5} />
+                      )}
                     </span>
                     <span className="document-item-text">
                       <strong>{document.title}</strong>
@@ -790,8 +900,12 @@ export function DocumentsCatalog({
                         <span className="document-format">
                           {documentFormat(document.mimeType)}
                         </span>
-                        <span>{document.documentType || documentSize(document.size)}</span>
-                        {document.documentDate && <span>· {document.documentDate}</span>}
+                        <span>
+                          {document.documentType || documentSize(document.size)}
+                        </span>
+                        {document.documentDate && (
+                          <span>· {document.documentDate}</span>
+                        )}
                       </small>
                     </span>
                   </button>
@@ -811,7 +925,12 @@ export function DocumentsCatalog({
                       className="document-delete"
                       label={`Удалить документ «${document.title}»`}
                       confirmationLabel={`Подтвердить удаление документа «${document.title}»`}
-                      disabled={deleting !== null || !!activeSelected || !!editing || uploadOpen}
+                      disabled={
+                        deleting !== null ||
+                        !!activeSelected ||
+                        !!editing ||
+                        uploadOpen
+                      }
                       onConfirm={() => void remove(document)}
                     />
                   )}

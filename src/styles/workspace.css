@@ -551,8 +551,8 @@ body,
 }
 .admin-users-head {
   padding: 13px 10px 9px;
-  color: #788478;
-  font-size: 11px;
+  color: #52634e;
+  font-size: 12px;
   font-weight: 600;
 }
 .admin-user-row {
@@ -642,6 +642,14 @@ body,
 }
 .admin-user-row .person-search {
   margin: 0;
+}
+.admin-user-row .person-search-input {
+  height: 46px;
+  padding-block: 0;
+}
+.admin-user-row .person-search .person-search-input input {
+  min-height: 44px;
+  padding-block: 0;
 }
 .admin-user-row .person-search > label {
   position: absolute;

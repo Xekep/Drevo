@@ -1,0 +1,121 @@
+{
+  "runs": [
+    {
+      "repeat": 0,
+      "w": 390,
+      "state": {
+        "pages": 3,
+        "images": [
+          {
+            "complete": true,
+            "width": 1132
+          },
+          {
+            "complete": true,
+            "width": 1132
+          },
+          {
+            "complete": true,
+            "width": 1132
+          }
+        ],
+        "one": "<br-mode-1up class=\"br-mode-1up__root BRmode1up\" style=\"touch-action: pan-x pan-y;\"><!---->\n      <div class=\"br-mode-1up__world\" style=\"width: 544.067px; height: 2200.72px; transform: scale(0.716824);\"></div>\n      <div class=\"br-mode-1up__visible-world\" style=\"transform: scale(0.716824);\">\n        <!--?lit$332857083$--><!----><div class=\"BRpagecontainer pagediv0 BRpage-visible\" data-side=\"R\" data-index=\"0\" data-page-num=\"1\" style=\"position: absolute; width: 496.067px; height: 701.575px; top: 0px; left: 0px; transform: translate(24px, 24px);\"><img class=\"BRpageimage\" alt=\"Book page image\" draggable=\"false\" src=\"blob:http://127.0.0.1:4197/89f9f72e-1236-4270-918a-86cb714d89d0\"><div class=\"dre",
+        "bodyClass": "",
+        "text": "О документе\n\nСтраница 1 из 3"
+      }
+    },
+    {
+      "repeat": 0,
+      "w": 1440,
+      "state": {
+        "pages": 3,
+        "images": [
+          {
+            "complete": true,
+            "width": 1132
+          },
+          {
+            "complete": true,
+            "width": 1132
+          },
+          {
+            "complete": true,
+            "width": 1132
+          }
+        ],
+        "bodyClass": "",
+        "text": "О документе\n\nСтраница 1 из 3"
+      }
+    },
+    {
+      "repeat": 0,
+      "w": 320,
+      "state": {
+        "pages": 0,
+        "images": [],
+        "one": "<br-mode-1up class=\"br-mode-1up__root BRmode1up\" style=\"touch-action: pan-x pan-y;\"><!---->\n      <div class=\"br-mode-1up__world\" style=\"width: 544.067px; height: 2200.72px; transform: scale(0.716824);\"></div>\n      <div class=\"br-mode-1up__visible-world\" style=\"transform: scale(0.716824);\">\n        <!--?lit$332857083$-->\n      </div></br-mode-1up>",
+        "bodyClass": "",
+        "text": "О документе\n\nСтраница 1 из 3"
+      }
+    },
+    {
+      "repeat": 1,
+      "w": 390,
+      "state": {
+        "pages": 3,
+        "images": [
+          {
+            "complete": true,
+            "width": 1132
+          },
+          {
+            "complete": true,
+            "width": 1132
+          },
+          {
+            "complete": true,
+            "width": 1132
+          }
+        ],
+        "one": "<br-mode-1up class=\"br-mode-1up__root BRmode1up\" style=\"touch-action: pan-x pan-y;\"><!---->\n      <div class=\"br-mode-1up__world\" style=\"width: 544.067px; height: 2200.72px; transform: scale(0.716824);\"></div>\n      <div class=\"br-mode-1up__visible-world\" style=\"transform: scale(0.716824);\">\n        <!--?lit$944947913$--><!----><div class=\"BRpagecontainer pagediv0 BRpage-visible\" data-side=\"R\" data-index=\"0\" data-page-num=\"1\" style=\"position: absolute; width: 496.067px; height: 701.575px; top: 0px; left: 0px; transform: translate(24px, 24px);\"><img class=\"BRpageimage\" alt=\"Book page image\" draggable=\"false\" src=\"blob:http://127.0.0.1:4197/841a4ba4-f61c-466c-ae10-43a4423d647a\"><div class=\"dre",
+        "bodyClass": "",
+        "text": "О документе\n\nСтраница 1 из 3"
+      }
+    },
+    {
+      "repeat": 1,
+      "w": 1440,
+      "state": {
+        "pages": 3,
+        "images": [
+          {
+            "complete": true,
+            "width": 1132
+          },
+          {
+            "complete": true,
+            "width": 1132
+          },
+          {
+            "complete": true,
+            "width": 1132
+          }
+        ],
+        "bodyClass": "",
+        "text": "О документе\n\nСтраница 1 из 3"
+      }
+    },
+    {
+      "repeat": 1,
+      "w": 320,
+      "state": {
+        "pages": 0,
+        "images": [],
+        "one": "<br-mode-1up class=\"br-mode-1up__root BRmode1up\" style=\"touch-action: pan-x pan-y;\"><!---->\n      <div class=\"br-mode-1up__world\" style=\"width: 544.067px; height: 2200.72px; transform: scale(0.716824);\"></div>\n      <div class=\"br-mode-1up__visible-world\" style=\"transform: scale(0.716824);\">\n        <!--?lit$944947913$-->\n      </div></br-mode-1up>",
+        "bodyClass": "",
+        "text": "О документе\n\nСтраница 1 из 3"
+      }
+    }
+  ],
+  "logs": []
+}

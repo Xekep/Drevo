@@ -8,7 +8,7 @@ import type { Family, Person } from "../src/domain/index.ts";
 
 const root = new URL("..", import.meta.url);
 
-test("album keeps one semantic title and explains desktop-only upload on mobile", async () => {
+test("album keeps one semantic title and offers mobile upload only with edit permission", async () => {
   const server = await createServer({
     configFile: false,
     optimizeDeps: { noDiscovery: true },
@@ -38,8 +38,15 @@ test("album keeps one semantic title and explains desktop-only upload on mobile"
       }),
     );
     assert.match(html, /<h1>Семейный альбом<\/h1>/);
-    assert.match(html, /Добавить фотографии можно с компьютера/);
+    assert.match(html, /Добавить фото/);
+    assert.match(html, /Добавьте семейную фотографию в архив/);
+    assert.doesNotMatch(html, /Добавить фотографии можно с компьютера/);
     assert.doesNotMatch(html, /gallery-title-(?:mobile|desktop)/);
+    const readOnly = renderToStaticMarkup(createElement(Gallery, {
+      family, canEdit: false, mayEdit: false, onAdd: () => {},
+      onOpen: () => {}, onDropPhoto: () => {}, onSelectAlbum: () => {},
+    }));
+    assert.doesNotMatch(readOnly, /Добавить фото/);
   } finally {
     await server.close();
   }

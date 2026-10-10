@@ -12,7 +12,11 @@ function canonicalPath() {
     .replace(/^(\/a\/[A-Za-z0-9-]{3,64})\/admin(?=\/|$)/, "$1/manage")
     .replace(/^\/admin\/matches(?=\/|$)/, "/manage/matches");
   if (path !== window.location.pathname)
-    window.history.replaceState(window.history.state, "", path + window.location.search + window.location.hash);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      path + window.location.search + window.location.hash,
+    );
   return path + window.location.search;
 }
 
@@ -24,6 +28,8 @@ export function useArchiveView(canLeave: () => boolean = () => true) {
   );
   const navigate = useCallback(
     (next: ArchiveView, target?: ArchiveTarget | string, replace = false) => {
+      if (next !== archiveViewAt(window.location.pathname) && !canLeave())
+        return;
       if (next === "admin") {
         window.location.assign(archivePaths.admin);
         return;
@@ -46,7 +52,7 @@ export function useArchiveView(canLeave: () => boolean = () => true) {
       updatePath(path);
       update(next);
     },
-    [],
+    [canLeave],
   );
   useEffect(() => {
     const sync = () => {

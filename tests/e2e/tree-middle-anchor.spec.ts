@@ -288,10 +288,10 @@ for (const mode of ["shared", "public"] as const) {
       dialog.getByRole("combobox", { name: "Относительно человека" }),
     ).toHaveValue("Тестов Пётр Иванович");
     await expect(
-      dialog.getByRole("radio", { name: "Вверх: 3", exact: true }),
+      dialog.getByRole("radio", { name: "Предки: 3", exact: true }),
     ).toBeChecked();
     await expect(
-      dialog.getByRole("radio", { name: "Вниз: 3", exact: true }),
+      dialog.getByRole("radio", { name: "Потомки: 3", exact: true }),
     ).toBeChecked();
     await expect(
       dialog.getByRole("radio", { name: "Боковые ветви: 1", exact: true }),

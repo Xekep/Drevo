@@ -221,7 +221,7 @@ test("альбом человека сохраняет адрес и показ�
 
   await page.getByRole("button", { name: "По годам" }).click();
   await page
-    .locator(".photo-albums button")
+    .locator(".photo-albums a")
     .filter({ hasText: "1980" })
     .click();
   await expect(page).toHaveURL(/\/photos\?personId=e2e-child&year=1980$/);
@@ -242,7 +242,7 @@ test("общая галерея открывает альбомы людей и 
     "true",
   );
   await page
-    .locator(".photo-albums button")
+    .locator(".photo-albums a")
     .filter({ hasText: "Пётр" })
     .click();
   await expect(page).toHaveURL(/\/photos\?personId=e2e-child$/);
@@ -259,7 +259,7 @@ test("общая галерея открывает альбомы людей и 
   await expect(page.getByRole("button", { name: "По людям" })).toBeVisible();
   await page.getByRole("button", { name: "По годам" }).click();
   await page
-    .locator(".photo-albums button")
+    .locator(".photo-albums a")
     .filter({ hasText: "2000" })
     .click();
   await expect(page).toHaveURL(/\/photos\?year=2000$/);
