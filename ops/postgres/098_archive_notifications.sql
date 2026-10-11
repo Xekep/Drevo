@@ -2,15 +2,17 @@
 CREATE TABLE IF NOT EXISTS archive_notification_cursors (
   archive_id text NOT NULL DEFAULT current_setting('drevo.archive_id',true)
     REFERENCES archives(id) ON DELETE CASCADE,
-  user_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  user_id text NOT NULL,
   read_through bigint NOT NULL DEFAULT 0 CHECK(read_through>=0),
-  PRIMARY KEY(archive_id,user_id)
+  PRIMARY KEY(archive_id,user_id),
+  FOREIGN KEY(archive_id,user_id) REFERENCES archive_memberships(archive_id,user_id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS archive_notification_reads (
   archive_id text NOT NULL DEFAULT current_setting('drevo.archive_id',true),
-  user_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  user_id text NOT NULL,
   event_id bigint NOT NULL,
   PRIMARY KEY(archive_id,user_id,event_id),
+  FOREIGN KEY(archive_id,user_id) REFERENCES archive_memberships(archive_id,user_id) ON DELETE CASCADE,
   FOREIGN KEY(archive_id,event_id) REFERENCES archive_audit_entries(archive_id,id) ON DELETE CASCADE
 );
 ALTER TABLE archive_notification_cursors ENABLE ROW LEVEL SECURITY;
