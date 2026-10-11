@@ -14,6 +14,8 @@ import { startServer } from "../../src/server/index.ts";
 import { openArchive } from "../../src/server/database.ts";
 import { userStore } from "../../src/server/users.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
+import { auditStore } from "../../src/server/audit.ts";
+import { archiveNotificationsStore } from "../../src/server/archive-notifications.ts";
 
 // This program is appended to the ordinary-role, disposable runtime CI only.
 assert.match(
@@ -167,6 +169,27 @@ try {
     join(directory, "b.sqlite"),
     shared,
   );
+  // Ordinary-role SQL exercises the notification dialect and RLS isolation.
+  for (const db of [a, b]) await db.transaction(async () => {
+    await auditStore(db).record({ action: "Добавлено", entity: "people", entityId: "same-id",
+      label: "Historical private label", personIds: ["same-id"], details: [] },
+    { id: "fixture-owner", name: "Владелец" });
+  });
+  const inboxA = archiveNotificationsStore(a);
+  const inboxB = archiveNotificationsStore(b);
+  const notificationsA = await inboxA.list("shared-probe-reader", null);
+  const notificationsB = await inboxB.list("shared-probe-reader", null);
+  assert.equal(notificationsA.unread, 1);
+  assert.equal(notificationsB.unread, 1);
+  assert.match(notificationsA.items[0].personName, /shared-probe-0/);
+  assert.match(notificationsB.items[0].personName, /shared-probe-1/);
+  assert.equal((await inboxA.list("shared-probe-reader", new Set())).unread, 0);
+  assert.equal(await inboxA.read("shared-probe-reader", null, notificationsB.latest), false);
+  assert.equal(await inboxA.read("shared-probe-reader", null, notificationsA.latest), true);
+  assert.equal((await inboxA.list("shared-probe-reader", null)).unread, 0);
+  assert.equal((await inboxB.list("shared-probe-reader", null)).unread, 1);
+  await inboxB.readThrough("shared-probe-reader", null, notificationsB.latest);
+  assert.equal((await inboxB.list("shared-probe-reader", null)).unread, 0);
   await assert.rejects(
     a.transaction(async () => {
       await a
@@ -199,6 +222,14 @@ try {
   app = await startServer(0, join(directory, "root.sqlite"), true);
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   const headers = { Cookie: `drevo_session=${token}` };
+  for (const index of [0, 1]) {
+    const response = await fetch(`${base}/a/shared-probe-${index}/api/notifications`, { headers });
+    assert.equal(response.status, 200);
+    const inbox = await response.json();
+    assert.equal(inbox.items.length, 1);
+    assert.equal(inbox.unread, 0);
+    assert.match(inbox.items[0].personName, new RegExp(`shared-probe-${index}`));
+  }
   const began = performance.now();
   // Opening is intentionally bounded; all 100 distinct runtimes remain live.
   for (let i = 0; i < 100; i++) {

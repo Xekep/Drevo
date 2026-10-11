@@ -1,6 +1,6 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
-import { archiveDocumentPath } from "../domain/archive-routes.ts";
+import { archiveDocumentPath, archiveEntityAt } from "../domain/archive-routes.ts";
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import {
   ArrowDownUp,
@@ -146,7 +146,9 @@ export function PersonPanel({
   canLoadDocuments?: boolean;
   idPrefix?: string;
 }) {
-  const [tab, setTab] = useState<"bio" | "sources" | "discussion">("bio");
+  const [tab, setTab] = useState<"bio" | "sources" | "discussion">(() =>
+    canDiscuss && typeof window !== "undefined" && window.location.hash === "#discussion" && archiveEntityAt(window.location.pathname)?.id === person.id
+      ? "discussion" : "bio");
   const discussionCount = useDiscussionCount(person.id, canDiscuss);
   const [documents, setDocuments] = useState<{
     personId: string;

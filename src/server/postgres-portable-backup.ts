@@ -36,6 +36,8 @@ export async function writePortablePostgresBackup(
       tree_settings: "SELECT * FROM runtime_tree_settings",
       audit_entries: "SELECT * FROM archive_audit_entries",
       audit_people: "SELECT * FROM archive_audit_people",
+      notification_cursors: "SELECT * FROM archive_notification_cursors",
+      notification_reads: "SELECT * FROM archive_notification_reads",
       person_comments:
         "SELECT archive_id,id,person_id,author_id,author_name,created_ms,text,updated_ms,attachments::text AS attachments FROM person_comments",
       source_catalog:

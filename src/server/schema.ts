@@ -86,6 +86,18 @@ CREATE TABLE IF NOT EXISTS audit_people (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS audit_people_person ON audit_people(person_id,entry_id);
 CREATE INDEX IF NOT EXISTS audit_actor ON audit_entries(actor_id,id);
+CREATE INDEX IF NOT EXISTS notification_events ON audit_entries(id DESC)
+  WHERE (entity='people' AND action='Добавлено') OR
+    (entity='person_comment' AND action='Добавлено сообщение в обсуждение');
+CREATE TABLE IF NOT EXISTS notification_cursors (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  read_through INTEGER NOT NULL DEFAULT 0 CHECK(read_through>=0)
+) STRICT;
+CREATE TABLE IF NOT EXISTS notification_reads (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  event_id INTEGER NOT NULL REFERENCES audit_entries(id) ON DELETE CASCADE,
+  PRIMARY KEY(user_id,event_id)
+) STRICT;
 CREATE TABLE IF NOT EXISTS share_links (
   id TEXT PRIMARY KEY,
   token_hash TEXT UNIQUE NOT NULL,

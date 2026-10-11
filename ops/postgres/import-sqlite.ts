@@ -142,6 +142,8 @@ const serviceTables = [
   "ai_usage_models",
   "audit_entries",
   "audit_people",
+  "notification_cursors",
+  "notification_reads",
   "auth_sessions",
   "backup_catalog",
   "backup_job",
@@ -187,7 +189,7 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
   ]
     .filter(
       (name) =>
-        !["person_comments", "vk_auth_settings", "media_originals", "upload_limits", "source_catalog"].includes(
+        !["person_comments", "vk_auth_settings", "media_originals", "upload_limits", "source_catalog", "notification_cursors", "notification_reads"].includes(
           name,
         ) || actual.includes(name),
     )
