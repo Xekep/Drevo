@@ -1,5 +1,5 @@
 import pg from "pg";
-import { workQueue } from "./work-queue.ts";
+import { workQueue, WorkQueueBusyError } from "./work-queue.ts";
 
 /** One owner per backend. Archive views borrow connections, never own the pool. */
 export function postgresConnections(
@@ -41,7 +41,14 @@ export function postgresConnections(
     pool,
     reserveTransaction: () => transactions.acquire(),
     async connect(archiveId: string) {
-      const client = await pool.connect();
+      const client = await pool.connect().catch((error: unknown) => {
+        if (
+          error instanceof Error &&
+          error.message === "timeout exceeded when trying to connect"
+        )
+          throw new WorkQueueBusyError();
+        throw error;
+      });
       try {
         await client.query("SELECT set_config('drevo.archive_id',$1,false)", [
           archiveId,
@@ -93,7 +100,10 @@ export function postgresConnections(
         else tasks--;
       };
     },
-    close: () => { transactions.close(); return pool.end(); },
+    close: () => {
+      transactions.close();
+      return pool.end();
+    },
   };
 }
 export type PostgresConnections = ReturnType<typeof postgresConnections>;

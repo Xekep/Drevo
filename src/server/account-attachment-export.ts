@@ -250,6 +250,12 @@ export async function prepareAccountAttachmentExport(
           zip.addReadStreamLazy(file.path, { compress: false, size: file.size },
             (callback) => {
               void (async () => {
+                // O_NOFOLLOW is unavailable on Windows. Also reject a replaced
+                // link before opening it: its target may reuse the original inode.
+                const pathInfo = await lstat(file.source);
+                if (!pathInfo.isFile() || pathInfo.isSymbolicLink() ||
+                    pathInfo.dev !== file.dev || pathInfo.ino !== file.ino)
+                  throw new AccountAttachmentExportMissing("Discussion original changed during export");
                 const handle = await open(file.source, readFlags);
                 try {
                   const info = await handle.stat();

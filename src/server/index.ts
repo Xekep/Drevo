@@ -64,7 +64,7 @@ import {
   postgresConnections,
   type PostgresConnections,
 } from "./postgres-connections.ts";
-import { workQueue, type WorkQueue } from "./work-queue.ts";
+import { workQueue, WorkQueueBusyError, type WorkQueue } from "./work-queue.ts";
 import { archiveSnapshotBudget } from "./archive-read-cache.ts";
 import { publicShareAccess } from "./public-share-access.ts";
 import { safeRequestRoute } from "./safe-request-route.ts";
@@ -646,7 +646,12 @@ export async function startServer(
               error: error instanceof Error ? error.message : String(error),
             }),
           );
-          if (!res.headersSent) json(res, 500, { error: "Ошибка сервера" });
+          if (!res.headersSent) {
+            if (error instanceof WorkQueueBusyError) {
+              res.setHeader("Retry-After", "2");
+              json(res, 503, { error: error.message });
+            } else json(res, 500, { error: "Ошибка сервера" });
+          }
           else res.end();
         })
         .finally(() => {
