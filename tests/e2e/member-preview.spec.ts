@@ -3,6 +3,8 @@ import sharp from "sharp";
 import type { ArchiveUser } from "../../src/domain/access.ts";
 import type { Family, Person } from "../../src/domain/types.ts";
 import { projectFamilyForUser } from "../../src/domain/tree-access.ts";
+import { galleryProjection, placesProjection, type GalleryQuery } from "../../src/domain/archive-view-projection.ts";
+import { analyzeFamilyInsights } from "../../src/domain/family-insights.ts";
 
 const prefix = "/a/preview-archive/preview/member%3Atest";
 const person = (id: string, name: string, parents: string[] = []): Person => ({
@@ -137,7 +139,24 @@ async function mockPreview(
           preview: true,
         },
       });
-    if (path === "/api/family")
+    if (path === "/api/family") {
+      const projection = url.searchParams.get("projection");
+      const pageToken = url.searchParams.get("token") || undefined;
+      if (projection === "places")
+        return route.fulfill({ json: { pageToken, ...placesProjection(family) } });
+      if (projection === "insights")
+        return route.fulfill({ json: { pageToken, insights: analyzeFamilyInsights(family) } });
+      if (projection === "gallery")
+        return route.fulfill({ json: { pageToken, ...galleryProjection(family, {
+          mode: url.searchParams.get("mode") as GalleryQuery["mode"],
+          personId: url.searchParams.get("personId"), year: url.searchParams.get("year"),
+          offset: Number(url.searchParams.get("offset")),
+        }) } });
+      if (projection === "photos") {
+        const ids = JSON.parse(url.searchParams.get("ids")!) as string[];
+        const photos = (family.photos || []).filter((photo) => ids.includes(photo.id));
+        return route.fulfill({ status: photos.length === ids.length ? 200 : 404, json: { pageToken, photos } });
+      }
       return route.fulfill({
         json: {
           family,
@@ -154,6 +173,7 @@ async function mockPreview(
           },
         },
       });
+    }
     if (
       path.startsWith("/media/") ||
       path === `/api/documents/${documentId}/file`
