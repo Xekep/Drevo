@@ -19,7 +19,7 @@ export async function verifyInvitationAcceptSessionRevocation(db: StoreDatabase,
   const revokedHash = sessionTokenHash(revokedToken);
   const activeHash = sessionTokenHash(activeToken);
   const now = Date.now();
-  const body = JSON.stringify({ archiveId, token: invitationToken });
+  const body = JSON.stringify({ token: invitationToken });
   await client.query("SELECT set_config('drevo.archive_id',$1,false)", [archiveId]);
   await client.query("INSERT INTO accounts(id,name,created_at) VALUES($1,'Revoked invitee',$2)",
     [accountId, new Date(now).toISOString()]);

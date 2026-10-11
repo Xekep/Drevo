@@ -98,6 +98,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "023_archive_invitations.sql",
     ],
     [
+      "SELECT 1 AS present FROM pg_policy WHERE polrelid=to_regclass('archive_invitations') AND polname='invitation_token_lookup'",
+      "101_opaque_invitation_links.sql",
+    ],
+    [
       "SELECT 1 AS present FROM pg_policies WHERE schemaname=current_schema() AND tablename='archive_owners' AND policyname='account_owners_read'",
       "022_account_owner_directory.sql",
     ],

@@ -125,7 +125,7 @@ export function archiveInvitations(db: StoreDatabase) {
         personId,
         treeAccess,
         expiresAt,
-        path: `/join/${archiveId}/${token}`,
+        path: `/join/${token}`,
       };
     },
     async revoke(actor: ArchiveUser, id: string) {
@@ -144,8 +144,8 @@ export function archiveInvitations(db: StoreDatabase) {
 
 /** Token lookup and membership grant are one transaction under target RLS. */
 export function accountInvitations(db: StoreDatabase) {
-  const validate = (archiveId: string, token: string) => {
-    if (!archivePattern.test(archiveId) || !tokenPattern.test(token))
+  const validate = (archiveId: string | undefined, token: string) => {
+    if ((archiveId !== undefined && !archivePattern.test(archiveId)) || !tokenPattern.test(token))
       throw new InvalidInvitationError("Приглашение недействительно.");
   };
   const previewValue = async (
@@ -165,11 +165,12 @@ export function accountInvitations(db: StoreDatabase) {
     };
   };
   const withInvitation = async <T>(
-    archiveId: string,
+    archiveId: string | undefined,
     token: string,
     work: (
       client: pg.PoolClient,
       invite: { id: string; role: string; person_id: string | null; tree_access: string; used_by: string | null },
+      targetArchiveId: string,
     ) => Promise<T>,
     lock = false,
     session?: { accountId: string; tokenHash: string },
@@ -178,12 +179,28 @@ export function accountInvitations(db: StoreDatabase) {
     if (!db.postgresTransaction)
       throw new InvalidInvitationError("Приглашения доступны с PostgreSQL.");
     return await db.postgresTransaction(async (client) => {
+      let targetArchiveId = archiveId;
+      if (targetArchiveId === undefined) {
+        // A transaction-local bearer capability can read exactly one invitation,
+        // never people or memberships of its target. Restore ordinary RLS before
+        // locking the archive or applying the existing acceptance checks.
+        await client.query("SELECT set_config('drevo.invitation_token_hash',$1,true)", [hash(token)]);
+        const target = await client.query<{ archive_id: string }>(
+          `SELECT archive_id FROM archive_invitations
+           WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>$2`,
+          [hash(token), new Date().toISOString()],
+        );
+        await client.query("SELECT set_config('drevo.invitation_token_hash','',true)");
+        if (target.rowCount !== 1)
+          throw new InvalidInvitationError("Приглашение недействительно или срок истёк.");
+        targetArchiveId = target.rows[0].archive_id;
+      }
       await client.query("SELECT set_config('drevo.archive_id',$1,true)", [
-        archiveId,
+        targetArchiveId,
       ]);
       if (lock) {
         // Match invitation revoke and accept: archive before invitation row.
-        const archive = await client.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE", [archiveId]);
+        const archive = await client.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE", [targetArchiveId]);
         if (!archive.rowCount)
           throw new InvalidInvitationError("Приглашение недействительно.");
       }
@@ -216,33 +233,33 @@ export function accountInvitations(db: StoreDatabase) {
         `SELECT id,role,person_id,tree_access,used_by FROM archive_invitations
          WHERE archive_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>$3
          ${lock ? "FOR UPDATE" : ""}`,
-        [archiveId, hash(token), new Date().toISOString()],
+        [targetArchiveId, hash(token), new Date().toISOString()],
       );
       const invite = result.rows[0];
       if (!invite)
         throw new InvalidInvitationError(
           "Приглашение недействительно или срок истёк.",
         );
-      return await work(client, invite);
+      return await work(client, invite, targetArchiveId);
     });
   };
   return {
     async deliverPreview(
-      archiveId: string,
+      archiveId: string | undefined,
       token: string,
       deliver: (value: Awaited<ReturnType<typeof previewValue>>) => Promise<void>,
     ) {
-      return await withInvitation(archiveId, token, async (client, invite) => {
-        await deliver(await previewValue(client, archiveId, invite));
+      return await withInvitation(archiveId, token, async (client, invite, targetArchiveId) => {
+        await deliver(await previewValue(client, targetArchiveId, invite));
       }, true);
     },
-    async accept(archiveId: string, token: string, accountId: string, tokenHash: string) {
+    async accept(archiveId: string | undefined, token: string, accountId: string, tokenHash: string) {
       if (!accountId)
         throw new InvalidInvitationError("Войдите, чтобы принять приглашение.");
       return await withInvitation(
         archiveId,
         token,
-        async (client, invite) => {
+        async (client, invite, archiveId) => {
           if (invite.used_by && invite.used_by !== accountId)
             throw new InvalidInvitationError("Приглашение уже использовано.");
           if (!invite.used_by) {

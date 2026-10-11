@@ -3,7 +3,7 @@ import { open as openFile } from "node:fs/promises";
 import { dirname, extname, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
-import { archiveViewAt } from "../domain/archive-routes.ts";
+import { archiveViewAt, invitationAt } from "../domain/archive-routes.ts";
 import { memberPreviewAt } from "../domain/archive-context.ts";
 import { staticAssetsHttp } from "./static-assets-http.ts";
 import { decodePublicPersonId } from "./public-person-id.ts";
@@ -89,10 +89,7 @@ export function productionStaticHttp(
     if (decoded.includes("\0"))
       return missing();
 
-    const invitation =
-      /^\/join\/[A-Za-z0-9][A-Za-z0-9-]{2,63}\/[A-Za-z0-9_-]{43}$/.test(
-        pathname,
-      );
+    const invitation = Boolean(invitationAt(pathname));
     const shared =
       /^\/(?:a\/[A-Za-z0-9][A-Za-z0-9-]{2,63}\/)?s\/[A-Za-z0-9_-]{43}$/.test(
         pathname,
@@ -149,7 +146,7 @@ export function productionStaticHttp(
         "Cache-Control":
           pathname.startsWith("/assets/") || pathname.startsWith("/models/")
             ? "public, max-age=31536000, immutable"
-            : "no-cache",
+            : invitation ? "no-store" : "no-cache",
       });
       if (req.method === "HEAD") {
         await handle.close();

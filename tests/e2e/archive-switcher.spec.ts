@@ -1,8 +1,6 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
-test("menu switches between owned and invited archives without offering pending access", async ({
-  page,
-}) => {
+async function mockWorkspace(page: Page) {
   const user = {
     id: "switch-reader",
     name: "Участник",
@@ -46,6 +44,12 @@ test("menu switches between owned and invited archives without offering pending 
       },
     }),
   );
+}
+
+test("menu switches between owned and invited archives without offering pending access", async ({
+  page,
+}, testInfo) => {
+  await mockWorkspace(page);
   await page.route("**/api/account/archives", (route) =>
     route.fulfill({
       json: {
@@ -56,6 +60,7 @@ test("menu switches between owned and invited archives without offering pending 
             current: true,
             owned: true,
             approved: true,
+            role: "relative",
           },
           {
             id: "invited-archive",
@@ -63,6 +68,7 @@ test("menu switches between owned and invited archives without offering pending 
             current: false,
             owned: false,
             approved: true,
+            role: "reader",
           },
           {
             id: "pending-archive",
@@ -70,6 +76,7 @@ test("menu switches between owned and invited archives without offering pending 
             current: false,
             owned: false,
             approved: false,
+            role: "reader",
           },
         ],
       },
@@ -83,12 +90,170 @@ test("menu switches between owned and invited archives without offering pending 
   const dialog = page.getByRole("dialog", { name: "Доступные древа" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText("Ваше древо", { exact: true })).toBeVisible();
-  const link = dialog.getByRole("link", { name: "Открыть" });
+  const link = dialog.getByRole("link", { name: /Древо родственника/ });
   await expect(link).toHaveAttribute("href", "/a/invited-archive/tree");
   await expect(dialog.getByText("Ожидает доступа")).toBeVisible();
   await expect(dialog.getByRole("link")).toHaveCount(1);
-  await link.focus();
+  await expect(link).toContainText("Читатель");
+  await expect(dialog.locator('[aria-current="true"]')).toContainText(
+    "Моё древо",
+  );
+  await dialog.screenshot({
+    path: testInfo.outputPath("archive-switcher.png"),
+  });
+  await page.screenshot({
+    path: testInfo.outputPath("archive-switcher-page.png"),
+  });
+  await dialog.getByRole("button", { name: "Закрыть", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await expect(link).toBeFocused();
+  await expect(link).toHaveCSS("outline-style", "solid");
+  const row = (await link.boundingBox())!;
+  expect(row.width).toBeGreaterThan(200);
+  expect(row.height).toBeGreaterThanOrEqual(44);
+  const newTab = page.context().waitForEvent("page");
+  await link.click({ button: "middle" });
+  const opened = await newTab;
+  await opened.waitForLoadState("domcontentloaded");
+  expect(new URL(opened.url()).pathname).toBe("/a/invited-archive/tree");
+  expect(new URL(page.url()).pathname).toBe("/a/own-archive/tree");
+  await opened.close();
+  await expect(dialog).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(page.getByLabel("Меню проекта", { exact: true })).toBeFocused();
+});
+
+test("switcher searches many trees and contains long names at narrow widths", async ({
+  page,
+  isMobile,
+}, info) => {
+  await mockWorkspace(page);
+  const longTitle =
+    "Родословная семьи Александровых и их родственников из нескольких поколений";
+  const archives = [
+    {
+      id: "own-archive",
+      title: "Моё древо",
+      owned: true,
+      current: true,
+      approved: true,
+      role: "relative",
+    },
+    {
+      id: "long-title",
+      title: longTitle,
+      owned: false,
+      current: false,
+      approved: true,
+      role: "relative",
+    },
+    {
+      id: "long-word",
+      title:
+        "НевероятноДлинноеНазваниеСемейногоДреваБезПробеловДляПроверкиПереноса",
+      owned: false,
+      current: false,
+      approved: true,
+      role: "reader",
+    },
+    ...[
+      "Материнская линия",
+      "Семья Петровых",
+      "Отцовская линия",
+      "Семья Сидоровых",
+      "Семья Ивановых",
+    ].map((title, index) => ({
+      id: `invited-${index}`,
+      title,
+      owned: false,
+      current: false,
+      approved: true,
+      role: "reader",
+    })),
+  ];
+  await page.route("**/api/account/archives", (route) =>
+    route.fulfill({ json: { archives } }),
+  );
+  await page.goto("/a/own-archive/tree");
+  await page.getByLabel("Меню проекта", { exact: true }).click();
+  await page
+    .getByRole("button", { name: "Сменить древо", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Доступные древа" });
+  const search = dialog.getByRole("textbox", { name: "Найти древо" });
+  await expect(search).toBeVisible();
+  for (const width of isMobile ? [320, 390] : [768, 1440]) {
+    await page.setViewportSize({ width, height: 800 });
+    const box = (await dialog.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    expect(
+      await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth),
+    ).toBe(true);
+    if (width === 320) {
+      const title = dialog
+        .locator(".archive-switcher-name strong")
+        .filter({ hasText: longTitle });
+      expect((await title.boundingBox())!.height).toBeGreaterThanOrEqual(40);
+    }
+    await dialog.screenshot({
+      path: info.outputPath(`archive-switcher-many-${width}.png`),
+    });
+    await page.screenshot({
+      path: info.outputPath(`archive-switcher-many-page-${width}.png`),
+    });
+  }
+  const longLink = dialog.getByRole("link", { name: new RegExp(longTitle) });
+  await expect(longLink).toHaveAttribute("title", longTitle);
+  await search.fill("АЛЕКСАНДРОВЫХ");
+  await expect(dialog.getByRole("link")).toHaveCount(1);
+  await expect(longLink).toBeVisible();
+  await search.fill("Несуществующее древо");
+  await expect(dialog.getByRole("status")).toHaveText("Древа не найдены.");
+  await expect(dialog.getByRole("link")).toHaveCount(0);
+  await search.fill("");
+  await expect(dialog.getByRole("link")).toHaveCount(archives.length - 1);
+  await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+});
+
+test("switcher keeps loading, error retry and empty states compact", async ({
+  page,
+}, info) => {
+  await mockWorkspace(page);
+  let release: () => void = () => {};
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let attempts = 0;
+  await page.route("**/api/account/archives", async (route) => {
+    attempts++;
+    if (attempts === 1) {
+      await pending;
+      return route.fulfill({ status: 503, json: { error: "Temporary" } });
+    }
+    return route.fulfill({ json: { archives: [] } });
+  });
+  await page.goto("/a/own-archive/tree");
+  await page.getByLabel("Меню проекта", { exact: true }).click();
+  await page
+    .getByRole("button", { name: "Сменить древо", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Доступные древа" });
+  await expect(dialog.getByRole("status")).toHaveText("Загружаем древа…");
+  expect((await dialog.boundingBox())!.height).toBeLessThan(220);
+  release();
+  await expect(dialog.getByRole("alert")).toContainText(
+    "Не удалось загрузить древа.",
+  );
+  await dialog.screenshot({
+    path: info.outputPath("archive-switcher-error.png"),
+  });
+  await dialog.getByRole("button", { name: "Повторить", exact: true }).click();
+  await expect(dialog.getByRole("status")).toHaveText(
+    "Пока нет доступных древ.",
+  );
+  expect((await dialog.boundingBox())!.height).toBeLessThan(220);
+  expect(attempts).toBe(2);
 });

@@ -95,7 +95,7 @@ export function JsonAdditionsImport({
         фотографии и документы сохранятся. Все новые карточки получат отметку
         «Требует проверки».
       </p>
-      <label>
+      <label className="json-additions-file">
         JSON с новыми карточками
         <input
           type="file"
@@ -110,7 +110,7 @@ export function JsonAdditionsImport({
           }}
         />
       </label>
-      {file && <p>{file.name}</p>}
+      {file && <p className="json-additions-filename">{file.name}</p>}
       <button
         type="button"
         disabled={busy || !file || !canEdit}
@@ -189,7 +189,11 @@ export function JsonAdditionsImport({
           {error}
         </p>
       )}
-      {done && <p role="status">{done}</p>}
+      {done && (
+        <p className="json-import-success" role="status">
+          {done}
+        </p>
+      )}
     </section>
   );
 }

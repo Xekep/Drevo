@@ -1,6 +1,105 @@
 import { expect, test } from "@playwright/test";
 import type { Family } from "../../src/domain/types.ts";
 
+test("import keeps real preview warnings and blocks invalid cards at narrow widths", async ({
+  page,
+  request,
+  isMobile,
+}, info) => {
+  const original = await (await request.get("/api/family")).json();
+  // The canvas import action remains desktop-only; verify the open dialog's
+  // narrow layout without exposing that action on mobile.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/tree");
+  await page
+    .locator(".react-flow__pane")
+    .click({ button: "right", position: { x: 40, y: 350 } });
+  await page.getByRole("menuitem", { name: "Импорт", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Импорт в древо" });
+  if (isMobile) await page.setViewportSize({ width: 320, height: 800 });
+  const bounds = (await dialog.boundingBox())!;
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(isMobile ? 320 : 1280);
+  expect(
+    await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth),
+  ).toBe(true);
+  await dialog.screenshot({
+    path: info.outputPath("tree-import-narrow-initial.png"),
+  });
+  await page.screenshot({
+    path: info.outputPath("tree-import-narrow-initial-page.png"),
+  });
+  const packet = {
+    format: "drevo.reviewed-add-only",
+    version: 1,
+    existingPeople: [],
+    newPeople: [
+      {
+        id: `preview-only-${info.project.name}`,
+        name: "Анна",
+        surname: "Тестова",
+        patronymic: "Петровна",
+        sex: "f",
+        birth: "1990-01-01",
+        parents: ["e2e-child"],
+      },
+    ],
+  };
+  const chooseFile = async (data: unknown) => {
+    await dialog.getByLabel("JSON с новыми карточками").setInputFiles({
+      name: "Очень-длинное-название-пакета-с-новыми-карточками-родственников.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(data)),
+    });
+    await dialog.getByRole("button", { name: "Проверить пакет JSON" }).click();
+  };
+  await chooseFile(packet);
+  await expect(dialog.getByText(/Нужно проверить ·/)).toBeVisible();
+  await expect(dialog.getByText(/Возможный дубль/)).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Добавить 1 карточек" }),
+  ).toBeEnabled();
+  await dialog.screenshot({
+    path: info.outputPath("tree-import-warnings.png"),
+  });
+  await page.screenshot({
+    path: info.outputPath("tree-import-warnings-page.png"),
+  });
+  await dialog
+    .getByRole("button", { name: "Добавить 1 карточек" })
+    .scrollIntoViewIfNeeded();
+  await dialog.screenshot({
+    path: info.outputPath("tree-import-preview-actions.png"),
+  });
+  await chooseFile({
+    ...packet,
+    newPeople: [{ ...packet.newPeople[0], death: "1980-01-01" }],
+  });
+  await expect(dialog.getByRole("alert")).toContainText(
+    "Некорректная карточка человека",
+  );
+  await expect(
+    dialog.getByRole("button", { name: "Добавить 1 карточек" }),
+  ).toHaveCount(0);
+  await chooseFile({
+    ...packet,
+    newPeople: [{ ...packet.newPeople[0], birth: "1970-01-01" }],
+  });
+  await expect(dialog.getByRole("alert")).toContainText(
+    "Добавление заблокировано",
+  );
+  await expect(
+    dialog.getByRole("button", { name: "Добавить 1 карточек" }),
+  ).toBeDisabled();
+  expect(
+    await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth),
+  ).toBe(true);
+  await dialog.screenshot({ path: info.outputPath("tree-import-blocked.png") });
+  expect((await (await request.get("/api/family")).json()).family).toEqual(
+    original.family,
+  );
+});
+
 for (const shared of [false, true])
   test(`mobile ${shared ? "shared" : "own"} tree hides import and export`, async ({
     page,
@@ -81,6 +180,16 @@ test("tree import previews a JSON batch and preserves every existing card", asyn
     await page.getByRole("menuitem", { name: "Импорт", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Импорт в древо" });
     await expect(dialog).toBeVisible();
+    expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(640);
+    await expect(
+      dialog.getByRole("region", { name: "Отмена импорта" }),
+    ).not.toBeVisible();
+    await dialog.screenshot({
+      path: info.outputPath("tree-import-initial.png"),
+    });
+    await page.screenshot({
+      path: info.outputPath("tree-import-initial-page.png"),
+    });
     await dialog.getByLabel("JSON с новыми карточками").setInputFiles({
       name: "batch.json",
       mimeType: "application/json",
@@ -89,6 +198,9 @@ test("tree import previews a JSON batch and preserves every existing card", asyn
     await dialog.getByRole("button", { name: "Проверить пакет JSON" }).click();
     const add = dialog.getByRole("button", { name: "Добавить 1 карточек" });
     await expect(add).toBeEnabled();
+    await dialog.screenshot({
+      path: info.outputPath("tree-import-preview.png"),
+    });
     expect(
       (await (await request.get("/api/family")).json()).family.people,
     ).toEqual(original.family.people);
@@ -119,6 +231,7 @@ test("tree import previews a JSON batch and preserves every existing card", asyn
       dialog.getByRole("button", { name: "Добавить 1 карточек" }),
     ).toHaveCount(0);
     const undo = dialog.getByRole("region", { name: "Отмена импорта" });
+    await dialog.getByText("История и отмена импорта", { exact: true }).click();
     await undo
       .getByRole("button", { name: "Показать импортированные пакеты" })
       .click();
@@ -135,6 +248,8 @@ test("tree import previews a JSON batch and preserves every existing card", asyn
       name: "Отменить импорт и удалить 1 карточек",
     });
     await expect(remove).toBeDisabled();
+    await remove.scrollIntoViewIfNeeded();
+    await dialog.screenshot({ path: info.outputPath("tree-import-undo.png") });
     expect(
       (await (await request.get("/api/family")).json()).family.people.length,
     ).toBe(saved.family.people.length);
