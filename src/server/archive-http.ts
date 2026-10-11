@@ -43,6 +43,7 @@ import { documentsHttp } from "./documents-http.ts";
 import { pdfDocumentPages } from "./document-pdf.ts";
 import { join } from "node:path";
 import { personDiscussionHttp } from "./person-discussion-http.ts";
+import { archiveNotificationsHttp } from "./archive-notifications-http.ts";
 import { treePreferencesStore } from "./tree-preferences.ts";
 import { treePreferencesHttp } from "./tree-preferences-http.ts";
 import { publishedPeopleStore } from "./published-people.ts";
@@ -201,6 +202,7 @@ export async function archiveHttp({
     uploadsDirectory,
     media,
   });
+  const notifications = archiveNotificationsHttp({ archive, auth, publicOrigin });
   const places = placesHttp({
     archive,
     auth,
@@ -407,6 +409,7 @@ export async function archiveHttp({
     if (await providerCleanupStatus(req, res, url)) return true;
     if (await adminResearchResources(req, res, url)) return true;
     if (await personalTreeSettings(req, res, url)) return true;
+    if (await notifications(req, res, url)) return true;
     if (await archiveQuery(req, res, url)) return true;
     if (await offlinePackage(req, res, url)) return true;
     if (await documents(req, res, url)) return true;

@@ -25,6 +25,8 @@ export const runtimeServiceTables = [
   "backup_job",
   "media_upload_grants",
   "user_tree_preferences",
+  "notification_cursors",
+  "notification_reads",
   "vk_auth_settings",
 ] as const;
 
@@ -46,6 +48,7 @@ export async function backfillRuntimeServicesInTransaction(
     ),
   );
   await client.query(readFileSync(new URL("./079_ai_chat_stop.sql", import.meta.url), "utf8"));
+  await client.query(readFileSync(new URL("./098_archive_notifications.sql", import.meta.url), "utf8"));
   await client.query(readFileSync(new URL("./082_ai_provider_cleanup.sql", import.meta.url), "utf8"));
   await client.query(
     readFileSync(
@@ -80,12 +83,14 @@ export async function backfillRuntimeServicesInTransaction(
     ),
   );
   for (const table of runtimeServiceTables) {
+    const targetTable = table.startsWith("notification_") ? `archive_${table}` : table;
     const metadata = (
       await client.query(
         "SELECT columns FROM service_snapshot_tables WHERE archive_id=$1 AND name=$2",
         [archiveId, table],
       )
     ).rows[0];
+    if (!metadata && table.startsWith("notification_")) continue;
     if (!metadata)
       throw new Error(`Отсутствует таблица для переноса: ${table}`);
     const columns: string[] = metadata.columns;
@@ -97,7 +102,7 @@ export async function backfillRuntimeServicesInTransaction(
     if (
       (
         await client.query(
-          `SELECT 1 FROM ${table} WHERE archive_id=$1 LIMIT 1`,
+          `SELECT 1 FROM ${targetTable} WHERE archive_id=$1 LIMIT 1`,
           [archiveId],
         )
       ).rowCount
@@ -111,14 +116,14 @@ export async function backfillRuntimeServicesInTransaction(
     ).rows;
     const ordinal = table === "share_links" || table === "face_descriptors";
     const fields = ["archive_id", ...columns, ...(ordinal ? ["ordinal"] : [])];
-    const sql = `INSERT INTO ${table}(${fields.map((field) => `"${field}"`).join(",")}) VALUES(${fields.map((_, i) => `$${i + 1}`).join(",")}) RETURNING ${columns.map((field) => `"${field}"`).join(",")}`;
+    const sql = `INSERT INTO ${targetTable}(${fields.map((field) => `"${field}"`).join(",")}) VALUES(${fields.map((_, i) => `$${i + 1}`).join(",")}) RETURNING ${columns.map((field) => `"${field}"`).join(",")}`;
     // JSONB comes back parsed, int8 as text. Read PostgreSQL's actual column
     // types so round-trip verification distinguishes JSON strings from text.
     const types = new Map(
       (
         await client.query(
           "SELECT column_name,data_type FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=$1",
-          [table],
+          [targetTable],
         )
       ).rows.map((row) => [row.column_name, row.data_type]),
     );
