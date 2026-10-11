@@ -111,6 +111,22 @@ export function archiveNotificationsStore(db: StoreDatabase) {
     ) {
       const { latest } = await this.list(userId, visible);
       const through = Math.min(id, latest);
+      if (visible !== null) {
+        // A scoped reader must not mark unseen people as read if their access
+        // later expands. Keep the archive-wide cursor for unrestricted readers.
+        const q = eligible(userId, visible);
+        await db
+          .prepare(
+            `INSERT INTO notification_reads(user_id,event_id)
+            SELECT ?,n.id FROM (${q.sqlite}) n
+            WHERE n.id<=? AND n.is_read=0 ON CONFLICT DO NOTHING`,
+            `INSERT INTO archive_notification_reads(user_id,event_id)
+            SELECT ?,n.id FROM (${q.postgres}) n
+            WHERE n.id<=? AND n.is_read=0 ON CONFLICT DO NOTHING`,
+          )
+          .run(userId, ...q.values, through);
+        return;
+      }
       await db
         .prepare(
           `INSERT INTO notification_cursors(user_id,read_through) VALUES(?,?)

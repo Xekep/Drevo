@@ -195,7 +195,7 @@ export function ArchiveNavigation({
         О проекте
       </button>
       {user?.approved && !participantPreview && view !== "admin" &&
-        <ArchiveNotifications beforeLeave={onPlatformLeave} />}
+        <ArchiveNotifications userId={user.id} beforeLeave={onPlatformLeave} />}
       {identity && (
         <details ref={menu} className="archive-more">
           <summary

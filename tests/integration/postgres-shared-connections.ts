@@ -190,6 +190,37 @@ try {
   assert.equal((await inboxB.list("shared-probe-reader", null)).unread, 1);
   await inboxB.readThrough("shared-probe-reader", null, notificationsB.latest);
   assert.equal((await inboxB.list("shared-probe-reader", null)).unread, 0);
+  // Scope receipts must not suppress unseen events when access later expands.
+  // Both inserts use the ordinary runtime role and the archive-local RLS scope.
+  const scopePeople = ["scope-hidden", "scope-visible"];
+  await a.transaction(async () => {
+    for (const [index, id] of scopePeople.entries()) {
+      await a.prepare("", "INSERT INTO people(id,ordinal,data) VALUES(?,?,?)")
+        .run(id, index + 10, JSON.stringify({ ...person, id, name: id }));
+      await auditStore(a).record({ action: "Добавлено", entity: "people", entityId: id,
+        label: "Scope receipt probe", personIds: [id], details: [] },
+      { id: "fixture-owner", name: "Владелец" });
+    }
+  });
+  const onlyVisible = new Set(["scope-visible"]);
+  const scopedInbox = await inboxA.list("shared-probe-reader", onlyVisible);
+  assert.equal(scopedInbox.items.length, 1);
+  await a.transaction(() => inboxA.readThrough("shared-probe-reader", onlyVisible, scopedInbox.latest));
+  await a.transaction(() => inboxA.readThrough("shared-probe-reader", onlyVisible, scopedInbox.latest));
+  await a.transaction(() => inboxA.readThrough("shared-probe-reader", new Set(), Number.MAX_SAFE_INTEGER));
+  const expandedInbox = await inboxA.list("shared-probe-reader", new Set(scopePeople));
+  assert.equal(expandedInbox.unread, 1);
+  assert.equal(expandedInbox.items.find((item) => item.personId === "scope-hidden")?.read, false);
+  assert.equal(expandedInbox.items.find((item) => item.personId === "scope-visible")?.read, true);
+  assert.equal((await a.prepare("", "SELECT count(*)::int AS n FROM archive_notification_cursors").get())!.n, 0);
+  assert.equal((await b.prepare("", "SELECT count(*)::int AS n FROM archive_notification_reads").get())!.n, 0);
+  assert.equal((await inboxB.list("shared-probe-reader", null)).unread, 0);
+  await a.transaction(async () => {
+    for (const item of expandedInbox.items)
+      await a.prepare("", "DELETE FROM archive_audit_entries WHERE id=?").run(item.id);
+    for (const id of scopePeople)
+      await a.prepare("", "DELETE FROM people WHERE id=?").run(id);
+  });
   await assert.rejects(
     a.transaction(async () => {
       await a
