@@ -63,7 +63,8 @@ export function createYandexOAuth(options: OAuthOptions) {
         profile.real_name,
         profile.login,
       ].find((v) => typeof v === "string" && v.trim()) as string | undefined;
-      return { id: profile.id, name: (name || profile.id).slice(0, 200) };
+      // Account names accept at most 160 characters, including in PostgreSQL.
+      return { id: profile.id, name: (name || profile.id).trim().slice(0, 160) };
     },
   });
 }

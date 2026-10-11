@@ -77,6 +77,10 @@ test("shared search selects only shared people and disappears after revocation",
     await page.getByRole("button", { name: "Найти человека", exact: true }).click();
   }
   await expect(search).toBeVisible();
+  if (!isMobile) {
+    await expect(page.locator(".shared-search-toggle")).toBeHidden();
+    await expect(page.locator(".shared-header .lucide-search:visible")).toHaveCount(1);
+  }
   await search.fill("Тестов");
   await expect(results.getByRole("option")).toHaveCount(2);
   const bounds = (await results.boundingBox())!;

@@ -191,3 +191,63 @@ test("Yandex OAuth can await an injected asynchronous transaction store", async 
     await new Promise<void>((done) => server.close(() => done()));
   }
 });
+
+test("Yandex OAuth fits optional profile names to the PostgreSQL account limit", async () => {
+  const profiles = [
+    { id: "12345678", display_name: "x".repeat(161), real_name: "Ignored" },
+    { id: "12345678", display_name: `  ${"x".repeat(500)}  ` },
+    { id: "12345678", display_name: " ", real_name: "x".repeat(161) },
+    { id: "12345678", display_name: "", real_name: null, login: "x".repeat(161) },
+    { id: "12345678", display_name: " ", real_name: "", login: null },
+    { id: "12345678" },
+  ];
+  let profileIndex = 0;
+  const received: { id: string; name: string }[] = [];
+  const db = new DatabaseSync(":memory:");
+  initializeArchiveSchema(db);
+  const oauth = createYandexOAuth({
+    origin: "https://mydrevo.org",
+    clientId: "client",
+    clientSecret: "secret",
+    db: storeDatabase(db),
+    fetcher: async (input) => Response.json(
+      String(input).includes("/token")
+        ? { access_token: "private-token" }
+        : profiles[profileIndex],
+    ),
+    issueSession: (_req, _res, profile) => {
+      // This is the account contract, not an optional provider-profile field.
+      if (!profile.name || profile.name.length > 160)
+        throw new Error("Account name rejected");
+      received.push(profile);
+      return "/tree";
+    },
+  });
+  const server = createServer((req, res) => {
+    void oauth.handle(req, res, new URL(req.url!, "http://localhost"));
+  });
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    for (; profileIndex < profiles.length; profileIndex++) {
+      const started = await fetch(base + "/auth/yandex", { redirect: "manual" });
+      assert.equal(started.status, 302);
+      const state = new URL(started.headers.get("location")!).searchParams.get("state")!;
+      const cookie = started.headers.get("set-cookie")!.split(";")[0];
+      const completed = await fetch(
+        base + `/auth/yandex/callback?state=${state}&code=code`,
+        { headers: { Cookie: cookie }, redirect: "manual" },
+      );
+      assert.equal(completed.status, 303, `profile ${profileIndex} should sign in`);
+    }
+    assert.deepEqual(received, [
+      ...Array.from({ length: 4 }, () => ({ id: "12345678", name: "x".repeat(160) })),
+      { id: "12345678", name: "12345678" },
+      { id: "12345678", name: "12345678" },
+    ]);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((done) => server.close(() => done()));
+    db.close();
+  }
+});
