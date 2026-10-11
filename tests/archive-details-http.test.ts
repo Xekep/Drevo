@@ -122,10 +122,76 @@ test("demand detail HTTP reads indexed IDs and tagged photos within the current 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Cache-Control"), "no-store");
   const data = await response.json();
-  const directPhoto = await fetch(base + "?" + new URLSearchParams({ projection: "photos", token, ids: JSON.stringify(["shared"]) }));
-  assert.equal(directPhoto.status, 200, "a direct photo lookup never hydrates the full archive");
-  assert.deepEqual((await directPhoto.json()).photos[0].tags.map((tag: { personId: string }) => tag.personId), ["child"]);
-  assert.equal((await fetch(base + "?" + new URLSearchParams({ projection: "photos", token, ids: JSON.stringify(["missing"]) }))).status, 404);
+  const galleryResponse = await fetch(
+    base +
+      "?" +
+      new URLSearchParams({ projection: "gallery", mode: "all", token }),
+  );
+  assert.equal(
+    galleryResponse.status,
+    200,
+    "gallery reads never hydrate the full archive",
+  );
+  const gallery = await galleryResponse.json();
+  assert.equal(
+    gallery.total,
+    2,
+    "an author's own untagged photo remains visible",
+  );
+  assert.deepEqual(
+    gallery.photos
+      .find((photo: { id: string }) => photo.id === "shared")
+      .tags.map((tag: { personId: string }) => tag.personId),
+    ["child"],
+  );
+  const mapResponse = await fetch(
+    base + "?" + new URLSearchParams({ projection: "places", token }),
+  );
+  assert.equal(mapResponse.status, 200, "places read their own SQL projection");
+  const places = await mapResponse.json();
+  assert.deepEqual(
+    places.people.map((item: { id: string }) => item.id),
+    ["parent", "child"],
+  );
+  assert.ok(
+    places.people.every(
+      (item: object) => !("biography" in item) && !("sources" in item),
+    ),
+  );
+  const directPhoto = await fetch(
+    base +
+      "?" +
+      new URLSearchParams({
+        projection: "photos",
+        token,
+        ids: JSON.stringify(["shared"]),
+      }),
+  );
+  assert.equal(
+    directPhoto.status,
+    200,
+    "a direct photo lookup never hydrates the full archive",
+  );
+  assert.deepEqual(
+    (await directPhoto.json()).photos[0].tags.map(
+      (tag: { personId: string }) => tag.personId,
+    ),
+    ["child"],
+  );
+  assert.equal(
+    (
+      await fetch(
+        base +
+          "?" +
+          new URLSearchParams({
+            projection: "photos",
+            token,
+            ids: JSON.stringify(["missing"]),
+          }),
+      )
+    ).status,
+    404,
+  );
   assert.deepEqual(
     data.people.map((p: Person) => p.id),
     ["child"],

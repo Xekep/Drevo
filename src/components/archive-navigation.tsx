@@ -2,6 +2,7 @@ import { archiveFetch } from "../data/archive-fetch.ts";
 import {
   useEffect,
   useRef,
+  useState,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -22,8 +23,12 @@ import {
 } from "lucide-react";
 import { isArchiveOwner, type Person, type ArchiveUser } from "../domain";
 import { AccountPortrait } from "./account-portrait";
+import { ArchiveSwitcher } from "./archive-switcher";
 import { archivePaths, type ArchiveView } from "../domain/archive-routes";
-import { memberPreviewAt, scopedArchivePath } from "../domain/archive-context.ts";
+import {
+  memberPreviewAt,
+  scopedArchivePath,
+} from "../domain/archive-context.ts";
 import { clearLayoutStorage } from "./tree/layout-storage";
 import { TreeSearch } from "./tree-search";
 export type { ArchiveView } from "../domain/archive-routes";
@@ -44,7 +49,11 @@ export function ArchiveNavigation({
   view: ArchiveView;
   onView: (view: ArchiveView) => void;
   user: ArchiveUser | null;
-  account?: { id: string; name: string; globalRole?: "admin" | "researcher" | null } | null;
+  account?: {
+    id: string;
+    name: string;
+    globalRole?: "admin" | "researcher" | null;
+  } | null;
   accountPerson?: Person;
   local: boolean;
   readTree: boolean;
@@ -55,11 +64,14 @@ export function ArchiveNavigation({
   onTreePreferences?: () => void;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
+  const [switchingArchive, setSwitchingArchive] = useState(false);
   useEffect(() => {
     if (menu.current) menu.current.open = false;
   }, [view]);
   const identity = user || account;
-  const previewArchive = participantPreview ? memberPreviewAt(window.location.pathname)?.archiveId : null;
+  const previewArchive = participantPreview
+    ? memberPreviewAt(window.location.pathname)?.archiveId
+    : null;
   const initial =
     identity?.name.trim().charAt(0).toLocaleUpperCase("ru-RU") || "Д";
   const navigate = (
@@ -83,8 +95,15 @@ export function ArchiveNavigation({
     onView(next);
   };
   const checkPlatformLeave = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (event.button === 0 && !event.ctrlKey && !event.metaKey &&
-        !event.shiftKey && !event.altKey && onPlatformLeave && !onPlatformLeave())
+    if (
+      event.button === 0 &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.shiftKey &&
+      !event.altKey &&
+      onPlatformLeave &&
+      !onPlatformLeave()
+    )
       event.preventDefault();
   };
   useEffect(() => {
@@ -171,106 +190,168 @@ export function ArchiveNavigation({
             </a>
           ))}
       </div>
-      <button
-        className="nav-about"
-        type="button"
-        onClick={showAbout}
-      >
+      <button className="nav-about" type="button" onClick={showAbout}>
         О проекте
       </button>
-      {identity && <details ref={menu} className="archive-more">
-        <summary className="nav-account" aria-label={participantPreview ? "Разделы предпросмотра" : "Меню проекта"}
-          title={identity ? `Меню: ${identity.name}` : "Меню проекта"}>
-          <span className="nav-account-avatar" aria-hidden="true">
-            <AccountPortrait user={user} person={accountPerson}
-              fallback={identity ? initial : <UserRound size={20} />} />
-          </span>
-        </summary>
-        <div className="nav-bottom">
-          {!participantPreview && <a className="nav-menu-account" href={scopedArchivePath(archivePaths.account)}
-            aria-current={view === "account" ? "page" : undefined}
-            onClick={(event) => navigate(event, "account")}>
-            <UserRound size={18} aria-hidden="true" />
-            <span>Личный кабинет</span>
-          </a>}
-          {!participantPreview && user && isArchiveOwner(user) && user.approved === true && (
-            <a
-              className="nav-menu-manage"
-              href={scopedArchivePath(archivePaths.manage)}
-              aria-current={view === "manage" ? "page" : undefined}
-              onClick={(event) => navigate(event, "manage")}
-            >
-              <ShieldCheck size={22} />
-              <span>Управление древом</span>
-            </a>
-          )}
-          {!participantPreview && (account?.globalRole === "admin" || user?.globalRole === "admin" || user?.platformAdmin === true) && (
-            <a className="nav-menu-platform" href="/admin"
-              aria-current={view === "admin" ? "page" : undefined}
-              onClick={checkPlatformLeave}>
-              <ShieldCheck size={22} />
-              <span>Админка платформы</span>
-            </a>
-          )}
-          <div className={participantPreview ? "preview-sections" : "mobile-sections"}>
-            {(
-              [
-                ["tree", "Древо", TreeDeciduous],
-                ["list", "Люди", Users],
-                ["families", "Семьи", Heart],
-                ["gallery", "Фото", Image],
-                ["documents", "Документы", BookOpenText],
-                ["places", "Места", MapPin],
-                ["insights", "Сводка", ChartNoAxesCombined],
-                ["resources", "Ресурсы", LibraryBig],
-              ] as const
-            )
-              .filter(([id]) =>
-                id === "gallery"
-                  ? readPhotos
-                  : id === "documents"
-                    ? user?.approved === true || local
-                    : id === "places"
-                      ? readTree || readPhotos
-                      : readTree,
-              )
-              .map(([id, label, Icon]) => (
+      {identity && (
+        <details ref={menu} className="archive-more">
+          <summary
+            className="nav-account"
+            aria-label={
+              participantPreview ? "Разделы предпросмотра" : "Меню проекта"
+            }
+            title={identity ? `Меню: ${identity.name}` : "Меню проекта"}
+          >
+            <span className="nav-account-avatar" aria-hidden="true">
+              <AccountPortrait
+                user={user}
+                person={accountPerson}
+                fallback={identity ? initial : <UserRound size={20} />}
+              />
+            </span>
+          </summary>
+          <div className="nav-bottom">
+            {!participantPreview && !local && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (menu.current) {
+                    menu.current.open = false;
+                    menu.current.querySelector("summary")?.focus();
+                  }
+                  setSwitchingArchive(true);
+                }}
+              >
+                <TreeDeciduous size={18} aria-hidden="true" />
+                <span>Сменить древо</span>
+              </button>
+            )}
+            {!participantPreview && (
+              <a
+                className="nav-menu-account"
+                href={scopedArchivePath(archivePaths.account)}
+                aria-current={view === "account" ? "page" : undefined}
+                onClick={(event) => navigate(event, "account")}
+              >
+                <UserRound size={18} aria-hidden="true" />
+                <span>Личный кабинет</span>
+              </a>
+            )}
+            {!participantPreview &&
+              user &&
+              isArchiveOwner(user) &&
+              user.approved === true && (
                 <a
-                  key={id}
-                  href={scopedArchivePath(archivePaths[id])}
-                  aria-current={view === id ? "page" : undefined}
-                  onClick={(event) => navigate(event, id)}
+                  className="nav-menu-manage"
+                  href={scopedArchivePath(archivePaths.manage)}
+                  aria-current={view === "manage" ? "page" : undefined}
+                  onClick={(event) => navigate(event, "manage")}
                 >
-                  <Icon size={18} />
-                  {label}
+                  <ShieldCheck size={22} />
+                  <span>Управление древом</span>
                 </a>
-              ))}
-          </div>
-          {participantPreview && onTreePreferences && <button type="button" onClick={() => {
-            if (menu.current) menu.current.open = false;
-            onTreePreferences();
-          }}>
-            <Settings size={18} aria-hidden="true" /><span>Вид древа</span>
-          </button>}
-          {participantPreview && <a href={`${previewArchive ? `/a/${previewArchive}` : ""}/manage`}>
-            <LogOut size={18} aria-hidden="true" /><span>Выйти из просмотра</span>
-          </a>}
-          <button className="nav-about-menu" type="button" onClick={showAbout}>
-            <Info size={18} aria-hidden="true" />
-            <span>О проекте</span>
-          </button>
-          {!participantPreview && <a href="/discover">
-            <Users size={18} />
-            <span>Поиск опубликованных людей</span>
-          </a>}
-          {identity && !local && !participantPreview && (
-            <button title="Выйти" onClick={() => void logout()}>
-              <LogOut size={20} />
-              <span>Выйти</span>
+              )}
+            {!participantPreview &&
+              (account?.globalRole === "admin" ||
+                user?.globalRole === "admin" ||
+                user?.platformAdmin === true) && (
+                <a
+                  className="nav-menu-platform"
+                  href="/admin"
+                  aria-current={view === "admin" ? "page" : undefined}
+                  onClick={checkPlatformLeave}
+                >
+                  <ShieldCheck size={22} />
+                  <span>Админка платформы</span>
+                </a>
+              )}
+            <div
+              className={
+                participantPreview ? "preview-sections" : "mobile-sections"
+              }
+            >
+              {(
+                [
+                  ["tree", "Древо", TreeDeciduous],
+                  ["list", "Люди", Users],
+                  ["families", "Семьи", Heart],
+                  ["gallery", "Фото", Image],
+                  ["documents", "Документы", BookOpenText],
+                  ["places", "Места", MapPin],
+                  ["insights", "Сводка", ChartNoAxesCombined],
+                  ["resources", "Ресурсы", LibraryBig],
+                ] as const
+              )
+                .filter(([id]) =>
+                  id === "gallery"
+                    ? readPhotos
+                    : id === "documents"
+                      ? user?.approved === true || local
+                      : id === "places"
+                        ? readTree || readPhotos
+                        : readTree,
+                )
+                .map(([id, label, Icon]) => (
+                  <a
+                    key={id}
+                    href={scopedArchivePath(archivePaths[id])}
+                    aria-current={view === id ? "page" : undefined}
+                    onClick={(event) => navigate(event, id)}
+                  >
+                    <Icon size={18} />
+                    {label}
+                  </a>
+                ))}
+            </div>
+            {participantPreview && onTreePreferences && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (menu.current) menu.current.open = false;
+                  onTreePreferences();
+                }}
+              >
+                <Settings size={18} aria-hidden="true" />
+                <span>Вид древа</span>
+              </button>
+            )}
+            {participantPreview && (
+              <a
+                href={`${previewArchive ? `/a/${previewArchive}` : ""}/manage`}
+              >
+                <LogOut size={18} aria-hidden="true" />
+                <span>Выйти из просмотра</span>
+              </a>
+            )}
+            <button
+              className="nav-about-menu"
+              type="button"
+              onClick={showAbout}
+            >
+              <Info size={18} aria-hidden="true" />
+              <span>О проекте</span>
             </button>
-          )}
-        </div>
-      </details>}
+            {!participantPreview && (
+              <a href="/discover">
+                <Users size={18} />
+                <span>Поиск опубликованных людей</span>
+              </a>
+            )}
+            {identity && !local && !participantPreview && (
+              <button title="Выйти" onClick={() => void logout()}>
+                <LogOut size={20} />
+                <span>Выйти</span>
+              </button>
+            )}
+          </div>
+        </details>
+      )}
+      {switchingArchive && (
+        <ArchiveSwitcher
+          onClose={() => setSwitchingArchive(false)}
+          beforeLeave={onPlatformLeave}
+        />
+      )}
     </nav>
   );
 }

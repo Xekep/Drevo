@@ -20,6 +20,11 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { auditStore } from "./audit.ts";
 import {
+  galleryProjection,
+  type GalleryQuery,
+} from "../domain/archive-view-projection.ts";
+import type { PostgresConnections } from "./postgres-connections.ts";
+import {
   archiveRows,
   type ArchiveRows,
   type JsonRow,
@@ -31,9 +36,13 @@ import { initializeArchiveSchema } from "./schema.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { prepareAwardCitationWrite } from "./award-citation-write.ts";
 import { patchPeople } from "./person-patches.ts";
-import { archiveSnapshotReader } from "./archive-read-cache.ts";
+import { archiveSnapshotReader, type archiveSnapshotBudget } from "./archive-read-cache.ts";
 import { hydrateArchive, hydrateRelations } from "./archive-hydration.ts";
-import { allCitations, assertCatalogLinks, hydrateCatalogCitations } from "./source-catalog-store.ts";
+import {
+  allCitations,
+  assertCatalogLinks,
+  hydrateCatalogCitations,
+} from "./source-catalog-store.ts";
 import { applyArchiveChanges } from "../domain/changes.ts";
 import {
   validateFamily,
@@ -54,9 +63,10 @@ export type StoredFaceDescriptor = {
 };
 
 function addsMediaReference(before: Family, after: Family) {
-  const citationUrls = (family: Family) => allCitations(family)
-    .map((citation) => citation.url?.split(/[?#]/, 1)[0])
-    .filter((url): url is string => !!url?.startsWith("/media/"));
+  const citationUrls = (family: Family) =>
+    allCitations(family)
+      .map((citation) => citation.url?.split(/[?#]/, 1)[0])
+      .filter((url): url is string => !!url?.startsWith("/media/"));
   const existing = new Set([
     ...before.people.map((person) => person.photo),
     ...(before.photos || []).map((photo) => photo.url),
@@ -65,7 +75,8 @@ function addsMediaReference(before: Family, after: Family) {
   return (
     after.people.some(
       (person) => person.photo && !existing.has(person.photo),
-    ) || (after.photos || []).some((photo) => !existing.has(photo.url)) ||
+    ) ||
+    (after.photos || []).some((photo) => !existing.has(photo.url)) ||
     citationUrls(after).some((url) => !existing.has(url))
   );
 }
@@ -203,8 +214,14 @@ async function syncRelations(
       old.sources !== row.sources ||
       old.confidence !== row.confidence
     )
-      await update.run(row.note, row.twinKind, row.createdBy, row.sources,
-        row.confidence, row.id);
+      await update.run(
+        row.note,
+        row.twinKind,
+        row.createdBy,
+        row.sources,
+        row.confidence,
+        row.id,
+      );
   }
 }
 
@@ -330,6 +347,8 @@ export async function openArchive(
   path: string,
   seed: Family,
   archiveId?: string,
+  connections?: PostgresConnections,
+  snapshotBudget?: ReturnType<typeof archiveSnapshotBudget>,
 ) {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   let db: StoreDatabase;
@@ -337,6 +356,7 @@ export async function openArchive(
     db = await openPostgresDatabase(
       archiveId ?? process.env.ARCHIVE_ID ?? "",
       path,
+      connections,
     );
   } else {
     if (archiveId)
@@ -352,32 +372,154 @@ export async function openArchive(
   }
 
   const audit = auditStore(db);
-  const read = archiveSnapshotReader(db, () =>
-      db.transaction(() => readArchive(db), true),
+  const cacheBytes = 16 * 1024 ** 2;
+  const read = archiveSnapshotReader(
+      db,
+      () => db.transaction(() => readArchive(db), true),
+      cacheBytes,
+      snapshotBudget,
     ),
     meta = async () => await readArchiveMeta(db),
-    portraitOverview = archiveSnapshotReader(db, () =>
-      db.transaction(() => readArchiveOverview(db, true), true),
+    portraitOverview = archiveSnapshotReader(
+      db,
+      () => db.transaction(() => readArchiveOverview(db, true), true),
+      cacheBytes,
+      snapshotBudget,
     ),
-    anonymousOverview = archiveSnapshotReader(db, () =>
-      db.transaction(() => readArchiveOverview(db, false), true),
+    anonymousOverview = archiveSnapshotReader(
+      db,
+      () => db.transaction(() => readArchiveOverview(db, false), true),
+      cacheBytes,
+      snapshotBudget,
     ),
     overview = (includePortraits = true) =>
       includePortraits ? portraitOverview() : anonymousOverview(),
-    peoplePage = async (offset: number, limit: number, visible?: ReadonlySet<string>) =>
-      await readPeoplePage(db, offset, limit, visible),
-    photoPage = async (offset: number, limit: number, scope?: PhotoReadScope,
+    peoplePage = async (
+      offset: number,
+      limit: number,
+      visible?: ReadonlySet<string>,
+    ) => await readPeoplePage(db, offset, limit, visible),
+    photoPage = async (
+      offset: number,
+      limit: number,
+      scope?: PhotoReadScope,
       tagged?: ReadonlySet<string>,
       ids?: ReadonlySet<string>,
     ) =>
-      await db.transaction(() => readPhotoPage(db, offset, limit, scope, tagged, ids), true),
-    photoCount = async (scope?: PhotoReadScope,
+      await db.transaction(
+        () => readPhotoPage(db, offset, limit, scope, tagged, ids),
+        true,
+      ),
+    photoCount = async (
+      scope?: PhotoReadScope,
       tagged?: ReadonlySet<string>,
     ) => {
       const where = photoReadWhere(scope, tagged);
-      return Number((await db.prepare(`SELECT count(*) AS count FROM photos${where.sqlite}`,
-        `SELECT count(*) AS count FROM photos${where.postgres}`).get(...where.args))?.count || 0);
+      return Number(
+        (
+          await db
+            .prepare(
+              `SELECT count(*) AS count FROM photos${where.sqlite}`,
+              `SELECT count(*) AS count FROM photos${where.postgres}`,
+            )
+            .get(...where.args)
+        )?.count || 0,
+      );
     };
+  const viewPeople = async (
+    view: "places" | "gallery",
+    visible?: ReadonlySet<string>,
+  ) => {
+    const fields =
+      view === "places"
+        ? ["id", "events"]
+        : ["id", "surname", "name", "patronymic"];
+    const people = (
+      await db
+        .prepare(
+          `SELECT json_object(${fields.map((field) => `'${field}',json_extract(data,'$.${field}')`).join(",")}) AS data FROM people${visible ? " WHERE id IN (SELECT value FROM json_each(?))" : ""} ORDER BY rowid`,
+          `SELECT jsonb_build_object(${fields.map((field) => `'${field}',data->'${field}'`).join(",")}) AS data FROM people${visible ? " WHERE id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))" : ""} ORDER BY ordinal`,
+        )
+        .all(...(visible ? [JSON.stringify([...visible])] : []))
+    ).map(
+      (row) =>
+        ({
+          ...JSON.parse(String(row.data)),
+          sources: [],
+          parents: [],
+          spouses: [],
+        }) as Person,
+    );
+    if (view === "places")
+      await hydrateCatalogCitations(db, {
+        title: "",
+        description: "",
+        demo: false,
+        people,
+      });
+    return people;
+  };
+  const gallery = async (
+    query: GalleryQuery,
+    scope?: PhotoReadScope,
+    readTree = true,
+    readPhotos = true,
+  ) => {
+    const people = readTree ? await viewPeople("gallery", scope?.visible) : [];
+    if (!readPhotos)
+      return galleryProjection(
+        { title: "", description: "", demo: false, people, photos: [] },
+        query,
+      );
+    const where = photoReadWhere(scope);
+    const fields = ["id", "url", "title", "year", "takenAt", "createdAt"];
+    // Only the compact album/order index is materialized; full annotations and
+    // descriptions are read for the current 30 photographs below.
+    const photos = (
+      await db
+        .prepare(
+          `SELECT json_object(${fields.map((field) => `'${field}',json_extract(data,'$.${field}')`).join(",")}) AS data FROM photos${where.sqlite} ORDER BY rowid`,
+          `SELECT jsonb_build_object(${fields.map((field) => `'${field}',data->'${field}'`).join(",")}) AS data FROM photos${where.postgres} ORDER BY ordinal`,
+        )
+        .all(...where.args)
+    ).map(
+      (row) => ({ ...JSON.parse(String(row.data)), tags: [] }) as ArchivePhoto,
+    );
+    const byId = new Map(photos.map((photo) => [photo.id, photo]));
+    if (readTree)
+      for (const tag of await db
+        .prepare(
+          "SELECT photo_id,person_id FROM photo_tags ORDER BY rowid",
+          "SELECT photo_id,person_id FROM photo_tags ORDER BY ordinal",
+        )
+        .all()) {
+        if (!scope || scope.visible.has(String(tag.person_id)))
+          byId
+            .get(String(tag.photo_id))
+            ?.tags.push({
+              personId: String(tag.person_id),
+            } as ArchivePhoto["tags"][number]);
+      }
+    const result = galleryProjection(
+      { title: "", description: "", demo: false, people, photos },
+      query,
+    );
+    if (result.photos.length) {
+      const rows = await photoPage(
+        0,
+        result.photos.length,
+        scope,
+        undefined,
+        new Set(result.photos.map((photo) => photo.id)),
+      );
+      const selected = new Map(rows.map((photo) => [photo.id, photo]));
+      result.photos = result.photos.map((photo) => {
+        const full = selected.get(photo.id)!;
+        return readTree ? full : { ...full, tags: [] };
+      });
+    }
+    return result;
+  };
 
   const checkRevision = async (expected: number) => {
     const old = await db
@@ -445,7 +587,10 @@ export async function openArchive(
       const family =
         actor && previous
           ? authorizeArchive(value, previous, actor)
-          : prepareAwardCitationWrite(structuredClone(validateFamily(value)), previous);
+          : prepareAwardCitationWrite(
+              structuredClone(validateFamily(value)),
+              previous,
+            );
       await checkStorePostgresPeopleGrowth(
         db,
         family.people.length - (previous?.people.length || 0),
@@ -603,7 +748,7 @@ export async function openArchive(
   )
     await write(seed, 0);
   return {
-    read,
+    read: () => read(),
     meta,
     overview,
     peoplePage,
@@ -647,7 +792,9 @@ export async function openArchive(
       return validateFamily(family);
     },
     appendPhoto,
-    close: async () => await db.close(),
+    viewPeople,
+    gallery,
+    close: async () => { read.close(); portraitOverview.close(); anonymousOverview.close(); await db.close(); },
     db,
   };
 }
@@ -761,14 +908,23 @@ async function readPeoplePage(
       }) as Person,
   );
   await hydrateCatalogCitations(db, {
-    title: "", description: "", demo: false, people,
+    title: "",
+    description: "",
+    demo: false,
+    people,
   });
   return people;
 }
 
 type PhotoReadScope = { visible: ReadonlySet<string>; userId: string };
-function photoReadWhere(scope?: PhotoReadScope, tagged?: ReadonlySet<string>, ids?: ReadonlySet<string>) {
-  const sqlite: string[] = [], postgres: string[] = [], args: string[] = [];
+function photoReadWhere(
+  scope?: PhotoReadScope,
+  tagged?: ReadonlySet<string>,
+  ids?: ReadonlySet<string>,
+) {
+  const sqlite: string[] = [],
+    postgres: string[] = [],
+    args: string[] = [];
   if (scope) {
     sqlite.push(
       "(json_extract(photos.data,'$.createdBy')=? OR EXISTS (SELECT 1 FROM photo_tags t WHERE t.photo_id=photos.id AND t.person_id IN (SELECT value FROM json_each(?))))",
@@ -788,8 +944,12 @@ function photoReadWhere(scope?: PhotoReadScope, tagged?: ReadonlySet<string>, id
     args.push(JSON.stringify([...tagged]));
   }
   if (ids) {
-    const predicate = ids.size ? `photos.id IN (${[...ids].map(() => "?").join(",")})` : "0=1";
-    sqlite.push(predicate); postgres.push(predicate); args.push(...ids);
+    const predicate = ids.size
+      ? `photos.id IN (${[...ids].map(() => "?").join(",")})`
+      : "0=1";
+    sqlite.push(predicate);
+    postgres.push(predicate);
+    args.push(...ids);
   }
   return {
     sqlite: sqlite.length ? " WHERE " + sqlite.join(" AND ") : "",
@@ -824,11 +984,11 @@ async function readPhotoPage(
         `SELECT photo_id,data FROM photo_tags WHERE photo_id IN (${placeholders}) ORDER BY ordinal`,
       )
       .all(...photos.map((photo) => photo.id));
-  for (const row of tags)
-    {
-      const tag = JSON.parse(String(row.data));
-      if (!scope || scope.visible.has(tag.personId)) photoMap.get(String(row.photo_id))?.tags.push(tag);
-    }
+  for (const row of tags) {
+    const tag = JSON.parse(String(row.data));
+    if (!scope || scope.visible.has(tag.personId))
+      photoMap.get(String(row.photo_id))?.tags.push(tag);
+  }
   return photos;
 }
 

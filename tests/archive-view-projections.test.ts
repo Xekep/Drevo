@@ -11,6 +11,7 @@ import { archiveOverview } from "../src/domain/archive-projection.ts";
 import { archiveDetails } from "../src/data/archive-details.ts";
 import { archiveChanges } from "../src/domain/changes.ts";
 import { analyzeFamilyInsights } from "../src/domain/family-insights.ts";
+import { openArchive } from "../src/server/database.ts";
 
 const family: Family = {
   title: "Тест",
@@ -57,6 +58,40 @@ const family: Family = {
           ],
   })),
 };
+test("SQL gallery index matches complete snapshot albums without full hydration", async () => {
+  const archive = await openArchive(":memory:", family);
+  try {
+    const stored = (await archive.read()).family;
+    archive.read = async () => {
+      throw new Error("Full hydration forbidden");
+    };
+    for (const query of [
+      { mode: "all" as const },
+      { mode: "all" as const, offset: 30 },
+      { mode: "people" as const },
+      { mode: "years" as const },
+      { mode: "years" as const, year: "1950", personId: "f-0" },
+      { mode: "all" as const, personId: "unknown" },
+    ])
+      assert.deepEqual(
+        await archive.gallery(query),
+        galleryProjection(stored, query),
+      );
+    const events = await archive.viewPeople("places");
+    assert.deepEqual(
+      events.map((person) => person.events),
+      stored.people.map((person) => person.events),
+    );
+    assert.ok(
+      events.every(
+        (person) =>
+          !person.biography && !person.awards && !person.sources.length,
+      ),
+    );
+  } finally {
+    await archive.close();
+  }
+});
 test("gallery pages retain canonical order, bounded objects, album counts and unknown albums", () => {
   const first = galleryProjection(family, { mode: "all" });
   const second = galleryProjection(family, { mode: "all", offset: 30 });
