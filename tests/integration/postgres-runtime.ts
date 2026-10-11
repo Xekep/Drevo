@@ -3210,6 +3210,7 @@ try {
     let adminResponseCalls = 0;
     let adminModelCalls = 0;
     const actualAiSettings = await aiSettingsStore(app.archive.db);
+    const adminSettingsBefore = await actualAiSettings.read();
     const guardedAdminAi = adminAiHttp({
       auth: await createAuth(await userStore(app.archive.db), app.archive.db,
         process.env.PUBLIC_ORIGIN),
@@ -3356,6 +3357,10 @@ try {
         "the connection-check model must not run after admin role revocation");
       await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
       holdRoleConversation = false;
+      // This scenario must cross the provider boundary, not reuse the catalog
+      // cached by the earlier explicit refresh with the same credential/folder.
+      await actualAiSettings.write({ ...await actualAiSettings.read(),
+        folderId: "catalog-get-revocation-fixture" }, owner);
       holdSettingsModels = true;
       const loadingSettings = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai`, {
         headers: ownerHeaders,
@@ -3419,7 +3424,10 @@ try {
       holdWriteStatusModels = true;
       const waitingForStatus = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai`, {
         method: "PUT", headers: ownerHeaders,
-        body: JSON.stringify({ ...await actualAiSettings.read(), apiKey: "" }),
+        // A different folder deliberately misses the GET scenario's catalog
+        // cache so revocation is checked after a real post-write model lookup.
+        body: JSON.stringify({ ...await actualAiSettings.read(), apiKey: "",
+          folderId: "catalog-put-revocation-fixture" }),
       });
       await Promise.race([writeStatusModelsStarted,
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI settings status lookup did not start")), 15_000))]);
@@ -3440,6 +3448,7 @@ try {
       releaseWriteStatusModels();
       releaseModelBody();
       await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
+      await actualAiSettings.write(adminSettingsBefore, owner);
       await new Promise<void>((resolve) => guardedAdminServer.close(() => resolve()));
     }
 
