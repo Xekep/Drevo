@@ -31,6 +31,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: bash -n ops/deploy.sh
+      - run: python3 -B -m unittest discover -s tests -p 'test_release_identity.py'
       - name: Validate Nginx site
         run: |
           if ! command -v nginx >/dev/null; then
@@ -116,7 +117,12 @@ jobs:
         with:
           name: verified-release
       - name: Extract verified release
-        run: tar -xzf release.tar.gz
+        id: verified-release
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          tar -xzf release.tar.gz
+          python3 release/ops/read-release-id.py release/release.json "$EXPECTED_COMMIT" >> "$GITHUB_OUTPUT"
       - name: Configure SSH
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -127,7 +133,7 @@ jobs:
           printf '%s\n' '[94.232.248.210]:4321 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG2C3d6j+K8FTcK6aoKhH7lTTfBWX2lp1hBFZp+I8nhV' > ~/.ssh/known_hosts
       - name: Upload isolated release
         env:
-          RELEASE_ID: ${{ github.sha }}-${{ github.run_attempt }}
+          RELEASE_ID: ${{ steps.verified-release.outputs.release_id }}
         run: |
           ssh -p 4321 -o BatchMode=yes -o StrictHostKeyChecking=yes deploy@94.232.248.210 "mkdir -p /var/www/drevo.kiiko.ru/releases/$RELEASE_ID"
           rsync -az --no-owner --no-group --chmod=Dg+rwx,Dg+s,Do-rwx,Fg+rw,Fo-rwx \
@@ -135,7 +141,7 @@ jobs:
             release/ "deploy@94.232.248.210:/var/www/drevo.kiiko.ru/releases/$RELEASE_ID/"
       - name: Activate and check release
         env:
-          RELEASE_ID: ${{ github.sha }}-${{ github.run_attempt }}
+          RELEASE_ID: ${{ steps.verified-release.outputs.release_id }}
         run: |
           ssh -p 4321 -o BatchMode=yes -o StrictHostKeyChecking=yes deploy@94.232.248.210 \
             "bash /var/www/drevo.kiiko.ru/releases/$RELEASE_ID/ops/deploy.sh $RELEASE_ID"
