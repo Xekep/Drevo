@@ -41,6 +41,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: bash -n ops/deploy.sh
+      - run: python3 -B -m unittest discover -s tests -p 'test_release_identity.py'
       - name: Validate Nginx site
         run: |
           if ! command -v nginx >/dev/null; then
