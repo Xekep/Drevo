@@ -193,6 +193,10 @@ export async function verifyPlatformTiers(client: Client, db: StoreDatabase, bas
     const changedDetail = await fetch(endpoint, { headers });
     assert.equal(changedDetail.status, 200);
     assert.deepEqual(await changedDetail.json(), { accountId: targetId, fullAccess: true });
+    // Receiving JSON does not imply the server's delivery transaction has
+    // committed. Wait for its retained SHARE lock before checking an idle
+    // idempotent write; a real overlapping NOWAIT write may correctly get 409.
+    await client.query("SELECT id FROM accounts WHERE id=$1 FOR UPDATE", [targetId]);
     assert.equal((await change(headers, true, true)).status, 200,
       "an identical request is idempotent");
     assert.equal((await client.query(`SELECT count(*)::int AS n FROM platform_config_audit
