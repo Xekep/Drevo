@@ -10,10 +10,8 @@ import {
 } from "../../src/server/store-database.ts";
 import { readPostgresArchive } from "../../src/server/postgres-archive-read.ts";
 import { archiveQueryHttp } from "../../src/server/archive-query-http.ts";
-import {
-  archiveOverview,
-  galleryProjection,
-} from "../../src/domain/archive-projection.ts";
+import { archiveOverview } from "../../src/domain/archive-projection.ts";
+import { galleryProjection } from "../../src/domain/archive-view-projection.ts";
 import type { openArchive } from "../../src/server/database.ts";
 import type { createAuth } from "../../src/server/auth.ts";
 import type { settingsStore } from "../../src/server/settings.ts";
