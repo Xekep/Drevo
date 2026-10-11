@@ -4,6 +4,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { documentFileTypeFromMime } from "../shared/document-file.ts";
 import { makeDrevoPlugin } from "./bookreader-drevo-plugin";
 import { PdfTextSearch } from "./bookreader-pdf-search";
+import { installBookReaderPageNavigation } from "./bookreader-page-navigation";
 import type { ReaderCommand, ReaderEvent } from "./bookreader-frame-messages";
 import {
   loadBookReader,
@@ -357,6 +358,7 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
     // Keep the document page on a responsive change. An explicit choice in
     // the reader takes precedence over our automatic spread selection.
     const currentReader = reader;
+    const cleanupNavigation = installBookReaderPageNavigation(currentReader);
     const narrowReader = matchMedia("(max-width: 760px)");
     let manualMode = false;
     let changingMode = false;
@@ -408,6 +410,7 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
     viewportObserver.observe(document.getElementById("bookreader")!);
     const cleanupBeforeMode = cleanupDocument;
     cleanupDocument = () => {
+      cleanupNavigation();
       narrowReader.removeEventListener("change", updateReaderMode);
       viewportObserver.disconnect();
       cancelAnimationFrame(resizeFrame);
