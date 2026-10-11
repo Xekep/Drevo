@@ -50,6 +50,7 @@ import { publishedPeopleHttp } from "./published-people-http.ts";
 import { discoveryMatchesHttp } from "./discovery-matches-http.ts";
 import { discoveryCardShareHttp } from "./discovery-card-share-http.ts";
 import { discoveryBranchShareHttp } from "./discovery-branch-share-http.ts";
+import type { WorkQueue } from "./work-queue.ts";
 import {
   assertMemberPreviewDelivery,
   setMemberPreviewTarget,
@@ -70,6 +71,7 @@ export async function archiveHttp({
   restores,
   providerCleanup,
   decodePdf,
+  aiQueue,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -85,6 +87,7 @@ export async function archiveHttp({
   restores: RestoreStore;
   providerCleanup?: AiProviderCleanup;
   decodePdf?: ReturnType<typeof pdfDecodeCoordinator>["decode"];
+  aiQueue?: WorkQueue;
 }) {
   const suggestions = researchSuggestionStore(archive.db);
   const aiSettings = await aiSettingsStore(archive.db);
@@ -119,6 +122,7 @@ export async function archiveHttp({
   });
   const core = coreHttp({ archive, auth, publicOrigin });
   const researchAi = aiResearchHttp({
+    executionQueue: aiQueue,
     archive,
     auth,
     suggestions,

@@ -4,8 +4,25 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openArchive, readArchive } from "../src/server/database.ts";
-import { archiveSnapshotReader } from "../src/server/archive-read-cache.ts";
+import { archiveSnapshotReader, archiveSnapshotBudget } from "../src/server/archive-read-cache.ts";
 import type { Family } from "../src/domain/types.ts";
+
+test("snapshot readers share a memory budget and reload evicted views", async () => {
+  const archive = await openArchive(":memory:", { title: "", description: "", demo: false, people: [] });
+  try {
+    const value = { revision: 1, text: "x".repeat(100) };
+    const bytes = JSON.stringify(value).length * 2;
+    const budget = archiveSnapshotBudget(bytes * 2);
+    const loads = [0, 0, 0];
+    const readers = loads.map((_, i) => archiveSnapshotReader(archive.db, async () => { loads[i]++; return value; }, 1000, budget));
+    await readers[0](); await readers[1](); await readers[0](); await readers[2]();
+    assert.ok(budget.diagnostics().bytes <= bytes * 2);
+    await readers[1]();
+    assert.deepEqual(loads, [1, 2, 1]);
+    readers.forEach(reader => reader.close());
+    assert.equal(budget.diagnostics().bytes, 0);
+  } finally { await archive.close(); }
+});
 
 const family: Family = {
   title: "Архив",

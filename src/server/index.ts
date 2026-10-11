@@ -60,6 +60,12 @@ import { platformAiProviderCleanupHttp } from "./platform-ai-provider-cleanup-ht
 import { discoveryPeopleHttp } from "./discovery-people-http.ts";
 import { accountInvitationsHttp } from "./account-invitations-http.ts";
 import { archiveRoutePool } from "./archive-route-pool.ts";
+import {
+  postgresConnections,
+  type PostgresConnections,
+} from "./postgres-connections.ts";
+import { workQueue, WorkQueueBusyError, type WorkQueue } from "./work-queue.ts";
+import { archiveSnapshotBudget } from "./archive-read-cache.ts";
 import { publicShareAccess } from "./public-share-access.ts";
 import { safeRequestRoute } from "./safe-request-route.ts";
 import { sessionHttp } from "./session-http.ts";
@@ -91,6 +97,8 @@ export async function startServer(
   aiFetch?: typeof fetch,
   archiveId?: string,
   sharedPdfDecoder?: ReturnType<typeof pdfDecodeCoordinator>,
+  sharedConnections?: PostgresConnections,
+  sharedWork?: { ai: WorkQueue; previews: WorkQueue; snapshots: ReturnType<typeof archiveSnapshotBudget> },
 ): Promise<StartedServer> {
   assertProductionOrigin(
     process.env.NODE_ENV === "production",
@@ -137,8 +145,23 @@ export async function startServer(
       throw new AggregateError(errors, "Не удалось закрыть ресурсы сервера");
   };
   try {
+    const work = sharedWork ?? {
+      ai: workQueue(4, 32),
+        previews: workQueue(2, 32, 15_000),
+        snapshots: archiveSnapshotBudget(),
+    };
+    if (!sharedWork)
+      own(() => {
+        work.ai.close();
+        work.previews.close();
+      });
     const pdfDecoder = sharedPdfDecoder ?? pdfDecodeCoordinator();
     if (!sharedPdfDecoder) own(() => pdfDecoder.close());
+    const connections =
+      configuredDatabaseBackend(dbPath) === "postgres" && dbPath !== ":memory:"
+        ? (sharedConnections ?? postgresConnections())
+        : undefined;
+    if (connections && !sharedConnections) own(() => connections.close());
     const archive = await openArchive(
       dbPath,
       validateFamily(
@@ -147,6 +170,8 @@ export async function startServer(
         ),
       ),
       archiveId,
+      connections,
+      work.snapshots,
     );
     own(() => archive.close());
     if (!archiveId)
@@ -248,7 +273,10 @@ export async function startServer(
           count: mediaIndex.missing,
         }),
       );
-    const previewImage = imagePreviews(resolve(dirname(dbPath), "previews"));
+    const previewImage = imagePreviews(
+      resolve(dirname(dbPath), "previews"),
+      work.previews,
+    );
     const cacheMaintenance = derivedCacheMaintenance(dirname(dbPath));
     own(() => cacheMaintenance.close());
     const restores = restoreStore(archive, dbPath);
@@ -360,8 +388,10 @@ export async function startServer(
                 aiFetch,
                 id,
                 pdfDecoder,
+                connections,
+                work,
               ),
-            { maxOpen: 3 },
+            { maxOpen: 128 },
           )
         : null;
     own(async () => {
@@ -405,6 +435,7 @@ export async function startServer(
       selectedArchiveId: archiveId,
       providerCleanup,
       decodePdf: pdfDecoder.decode,
+      aiQueue: work.ai,
       serveStatic,
     });
     const stopRequests = own(() => handleArchive.close());
@@ -526,8 +557,15 @@ export async function startServer(
                 queued: scoped.queued,
               }
             : null,
-          pools: [...(rootPool ? [rootPool] : []), ...(scoped?.pools || [])],
+          pools: connections
+            ? rootPool
+              ? [rootPool]
+              : []
+            : [...(rootPool ? [rootPool] : []), ...(scoped?.pools || [])],
           pdf: pdfDecoder.diagnostics(),
+          ai: work.ai.diagnostics(),
+          previews: work.previews.diagnostics(),
+          snapshots: work.snapshots.diagnostics(),
         });
       }
       if (routedArchives && (await routedArchives.route(req, res, parsedUrl)))
@@ -608,7 +646,12 @@ export async function startServer(
               error: error instanceof Error ? error.message : String(error),
             }),
           );
-          if (!res.headersSent) json(res, 500, { error: "Ошибка сервера" });
+          if (!res.headersSent) {
+            if (error instanceof WorkQueueBusyError) {
+              res.setHeader("Retry-After", "2");
+              json(res, 503, { error: error.message });
+            } else json(res, 500, { error: "Ошибка сервера" });
+          }
           else res.end();
         })
         .finally(() => {
@@ -632,16 +675,18 @@ export async function startServer(
       if (server.listening)
         await new Promise<void>((done) => server.close(() => done()));
     });
-    await new Promise<void>((done, reject) => {
-      server.once("error", reject);
-      server.listen(port, "127.0.0.1", () => {
-        server.off("error", reject);
-        done();
+    if (!sharedConnections)
+      await new Promise<void>((done, reject) => {
+        server.once("error", reject);
+        server.listen(port, "127.0.0.1", () => {
+          server.off("error", reject);
+          done();
+        });
       });
-    });
-    console.log(
-      `Древо: http://127.0.0.1:${(server.address() as { port: number }).port}/ · ${archive.db.kind === "postgres" ? "PostgreSQL: " + archive.db.archiveId : "SQLite: " + dbPath}`,
-    );
+    if (!sharedConnections)
+      console.log(
+        `Древо: http://127.0.0.1:${(server.address() as { port: number }).port}/ · ${archive.db.kind === "postgres" ? "PostgreSQL: " + archive.db.archiveId : "SQLite: " + dbPath}`,
+      );
     let closing: Promise<void> | undefined;
     return {
       server,

@@ -6,6 +6,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import pg from "pg";
 import { setTimeout as delay } from "node:timers/promises";
 import { initializePostgresRuntimeSchema } from "./postgres-runtime-schema.ts";
+import type { PostgresConnections } from "./postgres-connections.ts";
 
 type Row = Record<string, unknown>;
 export function postgresPoolSize(
@@ -201,35 +202,53 @@ export function storeDatabase(
 export async function openPostgresDatabase(
   archiveId: string,
   file: string,
+  shared?: PostgresConnections,
 ): Promise<StoreDatabase> {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{2,63}$/.test(archiveId))
     throw new Error("Некорректный идентификатор архива PostgreSQL");
-  const pool = new pg.Pool({
-    // Root + four scoped runtimes use at most ten slots per process by default.
-    // Two processes leave room within production's 27 ordinary PG connections.
-    max: postgresPoolSize(),
-    connectionTimeoutMillis: 5000,
-    idleTimeoutMillis: 30000,
-    statement_timeout: 15000,
-    application_name: "drevo",
-    options: `-c drevo.archive_id=${archiveId} -c timezone=UTC`,
-    types: {
-      getTypeParser(oid, format) {
-        // The existing stores parse their JSON explicitly. Do not alter pg's
-        // global parsers used by migration and verification tools.
-        if (oid === 114 || oid === 3802) return (value: string) => value;
-        if (oid === 20)
-          return (value: string) => {
-            const number = Number(value);
-            if (!Number.isSafeInteger(number))
-              throw new Error("Число БД вне безопасного диапазона");
-            return number;
-          };
-        return pg.types.getTypeParser(oid, format);
+  const pool =
+    shared?.pool ??
+    new pg.Pool({
+      // Standalone tools retain an archive-local pool. HTTP uses the explicitly
+      // supplied process pool, independent of the number of open archive views.
+      max: postgresPoolSize(),
+      connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 30000,
+      statement_timeout: 15000,
+      application_name: "drevo",
+      options: `-c drevo.archive_id=${archiveId} -c timezone=UTC`,
+      types: {
+        getTypeParser(oid, format) {
+          // The existing stores parse their JSON explicitly. Do not alter pg's
+          // global parsers used by migration and verification tools.
+          if (oid === 114 || oid === 3802) return (value: string) => value;
+          if (oid === 20)
+            return (value: string) => {
+              const number = Number(value);
+              if (!Number.isSafeInteger(number))
+                throw new Error("Число БД вне безопасного диапазона");
+              return number;
+            };
+          return pg.types.getTypeParser(oid, format);
+        },
       },
-    },
-  });
-  pool.on("error", () => console.error("postgres_idle_connection_failed"));
+    });
+  if (!shared)
+    pool.on("error", () => console.error("postgres_idle_connection_failed"));
+  let closed = false;
+  const connect = async () => {
+    if (closed) throw new Error("Соединение с архивом закрыто");
+    return shared
+      ? await shared.connect(archiveId)
+      : (() => {
+          return pool
+            .connect()
+            .then((client) => ({
+              client,
+              release: async (discard = false) => client.release(discard),
+            }));
+        })();
+  };
   const context = new AsyncLocalStorage<{
     client: pg.PoolClient;
     active: boolean;
@@ -239,6 +258,7 @@ export async function openPostgresDatabase(
   // independent operations so they cannot enter another callback's transaction.
   type TaskSession = {
     client: pg.PoolClient;
+    release: (discard?: boolean) => Promise<void>;
     tail: Promise<void>;
     discard: boolean;
   };
@@ -262,6 +282,7 @@ export async function openPostgresDatabase(
     };
   }
   async function reserveTaskSlot(): Promise<() => void> {
+    if (shared) return await shared.reserveTask();
     if (taskOwners < taskLimit) {
       taskOwners++;
       return taskSlotRelease();
@@ -299,14 +320,21 @@ export async function openPostgresDatabase(
       release();
     }
   }
-  const query = (sql: string, values?: SQLInputValue[]) => {
+  const query = async (sql: string, values?: SQLInputValue[]) => {
+    if (closed) throw new Error("Соединение с архивом закрыто");
     const owner = context.getStore();
     if (owner && !owner.active)
       throw new Error("Контекст транзакции БД уже завершён");
     if (owner) return owner.client.query<Row>(sql, values);
     if (tasks.getStore())
       return onTaskSession((client) => client.query<Row>(sql, values));
-    return pool.query<Row>(sql, values);
+    if (!shared) return pool.query<Row>(sql, values);
+    const lease = await connect();
+    try {
+      return await lease.client.query<Row>(sql, values);
+    } finally {
+      await lease.release();
+    }
   };
   async function withSessionTaskLock<T>(
     key: string,
@@ -323,7 +351,7 @@ export async function openPostgresDatabase(
       releaseSlot = await reserveTaskSlot();
       try {
         borrowed = {
-          client: await pool.connect(),
+          ...(await connect()),
           tail: Promise.resolve(),
           discard: false,
         };
@@ -381,7 +409,7 @@ export async function openPostgresDatabase(
         if (!parent) {
           await session.tail;
           try {
-            session.client.release(session.discard);
+            await session.release(session.discard);
           } finally {
             releaseSlot?.();
           }
@@ -465,11 +493,13 @@ export async function openPostgresDatabase(
         }
       };
       if (tasks.getStore()) return await onTaskSession(execute);
-      const client = await pool.connect();
+      const releaseTransaction = shared ? await shared.reserveTransaction() : undefined;
       try {
-        return await execute(client);
+        const lease = await connect();
+        try { return await execute(lease.client); }
+        finally { await lease.release(); }
       } finally {
-        client.release();
+        releaseTransaction?.();
       }
     },
     async postgresTransaction(work) {
@@ -499,11 +529,13 @@ export async function openPostgresDatabase(
         }
       };
       if (task) return await onTaskSession(execute);
-      const client = await pool.connect();
+      const releaseTransaction = shared ? await shared.reserveTransaction() : undefined;
       try {
-        return await execute(client);
+        const lease = await connect();
+        try { return await execute(lease.client); }
+        finally { await lease.release(); }
       } finally {
-        client.release();
+        releaseTransaction?.();
       }
     },
     async withExclusiveArchiveTask(task, work) {
@@ -537,24 +569,28 @@ export async function openPostgresDatabase(
         await delay(50);
       }
     },
-    close: () => pool.end(),
+    close: async () => {
+      if (closed) return;
+      closed = true;
+      if (!shared) await pool.end();
+    },
   };
   try {
-    const role = await pool.query(
+    const role = await query(
       "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname=current_user",
     );
     if (role.rows[0]?.rolsuper || role.rows[0]?.rolbypassrls)
       throw new Error(
         "Рабочая роль PostgreSQL не должна обходить RLS или иметь права superuser",
       );
-    const result = await pool.query("SELECT id FROM archives WHERE id=$1", [
+    const result = await query("SELECT id FROM archives WHERE id=$1", [
       archiveId,
     ]);
     if (result.rowCount !== 1) throw new Error("Архив PostgreSQL не найден");
     await initializePostgresRuntimeSchema(database);
     return database;
   } catch (error) {
-    await pool.end();
+    if (!shared) await pool.end();
     throw error;
   }
 }

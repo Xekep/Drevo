@@ -47,17 +47,17 @@ jobs:
             await client.end();
           }
           NODE
-      - name: Measure five minutes of two-backend traffic on 10000 people
+      - name: Measure five minutes with 100 concurrent readers on 10000 people
         run: |
           set -euo pipefail
           PGUSER=drevo_runtime PGPASSWORD=local_runtime_test PGDATABASE=drevo_migration_bench_http_soak \
-            node --experimental-strip-types ops/postgres/benchmark-http.ts 10000 300 | tee benchmark-http-soak.jsonl
+            node --experimental-strip-types ops/postgres/benchmark-http.ts 10000 300 100 1000 | tee benchmark-http-soak.jsonl
       - name: Publish measured results and limits
         if: always()
         run: |
           {
             echo '### Two-backend PostgreSQL mixed HTTP soak'
-            echo 'Synthetic 10000-person archive, five minutes, 12 HTTP readers plus writer, two backend processes, shared media, two fake AI turns and one competing background backup. This is a GitHub runner measurement, not production capacity or external AI latency.'
+            echo 'Synthetic 10000-person archive, five minutes, 100 concurrent HTTP readers (one second think time) plus writer, two backend processes, shared media, two fake AI turns and one competing background backup. Readers use one test identity: this measures traffic, not 100 independent accounts. This is a GitHub runner measurement, not production capacity or external AI latency.'
             echo '```json'
             if [ -f benchmark-http-soak.jsonl ]; then cat benchmark-http-soak.jsonl; fi
             echo '```'
