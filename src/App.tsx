@@ -1001,8 +1001,7 @@ export default function App() {
                         </div>
                       }
                       onShare={
-                        isArchiveOwner(user) && canEdit && desktop &&
-                        !archiveContextAt(window.location.pathname)
+                        isArchiveOwner(user) && canEdit && desktop
                           ? (anchorId, ids) => {
                               const anchor = map.get(anchorId);
                               if (anchor)
