@@ -80,7 +80,7 @@ export function JsonImportUndo({
     }
   }
   return (
-    <section aria-label="Отмена импорта">
+    <section className="json-import-undo" aria-label="Отмена импорта">
       <h3>Отменить импорт</h3>
       <p>
         Удалить только карточки выбранного пакета. Остальное древо не
@@ -95,7 +95,7 @@ export function JsonImportUndo({
         Показать импортированные пакеты
       </button>
       {batches && (
-        <ul>
+        <ul className="json-import-batches">
           {batches.map((batch) => (
             <li key={batch.revision}>
               {new Date(batch.at).toLocaleString("ru-RU")} · {batch.actorName} ·
@@ -152,7 +152,7 @@ export function JsonImportUndo({
               ))}
             </ul>
           </details>
-          <label>
+          <label className="json-import-confirm">
             <input
               type="checkbox"
               checked={confirmed}
@@ -176,7 +176,11 @@ export function JsonImportUndo({
           {error}
         </p>
       )}
-      {done && <p role="status">{done}</p>}
+      {done && (
+        <p className="json-import-success" role="status">
+          {done}
+        </p>
+      )}
     </section>
   );
 }
