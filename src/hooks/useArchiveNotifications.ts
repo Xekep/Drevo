@@ -41,10 +41,11 @@ export function useArchiveNotifications({
   open: boolean;
 }) {
   // Capture the resource before async work; a later archive switch cannot retarget a POST.
-  const resource = new URL(
-    archiveResourceUrl("/api/notifications"),
-    window.location.origin,
-  ).href;
+  const scopedResource = archiveResourceUrl("/api/notifications");
+  const resource =
+    typeof window === "undefined"
+      ? scopedResource
+      : new URL(scopedResource, window.location.origin).href;
   const scope = `${resource}\n${userId}`;
   const runtime = useRef<Runtime | null>(null);
   const openState = useRef(open);
