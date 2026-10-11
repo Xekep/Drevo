@@ -12,6 +12,65 @@ import { archiveChanges, applyArchiveChanges } from "../src/domain/changes.ts";
 import type { ArchivePageHeader } from "../src/data/archive-pages.ts";
 import type { Family } from "../src/domain/types.ts";
 
+test("an urgent photo read preserves canonical collection order and completes before the next background batch", async () => {
+  const setup = fixture(2);
+  setup.family.photos = Array.from({ length: 210 }, (_, index) => ({
+    id: `f${index}`,
+    url: `/media/${index}.jpg`,
+    title: String(index),
+    tags: [],
+  }));
+  setup.initial.totals!.photos = 210;
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const ready = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const calls: string[] = [];
+  let latest = setup.initial;
+  const reader = archiveDetails(
+    setup.initial,
+    async (input) => {
+      const params = new URL(input, "http://local.test").searchParams;
+      calls.push(input);
+      if (params.get("projection") === "photos")
+        return Response.json({
+          pageToken: setup.initial.pageToken,
+          photos: [setup.family.photos![205]],
+        });
+      const offset = Number(params.get("offset"));
+      if (!offset) {
+        entered();
+        await gate;
+      }
+      return Response.json({
+        pageToken: setup.initial.pageToken,
+        total: 210,
+        items: setup.family.photos!.slice(offset, offset + 40),
+      });
+    },
+    (header) => {
+      latest = header;
+    },
+  );
+  const collection = reader.loadCollections(["photos"]);
+  await ready;
+  const card = reader.loadPhotos(["f205"]);
+  release();
+  await card;
+  await collection;
+  assert.ok(
+    calls.findIndex((url) => url.includes("projection=photos")) <
+      calls.findIndex((url) => url.includes("offset=160")),
+  );
+  assert.deepEqual(
+    latest.family.photos!.map((photo) => photo.id),
+    setup.family.photos.map((photo) => photo.id),
+  );
+});
+
 function fixture(count = 170) {
   const family: Family = {
     title: "Тестовый архив",
@@ -138,6 +197,49 @@ test("10,000-person archive starts without detail requests and opens only the re
     applied.family.people[121].biography,
     family.people[121].biography,
   );
+});
+
+test("card reads run between collection batches, preserving hydrated fields", async () => {
+  const f = fixture(210);
+  let release!: () => void, started!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const begun = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const reader = archiveDetails(
+    f.initial,
+    async (input) => {
+      const url = new URL(input, "http://local.test");
+      if (
+        url.searchParams.get("projection") === "page" &&
+        url.searchParams.get("offset") === "0"
+      ) {
+        started();
+        await blocked;
+      }
+      return f.request(input);
+    },
+    (data) => f.updates.push(data),
+  );
+  const collection = reader.loadCollections(["people"]);
+  await begun;
+  const card = reader.loadPeople(["p205"]);
+  release();
+  await card;
+  assert.equal(reader.isComplete("people"), false);
+  await collection;
+  const cardIndex = f.calls.findIndex((url) =>
+    url.includes("projection=details"),
+  );
+  const nextBatch = f.calls.findIndex((url) => url.includes("offset=160"));
+  assert.ok(cardIndex >= 0 && cardIndex < nextBatch);
+  assert.equal(
+    f.updates.at(-1)!.family.people[205].biography,
+    f.family.people[205].biography,
+  );
+  assert.equal(reader.isComplete("people"), true);
 });
 
 test("person album pages are deduplicated and collection demands preserve hydrated fields", async () => {

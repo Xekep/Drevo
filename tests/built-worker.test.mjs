@@ -4,6 +4,8 @@ import { Worker } from "node:worker_threads";
 import { readdirSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { randomFamily } from "./layout-fixtures.ts";
 const dist = fileURLToPath(new URL("../dist/", import.meta.url));
 const bundle = readdirSync(join(dist, "assets")).find(
   (p) => p.startsWith("layout.worker-") && p.endsWith(".js"),
@@ -69,6 +71,7 @@ function calculate(
   reverse = false,
   data = people,
   cardVariant = "classic",
+  parallelCandidates = false,
 ) {
   return new Promise((resolve, reject) => {
     const onError = (error) => {
@@ -81,7 +84,7 @@ function calculate(
     };
     worker.once("error", onError);
     worker.once("message", onMessage);
-    worker.postMessage({ people: data, links: [], mode, reverse, cardVariant });
+    worker.postMessage({ people: data, links: [], mode, reverse, cardVariant, parallelCandidates });
   });
 }
 function productionWorker() {
@@ -92,6 +95,20 @@ function productionWorker() {
     },
   });
 }
+test("two ELK workers preserve the exact large-archive geometry and subsequent single-worker reuse", { timeout: 60_000 }, async () => {
+  const data = randomFamily(5, 9);
+  assert.equal(data.length, 977);
+  const fingerprint = (geometry) => createHash("sha256").update(JSON.stringify(geometry)).digest("hex");
+  const worker = productionWorker();
+  try {
+    const sequential = await calculate(worker, "generations", false, data, "portrait", false);
+    assert.equal(sequential.error, undefined);
+    const parallel = await calculate(worker, "generations", false, data, "portrait", true);
+    assert.equal(parallel.error, undefined);
+    assert.equal(fingerprint(parallel), fingerprint(sequential));
+    assert.equal(fingerprint(await calculate(worker, "generations", false, data, "portrait", false)), fingerprint(sequential));
+  } finally { await worker.terminate(); }
+});
 test(
   "production worker executes nested ELK and switches back to timeline",
   { timeout: 20000 },

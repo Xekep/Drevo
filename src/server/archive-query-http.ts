@@ -23,6 +23,8 @@ import { AccountSessionBusy, AccountSessionExpired, assertActiveAccountSession }
 import { accountAiAccess } from "./account-ai-access.ts";
 import { memberPreviewTarget, assertMemberPreviewStoreDelivery } from "./member-preview-access.ts";
 import { publicPersonId } from "./public-person-id.ts";
+import { analyzeFamilyInsights } from "../domain/family-insights.ts";
+import { placesProjection, galleryProjection } from "../domain/archive-view-projection.ts";
 
 export function archiveQueryHttp({
   archive,
@@ -280,6 +282,44 @@ export function archiveQueryHttp({
       )
         return json(res, 401, { error: "Sign in to view this archive" });
       const projection = url.searchParams.get("projection");
+      if (projection === "photos") {
+        let ids: unknown;
+        try { ids = JSON.parse(url.searchParams.get("ids") || "null"); }
+        catch { return json(res, 400, { error: "Некорректные идентификаторы" }); }
+        if (!Array.isArray(ids) || !ids.length || ids.length > 40 || !ids.every(publicPersonId) || new Set(ids).size !== ids.length)
+          return json(res, 400, { error: "Некорректные идентификаторы" });
+        const readTree = memberCanRead || access.publicTree, readPhotos = memberCanRead || access.publicAlbums;
+        const page = await archive.db.transaction(async () => {
+          const meta = await archive.meta();
+          const pageToken = `${meta.revision}:${Number(readTree)}:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
+          if (url.searchParams.get("token") !== pageToken) return null;
+          const visible = isScopedUser(visitor) ? await scopedIds(visitor) : null;
+          const photos = readPhotos ? await archive.photoPage(0, 40,
+            visible ? { visible, userId: visitor!.id } : undefined, undefined, new Set(ids as string[])) : [];
+          return { pageToken, revision: meta.revision, photos: photos.map((photo) => readTree ? photo : { ...photo, tags: [] }) };
+        }, true);
+        if (!page) return changed();
+        if (page.photos.length !== ids.length) return json(res, 404, { error: "Фотография не найдена или недоступна" });
+        return deliverArchiveJson({ pageToken: page.pageToken, photos: page.photos }, undefined, page.revision);
+      }
+      if (["places", "insights", "gallery"].includes(projection || "")) {
+        const prepared = await snapshot(req, visitor, access);
+        const pageToken = `${prepared.revision}:${Number(prepared.readTree)}:${Number(prepared.readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
+        if (url.searchParams.get("token") !== pageToken) return changed();
+        let result: unknown;
+        if (projection === "insights") result = { insights: analyzeFamilyInsights(prepared.family) };
+        else if (projection === "places") result = placesProjection(prepared.family);
+        else {
+          const mode = url.searchParams.get("mode") || "people", offset = Number(url.searchParams.get("offset") || 0);
+          const personId = url.searchParams.get("personId"), year = url.searchParams.get("year");
+          if (!["all", "people", "years"].includes(mode) || !Number.isSafeInteger(offset) || offset < 0 ||
+              (personId && personId !== "unknown" && !publicPersonId(personId)) ||
+              (year && !/^(?:unknown|\d{4})$/.test(year)))
+            return json(res, 400, { error: "Некорректный фильтр фотографий" });
+          result = galleryProjection(prepared.family, { mode: mode as "all" | "people" | "years", offset, personId, year });
+        }
+        return deliverArchiveJson({ ...result as object, pageToken }, undefined, prepared.revision);
+      }
       if (projection === "details") {
         if (!memberCanRead && !access.publicTree)
           return json(res, 401, { error: "Войдите для просмотра людей" });

@@ -1,3 +1,4 @@
+import { pagedPhotoFixture } from "./paged-photo-fixture";
 import { expect, test } from "@playwright/test";
 
 const photos = [
@@ -55,6 +56,7 @@ const photos = [
 ];
 
 test.beforeEach(async ({ page }) => {
+  await pagedPhotoFixture(page, photos);
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const data = await response.json();

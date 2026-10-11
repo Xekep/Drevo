@@ -1,3 +1,4 @@
+import { pagedPhotoFixture } from "./paged-photo-fixture";
 import { expect, test } from "@playwright/test";
 
 const png = Buffer.from(
@@ -80,6 +81,7 @@ for (const marker of ["accessChanged", "refreshRequired"] as const) {
     await page.route("**/media/*.png**", (route) =>
       route.fulfill({ contentType: "image/png", body: png }),
     );
+  await pagedPhotoFixture(page, [source]);
     let portraitPosts = 0;
     let familyPosts = 0;
     await page.route("**/api/portraits", (route) => {

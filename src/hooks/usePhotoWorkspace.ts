@@ -63,6 +63,7 @@ export function usePhotoWorkspace(family: Family | null) {
     droppedFile,
     photo,
     photoCollection,
+    setPhotoCollection,
     editPhotoId,
     personFilter,
     openPhoto,

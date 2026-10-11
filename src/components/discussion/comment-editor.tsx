@@ -10,6 +10,7 @@ import {
 import { livePreview, previewFocus } from "./live-preview";
 import "katex/dist/katex.min.css";
 import { GitBranch } from "lucide-react";
+import { commentDiagramTemplate } from "./diagram-template";
 
 type Props = {
   value: string;
@@ -18,6 +19,7 @@ type Props = {
   disabled?: boolean;
   label: string;
   focusOnMount?: boolean;
+  selectionOnMount?: { anchor: number; head: number };
 };
 
 export default function CommentEditor(props: Props) {
@@ -35,6 +37,7 @@ export default function CommentEditor(props: Props) {
       parent: host.current,
       state: EditorState.create({
         doc: current.value,
+        ...(current.selectionOnMount ? { selection: current.selectionOnMount } : {}),
         extensions: [
           markdown({ base: markdownLanguage, completeHTMLTags: false }),
           history(),
@@ -109,8 +112,7 @@ export default function CommentEditor(props: Props) {
         onClick={() => {
           const editor = view.current;
           if (!editor) return;
-          const template =
-            "\n\n```mermaid\ngraph TD\n  A[Родитель] --> B[Ребёнок]\n```\n\n";
+          const template = commentDiagramTemplate;
           const range = editor.state.selection.main;
           editor.dispatch({
             changes: { from: range.from, to: range.to, insert: template },

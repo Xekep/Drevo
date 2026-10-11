@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ImagePlus } from "lucide-react";
 import type { Family } from "../domain";
@@ -10,6 +10,10 @@ import { photoFileError } from "../domain/photo-upload";
 import { ArchiveLink } from "./archive-link";
 import { archiveTargetPath } from "../domain/archive-links";
 import { scopedArchivePath } from "../domain/archive-context";
+import type {
+  GalleryPage,
+  GalleryQuery,
+} from "../domain/archive-view-projection";
 import {
   faceRecognitionAvailable,
   warmFaceAssistant,
@@ -24,6 +28,8 @@ export function Gallery({
   personFilter,
   yearFilter,
   onSelectAlbum,
+  loadPage,
+  dataGeneration,
 }: {
   family: Family;
   canEdit: boolean;
@@ -33,6 +39,8 @@ export function Gallery({
   onDropPhoto: (file: File) => void;
   personFilter?: string | null;
   yearFilter?: string | null;
+  loadPage?: (query: GalleryQuery) => Promise<GalleryPage>;
+  dataGeneration?: number;
   onSelectAlbum: (
     personId: string | null,
     year: string | null,
@@ -43,6 +51,15 @@ export function Gallery({
   const [dropError, setDropError] = useState("");
   const [mode, setMode] = useState<"all" | "people" | "years">("people"),
     [limit, setLimit] = useState(30);
+  const [remote, setRemote] = useState<{
+    key: string;
+    page: GalleryPage;
+  } | null>(null);
+  const [pageLoading, setPageLoading] = useState(false),
+    [pageError, setPageError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const pageRequest = useRef(0),
+    pagePending = useRef(false);
   useEffect(() => {
     if (!canEdit) return;
     const controller = new AbortController();
@@ -116,24 +133,148 @@ export function Gallery({
       window.removeEventListener("blur", reset);
     };
   }, [mayEdit, onDropPhoto]);
-  const available = (family.photos || []).filter(
+  const knownPeople = !loadPage && personFilter === "unknown" ? new Set(family.people.map((person) => person.id)) : null;
+  const available = loadPage ? [] : (family.photos || []).filter(
     (photo) =>
-      !personFilter || photo.tags.some((t) => t.personId === personFilter),
+      !personFilter ||
+      (personFilter === "unknown"
+        ? !photo.tags.some((tag) =>
+            knownPeople!.has(tag.personId),
+          )
+        : photo.tags.some((t) => t.personId === personFilter)),
   );
   const activeMode = yearFilter
     ? "years"
     : personFilter && mode === "people"
       ? "all"
       : mode;
-  const albums =
-    activeMode === "all"
+  const localAlbums =
+    loadPage || activeMode === "all"
       ? []
       : photoAlbums(available, family.people, activeMode);
-  const album = yearFilter
-    ? albums.find((item) => item.id === yearFilter)
+  const localAlbum = yearFilter
+    ? localAlbums.find((item) => item.id === yearFilter)
     : null;
-  const photos = album ? album.photos : newestPhotos(available);
-  const browsingAlbums = activeMode !== "all" && !album;
+  const pageKey = JSON.stringify([
+    activeMode,
+    personFilter,
+    yearFilter,
+    dataGeneration,
+  ]);
+  useEffect(() => {
+    if (!loadPage) return;
+    let active = true;
+    const request = ++pageRequest.current;
+    pagePending.current = true;
+    queueMicrotask(() => {
+      if (active) {
+        setPageLoading(true);
+        setPageError("");
+      }
+    });
+    void loadPage({
+      mode: activeMode,
+      personId: personFilter,
+      year: yearFilter,
+    })
+      .then((page) => {
+        if (active && request === pageRequest.current)
+          setRemote({ key: pageKey, page });
+      })
+      .catch((error) => {
+        if (active && request === pageRequest.current)
+          setPageError(
+            error instanceof Error
+              ? error.message
+              : "Не удалось загрузить фотографии",
+          );
+      })
+      .finally(() => {
+        if (active && request === pageRequest.current) {
+          pagePending.current = false;
+          setPageLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    loadPage,
+    activeMode,
+    personFilter,
+    yearFilter,
+    dataGeneration,
+    pageKey,
+    retry,
+  ]);
+  const page = remote?.key === pageKey ? remote.page : null;
+  const albums = loadPage
+    ? page?.albums || []
+    : localAlbums.map((item) => ({
+        id: item.id,
+        label: item.label,
+        count: item.photos.length,
+        cover: item.photos[0].url,
+      }));
+  const album = loadPage
+    ? page?.album
+    : localAlbum && {
+        label: localAlbum.label,
+        count: localAlbum.photos.length,
+      };
+  const photos = loadPage
+    ? page?.photos || []
+    : yearFilter
+      ? localAlbum?.photos || []
+      : newestPhotos(available);
+  const browsingAlbums = activeMode !== "all" && !yearFilter;
+  async function more() {
+    if (!loadPage) {
+      setLimit((n) => n + 30);
+      return;
+    }
+    if (pagePending.current || !page) return;
+    const request = ++pageRequest.current;
+    pagePending.current = true;
+    setPageLoading(true);
+    setPageError("");
+    try {
+      const next = await loadPage({
+        mode: activeMode,
+        personId: personFilter,
+        year: yearFilter,
+        offset: browsingAlbums ? page.albums.length : page.photos.length,
+      });
+      if (request !== pageRequest.current) return;
+      if (next.total !== page.total || next.photoIds.length !== page.photoIds.length ||
+          next.photoIds.some((id, index) => id !== page.photoIds[index]))
+        throw new Error("Альбом изменился. Повторите загрузку.");
+      setRemote((current) =>
+        current?.key === pageKey
+          ? {
+              key: pageKey,
+              page: {
+                ...next,
+                albums: [...current.page.albums, ...next.albums],
+                photos: [...current.page.photos, ...next.photos],
+              },
+            }
+          : current,
+      );
+    } catch (error) {
+      if (request !== pageRequest.current) return;
+      setPageError(
+        error instanceof Error
+          ? error.message
+          : "Не удалось загрузить фотографии",
+      );
+    } finally {
+      if (request === pageRequest.current) {
+        pagePending.current = false;
+        setPageLoading(false);
+      }
+    }
+  }
   const filterPerson = family.people.find((p) => p.id === personFilter);
   return (
     <section className="gallery-view" aria-label="Галерея семейных фотографий">
@@ -232,23 +373,33 @@ export function Gallery({
             ← Все альбомы
           </button>
           <h3>
-            {album.label} · {album.photos.length}
+            {album.label} · {album.count}
           </h3>
         </div>
       )}
-      {!photos.length ? (
+      {pageError && (
+        <p role="alert" className="form-error">
+          {pageError}{" "}
+          <button onClick={() => setRetry((n) => n + 1)}>Повторить</button>
+        </p>
+      )}
+      {loadPage && !page ? (
+        !pageError && <p role="status">Загружаются фотографии…</p>
+      ) : !(browsingAlbums ? albums.length : photos.length) ? (
         <div className="gallery-empty">
           <ImagePlus size={42} strokeWidth={1} />
           <h3>Первые страницы альбома</h3>
           <p>
             {mayEdit
-              ? canEdit ? "Добавьте семейную фотографию и отметьте на ней людей." : "Добавьте семейную фотографию в архив."
+              ? canEdit
+                ? "Добавьте семейную фотографию и отметьте на ней людей."
+                : "Добавьте семейную фотографию в архив."
               : "В архиве пока нет фотографий."}
           </p>
         </div>
       ) : browsingAlbums ? (
         <div className="photo-albums">
-          {albums.slice(0, limit).map((item) => (
+          {albums.slice(0, loadPage ? undefined : limit).map((item) => (
             <ArchiveLink
               key={item.id}
               href={scopedArchivePath(
@@ -271,21 +422,17 @@ export function Gallery({
                 setLimit(30);
               }}
             >
-              <img
-                src={mediaPreview(item.photos[0].url)}
-                alt=""
-                loading="lazy"
-              />
+              <img src={mediaPreview(item.cover)} alt="" loading="lazy" />
               <span>
                 <b>{item.label}</b>
-                <small>{item.photos.length} фото</small>
+                <small>{item.count} фото</small>
               </span>
             </ArchiveLink>
           ))}
         </div>
       ) : (
         <div className="photo-grid">
-          {photos.slice(0, limit).map((photo) => (
+          {photos.slice(0, loadPage ? undefined : limit).map((photo) => (
             <ArchiveLink
               className="photo-tile"
               key={photo.id}
@@ -293,10 +440,7 @@ export function Gallery({
                 archiveTargetPath({ kind: "photo", id: photo.id }),
               )}
               onNavigate={() =>
-                onOpen(
-                  photo.id,
-                  photos.map((p) => p.id),
-                )
+                onOpen(photo.id, page?.photoIds || photos.map((p) => p.id))
               }
             >
               <img
@@ -324,8 +468,10 @@ export function Gallery({
           ))}
         </div>
       )}
-      {(browsingAlbums ? albums.length : photos.length) > limit && (
-        <LoadMore onMore={() => setLimit((n) => n + 30)} />
+      {(loadPage
+        ? page && page.total > (browsingAlbums ? albums.length : photos.length)
+        : (browsingAlbums ? albums.length : photos.length) > limit) && (
+        <LoadMore onMore={() => void more()} busy={pageLoading} />
       )}
     </section>
   );

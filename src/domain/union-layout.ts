@@ -646,12 +646,21 @@ function cardOverlapCount(
 }
 
 /** Кэш живёт один расчёт; готовые геометрии кандидатов больше не изменяются. */
-export function createGeometryContactScorer(width = TREE_NODE_WIDTH, height = TREE_NODE_HEIGHT) {
+export function createGeometryContactScorer(
+  width = TREE_NODE_WIDTH,
+  height = TREE_NODE_HEIGHT,
+) {
   const routeScore = incrementalRouteScorer();
-  const cardScores = new WeakMap<TreeGeometry, { contacts?: number; overlaps?: number }>();
+  const cardScores = new WeakMap<
+    TreeGeometry,
+    { contacts?: number; overlaps?: number }
+  >();
   const cards = (geometry: TreeGeometry) => {
     let result = cardScores.get(geometry);
-    if (!result) { result = {}; cardScores.set(geometry, result); }
+    if (!result) {
+      result = {};
+      cardScores.set(geometry, result);
+    }
     return result;
   };
   const scores = new WeakMap<
@@ -674,9 +683,9 @@ export function createGeometryContactScorer(width = TREE_NODE_WIDTH, height = TR
   };
   return {
     cardContacts: (geometry: TreeGeometry) =>
-      cards(geometry).contacts ??= routeCardContacts(geometry, width, height),
+      (cards(geometry).contacts ??= routeCardContacts(geometry, width, height)),
     cardOverlaps: (geometry: TreeGeometry) =>
-      cards(geometry).overlaps ??= cardOverlapCount(geometry, width, height),
+      (cards(geometry).overlaps ??= cardOverlapCount(geometry, width, height)),
     contacts: (geometry: TreeGeometry) => score(geometry).contacts,
     quality: (geometry: TreeGeometry) => score(geometry).quality,
     // Additional relationships do not choose positions of the primary family.
@@ -701,6 +710,7 @@ export async function unionGeometry(
   size: TreeNodeSize = { width: TREE_NODE_WIDTH, height: TREE_NODE_HEIGHT },
   previous?: TreeGeometry,
   largeDecross = true,
+  candidateConcurrency: 1 | 2 = 1,
 ): Promise<TreeGeometry> {
   const { width: W, height: H } = size;
   const {
@@ -769,24 +779,45 @@ export async function unionGeometry(
         profile: "sweep" as const,
       })),
     );
-  for (const { seed, profile } of candidates) {
-    let candidate: TreeGeometry;
-    try {
-      candidate = await geometryForSeed(
-        people,
-        layout,
-        reverse,
-        links,
-        seed,
-        size,
-        people.length <= 100 && seed === 8,
-        undefined,
-        undefined,
-        profile,
+  const concurrency = people.length > 900 ? candidateConcurrency : 1;
+  const pending = new Map<number, Promise<TreeGeometry | null>>();
+  let scheduled = 0;
+  const schedule = () => {
+    while (pending.size < concurrency && scheduled < candidates.length) {
+      const index = scheduled++;
+      const { seed, profile } = candidates[index];
+      pending.set(
+        index,
+        (async () => {
+          try {
+            return await geometryForSeed(
+              people,
+              layout,
+              reverse,
+              links,
+              seed,
+              size,
+              people.length <= 100 && seed === 8,
+              undefined,
+              undefined,
+              profile,
+            );
+          } catch {
+            return null;
+          }
+        })(),
       );
-    } catch {
-      continue;
     }
+  };
+  schedule();
+  // A completed fast candidate frees its slot before the slower candidate
+  // finishes. Evaluation still follows seed order and the same quality gates.
+  for (let index = 0; index < candidates.length; index++, schedule()) {
+    const { seed } = candidates[index];
+    const geometry = await pending.get(index)!;
+    pending.delete(index);
+    if (!geometry) continue;
+    const candidate = geometry;
     const candidateExtent = extent(candidate);
     if (
       Math.max(candidateExtent.width, candidateExtent.height) >
@@ -822,6 +853,8 @@ export async function unionGeometry(
     }
     if (!contacts.distinct) break;
   }
+  // No speculative task outlives this layout or competes with the next request.
+  await Promise.all(pending.values());
   if (
     previous?.mode === "generations" &&
     previous.reverse === reverse &&
@@ -859,8 +892,7 @@ export async function unionGeometry(
           nextRoutes.contacts > currentRoutes.contacts + delta ||
           nextRoutes.crossings > currentRoutes.crossings + delta ||
           nextRoutes.length > currentRoutes.length * 1.15 ||
-          routeCardContacts(item.geometry) >
-            routeCardContacts(best) ||
+          routeCardContacts(item.geometry) > routeCardContacts(best) ||
           Math.max(nextSize.width, nextSize.height) >
             Math.max(
               oldSize.width,
@@ -1062,14 +1094,18 @@ export async function unionGeometry(
     for (let pass = 0; pass < (previous ? 3 : 1); pass++) {
       let changed = false;
       const scores = familyBlockContactScores(best);
-      const widths = new Map((best.blocks || []).map((block) => [block.id, block.width]));
+      const widths = new Map(
+        (best.blocks || []).map((block) => [block.id, block.width]),
+      );
       const candidates = adjacentFamilyBlocks(best, size)
         .filter(
           ([left, right]) =>
             (scores.get(left) || 0) + (scores.get(right) || 0) > 0 &&
             // Keep small cold layouts stable for later incremental edits.
             // Only the previously unsupported different-width moves are new here.
-            (!!previous || people.length > 300 || widths.get(left) !== widths.get(right)),
+            (!!previous ||
+              people.length > 300 ||
+              widths.get(left) !== widths.get(right)),
         )
         .sort(
           ([a, b], [c, d]) =>

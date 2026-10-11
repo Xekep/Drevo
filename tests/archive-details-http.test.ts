@@ -122,6 +122,10 @@ test("demand detail HTTP reads indexed IDs and tagged photos within the current 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Cache-Control"), "no-store");
   const data = await response.json();
+  const directPhoto = await fetch(base + "?" + new URLSearchParams({ projection: "photos", token, ids: JSON.stringify(["shared"]) }));
+  assert.equal(directPhoto.status, 200, "a direct photo lookup never hydrates the full archive");
+  assert.deepEqual((await directPhoto.json()).photos[0].tags.map((tag: { personId: string }) => tag.personId), ["child"]);
+  assert.equal((await fetch(base + "?" + new URLSearchParams({ projection: "photos", token, ids: JSON.stringify(["missing"]) }))).status, 404);
   assert.deepEqual(
     data.people.map((p: Person) => p.id),
     ["child"],

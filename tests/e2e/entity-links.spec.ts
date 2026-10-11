@@ -1,3 +1,4 @@
+import { pagedPhotoFixture } from "./paged-photo-fixture";
 import { expect, test } from "@playwright/test";
 
 test("ссылка на человека открывает карточку и работает с историей браузера", async ({
@@ -117,6 +118,23 @@ test("переход из снимка перестраивает открыты
     }),
   );
 
+  await pagedPhotoFixture(page, [
+    {
+      id: "e2e-fan-photo",
+      url: "/media/e2e-fan-photo.png",
+      title: "Семейный снимок",
+      tags: [
+        {
+          id: "e2e-fan-tag",
+          personId: "e2e-memorial-person",
+          x: 0.3,
+          y: 0.2,
+          width: 0.25,
+          height: 0.4,
+        },
+      ],
+    },
+  ]);
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/);
   await page
@@ -127,7 +145,10 @@ test("переход из снимка перестраивает открыты
   const fan = page.locator(".fan-chart");
   await expect(fan).toHaveAttribute("aria-label", /Пётр/);
 
-  await page.locator(".archive-nav .nav-sections").getByRole("link", { name: "Фото" }).click();
+  await page
+    .locator(".archive-nav .nav-sections")
+    .getByRole("link", { name: "Фото" })
+    .click();
   await expect(page.getByRole("button", { name: "По людям" })).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -187,6 +208,7 @@ test("ссылка на снимок открывает просмотр и за
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#82947e"/></svg>',
     }),
   );
+  await pagedPhotoFixture(page, [photo, nextPhoto]);
   await page.goto("/photos?photo=e2e-photo");
   await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo");
   await page.goto("/photos/e2e-photo");
@@ -222,14 +244,21 @@ test("ссылка на снимок открывает просмотр и за
     page.getByRole("button", { name: "Закрыть сведения о человеке" }),
   ).toHaveCount(0);
   const toolbarButtons = [
-    page.locator(".photo-person-sidebar").getByRole("button", { name: "О снимке" }),
+    page
+      .locator(".photo-person-sidebar")
+      .getByRole("button", { name: "О снимке" }),
     page.getByRole("button", { name: "Показать в древе" }),
     page.getByRole("button", { name: "Скопировать ссылку" }),
     page.getByRole("button", { name: "Закрыть просмотр фото" }),
   ];
-  const positions = await Promise.all(toolbarButtons.map((button) => button.boundingBox()));
+  const positions = await Promise.all(
+    toolbarButtons.map((button) => button.boundingBox()),
+  );
   expect(positions.every(Boolean)).toBe(true);
-  expect(Math.max(...positions.map((box) => box!.y)) - Math.min(...positions.map((box) => box!.y))).toBeLessThan(2);
+  expect(
+    Math.max(...positions.map((box) => box!.y)) -
+      Math.min(...positions.map((box) => box!.y)),
+  ).toBeLessThan(2);
   await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo");
   await page
     .locator(".photo-person-sidebar")

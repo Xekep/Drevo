@@ -25,7 +25,7 @@ jobs:
           '
   postgres:
     uses: ./.github/workflows/postgres.yml
-  check:
+  prepare:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -89,8 +89,62 @@ jobs:
           sudo apt-get install -y --no-install-recommends imagemagick
           bash ops/fetch-award-images.sh
       - run: npm run build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-build
+          path: |
+            dist
+            public/awards
+          retention-days: 1
+          if-no-files-found: error
+  e2e:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22.23.2"
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: e2e-build
+          path: .
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - run: npm run prepare:models
+      # Each VM owns its e2e-server and SQLite. No shard shares mutable fixtures.
+      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: e2e-failures-${{ matrix.shard }}
+          path: test-results
+          retention-days: 3
+  unit:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22.23.2"
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: e2e-build
+          path: .
       - name: Test all suites on Node 22
         # Node 22: ошибка IPC в node --test (nodejs/node#64061, #64706).
         # Прямой запуск оставляет каждый файл в отдельном процессе, без IPC runner.
@@ -99,3 +153,17 @@ jobs:
             node --experimental-strip-types "$test_file"
           done
       - run: npm run test:worker
+  check:
+    if: always()
+    needs: [prepare, e2e, unit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every test group to succeed
+        env:
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+        run: |
+          test "$PREPARE_RESULT" = success
+          test "$E2E_RESULT" = success
+          test "$UNIT_RESULT" = success

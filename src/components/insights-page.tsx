@@ -11,19 +11,22 @@ import {
 } from "lucide-react";
 import { analyzeFamilyInsights, type Family } from "../domain";
 import { ArchiveSummary } from "./archive-summary";
+import type { FamilyInsights } from "../domain/family-insights";
 
 export default function InsightsPage({
   family,
   loadingDetails,
   onPerson,
   onQuality,
+  computedInsights,
 }: {
   family: Family;
   loadingDetails: boolean;
   onPerson: (id: string) => void;
   onQuality: () => void;
+  computedInsights?: FamilyInsights;
 }) {
-  const insights = useMemo(() => analyzeFamilyInsights(family), [family]);
+  const insights = useMemo(() => computedInsights || analyzeFamilyInsights(family), [family, computedInsights]);
   const openQuality = (event: MouseEvent<HTMLAnchorElement>) => {
     if (
       event.button !== 0 ||

@@ -25,6 +25,7 @@ import {
   ArchiveDetailsAccessError,
 } from "../data/archive-details";
 import type { ArchivePageHeader } from "../data/archive-pages";
+import type { GalleryPage, GalleryQuery } from "../domain/archive-view-projection";
 import { fetchWithTimeout, RequestTimeoutError } from "../data/request-timeout";
 import {
   readGuestTreePreferences,
@@ -107,6 +108,7 @@ export function useArchive(enabled = true) {
     people: Set<string>;
     peopleComplete: boolean;
     photosComplete: boolean;
+    projectionGeneration: number;
   } | null>(null);
   const publishDetailsView = useCallback(
     (reader: DetailsReader, refreshed = false) => {
@@ -119,6 +121,7 @@ export function useArchive(enabled = true) {
         people: reader.loadedPeople(),
         peopleComplete: reader.isComplete("people"),
         photosComplete: reader.isComplete("photos"),
+        projectionGeneration: reader.projectionGeneration(),
       }));
     },
     [],
@@ -664,26 +667,21 @@ export function useArchive(enabled = true) {
     },
     [user],
   );
-  const loadDetails = useCallback(
-    async (demand: {
-      people?: string[];
-      collections?: Array<"people" | "photos">;
-    }) => {
+  const withDetailsRead = useCallback(
+    async (work: (reader: DetailsReader) => Promise<unknown>, collection = false) => {
       const reader = details.current,
         epoch = accessEpoch.current;
       if (!reader || accessClosed.current) return;
       detailPending.current++;
-      if (demand.collections?.length) {
+      if (collection) {
         setLoadingDetails(true);
         setCollectionError("");
       }
       try {
-        if (demand.people?.length) await reader.loadPeople(demand.people);
-        if (demand.collections?.length)
-          await reader.loadCollections(demand.collections);
+        return await work(reader);
       } catch (reason) {
         if (epoch !== accessEpoch.current || details.current !== reader) return;
-        if (demand.collections?.length)
+        if (collection)
           setCollectionError(
             reason instanceof Error
               ? reason.message
@@ -713,6 +711,22 @@ export function useArchive(enabled = true) {
     },
     [],
   );
+  const loadDetails = useCallback(async (demand: { people?: string[]; photos?: string[];
+    view?: "places" | "insights"; collections?: Array<"people" | "photos"> }) => {
+    await withDetailsRead(async (reader) => {
+      if (demand.people?.length) await reader.loadPeople(demand.people);
+      if (demand.photos?.length) await reader.loadPhotos(demand.photos);
+      if (demand.view) await reader.loadView(demand.view);
+      if (demand.collections?.length) await reader.loadCollections(demand.collections);
+    }, !!demand.view || !!demand.collections?.length);
+  }, [withDetailsRead]);
+  const loadGallery = useCallback(async (query: GalleryQuery) => {
+    const result = await withDetailsRead((reader) => reader.gallery(query));
+    if (!result) throw new Error("Архив недоступен");
+    return result as GalleryPage;
+  }, [withDetailsRead]);
+  const hasViewDetails = useCallback((view: "places" | "insights") =>
+    detailsView?.source.hasView(view) ?? false, [detailsView]);
   const hasPersonDetails = useCallback(
     (id: string) => detailsView?.people.has(id) ?? true,
     [detailsView],
@@ -728,6 +742,10 @@ export function useArchive(enabled = true) {
   const currentFamily = useCallback(() => snapshot.current, []);
   return {
     loadDetails,
+    loadGallery,
+    hasViewDetails,
+    insights: detailsView?.source.insights(),
+    projectionGeneration: detailsView?.projectionGeneration,
     hasPersonDetails,
     hasCollectionDetails,
     currentFamily,

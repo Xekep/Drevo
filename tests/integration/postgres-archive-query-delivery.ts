@@ -413,4 +413,13 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
   assert.equal(staleSearch.status, 409,
     "public search must not return a prepared card after its revision changes");
   assert.doesNotMatch(await staleSearch.text(), /child|Changed Child/);
+  for (const projection of ["places", "insights", "gallery"]) {
+    const currentOverview = await (await get("/api/family?projection=overview", "")).json();
+    const path = `/api/family?${new URLSearchParams({ projection, token: currentOverview.pageToken, mode: "all" })}`;
+    const staleProjection = await race(path, async () => {
+      await second.query("UPDATE archives SET revision=revision+1 WHERE id='tree-a'");
+    }, "");
+    assert.equal(staleProjection.status, 409, `${projection} cannot deliver an obsolete public projection`);
+    assert.doesNotMatch(await staleProjection.text(), /Changed Child|photoIds|insights/);
+  }
 });
