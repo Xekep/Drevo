@@ -41,10 +41,12 @@ try {
     CREATE TABLE person_comments(archive_id text,attachments jsonb);
     CREATE TABLE ai_chat_messages(archive_id text,data jsonb);
     CREATE TABLE ai_settings(archive_id text,api_key_ciphertext text);
+    CREATE TABLE platform_ai_settings(id integer PRIMARY KEY,api_key_ciphertext text);
     CREATE TABLE platform_ai_cleanup_keys(version int,fingerprint text);
     INSERT INTO archives VALUES('primary-smoke'),('second-smoke');
     INSERT INTO accounts VALUES('one','Первый'),('two','Второй');
     INSERT INTO platform_test_config VALUES(1,'global configuration');
+    INSERT INTO platform_ai_settings VALUES(1,'synthetic-encrypted-key');
     INSERT INTO people VALUES('primary-smoke','{"name":"Первый"}'),('second-smoke','{"name":"Второй"}');
     ALTER TABLE people ENABLE ROW LEVEL SECURITY; ALTER TABLE people FORCE ROW LEVEL SECURITY;
     CREATE POLICY selected_tree ON people USING(archive_id=current_setting('drevo.archive_id',true));
@@ -59,6 +61,8 @@ try {
   const catalogOriginal = join(root, "archives/second-smoke/uploads/catalog-only.pdf");
   await writeFile(catalogOriginal, "catalog");
   await writeFile(join(root, "archives/second-smoke/uploads/history-only.pdf"), "history");
+  const globalAiKey = join(root, "drevo.sqlite.secrets.key");
+  await writeFile(globalAiKey, Buffer.alloc(32, 3), { mode: 0o600 });
   const stage = join(root, "snapshot"); await mkdir(stage);
   Object.assign(process.env, { DATABASE_BACKEND: "postgres", PGDATABASE: sourceName, PGUSER: operator,
     PGPASSWORD: password, PLATFORM_BACKUP_PGUSER: operator, PLATFORM_BACKUP_PGPASSWORD: password });
@@ -75,9 +79,19 @@ try {
   assert.equal((await recovered.query("SELECT value FROM platform_test_config")).rows[0].value, "global configuration");
   assert.equal((await recovered.query("SELECT count(*) AS n FROM documents")).rows[0].n, "2");
   assert.equal((await recovered.query("SELECT count(*) AS n FROM source_catalog")).rows[0].n, "2");
+  assert.equal((await recovered.query("SELECT api_key_ciphertext FROM platform_ai_settings WHERE id=1")).rows[0].api_key_ciphertext,
+    "synthetic-encrypted-key");
+  assert.deepEqual(await readFile(join(stage, "shared/drevo.sqlite.secrets.key")), Buffer.alloc(32, 3));
   assert.equal(await readFile(join(stage, "shared/archives/second-smoke/uploads/catalog-only.pdf"), "utf8"), "catalog");
   assert.equal(await readFile(join(stage, "shared/archives/second-smoke/uploads/history-only.pdf"), "utf8"), "history");
   process.env.PGUSER = operator; process.env.PGPASSWORD = password;
+  await unlink(globalAiKey);
+  await assert.rejects(platformBackupSnapshot(join(root, "drevo.sqlite"), "primary-smoke", join(root, "missing-global-ai-key"), signal),
+    { code: "ENOENT" }, "global credentials require the primary key even without archive credential rows");
+  await writeFile(globalAiKey, Buffer.alloc(31, 3), { mode: 0o600 });
+  await assert.rejects(platformBackupSnapshot(join(root, "drevo.sqlite"), "primary-smoke", join(root, "invalid-global-ai-key"), signal),
+    /Ключ глобальных настроек ИИ/, "a copied key with an invalid length cannot produce a successful backup");
+  await writeFile(globalAiKey, Buffer.alloc(32, 3), { mode: 0o600 });
   await unlink(catalogOriginal);
   await assert.rejects(platformBackupSnapshot(join(root, "drevo.sqlite"), "primary-smoke", join(root, "missing-catalog-original"), signal),
     { code: "ENOENT" }, "a catalog-only original cannot be silently omitted from a full-platform copy");

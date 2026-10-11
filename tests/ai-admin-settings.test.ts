@@ -30,7 +30,7 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
     if (String(url).endsWith("/models")) {
       modelRequests.push({
         authorization: headers.get("Authorization") || "",
-        project: headers.get("x-project") || "",
+        project: headers.get("OpenAI-Project") || "",
       });
       return Response.json({
         object: "list",
@@ -136,6 +136,12 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
       dailyRequests: 10,
       dailyTokens: 1000,
     });
+    const withoutCatalog = await fetch(base + "/api/admin/ai?models=0");
+    assert.equal(withoutCatalog.status, 200);
+    const fastSettings = await withoutCatalog.json();
+    assert.equal(fastSettings.folderId, "folder-1");
+    assert.deepEqual(fastSettings.models, []);
+    assert.equal(fastSettings.modelsError, "");
 
     const row = (await app.archive.db
       .prepare(

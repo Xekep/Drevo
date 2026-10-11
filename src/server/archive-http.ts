@@ -73,6 +73,7 @@ export async function archiveHttp({
   providerCleanup,
   decodePdf,
   aiQueue,
+  aiSecrets,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -89,9 +90,10 @@ export async function archiveHttp({
   providerCleanup?: AiProviderCleanup;
   decodePdf?: ReturnType<typeof pdfDecodeCoordinator>["decode"];
   aiQueue?: WorkQueue;
+  aiSecrets?: Pick<import("./store-database.ts").StoreDatabase, "file">;
 }) {
   const suggestions = researchSuggestionStore(archive.db);
-  const aiSettings = await aiSettingsStore(archive.db);
+  const aiSettings = await aiSettingsStore(archive.db, aiSecrets);
   const aiUsage = aiUsageStore(archive.db);
   const researchCatalog = researchCatalogStore(archive.db);
   const treePreferences = treePreferencesStore(archive.db);

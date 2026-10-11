@@ -49,7 +49,7 @@ test("platform cleanup list loads lazily, paginates and shows actionable errors 
   });
   await page.goto("/admin");
   await openAdminSection(page, "ai", "Yandex AI");
-  await expect(page.getByLabel("Древо для Yandex AI")).toHaveValue("");
+  await expect(page.getByLabel("Древо для Yandex AI")).toHaveCount(0);
   await expect(
     page.getByText("Очистка данных у провайдера", { exact: true }),
   ).toBeVisible();

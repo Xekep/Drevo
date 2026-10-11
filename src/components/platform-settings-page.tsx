@@ -1,5 +1,5 @@
 import { BackupAdmin } from "./backup-admin";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { confirmDiscardChanges } from "../hooks/useUnsavedChanges";
 import {
   ArrowLeft,
@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { AdminNavigation } from "./admin-navigation";
-import { archiveFetch } from "../data/archive-fetch.ts";
 import { PlatformAccountsAdmin } from "./platform-accounts-admin";
 import { AiSettingsAdmin } from "./ai-settings-admin";
 import { AiProviderCleanupAdmin } from "./ai-provider-cleanup-admin";
@@ -35,14 +34,7 @@ const sections: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "email", label: "Вход по email", icon: Mail },
   { id: "resources", label: "Ресурсы поиска", icon: ScanSearch },
 ];
-type AvailableArchive = {
-  id: string;
-  title: string;
-  approved: boolean;
-  current: boolean;
-};
-
-/** Account-scoped entry. Archive-specific AI settings are selected explicitly. */
+/** Account-scoped entry for settings shared by the entire platform. */
 export default function PlatformSettingsPage({
   accountId,
   onOwnRoleChanged,
@@ -57,9 +49,6 @@ export default function PlatformSettingsPage({
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [section, setSection] = useState<Section>(showRoles ? "roles" : "ai");
-  const [archives, setArchives] = useState<AvailableArchive[]>([]);
-  const [archivesReady, setArchivesReady] = useState(false);
-  const [aiArchiveId, setAiArchiveId] = useState("");
   const sectionDirty = useRef(false);
   const reportDirty = useCallback(
     (dirty: boolean) => {
@@ -68,35 +57,6 @@ export default function PlatformSettingsPage({
     },
     [onDirtyChange],
   );
-  useEffect(() => {
-    if (section !== "ai") return;
-    const controller = new AbortController();
-    void archiveFetch("/api/account/archives", {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then(async (response) => (response.ok ? response.json() : null))
-      .then((body: { archives?: AvailableArchive[] } | null) => {
-        if (controller.signal.aborted) return;
-        const available =
-          body?.archives?.filter(
-            (archive) => archive.approved && !archive.current,
-          ) || [];
-        setArchives(available);
-        setAiArchiveId((current) =>
-          available.some((archive) => archive.id === current) ? current : "",
-        );
-        setArchivesReady(true);
-      })
-      .catch(() => {
-        if (controller.signal.aborted) return;
-        setArchives([]);
-        setAiArchiveId("");
-        setArchivesReady(true);
-      });
-    return () => controller.abort();
-  }, [section]);
-
   return (
     <main className="account-page admin-page platform-settings-page">
       <aside className="admin-sidebar">
@@ -126,7 +86,6 @@ export default function PlatformSettingsPage({
               !confirmDiscardChanges(sectionDirty.current)
             )
               return;
-            if (next === "ai" && section !== "ai") setArchivesReady(false);
             setSection(next);
           }}
         />
@@ -167,39 +126,7 @@ export default function PlatformSettingsPage({
         )}
         {section === "ai" && (
           <div className="platform-ai-settings">
-            {!archivesReady ? (
-              <p role="status">Проверяем доступные архивы…</p>
-            ) : (
-              <>
-                <label className="platform-ai-archive">
-                  Древо
-                  <select
-                    aria-label="Древо для Yandex AI"
-                    value={aiArchiveId}
-                    onChange={(event) => {
-                      if (!confirmDiscardChanges(sectionDirty.current)) return;
-                      setAiArchiveId(event.target.value);
-                    }}
-                  >
-                    <option value="">Основной архив</option>
-                    {archives.map((archive) => (
-                      <option key={archive.id} value={archive.id}>
-                        {archive.title}
-                      </option>
-                    ))}
-                  </select>
-                  <small>
-                    Настройки ИИ задаются отдельно для выбранного архива.
-                  </small>
-                </label>
-                <AiSettingsAdmin
-                  key={aiArchiveId}
-                  archiveId={aiArchiveId || null}
-                  showCleanup={false}
-                  onDirtyChange={reportDirty}
-                />
-              </>
-            )}
+            <AiSettingsAdmin showCleanup={false} onDirtyChange={reportDirty} />
             <AiProviderCleanupAdmin platform />
           </div>
         )}

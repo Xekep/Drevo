@@ -13,20 +13,49 @@ import { userStore } from "../../src/server/users.ts";
 import { settingsStore } from "../../src/server/settings.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
-import { newSessionToken, sessionTokenHash } from "../../src/server/session-token.ts";
+import {
+  newSessionToken,
+  sessionTokenHash,
+} from "../../src/server/session-token.ts";
 import { readStorageLimits } from "../../src/server/storage-limits.ts";
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import { initializePlatformConfiguration } from "../../src/server/platform-configuration.ts";
+import {
+  aiSettingsStore,
+  aiRuntimeConfig,
+  defaultAiRoleProfile,
+} from "../../src/server/ai-settings.ts";
+import { aiUsageStore, AiLimitError } from "../../src/server/ai-usage.ts";
 
-export async function verifyPlatformConfigurationMigration(db: StoreDatabase,
-  client: pg.Client) {
-  await db.prepare("", "INSERT INTO upload_limits(id,data) VALUES(1,?)")
+export async function verifyPlatformConfigurationMigration(
+  db: StoreDatabase,
+  client: pg.Client,
+) {
+  await db
+    .prepare("", "INSERT INTO upload_limits(id,data) VALUES(1,?)")
     .run(JSON.stringify({ ...DEFAULT_STORAGE_LIMITS, admin: 2 }));
-  await db.prepare("", "INSERT INTO vk_auth_settings(id,enabled,client_id) VALUES(1,1,'12345')")
+  await db
+    .prepare(
+      "",
+      "INSERT INTO vk_auth_settings(id,enabled,client_id) VALUES(1,1,'12345')",
+    )
     .run();
-  await client.query("SELECT set_config('drevo.archive_id','private-091-fixture',false)");
+  await client.query(
+    "SELECT set_config('drevo.archive_id','private-091-fixture',false)",
+  );
   await client.query(`INSERT INTO archives(id,title,description,demo,revision,sqlite_schema_version)
     VALUES('private-091-fixture','Private fixture','',false,0,18)`);
+  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+    VALUES('private-091-fixture','owner','relative',true,'all')`);
+  await client.query(`INSERT INTO ai_settings(archive_id,id,model,folder_id)
+    VALUES('private-091-fixture',1,'private-tenant-model','private-tenant-folder')`);
+  await client.query(`INSERT INTO ai_usage(archive_id,id,at,started_ms,user_id,model,status,
+    provider_calls,input_tokens,output_tokens,total_tokens,latency_ms)
+    VALUES('private-091-fixture',424242,'1970-01-01T00:00:00Z',0,'migration-ai-fixture',
+      'tenant-history','ok',1,7,2,9,5)`);
+  await client.query(`INSERT INTO ai_usage_models(archive_id,usage_id,model,
+    provider_calls,input_tokens,output_tokens,total_tokens)
+    VALUES('private-091-fixture',424242,'tenant-history',1,7,2,9)`);
   await client.query(`INSERT INTO research_categories(archive_id,id,name,sort_order)
     VALUES('private-091-fixture','preexisting-other-category','Private other category',0)`);
   await client.query(`INSERT INTO research_resources
@@ -34,44 +63,146 @@ export async function verifyPlatformConfigurationMigration(db: StoreDatabase,
     VALUES('private-091-fixture','preexisting-other-resource','preexisting-other-category',
       'Private before migration','https://private-before.invalid/path',
       'Kept in the legacy tenant only',0)`);
-  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  await client.query(
+    "SELECT set_config('drevo.archive_id','runtime-test',false)",
+  );
+  const primaryAi = (
+    await client.query(
+      "SELECT model,folder_id,api_key_ciphertext FROM ai_settings WHERE id=1",
+    )
+  ).rows[0];
+  await client.query(`INSERT INTO ai_usage(archive_id,id,at,started_ms,user_id,model,status,
+    provider_calls,input_tokens,output_tokens,total_tokens,latency_ms)
+    VALUES('runtime-test',424242,'1970-01-01T00:00:00Z',0,'migration-ai-fixture',
+      'primary-history','ok',1,3,1,4,5)`);
+  await client.query(`INSERT INTO ai_usage_models(archive_id,usage_id,model,
+    provider_calls,input_tokens,output_tokens,total_tokens)
+    VALUES('runtime-test',424242,'primary-history',1,3,1,4)`);
   await initializePlatformConfiguration(db, "runtime-test");
-  assert.equal((await readStorageLimits(db)).admin, 2,
-    "the primary archive's existing upload limits become the platform limits");
-  assert.equal((await vkAuthSettingsStore(db).read()).clientId, "12345",
-    "the primary archive's existing VK configuration becomes platform-wide");
-  assert.ok((await researchCatalogStore(db).list())
-    .flatMap((category) => category.resources)
-    .some((resource) => resource.name === "Primary custom resource"),
-  "the copied JSONB search configuration remains readable in the global catalog");
-  assert.deepEqual((await client.query(`SELECT id,url FROM research_resources
-    WHERE name='Primary custom resource'`)).rows,
-  (await client.query(`SELECT id,url FROM platform_research_resources
-    WHERE name='Primary custom resource'`)).rows,
-  "the primary custom resource keeps its ID and URL; the legacy row remains");
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT model,folder_id,api_key_ciphertext FROM platform_ai_settings WHERE id=1",
+      )
+    ).rows[0],
+    primaryAi,
+    "only primary provider credentials/settings are promoted to the platform",
+  );
+  const migratedAi = (
+    await client.query(`SELECT u.archive_id,m.model,m.total_tokens
+    FROM platform_ai_usage u JOIN platform_ai_usage_models m ON m.usage_id=u.id
+    WHERE u.user_id='migration-ai-fixture' ORDER BY u.archive_id`)
+  ).rows;
+  assert.deepEqual(
+    migratedAi,
+    [
+      {
+        archive_id: "private-091-fixture",
+        model: "tenant-history",
+        total_tokens: "9",
+      },
+      {
+        archive_id: "runtime-test",
+        model: "primary-history",
+        total_tokens: "4",
+      },
+    ],
+    "colliding legacy usage IDs keep distinct model totals after migration",
+  );
+  assert.equal(
+    (await readStorageLimits(db)).admin,
+    2,
+    "the primary archive's existing upload limits become the platform limits",
+  );
+  assert.equal(
+    (await vkAuthSettingsStore(db).read()).clientId,
+    "12345",
+    "the primary archive's existing VK configuration becomes platform-wide",
+  );
+  assert.ok(
+    (await researchCatalogStore(db).list())
+      .flatMap((category) => category.resources)
+      .some((resource) => resource.name === "Primary custom resource"),
+    "the copied JSONB search configuration remains readable in the global catalog",
+  );
+  assert.deepEqual(
+    (
+      await client.query(`SELECT id,url FROM research_resources
+    WHERE name='Primary custom resource'`)
+    ).rows,
+    (
+      await client.query(`SELECT id,url FROM platform_research_resources
+    WHERE name='Primary custom resource'`)
+    ).rows,
+    "the primary custom resource keeps its ID and URL; the legacy row remains",
+  );
   await initializePlatformConfiguration(db, "runtime-test");
-  assert.equal((await client.query(`SELECT count(*)::int AS n
-    FROM platform_research_resources WHERE name='Primary custom resource'`)).rows[0].n, 1,
-  "the one-time primary migration is idempotent");
-  assert.equal((await client.query(`SELECT count(*)::int AS n
-    FROM platform_research_resources WHERE id='preexisting-other-resource'`)).rows[0].n, 0,
-  "migration never publishes another archive's pre-existing private URL");
-  await client.query("SELECT set_config('drevo.archive_id','private-091-fixture',false)");
-  assert.equal((await client.query(`SELECT count(*)::int AS n FROM research_resources
-    WHERE id='preexisting-other-resource'`)).rows[0].n, 1,
-  "the other archive's private legacy row remains available for operator review");
+  assert.equal(
+    (
+      await client.query(
+        "SELECT count(*)::int AS n FROM platform_ai_usage WHERE user_id='migration-ai-fixture'",
+      )
+    ).rows[0].n,
+    2,
+    "repeated startup must not duplicate historical usage",
+  );
+  await client.query(
+    "DELETE FROM platform_ai_usage WHERE user_id='migration-ai-fixture'",
+  );
+  await client.query(
+    "DELETE FROM ai_usage WHERE user_id='migration-ai-fixture'",
+  );
+  assert.equal(
+    (
+      await client.query(`SELECT count(*)::int AS n
+    FROM platform_research_resources WHERE name='Primary custom resource'`)
+    ).rows[0].n,
+    1,
+    "the one-time primary migration is idempotent",
+  );
+  assert.equal(
+    (
+      await client.query(`SELECT count(*)::int AS n
+    FROM platform_research_resources WHERE id='preexisting-other-resource'`)
+    ).rows[0].n,
+    0,
+    "migration never publishes another archive's pre-existing private URL",
+  );
+  await client.query(
+    "SELECT set_config('drevo.archive_id','private-091-fixture',false)",
+  );
+  assert.equal(
+    (
+      await client.query(`SELECT count(*)::int AS n FROM research_resources
+    WHERE id='preexisting-other-resource'`)
+    ).rows[0].n,
+    1,
+    "the other archive's private legacy row remains available for operator review",
+  );
   await client.query("DELETE FROM archives WHERE id='private-091-fixture'");
-  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  await client.query(
+    "SELECT set_config('drevo.archive_id','runtime-test',false)",
+  );
 }
 
 export async function verifySharedPlatformConfiguration({
-  rootDb, otherDb, rootBase, otherBase, headers, client,
+  rootDb,
+  otherDb,
+  rootBase,
+  otherBase,
+  headers,
+  client,
 }: {
-  rootDb: StoreDatabase; otherDb: StoreDatabase;
-  rootBase: string; otherBase: string;
-  headers: Record<string, string>; client: pg.Client;
+  rootDb: StoreDatabase;
+  otherDb: StoreDatabase;
+  rootBase: string;
+  otherBase: string;
+  headers: Record<string, string>;
+  client: pg.Client;
 }) {
-  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query(
+    "SELECT set_config('drevo.archive_id','other-archive',false)",
+  );
   await client.query(`INSERT INTO research_categories(archive_id,id,name,sort_order)
     VALUES('other-archive','private-other-category','Other archive only',0)`);
   await client.query(`INSERT INTO research_resources
@@ -79,60 +210,255 @@ export async function verifySharedPlatformConfiguration({
     VALUES('other-archive','private-other-resource','private-other-category',
       'Private legacy link','https://private-other.invalid/path',
       'Retained in the old tenant table only',0)`);
-  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
-  const rootDirectory = await fetch(rootBase + "/api/research-resources", { headers });
-  const otherDirectory = await fetch(otherBase + "/api/research-resources", { headers });
+  await client.query(
+    "SELECT set_config('drevo.archive_id','runtime-test',false)",
+  );
+  const rootDirectory = await fetch(rootBase + "/api/research-resources", {
+    headers,
+  });
+  const otherDirectory = await fetch(otherBase + "/api/research-resources", {
+    headers,
+  });
   assert.equal(rootDirectory.status, 200);
   assert.equal(otherDirectory.status, 200);
   const rootCatalog = await rootDirectory.text();
-  assert.equal(await otherDirectory.text(), rootCatalog,
-    "both archives read the same primary global catalog");
+  assert.equal(
+    await otherDirectory.text(),
+    rootCatalog,
+    "both archives read the same primary global catalog",
+  );
   assert.match(rootCatalog, /Primary custom resource/);
-  assert.doesNotMatch(rootCatalog, /Private legacy link|private-other\.invalid/,
-    "another archive's legacy URL is retained but never globally published");
-  assert.equal((await readStorageLimits(otherDb)).admin,
-    (await readStorageLimits(rootDb)).admin);
-  assert.equal((await vkAuthSettingsStore(otherDb).read()).clientId,
-    (await vkAuthSettingsStore(rootDb).read()).clientId);
+  assert.doesNotMatch(
+    rootCatalog,
+    /Private legacy link|private-other\.invalid/,
+    "another archive's legacy URL is retained but never globally published",
+  );
+  assert.equal(
+    (await readStorageLimits(otherDb)).admin,
+    (await readStorageLimits(rootDb)).admin,
+  );
+  assert.equal(
+    (await vkAuthSettingsStore(otherDb).read()).clientId,
+    (await vkAuthSettingsStore(rootDb).read()).clientId,
+  );
+  const primaryAi = await aiSettingsStore(rootDb);
+  const otherAi = await aiSettingsStore(otherDb, rootDb);
+  const aiBefore = await primaryAi.read();
+  const ciphertextBefore = (await rootDb
+    .prepare(
+      "",
+      "SELECT api_key_ciphertext FROM platform_ai_settings WHERE id=1",
+    )
+    .get())!.api_key_ciphertext;
+  try {
+    await otherAi.write(
+      {
+        ...aiBefore,
+        folderId: "global-fixture-folder",
+        apiKey: "fake-platform-ai-key",
+        roleProfiles: {
+          ...aiBefore.roleProfiles,
+          researcher: {
+            ...defaultAiRoleProfile(aiBefore),
+            model: "global-role-model",
+            dailyRequests: 321,
+            codeInterpreterEnabled: true,
+          },
+        },
+      },
+      { id: "owner", name: "Fixture operator" },
+    );
+    assert.deepEqual(
+      await primaryAi.read(),
+      await otherAi.read(),
+      "provider settings and role profiles are identical in every archive",
+    );
+    assert.equal(
+      (await primaryAi.savedApiKey()).value,
+      "fake-platform-ai-key",
+      "a scoped runtime encrypts with the primary key, not a tenant-local key",
+    );
+    assert.equal(
+      (await aiRuntimeConfig(primaryAi, "researcher")).modelUri,
+      "gpt://global-fixture-folder/global-role-model",
+    );
+    assert.equal(
+      (await aiRuntimeConfig(otherAi, "researcher")).userLimits?.dailyRequests,
+      321,
+    );
+    assert.equal(
+      (await aiRuntimeConfig(otherAi, "researcher")).limits.dailyRequests,
+      0,
+      "the old common allowance must not cap an explicitly configured role",
+    );
+    assert.equal(
+      (await aiRuntimeConfig(otherAi, "researcher")).capabilities
+        .codeInterpreter,
+      true,
+    );
+  } finally {
+    await primaryAi.write(aiBefore, { id: "owner", name: "Fixture operator" });
+    await rootDb
+      .prepare(
+        "",
+        "UPDATE platform_ai_settings SET api_key_ciphertext=? WHERE id=1",
+      )
+      .run(String(ciphertextBefore));
+  }
+  const unlimited = { requestsPerMinute: 0, dailyRequests: 0, dailyTokens: 0 };
+  const oneRequest = { ...unlimited, dailyRequests: 1 };
+  const rootUsage = aiUsageStore(rootDb),
+    otherUsage = aiUsageStore(otherDb);
+  const admissions = await Promise.allSettled([
+    rootUsage.admit(
+      "cross-tree-budget-fixture",
+      "fake-model",
+      unlimited,
+      oneRequest,
+    ),
+    otherUsage.admit(
+      "cross-tree-budget-fixture",
+      "fake-model",
+      unlimited,
+      oneRequest,
+    ),
+  ]);
+  assert.equal(
+    admissions.filter((r) => r.status === "fulfilled").length,
+    1,
+    "one account cannot spend its daily allowance twice by racing two archives",
+  );
+  const rejection = admissions.find(
+    (r) => r.status === "rejected",
+  ) as PromiseRejectedResult;
+  assert.ok(rejection.reason instanceof AiLimitError);
+  assert.equal(
+    (
+      await client.query(
+        "SELECT count(*)::int AS n FROM platform_ai_usage WHERE user_id='cross-tree-budget-fixture'",
+      )
+    ).rows[0].n,
+    1,
+  );
+  assert.deepEqual(
+    await rootUsage.summary(),
+    await otherUsage.summary(),
+    "platform usage summary is the same through different archive runtimes",
+  );
+  await assert.rejects(
+    rootDb.transaction(async () => {
+      await rootUsage.admit(
+        "rollback-budget-fixture",
+        "fake-model",
+        unlimited,
+        oneRequest,
+      );
+      throw new Error("input rejected");
+    }),
+    /input rejected/,
+  );
+  assert.equal(
+    (
+      await client.query(
+        "SELECT count(*)::int AS n FROM platform_ai_usage WHERE user_id='rollback-budget-fixture'",
+      )
+    ).rows[0].n,
+    0,
+    "a failed input transaction leaves no usage reservation",
+  );
+  await client.query(
+    "DELETE FROM platform_ai_usage WHERE user_id IN ('cross-tree-budget-fixture','rollback-budget-fixture')",
+  );
+  await client.query("SELECT set_config('drevo.archive_id','ai-quota-delete-fixture',false)");
+  await client.query(`INSERT INTO archives(id,title,description,demo,revision,sqlite_schema_version)
+    VALUES('ai-quota-delete-fixture','Temporary quota fixture','',false,0,18)`);
+  await client.query(`INSERT INTO platform_ai_usage
+    (archive_id,at,started_ms,user_id,model,status,provider_calls,input_tokens,output_tokens,total_tokens,latency_ms)
+    VALUES('ai-quota-delete-fixture',$1,$2,'deleted-tree-budget-fixture','fake-model','ok',1,1,1,2,5)`,
+    [new Date().toISOString(), Date.now()]);
+  await client.query("DELETE FROM archives WHERE id='ai-quota-delete-fixture'");
+  await assert.rejects(rootUsage.check("deleted-tree-budget-fixture", oneRequest, "user"), AiLimitError,
+    "deleting a tree does not reset an account's current daily allowance");
+  await client.query("DELETE FROM platform_ai_usage WHERE user_id='deleted-tree-budget-fixture'");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   const priorLimits = await readStorageLimits(otherDb);
   const changedLimits = { ...priorLimits, relative: 3 };
   const limitsWrite = await fetch(otherBase + "/api/settings/storage", {
-    method: "PUT", headers,
+    method: "PUT",
+    headers,
     body: JSON.stringify({ expected: priorLimits, next: changedLimits }),
   });
   assert.equal(limitsWrite.status, 200, await limitsWrite.text());
-  assert.equal((await readStorageLimits(rootDb)).relative, 3,
-    "a setting written from the second archive applies to the first");
-  assert.equal((await fetch(otherBase + "/api/settings/storage", {
-    method: "PUT", headers,
-    body: JSON.stringify({ expected: changedLimits, next: priorLimits }),
-  })).status, 200);
+  assert.equal(
+    (await readStorageLimits(rootDb)).relative,
+    3,
+    "a setting written from the second archive applies to the first",
+  );
+  assert.equal(
+    (
+      await fetch(otherBase + "/api/settings/storage", {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ expected: changedLimits, next: priorLimits }),
+      })
+    ).status,
+    200,
+  );
   const vkWrite = await fetch(otherBase + "/api/admin/auth/vk", {
-    method: "PUT", headers,
+    method: "PUT",
+    headers,
     body: JSON.stringify({ enabled: true, clientId: "67890" }),
   });
   assert.equal(vkWrite.status, 200, await vkWrite.text());
-  assert.equal((await vkAuthSettingsStore(rootDb).read()).clientId, "67890",
-    "the primary OAuth runtime reads the common VK configuration");
-  assert.equal((await fetch(otherBase + "/api/admin/auth/vk", {
-    method: "PUT", headers,
-    body: JSON.stringify({ enabled: true, clientId: "12345" }),
-  })).status, 200);
-  const categoryWrite = await fetch(otherBase + "/api/admin/research-resources/categories", {
-    method: "POST", headers,
-    body: JSON.stringify({ name: "Shared platform category" }),
-  });
+  assert.equal(
+    (await vkAuthSettingsStore(rootDb).read()).clientId,
+    "67890",
+    "the primary OAuth runtime reads the common VK configuration",
+  );
+  assert.equal(
+    (
+      await fetch(otherBase + "/api/admin/auth/vk", {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ enabled: true, clientId: "12345" }),
+      })
+    ).status,
+    200,
+  );
+  const categoryWrite = await fetch(
+    otherBase + "/api/admin/research-resources/categories",
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: "Shared platform category" }),
+    },
+  );
   assert.equal(categoryWrite.status, 201, await categoryWrite.clone().text());
-  const newCategory = (await categoryWrite.json() as {
-    categories: Array<{ id: string; name: string }>;
-  }).categories.find((category) => category.name === "Shared platform category");
+  const newCategory = (
+    (await categoryWrite.json()) as {
+      categories: Array<{ id: string; name: string }>;
+    }
+  ).categories.find((category) => category.name === "Shared platform category");
   assert.ok(newCategory);
-  assert.match(await fetch(rootBase + "/api/research-resources", { headers })
-    .then((response) => response.text()), /Shared platform category/);
-  assert.equal((await fetch(otherBase +
-    `/api/admin/research-resources/categories/${newCategory.id}`, {
-    method: "DELETE", headers,
-  })).status, 200);
+  assert.match(
+    await fetch(rootBase + "/api/research-resources", { headers }).then(
+      (response) => response.text(),
+    ),
+    /Shared platform category/,
+  );
+  assert.equal(
+    (
+      await fetch(
+        otherBase +
+          `/api/admin/research-resources/categories/${newCategory.id}`,
+        {
+          method: "DELETE",
+          headers,
+        },
+      )
+    ).status,
+    200,
+  );
 }
 
 /** Real HTTP handoff and two SQL connections; no OAuth/provider request. */
@@ -144,9 +470,13 @@ export async function verifyPlatformConfigurationRevocation(
   const token = newSessionToken();
   const tokenHash = sessionTokenHash(token);
   const origin = "https://platform-config.invalid";
-  await client.query("INSERT INTO accounts(id,name,created_at) VALUES($1,'Config reviewer',$2)",
-    [actorId, new Date().toISOString()]);
-  await client.query("INSERT INTO platform_admins(account_id) VALUES($1)", [actorId]);
+  await client.query(
+    "INSERT INTO accounts(id,name,created_at) VALUES($1,'Config reviewer',$2)",
+    [actorId, new Date().toISOString()],
+  );
+  await client.query("INSERT INTO platform_admins(account_id) VALUES($1)", [
+    actorId,
+  ]);
   await client.query(
     "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)",
     [tokenHash, actorId, Date.now() + 600_000],
@@ -156,7 +486,9 @@ export async function verifyPlatformConfigurationRevocation(
   let gate: { reached: () => void; wait: Promise<void> } | null = null;
   const guardedAuth = {
     ...auth,
-    isPlatformAdmin: async (req: Parameters<typeof auth.isPlatformAdmin>[0]) => {
+    isPlatformAdmin: async (
+      req: Parameters<typeof auth.isPlatformAdmin>[0],
+    ) => {
       const allowed = await auth.isPlatformAdmin(req);
       if (allowed && gate) {
         gate.reached();
@@ -166,19 +498,26 @@ export async function verifyPlatformConfigurationRevocation(
     },
   };
   const handlers = [
-    adminAccessHttp({ db, auth: guardedAuth, users,
-      visibility: await settingsStore(db), publicOrigin: origin }),
+    adminAccessHttp({
+      db,
+      auth: guardedAuth,
+      users,
+      visibility: await settingsStore(db),
+      publicOrigin: origin,
+    }),
     adminVkAuthHttp(guardedAuth, vkAuthSettingsStore(db, origin), origin),
     adminEmailAuthHttp(guardedAuth, emailAuthSettingsStore(db, origin), origin),
     platformAccountsHttp(db, guardedAuth),
-    adminResearchResourcesHttp({ auth: guardedAuth,
-      catalog: researchCatalogStore(db), publicOrigin: origin }),
+    adminResearchResourcesHttp({
+      auth: guardedAuth,
+      catalog: researchCatalogStore(db),
+      publicOrigin: origin,
+    }),
   ];
   const server = createServer((req, res) => {
     const url = new URL(req.url || "/", `http://${req.headers.host}`);
     void (async () => {
-      for (const handle of handlers)
-        if (await handle(req, res, url)) return;
+      for (const handle of handlers) if (await handle(req, res, url)) return;
       res.writeHead(404).end();
     })().catch((error) => res.destroy(error));
   });
@@ -194,20 +533,36 @@ export async function verifyPlatformConfigurationRevocation(
       storage: JSON.stringify(await readStorageLimits(db)),
       vk: JSON.stringify(await vkAuthSettingsStore(db, origin).read()),
       email: JSON.stringify(await emailAuthSettingsStore(db, origin).read()),
-      emailAudit: (await client.query("SELECT count(*)::int AS n FROM platform_config_audit WHERE item_id='email-auth'")).rows[0].n,
+      emailAudit: (
+        await client.query(
+          "SELECT count(*)::int AS n FROM platform_config_audit WHERE item_id='email-auth'",
+        )
+      ).rows[0].n,
       categories: JSON.stringify(await researchCatalogStore(db).list()),
     };
   }
-  async function revokedWrite(path: string, body: unknown,
-    revoke: "grant" | "session") {
+  async function revokedWrite(
+    path: string,
+    body: unknown,
+    revoke: "grant" | "session",
+  ) {
     let reached!: () => void;
     let release!: () => void;
-    const reachedGate = new Promise<void>((resolve) => { reached = resolve; });
-    const wait = new Promise<void>((resolve) => { release = resolve; });
+    const reachedGate = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const wait = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     gate = { reached, wait };
     const before = await snapshot();
     const pending = fetch(base + path, {
-      method: path === "/api/settings/storage" || path === "/api/admin/auth/vk" || path === "/api/admin/auth/email" ? "PUT" : "POST",
+      method:
+        path === "/api/settings/storage" ||
+        path === "/api/admin/auth/vk" ||
+        path === "/api/admin/auth/email"
+          ? "PUT"
+          : "POST",
       headers,
       body: JSON.stringify(body),
     });
@@ -215,144 +570,312 @@ export async function verifyPlatformConfigurationRevocation(
       await Promise.race([
         reachedGate,
         pending.then(async (response) => {
-          throw new Error(`Configuration write skipped the auth barrier: ${response.status}`);
+          throw new Error(
+            `Configuration write skipped the auth barrier: ${response.status}`,
+          );
         }),
-        new Promise<never>((_, reject) => setTimeout(
-          () => reject(new Error("Configuration auth barrier timed out")), 5000).unref()),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Configuration auth barrier timed out")),
+            5000,
+          ).unref(),
+        ),
       ]);
       if (revoke === "grant")
-        await client.query("DELETE FROM platform_admins WHERE account_id=$1", [actorId]);
+        await client.query("DELETE FROM platform_admins WHERE account_id=$1", [
+          actorId,
+        ]);
       else
-        await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [tokenHash]);
+        await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [
+          tokenHash,
+        ]);
       release();
       const response = await pending;
       assert.equal(response.status, 403, await response.text());
-      assert.deepEqual(await snapshot(), before,
-        "a completed platform revoke cannot commit any configuration change");
+      assert.deepEqual(
+        await snapshot(),
+        before,
+        "a completed platform revoke cannot commit any configuration change",
+      );
     } finally {
       release();
       gate = null;
       if (revoke === "grant")
-        await client.query("INSERT INTO platform_admins(account_id) VALUES($1) ON CONFLICT DO NOTHING",
-          [actorId]);
+        await client.query(
+          "INSERT INTO platform_admins(account_id) VALUES($1) ON CONFLICT DO NOTHING",
+          [actorId],
+        );
     }
   }
   try {
     // Platform access comes from the account, not a root-archive membership.
-    for (const path of ["/api/settings/storage", "/api/admin/auth/vk", "/api/admin/auth/email",
-      "/api/admin/research-resources"])
-      assert.equal((await fetch(base + path, { headers })).status, 200,
-        `${path} is available to a platform admin without archive membership`);
+    for (const path of [
+      "/api/settings/storage",
+      "/api/admin/auth/vk",
+      "/api/admin/auth/email",
+      "/api/admin/research-resources",
+    ])
+      assert.equal(
+        (await fetch(base + path, { headers })).status,
+        200,
+        `${path} is available to a platform admin without archive membership`,
+      );
     const current = await readStorageLimits(db);
-    const statisticsBefore = await fetch(base + "/api/platform/accounts/statistics", { headers }).then((response) => response.json());
+    const statisticsBefore = await fetch(
+      base + "/api/platform/accounts/statistics",
+      { headers },
+    ).then((response) => response.json());
     const directoryIds: string[] = [];
     try {
       for (let index = 0; index < 35; index++) {
         const id = `platform-directory-${String(index).padStart(3, "0")}`;
         directoryIds.push(id);
-        await client.query("INSERT INTO accounts(id,name,created_at) VALUES($1,$2,$3)",
-          [id, `Ёж каталога${index === 34 ? " 100%_тест" : ""}`, new Date().toISOString()]);
+        await client.query(
+          "INSERT INTO accounts(id,name,created_at) VALUES($1,$2,$3)",
+          [
+            id,
+            `Ёж каталога${index === 34 ? " 100%_тест" : ""}`,
+            new Date().toISOString(),
+          ],
+        );
       }
-      await client.query("INSERT INTO platform_admins(account_id) VALUES($1)", [directoryIds[0]]);
-      await client.query("INSERT INTO platform_researchers(account_id) VALUES($1)", [directoryIds[1]]);
-      await client.query("INSERT INTO account_tiers(account_id,full_access) VALUES($1,true)", [directoryIds[2]]);
+      await client.query("INSERT INTO platform_admins(account_id) VALUES($1)", [
+        directoryIds[0],
+      ]);
+      await client.query(
+        "INSERT INTO platform_researchers(account_id) VALUES($1)",
+        [directoryIds[1]],
+      );
+      await client.query(
+        "INSERT INTO account_tiers(account_id,full_access) VALUES($1,true)",
+        [directoryIds[2]],
+      );
       const getDirectory = async (query: string) => {
-        const response = await fetch(base + "/api/platform/accounts" + query, { headers });
+        const response = await fetch(base + "/api/platform/accounts" + query, {
+          headers,
+        });
         assert.equal(response.status, 200, await response.clone().text());
         return response.json();
       };
-      const first = await getDirectory("?q=" + encodeURIComponent("ЕЖ КАТАЛОГА"));
+      const first = await getDirectory(
+        "?q=" + encodeURIComponent("ЕЖ КАТАЛОГА"),
+      );
       assert.equal(first.accounts.length, 30);
       assert.ok(first.next);
-      assert.ok(!Object.hasOwn(first, "totals"), "paging never counts statistics");
-      const second = await getDirectory("?q=" + encodeURIComponent("ЕЖ КАТАЛОГА") + "&after=" + first.next);
+      assert.ok(
+        !Object.hasOwn(first, "totals"),
+        "paging never counts statistics",
+      );
+      const second = await getDirectory(
+        "?q=" + encodeURIComponent("ЕЖ КАТАЛОГА") + "&after=" + first.next,
+      );
       assert.equal(second.accounts.length, 5);
       assert.equal(second.next, null);
-      assert.deepEqual([...first.accounts, ...second.accounts].map((row: { id: string }) => row.id), directoryIds,
-        "equal name prefixes have a stable ID tie-break, without duplicate or missing accounts");
-      assert.deepEqual(first.accounts[0], { id: directoryIds[0], name: "Ёж каталога", role: "admin",
-        fullAccess: false, lastVisitAt: null });
+      assert.deepEqual(
+        [...first.accounts, ...second.accounts].map(
+          (row: { id: string }) => row.id,
+        ),
+        directoryIds,
+        "equal name prefixes have a stable ID tie-break, without duplicate or missing accounts",
+      );
+      assert.deepEqual(first.accounts[0], {
+        id: directoryIds[0],
+        name: "Ёж каталога",
+        role: "admin",
+        fullAccess: false,
+        lastVisitAt: null,
+      });
       assert.equal(first.accounts[1].role, "researcher");
       assert.equal(first.accounts[2].role, null);
       assert.equal(first.accounts[2].fullAccess, true);
       const literal = await getDirectory("?q=" + encodeURIComponent("%_"));
-      assert.deepEqual(literal.accounts.map((row: { id: string }) => row.id), [directoryIds[34]],
-        "LIKE wildcards are literal search characters");
-      assert.equal((await fetch(base + "/api/platform/accounts?after=bad-cursor", { headers })).status, 400);
-      const statisticsAfter = await fetch(base + "/api/platform/accounts/statistics", { headers }).then((response) => response.json());
+      assert.deepEqual(
+        literal.accounts.map((row: { id: string }) => row.id),
+        [directoryIds[34]],
+        "LIKE wildcards are literal search characters",
+      );
+      assert.equal(
+        (
+          await fetch(base + "/api/platform/accounts?after=bad-cursor", {
+            headers,
+          })
+        ).status,
+        400,
+      );
+      const statisticsAfter = await fetch(
+        base + "/api/platform/accounts/statistics",
+        { headers },
+      ).then((response) => response.json());
       assert.equal(statisticsAfter.accounts, statisticsBefore.accounts + 35);
       assert.equal(statisticsAfter.basic, statisticsBefore.basic + 34);
       assert.equal(statisticsAfter.full, statisticsBefore.full + 1);
       assert.equal(statisticsAfter.admins, statisticsBefore.admins + 1);
-      assert.equal(statisticsAfter.researchers, statisticsBefore.researchers + 1);
-      await client.query("DELETE FROM platform_admins WHERE account_id=$1", [actorId]);
-      for (const path of ["/api/platform/accounts", "/api/platform/accounts/statistics"])
+      assert.equal(
+        statisticsAfter.researchers,
+        statisticsBefore.researchers + 1,
+      );
+      await client.query("DELETE FROM platform_admins WHERE account_id=$1", [
+        actorId,
+      ]);
+      for (const path of [
+        "/api/platform/accounts",
+        "/api/platform/accounts/statistics",
+      ])
         assert.equal((await fetch(base + path, { headers })).status, 403);
-      await client.query("INSERT INTO platform_admins(account_id) VALUES($1)", [actorId]);
+      await client.query("INSERT INTO platform_admins(account_id) VALUES($1)", [
+        actorId,
+      ]);
     } finally {
-      await client.query("DELETE FROM accounts WHERE id=ANY($1::text[])", [directoryIds]);
-      await client.query("INSERT INTO platform_admins(account_id) VALUES($1) ON CONFLICT DO NOTHING", [actorId]);
+      await client.query("DELETE FROM accounts WHERE id=ANY($1::text[])", [
+        directoryIds,
+      ]);
+      await client.query(
+        "INSERT INTO platform_admins(account_id) VALUES($1) ON CONFLICT DO NOTHING",
+        [actorId],
+      );
     }
-    await revokedWrite("/api/settings/storage", {
-      expected: current, next: { ...current, relative: 1 },
-    }, "grant");
-    await revokedWrite("/api/admin/auth/vk", {
-      enabled: true, clientId: "67890",
-    }, "grant");
+    await revokedWrite(
+      "/api/settings/storage",
+      {
+        expected: current,
+        next: { ...current, relative: 1 },
+      },
+      "grant",
+    );
+    await revokedWrite(
+      "/api/admin/auth/vk",
+      {
+        enabled: true,
+        clientId: "67890",
+      },
+      "grant",
+    );
     const email = emailAuthSettingsStore(db, origin);
-    const smtp = { enabled: false, host: "smtp.example.org", port: 587,
-      user: "mail-user", from: "mail@example.org", password: "smtp-fixture-secret" };
+    const smtp = {
+      enabled: false,
+      host: "smtp.example.org",
+      port: 587,
+      user: "mail-user",
+      from: "mail@example.org",
+      password: "smtp-fixture-secret",
+    };
     const emailSession = { accountId: actorId, tokenHash };
     assert.equal((await email.write(smtp, emailSession)).hasPassword, true);
-    const cipher = (await client.query("SELECT password_cipher FROM platform_email_auth_settings WHERE id=1")).rows[0].password_cipher;
+    const cipher = (
+      await client.query(
+        "SELECT password_cipher FROM platform_email_auth_settings WHERE id=1",
+      )
+    ).rows[0].password_cipher;
     assert.ok(cipher.startsWith("v1."));
     assert.ok(!cipher.includes(smtp.password));
     const otherStore = emailAuthSettingsStore(db, origin);
     assert.equal((await otherStore.runtime()).enabled, false);
-    const withoutSecret = { enabled: smtp.enabled, host: smtp.host, port: smtp.port,
-      user: smtp.user, from: smtp.from };
-    assert.equal((await email.write({ ...withoutSecret, enabled: true }, emailSession)).available, true);
-    assert.equal((await otherStore.runtime()).enabled, true,
-      "another runtime reads changes without a restart");
-    assert.equal((await client.query("SELECT password_cipher FROM platform_email_auth_settings WHERE id=1")).rows[0].password_cipher, cipher,
-      "omitting a password preserves the current ciphertext");
+    const withoutSecret = {
+      enabled: smtp.enabled,
+      host: smtp.host,
+      port: smtp.port,
+      user: smtp.user,
+      from: smtp.from,
+    };
+    assert.equal(
+      (await email.write({ ...withoutSecret, enabled: true }, emailSession))
+        .available,
+      true,
+    );
+    assert.equal(
+      (await otherStore.runtime()).enabled,
+      true,
+      "another runtime reads changes without a restart",
+    );
+    assert.equal(
+      (
+        await client.query(
+          "SELECT password_cipher FROM platform_email_auth_settings WHERE id=1",
+        )
+      ).rows[0].password_cipher,
+      cipher,
+      "omitting a password preserves the current ciphertext",
+    );
     assert.ok(!JSON.stringify(await email.read()).includes(smtp.password));
-    await assert.rejects(email.write({ ...withoutSecret, enabled: true, password: null }, emailSession), /включения/);
-    assert.equal((await email.read()).available, true, "failed validation leaves the stored configuration intact");
-    await revokedWrite("/api/admin/auth/email", { ...withoutSecret, enabled: false }, "grant");
-    await revokedWrite("/api/admin/auth/email/test", { to: "test@example.org" }, "grant");
-    assert.equal((await email.write({ ...withoutSecret, password: null }, emailSession)).hasPassword, false);
+    await assert.rejects(
+      email.write(
+        { ...withoutSecret, enabled: true, password: null },
+        emailSession,
+      ),
+      /включения/,
+    );
+    assert.equal(
+      (await email.read()).available,
+      true,
+      "failed validation leaves the stored configuration intact",
+    );
+    await revokedWrite(
+      "/api/admin/auth/email",
+      { ...withoutSecret, enabled: false },
+      "grant",
+    );
+    await revokedWrite(
+      "/api/admin/auth/email/test",
+      { to: "test@example.org" },
+      "grant",
+    );
+    assert.equal(
+      (await email.write({ ...withoutSecret, password: null }, emailSession))
+        .hasPassword,
+      false,
+    );
     assert.equal((await otherStore.runtime()).enabled, false);
     await client.query("DELETE FROM platform_email_auth_settings WHERE id=1");
-    await revokedWrite("/api/admin/research-resources/categories", {
-      name: "Revoked category",
-    }, "grant");
+    await revokedWrite(
+      "/api/admin/research-resources/categories",
+      {
+        name: "Revoked category",
+      },
+      "grant",
+    );
     // The singleton is installed during bootstrap. Competing first edits must
     // serialize on the same row and respect the optimistic expected value.
     const expected = await readStorageLimits(db);
-    const edits = await Promise.all([1, 2].map((extra) => fetch(
-      base + "/api/settings/storage", {
-        method: "PUT", headers,
-        body: JSON.stringify({ expected,
-          next: { ...expected, relative: (expected.relative ?? 0) + extra } }),
-      },
-    )));
-    assert.deepEqual(edits.map((response) => response.status).sort(), [200, 409]);
+    const edits = await Promise.all(
+      [1, 2].map((extra) =>
+        fetch(base + "/api/settings/storage", {
+          method: "PUT",
+          headers,
+          body: JSON.stringify({
+            expected,
+            next: { ...expected, relative: (expected.relative ?? 0) + extra },
+          }),
+        }),
+      ),
+    );
+    assert.deepEqual(
+      edits.map((response) => response.status).sort(),
+      [200, 409],
+    );
     const afterRace = await readStorageLimits(db);
-    assert.ok(afterRace.relative === (expected.relative ?? 0) + 1 ||
-      afterRace.relative === (expected.relative ?? 0) + 2);
+    assert.ok(
+      afterRace.relative === (expected.relative ?? 0) + 1 ||
+        afterRace.relative === (expected.relative ?? 0) + 2,
+    );
     const reset = await fetch(base + "/api/settings/storage", {
-      method: "PUT", headers,
+      method: "PUT",
+      headers,
       body: JSON.stringify({ expected: afterRace, next: expected }),
     });
     assert.equal(reset.status, 200, await reset.text());
     await revokedWrite("/api/admin/auth/email", withoutSecret, "session");
     // Restore the fixture session for the existing session-revocation case.
-    await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)",
-      [tokenHash, actorId, Date.now() + 600_000]);
-    await revokedWrite("/api/admin/research-resources/categories", {
-      name: "Logged-out category",
-    }, "session");
+    await client.query(
+      "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)",
+      [tokenHash, actorId, Date.now() + 600_000],
+    );
+    await revokedWrite(
+      "/api/admin/research-resources/categories",
+      {
+        name: "Logged-out category",
+      },
+      "session",
+    );
     console.log("platform_configuration_completed_revoke_verified");
   } finally {
     gate = null;

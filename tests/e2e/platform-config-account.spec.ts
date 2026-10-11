@@ -1,9 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("platform admin without membership opens global settings, with archive-scoped AI selection", async ({ page }, info) => {
+test("platform admin without membership opens global settings and AI without choosing a tree", async ({ page }, info) => {
   const paths: string[] = [];
   let familyRequests = 0;
-  let includeSecondary = true;
   let ownFullAccess = false;
   await page.route("**/api/family?projection=overview", (route) => {
     familyRequests++;
@@ -17,7 +16,7 @@ test("platform admin without membership opens global settings, with archive-scop
   } }));
   await page.route("**/api/account/archives", (route) => route.fulfill({ json: { archives: [
     { id: "primary-tree", title: "Основной архив", approved: true, current: true },
-    ...(includeSecondary ? [{ id: "other-tree", title: "Другое дерево", approved: true, current: false }] : []),
+    { id: "other-tree", title: "Другое древо", approved: true, current: false },
     { id: "hidden-tree", title: "Закрытое дерево", approved: false, current: false },
   ] } }));
   await page.route("**/api/account/sessions", (route) => route.fulfill({ json: {
@@ -63,7 +62,7 @@ test("platform admin without membership opens global settings, with archive-scop
   await page.route(/\/api\/platform\/tiers\/new-account\/usage$/, (route) =>
     route.fulfill({ json: { accountId: "new-account", owned: true,
       people: 12, mediaBytes: 20_000_000 } }));
-  await page.route("**/api/admin/ai", (route) => {
+  await page.route(/\/api\/admin\/ai(?:\?.*)?$/, (route) => {
     paths.push(new URL(route.request().url()).pathname);
     return route.fulfill({ status: 503, json: { error: "Тестовая модель отключена" } });
   });
@@ -118,17 +117,13 @@ test("platform admin without membership opens global settings, with archive-scop
   await page.getByRole("button", { name: "Ресурсы поиска" }).click();
   await page.getByRole("button", { name: "Yandex AI" }).click();
   const aiArchive = page.getByLabel("Древо для Yandex AI");
-  await expect(aiArchive.getByRole("option")).toHaveText(["Основной архив", "Другое дерево"]);
+  await expect(aiArchive).toHaveCount(0);
   await expect.poll(() => paths.filter((path) => path === "/api/admin/ai").length).toBe(1);
-  await aiArchive.selectOption("other-tree");
-  await expect.poll(() => paths.filter((path) => path === "/a/other-tree/api/admin/ai").length).toBe(1);
-  includeSecondary = false;
   await page.getByRole("button", { name: "Хранилище" }).click();
   await page.getByRole("button", { name: "Yandex AI" }).click();
-  await expect(aiArchive).toHaveValue("");
-  await expect(aiArchive.getByRole("option")).toHaveText(["Основной архив"]);
+  await expect(aiArchive).toHaveCount(0);
   await expect.poll(() => paths.filter((path) => path === "/api/admin/ai").length).toBe(2);
-  await expect(page.getByText("Настройки ИИ задаются отдельно для выбранного архива.")).toBeVisible();
+  expect(paths.some((path) => path.startsWith("/a/"))).toBe(false);
   expect(familyRequests).toBe(beforePlatform);
   for (const path of ["/api/settings/storage", "/api/admin/auth/vk", "/api/admin/research-resources"])
     expect(paths).toContain(path);

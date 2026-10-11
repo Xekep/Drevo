@@ -91,7 +91,7 @@ export async function verifyAiTurnCoordination(db: StoreDatabase) {
         })),
     );
     assert.equal(dailyAttempts.filter((result) => result.status === "fulfilled").length, 2,
-      "different users share the archive daily budget across pools");
+      "different users share the platform daily budget across pools");
     for (const result of dailyAttempts)
       if (result.status === "rejected") assert.ok(result.reason instanceof AiLimitError);
     console.log(
@@ -100,9 +100,9 @@ export async function verifyAiTurnCoordination(db: StoreDatabase) {
   } finally {
     await chats.delete(chat.id, "coordination-user");
     await db
-      .prepare("", "DELETE FROM ai_usage WHERE user_id=?")
+      .prepare("", "DELETE FROM platform_ai_usage WHERE user_id=?")
       .run("coordination-user");
-    await db.prepare("", "DELETE FROM ai_usage WHERE model=?").run("coordination-daily");
+    await db.prepare("", "DELETE FROM platform_ai_usage WHERE model=?").run("coordination-daily");
     await second.close();
   }
 }

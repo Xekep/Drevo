@@ -128,6 +128,16 @@ export async function platformBackupSnapshot(databasePath: string, primaryId: st
       for (const row of keyed.rows)
         if ((await lstat(join(shared, directoryFor(row.archive_id), basename(databasePath) + ".secrets.key"))).size !== 32)
           throw new Error("Ключ настроек ИИ не сохранён");
+      // Platform credentials use the primary database's key even when all
+      // former archive settings are empty. Never report a complete native
+      // copy if its global AI credentials cannot be recovered from that copy.
+      const platformAi = await client.query("SELECT to_regclass('public.platform_ai_settings') AS installed");
+      if (platformAi.rows[0]?.installed) {
+        const encrypted = await client.query("SELECT 1 FROM platform_ai_settings WHERE api_key_ciphertext<>'' LIMIT 1");
+        if (encrypted.rowCount &&
+            (await lstat(join(shared, basename(databasePath) + ".secrets.key"))).size !== 32)
+          throw new Error("Ключ глобальных настроек ИИ не сохранён");
+      }
       const cleanupKey = (await client.query("SELECT fingerprint FROM platform_ai_cleanup_keys WHERE version=1")).rows[0];
       for (const name of ["ai-provider-cleanup.v1.key", "backups/platform-keys/ai-provider-cleanup.v1.key"])
         await copyPrivateKey(join(root, name), join(shared, name));

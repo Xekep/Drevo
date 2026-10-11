@@ -175,7 +175,7 @@ export function defaultAiRoleProfile(
     | "compactThresholdTokens"
     | "automaticTruncation"
     | "maxToolIterations"
-  >,
+  > & { codeInterpreterEnabled?: boolean },
 ): AiRoleProfile {
   return {
     enabled: true,
@@ -186,7 +186,7 @@ export function defaultAiRoleProfile(
     photoAnalysisEnabled: true,
     proposalsEnabled: true,
     pdfEnabled: true,
-    codeInterpreterEnabled: true,
+    codeInterpreterEnabled: settings.codeInterpreterEnabled === true,
     requestsPerMinute: settings.requestsPerMinute,
     dailyRequests: settings.dailyRequests,
     dailyTokens: settings.dailyTokens,
@@ -279,7 +279,10 @@ function settingsInput(value: unknown, before: AiSettings) {
   return { afterInput, newApiKey, clearApiKey };
 }
 
-export async function aiSettingsStore(db: StoreDatabase) {
+export async function aiSettingsStore(
+  db: StoreDatabase,
+  secrets: Pick<StoreDatabase, "file"> = db,
+) {
   const audit = auditStore(db);
   await db
     .prepare(
@@ -287,7 +290,7 @@ export async function aiSettingsStore(db: StoreDatabase) {
       id,enabled,model,folder_id,api_key_ciphertext,
       requests_per_minute,daily_requests,daily_tokens
     ) VALUES(1,1,'','','',6,100,250000)`,
-      "INSERT INTO ai_settings(\n      id,enabled,model,folder_id,api_key_ciphertext,\n      requests_per_minute,daily_requests,daily_tokens\n    ) VALUES(1,1,'','','',6,100,250000) ON CONFLICT DO NOTHING",
+      "INSERT INTO platform_ai_settings(\n      id,enabled,model,folder_id,api_key_ciphertext,\n      requests_per_minute,daily_requests,daily_tokens\n    ) VALUES(1,1,'','','',6,100,250000) ON CONFLICT DO NOTHING",
     )
     .run();
 
@@ -299,7 +302,7 @@ export async function aiSettingsStore(db: StoreDatabase) {
                 compaction_enabled,compact_threshold_tokens,
                 automatic_truncation,max_tool_iterations,role_profiles
          FROM ai_settings WHERE id=1`,
-        "SELECT enabled,code_interpreter_enabled,web_search_enabled,model,folder_id,api_key_ciphertext,\n                requests_per_minute,daily_requests,daily_tokens,\n                compaction_enabled,compact_threshold_tokens,\n                automatic_truncation,max_tool_iterations,role_profiles\n         FROM ai_settings WHERE id=1",
+        "SELECT enabled,code_interpreter_enabled,web_search_enabled,model,folder_id,api_key_ciphertext,\n                requests_per_minute,daily_requests,daily_tokens,\n                compaction_enabled,compact_threshold_tokens,\n                automatic_truncation,max_tool_iterations,role_profiles\n         FROM platform_ai_settings WHERE id=1",
       )
       .get()) as AiSettingsRow;
   }
@@ -334,7 +337,7 @@ export async function aiSettingsStore(db: StoreDatabase) {
     if (!ciphertext) return { value: "", stored: false, error: "" };
     try {
       return {
-        value: decryptAiSecret(db, ciphertext),
+        value: decryptAiSecret(secrets, ciphertext),
         stored: true,
         error: "",
       };
@@ -376,127 +379,140 @@ export async function aiSettingsStore(db: StoreDatabase) {
       value: unknown,
       actor: ArchiveUser | Pick<ArchiveUser, "id" | "name">,
     ) {
-      const before = await read(),
-        current = await row();
-      const { afterInput, newApiKey, clearApiKey } = settingsInput(
-        value,
-        before,
-      );
-      let ciphertext = String(current.api_key_ciphertext || "");
-      if (clearApiKey) ciphertext = "";
-      if (newApiKey) ciphertext = encryptAiSecret(db, newApiKey);
+      const write = async () => {
+        if (db.kind === "postgres")
+          await db.prepare("", "SELECT pg_advisory_xact_lock(186743299)").get();
+        const before = await read(),
+          current = await row();
+        const { afterInput, newApiKey, clearApiKey } = settingsInput(
+          value,
+          before,
+        );
+        let ciphertext = String(current.api_key_ciphertext || "");
+        if (clearApiKey) ciphertext = "";
+        if (newApiKey) ciphertext = encryptAiSecret(secrets, newApiKey);
 
-      await db
-        .prepare(
-          `UPDATE ai_settings SET
+        await db
+          .prepare(
+            `UPDATE ai_settings SET
           enabled=?,code_interpreter_enabled=?,web_search_enabled=?,model=?,folder_id=?,api_key_ciphertext=?,
           requests_per_minute=?,daily_requests=?,daily_tokens=?,
           compaction_enabled=?,compact_threshold_tokens=?,
           automatic_truncation=?,max_tool_iterations=?,role_profiles=?
          WHERE id=1`,
-          "UPDATE ai_settings SET\n          enabled=?,code_interpreter_enabled=?,web_search_enabled=?,model=?,folder_id=?,api_key_ciphertext=?,\n          requests_per_minute=?,daily_requests=?,daily_tokens=?,\n          compaction_enabled=?,compact_threshold_tokens=?,\n          automatic_truncation=?,max_tool_iterations=?,role_profiles=?\n         WHERE id=1",
-        )
-        .run(
-          Number(afterInput.enabled),
-          Number(afterInput.codeInterpreterEnabled),
-          Number(afterInput.webSearchEnabled),
-          afterInput.model,
-          afterInput.folderId,
-          ciphertext,
-          afterInput.requestsPerMinute,
-          afterInput.dailyRequests,
-          afterInput.dailyTokens,
-          Number(afterInput.compactionEnabled),
-          afterInput.compactThresholdTokens,
-          Number(afterInput.automaticTruncation),
-          afterInput.maxToolIterations,
-          JSON.stringify(afterInput.roleProfiles),
-        );
+            "UPDATE platform_ai_settings SET\n          enabled=?,code_interpreter_enabled=?,web_search_enabled=?,model=?,folder_id=?,api_key_ciphertext=?,\n          requests_per_minute=?,daily_requests=?,daily_tokens=?,\n          compaction_enabled=?,compact_threshold_tokens=?,\n          automatic_truncation=?,max_tool_iterations=?,role_profiles=?\n         WHERE id=1",
+          )
+          .run(
+            Number(afterInput.enabled),
+            Number(afterInput.codeInterpreterEnabled),
+            Number(afterInput.webSearchEnabled),
+            afterInput.model,
+            afterInput.folderId,
+            ciphertext,
+            afterInput.requestsPerMinute,
+            afterInput.dailyRequests,
+            afterInput.dailyTokens,
+            Number(afterInput.compactionEnabled),
+            afterInput.compactThresholdTokens,
+            Number(afterInput.automaticTruncation),
+            afterInput.maxToolIterations,
+            JSON.stringify(afterInput.roleProfiles),
+          );
 
-      const after = await read(),
-        details = [
-          ...Object.keys(ROLE_NAMES).flatMap((role) => {
-            const key = role as Role;
-            return JSON.stringify(before.roleProfiles[key]) ===
-              JSON.stringify(after.roleProfiles[key])
-              ? []
-              : [
-                  {
-                    field: `AI · ${ROLE_NAMES[key]}`,
-                    before: JSON.stringify(before.roleProfiles[key]),
-                    after: JSON.stringify(after.roleProfiles[key]),
-                  },
-                ];
-          }),
-          ...(before.enabled !== after.enabled
-            ? [
-                {
-                  field: "ИИ-исследователь",
-                  before: before.enabled ? "Включён" : "Выключен",
-                  after: after.enabled ? "Включён" : "Выключен",
-                },
-              ]
-            : []),
-          ...(before.model !== after.model
-            ? [
-                {
-                  field: "Модель",
-                  before: before.model || "Из окружения",
-                  after: after.model || "Из окружения",
-                },
-              ]
-            : []),
-          ...(before.folderId !== after.folderId
-            ? [
-                {
-                  field: "Folder ID",
-                  before: before.folderId || "Из окружения",
-                  after: after.folderId || "Из окружения",
-                },
-              ]
-            : []),
-          ...(before.apiKeyStored !== after.apiKeyStored || !!newApiKey
-            ? [
-                {
-                  field: "API-ключ",
-                  before: before.apiKeyStored ? "Сохранён" : "Не сохранён",
-                  after: after.apiKeyStored ? "Сохранён" : "Удалён",
-                },
-              ]
-            : []),
-          ...(
-            [
-              ["requestsPerMinute", "Запросов в минуту"],
-              ["webSearchEnabled", "Поиск в интернете"],
-              ["codeInterpreterEnabled", "Code Interpreter"],
-              ["dailyRequests", "Запросов в день"],
-              ["dailyTokens", "Токенов в день"],
-            ] as const
-          ).flatMap(([key, label]) =>
-            before[key] !== after[key]
+        const after = await read(),
+          details = [
+            ...Object.keys(ROLE_NAMES).flatMap((role) => {
+              const key = role as Role;
+              return JSON.stringify(before.roleProfiles[key]) ===
+                JSON.stringify(after.roleProfiles[key])
+                ? []
+                : [
+                    {
+                      field: `AI · ${ROLE_NAMES[key]}`,
+                      before: JSON.stringify(before.roleProfiles[key]),
+                      after: JSON.stringify(after.roleProfiles[key]),
+                    },
+                  ];
+            }),
+            ...(before.enabled !== after.enabled
               ? [
                   {
-                    field: label,
-                    before: String(before[key]),
-                    after: String(after[key]),
+                    field: "ИИ-исследователь",
+                    before: before.enabled ? "Включён" : "Выключен",
+                    after: after.enabled ? "Включён" : "Выключен",
                   },
                 ]
-              : [],
-          ),
-        ];
-      if (details.length)
-        await audit.record(
-          {
-            action: "Изменены настройки ИИ",
-            entity: "settings",
-            entityId: "ai",
-            label: "AI Studio",
-            personIds: [],
-            details,
-          },
-          actor,
-        );
-      return after;
+              : []),
+            ...(before.model !== after.model
+              ? [
+                  {
+                    field: "Модель",
+                    before: before.model || "Из окружения",
+                    after: after.model || "Из окружения",
+                  },
+                ]
+              : []),
+            ...(before.folderId !== after.folderId
+              ? [
+                  {
+                    field: "Folder ID",
+                    before: before.folderId || "Из окружения",
+                    after: after.folderId || "Из окружения",
+                  },
+                ]
+              : []),
+            ...(before.apiKeyStored !== after.apiKeyStored || !!newApiKey
+              ? [
+                  {
+                    field: "API-ключ",
+                    before: before.apiKeyStored ? "Сохранён" : "Не сохранён",
+                    after: after.apiKeyStored ? "Сохранён" : "Удалён",
+                  },
+                ]
+              : []),
+            ...(
+              [
+                ["requestsPerMinute", "Запросов в минуту"],
+                ["webSearchEnabled", "Поиск в интернете"],
+                ["codeInterpreterEnabled", "Code Interpreter"],
+                ["dailyRequests", "Запросов в день"],
+                ["dailyTokens", "Токенов в день"],
+              ] as const
+            ).flatMap(([key, label]) =>
+              before[key] !== after[key]
+                ? [
+                    {
+                      field: label,
+                      before: String(before[key]),
+                      after: String(after[key]),
+                    },
+                  ]
+                : [],
+            ),
+          ];
+        if (details.length && db.kind === "postgres")
+          await db
+            .prepare(
+              "",
+              `INSERT INTO platform_config_audit(actor_id,action,item_id)
+          VALUES(?,'ai_settings_changed','ai')`,
+            )
+            .run(actor.id);
+        else if (details.length)
+          await audit.record(
+            {
+              action: "Изменены настройки ИИ",
+              entity: "settings",
+              entityId: "ai",
+              label: "AI Studio",
+              personIds: [],
+              details,
+            },
+            actor,
+          );
+        return after;
+      };
+      return db.inTransaction() ? await write() : await db.transaction(write);
     },
   };
 }
@@ -542,12 +558,15 @@ export async function aiRuntimeConfig(
       photoAnalysis: capabilities.photoAnalysisEnabled,
       proposals: capabilities.proposalsEnabled,
       pdf: capabilities.pdfEnabled,
-      codeInterpreter:
-        common.codeInterpreterEnabled && capabilities.codeInterpreterEnabled,
+      codeInterpreter: role
+        ? capabilities.codeInterpreterEnabled
+        : common.codeInterpreterEnabled,
     },
     visionModel: capabilities.visionModel,
     enabled: stored.enabled,
-    codeInterpreterEnabled: common.codeInterpreterEnabled,
+    codeInterpreterEnabled: role
+      ? capabilities.codeInterpreterEnabled
+      : common.codeInterpreterEnabled,
     webSearchEnabled: stored.webSearchEnabled,
     webSearchProvider: process.env.AI_WEB_SEARCH_PROVIDER || "yandex",
     webSearchDefaultScope: "trusted" as const,
@@ -582,16 +601,21 @@ export async function aiRuntimeConfig(
       : envModel
         ? "environment"
         : "default",
-    limits: {
-      requestsPerMinute: stored.requestsPerMinute,
-      dailyRequests: common.dailyRequests,
-      dailyTokens: common.dailyTokens,
-    },
-    userLimits: profile
+    // The common fields remain for old saved profiles. Chat admission applies
+    // the selected role's budget to this account across all archives; a hidden
+    // legacy platform budget must not override a role raised by the admin.
+    limits: role
+      ? { requestsPerMinute: 0, dailyRequests: 0, dailyTokens: 0 }
+      : {
+          requestsPerMinute: stored.requestsPerMinute,
+          dailyRequests: common.dailyRequests,
+          dailyTokens: common.dailyTokens,
+        },
+    userLimits: role
       ? {
-          requestsPerMinute: profile.requestsPerMinute,
-          dailyRequests: profile.dailyRequests,
-          dailyTokens: profile.dailyTokens,
+          requestsPerMinute: capabilities.requestsPerMinute,
+          dailyRequests: capabilities.dailyRequests,
+          dailyTokens: capabilities.dailyTokens,
         }
       : null,
     compactionEnabled: stored.compactionEnabled,
@@ -607,6 +631,22 @@ export async function publicAiStatus(
 ) {
   const runtime = await aiRuntimeConfig(settings);
   const stored = await settings.read();
+  const configuredModel = (model: string) =>
+    !!model && (runtime.folderConfigured || model.startsWith("gpt://"));
+  const profiles = Object.values(stored.roleProfiles);
+  const configured =
+    runtime.apiKeyConfigured &&
+    (runtime.folderConfigured ||
+      configuredModel(runtime.model) ||
+      profiles.some((profile) => profile && configuredModel(profile.model)));
+  const active =
+    runtime.enabled &&
+    runtime.apiKeyConfigured &&
+    profiles.some((profile) =>
+      profile
+        ? profile.enabled && configuredModel(profile.model || runtime.model)
+        : configuredModel(runtime.model),
+    );
   return {
     roleProfiles: stored.roleProfiles,
     defaultRoleProfile: {
@@ -618,8 +658,8 @@ export async function publicAiStatus(
     codeInterpreterEnabled: runtime.codeInterpreterEnabled,
     webSearchProvider: runtime.webSearchProvider,
     webSearchDefaultScope: runtime.webSearchDefaultScope,
-    active: runtime.active,
-    configured: runtime.configured,
+    active,
+    configured,
     apiKeyConfigured: runtime.apiKeyConfigured,
     apiKeyStored: runtime.apiKeyStored,
     apiKeySource: runtime.apiKeySource,

@@ -218,6 +218,16 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
             SET actor_id='deleted-account' WHERE actor_id=$1`, [accountId]);
         }
 
+        // Retain the billed usage and its model breakdown after deletion,
+        // including trees the account left earlier, without retaining its
+        // login identity in the global AI ledger.
+        const platformAiUsage = await client.query(
+          "SELECT to_regclass('public.platform_ai_usage') AS installed",
+        );
+        if (platformAiUsage.rows[0]?.installed)
+          await client.query(`UPDATE platform_ai_usage
+            SET user_id='deleted-account' WHERE user_id=$1`, [accountId]);
+
         const deleted = await client.query("DELETE FROM accounts WHERE id=$1", [
           accountId,
         ]);

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { accountSelfDeletion, AccountDeletionConflict } from "../src/server/account-self-deletion.ts";
 import type { StoreDatabase } from "../src/server/store-database.ts";
 
-function fakeDatabase(installed = true, redactionAllowed = true, unionInstalled = true, annotationInstalled = true) {
+function fakeDatabase(installed = true, redactionAllowed = true, unionInstalled = true, annotationInstalled = true,
+  platformUsageInstalled = true) {
   let archiveId = "";
   const writes: Array<{ archiveId: string; sql: string; args: unknown[] }> = [];
   const calls: string[] = [];
@@ -45,6 +46,8 @@ function fakeDatabase(installed = true, redactionAllowed = true, unionInstalled 
         return { rowCount: 1, rows: [{ allowed: redactionAllowed }] };
       if (sql.includes("to_regprocedure"))
         return { rowCount: 1, rows: [{ installed: installed ? "runtime_anonymize_deleted_account_history(text)" : null }] };
+      if (sql.includes("to_regclass('public.platform_ai_usage')"))
+        return { rowCount: 1, rows: [{ installed: platformUsageInstalled ? "platform_ai_usage" : null }] };
       if (sql.includes("SELECT id FROM archives WHERE id=$1 FOR UPDATE"))
         return { rowCount: 1, rows: [{ id: archiveId }] };
       if (/^(UPDATE|DELETE|INSERT|SELECT public\.runtime_anonymize)/.test(sql))
@@ -125,4 +128,27 @@ test("account deletion runs privileged anonymization before removing memberships
   assert.ok(writes.some(({ sql, archiveId }) =>
     archiveId === "current-tree" && sql.startsWith("DELETE FROM archive_memberships")));
   assert.equal(writes.filter(({ sql }) => sql.startsWith("DELETE FROM accounts")).length, 1);
+});
+
+test("account deletion anonymizes the global AI ledger before deleting the account without removing usage", async () => {
+  const { db, writes, calls } = fakeDatabase();
+  await accountSelfDeletion(db, true).remove("account-1", {
+    name: "Имя", leaveSharedArchives: true,
+  }, "test-session-hash");
+  const redaction = writes.filter(({ sql }) => sql.startsWith("UPDATE platform_ai_usage"));
+  assert.equal(redaction.length, 1);
+  assert.deepEqual(redaction[0].args, ["account-1"]);
+  assert.match(redaction[0].sql, /SET user_id='deleted-account' WHERE user_id=\$1/);
+  assert.ok(calls.findIndex((sql) => sql.startsWith("UPDATE platform_ai_usage")) <
+    calls.findIndex((sql) => sql.startsWith("DELETE FROM accounts")));
+  assert.ok(!writes.some(({ sql }) => /DELETE FROM platform_ai_usage|UPDATE platform_ai_usage_models/.test(sql)),
+    "deletion must retain token totals and model history");
+});
+
+test("account deletion remains compatible with a snapshot without the global AI ledger", async () => {
+  const { db, writes } = fakeDatabase(true, true, true, true, false);
+  assert.equal((await accountSelfDeletion(db, true).remove("account-1", {
+    name: "Имя", leaveSharedArchives: true,
+  }, "test-session-hash")).deleted, true);
+  assert.ok(!writes.some(({ sql }) => sql.startsWith("UPDATE platform_ai_usage")));
 });

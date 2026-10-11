@@ -40,7 +40,16 @@ test("role profiles inherit old settings, override models and capabilities, vali
     for (const role of ["admin", "relative", "researcher", "reader"] as const) {
       const runtime = await aiRuntimeConfig(settings, role);
       assert.equal(runtime.modelUri, "gpt://folder/base");
-      assert.equal(runtime.userLimits, null);
+      assert.deepEqual(runtime.userLimits, {
+        requestsPerMinute: 6,
+        dailyRequests: 100,
+        dailyTokens: 10000,
+      });
+      assert.deepEqual(runtime.limits, {
+        requestsPerMinute: 0,
+        dailyRequests: 0,
+        dailyTokens: 0,
+      });
       assert.equal(runtime.capabilities.codeInterpreter, false);
     }
     const legacy = { ...defaultAiRoleProfile(common) };
@@ -88,7 +97,7 @@ test("role profiles inherit old settings, override models and capabilities, vali
       true,
     );
     assert.equal(runtime.userLimits?.dailyRequests, 30);
-    assert.equal(runtime.limits.dailyRequests, 100);
+    assert.equal(runtime.limits.dailyRequests, 0);
     assert.equal(
       await aiVision(async () => {
         throw new Error("No discovery needed");
@@ -139,6 +148,133 @@ test("role profiles inherit old settings, override models and capabilities, vali
     );
   } finally {
     db.close();
+  }
+});
+
+test("a role budget and Python setting are independent of hidden legacy common limits", async () => {
+  const source = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(source);
+    const db = storeDatabase(source),
+      settings = await aiSettingsStore(db);
+    const common = {
+      ...(await settings.read()),
+      model: "base",
+      folderId: "folder",
+      codeInterpreterEnabled: false,
+      dailyRequests: 1,
+      dailyTokens: 1,
+    };
+    await settings.write(
+      {
+        ...common,
+        roleProfiles: {
+          ...common.roleProfiles,
+          researcher: {
+            ...defaultAiRoleProfile(common),
+            dailyRequests: 5,
+            dailyTokens: 1000,
+            codeInterpreterEnabled: true,
+          },
+        },
+      },
+      admin,
+    );
+    const runtime = await aiRuntimeConfig(settings, "researcher");
+    assert.equal(
+      runtime.capabilities.codeInterpreter,
+      true,
+      "the chosen role can enable Python without a hidden common switch",
+    );
+    assert.deepEqual(runtime.limits, {
+      requestsPerMinute: 0,
+      dailyRequests: 0,
+      dailyTokens: 0,
+    });
+    const usage = aiUsageStore(db);
+    for (let request = 0; request < 5; request++)
+      await usage.admit(
+        "researcher",
+        runtime.modelUri,
+        runtime.limits,
+        runtime.userLimits!,
+      );
+    await assert.rejects(
+      usage.admit(
+        "researcher",
+        runtime.modelUri,
+        runtime.limits,
+        runtime.userLimits!,
+      ),
+      /Ваш дневной лимит запросов/,
+    );
+    assert.equal((await usage.summary()).today.requests, 5);
+  } finally {
+    source.close();
+  }
+});
+
+test("admin status recognizes role-only models without exposing credentials or changing chat readiness", async () => {
+  const source = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(source);
+    const settings = await aiSettingsStore(storeDatabase(source));
+    const before = await settings.read();
+    const disabled = { ...defaultAiRoleProfile(before), enabled: false };
+    const input = {
+      ...before,
+      model: "",
+      folderId: "role-status-folder",
+      apiKey: "fake-role-status-secret",
+      roleProfiles: {
+        admin: disabled,
+        researcher: { ...disabled, enabled: true, model: "role-status-model" },
+        relative: disabled,
+        reader: disabled,
+      },
+    };
+    await settings.write(input, admin);
+    const status = await publicAiStatus(settings);
+    assert.equal(status.configured, true);
+    assert.equal(status.active, true);
+    assert.equal((await aiRuntimeConfig(settings, "researcher")).active, true);
+    assert.equal((await aiRuntimeConfig(settings, "reader")).active, false);
+    assert.equal(Object.hasOwn(status, "apiKey"), false);
+    assert.doesNotMatch(JSON.stringify(status), /fake-role-status-secret/);
+    await settings.write(
+      {
+        ...input,
+        roleProfiles: {
+          ...input.roleProfiles,
+          researcher: { ...input.roleProfiles.researcher, enabled: false },
+        },
+      },
+      admin,
+    );
+    assert.equal((await publicAiStatus(settings)).configured, true);
+    assert.equal((await publicAiStatus(settings)).active, false);
+    await settings.write(
+      {
+        ...input,
+        folderId: "",
+        roleProfiles: {
+          ...input.roleProfiles,
+          researcher: {
+            ...input.roleProfiles.researcher,
+            model: "gpt://inline-folder/role-model",
+          },
+        },
+      },
+      admin,
+    );
+    assert.equal(
+      (await publicAiStatus(settings)).configured,
+      true,
+      "an inline model URI preserves folder-less provider compatibility",
+    );
+    assert.equal((await publicAiStatus(settings)).active, true);
+  } finally {
+    source.close();
   }
 });
 
