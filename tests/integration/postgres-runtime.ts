@@ -1035,6 +1035,12 @@ try {
     colorScheme: "white",
   });
   assert.equal((await preferences.read("owner")).colorScheme, "white");
+  assert.equal((await preferences.read("owner")).animateOnLoad, true,
+    "existing native preference records retain startup animation by default");
+  await preferences.write("owner", { reverseTimeline: false, animateOnLoad: false });
+  assert.equal((await preferences.read("owner")).animateOnLoad, false);
+  assert.equal((await preferences.read("reader")).animateOnLoad, true,
+    "turning off one account's startup animation does not affect another account");
   const generationLimits = { anchorId: "runtime-person", ancestors: 7, descendants: 50, collateral: 2 };
   await preferences.write("owner", { reverseTimeline: false, generationLimits });
   assert.deepEqual((await preferences.read("owner")).generationLimits, generationLimits);
@@ -1042,6 +1048,9 @@ try {
   await assert.rejects(preferences.write("owner", { reverseTimeline: false, generationLimits: { ...generationLimits, collateral: 3 } }), /Некорректные/);
   await preferences.write("owner", { reverseTimeline: false, generationLimits: null });
   assert.equal((await preferences.read("owner")).generationLimits, undefined);
+  assert.equal((await preferences.read("owner")).animateOnLoad, false,
+    "legacy native preference writes do not reset the animation choice");
+  await preferences.write("owner", { reverseTimeline: false, animateOnLoad: true });
   await verifyAiTurnCoordination(live.db);
   await verifyAiProviderCleanup(live.db, source);
   await verifyAiInputFileCleanup(live.db, source);

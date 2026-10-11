@@ -69,6 +69,11 @@ for (const mode of ["shared", "public"] as const)
       dialog.getByRole("combobox", { name: "Генеалогический формат" }),
     ).toHaveCount(0);
     await expect(dialog.getByText(/Личные настройки/)).toHaveCount(0);
+    const loadAnimation = dialog.getByRole("switch", {
+      name: "Анимация при загрузке",
+    });
+    await expect(loadAnimation).toBeChecked();
+    await loadAnimation.uncheck();
     await expect(
       dialog.getByRole("radio", { name: "Предки сверху" }),
     ).toBeChecked();
@@ -87,7 +92,9 @@ for (const mode of ["shared", "public"] as const)
       .getByRole("combobox", { name: "Относительно человека" })
       .fill("Пётр");
     await dialog.getByRole("option", { name: /Тестов Пётр Иванович/ }).click();
-    await dialog.getByRole("radio", { name: "Потомки: 1", exact: true }).check();
+    await dialog
+      .getByRole("radio", { name: "Потомки: 1", exact: true })
+      .check();
     await dialog
       .getByRole("radio", { name: "Боковые ветви: 0", exact: true })
       .check();
@@ -127,6 +134,7 @@ for (const mode of ["shared", "public"] as const)
       .poll(() => page.locator(".react-flow__edge").count())
       .toBeGreaterThan(0);
     await gear.click();
+    await expect(loadAnimation).not.toBeChecked();
     await expect(
       dialog.getByRole("switch", { name: "Ограничить видимое древо" }),
     ).toBeChecked();

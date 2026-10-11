@@ -64,10 +64,16 @@ test("shared search selects only shared people and disappears after revocation",
     if (path.startsWith("/api/")) requests.push(`${request.method()} ${path}`);
   });
   await page.goto(share.path);
+  await expect(page.locator(".tree-canvas")).toBeVisible();
   const search = page.getByRole("combobox", { name: "Найти человека" });
   const results = page.getByRole("listbox", { name: "Найденные люди" });
+  const sharedHeader = page.locator(".shared-header");
+  await sharedHeader.screenshot({ path: testInfo.outputPath("shared-header.png") });
   if (isMobile) {
     await expect(search).toBeHidden();
+    const searchToggle = (await page.getByRole("button", { name: "Найти человека", exact: true }).boundingBox())!;
+    expect(searchToggle.width).toBeGreaterThanOrEqual(44);
+    expect(searchToggle.height).toBeGreaterThanOrEqual(44);
     const header = await page.locator(".shared-header").boundingBox();
     await page.getByRole("button", { name: "Найти человека", exact: true }).click();
     await expect(search).toBeFocused();
@@ -78,6 +84,8 @@ test("shared search selects only shared people and disappears after revocation",
   }
   await expect(search).toBeVisible();
   if (!isMobile) {
+    expect((await sharedHeader.boundingBox())!.height).toBeLessThanOrEqual(58);
+    expect((await page.locator(".shared-header .archive-search").boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await expect(page.locator(".shared-search-toggle")).toBeHidden();
     await expect(page.locator(".shared-header .lucide-search:visible")).toHaveCount(1);
   }

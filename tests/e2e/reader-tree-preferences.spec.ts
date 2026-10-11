@@ -143,6 +143,11 @@ for (const prefix of ["", "/a/foreign-archive"]) {
       dialog.getByRole("button", { name: "Управление древом" }),
     ).toHaveCount(0);
     await expect(page.locator(".flow-add-tools")).toHaveCount(0);
+    const loadAnimation = dialog.getByRole("switch", {
+      name: "Анимация при загрузке",
+    });
+    await expect(loadAnimation).toBeChecked();
+    await loadAnimation.uncheck();
     await dialog.getByRole("radio", { name: "Белая" }).check();
     await expect(page.locator(".tree-canvas")).toHaveClass(/theme-white/);
     await dialog.getByRole("radio", { name: "Потомки сверху" }).check();
@@ -155,6 +160,7 @@ for (const prefix of ["", "/a/foreign-archive"]) {
     await page.reload();
     await expect(page.locator(".tree-canvas")).toHaveClass(/theme-white/);
     await page.getByRole("button", { name: "Настройки древа" }).click();
+    await expect(loadAnimation).not.toBeChecked();
     await expect(
       dialog.getByRole("radio", { name: "Потомки сверху" }),
     ).toBeChecked();
@@ -165,6 +171,7 @@ for (const prefix of ["", "/a/foreign-archive"]) {
       dialog.getByRole("switch", { name: "Ограничить видимое древо" }),
     ).toBeChecked();
     await dialog.getByRole("button", { name: "Сбросить вид" }).click();
+    await expect(loadAnimation).toBeChecked();
     await expect(
       dialog.getByRole("radio", { name: "Предки сверху" }),
     ).toBeChecked();

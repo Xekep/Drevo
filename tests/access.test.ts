@@ -267,6 +267,7 @@ test("OAuth roles, ownership, public sections and selected tree backup work thro
       reverseTimeline: true,
       cardVariant: "portrait",
       colorScheme: "white",
+      animateOnLoad: true,
     };
     assert.equal(
       (await request("/api/research-resources", reader)).status,
@@ -293,7 +294,12 @@ test("OAuth roles, ownership, public sections and selected tree backup work thro
       await request("/api/tree-preferences", reader).then((response) =>
         response.json(),
       ),
-      { reverseTimeline: false, cardVariant: "portrait", colorScheme: "warm" },
+      {
+        reverseTimeline: false,
+        cardVariant: "portrait",
+        colorScheme: "warm",
+        animateOnLoad: true,
+      },
       "другой участник не наследует выбор администратора",
     );
     assert.equal(
@@ -302,6 +308,7 @@ test("OAuth roles, ownership, public sections and selected tree backup work thro
           reverseTimeline: false,
           cardVariant: "classic",
           colorScheme: "white",
+          animateOnLoad: true,
         })
       ).status,
       200,
@@ -320,7 +327,12 @@ test("OAuth roles, ownership, public sections and selected tree backup work thro
       await request("/api/tree-preferences", reader).then((response) =>
         response.json(),
       ),
-      { reverseTimeline: false, cardVariant: "portrait", colorScheme: "white" },
+      {
+        reverseTimeline: false,
+        cardVariant: "portrait",
+        colorScheme: "white",
+        animateOnLoad: true,
+      },
       "старый клиент не сбрасывает выбранную цветовую схему",
     );
     assert.equal(
@@ -329,6 +341,7 @@ test("OAuth roles, ownership, public sections and selected tree backup work thro
           reverseTimeline: false,
           cardVariant: "portrait",
           colorScheme: "invalid",
+          animateOnLoad: true,
         })
       ).status,
       400,
@@ -381,6 +394,7 @@ test("OAuth roles, ownership, public sections and selected tree backup work thro
         await request("/api/tree-preferences", reader, "PUT", {
           reverseTimeline: true,
           colorScheme: "white",
+          animateOnLoad: true,
           generationLimits: {
             anchorId: "person",
             ancestors: 3,
@@ -396,9 +410,15 @@ test("OAuth roles, ownership, public sections and selected tree backup work thro
         reverseTimeline: false,
         cardVariant: "portrait",
         colorScheme: "warm",
+        animateOnLoad: true,
         generationLimits: null,
       }).then((response) => response.json()),
-      { reverseTimeline: false, cardVariant: "portrait", colorScheme: "warm" },
+      {
+        reverseTimeline: false,
+        cardVariant: "portrait",
+        colorScheme: "warm",
+        animateOnLoad: true,
+      },
     );
     assert.deepEqual(
       await request("/api/settings", admin).then((response) => response.json()),
@@ -858,8 +878,11 @@ test("OAuth roles, ownership, public sections and selected tree backup work thro
     assert.match(listing, /drevo.sqlite/);
     assert.ok(listing.includes(photo.url.replace("/media/", "uploads/")));
     assert.ok(listing.includes(newPhoto.url.replace("/media/", "uploads/")));
-    assert.equal(listing.includes(portrait.replace("/media/", "uploads/")), false,
-      "an uploaded portrait without a live or historical reference is excluded from the tree copy");
+    assert.equal(
+      listing.includes(portrait.replace("/media/", "uploads/")),
+      false,
+      "an uploaded portrait without a live or historical reference is excluded from the tree copy",
+    );
     assert.doesNotMatch(listing, /secrets\.key|ai-chat-files|archives\//);
     assert.equal(
       listing.includes("previews/"),
@@ -876,8 +899,11 @@ test("OAuth roles, ownership, public sections and selected tree backup work thro
       "ok",
     );
     assert.equal(db.prepare("SELECT count(*) AS n FROM users").get()!.n, 2);
-    assert.equal(db.prepare("SELECT count(*) AS n FROM auth_sessions").get()!.n, 0,
-      "tree copies do not transport active login sessions");
+    assert.equal(
+      db.prepare("SELECT count(*) AS n FROM auth_sessions").get()!.n,
+      0,
+      "tree copies do not transport active login sessions",
+    );
     db.close();
     await request("/api/users/second", admin, "PATCH", { role: "reader" });
     assert.equal(

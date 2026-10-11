@@ -981,6 +981,7 @@ export default function App() {
                       onRename={canEdit && isArchiveOwner(user) ? () => setSettings(true) : undefined}
                       onAddSelf={canEdit && user && isArchiveOwner(user) && !user.personId ? newSelf : undefined}
                       skipInitialGrowth={initialPersonLink}
+                      animateOnLoad={archive.treePreferences.animateOnLoad}
                       onGrowthChange={setTreeGrowing}
                       comparisonAction={
                         <div className="workspace-actions">

@@ -27,6 +27,7 @@ test("each viewer can switch direction and colors; legacy card variants stay por
     reverseTimeline: false,
     cardVariant: "portrait",
     colorScheme: "warm",
+    animateOnLoad: true,
   };
   let referenceId: string | undefined = "e2e-memorial-person";
   await page.addInitScript(() =>
@@ -36,6 +37,7 @@ test("each viewer can switch direction and colors; legacy card variants stay por
         reverseTimeline: true,
         cardVariant: "classic",
         colorScheme: "white",
+        animateOnLoad: true,
       }),
     ),
   );
@@ -137,6 +139,7 @@ test("each viewer can switch direction and colors; legacy card variants stay por
     reverseTimeline: true,
     cardVariant: "portrait",
     colorScheme: "white",
+    animateOnLoad: true,
   });
   const bounds = await dialog.boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
@@ -256,6 +259,7 @@ test("white scheme also colors the fan", async ({ page }, testInfo) => {
       reverseTimeline: false,
       cardVariant: "classic",
       colorScheme: "white",
+      animateOnLoad: true,
     };
     await route.fulfill({ response, json: data });
   });

@@ -192,6 +192,22 @@ export function TreePreferencesDialog({
             ))}
           </div>
         </fieldset>
+        <fieldset disabled={saving}>
+          <label className="tree-generation-toggle">
+            <span>Анимация при загрузке</span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={draft.animateOnLoad !== false}
+              onChange={(event) =>
+                void choose({
+                  ...draft,
+                  animateOnLoad: event.target.checked,
+                })
+              }
+            />
+          </label>
+        </fieldset>
         {!!people.length && (
           <fieldset disabled={saving} className="tree-generation-settings">
             <legend>Поколения</legend>

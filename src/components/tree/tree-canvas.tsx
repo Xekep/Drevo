@@ -173,6 +173,7 @@ type Props = {
   spotlight?: string[];
   onIntroComplete?: () => void;
   skipInitialGrowth?: boolean;
+  animateOnLoad?: boolean;
   onGrowthChange?: (active: boolean) => void;
   onModeChange?: (mode: TreeMode) => void;
 };
@@ -319,7 +320,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       active = false;
     };
   }, [activeFanAnchor, family.people, focus]);
-  const [growing, setGrowing] = useState(() => !props.skipInitialGrowth);
+  const [growing, setGrowing] = useState(() => !props.skipInitialGrowth && props.animateOnLoad !== false);
   useEffect(() => {
     if (!activeFanAnchor || !fanRevealing) return;
     const element = container.current;

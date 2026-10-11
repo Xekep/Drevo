@@ -48,6 +48,34 @@ test("guest preferences store only view options and keep the archive defaults wh
   assert.deepEqual(JSON.parse(raw!), value);
 });
 
+test("guests retain startup animation choice across reloads while old and invalid values use the default", (t) => {
+  let raw: string | null = null;
+  storageMock(t, {
+    getItem: () => raw,
+    setItem: (_key, value) => {
+      raw = value;
+    },
+  });
+  writeGuestTreePreferences({
+    ...DEFAULT_TREE_PREFERENCES,
+    animateOnLoad: false,
+  });
+  assert.equal(
+    readGuestTreePreferences(DEFAULT_TREE_PREFERENCES).animateOnLoad,
+    false,
+  );
+  raw = JSON.stringify({ reverseTimeline: false });
+  assert.equal(
+    readGuestTreePreferences(DEFAULT_TREE_PREFERENCES).animateOnLoad,
+    true,
+  );
+  raw = JSON.stringify({ animateOnLoad: "false" });
+  assert.equal(
+    readGuestTreePreferences(DEFAULT_TREE_PREFERENCES).animateOnLoad,
+    true,
+  );
+});
+
 test("corrupt and unavailable guest storage cannot prevent opening the tree", (t) => {
   let raw = "invalid json";
   storageMock(t, {

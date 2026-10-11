@@ -19,6 +19,10 @@ export function readGuestTreePreferences(
           ? value.reverseTimeline
           : fallback.reverseTimeline,
       cardVariant: "portrait",
+      animateOnLoad:
+        typeof value.animateOnLoad === "boolean"
+          ? value.animateOnLoad
+          : (fallback.animateOnLoad ?? true),
       colorScheme: ["warm", "white"].includes(value.colorScheme)
         ? value.colorScheme
         : fallback.colorScheme,
@@ -38,6 +42,7 @@ export function writeGuestTreePreferences(value: TreePreferences) {
       JSON.stringify({
         reverseTimeline: value.reverseTimeline,
         cardVariant: "portrait",
+        animateOnLoad: value.animateOnLoad ?? true,
         colorScheme: value.colorScheme,
         ...(isTreeGenerationLimits(value.generationLimits)
           ? { generationLimits: value.generationLimits }

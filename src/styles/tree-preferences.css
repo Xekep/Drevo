@@ -1,5 +1,6 @@
 .editor-dialog.tree-preferences-dialog {
   width: min(376px, calc(100vw - 24px));
+  max-height: min(590px, calc(100dvh - 24px));
 }
 .editor-dialog.tree-preferences-dialog > header {
   padding: 12px 16px;

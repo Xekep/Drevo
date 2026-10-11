@@ -33,6 +33,8 @@ export type TreePreferences = {
   reverseTimeline: boolean;
   cardVariant: TreeCardVariant;
   colorScheme: TreeColorScheme;
+  /** Missing on older clients retains the default startup animation. */
+  animateOnLoad?: boolean;
   /** Missing/null retains the complete view, including disconnected people. */
   generationLimits?: TreeGenerationLimits | null;
 };
@@ -41,6 +43,7 @@ export const DEFAULT_TREE_PREFERENCES: TreePreferences = {
   reverseTimeline: false,
   cardVariant: "portrait",
   colorScheme: "warm",
+  animateOnLoad: true,
 };
 
 export function withGenerationAnchor(
