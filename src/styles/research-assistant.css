@@ -1270,6 +1270,10 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   margin: 0;
 }
 .ai-role-profile-main select { width: 100%; }
+.ai-model-catalog-status { display: grid; gap: 6px; }
+.ai-model-catalog-status button { justify-self: start; }
+.ai-model-catalog-status p { color: #a83f34; overflow-wrap: anywhere; }
+.ai-role-features[open] { display: grid; gap: 10px; }
 .ai-role-profile-custom > small { color: var(--muted); font-size: 11px; }
 .ai-role-profile-custom .ai-role-limits {
   grid-template-columns: repeat(3, minmax(0, 1fr));

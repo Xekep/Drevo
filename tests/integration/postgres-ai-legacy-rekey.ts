@@ -25,7 +25,7 @@ export async function verifyAiLegacyChatRekey(
 ) {
       {
         const usageBeforeRekey = Number((await client.query(
-          "SELECT coalesce(max(id),0) AS id FROM ai_usage WHERE archive_id='runtime-test' AND user_id=$1",
+          "SELECT coalesce(max(id),0) AS id FROM platform_ai_usage WHERE archive_id='runtime-test' AND user_id=$1",
           [proposalMember],
         )).rows[0].id);
         const cleanup = await aiProviderCleanup(archive.db, source);
@@ -98,7 +98,7 @@ export async function verifyAiLegacyChatRekey(
           await client.query("INSERT INTO platform_researchers(account_id) VALUES($1) ON CONFLICT DO NOTHING",
             [proposalMember]);
           await client.query(
-            "DELETE FROM ai_usage WHERE archive_id='runtime-test' AND user_id=$1 AND id>$2",
+            "DELETE FROM platform_ai_usage WHERE archive_id='runtime-test' AND user_id=$1 AND id>$2",
             [proposalMember, usageBeforeRekey],
           );
           await aiChatStore(archive.db).delete(legacy.id, proposalMember);

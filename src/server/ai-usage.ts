@@ -74,7 +74,7 @@ export function aiUsageStore(db: StoreDatabase) {
           (await db
             .prepare(
               "SELECT count(*) AS n FROM ai_usage WHERE user_id=? AND started_ms>=?",
-              "SELECT count(*) AS n FROM ai_usage WHERE user_id=? AND started_ms>=?",
+              "SELECT count(*) AS n FROM platform_ai_usage WHERE user_id=? AND started_ms>=?",
             )
             .get(userId, minuteAgo))!.n,
         );
@@ -82,7 +82,7 @@ export function aiUsageStore(db: StoreDatabase) {
         const oldest = (await db
           .prepare(
             "SELECT min(started_ms) AS started FROM ai_usage WHERE user_id=? AND started_ms>=?",
-            "SELECT min(started_ms) AS started FROM ai_usage WHERE user_id=? AND started_ms>=?",
+            "SELECT min(started_ms) AS started FROM platform_ai_usage WHERE user_id=? AND started_ms>=?",
           )
           .get(userId, minuteAgo))!.started as number | null;
         const retry = oldest
@@ -99,14 +99,14 @@ export function aiUsageStore(db: StoreDatabase) {
           ? (await db
               .prepare(
                 "SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens FROM ai_usage WHERE started_ms>=? AND user_id=?",
-                "SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens FROM ai_usage WHERE started_ms>=? AND user_id=?",
+                "SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens FROM platform_ai_usage WHERE started_ms>=? AND user_id=?",
               )
               .get(todayStart(), userId))!
           : (await db
               .prepare(
                 `SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens
            FROM ai_usage WHERE started_ms>=?`,
-                "SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens\n           FROM ai_usage WHERE started_ms>=?",
+                "SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens\n           FROM platform_ai_usage WHERE started_ms>=?",
               )
               .get(todayStart()))!;
       if (
@@ -135,7 +135,7 @@ export function aiUsageStore(db: StoreDatabase) {
               at,started_ms,user_id,model,status,provider_calls,
               input_tokens,output_tokens,total_tokens,latency_ms
             ) VALUES(?,?,?,?,'error',0,0,0,0,0)`,
-            "INSERT INTO ai_usage(\n              at,started_ms,user_id,model,status,provider_calls,\n              input_tokens,output_tokens,total_tokens,latency_ms\n            ) VALUES(?,?,?,?,'error',0,0,0,0,0) RETURNING id",
+            "INSERT INTO platform_ai_usage(\n              at,started_ms,user_id,model,status,provider_calls,\n              input_tokens,output_tokens,total_tokens,latency_ms\n            ) VALUES(?,?,?,?,'error',0,0,0,0,0) RETURNING id",
           )
           .run(at, started, userId, model);
       return {
@@ -144,7 +144,7 @@ export function aiUsageStore(db: StoreDatabase) {
       };
     },
 
-    /** The archive transaction serializes admission across server processes.
+    /** A platform advisory lock serializes admission across server processes.
      * The input message can be committed in the same transaction by the caller.
      */
     async admit(
@@ -154,6 +154,8 @@ export function aiUsageStore(db: StoreDatabase) {
       userLimits?: AiUsageLimits,
     ) {
       const work = async () => {
+        if (db.kind === "postgres")
+          await db.prepare("", "SELECT pg_advisory_xact_lock(186743300)").get();
         await store.check(userId, limits);
         if (userLimits) await store.check(userId, userLimits, "user");
         return await store.begin(userId, model);
@@ -182,7 +184,7 @@ export function aiUsageStore(db: StoreDatabase) {
           status=?,provider_calls=?,input_tokens=?,output_tokens=?,
           total_tokens=?,cached_input_tokens=?,latency_ms=?
          WHERE id=?`,
-          "UPDATE ai_usage SET\n          status=?,provider_calls=?,input_tokens=?,output_tokens=?,\n          total_tokens=?,cached_input_tokens=?,latency_ms=?\n         WHERE id=?",
+          "UPDATE platform_ai_usage SET\n          status=?,provider_calls=?,input_tokens=?,output_tokens=?,\n          total_tokens=?,cached_input_tokens=?,latency_ms=?\n         WHERE id=?",
         )
         .run(
           value.status,
@@ -200,7 +202,7 @@ export function aiUsageStore(db: StoreDatabase) {
             await db
               .prepare(
                 "SELECT model FROM ai_usage WHERE id=?",
-                "SELECT model FROM ai_usage WHERE id=?",
+                "SELECT model FROM platform_ai_usage WHERE id=?",
               )
               .get(id)
           )?.model || "",
@@ -221,14 +223,14 @@ export function aiUsageStore(db: StoreDatabase) {
       await db
         .prepare(
           "DELETE FROM ai_usage_models WHERE usage_id=?",
-          "DELETE FROM ai_usage_models WHERE usage_id=?",
+          "DELETE FROM platform_ai_usage_models WHERE usage_id=?",
         )
         .run(id);
       const insertModel = db.prepare(
         `INSERT INTO ai_usage_models(
           usage_id,model,provider_calls,input_tokens,output_tokens,total_tokens
         ) VALUES(?,?,?,?,?,?)`,
-        "INSERT INTO ai_usage_models(\n          usage_id,model,provider_calls,input_tokens,output_tokens,total_tokens\n        ) VALUES(?,?,?,?,?,?)",
+        "INSERT INTO platform_ai_usage_models(\n          usage_id,model,provider_calls,input_tokens,output_tokens,total_tokens\n        ) VALUES(?,?,?,?,?,?)",
       );
       for (const model of models) {
         const modelInput = Math.max(0, Math.round(model.inputTokens)),
@@ -257,7 +259,7 @@ export function aiUsageStore(db: StoreDatabase) {
               coalesce(sum(CASE WHEN status='error' THEN 1 ELSE 0 END),0) AS errors,
               coalesce(avg(latency_ms),0) AS average_latency_ms
              FROM ai_usage WHERE started_ms>=?`,
-            "SELECT\n              count(*) AS requests,\n              coalesce(sum(provider_calls),0) AS provider_calls,\n              coalesce(sum(input_tokens),0) AS input_tokens,\n              coalesce(sum(output_tokens),0) AS output_tokens,\n              coalesce(sum(total_tokens),0) AS total_tokens,\n              coalesce(sum(CASE WHEN status='error' THEN 1 ELSE 0 END),0) AS errors,\n              coalesce(avg(latency_ms),0) AS average_latency_ms\n             FROM ai_usage WHERE started_ms>=?",
+            "SELECT\n              count(*) AS requests,\n              coalesce(sum(provider_calls),0) AS provider_calls,\n              coalesce(sum(input_tokens),0) AS input_tokens,\n              coalesce(sum(output_tokens),0) AS output_tokens,\n              coalesce(sum(total_tokens),0) AS total_tokens,\n              coalesce(sum(CASE WHEN status='error' THEN 1 ELSE 0 END),0) AS errors,\n              coalesce(avg(latency_ms),0) AS average_latency_ms\n             FROM platform_ai_usage WHERE started_ms>=?",
           )
           .get(todayStart()))!,
         modelRows = await db
@@ -274,7 +276,7 @@ export function aiUsageStore(db: StoreDatabase) {
              WHERE u.started_ms>=?
              GROUP BY day,m.model
              ORDER BY day,m.model`,
-            "SELECT\n               to_char(to_timestamp(u.started_ms / 1000.0) AT TIME ZONE 'UTC','YYYY-MM-DD') AS day,\n               m.model AS model,\n               coalesce(sum(m.provider_calls),0) AS provider_calls,\n               coalesce(sum(m.input_tokens),0) AS input_tokens,\n               coalesce(sum(m.output_tokens),0) AS output_tokens,\n               coalesce(sum(m.total_tokens),0) AS total_tokens\n             FROM ai_usage_models m\n             JOIN ai_usage u ON u.id=m.usage_id\n             WHERE u.started_ms>=?\n             GROUP BY day,m.model\n             ORDER BY day,m.model",
+            "SELECT\n               to_char(to_timestamp(u.started_ms / 1000.0) AT TIME ZONE 'UTC','YYYY-MM-DD') AS day,\n               m.model AS model,\n               coalesce(sum(m.provider_calls),0) AS provider_calls,\n               coalesce(sum(m.input_tokens),0) AS input_tokens,\n               coalesce(sum(m.output_tokens),0) AS output_tokens,\n               coalesce(sum(m.total_tokens),0) AS total_tokens\n             FROM platform_ai_usage_models m\n             JOIN platform_ai_usage u ON u.id=m.usage_id\n             WHERE u.started_ms>=?\n             GROUP BY day,m.model\n             ORDER BY day,m.model",
           )
           .all(historyStart),
         todayModelRows = modelRows.filter(
@@ -287,7 +289,7 @@ export function aiUsageStore(db: StoreDatabase) {
             `SELECT id,at,user_id,model,status,provider_calls,input_tokens,
                     output_tokens,total_tokens,latency_ms
              FROM ai_usage ORDER BY id DESC LIMIT ?`,
-            "SELECT id,at,user_id,model,status,provider_calls,input_tokens,\n                    output_tokens,total_tokens,latency_ms\n             FROM ai_usage ORDER BY id DESC LIMIT ?",
+            "SELECT id,at,user_id,model,status,provider_calls,input_tokens,\n                    output_tokens,total_tokens,latency_ms\n             FROM platform_ai_usage ORDER BY id DESC LIMIT ?",
           )
           .all(Math.max(1, Math.min(100, limit)));
       return {

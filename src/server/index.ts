@@ -422,6 +422,7 @@ export async function startServer(
       publicOrigin,
     });
     const handleArchive = await archiveHttp({
+      aiSecrets: configuredPath === ":memory:" ? archive.db : { file: configuredPath },
       geocoding,
       restores,
       archive,

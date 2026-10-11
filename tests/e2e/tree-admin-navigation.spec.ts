@@ -180,7 +180,7 @@ test("legacy local platform admin uses the trusted session flag without an accou
     account: null, local: true, yandex: false,
   } }));
   await page.route("**/api/account/archives", (route) => route.fulfill({ json: { archives: [] } }));
-  await page.route("**/api/admin/ai", (route) => route.fulfill({ status: 503, json: { error: "Тест" } }));
+  await page.route(/\/api\/admin\/ai(?:\?.*)?$/, (route) => route.fulfill({ status: 503, json: { error: "Тест" } }));
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Админка платформы" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Yandex AI" })).toBeVisible();

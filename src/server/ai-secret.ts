@@ -2,9 +2,10 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { StoreDatabase } from "./store-database.ts";
 
-const memoryKeys = new WeakMap<StoreDatabase, Buffer>();
+type SecretDatabase = Pick<StoreDatabase, "file">;
+const memoryKeys = new WeakMap<SecretDatabase, Buffer>();
 
-function keyFile(db: StoreDatabase) {
+function keyFile(db: SecretDatabase) {
   const file = db.file;
   return file ? file + ".secrets.key" : "";
 }
@@ -22,7 +23,7 @@ function readKeyFile(path: string) {
   return key;
 }
 
-function secretKey(db: StoreDatabase, create: boolean) {
+function secretKey(db: SecretDatabase, create: boolean) {
   const path = keyFile(db);
   if (!path) {
     const existing = memoryKeys.get(db);
@@ -47,7 +48,7 @@ function secretKey(db: StoreDatabase, create: boolean) {
   }
 }
 
-export function encryptAiSecret(db: StoreDatabase, value: string) {
+export function encryptAiSecret(db: SecretDatabase, value: string) {
   const key = secretKey(db, true)!,
     iv = randomBytes(12),
     cipher = createCipheriv("aes-256-gcm", key, iv),
@@ -61,7 +62,7 @@ export function encryptAiSecret(db: StoreDatabase, value: string) {
   ].join(".");
 }
 
-export function decryptAiSecret(db: StoreDatabase, value: string) {
+export function decryptAiSecret(db: SecretDatabase, value: string) {
   if (!value) return "";
   const parts = value.split(".");
   if (
@@ -87,6 +88,6 @@ export function decryptAiSecret(db: StoreDatabase, value: string) {
   );
 }
 
-export function aiSecretKeyPath(db: StoreDatabase) {
+export function aiSecretKeyPath(db: SecretDatabase) {
   return keyFile(db) || null;
 }

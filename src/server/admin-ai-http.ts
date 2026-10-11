@@ -56,13 +56,13 @@ export function adminAiHttp({
     res.end(JSON.stringify(value));
     return true;
   };
-  const statusValue = async (req: IncomingMessage) => {
+  const statusValue = async (req: IncomingMessage, includeModels = true) => {
     const runtime = await aiRuntimeConfig(settings);
     // Loading settings can outlive a platform grant revocation.
     if (!(await auth.isPlatformAdmin(req))) return null;
     let models: AiStudioModel[] = [];
     let modelsError = "";
-    if (runtime.apiKey && runtime.folderId)
+    if (includeModels && runtime.apiKey && runtime.folderId)
       try {
         models = await fetchAiStudioModels({
           baseUrl: runtime.baseUrl,
@@ -160,7 +160,7 @@ export function adminAiHttp({
     };
 
     if (path === "/api/admin/ai" && req.method === "GET") {
-      const status = await statusValue(req);
+      const status = await statusValue(req, url.searchParams.get("models") !== "0");
       if (!status || !(await stillAdmin()))
         return json(res, 403, { error: "Доступ отозван" });
       return deliver(200, status);
@@ -185,7 +185,7 @@ export function adminAiHttp({
             );
           await settings.write(body, admin);
         });
-        const status = await statusValue(req);
+        const status = await statusValue(req, url.searchParams.get("models") !== "0");
         if (!status || !(await stillAdmin()))
           return json(res, 403, { error: "Доступ отозван" });
         return deliver(200, status);
@@ -225,6 +225,7 @@ export function adminAiHttp({
           apiKey,
           folderId,
           fetcher,
+          forceRefresh: body.forceRefresh === true,
         });
         // Model discovery may finish after platform access is revoked.
         if (!(await stillAdmin()))

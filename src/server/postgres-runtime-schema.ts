@@ -460,6 +460,12 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       await db.exec("", `INSERT INTO document_citation_index_state(archive_id)
         VALUES(current_setting('drevo.archive_id',true)) ON CONFLICT DO NOTHING`);
     });
+  if (!(await db.prepare("", "SELECT to_regclass('platform_ai_settings') AS present").get())?.present)
+    await db.transaction(async () => {
+      await db.prepare("", "SELECT pg_advisory_xact_lock(186743291)").get();
+      if (!(await db.prepare("", "SELECT to_regclass('platform_ai_settings') AS present").get())?.present)
+        await db.exec("", readFileSync(new URL("../../ops/postgres/099_platform_ai.sql", import.meta.url), "utf8"));
+    });
   // A preview staged before the additive migration still occupies capacity
   // when its archive starts. RLS keeps this backfill within the active archive.
   if ((await db.prepare("", "SELECT 1 AS present FROM workflow_stages WHERE kind='drevo' AND expires_at>? LIMIT 1")

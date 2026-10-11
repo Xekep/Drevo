@@ -446,7 +446,7 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
-  await page.route("**/api/admin/ai", async (route) => {
+  await page.route(/\/api\/admin\/ai(?:\?.*)?$/, async (route) => {
     if (route.request().method() !== "GET") return route.continue();
     const response = await route.fetch(),
       status = (await response.json()) as Record<string, unknown>,
@@ -531,7 +531,7 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
 
   const apiKey = page.getByLabel("API-ключ"),
     folderId = page.getByLabel("Folder ID"),
-    model = page.locator("#ai-model");
+    model = page.getByLabel("Модель для этой роли", { exact: true });
 
   await expect(apiKey).toHaveAttribute("type", "password");
   await expect(folderId).toBeVisible();

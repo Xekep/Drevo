@@ -997,7 +997,9 @@ try {
       "the upload cap is shared across archives");
     await assert.rejects(isolatedVk.prepare("", "INSERT INTO upload_limits(archive_id,id,data) VALUES('runtime-test',1,'{}')").run(), /row-level security/);
     const isolatedAi = await aiSettingsStore(isolatedVk);
-    assert.equal((await isolatedAi.read()).roleProfiles.researcher, null);
+    assert.deepEqual((await isolatedAi.read()).roleProfiles.researcher,
+      (await aiSettings.read()).roleProfiles.researcher,
+      "AI role profiles are platform-wide rather than tenant-specific");
     await assert.rejects(
       isolatedVk
         .prepare(
@@ -1833,7 +1835,7 @@ try {
     assert.match(await history.text(), /Ответ локального PostgreSQL архива/);
     await verifyAiProviderDeleteRoute(app.archive.db, source, localBase,
       localAiFetch, chatId, () => localDeletes);
-    await app.archive.db.prepare("", "DELETE FROM ai_usage WHERE user_id='local'").run();
+    await app.archive.db.prepare("", "DELETE FROM platform_ai_usage WHERE user_id='local'").run();
   } finally {
     await app?.close();
     app = undefined;
@@ -3096,7 +3098,7 @@ try {
     const pdfRenderGate = new Promise<void>((resolve) => { releasePdfRender = resolve; });
     const pdfFilesRoot = mkdtempSync(join(tmpdir(), "drevo-ai-pdf-tier-"));
     const pdfUsageBefore = Number((await client.query(
-      "SELECT coalesce(max(id),0) AS id FROM ai_usage WHERE archive_id='runtime-test' AND user_id='owner'",
+      "SELECT coalesce(max(id),0) AS id FROM platform_ai_usage WHERE archive_id='runtime-test' AND user_id='owner'",
     )).rows[0].id);
     const pdfAi = aiResearchHttp({
       archive: app.archive,
@@ -3157,7 +3159,7 @@ try {
       await new Promise<void>((resolve) => pdfServer.close(() => resolve()));
       await pdfAi.close();
       rmSync(pdfFilesRoot, { recursive: true, force: true });
-      await client.query("DELETE FROM ai_usage WHERE archive_id='runtime-test' AND user_id='owner' AND id>$1",
+      await client.query("DELETE FROM platform_ai_usage WHERE archive_id='runtime-test' AND user_id='owner' AND id>$1",
         [pdfUsageBefore]);
     }
 
@@ -3516,7 +3518,7 @@ try {
       const oldChats = new Set((await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))
         .rows.map((row) => row.id as string));
       const usageBefore = Number((await client.query(
-        "SELECT coalesce(max(id),0) AS id FROM ai_usage WHERE archive_id='runtime-test' AND user_id=$1",
+        "SELECT coalesce(max(id),0) AS id FROM platform_ai_usage WHERE archive_id='runtime-test' AND user_id=$1",
         [proposalMember],
       )).rows[0].id);
       try {
@@ -3546,7 +3548,7 @@ try {
         for (const chatId of newChats) await aiChatStore(app!.archive.db).delete(chatId, proposalMember);
         await new Promise<void>((resolve) => server.close(() => resolve()));
         await handler.close();
-        await client.query("DELETE FROM ai_usage WHERE archive_id='runtime-test' AND user_id=$1 AND id>$2",
+        await client.query("DELETE FROM platform_ai_usage WHERE archive_id='runtime-test' AND user_id=$1 AND id>$2",
           [proposalMember, usageBefore]);
       }
     };
@@ -3837,9 +3839,16 @@ try {
       }
       {
         const previousInterpreter = (await client.query(
-          "SELECT code_interpreter_enabled FROM ai_settings WHERE id=1",
-        )).rows[0].code_interpreter_enabled;
-        await client.query("UPDATE ai_settings SET code_interpreter_enabled=1 WHERE id=1");
+          "SELECT code_interpreter_enabled,role_profiles FROM platform_ai_settings WHERE id=1",
+        )).rows[0];
+        const interpreterProfiles = JSON.parse(previousInterpreter.role_profiles);
+        interpreterProfiles.researcher = {
+          ...defaultAiRoleProfile(await actualAiSettings.read()),
+          ...interpreterProfiles.researcher,
+          codeInterpreterEnabled: true,
+        };
+        await client.query("UPDATE platform_ai_settings SET code_interpreter_enabled=1,role_profiles=$1 WHERE id=1",
+          [JSON.stringify(interpreterProfiles)]);
         let calculationCalls = 0;
         let uploads = 0;
         let returnCalculationFile = false;
@@ -3941,7 +3950,7 @@ try {
             "the Code Interpreter model is not called after tier downgrade");
           await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
           fileTestUsageBefore = Number((await client.query(
-            "SELECT coalesce(max(id),0) AS id FROM ai_usage WHERE archive_id='runtime-test' AND user_id=$1",
+            "SELECT coalesce(max(id),0) AS id FROM platform_ai_usage WHERE archive_id='runtime-test' AND user_id=$1",
             [proposalMember],
           )).rows[0].id);
           returnCalculationFile = true;
@@ -3982,7 +3991,7 @@ try {
           assert.equal(readdirSync(generatedRoot, { recursive: true, withFileTypes: true })
             .filter((entry) => entry.isFile()).length, 0,
           "downgrade during generated file staging cannot persist a file");
-          await client.query("DELETE FROM ai_usage WHERE archive_id='runtime-test' AND user_id=$1 AND id>$2",
+          await client.query("DELETE FROM platform_ai_usage WHERE archive_id='runtime-test' AND user_id=$1 AND id>$2",
             [proposalMember, fileTestUsageBefore]);
           await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
           pauseInstall = false;
@@ -4010,14 +4019,15 @@ try {
           await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
             [sessionTokenHash(proposalToken), proposalMember, Date.now() + 60000]);
           await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
-          await client.query("UPDATE ai_settings SET code_interpreter_enabled=$1 WHERE id=1", [previousInterpreter]);
+          await client.query("UPDATE platform_ai_settings SET code_interpreter_enabled=$1,role_profiles=$2 WHERE id=1",
+            [previousInterpreter.code_interpreter_enabled, previousInterpreter.role_profiles]);
           const newChats = (await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))
             .rows.map((row) => row.id as string).filter((id) => !oldChats.has(id));
           for (const chatId of newChats) await aiChatStore(app!.archive.db).delete(chatId, proposalMember);
           await new Promise<void>((resolve) => server.close(() => resolve()));
           await handler.close();
           if (fileTestUsageBefore)
-            await client.query("DELETE FROM ai_usage WHERE archive_id='runtime-test' AND user_id=$1 AND id>$2",
+            await client.query("DELETE FROM platform_ai_usage WHERE archive_id='runtime-test' AND user_id=$1 AND id>$2",
               [proposalMember, fileTestUsageBefore]);
           rmSync(calculationFilesRoot, { recursive: true, force: true });
         }

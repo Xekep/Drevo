@@ -1,19 +1,12 @@
-import { archiveFetch } from "../data/archive-fetch.ts";
 import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
-import {
-  Bot,
-  CheckCircle2,
-  PlugZap,
-  RefreshCw,
-  Save,
-  TriangleAlert,
-} from "lucide-react";
+import { Bot, CheckCircle2, Save, TriangleAlert } from "lucide-react";
 import { AiTokenUsageChart } from "./charts/ai-token-usage-chart";
 import { AiRoleProfilesEditor } from "./ai-role-profiles-editor";
 import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
@@ -108,18 +101,12 @@ type AiAdminStatus = {
 };
 
 export function AiSettingsAdmin({
-  archiveId = null,
   showCleanup = true,
   onDirtyChange,
 }: {
-  archiveId?: string | null;
   showCleanup?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const url = useCallback(
-    (path: string) => (archiveId ? `/a/${archiveId}${path}` : path),
-    [archiveId],
-  );
   const [status, setStatus] = useState<AiAdminStatus | null>(null),
     [enabled, setEnabled] = useState(true),
     [webSearchEnabled, setWebSearchEnabled] = useState(false),
@@ -181,6 +168,7 @@ export function AiSettingsAdmin({
     ],
   );
   const [savedDraft, setSavedDraft] = useState("");
+  const modelsRequest = useRef<AbortController | null>(null);
   const draftKey = JSON.stringify(draft);
   const dirty = Boolean(status) && draftKey !== savedDraft;
   useUnsavedChanges(dirty);
@@ -206,7 +194,21 @@ export function AiSettingsAdmin({
     setCompactThresholdTokens(next.compactThresholdTokens);
     setAutomaticTruncation(next.automaticTruncation);
     setMaxToolIterations(next.maxToolIterations);
-    setRoleProfiles(next.roleProfiles);
+    const profiles = Object.fromEntries(
+      (["admin", "researcher", "relative", "reader"] as const).map((role) => [
+        role,
+        {
+          ...(next.roleProfiles[role] || next.defaultRoleProfile),
+          model:
+            next.roleProfiles[role]?.model ||
+            selectedModel ||
+            next.models[0]?.id ||
+            "",
+          ...(role === "reader" ? { proposalsEnabled: false } : {}),
+        },
+      ]),
+    ) as AiRoleProfiles;
+    setRoleProfiles(profiles);
     setSavedDraft(
       JSON.stringify({
         enabled: next.enabled,
@@ -223,31 +225,92 @@ export function AiSettingsAdmin({
         compactThresholdTokens: next.compactThresholdTokens,
         automaticTruncation: next.automaticTruncation,
         maxToolIterations: next.maxToolIterations,
-        roleProfiles: next.roleProfiles,
+        roleProfiles: profiles,
       }),
     );
   }, []);
 
-  const load = useCallback(async () => {
-    const response = await archiveFetch(url("/api/admin/ai"), {
+  const loadModels = useCallback(
+    async (configuration: {
+      folderId: string;
+      apiKey?: string;
+      forceRefresh?: boolean;
+    }) => {
+      modelsRequest.current?.abort();
+      const controller = new AbortController();
+      modelsRequest.current = controller;
+      setLoadingModels(true);
+      try {
+        const response = await fetch("/api/admin/ai/models", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(configuration),
+          signal: controller.signal,
+        });
+        const data = (await response.json()) as {
+          models?: AiAdminStatus["models"];
+          error?: string;
+        };
+        if (!response.ok)
+          throw new Error(data.error || "Не удалось получить список моделей");
+        if (controller.signal.aborted) return;
+        const models = data.models || [];
+        setStatus((current) =>
+          current
+            ? {
+                ...current,
+                models,
+                modelsError: models.length
+                  ? ""
+                  : "В каталоге нет доступных текстовых моделей. Проверьте Folder ID и права API-ключа.",
+              }
+            : current,
+        );
+      } catch (reason) {
+        if (!controller.signal.aborted)
+          setStatus((current) =>
+            current
+              ? {
+                  ...current,
+                  modelsError:
+                    reason instanceof Error
+                      ? reason.message
+                      : "Не удалось получить список моделей",
+                }
+              : current,
+          );
+      } finally {
+        if (!controller.signal.aborted) setLoadingModels(false);
+      }
+    },
+    [],
+  );
+
+  const load = useCallback(async (signal: AbortSignal) => {
+    const response = await fetch("/api/admin/ai?models=0", {
         cache: "no-store",
+        signal,
       }),
       data = await response.json();
+    if (signal.aborted) return;
     if (!response.ok)
       throw new Error(data.error || "Не удалось загрузить настройки AI Studio");
     applyStatus(data as AiAdminStatus);
-  }, [applyStatus, url]);
+    if (data.apiKeyConfigured && data.folderId)
+      void loadModels({ folderId: data.folderId });
+  }, [applyStatus, loadModels]);
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
     queueMicrotask(() => {
-      if (!active) return;
-      void load().catch((reason) => {
-        if (active) setError((reason as Error).message);
+      if (controller.signal.aborted) return;
+      void load(controller.signal).catch((reason) => {
+        if (!controller.signal.aborted) setError((reason as Error).message);
       });
     });
     return () => {
-      active = false;
+      controller.abort();
+      modelsRequest.current?.abort();
     };
   }, [load]);
 
@@ -257,7 +320,7 @@ export function AiSettingsAdmin({
     setError("");
     setNotice("");
     try {
-      const response = await archiveFetch(url("/api/admin/ai"), {
+      const response = await fetch("/api/admin/ai?models=0", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(draft),
@@ -267,7 +330,14 @@ export function AiSettingsAdmin({
         throw new Error(
           data.error || "Не удалось сохранить настройки AI Studio",
         );
-      applyStatus(data as AiAdminStatus);
+      applyStatus({
+        ...data,
+        models: status?.models || [],
+        modelsError: status?.modelsError || "",
+      } as AiAdminStatus);
+      if (data.apiKeyConfigured && data.folderId &&
+          (apiKey.trim() || clearApiKey || data.folderId !== status?.folderId))
+        void loadModels({ folderId: data.folderId });
       setNotice("Настройки AI Studio сохранены");
     } catch (reason) {
       setError((reason as Error).message);
@@ -281,8 +351,8 @@ export function AiSettingsAdmin({
     setError("");
     setNotice("");
     try {
-      const response = await archiveFetch(
-          url(`/api/admin/ai/test${role ? `?role=${role}` : ""}`),
+      const response = await fetch(
+          `/api/admin/ai/test${role ? `?role=${role}` : ""}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -292,7 +362,7 @@ export function AiSettingsAdmin({
         data = await response.json();
       if (!response.ok) throw new Error(data.error || "AI Studio не ответила");
       setNotice(
-        `Проверка текущих настроек успешна · ${status?.models.find((item) => item.id === data.model)?.label || data.model}${data.answer ? ` · ${data.answer}` : ""}${compactionEnabled && !data.compactionAvailable ? " · Yandex не принимает сжатие контекста; используется автоматическое усечение" : ""}`,
+        `Проверка текущих настроек успешна · ${status?.models.find((item) => item.id === data.model)?.label || data.model}${data.answer ? ` · ${data.answer}` : ""}${(role ? roleProfiles[role]?.compactionEnabled : compactionEnabled) && !data.compactionAvailable ? " · Yandex не принимает сжатие контекста; используется автоматическое усечение" : ""}`,
       );
     } catch (reason) {
       setError((reason as Error).message);
@@ -302,43 +372,13 @@ export function AiSettingsAdmin({
   }
 
   async function refreshModels() {
-    setLoadingModels(true);
     setError("");
     setNotice("");
-    try {
-      const response = await archiveFetch(url("/api/admin/ai/models"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            folderId,
-            ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
-          }),
-        }),
-        data = (await response.json()) as {
-          models?: AiAdminStatus["models"];
-          error?: string;
-        };
-      if (!response.ok)
-        throw new Error(data.error || "Не удалось получить список моделей");
-      const models = data.models || [];
-      setStatus((current) =>
-        current ? { ...current, models, modelsError: "" } : current,
-      );
-      setModel((current) =>
-        models.some((item) => item.id === current)
-          ? current
-          : models[0]?.id || "",
-      );
-      setNotice(
-        models.length
-          ? `Получено моделей: ${models.length}`
-          : "В каталоге нет доступных текстовых моделей",
-      );
-    } catch (reason) {
-      setError((reason as Error).message);
-    } finally {
-      setLoadingModels(false);
-    }
+    await loadModels({
+      folderId,
+      ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+      forceRefresh: true,
+    });
   }
 
   if (!status && !error)
@@ -388,10 +428,7 @@ export function AiSettingsAdmin({
               }
             }}
           >
-            <fieldset
-              className="ai-settings-fields"
-              disabled={busy || testing || loadingModels}
-            >
+            <fieldset className="ai-settings-fields" disabled={busy || testing}>
               <label
                 className="setting-toggle"
                 htmlFor="ai-research-enabled"
@@ -399,7 +436,10 @@ export function AiSettingsAdmin({
               >
                 <span>
                   <b>ИИ-исследователь</b>
-                  <small>Доступен пользователям с разрешёнными ролями.</small>
+                  <small>
+                    Единое подключение для всех древ. Доступ и лимиты задаются
+                    по ролям.
+                  </small>
                 </span>
                 <input
                   id="ai-research-enabled"
@@ -417,18 +457,18 @@ export function AiSettingsAdmin({
                   open={!status.configured || undefined}
                 >
                   <summary>
-                    Подключение ·{" "}
-                    {status.models.find((item) => item.id === model)?.label ||
-                      model ||
-                      "Не настроено"}
+                    Подключение Яндекс ·{" "}
+                    {status.configured ? "настроено" : "не настроено"}
                   </summary>
                   <fieldset className="ai-credential-settings">
-                    <legend>Подключение и модель по умолчанию</legend>
+                    <legend>Общее подключение</legend>
 
                     <label htmlFor="ai-api-key">
                       API-ключ
                       <input
                         id="ai-api-key"
+                        aria-label="API-ключ"
+                        aria-describedby="ai-api-key-hint"
                         type="password"
                         autoComplete="new-password"
                         value={apiKey}
@@ -442,7 +482,7 @@ export function AiSettingsAdmin({
                           if (event.target.value) setClearApiKey(false);
                         }}
                       />
-                      <small>
+                      <small id="ai-api-key-hint">
                         Ключ отправляется только на сервер и хранится там
                         зашифрованным. Обратно в браузер он не возвращается.
                       </small>
@@ -483,70 +523,12 @@ export function AiSettingsAdmin({
                         onChange={(event) => setFolderId(event.target.value)}
                       />
                     </label>
-
-                    <div className="ai-model-picker">
-                      <label htmlFor="ai-model">
-                        Модель
-                        <select
-                          id="ai-model"
-                          value={model}
-                          disabled={!status.models.length && !model}
-                          onChange={(event) => setModel(event.target.value)}
-                        >
-                          {!status.models.some((item) => item.id === model) &&
-                            model && (
-                              <option value={model}>
-                                {model} · текущее значение
-                              </option>
-                            )}
-                          {!model && !status.models.length && (
-                            <option value="">Загрузите модели каталога</option>
-                          )}
-                          {status.models.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <button
-                        type="button"
-                        className="ai-model-refresh"
-                        disabled={loadingModels || !folderId.trim()}
-                        onClick={() => void refreshModels()}
-                      >
-                        <RefreshCw
-                          size={15}
-                          className={loadingModels ? "spinning" : ""}
-                        />
-                        {loadingModels ? "Загружаем…" : "Обновить список"}
-                      </button>
-                      {status.modelsError && (
-                        <small className="form-error">
-                          {status.modelsError}
-                        </small>
-                      )}
-                    </div>
                   </fieldset>{" "}
                   {status.credentialError && (
                     <p className="form-error" role="alert">
                       {status.credentialError}
                     </p>
                   )}
-                  <button
-                    type="button"
-                    disabled={
-                      busy ||
-                      testing ||
-                      loadingModels ||
-                      (!apiKey.trim() && !status.apiKeyConfigured) ||
-                      !model
-                    }
-                    onClick={() => void testConnection()}
-                  >
-                    <PlugZap size={16} />
-                    {testing ? "Проверяем…" : "Проверить подключение"}
-                  </button>
                 </details>
               </section>
               <section
@@ -558,194 +540,25 @@ export function AiSettingsAdmin({
                   defaults={{
                     ...status.defaultRoleProfile,
                     model,
-                    webSearchEnabled,
-                    requestsPerMinute,
-                    dailyRequests,
-                    dailyTokens,
-                    compactionEnabled,
-                    compactThresholdTokens,
-                    automaticTruncation,
-                    maxToolIterations,
                   }}
                   models={status.models}
                   disabled={busy || testing}
-                  codeInterpreterAllowed={codeInterpreterEnabled}
                   globallyEnabled={enabled}
+                  loadingModels={loadingModels}
+                  modelsError={status.modelsError}
+                  canLoadModels={
+                    !!folderId.trim() &&
+                    (!!apiKey.trim() || status.apiKeyConfigured)
+                  }
+                  onRefreshModels={() => void refreshModels()}
                   onChange={setRoleProfiles}
                   onTest={(role) => void testConnection(role)}
                 />
-
-                <details className="ai-admin-connection ai-default-settings">
-                  <summary>Общие настройки ролей</summary>
-                  <label
-                    className="setting-toggle"
-                    htmlFor="ai-web-search-enabled"
-                    aria-label="Поиск в интернете по умолчанию"
-                  >
-                    <span>
-                      <b>Поиск в интернете по умолчанию</b>
-                      <small>
-                        Для ролей с общими настройками. Отдельный профиль может
-                        изменить выбор.
-                      </small>
-                    </span>
-                    <input
-                      id="ai-web-search-enabled"
-                      type="checkbox"
-                      checked={webSearchEnabled}
-                      disabled={busy}
-                      onChange={(event) =>
-                        setWebSearchEnabled(event.target.checked)
-                      }
-                    />
-                  </label>
-                  <label
-                    className="setting-toggle"
-                    htmlFor="ai-code-interpreter-enabled"
-                    aria-label="Code Interpreter"
-                  >
-                    <span>
-                      <b>Разрешить вычисления Python</b>
-                      <small>
-                        Общий доступ для всех ролей. При выключении Python
-                        недоступен даже в отдельных профилях.
-                      </small>
-                    </span>
-                    <input
-                      id="ai-code-interpreter-enabled"
-                      type="checkbox"
-                      checked={codeInterpreterEnabled}
-                      disabled={busy}
-                      onChange={(event) =>
-                        setCodeInterpreterEnabled(event.target.checked)
-                      }
-                    />
-                  </label>
-                  <label htmlFor="ai-rpm">
-                    Запросов в минуту на пользователя
-                    <input
-                      id="ai-rpm"
-                      type="number"
-                      min={0}
-                      max={120}
-                      value={requestsPerMinute}
-                      onChange={(event) =>
-                        setRequestsPerMinute(Number(event.target.value))
-                      }
-                    />
-                  </label>{" "}
-                  <details className="ai-context-settings">
-                    <summary>Контекст диалога</summary>
-                    <label
-                      className="setting-toggle"
-                      htmlFor="ai-compaction-enabled"
-                      aria-label="Сжимать длинный диалог"
-                    >
-                      <span>
-                        <b>Сжимать длинный диалог</b>
-                      </span>
-                      <input
-                        id="ai-compaction-enabled"
-                        type="checkbox"
-                        checked={compactionEnabled}
-                        onChange={(event) =>
-                          setCompactionEnabled(event.target.checked)
-                        }
-                      />
-                    </label>
-                    <label htmlFor="ai-compact-threshold">
-                      Порог сжатия, токенов
-                      <input
-                        id="ai-compact-threshold"
-                        type="number"
-                        min={1000}
-                        max={1000000}
-                        disabled={!compactionEnabled}
-                        value={compactThresholdTokens}
-                        onChange={(event) =>
-                          setCompactThresholdTokens(Number(event.target.value))
-                        }
-                      />
-                    </label>
-                    <label
-                      className="setting-toggle"
-                      htmlFor="ai-truncation-enabled"
-                      aria-label="Автоматически сокращать контекст при переполнении"
-                    >
-                      <span>
-                        <b>Автоматически сокращать контекст при переполнении</b>
-                      </span>
-                      <input
-                        id="ai-truncation-enabled"
-                        type="checkbox"
-                        checked={automaticTruncation}
-                        onChange={(event) =>
-                          setAutomaticTruncation(event.target.checked)
-                        }
-                      />
-                    </label>
-                    <label htmlFor="ai-tool-iterations">
-                      Максимум шагов инструментов
-                      <input
-                        id="ai-tool-iterations"
-                        type="number"
-                        min={1}
-                        max={20}
-                        value={maxToolIterations}
-                        onChange={(event) =>
-                          setMaxToolIterations(Number(event.target.value))
-                        }
-                      />
-                    </label>
-                  </details>
-                </details>
               </section>
               <section
                 className="ai-settings-section"
                 aria-label="Расход и бюджет"
               >
-                <details className="ai-admin-connection ai-budget-settings">
-                  <summary>
-                    Общий бюджет древа ·{" "}
-                    {dailyTokens
-                      ? `${dailyTokens.toLocaleString("ru-RU")} токенов в день`
-                      : "Без ограничения"}
-                  </summary>
-                  <fieldset className="ai-limit-settings">
-                    <legend>Бюджет всего древа</legend>
-
-                    <label htmlFor="ai-daily-requests">
-                      Запросов в день на всё древо
-                      <input
-                        id="ai-daily-requests"
-                        type="number"
-                        min={0}
-                        max={100000}
-                        value={dailyRequests}
-                        onChange={(event) =>
-                          setDailyRequests(Number(event.target.value))
-                        }
-                      />
-                    </label>
-                    <label htmlFor="ai-daily-tokens">
-                      Токенов в день на всё древо
-                      <input
-                        id="ai-daily-tokens"
-                        type="number"
-                        min={0}
-                        max={1000000000}
-                        value={dailyTokens}
-                        onChange={(event) =>
-                          setDailyTokens(Number(event.target.value))
-                        }
-                      />
-                    </label>
-                    <small>
-                      Общий предел для всех пользователей вместе. 0 — без
-                      ограничения.
-                    </small>
-                  </fieldset>
-                </details>
                 <details className="ai-admin-connection ai-usage-details">
                   <summary>
                     Расход · сегодня {status.usage.today.requests} запросов
@@ -755,15 +568,11 @@ export function AiSettingsAdmin({
                     aria-label="Использование ИИ"
                   >
                     <h3>Использование сегодня</h3>
+                    <p>Все пользователи и древа платформы.</p>
                     <div className="ai-usage-stats">
                       <div>
                         <b>{status.usage.today.requests}</b>
-                        <span>
-                          запросов
-                          {status.limits.dailyRequests
-                            ? ` / ${status.limits.dailyRequests}`
-                            : ""}
-                        </span>
+                        <span>запросов</span>
                       </div>
                       <div>
                         <b>
@@ -780,9 +589,6 @@ export function AiSettingsAdmin({
                           {status.usage.today.outputTokens.toLocaleString(
                             "ru-RU",
                           )}
-                          {status.limits.dailyTokens
-                            ? ` · лимит ${status.limits.dailyTokens.toLocaleString("ru-RU")}`
-                            : ""}
                         </span>
                       </div>
                       <div>
@@ -849,7 +655,7 @@ export function AiSettingsAdmin({
               <button
                 type="submit"
                 className="primary-action"
-                disabled={busy || testing || loadingModels || !dirty}
+                disabled={busy || testing || !dirty}
               >
                 <Save size={16} />
                 {busy ? "Сохраняем…" : "Сохранить"}
@@ -899,7 +705,7 @@ export function AiSettingsAdmin({
             </div>
           </details>
 
-          {showCleanup && <AiProviderCleanupAdmin archiveId={archiveId} />}
+          {showCleanup && <AiProviderCleanupAdmin platform />}
         </>
       )}
 
