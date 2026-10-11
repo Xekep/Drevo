@@ -1,4 +1,5 @@
 import { archiveFetch } from "./data/archive-fetch.ts";
+import { ArchiveDetailsNotFoundError } from "./data/archive-details";
 import { canManageTreeBackups, isArchiveOwner } from "./domain/access.ts";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { confirmDiscardChanges } from "./hooks/useUnsavedChanges";
@@ -125,6 +126,7 @@ export default function App() {
       detailsGeneration,
       hasPersonDetails,
     } = archive;
+  const { loadGallery, projectionGeneration } = archive;
   const desktop = useDesktopEditing(),
     canEdit = !participantPreview && allowedEdit;
   const publicationOwnership = useArchivePublicationOwner(
@@ -312,14 +314,16 @@ export default function App() {
     [loadDetails, detailsGeneration],
   );
   const archiveAvailable = !!family;
-  const needsPeopleDetails = (view === "tree" && timelineDetails) || ["places", "insights", "quality"].includes(view);
-  const needsPhotoDetails = ["gallery", "places", "insights", "quality"].includes(view);
+  const needsPeopleDetails = (view === "tree" && timelineDetails) || view === "quality";
+  const needsPhotoDetails = view === "quality";
+  const projectionView = view === "places" || view === "insights" ? view : undefined;
   const loadViewDetails = useCallback(() => {
+    if (projectionView) return loadDetails({ view: projectionView });
     const collections: Array<"people" | "photos"> = [];
     if (needsPeopleDetails) collections.push("people");
     if (needsPhotoDetails) collections.push("photos");
     return collections.length ? loadDetails({ collections }) : Promise.resolve();
-  }, [needsPeopleDetails, needsPhotoDetails, loadDetails]);
+  }, [needsPeopleDetails, needsPhotoDetails, loadDetails, projectionView]);
   const retryViewDetails = () => {
     void loadViewDetails().catch((reason) =>
       setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить сведения"));
@@ -342,6 +346,7 @@ export default function App() {
     archiveAvailable,
     detailsSource,
     detailsGeneration,
+    projectionGeneration,
     loadViewDetails,
   ]);
   useEffect(() => {
@@ -369,6 +374,41 @@ export default function App() {
     setPublishPerson(map.get(personId) || null);
   }, [map]);
   const { openPhoto, navigatePhoto, closePhoto, uploaded } = photoWorkspace;
+  const photoNavigationRequest = useRef(0);
+  useEffect(() => { photoNavigationRequest.current++; }, [currentPath]);
+  const { photo: workspacePhoto, photoCollection, setPhotoCollection } = photoWorkspace;
+  const workspacePhotoId = workspacePhoto?.id;
+  useEffect(() => {
+    if (!workspacePhotoId || photoCollection) return;
+    let active = true;
+    void loadGallery({ mode: "all" }).then((page) => {
+      if (active && page.photoIds.includes(workspacePhotoId)) setPhotoCollection(page.photoIds);
+    }).catch((reason) => { if (active) setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить альбом"); });
+    return () => { active = false; };
+  }, [workspacePhotoId, photoCollection, setPhotoCollection, loadGallery, projectionGeneration]);
+  useEffect(() => {
+    if (!workspacePhotoId || !photoCollection) return;
+    const index = photoCollection.indexOf(workspacePhotoId);
+    const adjacent = [photoCollection[index - 1], photoCollection[index + 1]].filter((id): id is string => !!id);
+    if (adjacent.length) void loadDetails({ photos: adjacent }).catch(() => {
+      // A speculative neighbor failure does not close the current photograph;
+      // an explicit navigation retries it and displays the error.
+    });
+  }, [workspacePhotoId, photoCollection, loadDetails, projectionGeneration]);
+  const [missingPhotoTarget, setMissingPhotoTarget] = useState("");
+  const urlPhotoTarget = archiveTargetAt(currentPath.split("?")[0], currentPath.includes("?") ? `?${currentPath.split("?")[1]}` : "");
+  const urlPhotoId = urlPhotoTarget?.kind === "photo" ? urlPhotoTarget.id : null;
+  const urlPhotoLoaded = !!family?.photos?.some((photo) => photo.id === urlPhotoId);
+  useEffect(() => {
+    if (!archiveAvailable || !readPhotos || !urlPhotoId || urlPhotoLoaded) return;
+    let active = true;
+    void loadDetails({ photos: [urlPhotoId] }).catch((reason) => {
+      if (!active) return;
+      if (reason instanceof ArchiveDetailsNotFoundError) setMissingPhotoTarget(urlPhotoId);
+      setNotice(reason instanceof Error ? reason.message : "Не удалось открыть фотографию");
+    });
+    return () => { active = false; };
+  }, [archiveAvailable, readPhotos, urlPhotoId, urlPhotoLoaded, loadDetails, detailsSource, projectionGeneration]);
   useEffect(() => {
     if (!family || archive.loadingDetails) return;
     let active = true;
@@ -379,7 +419,7 @@ export default function App() {
         window.location.search,
       );
       if (
-        target?.kind === "photo" && !hasCollectionDetails("photos")) return;
+        target?.kind === "photo" && readPhotos && !family.photos?.some((photo) => photo.id === target.id) && missingPhotoTarget !== target.id) return;
       if (
         target &&
         window.location.pathname + window.location.search !==
@@ -419,7 +459,7 @@ export default function App() {
   }, [
     family,
     archive.loadingDetails,
-    hasCollectionDetails,
+    missingPhotoTarget,
     readTree,
     readPhotos,
     map,
@@ -432,26 +472,46 @@ export default function App() {
   ]);
   const openPhotoUrl = useCallback(
     (id: string, ids?: string[]) => {
+      const request = ++photoNavigationRequest.current;
+      photoReturnPath.current = currentPath.startsWith("/photos?") ? currentPath : "/photos";
+      if (!currentFamily()?.photos?.some((photo) => photo.id === id)) {
+        void loadDetails({ photos: [id] }).then(() => {
+          if (request === photoNavigationRequest.current && currentFamily()?.photos?.some((photo) => photo.id === id)) {
+            const target: ArchiveTarget = { kind: "photo", id };
+            lastUrlTarget.current = targetKey(target);
+            setView("gallery", target); openPhoto(id, ids);
+          }
+        }).catch((reason) => { if (request === photoNavigationRequest.current) setNotice(reason instanceof Error ? reason.message : "Не удалось открыть фотографию"); });
+        return;
+      }
       const target: ArchiveTarget = { kind: "photo", id };
-      photoReturnPath.current = currentPath.startsWith("/photos?")
-        ? currentPath
-        : "/photos";
       lastUrlTarget.current = targetKey(target);
       setView("gallery", target);
       openPhoto(id, ids);
     },
-    [currentPath, openPhoto, setView],
+    [currentPath, openPhoto, setView, currentFamily, loadDetails],
   );
   const navigatePhotoUrl = useCallback(
     (id: string) => {
+      const request = ++photoNavigationRequest.current;
+      if (!currentFamily()?.photos?.some((photo) => photo.id === id)) {
+        void loadDetails({ photos: [id] }).then(() => {
+          if (request !== photoNavigationRequest.current || !currentFamily()?.photos?.some((photo) => photo.id === id)) return;
+          const target: ArchiveTarget = { kind: "photo", id };
+          lastUrlTarget.current = targetKey(target);
+          setView("gallery", target, true); navigatePhoto(id);
+        }).catch((reason) => { if (request === photoNavigationRequest.current) setNotice(reason instanceof Error ? reason.message : "Не удалось открыть фотографию"); });
+        return;
+      }
       const target: ArchiveTarget = { kind: "photo", id };
       lastUrlTarget.current = targetKey(target);
       setView("gallery", target, true);
       navigatePhoto(id);
     },
-    [navigatePhoto, setView],
+    [navigatePhoto, setView, currentFamily, loadDetails],
   );
   const closePhotoUrl = useCallback(() => {
+    photoNavigationRequest.current++;
     lastUrlTarget.current = "";
     setView("gallery", photoReturnPath.current, true);
     photoReturnPath.current = "/photos";
@@ -1155,10 +1215,14 @@ export default function App() {
                   mayEdit={!participantPreview && allowedEdit}
                   busy={busy}
                   onDirtyChange={onPlatformSettingsDirtyChange}
-                  loadingDetails={archive.loadingDetails ||
+                  loadingDetails={(view !== "gallery" && archive.loadingDetails) ||
+                    (!!detailsSource && !!projectionView && !archive.hasViewDetails(projectionView)) ||
                     (needsPeopleDetails && !hasCollectionDetails("people")) ||
                     (needsPhotoDetails && !hasCollectionDetails("photos"))}
                   detailsError={archive.collectionError}
+                  insights={archive.insights}
+                  loadGallery={detailsSource ? loadGallery : undefined}
+                  galleryGeneration={archive.projectionGeneration}
                   onRetryDetails={retryViewDetails}
                   save={save}
                   onPerson={showPerson}

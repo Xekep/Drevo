@@ -1,3 +1,7 @@
+import {
+  galleryProjection,
+  type GalleryQuery,
+} from "../../src/domain/archive-view-projection.ts";
 import { expect, test, type Page } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import {
@@ -21,44 +25,50 @@ test("a failed collection read shows a retry action instead of an endless spinne
     await route.fulfill({ response, json: data });
   });
   let attempts = 0;
-  await page.route(
-    "**/api/family?projection=page&collection=photos&**",
-    (route) => {
-      if (++attempts === 1)
-        return route.fulfill({
-          status: 503,
-          json: { error: "Временно недоступно" },
-        });
-      const token = new URL(route.request().url()).searchParams.get("token");
+  await page.route("**/api/family?projection=gallery&**", (route) => {
+    if (++attempts === 1)
       return route.fulfill({
-        json: {
-          pageToken: token,
-          total: 1,
-          items: [
-            {
-              id: "retry-photo",
-              title: "Повторный снимок",
-              event: "Повторный снимок",
-              url: "/media/retry.png",
-              tags: [],
-            },
-          ],
-        },
+        status: 503,
+        json: { error: "Временно недоступно" },
       });
-    },
-  );
+    const token = new URL(route.request().url()).searchParams.get("token");
+    const params = new URL(route.request().url()).searchParams;
+    return route.fulfill({
+      json: {
+        pageToken: token,
+        ...galleryProjection(
+          {
+            title: "",
+            description: "",
+            demo: false,
+            people: [],
+            photos: [
+              {
+                id: "retry-photo",
+                title: "Повторный снимок",
+                event: "Повторный снимок",
+                url: "/media/retry.png",
+                tags: [],
+              },
+            ],
+          },
+          { mode: params.get("mode") as GalleryQuery["mode"] },
+        ),
+      },
+    });
+  });
   await page.goto("/photos");
   const error = page
     .getByRole("alert")
     .filter({ hasText: "Временно недоступно" });
   await expect(error).toBeVisible();
-  await error.getByRole("button", { name: "Повторить загрузку" }).click();
+  await error.getByRole("button", { name: "Повторить", exact: true }).click();
   await expect(error).toHaveCount(0);
   await page.getByRole("button", { name: "Все · по добавлению" }).click();
   await expect(
     page.getByText("Повторный снимок", { exact: true }),
   ).toBeVisible();
-  expect(attempts).toBe(2);
+  expect(attempts).toBe(3);
 });
 
 test("a minimal save reply preserves album pages loaded while the write was in flight", async ({
@@ -211,31 +221,34 @@ test("a collection revision conflict reloads details of the person already open"
       },
     });
   });
-  await page.route(
-    "**/api/family?projection=page&collection=photos&**",
-    (route) => {
-      if (conflict) {
-        conflict = false;
-        revision++;
-        person.biography = "Изменение из другой вкладки";
-        return route.fulfill({ status: 409, json: {} });
-      }
-      return route.fulfill({
-        json: {
-          pageToken: token(),
-          total: 1,
-          items: [
-            {
-              id: "unrelated-photo",
-              title: "Снимок",
-              url: "/media/synthetic-album.png",
-              tags: [],
-            },
-          ],
-        },
-      });
-    },
-  );
+  await page.route("**/api/family?projection=gallery&**", (route) => {
+    if (conflict) {
+      conflict = false;
+      revision++;
+      person.biography = "Изменение из другой вкладки";
+      return route.fulfill({ status: 409, json: {} });
+    }
+    const params = new URL(route.request().url()).searchParams;
+    return route.fulfill({
+      json: {
+        pageToken: token(),
+        ...galleryProjection(
+          {
+            ...family,
+            photos: [
+              {
+                id: "unrelated-photo",
+                title: "Photo",
+                url: "/media/synthetic-album.png",
+                tags: [],
+              },
+            ],
+          },
+          { mode: params.get("mode") as GalleryQuery["mode"] },
+        ),
+      },
+    });
+  });
   await page.goto("/people/e2e-child");
   const dock = page.locator(".inspector-dock");
   await expect(

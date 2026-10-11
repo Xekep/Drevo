@@ -1,11 +1,13 @@
 import type { Family } from "../domain/types.ts";
 import { personDetails } from "../domain/archive-projection.ts";
+import type { FamilyInsights } from "../domain/family-insights.ts";
 export type ArchivePageHeader = {
   family: Family;
   revision: number;
   partial?: boolean;
   pageToken?: string;
   totals?: { people: number; photos: number };
+  insights?: FamilyInsights;
 };
 
 /** Не заставляем React пересобирать весь архив после каждой сетевой страницы. */

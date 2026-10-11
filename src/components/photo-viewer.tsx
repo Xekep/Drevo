@@ -46,6 +46,7 @@ type Rect = Pick<PhotoTag, "x" | "y" | "width" | "height">;
 function PhotoViewerContent({
   photo,
   photos,
+  photoIds,
   onNavigate,
   family,
   canEdit: allowedEdit,
@@ -63,6 +64,7 @@ function PhotoViewerContent({
 }: {
   photo: ArchivePhoto;
   photos: ArchivePhoto[];
+  photoIds?: string[];
   onNavigate: (id: string) => void;
   family: Family;
   canEdit: boolean;
@@ -105,9 +107,11 @@ function PhotoViewerContent({
     }, 200);
     return () => window.clearTimeout(timer);
   }, [imageState, displaySrc, imageAttempt]);
-  const index = photos.findIndex((p) => p.id === photo.id);
-  const previous = photos[index - 1];
-  const next = photos[index + 1];
+  const ids = photoIds?.includes(photo.id) ? photoIds : photos.map((item) => item.id);
+  const index = ids.indexOf(photo.id);
+  const previousId = ids[index - 1], nextId = ids[index + 1];
+  const previous = photos.find((item) => item.id === previousId);
+  const next = photos.find((item) => item.id === nextId);
   const [editing, setEditing] = useState(initialEditing);
   const [faceAccess, setFaceAccess] = useState(false);
   useEffect(() => {
@@ -169,8 +173,8 @@ function PhotoViewerContent({
   }, [previous, next]);
   const imageSpace = useRef<HTMLDivElement>(null);
   const slide = usePhotoSwipe({
-    previous: previous?.id,
-    next: next?.id,
+    previous: previousId,
+    next: nextId,
     locked: navigationLocked,
     onNavigate,
     onTap: () => setShowTags((value) => !value),
@@ -515,14 +519,14 @@ function PhotoViewerContent({
               </div>
             </div>
           </div>
-          {photos.length > 1 && (
+          {ids.length > 1 && (
             <nav
               className="photo-navigation"
               aria-label="Переключение фотографий"
             >
               <button
                 className="photo-previous"
-                disabled={!previous || navigationLocked}
+                disabled={!previousId || navigationLocked}
                 onClick={() => navigate(-1)}
                 aria-label="Предыдущая фотография"
                 title={
@@ -535,7 +539,7 @@ function PhotoViewerContent({
               </button>
               <button
                 className="photo-next"
-                disabled={!next || navigationLocked}
+                disabled={!nextId || navigationLocked}
                 onClick={() => navigate(1)}
                 aria-label="Следующая фотография"
                 title={
@@ -550,7 +554,7 @@ function PhotoViewerContent({
           )}
           <footer className="photo-footer">
             <span className="photo-counter" role="status" aria-live="polite">
-              {index + 1} / {photos.length}
+              {index + 1} / {ids.length}
             </span>
             <a className="photo-original" href={archiveResourceUrl(photo.url)} download>
               <Download size={16} />

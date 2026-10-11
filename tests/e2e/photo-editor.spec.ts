@@ -1,3 +1,4 @@
+import { pagedPhotoFixture } from "./paged-photo-fixture";
 import { expect, test } from "@playwright/test";
 
 test("редактор фото сохраняет снимок видимым и отменяет черновик отметки", async ({
@@ -40,6 +41,7 @@ test("редактор фото сохраняет снимок видимым �
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600"><rect width="900" height="600" fill="#738273"/><circle cx="450" cy="200" r="72" fill="#d2c8b3"/><path d="M300 510V370Q450 250 600 370V510" fill="#48594b"/></svg>',
     }),
   );
+  await pagedPhotoFixture(page, [photo]);
   await page.goto("/photos/e2e-editor-photo");
   const toolbar = page.getByRole("group", { name: "Действия с фотографией" });
   if (testInfo.project.name === "mobile") {

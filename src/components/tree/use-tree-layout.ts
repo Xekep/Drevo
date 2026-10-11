@@ -167,7 +167,11 @@ export function useTreeLayout(
           worker.removeEventListener("message", onMessage);
           worker.removeEventListener("error", onError);
         };
-        worker.postMessage({ requestId, ...input, previousGeometry });
+        const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+        const parallelCandidates = window.innerWidth >= 1024 &&
+          window.matchMedia("(pointer: fine)").matches &&
+          navigator.hardwareConcurrency >= 8 && memory !== undefined && memory >= 8;
+        worker.postMessage({ requestId, ...input, previousGeometry, parallelCandidates });
       } catch {
         finish({
           requestId,

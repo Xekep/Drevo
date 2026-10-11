@@ -30,6 +30,17 @@ export async function assertPostgresDemandDetails(
     [person.id],
   );
   assert.equal(body.people[0].biography, person.biography);
+  const anyPhoto = snapshot.family.photos?.[0];
+  if (anyPhoto) {
+    const photoResponse = await fetch(base + "/api/family?" + new URLSearchParams({
+      projection: "photos", ids: JSON.stringify([anyPhoto.id]), token: overview.pageToken,
+    }));
+    assert.equal(photoResponse.status, 200, await photoResponse.clone().text());
+    assert.deepEqual((await photoResponse.json()).photos, [anyPhoto]);
+    assert.deepEqual(await archive.photoPage(0, 40, undefined, undefined, new Set([anyPhoto.id])), [anyPhoto]);
+    const denied = await archive.photoPage(0, 40, { visible: new Set(), userId: "unrelated" }, undefined, new Set([anyPhoto.id]));
+    assert.equal(denied.length, 0);
+  }
   const photos = (snapshot.family.photos || []).filter((photo) =>
     photo.tags.some((tag) => tag.personId === person.id),
   );

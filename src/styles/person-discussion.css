@@ -462,6 +462,24 @@
   font-size: 13px;
   color: var(--ink);
 }
+.comment-editor-placeholder textarea {
+  display: block;
+  width: 100%;
+  min-height: 76px;
+  padding: 7px 36px 7px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: none;
+}
+.comment-editor-placeholder .comment-insert-diagram {
+  position: absolute;
+  right: 0;
+  top: 0;
+}
 .comment-editor .cm-editor.cm-focused {
   outline: none;
 }

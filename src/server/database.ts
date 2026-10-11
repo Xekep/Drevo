@@ -368,8 +368,9 @@ export async function openArchive(
       await readPeoplePage(db, offset, limit, visible),
     photoPage = async (offset: number, limit: number, scope?: PhotoReadScope,
       tagged?: ReadonlySet<string>,
+      ids?: ReadonlySet<string>,
     ) =>
-      await db.transaction(() => readPhotoPage(db, offset, limit, scope, tagged), true),
+      await db.transaction(() => readPhotoPage(db, offset, limit, scope, tagged, ids), true),
     photoCount = async (scope?: PhotoReadScope,
       tagged?: ReadonlySet<string>,
     ) => {
@@ -766,7 +767,7 @@ async function readPeoplePage(
 }
 
 type PhotoReadScope = { visible: ReadonlySet<string>; userId: string };
-function photoReadWhere(scope?: PhotoReadScope, tagged?: ReadonlySet<string>) {
+function photoReadWhere(scope?: PhotoReadScope, tagged?: ReadonlySet<string>, ids?: ReadonlySet<string>) {
   const sqlite: string[] = [], postgres: string[] = [], args: string[] = [];
   if (scope) {
     sqlite.push(
@@ -786,6 +787,10 @@ function photoReadWhere(scope?: PhotoReadScope, tagged?: ReadonlySet<string>) {
     );
     args.push(JSON.stringify([...tagged]));
   }
+  if (ids) {
+    const predicate = ids.size ? `photos.id IN (${[...ids].map(() => "?").join(",")})` : "0=1";
+    sqlite.push(predicate); postgres.push(predicate); args.push(...ids);
+  }
   return {
     sqlite: sqlite.length ? " WHERE " + sqlite.join(" AND ") : "",
     postgres: postgres.length ? " WHERE " + postgres.join(" AND ") : "",
@@ -798,8 +803,9 @@ async function readPhotoPage(
   limit: number,
   scope?: PhotoReadScope,
   tagged?: ReadonlySet<string>,
+  ids?: ReadonlySet<string>,
 ): Promise<ArchivePhoto[]> {
-  const where = photoReadWhere(scope, tagged);
+  const where = photoReadWhere(scope, tagged, ids);
   const rows = await db
       .prepare(
         `SELECT id,data FROM photos${where.sqlite} ORDER BY rowid LIMIT ? OFFSET ?`,

@@ -1,3 +1,4 @@
+import { pagedPhotoFixture } from "./paged-photo-fixture";
 import { familyViewAction } from "./tree-toolbar-actions";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
@@ -129,6 +130,7 @@ test("downward swipes dismiss mobile photo details and a person's card", async (
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"/>',
     }),
   );
+  await pagedPhotoFixture(page, [photo]);
   await page.goto("/photos/e2e-mobile-photo");
   await page.locator(".photo-info-toggle").click();
   const info = page.locator("#photo-information");

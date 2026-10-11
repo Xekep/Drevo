@@ -10,7 +10,7 @@ import {
   type PersonDiscussionPage as Page,
   type CommentAttachment,
 } from "../shared/person-discussion";
-import CommentEditor from "./discussion/comment-editor";
+import CommentEditor from "./discussion/lazy-comment-editor";
 import { CommentMarkdown } from "./discussion/comment-markdown";
 import {
   AttachmentComposer,

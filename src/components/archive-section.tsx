@@ -3,6 +3,8 @@ import type { ArchiveUser, Family, Person } from "../domain";
 import type { ArchiveView } from "../domain/archive-routes";
 import { ArchiveLoading } from "./archive-loading";
 import { loadLazyModule } from "./lazy-section-recovery";
+import type { GalleryPage, GalleryQuery } from "../domain/archive-view-projection";
+import type { FamilyInsights } from "../domain/family-insights";
 
 const PeopleCatalog = lazy(() =>
   loadLazyModule(async () => {
@@ -52,6 +54,9 @@ type Props = {
   mayEdit: boolean;
   busy: boolean;
   loadingDetails: boolean;
+  insights?: FamilyInsights;
+  loadGallery?: (query: GalleryQuery) => Promise<GalleryPage>;
+  galleryGeneration?: number;
   detailsError?: string;
   onRetryDetails?: () => void;
   save: (family: Family) => Promise<Family>;
@@ -161,6 +166,8 @@ export function ArchiveSection(props: Props) {
         family={props.family}
         canEdit={props.canEdit}
         mayEdit={props.mayEdit}
+        loadPage={props.loadGallery}
+        dataGeneration={props.galleryGeneration}
         onAdd={props.onAddPhoto}
         onDropPhoto={props.onDropPhoto}
         onOpen={props.onPhoto}
@@ -189,6 +196,7 @@ export function ArchiveSection(props: Props) {
         loadingDetails={props.loadingDetails}
         onPerson={props.onPerson}
         onQuality={props.onQuality}
+        computedInsights={props.insights}
       />
     );
   else if (props.view === "resources") content = <ResearchResourcesPage />;

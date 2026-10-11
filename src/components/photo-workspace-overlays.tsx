@@ -73,6 +73,7 @@ export function PhotoWorkspaceOverlays({
               photo.id,
               workspace.photoCollection,
             )}
+            photoIds={workspace.photoCollection}
             onNavigate={workspace.navigatePhoto}
             family={family}
             initialEditing={workspace.editPhotoId === photo.id}

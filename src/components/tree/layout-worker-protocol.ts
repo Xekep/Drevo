@@ -16,6 +16,7 @@ export type LayoutWorkerRequest = LayoutWorkerInput & {
   /** Старые production-worker тесты могут посылать сообщение без id. */
   requestId?: number;
   previousGeometry?: TreeGeometry;
+  parallelCandidates?: boolean;
 };
 
 export type TaggedLayoutWorkerResponse =
