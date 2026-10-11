@@ -10,9 +10,9 @@ import {
   defaultAiRoleProfile,
 } from "../src/server/ai-settings.ts";
 
-for (const mode of ["global-disabled", "role-disabled", "enabled", "budget"])
+for (const mode of ["legacy-common-off", "inherited-disabled", "role-disabled", "enabled", "budget"])
   test(`agent integrates Code Interpreter and protects artifacts (${mode})`, async () => {
-    const enabled = mode === "enabled" || mode === "budget";
+    const enabled = mode === "enabled" || mode === "budget" || mode === "legacy-common-off";
     const dir = mkdtempSync(join(tmpdir(), "drevo-calculation-http-"));
     const env = {
       PUBLIC_ORIGIN: "http://localhost",
@@ -117,10 +117,10 @@ for (const mode of ["global-disabled", "role-disabled", "enabled", "budget"])
       await settings.write(
         {
           ...before,
-          codeInterpreterEnabled: mode !== "global-disabled",
+          codeInterpreterEnabled: mode !== "legacy-common-off" && mode !== "inherited-disabled",
           roleProfiles: {
             ...before.roleProfiles,
-            admin: {
+            admin: mode === "inherited-disabled" ? null : {
               ...defaultAiRoleProfile(before),
               codeInterpreterEnabled: mode !== "role-disabled",
             },
