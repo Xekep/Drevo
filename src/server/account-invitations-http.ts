@@ -51,7 +51,7 @@ export function accountInvitationsHttp(
     try {
       const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       if (
-        typeof input?.archiveId !== "string" ||
+        (input?.archiveId !== undefined && typeof input.archiveId !== "string") ||
         typeof input?.token !== "string"
       )
         throw new InvalidInvitationError("Приглашение недействительно.");

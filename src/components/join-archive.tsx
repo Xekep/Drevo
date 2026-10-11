@@ -13,7 +13,7 @@ export function JoinArchive({
   archiveId,
   token,
 }: {
-  archiveId: string;
+  archiveId?: string;
   token: string;
 }) {
   const [preview, setPreview] = useState<Preview | null>(null);

@@ -30,7 +30,7 @@ import "./styles/entry-sequence.css";
 import "./styles/public-people.css";
 import { ArchiveLoading } from "./components/archive-loading";
 import { memberPreviewAt } from "./domain/archive-context.ts";
-import { archiveViewAt } from "./domain/archive-routes.ts";
+import { archiveViewAt, invitationAt } from "./domain/archive-routes.ts";
 import { NotFoundPage } from "./components/not-found-page.tsx";
 
 const App = lazy(() => import("./App"));
@@ -50,10 +50,7 @@ const sharedToken =
   /^\/(?:a\/[A-Za-z0-9][A-Za-z0-9-]{2,63}\/)?s\/([A-Za-z0-9_-]{43})$/.exec(
     location.pathname,
   )?.[1];
-const join =
-  /^\/join\/([A-Za-z0-9][A-Za-z0-9-]{2,63})\/([A-Za-z0-9_-]{43})$/.exec(
-    location.pathname,
-  );
+const join = invitationAt(location.pathname);
 const linkedBranch = (() => {
   const match = /^\/discover\/linked\/([A-Za-z0-9-]{3,64})\/([a-f0-9-]{36})\/([^/]{1,1200})$/.exec(
     location.pathname,
@@ -67,11 +64,7 @@ const linkedBranch = (() => {
 const pendingInvite = (() => {
   try {
     const path = sessionStorage.getItem("drevo_pending_invite") || "";
-    return /^\/join\/[A-Za-z0-9][A-Za-z0-9-]{2,63}\/[A-Za-z0-9_-]{43}$/.test(
-      path,
-    )
-      ? path
-      : "";
+    return invitationAt(path) ? path : "";
   } catch {
     return "";
   }
@@ -102,7 +95,7 @@ function Entry() {
   return sharedToken ? (
     <SharedTree token={sharedToken} />
   ) : join ? (
-    <JoinArchive archiveId={join[1]} token={join[2]} />
+    <JoinArchive archiveId={join.archiveId} token={join.token} />
   ) : linkedBranch ? (
     <DiscoveryLinkedBranchPerson archiveId={linkedBranch[0]}
       matchId={linkedBranch[1]} personId={linkedBranch[2]} />

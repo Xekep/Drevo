@@ -33,7 +33,7 @@ export async function verifyInvitationPreviewDelivery(db: StoreDatabase, client:
   };
   const headers = { Origin: origin, "Content-Type": "application/json" };
   const preview = (base: string, token: string) => fetch(base + "/api/account/invitations/preview", {
-    method: "POST", headers, body: JSON.stringify({ archiveId, token }),
+    method: "POST", headers, body: JSON.stringify({ token }),
   });
   let revokedBeforeFinalCheck = { status: 0, leakedRole: false };
   const first = await makeInvitation();

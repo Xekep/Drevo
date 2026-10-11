@@ -139,10 +139,15 @@ test("production static streams SPA routes, files and shared page", async () => 
       assert.equal(await shared.text(), html);
     }
 
-    const invitation = await fetch(app.base + `/join/family-one/${token}`);
-    assert.equal(invitation.status, 200);
-    assert.equal(invitation.headers.get("referrer-policy"), "no-referrer");
-    assert.equal(await invitation.text(), html);
+    for (const path of [`/join/${token}`, `/join/family-one/${token}`]) {
+      const invitation = await fetch(app.base + path);
+      assert.equal(invitation.status, 200);
+      assert.equal(invitation.headers.get("referrer-policy"), "no-referrer");
+      assert.equal(invitation.headers.get("cache-control"), "no-store");
+      assert.equal(invitation.headers.get("x-robots-tag"), "noindex, nofollow, noarchive");
+      assert.equal(await invitation.text(), html);
+    }
+    assert.equal((await fetch(app.base + `/join/${token.slice(1)}`)).status, 404);
 
     const linkedBranch = await fetch(app.base +
       "/discover/linked/family-one/11111111-1111-4111-8111-111111111111/family%3Aperson.1");

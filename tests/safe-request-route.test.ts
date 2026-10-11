@@ -23,4 +23,5 @@ test("share bearer tokens stay out of root and selected-archive request logs", (
     safeRequestRoute("/join/private-tree/private-token"),
     "/join/[redacted]",
   );
+  assert.equal(safeRequestRoute(`/join/${"a".repeat(43)}`), "/join/[redacted]");
 });

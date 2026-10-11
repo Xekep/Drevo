@@ -10,11 +10,22 @@ import {
   archiveDocumentPath,
   archivePaths,
   archiveViewAt,
+  invitationAt,
 } from "../src/domain/archive-routes.ts";
 import {
   archiveTargetAt,
   archiveTargetPath,
 } from "../src/domain/archive-links.ts";
+
+test("opaque invitation routes and temporarily supported legacy links are exact", () => {
+  const token = "a".repeat(43);
+  assert.deepEqual(invitationAt(`/join/${token}`), { token });
+  assert.deepEqual(invitationAt(`/join/legacy-primary/${token}`), { archiveId: "legacy-primary", token });
+  for (const path of ["/join/", `/join/${token}/`, `/join/${token}/extra`,
+    `/join/${token.slice(1)}`, `/join/${token}a`, `/join/${"%61".repeat(43)}`,
+    `/join/../${token}`, `/join/family/${token}?token=other`])
+    assert.equal(invitationAt(path), null);
+});
 
 test("all archive sections have stable exact URLs shared by browser and server", () => {
   assert.equal(archiveViewAt("/"), "tree");

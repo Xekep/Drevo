@@ -1,6 +1,13 @@
 import { useEffect, useState, type MouseEvent } from "react";
-import { ArrowRight, Search } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  LoaderCircle,
+  Search,
+  TriangleAlert,
+} from "lucide-react";
 import { archiveFetch } from "../data/archive-fetch.ts";
+import { ROLE_NAMES, type Role } from "../domain/access";
 import { EditorDialog } from "./editor-dialog";
 import "../styles/account.css";
 
@@ -10,6 +17,7 @@ type AccessibleArchive = {
   current: boolean;
   owned: boolean;
   approved: boolean;
+  role: Role;
 };
 export function ArchiveSwitcher({
   onClose,
@@ -66,60 +74,108 @@ export function ArchiveSwitcher({
       dismissOnOutside
       className="archive-switcher"
     >
-      {error ? (
-        <div role="alert">
-          Не удалось загрузить древа.{" "}
-          <button
-            type="button"
-            onClick={() => { setError(false); setAttempt((value) => value + 1); }}
-          >
-            Повторить
-          </button>
-        </div>
-      ) : !archives ? (
-        <p role="status">Загрузка…</p>
-      ) : (
-        <>
-          {archives.length > 5 && (
-            <label className="archive-switcher-search">
-              <Search size={18} aria-hidden="true" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Найти древо"
-                aria-label="Найти древо"
-              />
-            </label>
-          )}
-          <div className="account-archive-list">
-            {filtered?.map((item) => (
-              <div className="account-archive-row" key={item.id}>
-                <span className="account-archive-name">
-                  <strong>{item.title}</strong>
-                  <small>
-                    {item.owned ? "Ваше древо" : "Вам предоставлен доступ"}
-                  </small>
-                </span>
-                {item.current ? (
-                  <span className="account-archive-current">Открыто</span>
-                ) : item.approved ? (
-                  <a
-                    href={`/a/${encodeURIComponent(item.id)}/tree`}
-                    onClick={leave}
-                  >
-                    Открыть <ArrowRight size={15} aria-hidden="true" />
-                  </a>
-                ) : (
-                  <span className="account-archive-current">
-                    Ожидает доступа
-                  </span>
-                )}
-              </div>
-            ))}
-            {!filtered?.length && <p>Древа не найдены.</p>}
+      <div className="archive-switcher-body">
+        {error ? (
+          <div className="archive-switcher-state" role="alert">
+            <TriangleAlert size={18} aria-hidden="true" />
+            <p>Не удалось загрузить древа.</p>
+            <button
+              type="button"
+              className="archive-switcher-retry"
+              onClick={() => {
+                setError(false);
+                setAttempt((value) => value + 1);
+              }}
+            >
+              Повторить
+            </button>
           </div>
-        </>
-      )}
+        ) : !archives ? (
+          <div className="archive-switcher-state" role="status">
+            <LoaderCircle
+              size={18}
+              className="archive-switcher-spinner"
+              aria-hidden="true"
+            />
+            <p>Загружаем древа…</p>
+          </div>
+        ) : (
+          <>
+            {archives.length > 5 && (
+              <label className="archive-switcher-search">
+                <Search size={18} aria-hidden="true" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Найти древо"
+                  aria-label="Найти древо"
+                />
+              </label>
+            )}
+            <ul className="archive-switcher-list" aria-label="Ваши древа">
+              {filtered?.map((item) => {
+                const content = (
+                  <>
+                    <span className="archive-switcher-name">
+                      <strong>{item.title}</strong>
+                      <small>
+                        {item.owned ? "Ваше древо" : ROLE_NAMES[item.role]}
+                      </small>
+                    </span>
+                    {item.current ? (
+                      <span className="archive-switcher-current">
+                        <Check size={14} aria-hidden="true" />
+                        Открыто
+                      </span>
+                    ) : item.approved ? (
+                      <ArrowRight
+                        size={18}
+                        className="archive-switcher-arrow"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <span className="archive-switcher-pending">
+                        Ожидает доступа
+                      </span>
+                    )}
+                  </>
+                );
+                return (
+                  <li
+                    key={item.id}
+                    aria-current={item.current ? "true" : undefined}
+                  >
+                    {item.approved && !item.current ? (
+                      <a
+                        className="archive-switcher-row"
+                        href={`/a/${encodeURIComponent(item.id)}/tree`}
+                        title={item.title}
+                        onClick={leave}
+                      >
+                        {content}
+                      </a>
+                    ) : (
+                      <div
+                        className={`archive-switcher-row${item.current ? " is-current" : " is-pending"}`}
+                        title={item.title}
+                      >
+                        {content}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            {!filtered?.length && (
+              <p className="archive-switcher-empty" role="status">
+                {query.trim()
+                  ? "Древа не найдены."
+                  : "Пока нет доступных древ."}
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </EditorDialog>
   );
 }

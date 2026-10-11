@@ -198,6 +198,7 @@ export function AiSettingsAdmin({
       (["admin", "researcher", "relative", "reader"] as const).map((role) => [
         role,
         {
+          // TODO(remove): R7.2 in docs/roadmap.md, after explicit role migration.
           ...(next.roleProfiles[role] || next.defaultRoleProfile),
           model:
             next.roleProfiles[role]?.model ||

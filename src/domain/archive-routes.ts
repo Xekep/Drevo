@@ -1,5 +1,15 @@
 import { archiveContextAt, memberPreviewAt } from "./archive-context.ts";
 
+/** Opaque invitations do not expose the archive identifier in copied links. */
+export function invitationAt(pathname: string): { archiveId?: string; token: string } | null {
+  const short = /^\/join\/([A-Za-z0-9_-]{43})$/.exec(pathname);
+  if (short) return { token: short[1] };
+  // TODO(remove): roadmap R7.1; remove after the last legacy link expires
+  // (maximum 720 hours after the last old-release issuance), docs/roadmap.md.
+  const legacy = /^\/join\/([A-Za-z0-9][A-Za-z0-9-]{2,63})\/([A-Za-z0-9_-]{43})$/.exec(pathname);
+  return legacy ? { archiveId: legacy[1], token: legacy[2] } : null;
+}
+
 const innerViewPath = (pathname: string) =>
   memberPreviewAt(pathname)?.innerPath || archiveContextAt(pathname)?.innerPath || pathname;
 

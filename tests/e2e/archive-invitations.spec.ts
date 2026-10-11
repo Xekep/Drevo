@@ -4,6 +4,38 @@ import { openAdminSection } from "./admin-navigation";
 const token = "a".repeat(43);
 const joinPath = `/join/family-one/${token}`;
 
+for (const archiveId of ["legacy-primary", "family-two"]) {
+  test(`opaque invitation resolves ${archiveId} and survives sign-in without an archive id`, async ({ page }) => {
+    let signedIn = false;
+    const bodies: Array<Record<string, unknown>> = [];
+    const shortPath = `/join/${token}`;
+    await page.route("**/api/account/invitations/preview", (route) => {
+      bodies.push(route.request().postDataJSON());
+      return route.fulfill({ json: { archiveId, title: "Приглашённое древо", role: "reader" } });
+    });
+    await page.route("**/api/session", (route) => route.fulfill({
+      json: { account: signedIn ? { name: "Анна" } : null, yandex: true, vk: false },
+    }));
+    await page.route("**/auth/yandex", (route) => route.fulfill({ contentType: "text/html", body: "<title>OAuth</title>" }));
+    await page.route("**/api/account/invitations/accept", (route) => {
+      bodies.push(route.request().postDataJSON());
+      return route.fulfill({ json: { archiveId, path: `/a/${archiveId}/tree` } });
+    });
+    await page.goto(shortPath);
+    await expect(page.getByRole("heading", { name: "Приглашённое древо" })).toBeVisible();
+    await page.getByRole("button", { name: "Войти через Яндекс" }).click();
+    await expect(page).toHaveURL(/\/auth\/yandex$/);
+    expect(await page.evaluate(() => sessionStorage.getItem("drevo_pending_invite"))).toBe(shortPath);
+    signedIn = true;
+    await page.goto("/tree");
+    await expect(page).toHaveURL(new RegExp(`${shortPath}$`));
+    await page.getByRole("button", { name: "Присоединиться" }).click();
+    await expect(page).toHaveURL(new RegExp(`/a/${archiveId}/tree$`));
+    expect(bodies.length).toBeGreaterThanOrEqual(3);
+    expect(bodies.every((body) => Object.keys(body).length === 1 && body.token === token)).toBe(true);
+  });
+}
+
 test("an invited account can accept a selected archive link", async ({
   page,
 }) => {
@@ -87,7 +119,7 @@ test("an archive admin creates and revokes a one-use invitation", async ({
           id: record.id,
           role: "reader",
           expiresAt: record.expiresAt,
-          path: `/join/family-one/${token}`,
+          path: `/join/${token}`,
         },
       });
     }
@@ -108,7 +140,7 @@ test("an archive admin creates and revokes a one-use invitation", async ({
   await page.getByRole("button", { name: "Создать ссылку" }).click();
   await expect(
     page.getByRole("textbox", { name: "Ссылка для отправки" }),
-  ).toHaveValue(new RegExp(`/join/family-one/${token}$`));
+  ).toHaveValue(new RegExp(`/join/${token}$`));
   await expect(page.getByText("Ожидает", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Отозвать" }).click();
   await expect(page.getByText("Отозвано", { exact: true })).toBeVisible();
@@ -125,7 +157,7 @@ test("invitation scope is blood plus partners only with a selected identity", as
       requests.push(route.request().postDataJSON());
       return route.fulfill({
         status: 201,
-        json: { path: `/join/family-one/${token}` },
+        json: { path: `/join/${token}` },
       });
     }
     return route.fulfill({ json: { invitations: [] } });

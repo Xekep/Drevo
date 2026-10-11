@@ -60,6 +60,7 @@ import { verifyOwnerTransferGetRevocation } from "./postgres-owner-transfer-read
 import { verifyInvitationAcceptSessionRevocation } from "./postgres-invitation-accept-session.ts";
 import { verifyInvitationPreviewDelivery } from "./postgres-invitation-preview-delivery.ts";
 import { verifyInvitationScopeAndMembershipRemoval } from "./postgres-invitation-scope.ts";
+import { verifyOpaqueInvitations } from "./postgres-opaque-invitations.ts";
 import { verifyAccountArchiveCreateSessionRevocation } from "./postgres-account-archive-create-session.ts";
 import { verifyAccountArchivesReadSessionRevocation } from "./postgres-account-archives-read-session.ts";
 import { verifySessionDelivery } from "./postgres-session-delivery.ts";
@@ -1181,6 +1182,7 @@ try {
   await verifyInvitationAcceptSessionRevocation(app.archive.db, client);
   await verifyInvitationPreviewDelivery(app.archive.db, client);
   await verifyInvitationScopeAndMembershipRemoval(app.archive.db, client);
+  await verifyOpaqueInvitations(app.archive.db, client);
   await verifyAccountArchiveCreateSessionRevocation(app.archive.db, client);
   await verifyAccountArchivesReadSessionRevocation(app.archive.db, client);
   await verifyOfflineExportDelivery(app.archive, client, uploads);
@@ -5286,9 +5288,8 @@ try {
   });
   const invitation = await invitationResponse.json();
   assert.equal(invitationResponse.status, 201, JSON.stringify(invitation));
-  assert.match(invitation.path, /^\/join\/other-archive\/[A-Za-z0-9_-]{43}$/);
+  assert.match(invitation.path, /^\/join\/[A-Za-z0-9_-]{43}$/);
   const inviteBody = JSON.stringify({
-    archiveId: "other-archive",
     token: invitation.path.split("/").at(-1),
   });
   const invitationHeaders = {
