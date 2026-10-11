@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import pg from "pg";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { postgresConnections } from "../../src/server/postgres-connections.ts";
@@ -11,6 +11,9 @@ import {
   sessionTokenHash,
 } from "../../src/server/session-token.ts";
 import { startServer } from "../../src/server/index.ts";
+import { openArchive } from "../../src/server/database.ts";
+import { userStore } from "../../src/server/users.ts";
+import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 
 // This program is appended to the ordinary-role, disposable runtime CI only.
 assert.match(
@@ -33,6 +36,43 @@ try {
   assert.equal(
     (await client.query("SELECT current_database() AS name")).rows[0].name,
     process.env.PGDATABASE,
+  );
+  assert.equal(
+    (
+      await client.query(
+        "SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema='public'",
+      )
+    ).rows[0].n,
+    0,
+    "The shared-connection probe needs its own empty disposable database",
+  );
+  // Other runtime fixtures intentionally leave encrypted provider cleanup rows.
+  // Their private filesystem key cannot be reused by this independent server.
+  const source = join(directory, "seed.sqlite");
+  const uploads = join(directory, "uploads");
+  await mkdir(uploads);
+  delete process.env.DATABASE_BACKEND;
+  const seed = await openArchive(source, {
+    title: "Изолированная проверка",
+    description: "",
+    demo: false,
+    people: [],
+    links: [],
+    photos: [],
+  });
+  try {
+    await (
+      await userStore(seed.db, { initialAdminId: "fixture-owner" })
+    ).register("fixture-owner", "Владелец");
+  } finally {
+    await seed.close();
+  }
+  await importSqliteSnapshot(
+    source,
+    uploads,
+    "shared-fixture",
+    client,
+    "fixture-owner",
   );
   await client.query(
     "INSERT INTO accounts(id,name,created_at) VALUES('shared-probe-reader','Тестовый участник',$1)",
