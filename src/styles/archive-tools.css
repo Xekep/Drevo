@@ -43,6 +43,24 @@
 .shared-search .shared-search-toggle {
   display: none;
 }
+@media (min-width: 600px) {
+  .shared-app .shared-header {
+    min-height: 58px;
+    padding-block: 6px;
+    flex-wrap: nowrap;
+  }
+  .shared-app .shared-header-title strong {
+    line-height: 20px;
+  }
+  .shared-app .shared-header-title small {
+    margin-top: 2px;
+    line-height: 16px;
+  }
+  .shared-app .shared-header .archive-search {
+    min-height: 44px;
+    padding-block: 6px;
+  }
+}
 @media (max-width: 599px) {
   .shared-app .shared-header {
     position: relative;

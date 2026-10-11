@@ -1124,6 +1124,8 @@ export function initializeArchiveSchema(db: DatabaseSync) {
   const portraitCardsExtension = "2026-09-default-portrait-cards";
   if (!tableHasColumn(db, "user_tree_preferences", "generation_limits"))
     db.exec("ALTER TABLE user_tree_preferences ADD COLUMN generation_limits TEXT CHECK(generation_limits IS NULL OR json_valid(generation_limits))");
+  if (!tableHasColumn(db, "user_tree_preferences", "animate_on_load"))
+    db.exec("ALTER TABLE user_tree_preferences ADD COLUMN animate_on_load INTEGER NOT NULL DEFAULT 1 CHECK(animate_on_load IN (0,1))");
   if (
     !db
       .prepare("SELECT 1 FROM migrations WHERE id=?")

@@ -247,11 +247,16 @@ test("member preview exposes view settings without writing either account or gue
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
   await expect(dialog.getByRole("radio", { name: "Предки сверху" })).toBeChecked();
   await expect(dialog.getByRole("button", { name: "Управление древом" })).toHaveCount(0);
+  const loadAnimation = dialog.getByRole("switch", { name: "Анимация при загрузке" });
+  await expect(loadAnimation).toBeChecked();
+  await loadAnimation.uncheck();
   await dialog.getByRole("radio", { name: "Белая" }).check();
   await expect(canvas).toHaveClass(/theme-white/);
   await dialog.getByRole("radio", { name: "Потомки сверху" }).check();
   await expect(dialog.getByRole("radio", { name: "Потомки сверху" })).toBeChecked();
   await dialog.getByRole("button", { name: "Сбросить вид" }).click();
+  await expect(loadAnimation).toBeChecked();
+  await loadAnimation.uncheck();
   await expect(dialog.getByRole("radio", { name: "Предки сверху" })).toBeChecked();
   await expect(canvas).not.toHaveClass(/theme-white/);
   const wheelHint = dialog.getByText("Нажмите колесо мыши на карточке, чтобы выбрать опорного человека.");
@@ -281,6 +286,7 @@ test("member preview exposes view settings without writing either account or gue
   await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
   await page.getByRole("button", { name: "Настройки древа" }).click();
   await expect(dialog.getByRole("radio", { name: "Предки сверху" })).toBeChecked();
+  await expect(loadAnimation).toBeChecked();
   await expect(dialog.locator(".member-preview-banner")).toContainText(member.name);
   await expect(dialog.getByRole("link", { name: "Выйти из просмотра" })).toBeVisible();
   // Clicking padding within the dialog is not a backdrop dismissal.

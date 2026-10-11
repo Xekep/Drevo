@@ -189,6 +189,7 @@ export default function SharedTree({ token }: { token: string }) {
                 ref={treeCanvas}
                 restricted
                 onPreferences={() => setPreferencesOpen(true)}
+                animateOnLoad={preferences?.animateOnLoad}
                 onExport={() => setExportOpen(true)}
                 comparisonAction={
                   <div className="workspace-actions">

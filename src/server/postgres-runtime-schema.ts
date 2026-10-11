@@ -4,6 +4,10 @@ import type { StoreDatabase } from "./store-database.ts";
 /** Runtime extensions; an older writer may read but cannot change an annotated parent edge. */
 export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
   for (const [query, file] of [
+    [
+      "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='user_tree_preferences' AND column_name='animate_on_load'",
+      "100_tree_load_animation.sql",
+    ],
     ["SELECT to_regclass('archive_notification_reads') AS present", "098_archive_notifications.sql"],
     [
       "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='ai_chats' AND column_name='stop_token'",
