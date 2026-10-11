@@ -8,6 +8,7 @@ export type BookReaderInstance = {
   currentIndex(): number;
   jumpToIndex(index: number): void;
   bind(name: string, handler: () => void): void;
+  unbind(name: string, handler: () => void): void;
   trigger(name: string, properties?: unknown): void;
   removeProgressPopup(): void;
   mode: number;
@@ -21,6 +22,23 @@ export type BookReaderInstance = {
       mode1UpLit: HTMLElement & {
         updateVisibleRegion(): void;
         initFirstRender(index: number): void;
+        jumpToIndex(index: number, options?: { smooth?: boolean }): void;
+        updateComplete: Promise<unknown>;
+        scale: number;
+        SPACING_IN: number;
+        pages: { heightInches: number }[];
+        worldDimensions: { width: number; height: number };
+        computeWorldDimensions(): { width: number; height: number };
+        coordSpace: { visiblePixelsToWorldUnits(pixels: number): number };
+        requestUpdate(): void;
+      };
+    };
+    mode2Up: {
+      mode2UpLit: HTMLElement & {
+        autoFit: string;
+        activeFlip: unknown;
+        resizeViaAutofit(): void;
+        recenter(): void;
       };
     };
   };

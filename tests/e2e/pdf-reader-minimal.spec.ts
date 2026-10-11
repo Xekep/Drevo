@@ -9,6 +9,7 @@ async function samplePdf(
   pageCount = 3,
   mixedSizes = false,
   withText = true,
+  shortLastPage = false,
 ) {
   const pdf = new PDFDocument({
     autoFirstPage: false,
@@ -27,7 +28,9 @@ async function samplePdf(
   }
   for (let page = 1; page <= pageCount; page++) {
     pdf.addPage(
-      mixedSizes
+      shortLastPage && page === pageCount
+        ? { size: [2388, 760] }
+        : mixedSizes
         ? {
             size: page % 3 === 0 ? "A3" : "A4",
             layout: page % 3 === 2 ? "landscape" : "portrait",
@@ -662,6 +665,119 @@ test("BookReader turns the cover and preloads the next spread", async ({
   ).toBeLessThanOrEqual(1);
   await book.locator(".BRicon.book_left:visible").first().click();
   await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();
+});
+
+test("mixed PDF formats refit each spread while preserving explicit zoom", async ({
+  page,
+}, info) => {
+  test.skip(
+    info.project.name === "mobile",
+    "Spread fitting is checked on desktop",
+  );
+  const { book } = await openSample(
+    page,
+    "Mixed short final page",
+    await samplePdf(0, 4, false, true, true),
+  );
+  const next = book.locator(".BRicon.book_right:visible").first();
+  const previous = book.locator(".BRicon.book_left:visible").first();
+  await next.click();
+  await expect(
+    book.getByText("Страница 2 из 4", { exact: true }),
+  ).toBeVisible();
+  await next.click();
+  await expect(
+    book.getByText("Страница 4 из 4", { exact: true }),
+  ).toBeVisible();
+  const last = book
+    .locator('.BRpage-visible[data-index="3"] img.BRpageimage:visible')
+    .first();
+  await expect
+    .poll(() => last.evaluate((image: HTMLImageElement) => image.naturalWidth))
+    .toBeGreaterThan(0);
+  await expect(book.locator(".BRpageFlipping")).toHaveCount(0);
+  await expect
+    .poll(() =>
+      last.evaluate((image) => {
+        const bounds = image.getBoundingClientRect();
+        const root = document
+          .querySelector("br-mode-2up")!
+          .getBoundingClientRect();
+        return (
+          bounds.left >= root.left - 1 &&
+          bounds.right <= root.right + 1 &&
+          bounds.bottom <= root.bottom + 1
+        );
+      }),
+    )
+    .toBe(true);
+  await previous.click();
+  await expect(
+    book.getByText("Страница 2 из 4", { exact: true }),
+  ).toBeVisible();
+  await expect(book.locator(".BRpageFlipping")).toHaveCount(0);
+  const transformScale = () =>
+    book
+      .locator(".br-mode-2up__book")
+      .evaluate(
+        (element) =>
+          new DOMMatrixReadOnly(getComputedStyle(element).transform).a,
+      );
+  const fitted = await transformScale();
+  await book.locator(".BRicon.zoom_in:visible").first().click();
+  await expect.poll(transformScale).toBeGreaterThan(fitted);
+  const manual = await transformScale();
+  await next.click();
+  await expect(
+    book.getByText("Страница 4 из 4", { exact: true }),
+  ).toBeVisible();
+  await expect(book.locator(".BRpageFlipping")).toHaveCount(0);
+  await expect.poll(transformScale).toBeCloseTo(manual, 5);
+});
+
+test("mobile navigation reaches a short final PDF page and its direct link", async ({
+  page,
+}, info) => {
+  test.skip(
+    info.project.name !== "mobile",
+    "Native 1up paging is checked on mobile",
+  );
+  const { book, id } = await openSample(
+    page,
+    "Mobile short final page",
+    await samplePdf(0, 4, false, true, true),
+  );
+  await book.locator(".toggle_slider:visible").click();
+  for (let pageNumber = 2; pageNumber <= 4; pageNumber++) {
+    await book.locator(".BRicon.book_right:visible").first().click();
+    await expect(
+      book.getByText(`Страница ${pageNumber} из 4`, { exact: true }),
+    ).toBeVisible();
+  }
+  const last = book
+    .locator('.BRpage-visible[data-index="3"] img.BRpageimage:visible')
+    .first();
+  await expect
+    .poll(() => last.evaluate((image: HTMLImageElement) => image.naturalWidth))
+    .toBeGreaterThan(0);
+  for (let pageNumber = 3; pageNumber >= 1; pageNumber--) {
+    await book.locator(".BRicon.book_left:visible").first().click();
+    await expect(
+      book.getByText(`Страница ${pageNumber} из 4`, { exact: true }),
+    ).toBeVisible();
+  }
+  await page.goto(`/documents/${id}/page/4`);
+  await expect(
+    book.getByText("Страница 4 из 4", { exact: true }),
+  ).toBeVisible();
+  await expect(last).toBeVisible();
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(
+      book.getByText("Страница 4 из 4", { exact: true }),
+    ).toBeVisible();
+    await expect(last).toBeVisible();
+  }
 });
 
 test("PDF modal keeps keyboard focus across iframe and sidebar controls", async ({
