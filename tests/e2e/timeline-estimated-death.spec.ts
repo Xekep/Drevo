@@ -24,7 +24,18 @@ test("chronology labels death estimates, removes them after that year and distin
     const response = await route.fetch();
     const data = await response.json();
     const url = new URL(route.request().url());
-    if (url.searchParams.get("projection") === "page") {
+    const projection = url.searchParams.get("projection");
+    // Lazy events must match this fixture: real later events clamp death estimates.
+    if (projection === "timeline") {
+      return route.fulfill({ response, json: { ...data,
+        people: family.people.map(({ id, events, awards }) => ({ id, events, awards })) } });
+    }
+    if (projection === "details") {
+      const ids = new Set<string>(JSON.parse(url.searchParams.get("ids") || "[]"));
+      return route.fulfill({ response, json: { ...data,
+        people: family.people.filter((person) => ids.has(person.id)) } });
+    }
+    if (projection === "page") {
       if (url.searchParams.get("collection") !== "people") return route.fulfill({ response, json: data });
       return route.fulfill({ response, json: { ...data, items: family.people, total: family.people.length } });
     }

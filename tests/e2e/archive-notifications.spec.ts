@@ -108,10 +108,9 @@ test("bell opens a compact accessible inbox, reads events and links straight to 
   const newTab = page.context().waitForEvent("page");
   await comment.click({ button: "middle" });
   const opened = await newTab;
+  // The new-page event may arrive while Chromium still exposes about:blank.
+  await expect(opened).toHaveURL(/\/people\/e2e-child#discussion$/);
   await opened.waitForLoadState("domcontentloaded");
-  expect(new URL(opened.url()).pathname + new URL(opened.url()).hash).toBe(
-    "/people/e2e-child#discussion",
-  );
   expect(new URL(page.url()).pathname).toBe("/tree");
   await opened.close();
   await expect(dialog).toBeVisible();
