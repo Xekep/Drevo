@@ -13,13 +13,17 @@ import {
 import { treeExportPeople } from "../domain/tree-export-selection.ts";
 import type { Family } from "../domain/types.ts";
 import { offlineReaderHtml, type OfflineDocument } from "./offline-reader.ts";
-import { documentFileTypeFromName, storedDocumentFileType } from "../shared/document-file.ts";
+import {
+  documentFileTypeFromName,
+  storedDocumentFileType,
+} from "../shared/document-file.ts";
 import { allCitations } from "./source-catalog-store.ts";
 
 export type OfflineScope =
   "all" | "family" | "ancestors" | "descendants" | "blood";
 const filePattern = /^\/media\/([a-f0-9-]{36}\.(?:jpg|png|webp|gif))$/;
-const citationFilePattern = /^\/?media\/([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\.(?:jpg|png|webp|gif|tif|pdf))([?#].*)?$/;
+const citationFilePattern =
+  /^\/?media\/([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\.(?:jpg|png|webp|gif|tif|pdf))([?#].*)?$/;
 const maxPackageBytes = 1024 * 1024 * 1024;
 
 function withoutCreator<T extends { createdBy?: string }>(
@@ -70,7 +74,9 @@ export function offlineFamily(
     .map((person) => ({
       ...withoutCreator(person),
       parents: person.parents.filter((id) => ids.has(id)),
-      parentClaims: person.parentClaims?.filter((claim) => ids.has(claim.parentId)),
+      parentClaims: person.parentClaims?.filter((claim) =>
+        ids.has(claim.parentId),
+      ),
       spouses: person.spouses.filter((id) => ids.has(id)),
       photo: person.photo ? relativeImage(person.photo) : undefined,
     }));
@@ -142,13 +148,21 @@ export function offlineDocuments(
         row.person_id,
       ]);
   const allLinked = new Set(associations.map((row) => row.document_id));
-  const cited = new Set(allCitations(family).flatMap((source) =>
-    source.documentId ? [source.documentId] : []));
+  const cited = new Set(
+    allCitations(family).flatMap((source) =>
+      source.documentId ? [source.documentId] : [],
+    ),
+  );
   return rows
     .filter(
-      (row) => links.has(row.id) || (includeUnlinked && !allLinked.has(row.id)) ||
-        (cited.has(row.id) && !!citedAccess && (citedAccess.canReadAll ||
-          (!allLinked.has(row.id) && row.uploaded_by === citedAccess.userId))),
+      (row) =>
+        links.has(row.id) ||
+        (includeUnlinked && !allLinked.has(row.id)) ||
+        (cited.has(row.id) &&
+          !!citedAccess &&
+          (citedAccess.canReadAll ||
+            (!allLinked.has(row.id) &&
+              row.uploaded_by === citedAccess.userId))),
     )
     .map((row) => {
       if (!storedDocumentFileType(row.file_name))
@@ -164,10 +178,21 @@ export function offlineDocuments(
         description: row.description || "",
         provenance: row.provenance || "",
         personIds: links.get(row.id) || [],
-        eventLinks: (JSON.parse(row.event_links || "[]") as Array<{personId: string; eventId: string; page?: number}>)
-          .filter((link) => (links.get(row.id) || []).includes(link.personId) &&
-            family.people.some((person) => person.id === link.personId &&
-              person.events?.some((event) => event.id === link.eventId))),
+        eventLinks: (
+          JSON.parse(row.event_links || "[]") as Array<{
+            personId: string;
+            eventId: string;
+            page?: number;
+          }>
+        ).filter(
+          (link) =>
+            (links.get(row.id) || []).includes(link.personId) &&
+            family.people.some(
+              (person) =>
+                person.id === link.personId &&
+                person.events?.some((event) => event.id === link.eventId),
+            ),
+        ),
         pages: JSON.parse(row.pages || "[]"),
       };
     });
@@ -175,7 +200,10 @@ export function offlineDocuments(
 
 /** Keep the citation text, but never package a document the current user
  * cannot download. offlineFamily has already copied the live archive. */
-export function detachUnavailableCitationDocuments(family: Family, documents: OfflineDocument[]) {
+export function detachUnavailableCitationDocuments(
+  family: Family,
+  documents: OfflineDocument[],
+) {
   const included = new Set(documents.map((document) => document.id));
   let detached = false;
   for (const citation of allCitations(family)) {
@@ -187,9 +215,13 @@ export function detachUnavailableCitationDocuments(family: Family, documents: Of
   return detached;
 }
 
-async function checksum(path: string) {
+async function checksum(path: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  for await (const chunk of createReadStream(path, { signal })) {
+    signal?.throwIfAborted();
+    hash.update(chunk);
+  }
   return hash.digest("hex");
 }
 
@@ -202,7 +234,9 @@ export async function writeOfflinePackage(
   revision: number,
   scope: OfflineScope,
   warnings: string[] = [],
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   const mediaPaths = new Set<string>();
   for (const person of family.people)
     if (person.photo) mediaPaths.add(person.photo);
@@ -220,6 +254,7 @@ export async function writeOfflinePackage(
   }> = [];
   let total = 0;
   for (const name of [...mediaPaths].sort()) {
+    signal?.throwIfAborted();
     if (!/^media\/[a-f0-9-]{36}\.(?:jpg|png|webp|gif|tif|pdf)$/.test(name))
       throw new Error("Некорректный путь вложения.");
     const path = join(uploadsDirectory, name.slice(6));
@@ -233,7 +268,7 @@ export async function writeOfflinePackage(
       name,
       path,
       size: info.size,
-      sha256: await checksum(path),
+      sha256: await checksum(path, signal),
     });
   }
   const transfer: TransferMedia[] = [
@@ -289,6 +324,7 @@ export async function writeOfflinePackage(
   const output = pipeline(
     zip.outputStream,
     createWriteStream(destination, { flags: "wx" }),
+    { signal },
   );
   void output.catch(() => {});
   zip.on("error", (error) => (zip.outputStream as Readable).destroy(error));

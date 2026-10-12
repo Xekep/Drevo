@@ -5,7 +5,7 @@ import { archiveViewAt } from "../domain/archive-routes.ts";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import type { mediaStore } from "./media.ts";
-import type { imagePreviews } from "./image-previews.ts";
+import type { ImagePreview } from "./image-previews.ts";
 import type { pdfDecodeCoordinator } from "./pdf-decode-coordinator.ts";
 import type { settingsStore } from "./settings.ts";
 import { userStore } from "./users.ts";
@@ -52,6 +52,9 @@ import { discoveryMatchesHttp } from "./discovery-matches-http.ts";
 import { discoveryCardShareHttp } from "./discovery-card-share-http.ts";
 import { discoveryBranchShareHttp } from "./discovery-branch-share-http.ts";
 import type { WorkQueue } from "./work-queue.ts";
+import type { PreparationAdmission } from "./preparation-admission.ts";
+import type { tiffDocumentRenderer } from "./document-images.ts";
+import type { MediaUsageLedger } from "./media-usage-ledger.ts";
 import {
   assertMemberPreviewDelivery,
   setMemberPreviewTarget,
@@ -74,11 +77,15 @@ export async function archiveHttp({
   decodePdf,
   aiQueue,
   aiSecrets,
+  preparation,
+  pendingAi,
+  tiffRenderer,
+  mediaUsage,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   media: ReturnType<typeof mediaStore>;
-  previewImage: ReturnType<typeof imagePreviews>;
+  previewImage: ImagePreview;
   visibility: Awaited<ReturnType<typeof settingsStore>>;
   publicOrigin?: string;
   serveStatic: ReturnType<typeof productionStaticHttp>;
@@ -91,6 +98,10 @@ export async function archiveHttp({
   decodePdf?: ReturnType<typeof pdfDecodeCoordinator>["decode"];
   aiQueue?: WorkQueue;
   aiSecrets?: Pick<import("./store-database.ts").StoreDatabase, "file">;
+  preparation?: PreparationAdmission;
+  pendingAi?: PreparationAdmission;
+  tiffRenderer?: ReturnType<typeof tiffDocumentRenderer>;
+  mediaUsage?: MediaUsageLedger;
 }) {
   const suggestions = researchSuggestionStore(archive.db);
   const aiSettings = await aiSettingsStore(archive.db, aiSecrets);
@@ -126,6 +137,8 @@ export async function archiveHttp({
   const core = coreHttp({ archive, auth, publicOrigin });
   const researchAi = aiResearchHttp({
     executionQueue: aiQueue,
+    preparation,
+    pendingAdmission: pendingAi,
     archive,
     auth,
     suggestions,
@@ -174,6 +187,7 @@ export async function archiveHttp({
     publicOrigin,
   });
   const archiveQuery = archiveQueryHttp({
+    preparation,
     archive,
     auth,
     visibility,
@@ -181,6 +195,7 @@ export async function archiveHttp({
     researchCatalog,
   });
   const offlinePackage = offlinePackageHttp({
+    preparation,
     archive,
     auth,
     uploadsDirectory,
@@ -190,6 +205,9 @@ export async function archiveHttp({
     decodePdf,
   );
   const documents = documentsHttp({
+    preparation,
+    tiffRenderer,
+    mediaUsage,
     archive,
     auth,
     media,
@@ -198,13 +216,19 @@ export async function archiveHttp({
     pdfPages,
   });
   const personDiscussion = personDiscussionHttp({
+    preparation,
+    mediaUsage,
     archive,
     auth,
     publicOrigin,
     uploadsDirectory,
     media,
   });
-  const notifications = archiveNotificationsHttp({ archive, auth, publicOrigin });
+  const notifications = archiveNotificationsHttp({
+    archive,
+    auth,
+    publicOrigin,
+  });
   const places = placesHttp({
     archive,
     auth,
@@ -246,6 +270,8 @@ export async function archiveHttp({
   const saveChanges = familyChangesHttp({ archive, auth, publicOrigin });
   const importAdditions = additionsImportHttp({ archive, auth, publicOrigin });
   const uploadMedia = mediaUploadHttp({
+    preparation,
+    mediaUsage,
     archive,
     auth,
     media,
@@ -438,6 +464,8 @@ export async function archiveHttp({
     async close() {
       clearInterval(shareCleanupTimer);
       await researchAi.close();
+      archiveQuery.close();
+      await documents.close();
       await pdfPages.close();
     },
   });

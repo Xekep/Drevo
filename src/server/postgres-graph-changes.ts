@@ -11,14 +11,18 @@ import type { Family } from "../domain/types.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { persistPostgresGraphChanges } from "./postgres-graph-rows.ts";
 import { authorizeArchive } from "./permissions.ts";
-import { readPostgresArchiveInTransaction } from "./postgres-archive-read.ts";
+import { readPostgresGraphForWrite } from "./postgres-graph-read.ts";
+import { scopedPostgresMediaReferencesSql } from "./media-reference-sql.ts";
 import {
   withPostgresArchiveWrite,
   rememberPostgresArchiveChange,
 } from "./postgres-archive-write.ts";
 import { checkPostgresPeopleGrowth } from "./postgres-people-quota.ts";
 import { allCitations } from "./source-catalog-store.ts";
-import { parseCatalogSource, type CatalogSource } from "../shared/source-catalog.ts";
+import {
+  parseCatalogSource,
+  type CatalogSource,
+} from "../shared/source-catalog.ts";
 import { ForbiddenError } from "./users.ts";
 
 const personFields = new Set([
@@ -27,36 +31,88 @@ const personFields = new Set([
   "generation",
   "parentageComplete",
 ]);
-const linkFields = new Set(["from", "to", "type", "note", "twinKind", "sources"]);
+const linkFields = new Set([
+  "from",
+  "to",
+  "type",
+  "note",
+  "twinKind",
+  "sources",
+]);
 const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 
 /** The raw delta writer has neither StoreDatabase catalog checks nor media quota.
  * Keep its narrower write contract inside the same archive-locked transaction. */
-async function assertGraphCitations(client: pg.Client, archiveId: string, before: Family, after: Family) {
+async function assertGraphCitations(
+  client: pg.Client,
+  archiveId: string,
+  before: Family,
+  after: Family,
+) {
   const mediaPath = (url?: string) => url?.split(/[?#]/, 1)[0];
-  const existingMedia = new Set([
-    ...before.people.map((person) => person.photo),
-    ...(before.photos || []).map((photo) => photo.url),
-    ...allCitations(before).map((citation) => mediaPath(citation.url)),
-  ].filter((url): url is string => !!url?.startsWith("/media/")));
+  const existingMedia = new Set(
+    [
+      ...before.people.map((person) => person.photo),
+      ...(before.photos || []).map((photo) => photo.url),
+      ...allCitations(before).map((citation) => mediaPath(citation.url)),
+    ].filter((url): url is string => !!url?.startsWith("/media/")),
+  );
+  const citations = allCitations(after);
+  const additionalMedia = [
+    ...new Set(
+      citations
+        .map((citation) => mediaPath(citation.url))
+        .filter(
+          (url): url is string =>
+            !!url?.startsWith("/media/") && !existingMedia.has(url),
+        ),
+    ),
+  ];
+  if (additionalMedia.length) {
+    // Photos are deliberately absent from the graph projection. Verify only
+    // candidate URLs against current persisted references, not a whole album.
+    const referenced = await client.query(
+      `SELECT DISTINCT r.url FROM (${scopedPostgresMediaReferencesSql}) r
+       WHERE r.url=ANY($2::text[])`,
+      [archiveId, additionalMedia],
+    );
+    for (const row of referenced.rows) existingMedia.add(String(row.url));
+  }
+  const catalogIds = [
+    ...new Set(
+      citations.flatMap((citation) =>
+        citation.catalogId ? [citation.catalogId] : [],
+      ),
+    ),
+  ];
   const catalog = new Map<string, CatalogSource>();
-  for (const citation of allCitations(after)) {
+  if (catalogIds.length) {
+    const rows = await client.query(
+      "SELECT id,data FROM source_catalog WHERE archive_id=$1 AND id=ANY($2::text[])",
+      [archiveId, catalogIds],
+    );
+    for (const row of rows.rows) {
+      const source = parseCatalogSource(
+        typeof row.data === "string" ? JSON.parse(row.data) : row.data,
+      );
+      if (!source) throw new Error("Повреждён источник в каталоге");
+      catalog.set(String(row.id), source);
+    }
+  }
+  for (const citation of citations) {
     const media = mediaPath(citation.url);
     if (media?.startsWith("/media/") && !existingMedia.has(media))
       throw new Error("Новые медиацитаты не поддерживаются этой операцией");
     if (!citation.catalogId) continue;
-    if (!catalog.has(citation.catalogId)) {
-      const row = (await client.query(
-        "SELECT data FROM source_catalog WHERE archive_id=$1 AND id=$2",
-        [archiveId, citation.catalogId],
-      )).rows[0];
-      if (!row) throw new Error("Источник отсутствует в этом архиве");
-      const source = parseCatalogSource(typeof row.data === "string" ? JSON.parse(row.data) : row.data);
-      if (!source) throw new Error("Повреждён источник в каталоге");
-      catalog.set(citation.catalogId, source);
-    }
-    if (citation.documentId && !catalog.get(citation.catalogId)!.documentIds.includes(citation.documentId))
+    if (!catalog.has(citation.catalogId))
+      throw new Error("Источник отсутствует в этом архиве");
+    if (
+      citation.documentId &&
+      !catalog
+        .get(citation.catalogId)!
+        .documentIds.includes(citation.documentId)
+    )
       throw new Error("Документ цитаты отсутствует у источника");
   }
 }
@@ -85,9 +141,12 @@ function validateGraphChanges(input: Change[]): Change[] {
         (change.after.photo !== undefined && change.after.photo !== "")
       ) {
         throw new Error("Допустимо только добавление человека без портрета");
-      } else if (Array.isArray(change.after.awards) &&
-        change.after.awards.some((award) => record(award) &&
-          Object.hasOwn(award, "sources"))) {
+      } else if (
+        Array.isArray(change.after.awards) &&
+        change.after.awards.some(
+          (award) => record(award) && Object.hasOwn(award, "sources"),
+        )
+      ) {
         // This raw helper has no source-catalog/document check. Award citations
         // enter through archive.write, which validates those references.
         throw new Error("Цитаты наград требуют полной проверки архива");
@@ -106,7 +165,16 @@ function validateGraphChanges(input: Change[]): Change[] {
           record(change.after) &&
           Object.keys(change.after).some(
             (key) =>
-              !["id", "createdBy", "from", "to", "type", "note", "twinKind", "sources"].includes(key),
+              ![
+                "id",
+                "createdBy",
+                "from",
+                "to",
+                "type",
+                "note",
+                "twinKind",
+                "sources",
+              ].includes(key),
           )
         )
           throw new Error("Неизвестное поле связи");
@@ -201,7 +269,6 @@ function validateTopology(before: Family, after: Family) {
 
 /** Atomic delta protocol used by the UI/domain, not a replacement snapshot.
  * Supports new people and edits/removal of relations, not person deletion/media.
- * HTTP remains on SQLite until the rest of the isolated write path is ready.
  */
 export async function changePostgresGraphForSession(
   client: pg.Client,
@@ -217,8 +284,14 @@ export async function changePostgresGraphForSession(
     archiveId,
     expectedRevision,
     async (actor, revision) => {
-      const before = (await readPostgresArchiveInTransaction(client, archiveId))
-        .family;
+      const completeIds = new Set(
+        changes
+          .filter((change) => change.collection === "people")
+          .map((change) => change.id!),
+      );
+      const before = (
+        await readPostgresGraphForWrite(client, archiveId, completeIds)
+      ).family;
       prepareChanges(changes, before, actor);
       const merged = applyArchiveChanges(before, changes);
       if (merged.conflicts.length)
@@ -262,6 +335,7 @@ export async function changePostgresGraphForSession(
         archiveId,
         before,
         after,
+        completeIds,
       );
       return rememberPostgresArchiveChange(
         client,
@@ -270,7 +344,7 @@ export async function changePostgresGraphForSession(
         persisted,
         actor,
         revision,
-        "snapshot",
+        "patches",
       );
     },
   );

@@ -4,6 +4,7 @@ import type { ResearchAttachment } from "../shared/research-attachments.ts";
 import { AI_CHAT_LIMIT } from "../shared/research-attachments.ts";
 import type { AiProviderCleanup } from "./ai-provider-cleanup.ts";
 import type { GeneratedResearchFileMeta } from "./generated-research-files.ts";
+import { AI_CHAT_HISTORY_PAGE_BYTES, AI_CHAT_HISTORY_PAGE_SIZE, type AiChatHead, type AiChatHistoryPage, type AiChatMessageDelta } from "../shared/ai-chat-history.ts";
 
 export class AiChatLimitError extends Error {
   constructor() {
@@ -25,11 +26,14 @@ type ChatRow = {
 };
 
 export type AiChatMessage = {
+  id?: number;
+  version?: number;
   role: "user" | "assistant";
   content: string;
   hidden?: boolean;
   references?: unknown[];
   suggestionIds?: string[];
+  suggestionStatuses?: Record<string, "pending" | "accepted" | "rejected">;
   files?: Array<{ name: string; url: string }>;
   generatedFileMeta?: GeneratedResearchFileMeta[];
   attachments?: ResearchAttachment[];
@@ -58,6 +62,43 @@ export function aiChatStore(db: StoreDatabase, cleanup?: AiProviderCleanup) {
       updatedAt: row.updated_at,
     };
   }
+  const publicMessage = (row: Record<string, unknown>): AiChatMessage & { id: number; version: number } => ({ ...JSON.parse(String(row.data)), ...(row.suggestion_states ? { suggestionStatuses: typeof row.suggestion_states === "string" ? JSON.parse(row.suggestion_states) : row.suggestion_states } : {}), role: row.role as "user" | "assistant", content: String(row.content), id: Number(row.id), version: Number(row.change_version) });
+  const head = async (id: string, userId: string): Promise<AiChatHead | null> => {
+    const row = await db.prepare(
+      "SELECT messages_version,(SELECT COALESCE(max(id),0) FROM ai_chat_messages WHERE chat_id=ai_chats.id) AS latest FROM ai_chats WHERE id=? AND user_id=?",
+      "SELECT messages_version,(SELECT COALESCE(max(id),0) FROM ai_chat_messages WHERE chat_id=ai_chats.id) AS latest FROM ai_chats WHERE id=? AND user_id=?",
+    ).get(id, userId);
+    return row ? { lastMessageId: Number(row.latest || 0), version: Number(row.messages_version || 0) } : null;
+  };
+  const selectBounded = async (id: string, cursor: number, changes: boolean) => {
+    const where = changes ? "change_version>?" : "(?=0 OR id<?)";
+    const order = changes ? "change_version,id" : "id DESC";
+    const query = (postgres: boolean) => `WITH candidates AS (
+      SELECT id,change_version,CASE WHEN ${postgres ? "(data->>'hidden')='true'" : "json_extract(data,'$.hidden')=1"} THEN 128 ELSE ${postgres ? "2*(octet_length(content)+octet_length(data::text))+128" : "2*(length(CAST(content AS BLOB))+length(CAST(data AS BLOB)))+128"} END AS bytes
+      FROM ai_chat_messages WHERE chat_id=? AND ${where}${changes ? "" : postgres ? " AND (data->>'hidden') IS DISTINCT FROM 'true'" : " AND json_extract(data,'$.hidden') IS NOT 1"}
+      ORDER BY ${order} LIMIT ?
+    ), ranked AS (
+      SELECT id,change_version,row_number() OVER (ORDER BY ${order}) AS position,
+        sum(bytes) OVER (ORDER BY ${order} ROWS UNBOUNDED PRECEDING) AS running_bytes FROM candidates
+    ), chosen AS (SELECT id FROM ranked WHERE position<=? AND running_bytes<=?)
+    SELECT m.id,m.change_version,m.role,
+      CASE WHEN ${postgres ? "(m.data->>'hidden')='true'" : "json_extract(m.data,'$.hidden')=1"} THEN '' ELSE m.content END AS content,
+      CASE WHEN ${postgres ? "(m.data->>'hidden')='true'" : "json_extract(m.data,'$.hidden')=1"} THEN ${postgres ? "jsonb_build_object('hidden',true)" : "json('{\"hidden\":true}')"} ELSE m.data END AS data,
+      (SELECT count(*) FROM candidates) AS candidate_count,
+      CASE WHEN ${postgres ? "(m.data->>'hidden')='true'" : "json_extract(m.data,'$.hidden')=1"} THEN NULL ELSE ${postgres
+        ? "(SELECT jsonb_object_agg(s.id,s.status) FROM runtime_visible_research_suggestions s WHERE s.id IN (SELECT jsonb_array_elements_text(COALESCE(m.data->'suggestionIds','[]'::jsonb))))"
+        : "(SELECT json_group_object(s.id,s.status) FROM research_suggestions s WHERE s.id IN (SELECT value FROM json_each(m.data,'$.suggestionIds')))"} END AS suggestion_states
+    FROM (SELECT 1 AS singleton) seed LEFT JOIN chosen c ON 1=1
+      LEFT JOIN ai_chat_messages m ON m.id=c.id AND m.chat_id=?
+    ORDER BY ${changes ? "m.change_version,m.id" : "m.id DESC"}`;
+    // Selection and body read share a single MVCC statement: a parallel edit
+    // cannot enlarge a selected body or reveal a newly hidden internal prompt.
+    const rows = await db.prepare(query(false), query(true)).all(id, ...(changes ? [cursor] : [cursor, cursor]), AI_CHAT_HISTORY_PAGE_SIZE + 1, AI_CHAT_HISTORY_PAGE_SIZE, AI_CHAT_HISTORY_PAGE_BYTES, id);
+    const selected = rows.filter(row => row.id !== null && row.id !== undefined);
+    const candidates = Number(rows[0]?.candidate_count || 0);
+    if (!selected.length && candidates) throw new Error("Сообщение превышает размер страницы истории");
+    return { records: selected.map(publicMessage), metadata: selected.map(row => ({ change_version: row.change_version })), hasMore: candidates > selected.length };
+  };
   return {
     read,
     async assertProviderReady() { await cleanup?.assertReady(); },
@@ -157,6 +198,39 @@ export function aiChatStore(db: StoreDatabase, cleanup?: AiProviderCleanup) {
           ...JSON.parse(row.data),
         }))
         .filter((message) => includeHidden || message.hidden !== true);
+    },
+    head,
+    async historyPage(id: string, userId: string, before = 0): Promise<AiChatHistoryPage<AiChatMessage> | null> {
+      if (!Number.isSafeInteger(before) || before < 0) throw new Error("Некорректная страница истории");
+      const latest = await head(id, userId);
+      if (!latest) return null;
+      const page = await selectBounded(id, before, false);
+      const messages = page.records.reverse();
+      return { messages, nextBefore: page.hasMore ? messages[0].id : null, latestMessageId: latest.lastMessageId, latestVersion: latest.version, hasMore: page.hasMore };
+    },
+    async changesAfter(id: string, userId: string, version: number): Promise<AiChatMessageDelta<AiChatMessage> | null> {
+      if (!Number.isSafeInteger(version) || version < 0) throw new Error("Некорректный указатель диалога");
+      if (!(await read(id, userId))) return null;
+      const page = await selectBounded(id, version, true);
+      // Remove formerly visible records without revealing internal prompts.
+      return { messages: page.records.map(message => message.hidden ? { id: message.id, version: message.version, role: message.role, content: "", hidden: true } : message), lastVersion: page.metadata.length ? Number(page.metadata.at(-1)!.change_version) : version, hasMore: page.hasMore };
+    },
+    async historySize(id: string, userId: string): Promise<number | null> {
+      if (!(await read(id, userId))) return null;
+      // Include JSON escaping and envelope overhead before allocating message objects.
+      const row = await db.prepare(
+        "SELECT COALESCE(sum(2*(length(CAST(content AS BLOB))+length(CAST(data AS BLOB)))+128*count(*),0) AS bytes FROM ai_chat_messages WHERE chat_id=?",
+        "SELECT COALESCE(sum(2*(octet_length(content)+octet_length(data::text)))+128*count(*),0) AS bytes FROM ai_chat_messages WHERE chat_id=?",
+      ).get(id);
+      return Number(row?.bytes || 0);
+    },
+    async attachmentInventory(id: string, userId: string): Promise<ResearchAttachment[] | null> {
+      if (!(await read(id, userId))) return null;
+      const rows = await db.prepare(
+        "SELECT json_extract(data,'$.attachments') AS attachments FROM ai_chat_messages WHERE chat_id=? AND json_type(data,'$.attachments')='array'",
+        "SELECT data->'attachments' AS attachments FROM ai_chat_messages WHERE chat_id=? AND jsonb_typeof(data->'attachments')='array'",
+      ).all(id);
+      return rows.flatMap(row => { const value: unknown = typeof row.attachments === "string" ? JSON.parse(row.attachments) : row.attachments; return Array.isArray(value) ? value as ResearchAttachment[] : []; });
     },
     async append(
       id: string,

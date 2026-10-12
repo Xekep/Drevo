@@ -17,7 +17,7 @@ export class ArchiveDetailsNotFoundError extends Error {}
 /** Owns a revision-bound, demand-loaded view. No eager archive-wide hydration. */
 export function archiveDetails<T extends ArchivePageHeader>(
   initial: T,
-  request: (url: string) => Promise<Response>,
+  request: (url: string, init?: RequestInit) => Promise<Response>,
   publish: (header: T, refreshed?: boolean) => void,
 ) {
   let header = initial,
@@ -36,7 +36,9 @@ export function archiveDetails<T extends ArchivePageHeader>(
     initial.partial ? [] : initial.family.people.map((p) => p.id),
   );
   let albums = new Set<string>();
-  const views = new Set<"places" | "insights">();
+  const personPhotoTotals = new Map<string, number>();
+  const galleryIndices = new Map<string, string[]>();
+  const views = new Set<"places" | "insights" | "timeline">();
   let projectionGeneration = 0;
   const emit = (refreshed = false) => {
     header = { ...header, partial: !(peopleComplete && photosComplete) };
@@ -66,8 +68,8 @@ export function archiveDetails<T extends ArchivePageHeader>(
       },
     };
   };
-  async function read(url: string, expectedVersion: number) {
-    const response = await request(url);
+  async function read(url: string, expectedVersion: number, init?: RequestInit) {
+    const response = await request(url, init);
     const data = await response.json();
     if (expectedVersion !== version || response.status === 409)
       throw new DetailsChanged();
@@ -106,6 +108,8 @@ export function archiveDetails<T extends ArchivePageHeader>(
       data.partial ? [] : data.family.people.map((p: { id: string }) => p.id),
     );
     albums = new Set();
+    personPhotoTotals.clear();
+    galleryIndices.clear();
     peopleComplete = !data.partial || data.totals?.people === 0;
     photosComplete = !data.partial || data.totals?.photos === 0;
     emit(true);
@@ -153,9 +157,10 @@ export function archiveDetails<T extends ArchivePageHeader>(
   }
   return {
     hasPerson: (id: string) => loaded.has(id),
+    personPhotoTotal: (id: string) => photosComplete ? (header.family.photos || []).filter(photo => photo.tags.some(tag => tag.personId === id)).length : personPhotoTotals.get(id),
     loadedPeople: () => new Set(loaded),
     projectionGeneration: () => projectionGeneration,
-    hasView: (view: "places" | "insights") => views.has(view),
+    hasView: (view: "places" | "insights" | "timeline") => views.has(view),
     insights: () => header.insights,
     isComplete: (collection: "people" | "photos") =>
       collection === "people" ? peopleComplete : photosComplete,
@@ -180,6 +185,9 @@ export function archiveDetails<T extends ArchivePageHeader>(
       };
       version++;
       views.clear();
+      albums.clear();
+      personPhotoTotals.clear();
+      galleryIndices.clear();
       delete header.insights;
       projectionGeneration++;
       if (full) {
@@ -188,12 +196,14 @@ export function archiveDetails<T extends ArchivePageHeader>(
       }
       emit();
     },
-    loadView(view: "places" | "insights") {
+    loadView(view: "places" | "insights" | "timeline", signal?: AbortSignal) {
       return enqueue(async () => {
+        if (signal?.aborted) return;
         if (views.has(view)) return;
         const data = await read(
           `/api/family?projection=${view}&token=${encodeURIComponent(header.pageToken || "")}`,
           version,
+          signal ? { signal } : undefined,
         );
         if (view === "places") {
           const projection = data as PlacesProjection;
@@ -223,6 +233,11 @@ export function archiveDetails<T extends ArchivePageHeader>(
             },
           };
           photosComplete = true;
+        } else if (view === "timeline") {
+          if (!Array.isArray(data.people) || data.people.length !== header.family.people.length) throw new Error("Некорректные сведения хронологии");
+          const byId = new Map<string, Pick<import("../domain/types.ts").Person, "id" | "events" | "awards">>(data.people.map((person: { id: string }) => [person.id, person]));
+          if (byId.size !== header.family.people.length || header.family.people.some(person => !byId.has(person.id))) throw new Error("Некорректные люди хронологии");
+          header = { ...header, family: { ...header.family, people: header.family.people.map(person => ({ ...person, events: byId.get(person.id)!.events, awards: byId.get(person.id)!.awards })) } };
         } else {
           if (!data.insights || !Array.isArray(data.insights.facts))
             throw new Error("Некорректная сводка");
@@ -235,6 +250,8 @@ export function archiveDetails<T extends ArchivePageHeader>(
     async gallery(query: GalleryQuery): Promise<GalleryPage> {
       let page: GalleryPage | undefined;
       await enqueue(async () => {
+        const key = JSON.stringify([query.mode, query.personId || null, query.year || null]);
+        const cachedIndex = galleryIndices.get(key);
         const params = new URLSearchParams({
           projection: "gallery",
           mode: query.mode,
@@ -242,8 +259,10 @@ export function archiveDetails<T extends ArchivePageHeader>(
           token: header.pageToken || "",
           ...(query.personId ? { personId: query.personId } : {}),
           ...(query.year ? { year: query.year } : {}),
+          ...(cachedIndex ? { index: "0" } : {}),
         });
         const data = await read(`/api/family?${params}`, version);
+        if (data.photoIds === undefined && cachedIndex) data.photoIds = cachedIndex;
         if (
           !Array.isArray(data.photos) ||
           data.photos.length > 30 ||
@@ -272,6 +291,11 @@ export function archiveDetails<T extends ArchivePageHeader>(
         )
           throw new Error("Неполная страница галереи");
         page = data;
+        if (query.mode === "all" || query.year) {
+          galleryIndices.delete(key);
+          if (galleryIndices.size >= 8) galleryIndices.delete(galleryIndices.keys().next().value!);
+          galleryIndices.set(key, data.photoIds);
+        }
         header = {
           ...header,
           family: { ...header.family, photos: photosWith(data.photos) },
@@ -279,6 +303,16 @@ export function archiveDetails<T extends ArchivePageHeader>(
         emit();
       }, true);
       return page!;
+    },
+    async exportWarnings(ids: string[], signal?: AbortSignal) {
+      let result: { parentEvidence: boolean; catalogLinks: boolean } | undefined;
+      await enqueue(async () => {
+        if (signal?.aborted) throw new DOMException("Проверка отменена", "AbortError");
+        const data = await read(`/api/family?projection=export-warnings&token=${encodeURIComponent(header.pageToken || "")}`, version, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }), signal });
+        if (typeof data.warnings?.parentEvidence !== "boolean" || typeof data.warnings?.catalogLinks !== "boolean") throw new Error("Некорректная проверка экспорта");
+        result = data.warnings;
+      }, true);
+      return result!;
     },
     loadPhotos(ids: string[]) {
       return enqueue(async () => {
@@ -319,12 +353,10 @@ export function archiveDetails<T extends ArchivePageHeader>(
         for (let start = 0; start < needed.length; start += 40) {
           const batch = needed.slice(start, start + 40),
             expectedVersion = version;
-          let offset = 0,
-            total = 0;
           const seen = new Set<string>();
-          do {
+          {
             const data = await read(
-              `/api/family?projection=details&ids=${encodeURIComponent(JSON.stringify(batch))}&offset=${offset}&token=${encodeURIComponent(header.pageToken || "")}`,
+              `/api/family?projection=details&preview=1&ids=${encodeURIComponent(JSON.stringify(batch))}&offset=0&token=${encodeURIComponent(header.pageToken || "")}`,
               expectedVersion,
             );
             if (
@@ -334,16 +366,16 @@ export function archiveDetails<T extends ArchivePageHeader>(
                 batch.length ||
               data.people.some((p: PersonDetails) => !batch.includes(p.id)) ||
               !Array.isArray(data.photos) ||
-              data.photos.length > 40 ||
+              data.photos.length > 30 ||
               !Number.isSafeInteger(data.photoTotal) ||
-              data.photoTotal < 0 ||
-              (offset > 0 && data.photoTotal !== total)
+              data.photoTotal < 0
             )
               throw new Error("Некорректный ответ сведений");
-            total = data.photoTotal;
+            if (!data.personPhotoTotals || batch.some(id => !Number.isSafeInteger(data.personPhotoTotals[id]) || data.personPhotoTotals[id] < 0)) throw new Error("Некорректный размер фотоальбома");
+            for (const id of batch) personPhotoTotals.set(id, data.personPhotoTotals[id]);
             if (
-              offset + data.photos.length > total ||
-              (!data.photos.length && offset < total)
+              data.photos.length > data.photoTotal ||
+              (!data.photos.length && data.photoTotal > 0)
             )
               throw new Error("Некорректная страница фотографий");
             for (const photo of data.photos as ArchivePhoto[]) {
@@ -360,15 +392,15 @@ export function archiveDetails<T extends ArchivePageHeader>(
               ...header,
               family: { ...header.family, photos: photosWith(data.photos) },
             };
-            offset += data.photos.length;
             emit();
-          } while (offset < total);
+          }
           batch.forEach((id) => albums.add(id));
         }
       }, true);
     },
-    loadCollections(collections: Array<"people" | "photos">) {
+    loadCollections(collections: Array<"people" | "photos">, signal?: AbortSignal) {
       return enqueue(async () => {
+        if (signal?.aborted) return;
         for (const collection of [...new Set(collections)]) {
           if (collection === "people" ? peopleComplete : photosComplete)
             continue;
@@ -380,6 +412,7 @@ export function archiveDetails<T extends ArchivePageHeader>(
             photos: ArchivePhoto[] = [];
           const known = new Set(header.family.people.map((p) => p.id));
           for (let offset = 0; offset < total; offset += 160) {
+            if (signal?.aborted) return;
             const offsets: number[] = Array.from(
               { length: Math.min(4, Math.ceil((total - offset) / 40)) },
               (_, i) => offset + i * 40,
@@ -389,6 +422,7 @@ export function archiveDetails<T extends ArchivePageHeader>(
                 read(
                   `/api/family?projection=page&collection=${collection}&offset=${pageOffset}&token=${encodeURIComponent(header.pageToken || "")}`,
                   expectedVersion,
+                  signal ? { signal } : undefined,
                 ),
               ),
             );

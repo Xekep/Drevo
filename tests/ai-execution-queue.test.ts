@@ -7,6 +7,11 @@ import { startServer } from "../src/server/index.ts";
 import { workQueue } from "../src/server/work-queue.ts";
 import { archiveSnapshotBudget } from "../src/server/archive-read-cache.ts";
 import { adaptLegacyAiFake } from "./legacy-ai-fake.ts";
+import {
+  preparationAdmission,
+  pendingAiAdmission,
+} from "../src/server/preparation-admission.ts";
+import { tiffDocumentRenderer } from "../src/server/document-images.ts";
 
 test("HTTP AI queue rejects overflow and stop removes a queued chat before calling the provider", async () => {
   const directory = await mkdtemp(join(tmpdir(), "drevo-ai-queue-"));
@@ -17,6 +22,10 @@ test("HTTP AI queue rejects overflow and stop removes a queued chat before calli
   process.env.YANDEX_AI_MODEL = "test-model";
   const ai = workQueue(1, 1);
   const previews = workQueue(2, 32);
+  const preparation = preparationAdmission();
+  const pendingAi = pendingAiAdmission();
+  const tiff = tiffDocumentRenderer(preparation);
+  const mediaScans = workQueue(1, 128, 30_000);
   const release = await ai.acquire();
   let calls = 0;
   const provider = adaptLegacyAiFake(async () => {
@@ -41,7 +50,15 @@ test("HTTP AI queue rejects overflow and stop removes a queued chat before calli
       undefined,
       undefined,
       undefined,
-      { ai, previews, snapshots: archiveSnapshotBudget() },
+      {
+        ai,
+        previews,
+        snapshots: archiveSnapshotBudget(),
+        preparation,
+        pendingAi,
+        tiff,
+        mediaScans,
+      },
     );
     const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
     const send = (path: string, message: string) =>
@@ -80,6 +97,11 @@ test("HTTP AI queue rejects overflow and stop removes a queued chat before calli
     ai.close();
     previews.close();
     await app?.close();
+    await tiff.close();
+    pendingAi.close();
+    mediaScans.close();
+    preparation.close();
+    await preparation.drain();
     keys.forEach((key, i) => {
       if (prior[i] === undefined) delete process.env[key];
       else process.env[key] = prior[i];

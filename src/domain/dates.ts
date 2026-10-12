@@ -53,7 +53,7 @@ export function dateBound(value: string, last: boolean) {
 }
 export const dateYear = (date?: string) =>
   date ? Number(date.slice(0, 4)) : new Date().getFullYear();
-export const fullName = (p: Person) =>
+export const fullName = (p: Pick<Person, "surname" | "name" | "patronymic">) =>
   [p.surname, p.name, p.patronymic]
     .map((s) => s.trim())
     .filter(Boolean)

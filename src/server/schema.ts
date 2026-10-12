@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { researchCatalogSeed } from "./research-catalog-seed.ts";
 
+
 export const ARCHIVE_SCHEMA_VERSION = 21;
 
 const coreSchema = `
@@ -627,7 +628,9 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     version INTEGER NOT NULL DEFAULT 1 CHECK(version>0)
   ) STRICT;`);
   const familyLinkExtension = "2026-10-family-link-types";
-  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(familyLinkExtension)) {
+  if (
+    !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(familyLinkExtension)
+  ) {
     db.exec("BEGIN IMMEDIATE");
     try {
       db.exec(`
@@ -648,7 +651,9 @@ export function initializeArchiveSchema(db: DatabaseSync) {
         ALTER TABLE relations_new RENAME TO relations;
         CREATE INDEX relations_target ON relations(target);
       `);
-      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(familyLinkExtension);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        familyLinkExtension,
+      );
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -656,13 +661,21 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     }
   }
   const linkSourcesExtension = "2026-10-family-link-sources";
-  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(linkSourcesExtension) ||
-      !tableHasColumn(db, "relations", "sources")) {
+  if (
+    !db
+      .prepare("SELECT 1 FROM migrations WHERE id=?")
+      .get(linkSourcesExtension) ||
+    !tableHasColumn(db, "relations", "sources")
+  ) {
     db.exec("BEGIN IMMEDIATE");
     try {
       if (!tableHasColumn(db, "relations", "sources"))
-        db.exec("ALTER TABLE relations ADD COLUMN sources TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(sources) AND json_type(sources)='array')");
-      db.prepare("INSERT OR IGNORE INTO migrations(id) VALUES(?)").run(linkSourcesExtension);
+        db.exec(
+          "ALTER TABLE relations ADD COLUMN sources TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(sources) AND json_type(sources)='array')",
+        );
+      db.prepare("INSERT OR IGNORE INTO migrations(id) VALUES(?)").run(
+        linkSourcesExtension,
+      );
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -670,13 +683,21 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     }
   }
   const linkConfidenceExtension = "2026-10-family-link-confidence";
-  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(linkConfidenceExtension) ||
-      !tableHasColumn(db, "relations", "confidence")) {
+  if (
+    !db
+      .prepare("SELECT 1 FROM migrations WHERE id=?")
+      .get(linkConfidenceExtension) ||
+    !tableHasColumn(db, "relations", "confidence")
+  ) {
     db.exec("BEGIN IMMEDIATE");
     try {
       if (!tableHasColumn(db, "relations", "confidence"))
-        db.exec("ALTER TABLE relations ADD COLUMN confidence TEXT CHECK(confidence IS NULL OR (type NOT IN ('parent','spouse') AND confidence IN ('confirmed','probable','tentative','conflicting','unknown')))");
-      db.prepare("INSERT OR IGNORE INTO migrations(id) VALUES(?)").run(linkConfidenceExtension);
+        db.exec(
+          "ALTER TABLE relations ADD COLUMN confidence TEXT CHECK(confidence IS NULL OR (type NOT IN ('parent','spouse') AND confidence IN ('confirmed','probable','tentative','conflicting','unknown')))",
+        );
+      db.prepare("INSERT OR IGNORE INTO migrations(id) VALUES(?)").run(
+        linkConfidenceExtension,
+      );
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -684,19 +705,51 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     }
   }
   const parentConfidenceExtension = "2026-10-parent-confidence";
-  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(parentConfidenceExtension)) {
+  if (
+    !db
+      .prepare("SELECT 1 FROM migrations WHERE id=?")
+      .get(parentConfidenceExtension)
+  ) {
     db.exec("BEGIN IMMEDIATE");
     try {
-      const oldSql = String(db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='relations'")
-        .get()?.sql || "").replace(/\s+/g, " ").toLowerCase();
-      const columns = db.prepare("PRAGMA table_info(relations)").all().map((row) => String(row.name));
-      const indexes = db.prepare("PRAGMA index_list(relations)").all().map((row) => String(row.name));
-      const triggers = db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='relations'").all();
-      if (!oldSql.includes("confidence text check(confidence is null or (type not in ('parent','spouse') and confidence in ('confirmed','probable','tentative','conflicting','unknown')))" ) ||
-          columns.join(",") !== "id,source,target,type,note,twin_kind,created_by,sources,confidence" ||
-          indexes.some((name) => name !== "relations_target" && !name.startsWith("sqlite_autoindex_relations_")) ||
-          triggers.length)
-        throw new Error("Unexpected relations schema before parent confidence migration");
+      const oldSql = String(
+        db
+          .prepare(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='relations'",
+          )
+          .get()?.sql || "",
+      )
+        .replace(/\s+/g, " ")
+        .toLowerCase();
+      const columns = db
+        .prepare("PRAGMA table_info(relations)")
+        .all()
+        .map((row) => String(row.name));
+      const indexes = db
+        .prepare("PRAGMA index_list(relations)")
+        .all()
+        .map((row) => String(row.name));
+      const triggers = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='relations'",
+        )
+        .all();
+      if (
+        !oldSql.includes(
+          "confidence text check(confidence is null or (type not in ('parent','spouse') and confidence in ('confirmed','probable','tentative','conflicting','unknown')))",
+        ) ||
+        columns.join(",") !==
+          "id,source,target,type,note,twin_kind,created_by,sources,confidence" ||
+        indexes.some(
+          (name) =>
+            name !== "relations_target" &&
+            !name.startsWith("sqlite_autoindex_relations_"),
+        ) ||
+        triggers.length
+      )
+        throw new Error(
+          "Unexpected relations schema before parent confidence migration",
+        );
       db.exec(`
         CREATE TABLE relations_parent_confidence (
           id TEXT PRIMARY KEY,
@@ -735,7 +788,9 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       `);
       if (db.prepare("PRAGMA foreign_key_check").all().length)
         throw new Error("Нарушены связи после обновления оценки родительства");
-      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(parentConfidenceExtension);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        parentConfidenceExtension,
+      );
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -994,6 +1049,36 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const mediaUsageExtension = "2026-10-media-storage-usage";
+  if (
+    !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(mediaUsageExtension)
+  ) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`CREATE TABLE media_storage_usage (
+        id INTEGER PRIMARY KEY CHECK(id=1),
+        files INTEGER NOT NULL CHECK(files>=0),
+        bytes INTEGER NOT NULL CHECK(bytes>=0)
+      ) STRICT;
+      INSERT INTO media_storage_usage SELECT 1,count(*),coalesce(sum(size_bytes),0) FROM media_originals;
+      CREATE TRIGGER media_usage_insert AFTER INSERT ON media_originals BEGIN
+        UPDATE media_storage_usage SET files=files+1,bytes=bytes+NEW.size_bytes WHERE id=1;
+      END;
+      CREATE TRIGGER media_usage_delete AFTER DELETE ON media_originals BEGIN
+        UPDATE media_storage_usage SET files=files-1,bytes=bytes-OLD.size_bytes WHERE id=1;
+      END;
+      CREATE TRIGGER media_usage_update AFTER UPDATE OF size_bytes ON media_originals BEGIN
+        UPDATE media_storage_usage SET bytes=bytes+NEW.size_bytes-OLD.size_bytes WHERE id=1;
+      END;`);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        mediaUsageExtension,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   const discussionExtension = "2026-09-person-discussions";
   if (
     !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(discussionExtension)
@@ -1039,7 +1124,9 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     db.exec("BEGIN IMMEDIATE");
     try {
       if (!tableHasColumn(db, "person_comments", "updated_ms"))
-        db.exec("ALTER TABLE person_comments ADD COLUMN updated_ms INTEGER CHECK(updated_ms IS NULL OR updated_ms > created_ms)");
+        db.exec(
+          "ALTER TABLE person_comments ADD COLUMN updated_ms INTEGER CHECK(updated_ms IS NULL OR updated_ms > created_ms)",
+        );
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -1049,7 +1136,13 @@ export function initializeArchiveSchema(db: DatabaseSync) {
   if (!tableHasColumn(db, "person_comments", "attachments")) {
     db.exec("BEGIN IMMEDIATE");
     try {
-      const sequence = Number(db.prepare("SELECT seq FROM sqlite_sequence WHERE name='person_comments'").get()?.seq || 0);
+      const sequence = Number(
+        db
+          .prepare(
+            "SELECT seq FROM sqlite_sequence WHERE name='person_comments'",
+          )
+          .get()?.seq || 0,
+      );
       db.exec(`CREATE TABLE person_comments_with_files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
@@ -1066,8 +1159,12 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       ALTER TABLE person_comments_with_files RENAME TO person_comments;
       CREATE INDEX person_comments_person ON person_comments(person_id,id DESC);
       CREATE INDEX person_comments_author ON person_comments(author_id);`);
-      db.prepare("INSERT INTO sqlite_sequence(name,seq) SELECT 'person_comments',? WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='person_comments')").run(sequence);
-      db.prepare("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='person_comments'").run(sequence);
+      db.prepare(
+        "INSERT INTO sqlite_sequence(name,seq) SELECT 'person_comments',? WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='person_comments')",
+      ).run(sequence);
+      db.prepare(
+        "UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='person_comments'",
+      ).run(sequence);
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -1123,9 +1220,13 @@ export function initializeArchiveSchema(db: DatabaseSync) {
   }
   const portraitCardsExtension = "2026-09-default-portrait-cards";
   if (!tableHasColumn(db, "user_tree_preferences", "generation_limits"))
-    db.exec("ALTER TABLE user_tree_preferences ADD COLUMN generation_limits TEXT CHECK(generation_limits IS NULL OR json_valid(generation_limits))");
+    db.exec(
+      "ALTER TABLE user_tree_preferences ADD COLUMN generation_limits TEXT CHECK(generation_limits IS NULL OR json_valid(generation_limits))",
+    );
   if (!tableHasColumn(db, "user_tree_preferences", "animate_on_load"))
-    db.exec("ALTER TABLE user_tree_preferences ADD COLUMN animate_on_load INTEGER NOT NULL DEFAULT 1 CHECK(animate_on_load IN (0,1))");
+    db.exec(
+      "ALTER TABLE user_tree_preferences ADD COLUMN animate_on_load INTEGER NOT NULL DEFAULT 1 CHECK(animate_on_load IN (0,1))",
+    );
   if (
     !db
       .prepare("SELECT 1 FROM migrations WHERE id=?")
@@ -1269,14 +1370,24 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     }
   }
   const documentLinksExtension = "2026-10-document-events-pages";
-  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(documentLinksExtension)) {
+  if (
+    !db
+      .prepare("SELECT 1 FROM migrations WHERE id=?")
+      .get(documentLinksExtension)
+  ) {
     db.exec("BEGIN IMMEDIATE");
     try {
       if (!tableHasColumn(db, "documents", "event_links"))
-        db.exec("ALTER TABLE documents ADD COLUMN event_links TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(event_links) AND json_type(event_links)='array')");
+        db.exec(
+          "ALTER TABLE documents ADD COLUMN event_links TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(event_links) AND json_type(event_links)='array')",
+        );
       if (!tableHasColumn(db, "documents", "pages"))
-        db.exec("ALTER TABLE documents ADD COLUMN pages TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(pages) AND json_type(pages)='array')");
-      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(documentLinksExtension);
+        db.exec(
+          "ALTER TABLE documents ADD COLUMN pages TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(pages) AND json_type(pages)='array')",
+        );
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        documentLinksExtension,
+      );
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -1339,7 +1450,11 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     }
   }
   const revokeIneligiblePublication = "2026-10-revoke-ineligible-publication";
-  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(revokeIneligiblePublication)) {
+  if (
+    !db
+      .prepare("SELECT 1 FROM migrations WHERE id=?")
+      .get(revokeIneligiblePublication)
+  ) {
     db.exec("BEGIN IMMEDIATE");
     try {
       db.exec(`CREATE TRIGGER discovery_revoke_ineligible_publication
@@ -1358,11 +1473,44 @@ export function initializeArchiveSchema(db: DatabaseSync) {
           AND NOT (json_extract(people.data,'$.deceased') = 1 OR
             COALESCE(json_extract(people.data,'$.death'),'') <> '')
       )`);
-      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(revokeIneligiblePublication);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        revokeIneligiblePublication,
+      );
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
       throw error;
     }
   }
+  initializeSqliteAiChatCursors(db);
+}
+
+
+/** Kept alongside the PostgreSQL cursor migration; call inside schema startup. */
+function initializeSqliteAiChatCursors(db: DatabaseSync) {
+  const migration = "2026-10-ai-chat-message-cursors";
+  if (db.prepare("SELECT 1 FROM migrations WHERE id=?").get(migration)) return;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.exec(`ALTER TABLE ai_chats ADD COLUMN messages_version INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE ai_chat_messages ADD COLUMN change_version INTEGER NOT NULL DEFAULT 0;
+      UPDATE ai_chat_messages SET change_version=id;
+      UPDATE ai_chats SET messages_version=COALESCE((SELECT max(change_version) FROM ai_chat_messages WHERE chat_id=ai_chats.id),0);
+      CREATE INDEX ai_chat_messages_change_cursor ON ai_chat_messages(chat_id,change_version,id);
+      CREATE TRIGGER ai_message_insert_cursor AFTER INSERT ON ai_chat_messages BEGIN
+        UPDATE ai_chats SET messages_version=messages_version+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=NEW.chat_id;
+        UPDATE ai_chat_messages SET change_version=(SELECT messages_version FROM ai_chats WHERE id=NEW.chat_id) WHERE id=NEW.id;
+      END;
+      CREATE TRIGGER ai_message_update_cursor AFTER UPDATE OF content,data,role ON ai_chat_messages BEGIN
+        UPDATE ai_chats SET messages_version=messages_version+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=NEW.chat_id;
+        UPDATE ai_chat_messages SET change_version=(SELECT messages_version FROM ai_chats WHERE id=NEW.chat_id) WHERE id=NEW.id;
+      END;
+      CREATE TRIGGER ai_proposal_status_cursor AFTER UPDATE OF status ON research_suggestions WHEN NEW.status<>OLD.status BEGIN
+        UPDATE ai_chat_messages SET data=json_set(data,'$.suggestionStatuses',
+          json_patch(COALESCE(json_extract(data,'$.suggestionStatuses'),'{}'),json_object(NEW.id,NEW.status)))
+        WHERE EXISTS (SELECT 1 FROM json_each(ai_chat_messages.data,'$.suggestionIds') WHERE value=NEW.id);
+      END;`);
+    db.prepare("INSERT INTO migrations(id) VALUES(?)").run(migration);
+    db.exec("COMMIT");
+  } catch (error) { db.exec("ROLLBACK"); throw error; }
 }

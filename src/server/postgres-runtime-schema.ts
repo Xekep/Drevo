@@ -1,14 +1,44 @@
 import { readFileSync } from "node:fs";
 import type { StoreDatabase } from "./store-database.ts";
 
-/** Runtime extensions; an older writer may read but cannot change an annotated parent edge. */
-export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
+/** One owner per shared PostgreSQL pool. Failed probes are retryable, never cached. */
+export function runtimeSchemaCoordinator() {
+  let pending: Promise<void> | undefined;
+  return {
+    ensure(work: () => Promise<void>) {
+      if (!pending) {
+        const entry = Promise.resolve().then(work);
+        pending = entry;
+        void entry.catch(() => {
+          if (pending === entry) pending = undefined;
+        });
+      }
+      return pending;
+    },
+  };
+}
+
+/** Runtime extensions are global; per-archive backfills remain scoped by RLS. */
+export async function initializePostgresRuntimeSchema(
+  db: StoreDatabase,
+  coordinator?: ReturnType<typeof runtimeSchemaCoordinator>,
+) {
+  if (coordinator)
+    await coordinator.ensure(() => initializeGlobalRuntimeSchema(db));
+  else await initializeGlobalRuntimeSchema(db);
+  await initializeArchiveRuntimeSchema(db);
+}
+
+async function initializeGlobalRuntimeSchema(db: StoreDatabase) {
   for (const [query, file] of [
     [
       "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='user_tree_preferences' AND column_name='animate_on_load'",
       "100_tree_load_animation.sql",
     ],
-    ["SELECT to_regclass('archive_notification_reads') AS present", "098_archive_notifications.sql"],
+    [
+      "SELECT to_regclass('archive_notification_reads') AS present",
+      "098_archive_notifications.sql",
+    ],
     [
       "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='ai_chats' AND column_name='stop_token'",
       "079_ai_chat_stop.sql",
@@ -389,10 +419,33 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT 1 AS present FROM pg_constraint WHERE conrelid=to_regclass('archive_invitations') AND conname='archive_invitation_scope_check'",
       "094_archive_invitation_scope.sql",
     ],
+    [
+      "SELECT to_regclass('archive_media_storage_usage') AS present",
+      "102_media_storage_usage.sql",
+    ],
+    [
+      `SELECT 1 AS present WHERE
+        EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+          AND table_name='ai_chats' AND column_name='messages_version')
+        AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+          AND table_name='ai_chat_messages' AND column_name='change_version')
+        AND EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('ai_chat_messages')
+          AND tgname='ai_chat_messages_change_cursor' AND NOT tgisinternal)
+        AND EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('research_suggestions')
+          AND tgname='ai_proposal_status_cursor' AND NOT tgisinternal)
+        AND to_regprocedure('drevo_ai_proposal_status_cursor()') IS NOT NULL
+        AND to_regclass('ai_chat_messages_change_cursor') IS NOT NULL`,
+      "103_ai_chat_message_cursors.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
-    if (file === "090_global_staff_roles.sql" || file === "092_discovery_branch_depth.sql" ||
-        file === "094_archive_invitation_scope.sql") {
+    if (
+      file === "102_media_storage_usage.sql" ||
+      file === "103_ai_chat_message_cursors.sql" ||
+      file === "090_global_staff_roles.sql" ||
+      file === "092_discovery_branch_depth.sql" ||
+      file === "094_archive_invitation_scope.sql"
+    ) {
       if (!db.postgresTransaction)
         throw new Error("PostgreSQL transaction unavailable");
       await db.postgresTransaction(async (client) => {
@@ -401,8 +454,12 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
         // already hold DDL locks while opening this same archive.
         await client.query("SELECT pg_advisory_xact_lock(186743291)");
         if ((await client.query(query)).rows[0]?.present) return;
-        await client.query(readFileSync(
-          new URL(`../../ops/postgres/${file}`, import.meta.url), "utf8"));
+        await client.query(
+          readFileSync(
+            new URL(`../../ops/postgres/${file}`, import.meta.url),
+            "utf8",
+          ),
+        );
       });
       continue;
     }
@@ -424,64 +481,192 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       // a stale catalog lookup even after the advisory lock. Rollback gives
       // this check a fresh catalog snapshot. A complete migration is required;
       // a conflicting partial table/index installation remains fatal.
-      if ((file !== "080_discovery_relative_consents.sql" &&
-           file !== "081_discovery_candidate_tiers.sql" &&
-           file !== "083_discovery_grandparent_consents.sql" &&
-           file !== "086_discovery_match_confirmation.sql" &&
-           file !== "087_discovery_match_decision_notes.sql") ||
-          (error as { code?: string }).code !== "42P07" ||
-          !(await db.prepare("", query).get())?.present) throw error;
+      if (
+        (file !== "080_discovery_relative_consents.sql" &&
+          file !== "081_discovery_candidate_tiers.sql" &&
+          file !== "083_discovery_grandparent_consents.sql" &&
+          file !== "086_discovery_match_confirmation.sql" &&
+          file !== "087_discovery_match_decision_notes.sql") ||
+        (error as { code?: string }).code !== "42P07" ||
+        !(await db.prepare("", query).get())?.present
+      )
+        throw error;
     }
   }
-  // The schema is global but membership RLS is per archive. Normalize each
-  // archive when its runtime opens, including archives opened after migration.
-  if ((await db.prepare("", `SELECT 1 AS present FROM archive_memberships
-    WHERE role IN ('admin','researcher') LIMIT 1`).get())?.present)
-    await db.transaction(async () => {
-      await db.prepare("", `UPDATE archive_memberships SET role='relative'
-        WHERE role IN ('admin','researcher')`).run();
-    });
-  if (!(await db.prepare("", `SELECT 1 AS present FROM discovery_publication_reconciled_archives
-    WHERE archive_id=current_setting('drevo.archive_id', true)`).get())?.present)
-    await db.transaction(async () => {
-      await db.exec("", `DELETE FROM published_people published USING people p
-        WHERE p.archive_id=published.archive_id AND p.id=published.person_id
-          AND NOT (coalesce(p.data->>'deceased' = 'true', false) OR
-                   nullif(p.data->>'death', '') IS NOT NULL)`);
-      await db.exec("", `INSERT INTO discovery_publication_reconciled_archives(archive_id)
-        VALUES(current_setting('drevo.archive_id', true)) ON CONFLICT DO NOTHING`);
-    });
-  if (!(await db.prepare("", "SELECT to_regclass('document_citation_refs') AS present").get())?.present)
+  if (
+    !(
+      await db
+        .prepare("", "SELECT to_regclass('document_citation_refs') AS present")
+        .get()
+    )?.present
+  )
     await db.transaction(async () => {
       await db.exec("", "SELECT pg_advisory_xact_lock(186743294)");
-      await db.exec("", readFileSync(new URL("../../ops/postgres/097_document_citation_index.sql", import.meta.url), "utf8"));
+      await db.exec(
+        "",
+        readFileSync(
+          new URL(
+            "../../ops/postgres/097_document_citation_index.sql",
+            import.meta.url,
+          ),
+          "utf8",
+        ),
+      );
     });
-  if (!(await db.prepare("", `SELECT 1 AS present FROM document_citation_index_state
-    WHERE archive_id=current_setting('drevo.archive_id',true)`).get())?.present)
-    await db.transaction(async () => {
-      for (const [table, kind, field] of [["people", "person", "data"],
-        ["family_unions", "union", "data"], ["relations", "relation", "sources"]])
-        await db.exec("", `INSERT INTO document_citation_refs(archive_id,document_id,kind,entity_id)
-          SELECT DISTINCT entity.archive_id,ref #>> '{}','${kind}',entity.id
-          FROM ${table} entity CROSS JOIN LATERAL jsonb_path_query(entity.${field},'$.**.documentId') ref
-          WHERE jsonb_typeof(ref)='string' AND ref #>> '{}' <> '' ON CONFLICT DO NOTHING`);
-      await db.exec("", `INSERT INTO document_citation_index_state(archive_id)
-        VALUES(current_setting('drevo.archive_id',true)) ON CONFLICT DO NOTHING`);
-    });
-  if (!(await db.prepare("", "SELECT to_regclass('platform_ai_settings') AS present").get())?.present)
+  if (
+    !(
+      await db
+        .prepare("", "SELECT to_regclass('platform_ai_settings') AS present")
+        .get()
+    )?.present
+  )
     await db.transaction(async () => {
       await db.prepare("", "SELECT pg_advisory_xact_lock(186743291)").get();
-      if (!(await db.prepare("", "SELECT to_regclass('platform_ai_settings') AS present").get())?.present)
-        await db.exec("", readFileSync(new URL("../../ops/postgres/099_platform_ai.sql", import.meta.url), "utf8"));
+      if (
+        !(
+          await db
+            .prepare(
+              "",
+              "SELECT to_regclass('platform_ai_settings') AS present",
+            )
+            .get()
+        )?.present
+      )
+        await db.exec(
+          "",
+          readFileSync(
+            new URL("../../ops/postgres/099_platform_ai.sql", import.meta.url),
+            "utf8",
+          ),
+        );
     });
+}
+
+async function initializeArchiveRuntimeSchema(db: StoreDatabase) {
+  // Global DDL/probes are shared, but existing messages in every other archive
+  // were hidden by RLS when the migration's initial backfill ran.
+  if (
+    (
+      await db
+        .prepare(
+          "",
+          "SELECT 1 AS present FROM ai_chat_messages WHERE change_version=0 LIMIT 1",
+        )
+        .get()
+    )?.present
+  )
+    await db.transaction(async () => {
+      await db.exec(
+        "",
+        "UPDATE ai_chat_messages SET change_version=id WHERE change_version=0",
+      );
+      await db.exec(
+        "",
+        `UPDATE ai_chats c SET messages_version=GREATEST(c.messages_version,
+        COALESCE((SELECT max(m.change_version) FROM ai_chat_messages m
+          WHERE m.archive_id=c.archive_id AND m.chat_id=c.id),0))`,
+      );
+    });
+  // The schema is global but membership RLS is per archive. Normalize each
+  // archive when its runtime opens, including archives opened after migration.
+  if (
+    (
+      await db
+        .prepare(
+          "",
+          `SELECT 1 AS present FROM archive_memberships
+    WHERE role IN ('admin','researcher') LIMIT 1`,
+        )
+        .get()
+    )?.present
+  )
+    await db.transaction(async () => {
+      await db
+        .prepare(
+          "",
+          `UPDATE archive_memberships SET role='relative'
+        WHERE role IN ('admin','researcher')`,
+        )
+        .run();
+    });
+  if (
+    !(
+      await db
+        .prepare(
+          "",
+          `SELECT 1 AS present FROM discovery_publication_reconciled_archives
+    WHERE archive_id=current_setting('drevo.archive_id', true)`,
+        )
+        .get()
+    )?.present
+  )
+    await db.transaction(async () => {
+      await db.exec(
+        "",
+        `DELETE FROM published_people published USING people p
+        WHERE p.archive_id=published.archive_id AND p.id=published.person_id
+          AND NOT (coalesce(p.data->>'deceased' = 'true', false) OR
+                   nullif(p.data->>'death', '') IS NOT NULL)`,
+      );
+      await db.exec(
+        "",
+        `INSERT INTO discovery_publication_reconciled_archives(archive_id)
+        VALUES(current_setting('drevo.archive_id', true)) ON CONFLICT DO NOTHING`,
+      );
+    });
+
+  if (
+    !(
+      await db
+        .prepare(
+          "",
+          `SELECT 1 AS present FROM document_citation_index_state
+    WHERE archive_id=current_setting('drevo.archive_id',true)`,
+        )
+        .get()
+    )?.present
+  )
+    await db.transaction(async () => {
+      for (const [table, kind, field] of [
+        ["people", "person", "data"],
+        ["family_unions", "union", "data"],
+        ["relations", "relation", "sources"],
+      ])
+        await db.exec(
+          "",
+          `INSERT INTO document_citation_refs(archive_id,document_id,kind,entity_id)
+          SELECT DISTINCT entity.archive_id,ref #>> '{}','${kind}',entity.id
+          FROM ${table} entity CROSS JOIN LATERAL jsonb_path_query(entity.${field},'$.**.documentId') ref
+          WHERE jsonb_typeof(ref)='string' AND ref #>> '{}' <> '' ON CONFLICT DO NOTHING`,
+        );
+      await db.exec(
+        "",
+        `INSERT INTO document_citation_index_state(archive_id)
+        VALUES(current_setting('drevo.archive_id',true)) ON CONFLICT DO NOTHING`,
+      );
+    });
+
   // A preview staged before the additive migration still occupies capacity
   // when its archive starts. RLS keeps this backfill within the active archive.
-  if ((await db.prepare("", "SELECT 1 AS present FROM workflow_stages WHERE kind='drevo' AND expires_at>? LIMIT 1")
-    .get(Date.now()))?.present)
+  if (
+    (
+      await db
+        .prepare(
+          "",
+          "SELECT 1 AS present FROM workflow_stages WHERE kind='drevo' AND expires_at>? LIMIT 1",
+        )
+        .get(Date.now())
+    )?.present
+  )
     await db.transaction(async () => {
       await db.exec("", "SELECT pg_advisory_xact_lock(186743294)");
-      await db.prepare("", `INSERT INTO platform_portable_preview_slots(token,archive_id,expires_at)
+      await db
+        .prepare(
+          "",
+          `INSERT INTO platform_portable_preview_slots(token,archive_id,expires_at)
         SELECT token,archive_id,expires_at FROM workflow_stages
-        WHERE kind='drevo' AND expires_at>? ON CONFLICT(token) DO NOTHING`).run(Date.now());
+        WHERE kind='drevo' AND expires_at>? ON CONFLICT(token) DO NOTHING`,
+        )
+        .run(Date.now());
     });
 }

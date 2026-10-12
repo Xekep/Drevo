@@ -29,16 +29,18 @@ function openAlbum(onOpen: () => void) {
 
 export function PersonPhotoAlbum({
   photos,
+  total = photos.length,
   onOpen,
 }: {
   photos: ArchivePhoto[];
+  total?: number;
   onOpen: () => void;
 }) {
   return (
     <button
       className="person-album-stack"
       onClick={() => openAlbum(onOpen)}
-      aria-label={`Открыть фотоальбом человека: ${photos.length} фото`}
+      aria-label={`Открыть фотоальбом человека: ${total} фото`}
     >
       {photos.length > 0 && (
         <span className="album-stack-pictures" aria-hidden="true">
@@ -57,7 +59,7 @@ export function PersonPhotoAlbum({
       <span className="album-stack-caption">
         <Images size={18} />
         <span>
-          Фотоальбом <small>{photos.length} фото</small>
+          Фотоальбом <small>{total} фото</small>
         </span>
         <ChevronRight size={18} />
       </span>

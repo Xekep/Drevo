@@ -41,7 +41,12 @@ import { backupCoordinator } from "./backup-coordinator.ts";
 import { platformBackupCoordinator } from "./platform-backup-coordinator.ts";
 import { platformBackupHttp } from "./platform-backup-http.ts";
 import { backupManagementHttp } from "./backup-management-http.ts";
-import { indexReferencedMediaOriginals } from "./media-originals.ts";
+import { mediaUsageLedger } from "./media-usage-ledger.ts";
+import {
+  preparationAdmission,
+  pendingAiAdmission,
+} from "./preparation-admission.ts";
+import { tiffDocumentRenderer } from "./document-images.ts";
 import {
   configuredDatabaseBackend,
   type StoreDatabase,
@@ -88,6 +93,15 @@ type StartedServer = {
     NonNullable<StoreDatabase["poolDiagnostics"]>
   > | null;
 };
+type SharedWork = {
+  ai: WorkQueue;
+  previews: WorkQueue;
+  snapshots: ReturnType<typeof archiveSnapshotBudget>;
+  preparation: ReturnType<typeof preparationAdmission>;
+  pendingAi: ReturnType<typeof pendingAiAdmission>;
+  tiff: ReturnType<typeof tiffDocumentRenderer>;
+  mediaScans: WorkQueue;
+};
 
 export async function startServer(
   port = Number(process.env.PORT || 3000),
@@ -98,7 +112,7 @@ export async function startServer(
   archiveId?: string,
   sharedPdfDecoder?: ReturnType<typeof pdfDecodeCoordinator>,
   sharedConnections?: PostgresConnections,
-  sharedWork?: { ai: WorkQueue; previews: WorkQueue; snapshots: ReturnType<typeof archiveSnapshotBudget> },
+  sharedWork?: SharedWork,
 ): Promise<StartedServer> {
   assertProductionOrigin(
     process.env.NODE_ENV === "production",
@@ -126,6 +140,7 @@ export async function startServer(
         )
       : configuredPath;
   const releases: Array<() => Promise<void>> = [];
+  let preparationOwner: ReturnType<typeof preparationAdmission> | undefined;
   const own = (release: () => void | Promise<void>) => {
     let released: Promise<void> | undefined;
     const close = () => (released ??= Promise.resolve().then(release));
@@ -134,6 +149,11 @@ export async function startServer(
   };
   const releaseResources = async () => {
     const errors: unknown[] = [];
+    // Closing sockets is not completion of async upload/decoder handlers.
+    // Let their cleanup commit/release reservations while every DB is alive.
+    // Only the root owns this admission; evicting one tenant must not close it.
+    preparationOwner?.close();
+    await preparationOwner?.drain();
     for (const release of [...releases].reverse()) {
       try {
         await release();
@@ -145,17 +165,29 @@ export async function startServer(
       throw new AggregateError(errors, "Не удалось закрыть ресурсы сервера");
   };
   try {
+    const preparation = sharedWork?.preparation ?? preparationAdmission();
     const work = sharedWork ?? {
       ai: workQueue(4, 32),
-        previews: workQueue(2, 32, 15_000),
-        snapshots: archiveSnapshotBudget(),
+      previews: workQueue(2, 32, 15_000),
+      snapshots: archiveSnapshotBudget(),
+      preparation,
+      pendingAi: pendingAiAdmission(),
+      tiff: tiffDocumentRenderer(preparation),
+      mediaScans: workQueue(1, 128, 30_000),
     };
+    if (!sharedWork) preparationOwner = work.preparation;
     if (!sharedWork)
-      own(() => {
+      own(async () => {
         work.ai.close();
         work.previews.close();
+        await work.tiff.close();
+        work.pendingAi.close();
+        work.mediaScans.close();
+        work.preparation.close();
       });
-    const pdfDecoder = sharedPdfDecoder ?? pdfDecodeCoordinator();
+    const pdfDecoder =
+      sharedPdfDecoder ??
+      pdfDecodeCoordinator(undefined, undefined, work.preparation);
     if (!sharedPdfDecoder) own(() => pdfDecoder.close());
     const connections =
       configuredDatabaseBackend(dbPath) === "postgres" && dbPath !== ":memory:"
@@ -260,23 +292,27 @@ export async function startServer(
     await removeStarterFamily(archive);
 
     const media = mediaStore(resolve(dirname(dbPath), "uploads"));
-    const mediaIndex = await indexReferencedMediaOriginals(
+    const mediaUsage = mediaUsageLedger(
       archive.db,
-      (await archive.read()).family,
-      media,
+      resolve(dirname(dbPath), "uploads"),
+      {
+        discoverUnreferenced:
+          !archiveId || archiveId === process.env.ARCHIVE_ID,
+        executionQueue: work.mediaScans,
+      },
     );
-    if (mediaIndex.missing)
-      console.warn(
-        JSON.stringify({
-          level: "warn",
-          event: "media_references_missing",
-          count: mediaIndex.missing,
-        }),
-      );
+    own(() => mediaUsage.close());
+    // Do not hydrate the entire archive or scan all originals before routing.
+    // Upload admission awaits this same singleflight before using the counter.
+    void mediaUsage
+      .ensure()
+      .catch(() => console.warn("media_usage_initialization_failed"));
     const previewImage = imagePreviews(
       resolve(dirname(dbPath), "previews"),
       work.previews,
+      work.preparation,
     );
+    own(() => previewImage.close());
     const cacheMaintenance = derivedCacheMaintenance(dirname(dbPath));
     own(() => cacheMaintenance.close());
     const restores = restoreStore(archive, dbPath);
@@ -329,7 +365,13 @@ export async function startServer(
       publicOrigin,
       !archiveId,
     );
-    const exportAccountData = accountDataExportHttp(archive.db, auth);
+    const exportAccountData = accountDataExportHttp(
+      archive.db,
+      auth,
+      undefined,
+      undefined,
+      work.preparation,
+    );
     const exportAccountAttachments = accountAttachmentExportHttp(
       archive.db,
       auth,
@@ -341,6 +383,9 @@ export async function startServer(
             : ["archives", targetArchiveId]),
           "uploads",
         ),
+      undefined,
+      undefined,
+      work.preparation,
     );
     const deleteAccount = accountSelfDeletionHttp(
       archive.db,
@@ -422,7 +467,8 @@ export async function startServer(
       publicOrigin,
     });
     const handleArchive = await archiveHttp({
-      aiSecrets: configuredPath === ":memory:" ? archive.db : { file: configuredPath },
+      aiSecrets:
+        configuredPath === ":memory:" ? archive.db : { file: configuredPath },
       geocoding,
       restores,
       archive,
@@ -437,21 +483,35 @@ export async function startServer(
       providerCleanup,
       decodePdf: pdfDecoder.decode,
       aiQueue: work.ai,
+      preparation: work.preparation,
+      pendingAi: work.pendingAi,
+      tiffRenderer: work.tiff,
+      mediaUsage,
       serveStatic,
     });
     const stopRequests = own(() => handleArchive.close());
-    const gedcom = gedcomHttp(archive, auth, dbPath, publicOrigin);
+    const gedcom = gedcomHttp(
+      archive,
+      auth,
+      dbPath,
+      publicOrigin,
+      mediaUsage,
+      work.preparation,
+    );
     own(() => gedcom.close());
     const portableExport = portableExportHttp(
       archive,
       auth,
       resolve(dirname(dbPath), "uploads"),
+      undefined,
+      work.preparation,
     );
     const portableImport = portableImportHttp(
       archive,
       auth,
       dbPath,
       publicOrigin,
+      mediaUsage,
     );
     own(() => portableImport.close());
     const handleSources = sourceCatalogHttp(archive, auth, publicOrigin);
@@ -632,7 +692,12 @@ export async function startServer(
       activeRequests++;
       void handle(req, res)
         .catch((error) => {
-          if (error instanceof PdfDecodeBusyError && !res.headersSent) {
+          if (req.aborted || res.destroyed) return;
+          if (
+            (error instanceof PdfDecodeBusyError ||
+              error instanceof WorkQueueBusyError) &&
+            !res.headersSent
+          ) {
             res.setHeader("Retry-After", "2");
             json(res, 503, { error: error.message });
             return;
@@ -648,12 +713,8 @@ export async function startServer(
             }),
           );
           if (!res.headersSent) {
-            if (error instanceof WorkQueueBusyError) {
-              res.setHeader("Retry-After", "2");
-              json(res, 503, { error: error.message });
-            } else json(res, 500, { error: "Ошибка сервера" });
-          }
-          else res.end();
+            json(res, 500, { error: "Ошибка сервера" });
+          } else res.end();
         })
         .finally(() => {
           activeRequests--;

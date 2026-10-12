@@ -51,7 +51,6 @@ import { MemberPreviewName } from "./components/member-preview-context";
 import { withGenerationAnchor } from "./domain/tree-preferences";
 import { TreeExportDialog } from "./components/tree-export-dialog";
 import { downloadVisibleGenealogy } from "./components/tree/visible-genealogy-download";
-import { visibleGenealogyHasCatalogLinks } from "./domain/visible-genealogy-catalog-warning";
 import { TreeImportDialog } from "./components/tree-import-dialog";
 import { AboutProject } from "./components/about-project";
 import { useDesktopEditing } from "./hooks/useDesktopEditing";
@@ -167,17 +166,12 @@ export default function App() {
       dispatch,
     } = selection;
   const treeCanvas = useRef<TreeCanvasHandle>(null);
+  const exportWarnings = archive.exportWarnings;
   const checkExportWarnings = useCallback(async (signal: AbortSignal) => {
     if (!family) return { parentEvidence: false, catalogLinks: false };
-    await loadDetails({ collections: ["people"] });
-    const current = currentFamily() || family;
     const visible = new Set(await treeCanvas.current!.visiblePersonIds(signal));
-    return {
-      parentEvidence: current.people.some((person) => visible.has(person.id) &&
-        person.parentClaims?.some((claim) => visible.has(claim.parentId))),
-      catalogLinks: visibleGenealogyHasCatalogLinks(current, visible),
-    };
-  }, [family, loadDetails, currentFamily]);
+    return exportWarnings([...visible], signal);
+  }, [family, exportWarnings]);
   const view =
     requestedView === "admin" || requestedView === "manage" || requestedView === "account"
       ? requestedView
@@ -314,15 +308,15 @@ export default function App() {
     [loadDetails, detailsGeneration],
   );
   const archiveAvailable = !!family;
-  const needsPeopleDetails = (view === "tree" && timelineDetails) || view === "quality";
+  const needsPeopleDetails = view === "quality";
   const needsPhotoDetails = view === "quality";
-  const projectionView = view === "places" || view === "insights" ? view : undefined;
-  const loadViewDetails = useCallback(() => {
-    if (projectionView) return loadDetails({ view: projectionView });
+  const projectionView = view === "tree" && timelineDetails ? "timeline" : view === "places" || view === "insights" ? view : undefined;
+  const loadViewDetails = useCallback((signal?: AbortSignal) => {
+    if (projectionView) return loadDetails({ view: projectionView, signal });
     const collections: Array<"people" | "photos"> = [];
     if (needsPeopleDetails) collections.push("people");
     if (needsPhotoDetails) collections.push("photos");
-    return collections.length ? loadDetails({ collections }) : Promise.resolve();
+    return collections.length ? loadDetails({ collections, signal }) : Promise.resolve();
   }, [needsPeopleDetails, needsPhotoDetails, loadDetails, projectionView]);
   const retryViewDetails = () => {
     void loadViewDetails().catch((reason) =>
@@ -331,7 +325,8 @@ export default function App() {
   useEffect(() => {
     if (!archiveAvailable) return;
     let active = true;
-    void loadViewDetails().catch((reason) => {
+    const controller = new AbortController();
+    void loadViewDetails(controller.signal).catch((reason) => {
       if (active)
         setNotice(
           reason instanceof Error
@@ -341,6 +336,7 @@ export default function App() {
     });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [
     archiveAvailable,
@@ -1158,6 +1154,7 @@ export default function App() {
                               detailsLoading={!hasPersonDetails(chosen[0].id)}
                               loadPersonDetails={loadPersonDetails}
                               hasPersonDetails={hasPersonDetails}
+                              personPhotoTotal={archive.personPhotoTotal}
                               onRetryDetails={() => {
                                 void archive.loadDetails({ people: [chosen[0].id] }).catch((reason) =>
                                   setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить карточку"));

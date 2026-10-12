@@ -39,7 +39,10 @@ import {
   CODE_INTERPRETER_TOOL,
   runCodeInterpreter,
 } from "./code-interpreter.ts";
-import { GeneratedFileAccessError, type generatedResearchFileStore } from "./generated-research-files.ts";
+import {
+  GeneratedFileAccessError,
+  type generatedResearchFileStore,
+} from "./generated-research-files.ts";
 import {
   executeResearchTool,
   RESEARCH_TOOL_DEFINITIONS,
@@ -51,8 +54,9 @@ import { aiVision } from "./ai-vision.ts";
 import { aiRuntimeConfig } from "./ai-settings.ts";
 import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
-import type { imagePreviews } from "./image-previews.ts";
+import type { ImagePreview } from "./image-previews.ts";
 import type { mediaStore } from "./media.ts";
+import type { PreparationAdmission } from "./preparation-admission.ts";
 import type { researchCatalogStore } from "./research-catalog.ts";
 import { researchPdf } from "./research-pdf.ts";
 import {
@@ -110,11 +114,12 @@ export function createResearchRunner({
   providerCleanup,
   webSearch,
   renderPdf = researchPdf,
+  preparation,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   suggestions: ReturnType<typeof researchSuggestionStore>;
   media: ReturnType<typeof mediaStore>;
-  previewImage: ReturnType<typeof imagePreviews>;
+  previewImage: ImagePreview;
   researchCatalog: ReturnType<typeof researchCatalogStore>;
   fetcher: typeof fetch;
   webSearch?: (
@@ -127,6 +132,7 @@ export function createResearchRunner({
   attachments?: ReturnType<typeof aiAttachmentStore>;
   providerCleanup?: AiProviderCleanup;
   renderPdf?: typeof researchPdf;
+  preparation?: PreparationAdmission;
 }) {
   const responses = yandexResponsesClient(fetcher);
   const vision = aiVision(fetcher);
@@ -435,7 +441,8 @@ export function createResearchRunner({
     const uiActions: UiAction[] = [],
       files: ResearchFile[] = [],
       viewControlRequested =
-        explicitViewControlRequest(message, view) || hideReviewPeopleRequest(message),
+        explicitViewControlRequest(message, view) ||
+        hideReviewPeopleRequest(message),
       reviewHideRequested = hideReviewPeopleRequest(message),
       filterSurnameRequested =
         viewControlRequested &&
@@ -620,6 +627,7 @@ export function createResearchRunner({
             signal,
             question: message,
             assertAiAccess,
+            preparation,
           })
         : { content: [], files: [] };
     const currentInput: ResponseItem = {
@@ -654,7 +662,9 @@ export function createResearchRunner({
       await assertAiAccess();
       await chats.assertProviderReady();
       conversationId = await responses.createConversation(runtime, signal);
-      if (!(await chats.bindNewRemote(chatId, conversationId, runtime, turnToken)))
+      if (
+        !(await chats.bindNewRemote(chatId, conversationId, runtime, turnToken))
+      )
         throw new Error("AI chat lease was lost before provider binding");
       pendingInput.push(...restoreHistory());
     }
@@ -731,7 +741,8 @@ export function createResearchRunner({
           console.warn(
             JSON.stringify({
               event: "ai.response_recovery",
-              providerStatus: error instanceof YandexResponseError ? error.status : undefined,
+              providerStatus:
+                error instanceof YandexResponseError ? error.status : undefined,
               afterTools: recoveryResults.length > 0,
               completedToolCount: recoveryResults.length,
             }),
@@ -751,7 +762,14 @@ export function createResearchRunner({
             runtime,
             recoverySignal,
           );
-          if (!(await chats.bindNewRemote(chatId, conversationId, runtime, turnToken)))
+          if (
+            !(await chats.bindNewRemote(
+              chatId,
+              conversationId,
+              runtime,
+              turnToken,
+            ))
+          )
             throw new Error("AI chat lease was lost before provider binding");
           await assertAiAccess();
           recordModelCall(metrics, runtime.modelUri);
@@ -789,7 +807,14 @@ export function createResearchRunner({
           await assertAiAccess();
           await chats.assertProviderReady();
           conversationId = await responses.createConversation(runtime, signal);
-          if (!(await chats.bindNewRemote(chatId, conversationId, runtime, turnToken)))
+          if (
+            !(await chats.bindNewRemote(
+              chatId,
+              conversationId,
+              runtime,
+              turnToken,
+            ))
+          )
             throw new Error("AI chat lease was lost before provider binding");
           pendingInput.splice(
             0,
@@ -1169,8 +1194,12 @@ export function createResearchRunner({
           }
         };
         const assertInstallAccess = async () => {
-          try { await (assertGeneratedFileInstall || assertAiAccess)(); }
-          catch (error) { accessCheckFailed = true; throw error; }
+          try {
+            await (assertGeneratedFileInstall || assertAiAccess)();
+          } catch (error) {
+            accessCheckFailed = true;
+            throw error;
+          }
         };
         try {
           toolArgs = JSON.parse(call.function.arguments || "{}");
@@ -1203,6 +1232,7 @@ export function createResearchRunner({
                 signal,
                 question: message,
                 assertAiAccess,
+                preparation,
               });
               result = {
                 files: chatAttachmentCatalog(selected),
@@ -1305,12 +1335,15 @@ export function createResearchRunner({
             for (const file of calculation.files) {
               // Provider cleanup can finish after the account is downgraded.
               await assertAiAccessBeforeSave();
-              const saved = await generatedFiles.save({
-                ...file,
-                ownerId: user.id,
-                chatId,
-                expires: Date.now() + 30 * 60_000,
-              }, assertInstallAccess);
+              const saved = await generatedFiles.save(
+                {
+                  ...file,
+                  ownerId: user.id,
+                  chatId,
+                  expires: Date.now() + 30 * 60_000,
+                },
+                assertInstallAccess,
+              );
               if (!saved) break;
               links.push(saved);
             }
@@ -1341,16 +1374,21 @@ export function createResearchRunner({
               ),
               name = researchPdfFilename(title);
             await assertAiAccessBeforeSave();
-            const saved = await generatedFiles.save({
-              ownerId: user.id,
-              chatId,
-              contentType: "application/pdf",
-              name,
-              bytes,
-              expires: Date.now() + 30 * 60_000,
-            }, assertInstallAccess);
+            const saved = await generatedFiles.save(
+              {
+                ownerId: user.id,
+                chatId,
+                contentType: "application/pdf",
+                name,
+                bytes,
+                expires: Date.now() + 30 * 60_000,
+              },
+              assertInstallAccess,
+            );
             if (!saved)
-              throw new Error("Временное хранилище файлов заполнено. Повторите позже.");
+              throw new Error(
+                "Временное хранилище файлов заполнено. Повторите позже.",
+              );
             files.push(saved);
             result = { created: true, file: saved };
           } else if (call.function.name === ANALYZE_PHOTO_TOOL.name) {
@@ -1376,6 +1414,7 @@ export function createResearchRunner({
               )!,
               source = media.open(photo.url);
             if (!source) throw new Error("Файл фотографии недоступен");
+            signal.throwIfAborted();
             const bytes = await previewImage(
               { path: source.path, cacheKey: source.name },
               "ai",
@@ -1449,22 +1488,53 @@ export function createResearchRunner({
               uiActions.push(action);
               result = { scheduled: true, action };
             } else if (raw.action === "filter_by_criteria") {
-              const label = typeof raw.label === "string" && raw.label.trim() ? raw.label.trim() : "Выборка по условиям";
-              if (!label || label.length > 100 || [...label].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127))
+              const label =
+                typeof raw.label === "string" && raw.label.trim()
+                  ? raw.label.trim()
+                  : "Выборка по условиям";
+              if (
+                !label ||
+                label.length > 100 ||
+                [...label].some(
+                  (character) =>
+                    character.charCodeAt(0) < 32 ||
+                    character.charCodeAt(0) === 127,
+                )
+              )
                 throw new Error("Укажите короткое название выборки");
-              const filtered = filterResearchPeople(family, raw.criteria, raw.mode);
-              uiActions.push({ type: "filter_people", personIds: filtered.personIds, label });
+              const filtered = filterResearchPeople(
+                family,
+                raw.criteria,
+                raw.mode,
+              );
+              uiActions.push({
+                type: "filter_people",
+                personIds: filtered.personIds,
+                label,
+              });
               const answer = `${raw.mode === "exclude" ? "Исключил из показа" : "Выбрал для показа"} ${filtered.matchedCount} ${plural(filtered.matchedCount, "карточку", "карточки", "карточек")} по условию «${label}». На древе остаётся ${filtered.personIds.length} из ${filtered.totalPeople}. Это временный фильтр; кнопка «Всё древо» вернёт общий вид.`;
               if (calls.length === 1 && !recoveryResults.length) {
                 // A standalone display command needs no synthesis. Avoid a
                 // second reasoning pass and an unmatched remote function call.
                 await chats.setRemote(chatId, null, turnToken);
                 onDelta(answer);
-                return { answer, references: [], suggestionIds: [], uiActions, files: [] };
+                return {
+                  answer,
+                  references: [],
+                  suggestionIds: [],
+                  uiActions,
+                  files: [],
+                };
               }
               // A combined analysis still needs its final answer. Keep the
               // potentially large ID set out of the provider's conversation.
-              result = { scheduled: true, matchedCount: filtered.matchedCount, visibleCount: filtered.personIds.length, totalPeople: filtered.totalPeople, notice: answer };
+              result = {
+                scheduled: true,
+                matchedCount: filtered.matchedCount,
+                visibleCount: filtered.personIds.length,
+                totalPeople: filtered.totalPeople,
+                notice: answer,
+              };
             } else if (raw.action === "filter_people") {
               if (
                 !subsetRequested ||
@@ -1504,7 +1574,9 @@ export function createResearchRunner({
               result = { scheduled: true, action };
             } else if (raw.action === "hide_review_people") {
               if (!reviewHideRequested)
-                throw new Error("Нужна явная просьба скрыть карточки на проверке");
+                throw new Error(
+                  "Нужна явная просьба скрыть карточки на проверке",
+                );
               const action: UiAction = { type: "hide_review_people" };
               uiActions.push(action);
               result = { scheduled: true, action };

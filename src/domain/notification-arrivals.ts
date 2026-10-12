@@ -35,8 +35,8 @@ export function combineNotificationPages(
   const items = retained.length || !all.length ? retained : all;
   return {
     items,
-    unread: last.unread,
-    latest: last.latest,
+    unread: pages[0].unread,
+    latest: pages[0].latest,
     next: all.length > items.length ? (items.at(-1)?.id ?? null) : last.next,
   };
 }

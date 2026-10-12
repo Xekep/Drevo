@@ -8,7 +8,8 @@ import sharp from "sharp";
 
 export const mediaPattern = /^\/media\/([a-zA-Z0-9-]+\.(jpg|png|webp|gif))$/;
 /** Portable citations may retain originals that are not gallery images. */
-export const originalMediaPattern = /^\/media\/([a-zA-Z0-9-]+\.(jpg|png|webp|gif|tif|pdf))$/;
+export const originalMediaPattern =
+  /^\/media\/([a-zA-Z0-9-]+\.(jpg|png|webp|gif|tif|pdf))$/;
 const mimeTypes: Record<string, string> = {
   jpg: "image/jpeg",
   png: "image/png",
@@ -70,8 +71,8 @@ export function mediaStore(directory: string) {
   const scanUsage = async () => {
     let files = 0,
       bytes = 0;
-    const names = (await readdir(directory)).filter(
-      (name) => mediaPattern.test(`/media/${name}`),
+    const names = (await readdir(directory)).filter((name) =>
+      mediaPattern.test(`/media/${name}`),
     );
     const iterator = names.values();
     await Promise.all(
@@ -110,7 +111,7 @@ export function mediaStore(directory: string) {
       });
       return usageWork;
     },
-    async addStream(source: Readable, limit: number) {
+    async addStream(source: Readable, limit: number, signal?: AbortSignal) {
       const id = randomUUID(),
         temporary = resolve(directory, `.${id}.upload`),
         headerParts: Buffer[] = [];
@@ -137,12 +138,20 @@ export function mediaStore(directory: string) {
           source,
           guard,
           createWriteStream(temporary, { flags: "wx" }),
+          {
+            signal: signal
+              ? AbortSignal.any([signal, AbortSignal.timeout(120_000)])
+              : AbortSignal.timeout(120_000),
+          },
         );
+        signal?.throwIfAborted();
         const ext = imageExtension(Buffer.concat(headerParts, headerLength));
         await sharp(temporary, { limitInputPixels: 50_000_000 })
+          .timeout({ seconds: 25 })
           .rotate()
           .resize({ width: 1, height: 1, fit: "inside" })
           .toBuffer();
+        signal?.throwIfAborted();
         const name = `${id}.${ext}`,
           target = resolve(directory, name);
         await rename(temporary, target);

@@ -14,3 +14,5 @@ export type ArchiveNotificationsPage = {
   next: number | null;
   latest: number;
 };
+export type ArchiveNotificationsSummary = Pick<ArchiveNotificationsPage, "unread" | "latest">;
+export type ArchiveNotificationsSlice = Pick<ArchiveNotificationsPage, "items" | "next">;

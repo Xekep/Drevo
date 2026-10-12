@@ -2,29 +2,102 @@ import { setImmediate } from "node:timers/promises";
 import type { StoreDatabase } from "./store-database.ts";
 
 type Snapshot = { revision: number; json: string };
-/** Process-wide budget of immutable serialized snapshots, never user responses. */
+/** One process-wide LRU for snapshots and derived indexes, never HTTP responses.
+ * Object/index owners provide conservative accounted sizes; this is not an RSS cap. */
 export function archiveSnapshotBudget(maximumBytes = 64 * 1024 ** 2) {
-  const entries = new Map<symbol, Snapshot>();
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1)
+    throw new Error("Invalid archive cache budget");
+  const entries = new Map<
+    symbol,
+    { value: unknown; bytes: number; onEvict?: () => void }
+  >();
   let bytes = 0;
   const remove = (key: symbol) => {
     const entry = entries.get(key);
-    if (entry) { bytes -= entry.json.length * 2; entries.delete(key); }
+    if (entry) {
+      bytes -= entry.bytes;
+      entries.delete(key);
+      entry.onEvict?.();
+    }
+  };
+  const getDerived = <T>(key: symbol): T | undefined => {
+    const entry = entries.get(key);
+    if (entry) {
+      entries.delete(key);
+      entries.set(key, entry);
+    }
+    return entry?.value as T | undefined;
+  };
+  const setDerived = (
+    key: symbol,
+    value: unknown,
+    size: number,
+    onEvict?: () => void,
+  ) => {
+    if (!Number.isSafeInteger(size) || size < 1)
+      throw new Error("Invalid derived cache size");
+    remove(key);
+    if (size > maximumBytes) {
+      onEvict?.();
+      return;
+    }
+    while (bytes + size > maximumBytes && entries.size)
+      remove(entries.keys().next().value!);
+    entries.set(key, { value, bytes: size, onEvict });
+    bytes += size;
   };
   return {
-    get(key: symbol) {
-      const entry = entries.get(key);
-      if (entry) { entries.delete(key); entries.set(key, entry); }
-      return entry;
-    },
-    set(key: symbol, entry: Snapshot) {
-      remove(key);
-      const size = entry.json.length * 2;
-      if (size > maximumBytes) return;
-      while (bytes + size > maximumBytes && entries.size) remove(entries.keys().next().value!);
-      entries.set(key, entry); bytes += size;
-    },
+    get: (key: symbol) => getDerived<Snapshot>(key),
+    set: (key: symbol, entry: Snapshot) =>
+      setDerived(key, entry, entry.json.length * 2),
+    getDerived,
+    setDerived,
     remove,
     diagnostics: () => ({ bytes, entries: entries.size, maximumBytes }),
+  };
+}
+
+/** Runtime ownership over the shared budget. Closing one view releases every
+ * derived key it created without clearing another archive's indexes. */
+export function archiveCacheView(
+  parent: ReturnType<typeof archiveSnapshotBudget>,
+) {
+  const keys = new Set<symbol>();
+  let closed = false;
+  const setDerived = (
+    key: symbol,
+    value: unknown,
+    bytes: number,
+    onEvict?: () => void,
+  ) => {
+    parent.remove(key);
+    if (closed) {
+      onEvict?.();
+      return;
+    }
+    keys.add(key);
+    parent.setDerived(key, value, bytes, () => {
+      keys.delete(key);
+      onEvict?.();
+    });
+  };
+  return {
+    get: (key: symbol) => (closed ? undefined : parent.get(key)),
+    set: (key: symbol, value: Snapshot) =>
+      setDerived(key, value, value.json.length * 2),
+    getDerived: <T>(key: symbol) =>
+      closed ? undefined : parent.getDerived<T>(key),
+    setDerived,
+    remove: (key: symbol) => {
+      keys.delete(key);
+      parent.remove(key);
+    },
+    diagnostics: parent.diagnostics,
+    close() {
+      closed = true;
+      for (const key of [...keys]) parent.remove(key);
+      keys.clear();
+    },
   };
 }
 
@@ -77,7 +150,9 @@ export function archiveSnapshotReader<T extends { revision: number }>(
             if (budget) {
               if (value.json.length * 2 <= maximumBytes) budget.set(key, value);
               else budget.remove(key);
-            } else cached = value.json.length * 2 <= maximumBytes ? value : undefined;
+            } else
+              cached =
+                value.json.length * 2 <= maximumBytes ? value : undefined;
             pending = undefined;
           }
         },
@@ -89,5 +164,11 @@ export function archiveSnapshotReader<T extends { revision: number }>(
     const entry = await pending.value;
     return await copy(entry);
   };
-  return Object.assign(read, { close: () => { disposed = true; cached = undefined; budget?.remove(key); } });
+  return Object.assign(read, {
+    close: () => {
+      disposed = true;
+      cached = undefined;
+      budget?.remove(key);
+    },
+  });
 }

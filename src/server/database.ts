@@ -21,6 +21,9 @@ import { dirname } from "node:path";
 import { auditStore } from "./audit.ts";
 import {
   galleryProjection,
+  galleryProjectionIndex,
+  galleryIndexPage,
+  type GalleryProjectionIndex,
   type GalleryQuery,
 } from "../domain/archive-view-projection.ts";
 import type { PostgresConnections } from "./postgres-connections.ts";
@@ -36,7 +39,9 @@ import { initializeArchiveSchema } from "./schema.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { prepareAwardCitationWrite } from "./award-citation-write.ts";
 import { patchPeople } from "./person-patches.ts";
-import { archiveSnapshotReader, type archiveSnapshotBudget } from "./archive-read-cache.ts";
+import { archiveSnapshotReader, archiveSnapshotBudget, archiveCacheView } from "./archive-read-cache.ts";
+import { archiveVisibilityReader } from "./archive-visibility-cache.ts";
+import { createHash } from "node:crypto";
 import { hydrateArchive, hydrateRelations } from "./archive-hydration.ts";
 import {
   allCitations,
@@ -372,25 +377,27 @@ export async function openArchive(
   }
 
   const audit = auditStore(db);
+  const derivedBudget = archiveCacheView(snapshotBudget ?? archiveSnapshotBudget());
+  const visibilityIds = archiveVisibilityReader(db, () => db.transaction(() => readArchiveVisibilityGraph(db), true), derivedBudget);
   const cacheBytes = 16 * 1024 ** 2;
   const read = archiveSnapshotReader(
       db,
       () => db.transaction(() => readArchive(db), true),
       cacheBytes,
-      snapshotBudget,
+      derivedBudget,
     ),
     meta = async () => await readArchiveMeta(db),
     portraitOverview = archiveSnapshotReader(
       db,
       () => db.transaction(() => readArchiveOverview(db, true), true),
       cacheBytes,
-      snapshotBudget,
+      derivedBudget,
     ),
     anonymousOverview = archiveSnapshotReader(
       db,
       () => db.transaction(() => readArchiveOverview(db, false), true),
       cacheBytes,
-      snapshotBudget,
+      derivedBudget,
     ),
     overview = (includePortraits = true) =>
       includePortraits ? portraitOverview() : anonymousOverview(),
@@ -426,14 +433,22 @@ export async function openArchive(
         )?.count || 0,
       );
     };
+  const personPhotoCounts = async (ids: ReadonlySet<string>, scope?: PhotoReadScope) => {
+    const where = photoReadWhere(scope);
+    const rows = await db.prepare(
+      `SELECT person_id,count(DISTINCT photo_id) AS total FROM photo_tags WHERE photo_id IN (SELECT id FROM photos${where.sqlite}) AND person_id IN (SELECT value FROM json_each(?)) GROUP BY person_id`,
+      `SELECT person_id,count(DISTINCT photo_id) AS total FROM photo_tags WHERE photo_id IN (SELECT id FROM photos${where.postgres}) AND person_id IN (SELECT jsonb_array_elements_text(?::jsonb)) GROUP BY person_id`,
+    ).all(...where.args, JSON.stringify([...ids]));
+    return Object.fromEntries([...ids].map(id => [id, Number(rows.find(row => row.person_id === id)?.total || 0)]));
+  };
   const viewPeople = async (
-    view: "places" | "gallery",
+    view: "places" | "gallery" | "timeline",
     visible?: ReadonlySet<string>,
   ) => {
     const fields =
       view === "places"
         ? ["id", "events"]
-        : ["id", "surname", "name", "patronymic"];
+        : view === "timeline" ? ["id", "events", "awards"] : ["id", "surname", "name", "patronymic"];
     const people = (
       await db
         .prepare(
@@ -450,7 +465,7 @@ export async function openArchive(
           spouses: [],
         }) as Person,
     );
-    if (view === "places")
+    if (view === "places" || view === "timeline")
       await hydrateCatalogCitations(db, {
         title: "",
         description: "",
@@ -459,51 +474,75 @@ export async function openArchive(
       });
     return people;
   };
+  const galleryKeys = new Map<string, symbol>();
+  const galleryPending = new Map<string, Promise<Family>>();
   const gallery = async (
     query: GalleryQuery,
     scope?: PhotoReadScope,
     readTree = true,
     readPhotos = true,
   ) => {
-    const people = readTree ? await viewPeople("gallery", scope?.visible) : [];
-    if (!readPhotos)
-      return galleryProjection(
-        { title: "", description: "", demo: false, people, photos: [] },
-        query,
-      );
-    const where = photoReadWhere(scope);
-    const fields = ["id", "url", "title", "year", "takenAt", "createdAt"];
-    // Only the compact album/order index is materialized; full annotations and
-    // descriptions are read for the current 30 photographs below.
-    const photos = (
-      await db
-        .prepare(
+    const revision = Number((await db.prepare("SELECT revision FROM archive WHERE id=1", "SELECT revision FROM archives WHERE id=current_setting('drevo.archive_id',true)").get())?.revision);
+    const reusable = db.canReuseGraphCache();
+    const scopeKey = createHash("sha256").update(JSON.stringify([revision, readTree, readPhotos, scope?.userId || "", scope ? [...scope.visible].sort() : null])).digest("hex");
+    const cacheKey = galleryKeys.get(scopeKey);
+    let index = reusable && cacheKey ? derivedBudget.getDerived<Family>(cacheKey) : undefined;
+    if (!readPhotos) return galleryProjection({ title: "", description: "", demo: false, people: readTree ? await viewPeople("gallery", scope?.visible) : [], photos: [] }, query);
+    if (!index) {
+      const loadIndex = async (): Promise<Family> => {
+        const people = readTree ? await viewPeople("gallery", scope?.visible) : [];
+        const where = photoReadWhere(scope);
+        const fields = ["id", "url", "title", "year", "takenAt", "createdAt"];
+        // Materialize compact album/order fields; full annotations/descriptions
+        // are fetched only for the 30 photographs in the current page below.
+        const photos = (await db.prepare(
           `SELECT json_object(${fields.map((field) => `'${field}',json_extract(data,'$.${field}')`).join(",")}) AS data FROM photos${where.sqlite} ORDER BY rowid`,
           `SELECT jsonb_build_object(${fields.map((field) => `'${field}',data->'${field}'`).join(",")}) AS data FROM photos${where.postgres} ORDER BY ordinal`,
-        )
-        .all(...where.args)
-    ).map(
-      (row) => ({ ...JSON.parse(String(row.data)), tags: [] }) as ArchivePhoto,
-    );
-    const byId = new Map(photos.map((photo) => [photo.id, photo]));
-    if (readTree)
-      for (const tag of await db
-        .prepare(
-          "SELECT photo_id,person_id FROM photo_tags ORDER BY rowid",
-          "SELECT photo_id,person_id FROM photo_tags ORDER BY ordinal",
-        )
-        .all()) {
-        if (!scope || scope.visible.has(String(tag.person_id)))
-          byId
-            .get(String(tag.photo_id))
-            ?.tags.push({
-              personId: String(tag.person_id),
-            } as ArchivePhoto["tags"][number]);
+        ).all(...where.args)).map(row => ({ ...JSON.parse(String(row.data)), tags: [] }) as ArchivePhoto);
+        const byId = new Map(photos.map(photo => [photo.id, photo]));
+        if (readTree) for (const tag of await db.prepare(
+          `SELECT photo_id,person_id FROM photo_tags WHERE photo_id IN (SELECT id FROM photos${where.sqlite}) ORDER BY rowid`,
+          `SELECT photo_id,person_id FROM photo_tags WHERE photo_id IN (SELECT id FROM photos${where.postgres}) ORDER BY ordinal`,
+        ).all(...where.args)) {
+          if (!scope || scope.visible.has(String(tag.person_id)))
+            byId.get(String(tag.photo_id))?.tags.push({ personId: String(tag.person_id) } as ArchivePhoto["tags"][number]);
+        }
+        return { title: "", description: "", demo: false, people, photos };
+      };
+      let loading = reusable ? galleryPending.get(scopeKey) : undefined;
+      if (!loading) {
+        loading = loadIndex();
+        if (reusable && galleryPending.size < 16) {
+          galleryPending.set(scopeKey, loading);
+          const owned = loading;
+          void loading.finally(() => { if (galleryPending.get(scopeKey) === owned) galleryPending.delete(scopeKey); }).catch(() => {});
+        }
       }
-    const result = galleryProjection(
-      { title: "", description: "", demo: false, people, photos },
-      query,
-    );
+      index = await loading;
+      if (reusable) {
+        const bytes = JSON.stringify(index).length * 4;
+        if (bytes <= 16 * 1024 ** 2) {
+          const key = galleryKeys.get(scopeKey) ?? Symbol("gallery index");
+          if (galleryKeys.size >= 16 && !galleryKeys.has(scopeKey)) derivedBudget.remove(galleryKeys.values().next().value!);
+          derivedBudget.setDerived(key, index, bytes, () => { if (galleryKeys.get(scopeKey) === key) galleryKeys.delete(scopeKey); });
+          galleryKeys.set(scopeKey, key);
+        }
+      }
+    }
+    const queryKey = `query:${scopeKey}:${JSON.stringify([query.mode, query.personId || null, query.year || null, query.personIds ? [...query.personIds].sort() : null])}`;
+    const derivedKey = galleryKeys.get(queryKey);
+    let prepared = reusable && derivedKey ? derivedBudget.getDerived<GalleryProjectionIndex>(derivedKey) : undefined;
+    if (!prepared) {
+      prepared = galleryProjectionIndex(index, query);
+      const bytes = JSON.stringify(prepared).length * 4;
+      if (reusable && bytes <= 16 * 1024 ** 2) {
+        const key = derivedKey ?? Symbol("gallery query index");
+        if (galleryKeys.size >= 16 && !galleryKeys.has(queryKey)) derivedBudget.remove(galleryKeys.values().next().value!);
+        derivedBudget.setDerived(key, prepared, bytes, () => { if (galleryKeys.get(queryKey) === key) galleryKeys.delete(queryKey); });
+        galleryKeys.set(queryKey, key);
+      }
+    }
+    const result = galleryIndexPage(prepared, query);
     if (result.photos.length) {
       const rows = await photoPage(
         0,
@@ -782,7 +821,7 @@ export async function openArchive(
           throw new Error("Версия больше не хранится в истории");
         const saved = JSON.parse(String(row.data));
         family =
-          saved.format === "drevo-person-patches-v1"
+          ["drevo-person-patches-v1", "drevo-archive-changes-v1"].includes(saved.format)
             ? applyArchiveChanges(family, saved.changes, "local").family
             : saved;
         nextRevision--;
@@ -794,7 +833,11 @@ export async function openArchive(
     appendPhoto,
     viewPeople,
     gallery,
-    close: async () => { read.close(); portraitOverview.close(); anonymousOverview.close(); await db.close(); },
+    personPhotoCounts,
+    exportWarnings: (ids: ReadonlySet<string>) => readExportWarnings(db, ids),
+    visibleIds: visibilityIds,
+    cacheBudget: derivedBudget,
+    close: async () => { read.close(); portraitOverview.close(); anonymousOverview.close(); visibilityIds.close(); galleryKeys.clear(); galleryPending.clear(); derivedBudget.close(); await db.close(); },
     db,
   };
 }
@@ -824,6 +867,34 @@ async function readArchiveMeta(db: StoreDatabase) {
  * источников, биографий, наград и событий. Тяжёлые JSON-поля отбрасывает сам
  * SQLite до передачи строки в Node.
  */
+export async function readArchiveVisibilityGraph(db: StoreDatabase) {
+  const revision = Number((await db.prepare("SELECT revision FROM archive WHERE id=1", "SELECT revision FROM archives WHERE id=current_setting('drevo.archive_id',true)").get())?.revision);
+  const people = (await db.prepare(
+    "SELECT id,json_extract(data,'$.createdBy') AS created_by FROM people ORDER BY rowid",
+    "SELECT id,data->>'createdBy' AS created_by FROM people ORDER BY ordinal",
+  ).all()).map(row => ({ id: String(row.id), ...(row.created_by ? { createdBy: String(row.created_by) } : {}), name: "", surname: "", patronymic: "", sex: "u", birth: "", birthPlace: "", generation: 1, column: 0, parents: [], spouses: [], sources: [] }) as Person);
+  const links = hydrateRelations(await db.prepare("SELECT id,source,target,type FROM relations ORDER BY rowid", "SELECT id,source,target,type FROM relations ORDER BY ordinal").all(), people);
+  const unions = (await db.prepare("SELECT id,participant_a,participant_b FROM family_unions ORDER BY rowid", "SELECT id,participant_a,participant_b FROM family_unions ORDER BY ordinal").all()).map(row => ({ id: String(row.id), participants: [String(row.participant_a), String(row.participant_b)] as [string, string], type: "partnership" as const }));
+  return { revision, family: { title: "", description: "", demo: false, people, links, unions, photos: [] } satisfies Family };
+}
+
+async function readExportWarnings(db: StoreDatabase, ids: ReadonlySet<string>) {
+  if (!ids.size) return { parentEvidence: false, catalogLinks: false };
+  const scope = JSON.stringify([...ids]);
+  const sqliteIds = "SELECT value FROM json_each(?)", postgresIds = "SELECT jsonb_array_elements_text(?::jsonb)";
+  const result = await db.prepare(
+    `SELECT EXISTS(SELECT 1 FROM relations WHERE type='parent' AND source IN (${sqliteIds}) AND target IN (${sqliteIds}) AND (COALESCE(confidence,'')<>'' OR json_array_length(COALESCE(sources,'[]'))>0)) AS parent_evidence,
+      (EXISTS(SELECT 1 FROM people p,json_tree(json_remove(p.data,'$.parentClaims')) j WHERE p.id IN (${sqliteIds}) AND j.key='catalogId' AND j.type='text' AND j.value<>'') OR
+       EXISTS(SELECT 1 FROM relations r,json_tree(COALESCE(r.sources,'[]')) j WHERE r.source IN (${sqliteIds}) AND r.target IN (${sqliteIds}) AND j.key='catalogId' AND j.type='text' AND j.value<>'') OR
+       EXISTS(SELECT 1 FROM family_unions u,json_tree(u.data) j WHERE u.participant_a IN (${sqliteIds}) AND u.participant_b IN (${sqliteIds}) AND j.key='catalogId' AND j.type='text' AND j.value<>'')) AS catalog_links`,
+    `SELECT EXISTS(SELECT 1 FROM relations WHERE type='parent' AND source IN (${postgresIds}) AND target IN (${postgresIds}) AND (COALESCE(confidence,'')<>'' OR jsonb_array_length(COALESCE(sources::jsonb,'[]'::jsonb))>0)) AS parent_evidence,
+      (EXISTS(SELECT 1 FROM people WHERE id IN (${postgresIds}) AND jsonb_path_exists(data - 'parentClaims', '$.**.catalogId ? (@.type() == "string" && @ != "")')) OR
+       EXISTS(SELECT 1 FROM relations WHERE source IN (${postgresIds}) AND target IN (${postgresIds}) AND jsonb_path_exists(COALESCE(sources::jsonb,'[]'::jsonb), '$.**.catalogId ? (@.type() == "string" && @ != "")')) OR
+       EXISTS(SELECT 1 FROM family_unions WHERE participant_a IN (${postgresIds}) AND participant_b IN (${postgresIds}) AND jsonb_path_exists(data, '$.**.catalogId ? (@.type() == "string" && @ != "")'))) AS catalog_links`,
+  ).get(...Array.from({ length: 7 }, () => scope));
+  return { parentEvidence: Number(result?.parent_evidence) === 1, catalogLinks: Number(result?.catalog_links) === 1 };
+}
+
 async function readArchiveOverview(db: StoreDatabase, includePortraits = true) {
   const meta = await readArchiveMeta(db);
   const remove = [

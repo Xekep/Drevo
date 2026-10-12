@@ -119,7 +119,11 @@ export function archiveNotificationsHttp({
             return json(res, 404, { error: "Уведомление не найдено" });
           if (receipt?.through !== undefined)
             await store.readThrough(user.id, visible, receipt.through);
-          const body = await store.list(user.id, visible, before);
+          const body = req.method === "GET" && url.searchParams.get("head") === "1"
+            ? await store.summary(user.id, visible)
+            : req.method === "GET" && before > 0 && url.searchParams.get("summary") === "0"
+              ? await store.tail(user.id, visible, before)
+              : await store.list(user.id, visible, before);
           // Hold session/membership/archive locks only for this small response,
           // with a deadline so a slow reader cannot delay access revocation.
           const delivered = finished(res, { cleanup: true });
@@ -136,7 +140,7 @@ export function archiveNotificationsHttp({
           return true;
         },
         false,
-        { archiveLock: "share" },
+        { archiveLock: "share", graphReadOnly: true },
       );
     } catch (error) {
       if (res.headersSent || res.destroyed) return true;

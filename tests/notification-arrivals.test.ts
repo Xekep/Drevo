@@ -83,7 +83,7 @@ test("revalidated pages retain loaded range without duplicates or ineligible cac
     195,
     "trimmed page resumes below the actual rendered range",
   );
-  assert.equal(combined.latest, 201);
+  assert.equal(combined.latest, 202, "global unread watermark comes from the fresh head, never the older tail");
 });
 
 test("when old loaded range disappears, fresh eligible older events remain usable", () => {

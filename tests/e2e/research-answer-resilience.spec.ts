@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { aiChatDetailRoute, aiChatFixture } from "./ai-chat-fixture.ts";
 
 const damaged =
   "[Повреждённая ссылка](#drevo-person-%FF) · [Неоднозначная ссылка](#drevo-photo-%252F) · [Рабочая ссылка](#drevo-person-e2e-child)";
@@ -29,11 +30,17 @@ for (const source of ["stream", "history"] as const) {
         },
       }),
     );
-    await page.route("**/api/ai/chats/damaged-history", (route) =>
+    await page.route(aiChatDetailRoute("damaged-history"), (route) =>
       route.fulfill({
-        json: {
-          messages: [{ role: "assistant", content: damaged, references: [] }],
-        },
+        json: aiChatFixture(route.request().url(), "damaged-history", [
+          {
+            id: 1,
+            version: 1,
+            role: "assistant",
+            content: damaged,
+            references: [],
+          },
+        ]),
       }),
     );
     await page.route("**/api/ai/chat/stream", (route) =>

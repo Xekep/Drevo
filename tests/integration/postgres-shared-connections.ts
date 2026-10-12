@@ -16,6 +16,13 @@ import { userStore } from "../../src/server/users.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { auditStore } from "../../src/server/audit.ts";
 import { archiveNotificationsStore } from "../../src/server/archive-notifications.ts";
+import { archiveVisibilityReader } from "../../src/server/archive-visibility-cache.ts";
+import {
+  archiveSnapshotBudget,
+  archiveCacheView,
+} from "../../src/server/archive-read-cache.ts";
+import type { Family } from "../../src/domain/types.ts";
+import type { ArchiveUser } from "../../src/domain/access.ts";
 
 // This program is appended to the ordinary-role, disposable runtime CI only.
 assert.match(
@@ -169,12 +176,146 @@ try {
     join(directory, "b.sqlite"),
     shared,
   );
-  // Ordinary-role SQL exercises the notification dialect and RLS isolation.
-  for (const db of [a, b]) await db.transaction(async () => {
-    await auditStore(db).record({ action: "Добавлено", entity: "people", entityId: "same-id",
-      label: "Historical private label", personIds: ["same-id"], details: [] },
-    { id: "fixture-owner", name: "Владелец" });
+  // Revisions and caches must respect a real old REPEATABLE READ snapshot,
+  // while another ordinary-role connection commits a newer graph.
+  const writer = await openPostgresDatabase(
+    "shared-probe-0",
+    join(directory, "writer.sqlite"),
+    shared,
+  );
+  const graphBudget = archiveCacheView(archiveSnapshotBudget());
+  const visibility = archiveVisibilityReader(
+    a,
+    () =>
+      a.transaction(async () => {
+        const revision = Number(
+          (await a
+            .prepare(
+              "",
+              "SELECT revision FROM archives WHERE id=current_setting('drevo.archive_id',true)",
+            )
+            .get())!.revision,
+        );
+        const rows = await a
+          .prepare("", "SELECT data FROM people ORDER BY ordinal")
+          .all();
+        const family: Family = {
+          title: "",
+          description: "",
+          demo: false,
+          people: rows.map((row) => JSON.parse(String(row.data))),
+          links: [],
+          photos: [],
+        };
+        return { revision, family };
+      }, true),
+    graphBudget,
+  );
+  const viewer = (id: string): ArchiveUser => ({
+    id,
+    name: id,
+    role: "reader",
+    archiveOwner: false,
+    createdAt: "",
+    approved: true,
+    treeAccess: "common_ancestors",
   });
+  try {
+    assert.equal((await visibility(viewer("alice"))).size, 0);
+    await assert.rejects(
+      a.transaction(async () => {
+        assert.equal(a.canReuseGraphCache(), false);
+        await a
+          .prepare(
+            "",
+            "UPDATE people SET data=jsonb_set(data,'{createdBy}',to_jsonb(?::text)) WHERE id='same-id'",
+          )
+          .run("alice");
+        assert.ok((await visibility(viewer("alice"))).has("same-id"));
+        throw new Error("rollback visibility writer");
+      }),
+      /rollback visibility writer/,
+    );
+    assert.equal((await visibility(viewer("alice"))).size, 0);
+    let snapshotReady!: () => void, continueSnapshot!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      snapshotReady = resolve;
+    });
+    const proceed = new Promise<void>((resolve) => {
+      continueSnapshot = resolve;
+    });
+    const oldSnapshot = a.transaction(async () => {
+      assert.equal(a.canReuseGraphCache(), true);
+      assert.equal((await visibility(viewer("alice"))).size, 0);
+      snapshotReady();
+      await proceed;
+      // Bob has no old cached scope, so this also checks graph reload in the
+      // old SQL snapshot after the newer global cache was populated.
+      assert.equal((await visibility(viewer("bob"))).size, 0);
+    }, true);
+    try {
+      await ready;
+      await writer.transaction(async () => {
+        await writer
+          .prepare(
+            "",
+            "UPDATE people SET data=jsonb_set(data,'{createdBy}',to_jsonb(?::text)) WHERE id='same-id'",
+          )
+          .run("bob");
+        await writer
+          .prepare(
+            "",
+            "UPDATE archives SET revision=revision+1 WHERE id=current_setting('drevo.archive_id',true)",
+          )
+          .run();
+      });
+      assert.ok((await visibility(viewer("bob"))).has("same-id"));
+    } finally {
+      continueSnapshot();
+      await oldSnapshot;
+    }
+    await a.transaction(
+      async () => {
+        assert.equal(a.canReuseGraphCache(), true);
+        assert.ok((await visibility(viewer("bob"))).has("same-id"));
+      },
+      false,
+      { archiveLock: "share", graphReadOnly: true },
+    );
+    await writer.transaction(async () => {
+      await writer
+        .prepare(
+          "",
+          "UPDATE people SET data=data-'createdBy' WHERE id='same-id'",
+        )
+        .run();
+      await writer
+        .prepare(
+          "",
+          "UPDATE archives SET revision=revision+1 WHERE id=current_setting('drevo.archive_id',true)",
+        )
+        .run();
+    });
+  } finally {
+    visibility.close();
+    graphBudget.close();
+    await writer.close();
+  }
+  // Ordinary-role SQL exercises the notification dialect and RLS isolation.
+  for (const db of [a, b])
+    await db.transaction(async () => {
+      await auditStore(db).record(
+        {
+          action: "Добавлено",
+          entity: "people",
+          entityId: "same-id",
+          label: "Historical private label",
+          personIds: ["same-id"],
+          details: [],
+        },
+        { id: "fixture-owner", name: "Владелец" },
+      );
+    });
   const inboxA = archiveNotificationsStore(a);
   const inboxB = archiveNotificationsStore(b);
   const notificationsA = await inboxA.list("shared-probe-reader", null);
@@ -184,8 +325,14 @@ try {
   assert.match(notificationsA.items[0].personName, /shared-probe-0/);
   assert.match(notificationsB.items[0].personName, /shared-probe-1/);
   assert.equal((await inboxA.list("shared-probe-reader", new Set())).unread, 0);
-  assert.equal(await inboxA.read("shared-probe-reader", null, notificationsB.latest), false);
-  assert.equal(await inboxA.read("shared-probe-reader", null, notificationsA.latest), true);
+  assert.equal(
+    await inboxA.read("shared-probe-reader", null, notificationsB.latest),
+    false,
+  );
+  assert.equal(
+    await inboxA.read("shared-probe-reader", null, notificationsA.latest),
+    true,
+  );
   assert.equal((await inboxA.list("shared-probe-reader", null)).unread, 0);
   assert.equal((await inboxB.list("shared-probe-reader", null)).unread, 1);
   await inboxB.readThrough("shared-probe-reader", null, notificationsB.latest);
@@ -195,29 +342,72 @@ try {
   const scopePeople = ["scope-hidden", "scope-visible"];
   await a.transaction(async () => {
     for (const [index, id] of scopePeople.entries()) {
-      await a.prepare("", "INSERT INTO people(id,ordinal,data) VALUES(?,?,?)")
+      await a
+        .prepare("", "INSERT INTO people(id,ordinal,data) VALUES(?,?,?)")
         .run(id, index + 10, JSON.stringify({ ...person, id, name: id }));
-      await auditStore(a).record({ action: "Добавлено", entity: "people", entityId: id,
-        label: "Scope receipt probe", personIds: [id], details: [] },
-      { id: "fixture-owner", name: "Владелец" });
+      await auditStore(a).record(
+        {
+          action: "Добавлено",
+          entity: "people",
+          entityId: id,
+          label: "Scope receipt probe",
+          personIds: [id],
+          details: [],
+        },
+        { id: "fixture-owner", name: "Владелец" },
+      );
     }
   });
   const onlyVisible = new Set(["scope-visible"]);
   const scopedInbox = await inboxA.list("shared-probe-reader", onlyVisible);
   assert.equal(scopedInbox.items.length, 1);
-  await a.transaction(() => inboxA.readThrough("shared-probe-reader", onlyVisible, scopedInbox.latest));
-  await a.transaction(() => inboxA.readThrough("shared-probe-reader", onlyVisible, scopedInbox.latest));
-  await a.transaction(() => inboxA.readThrough("shared-probe-reader", new Set(), Number.MAX_SAFE_INTEGER));
-  const expandedInbox = await inboxA.list("shared-probe-reader", new Set(scopePeople));
+  await a.transaction(() =>
+    inboxA.readThrough("shared-probe-reader", onlyVisible, scopedInbox.latest),
+  );
+  await a.transaction(() =>
+    inboxA.readThrough("shared-probe-reader", onlyVisible, scopedInbox.latest),
+  );
+  await a.transaction(() =>
+    inboxA.readThrough(
+      "shared-probe-reader",
+      new Set(),
+      Number.MAX_SAFE_INTEGER,
+    ),
+  );
+  const expandedInbox = await inboxA.list(
+    "shared-probe-reader",
+    new Set(scopePeople),
+  );
   assert.equal(expandedInbox.unread, 1);
-  assert.equal(expandedInbox.items.find((item) => item.personId === "scope-hidden")?.read, false);
-  assert.equal(expandedInbox.items.find((item) => item.personId === "scope-visible")?.read, true);
-  assert.equal((await a.prepare("", "SELECT count(*)::int AS n FROM archive_notification_cursors").get())!.n, 0);
-  assert.equal((await b.prepare("", "SELECT count(*)::int AS n FROM archive_notification_reads").get())!.n, 0);
+  assert.equal(
+    expandedInbox.items.find((item) => item.personId === "scope-hidden")?.read,
+    false,
+  );
+  assert.equal(
+    expandedInbox.items.find((item) => item.personId === "scope-visible")?.read,
+    true,
+  );
+  assert.equal(
+    (await a
+      .prepare(
+        "",
+        "SELECT count(*)::int AS n FROM archive_notification_cursors",
+      )
+      .get())!.n,
+    0,
+  );
+  assert.equal(
+    (await b
+      .prepare("", "SELECT count(*)::int AS n FROM archive_notification_reads")
+      .get())!.n,
+    0,
+  );
   assert.equal((await inboxB.list("shared-probe-reader", null)).unread, 0);
   await a.transaction(async () => {
     for (const item of expandedInbox.items)
-      await a.prepare("", "DELETE FROM archive_audit_entries WHERE id=?").run(item.id);
+      await a
+        .prepare("", "DELETE FROM archive_audit_entries WHERE id=?")
+        .run(item.id);
     for (const id of scopePeople)
       await a.prepare("", "DELETE FROM people WHERE id=?").run(id);
   });
@@ -253,27 +443,26 @@ try {
   app = await startServer(0, join(directory, "root.sqlite"), true);
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   const headers = { Cookie: `drevo_session=${token}` };
-  for (const index of [0, 1]) {
-    const response = await fetch(`${base}/a/shared-probe-${index}/api/notifications`, { headers });
-    assert.equal(response.status, 200);
-    const inbox = await response.json();
-    assert.equal(inbox.items.length, 1);
-    assert.equal(inbox.unread, 0);
-    assert.match(inbox.items[0].personName, new RegExp(`shared-probe-${index}`));
-  }
+  const coldDurations: number[] = [];
   const began = performance.now();
-  // Opening is intentionally bounded; all 100 distinct runtimes remain live.
-  for (let i = 0; i < 100; i++) {
-    const response = await fetch(
-      `${base}/a/shared-probe-${i}/api/family?projection=overview`,
-      { headers },
-    );
-    assert.equal(response.status, 200);
-    assert.equal(
-      (await response.json()).family.people[0].name,
-      `shared-probe-${i}`,
-    );
-  }
+  // Actual cold HTTP starts are concurrent, not a sequential warmup that
+  // hides a serial queue's deadline. Factory/schema/media work is not mocked.
+  await Promise.all(
+    Array.from({ length: 100 }, async (_, i) => {
+      const started = performance.now();
+      const response = await fetch(
+        `${base}/a/shared-probe-${i}/api/family?projection=overview`,
+        { headers },
+      );
+      assert.equal(response.status, 200);
+      assert.equal(
+        (await response.json()).family.people[0].name,
+        `shared-probe-${i}`,
+      );
+      coldDurations.push(performance.now() - started);
+    }),
+  );
+  coldDurations.sort((a, b) => a - b);
   const warmBegan = performance.now();
   await Promise.all(
     Array.from({ length: 100 }, async (_, i) => {
@@ -288,6 +477,21 @@ try {
       );
     }),
   );
+  const warmBurstMs = performance.now() - warmBegan;
+  for (const index of [0, 1]) {
+    const response = await fetch(
+      `${base}/a/shared-probe-${index}/api/notifications`,
+      { headers },
+    );
+    assert.equal(response.status, 200);
+    const inbox = await response.json();
+    assert.equal(inbox.items.length, 1);
+    assert.equal(inbox.unread, 0);
+    assert.match(
+      inbox.items[0].personName,
+      new RegExp(`shared-probe-${index}`),
+    );
+  }
   const directoryResponse = await fetch(
     `${base}/a/shared-probe-42/api/account/archives`,
     { headers },
@@ -307,8 +511,12 @@ try {
   console.log(
     JSON.stringify({
       operation: "100_distinct_archives",
-      sequentialColdMs: warmBegan - began,
-      warmBurstMs: performance.now() - warmBegan,
+      coldRequests: coldDurations.length,
+      coldMinMs: Number(coldDurations[0].toFixed(2)),
+      coldP95Ms: Number(coldDurations[94].toFixed(2)),
+      coldP99Ms: Number(coldDurations[98].toFixed(2)),
+      coldBurstMs: warmBegan - began,
+      warmBurstMs,
       errors: 0,
       pool: app.poolDiagnostics(),
     }),

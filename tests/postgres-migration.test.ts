@@ -89,6 +89,8 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     assert.equal(snapshot.rows.get("documents")?.[0]?.pages, "[]");
     assert.equal(snapshot.rows.get("person_comments")?.length, 1);
     assert.equal(snapshot.services.length, 33);
+    assert.ok(!snapshot.services.some((table) => table.name === "media_storage_usage"),
+      "derived counters must be rebuilt from imported originals, not copied");
     assert.ok(snapshot.services.some((table) => table.name === "notification_cursors"));
     assert.ok(snapshot.services.some((table) => table.name === "notification_reads"));
     assert.ok(!snapshot.services.some((table) =>

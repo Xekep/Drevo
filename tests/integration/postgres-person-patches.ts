@@ -1,3 +1,4 @@
+import { applyArchiveChanges } from "../../src/domain/changes.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { inverseChanges, type Change } from "../../src/domain/changes.ts";
@@ -87,14 +88,21 @@ test("standalone PostgreSQL card patch rejects citation and event fields without
   const { first } = await fixture(t);
   const before = await fingerprint(first);
   for (const [field, after] of [
-    ["sources", [{ catalogId: "missing-register", title: "", type: "", reference: "" }]],
+    [
+      "sources",
+      [{ catalogId: "missing-register", title: "", type: "", reference: "" }],
+    ],
     ["events", [{ id: "new-event", type: "move", sources: [] }]],
   ] as const) {
-    await assert.rejects(patch(first, tokens.admin, "tree-a",
-      change(field, undefined, after), 0),
-    /Ожидаются изменения полей существующих карточек/);
-    assert.deepEqual(await fingerprint(first), before,
-      `${field} must not bypass the full archive catalog and event policy`);
+    await assert.rejects(
+      patch(first, tokens.admin, "tree-a", change(field, undefined, after), 0),
+      /Ожидаются изменения полей существующих карточек/,
+    );
+    assert.deepEqual(
+      await fingerprint(first),
+      before,
+      `${field} must not bypass the full archive catalog and event policy`,
+    );
   }
 });
 
@@ -482,5 +490,79 @@ test("history retention affects only the edited archive", async (t) => {
       { archive_id: "tree-a", count: 50, oldest: 11 },
       { archive_id: "tree-b", count: 1, oldest: 0 },
     ],
+  );
+});
+
+test("scoped projected patches preserve rich hidden neighbors and quoted source URLs", async (t) => {
+  const { first } = await fixture(t);
+  await first.query("SELECT set_config('drevo.archive_id','tree-a',false)");
+  const source = {
+    title: "Private source",
+    type: "archive",
+    reference: "leaf-4",
+    url: "https://example.invalid/metric",
+    note: "Source note",
+  };
+  await first.query(
+    "UPDATE people SET data=data || $1::jsonb WHERE archive_id='tree-a'",
+    [
+      JSON.stringify({
+        biography: "Large biography ".repeat(1000),
+        sources: [source],
+        awards: [{ id: "rich-award", name: "Medal", year: "1970" }],
+      }),
+    ],
+  );
+  await first.query(
+    "UPDATE archive_memberships SET tree_access='common_ancestors',person_id='own' WHERE archive_id='tree-a' AND user_id='relative'",
+  );
+  const untouched = (
+    await first.query(
+      "SELECT id,xmin::text,data FROM people WHERE archive_id='tree-a' AND id<>'own' ORDER BY id",
+    )
+  ).rows;
+  const before = await readPostgresArchive(first, "tree-a");
+  const result = await patch(
+    first,
+    tokens.relative,
+    "tree-a",
+    change("birth", "2000", "2001", "own"),
+    0,
+  );
+  const saved = await readPostgresArchive(first, "tree-a");
+  assert.deepEqual(
+    (
+      await first.query(
+        "SELECT id,xmin::text,data FROM people WHERE archive_id='tree-a' AND id<>'own' ORDER BY id",
+      )
+    ).rows,
+    untouched,
+  );
+  const changed = saved.family.people.find((p) => p.id === "own")!;
+  assert.equal(changed.birth, "2001");
+  assert.deepEqual(changed.sources, [source]);
+  assert.equal(
+    changed.biography,
+    before.family.people.find((p) => p.id === "own")!.biography,
+  );
+  assert.deepEqual(
+    changed.awards,
+    before.family.people.find((p) => p.id === "own")!.awards,
+  );
+  assert.deepEqual(saved.family.photos, before.family.photos);
+  assert.ok(
+    result.appliedChanges.every(
+      (change) => change.id === "own" && change.field === "birth",
+    ),
+  );
+  const history = (
+    await first.query(
+      "SELECT data FROM history WHERE archive_id='tree-a' AND revision=0",
+    )
+  ).rows[0].data;
+  assert.equal(history.format, "drevo-archive-changes-v1");
+  assert.deepEqual(
+    applyArchiveChanges(saved.family, history.changes, "local").family,
+    before.family,
   );
 });

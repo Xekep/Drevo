@@ -2,9 +2,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import { finished } from "node:stream/promises";
-import { assertMemberPreviewDelivery, memberPreviewTarget,
-  samePreviewMember } from "./member-preview-access.ts";
-import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
+import {
+  assertMemberPreviewDelivery,
+  memberPreviewTarget,
+  samePreviewMember,
+} from "./member-preview-access.ts";
+import { isScopedUser } from "../domain/tree-access.ts";
+import { scopedArchiveReader } from "./scoped-archive-reader.ts";
 import { isArchiveOwner } from "../domain/access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { auditStore } from "./audit.ts";
@@ -12,6 +16,13 @@ import { ForbiddenError } from "./users.ts";
 import { statfs } from "node:fs/promises";
 import type { mediaStore } from "./media.ts";
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
+import type { MediaUsageLedger } from "./media-usage-ledger.ts";
+import {
+  preparationAdmission,
+  withPreparation,
+  PREPARATION_BYTES,
+  type PreparationAdmission,
+} from "./preparation-admission.ts";
 import { enforceUserStorageLimit } from "./storage-limits.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
 import {
@@ -69,11 +80,13 @@ async function readText(
   req: IncomingMessage,
   editing = false,
   reserve?: () => Promise<void>,
+  signal?: AbortSignal,
 ) {
   const chunks: Buffer[] = [];
   let size = 0;
   let reserved = false;
   for await (const chunk of req) {
+    signal?.throwIfAborted();
     size += chunk.length;
     if (size > Math.ceil(MAX_COMMENT_FILES_BYTES / 3) * 4 + 16_384)
       throw new Error("Слишком длинное сообщение");
@@ -109,6 +122,7 @@ async function readText(
     expectedUpdated,
     attachments: await prepareCommentAttachments(
       (body as { attachments?: unknown }).attachments,
+      signal,
     ),
   };
 }
@@ -122,6 +136,8 @@ export function personDiscussionHttp({
   beforeAttachmentDelivery,
   beforeLockedAttachmentDelivery,
   afterAttachmentAccessCheck,
+  preparation,
+  mediaUsage,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -131,11 +147,15 @@ export function personDiscussionHttp({
   beforeAttachmentDelivery?: () => Promise<void>;
   beforeLockedAttachmentDelivery?: () => Promise<void>;
   afterAttachmentAccessCheck?: () => Promise<void>;
+  preparation?: PreparationAdmission;
+  mediaUsage?: MediaUsageLedger;
 }) {
   const db = archive.db;
+  const budget = preparation ?? preparationAdmission();
+  const scopedIds = scopedArchiveReader(archive);
   const audit = auditStore(db);
   const attachments = discussionAttachmentStore(uploadsDirectory);
-  const quota = uploadQuota(db);
+  const quota = uploadQuota(db, { mediaUsage });
   const comment = db.prepare(
     `${sqliteComments} WHERE c.id=? AND c.person_id=?`,
     `${postgresComments} WHERE c.id=? AND c.person_id=?`,
@@ -159,9 +179,7 @@ export function personDiscussionHttp({
     } catch {
       return json(res, 400, { error: "Некорректный адрес человека" });
     }
-    let visible = isScopedUser(user)
-      ? visiblePersonIds((await archive.read()).family, user)
-      : null;
+    let visible = isScopedUser(user) ? await scopedIds(user) : null;
     const canSee = visible
       ? visible.has(personId)
       : !!(await db
@@ -187,9 +205,7 @@ export function personDiscussionHttp({
       if (!current || current.id !== user.id || !(await auth.canRead(req)))
         throw new ForbiddenError("Доступ к обсуждению изменился");
       user = current;
-      visible = isScopedUser(user)
-        ? visiblePersonIds((await archive.read()).family, user)
-        : null;
+      visible = isScopedUser(user) ? await scopedIds(user) : null;
       if (visible && !visible.has(personId))
         throw new ForbiddenError("Доступ к человеку изменился");
     }
@@ -217,12 +233,15 @@ export function personDiscussionHttp({
           row.updated_ms == null
             ? null
             : new Date(row.updated_ms).toISOString(),
-        canDelete: !preview && (isArchiveOwner(user) || row.author_id === user.id),
+        canDelete:
+          !preview && (isArchiveOwner(user) || row.author_id === user.id),
         canEdit: !preview && row.author_id === user.id,
         attachments: commentFilesFromJson(row.attachments).map((file) => {
           const url = `/api/people/${encodeURIComponent(personId)}/discussion/${row.id}/attachments/${file.id}`;
-          const type = commentFileMimeType(file.name) === file.type
-            ? file.type : "application/octet-stream";
+          const type =
+            commentFileMimeType(file.name) === file.type
+              ? file.type
+              : "application/octet-stream";
           return {
             ...file,
             type,
@@ -243,113 +262,170 @@ export function personDiscussionHttp({
         commentFilesFromJson(row.attachments).find(
           (item) => item.id === match[3],
         );
-      const safeType = file && commentFileMimeType(file.name) === file.type
-        ? file.type : "application/octet-stream";
+      const safeType =
+        file && commentFileMimeType(file.name) === file.type
+          ? file.type
+          : "application/octet-stream";
       if (!file || (match[4] && !safeType.startsWith("image/")))
         return json(res, 404, { error: "Вложение не найдено" });
-      try {
-        const bytes = await attachments.read(file, !!match[4]);
-        // Capture revision before the scoped visibility snapshot. A graph
-        // edit between that snapshot and final delivery must not bless stale
-        // visibility with the new revision.
-        const expectedRevision = (await archive.meta()).revision;
-        await checkCurrentAccess();
-        await afterAttachmentAccessCheck?.();
-        const current = (await comment.get(Number(match[2]), personId)) as
-          CommentRow | undefined;
-        if (!current || !commentFilesFromJson(current.attachments).some(
-          (item) => item.id === file.id && item.type === file.type,
-        ))
-          return json(res, 404, { error: "Вложение не найдено" });
-        await beforeAttachmentDelivery?.();
-        const send = () => {
-          res.writeHead(200, {
-            "Content-Type": match[4] ? "image/webp" : safeType,
-            "Content-Length": bytes.length,
-            "Cache-Control": "private, no-store",
-            "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": "default-src 'none'; sandbox",
-            "Content-Disposition": `${(match[4] || safeType.startsWith("image/")) && url.searchParams.get("download") !== "1" ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16)}`)}`,
-          });
-          res.end(bytes);
-        };
-        if (db.kind !== "postgres" || !db.postgresTransaction || auth.local) {
-          send();
-          return true;
-        }
-        const session = await auth.accountSession(req);
-        if (!session || (!preview && session.accountId !== user.id))
-          return json(res, 401, { error: "Сеанс завершён. Войдите снова" });
-        if (!db.archiveId) return json(res, 404, { error: "Вложение не найдено" });
-        let delivery: "sent" | "denied";
-        try {
-          delivery = await db.postgresTransaction(async (client) => {
-            let previewExpiresAt: number | null = null;
-            // Keep the archive, session, membership and comment stable until
-            // the in-memory attachment is handed to HTTP. A slow reader then
-            // cannot hold ordinary archive edits through the whole transfer.
-            await client.query("SELECT set_config('drevo.archive_id',$1,true)", [db.archiveId]);
-            const archiveRow = await client.query<{ revision: string }>(
-              "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT", [db.archiveId],
-            );
-            if (Number(archiveRow.rows[0]?.revision) !== expectedRevision)
-              return "denied";
-            if (preview) {
-              previewExpiresAt = await assertMemberPreviewDelivery(client,
-                db.archiveId!, session, user);
-              if (!previewExpiresAt) return "denied";
+      return await withPreparation(
+        req,
+        res,
+        budget,
+        PREPARATION_BYTES.export,
+        async (signal) => {
+          try {
+            const bytes = await attachments.read(file, !!match[4], signal);
+            signal.throwIfAborted();
+            // Capture revision before the scoped visibility snapshot. A graph
+            // edit between that snapshot and final delivery must not bless stale
+            // visibility with the new revision.
+            const expectedRevision = (await archive.meta()).revision;
+            await checkCurrentAccess();
+            await afterAttachmentAccessCheck?.();
+            const current = (await comment.get(Number(match[2]), personId)) as
+              CommentRow | undefined;
+            if (
+              !current ||
+              !commentFilesFromJson(current.attachments).some(
+                (item) => item.id === file.id && item.type === file.type,
+              )
+            )
+              return json(res, 404, { error: "Вложение не найдено" });
+            await beforeAttachmentDelivery?.();
+            const send = () => {
+              res.writeHead(200, {
+                "Content-Type": match[4] ? "image/webp" : safeType,
+                "Content-Length": bytes.length,
+                "Cache-Control": "private, no-store",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "default-src 'none'; sandbox",
+                "Content-Disposition": `${(match[4] || safeType.startsWith("image/")) && url.searchParams.get("download") !== "1" ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16)}`)}`,
+              });
+              res.end(bytes);
+            };
+            if (
+              db.kind !== "postgres" ||
+              !db.postgresTransaction ||
+              auth.local
+            ) {
+              send();
+              return true;
             }
-            const active = !preview ? await client.query<{ expires_at: string }>(
-              `SELECT expires_at FROM account_sessions WHERE token_hash=$1 AND user_id=$2
-               FOR SHARE NOWAIT`, [session.tokenHash, user.id],
-            ) : null;
-            if (!preview && (!active?.rows[0] || Number(active.rows[0].expires_at) <= Date.now()))
-              return "denied";
-            const members = !preview ? await client.query<{
-              role: string; approved: boolean; tree_access: string; person_id: string | null;
-            }>(
-              `SELECT role,approved,tree_access,person_id FROM archive_memberships
+            const session = await auth.accountSession(req);
+            if (!session || (!preview && session.accountId !== user.id))
+              return json(res, 401, { error: "Сеанс завершён. Войдите снова" });
+            if (!db.archiveId)
+              return json(res, 404, { error: "Вложение не найдено" });
+            let delivery: "sent" | "denied";
+            try {
+              delivery = await db.postgresTransaction(async (client) => {
+                let previewExpiresAt: number | null = null;
+                // Keep the archive, session, membership and comment stable until
+                // the in-memory attachment is handed to HTTP. A slow reader then
+                // cannot hold ordinary archive edits through the whole transfer.
+                await client.query(
+                  "SELECT set_config('drevo.archive_id',$1,true)",
+                  [db.archiveId],
+                );
+                const archiveRow = await client.query<{ revision: string }>(
+                  "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT",
+                  [db.archiveId],
+                );
+                if (Number(archiveRow.rows[0]?.revision) !== expectedRevision)
+                  return "denied";
+                if (preview) {
+                  previewExpiresAt = await assertMemberPreviewDelivery(
+                    client,
+                    db.archiveId!,
+                    session,
+                    user,
+                  );
+                  if (!previewExpiresAt) return "denied";
+                }
+                const active = !preview
+                  ? await client.query<{ expires_at: string }>(
+                      `SELECT expires_at FROM account_sessions WHERE token_hash=$1 AND user_id=$2
+               FOR SHARE NOWAIT`,
+                      [session.tokenHash, user.id],
+                    )
+                  : null;
+                if (
+                  !preview &&
+                  (!active?.rows[0] ||
+                    Number(active.rows[0].expires_at) <= Date.now())
+                )
+                  return "denied";
+                const members = !preview
+                  ? await client.query<{
+                      role: string;
+                      approved: boolean;
+                      tree_access: string;
+                      person_id: string | null;
+                    }>(
+                      `SELECT role,approved,tree_access,person_id FROM archive_memberships
                WHERE archive_id=$1 AND user_id=$2 FOR SHARE NOWAIT`,
-              [db.archiveId, user.id],
-            ) : null;
-            const member = members?.rows[0];
-            if (!preview && (!member?.approved || member.role !== user.role ||
-                (member.tree_access || "all") !== (user.treeAccess || "all") ||
-                (member.person_id || null) !== (user.personId || null)))
-              return "denied";
-            const comments = await client.query<{ attachments: unknown }>(
-              `SELECT attachments FROM person_comments WHERE id=$1 AND person_id=$2
-               FOR SHARE NOWAIT`, [Number(match[2]), personId],
-            );
-            if (!comments.rows[0] || !commentFilesFromJson(comments.rows[0].attachments)
-              .some((item) => item.id === file.id && item.type === file.type &&
-                item.name === file.name && item.size === file.size))
-              return "denied";
-            await beforeLockedAttachmentDelivery?.();
-            if (previewExpiresAt && Date.now() >= previewExpiresAt) return "denied";
-            if (!res.destroyed) send();
-            return "sent";
-          });
-        } catch (error) {
-          if ((error as { code?: string }).code === "55P03")
-            return json(res, 409, { error: "Права доступа меняются. Повторите запрос" });
-          throw error;
-        }
-        if (res.destroyed) return true;
-        if (delivery === "denied")
-          return json(res, 404, { error: "Вложение не найдено" });
-        return true;
-      } catch (error) {
-        if (res.destroyed) return true;
-        if (res.headersSent) {
-          res.destroy(error as Error);
-          return true;
-        }
-        if (error instanceof ForbiddenError ||
-            (error as NodeJS.ErrnoException).code === "ENOENT")
-          return json(res, 404, { error: "Файл вложения не найден" });
-        throw error;
-      }
+                      [db.archiveId, user.id],
+                    )
+                  : null;
+                const member = members?.rows[0];
+                if (
+                  !preview &&
+                  (!member?.approved ||
+                    member.role !== user.role ||
+                    (member.tree_access || "all") !==
+                      (user.treeAccess || "all") ||
+                    (member.person_id || null) !== (user.personId || null))
+                )
+                  return "denied";
+                const comments = await client.query<{ attachments: unknown }>(
+                  `SELECT attachments FROM person_comments WHERE id=$1 AND person_id=$2
+               FOR SHARE NOWAIT`,
+                  [Number(match[2]), personId],
+                );
+                if (
+                  !comments.rows[0] ||
+                  !commentFilesFromJson(comments.rows[0].attachments).some(
+                    (item) =>
+                      item.id === file.id &&
+                      item.type === file.type &&
+                      item.name === file.name &&
+                      item.size === file.size,
+                  )
+                )
+                  return "denied";
+                await beforeLockedAttachmentDelivery?.();
+                if (previewExpiresAt && Date.now() >= previewExpiresAt)
+                  return "denied";
+                if (!res.destroyed) send();
+                return "sent";
+              });
+            } catch (error) {
+              if ((error as { code?: string }).code === "55P03")
+                return json(res, 409, {
+                  error: "Права доступа меняются. Повторите запрос",
+                });
+              throw error;
+            }
+            if (res.destroyed) return true;
+            if (delivery === "denied")
+              return json(res, 404, { error: "Вложение не найдено" });
+            return true;
+          } catch (error) {
+            if (res.destroyed) return true;
+            if (res.headersSent) {
+              res.destroy(error as Error);
+              return true;
+            }
+            if (
+              error instanceof ForbiddenError ||
+              (error as NodeJS.ErrnoException).code === "ENOENT"
+            )
+              return json(res, 404, { error: "Файл вложения не найден" });
+            throw error;
+          }
+        },
+      );
     }
     if (match[3]) return json(res, 405, { error: "Метод не поддерживается" });
     const previewJson = async (value: unknown) => {
@@ -368,12 +444,21 @@ export function personDiscussionHttp({
         return json(res, 403, { error: "Предпросмотр недоступен" });
       try {
         const delivered = await db.postgresTransaction(async (client) => {
-          await client.query("SELECT set_config('drevo.archive_id',$1,true)", [db.archiveId]);
+          await client.query("SELECT set_config('drevo.archive_id',$1,true)", [
+            db.archiveId,
+          ]);
           const archiveRow = await client.query<{ revision: string }>(
-            "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT", [db.archiveId]);
-          if (Number(archiveRow.rows[0]?.revision) !== previewRevision) return false;
-          const expiresAt = await assertMemberPreviewDelivery(client,
-            db.archiveId!, session, user);
+            "SELECT revision FROM archives WHERE id=$1 FOR SHARE NOWAIT",
+            [db.archiveId],
+          );
+          if (Number(archiveRow.rows[0]?.revision) !== previewRevision)
+            return false;
+          const expiresAt = await assertMemberPreviewDelivery(
+            client,
+            db.archiveId!,
+            session,
+            user,
+          );
           if (!expiresAt) return false;
           const remaining = Math.min(4_000, expiresAt - Date.now());
           if (remaining <= 0 || Date.now() >= expiresAt) return false;
@@ -381,16 +466,25 @@ export function personDiscussionHttp({
           const timer = setTimeout(() => res.destroy(), remaining);
           timer.unref();
           try {
-            res.writeHead(200, { "Content-Type": "application/json; charset=utf-8",
-              "Cache-Control": "private, no-store" });
+            res.writeHead(200, {
+              "Content-Type": "application/json; charset=utf-8",
+              "Cache-Control": "private, no-store",
+            });
             res.end(body);
             await done;
-          } finally { clearTimeout(timer); }
+          } finally {
+            clearTimeout(timer);
+          }
           return true;
         });
-        return delivered ? true : json(res, 409, { error: "Права предпросмотра изменились" });
+        return delivered
+          ? true
+          : json(res, 409, { error: "Права предпросмотра изменились" });
       } catch (error) {
-        if (res.headersSent || res.destroyed) { res.destroy(); return true; }
+        if (res.headersSent || res.destroyed) {
+          res.destroy();
+          return true;
+        }
         if ((error as { code?: string }).code === "55P03")
           return json(res, 409, { error: "Права предпросмотра меняются" });
         throw error;
@@ -428,289 +522,311 @@ export function personDiscussionHttp({
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
 
-    let release: Awaited<ReturnType<typeof quota.acquire>> | undefined;
-    let savedFiles: CommentAttachmentFile[] = [];
-    async function reserve(
-      maximumBytes = MAX_COMMENT_FILES_BYTES + MAX_COMMENT_FILES * 256 * 1024,
-    ) {
-      if (!release)
-        release = await quota.acquire(
-          user.id,
-          maximumBytes,
-          async () => {
-            const disk = await statfs(uploadsDirectory);
-            return disk.bavail * disk.bsize;
-          },
-          () => media.usage(true),
-        );
-    }
-    try {
-      if (req.method === "POST" && !match[2]) {
-        const input = await readText(req, false, reserve);
-        const { text } = input;
-        if (
-          (!text.trim() && !input.attachments?.files.length) ||
-          input.attachments?.keep.length
-        )
-          throw new RangeError("Введите сообщение или прикрепите файл");
-        if (input.attachments?.files.length)
-          await reserve(
-            input.attachments.files.reduce(
-              (sum, file) =>
-                sum + file.bytes.length + (file.preview?.length || 0),
-              0,
-            ),
-          );
-        const now = Date.now();
-        const createdRow = await db.transaction(async () => {
-          await checkCurrentAccess();
-          const recent = (await db
-            .prepare(
-              "SELECT count(*) AS count FROM audit_entries WHERE actor_id=? AND entity='person_comment' AND action='Добавлено сообщение в обсуждение' AND at>=?",
-              "SELECT count(*) AS count FROM archive_audit_entries WHERE actor_id=? AND entity='person_comment' AND action='Добавлено сообщение в обсуждение' AND at>=?",
+    return await withPreparation(
+      req,
+      res,
+      budget,
+      PREPARATION_BYTES.discussion,
+      async (signal) => {
+        signal.throwIfAborted();
+        let release: Awaited<ReturnType<typeof quota.acquire>> | undefined;
+        let savedFiles: CommentAttachmentFile[] = [];
+        async function reserve(
+          maximumBytes = MAX_COMMENT_FILES_BYTES +
+            MAX_COMMENT_FILES * 256 * 1024,
+        ) {
+          if (!release)
+            release = await quota.acquire(
+              user.id,
+              maximumBytes,
+              async () => {
+                const disk = await statfs(uploadsDirectory);
+                return disk.bavail * disk.bsize;
+              },
+              () => media.usage(true),
+              signal,
+            );
+        }
+        try {
+          if (req.method === "POST" && !match[2]) {
+            const input = await readText(req, false, reserve, signal);
+            const { text } = input;
+            if (
+              (!text.trim() && !input.attachments?.files.length) ||
+              input.attachments?.keep.length
             )
-            .get(user.id, new Date(now - 60_000).toISOString())) as {
-            count: number;
-          };
-          if (recent.count >= 5) {
-            return null;
-          }
-          await release?.assertValid();
-          savedFiles = await attachments.save(input.attachments?.files || []);
-          const id = Number(
-            (
-              await db
+              throw new RangeError("Введите сообщение или прикрепите файл");
+            if (input.attachments?.files.length)
+              await reserve(
+                input.attachments.files.reduce(
+                  (sum, file) =>
+                    sum + file.bytes.length + (file.preview?.length || 0),
+                  0,
+                ),
+              );
+            const now = Date.now();
+            const createdRow = await db.transaction(async () => {
+              signal.throwIfAborted();
+              await checkCurrentAccess();
+              const recent = (await db
                 .prepare(
-                  "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,attachments) VALUES(?,?,?,?,?,?)",
-                  "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,attachments) VALUES(?,?,?,?,?,?) RETURNING id",
+                  "SELECT count(*) AS count FROM audit_entries WHERE actor_id=? AND entity='person_comment' AND action='Добавлено сообщение в обсуждение' AND at>=?",
+                  "SELECT count(*) AS count FROM archive_audit_entries WHERE actor_id=? AND entity='person_comment' AND action='Добавлено сообщение в обсуждение' AND at>=?",
+                )
+                .get(user.id, new Date(now - 60_000).toISOString())) as {
+                count: number;
+              };
+              if (recent.count >= 5) {
+                return null;
+              }
+              await release?.assertValid();
+              savedFiles = await attachments.save(
+                input.attachments?.files || [],
+              );
+              const id = Number(
+                (
+                  await db
+                    .prepare(
+                      "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,attachments) VALUES(?,?,?,?,?,?)",
+                      "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,attachments) VALUES(?,?,?,?,?,?) RETURNING id",
+                    )
+                    .run(
+                      personId,
+                      user.id,
+                      user.name,
+                      now,
+                      text,
+                      JSON.stringify(savedFiles),
+                    )
+                ).lastInsertRowid,
+              );
+              const row = (await comment.get(id, personId)) as CommentRow;
+              await enforceUserStorageLimit(db, user.id);
+              await enforcePostgresMediaQuota(db);
+              await audit.record(
+                {
+                  action: "Добавлено сообщение в обсуждение",
+                  entity: "person_comment",
+                  entityId: String(id),
+                  label: "Обсуждение человека",
+                  personIds: [personId],
+                  details: [],
+                },
+                user,
+              );
+
+              return row;
+            });
+            if (!createdRow)
+              return json(res, 429, {
+                error: "Подождите минуту перед новым сообщением",
+              });
+            savedFiles = [];
+            return json(res, 201, {
+              item: present(createdRow),
+              total: await total(),
+            });
+          }
+
+          if (req.method === "PATCH" && match[2]) {
+            const id = Number(match[2]);
+            if (!Number.isSafeInteger(id))
+              return json(res, 400, { error: "Некорректное сообщение" });
+            const edit = await readText(req, true, reserve, signal);
+            if (edit.attachments?.files.length)
+              await reserve(
+                edit.attachments.files.reduce(
+                  (sum, file) =>
+                    sum + file.bytes.length + (file.preview?.length || 0),
+                  0,
+                ),
+              );
+            let removed: CommentAttachmentFile[] = [];
+            const result = await db.transaction(async () => {
+              signal.throwIfAborted();
+              await checkCurrentAccess();
+              const row = (await comment.get(id, personId)) as
+                CommentRow | undefined;
+              if (!row) return { status: 404, error: "Сообщение не найдено" };
+              if (row.author_id !== user.id)
+                return {
+                  status: 403,
+                  error: "Редактировать сообщение может только его автор",
+                };
+              if ((row.updated_ms ?? null) !== edit.expectedUpdated)
+                return {
+                  status: 409,
+                  error:
+                    "Сообщение уже изменено в другой вкладке. Черновик сохранён; загрузите актуальный текст перед повторной правкой.",
+                  item: present(row),
+                };
+              const oldFiles = commentFilesFromJson(row.attachments);
+              const kept = edit.attachments
+                ? oldFiles.filter((file) =>
+                    edit.attachments!.keep.includes(file.id),
+                  )
+                : oldFiles;
+              if (
+                edit.attachments &&
+                kept.length !== edit.attachments.keep.length
+              )
+                throw new RangeError("Вложение не принадлежит этому сообщению");
+              if (
+                !edit.text.trim() &&
+                !kept.length &&
+                !edit.attachments?.files.length
+              )
+                throw new RangeError("Введите сообщение или прикрепите файл");
+              if (
+                row.text === edit.text &&
+                kept.length === oldFiles.length &&
+                !edit.attachments?.files.length
+              )
+                return {
+                  status: 200,
+                  item: present(row),
+                };
+              await release?.assertValid();
+              savedFiles = await attachments.save(
+                edit.attachments?.files || [],
+              );
+              const nextFiles = [...kept, ...savedFiles];
+              if (!validCommentFiles(nextFiles))
+                throw new RangeError("Общий размер вложений — не больше 20 МБ");
+              removed = oldFiles.filter(
+                (file) => !kept.some((entry) => entry.id === file.id),
+              );
+              const updated = Math.max(
+                Date.now(),
+                row.created_ms + 1,
+                (row.updated_ms ?? 0) + 1,
+              );
+              const changed = await db
+                .prepare(
+                  "UPDATE person_comments SET text=?,updated_ms=?,attachments=? WHERE id=? AND person_id=? AND author_id=? AND updated_ms IS ?",
+                  "UPDATE person_comments SET text=?,updated_ms=?,attachments=? WHERE id=? AND person_id=? AND author_id=? AND updated_ms IS NOT DISTINCT FROM ?",
                 )
                 .run(
+                  edit.text,
+                  updated,
+                  JSON.stringify(nextFiles),
+                  id,
                   personId,
                   user.id,
-                  user.name,
-                  now,
-                  text,
-                  JSON.stringify(savedFiles),
+                  edit.expectedUpdated,
+                );
+              if (changed.changes !== 1) {
+                const latest = (await comment.get(id, personId)) as
+                  CommentRow | undefined;
+                return {
+                  status: 409,
+                  error:
+                    "Сообщение уже изменено или удалено. Черновик сохранён.",
+                  ...(latest && {
+                    item: present(latest),
+                  }),
+                };
+              }
+              if (savedFiles.length) {
+                await enforceUserStorageLimit(db, user.id);
+                await enforcePostgresMediaQuota(db);
+              }
+              await audit.record(
+                {
+                  action: "Изменено сообщение в обсуждении",
+                  entity: "person_comment",
+                  entityId: String(id),
+                  label: "Обсуждение человека",
+                  personIds: [personId],
+                  details: [],
+                },
+                user,
+              );
+              return {
+                status: 200,
+                item: present({
+                  ...row,
+                  text: edit.text,
+                  updated_ms: updated,
+                  attachments: nextFiles,
+                }),
+              };
+            });
+            const { status, ...body } = result;
+            if (status === 200) {
+              savedFiles = [];
+              await attachments.remove(removed).catch(() => {});
+            }
+            return json(res, status, body);
+          }
+
+          if (req.method === "DELETE" && match[2]) {
+            const id = Number(match[2]);
+            if (!Number.isSafeInteger(id))
+              return json(res, 400, { error: "Некорректное сообщение" });
+            let deletedFiles: CommentAttachmentFile[] = [];
+            const changed = await db.transaction(async () => {
+              signal.throwIfAborted();
+              await checkCurrentAccess();
+              const row = (await comment.get(id, personId)) as
+                CommentRow | undefined;
+              if (!row) return { status: 404, error: "Сообщение не найдено" };
+              if (row.author_id !== user.id && !isArchiveOwner(user))
+                return {
+                  status: 403,
+                  error: "Удалить сообщение может автор или администратор",
+                };
+              deletedFiles = commentFilesFromJson(row.attachments);
+              const deleted = await db
+                .prepare(
+                  "DELETE FROM person_comments WHERE id=? AND person_id=?",
+                  "DELETE FROM person_comments WHERE id=? AND person_id=?",
                 )
-            ).lastInsertRowid,
-          );
-          const row = (await comment.get(id, personId)) as CommentRow;
-          await enforceUserStorageLimit(db, user.id);
-          await enforcePostgresMediaQuota(db);
-          await audit.record(
+                .run(id, personId);
+              if (deleted.changes !== 1) {
+                return { status: 404, error: "Сообщение не найдено" };
+              }
+              await audit.record(
+                {
+                  action: "Удалено сообщение из обсуждения",
+                  entity: "person_comment",
+                  entityId: String(id),
+                  label: "Обсуждение человека",
+                  personIds: [personId],
+                  details: [],
+                },
+                user,
+              );
+
+              return { status: 200 };
+            });
+            if (changed.status !== 200)
+              return json(res, changed.status, { error: changed.error });
+            await attachments.remove(deletedFiles).catch(() => {});
+            return json(res, 200, { deleted: true, total: await total() });
+          }
+          return json(res, 405, { error: "Метод не поддерживается" });
+        } catch (error) {
+          return json(
+            res,
+            error instanceof UploadQuotaError
+              ? error.status
+              : error instanceof ForbiddenError
+                ? 403
+                : 400,
             {
-              action: "Добавлено сообщение в обсуждение",
-              entity: "person_comment",
-              entityId: String(id),
-              label: "Обсуждение человека",
-              personIds: [personId],
-              details: [],
-            },
-            user,
-          );
-
-          return row;
-        });
-        if (!createdRow)
-          return json(res, 429, {
-            error: "Подождите минуту перед новым сообщением",
-          });
-        savedFiles = [];
-        return json(res, 201, {
-          item: present(createdRow),
-          total: await total(),
-        });
-      }
-
-      if (req.method === "PATCH" && match[2]) {
-        const id = Number(match[2]);
-        if (!Number.isSafeInteger(id))
-          return json(res, 400, { error: "Некорректное сообщение" });
-        const edit = await readText(req, true, reserve);
-        if (edit.attachments?.files.length)
-          await reserve(
-            edit.attachments.files.reduce(
-              (sum, file) =>
-                sum + file.bytes.length + (file.preview?.length || 0),
-              0,
-            ),
-          );
-        let removed: CommentAttachmentFile[] = [];
-        const result = await db.transaction(async () => {
-          await checkCurrentAccess();
-          const row = (await comment.get(id, personId)) as
-            CommentRow | undefined;
-          if (!row) return { status: 404, error: "Сообщение не найдено" };
-          if (row.author_id !== user.id)
-            return {
-              status: 403,
-              error: "Редактировать сообщение может только его автор",
-            };
-          if ((row.updated_ms ?? null) !== edit.expectedUpdated)
-            return {
-              status: 409,
               error:
-                "Сообщение уже изменено в другой вкладке. Черновик сохранён; загрузите актуальный текст перед повторной правкой.",
-              item: present(row),
-            };
-          const oldFiles = commentFilesFromJson(row.attachments);
-          const kept = edit.attachments
-            ? oldFiles.filter((file) =>
-                edit.attachments!.keep.includes(file.id),
-              )
-            : oldFiles;
-          if (edit.attachments && kept.length !== edit.attachments.keep.length)
-            throw new RangeError("Вложение не принадлежит этому сообщению");
-          if (
-            !edit.text.trim() &&
-            !kept.length &&
-            !edit.attachments?.files.length
-          )
-            throw new RangeError("Введите сообщение или прикрепите файл");
-          if (
-            row.text === edit.text &&
-            kept.length === oldFiles.length &&
-            !edit.attachments?.files.length
-          )
-            return {
-              status: 200,
-              item: present(row),
-            };
-          await release?.assertValid();
-          savedFiles = await attachments.save(edit.attachments?.files || []);
-          const nextFiles = [...kept, ...savedFiles];
-          if (!validCommentFiles(nextFiles))
-            throw new RangeError("Общий размер вложений — не больше 20 МБ");
-          removed = oldFiles.filter(
-            (file) => !kept.some((entry) => entry.id === file.id),
-          );
-          const updated = Math.max(
-            Date.now(),
-            row.created_ms + 1,
-            (row.updated_ms ?? 0) + 1,
-          );
-          const changed = await db
-            .prepare(
-              "UPDATE person_comments SET text=?,updated_ms=?,attachments=? WHERE id=? AND person_id=? AND author_id=? AND updated_ms IS ?",
-              "UPDATE person_comments SET text=?,updated_ms=?,attachments=? WHERE id=? AND person_id=? AND author_id=? AND updated_ms IS NOT DISTINCT FROM ?",
-            )
-            .run(
-              edit.text,
-              updated,
-              JSON.stringify(nextFiles),
-              id,
-              personId,
-              user.id,
-              edit.expectedUpdated,
-            );
-          if (changed.changes !== 1) {
-            const latest = (await comment.get(id, personId)) as
-              CommentRow | undefined;
-            return {
-              status: 409,
-              error: "Сообщение уже изменено или удалено. Черновик сохранён.",
-              ...(latest && {
-                item: present(latest),
-              }),
-            };
-          }
-          if (savedFiles.length) {
-            await enforceUserStorageLimit(db, user.id);
-            await enforcePostgresMediaQuota(db);
-          }
-          await audit.record(
-            {
-              action: "Изменено сообщение в обсуждении",
-              entity: "person_comment",
-              entityId: String(id),
-              label: "Обсуждение человека",
-              personIds: [personId],
-              details: [],
+                error instanceof Error
+                  ? error.message
+                  : "Не удалось сохранить сообщение",
             },
-            user,
           );
-          return {
-            status: 200,
-            item: present({
-              ...row,
-              text: edit.text,
-              updated_ms: updated,
-              attachments: nextFiles,
-            }),
-          };
-        });
-        const { status, ...body } = result;
-        if (status === 200) {
-          savedFiles = [];
-          await attachments.remove(removed).catch(() => {});
+        } finally {
+          if (savedFiles.length)
+            await attachments.remove(savedFiles).catch(() => {});
+          await release?.();
         }
-        return json(res, status, body);
-      }
-
-      if (req.method === "DELETE" && match[2]) {
-        const id = Number(match[2]);
-        if (!Number.isSafeInteger(id))
-          return json(res, 400, { error: "Некорректное сообщение" });
-        let deletedFiles: CommentAttachmentFile[] = [];
-        const changed = await db.transaction(async () => {
-          await checkCurrentAccess();
-          const row = (await comment.get(id, personId)) as
-            CommentRow | undefined;
-          if (!row) return { status: 404, error: "Сообщение не найдено" };
-          if (row.author_id !== user.id && !isArchiveOwner(user))
-            return {
-              status: 403,
-              error: "Удалить сообщение может автор или администратор",
-            };
-          deletedFiles = commentFilesFromJson(row.attachments);
-          const deleted = await db
-            .prepare(
-              "DELETE FROM person_comments WHERE id=? AND person_id=?",
-              "DELETE FROM person_comments WHERE id=? AND person_id=?",
-            )
-            .run(id, personId);
-          if (deleted.changes !== 1) {
-            return { status: 404, error: "Сообщение не найдено" };
-          }
-          await audit.record(
-            {
-              action: "Удалено сообщение из обсуждения",
-              entity: "person_comment",
-              entityId: String(id),
-              label: "Обсуждение человека",
-              personIds: [personId],
-              details: [],
-            },
-            user,
-          );
-
-          return { status: 200 };
-        });
-        if (changed.status !== 200)
-          return json(res, changed.status, { error: changed.error });
-        await attachments.remove(deletedFiles).catch(() => {});
-        return json(res, 200, { deleted: true, total: await total() });
-      }
-      return json(res, 405, { error: "Метод не поддерживается" });
-    } catch (error) {
-      return json(
-        res,
-        error instanceof UploadQuotaError
-          ? error.status
-          : error instanceof ForbiddenError
-            ? 403
-            : 400,
-        {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Не удалось сохранить сообщение",
-        },
-      );
-    } finally {
-      if (savedFiles.length)
-        await attachments.remove(savedFiles).catch(() => {});
-      await release?.();
-    }
+      },
+    );
   };
 }

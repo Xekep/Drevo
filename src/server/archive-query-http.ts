@@ -31,6 +31,7 @@ import {
 } from "./member-preview-access.ts";
 import { publicPersonId } from "./public-person-id.ts";
 import { analyzeFamilyInsights } from "../domain/family-insights.ts";
+import { withPreparation, preparationAdmission, type PreparationAdmission } from "./preparation-admission.ts";
 
 export function archiveQueryHttp({
   archive,
@@ -40,6 +41,7 @@ export function archiveQueryHttp({
   researchCatalog,
   beforeDelivery,
   beforeLockedDelivery,
+  preparation = preparationAdmission(),
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -48,8 +50,9 @@ export function archiveQueryHttp({
   researchCatalog: ReturnType<typeof researchCatalogStore>;
   beforeDelivery?: () => Promise<void>;
   beforeLockedDelivery?: () => Promise<void>;
+  preparation?: PreparationAdmission;
 }) {
-  const searchPeople = peopleSearchStore(archive.db);
+  const searchPeople = peopleSearchStore(archive.db, archive.cacheBudget);
   const scopedIds = scopedArchiveReader(archive);
   const publicSearchLimiter = createSharedRequestLimiter(
     archive.db,
@@ -135,7 +138,7 @@ export function archiveQueryHttp({
     };
   };
 
-  return async (
+  const handler = async (
     req: IncomingMessage,
     res: ServerResponse,
     url: URL,
@@ -337,10 +340,41 @@ export function archiveQueryHttp({
     }
 
     if (path === "/api/family") {
-      if (req.method !== "GET") return false;
+      const projection = url.searchParams.get("projection");
+      if (req.method !== "GET" && !(req.method === "POST" && projection === "export-warnings")) return false;
       if (!memberCanRead && !access.publicTree && !access.publicAlbums)
         return json(res, 401, { error: "Sign in to view this archive" });
-      const projection = url.searchParams.get("projection");
+      if (projection === "timeline" || projection === "export-warnings") {
+        const readTree = memberCanRead || access.publicTree, readPhotos = memberCanRead || access.publicAlbums;
+        if (!readTree) return json(res, 401, { error: "Войдите для просмотра людей" });
+        let requested: string[] | undefined;
+        if (projection === "export-warnings") {
+          if (req.method !== "POST") { res.setHeader("Allow", "POST"); return json(res, 405, { error: "Ожидается POST" }); }
+          if (!req.headers["content-type"]?.startsWith("application/json")) return json(res, 415, { error: "Ожидается JSON" });
+          const chunks: Buffer[] = [];
+          let size = 0;
+          try {
+            for await (const chunk of req) { size += chunk.length; if (size > 4 * 1024 ** 2) return json(res, 413, { error: "Слишком много карточек для проверки" }); chunks.push(Buffer.from(chunk)); }
+            requested = JSON.parse(Buffer.concat(chunks).toString("utf8")).ids;
+          } catch { return json(res, 400, { error: "Некорректные идентификаторы" }); }
+          if (!Array.isArray(requested) || requested.length > 100_000 || !requested.every(publicPersonId) || new Set(requested).size !== requested.length)
+            return json(res, 400, { error: "Некорректные идентификаторы" });
+        }
+        const prepared = await archive.db.transaction(async () => {
+          const meta = await archive.meta();
+          const pageToken = `${meta.revision}:${Number(readTree)}:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
+          if (url.searchParams.get("token") !== pageToken) return null;
+          const visible = isScopedUser(visitor) ? await scopedIds(visitor) : undefined;
+          if (requested && visible && requested.some(id => !visible.has(id))) return { missing: true } as const;
+          const result = projection === "timeline"
+            ? { people: (await archive.viewPeople("timeline", visible)).map(({ id, events, awards }) => ({ id, ...(events ? { events } : {}), ...(awards ? { awards } : {}) })) }
+            : { warnings: await archive.exportWarnings(new Set(requested)) };
+          return { revision: meta.revision, pageToken, ...result };
+        }, true);
+        if (!prepared) return changed();
+        if ("missing" in prepared) return json(res, 404, { error: "Человек не найден или недоступен" });
+        return deliverArchiveJson(prepared, undefined, prepared.revision);
+      }
       if (projection === "photos") {
         let ids: unknown;
         try {
@@ -430,6 +464,7 @@ export function archiveQueryHttp({
                       offset,
                       personId,
                       year,
+                      includeIndex: url.searchParams.get("index") !== "0",
                     },
                     scope,
                     readTree,
@@ -504,11 +539,13 @@ export function archiveQueryHttp({
           if (people.length !== requested.size)
             return { missing: true } as const;
           const scope = visible ? { visible, userId: visitor!.id } : undefined;
+          const preview = url.searchParams.get("preview") === "1" && offset === 0;
+          const album = readPhotos && preview ? await archive.gallery({ mode: "all", personIds: [...requested], includeIndex: false }, scope, true, true) : undefined;
           return {
             revision: meta.revision,
             pageToken,
-            people: people.map(personDetails),
-            photos: readPhotos
+            people: people.map(person => personDetails(visible ? { ...person, parentClaims: person.parentClaims?.filter(claim => visible.has(claim.parentId)) } : person)),
+            photos: album ? album.photos : readPhotos
               ? await archive.photoPage(
                   offset,
                   archivePageSize,
@@ -516,9 +553,10 @@ export function archiveQueryHttp({
                   requested,
                 )
               : [],
-            photoTotal: readPhotos
+            photoTotal: album ? album.total : readPhotos
               ? await archive.photoCount(scope, requested)
               : 0,
+            ...(preview ? { personPhotoTotals: readPhotos ? await archive.personPhotoCounts(requested, scope) : Object.fromEntries([...requested].map(id => [id, 0])) } : {}),
           };
         }, true);
         if (!prepared) return changed();
@@ -708,14 +746,18 @@ export function archiveQueryHttp({
     }
     if (!memberCanRead && !access.publicTree)
       return json(res, 401, { error: "Войдите для экспорта древа" });
-    const { family, revision } = isScopedUser(visitor)
-      ? await scopedSnapshot(visitor)
-      : await archive.read();
-    return deliverArchiveJson(
-      analysisExport(family, revision, new Date().toISOString()),
-      url.searchParams.get("download") === "1"
-        ? 'attachment; filename="drevo-family.json"'
-        : undefined,
-    );
+    return withPreparation(req, res, preparation, 64 * 1024 ** 2, async signal => {
+      const { family, revision } = isScopedUser(visitor)
+        ? await scopedSnapshot(visitor)
+        : await archive.read();
+      signal.throwIfAborted();
+      return deliverArchiveJson(
+        analysisExport(family, revision, new Date().toISOString()),
+        url.searchParams.get("download") === "1"
+          ? 'attachment; filename="drevo-family.json"'
+          : undefined,
+      );
+    });
   };
+  return Object.assign(handler, { close: () => searchPeople.close() });
 }

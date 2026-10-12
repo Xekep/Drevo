@@ -131,8 +131,9 @@ function fixture(count = 170) {
         people: family.people
           .filter((p) => ids.includes(p.id))
           .map(personDetails),
-        photos: photos.slice(offset, offset + 40),
+        photos: photos.slice(0, 30),
         photoTotal: photos.length,
+        personPhotoTotals: Object.fromEntries(ids.map(id => [id, family.photos!.filter(photo => photo.tags.some(tag => tag.personId === id)).length])),
       });
     }
     assert.equal(url.searchParams.get("projection"), "page");
@@ -242,11 +243,12 @@ test("card reads run between collection batches, preserving hydrated fields", as
   assert.equal(reader.isComplete("people"), true);
 });
 
-test("person album pages are deduplicated and collection demands preserve hydrated fields", async () => {
+test("profile reads only one album preview and preserves its actual total", async () => {
   const { reader, calls, updates, family } = fixture();
   await reader.loadPeople(["p0"]);
-  assert.equal(calls.length, 2, "41 tagged photos require two bounded pages");
-  assert.equal(updates.at(-1)!.family.photos!.length, 41);
+  assert.equal(calls.length, 1, "opening a card never downloads its whole album");
+  assert.equal(updates.at(-1)!.family.photos!.length, 30);
+  assert.equal(reader.personPhotoTotal("p0"), 41);
   assert.ok(
     updates
       .at(-1)!
@@ -291,6 +293,7 @@ test("lazy reads recover one revision conflict via overview, never the full-fami
         people: [personDetails(family.people[2])],
         photos: [],
         photoTotal: 0,
+        personPhotoTotals: { p2: 0 },
       });
     },
     (data) => updates.push(data),
@@ -351,6 +354,7 @@ test("late detail replies cannot overwrite an already committed write", async ()
           people: [personDetails(family.people[2])],
           photos: [],
           photoTotal: 0,
+          personPhotoTotals: { p2: 0 },
         });
       }
       assert.equal(url, "/api/family?projection=overview");
@@ -412,4 +416,28 @@ test("an overview refresh in flight cannot roll back a subsequently committed wr
     updated.people[2].biography,
   );
   assert.equal(reader.hasPerson("p2"), true);
+});
+
+test("leaving a collection view aborts its reads without completing the collection or requesting later batches", async () => {
+  const setup = fixture(1000);
+  const controller = new AbortController();
+  let entered!: () => void;
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  const calls: string[] = [];
+  const reader = archiveDetails(setup.initial, async (url, init) => {
+    calls.push(url);
+    entered();
+    await new Promise<void>((resolve, reject) => {
+      if (init?.signal?.aborted) reject(new DOMException("Aborted", "AbortError"));
+      else init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+    });
+    return setup.request(url);
+  }, () => assert.fail("aborted page must not publish"));
+  const pending = reader.loadCollections(["people"], controller.signal);
+  await ready;
+  controller.abort();
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(calls.length, 4, "only the already dispatched bounded group starts");
+  assert.equal(reader.isComplete("people"), false);
+  assert.ok(calls.every(url => !url.includes("offset=160")));
 });

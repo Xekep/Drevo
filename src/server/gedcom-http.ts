@@ -30,12 +30,22 @@ import { recordMediaOriginal } from "./media-originals.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
 import { documentSearchText } from "../shared/document-details.ts";
 import { personCitations, unionCitations } from "./source-catalog-store.ts";
+import type { MediaUsageLedger } from "./media-usage-ledger.ts";
+import {
+  preparationAdmission,
+  preparationRequest,
+  PREPARATION_BYTES,
+  type PreparationAdmission,
+} from "./preparation-admission.ts";
+import { WorkQueueBusyError } from "./work-queue.ts";
 
 export function gedcomHttp(
   archive: Awaited<ReturnType<typeof openArchive>>,
   auth: Awaited<ReturnType<typeof createAuth>>,
   dbPath: string,
   publicOrigin?: string,
+  mediaUsage?: MediaUsageLedger,
+  preparation?: PreparationAdmission,
 ) {
   type Stage = {
     family: Family;
@@ -48,7 +58,8 @@ export function gedcomHttp(
     uploads = join(dirname(dbPath), "uploads");
   mkdirSync(stageRoot, { recursive: true });
   mkdirSync(uploads, { recursive: true });
-  const quota = uploadQuota(archive.db);
+  const quota = uploadQuota(archive.db, { mediaUsage });
+  const budget = preparation ?? preparationAdmission();
   const media = mediaStore(uploads);
   let exporting = false;
   const stagePath = (token: string) => {
@@ -145,20 +156,36 @@ export function gedcomHttp(
         return json(actor ? 403 : 401, {
           error: "Перенос данных доступен администратору",
         });
+      let releasePreparation: (() => void) | undefined;
+      let request: ReturnType<typeof preparationRequest> | undefined;
       try {
         if (
           (url.pathname === "/api/gedcom/export" && req.method === "GET") ||
-          (url.pathname === "/api/gedcom/export-visible" && req.method === "POST")
+          (url.pathname === "/api/gedcom/export-visible" &&
+            req.method === "POST")
         ) {
+          if (exporting)
+            return json(429, { error: "Другой экспорт уже выполняется" });
+          request = preparationRequest(req, res, 10 * 60_000);
+          releasePreparation = await budget.acquire(
+            PREPARATION_BYTES.export,
+            request.signal,
+          );
+          request.signal.throwIfAborted();
           const format = url.searchParams.get("format") || "gedzip7";
           if (!["gedcom551", "gedcom7", "gedzip7"].includes(format))
             return json(400, { error: "Неизвестный формат экспорта" });
           let family = (await archive.read()).family;
+          request.signal.throwIfAborted();
           let visible: Set<string> | undefined;
           if (url.pathname === "/api/gedcom/export-visible") {
             if (!isSameOriginRequest(req, publicOrigin))
               return json(403, { error: "Недопустимый источник запроса" });
-            if (!String(req.headers["content-type"] || "").startsWith("application/x-www-form-urlencoded"))
+            if (
+              !String(req.headers["content-type"] || "").startsWith(
+                "application/x-www-form-urlencoded",
+              )
+            )
               return json(415, { error: "Неверный формат запроса" });
             const parts: Buffer[] = [];
             let bytes = 0;
@@ -170,52 +197,89 @@ export function gedcomHttp(
             }
             let ids: unknown;
             try {
-              ids = JSON.parse(new URLSearchParams(Buffer.concat(parts).toString("utf8")).get("ids") || "");
+              ids = JSON.parse(
+                new URLSearchParams(Buffer.concat(parts).toString("utf8")).get(
+                  "ids",
+                ) || "",
+              );
             } catch {
               return json(400, { error: "Неверный список людей" });
             }
             const known = new Set(family.people.map((person) => person.id));
-            if (!Array.isArray(ids) || !ids.length || ids.length > 10000 ||
-                ids.some((id) => typeof id !== "string" || !known.has(id)))
+            if (
+              !Array.isArray(ids) ||
+              !ids.length ||
+              ids.length > 10000 ||
+              ids.some((id) => typeof id !== "string" || !known.has(id))
+            )
               return json(400, { error: "Неверный список людей" });
             visible = new Set(ids);
             family = {
               ...family,
-              people: family.people.filter((person) => visible!.has(person.id)).map((person) => ({
-                ...person,
-                parents: person.parents.filter((id) => visible!.has(id)),
-                parentClaims: person.parentClaims?.filter((claim) => visible!.has(claim.parentId)),
-                spouses: person.spouses.filter((id) => visible!.has(id)),
-              })),
-              links: family.links?.filter((link) => visible!.has(link.from) && visible!.has(link.to)),
-              unions: family.unions?.filter((union) => union.participants.every((id) => visible!.has(id))),
-              photos: family.photos?.filter((photo) =>
-                photo.tags.some((tag) => visible!.has(tag.personId)) ||
-                family.people.some((person) => visible!.has(person.id) && person.photo === photo.url),
-              ).map((photo) => ({
-                ...photo,
-                tags: photo.tags.filter((tag) => visible!.has(tag.personId)),
-              })),
+              people: family.people
+                .filter((person) => visible!.has(person.id))
+                .map((person) => ({
+                  ...person,
+                  parents: person.parents.filter((id) => visible!.has(id)),
+                  parentClaims: person.parentClaims?.filter((claim) =>
+                    visible!.has(claim.parentId),
+                  ),
+                  spouses: person.spouses.filter((id) => visible!.has(id)),
+                })),
+              links: family.links?.filter(
+                (link) => visible!.has(link.from) && visible!.has(link.to),
+              ),
+              unions: family.unions?.filter((union) =>
+                union.participants.every((id) => visible!.has(id)),
+              ),
+              photos: family.photos
+                ?.filter(
+                  (photo) =>
+                    photo.tags.some((tag) => visible!.has(tag.personId)) ||
+                    family.people.some(
+                      (person) =>
+                        visible!.has(person.id) && person.photo === photo.url,
+                    ),
+                )
+                .map((photo) => ({
+                  ...photo,
+                  tags: photo.tags.filter((tag) => visible!.has(tag.personId)),
+                })),
             };
           }
           let items = await exportMedia(archive.db, family);
           if (visible) {
-            const documents = new Set([
-              ...family.people.flatMap(personCitations),
-              ...(family.unions || []).flatMap(unionCitations),
-              ...(family.links || []).flatMap((link) => link.sources || []),
-            ].map((source) => source.documentId).filter(Boolean));
-            items = items.filter((item) =>
-              !item.document || item.personIds.some((id) => visible!.has(id)) || documents.has(item.id),
-            ).map((item) => ({
-              ...item,
-              personIds: item.personIds.filter((id) => visible!.has(id)),
-              portraitIds: item.portraitIds.filter((id) => visible!.has(id)),
-              ...(item.document ? { document: {
-                ...item.document,
-                eventLinks: item.document.eventLinks?.filter((link) => visible!.has(link.personId)),
-              } } : {}),
-            }));
+            const documents = new Set(
+              [
+                ...family.people.flatMap(personCitations),
+                ...(family.unions || []).flatMap(unionCitations),
+                ...(family.links || []).flatMap((link) => link.sources || []),
+              ]
+                .map((source) => source.documentId)
+                .filter(Boolean),
+            );
+            items = items
+              .filter(
+                (item) =>
+                  !item.document ||
+                  item.personIds.some((id) => visible!.has(id)) ||
+                  documents.has(item.id),
+              )
+              .map((item) => ({
+                ...item,
+                personIds: item.personIds.filter((id) => visible!.has(id)),
+                portraitIds: item.portraitIds.filter((id) => visible!.has(id)),
+                ...(item.document
+                  ? {
+                      document: {
+                        ...item.document,
+                        eventLinks: item.document.eventLinks?.filter((link) =>
+                          visible!.has(link.personId),
+                        ),
+                      },
+                    }
+                  : {}),
+              }));
           }
           if (format === "gedzip7") {
             if (exporting)
@@ -229,7 +293,11 @@ export function gedcomHttp(
                 items,
                 async () => {
                   const current = await auth.currentUser(req);
-                  if (!current?.approved || !isArchiveOwner(current) || current.id !== actor.id)
+                  if (
+                    !current?.approved ||
+                    !isArchiveOwner(current) ||
+                    current.id !== actor.id
+                  )
                     throw new ForbiddenError("Доступ администратора отозван");
                   res.writeHead(200, {
                     "Content-Type": "application/zip",
@@ -238,6 +306,7 @@ export function gedcomHttp(
                     "X-Content-Type-Options": "nosniff",
                   });
                 },
+                request.signal,
               );
               return true;
             } finally {
@@ -250,7 +319,11 @@ export function gedcomHttp(
             media: items,
           });
           const current = await auth.currentUser(req);
-          if (!current?.approved || !isArchiveOwner(current) || current.id !== actor.id)
+          if (
+            !current?.approved ||
+            !isArchiveOwner(current) ||
+            current.id !== actor.id
+          )
             throw new ForbiddenError("Доступ администратора отозван");
           res.writeHead(200, {
             "Content-Type": "text/vnd.familysearch.gedcom; charset=utf-8",
@@ -331,7 +404,11 @@ export function gedcomHttp(
               randomUUID(),
             );
             const currentActor = await auth.currentUser(req);
-            if (!currentActor?.approved || !isArchiveOwner(currentActor) || currentActor.id !== actor.id)
+            if (
+              !currentActor?.approved ||
+              !isArchiveOwner(currentActor) ||
+              currentActor.id !== actor.id
+            )
               return json(403, { error: "Доступ администратора отозван" });
             if (
               parsed.family.people.length + current.family.people.length >
@@ -451,7 +528,11 @@ export function gedcomHttp(
             );
           }
           const currentActor = await auth.currentUser(req);
-          if (!currentActor?.approved || !isArchiveOwner(currentActor) || currentActor.id !== actor.id)
+          if (
+            !currentActor?.approved ||
+            !isArchiveOwner(currentActor) ||
+            currentActor.id !== actor.id
+          )
             throw new Error("Доступ администратора отозван");
           const result = await archive.write(
             {
@@ -553,6 +634,10 @@ export function gedcomHttp(
           await release?.();
         }
       } catch (error) {
+        if (error instanceof WorkQueueBusyError) {
+          res.setHeader("Retry-After", "2");
+          return json(503, { error: error.message });
+        }
         if (res.headersSent) {
           res.destroy(error as Error);
           return true;
@@ -567,6 +652,9 @@ export function gedcomHttp(
                 : 400,
           { error: (error as Error).message },
         );
+      } finally {
+        releasePreparation?.();
+        request?.dispose();
       }
     },
   };

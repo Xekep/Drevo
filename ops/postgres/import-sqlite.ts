@@ -185,6 +185,9 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
     "archive",
     ...tables.map((table) => table.name),
     ...serviceTables,
+    // Derived counters are rebuilt by PostgreSQL's original-metadata triggers,
+    // never copied as service state from a potentially stale SQLite snapshot.
+    ...["media_storage_usage"].filter((name) => actual.includes(name)),
     ...["platform_ai_cleanup_keys", "platform_ai_conversations"].filter((name) => actual.includes(name)),
   ]
     .filter(

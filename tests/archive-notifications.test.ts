@@ -192,6 +192,12 @@ test("notifications follow current scope, confirmed events and individual receip
       );
     const first = await read("other");
     const second = await read("other", `?before=${first.next}`);
+    const summaryResponse = await request("other", "GET", undefined, undefined, "?head=1");
+    assert.equal(summaryResponse.status, 200);
+    assert.deepEqual(await summaryResponse.json(), { unread: first.unread, latest: first.latest });
+    const tailResponse = await request("other", "GET", undefined, undefined, `?before=${first.next}&summary=0`);
+    assert.equal(tailResponse.status, 200);
+    assert.deepEqual(await tailResponse.json(), { items: second.items, next: second.next });
     assert.equal(first.items.length, 20);
     assert.ok(second.items.length > 0);
     assert.ok(second.items.every((item) => item.id < first.items.at(-1)!.id));

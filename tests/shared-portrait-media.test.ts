@@ -16,7 +16,6 @@ import { sharesStore } from "../src/server/shares.ts";
 import { publicSharingHttp } from "../src/server/public-sharing-http.ts";
 import type { openArchive } from "../src/server/database.ts";
 import { mediaStore } from "../src/server/media.ts";
-import type { imagePreviews } from "../src/server/image-previews.ts";
 import type { ArchiveUser, Family } from "../src/domain/index.ts";
 
 const actor: ArchiveUser = {
@@ -169,11 +168,11 @@ test("shared preview does not release a portrait replaced during generation", as
         type: "image/png",
       }),
     } as ReturnType<typeof mediaStore>,
-    previewImage: (async () => {
+    previewImage: async () => {
       previewStarted();
       await resume;
       return Buffer.from("old portrait preview");
-    }) as ReturnType<typeof imagePreviews>,
+    },
     shares: {
       get: async () => ({ personIds: ["person"] }),
     } as unknown as ReturnType<typeof sharesStore>,
@@ -228,9 +227,9 @@ test("shared GIF original does not stream after its portrait changes", async () 
       read: async () => ({ family: currentFamily }),
     } as Awaited<ReturnType<typeof openArchive>>,
     media: mediaStore(uploads),
-    previewImage: (async () => {
+    previewImage: async () => {
       throw new Error("GIF must stream unchanged");
-    }) as ReturnType<typeof imagePreviews>,
+    },
     shares: {
       get: async () => {
         if (++lookups === 2) {
