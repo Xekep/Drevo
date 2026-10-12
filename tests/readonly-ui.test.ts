@@ -89,6 +89,8 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       onChanged: noop,
       save: async () => family,
       canEdit: true,
+      currentPath: "/manage",
+      onNavigate: noop,
     };
     for (const platformAdmin of [false, true]) {
       assert.doesNotMatch(
@@ -102,6 +104,7 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
     );
     const platform = renderToStaticMarkup(createElement(PlatformSettingsPage, {
       accountId: user.id, onOwnRoleChanged: noop, onOwnTierChanged: noop,
+      currentPath: "/admin", onNavigate: noop,
     }));
     assert.match(platform, /Резервные копии/);
     assert.doesNotMatch(platform, /MCP-токены/);

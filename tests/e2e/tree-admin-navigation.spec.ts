@@ -136,7 +136,7 @@ test("gear opens only owner management; full tier does not grant platform settin
     .getByRole("button", { name: "Управление древом" }).click();
   await expect(page).toHaveURL(/\/manage$/);
   for (const label of ["Yandex AI", "Хранилище", "Вход через VK", "Ресурсы поиска"])
-    await expect(page.locator(".admin-sidebar nav").getByRole("button", { name: label })).toHaveCount(0);
+    await expect(page.locator(".admin-sidebar nav").getByRole("link", { name: label })).toHaveCount(0);
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Админка платформы" })).toBeVisible();
   await expect(page.getByText("Доступна только администратору платформы.")).toBeVisible();
@@ -157,14 +157,14 @@ test("global admin without membership opens /admin without requesting a private 
   await page.route("**/api/platform/accounts", (route) => route.fulfill({ json: { accounts: [], next: null } }));
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Админка платформы" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Пользователи", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Пользователи", exact: true })).toBeVisible();
   expect(familyRequests).toBe(0);
   await page.getByLabel("Меню проекта").click();
   await expect(page.locator(".nav-menu-account")).toHaveAttribute("href", "/account");
   await expect(page.locator(".nav-menu-platform")).toHaveAttribute("href", "/admin");
   await expect(page.locator(".nav-menu-manage")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Управление древом" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Резервные копии", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Резервные копии", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "MCP-токены", exact: true })).toHaveCount(0);
 });
 
@@ -183,8 +183,8 @@ test("legacy local platform admin uses the trusted session flag without an accou
   await page.route(/\/api\/admin\/ai(?:\?.*)?$/, (route) => route.fulfill({ status: 503, json: { error: "Тест" } }));
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Админка платформы" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Yandex AI" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Пользователи", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Yandex AI" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Пользователи", exact: true })).toHaveCount(0);
   expect(familyRequests).toBe(0);
 });
 

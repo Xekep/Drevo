@@ -44,6 +44,10 @@
   .platform-account-search input { min-height: 44px; }
   .platform-account-search button { width: 44px; height: 44px; }
   .platform-account-row select { font-size: 12px; padding: 6px; }
-  .platform-accounts .account-card-title { align-items: center; }
+  .platform-accounts .account-card-title { align-items: center; flex-wrap: wrap; gap: 10px; }
   .platform-accounts .account-card-title h2 { font-size: 20px; }
+}
+
+@container (max-width: 370px) {
+  .account-card-title { flex-wrap: wrap; gap: 10px; }
 }

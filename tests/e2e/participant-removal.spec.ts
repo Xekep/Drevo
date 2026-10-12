@@ -39,12 +39,12 @@ test("participant removal needs two presses and can be cancelled without deletin
   await page.goto("/manage");
   await openAdminSection(page, "users", "Участники");
   const remove = page.getByRole("button", {
-    name: "Удалить участника: Анна Участница",
+    name: "Закрыть доступ участнику: Анна Участница",
   });
   await remove.click();
   expect(deletes).toBe(0);
   const confirm = page.getByRole("button", {
-    name: "Подтвердить удаление участника: Анна Участница",
+    name: "Подтвердить закрытие доступа участнику: Анна Участница",
   });
   await expect(
     page

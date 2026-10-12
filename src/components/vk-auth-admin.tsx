@@ -2,12 +2,25 @@ import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useState } from "react";
 import type { VkAuthStatus } from "../shared/vk-auth-settings";
 import "../styles/vk-auth-admin.css";
+import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
 
-export function VkAuthAdmin() {
+export function VkAuthAdmin({
+  onDirtyChange,
+}: {
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const [settings, setSettings] = useState<VkAuthStatus | null>(null);
+  const [savedSettings, setSavedSettings] = useState<VkAuthStatus | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const dirty =
+    !!settings &&
+    !!savedSettings &&
+    (settings.enabled !== savedSettings.enabled ||
+      settings.clientId !== savedSettings.clientId);
+  useUnsavedChanges(dirty, onDirtyChange);
   useEffect(() => {
     const controller = new AbortController();
     archiveFetch("/api/admin/auth/vk", {
@@ -18,13 +31,16 @@ export function VkAuthAdmin() {
         const data = await response.json();
         if (!response.ok)
           throw new Error(data.error || "Не удалось загрузить настройки VK");
-        if (!controller.signal.aborted) setSettings(data);
+        if (!controller.signal.aborted) {
+          setSettings(data);
+          setSavedSettings(data);
+        }
       })
       .catch((reason) => {
         if (!controller.signal.aborted) setError(reason.message);
       });
     return () => controller.abort();
-  }, []);
+  }, [attempt]);
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (!settings || busy) return;
@@ -44,6 +60,7 @@ export function VkAuthAdmin() {
       if (!response.ok)
         throw new Error(data.error || "Не удалось сохранить настройки VK");
       setSettings(data);
+      setSavedSettings(data);
       setSaved(true);
     } catch (reason) {
       setError(
@@ -102,7 +119,13 @@ export function VkAuthAdmin() {
               <button type="submit" className="primary-action">
                 {busy ? "Сохраняем…" : "Сохранить"}
               </button>
-              <span role="status">{saved ? "Сохранено" : ""}</span>
+              <span role="status">
+                {dirty
+                  ? "Есть несохранённые изменения"
+                  : saved
+                    ? "Сохранено"
+                    : ""}
+              </span>
             </div>
           </fieldset>
         </form>
@@ -111,7 +134,18 @@ export function VkAuthAdmin() {
       )}
       {error && (
         <p className="form-error" role="alert">
-          {error}
+          {error} Проверьте соединение и повторите попытку.
+          {!settings && (
+            <button
+              type="button"
+              onClick={() => {
+                setError("");
+                setAttempt((value) => value + 1);
+              }}
+            >
+              Повторить загрузку
+            </button>
+          )}
         </p>
       )}
     </section>

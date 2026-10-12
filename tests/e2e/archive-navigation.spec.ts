@@ -230,7 +230,7 @@ test("a guest has no avatar menu and can still sign in", async ({
     page.getByRole("heading", { name: "Войдите в Drevo" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Управление архивом" }),
+    page.getByRole("link", { name: "Управление древом" }),
   ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Выйти из этого сеанса" }),

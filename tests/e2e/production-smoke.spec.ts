@@ -930,7 +930,7 @@ test("мобильная админка доступна и не разъезж�
     page.getByRole("heading", { name: "Участники", exact: true }),
   ).toBeVisible();
   const navigation = page.getByRole("navigation", { name: "Разделы админки" });
-  await expect(navigation.getByRole("button", { name: "Участники", exact: true }))
+  await expect(navigation.getByRole("link", { name: "Участники", exact: true }))
     .toHaveAttribute("aria-current", "page");
   await expect(page.locator("#admin-section-select")).toHaveCount(0);
   for (const width of [320, 390]) {
@@ -987,7 +987,7 @@ test("мобильная админка доступна и не разъезж�
     page.getByRole("heading", { level: 1, name: "Журнал правок" }),
   ).toBeVisible();
   await page.reload();
-  const selected = navigation.getByRole("button", { name: "Журнал правок", exact: true });
+  const selected = navigation.getByRole("link", { name: "Журнал правок", exact: true });
   await expect(selected).toHaveAttribute("aria-current", "page");
   await expect.poll(async () => {
     const menu = (await navigation.boundingBox())!;
@@ -1122,11 +1122,11 @@ test("участники загружаются страницами и удал
   await expect(page.locator(".admin-user-row")).toHaveCount(20);
   expect(requestedPages).toEqual([0, 20, 40, 20, 0]);
   await page
-    .getByRole("button", { name: "Удалить участника: Участник 00" })
+    .getByRole("button", { name: "Закрыть доступ участнику: Участник 00" })
     .click();
   expect(participants).toHaveLength(45);
   await expect(page.getByText("Аккаунт и данные в древе сохранятся.", { exact: false })).toBeVisible();
-  await page.getByRole("button", { name: "Подтвердить удаление участника: Участник 00" }).click();
+  await page.getByRole("button", { name: "Подтвердить закрытие доступа участнику: Участник 00" }).click();
   await expect(page.getByText(/Всего участников\s*44/)).toBeVisible();
   await expect(
     page.getByRole("article", { name: "Участник: Участник 00" }),

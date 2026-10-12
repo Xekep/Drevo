@@ -30,19 +30,28 @@ import {
 import { ShareCatalog } from "./share-catalog";
 import { InvitationsAdmin } from "./invitations-admin";
 import { AuditLog } from "./audit-log";
+import { AuditActorFilter } from "./audit-actor-filter";
 import { PersonSearch } from "./person-search";
 import { GedcomTransfer } from "./gedcom-transfer";
 import { SourceCatalogAdmin } from "./source-catalog-admin";
 import { PublicationAdmin } from "./publication-admin";
 import type { PublicationOwnership } from "../hooks/useArchivePublicationOwner";
 import { DiscoveryMatchesAdmin } from "./discovery-matches-admin";
-import { adminMatchesPath, adminMatchSourceAt, adminMatchTargetAt, archivePaths } from "../domain/archive-routes";
-import { archiveContextAt, memberPreviewPath, scopedArchivePath } from "../domain/archive-context";
-type Settings = {
-  publicTree: boolean;
-  publicAlbums: boolean;
-  reverseTimeline: boolean;
-};
+import {
+  adminMatchesPath,
+  adminMatchSourceAt,
+  adminMatchTargetAt,
+  archivePaths,
+} from "../domain/archive-routes";
+import {
+  archiveContextAt,
+  memberPreviewPath,
+  scopedArchivePath,
+} from "../domain/archive-context";
+import {
+  PublicTreeSettings,
+  type PublicTreeSettingsValue as Settings,
+} from "./public-tree-settings";
 type UserPatch = {
   role?: Role;
   approved?: boolean;
@@ -65,9 +74,7 @@ const ADMIN_SECTIONS = [
   },
   {
     label: "Источники",
-    items: [
-      { id: "sources", label: "Источники", icon: BookOpen },
-    ],
+    items: [{ id: "sources", label: "Источники", icon: BookOpen }],
   },
   {
     label: "Данные",
@@ -82,7 +89,10 @@ const ADMIN_SECTIONS = [
   },
 ] as const;
 const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
-  backups: { title: "Резервные копии древа", description: "Ручные копии этого архива. Сохраняются пять последних." },
+  backups: {
+    title: "Резервные копии древа",
+    description: "Ручные копии этого архива. Сохраняются пять последних.",
+  },
   users: {
     title: "Участники",
     description: "Аккаунты, роли и доступ к семейному архиву.",
@@ -203,12 +213,15 @@ function AdminUserRow({
           }
         >
           {Object.entries(ROLE_NAMES)
-            .filter(([role]) => !user.treeRole || role === "reader" || role === "relative")
+            .filter(
+              ([role]) =>
+                !user.treeRole || role === "reader" || role === "relative",
+            )
             .map(([role, label]) => (
-            <option key={role} value={role}>
-              {label}
-            </option>
-          ))}
+              <option key={role} value={role}>
+                {label}
+              </option>
+            ))}
         </select>
       </label>
       {platformAdmin && user.fullAccess !== undefined && (
@@ -239,7 +252,7 @@ function AdminUserRow({
         onCancel={() => setPersonId(user.personId || "")}
       />
       <label className="admin-user-select">
-        <span>Показывать</span>
+        <span>Доступ к древу</span>
         <select
           aria-label={`Доступ к древу: ${user.name}`}
           title="Кровные родственники привязанного человека и их супруги или партнёры"
@@ -269,11 +282,16 @@ function AdminUserRow({
         )}
         <a
           className="admin-user-preview"
-          href={memberPreviewPath(archiveContextAt(window.location.pathname)?.id || null, user.id)}
+          href={memberPreviewPath(
+            archiveContextAt(window.location.pathname)?.id || null,
+            user.id,
+          )}
           aria-label={`Посмотреть как участник: ${user.name}`}
           title={`Посмотреть как участник: ${user.name}`}
           aria-disabled={busy || undefined}
-          onClick={(event) => { if (busy) event.preventDefault(); }}
+          onClick={(event) => {
+            if (busy) event.preventDefault();
+          }}
         >
           <Eye size={16} aria-hidden="true" />
         </a>
@@ -281,11 +299,13 @@ function AdminUserRow({
           type="button"
           className="admin-user-delete"
           disabled={busy || user.id === currentUserId || isArchiveOwner(user)}
-          aria-label={`${deleteArmed ? "Подтвердить удаление участника" : "Удалить участника"}: ${user.name}`}
+          aria-label={`${deleteArmed ? "Подтвердить закрытие доступа участнику" : "Закрыть доступ участнику"}: ${user.name}`}
           title={
             user.id === currentUserId || isArchiveOwner(user)
               ? "Владельца древа удалить нельзя"
-              : deleteArmed ? "Нажмите ещё раз, чтобы закрыть доступ к этому древу" : "Удалить доступ к этому древу"
+              : deleteArmed
+                ? "Нажмите ещё раз, чтобы закрыть доступ к этому древу"
+                : "Закрыть доступ к этому древу"
           }
           onBlur={() => setDeleteArmed(false)}
           onKeyDown={(event) => {
@@ -293,7 +313,10 @@ function AdminUserRow({
             if (event.key === "Escape") setDeleteArmed(false);
           }}
           onClick={() => {
-            if (!deleteArmed) { setDeleteArmed(true); return; }
+            if (!deleteArmed) {
+              setDeleteArmed(true);
+              return;
+            }
             setDeleteArmed(false);
             void onDelete();
           }}
@@ -301,15 +324,20 @@ function AdminUserRow({
           {deleteArmed ? <Check size={16} /> : <Trash2 size={16} />}
         </button>
       </div>
-      {deleteArmed && <small className="admin-user-delete-confirm" role="status">
-        Нажмите ✓ ещё раз, чтобы закрыть доступ. Аккаунт и данные в древе сохранятся. Esc — отмена.
-      </small>}
+      {deleteArmed && (
+        <small className="admin-user-delete-confirm" role="status">
+          Нажмите ✓ ещё раз, чтобы закрыть доступ. Аккаунт и данные в древе
+          сохранятся. Esc — отмена.
+        </small>
+      )}
     </article>
   );
 }
 export function AdminPanel({
   family,
   currentUserId,
+  currentPath,
+  onNavigate,
   archiveOwner = true,
   backupAccess = false,
   platformAdmin,
@@ -322,6 +350,8 @@ export function AdminPanel({
 }: {
   family: Family;
   currentUserId: string;
+  currentPath: string;
+  onNavigate: (path: string) => void;
   archiveOwner?: boolean;
   backupAccess?: boolean;
   platformAdmin: boolean;
@@ -332,15 +362,17 @@ export function AdminPanel({
   canEdit: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [section, setSection] = useState(() => {
-    if (typeof window === "undefined") return "users";
-    return [adminMatchesPath, "/admin/matches"].includes(
-      archiveContextAt(window.location.pathname)?.innerPath || window.location.pathname) ||
-      adminMatchTargetAt(window.location.pathname) ||
-      adminMatchSourceAt(window.location.pathname)
-      ? "matches" : new URLSearchParams(window.location.search).get("section") || "users";
-  }),
-    [users, setUsers] = useState<ArchiveUser[]>([]),
+  const section =
+    [adminMatchesPath, "/admin/matches"].includes(
+      archiveContextAt(currentPath.split("?")[0])?.innerPath ||
+        currentPath.split("?")[0],
+    ) ||
+    adminMatchTargetAt(currentPath.split("?")[0]) ||
+    adminMatchSourceAt(currentPath.split("?")[0])
+      ? "matches"
+      : new URLSearchParams(currentPath.split("?")[1] || "").get("section") ||
+        "users";
+  const [users, setUsers] = useState<ArchiveUser[]>([]),
     [usersTotal, setUsersTotal] = useState(0),
     [usersNext, setUsersNext] = useState<string | null>(null),
     [usersCursor, setUsersCursor] = useState<string | null>(null),
@@ -348,48 +380,87 @@ export function AdminPanel({
     [usersReload, setUsersReload] = useState(0),
     [usersLoading, setUsersLoading] = useState(true),
     [settings, setSettings] = useState<Settings | null>(null),
+    [settingsAttempt, setSettingsAttempt] = useState(0),
+    [settingsError, setSettingsError] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
   const [auditActor, setAuditActor] = useState("");
-  const sourceDirty = useRef(false);
-  const reportDirty = useCallback((dirty: boolean) => {
-    sourceDirty.current = dirty;
-    onDirtyChange?.(dirty);
-  }, [onDirtyChange]);
+  const dirtyForms = useRef(new Set<string>());
+  const updateDirty = useCallback(
+    (key: string, dirty: boolean) => {
+      if (dirty) dirtyForms.current.add(key);
+      else dirtyForms.current.delete(key);
+      onDirtyChange?.(dirtyForms.current.size > 0);
+    },
+    [onDirtyChange],
+  );
+  const reportDirty = useCallback(
+    (dirty: boolean) => updateDirty("sources", dirty),
+    [updateDirty],
+  );
+  const reportSettingsDirty = useCallback(
+    (dirty: boolean) => updateDirty("sharing", dirty),
+    [updateDirty],
+  );
   const visibleGroups = ADMIN_SECTIONS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => archiveOwner && (item.id !== "backups" || backupAccess)),
+    items: group.items.filter(
+      (item) => archiveOwner && (item.id !== "backups" || backupAccess),
+    ),
   })).filter((group) => group.items.length > 0);
-  const visibleSection = visibleGroups.some((group) => group.items.some((item) => item.id === section))
-    ? section : visibleGroups[0]?.items[0]?.id || "users";
+  const visibleSection = visibleGroups.some((group) =>
+    group.items.some((item) => item.id === section),
+  )
+    ? section
+    : visibleGroups[0]?.items[0]?.id || "users";
+  const sectionPath = (next: string) => {
+    const path = scopedArchivePath(
+      next === "matches" ? adminMatchesPath : archivePaths.manage,
+    );
+    return next === "users" || next === "matches"
+      ? path
+      : `${path}?section=${next}`;
+  };
   const selectSection = (next: string) => {
-    if (next !== visibleSection && !confirmDiscardChanges(sourceDirty.current)) return;
-    if (!visibleGroups.some((group) => group.items.some((item) => item.id === next))) return;
-    setSection(next);
+    if (next === visibleSection) return;
+    if (!confirmDiscardChanges(dirtyForms.current.size > 0)) return;
+    if (
+      !visibleGroups.some((group) =>
+        group.items.some((item) => item.id === next),
+      )
+    )
+      return;
     setNotice("");
-    const path = scopedArchivePath(next === "matches" ? adminMatchesPath : archivePaths.manage);
-    const url = next === "users" || next === "matches" ? path : `${path}?section=${next}`;
-    if (window.location.pathname + window.location.search !== url)
-      window.history.replaceState(window.history.state, "", url);
+    setError("");
+    onNavigate(sectionPath(next));
   };
   useEffect(() => {
+    document.title = `${ADMIN_INTRO[visibleSection].title} · ${family.title} · Drevo`;
+  }, [visibleSection, family.title]);
+  useEffect(() => {
     if (visibleSection !== section)
-      window.history.replaceState(window.history.state, "", scopedArchivePath(archivePaths.manage));
+      window.history.replaceState(
+        window.history.state,
+        "",
+        scopedArchivePath(archivePaths.manage),
+      );
   }, [section, visibleSection]);
   useEffect(() => {
     if (!archiveOwner) return;
     const controller = new AbortController();
     void archiveFetch("/api/settings", { signal: controller.signal })
       .then(async (response) => {
-        if (!response.ok) throw new Error("Нет доступа к управлению архивом");
-        setSettings(await response.json());
+        const value = await response.json();
+        if (!response.ok)
+          throw new Error(value.error || "Не удалось загрузить настройки");
+        setSettings(value);
       })
       .catch((e) => {
-        if (!controller.signal.aborted) setError(e.message);
+        if (!controller.signal.aborted) setSettingsError(e.message);
       });
     return () => controller.abort();
-  }, [archiveOwner]);
+  }, [archiveOwner, settingsAttempt]);
   useEffect(() => {
     if (!archiveOwner) return;
     const controller = new AbortController();
@@ -454,12 +525,17 @@ export function AdminPanel({
             <b>Управление древом</b>
           </span>
         </div>
-        <AdminNavigation groups={visibleGroups} selected={visibleSection}
-          onSelect={selectSection} label="Разделы админки" />
+        <AdminNavigation
+          groups={visibleGroups}
+          selected={visibleSection}
+          onSelect={selectSection}
+          href={sectionPath}
+          label="Разделы админки"
+        />
         <button
           className="admin-back"
           type="button"
-          onClick={() => { if (confirmDiscardChanges(sourceDirty.current)) onClose(); }}
+          onClick={onClose}
           aria-label="Вернуться к древу"
           title="Вернуться к древу"
         >
@@ -470,31 +546,54 @@ export function AdminPanel({
       <div className="admin-content">
         <header className="admin-page-header">
           <span className="section-label">УПРАВЛЕНИЕ ДРЕВОМ</span>
+          <span className="admin-context">{family.title}</span>
           <h1>{ADMIN_INTRO[visibleSection].title}</h1>
           {(publicationOwnership === "owner" ||
-            (visibleSection !== "publications" && visibleSection !== "matches")) &&
-            <p className="admin-subtitle">{ADMIN_INTRO[visibleSection].description}</p>}
+            (visibleSection !== "publications" &&
+              visibleSection !== "matches")) && (
+            <p className="admin-subtitle">
+              {ADMIN_INTRO[visibleSection].description}
+            </p>
+          )}
         </header>
-        {archiveOwner && !settings && !error && <p role="status">Загружаем настройки…</p>}
-        {settings && visibleSection === "users" && (
+        {settingsError && (
+          <div className="admin-load-error" role="alert">
+            <p>{settingsError}. Проверьте соединение и повторите попытку.</p>
+            <button
+              type="button"
+              onClick={() => {
+                setSettingsError("");
+                setSettingsAttempt((value) => value + 1);
+              }}
+            >
+              Повторить загрузку настроек
+            </button>
+          </div>
+        )}
+        {archiveOwner && !settings && !settingsError && (
+          <p role="status">Загружаем настройки…</p>
+        )}
+        {visibleSection === "users" && (
           <section className="admin-card archive-form">
             <details className="admin-access-help">
               <summary>Как работают роли и доступ</summary>
-              <p>Новые пользователи ожидают одобрения. Читатель видит закрытый
+              <p>
+                Новые пользователи ожидают одобрения. Читатель видит закрытый
                 архив после допуска, родственник редактирует свои объекты,
-                владелец управляет участниками и содержимым архива.
-                Публикацией людей и связями древ управляет владелец.</p>
+                владелец управляет участниками и содержимым архива. Публикацией
+                людей и связями древ управляет владелец.
+              </p>
             </details>
-            {(settings.publicTree || settings.publicAlbums) && (
+            {(settings?.publicTree || settings?.publicAlbums) && (
               <p role="note" className="form-error">
-                Для доступа только к кровным родственникам и их супругам сначала закройте публичное древо и
-                альбомы в разделе «Общий доступ».
+                Для доступа только к кровным родственникам и их супругам сначала
+                закройте публичное древо и альбомы в разделе «Общий доступ».
               </p>
             )}
             {!usersLoading && usersTotal === 0 && (
               <p>
-                После первого входа через Яндекс здесь появятся участники. На
-                этом компьютере управление доступно без входа.
+                Пригласите участника ссылкой из раздела «Приглашения». После
+                входа его аккаунт появится в этом списке.
               </p>
             )}
             <div className="admin-users-toolbar">
@@ -519,7 +618,7 @@ export function AdminPanel({
                         <span>Уровень</span>
                       )}
                     <span>Кто это в древе</span>
-                    <span>Показывать</span>
+                    <span>Доступ к древу</span>
                     <span>Действия</span>
                   </div>
                   {users.map((user) => (
@@ -593,103 +692,85 @@ export function AdminPanel({
             )}
             {error && (
               <p role="alert" className="form-error">
-                {error}
+                {error} Проверьте соединение и повторите попытку.
+                <button
+                  type="button"
+                  disabled={usersLoading || busy}
+                  onClick={() => {
+                    setError("");
+                    setUsersLoading(true);
+                    setUsersReload((value) => value + 1);
+                  }}
+                >
+                  Обновить список
+                </button>
               </p>
             )}
           </section>
         )}
         {settings && visibleSection === "shares" && (
-          <form
-            className="admin-card archive-form"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const saved = await change("/api/settings", "PUT", settings);
+          <PublicTreeSettings
+            saved={settings}
+            busy={busy}
+            notice={notice}
+            onDirtyChange={reportSettingsDirty}
+            onSave={async (draft) => {
+              const saved = await change("/api/settings", "PUT", draft);
               if (saved) setSettings(saved);
+              return saved;
             }}
-          >
-            <h2>Публичный просмотр</h2>
-            <p>Откройте всё древо по ссылке для гостей без входа. Публикация отдельных людей в общем поиске настраивается отдельно.</p>
-            <label
-              className="setting-toggle"
-              htmlFor="public-tree"
-              aria-label="Всё древо по ссылке"
-            >
-              <span>
-                <b>Всё древо по ссылке</b>
-                <small>Все люди, их карточки, семьи и родственные связи</small>
-              </span>
-              <input
-                type="checkbox"
-                id="public-tree"
-                checked={settings.publicTree}
-                onChange={(e) =>
-                  setSettings({ ...settings, publicTree: e.target.checked })
-                }
-              />
-            </label>
-            <label
-              className="setting-toggle"
-              htmlFor="public-albums"
-              aria-label="Публичные фотоальбомы"
-            >
-              <span>
-                <b>Фотоальбомы</b>
-                <small>Фотографии и описания снимков</small>
-              </span>
-              <input
-                type="checkbox"
-                id="public-albums"
-                checked={settings.publicAlbums}
-                onChange={(e) =>
-                  setSettings({ ...settings, publicAlbums: e.target.checked })
-                }
-              />
-            </label>
-            <footer>
-              <button className="primary-action" disabled={busy}>
-                {busy ? "Сохраняем…" : "Сохранить настройки"}
-              </button>
-            </footer>
-          </form>
+          />
         )}
-        {visibleSection === "sources" && <SourceCatalogAdmin family={family} onChanged={onChanged} onDirtyChange={reportDirty} />}
+        {visibleSection === "sources" && (
+          <SourceCatalogAdmin
+            family={family}
+            onChanged={onChanged}
+            onDirtyChange={reportDirty}
+          />
+        )}
         {visibleSection === "shares" && <ShareCatalog />}
-        {visibleSection === "publications" && (publicationOwnership === "owner"
-          ? <PublicationAdmin family={family} />
-          : <section className="admin-card archive-form"><p role="status">{
-            publicationOwnership === "checking" ? "Проверяем право на публикацию…"
-              : publicationOwnership === "unavailable" ? "Не удалось проверить право на публикацию. Обновите страницу и повторите попытку."
-                : "Публикацией людей управляет владелец древа."
-          }</p></section>)}
-        {visibleSection === "matches" && (publicationOwnership === "owner"
-          ? <DiscoveryMatchesAdmin family={family} />
-          : <section className="admin-card archive-form"><p role="status">{
-            publicationOwnership === "checking" ? "Проверяем право на сопоставление…"
-              : publicationOwnership === "unavailable" ? "Не удалось проверить право на сопоставление. Обновите страницу и повторите попытку."
-                : "Связями с другими древами управляет владелец древа."
-          }</p></section>)}
-        {visibleSection === "invitations" && <InvitationsAdmin people={family.people} />}
+        {visibleSection === "publications" &&
+          (publicationOwnership === "owner" ? (
+            <PublicationAdmin family={family} />
+          ) : (
+            <section className="admin-card archive-form">
+              <p role="status">
+                {publicationOwnership === "checking"
+                  ? "Проверяем право на публикацию…"
+                  : publicationOwnership === "unavailable"
+                    ? "Не удалось проверить право на публикацию. Обновите страницу и повторите попытку."
+                    : "Публикацией людей управляет владелец древа."}
+              </p>
+            </section>
+          ))}
+        {visibleSection === "matches" &&
+          (publicationOwnership === "owner" ? (
+            <DiscoveryMatchesAdmin family={family} />
+          ) : (
+            <section className="admin-card archive-form">
+              <p role="status">
+                {publicationOwnership === "checking"
+                  ? "Проверяем право на сопоставление…"
+                  : publicationOwnership === "unavailable"
+                    ? "Не удалось проверить право на сопоставление. Обновите страницу и повторите попытку."
+                    : "Связями с другими древами управляет владелец древа."}
+              </p>
+            </section>
+          ))}
+        {visibleSection === "invitations" && (
+          <InvitationsAdmin people={family.people} />
+        )}
         {visibleSection === "audit" && (
           <section className="admin-card archive-form">
-            <label>
-              Кто изменил
-              <select
-                value={auditActor}
-                onChange={(e) => setAuditActor(e.target.value)}
-              >
-                <option value="">Все участники</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-                <option value="system">Система</option>
-              </select>
-            </label>
+            <AuditActorFilter value={auditActor} onChange={setAuditActor} />
             <AuditLog key={auditActor} actorId={auditActor || undefined} />
           </section>
         )}
-        {visibleSection === "backups" && backupAccess && <BackupAdmin archiveId={archiveContextAt(window.location.pathname)?.id || null} />}
+        {visibleSection === "backups" && backupAccess && (
+          <BackupAdmin
+            archiveId={archiveContextAt(window.location.pathname)?.id || null}
+          />
+        )}
         {visibleSection === "data" && (
           <section className="admin-card archive-form">
             <GedcomTransfer

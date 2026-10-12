@@ -108,7 +108,7 @@ test("ручные копии выбранного древа отделены �
   await expect(
     page.getByRole("button", { name: "Создать копию", exact: true }),
   ).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Резервные копии", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Резервные копии", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "MCP-токены", exact: true })).toHaveCount(0);
   await openAdminSection(page, "backups", "Резервные копии");
   await expect.poll(() => listRequests).toContain("/api/backups/");

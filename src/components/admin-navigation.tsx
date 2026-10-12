@@ -7,10 +7,17 @@ type NavigationGroup<T extends string> = {
 };
 
 /** Owns selected-item visibility in the horizontally scrolling mobile navigation. */
-export function AdminNavigation<T extends string>({ groups, selected, onSelect, label }: {
+export function AdminNavigation<T extends string>({
+  groups,
+  selected,
+  onSelect,
+  href,
+  label,
+}: {
   groups: readonly NavigationGroup<T>[];
   selected: T;
   onSelect: (id: T) => void;
+  href: (id: T) => string;
   label: string;
 }) {
   const navigation = useRef<HTMLElement>(null);
@@ -24,20 +31,43 @@ export function AdminNavigation<T extends string>({ groups, selected, onSelect, 
       const bounds = nav.getBoundingClientRect();
       const item = selected.getBoundingClientRect();
       if (item.left < bounds.left) nav.scrollLeft += item.left - bounds.left;
-      else if (item.right > bounds.right) nav.scrollLeft += item.right - bounds.right;
+      else if (item.right > bounds.right)
+        nav.scrollLeft += item.right - bounds.right;
     };
     revealSelected();
     const observer = new ResizeObserver(revealSelected);
     observer.observe(nav);
     return () => observer.disconnect();
   }, [selected]);
-  return <nav ref={navigation} aria-label={label}>
-    {groups.map((group) => <div className="admin-nav-group" key={group.label}>
-      <span className="admin-nav-label">{group.label}</span>
-      {group.items.map(({ id, label, icon: Icon }) => <button key={id} type="button"
-        aria-current={selected === id ? "page" : undefined} onClick={() => onSelect(id)}>
-        <Icon size={17} aria-hidden="true" />{label}
-      </button>)}
-    </div>)}
-  </nav>;
+  return (
+    <nav ref={navigation} aria-label={label}>
+      {groups.map((group) => (
+        <div className="admin-nav-group" key={group.label}>
+          <span className="admin-nav-label">{group.label}</span>
+          {group.items.map(({ id, label, icon: Icon }) => (
+            <a
+              key={id}
+              href={href(id)}
+              aria-current={selected === id ? "page" : undefined}
+              onClick={(event) => {
+                if (
+                  event.button !== 0 ||
+                  event.ctrlKey ||
+                  event.metaKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return;
+                event.preventDefault();
+                onSelect(id);
+              }}
+            >
+              <Icon size={17} aria-hidden="true" />
+              {label}
+            </a>
+          ))}
+        </div>
+      ))}
+    </nav>
+  );
 }

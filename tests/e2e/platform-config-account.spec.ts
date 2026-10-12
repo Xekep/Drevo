@@ -111,16 +111,16 @@ test("platform admin without membership opens global settings and AI without cho
     }
   }
   const beforePlatform = familyRequests;
-  await page.getByRole("button", { name: "Хранилище" }).click();
+  await page.getByRole("link", { name: "Хранилище" }).click();
   await expect(page.getByRole("heading", { name: "Лимиты хранилища" })).toBeVisible();
-  await page.getByRole("button", { name: "Вход через VK" }).click();
-  await page.getByRole("button", { name: "Ресурсы поиска" }).click();
-  await page.getByRole("button", { name: "Yandex AI" }).click();
+  await page.getByRole("link", { name: "Вход через VK" }).click();
+  await page.getByRole("link", { name: "Ресурсы поиска" }).click();
+  await page.getByRole("link", { name: "Yandex AI" }).click();
   const aiArchive = page.getByLabel("Древо для Yandex AI");
   await expect(aiArchive).toHaveCount(0);
   await expect.poll(() => paths.filter((path) => path === "/api/admin/ai").length).toBe(1);
-  await page.getByRole("button", { name: "Хранилище" }).click();
-  await page.getByRole("button", { name: "Yandex AI" }).click();
+  await page.getByRole("link", { name: "Хранилище" }).click();
+  await page.getByRole("link", { name: "Yandex AI" }).click();
   await expect(aiArchive).toHaveCount(0);
   await expect.poll(() => paths.filter((path) => path === "/api/admin/ai").length).toBe(2);
   expect(paths.some((path) => path.startsWith("/a/"))).toBe(false);
@@ -128,7 +128,7 @@ test("platform admin without membership opens global settings and AI without cho
   for (const path of ["/api/settings/storage", "/api/admin/auth/vk", "/api/admin/research-resources"])
     expect(paths).toContain(path);
   await expect(page.getByRole("button", { name: "MCP-токены", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Резервные копии", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Резервные копии", exact: true })).toBeVisible();
   expect(familyRequests).toBe(beforePlatform);
 });
 

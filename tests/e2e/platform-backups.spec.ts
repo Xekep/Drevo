@@ -27,7 +27,7 @@ test("platform backups have a global endpoint and no archive picker or live rest
     return route.fulfill({ json: state });
   });
   await page.goto("/admin");
-  await page.getByRole("button", { name: "Резервные копии", exact: true }).click();
+  await page.getByRole("link", { name: "Резервные копии", exact: true }).click();
   await expect(page.getByLabel("Архив для резервных копий")).toHaveCount(0);
   await expect(page.getByLabel("Количество копий")).toHaveValue("7");
   await page.getByLabel("Количество копий").fill("10");
@@ -103,7 +103,7 @@ for (const example of [
   } else {
     await expect(page.locator(".admin-mark b")).toHaveText("Управление древом");
   }
-  const tab = page.getByRole("button", { name: "Резервные копии", exact: true });
+  const tab = page.getByRole("link", { name: "Резервные копии", exact: true });
   if (!example.allowed) {
     await expect(tab).toHaveCount(0);
     expect(paths).toEqual([]);

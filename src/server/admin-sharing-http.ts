@@ -41,6 +41,7 @@ export function adminSharingHttp({
     const path = url.pathname;
     if (
       path !== "/api/audit" &&
+      path !== "/api/audit/actors" &&
       path !== "/api/shares" &&
       !path.startsWith("/api/shares/")
     )
@@ -52,10 +53,25 @@ export function adminSharingHttp({
         error: "Доступно администратору",
       });
 
-    if (path === "/api/audit" && req.method === "GET") {
+    if (
+      (path === "/api/audit" || path === "/api/audit/actors") &&
+      req.method === "GET"
+    ) {
       const before = Number(url.searchParams.get("before") || 0);
       if (!Number.isSafeInteger(before) || before < 0)
         return json(res, 400, { error: "Некорректная страница журнала" });
+      if (path === "/api/audit/actors") {
+        const page = await audit.actors(before);
+        const current = await auth.currentUser(req);
+        if (
+          !current ||
+          current.id !== actor.id ||
+          !isArchiveOwner(current) ||
+          !current.approved
+        )
+          return json(res, 403, { error: "Доступ отозван" });
+        return json(res, 200, page);
+      }
       return json(
         res,
         200,

@@ -7,6 +7,8 @@ import { loadLazyModule } from "./lazy-section-recovery";
 type AdminPanelProps = {
   family: Family;
   currentUserId: string;
+  currentPath: string;
+  onNavigate: (path: string) => void;
   platformAdmin: boolean;
   archiveOwner: boolean;
   backupAccess?: boolean;
