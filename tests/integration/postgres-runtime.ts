@@ -14059,14 +14059,17 @@ try {
   assert.equal((await app.archive.read()).family.people[0].maidenName, "Иванова");
   const unionFixture = await app.archive.read();
   const unionWithPeer = structuredClone(unionFixture.family);
-  unionWithPeer.people.push({ id: "pg-union-identity-peer", createdBy: "owner",
-    name: "Peer", surname: "Fixture", patronymic: "", sex: "u", birth: "",
-    birthPlace: "", parents: [], spouses: [], generation: 1, column: 0, sources: [] });
+  const unionPeople = [unionFixture.family.people[0].id,
+    "pg-union-identity-peer", "pg-union-identity-alternative"] as const;
+  assert.equal(new Set(unionPeople).size, 3,
+    "union identity revocation requires three distinct people");
+  for (const id of unionPeople.slice(1))
+    unionWithPeer.people.push({ id, createdBy: "owner",
+      name: "Peer", surname: "Fixture", patronymic: "", sex: "u", birth: "",
+      birthPlace: "", parents: [], spouses: [], generation: 1, column: 0, sources: [] });
   await app.archive.write(unionWithPeer, unionFixture.revision);
   const unionBefore = await app.archive.read();
   const unionWithEvidence = structuredClone(unionBefore.family);
-  const unionPeople = [unionBefore.family.people[0].id, unionBefore.family.people[1].id,
-    "pg-union-identity-peer"];
   unionWithEvidence.unions = [...(unionWithEvidence.unions || []), {
     id: "pg-union-source-identity", participants: [unionPeople[0], unionPeople[1]],
     type: "marriage" as const, createdBy: "owner", note: "Keep this note",
@@ -14083,6 +14086,9 @@ try {
   assert.equal((await postPlaceChanges(unionSaved.family, shiftedUnionType, unionSaved.revision)).status, 403);
   const shiftedParticipants = structuredClone(unionSaved.family);
   shiftedParticipants.unions![unionIndex].participants = [unionPeople[0], unionPeople[2]];
+  assert.ok(archiveChanges(unionSaved.family, shiftedParticipants).some((change) =>
+    change.collection === "unions" && change.id === "pg-union-source-identity" &&
+    change.field === "participants"), "the participant identity fixture must actually change participants");
   assert.equal((await postPlaceChanges(unionSaved.family, shiftedParticipants, unionSaved.revision)).status, 403);
   assert.equal((await app.archive.read()).revision, unionSaved.revision);
   const unlinkedUnion = structuredClone(shiftedUnionType);
@@ -14101,7 +14107,8 @@ try {
   assert.equal((await postPlaceChanges(unionUpdated.family, withoutTestUnion, unionUpdated.revision)).status, 200);
   const withoutPeer = await app.archive.read();
   const restoredPeople = structuredClone(withoutPeer.family);
-  restoredPeople.people = restoredPeople.people.filter((person) => person.id !== "pg-union-identity-peer");
+  restoredPeople.people = restoredPeople.people.filter((person) =>
+    !unionPeople.slice(1).includes(person.id));
   await app.archive.write(restoredPeople, withoutPeer.revision);
   await verifyRestoreGuard({ client, source, family, ownerHeaders, restoreBytes,
     selectedBase: securedBase, rootArchive: app.archive });
