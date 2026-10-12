@@ -6,6 +6,7 @@ import {
   type AuditEntry,
 } from "../domain/audit.ts";
 import type { Family } from "../domain/types.ts";
+import type { AuditActorPage } from "../shared/audit-actors.ts";
 
 export function auditStore(db: StoreDatabase) {
   async function record(
@@ -42,6 +43,25 @@ export function auditStore(db: StoreDatabase) {
   }
   return {
     record,
+    async actors(before = 0): Promise<AuditActorPage> {
+      const query = (table: string) => `WITH latest AS (
+        SELECT actor_id, MAX(id) AS latest_id FROM ${table}
+        WHERE actor_id<>'system' GROUP BY actor_id
+      ) SELECT a.actor_id,a.actor_name,a.id FROM ${table} a
+        JOIN latest ON a.id=latest.latest_id
+        WHERE (?=0 OR a.id<?) ORDER BY a.id DESC LIMIT 31`;
+      const rows = await db
+        .prepare(query("audit_entries"), query("runtime_visible_audit_entries"))
+        .all(before, before);
+      const page = rows.slice(0, 30);
+      return {
+        actors: page.map((row) => ({
+          id: String(row.actor_id),
+          name: String(row.actor_name),
+        })),
+        next: rows.length > 30 ? Number(page.at(-1)!.id) : null,
+      };
+    },
     async archive(
       before: Family,
       after: Family,

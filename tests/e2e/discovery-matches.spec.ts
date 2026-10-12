@@ -1055,6 +1055,6 @@ test("a selected linked member opens through its own permission-checked URL", as
   await page.goto("/manage/matches");
   await expect(page.getByRole("heading", { name: "Запросы между древами" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Разделы админки" })
-    .getByRole("button", { name: "Связи древ", exact: true }))
+    .getByRole("link", { name: "Связи древ", exact: true }))
     .toHaveAttribute("aria-current", "page");
 });

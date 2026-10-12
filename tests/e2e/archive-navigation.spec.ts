@@ -230,7 +230,7 @@ test("a guest has no avatar menu and can still sign in", async ({
     page.getByRole("heading", { name: "Войдите в Drevo" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Управление архивом" }),
+    page.getByRole("link", { name: "Управление древом" }),
   ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Выйти из этого сеанса" }),
@@ -268,10 +268,10 @@ test("account cabinet shows the owner's current tier and quotas", async ({
     }),
   );
   await page.goto("/account");
-  await expect(page.getByText("Уровень аккаунта")).toBeVisible();
-  await expect(page.getByText("Базовый", { exact: true })).toBeVisible();
+  await expect(page.locator(".account-tier")).toHaveText("Базовый аккаунт");
   await expect(page.getByText("42 из 150")).toBeVisible();
   await expect(page.getByText("120 МБ из 500 МБ")).toBeVisible();
+  await page.getByText("Данные и владение древом", { exact: true }).click();
   await expect(
     page.getByRole("link", { name: /Скачать древо с фото и документами/ }),
   ).toHaveAttribute("href", "/api/gedcom/export?format=gedzip7");
@@ -348,6 +348,7 @@ test("empty archive owner previews a portable import before applying", async ({
     }),
   );
   await page.goto("/account");
+  await page.getByText("Данные и владение древом", { exact: true }).click();
   await expect(page.getByText("Перенести архив в пустое древо")).toBeVisible();
   await page.getByLabel("Файл .drevo").setInputFiles({
     name: "family.drevo",
@@ -366,10 +367,10 @@ test("empty archive owner previews a portable import before applying", async ({
   await expect(
     page.getByRole("button", { name: "Импортировать в это древо" }),
   ).toBeDisabled();
-  await expect(page.getByRole("alert")).toContainText("Лимит людей: 150");
+  await expect(page.locator(".account-portable-import").getByRole("alert")).toContainText("Лимит людей: 150");
   unsupported = true;
   await page.getByRole("button", { name: "Проверить файл" }).click();
-  await expect(page.getByRole("alert")).toContainText("неподдерживаемые поля");
+  await expect(page.locator(".account-portable-import").getByRole("alert")).toContainText("неподдерживаемые поля");
   await expect(page.getByRole("button", { name: "Импортировать в это древо" })).toHaveCount(0);
 });
 
@@ -403,6 +404,7 @@ test("owner is not offered portable import when only catalog data occupies the a
   } }));
   await page.goto("/account");
   await expect(page.getByText("Перенести архив в пустое древо")).toHaveCount(0);
+  await page.getByText("Данные и владение древом", { exact: true }).click();
   await expect(page.getByRole("link", { name: /Скачать полный переносимый архив/ })).toBeVisible();
 });
 
@@ -473,6 +475,7 @@ test("owner can choose a member and propose a transfer in the account cabinet", 
     }),
   );
   await page.goto("/account");
+  await page.getByText("Данные и владение древом", { exact: true }).click();
   await page.getByRole("button", { name: "Передать владение" }).click();
   await expect(page.getByRole("button", { name: "Борис Иванов" })).toBeDisabled();
   await expect(page.getByText(/сейчас не может принять древо/)).toBeVisible();
@@ -543,6 +546,7 @@ test("deleting a personal tree requires its name and collaborator consent", asyn
       .then((response) => route.fulfill({ response }));
   });
   await page.goto("/a/test-archive/account");
+  await page.getByText("Данные и владение древом", { exact: true }).click();
   await page.getByRole("button", { name: "Удалить это древо" }).click();
   const confirm = page.getByRole("button", { name: "Удалить древо и файлы" });
   await expect(confirm).toBeDisabled();
@@ -618,6 +622,7 @@ test("account deletion requires its exact name and shared-tree consent", async (
     });
   });
   await page.goto("/account");
+  await page.getByText("Удаление аккаунта", { exact: true }).click();
   await page.getByRole("button", { name: "Удалить аккаунт" }).click();
   const confirm = page.getByRole("button", { name: "Удалить аккаунт" }).last();
   await expect(confirm).toBeDisabled();

@@ -30,7 +30,10 @@ export function useArchiveView(canLeave: () => boolean = () => true) {
     (next: ArchiveView, target?: ArchiveTarget | string, replace = false) => {
       if (next !== archiveViewAt(window.location.pathname) && !canLeave())
         return;
-      if (next === "admin") {
+      if (
+        next === "admin" &&
+        archiveViewAt(window.location.pathname) !== "admin"
+      ) {
         window.location.assign(archivePaths.admin);
         return;
       }

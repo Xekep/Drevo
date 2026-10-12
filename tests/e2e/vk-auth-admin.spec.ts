@@ -24,7 +24,7 @@ test("VK settings form saves configuration without exposing a disabled login pro
   });
   await page.goto("/admin");
   await page
-    .getByRole("button", { name: "Вход через VK", exact: true })
+    .getByRole("link", { name: "Вход через VK", exact: true })
     .click();
   const form = page.getByRole("region", { name: "Настройки входа через VK" });
   await expect(

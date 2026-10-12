@@ -25,7 +25,7 @@ test("platform sections stay reachable and forms fit desktop and mobile screens"
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: info.outputPath(`platform-roles-${width}.png`) });
   }
-  const resources = navigation.getByRole("button", { name: "Ресурсы поиска" });
+  const resources = navigation.getByRole("link", { name: "Ресурсы поиска" });
   await resources.click();
   await expect(resources).toHaveAttribute("aria-current", "page");
   const selected = await resources.boundingBox();

@@ -676,7 +676,7 @@ test("participants have a separate preview action alongside deletion", async ({
   await page.goto("/a/preview-archive/manage");
   await page
     .getByRole("navigation", { name: "Разделы админки" })
-    .getByRole("button", { name: "Участники", exact: true })
+    .getByRole("link", { name: "Участники", exact: true })
     .click();
   const row = page.getByRole("article", {
     name: `Участник: ${member.name}`,
@@ -692,7 +692,7 @@ test("participants have a separate preview action alongside deletion", async ({
   ).toHaveAttribute("href", `${prefix}/tree`);
   await expect(
     row.getByRole("button", {
-      name: `Удалить участника: ${member.name}`,
+      name: `Закрыть доступ участнику: ${member.name}`,
       exact: true,
     }),
   ).toBeVisible();

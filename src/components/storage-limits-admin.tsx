@@ -3,14 +3,29 @@ import { archiveFetch } from "../data/archive-fetch";
 import { ROLE_NAMES, type Role } from "../domain/access";
 import type { StorageLimits } from "../shared/storage-limits";
 import "../styles/storage-limits.css";
+import {
+  confirmDiscardChanges,
+  useUnsavedChanges,
+} from "../hooks/useUnsavedChanges";
 
-export function StorageLimitsAdmin() {
+export function StorageLimitsAdmin({
+  onDirtyChange,
+}: {
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const [saved, setSaved] = useState<StorageLimits | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [retry, setRetry] = useState(0);
+  const dirty =
+    !!saved &&
+    Object.entries(saved).some(
+      ([role, limit]) =>
+        (draft[role] ?? "").trim() !== (limit === null ? "" : String(limit)),
+    );
+  useUnsavedChanges(dirty, onDirtyChange);
   useEffect(() => {
     const request = new AbortController();
     void (async () => {
@@ -66,6 +81,14 @@ export function StorageLimitsAdmin() {
       if (!response.ok)
         throw new Error(data.error || "Не удалось сохранить лимиты");
       setSaved(data);
+      setDraft(
+        Object.fromEntries(
+          Object.entries(data).map(([role, limit]) => [
+            role,
+            limit === null ? "" : String(limit),
+          ]),
+        ),
+      );
       setNotice("Лимиты сохранены");
     } catch (reason) {
       setError(
@@ -116,8 +139,8 @@ export function StorageLimitsAdmin() {
       </div>
       <p className="field-hint">
         Пустое поле — без личного лимита, 0 — запрет новых загрузок. Один PDF —
-        до 100 МБ, TIFF — до 50 МБ, изображение — до 20 МБ. Роль читателя по-прежнему не даёт права
-        загрузки.
+        до 100 МБ, TIFF — до 50 МБ, изображение — до 20 МБ. Роль читателя
+        по-прежнему не даёт права загрузки.
       </p>
       <p className="field-hint">
         Общая квота архива 10 ГиБ и ограничение базового аккаунта владельца 500
@@ -132,6 +155,7 @@ export function StorageLimitsAdmin() {
             type="button"
             disabled={busy}
             onClick={() => {
+              if (!confirmDiscardChanges(dirty)) return;
               setError("");
               setRetry((value) => value + 1);
             }}
@@ -140,7 +164,9 @@ export function StorageLimitsAdmin() {
           </button>
         </p>
       )}
-      {notice && <p role="status">{notice}</p>}
+      <p className="admin-save-state" role="status">
+        {dirty ? "Есть несохранённые изменения" : notice}
+      </p>
       <button
         type="submit"
         className="primary-action"

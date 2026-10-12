@@ -1,5 +1,5 @@
 import { BackupAdmin } from "./backup-admin";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { confirmDiscardChanges } from "../hooks/useUnsavedChanges";
 import {
   ArrowLeft,
@@ -41,14 +41,29 @@ export default function PlatformSettingsPage({
   onOwnTierChanged,
   showRoles = true,
   onDirtyChange,
+  currentPath,
+  onNavigate,
 }: {
   accountId: string;
+  currentPath: string;
+  onNavigate: (path: string) => void;
   onOwnRoleChanged: (role: "admin" | "researcher" | null) => void;
   onOwnTierChanged: (fullAccess: boolean) => void;
   showRoles?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [section, setSection] = useState<Section>(showRoles ? "roles" : "ai");
+  const requested = new URLSearchParams(currentPath.split("?")[1] || "").get(
+    "section",
+  );
+  const section =
+    sections.find(
+      (item) => item.id === requested && (showRoles || item.id !== "roles"),
+    )?.id || (showRoles ? "roles" : "ai");
+  const sectionPath = (next: Section) =>
+    next === "roles" ? "/admin" : `/admin?section=${next}`;
+  useEffect(() => {
+    document.title = `${sections.find((item) => item.id === section)!.label} · Админка · Drevo`;
+  }, [section]);
   const sectionDirty = useRef(false);
   const reportDirty = useCallback(
     (dirty: boolean) => {
@@ -72,12 +87,25 @@ export default function PlatformSettingsPage({
         <AdminNavigation
           groups={[
             {
-              label: "Настройки",
+              label: "Доступ",
               items: sections.filter(
-                (item) => showRoles || item.id !== "roles",
+                (item) => item.id === "roles" && showRoles,
               ),
             },
-          ]}
+            {
+              label: "Интеграции",
+              items: sections.filter((item) =>
+                ["ai", "vk", "email"].includes(item.id),
+              ),
+            },
+            {
+              label: "Данные",
+              items: sections.filter((item) =>
+                ["backups", "storage", "resources"].includes(item.id),
+              ),
+            },
+          ].filter((group) => group.items.length > 0)}
+          href={sectionPath}
           selected={section}
           label="Разделы админки платформы"
           onSelect={(next) => {
@@ -86,7 +114,7 @@ export default function PlatformSettingsPage({
               !confirmDiscardChanges(sectionDirty.current)
             )
               return;
-            setSection(next);
+            if (next !== section) onNavigate(sectionPath(next));
           }}
         />
         <a
@@ -113,8 +141,8 @@ export default function PlatformSettingsPage({
         <header className="admin-page-header">
           <h1>Админка платформы</h1>
           <p className="admin-subtitle">
-            Глобальные роли и настройки платформы. Управление конкретным древом
-            открывается из его меню.
+            Настройки всех древ. Доступ участников к конкретному древу задаётся
+            в его управлении.
           </p>
         </header>
         {showRoles && section === "roles" && (
@@ -131,7 +159,11 @@ export default function PlatformSettingsPage({
           </div>
         )}
         {section === "backups" && (
-          <BackupAdmin scope="platform" archiveId={null} />
+          <BackupAdmin
+            scope="platform"
+            archiveId={null}
+            onDirtyChange={reportDirty}
+          />
         )}
         {section === "storage" && (
           <section className="account-card">
@@ -141,7 +173,7 @@ export default function PlatformSettingsPage({
                 <h2>Лимиты хранилища</h2>
               </div>
             </div>
-            <StorageLimitsAdmin />
+            <StorageLimitsAdmin onDirtyChange={reportDirty} />
           </section>
         )}
         {section === "vk" && (
@@ -152,7 +184,7 @@ export default function PlatformSettingsPage({
                 <h2>Вход через VK</h2>
               </div>
             </div>
-            <VkAuthAdmin />
+            <VkAuthAdmin onDirtyChange={reportDirty} />
           </section>
         )}
         {section === "email" && (
@@ -174,7 +206,7 @@ export default function PlatformSettingsPage({
                 <h2>Ресурсы поиска</h2>
               </div>
             </div>
-            <ResearchResourcesAdmin />
+            <ResearchResourcesAdmin onDirtyChange={reportDirty} />
           </section>
         )}
       </div>

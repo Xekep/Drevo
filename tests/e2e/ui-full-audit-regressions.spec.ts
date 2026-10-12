@@ -100,7 +100,9 @@ test("выбранный клавиатурой результат поиска 
   await openAdminSection(page, "invitations", "Приглашения");
   const input = page.getByRole("combobox", { name: "Кто это в древе" });
   await input.fill("Тест");
-  await expect(page.getByRole("listbox", { name: "Найденные люди" }).getByRole("option")).toHaveCount(6);
+  await expect(
+    page.getByRole("listbox", { name: "Найденные люди" }).getByRole("option"),
+  ).toHaveCount(6);
   for (let i = 0; i < 6; i++) await input.press("ArrowDown");
   const visible = await input.evaluate((element) => {
     const active = document.getElementById(
@@ -153,7 +155,10 @@ test("поиск людей документа показывает коротк
   await input.fill("Т");
   await expect(input).toHaveCSS("border-top-width", "0px");
   await expect(input).toHaveCSS("outline-width", "0px");
-  await expect(picker.locator(".person-search-input")).toHaveCSS("outline-style", "solid");
+  await expect(picker.locator(".person-search-input")).toHaveCSS(
+    "outline-style",
+    "solid",
+  );
   await expect(picker.getByRole("status")).toHaveText(
     "Введите хотя бы две буквы",
   );
@@ -223,19 +228,19 @@ test("PDF переживает повторные смены ширины и р�
   ).toBeVisible();
 });
 
-test("каталог людей поддерживает Ctrl и среднюю кнопку без перехода текущей вкладки", async ({
-  page,
-}, info) => {
-  test.skip(
-    info.project.name !== "desktop",
-    "Модификаторы мыши относятся к desktop",
-  );
-  await page.goto("/people");
-  const person = page.locator(".directory-person").first();
-  await expect(person).toHaveAttribute("href", /\/people\/e2e-/);
-  for (const gesture of ["control", "middle"] as const) {
-    // A background tab can leave Chromium's native modifier gesture unfocused
-    // after it closes. Activate the originating page before each real click.
+// Each native gesture gets its own browser context: closing a background tab
+// can leave Chromium's modifier/focus state behind for the next gesture.
+for (const gesture of ["control", "middle"] as const) {
+  test(`каталог людей открывается в новой вкладке: ${gesture}`, async ({
+    page,
+  }, info) => {
+    test.skip(
+      info.project.name !== "desktop",
+      "Модификаторы мыши относятся к desktop",
+    );
+    await page.goto("/people");
+    const person = page.locator(".directory-person").first();
+    await expect(person).toHaveAttribute("href", /\/people\/e2e-/);
     await page.bringToFront();
     await person.scrollIntoViewIfNeeded();
     const opened = page.context().waitForEvent("page");
@@ -246,8 +251,8 @@ test("каталог людей поддерживает Ctrl и среднюю 
     await tab.waitForURL(/\/people\/e2e-/);
     await expect(page).toHaveURL(/\/people$/);
     await tab.close();
-  }
-});
+  });
+}
 
 test("мобильная загрузка фото доступна без запуска распознавания лиц", async ({
   page,
@@ -262,13 +267,15 @@ test("мобильная загрузка фото доступна без за�
   await page.getByRole("button", { name: "Добавить фото" }).click();
   const dialog = page.getByRole("dialog", { name: "Добавить фотографию" });
   await expect(dialog).toBeVisible();
-  await dialog
-    .getByLabel("Выбрать фотографию")
-    .setInputFiles({
-      name: "mobile.png",
-      mimeType: "image/png",
-    buffer: await sharp({ create: { width: 320, height: 240, channels: 3, background: "#d3ddc9" } }).png().toBuffer(),
-    });
+  await dialog.getByLabel("Выбрать фотографию").setInputFiles({
+    name: "mobile.png",
+    mimeType: "image/png",
+    buffer: await sharp({
+      create: { width: 320, height: 240, channels: 3, background: "#d3ddc9" },
+    })
+      .png()
+      .toBuffer(),
+  });
   await dialog
     .getByRole("button", { name: "Сохранить фотографию", exact: true })
     .click();
@@ -330,6 +337,8 @@ test("графики ИИ учитывают смену reduced motion без п
   expect(reduced.animation).toBe(false);
   expect(reduced.seriesAnimation).toBe(false);
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await expect.poll(async () => (await motionState()).animation).not.toBe(false);
+  await expect
+    .poll(async () => (await motionState()).animation)
+    .not.toBe(false);
   expect((await motionState()).id).toBe(reduced.id);
 });

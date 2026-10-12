@@ -23,6 +23,7 @@ export function AccountAiHistory({ accountId }: { accountId: string }) {
   const [error, setError] = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -38,10 +39,13 @@ export function AccountAiHistory({ accountId }: { accountId: string }) {
         if (!controller.signal.aborted) setChats(result.chats);
       })
       .catch(() => {
-        if (!controller.signal.aborted) setError("Не удалось загрузить диалоги");
+        if (!controller.signal.aborted)
+          setError(
+            "Не удалось загрузить диалоги. Проверьте соединение и повторите попытку.",
+          );
       });
     return () => controller.abort();
-  }, [accountId]);
+  }, [accountId, attempt]);
 
   const remove = async (id: string) => {
     setDeletingId(id);
@@ -62,38 +66,83 @@ export function AccountAiHistory({ accountId }: { accountId: string }) {
 
   if (chats?.length === 0 && !error) return null;
   return (
-    <section className="account-card" aria-labelledby="account-ai-history-title">
+    <section
+      className="account-card"
+      aria-labelledby="account-ai-history-title"
+    >
       <div className="account-card-title">
-        <span className="account-icon"><MessageSquareText size={20} /></span>
+        <span className="account-icon">
+          <MessageSquareText size={20} />
+        </span>
         <div>
           <span className="account-eyebrow">Личные данные</span>
           <h2 id="account-ai-history-title">Диалоги с ИИ</h2>
         </div>
       </div>
-      {chats === null && !error && <p className="account-card-copy" role="status">Загружаем диалоги…</p>}
-      {chats && <div className="account-ai-chat-list">
-        {chats.map((chat) => (
-          <div className="account-ai-chat" key={chat.id}>
-            <span className="account-ai-chat-name">
-              <strong>{chat.title}</strong>
-              <small>{updated(chat.updatedAt)}{chat.unavailable ? " · Содержимое недоступно" : ""}</small>
-            </span>
-            {confirmId === chat.id ? (
-              <span className="account-ai-chat-actions">
-                <button type="button" disabled={deletingId === chat.id} onClick={() => void remove(chat.id)}>
-                  {deletingId === chat.id ? "Удаляем…" : "Удалить"}
-                </button>
-                <button type="button" disabled={deletingId === chat.id} onClick={() => setConfirmId(null)}>Отмена</button>
+      {chats === null && !error && (
+        <p className="account-card-copy" role="status">
+          Загружаем диалоги…
+        </p>
+      )}
+      {chats && (
+        <div className="account-ai-chat-list">
+          {chats.map((chat) => (
+            <div className="account-ai-chat" key={chat.id}>
+              <span className="account-ai-chat-name">
+                <strong>{chat.title}</strong>
+                <small>
+                  {updated(chat.updatedAt)}
+                  {chat.unavailable ? " · Содержимое недоступно" : ""}
+                </small>
               </span>
-            ) : (
-              <button type="button" className="account-ai-chat-delete" aria-label={`Удалить диалог: ${chat.title}`} onClick={() => setConfirmId(chat.id)}>
-                <Trash2 size={17} aria-hidden="true" />
-              </button>
-            )}
-          </div>
-        ))}
-      </div>}
-      {error && <p className="account-error" role="alert">{error}</p>}
+              {confirmId === chat.id ? (
+                <span className="account-ai-chat-actions">
+                  <button
+                    type="button"
+                    disabled={deletingId === chat.id}
+                    onClick={() => void remove(chat.id)}
+                  >
+                    {deletingId === chat.id ? "Удаляем…" : "Удалить"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deletingId === chat.id}
+                    onClick={() => setConfirmId(null)}
+                  >
+                    Отмена
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="account-ai-chat-delete"
+                  aria-label={`Удалить диалог: ${chat.title}`}
+                  onClick={() => setConfirmId(chat.id)}
+                >
+                  <Trash2 size={17} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {error && (
+        <p className="account-error" role="alert">
+          {error}
+          {chats === null && (
+            <button
+              type="button"
+              className="account-row-action"
+              onClick={() => {
+                setError("");
+                setAttempt((value) => value + 1);
+              }}
+            >
+              Повторить загрузку
+            </button>
+          )}
+        </p>
+      )}
     </section>
   );
 }

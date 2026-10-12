@@ -15,6 +15,7 @@ import type {
   BackupStatus,
 } from "../shared/backup-management";
 import { BackupRestore } from "./backup-restore";
+import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
 
 function backupUrl(scope: "tree" | "platform", archiveId: string | null, path: string) {
   return scope === "platform" ? "/api/platform/backups" + path : archiveResourceUrl("/api/backups" + path, archiveId ? `/a/${archiveId}` : "/");
@@ -40,7 +41,7 @@ const bytes = (value: number) =>
     ? (value / 1024 ** 3).toFixed(1) + " ГиБ"
     : Math.max(0.1, value / 1024 ** 2).toFixed(1) + " МиБ";
 
-export function BackupAdmin({ archiveId, scope = "tree" }: { archiveId: string | null; scope?: "tree" | "platform" }) {
+export function BackupAdmin({ archiveId, scope = "tree", onDirtyChange }: { archiveId: string | null; scope?: "tree" | "platform"; onDirtyChange?: (dirty: boolean) => void }) {
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [draft, setDraft] = useState<BackupSettings | null>(null);
   const [offset, setOffset] = useState(0);
@@ -86,6 +87,7 @@ export function BackupAdmin({ archiveId, scope = "tree" }: { archiveId: string |
   const running = busy || status?.job?.state === "running";
   const dirty =
     scope === "platform" && !!draft && JSON.stringify(draft) !== JSON.stringify(status?.settings);
+  useUnsavedChanges(dirty, onDirtyChange);
   const preview =
     status?.job?.id === previewJobId ? status.job.preview : undefined;
   function field<K extends keyof BackupSettings>(

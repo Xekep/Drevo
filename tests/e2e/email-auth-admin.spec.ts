@@ -28,7 +28,7 @@ test("platform email settings keep the secret out of the form and fit mobile", a
   });
   await page.goto("/admin");
   await page.getByRole("navigation", { name: "Разделы админки платформы" })
-    .getByRole("button", { name: "Вход по email" }).click();
+    .getByRole("link", { name: "Вход по email" }).click();
   const form = page.getByRole("region", { name: "Настройки входа по email" });
   await expect(form.getByLabel("Пароль SMTP", { exact: true })).toHaveValue("");
   await expect(form.getByRole("button", { name: "Сохранить", exact: true })).toBeDisabled();
@@ -36,14 +36,14 @@ test("platform email settings keep the secret out of the form and fit mobile", a
   page.on("dialog", async (dialog) => { prompts++; await dialog.dismiss(); });
   const navigation = page.getByRole("navigation", { name: "Разделы админки платформы" });
   await form.getByLabel("SMTP-сервер").fill("changed.example.org");
-  await navigation.getByRole("button", { name: "Вход через VK" }).click();
+  await navigation.getByRole("link", { name: "Вход через VK" }).click();
   await expect(form.getByLabel("SMTP-сервер")).toHaveValue("changed.example.org");
   expect(prompts).toBe(1);
   await form.getByLabel("SMTP-сервер").fill("smtp.example.org");
-  await navigation.getByRole("button", { name: "Пользователи", exact: true }).click();
+  await navigation.getByRole("link", { name: "Пользователи", exact: true }).click();
   await expect(form).toHaveCount(0);
   expect(prompts).toBe(1);
-  await navigation.getByRole("button", { name: "Вход по email" }).click();
+  await navigation.getByRole("link", { name: "Вход по email" }).click();
   for (const width of info.project.name === "desktop" ? [1440, 768] : [390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);

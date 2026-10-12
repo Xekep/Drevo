@@ -205,6 +205,7 @@ export default function App() {
     updateOwnRole, updateOwnTier } = useAccountSession({ archive, view, requestedView, previewActive });
   const [entryPending, setEntryPending] = useState(shouldPlayEntrySequence);
   useEffect(() => {
+    if (view !== "tree") return;
     const preventPageZoom = (event: WheelEvent) => {
       if (event.ctrlKey) event.preventDefault();
     };
@@ -240,7 +241,7 @@ export default function App() {
       window.removeEventListener("wheel", preventPageZoom, true);
       window.removeEventListener("keydown", preventPageSelectAll, true);
     };
-  }, []);
+  }, [view]);
   const finishEntry = useCallback(() => {
     clearEntrySequence();
     setEntryPending(false);
@@ -918,7 +919,7 @@ export default function App() {
               (!accountSession?.account && accountSession?.user?.platformAdmin === true) ? (
             <LazyChunkBoundary message="Админка платформы не загрузилась. Обновите страницу и повторите вход.">
               <Suspense fallback={<main className="archive-status" role="status">Загружаем админку платформы…</main>}>
-                <PlatformSettingsPage accountId={(accountSession.account || accountSession.user)!.id}
+                <PlatformSettingsPage currentPath={currentPath} onNavigate={(path) => setView("admin", path)} accountId={(accountSession.account || accountSession.user)!.id}
                 onDirtyChange={onPlatformSettingsDirtyChange}
                 showRoles={Boolean(accountSession.account)}
                 onOwnRoleChanged={(role) => {
@@ -941,6 +942,8 @@ export default function App() {
               (user && isArchiveOwner(user) && user.approved) ? (
                 <AdminPanel
                   family={family}
+                  currentPath={currentPath}
+                  onNavigate={(path) => setView("manage", path)}
                   currentUserId={user.id}
                   platformAdmin={user.platformAdmin === true}
                   archiveOwner={isArchiveOwner(user)}

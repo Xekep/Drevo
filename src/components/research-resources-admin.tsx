@@ -7,6 +7,10 @@ import type {
 import { useEffect, useState, type FormEvent } from "react";
 import { ExternalLink, Plus, Trash2 } from "lucide-react";
 import "../styles/research-resources-admin.css";
+import {
+  confirmDiscardChanges,
+  useUnsavedChanges,
+} from "../hooks/useUnsavedChanges";
 
 type ResourceDraft = Pick<Resource, "name" | "url" | "description"> &
   ResearchSearchSettings;
@@ -30,7 +34,11 @@ function resourceHost(resource: Resource) {
   }
 }
 
-export function ResearchResourcesAdmin() {
+export function ResearchResourcesAdmin({
+  onDirtyChange,
+}: {
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState("");
   const [categoryName, setCategoryName] = useState("");
@@ -42,7 +50,14 @@ export function ResearchResourcesAdmin() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const [savedDraft, setSavedDraft] = useState(JSON.stringify(emptyDraft));
   const selected = categories.find((item) => item.id === categoryId);
+  const resourceDirty =
+    editing !== null && JSON.stringify(draft) !== savedDraft;
+  const categoryDirty = !!selected && categoryName !== selected.name;
+  const dirty = resourceDirty || categoryDirty || !!newCategory.trim();
+  useUnsavedChanges(dirty, onDirtyChange);
   const filteredResources =
     selected?.resources.filter((resource) => {
       const query = resourceQuery.trim().toLocaleLowerCase("ru-RU");
@@ -57,7 +72,10 @@ export function ResearchResourcesAdmin() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void archiveFetch(endpoint, { signal: controller.signal, cache: "no-store" })
+    void archiveFetch(endpoint, {
+      signal: controller.signal,
+      cache: "no-store",
+    })
       .then(async (response) => {
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || "Каталог недоступен");
@@ -73,7 +91,7 @@ export function ResearchResourcesAdmin() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, []);
+  }, [attempt]);
 
   async function change(path: string, method: string, body?: unknown) {
     setBusy(true);
@@ -103,21 +121,24 @@ export function ResearchResourcesAdmin() {
     }
   }
 
-  function chooseCategory(category: Category) {
+  function chooseCategory(category: Category, saved = false) {
+    if (!saved && !confirmDiscardChanges(dirty)) return;
     setCategoryId(category.id);
     setCategoryName(category.name);
     setResourceQuery("");
     setEditing(null);
+    setNewCategory("");
     setError("");
     setNotice("");
   }
 
   async function addCategory(event: FormEvent) {
     event.preventDefault();
+    if (!confirmDiscardChanges(resourceDirty || categoryDirty)) return;
     const next = await change("/categories", "POST", { name: newCategory });
     if (!next) return;
     const added = next.find((item) => item.name === newCategory.trim());
-    if (added) chooseCategory(added);
+    if (added) chooseCategory(added, true);
     setNewCategory("");
   }
 
@@ -130,8 +151,10 @@ export function ResearchResourcesAdmin() {
   }
 
   function editResource(resource: Resource | null) {
+    if (!confirmDiscardChanges(resourceDirty)) return;
     setEditing(resource?.id || "new");
     setDraft(resource || emptyDraft);
+    setSavedDraft(JSON.stringify(resource || emptyDraft));
     setError("");
     setNotice("");
   }
@@ -166,7 +189,20 @@ export function ResearchResourcesAdmin() {
       {loading && <p role="status">Загружаем каталог…</p>}
       {error && (
         <p role="alert" className="form-error">
-          {error}
+          {error} Проверьте соединение и повторите попытку.
+          {!categories.length && (
+            <button
+              type="button"
+              onClick={() => {
+                if (!confirmDiscardChanges(dirty)) return;
+                setError("");
+                setLoading(true);
+                setAttempt((value) => value + 1);
+              }}
+            >
+              Повторить загрузку каталога
+            </button>
+          )}
         </p>
       )}
       {notice && (
@@ -451,7 +487,10 @@ export function ResearchResourcesAdmin() {
                       <button
                         type="button"
                         disabled={busy}
-                        onClick={() => setEditing(null)}
+                        onClick={() => {
+                          if (confirmDiscardChanges(resourceDirty))
+                            setEditing(null);
+                        }}
                       >
                         Отмена
                       </button>
