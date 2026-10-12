@@ -370,11 +370,11 @@ test("Ctrl+A не выделяет страницу, но работает в п
   expect(selection.end).toBe(selection.length);
 });
 
-test("Ctrl+колесо не меняет масштаб страницы вне дерева", async ({
+test("Ctrl+колесо перехватывается только на полотне древа", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
-  for (const path of ["/people", "/insights"]) {
+  for (const path of ["/tree", "/people", "/insights", "/account", "/manage"]) {
     await page.goto(path);
     await expect(
       page.getByRole("navigation", { name: "Разделы архива" }),
@@ -388,7 +388,7 @@ test("Ctrl+колесо не меняет масштаб страницы вне
       });
       return !window.dispatchEvent(event);
     });
-    expect(blocked).toBe(true);
+    expect(blocked, path).toBe(path === "/tree");
   }
 });
 

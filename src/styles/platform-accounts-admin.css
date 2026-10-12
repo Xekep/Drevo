@@ -32,7 +32,8 @@
 .platform-statistics-grid dd { margin: 6px 0 0; font-size: 24px; font-weight: 600; color: #35533c; overflow-wrap: anywhere; }
 @container (max-width: 530px) {
   .platform-account-heading { display: none; }
-  .platform-account-row { grid-template-columns: minmax(0,1fr) 96px 36px; gap: 6px; padding: 8px 0; }
+  .platform-account-row { grid-template-columns: minmax(0,1fr) 96px 36px; gap: 4px; padding: 6px 0; }
+  .platform-account-identity strong, .platform-account-identity small { line-height: 1.35; }
   .platform-account-identity { grid-column: 1/-1; }
 }
 @media (max-width: 600px) {
