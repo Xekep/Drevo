@@ -52,8 +52,12 @@ test("one pool checks global schema once while every archive retains its scoped 
   const cursorProbe = queries.findIndex(({ query }) =>
     query.includes("column_name='messages_version'"),
   );
+  const mediaUrlProbe = queries.findIndex(({ query }) =>
+    query.includes("column_name='portrait_url'"),
+  );
   assert.ok(originalProbe >= 0 && counterProbe > originalProbe);
   assert.ok(cursorProbe > counterProbe);
+  assert.ok(mediaUrlProbe > cursorProbe);
   for (const archive of ["first", "second"])
     assert.ok(
       queries.some(

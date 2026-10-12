@@ -74,7 +74,7 @@ test("native104 indexes direct portrait/gallery references under FORCE RLS witho
   );
   await first.query("SELECT set_config('drevo.archive_id','tree-b',false)");
   await first.query(
-    `UPDATE photos SET data=jsonb_set(data,'{url}','"/media/foreign-gallery.png"') WHERE id='photo'`,
+    `UPDATE photos SET data=jsonb_set(data,'{url}','"/media/foreign-gallery.png"') WHERE archive_id='tree-b' AND id='photo'`,
   );
   await first.query(`CREATE ROLE ${role} NOLOGIN NOSUPERUSER NOBYPASSRLS`);
   roleCreated = true;
