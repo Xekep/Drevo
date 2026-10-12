@@ -302,10 +302,10 @@ export default function App() {
   const [timelineDetails, setTimelineDetails] = useState(false);
   const loadPersonDetails = useCallback(
     (id: string) => {
-      if (detailsGeneration === undefined) return Promise.resolve();
+      if (projectionGeneration === undefined) return Promise.resolve();
       return loadDetails({ people: [id] });
     },
-    [loadDetails, detailsGeneration],
+    [loadDetails, projectionGeneration],
   );
   const archiveAvailable = !!family;
   const needsPeopleDetails = view === "quality";
@@ -364,6 +364,7 @@ export default function App() {
     archiveAvailable,
     detailsSource,
     detailsGeneration,
+    projectionGeneration,
     loadDetails,
   ]);
   const openPersonPublication = useCallback((personId: string) => {

@@ -441,3 +441,33 @@ test("leaving a collection view aborts its reads without completing the collecti
   assert.equal(reader.isComplete("people"), false);
   assert.ok(calls.every(url => !url.includes("offset=160")));
 });
+
+test("a minimal committed write invalidates the selected profile preview and reloads its true album total once", async () => {
+  const setup = fixture(1);
+  const photos = setup.family.photos!.filter(photo => photo.tags.some(tag => tag.personId === "p0"));
+  let latest = setup.initial, revision = 1, total = photos.length, calls = 0;
+  const reader = archiveDetails(setup.initial, async input => {
+    const params = new URL(input, "https://example.test").searchParams;
+    assert.equal(params.get("projection"), "details");
+    assert.equal(params.get("preview"), "1");
+    assert.equal(params.get("offset"), "0");
+    assert.equal(params.get("token"), `${revision}:fixture`);
+    calls++;
+    return Response.json({ pageToken: `${revision}:fixture`, people: [personDetails(setup.family.people[0])], photos: photos.slice(0, 30), photoTotal: total, personPhotoTotals: { p0: total } });
+  }, header => { latest = header; });
+  await reader.loadPeople(["p0"]);
+  assert.equal(reader.personPhotoTotal("p0"), 41);
+  assert.equal(reader.projectionGeneration(), 0);
+  revision = 2;
+  total = 42;
+  reader.replace({ ...latest.family, people: latest.family.people.map(person => ({ ...person, name: "Updated" })) }, revision, false);
+  assert.equal(reader.hasPerson("p0"), true, "committed card fields remain loaded");
+  assert.equal(reader.personPhotoTotal("p0"), undefined, "an old count cannot survive a new archive revision");
+  assert.equal(reader.projectionGeneration(), 1, "App depends on this revision marker even when the reader and selected ID stay unchanged");
+  await reader.loadPeople(["p0"]);
+  assert.equal(reader.personPhotoTotal("p0"), 42);
+  assert.equal(latest.family.photos!.length, 30, "reloading still fetches only a bounded cover preview");
+  await reader.loadPeople(["p0"]);
+  assert.equal(calls, 2, "publishing fresh profile data never invalidates its projection again or loops");
+  assert.equal(reader.projectionGeneration(), 1);
+});

@@ -59,7 +59,11 @@ export function validateBackupSettings(value: unknown): BackupSettings {
   };
 }
 
-export async function backupStore(db: StoreDatabase, now = Date.now, treeOnly = false) {
+export async function backupStore(
+  db: StoreDatabase,
+  now = Date.now,
+  treeOnly = false,
+) {
   const audit = auditStore(db);
   await db
     .prepare(
@@ -75,7 +79,9 @@ export async function backupStore(db: StoreDatabase, now = Date.now, treeOnly = 
       )
       .get())!;
     return {
-      value: treeOnly ? { ...defaults, enabled: false, keepCount: 5 } : JSON.parse(String(row.data)) as BackupSettings,
+      value: treeOnly
+        ? { ...defaults, enabled: false, keepCount: 5 }
+        : (JSON.parse(String(row.data)) as BackupSettings),
       next: Number(row.next_run),
     };
   }
@@ -92,13 +98,20 @@ export async function backupStore(db: StoreDatabase, now = Date.now, treeOnly = 
     await audit.record(settingAudit(old.value, checked), actor);
     return checked;
   }
-  function nextRun(checked: BackupSettings, old: BackupSettings, previous: number) {
+  function nextRun(
+    checked: BackupSettings,
+    old: BackupSettings,
+    previous: number,
+  ) {
     return checked.enabled !== old.enabled ||
       checked.intervalHours !== old.intervalHours
-        ? now() + checked.intervalHours * hour
-        : previous;
+      ? now() + checked.intervalHours * hour
+      : previous;
   }
-  function settingAudit(before: BackupSettings, after: BackupSettings): AuditDraft {
+  function settingAudit(
+    before: BackupSettings,
+    after: BackupSettings,
+  ): AuditDraft {
     return {
       action: "Настроены резервные копии",
       entity: "settings",
@@ -114,26 +127,41 @@ export async function backupStore(db: StoreDatabase, now = Date.now, treeOnly = 
       ],
     };
   }
-  async function savePostgres(value: unknown, actor: ArchiveUser, client: pg.PoolClient) {
+  async function savePostgres(
+    value: unknown,
+    actor: ArchiveUser,
+    client: pg.PoolClient,
+  ) {
     if (db.kind !== "postgres") throw new Error("PostgreSQL is required");
     const checked = validateBackupSettings(value);
     const previous = await client.query<{ data: string; next_run: string }>(
       `SELECT data,next_run FROM backup_settings
-       WHERE archive_id=$1 AND id=1 FOR UPDATE NOWAIT`, [db.archiveId]);
+       WHERE archive_id=$1 AND id=1 FOR UPDATE NOWAIT`,
+      [db.archiveId],
+    );
     if (!previous.rows[0]) throw new Error("Backup settings are unavailable");
     const old = JSON.parse(String(previous.rows[0].data)) as BackupSettings;
     const next = nextRun(checked, old, Number(previous.rows[0].next_run));
     await client.query(
       "UPDATE backup_settings SET data=$1,next_run=$2 WHERE archive_id=$3 AND id=1",
-      [JSON.stringify(checked), next, db.archiveId]);
+      [JSON.stringify(checked), next, db.archiveId],
+    );
     const draft = settingAudit(old, checked);
     await client.query(
       `INSERT INTO archive_audit_entries
        (archive_id,at,actor_id,actor_name,action,entity,entity_id,label,revision,details)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9)`,
-      [db.archiveId, new Date().toISOString(), actor.id, actor.name,
-        draft.action, draft.entity, draft.entityId, draft.label,
-        JSON.stringify(draft.details)],
+      [
+        db.archiveId,
+        new Date().toISOString(),
+        actor.id,
+        actor.name,
+        draft.action,
+        draft.entity,
+        draft.entityId,
+        draft.label,
+        JSON.stringify(draft.details),
+      ],
     );
     return checked;
   }
@@ -149,7 +177,8 @@ export async function backupStore(db: StoreDatabase, now = Date.now, treeOnly = 
         "Резервная копия не найдена. Обновите список.",
       );
     const r = JSON.parse(String(row.data)) as BackupRecord;
-    if (treeOnly && !r.name.startsWith("tree-")) throw new BackupInputError("Копия не относится к ручным копиям древа.");
+    if (treeOnly && !r.name.startsWith("tree-"))
+      throw new BackupInputError("Копия не относится к ручным копиям древа.");
     return r;
   }
 
@@ -228,7 +257,7 @@ export async function backupStore(db: StoreDatabase, now = Date.now, treeOnly = 
       await db
         .prepare(
           "UPDATE backup_settings SET next_run=min(next_run,?) WHERE id=1",
-          "UPDATE backup_settings SET next_run=min(next_run,?) WHERE id=1",
+          "UPDATE backup_settings SET next_run=LEAST(next_run,?::bigint) WHERE id=1",
         )
         .run(next);
     },

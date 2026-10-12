@@ -18,6 +18,17 @@ test("редактор прямого родительства сохраняе�
     revision++;
     return route.fulfill({ json: { family, revision, appliedChanges: changes } });
   });
+  // The export warning is now a server projection. Keep it in the same
+  // persisted fixture as the mocked write, rather than querying the real DB.
+  await page.route("**/api/family?projection=export-warnings&**", (route) => {
+    const ids = new Set<string>(route.request().postDataJSON().ids);
+    const parentEvidence = family.people.some(person => ids.has(person.id) &&
+      person.parentClaims?.some(claim => ids.has(claim.parentId) &&
+        (!!claim.confidence || !!claim.sources?.length)));
+    return route.fulfill({ json: { revision,
+      pageToken: new URL(route.request().url()).searchParams.get("token"),
+      warnings: { parentEvidence, catalogLinks: false } } });
+  });
 
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growth-preparing|is-growing|is-layout-settling/);
