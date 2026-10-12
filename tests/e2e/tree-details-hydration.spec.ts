@@ -160,7 +160,7 @@ test("a minimal save reply preserves a bounded profile preview and the whole alb
       .fill("Тестов Александр Иванович");
     await page.getByRole("button", { name: "Сохранить", exact: true }).click();
     await expect.poll(() => writeStarted).toBe(true);
-    expect(detailOffsets).toEqual([0], "an open profile never downloads the remainder of a large album in the background");
+    expect(detailOffsets, "an open profile never downloads the remainder of a large album in the background").toEqual([0]);
     expect(galleryOffsets).toEqual([]);
     releaseSave();
     await expect(
@@ -172,7 +172,7 @@ test("a minimal save reply preserves a bounded profile preview and the whole alb
         exact: true,
       }),
     ).toBeVisible();
-    expect(detailOffsets).toEqual([0, 0], "the new revision refreshes one bounded preview without full-album paging");
+    expect(detailOffsets, "the new revision refreshes one bounded preview without full-album paging").toEqual([0, 0]);
     await dock.getByRole("button", { name: "Открыть фотоальбом человека: 41 фото", exact: true }).click();
     await expect(page.locator(".photo-grid .photo-tile")).toHaveCount(30);
     await page.getByRole("button", { name: "Показать ещё", exact: true }).click();
