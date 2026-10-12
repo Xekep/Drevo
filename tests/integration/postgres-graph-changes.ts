@@ -459,7 +459,12 @@ test("new people and parent/spouse relations commit together with the same famil
     ).family,
     before,
   );
-  assert.deepEqual(history.changes, inverseChanges(result.appliedChanges));
+  // JSONB persists deletion patches without undefined-valued properties.
+  // Compare the storage contract while the full inverse replay above verifies data.
+  assert.deepEqual(
+    history.changes,
+    JSON.parse(JSON.stringify(inverseChanges(result.appliedChanges))),
+  );
   const audit = (await postgresAuditReader(first, "tree-a").list()).items;
   assert.ok(audit.length >= 2);
   assert.ok(
@@ -1219,7 +1224,12 @@ test("projected graph writes preserve rich untouched cards and inverse patches r
     applyArchiveChanges(saved, history.changes, "local").family,
     before,
   );
-  assert.deepEqual(history.changes, inverseChanges(result.appliedChanges));
+  // JSONB persists deletion patches without undefined-valued properties.
+  // Compare the storage contract while the full inverse replay above verifies data.
+  assert.deepEqual(
+    history.changes,
+    JSON.parse(JSON.stringify(inverseChanges(result.appliedChanges))),
+  );
   assert.ok(!JSON.stringify(history).includes(rich.biography));
   assert.ok(
     !history.changes.some((change: Change) => change.collection === "photos"),
