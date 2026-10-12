@@ -3,12 +3,14 @@ import { dirname, join } from "node:path";
 import { finished } from "node:stream/promises";
 import { aiAttachmentStore, validateAttachments } from "./ai-attachments.ts";
 import type { ResearchAttachment } from "../shared/research-attachments.ts";
-import { generatedResearchFileStore } from "./generated-research-files.ts";
+import {
+  generatedResearchFileStore,
+  type GeneratedResearchFileMeta,
+} from "./generated-research-files.ts";
 import { yandexWebSearchProvider } from "./yandex-web-search.ts";
 import { recordModelCall, recordModelTokens } from "./ai-research-support.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ArchiveUser, Role } from "../domain/access.ts";
-import { fullName } from "../domain/dates.ts";
 import { exportGedcom } from "../domain/gedcom.ts";
 import { lineageReport } from "../domain/lineage-report.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
@@ -17,7 +19,7 @@ import { aiRuntimeConfig, type aiSettingsStore } from "./ai-settings.ts";
 import { AiLimitError, type aiUsageStore } from "./ai-usage.ts";
 import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
-import type { imagePreviews } from "./image-previews.ts";
+import type { ImagePreview } from "./image-previews.ts";
 import type { mediaStore } from "./media.ts";
 import type { researchCatalogStore } from "./research-catalog.ts";
 import { type researchSuggestionStore } from "./research-suggestions.ts";
@@ -26,12 +28,22 @@ import { YandexResponseError } from "./yandex-responses.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
 import { aiProfileRole } from "../domain/access.ts";
 import {
+  aiChatAccessScopeFromIds,
+  aiChatAllowedScopesFromCurrent,
   aiChatAccessScope,
-  aiChatAllowedScopes,
 } from "./ai-chat-access-scope.ts";
 import { researchPdf } from "./research-pdf.ts";
 import type { AiProviderCleanup } from "./ai-provider-cleanup.ts";
 import { workQueue, WorkQueueBusyError, type WorkQueue } from "./work-queue.ts";
+import {
+  preparationAdmission,
+  pendingAiAdmission,
+  preparationRequest,
+  withPreparation,
+  PREPARATION_BYTES,
+  type PreparationAdmission,
+} from "./preparation-admission.ts";
+import { scopedArchiveReader } from "./scoped-archive-reader.ts";
 
 import { createResearchRunner } from "./ai-research-runner.ts";
 import { yandexResponsesClient } from "./yandex-responses.ts";
@@ -75,6 +87,8 @@ export function aiResearchHttp({
   renderPdf,
   providerCleanup,
   executionQueue,
+  preparation,
+  pendingAdmission,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -82,7 +96,7 @@ export function aiResearchHttp({
   aiSettings: Awaited<ReturnType<typeof aiSettingsStore>>;
   usage: ReturnType<typeof aiUsageStore>;
   media: ReturnType<typeof mediaStore>;
-  previewImage: ReturnType<typeof imagePreviews>;
+  previewImage: ImagePreview;
   researchCatalog: ReturnType<typeof researchCatalogStore>;
   publicOrigin?: string;
   fetcher?: typeof fetch;
@@ -97,8 +111,14 @@ export function aiResearchHttp({
   renderPdf?: typeof researchPdf;
   providerCleanup?: AiProviderCleanup;
   executionQueue?: WorkQueue;
+  preparation?: PreparationAdmission;
+  pendingAdmission?: PreparationAdmission;
 }) {
   const queue = executionQueue ?? workQueue(4, 32);
+  const budget = preparation ?? preparationAdmission();
+  const pendingBudget = pendingAdmission ?? pendingAiAdmission();
+  const visibleIds = scopedArchiveReader(archive);
+  const preparing = new Map<AbortController, Promise<void>>();
   const chats = aiChatStore(archive.db, providerCleanup);
   const attachments = aiAttachmentStore(
     uploadsDirectory || join(dirname(archive.db.file), "uploads"),
@@ -144,16 +164,28 @@ export function aiResearchHttp({
   }
   const responses = yandexResponsesClient(fetcher);
   const accessScope = async (user: ArchiveUser) => {
-    return aiChatAccessScope(
+    if (!isScopedUser(user)) return aiChatAccessScopeFromIds(user);
+    const people = await visibleIds(user);
+    // Creator-owned or tagged-visible photos match projectFamilyForUser exactly.
+    const photos = await archive.db
+      .prepare(
+        `SELECT id FROM photos WHERE json_extract(data,'$.createdBy')=? OR EXISTS
+       (SELECT 1 FROM photo_tags t WHERE t.photo_id=photos.id AND
+        t.person_id IN (SELECT value FROM json_each(?)))`,
+        `SELECT id FROM photos WHERE data->>'createdBy'=? OR EXISTS
+       (SELECT 1 FROM photo_tags t WHERE t.archive_id=photos.archive_id AND
+        t.photo_id=photos.id AND t.person_id IN
+        (SELECT value FROM jsonb_array_elements_text(?::jsonb)))`,
+      )
+      .all(user.id, JSON.stringify([...(people ?? [])]));
+    return aiChatAccessScopeFromIds(
       user,
-      isScopedUser(user) ? (await archive.read()).family : undefined,
+      people ?? [],
+      photos.map((row) => String(row.id)),
     );
   };
   const allowedChatScopes = async (user: ArchiveUser) =>
-    aiChatAllowedScopes(
-      user,
-      isScopedUser(user) ? (await archive.read()).family : undefined,
-    );
+    aiChatAllowedScopesFromCurrent(user, await accessScope(user));
   const canReadChatScope = async (user: ArchiveUser, scope: string) =>
     (await allowedChatScopes(user)).includes(scope);
   const lockedChatReader = async (
@@ -623,6 +655,7 @@ export function aiResearchHttp({
   };
 
   const runResearch = createResearchRunner({
+    preparation: budget,
     archive,
     suggestions,
     media,
@@ -674,79 +707,88 @@ export function aiResearchHttp({
         return json(res, 403, {
           error: "ИИ-функции недоступны этому аккаунту",
         });
-      const snapshot = await archive.read();
-      const requestedScope = aiChatAccessScope(
-        actor,
-        isScopedUser(actor) ? snapshot.family : undefined,
-      );
-      const source = snapshot.family;
-      const family = isScopedUser(actor)
-        ? projectFamilyForUser(source, actor)
-        : source;
-      let content: string;
-      let filename: string;
-      let contentType: string;
-      if (path === "/api/ai/export/gedcom") {
-        const format = url.searchParams.get("format");
-        if (format !== "gedcom7" && format !== "gedcom551")
-          return json(res, 400, { error: "Неизвестный формат GEDCOM" });
-        content = exportGedcom(family, {
-          version: format === "gedcom7" ? "7.0" : "5.5.1",
-          media: [],
-        });
-        filename = format === "gedcom7" ? "drevo-7.ged" : "drevo-5.5.1.ged";
-        contentType = "text/vnd.familysearch.gedcom; charset=utf-8";
-      } else if (path === "/api/ai/export/lineage") {
-        const personId = url.searchParams.get("personId") || "";
-        const direction = url.searchParams.get("direction");
-        if (
-          !family.people.some((person) => person.id === personId) ||
-          (direction !== "ancestors" && direction !== "descendants")
-        )
-          return json(res, 404, {
-            error: "Человек или направление не найдены",
-          });
-        content = lineageReport(family, personId, direction, 8);
-        filename = `drevo-lineage-${direction}.txt`;
-        contentType = "text/plain; charset=utf-8";
-      } else return json(res, 404, { error: "Формат экспорта не найден" });
-      const bytes = Buffer.from(content);
-      if (!(await canDeliverAiData(req, requestedScope)))
-        return json(res, 403, { error: "Доступ к данным изменился" });
-      const headers = {
-        "Content-Type": contentType,
-        "Content-Length": bytes.length,
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "Cache-Control": "private, no-store",
-        "X-Content-Type-Options": "nosniff",
-      };
-      await beforeBufferedDelivery?.(path);
-      if (
-        archive.db.kind === "postgres" &&
-        !auth.local &&
-        archive.db.postgresTransaction
-      ) {
-        if (activeFileDeliveries >= 3)
-          return json(res, 429, {
-            error: "Слишком много одновременных скачиваний",
-          });
-        activeFileDeliveries++;
-        try {
-          return await deliverBufferedAiFile(
-            req,
-            res,
+      return await withPreparation(
+        req,
+        res,
+        budget,
+        PREPARATION_BYTES.export,
+        async (signal) => {
+          const snapshot = await archive.read();
+          signal.throwIfAborted();
+          const requestedScope = aiChatAccessScope(
             actor,
-            snapshot.revision,
-            bytes,
-            headers,
+            isScopedUser(actor) ? snapshot.family : undefined,
           );
-        } finally {
-          activeFileDeliveries--;
-        }
-      }
-      res.writeHead(200, headers);
-      res.end(bytes);
-      return true;
+          const source = snapshot.family;
+          const family = isScopedUser(actor)
+            ? projectFamilyForUser(source, actor)
+            : source;
+          let content: string;
+          let filename: string;
+          let contentType: string;
+          if (path === "/api/ai/export/gedcom") {
+            const format = url.searchParams.get("format");
+            if (format !== "gedcom7" && format !== "gedcom551")
+              return json(res, 400, { error: "Неизвестный формат GEDCOM" });
+            content = exportGedcom(family, {
+              version: format === "gedcom7" ? "7.0" : "5.5.1",
+              media: [],
+            });
+            filename = format === "gedcom7" ? "drevo-7.ged" : "drevo-5.5.1.ged";
+            contentType = "text/vnd.familysearch.gedcom; charset=utf-8";
+          } else if (path === "/api/ai/export/lineage") {
+            const personId = url.searchParams.get("personId") || "";
+            const direction = url.searchParams.get("direction");
+            if (
+              !family.people.some((person) => person.id === personId) ||
+              (direction !== "ancestors" && direction !== "descendants")
+            )
+              return json(res, 404, {
+                error: "Человек или направление не найдены",
+              });
+            content = lineageReport(family, personId, direction, 8);
+            filename = `drevo-lineage-${direction}.txt`;
+            contentType = "text/plain; charset=utf-8";
+          } else return json(res, 404, { error: "Формат экспорта не найден" });
+          const bytes = Buffer.from(content);
+          if (!(await canDeliverAiData(req, requestedScope)))
+            return json(res, 403, { error: "Доступ к данным изменился" });
+          const headers = {
+            "Content-Type": contentType,
+            "Content-Length": bytes.length,
+            "Content-Disposition": `attachment; filename="${filename}"`,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+          };
+          await beforeBufferedDelivery?.(path);
+          if (
+            archive.db.kind === "postgres" &&
+            !auth.local &&
+            archive.db.postgresTransaction
+          ) {
+            if (activeFileDeliveries >= 3)
+              return json(res, 429, {
+                error: "Слишком много одновременных скачиваний",
+              });
+            activeFileDeliveries++;
+            try {
+              return await deliverBufferedAiFile(
+                req,
+                res,
+                actor,
+                snapshot.revision,
+                bytes,
+                headers,
+              );
+            } finally {
+              activeFileDeliveries--;
+            }
+          }
+          res.writeHead(200, headers);
+          res.end(bytes);
+          return true;
+        },
+      );
     }
     if (path.startsWith("/api/ai/files/")) {
       if (req.method !== "GET")
@@ -775,79 +817,101 @@ export function aiResearchHttp({
         });
       if (!(await canDeliverAiData(req, chat.accessScope)))
         return json(res, 403, { error: "Доступ к данным изменился" });
-      const meta =
-        shared &&
-        (await chats.messages(chat.id, fileUser.id))
-          ?.flatMap((message) =>
-            Array.isArray(message.generatedFileMeta)
-              ? message.generatedFileMeta
-              : [],
-          )
-          .find(
-            (item) => item && typeof item === "object" && item.url === path,
-          );
-      const bytes =
-        shared && meta
-          ? await generatedFiles.read(shared[1], shared[2], meta)
-          : legacy &&
-              legacy.expires >= Date.now() &&
-              legacy.ownerId === fileUser.id
-            ? legacy.bytes
-            : null;
-      if (!bytes)
-        return json(res, 404, {
-          error: "Файл не найден или срок ссылки истёк",
-        });
-      const name = meta?.name || legacy?.name || "result.bin";
-      const contentType =
-        meta?.contentType || legacy?.contentType || "application/octet-stream";
-      const currentChat = await chats.read(chat.id, fileUser.id);
-      if (!currentChat || currentChat.accessScope !== chat.accessScope)
-        return json(res, 404, {
-          error: "Файл не найден или срок ссылки истёк",
-        });
-      if (!(await canDeliverAiData(req, chat.accessScope)))
-        return json(res, 403, { error: "Доступ к данным изменился" });
-      const headers = {
-        "Content-Type": contentType,
-        "Content-Length": bytes.length,
-        "Content-Disposition": `attachment; filename="drevo-result.${
-          name
-            .split(".")
-            .at(-1)
-            ?.replace(/[^a-z0-9]/gi, "") || "bin"
-        }"; filename*=UTF-8''${encodeURIComponent(name)}`,
-        "Cache-Control": "private, no-store",
-        "X-Content-Type-Options": "nosniff",
-      };
-      await beforeBufferedDelivery?.(path);
-      if (
-        archive.db.kind === "postgres" &&
-        !auth.local &&
-        archive.db.postgresTransaction
-      ) {
-        if (activeFileDeliveries >= 3)
-          return json(res, 429, {
-            error: "Слишком много одновременных скачиваний",
-          });
-        activeFileDeliveries++;
-        try {
-          return await deliverBufferedAiFile(
-            req,
-            res,
-            fileUser,
-            fileRevision,
-            bytes,
-            headers,
-            { id: chat.id, scope: chat.accessScope },
-          );
-        } finally {
-          activeFileDeliveries--;
-        }
-      }
-      res.writeHead(200, headers);
-      res.end(bytes);
-      return true;
+      return await withPreparation(
+        req,
+        res,
+        budget,
+        PREPARATION_BYTES.export,
+        async (signal) => {
+          const metadata = shared
+            ? await archive.db
+                .prepare(
+                  `SELECT item.value AS metadata FROM ai_chat_messages m,
+          json_each(CASE WHEN json_type(m.data,'$.generatedFileMeta')='array'
+            THEN json_extract(m.data,'$.generatedFileMeta') ELSE '[]' END) item
+         WHERE m.chat_id=? AND json_extract(m.data,'$.hidden') IS NOT 1
+           AND json_extract(item.value,'$.url')=? LIMIT 1`,
+                  `SELECT item.value::text AS metadata FROM ai_chat_messages m,
+          LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(m.data->'generatedFileMeta')='array'
+            THEN m.data->'generatedFileMeta' ELSE '[]'::jsonb END) item(value)
+         WHERE m.chat_id=? AND (m.data->>'hidden') IS DISTINCT FROM 'true'
+           AND item.value->>'url'=? LIMIT 1`,
+                )
+                .get(chat.id, path)
+            : undefined;
+          const meta = metadata
+            ? (JSON.parse(
+                String(metadata.metadata),
+              ) as GeneratedResearchFileMeta)
+            : undefined;
+          signal.throwIfAborted();
+          const bytes =
+            shared && meta
+              ? await generatedFiles.read(shared[1], shared[2], meta)
+              : legacy &&
+                  legacy.expires >= Date.now() &&
+                  legacy.ownerId === fileUser.id
+                ? legacy.bytes
+                : null;
+          signal.throwIfAborted();
+          if (!bytes)
+            return json(res, 404, {
+              error: "Файл не найден или срок ссылки истёк",
+            });
+          const name = meta?.name || legacy?.name || "result.bin";
+          const contentType =
+            meta?.contentType ||
+            legacy?.contentType ||
+            "application/octet-stream";
+          const currentChat = await chats.read(chat.id, fileUser.id);
+          if (!currentChat || currentChat.accessScope !== chat.accessScope)
+            return json(res, 404, {
+              error: "Файл не найден или срок ссылки истёк",
+            });
+          if (!(await canDeliverAiData(req, chat.accessScope)))
+            return json(res, 403, { error: "Доступ к данным изменился" });
+          const headers = {
+            "Content-Type": contentType,
+            "Content-Length": bytes.length,
+            "Content-Disposition": `attachment; filename="drevo-result.${
+              name
+                .split(".")
+                .at(-1)
+                ?.replace(/[^a-z0-9]/gi, "") || "bin"
+            }"; filename*=UTF-8''${encodeURIComponent(name)}`,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+          };
+          await beforeBufferedDelivery?.(path);
+          if (
+            archive.db.kind === "postgres" &&
+            !auth.local &&
+            archive.db.postgresTransaction
+          ) {
+            if (activeFileDeliveries >= 3)
+              return json(res, 429, {
+                error: "Слишком много одновременных скачиваний",
+              });
+            activeFileDeliveries++;
+            try {
+              return await deliverBufferedAiFile(
+                req,
+                res,
+                fileUser,
+                fileRevision,
+                bytes,
+                headers,
+                { id: chat.id, scope: chat.accessScope },
+              );
+            } finally {
+              activeFileDeliveries--;
+            }
+          }
+          res.writeHead(200, headers);
+          res.end(bytes);
+          return true;
+        },
+      );
     }
     if (
       path !== "/api/ai/status" &&
@@ -910,47 +974,55 @@ export function aiResearchHttp({
       const chat = match && (await chats.read(match[1], aiUser.id));
       if (!chat || !(await canReadChatScope(aiUser, chat.accessScope)))
         return json(res, 404, { error: "Вложение не найдено" });
-      const item = await attachments
-        .download(chat.id, aiUser.id, path)
-        .catch(() => null);
-      if (!item) return json(res, 404, { error: "Вложение не найдено" });
-      const deliveryRevision = (await archive.meta()).revision;
-      if (!(await canDeliverAiData(req, chat.accessScope)))
-        return json(res, 403, { error: "Доступ к данным изменился" });
-      await beforeAttachmentDelivery?.();
-      if (
-        archive.db.kind === "postgres" &&
-        !auth.local &&
-        archive.db.postgresTransaction
-      ) {
-        if (activeFileDeliveries >= 3)
-          return json(res, 429, {
-            error: "Слишком много одновременных скачиваний",
+      return await withPreparation(
+        req,
+        res,
+        budget,
+        PREPARATION_BYTES.export,
+        async (signal) => {
+          const item = await attachments
+            .download(chat.id, aiUser.id, path, signal)
+            .catch(() => null);
+          if (!item) return json(res, 404, { error: "Вложение не найдено" });
+          const deliveryRevision = (await archive.meta()).revision;
+          if (!(await canDeliverAiData(req, chat.accessScope)))
+            return json(res, 403, { error: "Доступ к данным изменился" });
+          await beforeAttachmentDelivery?.();
+          if (
+            archive.db.kind === "postgres" &&
+            !auth.local &&
+            archive.db.postgresTransaction
+          ) {
+            if (activeFileDeliveries >= 3)
+              return json(res, 429, {
+                error: "Слишком много одновременных скачиваний",
+              });
+            activeFileDeliveries++;
+            try {
+              return await deliverAttachment(
+                req,
+                res,
+                aiUser,
+                chat.id,
+                chat.accessScope,
+                deliveryRevision,
+                item,
+              );
+            } finally {
+              activeFileDeliveries--;
+            }
+          }
+          res.writeHead(200, {
+            "Content-Type": item.file.type,
+            "Content-Length": item.bytes.length,
+            "Content-Disposition": `attachment; filename="attachment"; filename*=UTF-8''${encodeURIComponent(item.file.name)}`,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
           });
-        activeFileDeliveries++;
-        try {
-          return await deliverAttachment(
-            req,
-            res,
-            aiUser,
-            chat.id,
-            chat.accessScope,
-            deliveryRevision,
-            item,
-          );
-        } finally {
-          activeFileDeliveries--;
-        }
-      }
-      res.writeHead(200, {
-        "Content-Type": item.file.type,
-        "Content-Length": item.bytes.length,
-        "Content-Disposition": `attachment; filename="attachment"; filename*=UTF-8''${encodeURIComponent(item.file.name)}`,
-        "Cache-Control": "private, no-store",
-        "X-Content-Type-Options": "nosniff",
-      });
-      res.end(item.bytes);
-      return true;
+          res.end(item.bytes);
+          return true;
+        },
+      );
     }
 
     if (path === "/api/ai/chats" && req.method === "GET") {
@@ -1004,30 +1076,90 @@ export function aiResearchHttp({
         const chat = await chats.read(id, user.id);
         if (!chat || !(await canReadChatScope(user, chat.accessScope)))
           return json(res, 404, { error: "Диалог не найден" });
-        const busy = !!(await chats.isBusy(id));
-        const messages = await chats.messages(id, user.id);
-        await beforeChatDelivery?.();
-        if (archive.db.kind === "postgres")
-          return deliverChatJson(req, res, user, chat.accessScope, {
+        const versionValue = url.searchParams.get("version");
+        const version = versionValue === null ? null : Number(versionValue);
+        const beforeValue = url.searchParams.get("before");
+        const before = beforeValue === null ? undefined : Number(beforeValue);
+        if (
+          (versionValue !== null &&
+            (!/^(0|[1-9][0-9]*)$/.test(versionValue) ||
+              !Number.isSafeInteger(version))) ||
+          (beforeValue !== null &&
+            (!/^[1-9][0-9]*$/.test(beforeValue) ||
+              !Number.isSafeInteger(before))) ||
+          (before !== undefined && version !== null)
+        )
+          return json(res, 400, { error: "Некорректный курсор диалога" });
+        const sendChat = async () => {
+          const busy = !!(await chats.isBusy(id));
+          const head = await chats.head(id, user.id);
+          if (!head) return json(res, 404, { error: "Диалог не найден" });
+          const changed =
+            version !== null && head.version > version
+              ? await chats.changesAfter(id, user.id, version)
+              : null;
+          const history =
+            version === null
+              ? await chats.historyPage(id, user.id, before)
+              : null;
+          const messages =
+            version !== null
+              ? (changed?.messages ?? [])
+              : (history?.messages ?? []);
+          const latestMessageId = Math.max(
+            head.lastMessageId,
+            history?.latestMessageId ?? 0,
+            ...messages.map((message) => message.id ?? 0),
+          );
+          const latestVersion = changed
+            ? changed.lastVersion
+            : history
+              ? history.latestVersion
+              : head.version;
+          const nextBefore = history?.nextBefore ?? null;
+          const hasMore = changed?.hasMore ?? history?.hasMore ?? false;
+          await beforeChatDelivery?.();
+          if (archive.db.kind === "postgres")
+            return deliverChatJson(req, res, user, chat.accessScope, {
+              chat: {
+                id: chat.id,
+                createdAt: chat.createdAt,
+                updatedAt: chat.updatedAt,
+                busy,
+                lastMessageId: latestMessageId,
+              },
+              messages,
+              latestMessageId,
+              latestVersion,
+              nextBefore,
+              hasMore,
+            });
+          if (!(await canDeliverAiData(req, chat.accessScope)))
+            return json(res, 403, { error: "Доступ к диалогу изменился" });
+          return json(res, 200, {
             chat: {
               id: chat.id,
               createdAt: chat.createdAt,
               updatedAt: chat.updatedAt,
               busy,
+              lastMessageId: latestMessageId,
             },
             messages,
+            latestMessageId,
+            latestVersion,
+            nextBefore,
+            hasMore,
           });
-        if (!(await canDeliverAiData(req, chat.accessScope)))
-          return json(res, 403, { error: "Доступ к диалогу изменился" });
-        return json(res, 200, {
-          chat: {
-            id: chat.id,
-            createdAt: chat.createdAt,
-            updatedAt: chat.updatedAt,
-            busy,
-          },
-          messages,
-        });
+        };
+        return version === null
+          ? await withPreparation(
+              req,
+              res,
+              budget,
+              PREPARATION_BYTES.export,
+              sendChat,
+            )
+          : await sendChat();
       }
       if (req.method === "DELETE") {
         if (!isSameOriginRequest(req, publicOrigin))
@@ -1089,435 +1221,534 @@ export function aiResearchHttp({
     if (!req.headers["content-type"]?.startsWith("application/json"))
       return json(res, 415, { error: "JSON required" });
 
-    let body: Record<string, unknown>;
+    const input = preparationRequest(req, res, 30_000);
+    const preparingController = new AbortController();
+    let finishPreparing: () => void = () => {};
+    preparing.set(
+      preparingController,
+      new Promise<void>((resolve) => {
+        finishPreparing = resolve;
+      }),
+    );
+    const inputSignal = AbortSignal.any([
+      input.signal,
+      preparingController.signal,
+    ]);
+    let preparationSlot: (() => void) | undefined;
+    let pendingSlot: (() => void) | undefined;
     try {
-      body = (await readJson(req, 14 * 1024 * 1024)) as Record<string, unknown>;
-      if (!body || typeof body !== "object" || Array.isArray(body))
-        throw new Error("Некорректный запрос");
-    } catch (error) {
-      return json(res, error instanceof RangeError ? 413 : 400, {
-        error:
-          error instanceof Error ? error.message : "Некорректный JSON запроса",
-      });
-    }
-    const user = await auth.currentUser(req);
-    if (!user?.approved)
-      return json(res, 403, { error: "Доступ к архиву отозван" });
-    // A large attachment may arrive after the owner's tier was downgraded.
-    if (!(await accountAiAccess(archive.db, user.id, auth.local)))
-      return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
-    const turnProfile = aiProfileRole(user);
-    const runtime = await aiRuntimeConfig(aiSettings, turnProfile);
-    if (!runtime.active)
-      return json(res, 503, {
-        error: runtime.configured
-          ? "ИИ-исследователь отключён администратором"
-          : "ИИ-исследователь не настроен: задайте API-ключ, Folder ID и модель",
-      });
-    const canPropose =
-      runtime.capabilities.proposals && (await auth.canEdit(req));
-    let preparedAttachments;
-    try {
-      preparedAttachments = await validateAttachments(
-        body.attachments,
-        runtime.capabilities,
+      const admissionRuntime = await aiRuntimeConfig(
+        aiSettings,
+        aiProfileRole(aiUser),
       );
-      delete body.attachments;
-    } catch (error) {
-      return json(res, 400, {
-        error:
-          error instanceof RangeError
-            ? error.message
-            : "Не удалось прочитать вложения",
-      });
-    }
-    const selectedPersonId = body.selectedPersonId;
-    if (
-      selectedPersonId !== undefined &&
-      (typeof selectedPersonId !== "string" || !selectedPersonId)
-    )
-      return json(res, 400, { error: "Некорректный выбор человека" });
-    const typedMessage =
-      typeof body.message === "string" && body.message.trim()
-        ? body.message.trim()
-        : preparedAttachments.length
-          ? "Изучи прикреплённые файлы."
-          : "";
-    if (
-      typedMessage.length > 8000 ||
-      (selectedPersonId && typedMessage) ||
-      (!selectedPersonId && !typedMessage)
-    )
-      return json(res, 400, { error: "Некорректный текст запроса" });
-    const requestedChatId = typeof body.chatId === "string" ? body.chatId : "";
-    if (selectedPersonId && !requestedChatId)
-      return json(res, 400, { error: "Выберите диалог для уточнения" });
-    const family = (await archive.read()).family;
-    const visibleFamily = isScopedUser(user)
-      ? projectFamilyForUser(family, user)
-      : family;
-    const selectedPerson = selectedPersonId
-      ? visibleFamily.people.find((person) => person.id === selectedPersonId)
-      : null;
-    if (selectedPersonId && !selectedPerson)
-      return json(res, 404, { error: "Человек не найден" });
-    const message = selectedPerson
-      ? `Уточнение к предыдущему вопросу: речь о ${fullName(selectedPerson)}. Продолжи ответ.`
-      : typedMessage;
-    try {
-      await usage.check(user.id, runtime.limits);
-      if (runtime.userLimits)
-        await usage.check(user.id, runtime.userLimits, "user");
-    } catch (error) {
-      if (error instanceof AiLimitError) {
-        if (error.retryAfterSeconds)
-          res.setHeader("Retry-After", String(error.retryAfterSeconds));
-        return json(res, 429, { error: error.message });
+      if (!admissionRuntime.active)
+        return json(res, 503, { error: "ИИ-исследователь сейчас недоступен" });
+      preparationSlot = await budget.acquire(PREPARATION_BYTES.ai, inputSignal);
+      inputSignal.throwIfAborted();
+      let body: Record<string, unknown>;
+      try {
+        body = (await readJson(req, 14 * 1024 * 1024)) as Record<
+          string,
+          unknown
+        >;
+        if (!body || typeof body !== "object" || Array.isArray(body))
+          throw new Error("Некорректный запрос");
+        // Do not retain arbitrary JSON or huge view-context arrays in a pending turn.
+        for (const key of Object.keys(body))
+          if (
+            ![
+              "attachments",
+              "message",
+              "chatId",
+              "selectedPersonId",
+              "context",
+            ].includes(key)
+          )
+            delete body[key];
+        const rawContext =
+          body.context &&
+          typeof body.context === "object" &&
+          !Array.isArray(body.context)
+            ? (body.context as Record<string, unknown>)
+            : {};
+        body.context = Object.fromEntries(
+          ["view", "openPersonId", "openPhotoId", "timeZone"]
+            .filter(
+              (key) =>
+                typeof rawContext[key] === "string" &&
+                (rawContext[key] as string).length <= 200,
+            )
+            .map((key) => [key, rawContext[key]]),
+        );
+        (body.context as Record<string, unknown>).personIds = Array.isArray(
+          rawContext.personIds,
+        )
+          ? rawContext.personIds
+              .filter((id) => typeof id === "string" && id.length <= 200)
+              .slice(0, 2)
+          : [];
+      } catch (error) {
+        return json(res, error instanceof RangeError ? 413 : 400, {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Некорректный JSON запроса",
+        });
       }
-      throw error;
-    }
-
-    let chat;
-    try {
-      chat = requestedChatId
-        ? await chats.read(requestedChatId, user.id)
-        : await chats.create(user.id, await accessScope(user));
-    } catch (error) {
-      if (error instanceof AiChatLimitError)
-        return json(res, 409, { code: "AI_CHAT_LIMIT", error: error.message });
-      throw error;
-    }
-    if (!chat || !(await canReadChatScope(user, chat.accessScope)))
-      return json(res, 404, { error: "Диалог не найден" });
-    if (closing)
-      return json(res, 503, {
-        error: "Сервер перезапускается. Повторите запрос.",
-      });
-    const lockToken = await chats.acquire(chat.id);
-    if (!lockToken)
-      return json(res, 409, {
-        error: "Дождитесь завершения предыдущего ответа в этом диалоге",
-      });
-    let usageRun: Awaited<ReturnType<typeof usage.begin>>;
-    let savedAttachments: ResearchAttachment[] = [];
-    let appended = false;
-    try {
-      if (closing) throw new Error("Сервер перезапускается");
-      if (!(await accountAiAccess(archive.db, user.id, auth.local))) {
-        await chats.release(chat.id, lockToken);
+      const user = await auth.currentUser(req);
+      if (!user?.approved)
+        return json(res, 403, { error: "Доступ к архиву отозван" });
+      // A large attachment may arrive after the owner's tier was downgraded.
+      if (!(await accountAiAccess(archive.db, user.id, auth.local)))
         return json(res, 403, {
           error: "ИИ-функции недоступны этому аккаунту",
         });
-      }
-      const oldFiles =
-        (await chats.messages(chat.id, user.id))?.flatMap(
-          (item) => item.attachments || [],
-        ) || [];
-      if (
-        preparedAttachments.length &&
-        oldFiles.length + preparedAttachments.length > 100
-      ) {
-        await chats.release(chat.id, lockToken);
-        return json(res, 400, {
-          error: "В библиотеке уже 100 файлов. Создайте новый диалог.",
-        });
-      }
-      if (
-        preparedAttachments.length &&
-        oldFiles.reduce((size, file) => size + file.size, 0) +
-          preparedAttachments.reduce(
-            (size, file) => size + file.bytes.length,
-            0,
-          ) >
-          100 * 1024 * 1024
-      ) {
-        await chats.release(chat.id, lockToken);
-        return json(res, 400, {
-          error: "В диалоге уже 100 МБ вложений. Создайте новый диалог.",
-        });
-      }
-      try {
-        savedAttachments = await attachments.save(chat.id, preparedAttachments);
-      } catch {
-        await chats.release(chat.id, lockToken);
+      const turnProfile = aiProfileRole(user);
+      const runtime = await aiRuntimeConfig(aiSettings, turnProfile);
+      if (!runtime.active)
         return json(res, 503, {
+          error: runtime.configured
+            ? "ИИ-исследователь отключён администратором"
+            : "ИИ-исследователь не настроен: задайте API-ключ, Folder ID и модель",
+        });
+      const canPropose =
+        runtime.capabilities.proposals && (await auth.canEdit(req));
+      let preparedAttachments;
+      try {
+        preparedAttachments = await validateAttachments(
+          body.attachments,
+          runtime.capabilities,
+          inputSignal,
+        );
+        delete body.attachments;
+      } catch (error) {
+        if (inputSignal.aborted) throw error;
+        return json(res, 400, {
           error:
-            "Не удалось сохранить вложения. Попробуйте позже или обратитесь к администратору.",
+            error instanceof RangeError
+              ? error.message
+              : "Не удалось прочитать вложения",
         });
       }
-      if (savedAttachments.length) await beforeAttachmentCommit?.();
-      // File writes can outlive the tier check above. Admit the input message
-      // only while the current access rows are locked; a failed admission
-      // removes the staged attachments below.
-      const accepted = await archive.db.transaction(async () => {
-        if (
-          !(await canDeliverAiData(
-            req,
-            chat.accessScope,
-            user.id,
-            true,
-            turnProfile,
-          ))
-        )
-          return null;
-        const current = await auth.currentUser(req);
-        if (!current || current.id !== user.id) return null;
-        const currentScope = await accessScope(current);
-        if (chat.accessScope !== currentScope) {
-          // The former remote conversation may hold context from the old
-          // profile. Clear it and rekey under this lease before admission;
-          // the runner rebuilds bounded local history with current rules.
-          if (
-            !(await chats.setRemote(chat.id, null, lockToken)) ||
-            !(await chats.updateScope(
-              chat.id,
-              user.id,
-              chat.accessScope,
-              currentScope,
-              lockToken,
-            ))
-          )
-            throw new Error("AI chat scope changed during admission");
-        }
-        const admitted = await usage.admit(
-          user.id,
-          runtime.model,
-          runtime.limits,
-          runtime.userLimits ?? undefined,
-        );
-        await chats.append(
-          chat.id,
-          "user",
-          message,
-          selectedPerson
-            ? { hidden: true }
-            : {
-                ...(savedAttachments.length
-                  ? { attachments: savedAttachments }
-                  : {}),
-              },
-        );
-        return { admitted, currentScope };
-      });
-      if (!accepted) {
-        await attachments.removeFiles(savedAttachments);
-        savedAttachments = [];
-        await chats.release(chat.id, lockToken);
-        return json(res, 403, { error: "Доступ к ИИ отключён" });
-      }
-      appended = true;
-      usageRun = accepted.admitted;
-      chat.accessScope = accepted.currentScope;
-      if (closing) throw new Error("Сервер перезапускается");
-    } catch (error) {
-      if (!appended) await attachments.removeFiles(savedAttachments);
-      await chats.release(chat.id, lockToken);
-      if (error instanceof AiLimitError) {
-        if (error.retryAfterSeconds)
-          res.setHeader("Retry-After", String(error.retryAfterSeconds));
-        return json(res, 429, { error: error.message });
-      }
-      throw error;
-    }
-    const metrics: ResearchMetrics = {
-        providerCalls: 0,
-        agentIterations: 0,
-        compactionAvailable: null,
-        toolCallCount: 0,
-        cachedTokens: 0,
-        responseId: "",
-        inputTokens: 0,
-        outputTokens: 0,
-        models: new Map(),
-      },
-      controller = new AbortController();
-    const assertTurnRunning = async (lockForCommit = false) => {
-      const status = await chats.turnStatus(chat.id, lockToken, lockForCommit);
-      if (status === "lost") leaseLost = true;
-      if (status !== "active") controller.abort();
-      if (controller.signal.aborted)
-        throw new DOMException("Ответ остановлен", "AbortError");
-    };
-    let renewing = false;
-    let leaseLost = false;
-    let accessRevoked = false;
-    const lockRenewal = setInterval(() => {
-      if (renewing) return;
-      renewing = true;
-      void accountAiAccess(archive.db, user.id, auth.local)
-        .then((allowed) => {
-          if (!allowed) {
-            accessRevoked = true;
-            controller.abort();
-            return false;
-          }
-          return chats.renew(chat.id, lockToken);
-        })
-        .then((held) => {
-          if (!held && !accessRevoked) {
-            leaseLost = true;
-            controller.abort();
-          } else if (held && stream && !res.writableEnded && !res.destroyed) {
-            res.write(": keep-alive\n\n");
-          }
-        })
-        .catch(() => {
-          leaseLost = true;
-          controller.abort();
-          console.warn(
-            JSON.stringify({
-              event: "ai.chat_lease_lost",
-              localConversationId: chat.id,
-            }),
-          );
-        })
-        .finally(() => {
-          renewing = false;
-        });
-    }, 20_000);
-    lockRenewal.unref();
-    let stopCheck: Promise<void> | undefined;
-    const cancellationPoll = setInterval(() => {
-      if (stopCheck || controller.signal.aborted) return;
-      stopCheck = chats
-        .turnStatus(chat.id, lockToken)
-        .then((status) => {
-          if (status === "lost") leaseLost = true;
-          if (status !== "active") controller.abort();
-        })
-        .catch(() => {
-          leaseLost = true;
-          controller.abort();
-        })
-        .finally(() => {
-          stopCheck = undefined;
-        });
-    }, 1000);
-    cancellationPoll.unref();
-    let finishRun: () => void = () => {};
-    const done = new Promise<void>((resolve) => {
-      finishRun = resolve;
-    });
-    activeRuns.set(chat.id, { controller, done });
-    // The turn belongs to the saved chat, not to this browser connection.
-    // Reload/disconnect detaches delivery; explicit stop/delete cancels work.
-
-    if (stream) {
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-        "X-Accel-Buffering": "no",
-      });
-      res.flushHeaders?.();
-      sse(res, "chat", { chatId: chat.id });
-      if (savedAttachments.length)
-        sse(res, "attachments", { attachments: savedAttachments });
-    }
-
-    let releaseExecution: (() => void) | undefined;
-    try {
+      const selectedPersonId = body.selectedPersonId;
       if (
-        stream &&
-        queue.diagnostics().active >= queue.diagnostics().concurrency
+        selectedPersonId !== undefined &&
+        (typeof selectedPersonId !== "string" ||
+          !selectedPersonId ||
+          selectedPersonId.length > 200)
       )
-        sse(res, "status", { message: "Ожидаю свободное место для ответа…" });
-      releaseExecution = await queue.acquire(controller.signal);
-      await assertTurnRunning();
-      if (!(await accountAiAccess(archive.db, user.id, auth.local))) {
-        accessRevoked = true;
-        throw new DOMException("Доступ к ИИ отключён", "AbortError");
+        return json(res, 400, { error: "Некорректный выбор человека" });
+      const typedMessage =
+        typeof body.message === "string" && body.message.trim()
+          ? body.message.trim()
+          : preparedAttachments.length
+            ? "Изучи прикреплённые файлы."
+            : "";
+      if (
+        typedMessage.length > 8000 ||
+        (selectedPersonId && typedMessage) ||
+        (!selectedPersonId && !typedMessage)
+      )
+        return json(res, 400, { error: "Некорректный текст запроса" });
+      const requestedChatId =
+        typeof body.chatId === "string" ? body.chatId : "";
+      body.chatId = requestedChatId;
+      if (requestedChatId.length > 200)
+        return json(res, 400, { error: "Некорректный диалог" });
+      if (selectedPersonId && !requestedChatId)
+        return json(res, 400, { error: "Выберите диалог для уточнения" });
+      const selectedVisible =
+        !selectedPersonId ||
+        !isScopedUser(user) ||
+        (await visibleIds(user)).has(selectedPersonId);
+      const selectedPerson =
+        selectedPersonId && selectedVisible
+          ? await archive.db
+              .prepare(
+                "SELECT json_extract(data,'$.surname') AS surname,json_extract(data,'$.name') AS name,json_extract(data,'$.patronymic') AS patronymic FROM people WHERE id=?",
+                "SELECT data->>'surname' AS surname,data->>'name' AS name,data->>'patronymic' AS patronymic FROM people WHERE id=?",
+              )
+              .get(selectedPersonId)
+          : null;
+      if (selectedPersonId && !selectedPerson)
+        return json(res, 404, { error: "Человек не найден" });
+      const message = selectedPerson
+        ? `Уточнение к предыдущему вопросу: речь о ${[selectedPerson.surname, selectedPerson.name, selectedPerson.patronymic].filter(Boolean).join(" ") || "Человек без имени"}. Продолжи ответ.`
+        : typedMessage;
+      body.message = message;
+      // Reserve pending capacity before creating a chat or persisting any input.
+      // The input lease still covers decoded bytes; the pending lease covers only
+      // compact request metadata and references after those bytes are released.
+      const pendingBytes =
+        Buffer.byteLength(JSON.stringify(body)) +
+        Buffer.byteLength(message) +
+        Buffer.byteLength(
+          JSON.stringify(
+            preparedAttachments.map((file) => ({
+              name: file.name,
+              type: file.type,
+              size: file.bytes.length,
+            })),
+          ),
+        ) +
+        preparedAttachments.length * 256 +
+        4096;
+      pendingSlot = await pendingBudget.acquire(pendingBytes, inputSignal);
+      try {
+        await usage.check(user.id, runtime.limits);
+        if (runtime.userLimits)
+          await usage.check(user.id, runtime.userLimits, "user");
+      } catch (error) {
+        if (error instanceof AiLimitError) {
+          if (error.retryAfterSeconds)
+            res.setHeader("Retry-After", String(error.retryAfterSeconds));
+          return json(res, 429, { error: error.message });
+        }
+        throw error;
       }
-      const result = await runResearch({
-        body: { ...body, message },
-        user,
-        canPropose,
-        runtime,
-        stream,
-        metrics,
-        // The browser does not consume deltas. Delivering them before the
-        // final access check would leak an answer after a tier downgrade.
-        onDelta: () => {},
-        onStatus: (status) => {
-          if (stream) sse(res, "status", { message: status });
-        },
-        signal: controller.signal,
-        chatId: chat.id,
-        turnToken: lockToken,
-        assertAiAccess: async () => {
-          await assertTurnRunning();
+
+      let chat;
+      try {
+        chat = requestedChatId
+          ? await chats.read(requestedChatId, user.id)
+          : await chats.create(user.id, await accessScope(user));
+      } catch (error) {
+        if (error instanceof AiChatLimitError)
+          return json(res, 409, {
+            code: "AI_CHAT_LIMIT",
+            error: error.message,
+          });
+        throw error;
+      }
+      if (!chat || !(await canReadChatScope(user, chat.accessScope)))
+        return json(res, 404, { error: "Диалог не найден" });
+      if (closing)
+        return json(res, 503, {
+          error: "Сервер перезапускается. Повторите запрос.",
+        });
+      inputSignal.throwIfAborted();
+      const lockToken = await chats.acquire(chat.id);
+      if (!lockToken)
+        return json(res, 409, {
+          error: "Дождитесь завершения предыдущего ответа в этом диалоге",
+        });
+      let usageRun: Awaited<ReturnType<typeof usage.begin>>;
+      let savedAttachments: ResearchAttachment[] = [];
+      let appended = false;
+      try {
+        if (closing) throw new Error("Сервер перезапускается");
+        if (!(await accountAiAccess(archive.db, user.id, auth.local))) {
+          await chats.release(chat.id, lockToken);
+          return json(res, 403, {
+            error: "ИИ-функции недоступны этому аккаунту",
+          });
+        }
+        const oldFiles =
+          (await chats.attachmentInventory(chat.id, user.id)) || [];
+        if (
+          preparedAttachments.length &&
+          oldFiles.length + preparedAttachments.length > 100
+        ) {
+          await chats.release(chat.id, lockToken);
+          return json(res, 400, {
+            error: "В библиотеке уже 100 файлов. Создайте новый диалог.",
+          });
+        }
+        if (
+          preparedAttachments.length &&
+          oldFiles.reduce((size, file) => size + file.size, 0) +
+            preparedAttachments.reduce(
+              (size, file) => size + file.bytes.length,
+              0,
+            ) >
+            100 * 1024 * 1024
+        ) {
+          await chats.release(chat.id, lockToken);
+          return json(res, 400, {
+            error: "В диалоге уже 100 МБ вложений. Создайте новый диалог.",
+          });
+        }
+        try {
+          inputSignal.throwIfAborted();
+          savedAttachments = await attachments.save(
+            chat.id,
+            preparedAttachments,
+          );
+        } catch {
+          await chats.release(chat.id, lockToken);
+          return json(res, 503, {
+            error:
+              "Не удалось сохранить вложения. Попробуйте позже или обратитесь к администратору.",
+          });
+        }
+        if (savedAttachments.length) await beforeAttachmentCommit?.();
+        // File writes can outlive the tier check above. Admit the input message
+        // only while the current access rows are locked; a failed admission
+        // removes the staged attachments below.
+        const accepted = await archive.db.transaction(async () => {
+          inputSignal.throwIfAborted();
           if (
-            await canDeliverAiData(
-              req,
-              chat.accessScope,
-              user.id,
-              false,
-              turnProfile,
-            )
-          )
-            return;
-          accessRevoked = true;
-          controller.abort();
-          throw new DOMException("Доступ к ИИ отключён", "AbortError");
-        },
-        assertGeneratedFileInstall: async () => {
-          await assertTurnRunning(true);
-          if (
-            await canDeliverAiData(
+            !(await canDeliverAiData(
               req,
               chat.accessScope,
               user.id,
               true,
               turnProfile,
-            )
+            ))
           )
-            return;
-          accessRevoked = true;
-          controller.abort();
-          throw new DOMException("Доступ к ИИ отключён", "AbortError");
+            return null;
+          const current = await auth.currentUser(req);
+          if (!current || current.id !== user.id) return null;
+          const currentScope = await accessScope(current);
+          if (chat.accessScope !== currentScope) {
+            // The former remote conversation may hold context from the old
+            // profile. Clear it and rekey under this lease before admission;
+            // the runner rebuilds bounded local history with current rules.
+            if (
+              !(await chats.setRemote(chat.id, null, lockToken)) ||
+              !(await chats.updateScope(
+                chat.id,
+                user.id,
+                chat.accessScope,
+                currentScope,
+                lockToken,
+              ))
+            )
+              throw new Error("AI chat scope changed during admission");
+          }
+          const admitted = await usage.admit(
+            user.id,
+            runtime.model,
+            runtime.limits,
+            runtime.userLimits ?? undefined,
+          );
+          await chats.append(
+            chat.id,
+            "user",
+            message,
+            selectedPerson
+              ? { hidden: true }
+              : {
+                  ...(savedAttachments.length
+                    ? { attachments: savedAttachments }
+                    : {}),
+                },
+          );
+          return { admitted, currentScope };
+        });
+        if (!accepted) {
+          await attachments.removeFiles(savedAttachments);
+          savedAttachments = [];
+          await chats.release(chat.id, lockToken);
+          return json(res, 403, { error: "Доступ к ИИ отключён" });
+        }
+        appended = true;
+        // From this committed point a tab change/disconnect only detaches SSE.
+        input.dispose();
+        preparedAttachments.length = 0;
+        preparationSlot?.();
+        preparationSlot = undefined;
+        usageRun = accepted.admitted;
+        chat.accessScope = accepted.currentScope;
+      } catch (error) {
+        if (!appended) await attachments.removeFiles(savedAttachments);
+        await chats.release(chat.id, lockToken);
+        if (error instanceof AiLimitError) {
+          if (error.retryAfterSeconds)
+            res.setHeader("Retry-After", String(error.retryAfterSeconds));
+          return json(res, 429, { error: error.message });
+        }
+        throw error;
+      }
+      const metrics: ResearchMetrics = {
+          providerCalls: 0,
+          agentIterations: 0,
+          compactionAvailable: null,
+          toolCallCount: 0,
+          cachedTokens: 0,
+          responseId: "",
+          inputTokens: 0,
+          outputTokens: 0,
+          models: new Map(),
         },
-        commitSuggestion: async (name, _actor, family, revision, args) =>
-          archive.db.transaction(async () => {
+        controller = new AbortController();
+      const assertTurnRunning = async (lockForCommit = false) => {
+        const status = await chats.turnStatus(
+          chat.id,
+          lockToken,
+          lockForCommit,
+        );
+        if (status === "lost") leaseLost = true;
+        if (status !== "active") controller.abort();
+        if (controller.signal.aborted)
+          throw new DOMException("Ответ остановлен", "AbortError");
+      };
+      let renewing = false;
+      let leaseLost = false;
+      let accessRevoked = false;
+      const lockRenewal = setInterval(() => {
+        if (renewing) return;
+        renewing = true;
+        void accountAiAccess(archive.db, user.id, auth.local)
+          .then((allowed) => {
+            if (!allowed) {
+              accessRevoked = true;
+              controller.abort();
+              return false;
+            }
+            return chats.renew(chat.id, lockToken);
+          })
+          .then((held) => {
+            if (!held && !accessRevoked) {
+              leaseLost = true;
+              controller.abort();
+            } else if (held && stream && !res.writableEnded && !res.destroyed) {
+              res.write(": keep-alive\n\n");
+            }
+          })
+          .catch(() => {
+            leaseLost = true;
+            controller.abort();
+            console.warn(
+              JSON.stringify({
+                event: "ai.chat_lease_lost",
+                localConversationId: chat.id,
+              }),
+            );
+          })
+          .finally(() => {
+            renewing = false;
+          });
+      }, 20_000);
+      lockRenewal.unref();
+      let stopCheck: Promise<void> | undefined;
+      const cancellationPoll = setInterval(() => {
+        if (stopCheck || controller.signal.aborted) return;
+        stopCheck = chats
+          .turnStatus(chat.id, lockToken)
+          .then((status) => {
+            if (status === "lost") leaseLost = true;
+            if (status !== "active") controller.abort();
+          })
+          .catch(() => {
+            leaseLost = true;
+            controller.abort();
+          })
+          .finally(() => {
+            stopCheck = undefined;
+          });
+      }, 1000);
+      cancellationPoll.unref();
+      let finishRun: () => void = () => {};
+      const done = new Promise<void>((resolve) => {
+        finishRun = resolve;
+      });
+      activeRuns.set(chat.id, { controller, done });
+      preparing.delete(preparingController);
+      finishPreparing();
+      if (closing) controller.abort();
+      // The turn belongs to the saved chat, not to this browser connection.
+      // Reload/disconnect detaches delivery; explicit stop/delete cancels work.
+
+      if (stream) {
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+        res.flushHeaders?.();
+        sse(res, "chat", { chatId: chat.id });
+        if (savedAttachments.length)
+          sse(res, "attachments", { attachments: savedAttachments });
+      }
+
+      let releaseExecution: (() => void) | undefined;
+      try {
+        if (
+          stream &&
+          queue.diagnostics().active >= queue.diagnostics().concurrency
+        )
+          sse(res, "status", { message: "Ожидаю свободное место для ответа…" });
+        releaseExecution = await queue.acquire(controller.signal);
+        pendingSlot?.();
+        pendingSlot = undefined;
+        await assertTurnRunning();
+        if (!(await accountAiAccess(archive.db, user.id, auth.local))) {
+          accessRevoked = true;
+          throw new DOMException("Доступ к ИИ отключён", "AbortError");
+        }
+        const result = await runResearch({
+          body: { ...body, message },
+          user,
+          canPropose,
+          runtime,
+          stream,
+          metrics,
+          // The browser does not consume deltas. Delivering them before the
+          // final access check would leak an answer after a tier downgrade.
+          onDelta: () => {},
+          onStatus: (status) => {
+            if (stream) sse(res, "status", { message: status });
+          },
+          signal: controller.signal,
+          chatId: chat.id,
+          turnToken: lockToken,
+          assertAiAccess: async () => {
+            await assertTurnRunning();
+            if (
+              await canDeliverAiData(
+                req,
+                chat.accessScope,
+                user.id,
+                false,
+                turnProfile,
+              )
+            )
+              return;
+            accessRevoked = true;
+            controller.abort();
+            throw new DOMException("Доступ к ИИ отключён", "AbortError");
+          },
+          assertGeneratedFileInstall: async () => {
             await assertTurnRunning(true);
             if (
-              !(await canDeliverAiData(
+              await canDeliverAiData(
                 req,
                 chat.accessScope,
                 user.id,
                 true,
                 turnProfile,
-              ))
-            ) {
-              accessRevoked = true;
-              controller.abort();
-              throw new DOMException("AI profile changed", "AbortError");
-            }
-            const latest = await auth.currentUser(req);
-            if (
-              controller.signal.aborted ||
-              !latest ||
-              latest.id !== user.id ||
-              !latest.approved ||
-              !(await auth.canEdit(req))
-            ) {
-              accessRevoked = true;
-              controller.abort();
-              throw new DOMException(
-                "Доступ к предложению отозван",
-                "AbortError",
-              );
-            }
-            if (archive.db.kind === "postgres") {
-              const membership = await archive.db
-                .prepare(
-                  "",
-                  `SELECT role,approved
-                FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`,
-                )
-                .get(archive.db.archiveId || "", user.id);
+              )
+            )
+              return;
+            accessRevoked = true;
+            controller.abort();
+            throw new DOMException("Доступ к ИИ отключён", "AbortError");
+          },
+          commitSuggestion: async (name, _actor, family, revision, args) =>
+            archive.db.transaction(async () => {
+              await assertTurnRunning(true);
               if (
-                !membership?.approved ||
-                String(membership.role) !== "relative"
+                !(await canDeliverAiData(
+                  req,
+                  chat.accessScope,
+                  user.id,
+                  true,
+                  turnProfile,
+                ))
+              ) {
+                accessRevoked = true;
+                controller.abort();
+                throw new DOMException("AI profile changed", "AbortError");
+              }
+              const latest = await auth.currentUser(req);
+              if (
+                controller.signal.aborted ||
+                !latest ||
+                latest.id !== user.id ||
+                !latest.approved ||
+                !(await auth.canEdit(req))
               ) {
                 accessRevoked = true;
                 controller.abort();
@@ -1526,233 +1757,48 @@ export function aiResearchHttp({
                   "AbortError",
                 );
               }
-            }
-            if (
-              !(await accountAiAccess(archive.db, user.id, auth.local, true))
-            ) {
-              accessRevoked = true;
-              controller.abort();
-              throw new DOMException("Доступ к ИИ отозван", "AbortError");
-            }
-            if (controller.signal.aborted)
-              throw new DOMException("Запрос остановлен", "AbortError");
-            return suggestions.createFromTool(
-              name,
-              latest,
-              family,
-              revision,
-              args,
-            );
-          }),
-      });
-      if (controller.signal.aborted)
-        throw new DOMException("Запрос остановлен", "AbortError");
-      const answerSaved = await archive.db.transaction(async () => {
-        await assertTurnRunning(true);
-        if (
-          !(await canDeliverAiData(
-            req,
-            chat.accessScope,
-            user.id,
-            true,
-            turnProfile,
-          ))
-        )
-          return false;
-        await chats.append(chat.id, "assistant", result.answer, {
-          references: result.references,
-          suggestionIds: result.suggestionIds,
-          files: result.files,
-          generatedFileMeta: generatedFiles.metadata(result.files),
+              if (archive.db.kind === "postgres") {
+                const membership = await archive.db
+                  .prepare(
+                    "",
+                    `SELECT role,approved
+                FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`,
+                  )
+                  .get(archive.db.archiveId || "", user.id);
+                if (
+                  !membership?.approved ||
+                  String(membership.role) !== "relative"
+                ) {
+                  accessRevoked = true;
+                  controller.abort();
+                  throw new DOMException(
+                    "Доступ к предложению отозван",
+                    "AbortError",
+                  );
+                }
+              }
+              if (
+                !(await accountAiAccess(archive.db, user.id, auth.local, true))
+              ) {
+                accessRevoked = true;
+                controller.abort();
+                throw new DOMException("Доступ к ИИ отозван", "AbortError");
+              }
+              if (controller.signal.aborted)
+                throw new DOMException("Запрос остановлен", "AbortError");
+              return suggestions.createFromTool(
+                name,
+                latest,
+                family,
+                revision,
+                args,
+              );
+            }),
         });
-        const latestFamily = (await archive.read()).family;
-        const accessiblePeople = new Set(
-          (isScopedUser(user)
-            ? projectFamilyForUser(latestFamily, user)
-            : latestFamily
-          ).people.map((person) => person.id),
-        );
-        const activeIds = [
-          ...new Set([
-            ...chat.sessionState.activePersonIds,
-            ...result.references
-              .filter((item) => item.kind === "person")
-              .map((item) => item.id),
-          ]),
-        ].filter((id) => accessiblePeople.has(id));
-        await chats.setActivePeople(chat.id, activeIds);
-        return true;
-      });
-      if (!answerSaved) {
-        accessRevoked = true;
-        controller.abort();
-        throw new DOMException("Доступ к ИИ отключён", "AbortError");
-      }
-      const assertAnswerDelivery = async () => {
-        await assertTurnRunning();
-        const allowed = await canDeliverAiData(
-          req,
-          chat.accessScope,
-          user.id,
-          false,
-          turnProfile,
-        );
-        controller.signal.throwIfAborted();
-        if (allowed) return;
-        accessRevoked = true;
-        controller.abort();
-        throw new DOMException("Доступ к ИИ отключён", "AbortError");
-      };
-      await beforeAnswerDelivery?.();
-      await assertAnswerDelivery();
-      await usage.finish(usageRun.id, usageRun.started, {
-        status: "ok",
-        providerCalls: metrics.providerCalls,
-        inputTokens: metrics.inputTokens,
-        outputTokens: metrics.outputTokens,
-        cachedInputTokens: metrics.cachedTokens,
-        models: modelUsage(metrics),
-      });
-      console.info(
-        JSON.stringify({
-          event: "ai.turn_completed",
-          localConversationId: chat.id,
-          providerCalls: metrics.providerCalls,
-          agentIterations: metrics.agentIterations,
-          toolCallCount: metrics.toolCallCount,
-          inputTokens: metrics.inputTokens,
-          outputTokens: metrics.outputTokens,
-          cachedTokens: metrics.cachedTokens,
-          compactionEnabled: runtime.compactionEnabled,
-          compactionAvailable: metrics.compactionAvailable,
-          compactThreshold: runtime.compactThresholdTokens,
-          truncationMode: runtime.automaticTruncation ? "auto" : "disabled",
-          latencyMs: Date.now() - usageRun.started,
-        }),
-      );
-
-      // The last access decision and HTTP handoff share one short lock window.
-      // A completed role revoke cannot slip between that decision and bytes.
-      await archive.db.transaction(async () => {
-        await assertTurnRunning(true);
-        if (
-          !(await canDeliverAiData(
-            req,
-            chat.accessScope,
-            user.id,
-            true,
-            turnProfile,
-          ))
-        ) {
-          accessRevoked = true;
-          controller.abort();
-          throw new DOMException("AI profile changed", "AbortError");
-        }
-        if (res.destroyed) return;
-        const delivered = finished(res, { cleanup: true });
-        const deadline = setTimeout(() => res.destroy(), 5_000);
-        deadline.unref();
-        try {
-          if (stream) {
-            sse(res, "done", {
-              chatId: chat.id,
-              answer: result.answer,
-              references: result.references,
-              suggestionIds: result.suggestionIds,
-              uiActions: result.uiActions,
-              files: result.files,
-            });
-            res.end();
-          } else json(res, 200, { ...result, chatId: chat.id });
-          await delivered;
-        } catch (error) {
-          res.destroy();
-          await delivered.catch(() => {});
-          throw error;
-        } finally {
-          clearTimeout(deadline);
-        }
-      });
-      return true;
-    } catch (error) {
-      // A provider can fail immediately after a tier downgrade, before the
-      // periodic lease check runs. Error handling is still part of this turn.
-      const canReportError = async () => {
-        try {
-          return await canDeliverAiData(
-            req,
-            chat.accessScope,
-            user.id,
-            false,
-            turnProfile,
-          );
-        } catch {
-          return false;
-        }
-      };
-      if (!(await canReportError())) {
-        accessRevoked = true;
-        controller.abort();
-      }
-      await chats.setRemote(chat.id, null, lockToken);
-      const errorMessage = accessRevoked
-        ? "Доступ к ИИ отключён. Ответ не сохранён."
-        : leaseLost
-          ? "Соединение с архивом прервано. Повторите запрос после восстановления связи."
-          : controller.signal.aborted
-            ? "Ответ остановлен"
-            : error instanceof Error &&
-                (error.name === "TimeoutError" ||
-                  /aborted due to timeout|timed out/i.test(error.message))
-              ? "ИИ не ответил вовремя. Попробуйте повторить запрос."
-              : error instanceof YandexResponseError
-                ? error.status === 401 || error.status === 403
-                  ? "Yandex AI отклонил доступ. Администратору нужно проверить API-ключ и права на модель и диалоги в разделе Yandex AI."
-                  : (error.status === 400 || error.status === 422) &&
-                      preparedAttachments.length
-                    ? "Модель ИИ не приняла вложение. Для PDF нужна модель с поддержкой файлов; проверьте её в настройках ИИ или отправьте текст/изображение страницы. Файлы сохранены в диалоге."
-                    : error.status === 429
-                      ? "Yandex AI ограничил частоту запросов. Повторите немного позже."
-                      : error.code === "provider_timeout"
-                        ? "Yandex AI не завершил ответ вовремя. История диалога сохранена; запрос можно повторить."
-                        : error.code === "incomplete_max_output_tokens"
-                          ? "ИИ исчерпал лимит генерации и не завершил ответ. История сохранена; запрос можно повторить."
-                          : error.code === "incomplete_content_filter"
-                            ? "Yandex AI остановил ответ фильтром содержимого. Это не означает, что в архиве нет нужных данных. Попробуйте уточнить запрос."
-                            : "Сервис ИИ не смог завершить ответ. История диалога сохранена; запрос можно повторить."
-                : error instanceof Error
-                  ? error.message
-                  : "Не удалось получить ответ ИИ";
-      console.warn(
-        JSON.stringify({
-          event: "ai.turn_failed",
-          localConversationId: chat.id,
-          agentIterations: metrics.agentIterations,
-          toolCallCount: metrics.toolCallCount,
-          providerStatus:
-            error instanceof YandexResponseError ? error.status : undefined,
-          errorType: error instanceof Error ? error.name : "unknown",
-          latencyMs: Date.now() - usageRun.started,
-        }),
-      );
-      await usage.finish(usageRun.id, usageRun.started, {
-        status: "error",
-        providerCalls: metrics.providerCalls,
-        inputTokens: metrics.inputTokens,
-        outputTokens: metrics.outputTokens,
-        cachedInputTokens: metrics.cachedTokens,
-        models: modelUsage(metrics),
-      });
-      if (
-        !accessRevoked &&
-        !leaseLost &&
-        !controller.signal.aborted &&
-        (error instanceof YandexResponseError ||
-          (error instanceof Error && error.name === "TimeoutError"))
-      ) {
-        // Keep a safe operational fact for the next turn, never upstream text.
-        // The visible error is delivered separately through HTTP/SSE.
-        const recorded = await archive.db.transaction(async () => {
+        if (controller.signal.aborted)
+          throw new DOMException("Запрос остановлен", "AbortError");
+        const answerSaved = await archive.db.transaction(async () => {
+          await assertTurnRunning(true);
           if (
             !(await canDeliverAiData(
               req,
@@ -1763,61 +1809,292 @@ export function aiResearchHttp({
             ))
           )
             return false;
-          await chats.append(
-            chat.id,
-            "assistant",
-            `Служебный статус предыдущего ответа: ${errorMessage}`,
-            { hidden: true },
+          await chats.append(chat.id, "assistant", result.answer, {
+            references: result.references,
+            suggestionIds: result.suggestionIds,
+            files: result.files,
+            generatedFileMeta: generatedFiles.metadata(result.files),
+          });
+          const latestFamily = (await archive.read()).family;
+          const accessiblePeople = new Set(
+            (isScopedUser(user)
+              ? projectFamilyForUser(latestFamily, user)
+              : latestFamily
+            ).people.map((person) => person.id),
           );
+          const activeIds = [
+            ...new Set([
+              ...chat.sessionState.activePersonIds,
+              ...result.references
+                .filter((item) => item.kind === "person")
+                .map((item) => item.id),
+            ]),
+          ].filter((id) => accessiblePeople.has(id));
+          await chats.setActivePeople(chat.id, activeIds);
           return true;
         });
-        if (!recorded) accessRevoked = true;
-      }
-      if (!(await canReportError())) accessRevoked = true;
-      const deliveredError = accessRevoked
-        ? "Доступ к ИИ отключён. Ответ не сохранён."
-        : errorMessage;
-      if (res.destroyed) return true;
-      if (stream) {
-        sse(res, "error", { error: deliveredError });
-        res.end();
+        if (!answerSaved) {
+          accessRevoked = true;
+          controller.abort();
+          throw new DOMException("Доступ к ИИ отключён", "AbortError");
+        }
+        const assertAnswerDelivery = async () => {
+          await assertTurnRunning();
+          const allowed = await canDeliverAiData(
+            req,
+            chat.accessScope,
+            user.id,
+            false,
+            turnProfile,
+          );
+          controller.signal.throwIfAborted();
+          if (allowed) return;
+          accessRevoked = true;
+          controller.abort();
+          throw new DOMException("Доступ к ИИ отключён", "AbortError");
+        };
+        await beforeAnswerDelivery?.();
+        await assertAnswerDelivery();
+        await usage.finish(usageRun.id, usageRun.started, {
+          status: "ok",
+          providerCalls: metrics.providerCalls,
+          inputTokens: metrics.inputTokens,
+          outputTokens: metrics.outputTokens,
+          cachedInputTokens: metrics.cachedTokens,
+          models: modelUsage(metrics),
+        });
+        console.info(
+          JSON.stringify({
+            event: "ai.turn_completed",
+            localConversationId: chat.id,
+            providerCalls: metrics.providerCalls,
+            agentIterations: metrics.agentIterations,
+            toolCallCount: metrics.toolCallCount,
+            inputTokens: metrics.inputTokens,
+            outputTokens: metrics.outputTokens,
+            cachedTokens: metrics.cachedTokens,
+            compactionEnabled: runtime.compactionEnabled,
+            compactionAvailable: metrics.compactionAvailable,
+            compactThreshold: runtime.compactThresholdTokens,
+            truncationMode: runtime.automaticTruncation ? "auto" : "disabled",
+            latencyMs: Date.now() - usageRun.started,
+          }),
+        );
+
+        // The last access decision and HTTP handoff share one short lock window.
+        // A completed role revoke cannot slip between that decision and bytes.
+        await archive.db.transaction(async () => {
+          await assertTurnRunning(true);
+          if (
+            !(await canDeliverAiData(
+              req,
+              chat.accessScope,
+              user.id,
+              true,
+              turnProfile,
+            ))
+          ) {
+            accessRevoked = true;
+            controller.abort();
+            throw new DOMException("AI profile changed", "AbortError");
+          }
+          if (res.destroyed) return;
+          const delivered = finished(res, { cleanup: true });
+          const deadline = setTimeout(() => res.destroy(), 5_000);
+          deadline.unref();
+          try {
+            if (stream) {
+              sse(res, "done", {
+                chatId: chat.id,
+                answer: result.answer,
+                references: result.references,
+                suggestionIds: result.suggestionIds,
+                uiActions: result.uiActions,
+                files: result.files,
+              });
+              res.end();
+            } else json(res, 200, { ...result, chatId: chat.id });
+            await delivered;
+          } catch (error) {
+            res.destroy();
+            await delivered.catch(() => {});
+            throw error;
+          } finally {
+            clearTimeout(deadline);
+          }
+        });
         return true;
-      }
-      if (res.headersSent) {
-        res.destroy();
-        return true;
-      }
-      return json(
-        res,
-        accessRevoked
-          ? 403
-          : error instanceof WorkQueueBusyError
-            ? 503
-            : error instanceof RangeError
-              ? 400
-              : 502,
-        {
-          error: deliveredError,
-        },
-      );
-    } finally {
-      releaseExecution?.();
-      clearInterval(lockRenewal);
-      clearInterval(cancellationPoll);
-      await stopCheck;
-      try {
-        await chats.release(chat.id, lockToken);
+      } catch (error) {
+        // A provider can fail immediately after a tier downgrade, before the
+        // periodic lease check runs. Error handling is still part of this turn.
+        const canReportError = async () => {
+          try {
+            return await canDeliverAiData(
+              req,
+              chat.accessScope,
+              user.id,
+              false,
+              turnProfile,
+            );
+          } catch {
+            return false;
+          }
+        };
+        if (!(await canReportError())) {
+          accessRevoked = true;
+          controller.abort();
+        }
+        await chats.setRemote(chat.id, null, lockToken);
+        const errorMessage = accessRevoked
+          ? "Доступ к ИИ отключён. Ответ не сохранён."
+          : leaseLost
+            ? "Соединение с архивом прервано. Повторите запрос после восстановления связи."
+            : controller.signal.aborted
+              ? "Ответ остановлен"
+              : error instanceof Error &&
+                  (error.name === "TimeoutError" ||
+                    /aborted due to timeout|timed out/i.test(error.message))
+                ? "ИИ не ответил вовремя. Попробуйте повторить запрос."
+                : error instanceof YandexResponseError
+                  ? error.status === 401 || error.status === 403
+                    ? "Yandex AI отклонил доступ. Администратору нужно проверить API-ключ и права на модель и диалоги в разделе Yandex AI."
+                    : (error.status === 400 || error.status === 422) &&
+                        savedAttachments.length
+                      ? "Модель ИИ не приняла вложение. Для PDF нужна модель с поддержкой файлов; проверьте её в настройках ИИ или отправьте текст/изображение страницы. Файлы сохранены в диалоге."
+                      : error.status === 429
+                        ? "Yandex AI ограничил частоту запросов. Повторите немного позже."
+                        : error.code === "provider_timeout"
+                          ? "Yandex AI не завершил ответ вовремя. История диалога сохранена; запрос можно повторить."
+                          : error.code === "incomplete_max_output_tokens"
+                            ? "ИИ исчерпал лимит генерации и не завершил ответ. История сохранена; запрос можно повторить."
+                            : error.code === "incomplete_content_filter"
+                              ? "Yandex AI остановил ответ фильтром содержимого. Это не означает, что в архиве нет нужных данных. Попробуйте уточнить запрос."
+                              : "Сервис ИИ не смог завершить ответ. История диалога сохранена; запрос можно повторить."
+                  : error instanceof Error
+                    ? error.message
+                    : "Не удалось получить ответ ИИ";
+        console.warn(
+          JSON.stringify({
+            event: "ai.turn_failed",
+            localConversationId: chat.id,
+            agentIterations: metrics.agentIterations,
+            toolCallCount: metrics.toolCallCount,
+            providerStatus:
+              error instanceof YandexResponseError ? error.status : undefined,
+            errorType: error instanceof Error ? error.name : "unknown",
+            latencyMs: Date.now() - usageRun.started,
+          }),
+        );
+        await usage.finish(usageRun.id, usageRun.started, {
+          status: "error",
+          providerCalls: metrics.providerCalls,
+          inputTokens: metrics.inputTokens,
+          outputTokens: metrics.outputTokens,
+          cachedInputTokens: metrics.cachedTokens,
+          models: modelUsage(metrics),
+        });
+        if (
+          !accessRevoked &&
+          !leaseLost &&
+          !controller.signal.aborted &&
+          (error instanceof YandexResponseError ||
+            (error instanceof Error && error.name === "TimeoutError"))
+        ) {
+          // Keep a safe operational fact for the next turn, never upstream text.
+          // The visible error is delivered separately through HTTP/SSE.
+          const recorded = await archive.db.transaction(async () => {
+            if (
+              !(await canDeliverAiData(
+                req,
+                chat.accessScope,
+                user.id,
+                true,
+                turnProfile,
+              ))
+            )
+              return false;
+            await chats.append(
+              chat.id,
+              "assistant",
+              `Служебный статус предыдущего ответа: ${errorMessage}`,
+              { hidden: true },
+            );
+            return true;
+          });
+          if (!recorded) accessRevoked = true;
+        }
+        if (!(await canReportError())) accessRevoked = true;
+        const deliveredError = accessRevoked
+          ? "Доступ к ИИ отключён. Ответ не сохранён."
+          : errorMessage;
+        if (res.destroyed) return true;
+        if (stream) {
+          sse(res, "error", { error: deliveredError });
+          res.end();
+          return true;
+        }
+        if (res.headersSent) {
+          res.destroy();
+          return true;
+        }
+        return json(
+          res,
+          accessRevoked
+            ? 403
+            : error instanceof WorkQueueBusyError
+              ? 503
+              : error instanceof RangeError
+                ? 400
+                : 502,
+          {
+            error: deliveredError,
+          },
+        );
       } finally {
-        if (activeRuns.get(chat.id)?.controller === controller)
-          activeRuns.delete(chat.id);
-        finishRun();
+        releaseExecution?.();
+        clearInterval(lockRenewal);
+        clearInterval(cancellationPoll);
+        await stopCheck;
+        try {
+          await chats.release(chat.id, lockToken);
+        } finally {
+          if (activeRuns.get(chat.id)?.controller === controller)
+            activeRuns.delete(chat.id);
+          finishRun();
+        }
       }
+    } catch (error) {
+      if (res.destroyed) return true;
+      if (
+        (error instanceof WorkQueueBusyError || inputSignal.aborted) &&
+        !res.headersSent
+      ) {
+        res.setHeader("Retry-After", "2");
+        return json(res, 503, {
+          error:
+            error instanceof WorkQueueBusyError
+              ? error.message
+              : "Подготовка запроса превысила ограничение времени. Повторите запрос.",
+        });
+      }
+      throw error;
+    } finally {
+      preparationSlot?.();
+      pendingSlot?.();
+      preparing.delete(preparingController);
+      finishPreparing();
+      input.dispose();
     }
   };
   return Object.assign(handle, {
     async close() {
       closing = true;
       if (!executionQueue) queue.close();
+      if (!preparation) budget.close();
+      if (!pendingAdmission) pendingBudget.close();
+      const inputPreparations = [...preparing.entries()];
+      for (const [controller] of inputPreparations) controller.abort();
+      await Promise.all(inputPreparations.map(([, done]) => done));
       clearInterval(attachmentFileCleanup);
       clearInterval(generatedFileCleanup);
       const runs = [...activeRuns.values()];

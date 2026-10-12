@@ -6,6 +6,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import pg from "pg";
 import { setTimeout as delay } from "node:timers/promises";
 import { initializePostgresRuntimeSchema } from "./postgres-runtime-schema.ts";
+import { WorkQueueBusyError } from "./work-queue.ts";
 import type { PostgresConnections } from "./postgres-connections.ts";
 
 type Row = Record<string, unknown>;
@@ -53,7 +54,7 @@ export type StoreDatabase = {
   transaction<T>(
     work: () => Promise<T>,
     readOnly?: boolean,
-    options?: { archiveLock: "share" },
+    options?: { archiveLock: "share"; graphReadOnly?: boolean },
   ): Promise<T>;
   /** Global OAuth work uses its own transaction, without locking one tree. */
   postgresTransaction?<T>(
@@ -70,6 +71,9 @@ export type StoreDatabase = {
     work: () => Promise<T>,
   ): Promise<T>;
   inTransaction(): boolean;
+  /** Committed graph cache: READ ONLY or an explicitly graph-read-only receipt
+   * transaction; arbitrary writers must see their own uncommitted graph. */
+  canReuseGraphCache(): boolean;
   poolDiagnostics?(): {
     total: number;
     idle: number;
@@ -119,6 +123,7 @@ export function storeDatabase(
   const context = new AsyncLocalStorage<{
     transaction: boolean;
     active: boolean;
+    graphReadOnly: boolean;
   }>();
   let tail = Promise.resolve();
   async function exclusive<T>(work: () => Promise<T>): Promise<T> {
@@ -133,7 +138,7 @@ export function storeDatabase(
       release = done;
     });
     await previous;
-    const owner = { transaction: false, active: true };
+    const owner = { transaction: false, active: true, graphReadOnly: false };
     try {
       return await context.run(owner, work);
     } finally {
@@ -149,6 +154,12 @@ export function storeDatabase(
     kind: "sqlite",
     file: String(main?.file || ""),
     inTransaction: () => !!context.getStore()?.transaction,
+    canReuseGraphCache: () => {
+      const owner = context.getStore();
+      if (owner && !owner.active)
+        throw new Error("Expired database operation context");
+      return !owner?.transaction || owner.graphReadOnly;
+    },
     prepare(sql) {
       const statement = source.prepare(sql);
       return {
@@ -170,15 +181,18 @@ export function storeDatabase(
       await exclusive(async () => {
         source.exec(sql);
       }),
-    transaction: async (work, readOnly = false) =>
+    transaction: async (work, readOnly = false, options) =>
       await exclusive(async () => {
         const owner = context.getStore()!;
+        if (options?.graphReadOnly && options.archiveLock !== "share")
+          throw new Error("Graph cache requires an archive share lock");
         if (owner.transaction) {
           if (readOnly) return await work();
           throw new Error("Nested transaction");
         }
         source.exec(readOnly ? "BEGIN" : "BEGIN IMMEDIATE");
         owner.transaction = true;
+        owner.graphReadOnly = readOnly || options?.graphReadOnly === true;
         try {
           const result = await work();
           source.exec("COMMIT");
@@ -188,6 +202,7 @@ export function storeDatabase(
           throw error;
         } finally {
           owner.transaction = false;
+          owner.graphReadOnly = false;
         }
       }),
     close: async () =>
@@ -241,17 +256,16 @@ export async function openPostgresDatabase(
     return shared
       ? await shared.connect(archiveId)
       : (() => {
-          return pool
-            .connect()
-            .then((client) => ({
-              client,
-              release: async (discard = false) => client.release(discard),
-            }));
+          return pool.connect().then((client) => ({
+            client,
+            release: async (discard = false) => client.release(discard),
+          }));
         })();
   };
   const context = new AsyncLocalStorage<{
     client: pg.PoolClient;
     active: boolean;
+    graphReadOnly: boolean;
   }>();
   // Long tasks own a session, not a transaction. SQL and short transactions
   // borrow that same connection, including nested filesystem locks. Serialize
@@ -295,7 +309,7 @@ export async function openPostgresDatabase(
       const timeout = setTimeout(() => {
         const index = taskWaiters.indexOf(grant);
         if (index >= 0) taskWaiters.splice(index, 1);
-        reject(new Error("Background task connection budget is busy"));
+        reject(new WorkQueueBusyError());
       }, 5000);
       taskWaiters.push(grant);
     });
@@ -432,6 +446,12 @@ export async function openPostgresDatabase(
     archiveId,
     file,
     inTransaction: () => !!context.getStore(),
+    canReuseGraphCache: () => {
+      const owner = context.getStore();
+      if (owner && !owner.active)
+        throw new Error("Expired database transaction context");
+      return !owner || owner.graphReadOnly;
+    },
     prepare(sqlite, postgres) {
       if (!postgres)
         throw new Error("Для PostgreSQL не задан явный SQL-запрос");
@@ -454,6 +474,8 @@ export async function openPostgresDatabase(
       await query(postgres);
     },
     async transaction(work, readOnly = false, options) {
+      if (options?.graphReadOnly && options.archiveLock !== "share")
+        throw new Error("Graph cache requires an archive share lock");
       const parent = context.getStore();
       if (parent) {
         if (!parent.active)
@@ -462,7 +484,11 @@ export async function openPostgresDatabase(
         throw new Error("Вложенная транзакция не поддерживается");
       }
       const execute = async (client: pg.PoolClient) => {
-        const owner = { client, active: true };
+        const owner = {
+          client,
+          active: true,
+          graphReadOnly: readOnly || options?.graphReadOnly === true,
+        };
         try {
           await client.query(
             readOnly
@@ -493,11 +519,16 @@ export async function openPostgresDatabase(
         }
       };
       if (tasks.getStore()) return await onTaskSession(execute);
-      const releaseTransaction = shared ? await shared.reserveTransaction() : undefined;
+      const releaseTransaction = shared
+        ? await shared.reserveTransaction()
+        : undefined;
       try {
         const lease = await connect();
-        try { return await execute(lease.client); }
-        finally { await lease.release(); }
+        try {
+          return await execute(lease.client);
+        } finally {
+          await lease.release();
+        }
       } finally {
         releaseTransaction?.();
       }
@@ -507,7 +538,7 @@ export async function openPostgresDatabase(
         throw new Error("Вложенная транзакция не поддерживается");
       const task = tasks.getStore();
       const execute = async (client: pg.PoolClient) => {
-        const owner = { client, active: true };
+        const owner = { client, active: true, graphReadOnly: false };
         try {
           await client.query("BEGIN");
           await client.query("SET LOCAL lock_timeout='5s'");
@@ -529,11 +560,16 @@ export async function openPostgresDatabase(
         }
       };
       if (task) return await onTaskSession(execute);
-      const releaseTransaction = shared ? await shared.reserveTransaction() : undefined;
+      const releaseTransaction = shared
+        ? await shared.reserveTransaction()
+        : undefined;
       try {
         const lease = await connect();
-        try { return await execute(lease.client); }
-        finally { await lease.release(); }
+        try {
+          return await execute(lease.client);
+        } finally {
+          await lease.release();
+        }
       } finally {
         releaseTransaction?.();
       }
@@ -564,8 +600,7 @@ export async function openPostgresDatabase(
         // holder still needs a connection for the short disk reservation query.
         const result = await withSessionTaskLock(lockKey, work);
         if (result.acquired) return result.value;
-        if (Date.now() >= deadline)
-          throw new Error("Platform task lock is busy");
+        if (Date.now() >= deadline) throw new WorkQueueBusyError();
         await delay(50);
       }
     },
@@ -587,7 +622,7 @@ export async function openPostgresDatabase(
       archiveId,
     ]);
     if (result.rowCount !== 1) throw new Error("Архив PostgreSQL не найден");
-    await initializePostgresRuntimeSchema(database);
+    await initializePostgresRuntimeSchema(database, shared?.schema);
     return database;
   } catch (error) {
     if (!shared) await pool.end();

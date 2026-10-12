@@ -1,5 +1,9 @@
 import { decodePdfPages } from "./document-pdf-decoder.ts";
 import type { PdfPageSize } from "./document-pdf.ts";
+import {
+  PREPARATION_BYTES,
+  type PreparationAdmission,
+} from "./preparation-admission.ts";
 
 export class PdfDecodeBusyError extends Error {
   constructor() {
@@ -16,7 +20,11 @@ type Job = {
 };
 
 /** Root owns one decoder across its archive runtimes, without a global service registry. */
-export function pdfDecodeCoordinator(decoder = decodePdfPages, waitMs = 5000) {
+export function pdfDecodeCoordinator(
+  decoder = decodePdfPages,
+  waitMs = 5000,
+  preparation?: PreparationAdmission,
+) {
   const controller = new AbortController();
   const queue: Job[] = [];
   let active: Promise<void> | undefined;
@@ -25,7 +33,19 @@ export function pdfDecodeCoordinator(decoder = decodePdfPages, waitMs = 5000) {
     const job = queue.shift();
     if (!job) return;
     job.cleanup();
-    active = decoder(job.path, AbortSignal.any([job.signal, controller.signal]))
+    const signal = AbortSignal.any([job.signal, controller.signal]);
+    active = (async () => {
+      const release = await preparation?.acquire(
+        PREPARATION_BYTES.image,
+        signal,
+      );
+      try {
+        signal.throwIfAborted();
+        return await decoder(job.path, signal);
+      } finally {
+        release?.();
+      }
+    })()
       .then(job.resolve, job.reject)
       .finally(() => {
         active = undefined;

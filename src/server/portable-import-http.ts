@@ -7,9 +7,15 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
 import { accountCapacity } from "./account-capacity.ts";
-import { AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
+import {
+  AccountSessionBusy,
+  AccountSessionExpired,
+} from "./account-session-guard.ts";
 import { ConflictError, type openArchive } from "./database.ts";
-import { applyPortablePackage, portableStoreOccupied } from "./portable-apply.ts";
+import {
+  applyPortablePackage,
+  portableStoreOccupied,
+} from "./portable-apply.ts";
 import { isArchiveOwner } from "../domain/access.ts";
 import {
   PORTABLE_IMPORT_LIMIT,
@@ -23,6 +29,7 @@ import { mediaStore } from "./media.ts";
 import { reservePlatformDisk } from "./platform-disk-reservation.ts";
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { ForbiddenError } from "./users.ts";
+import type { MediaUsageLedger } from "./media-usage-ledger.ts";
 
 const STAGE_LIFETIME = 30 * 60_000;
 const tokenPattern = /^[a-f0-9-]{36}$/;
@@ -34,10 +41,13 @@ function stageStatus(value: unknown) {
 }
 function readyStage(value: unknown) {
   const data = typeof value === "string" ? JSON.parse(value) : value;
-  if (!data || typeof data !== "object" ||
+  if (
+    !data ||
+    typeof data !== "object" ||
     (data as { status?: unknown }).status !== "ready" ||
     typeof (data as { manifestSha256?: unknown }).manifestSha256 !== "string" ||
-    !/^[a-f0-9]{64}$/.test((data as { manifestSha256: string }).manifestSha256))
+    !/^[a-f0-9]{64}$/.test((data as { manifestSha256: string }).manifestSha256)
+  )
     return null;
   return data as { status: "ready"; manifestSha256: string };
 }
@@ -47,6 +57,7 @@ export function portableImportHttp(
   auth: Awaited<ReturnType<typeof createAuth>>,
   dbPath: string,
   publicOrigin?: string,
+  mediaUsage?: MediaUsageLedger,
 ) {
   const db = archive.db;
   const root = join(dirname(dbPath), "staging", "portable");
@@ -55,6 +66,7 @@ export function portableImportHttp(
   mkdirSync(uploads, { recursive: true });
   const media = mediaStore(uploads);
   const quota = uploadQuota(db, {
+    mediaUsage,
     reservationMs: 30 * 60_000,
     renewEveryMs: 60_000,
   });
@@ -199,8 +211,11 @@ export function portableImportHttp(
           "DELETE FROM workflow_stages WHERE kind='drevo' AND token=? AND actor_id=? AND data=?",
           "DELETE FROM workflow_stages WHERE kind='drevo' AND token=? AND actor_id=? AND data=?::jsonb",
         )
-        .run(String(row.token), actorId,
-          typeof row.data === "string" ? row.data : JSON.stringify(row.data));
+        .run(
+          String(row.token),
+          actorId,
+          typeof row.data === "string" ? row.data : JSON.stringify(row.data),
+        );
       if (!deleted.changes) throw new ConflictError("Импорт уже выполняется");
       await rm(stagePath(String(row.token)), { recursive: true, force: true });
     }
@@ -217,8 +232,13 @@ export function portableImportHttp(
         JSON.stringify({ status: "pending" }),
       )
       .catch((error: unknown) => {
-        if (db.kind === "postgres" && (error as { code?: string }).code === "P5502")
-          throw new ConflictError("Уже проверяются другие архивы. Повторите позже");
+        if (
+          db.kind === "postgres" &&
+          (error as { code?: string }).code === "P5502"
+        )
+          throw new ConflictError(
+            "Уже проверяются другие архивы. Повторите позже",
+          );
         throw error;
       });
     if (!inserted.changes) {
@@ -253,7 +273,8 @@ export function portableImportHttp(
     }, 60_000);
     heartbeat.unref();
     let ready = false;
-    let inputReserve: Awaited<ReturnType<typeof reservePlatformDisk>> | undefined;
+    let inputReserve:
+      Awaited<ReturnType<typeof reservePlatformDisk>> | undefined;
     try {
       let reservedBytes = length ?? 512 * 1024 ** 2;
       inputReserve = await reservePlatformDisk(
@@ -271,22 +292,30 @@ export function portableImportHttp(
         transform(chunk: Buffer, _encoding, callback) {
           size += chunk.length;
           if (size > PORTABLE_IMPORT_LIMIT)
-            return callback(new PortablePackageError("Пакет Drevo больше 12 ГиБ"));
-          const needsGrowth = length === null &&
+            return callback(
+              new PortablePackageError("Пакет Drevo больше 12 ГиБ"),
+            );
+          const needsGrowth =
+            length === null &&
             size >= reservedBytes - 64 * 1024 ** 2 &&
             reservedBytes < PORTABLE_IMPORT_LIMIT;
           const needsDiskCheck = size >= nextDiskCheck;
           if (!needsGrowth && !needsDiskCheck) return callback(null, chunk);
           void (async () => {
             if (needsGrowth) {
-              const additional = Math.min(512 * 1024 ** 2, PORTABLE_IMPORT_LIMIT - reservedBytes);
+              const additional = Math.min(
+                512 * 1024 ** 2,
+                PORTABLE_IMPORT_LIMIT - reservedBytes,
+              );
               await inputReserve!.grow(additional);
               reservedBytes += additional;
             }
             if (needsDiskCheck) {
               const space = await statfs(directory);
               if (space.bavail * space.bsize < 128 * 1024 ** 2)
-                throw new PortablePackageError("Недостаточно места для пакета Drevo");
+                throw new PortablePackageError(
+                  "Недостаточно места для пакета Drevo",
+                );
               nextDiskCheck = size + 64 * 1024 ** 2;
             }
           })().then(() => callback(null, chunk), callback);
@@ -339,8 +368,10 @@ export function portableImportHttp(
           "UPDATE workflow_stages SET data=?,expires_at=? WHERE kind='drevo' AND token=? AND actor_id=? AND expires_at>?",
         )
         .run(
-          JSON.stringify({ status: "ready",
-            manifestSha256: parsed.files.get("manifest.json")!.sha256 }),
+          JSON.stringify({
+            status: "ready",
+            manifestSha256: parsed.files.get("manifest.json")!.sha256,
+          }),
           Date.now() + STAGE_LIFETIME,
           token,
           actorId,
@@ -417,8 +448,10 @@ export function portableImportHttp(
         "UPDATE workflow_stages SET data=?,expires_at=? WHERE kind='drevo' AND token=? AND actor_id=? AND data=?::jsonb AND expires_at>?",
       )
       .run(
-        JSON.stringify({ status: "applying",
-          manifestSha256: previewed.manifestSha256 }),
+        JSON.stringify({
+          status: "applying",
+          manifestSha256: previewed.manifestSha256,
+        }),
         Date.now() + 2 * 60 * 60_000,
         body.token,
         actorId,
@@ -435,8 +468,12 @@ export function portableImportHttp(
       if (!(await empty()))
         throw new ConflictError("Древо изменилось после предпросмотра");
       const parsed = await parsePackage(join(directory, "input"), directory);
-      if (parsed.files.get("manifest.json")!.sha256 !== previewed.manifestSha256)
-        throw new ConflictError("Пакет Drevo изменился после предпросмотра; проверьте его заново");
+      if (
+        parsed.files.get("manifest.json")!.sha256 !== previewed.manifestSha256
+      )
+        throw new ConflictError(
+          "Пакет Drevo изменился после предпросмотра; проверьте его заново",
+        );
       const originalFiles = [...parsed.files].filter(([path]) =>
         path.startsWith("media/"),
       );
@@ -461,8 +498,11 @@ export function portableImportHttp(
       if (!actor || actor.id !== actorId)
         throw new ForbiddenError("Доступ владельца отозван");
       const session = auth.local ? null : await auth.accountSession(req);
-      if (db.kind === "postgres" && !auth.local &&
-          (!session || session.accountId !== actor.id))
+      if (
+        db.kind === "postgres" &&
+        !auth.local &&
+        (!session || session.accountId !== actor.id)
+      )
         throw new AccountSessionExpired("Сессия завершена. Войдите снова");
       await release?.assertValid();
       const result = await applyPortablePackage(
@@ -549,7 +589,8 @@ export function portableImportHttp(
         if (!db.withExclusiveArchiveTask)
           return json(200, await performImport());
         const task = await db.withExclusiveArchiveTask(
-          "portable-import", performImport,
+          "portable-import",
+          performImport,
         );
         return task.acquired
           ? json(200, task.value)
@@ -558,15 +599,16 @@ export function portableImportHttp(
         const status =
           error instanceof AccountSessionExpired
             ? 401
-            : error instanceof AccountSessionBusy || error instanceof ConflictError
+            : error instanceof AccountSessionBusy ||
+                error instanceof ConflictError
               ? 409
-            : error instanceof ForbiddenError
-              ? 403
-              : error instanceof UploadQuotaError
-                ? error.status
-              : error instanceof PortablePackageError
-                ? 400
-                : 500;
+              : error instanceof ForbiddenError
+                ? 403
+                : error instanceof UploadQuotaError
+                  ? error.status
+                  : error instanceof PortablePackageError
+                    ? 400
+                    : 500;
         if (status === 500) console.error("portable_import_failed", error);
         return json(status, {
           error:

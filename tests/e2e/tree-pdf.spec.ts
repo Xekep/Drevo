@@ -137,8 +137,16 @@ test("direct GEDCOM warns about visible catalog links without claiming citation 
     catalogId: "catalog-entry", title: "Register", type: "archive", reference: "p. 7",
     url: "https://example.test/register",
   }];
+  await page.route("**/api/family?projection=export-warnings&**", (route) => {
+    const requested = new Set<string>(route.request().postDataJSON().ids);
+    expect([...requested].every(id => ids.includes(id))).toBe(true);
+    return route.fulfill({ json: { revision: snapshot.revision,
+      pageToken: new URL(route.request().url()).searchParams.get("token"),
+      warnings: { parentEvidence: false, catalogLinks: requested.has(grandchild.id) } } });
+  });
   await page.route("**/api/family?projection=overview", (route) =>
-    route.fulfill({ response, json: { ...snapshot, family, partial: false } }));
+    route.fulfill({ response, json: { ...snapshot, family, partial: false,
+      pageToken: `${snapshot.revision}:fixture` } }));
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
   const dialog = await openExport(page);

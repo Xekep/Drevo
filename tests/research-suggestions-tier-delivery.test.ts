@@ -41,7 +41,9 @@ test("queued AI proposals are withheld after tier, role or scope changes", async
           transaction: async (work: () => Promise<boolean>) => work(),
           inTransaction: () => true,
           prepare: (_sqlite: string, postgres: string) => ({
-            get: async () => postgres.includes("FROM account_sessions")
+            get: async () => postgres.includes("SELECT revision FROM archives")
+              ? { revision: 1 }
+              : postgres.includes("FROM account_sessions")
               ? { user_id: actor.id, expires_at: Date.now() + 60_000 }
               : postgres.includes("FROM archive_memberships")
                 ? {
@@ -51,9 +53,16 @@ test("queued AI proposals are withheld after tier, role or scope changes", async
                     tree_access: currentActor.treeAccess,
                   }
                 : { viewer_full: viewerFull, owner_full: ownerFull },
+            all: async (...values: unknown[]) => {
+              assert.match(postgres, /^SELECT id,data->>'name' AS name/);
+              assert.deepEqual(JSON.parse(String(values[0])), ["person-1"]);
+              enterList();
+              await listWait;
+              return [{ id: "person-1", name: "Private", surname: "", patronymic: "" }];
+            },
           }),
         },
-        read: async () => ({ family: { people: [] } }),
+        read: async () => { throw new Error("full archive read is forbidden for proposal listing"); },
       },
       auth: {
         local: false,
@@ -63,8 +72,6 @@ test("queued AI proposals are withheld after tier, role or scope changes", async
       },
       suggestions: {
         list: async () => {
-          enterList();
-          await listWait;
           return [
             {
               id: "pending-ai-proposal",

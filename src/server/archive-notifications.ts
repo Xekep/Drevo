@@ -1,5 +1,5 @@
 import type { StoreDatabase } from "./store-database.ts";
-import type { ArchiveNotificationsPage } from "../shared/archive-notifications.ts";
+import type { ArchiveNotificationsPage, ArchiveNotificationsSummary, ArchiveNotificationsSlice } from "../shared/archive-notifications.ts";
 
 /** Notifications expose current card names, never historical audit details. */
 export function archiveNotificationsStore(db: StoreDatabase) {
@@ -38,11 +38,10 @@ export function archiveNotificationsStore(db: StoreDatabase) {
     return { sqlite: query(false), postgres: query(true), values };
   }
   return {
-    async list(
+    async summary(
       userId: string,
       visible: ReadonlySet<string> | null,
-      before = 0,
-    ): Promise<ArchiveNotificationsPage> {
+    ): Promise<ArchiveNotificationsSummary> {
       const q = eligible(userId, visible);
       const totals = await db
         .prepare(
@@ -54,6 +53,10 @@ export function archiveNotificationsStore(db: StoreDatabase) {
               AND NOT EXISTS(SELECT 1 FROM archive_notification_reads WHERE user_id=? AND event_id=n.id)`,
         )
         .get(...q.values, userId, userId);
+      return { unread: Number(totals?.unread || 0), latest: Number(totals?.latest || 0) };
+    },
+    async tail(userId: string, visible: ReadonlySet<string> | null, before = 0): Promise<ArchiveNotificationsSlice> {
+      const q = eligible(userId, visible);
       const rows = await db
         .prepare(
           `SELECT * FROM (${q.sqlite}) n WHERE (?=0 OR id<?) ORDER BY id DESC LIMIT 21`,
@@ -76,10 +79,11 @@ export function archiveNotificationsStore(db: StoreDatabase) {
       }));
       return {
         items,
-        unread: Number(totals?.unread || 0),
-        latest: Number(totals?.latest || 0),
         next: rows.length > 20 ? items.at(-1)!.id : null,
       };
+    },
+    async list(userId: string, visible: ReadonlySet<string> | null, before = 0): Promise<ArchiveNotificationsPage> {
+      return { ...await this.summary(userId, visible), ...await this.tail(userId, visible, before) };
     },
     async read(
       userId: string,
@@ -109,7 +113,7 @@ export function archiveNotificationsStore(db: StoreDatabase) {
       visible: ReadonlySet<string> | null,
       id: number,
     ) {
-      const { latest } = await this.list(userId, visible);
+      const { latest } = await this.summary(userId, visible);
       const through = Math.min(id, latest);
       if (visible !== null) {
         // A scoped reader must not mark unseen people as read if their access

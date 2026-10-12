@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { aiChatDetailRoute, aiChatFixture } from "./ai-chat-fixture.ts";
 
 test("two chats answer in parallel and show their own progress indicators", async ({
   page,
@@ -10,9 +11,29 @@ test("two chats answer in parallel and show their own progress indicators", asyn
       ReadableStreamDefaultController<Uint8Array>
     >();
     const encoder = new TextEncoder();
+    const saved = new Map<
+      string,
+      Array<{ id: number; version: number; role: string; content: string }>
+    >();
     Object.assign(window, {
+      readAiChatFixture(id: string) {
+        return { messages: saved.get(id) || [], busy: controllers.has(id) };
+      },
       finishAiChat(id: string) {
         const controller = controllers.get(id);
+        if (controller) {
+          const messages = saved.get(id) || [];
+          const next = messages.length + 1;
+          saved.set(id, [
+            ...messages,
+            {
+              id: next,
+              version: next,
+              role: "assistant",
+              content: `Ответ ${id}`,
+            },
+          ]);
+        }
         controller?.enqueue(
           encoder.encode(
             `event: done\ndata: ${JSON.stringify({ chatId: id, answer: `Ответ ${id}` })}\n\n`,
@@ -32,6 +53,12 @@ test("two chats answer in parallel and show their own progress indicators", asyn
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
           controllers.set(id, controller);
+          const messages = saved.get(id) || [];
+          const next = messages.length + 1;
+          saved.set(id, [
+            ...messages,
+            { id: next, version: next, role: "user", content: body.message },
+          ]);
           controller.enqueue(
             encoder.encode(
               `event: chat\ndata: ${JSON.stringify({ chatId: id })}\n\n`,
@@ -54,10 +81,38 @@ test("two chats answer in parallel and show their own progress indicators", asyn
   await page.route("**/api/ai/chats", (route) =>
     route.fulfill({ json: { chats: [] } }),
   );
-  for (const id of ["parallel-1", "parallel-2"])
-    await page.route(`**/api/ai/chats/${id}`, (route) =>
-      route.fulfill({ json: { messages: [] } }),
+  for (const id of ["parallel-1", "parallel-2"]) {
+    await page.route(aiChatDetailRoute(id), async (route) => {
+      const stored = await page.evaluate(
+        (chatId) =>
+          (
+            window as typeof window & {
+              readAiChatFixture(id: string): {
+                messages: Array<{
+                  id: number;
+                  version: number;
+                  role: string;
+                  content: string;
+                }>;
+                busy: boolean;
+              };
+            }
+          ).readAiChatFixture(chatId),
+        id,
+      );
+      await route.fulfill({
+        json: aiChatFixture(
+          route.request().url(),
+          id,
+          stored.messages,
+          stored.busy,
+        ),
+      });
+    });
+    await page.route(`**/api/ai/chats/${id}/stop`, (route) =>
+      route.fulfill({ json: { busy: false } }),
     );
+  }
   await page.goto("/tree");
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
   const panel = page.locator(".research-assistant");
@@ -65,8 +120,12 @@ test("two chats answer in parallel and show their own progress indicators", asyn
   await panel.locator("textarea").fill("Первый");
   await panel.getByRole("button", { name: "Отправить запрос" }).click();
   await expect(picker).toContainText("Первый");
-  await expect(panel.locator("form").getByRole("button", { name: "Остановить ответ" })).toBeVisible();
-  await expect(panel.locator("header").getByRole("button", { name: "Остановить ответ" })).toHaveCount(0);
+  await expect(
+    panel.locator("form").getByRole("button", { name: "Остановить ответ" }),
+  ).toBeVisible();
+  await expect(
+    panel.locator("header").getByRole("button", { name: "Остановить ответ" }),
+  ).toHaveCount(0);
   await picker.click();
   await panel.getByRole("button", { name: "Новый диалог" }).click();
   await panel.locator("textarea").fill("Второй");
@@ -96,34 +155,47 @@ test("two chats answer in parallel and show their own progress indicators", asyn
   await expect(panel).toContainText("Ответ parallel-1");
   await panel.locator("textarea").fill("Снова");
   await panel.getByRole("button", { name: "Отправить запрос" }).click();
-  await panel.locator("form").getByRole("button", { name: "Остановить ответ" }).click();
-  await expect(panel.getByRole("button", { name: "Остановить ответ" })).toHaveCount(0);
+  await panel
+    .locator("form")
+    .getByRole("button", { name: "Остановить ответ" })
+    .click();
+  await expect(
+    panel.getByRole("button", { name: "Остановить ответ" }),
+  ).toHaveCount(0);
   await panel.locator("textarea").fill("Новый запрос");
-  await expect(panel.locator("form").getByRole("button", { name: "Отправить запрос" })).toBeEnabled();
+  await expect(
+    panel.locator("form").getByRole("button", { name: "Отправить запрос" }),
+  ).toBeEnabled();
 });
 
-test("the assistant dims only while the user drags the tree", async ({ page }, testInfo) => {
+test("the assistant dims only while the user drags the tree", async ({
+  page,
+}, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
-  await page.route("**/api/ai/status", route=>route.fulfill({json:{enabled:true,streaming:true}}));
-  await page.route("**/api/ai/chats", route=>route.fulfill({json:{chats:[]}}));
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({ json: { enabled: true, streaming: true } }),
+  );
+  await page.route("**/api/ai/chats", (route) =>
+    route.fulfill({ json: { chats: [] } }),
+  );
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
-  await page.getByRole("button",{name:"Открыть ИИ-исследователя"}).click();
-  const panel=page.locator(".research-assistant");
-  await expect(panel).toHaveCSS("opacity","1");
-  const pane=page.locator(".react-flow__pane");
-  const box=(await pane.boundingBox())!;
-  await page.mouse.move(box.x+20,box.y+200);
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  const panel = page.locator(".research-assistant");
+  await expect(panel).toHaveCSS("opacity", "1");
+  const pane = page.locator(".react-flow__pane");
+  const box = (await pane.boundingBox())!;
+  await page.mouse.move(box.x + 20, box.y + 200);
   await page.mouse.down();
-  await page.mouse.move(box.x+65,box.y+250,{steps:6});
-  await expect(panel).toHaveCSS("opacity","0.45");
+  await page.mouse.move(box.x + 65, box.y + 250, { steps: 6 });
+  await expect(panel).toHaveCSS("opacity", "0.45");
   await page.mouse.up();
-  await expect(panel).toHaveCSS("opacity","1");
-  const header=(await panel.locator("header").boundingBox())!;
-  await page.mouse.move(header.x+70,header.y+20);
+  await expect(panel).toHaveCSS("opacity", "1");
+  const header = (await panel.locator("header").boundingBox())!;
+  await page.mouse.move(header.x + 70, header.y + 20);
   await page.mouse.down();
-  await page.mouse.move(header.x+20,header.y+50,{steps:6});
-  await expect(panel).toHaveCSS("opacity","1");
+  await page.mouse.move(header.x + 20, header.y + 50, { steps: 6 });
+  await expect(panel).toHaveCSS("opacity", "1");
   await page.mouse.up();
 });
 
@@ -137,9 +209,14 @@ test("switching chats keeps the earlier answer running and isolated", async ({
     route.fulfill({ json: { chats: [] } }),
   );
   let deleted = false;
-  await page.route("**/api/ai/chats/chat-2", (route) => {
-    deleted = route.request().method() === "DELETE";
-    return route.fulfill({ json: { ok: true } });
+  await page.route(aiChatDetailRoute("chat-2"), (route) => {
+    if (route.request().method() === "DELETE") {
+      deleted = true;
+      return route.fulfill({ json: { deleted: true } });
+    }
+    return route.fulfill({
+      json: aiChatFixture(route.request().url(), "chat-2", []),
+    });
   });
   let releaseFirst: (() => void) | undefined;
   const first = new Promise<void>((resolve) => {
@@ -224,23 +301,21 @@ test("choice is invisible to the user and chat picker keeps the original title",
     });
   });
   let delayChatOne = true;
-  await page.route("**/api/ai/chats/chat-one", async (route) => {
+  await page.route(aiChatDetailRoute("chat-one"), async (route) => {
     if (delayChatOne) {
       delayChatOne = false;
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     await route.fulfill({
-      json: {
-        messages: [
-          { role: "user", content: "Расскажи об Иване" },
-          {
-            role: "assistant",
-            content:
-              "Кого вы имеете в виду: [[choose-person:person-42|Иван Петров]]?",
-          },
-          { role: "assistant", content: "Продолжаю разговор." },
-        ],
-      },
+      json: aiChatFixture(route.request().url(), "chat-one", [
+        { role: "user", content: "Расскажи об Иване" },
+        {
+          role: "assistant",
+          content:
+            "Кого вы имеете в виду: [[choose-person:person-42|Иван Петров]]?",
+        },
+        { role: "assistant", content: "Продолжаю разговор." },
+      ]),
     });
   });
   await page.goto("/tree");
@@ -311,8 +386,14 @@ test("dialog history stays compact and searchable", async ({ page }) => {
       },
     }),
   );
-  await page.route("**/api/ai/chats/chat-0", (route) =>
-    route.fulfill({ json: { messages: [] } }),
+  await page.route(aiChatDetailRoute("chat-0"), (route) =>
+    route.fulfill({
+      json: aiChatFixture(
+        route.request().url(),
+        new URL(route.request().url()).pathname.split("/").at(-1)!,
+        [],
+      ),
+    }),
   );
   await page.goto("/tree");
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();

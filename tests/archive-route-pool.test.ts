@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { createServer, type ServerResponse } from "node:http";
+import { createServer, IncomingMessage, ServerResponse } from "node:http";
+import { Socket } from "node:net";
+import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import { archiveRoutePool } from "../src/server/archive-route-pool.ts";
 
@@ -413,3 +415,364 @@ test("a failed access recheck after opening closes the runtime and propagates th
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+function syntheticRequest(
+  pool: ReturnType<typeof archiveRoutePool>,
+  id: string,
+  caller = "allowed",
+) {
+  const req = new IncomingMessage(new Socket());
+  req.method = "GET";
+  req.headers["x-test-caller"] = caller;
+  const res = new ServerResponse(req);
+  const done = pool.route(
+    req,
+    res,
+    new URL(`https://isolated.invalid/a/${id}/api/family`),
+  );
+  return { res, done };
+}
+
+test("100 cold archive startups run in bounded parallel batches instead of a serial 5-second queue", async () => {
+  let active = 0,
+    peak = 0,
+    opened = 0;
+  const pool = archiveRoutePool(
+    async () => true,
+    async () => {
+      active++;
+      peak = Math.max(peak, active);
+      try {
+        await delay(180);
+        opened++;
+      } finally {
+        active--;
+      }
+      return {
+        handle: async (_req, res) => {
+          res.end();
+        },
+        close: async () => {},
+      };
+    },
+    { maxOpen: 128 },
+  );
+  try {
+    const requests = Array.from({ length: 100 }, (_, i) =>
+      syntheticRequest(pool, `cold-${i}`),
+    );
+    await Promise.all(requests.map((request) => request.done));
+    assert.equal(opened, 100);
+    assert.equal(peak, 4);
+    assert.ok(requests.every(({ res }) => res.statusCode === 200));
+    assert.equal(pool.diagnostics().open, 100);
+    assert.equal(pool.diagnostics().opening, 0);
+  } finally {
+    await pool.close();
+  }
+});
+
+test("same archive singleflight rechecks each caller and does not inherit the first caller's revoked grant", async () => {
+  let finish!: () => void, began!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    began = resolve;
+  });
+  let firstAllowed = true,
+    opened = 0,
+    closed = 0;
+  const handled: string[] = [];
+  const pool = archiveRoutePool(
+    async (req) => req.headers["x-test-caller"] !== "first" || firstAllowed,
+    async () => {
+      opened++;
+      began();
+      await gate;
+      return {
+        handle: async (req, res) => {
+          handled.push(String(req.headers["x-test-caller"]));
+          res.end();
+        },
+        close: async () => {
+          closed++;
+        },
+      };
+    },
+  );
+  try {
+    const first = syntheticRequest(pool, "same-tree", "first");
+    await started;
+    const remaining = Array.from({ length: 30 }, () =>
+      syntheticRequest(pool, "same-tree", "second"),
+    );
+    await delay(0);
+    firstAllowed = false;
+    finish();
+    await Promise.all([
+      first.done,
+      ...remaining.map((request) => request.done),
+    ]);
+    assert.equal(first.res.statusCode, 404);
+    assert.equal(opened, 1);
+    assert.equal(handled.length, 30);
+    assert.ok(handled.every((caller) => caller === "second"));
+    assert.equal(closed, 0);
+    assert.equal(pool.diagnostics().active, 0);
+  } finally {
+    finish();
+    await pool.close();
+  }
+  assert.equal(closed, 1);
+});
+
+test("failed startup frees its capacity and singleflight so a later request can retry", async () => {
+  let attempts = 0;
+  const pool = archiveRoutePool(
+    async () => true,
+    async () => {
+      if (++attempts === 1) throw new Error("isolated factory failure");
+      return {
+        handle: async (_req, res) => {
+          res.end();
+        },
+        close: async () => {},
+      };
+    },
+    { maxOpen: 1 },
+  );
+  try {
+    await assert.rejects(
+      syntheticRequest(pool, "retry-tree").done,
+      /isolated factory failure/,
+    );
+    assert.equal(pool.diagnostics().opening, 0);
+    const retry = syntheticRequest(pool, "retry-tree");
+    await retry.done;
+    assert.equal(retry.res.statusCode, 200);
+    assert.equal(attempts, 2);
+  } finally {
+    await pool.close();
+  }
+});
+
+test("shutdown rejects queued startups and closes an in-flight unpublishable runtime exactly once", async () => {
+  let finish!: () => void, began!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    began = resolve;
+  });
+  let opened = 0,
+    closed = 0,
+    handled = 0;
+  const pool = archiveRoutePool(
+    async () => true,
+    async () => {
+      opened++;
+      began();
+      await gate;
+      return {
+        handle: async (_req, res) => {
+          handled++;
+          res.end();
+        },
+        close: async () => {
+          closed++;
+        },
+      };
+    },
+    { maxOpen: 2, startupConcurrency: 1 },
+  );
+  const first = syntheticRequest(pool, "running-tree");
+  await started;
+  const queued = syntheticRequest(pool, "queued-tree");
+  await delay(0);
+  const shutdown = pool.close();
+  finish();
+  await Promise.all([first.done, queued.done, shutdown]);
+  assert.equal(opened, 1);
+  assert.equal(closed, 1);
+  assert.equal(handled, 0);
+  assert.equal(queued.res.statusCode, 503);
+  assert.equal(pool.diagnostics().opening, 0);
+});
+
+test("capacity includes asynchronous close before another startup owns resources", async () => {
+  let live = 0,
+    peak = 0;
+  const pool = archiveRoutePool(
+    async () => true,
+    async () => {
+      live++;
+      peak = Math.max(peak, live);
+      return {
+        handle: async (_req, res) => {
+          res.end();
+        },
+        close: async () => {
+          await delay(30);
+          live--;
+        },
+      };
+    },
+    { maxOpen: 2 },
+  );
+  try {
+    await Promise.all([
+      syntheticRequest(pool, "initial-1").done,
+      syntheticRequest(pool, "initial-2").done,
+    ]);
+    await Promise.all(
+      Array.from(
+        { length: 8 },
+        (_, i) => syntheticRequest(pool, `replace-${i}`).done,
+      ),
+    );
+    assert.equal(peak, 2);
+    assert.equal(pool.diagnostics().opening, 0);
+  } finally {
+    await pool.close();
+  }
+  assert.equal(live, 0);
+});
+
+test("disconnected queued callers release their singleflight without aborting another caller of that archive", async () => {
+  let finish!: () => void, began!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    began = resolve;
+  });
+  const opened: string[] = [];
+  const pool = archiveRoutePool(
+    async () => true,
+    async (id) => {
+      opened.push(id);
+      if (id === "holding-tree") {
+        began();
+        await gate;
+      }
+      return {
+        handle: async (_req, res) => {
+          res.end();
+        },
+        close: async () => {},
+      };
+    },
+    { startupConcurrency: 1 },
+  );
+  try {
+    const holding = syntheticRequest(pool, "holding-tree");
+    await started;
+    const abandoned = syntheticRequest(pool, "waiting-tree");
+    await delay(0);
+    abandoned.res.destroy();
+    abandoned.res.emit("close");
+    await abandoned.done;
+    const retry = syntheticRequest(pool, "waiting-tree");
+    await delay(0);
+    finish();
+    await Promise.all([holding.done, retry.done]);
+    assert.equal(retry.res.statusCode, 200);
+    assert.deepEqual(opened, ["holding-tree", "waiting-tree"]);
+    assert.equal(pool.diagnostics().active, 0);
+  } finally {
+    finish();
+    await pool.close();
+  }
+});
+
+test("all revoked startup waiters close the created runtime once without publishing private data", async () => {
+  let finish!: () => void, began!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    began = resolve;
+  });
+  let allowed = true,
+    closed = 0,
+    handled = 0;
+  const pool = archiveRoutePool(
+    async () => allowed,
+    async () => {
+      began();
+      await gate;
+      return {
+        handle: async (_req, res) => {
+          handled++;
+          res.end();
+        },
+        close: async () => {
+          closed++;
+        },
+      };
+    },
+  );
+  try {
+    const request = syntheticRequest(pool, "revoked-tree");
+    await started;
+    allowed = false;
+    finish();
+    await request.done;
+    assert.equal(request.res.statusCode, 404);
+    assert.equal(closed, 1);
+    assert.equal(handled, 0);
+    assert.equal(pool.diagnostics().open, 0);
+    assert.equal(pool.diagnostics().opening, 0);
+  } finally {
+    finish();
+    await pool.close();
+  }
+  assert.equal(closed, 1);
+});
+
+test(
+  "an unrelated warm archive does not wait for another archive's cold factory",
+  { timeout: 5000 },
+  async () => {
+    let finish!: () => void, began!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      began = resolve;
+    });
+    let coldFinished = false;
+    const pool = archiveRoutePool(
+      async () => true,
+      async (id) => {
+        if (id === "cold-tree") {
+          began();
+          await gate;
+          coldFinished = true;
+        }
+        return {
+          handle: async (_req, res) => {
+            res.end();
+          },
+          close: async () => {},
+        };
+      },
+      { maxOpen: 2, startupConcurrency: 1 },
+    );
+    let cold: ReturnType<typeof syntheticRequest> | undefined;
+    try {
+      await syntheticRequest(pool, "warm-tree").done;
+      cold = syntheticRequest(pool, "cold-tree");
+      await started;
+      const warm = syntheticRequest(pool, "warm-tree");
+      await warm.done;
+      assert.equal(warm.res.statusCode, 200);
+      assert.equal(coldFinished, false);
+    } finally {
+      finish();
+      await cold?.done;
+      await pool.close();
+    }
+  },
+);

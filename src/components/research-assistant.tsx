@@ -1,4 +1,6 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
+import { chatPollDelay, mergeChatDelta } from "../domain/ai-chat-polling.ts";
+import type { AiChatResponse } from "../shared/ai-chat-history.ts";
 import { AttachmentLibrary } from "./research/attachment-library";
 import { ResearchPanelSurface } from "./research/research-panel-surface";
 import {
@@ -40,7 +42,7 @@ import {
 } from "lucide-react";
 import type { ResearchMessage } from "./research/markdown-answer";
 
-type Message = ResearchMessage;
+type Message = ResearchMessage & { id?: number; version?: number; hidden?: boolean; suggestionStatuses?: Record<string, "pending" | "accepted" | "rejected"> };
 type LauncherPosition = { left: number; top: number };
 const MarkdownAnswer = lazy(() => import("./research/markdown-answer"));
 type SuggestionValue = string | boolean | undefined;
@@ -330,6 +332,8 @@ export function ResearchAssistant({
     [chatMenuOpen, setChatMenuOpen] = useState(false),
     [chatSearch, setChatSearch] = useState(""),
     [chatLoading, setChatLoading] = useState(true),
+    [olderBusy, setOlderBusy] = useState(false),
+    [nextBefore, setNextBefore] = useState<number | null>(null),
     [serverBusyChats, setServerBusyChats] = useState<Record<string, boolean>>(
       {},
     ),
@@ -441,8 +445,19 @@ export function ResearchAssistant({
     };
   }, [chatMenuOpen]);
 
+  const chatCursors = useRef(new Map<string, number>());
+  const olderCursors = useRef(new Map<string, number | null>());
+  const restoringHistory = useRef(false);
+  const historyAnchor = useRef<{ element: HTMLElement; height: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const anchor = historyAnchor.current;
+    if (!anchor) return;
+    anchor.element.scrollTop = anchor.top + anchor.element.scrollHeight - anchor.height;
+    historyAnchor.current = null;
+  }, [messages]);
+  const historyLoaded = useRef(false);
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !open || historyLoaded.current) return;
     let active = true;
     const selection = chatSelection.current;
     void archiveFetch("/api/ai/chats", { credentials: "same-origin" })
@@ -453,16 +468,20 @@ export function ResearchAssistant({
       .then(async (data) => {
         if (!active) return;
         setChats(data.chats);
+        historyLoaded.current = true;
         const initialChat = data.chats.find((chat) => !chat.unavailable);
         if (initialChat) {
           const response = await archiveFetch(
             `/api/ai/chats/${initialChat.id}`,
           );
           if (!response.ok) return;
-          const detail = (await response.json()) as { messages: Message[] };
+          const detail = (await response.json()) as AiChatResponse<Message>;
           if (active && selection === chatSelection.current) {
             selectedChatKey.current = initialChat.id;
             chatMessages.current.set(initialChat.id, detail.messages);
+            chatCursors.current.set(initialChat.id, detail.latestVersion);
+            olderCursors.current.set(initialChat.id, detail.nextBefore);
+            setNextBefore(detail.nextBefore);
             setChatId(initialChat.id);
             setMessages(detail.messages);
           }
@@ -478,50 +497,55 @@ export function ResearchAssistant({
     return () => {
       active = false;
     };
-  }, [enabled]);
+  }, [enabled, open]);
 
   useEffect(() => {
     if (!open || !chatId) return;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    let wasBusy = false;
+    let controller: AbortController | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let active = true, inFlight = false, wasBusy = false, failures = 0, denied = false, more = false;
     const refresh = async () => {
+      if (!active || denied || document.visibilityState !== "visible" || inFlight) return;
+      inFlight = true;
       try {
-        if (!activeRequests.current.has(chatId)) {
-          const response = await archiveFetch(`/api/ai/chats/${chatId}`, {
+        if (!activeRequests.current.has(chatId) && (chatCursors.current.has(chatId) || !chatLoading)) {
+          const version = chatCursors.current.get(chatId) ?? 0;
+          controller = new AbortController();
+          const response = await archiveFetch(`/api/ai/chats/${chatId}?status=1&version=${version}`, {
             signal: controller.signal,
             cache: "no-store",
           });
+          if ([401, 403, 404].includes(response.status)) {
+            denied = true;
+            chatMessages.current.delete(chatId);
+            chatCursors.current.delete(chatId);
+            if (selectedChatKey.current === chatId) { setMessages([]); setError("Диалог больше недоступен."); }
+            return;
+          }
+          if (!response.ok) throw new Error("Не удалось проверить диалог");
           if (response.ok) {
-            const data = (await response.json()) as {
-              chat: { busy?: boolean };
-              messages: Message[];
-            };
+            const data = (await response.json()) as AiChatResponse<Message>;
             if (
-              controller.signal.aborted ||
+              !active || controller.signal.aborted ||
               selectedChatKey.current !== chatId ||
               activeRequests.current.has(chatId)
             )
               return;
             const running = data.chat?.busy === true;
+            failures = 0;
+            chatCursors.current.set(chatId, data.latestVersion);
+            more = data.hasMore === true;
             setServerBusyChats((current) =>
               current[chatId] === running
                 ? current
                 : { ...current, [chatId]: running },
             );
-            if (
-              running ||
-              wasBusy ||
-              data.messages.length >
-                (chatMessages.current.get(chatId)?.length || 0)
-            ) {
-              chatMessages.current.set(chatId, data.messages);
-              setMessages(data.messages);
-            }
+            const next = mergeChatDelta(chatMessages.current.get(chatId) || [], data.messages);
+            if (next !== chatMessages.current.get(chatId)) { chatMessages.current.set(chatId, next); setMessages(next); }
             if (
               !running &&
               wasBusy &&
-              data.messages.at(-1)?.role === "assistant"
+              next.at(-1)?.role === "assistant"
             ) {
               chatErrors.current.delete(chatId);
               setError("");
@@ -530,18 +554,28 @@ export function ResearchAssistant({
           }
         }
       } catch {
-        /* Keep the last known state during a temporary disconnect. */
+        if (!controller?.signal.aborted) failures++;
       } finally {
-        if (!controller.signal.aborted)
-          timer = setTimeout(() => void refresh(), 2000);
+        inFlight = false;
+        controller = null;
+        if (active && !denied && document.visibilityState === "visible")
+          timer = setTimeout(() => void refresh(), more && !failures ? 100 : chatPollDelay(wasBusy || activeRequests.current.has(chatId), failures));
       }
     };
+    const foreground = () => {
+      clearTimeout(timer);
+      if (document.visibilityState === "visible") void refresh();
+      else controller?.abort();
+    };
+    document.addEventListener("visibilitychange", foreground);
     void refresh();
     return () => {
-      controller.abort();
+      active = false;
+      controller?.abort();
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", foreground);
     };
-  }, [open, chatId]);
+  }, [open, chatId, chatLoading]);
 
   useEffect(() => {
     if (view !== "tree" || !enabled) return;
@@ -669,6 +703,7 @@ export function ResearchAssistant({
   }, [canEdit]);
 
   useEffect(() => {
+    if (restoringHistory.current) { restoringHistory.current = false; return; }
     if (open) end.current?.scrollIntoView({ block: "end" });
   }, [open, messages, busy, suggestions]);
 
@@ -757,6 +792,7 @@ export function ResearchAssistant({
       restoreDraft(selectedChatKey.current);
       chatMessages.current.set(selectedChatKey.current, []);
       setChatId("");
+      setNextBefore(null);
       setMessages([]);
       setError("");
       setChatLoading(false);
@@ -768,6 +804,7 @@ export function ResearchAssistant({
     selectedChatKey.current = id;
     restoreDraft(id);
     setChatId(id);
+    setNextBefore(olderCursors.current.get(id) ?? null);
     setChatLoading(true);
     const cached = chatMessages.current.get(id);
     setMessages(cached || []);
@@ -775,13 +812,16 @@ export function ResearchAssistant({
     try {
       const response = await archiveFetch(`/api/ai/chats/${id}`);
       if (!response.ok) throw new Error("Не удалось открыть диалог");
-      const data = (await response.json()) as { messages: Message[] };
+      const data = (await response.json()) as AiChatResponse<Message>;
       if (selection !== chatSelection.current) return;
       // A running response can finish while the history request is in flight.
       const latest = chatMessages.current.get(id);
-      const next =
-        latest && latest.length > data.messages.length ? latest : data.messages;
+      const next = mergeChatDelta(latest || [], data.messages, true);
       chatMessages.current.set(id, next);
+      // Cached pages retain their cursor so updates to older records are not lost.
+      if (!chatCursors.current.has(id)) chatCursors.current.set(id, data.latestVersion);
+      if (!olderCursors.current.has(id)) olderCursors.current.set(id, data.nextBefore);
+      setNextBefore(olderCursors.current.get(id) ?? null);
       setMessages(next);
       setError(chatErrors.current.get(id) || "");
       const actions = pendingUiActions.current.get(id);
@@ -799,6 +839,29 @@ export function ResearchAssistant({
     } finally {
       if (selection === chatSelection.current) setChatLoading(false);
     }
+  }
+
+  async function loadOlderMessages() {
+    if (!chatId || nextBefore === null || olderBusy) return;
+    const id = chatId, selection = chatSelection.current;
+    const scroller = panel.current?.querySelector<HTMLElement>(".research-assistant-messages");
+    const height = scroller?.scrollHeight ?? 0, top = scroller?.scrollTop ?? 0;
+    setOlderBusy(true);
+    try {
+      const response = await archiveFetch(`/api/ai/chats/${id}?before=${nextBefore}`);
+      if (!response.ok) throw new Error("Не удалось загрузить предыдущие сообщения");
+      const data = await response.json() as AiChatResponse<Message>;
+      if (selection !== chatSelection.current || selectedChatKey.current !== id) return;
+      restoringHistory.current = true;
+      if (scroller) historyAnchor.current = { element: scroller, height, top };
+      const next = mergeChatDelta(chatMessages.current.get(id) || [], data.messages, true);
+      chatMessages.current.set(id, next);
+      olderCursors.current.set(id, data.nextBefore);
+      setMessages(next);
+      setNextBefore(data.nextBefore);
+    } catch (cause) {
+      if (selection === chatSelection.current) setError(cause instanceof Error ? cause.message : "Не удалось загрузить историю");
+    } finally { setOlderBusy(false); }
   }
 
   async function clearDialog() {
@@ -1474,8 +1537,13 @@ export function ResearchAssistant({
                     </p>
                   </div>
                 )}
+                {nextBefore !== null && (
+                  <button type="button" className="text-button" disabled={olderBusy} onClick={() => void loadOlderMessages()}>
+                    {olderBusy ? "Загружаем историю…" : "Предыдущие сообщения"}
+                  </button>
+                )}
                 {messages.map((message, index) => (
-                  <div key={index}>
+                  <div key={message.id === undefined ? `pending-${index}` : `message-${message.id}`}>
                     {message.role === "assistant" &&
                       !!message.activities?.length && (
                         <details className="research-activity">
@@ -1555,6 +1623,12 @@ export function ResearchAssistant({
                         )}
                       {message.role === "assistant" &&
                         message.suggestionIds?.map((id) => {
+                          const status = message.suggestionStatuses?.[id];
+                          if (status === "accepted" || status === "rejected") return (
+                            <p className="research-suggestion-result" key={id}>
+                              {status === "accepted" ? "✓ Изменение применено" : "Предложение отклонено"}
+                            </p>
+                          );
                           const suggestion = suggestions.find(
                             (item) => item.id === id,
                           );

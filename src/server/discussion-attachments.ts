@@ -46,7 +46,9 @@ export type PreparedCommentFile = {
 export async function prepareCommentFile(
   name: string,
   bytes: Buffer,
+  signal?: AbortSignal,
 ): Promise<PreparedCommentFile> {
+  signal?.throwIfAborted();
   if (
     !validCommentFileName(name) ||
     !bytes.length ||
@@ -61,7 +63,9 @@ export async function prepareCommentFile(
       const extension = imageExtension(bytes);
       if (type !== `image/${extension === "jpg" ? "jpeg" : extension}`)
         throw new Error("format");
-      const image = sharp(bytes, { limitInputPixels: 40_000_000 });
+      const image = sharp(bytes, { limitInputPixels: 40_000_000 }).timeout({
+        seconds: 25,
+      });
       const metadata = await image.metadata();
       if (metadata.format !== (type === "image/jpeg" ? "jpeg" : type.slice(6)))
         throw new Error("format");
@@ -96,10 +100,14 @@ export async function prepareCommentFile(
       throw new RangeError("Текстовые файлы должны быть в кодировке UTF-8.");
     }
   }
+  signal?.throwIfAborted();
   return { name, type, bytes, preview };
 }
 
-export async function prepareCommentAttachments(input: unknown) {
+export async function prepareCommentAttachments(
+  input: unknown,
+  signal?: AbortSignal,
+) {
   if (input === undefined) return null;
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new RangeError("Некорректные вложения.");
@@ -115,6 +123,7 @@ export async function prepareCommentAttachments(input: unknown) {
   let total = 0;
   const prepared: PreparedCommentFile[] = [];
   for (const file of files) {
+    signal?.throwIfAborted();
     if (
       !file ||
       typeof file.name !== "string" ||
@@ -130,7 +139,7 @@ export async function prepareCommentAttachments(input: unknown) {
       total > MAX_COMMENT_FILES_BYTES
     )
       throw new RangeError("Общий размер вложений — не больше 20 МБ.");
-    prepared.push(await prepareCommentFile(file.name, bytes));
+    prepared.push(await prepareCommentFile(file.name, bytes, signal));
   }
   return { keep: keep as string[], files: prepared };
 }
@@ -190,8 +199,12 @@ export function discussionAttachmentStore(uploads: string) {
         throw error;
       }
     },
-    async read(file: CommentAttachmentFile, preview: boolean) {
-      const bytes = await readFile(path(file.id, preview));
+    async read(
+      file: CommentAttachmentFile,
+      preview: boolean,
+      signal?: AbortSignal,
+    ) {
+      const bytes = await readFile(path(file.id, preview), { signal });
       if (
         bytes.length > MAX_COMMENT_FILE_BYTES ||
         (!preview && bytes.length !== file.size)

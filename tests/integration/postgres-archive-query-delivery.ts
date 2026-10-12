@@ -68,6 +68,9 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
     kind: "postgres",
     archiveId: "tree-a",
     inTransaction: () => inTransaction,
+    // This raw-client fixture tests delivery revocation, not retained caches.
+    // It does not expose the runtime's read-only cache capability.
+    canReuseGraphCache: () => false,
     prepare(_sqlite: string, postgres: string) {
       const sql = postgresBindings(postgres);
       return {

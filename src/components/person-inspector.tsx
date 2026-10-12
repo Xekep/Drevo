@@ -47,6 +47,7 @@ export function PersonInspector({
   onRetryDetails,
   loadPersonDetails,
   hasPersonDetails,
+  personPhotoTotal,
   readOnlyPreview = false,
   readPhotos,
   onSelect,
@@ -70,6 +71,7 @@ export function PersonInspector({
   onRetryDetails?: () => void;
   loadPersonDetails?: (id: string) => Promise<void>;
   hasPersonDetails?: (id: string) => boolean;
+  personPhotoTotal?: (id: string) => number | undefined;
   readOnlyPreview?: boolean;
   readPhotos: boolean;
   onSelect: (id: string) => void;
@@ -178,6 +180,7 @@ export function PersonInspector({
               person={person}
               loadPersonDetails={loadPersonDetails}
               hasPersonDetails={hasPersonDetails}
+              personPhotoTotal={personPhotoTotal}
               family={family}
               readPhotos={readPhotos}
               onClose={(id) => {
@@ -288,7 +291,7 @@ export function PersonInspector({
       />}
       {readPhotos && !detailsLoading && (
         <section className="person-photos">
-          <PersonPhotoAlbum photos={photos} onOpen={() => onAlbum(person.id)} />
+          <PersonPhotoAlbum photos={photos} total={personPhotoTotal?.(person.id)} onOpen={() => onAlbum(person.id)} />
         </section>
       )}
     </>

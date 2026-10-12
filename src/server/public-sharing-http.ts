@@ -3,7 +3,7 @@ import { open as openFile } from "node:fs/promises";
 import { finished, pipeline } from "node:stream/promises";
 import type { openArchive } from "./database.ts";
 import type { mediaStore } from "./media.ts";
-import type { imagePreviews } from "./image-previews.ts";
+import { ImagePreviewBusyError, type ImagePreview } from "./image-previews.ts";
 import type { sharesStore } from "./shares.ts";
 import { sharedFamily } from "../domain/shared-family.ts";
 import { DEFAULT_TREE_PREFERENCES } from "../domain/tree-preferences.ts";
@@ -17,7 +17,7 @@ export function publicSharingHttp({
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   media: ReturnType<typeof mediaStore>;
-  previewImage: ReturnType<typeof imagePreviews>;
+  previewImage: ImagePreview;
   shares: ReturnType<typeof sharesStore>;
   beforeDelivery?: () => Promise<void>;
 }) {
@@ -91,7 +91,11 @@ export function publicSharingHttp({
           });
           res.end(bytes);
           return true;
-        } catch {
+        } catch (error) {
+          if (error instanceof ImagePreviewBusyError) {
+            res.setHeader("Retry-After", "2");
+            return json(503, { error: error.message });
+          }
           /* Если превью не удалось получить, потоково отдаём исходный файл. */
         }
       }

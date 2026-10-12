@@ -109,6 +109,16 @@ test("demand detail HTTP reads indexed IDs and tagged photos within the current 
   });
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/family`;
   const token = "1:1:1:reader:child:common_ancestors";
+  const timelineResponse = await fetch(base + "?" + new URLSearchParams({ projection: "timeline", token }));
+  assert.equal(timelineResponse.status, 200);
+  const timeline = await timelineResponse.json();
+  assert.deepEqual(timeline.people.map((item: { id: string }) => item.id), ["parent", "child"]);
+  assert.ok(timeline.people.every((item: object) => !("biography" in item) && !("sources" in item)));
+  const warningRequest = (ids: string[]) => fetch(base + "?" + new URLSearchParams({ projection: "export-warnings", token }), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
+  const warnings = await warningRequest(["parent", "child"]);
+  assert.equal(warnings.status, 200);
+  assert.deepEqual((await warnings.json()).warnings, { parentEvidence: false, catalogLinks: false });
+  assert.equal((await warningRequest(["hidden"])).status, 404, "export checks cannot probe hidden people");
   const query = (ids: string[], pageToken = token, offset = 0) =>
     base +
     "?" +
@@ -122,6 +132,13 @@ test("demand detail HTTP reads indexed IDs and tagged photos within the current 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Cache-Control"), "no-store");
   const data = await response.json();
+  assert.equal(data.personPhotoTotals, undefined, "the explicitly paged album endpoint does not compute per-person preview totals");
+  const previewResponse = await fetch(query(["child"]) + "&preview=1");
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json();
+  assert.deepEqual(preview.personPhotoTotals, { child: 1 });
+  assert.equal(preview.photos.length, 1);
+  assert.deepEqual(preview.photos[0].tags.map((tag: { personId: string }) => tag.personId), ["child"]);
   const galleryResponse = await fetch(
     base +
       "?" +

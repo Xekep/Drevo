@@ -9,7 +9,7 @@ import { isArchiveOwner } from "../domain/access.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { hydrateArchive } from "./archive-hydration.ts";
 import { authorizeArchive } from "./permissions.ts";
-import { readPostgresArchiveInTransaction } from "./postgres-archive-read.ts";
+import { readPostgresGraphForWrite } from "./postgres-graph-read.ts";
 import { ForbiddenError } from "./users.ts";
 import {
   withPostgresArchiveWrite,
@@ -101,8 +101,8 @@ async function readPatchNeighborhood(
 }
 
 /**
- * Owns the transaction on an exclusively checked-out connection; not wired to
- * HTTP yet. READ COMMITTED re-reads facts and rights after waiting for a writer.
+ * Owns the transaction on an exclusively checked-out connection.
+ * READ COMMITTED re-reads facts and rights after waiting for a writer.
  * Lock order: archive revision -> session -> membership. All future archive
  * writers/audit appenders must use the same archive lock before changing rows.
  */
@@ -123,7 +123,8 @@ export async function patchPostgresPeopleForSession(
       // Scoped edits retain the complete visibility checks. Ordinary edits only
       // load the cards and their incident relations, not every photo in a tree.
       const before = isScopedUser(actor)
-        ? (await readPostgresArchiveInTransaction(client, archiveId)).family
+        ? (await readPostgresGraphForWrite(client, archiveId, new Set(ids)))
+            .family
         : await readPatchNeighborhood(client, archiveId, ids);
       const people = new Map(
         before.people.map((person) => [person.id, person]),

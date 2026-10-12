@@ -101,7 +101,7 @@ test("oversized streamed media is rejected and leaves no temporary file", async 
 test("upload HTTP handler does not collect the whole request in memory", () => {
   const source = readFileSync("src/server/media-upload-http.ts", "utf8");
   assert.doesNotMatch(source, /const chunks|Buffer\.concat/);
-  assert.match(source, /media\.addStream\s*\(req, MAX_UPLOAD\)/);
+  assert.match(source, /media\.addStream\s*\(\s*req\s*,\s*MAX_UPLOAD\s*,\s*signal\s*\)/);
 });
 
 test("media store does not expose whole-file synchronous I/O", () => {

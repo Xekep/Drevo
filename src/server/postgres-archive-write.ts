@@ -33,7 +33,9 @@ export async function withPostgresArchiveWrite<T>(
   try {
     await client.query("SET LOCAL lock_timeout = '5s'");
     await client.query("SET LOCAL statement_timeout = '15s'");
-    await client.query("SELECT set_config('drevo.parent_evidence_write','on',true)");
+    await client.query(
+      "SELECT set_config('drevo.parent_evidence_write','on',true)",
+    );
     const preliminary = await postgresAccessReader(
       client,
       archiveId,
@@ -50,7 +52,8 @@ export async function withPostgresArchiveWrite<T>(
       "SELECT id FROM accounts WHERE id=$1 FOR SHARE NOWAIT",
       [preliminary.id],
     );
-    if (!account.rowCount) throw new ForbiddenError("Аккаунт больше не доступен");
+    if (!account.rowCount)
+      throw new ForbiddenError("Аккаунт больше не доступен");
     const session = (
       await client.query(
         "SELECT user_id,expires_at FROM account_sessions WHERE token_hash=$1 FOR SHARE",
@@ -78,11 +81,19 @@ export async function withPostgresArchiveWrite<T>(
     if (!canEdit(actor) || Number(session.expires_at) <= Date.now())
       throw new ForbiddenError("Нет доступа к редактированию архива");
     const [admin, researcher] = [
-      await client.query("SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT", [actor.id]),
-      await client.query("SELECT account_id FROM platform_researchers WHERE account_id=$1 FOR SHARE NOWAIT", [actor.id]),
+      await client.query(
+        "SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT",
+        [actor.id],
+      ),
+      await client.query(
+        "SELECT account_id FROM platform_researchers WHERE account_id=$1 FOR SHARE NOWAIT",
+        [actor.id],
+      ),
     ];
-    if ((admin.rowCount ? "admin" : researcher.rowCount ? "researcher" : null) !==
-        (actor.globalRole ?? null))
+    if (
+      (admin.rowCount ? "admin" : researcher.rowCount ? "researcher" : null) !==
+      (actor.globalRole ?? null)
+    )
       throw new ForbiddenError("Глобальная роль изменилась");
     if (expectedRevision > revision)
       throw new ConflictError("Некорректная версия архива");
@@ -103,7 +114,7 @@ export async function rememberPostgresArchiveChange(
   after: Family,
   actor: ArchiveUser,
   revision: number,
-  history: "snapshot" | "person-patches",
+  history: "snapshot" | "person-patches" | "patches",
 ) {
   const appliedChanges = archiveChanges(before, after);
   if (!appliedChanges.length)
@@ -119,7 +130,7 @@ export async function rememberPostgresArchiveChange(
         history === "snapshot"
           ? before
           : {
-              format: "drevo-person-patches-v1",
+              format: "drevo-archive-changes-v1",
               changes: inverseChanges(appliedChanges),
             },
       ),

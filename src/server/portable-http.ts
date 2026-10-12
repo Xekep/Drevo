@@ -5,6 +5,12 @@ import { ForbiddenError } from "./users.ts";
 import { isArchiveOwner } from "../domain/access.ts";
 import { parseCatalogSource } from "../shared/source-catalog.ts";
 import {
+  preparationAdmission,
+  withPreparation,
+  PREPARATION_BYTES,
+  type PreparationAdmission,
+} from "./preparation-admission.ts";
+import {
   writePortablePackage,
   PortablePackageError,
   PORTABLE_CATALOG_FIELDS,
@@ -19,9 +25,11 @@ export function portableExportHttp(
   auth: Awaited<ReturnType<typeof createAuth>>,
   uploads: string,
   beforeSend?: () => Promise<void>,
+  preparation?: PreparationAdmission,
 ) {
   const db = archive.db;
   let exporting = false;
+  const budget = preparation ?? preparationAdmission();
   const owner =
     db.kind === "postgres"
       ? db.prepare("", "SELECT 1 FROM archive_owners WHERE user_id=?")
@@ -87,19 +95,34 @@ export function portableExportHttp(
         createdMs: Number(row.created_ms),
         ...(row.updated_ms == null ? {} : { editedMs: Number(row.updated_ms) }),
         text: String(row.text),
-        attachments: typeof row.attachments === "string" ? JSON.parse(row.attachments) : row.attachments as PortableComment["attachments"],
+        attachments:
+          typeof row.attachments === "string"
+            ? JSON.parse(row.attachments)
+            : (row.attachments as PortableComment["attachments"]),
       }));
-      const sources = (await db.prepare(
-        "SELECT data FROM source_catalog ORDER BY id",
-        "SELECT data FROM source_catalog ORDER BY id",
-      ).all()).map((row) => {
+      const sources = (
+        await db
+          .prepare(
+            "SELECT data FROM source_catalog ORDER BY id",
+            "SELECT data FROM source_catalog ORDER BY id",
+          )
+          .all()
+      ).map((row) => {
         const raw = JSON.parse(String(row.data));
-        if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
-          !hasOnlyPortableFields(raw, PORTABLE_CATALOG_FIELDS))
-          throw new PortablePackageError("Каталог содержит неподдерживаемые поля источника; экспорт остановлен");
+        if (
+          !raw ||
+          typeof raw !== "object" ||
+          Array.isArray(raw) ||
+          !hasOnlyPortableFields(raw, PORTABLE_CATALOG_FIELDS)
+        )
+          throw new PortablePackageError(
+            "Каталог содержит неподдерживаемые поля источника; экспорт остановлен",
+          );
         const source = parseCatalogSource(raw);
         if (!source)
-          throw new PortablePackageError("Повреждён источник в каталоге; экспорт остановлен");
+          throw new PortablePackageError(
+            "Повреждён источник в каталоге; экспорт остановлен",
+          );
         return source;
       });
       return { family, documents, comments, sources };
@@ -121,15 +144,18 @@ export function portableExportHttp(
       return json(
         (await auth.currentUser(req)) ? 403 : 401,
         "Экспорт доступен владельцу древа",
-    );
+      );
     if (exporting) return json(429, "Другой экспорт уже выполняется");
-    const performExport = async () => {
+    const performExport = async (preparationSignal: AbortSignal) => {
       exporting = true;
       const controller = new AbortController();
       const onClose = () => controller.abort();
       res.once("close", onClose);
+      const signal = AbortSignal.any([controller.signal, preparationSignal]);
       try {
+        signal.throwIfAborted();
         const data = await snapshot();
+        signal.throwIfAborted();
         await writePortablePackage(
           res,
           uploads,
@@ -145,7 +171,7 @@ export function portableExportHttp(
               "X-Content-Type-Options": "nosniff",
             });
           },
-          controller.signal,
+          signal,
         );
         return true;
       } catch (error) {
@@ -164,12 +190,22 @@ export function portableExportHttp(
         exporting = false;
       }
     };
-    if (!db.withExclusiveArchiveTask) return await performExport();
-    const task = await db.withExclusiveArchiveTask(
-      "portable-export", performExport,
+    // Admission precedes the task lock/connection and full snapshot allocation.
+    return await withPreparation(
+      req,
+      res,
+      budget,
+      PREPARATION_BYTES.export,
+      async (signal) => {
+        signal.throwIfAborted();
+        if (!db.withExclusiveArchiveTask) return await performExport(signal);
+        const task = await db.withExclusiveArchiveTask("portable-export", () =>
+          performExport(signal),
+        );
+        return task.acquired
+          ? task.value
+          : json(429, "Другой экспорт уже выполняется");
+      },
     );
-    return task.acquired
-      ? task.value
-      : json(429, "Другой экспорт уже выполняется");
   };
 }

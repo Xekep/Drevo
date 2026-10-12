@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { UploadQuotaError } from "./upload-quota-error.ts";
 import { enforceUserStorageLimit } from "./storage-limits.ts";
 import { PLATFORM_DISK_LOCK } from "./platform-disk-reservation.ts";
+import type { MediaUsageLedger } from "./media-usage-ledger.ts";
+import { waitForPreparation } from "./preparation-admission.ts";
 export { UploadQuotaError } from "./upload-quota-error.ts";
 
 const RESERVATION_MS = 10 * 60_000;
@@ -20,6 +22,17 @@ export function uploadQuota(
     reservationMs = RESERVATION_MS,
     renewEveryMs = 0,
     now = Date.now,
+    mediaUsage,
+  }: {
+    bytes?: number;
+    files?: number;
+    requestsPerHour?: number;
+    concurrent?: number;
+    freeReserve?: number;
+    reservationMs?: number;
+    renewEveryMs?: number;
+    now?: () => number;
+    mediaUsage?: MediaUsageLedger;
   } = {},
 ) {
   if (renewEveryMs && (renewEveryMs < 1 || renewEveryMs >= reservationMs))
@@ -31,12 +44,20 @@ export function uploadQuota(
       freeBytes: number | (() => Promise<number>),
       images:
         | { files: number; bytes: number }
-        | (() => Promise<{ files: number; bytes: number }>) =
-        { files: 0, bytes: 0 },
+        | (() => Promise<{ files: number; bytes: number }>) = {
+        files: 0,
+        bytes: 0,
+      },
+      signal?: AbortSignal,
     ) {
+      // Reconciliation may touch many files; never do it in the quota transaction.
+      signal?.throwIfAborted();
+      if (mediaUsage) await waitForPreparation(mediaUsage.ensure(), signal);
+      signal?.throwIfAborted();
       const time = now(),
         id = randomUUID();
       await db.transaction(async () => {
+        signal?.throwIfAborted();
         await db
           .prepare(
             "DELETE FROM document_upload_requests WHERE started_ms<? AND (reserved_bytes=0 OR expires_ms<?)",
@@ -76,13 +97,13 @@ export function uploadQuota(
               coalesce((SELECT sum(file_size) FROM documents),0)+coalesce((SELECT sum((f->>'size')::bigint) FROM person_comments c,jsonb_array_elements(c.attachments) f),0) AS bytes`,
           )
           .get())!;
-        // The file scan and the free-space check must observe the state after
-        // acquiring the shared lock. A scan taken while waiting for another
-        // process could miss originals that it has just finished uploading.
+        // Read authoritative usage and free space after taking the shared lock.
+        // Production passes a ledger; no filesystem scan runs under this lock.
         if (db.kind === "postgres") {
           await db
             .prepare("", "SELECT pg_advisory_xact_lock(?)")
             .get(PLATFORM_DISK_LOCK);
+          signal?.throwIfAborted();
           await db
             .prepare(
               "",
@@ -90,8 +111,11 @@ export function uploadQuota(
             )
             .run(time);
         }
-        const currentImages =
-          typeof images === "function" ? await images() : images;
+        const currentImages = mediaUsage
+          ? await mediaUsage.read()
+          : typeof images === "function"
+            ? await images()
+            : images;
         const currentFreeBytes =
           typeof freeBytes === "function" ? await freeBytes() : freeBytes;
         const platformPending =
@@ -121,6 +145,7 @@ export function uploadQuota(
             507,
           );
         await enforceUserStorageLimit(db, userId, maximumBytes, true, time);
+        signal?.throwIfAborted();
         await db
           .prepare(
             "INSERT INTO document_upload_requests(id,user_id,started_ms,expires_ms,reserved_bytes) VALUES(?,?,?,?,?)",
@@ -134,6 +159,7 @@ export function uploadQuota(
               "INSERT INTO platform_upload_reservations(id,reserved_bytes,expires_ms) VALUES(?,?,?)",
             )
             .run(id, maximumBytes, time + reservationMs);
+        signal?.throwIfAborted();
       });
       let renewing: Promise<void> | undefined;
       let stopped = false;
@@ -199,14 +225,15 @@ export function uploadQuota(
               "SELECT 1 AS valid FROM document_upload_requests WHERE id=? AND reserved_bytes>0 AND expires_ms>?",
             )
             .get(id, time);
-          const shared = db.kind === "postgres"
-            ? await db
-                .prepare(
-                  "",
-                  "SELECT 1 AS valid FROM platform_upload_reservations WHERE id=? AND expires_ms>?",
-                )
-                .get(id, time)
-            : { valid: 1 };
+          const shared =
+            db.kind === "postgres"
+              ? await db
+                  .prepare(
+                    "",
+                    "SELECT 1 AS valid FROM platform_upload_reservations WHERE id=? AND expires_ms>?",
+                  )
+                  .get(id, time)
+              : { valid: 1 };
           if (!local || !shared)
             throw new UploadQuotaError(
               "Резерв места истёк. Повторите импорт.",

@@ -1,4 +1,5 @@
 import pg from "pg";
+import { runtimeSchemaCoordinator } from "./postgres-runtime-schema.ts";
 import { workQueue, WorkQueueBusyError } from "./work-queue.ts";
 
 /** One owner per backend. Archive views borrow connections, never own the pool. */
@@ -39,6 +40,7 @@ export function postgresConnections(
   const transactions = workQueue(max - taskLimit - 1, 256, 5000);
   return {
     pool,
+    schema: runtimeSchemaCoordinator(),
     reserveTransaction: () => transactions.acquire(),
     async connect(archiveId: string) {
       const client = await pool.connect().catch((error: unknown) => {
@@ -86,7 +88,7 @@ export function postgresConnections(
           const timer = setTimeout(() => {
             const index = waiters.indexOf(grant);
             if (index >= 0) waiters.splice(index, 1);
-            reject(new Error("Background task connection budget is busy"));
+            reject(new WorkQueueBusyError());
           }, 5000);
           waiters.push(grant);
         });

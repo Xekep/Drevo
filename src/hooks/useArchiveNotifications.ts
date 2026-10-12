@@ -10,7 +10,7 @@ import {
   combineNotificationPages,
   notificationArrival,
 } from "../domain/notification-arrivals.ts";
-import type { ArchiveNotificationsPage } from "../shared/archive-notifications.ts";
+import type { ArchiveNotificationsPage, ArchiveNotificationsSummary, ArchiveNotificationsSlice } from "../shared/archive-notifications.ts";
 
 type Runtime = {
   scope: string;
@@ -110,6 +110,7 @@ export function useArchiveNotifications({
       body?: { id: number } | { through: number },
       deadline = Date.now() + 10_000,
       receipt = false,
+      headOnly = false,
     ) => {
       if (!state.active || deadline <= Date.now())
         throw new Error("Уведомления не ответили вовремя. Повторите запрос.");
@@ -121,7 +122,7 @@ export function useArchiveNotifications({
       );
       try {
         const response = await archiveFetch(
-          `${resource}${before ? `?before=${before}` : ""}`,
+          `${resource}${before ? `?before=${before}&summary=0` : headOnly ? "?head=1" : ""}`,
           {
             cache: "no-store",
             signal: controller.signal,
@@ -151,7 +152,12 @@ export function useArchiveNotifications({
               ? "Не удалось отметить уведомления"
               : "Не удалось загрузить уведомления",
           );
-        const page = (await response.json()) as ArchiveNotificationsPage;
+        const wire = (await response.json()) as ArchiveNotificationsPage | ArchiveNotificationsSummary | ArchiveNotificationsSlice;
+        const page: ArchiveNotificationsPage = headOnly
+          ? { ...wire as ArchiveNotificationsSummary, items: [], next: null }
+          : before && !body
+            ? { unread: state.page?.unread ?? 0, latest: state.page?.latest ?? 0, ...wire as ArchiveNotificationsSlice }
+            : wire as ArchiveNotificationsPage;
         if (state.stopped)
           throw new Error("Доступ к уведомлениям завершён. Войдите снова.");
         if (controller.signal.aborted)
@@ -179,7 +185,7 @@ export function useArchiveNotifications({
       const deadline = Date.now() + 10_000;
       const floor = openState.current ? (state.page?.items.at(-1)?.id ?? 0) : 0;
       const pages = [
-        head ?? (await request(state, undefined, undefined, deadline)),
+        head ?? (await request(state, undefined, undefined, deadline, false, !openState.current)),
       ];
       const visited = new Set<number>();
       // Revalidate the loaded range instead of keeping old tail records after a

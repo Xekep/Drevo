@@ -18,8 +18,12 @@ export type PlacesProjection = {
 export type GalleryQuery = {
   mode: "all" | "people" | "years";
   personId?: string | null;
+  /** Internal, already-authorized profile preview; not an unvalidated URL filter. */
+  personIds?: readonly string[];
   year?: string | null;
   offset?: number;
+  /** A client already holding this revision/query index requests only the page. */
+  includeIndex?: boolean;
 };
 export type GalleryPage = {
   albums: { id: string; label: string; count: number; cover: string }[];
@@ -28,19 +32,27 @@ export type GalleryPage = {
   total: number;
   album?: { label: string; count: number };
 };
+export type GalleryWirePage = Omit<GalleryPage, "photoIds"> & { photoIds?: string[] };
 export const galleryPageSize = 30;
 /** Call only on an already authorized, revision-bound snapshot. */
-export function galleryProjection(
+export type GalleryProjectionIndex = {
+  albums: ReturnType<typeof photoAlbums>;
+  photos: ArchivePhoto[];
+  browsingAlbums: boolean;
+  album?: { label: string; count: number };
+};
+export function galleryProjectionIndex(
   family: Family,
   query: GalleryQuery,
-): GalleryPage {
+): GalleryProjectionIndex {
   const names = new Set(family.people.map((p) => p.id));
   const available = (family.photos || []).filter(
     (photo) =>
+      (!query.personIds || photo.tags.some(tag => query.personIds!.includes(tag.personId))) && (
       !query.personId ||
       (query.personId === "unknown"
         ? !photo.tags.some((tag) => names.has(tag.personId))
-        : photo.tags.some((tag) => tag.personId === query.personId)),
+        : photo.tags.some((tag) => tag.personId === query.personId))),
   );
   const albums =
     query.mode === "all" && !query.year
@@ -55,10 +67,13 @@ export function galleryProjection(
     : undefined;
   // An empty/missing year is an empty album, never silently the whole archive.
   const photos = query.year ? album?.photos || [] : newestPhotos(available);
+  return { albums, photos, browsingAlbums: query.mode !== "all" && !query.year, ...(album ? { album: { label: album.label, count: photos.length } } : {}) };
+}
+export function galleryIndexPage(index: GalleryProjectionIndex, query: GalleryQuery): GalleryWirePage {
   const offset = query.offset || 0;
-  if (query.mode !== "all" && !query.year)
+  if (index.browsingAlbums)
     return {
-      albums: albums
+      albums: index.albums
         .slice(offset, offset + galleryPageSize)
         .map((item) => ({
           id: item.id,
@@ -68,13 +83,16 @@ export function galleryProjection(
         })),
       photos: [],
       photoIds: [],
-      total: albums.length,
+      total: index.albums.length,
     };
   return {
     albums: [],
-    photos: photos.slice(offset, offset + galleryPageSize),
-    photoIds: photos.map((photo) => photo.id),
-    total: photos.length,
-    ...(album ? { album: { label: album.label, count: photos.length } } : {}),
+    photos: index.photos.slice(offset, offset + galleryPageSize),
+    ...(query.includeIndex === false ? {} : { photoIds: index.photos.map((photo) => photo.id) }),
+    total: index.photos.length,
+    ...(index.album ? { album: index.album } : {}),
   };
+}
+export function galleryProjection(family: Family, query: GalleryQuery): GalleryWirePage {
+  return galleryIndexPage(galleryProjectionIndex(family, query), query);
 }

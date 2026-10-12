@@ -10,6 +10,8 @@ import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
 import type { ArchiveUser } from "../domain/access.ts";
+import { scopedArchiveReader } from "./scoped-archive-reader.ts";
+import { isScopedUser } from "../domain/tree-access.ts";
 
 export function researchSuggestionsHttp({
   archive,
@@ -22,6 +24,7 @@ export function researchSuggestionsHttp({
   suggestions: ReturnType<typeof researchSuggestionStore>;
   publicOrigin?: string;
 }) {
+  const scopedIds = scopedArchiveReader(archive);
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -79,13 +82,16 @@ export function researchSuggestionsHttp({
       return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
 
     if (url.pathname === "/api/research/suggestions" && req.method === "GET") {
-      const people = new Map(
-        (await archive.read()).family.people.map((person) => [
-          person.id,
-          person,
-        ]),
-      );
-      const listed = (await suggestions.list(actor)).map((suggestion) => ({
+      const revision = Number((await archive.db.prepare("SELECT revision FROM archive WHERE id=1", "SELECT revision FROM archives WHERE id=current_setting('drevo.archive_id',true)").get())?.revision);
+      const pending = await suggestions.list(actor);
+      const referenced = new Set(pending.flatMap(suggestion => suggestion.kind === "relation" ? [suggestion.personId, suggestion.payload.fromPersonId, suggestion.payload.toPersonId] : [suggestion.personId]));
+      const visible = isScopedUser(actor) ? await scopedIds(actor) : null;
+      const allowed = [...referenced].filter(id => !visible || visible.has(id));
+      const people = new Map((await archive.db.prepare(
+        "SELECT id,json_extract(data,'$.name') AS name,json_extract(data,'$.surname') AS surname,json_extract(data,'$.patronymic') AS patronymic FROM people WHERE id IN (SELECT value FROM json_each(?))",
+        "SELECT id,data->>'name' AS name,data->>'surname' AS surname,data->>'patronymic' AS patronymic FROM people WHERE id IN (SELECT jsonb_array_elements_text(?::jsonb))",
+      ).all(JSON.stringify(allowed))).map(row => [String(row.id), { name: String(row.name || ""), surname: String(row.surname || ""), patronymic: String(row.patronymic || "") }]));
+      const listed = pending.filter(suggestion => suggestion.kind === "person_create" || !visible || (visible.has(suggestion.personId) && (suggestion.kind !== "relation" || (visible.has(suggestion.payload.fromPersonId) && visible.has(suggestion.payload.toPersonId))))).map((suggestion) => ({
         ...suggestion,
         personName:
           suggestion.kind === "person_create"
@@ -109,9 +115,11 @@ export function researchSuggestionsHttp({
       // the locks only through the final response, not through the list read.
       const delivered = await archive.db.transaction(async () => {
         if (!(await lockedCurrentAiActor(req, actor))) return false;
+        const currentRevision = Number((await archive.db.prepare("SELECT revision FROM archive WHERE id=1", "SELECT revision FROM archives WHERE id=current_setting('drevo.archive_id',true)").get())?.revision);
+        if (currentRevision !== revision) return false;
         json(res, 200, { suggestions: listed });
         return true;
-      });
+      }, false, { archiveLock: "share", graphReadOnly: true });
       if (!delivered)
         return json(res, 403, { error: "Доступ к предложениям изменился" });
       return true;

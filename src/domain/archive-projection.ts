@@ -1,7 +1,8 @@
 import type { Family, Person } from "./types.ts";
 export type PersonDetails = Pick<
   Person,
-  "id" | "sources" | "biography" | "occupation" | "occupationClaim" | "maidenNameClaim" | "awards" | "events"
+  "id" | "sources" | "biography" | "occupation" | "occupationClaim" | "maidenNameClaim" | "awards" | "events" |
+  "birthDateClaim" | "deathDateClaim" | "birthPlaceClaim" | "deathPlaceClaim" | "factAlternatives" | "parentClaims"
 >;
 export function personDetails(person: PersonDetails): PersonDetails {
   const details: PersonDetails = { id: person.id, sources: person.sources };
@@ -11,6 +12,8 @@ export function personDetails(person: PersonDetails): PersonDetails {
   if (person.maidenNameClaim !== undefined) details.maidenNameClaim = person.maidenNameClaim;
   if (person.awards !== undefined) details.awards = person.awards;
   if (person.events !== undefined) details.events = person.events;
+  for (const field of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim", "factAlternatives", "parentClaims"] as const)
+    if (person[field] !== undefined) Object.assign(details, { [field]: person[field] });
   return details;
 }
 /** Скелет содержит весь граф для общей раскладки, но не тяжёлые сведения карточек. */

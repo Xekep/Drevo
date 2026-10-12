@@ -64,14 +64,19 @@ export async function accountMembershipsStillOverExportLimit(
   client: PoolClient,
   accountId: string,
 ) {
-  const result = await client.query(`SELECT count(*)::integer AS total,
+  const result = await client.query(
+    `SELECT count(*)::integer AS total,
       COALESCE(sum(octet_length(m.archive_id)+octet_length(a.title)
         +octet_length(m.role)+octet_length(m.tree_access)
         +COALESCE(octet_length(m.person_id),0)+512),0) AS bytes
     FROM archive_memberships m JOIN archives a ON a.id=m.archive_id
-    WHERE m.user_id=$1`, [accountId]);
-  return Number(result.rows[0]?.total) > MAX_EXPORTED_ARCHIVES ||
-    Number(result.rows[0]?.bytes) > MAX_EXPORTED_METADATA_RAW_BYTES;
+    WHERE m.user_id=$1`,
+    [accountId],
+  );
+  return (
+    Number(result.rows[0]?.total) > MAX_EXPORTED_ARCHIVES ||
+    Number(result.rows[0]?.bytes) > MAX_EXPORTED_METADATA_RAW_BYTES
+  );
 }
 
 function scopesStillVisible(
@@ -81,19 +86,31 @@ function scopesStillVisible(
   const current = new Map(rows.map((row) => [String(row.archive_id), row]));
   return scopes.every((scope) => {
     const row = current.get(scope.archiveId);
-    return row?.approved === scope.approved && row.role === scope.role &&
+    return (
+      row?.approved === scope.approved &&
+      row.role === scope.role &&
       row.tree_access === scope.treeAccess &&
-      (row.person_id == null ? null : String(row.person_id)) === scope.personId &&
-      Number(row.revision) === scope.revision && row.owned === scope.owned;
+      (row.person_id == null ? null : String(row.person_id)) ===
+        scope.personId &&
+      Number(row.revision) === scope.revision &&
+      row.owned === scope.owned
+    );
   });
 }
 
 /** A consistent snapshot of the account's own profile and archive access. */
 export function accountDataExport(db: StoreDatabase) {
   return {
-    async read(accountId: string, includeAiChats = true, includeAiAttachments = false) {
+    async read(
+      accountId: string,
+      includeAiChats = true,
+      includeAiAttachments = false,
+      signal?: AbortSignal,
+    ) {
+      signal?.throwIfAborted();
       if (db.kind !== "postgres") return null;
       return await db.transaction(async () => {
+        signal?.throwIfAborted();
         const profile = await db
           .prepare(
             "",
@@ -115,7 +132,11 @@ export function accountDataExport(db: StoreDatabase) {
         // Metadata is small in normal accounts, but neither identities nor
         // memberships have a lifetime count limit. Reject an oversized JSON
         // without reading the much larger comment and AI collections.
-        const metadata = includeAiChats ? await db.prepare("", `
+        const metadata = includeAiChats
+          ? await db
+              .prepare(
+                "",
+                `
           SELECT (SELECT count(*) FROM account_identities WHERE account_id=?) AS identities,
             (SELECT COALESCE(sum(octet_length(provider)+octet_length(subject)+96),0)
                FROM account_identities WHERE account_id=?) AS identity_bytes,
@@ -124,37 +145,55 @@ export function accountDataExport(db: StoreDatabase) {
                 +octet_length(m.role)+octet_length(m.tree_access)
                 +COALESCE(octet_length(m.person_id),0)+512),0)
                FROM archive_memberships m JOIN archives a ON a.id=m.archive_id
-              WHERE m.user_id=?) AS membership_bytes`).get(
-                accountId, accountId, accountId, accountId)
+              WHERE m.user_id=?) AS membership_bytes`,
+              )
+              .get(accountId, accountId, accountId, accountId)
           : null;
-        const membershipBounds = metadata == null
-          ? await db.prepare("", `SELECT count(*) AS memberships,
+        const membershipBounds =
+          metadata == null
+            ? await db
+                .prepare(
+                  "",
+                  `SELECT count(*) AS memberships,
               COALESCE(sum(octet_length(m.archive_id)+octet_length(a.title)
                 +octet_length(m.role)+octet_length(m.tree_access)
                 +COALESCE(octet_length(m.person_id),0)+512),0) AS membership_bytes
               FROM archive_memberships m JOIN archives a ON a.id=m.archive_id
-              WHERE m.user_id=?`).get(accountId)
-          : metadata;
+              WHERE m.user_id=?`,
+                )
+                .get(accountId)
+            : metadata;
         // No archive data is serialized for this refusal. In particular, do
         // not load every membership merely to construct an unbounded set of
         // per-archive delivery scopes for an already oversized account.
-        if (Number(membershipBounds?.memberships) > MAX_EXPORTED_ARCHIVES ||
-            Number(membershipBounds?.membership_bytes) > MAX_EXPORTED_METADATA_RAW_BYTES)
+        if (
+          Number(membershipBounds?.memberships) > MAX_EXPORTED_ARCHIVES ||
+          Number(membershipBounds?.membership_bytes) >
+            MAX_EXPORTED_METADATA_RAW_BYTES
+        )
           throw new AccountJsonTooLarge([], true);
-        let metadataRawBytes = metadata == null ? 0 :
-          Number(metadata.identity_bytes) + Number(metadata.membership_bytes) +
-          Buffer.byteLength(String(profile.id)) + Buffer.byteLength(String(profile.name)) +
-          Buffer.byteLength(String(email?.email ?? "")) + 512;
-        let jsonTooLarge = metadata != null &&
+        let metadataRawBytes =
+          metadata == null
+            ? 0
+            : Number(metadata.identity_bytes) +
+              Number(metadata.membership_bytes) +
+              Buffer.byteLength(String(profile.id)) +
+              Buffer.byteLength(String(profile.name)) +
+              Buffer.byteLength(String(email?.email ?? "")) +
+              512;
+        let jsonTooLarge =
+          metadata != null &&
           (Number(metadata.identities) > MAX_EXPORTED_IDENTITIES ||
-           Number(metadata.memberships) > MAX_EXPORTED_ARCHIVES ||
-           metadataRawBytes > MAX_EXPORTED_METADATA_RAW_BYTES);
-        const methods = jsonTooLarge ? [] : await db
-          .prepare(
-            "",
-            "SELECT provider,subject FROM account_identities WHERE account_id=? ORDER BY provider",
-          )
-          .all(accountId);
+            Number(metadata.memberships) > MAX_EXPORTED_ARCHIVES ||
+            metadataRawBytes > MAX_EXPORTED_METADATA_RAW_BYTES);
+        const methods = jsonTooLarge
+          ? []
+          : await db
+              .prepare(
+                "",
+                "SELECT provider,subject FROM account_identities WHERE account_id=? ORDER BY provider",
+              )
+              .all(accountId);
         const memberships = await db
           .prepare(
             "",
@@ -180,6 +219,7 @@ export function accountDataExport(db: StoreDatabase) {
         let scopedGraphRows = 0;
         let scopedGraphBytes = 0;
         for (const membership of memberships) {
+          signal?.throwIfAborted();
           await db
             .prepare("", "SELECT set_config('drevo.archive_id',?,true)")
             .get(String(membership.archive_id));
@@ -198,9 +238,15 @@ export function accountDataExport(db: StoreDatabase) {
             id: string;
             createdAt: string;
             updatedAt: string;
-            messages: Array<{ id: string; role: string; content: string; createdAt: string }>;
+            messages: Array<{
+              id: string;
+              role: string;
+              content: string;
+              createdAt: string;
+            }>;
           }> | null = null;
-          const archive = await db.prepare("", "SELECT revision FROM archives WHERE id=?")
+          const archive = await db
+            .prepare("", "SELECT revision FROM archives WHERE id=?")
             .get(String(membership.archive_id));
           if (!archive) return null;
           // The download also includes title, role and preferences for an
@@ -211,9 +257,10 @@ export function accountDataExport(db: StoreDatabase) {
             approved: membership.approved === true,
             role: String(membership.role),
             treeAccess: String(membership.tree_access),
-            personId: membership.person_id == null
-              ? null
-              : String(membership.person_id),
+            personId:
+              membership.person_id == null
+                ? null
+                : String(membership.person_id),
             revision: Number(archive.revision),
             owned: membership.owned === true,
             aiChatsExported: false,
@@ -229,9 +276,11 @@ export function accountDataExport(db: StoreDatabase) {
             )
             .get(String(membership.archive_id), accountId);
           if (includeAiChats && saved) {
-            metadataRawBytes += Buffer.byteLength(String(saved.generation_limits ?? "")) +
+            metadataRawBytes +=
+              Buffer.byteLength(String(saved.generation_limits ?? "")) +
               Buffer.byteLength(String(saved.card_variant)) +
-              Buffer.byteLength(String(saved.color_scheme)) + 64;
+              Buffer.byteLength(String(saved.color_scheme)) +
+              64;
             if (metadataRawBytes > MAX_EXPORTED_METADATA_RAW_BYTES) {
               jsonTooLarge = true;
               continue;
@@ -246,18 +295,23 @@ export function accountDataExport(db: StoreDatabase) {
               treeRole: String(membership.role) as ArchiveUser["treeRole"],
               archiveOwner: membership.owned === true,
               approved: true,
-              treeAccess: String(membership.tree_access) as ArchiveUser["treeAccess"],
+              treeAccess: String(
+                membership.tree_access,
+              ) as ArchiveUser["treeAccess"],
               ...(membership.person_id
                 ? { personId: String(membership.person_id) }
                 : {}),
             };
             const family = isScopedUser(user)
               ? await (async () => {
-                // readArchive materializes the entire graph and may hydrate
-                // citations from the source catalog. Bound the combined rows
-                // and raw JSON before that read. The final revision check
-                // still protects the visibility snapshot at delivery.
-                const graph = await db.prepare("", `SELECT
+                  // readArchive materializes the entire graph and may hydrate
+                  // citations from the source catalog. Bound the combined rows
+                  // and raw JSON before that read. The final revision check
+                  // still protects the visibility snapshot at delivery.
+                  const graph = await db
+                    .prepare(
+                      "",
+                      `SELECT
                     (SELECT count(*) FROM people) +
                     (SELECT count(*) FROM relations) +
                     (SELECT count(*) FROM photos) +
@@ -275,37 +329,52 @@ export function accountDataExport(db: StoreDatabase) {
                     (SELECT COALESCE(sum(octet_length(data::text)),0) FROM photo_tags) +
                     (SELECT COALESCE(sum(octet_length(data::text)),0) FROM family_unions) +
                     (SELECT COALESCE(sum(octet_length(data::text)),0) FROM source_catalog)
-                      AS bytes`).get();
-                scopedGraphRows += Number(graph?.rows);
-                scopedGraphBytes += Number(graph?.bytes);
-                if (scopedGraphRows > MAX_SCOPED_GRAPH_ROWS ||
-                    scopedGraphBytes > MAX_SCOPED_GRAPH_BYTES)
-                  throw new AccountJsonTooLarge(accessScopes);
-                return (await readArchive(db)).family;
-              })()
+                      AS bytes`,
+                    )
+                    .get();
+                  scopedGraphRows += Number(graph?.rows);
+                  scopedGraphBytes += Number(graph?.bytes);
+                  if (
+                    scopedGraphRows > MAX_SCOPED_GRAPH_ROWS ||
+                    scopedGraphBytes > MAX_SCOPED_GRAPH_BYTES
+                  )
+                    throw new AccountJsonTooLarge(accessScopes);
+                  return (await readArchive(db)).family;
+                })()
               : undefined;
             const visible = family ? visiblePersonIds(family, user) : null;
             const personFilter = visible
               ? " AND c.person_id=ANY(ARRAY(SELECT jsonb_array_elements_text(?::jsonb)))"
               : "";
             const commentArgs = visible
-              ? [String(membership.archive_id), accountId, JSON.stringify([...visible])]
+              ? [
+                  String(membership.archive_id),
+                  accountId,
+                  JSON.stringify([...visible]),
+                ]
               : [String(membership.archive_id), accountId];
             if (includeAiChats) {
               // Include attachment metadata and per-row overhead, but do not
               // treat PostgreSQL bytes as the escaped JSON response size.
-              const size = await db.prepare("", `SELECT count(*) AS comments,
+              const size = await db
+                .prepare(
+                  "",
+                  `SELECT count(*) AS comments,
                   COALESCE(sum(octet_length(c.text)
                     +COALESCE(octet_length(c.attachments::text),0)
                     +octet_length(c.person_id)+256),0) AS bytes
                 FROM person_comments c JOIN people p
                   ON p.archive_id=c.archive_id AND p.id=c.person_id
-                WHERE c.archive_id=? AND c.author_id=?${personFilter}`)
+                WHERE c.archive_id=? AND c.author_id=?${personFilter}`,
+                )
                 .get(...commentArgs);
               commentCount += BigInt(String(size?.comments ?? 0));
               commentPreflightBytes += BigInt(String(size?.bytes ?? 0));
-              if (commentCount > BigInt(MAX_EXPORTED_COMMENTS) ||
-                  commentPreflightBytes > BigInt(MAX_EXPORTED_COMMENT_PREFLIGHT_BYTES)) {
+              if (
+                commentCount > BigInt(MAX_EXPORTED_COMMENTS) ||
+                commentPreflightBytes >
+                  BigInt(MAX_EXPORTED_COMMENT_PREFLIGHT_BYTES)
+              ) {
                 jsonTooLarge = true;
                 continue;
               }
@@ -332,8 +401,10 @@ export function accountDataExport(db: StoreDatabase) {
                     ? null
                     : new Date(Number(row.updated_ms)).toISOString(),
               }));
-            if ((includeAiChats || includeAiAttachments) &&
-                await accountAiAccess(db, accountId)) {
+            if (
+              (includeAiChats || includeAiAttachments) &&
+              (await accountAiAccess(db, accountId))
+            ) {
               const scopes = aiChatAllowedScopes(user, family);
               const scopePlaceholders = scopes.map(() => "?").join(",");
               if (includeAiAttachments && !aiAttachmentError) {
@@ -341,7 +412,10 @@ export function accountDataExport(db: StoreDatabase) {
                   // Fetch only visible attachment metadata, not every message or
                   // its text. The extra row detects an oversized bundle before
                   // materializing a potentially unbounded inventory.
-                  const rows = await db.prepare("", `SELECT c.id AS chat_id,
+                  const rows = await db
+                    .prepare(
+                      "",
+                      `SELECT c.id AS chat_id,
                       c.access_scope,
                       m.id AS message_id,m.data->'attachments' AS attachments
                     FROM ai_chats c JOIN ai_chat_messages m
@@ -351,13 +425,24 @@ export function accountDataExport(db: StoreDatabase) {
                       AND m.data->'attachments' IS NOT NULL
                       AND CASE WHEN jsonb_typeof(m.data->'attachments')='array'
                         THEN jsonb_array_length(m.data->'attachments')>0 ELSE true END
-                    ORDER BY c.id,m.id LIMIT ?`).all(
-                      accountId, ...scopes, MAX_ACCOUNT_ATTACHMENT_FILES + 1);
+                    ORDER BY c.id,m.id LIMIT ?`,
+                    )
+                    .all(
+                      accountId,
+                      ...scopes,
+                      MAX_ACCOUNT_ATTACHMENT_FILES + 1,
+                    );
                   if (rows.length > MAX_ACCOUNT_ATTACHMENT_FILES)
-                    throw new AccountAttachmentExportTooLarge("Too many AI attachment messages");
+                    throw new AccountAttachmentExportTooLarge(
+                      "Too many AI attachment messages",
+                    );
                   for (const row of rows) {
+                    signal?.throwIfAborted();
                     const chatId = String(row.chat_id);
-                    for (const file of aiFilesFromJson(row.attachments, chatId)) {
+                    for (const file of aiFilesFromJson(
+                      row.attachments,
+                      chatId,
+                    )) {
                       aiAttachments.push({
                         archiveId: String(membership.archive_id),
                         chatId,
@@ -366,7 +451,9 @@ export function accountDataExport(db: StoreDatabase) {
                         file,
                       });
                       if (aiAttachments.length > MAX_ACCOUNT_ATTACHMENT_FILES)
-                        throw new AccountAttachmentExportTooLarge("Too many AI originals");
+                        throw new AccountAttachmentExportTooLarge(
+                          "Too many AI originals",
+                        );
                     }
                   }
                   if (rows.length > 0) accessScope.aiChatsExported = true;
@@ -384,29 +471,42 @@ export function accountDataExport(db: StoreDatabase) {
               if (includeAiChats) {
                 // PostgreSQL counts visible rows and bytes inside this same
                 // snapshot before the chat history is materialized in Node.
-                const size = await db.prepare("", `SELECT COUNT(*) AS messages,
+                const size = await db
+                  .prepare(
+                    "",
+                    `SELECT COUNT(*) AS messages,
                     COALESCE(SUM(octet_length(m.content)),0) AS bytes
                   FROM ai_chats c JOIN ai_chat_messages m
                     ON m.archive_id=c.archive_id AND m.chat_id=c.id
                   WHERE c.user_id=? AND c.access_scope IN (${scopePlaceholders})
-                    AND (m.data->>'hidden') IS DISTINCT FROM 'true'`).get(accountId, ...scopes);
+                    AND (m.data->>'hidden') IS DISTINCT FROM 'true'`,
+                  )
+                  .get(accountId, ...scopes);
                 aiMessageBytes += BigInt(String(size?.bytes ?? 0));
                 aiMessageCount += BigInt(String(size?.messages ?? 0));
-                if (aiMessageBytes > BigInt(MAX_EXPORTED_AI_MESSAGE_BYTES) ||
-                    aiMessageCount > BigInt(MAX_EXPORTED_AI_MESSAGES)) {
+                if (
+                  aiMessageBytes > BigInt(MAX_EXPORTED_AI_MESSAGE_BYTES) ||
+                  aiMessageCount > BigInt(MAX_EXPORTED_AI_MESSAGES)
+                ) {
                   accessScope.aiChatsExported = true;
                   aiHistoryTooLarge = true;
                   continue;
                 }
-                const chatRows = await db.prepare("", `SELECT c.id,c.created_at,c.updated_at,
+                const chatRows = await db
+                  .prepare(
+                    "",
+                    `SELECT c.id,c.created_at,c.updated_at,
                   m.role,m.content,m.created_at AS message_created_at,m.id AS message_id
                   FROM ai_chats c LEFT JOIN ai_chat_messages m
                     ON m.archive_id=c.archive_id AND m.chat_id=c.id
                    AND (m.data->>'hidden') IS DISTINCT FROM 'true'
                   WHERE c.user_id=? AND c.access_scope IN (${scopePlaceholders})
-                  ORDER BY c.created_at,c.id,m.id`).all(accountId, ...scopes);
+                  ORDER BY c.created_at,c.id,m.id`,
+                  )
+                  .all(accountId, ...scopes);
                 ownAiChats = [];
                 for (const row of chatRows) {
+                  signal?.throwIfAborted();
                   if (ownAiChats.at(-1)?.id !== String(row.id))
                     ownAiChats.push({
                       id: String(row.id),
@@ -449,29 +549,36 @@ export function accountDataExport(db: StoreDatabase) {
         }
         if (jsonTooLarge) throw new AccountJsonTooLarge(accessScopes);
         if (aiHistoryTooLarge) throw new AccountAiHistoryTooLarge(accessScopes);
-        return { accessScopes, aiAttachments, aiAttachmentError, download: {
-          format: "drevo-account-data",
-          version: 5,
-          exportedAt: new Date().toISOString(),
-          account: {
-            id: String(profile.id),
-            name: String(profile.name),
-            createdAt: String(profile.created_at),
-            lastVisitAt: profile.last_visit_at
-              ? String(profile.last_visit_at)
-              : null,
-            fullAccess: profile.full_access === true,
-            providers: methods
-              .map((row) => String(row.provider))
-              .filter((provider) => ["email", "vk", "yandex"].includes(provider)),
-            identities: methods.map((row) => ({
-              provider: String(row.provider),
-              subject: String(row.subject),
-            })),
-            verifiedEmail: email ? String(email.email) : null,
+        return {
+          accessScopes,
+          aiAttachments,
+          aiAttachmentError,
+          download: {
+            format: "drevo-account-data",
+            version: 5,
+            exportedAt: new Date().toISOString(),
+            account: {
+              id: String(profile.id),
+              name: String(profile.name),
+              createdAt: String(profile.created_at),
+              lastVisitAt: profile.last_visit_at
+                ? String(profile.last_visit_at)
+                : null,
+              fullAccess: profile.full_access === true,
+              providers: methods
+                .map((row) => String(row.provider))
+                .filter((provider) =>
+                  ["email", "vk", "yandex"].includes(provider),
+                ),
+              identities: methods.map((row) => ({
+                provider: String(row.provider),
+                subject: String(row.subject),
+              })),
+              verifiedEmail: email ? String(email.email) : null,
+            },
+            archives,
           },
-          archives,
-        } };
+        };
       }, true);
     },
     /** Recheck membership and graph revision before sending the snapshot.
@@ -479,15 +586,25 @@ export function accountDataExport(db: StoreDatabase) {
     async canDeliver(accountId: string, scopes: AccessScope[]) {
       if (db.kind !== "postgres") return false;
       return await db.transaction(async () => {
-        await db.prepare("", "SELECT set_config('drevo.account_id',?,true)")
+        await db
+          .prepare("", "SELECT set_config('drevo.account_id',?,true)")
           .get(accountId);
-        if (!(await db.prepare("", "SELECT 1 FROM accounts WHERE id=?")
-          .get(accountId))) return false;
-        const rows = await db.prepare("", `SELECT m.archive_id,m.role,m.tree_access,
+        if (
+          !(await db
+            .prepare("", "SELECT 1 FROM accounts WHERE id=?")
+            .get(accountId))
+        )
+          return false;
+        const rows = await db
+          .prepare(
+            "",
+            `SELECT m.archive_id,m.role,m.tree_access,
           m.person_id,m.approved,a.revision,
           EXISTS(SELECT 1 FROM archive_owners o WHERE o.archive_id=m.archive_id
             AND o.user_id=m.user_id) AS owned FROM archive_memberships m
-          JOIN archives a ON a.id=m.archive_id WHERE m.user_id=?`).all(accountId);
+          JOIN archives a ON a.id=m.archive_id WHERE m.user_id=?`,
+          )
+          .all(accountId);
         return scopesStillVisible(scopes, rows);
       }, true);
     },
@@ -512,12 +629,21 @@ export function accountDataExport(db: StoreDatabase) {
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           return await db.postgresTransaction(async (client) => {
-            await client.query("SELECT set_config('drevo.account_id',$1,true)", [accountId]);
-            const archiveIds = [...new Set(scopes.map((scope) => scope.archiveId))].sort();
+            await client.query(
+              "SELECT set_config('drevo.account_id',$1,true)",
+              [accountId],
+            );
+            const archiveIds = [
+              ...new Set(scopes.map((scope) => scope.archiveId)),
+            ].sort();
             for (const archiveId of archiveIds) {
-              await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
+              await client.query(
+                "SELECT set_config('drevo.archive_id',$1,true)",
+                [archiveId],
+              );
               const archive = await client.query(
-                "SELECT id FROM archives WHERE id=$1 FOR SHARE NOWAIT", [archiveId],
+                "SELECT id FROM archives WHERE id=$1 FOR SHARE NOWAIT",
+                [archiveId],
               );
               if (!archive.rowCount) return "access-changed";
             }
@@ -526,13 +652,25 @@ export function accountDataExport(db: StoreDatabase) {
                WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
               [tokenHash, accountId],
             );
-            if (!session.rowCount || Number(session.rows[0].expires_at) <= Date.now())
+            if (
+              !session.rowCount ||
+              Number(session.rows[0].expires_at) <= Date.now()
+            )
               return "session-expired";
-            if (!(await client.query("SELECT 1 FROM accounts WHERE id=$1", [accountId])).rowCount)
+            if (
+              !(
+                await client.query("SELECT 1 FROM accounts WHERE id=$1", [
+                  accountId,
+                ])
+              ).rowCount
+            )
               return "session-expired";
             const membershipRows: Array<Record<string, unknown>> = [];
             for (const archiveId of archiveIds) {
-              await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
+              await client.query(
+                "SELECT set_config('drevo.archive_id',$1,true)",
+                [archiveId],
+              );
               // Ownership can change while an already-admin recipient keeps
               // the same role and tree scope. Lock it with the archive before
               // validating the prepared account download.
@@ -547,15 +685,20 @@ export function accountDataExport(db: StoreDatabase) {
                  FOR SHARE OF m,a NOWAIT`,
                 [accountId, archiveId],
               );
-              membershipRows.push(...membership.rows.map((row) => ({
-                ...row,
-                owned: owner.rows[0]?.user_id === accountId,
-              })));
+              membershipRows.push(
+                ...membership.rows.map((row) => ({
+                  ...row,
+                  owned: owner.rows[0]?.user_id === accountId,
+                })),
+              );
             }
             if (!scopesStillVisible(scopes, membershipRows))
               return "access-changed";
             for (const scope of scopes.filter((item) => item.aiChatsExported)) {
-              await client.query("SELECT set_config('drevo.archive_id',$1,true)", [scope.archiveId]);
+              await client.query(
+                "SELECT set_config('drevo.archive_id',$1,true)",
+                [scope.archiveId],
+              );
               const tier = await client.query(
                 `SELECT viewer.full_access AS viewer_full,
                         owner_tier.full_access AS owner_full
@@ -566,8 +709,10 @@ export function accountDataExport(db: StoreDatabase) {
                  FOR SHARE OF viewer,owner_tier NOWAIT`,
                 [accountId, scope.archiveId],
               );
-              if (tier.rows[0]?.viewer_full !== true ||
-                  tier.rows[0]?.owner_full !== true)
+              if (
+                tier.rows[0]?.viewer_full !== true ||
+                tier.rows[0]?.owner_full !== true
+              )
                 return "access-changed";
             }
             if (validate && !(await validate(client))) return "access-changed";
@@ -577,7 +722,9 @@ export function accountDataExport(db: StoreDatabase) {
         } catch (error) {
           if ((error as { code?: string }).code !== "55P03") throw error;
           if (attempt === 2) return "access-busy";
-          await new Promise((resolve) => setTimeout(resolve, 30 * (attempt + 1)));
+          await new Promise((resolve) =>
+            setTimeout(resolve, 30 * (attempt + 1)),
+          );
         }
       }
       return "access-busy";

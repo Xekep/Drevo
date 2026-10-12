@@ -34,7 +34,10 @@ import {
 } from "../domain/genealogy-transfer.ts";
 import type { Family } from "../domain/types.ts";
 import { validateFamily } from "../domain/validation.ts";
-import { documentImageExtension, tiffDocumentPages } from "./document-images.ts";
+import {
+  documentImageExtension,
+  tiffDocumentPages,
+} from "./document-images.ts";
 import { decodeAnsel } from "../domain/ansel.ts";
 import { allCitations } from "./source-catalog-store.ts";
 
@@ -148,7 +151,7 @@ async function unpack(
       total += entry.uncompressedSize;
       const limit = /\.(ged|gedcom|xml)$/i.test(name)
         ? TRANSFER_TEXT_LIMIT
-        : documentFileTypeFromName(name)?.maxBytes ?? MAX_PDF_BYTES;
+        : (documentFileTypeFromName(name)?.maxBytes ?? MAX_PDF_BYTES);
       if (entry.uncompressedSize > limit || total > TRANSFER_PACKAGE_LIMIT)
         throw new Error(
           "Превышен размер распакованного пакета (512 МиБ; PDF 100 МиБ, TIFF 50 МиБ, фото 20 МиБ)",
@@ -242,8 +245,10 @@ export async function prepareGenealogyImport(
     let source: string | undefined;
     // Multiple OBJE records may point to one ZIP member. A document still
     // needs its own staged record even when a gallery photo shares its bytes.
-    const sourceKey = item.embedded || item.document || /\.(?:pdf|tif)$/i.test(item.file)
-      ? `object:${item.id}` : `file:${item.file}`;
+    const sourceKey =
+      item.embedded || item.document || /\.(?:pdf|tif)$/i.test(item.file)
+        ? `object:${item.id}`
+        : `file:${item.file}`;
     let stored = loaded.get(sourceKey);
     if (!stored) {
       if (item.embedded) {
@@ -281,7 +286,8 @@ export async function prepareGenealogyImport(
         continue;
       }
       const data = await readFile(source);
-      if (data.length > MAX_PDF_BYTES) throw new Error("Вложение больше 100 МБ");
+      if (data.length > MAX_PDF_BYTES)
+        throw new Error("Вложение больше 100 МБ");
       let extension: string;
       if (data.subarray(0, 5).toString("ascii") === "%PDF-") extension = "pdf";
       else {
@@ -296,7 +302,8 @@ export async function prepareGenealogyImport(
         if (extension !== "tif" && data.length > TRANSFER_FILE_LIMIT)
           throw new Error("Фотография больше 20 МБ");
         if (extension === "tif") {
-          if (data.length > MAX_TIFF_BYTES) throw new Error("TIFF больше 50 МБ");
+          if (data.length > MAX_TIFF_BYTES)
+            throw new Error("TIFF больше 50 МБ");
           await tiffDocumentPages(source);
         }
         await sharp(data, { limitInputPixels: 50_000_000 })
@@ -309,16 +316,27 @@ export async function prepareGenealogyImport(
       let document = item.document;
       if (xml && extension !== "pdf" && extension !== "tif" && document) {
         if (document.eventLinks?.length)
-          result.warnings.push(`Файл «${item.title}» оказался изображением: связь с событием не перенесена, портрет и фото сохранены.`);
+          result.warnings.push(
+            `Файл «${item.title}» оказался изображением: связь с событием не перенесена, портрет и фото сохранены.`,
+          );
         document = undefined;
       }
       if (xml && (extension === "pdf" || extension === "tif")) {
-        const description = document?.description || item.photo?.description || "";
+        const description =
+          document?.description || item.photo?.description || "";
         if (description.length > 1000)
-          result.warnings.push(`Описание документа «${item.title}» сокращено до 1000 символов; сохраните исходный XML.`);
-        const shortDescription = description.slice(0, 1000).replace(/[\uD800-\uDBFF]$/, "");
+          result.warnings.push(
+            `Описание документа «${item.title}» сокращено до 1000 символов; сохраните исходный XML.`,
+          );
+        const shortDescription = description
+          .slice(0, 1000)
+          .replace(/[\uD800-\uDBFF]$/, "");
         document = {
-          documentType: "", documentDate: "", place: "", provenance: "", ...document,
+          documentType: "",
+          documentDate: "",
+          place: "",
+          provenance: "",
+          ...document,
           description: shortDescription,
         };
       }
@@ -327,8 +345,16 @@ export async function prepareGenealogyImport(
         size: data.length,
         title: item.title,
         personIds: [],
-        documentId: !item.citationOnly && (extension === "pdf" || extension === "tif" || document) ? id : undefined,
-        document: !item.citationOnly && (extension === "pdf" || extension === "tif" || document) ? document : undefined,
+        documentId:
+          !item.citationOnly &&
+          (extension === "pdf" || extension === "tif" || document)
+            ? id
+            : undefined,
+        document:
+          !item.citationOnly &&
+          (extension === "pdf" || extension === "tif" || document)
+            ? document
+            : undefined,
       };
       loaded.set(sourceKey, stored);
       result.files.push(stored);
@@ -367,7 +393,9 @@ export async function prepareGenealogyImport(
       if (name) link.source.url = `/media/${name}${link.inlineUrlSuffix}`;
       else {
         delete link.source.url;
-        result.warnings.push("Оригинал источника не загружен; локальная ссылка цитаты не восстановлена.");
+        result.warnings.push(
+          "Оригинал источника не загружен; локальная ссылка цитаты не восстановлена.",
+        );
       }
       continue;
     }
@@ -376,16 +404,26 @@ export async function prepareGenealogyImport(
       link.source.documentId = documentId;
       if (link.page !== undefined) link.source.documentPage = link.page;
     } else
-      result.warnings.push("Вложение цитаты не загружено; связь с документом не восстановлена.");
+      result.warnings.push(
+        "Вложение цитаты не загружено; связь с документом не восстановлена.",
+      );
   }
-  const stagedDocuments = new Map(result.files.filter((file) => file.documentId)
-    .map((file) => [file.documentId!, file]));
+  const stagedDocuments = new Map(
+    result.files
+      .filter((file) => file.documentId)
+      .map((file) => [file.documentId!, file]),
+  );
   // Staging may share the original document object. Capture extension links
   // before adding standard EVENT.OBJE links so a later reference to the same
   // file is not mistaken for conflicting _DREVO_MEDIA metadata.
-  const ownEventLinks = new Map(parsed.media
-    .filter((item) => item.document?.eventLinks !== undefined)
-    .map((item) => [item.id, item.document!.eventLinks!.map((link) => ({ ...link }))]));
+  const ownEventLinks = new Map(
+    parsed.media
+      .filter((item) => item.document?.eventLinks !== undefined)
+      .map((item) => [
+        item.id,
+        item.document!.eventLinks!.map((link) => ({ ...link })),
+      ]),
+  );
   const eventMediaWarnings = new Set<string>();
   const warnEventMedia = (message: string) => {
     if (eventMediaWarnings.has(message)) return;
@@ -397,22 +435,44 @@ export async function prepareGenealogyImport(
     const documentId = importedDocuments.get(link.mediaId);
     const staged = documentId && stagedDocuments.get(documentId);
     if (!staged || !/\.(?:pdf|tif)$/.test(staged.name)) {
-      warnEventMedia("Связь EVENT.OBJE с событием не перенесена: оригинал не загружен как PDF/TIFF-документ; если файл доступен, фото или ссылка на человека сохраняются отдельно.");
+      warnEventMedia(
+        "Связь EVENT.OBJE с событием не перенесена: оригинал не загружен как PDF/TIFF-документ; если файл доступен, фото или ссылка на человека сохраняются отдельно.",
+      );
       continue;
     }
     if (ownLinks !== undefined) {
-      if (!ownLinks.some((existing) =>
-        existing.personId === link.personId && existing.eventId === link.eventId))
-        warnEventMedia("Связь EVENT.OBJE с событием не перенесена: сведения _DREVO_MEDIA о документе имеют приоритет.");
+      if (
+        !ownLinks.some(
+          (existing) =>
+            existing.personId === link.personId &&
+            existing.eventId === link.eventId,
+        )
+      )
+        warnEventMedia(
+          "Связь EVENT.OBJE с событием не перенесена: сведения _DREVO_MEDIA о документе имеют приоритет.",
+        );
       continue;
     }
-    staged.document ||= { documentType: "", documentDate: "", place: "",
-      description: "", provenance: "" };
-    const links = staged.document.eventLinks ||= [];
-    if (links.some((existing) => existing.personId === link.personId &&
-      existing.eventId === link.eventId)) continue;
+    staged.document ||= {
+      documentType: "",
+      documentDate: "",
+      place: "",
+      description: "",
+      provenance: "",
+    };
+    const links = (staged.document.eventLinks ||= []);
+    if (
+      links.some(
+        (existing) =>
+          existing.personId === link.personId &&
+          existing.eventId === link.eventId,
+      )
+    )
+      continue;
     if (links.length >= 100) {
-      warnEventMedia("У документа больше 100 связей EVENT.OBJE; лишние связи с событиями не перенесены.");
+      warnEventMedia(
+        "У документа больше 100 связей EVENT.OBJE; лишние связи с событиями не перенесены.",
+      );
       continue;
     }
     links.push({ personId: link.personId, eventId: link.eventId });
@@ -458,7 +518,9 @@ export async function exportMedia(
       id: String(row.id),
       file: `documents/${row.file_name}`,
       title: String(row.title),
-      mime: documentFileTypeFromName(String(row.file_name))?.mime || "application/pdf",
+      mime:
+        documentFileTypeFromName(String(row.file_name))?.mime ||
+        "application/pdf",
       personIds: peopleByDocument.get(String(row.id)) || [],
       portraitIds: [],
       document: {
@@ -468,9 +530,11 @@ export async function exportMedia(
         description: String(row.description || ""),
         provenance: String(row.provenance || ""),
         ...(String(row.event_links || "[]") !== "[]"
-          ? { eventLinks: JSON.parse(String(row.event_links)) } : {}),
+          ? { eventLinks: JSON.parse(String(row.event_links)) }
+          : {}),
         ...(String(row.pages || "[]") !== "[]"
-          ? { pages: JSON.parse(String(row.pages)) } : {}),
+          ? { pages: JSON.parse(String(row.pages)) }
+          : {}),
       },
     });
   const citationFiles = new Set<string>();
@@ -478,28 +542,38 @@ export async function exportMedia(
     const local = source.url && localCitationMediaUrl(source.url);
     if (!local || citationFiles.has(local.file)) continue;
     const name = local.file.slice(7);
-    const owned = await db.prepare(
-      "SELECT 1 FROM media_originals WHERE url=? UNION SELECT 1 FROM documents WHERE file_name=? LIMIT 1",
-      "SELECT 1 FROM media_originals WHERE url=? UNION SELECT 1 FROM documents WHERE file_name=? LIMIT 1",
-    ).get(local.file, name);
-    if (!owned) throw new Error("Оригинал источника не принадлежит выбранному архиву");
+    const owned = await db
+      .prepare(
+        "SELECT 1 FROM media_originals WHERE url=? UNION SELECT 1 FROM documents WHERE file_name=? LIMIT 1",
+        "SELECT 1 FROM media_originals WHERE url=? UNION SELECT 1 FROM documents WHERE file_name=? LIMIT 1",
+      )
+      .get(local.file, name);
+    if (!owned)
+      throw new Error("Оригинал источника не принадлежит выбранному архиву");
     citationFiles.add(local.file);
     media.push({
       id: `citation-${citationFiles.size}`,
       file: local.file,
       title: source.title || "Источник",
-      personIds: [], portraitIds: [], citationOnly: true,
+      personIds: [],
+      portraitIds: [],
+      citationOnly: true,
     });
   }
   return media;
 }
 
-export async function assertCitationOriginalsAvailable(uploads: string, media: TransferMedia[]) {
+export async function assertCitationOriginalsAvailable(
+  uploads: string,
+  media: TransferMedia[],
+) {
   for (const item of media) {
     if (!item.citationOnly) continue;
     const local = localCitationMediaUrl(item.file);
     if (!local) throw new Error("Некорректный путь оригинала источника");
-    const original = await lstat(join(uploads, local.file.slice(7))).catch(() => null);
+    const original = await lstat(join(uploads, local.file.slice(7))).catch(
+      () => null,
+    );
     if (!original?.isFile() || original.isSymbolicLink())
       throw new Error("Оригинал источника отсутствует в хранилище Drevo");
   }
@@ -510,12 +584,15 @@ async function preparePackage(
   family: Family,
   media: TransferMedia[],
   limited: boolean,
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   const used = new Set<string>();
   const files: Array<{ source: string; name: string }> = [];
   let size = 0;
   const exported = media.map((m) => ({ ...m }));
   for (const item of exported) {
+    signal?.throwIfAborted();
     const match =
       /^(?:\/media\/|documents\/)([a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|tif|pdf))$/.exec(
         item.file,
@@ -530,8 +607,8 @@ async function preparePackage(
     if (used.has(name)) continue;
     const info = item.citationOnly
       ? await lstat(source).catch(() => {
-        throw new Error("Оригинал источника отсутствует в хранилище Drevo");
-      })
+          throw new Error("Оригинал источника отсутствует в хранилище Drevo");
+        })
       : await lstat(source);
     if (!info.isFile() || info.isSymbolicLink())
       throw new Error(`Оригинал «${item.title}» не является обычным файлом`);
@@ -559,9 +636,11 @@ async function preparePackage(
 async function writePackage(
   outputStream: Writable,
   prepared: Awaited<ReturnType<typeof preparePackage>>,
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   const zip = new ZipFile();
-  const output = pipeline(zip.outputStream, outputStream);
+  const output = pipeline(zip.outputStream, outputStream, { signal });
   void output.catch(() => {});
   zip.on("error", (error) => (zip.outputStream as Readable).destroy(error));
   try {
@@ -596,10 +675,13 @@ export async function streamGenealogyPackage(
   family: Family,
   media: TransferMedia[],
   beforeStart: () => Promise<void>,
+  signal?: AbortSignal,
 ) {
-  const prepared = await preparePackage(uploads, family, media, false);
+  const prepared = await preparePackage(uploads, family, media, false, signal);
+  signal?.throwIfAborted();
   await beforeStart();
-  await writePackage(destination, prepared);
+  signal?.throwIfAborted();
+  await writePackage(destination, prepared, signal);
 }
 
 export async function installTransferFiles(

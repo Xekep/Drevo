@@ -30,7 +30,7 @@ test("bell opens a compact accessible inbox, reads events and links straight to 
       },
     ],
   };
-  await page.route("**/api/notifications", async (route) => {
+  await page.route("**/api/notifications*", async (route) => {
     if (route.request().method() === "POST") {
       const body = route.request().postDataJSON();
       inbox = {
@@ -325,9 +325,13 @@ test("revoked access stays cleared when an older poll settles after a read recei
   await page.goto("/tree");
   const bell = page.locator(".nav-notifications");
   await expect(bell).toHaveAccessibleName("Уведомления: 1 непрочитанных");
-  delayed = true;
   await bell.click();
   const panel = page.getByRole("dialog", { name: "Уведомления" });
+  // A closed inbox fetches only its summary. Load the visible page before
+  // delaying its next poll so a real read receipt can race that older request.
+  await expect(panel.getByRole("link")).toBeVisible();
+  delayed = true;
+  await page.clock.fastForward(30_100);
   await expect.poll(() => pendingGets).toBeGreaterThan(0);
   const newTab = page.context().waitForEvent("page");
   await panel.getByRole("link").click({ button: "middle" });

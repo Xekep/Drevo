@@ -10,6 +10,7 @@ import { completeArchive } from "../../src/data/archive-pages.ts";
 import { openArchive } from "../../src/server/database.ts";
 import { userStore } from "../../src/server/users.ts";
 import { importSqliteSnapshot } from "./import-sqlite.ts";
+import { benchmarkMediaReferencePlans } from "./benchmark-query-plans.ts";
 import type { Family } from "../../src/domain/types.ts";
 
 type BackendMetrics = {
@@ -253,6 +254,11 @@ try {
   assert.equal(uploaded.status, 201, await uploaded.clone().text());
   const photoUrl = (await uploaded.json()).family.photos[0].url as string;
   assert.ok(photoUrl.startsWith("/media/"));
+  console.log(
+    JSON.stringify(
+      await benchmarkMediaReferencePlans(client, "http-benchmark", photoUrl),
+    ),
+  );
   for (const base of bases) {
     for (const [path, type] of [
       [photoUrl, "image/png"],

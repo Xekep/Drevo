@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { aiChatDetailRoute, aiChatFixture } from "./ai-chat-fixture.ts";
 
 test("terminal stream error clears recovered busy state and remains visible", async ({
   page,
@@ -47,12 +48,14 @@ test("terminal stream error clears recovered busy state and remains visible", as
       },
     }),
   );
-  await page.route(`**/api/ai/chats/${id}`, (route) =>
+  await page.route(aiChatDetailRoute(id), (route) =>
     route.fulfill({
-      json: {
-        chat: { id, busy },
-        messages: busy ? [{ role: "user", content: "Ищи в ГАСО" }] : [],
-      },
+      json: aiChatFixture(
+        route.request().url(),
+        id,
+        busy ? [{ role: "user", content: "Ищи в ГАСО" }] : [],
+        busy,
+      ),
     }),
   );
   await page.goto("/tree");
@@ -120,16 +123,17 @@ for (const action of ["stop", "delete", "complete"] as const)
         },
       }),
     );
-    await page.route(`**/api/ai/chats/${id}`, (route) => {
+    await page.route(aiChatDetailRoute(id), (route) => {
       if (route.request().method() === "DELETE") {
         deleted = true;
         busy = false;
         return route.fulfill({ json: { deleted: true } });
       }
       return route.fulfill({
-        json: {
-          chat: { id, busy },
-          messages: [
+        json: aiChatFixture(
+          route.request().url(),
+          id,
+          [
             { role: "user", content: "Поищи в архиве" },
             ...(!busy && !stops
               ? [
@@ -140,7 +144,8 @@ for (const action of ["stop", "delete", "complete"] as const)
                 ]
               : []),
           ],
-        },
+          busy,
+        ),
       });
     });
     await page.route(`**/api/ai/chats/${id}/stop`, (route) => {

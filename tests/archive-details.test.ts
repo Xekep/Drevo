@@ -131,8 +131,9 @@ function fixture(count = 170) {
         people: family.people
           .filter((p) => ids.includes(p.id))
           .map(personDetails),
-        photos: photos.slice(offset, offset + 40),
+        photos: photos.slice(0, 30),
         photoTotal: photos.length,
+        personPhotoTotals: Object.fromEntries(ids.map(id => [id, family.photos!.filter(photo => photo.tags.some(tag => tag.personId === id)).length])),
       });
     }
     assert.equal(url.searchParams.get("projection"), "page");
@@ -242,11 +243,12 @@ test("card reads run between collection batches, preserving hydrated fields", as
   assert.equal(reader.isComplete("people"), true);
 });
 
-test("person album pages are deduplicated and collection demands preserve hydrated fields", async () => {
+test("profile reads only one album preview and preserves its actual total", async () => {
   const { reader, calls, updates, family } = fixture();
   await reader.loadPeople(["p0"]);
-  assert.equal(calls.length, 2, "41 tagged photos require two bounded pages");
-  assert.equal(updates.at(-1)!.family.photos!.length, 41);
+  assert.equal(calls.length, 1, "opening a card never downloads its whole album");
+  assert.equal(updates.at(-1)!.family.photos!.length, 30);
+  assert.equal(reader.personPhotoTotal("p0"), 41);
   assert.ok(
     updates
       .at(-1)!
@@ -291,6 +293,7 @@ test("lazy reads recover one revision conflict via overview, never the full-fami
         people: [personDetails(family.people[2])],
         photos: [],
         photoTotal: 0,
+        personPhotoTotals: { p2: 0 },
       });
     },
     (data) => updates.push(data),
@@ -351,6 +354,7 @@ test("late detail replies cannot overwrite an already committed write", async ()
           people: [personDetails(family.people[2])],
           photos: [],
           photoTotal: 0,
+          personPhotoTotals: { p2: 0 },
         });
       }
       assert.equal(url, "/api/family?projection=overview");
@@ -412,4 +416,81 @@ test("an overview refresh in flight cannot roll back a subsequently committed wr
     updated.people[2].biography,
   );
   assert.equal(reader.hasPerson("p2"), true);
+});
+
+test("leaving a collection view aborts its reads without completing the collection or requesting later batches", async () => {
+  const setup = fixture(1000);
+  const controller = new AbortController();
+  let entered!: () => void;
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  const calls: string[] = [];
+  const reader = archiveDetails(setup.initial, async (url, init) => {
+    calls.push(url);
+    entered();
+    await new Promise<void>((resolve, reject) => {
+      if (init?.signal?.aborted) reject(new DOMException("Aborted", "AbortError"));
+      else init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+    });
+    return setup.request(url);
+  }, () => assert.fail("aborted page must not publish"));
+  const pending = reader.loadCollections(["people"], controller.signal);
+  await ready;
+  controller.abort();
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(calls.length, 4, "only the already dispatched bounded group starts");
+  assert.equal(reader.isComplete("people"), false);
+  assert.ok(calls.every(url => !url.includes("offset=160")));
+});
+
+test("a minimal committed write invalidates the selected profile preview and reloads its true album total once", async () => {
+  const setup = fixture(1);
+  const photos = setup.family.photos!.filter(photo => photo.tags.some(tag => tag.personId === "p0"));
+  let latest = setup.initial, revision = 1, total = photos.length, calls = 0;
+  const reader = archiveDetails(setup.initial, async input => {
+    const params = new URL(input, "https://example.test").searchParams;
+    assert.equal(params.get("projection"), "details");
+    assert.equal(params.get("preview"), "1");
+    assert.equal(params.get("offset"), "0");
+    assert.equal(params.get("token"), `${revision}:fixture`);
+    calls++;
+    return Response.json({ pageToken: `${revision}:fixture`, people: [personDetails(setup.family.people[0])], photos: photos.slice(0, 30), photoTotal: total, personPhotoTotals: { p0: total } });
+  }, header => { latest = header; });
+  await reader.loadPeople(["p0"]);
+  assert.equal(reader.personPhotoTotal("p0"), 41);
+  assert.equal(reader.projectionGeneration(), 0);
+  revision = 2;
+  total = 42;
+  reader.replace({ ...latest.family, people: latest.family.people.map(person => ({ ...person, name: "Updated" })) }, revision, false);
+  assert.equal(reader.hasPerson("p0"), true, "committed card fields remain loaded");
+  assert.equal(reader.personPhotoTotal("p0"), undefined, "an old count cannot survive a new archive revision");
+  assert.equal(reader.projectionGeneration(), 1, "App depends on this revision marker even when the reader and selected ID stay unchanged");
+  await reader.loadPeople(["p0"]);
+  assert.equal(reader.personPhotoTotal("p0"), 42);
+  assert.equal(latest.family.photos!.length, 30, "reloading still fetches only a bounded cover preview");
+  await reader.loadPeople(["p0"]);
+  assert.equal(calls, 2, "publishing fresh profile data never invalidates its projection again or loops");
+  assert.equal(reader.projectionGeneration(), 1);
+});
+
+test("a shared profile preview does not complete an album whose photos fell outside the first thirty", async () => {
+  const setup = fixture(3);
+  setup.family.photos = setup.family.photos!.map((photo, index) => ({
+    ...photo,
+    tags: photo.tags.map(tag => ({ ...tag, personId: index < 41 ? "p0" : "p1" })),
+  }));
+  await setup.reader.loadPeople(["p0", "p1", "p2"]);
+  assert.equal(setup.calls.length, 1);
+  assert.equal(setup.reader.personPhotoTotal("p0"), 41);
+  assert.equal(setup.reader.personPhotoTotal("p1"), 41);
+  assert.equal(setup.reader.personPhotoTotal("p2"), 0);
+  assert.ok(setup.updates.at(-1)!.family.photos!.every(photo => photo.tags.every(tag => tag.personId === "p0")));
+  await setup.reader.loadPeople(["p1"]);
+  assert.equal(setup.calls.length, 2, "a known total alone does not replace that person's missing cover preview");
+  const solo = new URL(setup.calls[1], "https://example.test").searchParams;
+  assert.deepEqual(JSON.parse(solo.get("ids")!), ["p1"]);
+  assert.equal(solo.get("preview"), "1");
+  assert.equal(solo.get("offset"), "0");
+  assert.equal(setup.updates.at(-1)!.family.photos!.filter(photo => photo.tags.some(tag => tag.personId === "p1")).length, 30);
+  await setup.reader.loadPeople(["p0", "p1", "p2"]);
+  assert.equal(setup.calls.length, 2, "covered and genuinely empty albums are ready without repeat reads");
 });

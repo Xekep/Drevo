@@ -42,6 +42,10 @@ export async function writePortablePostgresBackup(
         "SELECT archive_id,id,person_id,author_id,author_name,created_ms,text,updated_ms,attachments::text AS attachments FROM person_comments",
       source_catalog:
         "SELECT archive_id,id,data::text AS data,version FROM source_catalog",
+      // This SQLite-only derived table is rebuilt from the same consistent
+      // original rows instead of querying a nonexistent PostgreSQL table.
+      media_storage_usage:
+        "SELECT 1 AS id,count(*) AS files,coalesce(sum(size_bytes),0) AS bytes FROM media_originals",
     };
     const ordered = new Set([
       "people",
@@ -56,26 +60,47 @@ export async function writePortablePostgresBackup(
     target.exec("PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE");
     let committed = false;
     try {
+      // Replay persisted metadata, not fresh changes. Message insert triggers
+      // would require the chat before its rows and would alter saved versions
+      // and timestamps. The target is isolated; restore its triggers atomically.
+      const cursorTriggers = target
+        .prepare(
+          `SELECT name,sql FROM sqlite_schema
+        WHERE type='trigger' AND name IN ('ai_message_insert_cursor',
+          'ai_message_update_cursor','ai_proposal_status_cursor')`,
+        )
+        .all();
+      for (const trigger of cursorTriggers)
+        target.exec(`DROP TRIGGER ${identifier(String(trigger.name))}`);
       for (const table of tables)
         target.exec(`DELETE FROM ${identifier(table)}`);
       await source.transaction(async () => {
         for (const table of tables) {
           // Platform cleanup credentials and obligations belong to the physical
           // system backup, never to one archive's downloadable TAR.
-          if (table === "platform_ai_cleanup_keys" ||
-              table === "platform_ai_conversations" ||
-              table === "platform_ai_input_files") continue;
+          if (
+            table === "platform_ai_cleanup_keys" ||
+            table === "platform_ai_conversations" ||
+            table === "platform_ai_input_files"
+          )
+            continue;
           const columns = target
             .prepare(`PRAGMA table_info(${identifier(table)})`)
             .all()
             .map((row) => String(row.name));
           const names = columns.map(identifier).join(",");
-          const projection = table === "ai_chats"
-            ? `SELECT ${columns.map((column) =>
-                column === "yandex_conversation_id" || column === "provider_cleanup_ref"
-                  ? `NULL AS ${identifier(column)}` : identifier(column)).join(",")}
+          const projection =
+            table === "ai_chats"
+              ? `SELECT ${columns
+                  .map((column) =>
+                    column === "yandex_conversation_id" ||
+                    column === "provider_cleanup_ref"
+                      ? `NULL AS ${identifier(column)}`
+                      : identifier(column),
+                  )
+                  .join(",")}
               FROM ai_chats`
-            : projections[table] || `SELECT * FROM ${identifier(table)}`;
+              : projections[table] || `SELECT * FROM ${identifier(table)}`;
           const select = `SELECT ${names} FROM (${projection}${ordered.has(table) ? " ORDER BY ordinal" : ""}) AS saved`;
           const insert = target.prepare(
             `INSERT INTO ${identifier(table)}(${names}) VALUES(${columns.map(() => "?").join(",")})`,
@@ -88,7 +113,9 @@ export async function writePortablePostgresBackup(
             for (;;) {
               const disk = await statfs(dirname(file));
               if (disk.bavail * disk.bsize < 256 * 1024 ** 2)
-                throw new Error("Недостаточно места для переносимой копии. Запись остановлена до заполнения диска");
+                throw new Error(
+                  "Недостаточно места для переносимой копии. Запись остановлена до заполнения диска",
+                );
               const rows = await source
                 .prepare("", "FETCH FORWARD 500 FROM portable_backup_rows")
                 .all();
@@ -115,6 +142,7 @@ export async function writePortablePostgresBackup(
           }
         }
       }, true);
+      for (const trigger of cursorTriggers) target.exec(String(trigger.sql));
       if (target.prepare("PRAGMA foreign_key_check").all().length)
         throw new Error("Резервная копия содержит нарушенные ссылки");
       target.exec("COMMIT");

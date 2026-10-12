@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { aiChatDetailRoute, aiChatFixture } from "./ai-chat-fixture.ts";
 import PDFDocument from "pdfkit";
 
 async function fakeAssistant(page: Page) {
@@ -15,21 +16,36 @@ async function fakeAssistant(page: Page) {
       },
     }),
   );
-  await page.route("**/api/ai/chats/audit-*", (route) =>
-    route.fulfill({ json: { messages: [] } }),
-  );
+  for (const id of ["audit-a", "audit-b"]) {
+    await page.route(aiChatDetailRoute(id), (route) =>
+      route.fulfill({
+        json:
+          route.request().method() === "DELETE"
+            ? { deleted: true }
+            : aiChatFixture(route.request().url(), id, []),
+      }),
+    );
+  }
 }
 
-test("two-person AI graphs keep small round nodes on a narrow screen", async ({ page }) => {
+test("two-person AI graphs keep small round nodes on a narrow screen", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 320, height: 844 });
   await fakeAssistant(page);
-  await page.route("**/api/ai/chat/stream", route => route.fulfill({
-    contentType: "text/event-stream",
-    body: `event: done\ndata: ${JSON.stringify({
-      answer: '```mermaid\ngraph LR\na[Иван] -->|отец| b[Пётр]\n```\n\n```mermaid\ngraph TD\na[Иван] -->|отец| b[Пётр]\n```',
-      references: [], suggestionIds: [], uiActions: [], files: [],
-    })}\n\n`,
-  }));
+  await page.route("**/api/ai/chat/stream", (route) =>
+    route.fulfill({
+      contentType: "text/event-stream",
+      body: `event: done\ndata: ${JSON.stringify({
+        answer:
+          "```mermaid\ngraph LR\na[Иван] -->|отец| b[Пётр]\n```\n\n```mermaid\ngraph TD\na[Иван] -->|отец| b[Пётр]\n```",
+        references: [],
+        suggestionIds: [],
+        uiActions: [],
+        files: [],
+      })}\n\n`,
+    }),
+  );
   await page.goto("/tree");
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
   await page.locator(".research-assistant textarea").fill("Покажи схемы");
@@ -37,20 +53,40 @@ test("two-person AI graphs keep small round nodes on a narrow screen", async ({ 
   const canvases = page.locator(".research-visual canvas");
   await expect(canvases).toHaveCount(2);
   for (const canvas of await canvases.all()) {
-    await expect.poll(() => canvas.evaluate((node: HTMLCanvasElement) => {
-      const pixels = node.getContext("2d")!.getImageData(0, 0, node.width, node.height).data;
-      let area = 0;
-      for (let i = 0; i < pixels.length; i += 4) {
-        if (pixels[i] === 95 && pixels[i + 1] === 135 && pixels[i + 2] === 102 && pixels[i + 3] > 200) area++;
-      }
-      const scale = node.width / node.getBoundingClientRect().width;
-      return area / (scale * scale);
-    })).toBeGreaterThan(100);
+    await expect
+      .poll(() =>
+        canvas.evaluate((node: HTMLCanvasElement) => {
+          const pixels = node
+            .getContext("2d")!
+            .getImageData(0, 0, node.width, node.height).data;
+          let area = 0;
+          for (let i = 0; i < pixels.length; i += 4) {
+            if (
+              pixels[i] === 95 &&
+              pixels[i + 1] === 135 &&
+              pixels[i + 2] === 102 &&
+              pixels[i + 3] > 200
+            )
+              area++;
+          }
+          const scale = node.width / node.getBoundingClientRect().width;
+          return area / (scale * scale);
+        }),
+      )
+      .toBeGreaterThan(100);
     const greenArea = await canvas.evaluate((node: HTMLCanvasElement) => {
-      const pixels = node.getContext("2d")!.getImageData(0, 0, node.width, node.height).data;
+      const pixels = node
+        .getContext("2d")!
+        .getImageData(0, 0, node.width, node.height).data;
       let area = 0;
       for (let i = 0; i < pixels.length; i += 4) {
-        if (pixels[i] === 95 && pixels[i + 1] === 135 && pixels[i + 2] === 102 && pixels[i + 3] > 200) area++;
+        if (
+          pixels[i] === 95 &&
+          pixels[i + 1] === 135 &&
+          pixels[i + 2] === 102 &&
+          pixels[i + 3] > 200
+        )
+          area++;
       }
       const scale = node.width / node.getBoundingClientRect().width;
       return area / (scale * scale);

@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { workQueue, WorkQueueBusyError } from "./work-queue.ts";
 import { memberPreviewAt } from "../domain/archive-context.ts";
 
 export type RoutedArchive = {
@@ -25,7 +26,7 @@ type Entry = {
 const MAX_OPEN_ARCHIVES = 128;
 const WAIT_FOR_IDLE_MS = 5000;
 const MAX_QUEUED_OPENS = 256;
-class ArchivePoolBusyError extends Error {}
+class ArchivePoolBusyError extends WorkQueueBusyError {}
 
 /** Keep explicitly selected archive runtimes bounded and never evict an active one. */
 export function archiveRoutePool(
@@ -35,99 +36,227 @@ export function archiveRoutePool(
     path: string,
   ) => Promise<boolean>,
   open: (archiveId: string) => Promise<RoutedArchive>,
-  options: { maxOpen?: number; idleMs?: number } = {},
+  options: {
+    maxOpen?: number;
+    idleMs?: number;
+    startupConcurrency?: number;
+    startupWaitMs?: number;
+  } = {},
 ) {
   const maxOpen = options.maxOpen ?? 4;
   if (!Number.isInteger(maxOpen) || maxOpen < 1 || maxOpen > MAX_OPEN_ARCHIVES)
     throw new Error("Invalid archive runtime limit");
+  const startupConcurrency = options.startupConcurrency ?? 4;
+  const startupWaitMs = options.startupWaitMs ?? 30_000;
+  if (
+    !Number.isInteger(startupConcurrency) ||
+    startupConcurrency < 1 ||
+    startupConcurrency > 8 ||
+    !Number.isInteger(startupWaitMs) ||
+    startupWaitMs < 1 ||
+    startupWaitMs > 60_000
+  )
+    throw new Error("Invalid archive startup limits");
+  const starts = workQueue(startupConcurrency, MAX_QUEUED_OPENS, startupWaitMs);
   const entries = new Map<string, Entry>();
+  type Waiting = {
+    req: IncomingMessage;
+    res: ServerResponse;
+    path: string;
+    pinned: boolean;
+  };
+  type Opening = {
+    value: Promise<Entry | null>;
+    waiters: Set<Waiting>;
+    entry?: Entry;
+    controller: AbortController;
+    started: boolean;
+  };
+  const opening = new Map<string, Opening>();
+  const retiring = new Map<Entry, Promise<void>>();
   const idleWaiters = new Set<() => void>();
   let lastUse = 0;
-  let queue = Promise.resolve();
-  let queued = 0;
+  let reservations = 0;
   let closing = false;
-  const exclusive = async <T>(work: () => Promise<T>): Promise<T> => {
-    if (closing || queued >= MAX_QUEUED_OPENS) throw new ArchivePoolBusyError();
-    queued++;
-    const deadline = Date.now() + WAIT_FOR_IDLE_MS;
-    const previous = queue;
-    let release!: () => void;
-    queue = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await previous;
-    try {
-      if (closing || Date.now() >= deadline) throw new ArchivePoolBusyError();
-      return await work();
-    } finally {
-      queued--;
-      release();
+  let closingPromise: Promise<void> | undefined;
+  const wake = () => {
+    for (const done of [...idleWaiters]) done();
+  };
+  const releaseEntry = (entry: Entry) => {
+    entry.active--;
+    if (!entry.active) {
+      entry.idleSince = Date.now();
+      wake();
     }
   };
-  const acquire = async (req: IncomingMessage, id: string, path: string) => {
-    // Authorization must not depend on whether another request warmed this runtime.
+  const retire = (id: string, entry: Entry) => {
+    const previous = retiring.get(entry);
+    if (previous) return previous;
+    // Delete and reserve synchronously, including asynchronous resource close.
+    entries.delete(id);
+    const done = Promise.resolve()
+      .then(() => entry.runtime.close())
+      .finally(() => {
+        retiring.delete(entry);
+        wake();
+      });
+    retiring.set(entry, done);
+    return done;
+  };
+  const reserveCapacity = async () => {
+    const deadline = Date.now() + WAIT_FOR_IDLE_MS;
+    for (;;) {
+      if (closing) throw new ArchivePoolBusyError();
+      if (entries.size + reservations + retiring.size < maxOpen) {
+        reservations++;
+        return;
+      }
+      const idle = [...entries]
+        .filter(([, entry]) => entry.active === 0)
+        .sort((left, right) => left[1].usedAt - right[1].usedAt)[0];
+      if (idle) {
+        await retire(idle[0], idle[1]);
+        continue;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new ArchivePoolBusyError();
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          clearTimeout(timer);
+          idleWaiters.delete(done);
+          resolve();
+        };
+        const timer = setTimeout(done, remaining);
+        idleWaiters.add(done);
+      });
+    }
+  };
+  const permittedWaiter = async (pending: Opening, id: string) => {
+    for (const waiter of pending.waiters)
+      if (
+        !waiter.res.destroyed &&
+        (await permitted(waiter.req, id, waiter.path))
+      )
+        return true;
+    return false;
+  };
+  const createOpening = (id: string) => {
+    const pending: Opening = {
+      value: Promise.resolve(null),
+      waiters: new Set(),
+      controller: new AbortController(),
+      started: false,
+    };
+    // A singleflight belongs to an archive, not its first caller's grant. A
+    // revoked first caller cannot deny another still-authorized waiting caller.
+    pending.value = Promise.resolve()
+      .then(async () => {
+        const releaseStart = await starts.acquire(pending.controller.signal);
+        pending.started = true;
+        let reserved = false;
+        try {
+          if (pending.controller.signal.aborted) return null;
+          const beforeCapacity = await permittedWaiter(pending, id);
+          if (closing) throw new ArchivePoolBusyError();
+          if (!beforeCapacity) return null;
+          await reserveCapacity();
+          reserved = true;
+          const beforeStartup = await permittedWaiter(pending, id);
+          if (closing) throw new ArchivePoolBusyError();
+          if (!beforeStartup) return null;
+          const runtime = await open(id);
+          let publish = false;
+          try {
+            publish = await permittedWaiter(pending, id);
+            publish = publish && !closing;
+          } catch (error) {
+            await runtime.close();
+            throw error;
+          }
+          if (!publish) {
+            await runtime.close();
+            if (closing) throw new ArchivePoolBusyError();
+            return null;
+          }
+          const entry: Entry = {
+            runtime,
+            // Pin every waiter before publishing. Their independent final grant
+            // checks may await SQL, during which eviction must not close the view.
+            active: pending.waiters.size,
+            usedAt: ++lastUse,
+            idleSince: Date.now(),
+          };
+          pending.entry = entry;
+          for (const waiter of pending.waiters) waiter.pinned = true;
+          entries.set(id, entry);
+          return entry;
+        } finally {
+          if (reserved) {
+            reservations--;
+            wake();
+          }
+          releaseStart();
+        }
+      })
+      .finally(() => {
+        if (opening.get(id) === pending) opening.delete(id);
+      });
+    opening.set(id, pending);
+    return pending;
+  };
+  const acquire = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    id: string,
+    path: string,
+  ) => {
+    if (closing) throw new ArchivePoolBusyError();
     if (!(await permitted(req, id, path))) return null;
+    if (closing) throw new ArchivePoolBusyError();
     const present = entries.get(id);
     if (present) {
       present.active++;
       present.usedAt = ++lastUse;
       return present;
     }
-    return await exclusive(async () => {
-      const existing = entries.get(id);
-      if (existing) {
-        // Another request may have opened this archive while we waited in
-        // the pool queue. Do not reuse its earlier access decision.
-        if (!(await permitted(req, id, path))) return null;
-        existing.active++;
-        existing.usedAt = ++lastUse;
-        return existing;
+    if (
+      !opening.has(id) &&
+      opening.size >= MAX_QUEUED_OPENS + startupConcurrency
+    )
+      throw new ArchivePoolBusyError();
+    const pending = opening.get(id) ?? createOpening(id);
+    const waiter = { req, res, path, pinned: false };
+    pending.waiters.add(waiter);
+    const disconnected = () => {
+      pending.waiters.delete(waiter);
+      if (waiter.pinned && pending.entry) {
+        waiter.pinned = false;
+        releaseEntry(pending.entry);
       }
-      if (entries.size >= maxOpen) {
-        const oldestIdle = () =>
-          [...entries]
-            .filter(([, entry]) => entry.active === 0)
-            .sort((left, right) => left[1].usedAt - right[1].usedAt)[0];
-        if (!oldestIdle())
-          await new Promise<void>((resolve) => {
-            const wake = () => {
-              clearTimeout(timer);
-              idleWaiters.delete(wake);
-              resolve();
-            };
-            const timer = setTimeout(wake, WAIT_FOR_IDLE_MS);
-            idleWaiters.add(wake);
-          });
-        if (!(await permitted(req, id, path))) return null;
-        const idle = oldestIdle();
-        if (!idle) throw new ArchivePoolBusyError();
-        entries.delete(idle[0]);
-        await idle[1].runtime.close();
+      if (!pending.started && !pending.waiters.size) {
+        if (opening.get(id) === pending) opening.delete(id);
+        pending.controller.abort();
       }
-      // A queued request may have lost access before opening starts. Opening
-      // can also take time, so check again before publishing the runtime.
-      if (!(await permitted(req, id, path))) return null;
-      const runtime = await open(id);
-      let stillPermitted: boolean;
-      try {
-        stillPermitted = await permitted(req, id, path);
-      } catch (error) {
-        await runtime.close();
-        throw error;
-      }
-      if (!stillPermitted) {
-        await runtime.close();
-        return null;
-      }
-      const entry: Entry = {
-        runtime,
-        active: 1,
-        usedAt: ++lastUse,
-        idleSince: Date.now(),
-      };
-      entries.set(id, entry);
+    };
+    res.once("close", disconnected);
+    let entry: Entry | null = null,
+      accepted = false;
+    try {
+      entry = await pending.value;
+      if (closing) throw new ArchivePoolBusyError();
+      if (!entry || res.destroyed) return null;
+      const stillPermitted = await permitted(req, id, path);
+      if (closing) throw new ArchivePoolBusyError();
+      if (!stillPermitted || res.destroyed) return null;
+      accepted = true;
+      waiter.pinned = false; // Reservation now belongs to the handler.
+      entry.usedAt = ++lastUse;
       return entry;
-    });
+    } finally {
+      pending.waiters.delete(waiter);
+      res.off("close", disconnected);
+      if (entry && !accepted && waiter.pinned) releaseEntry(entry);
+    }
   };
   const idleMs = options.idleMs ?? (maxOpen > 4 ? 5 * 60_000 : 0);
   const cleanup =
@@ -135,14 +264,13 @@ export function archiveRoutePool(
       ? setInterval(
           () => {
             if (closing) return;
-            void exclusive(async () => {
+            void (async () => {
               for (const [id, entry] of entries) {
                 if (entry.active || Date.now() - entry.idleSince < idleMs)
                   continue;
-                entries.delete(id);
-                await entry.runtime.close();
+                await retire(id, entry);
               }
-            }).catch(() => console.warn("archive_idle_cleanup_failed"));
+            })().catch(() => console.warn("archive_idle_cleanup_failed"));
           },
           Math.min(idleMs || 60_000, 60_000),
         )
@@ -155,7 +283,9 @@ export function archiveRoutePool(
         (sum, entry) => sum + entry.active,
         0,
       ),
-      queued,
+      queued: starts.diagnostics().queued,
+      opening: reservations,
+      startup: starts.diagnostics(),
       pools: [...entries.values()].flatMap((entry) => {
         const pool = entry.runtime.poolDiagnostics?.();
         return pool ? [pool] : [];
@@ -179,15 +309,20 @@ export function archiveRoutePool(
       if (!match) return false;
       let entry: Entry | null;
       try {
-        entry = await acquire(req, match[1], match[2]);
+        entry = await acquire(req, res, match[1], match[2]);
       } catch (error) {
-        if (!(error instanceof ArchivePoolBusyError)) throw error;
+        if (res.destroyed) return true;
+        if (!(error instanceof WorkQueueBusyError)) throw error;
         res.writeHead(503, {
           "Content-Type": "application/json; charset=utf-8",
           "Cache-Control": "no-store",
           "Retry-After": "2",
         });
         res.end(JSON.stringify({ error: "Сервер занят. Попробуйте ещё раз." }));
+        return true;
+      }
+      if (res.destroyed) {
+        if (entry) releaseEntry(entry);
         return true;
       }
       if (!entry) {
@@ -213,11 +348,7 @@ export function archiveRoutePool(
       const release = () => {
         if (released || !handlerDone || !responseDone) return;
         released = true;
-        entry.active--;
-        if (entry.active === 0) {
-          entry.idleSince = Date.now();
-          for (const wake of idleWaiters) wake();
-        }
+        releaseEntry(entry);
       };
       res.once("close", () => {
         responseDone = true;
@@ -232,14 +363,28 @@ export function archiveRoutePool(
       }
       return true;
     },
-    async close() {
+    close() {
+      if (closingPromise) return closingPromise;
       closing = true;
       if (cleanup) clearInterval(cleanup);
-      await queue;
-      await Promise.all(
-        [...entries.values()].map((entry) => entry.runtime.close()),
-      );
-      entries.clear();
+      starts.close();
+      wake();
+      closingPromise = (async () => {
+        await Promise.allSettled(
+          [...opening.values()].map((pending) => pending.value),
+        );
+        const results = await Promise.allSettled([
+          ...retiring.values(),
+          ...[...entries].map(([id, entry]) => retire(id, entry)),
+        ]);
+        entries.clear();
+        const errors = results
+          .filter((result) => result.status === "rejected")
+          .map((result) => result.reason);
+        if (errors.length)
+          throw new AggregateError(errors, "Archive runtime close failed");
+      })();
+      return closingPromise;
     },
   };
 }

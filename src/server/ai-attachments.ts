@@ -33,6 +33,7 @@ export type PreparedAttachment = { name: string; type: string; bytes: Buffer };
 export async function validateAttachments(
   input: unknown,
   capabilities: { photoAnalysis: boolean; codeInterpreter: boolean },
+  signal?: AbortSignal,
 ): Promise<PreparedAttachment[]> {
   if (input === undefined) return [];
   if (!Array.isArray(input) || input.length > AI_ATTACHMENT_COUNT)
@@ -40,6 +41,7 @@ export async function validateAttachments(
   const files: PreparedAttachment[] = [];
   let total = 0;
   for (const item of input) {
+    signal?.throwIfAborted();
     if (
       !item ||
       typeof item.name !== "string" ||
@@ -81,7 +83,9 @@ export async function validateAttachments(
           throw new Error("format");
         const meta = await sharp(bytes, {
           limitInputPixels: 40_000_000,
-        }).metadata();
+        })
+          .timeout({ seconds: 25 })
+          .metadata();
         const expected = type === "image/jpeg" ? "jpeg" : type.slice(6);
         if (meta.format !== expected) throw new Error("format");
       } catch {
@@ -109,6 +113,7 @@ export async function validateAttachments(
     }
     files.push({ name, type, bytes });
   }
+  signal?.throwIfAborted();
   return files;
 }
 
@@ -160,24 +165,30 @@ export function aiAttachmentStore(
           await rm(join(directory(match[1]), match[2]), { force: true });
       }
     },
-    async read(chatId: string, file: ResearchAttachment) {
+    async read(chatId: string, file: ResearchAttachment, signal?: AbortSignal) {
+      signal?.throwIfAborted();
       const match = fileRoute.exec(file.url);
       if (!match || match[1] !== chatId)
         throw new Error("Недоступное вложение");
       const path = join(directory(chatId), match[2]);
       if ((await stat(path)).size > AI_ATTACHMENT_BYTES)
         throw new RangeError("Вложение слишком большое");
-      return await readFile(path);
+      return await readFile(path, { signal });
     },
     async deleteChat(chatId: string) {
       await rm(directory(chatId), { recursive: true, force: true });
     },
-    async download(chatId: string, userId: string, url: string) {
-      const messages = await chats.messages(chatId, userId);
-      const file = messages
-        ?.flatMap((message) => message.attachments || [])
-        .find((file) => file.url === url);
-      return file ? { file, bytes: await this.read(chatId, file) } : null;
+    async download(
+      chatId: string,
+      userId: string,
+      url: string,
+      signal?: AbortSignal,
+    ) {
+      const files = await chats.attachmentInventory(chatId, userId);
+      const file = files?.find((file) => file.url === url);
+      return file
+        ? { file, bytes: await this.read(chatId, file, signal) }
+        : null;
     },
     async prune() {
       // Account deletion cascades chat rows. Remove orphan folders on startup.

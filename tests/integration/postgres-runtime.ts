@@ -2,6 +2,7 @@ import { verifyPlatformBackupsHttp } from "./postgres-platform-backups-http.ts";
 import { readStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
+import type { ArchiveUser } from "../../src/domain/access.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createServer, get as httpGet, type IncomingMessage } from "node:http";
@@ -1980,8 +1981,8 @@ try {
   // backup must preserve historical evidence, not silently omit missing files.
   assert.equal(existsSync(join(uploads, citationUrl.slice("/media/".length))), true);
   await pendingFile.undo();
-  // A scoped AI export awaits archive.read() again while checking its final
-  // scope. Downgrading the account during that await must prevent delivery.
+  // A scoped AI export awaits the thin visible-ID reader while checking its
+  // final scope. Downgrading the account during that await must prevent delivery.
   await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
   await client.query(`UPDATE archive_memberships
     SET tree_access='common_ancestors',person_id='person-a'
@@ -1990,16 +1991,16 @@ try {
   let reachedExportRead!: () => void;
   const atExportRead = new Promise<void>((resolve) => { reachedExportRead = resolve; });
   const continueExportRead = new Promise<void>((resolve) => { releaseExportRead = resolve; });
-  let exportReads = 0;
+  let exportScopeReads = 0;
   const exportArchive = {
     ...app.archive,
-    read: async () => {
-      if (++exportReads === 3) {
+    visibleIds: Object.assign(async (user: ArchiveUser) => {
+      if (++exportScopeReads === 2) {
         reachedExportRead();
         await continueExportRead;
       }
-      return app!.archive.read();
-    },
+      return app!.archive.visibleIds(user);
+    }, { close: app.archive.visibleIds.close }),
   };
   const exportAi = aiResearchHttp({
     archive: exportArchive,
@@ -6725,14 +6726,14 @@ try {
     let reads = 0;
     const delayedArchive = {
       ...app!.archive,
-      read: async () => {
-        const snapshot = await app!.archive.read();
+      visibleIds: Object.assign(async (user: ArchiveUser) => {
+        const ids = await app!.archive.visibleIds(user);
         if (reads++ === 0) {
           reachedRead();
           await readGate;
         }
-        return snapshot;
-      },
+        return ids;
+      }, { close: app!.archive.visibleIds.close }),
     };
     const handler = personDiscussionHttp({
       archive: delayedArchive,
@@ -14058,14 +14059,17 @@ try {
   assert.equal((await app.archive.read()).family.people[0].maidenName, "Иванова");
   const unionFixture = await app.archive.read();
   const unionWithPeer = structuredClone(unionFixture.family);
-  unionWithPeer.people.push({ id: "pg-union-identity-peer", createdBy: "owner",
-    name: "Peer", surname: "Fixture", patronymic: "", sex: "u", birth: "",
-    birthPlace: "", parents: [], spouses: [], generation: 1, column: 0, sources: [] });
+  const unionPeople = [unionFixture.family.people[0].id,
+    "pg-union-identity-peer", "pg-union-identity-alternative"] as const;
+  assert.equal(new Set(unionPeople).size, 3,
+    "union identity revocation requires three distinct people");
+  for (const id of unionPeople.slice(1))
+    unionWithPeer.people.push({ id, createdBy: "owner",
+      name: "Peer", surname: "Fixture", patronymic: "", sex: "u", birth: "",
+      birthPlace: "", parents: [], spouses: [], generation: 1, column: 0, sources: [] });
   await app.archive.write(unionWithPeer, unionFixture.revision);
   const unionBefore = await app.archive.read();
   const unionWithEvidence = structuredClone(unionBefore.family);
-  const unionPeople = [unionBefore.family.people[0].id, unionBefore.family.people[1].id,
-    "pg-union-identity-peer"];
   unionWithEvidence.unions = [...(unionWithEvidence.unions || []), {
     id: "pg-union-source-identity", participants: [unionPeople[0], unionPeople[1]],
     type: "marriage" as const, createdBy: "owner", note: "Keep this note",
@@ -14082,6 +14086,9 @@ try {
   assert.equal((await postPlaceChanges(unionSaved.family, shiftedUnionType, unionSaved.revision)).status, 403);
   const shiftedParticipants = structuredClone(unionSaved.family);
   shiftedParticipants.unions![unionIndex].participants = [unionPeople[0], unionPeople[2]];
+  assert.ok(archiveChanges(unionSaved.family, shiftedParticipants).some((change) =>
+    change.collection === "unions" && change.id === "pg-union-source-identity" &&
+    change.field === "participants"), "the participant identity fixture must actually change participants");
   assert.equal((await postPlaceChanges(unionSaved.family, shiftedParticipants, unionSaved.revision)).status, 403);
   assert.equal((await app.archive.read()).revision, unionSaved.revision);
   const unlinkedUnion = structuredClone(shiftedUnionType);
@@ -14100,7 +14107,8 @@ try {
   assert.equal((await postPlaceChanges(unionUpdated.family, withoutTestUnion, unionUpdated.revision)).status, 200);
   const withoutPeer = await app.archive.read();
   const restoredPeople = structuredClone(withoutPeer.family);
-  restoredPeople.people = restoredPeople.people.filter((person) => person.id !== "pg-union-identity-peer");
+  restoredPeople.people = restoredPeople.people.filter((person) =>
+    !unionPeople.slice(1).includes(person.id));
   await app.archive.write(restoredPeople, withoutPeer.revision);
   await verifyRestoreGuard({ client, source, family, ownerHeaders, restoreBytes,
     selectedBase: securedBase, rootArchive: app.archive });

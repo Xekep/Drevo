@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { aiChatDetailRoute, aiChatFixture } from "./ai-chat-fixture.ts";
 
 test("paperclip and dropping files share a saved, clearable chat library", async ({
   page,
@@ -25,20 +26,34 @@ test("paperclip and dropping files share a saved, clearable chat library", async
       },
     }),
   );
-  await page.route(`**/api/ai/chats/${chatId}`, (route) => {
+  await page.route(aiChatDetailRoute(chatId), (route) => {
     if (route.request().method() === "DELETE") {
       saved = false;
       attachments = [];
       return route.fulfill({ json: { deleted: true } });
     }
     return route.fulfill({
-      json: {
-        chat: { busy: false },
-        messages: [
-          { role: "user", content: "Изучи файлы", attachments },
-          { role: "assistant", content: "Файлы прочитаны." },
-        ],
-      },
+      json: aiChatFixture(
+        route.request().url(),
+        chatId,
+        saved
+          ? [
+              {
+                id: 1,
+                version: 1,
+                role: "user",
+                content: "Изучи файлы",
+                attachments,
+              },
+              {
+                id: 2,
+                version: 2,
+                role: "assistant",
+                content: "Файлы прочитаны.",
+              },
+            ]
+          : [],
+      ),
     });
   });
   await page.route("**/api/ai/chat/stream", (route) => {
@@ -180,8 +195,8 @@ test("ten chats disable creation and unsupported files stay out of the draft", a
       },
     }),
   );
-  await page.route("**/api/ai/chats/chat-0", (route) =>
-    route.fulfill({ json: { chat: { busy: false }, messages: [] } }),
+  await page.route(aiChatDetailRoute("chat-0"), (route) =>
+    route.fulfill({ json: aiChatFixture(route.request().url(), "chat-0", []) }),
   );
   await page.goto("/tree");
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
@@ -228,27 +243,23 @@ test("disabled AI capabilities reject matching files before uploading, including
   await panel
     .getByRole("button", { name: "Вложения (0)", exact: true })
     .click();
-  await panel
-    .getByLabel("Выбрать файлы для ИИ")
-    .setInputFiles([
-      {
-        name: "table.xlsx",
-        mimeType: "application/octet-stream",
-        buffer: Buffer.from("PK"),
-      },
-    ]);
+  await panel.getByLabel("Выбрать файлы для ИИ").setInputFiles([
+    {
+      name: "table.xlsx",
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from("PK"),
+    },
+  ]);
   await expect(panel.getByRole("alert")).toContainText(
     "включить Code Interpreter",
   );
-  await panel
-    .getByLabel("Выбрать файлы для ИИ")
-    .setInputFiles([
-      {
-        name: "photo.png",
-        mimeType: "image/png",
-        buffer: Buffer.from("image"),
-      },
-    ]);
+  await panel.getByLabel("Выбрать файлы для ИИ").setInputFiles([
+    {
+      name: "photo.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("image"),
+    },
+  ]);
   await expect(panel.getByRole("alert")).toContainText(
     "Анализ фотографий отключён",
   );

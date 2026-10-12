@@ -19,6 +19,7 @@ export function PersonFullView({
   person,
   loadPersonDetails,
   hasPersonDetails,
+  personPhotoTotal,
   family,
   readPhotos,
   onClose,
@@ -34,6 +35,7 @@ export function PersonFullView({
   person: Person;
   loadPersonDetails?: (id: string) => Promise<void>;
   hasPersonDetails?: (id: string) => boolean;
+  personPhotoTotal?: (id: string) => number | undefined;
   family: Family;
   readPhotos: boolean;
   onClose: (id: string) => void;
@@ -176,6 +178,7 @@ export function PersonFullView({
                 <section className="full-person-photos">
                   <PersonPhotoAlbum
                     photos={photos}
+                    total={personPhotoTotal?.(active.id)}
                     onOpen={() => {
                       onClose(activeId);
                       onAlbum(active.id);

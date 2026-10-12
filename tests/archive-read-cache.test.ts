@@ -4,24 +4,48 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openArchive, readArchive } from "../src/server/database.ts";
-import { archiveSnapshotReader, archiveSnapshotBudget } from "../src/server/archive-read-cache.ts";
+import {
+  archiveSnapshotReader,
+  archiveSnapshotBudget,
+  archiveCacheView,
+} from "../src/server/archive-read-cache.ts";
 import type { Family } from "../src/domain/types.ts";
 
 test("snapshot readers share a memory budget and reload evicted views", async () => {
-  const archive = await openArchive(":memory:", { title: "", description: "", demo: false, people: [] });
+  const archive = await openArchive(":memory:", {
+    title: "",
+    description: "",
+    demo: false,
+    people: [],
+  });
   try {
     const value = { revision: 1, text: "x".repeat(100) };
     const bytes = JSON.stringify(value).length * 2;
     const budget = archiveSnapshotBudget(bytes * 2);
     const loads = [0, 0, 0];
-    const readers = loads.map((_, i) => archiveSnapshotReader(archive.db, async () => { loads[i]++; return value; }, 1000, budget));
-    await readers[0](); await readers[1](); await readers[0](); await readers[2]();
+    const readers = loads.map((_, i) =>
+      archiveSnapshotReader(
+        archive.db,
+        async () => {
+          loads[i]++;
+          return value;
+        },
+        1000,
+        budget,
+      ),
+    );
+    await readers[0]();
+    await readers[1]();
+    await readers[0]();
+    await readers[2]();
     assert.ok(budget.diagnostics().bytes <= bytes * 2);
     await readers[1]();
     assert.deepEqual(loads, [1, 2, 1]);
-    readers.forEach(reader => reader.close());
+    readers.forEach((reader) => reader.close());
     assert.equal(budget.diagnostics().bytes, 0);
-  } finally { await archive.close(); }
+  } finally {
+    await archive.close();
+  }
 });
 
 const family: Family = {
@@ -212,4 +236,28 @@ test("failed reads can retry and oversized snapshots are not retained", async ()
   } finally {
     await archive.close();
   }
+});
+
+test("derived indexes and snapshots compete for bytes, and closing one runtime leaves another intact", () => {
+  const budget = archiveSnapshotBudget(100);
+  const first = archiveCacheView(budget),
+    second = archiveCacheView(budget);
+  const search = Symbol("search"),
+    graph = Symbol("graph"),
+    snapshot = Symbol("snapshot");
+  let evicted = 0;
+  first.setDerived(search, { index: 1 }, 60, () => {
+    evicted++;
+  });
+  second.setDerived(graph, { graph: 2 }, 60);
+  assert.equal(evicted, 1);
+  assert.equal(first.getDerived(search), undefined);
+  second.set(snapshot, { revision: 1, json: "12345" });
+  assert.equal(budget.diagnostics().bytes, 70);
+  first.close();
+  assert.deepEqual(second.getDerived(graph), { graph: 2 });
+  second.close();
+  assert.equal(budget.diagnostics().bytes, 0);
+  second.setDerived(graph, { leaked: true }, 20);
+  assert.equal(budget.diagnostics().bytes, 0);
 });

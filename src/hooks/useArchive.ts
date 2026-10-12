@@ -25,7 +25,7 @@ import {
   ArchiveDetailsAccessError,
 } from "../data/archive-details";
 import type { ArchivePageHeader } from "../data/archive-pages";
-import type { GalleryPage, GalleryQuery } from "../domain/archive-view-projection";
+import type { GalleryQuery } from "../domain/archive-view-projection";
 import { fetchWithTimeout, RequestTimeoutError } from "../data/request-timeout";
 import {
   readGuestTreePreferences,
@@ -216,11 +216,12 @@ export function useArchive(enabled = true) {
             setError("");
             const reader = archiveDetails(
               result,
-              (url) =>
+              (url, init) =>
                 fetchWithTimeout(
                   url,
                   {
-                    signal: controller.signal,
+                    ...init,
+                    signal: init?.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal,
                     cache: "no-store",
                   },
                   RECONCILE_TIMEOUT_MS,
@@ -669,7 +670,7 @@ export function useArchive(enabled = true) {
     [user],
   );
   const withDetailsRead = useCallback(
-    async (work: (reader: DetailsReader) => Promise<unknown>, collection = false) => {
+    async <T>(work: (reader: DetailsReader) => Promise<T>, collection = false): Promise<T | undefined> => {
       const reader = details.current,
         epoch = accessEpoch.current;
       if (!reader || accessClosed.current) return;
@@ -682,7 +683,7 @@ export function useArchive(enabled = true) {
         return await work(reader);
       } catch (reason) {
         if (epoch !== accessEpoch.current || details.current !== reader) return;
-        if (collection)
+        if (collection && !(reason instanceof Error && reason.name === "AbortError"))
           setCollectionError(
             reason instanceof Error
               ? reason.message
@@ -713,20 +714,26 @@ export function useArchive(enabled = true) {
     [],
   );
   const loadDetails = useCallback(async (demand: { people?: string[]; photos?: string[];
-    view?: "places" | "insights"; collections?: Array<"people" | "photos"> }) => {
+    view?: "places" | "insights" | "timeline"; collections?: Array<"people" | "photos">; signal?: AbortSignal }) => {
     await withDetailsRead(async (reader) => {
       if (demand.people?.length) await reader.loadPeople(demand.people);
       if (demand.photos?.length) await reader.loadPhotos(demand.photos);
-      if (demand.view) await reader.loadView(demand.view);
-      if (demand.collections?.length) await reader.loadCollections(demand.collections);
+      if (demand.view) await reader.loadView(demand.view, demand.signal);
+      if (demand.collections?.length) await reader.loadCollections(demand.collections, demand.signal);
     }, !!demand.view || !!demand.collections?.length);
   }, [withDetailsRead]);
   const loadGallery = useCallback(async (query: GalleryQuery) => {
     const result = await withDetailsRead((reader) => reader.gallery(query));
     if (!result) throw new Error("Архив недоступен");
-    return result as GalleryPage;
+    return result;
   }, [withDetailsRead]);
-  const hasViewDetails = useCallback((view: "places" | "insights") =>
+  const exportWarnings = useCallback(async (ids: string[], signal?: AbortSignal) => {
+    const result = await withDetailsRead(reader => reader.exportWarnings(ids, signal));
+    if (!result) throw new Error("Архив недоступен");
+    return result;
+  }, [withDetailsRead]);
+  const personPhotoTotal = useCallback((id: string) => details.current?.personPhotoTotal(id), []);
+  const hasViewDetails = useCallback((view: "places" | "insights" | "timeline") =>
     detailsView?.source.hasView(view) ?? false, [detailsView]);
   const hasPersonDetails = useCallback(
     (id: string) => detailsView?.people.has(id) ?? true,
@@ -744,6 +751,8 @@ export function useArchive(enabled = true) {
   return {
     loadDetails,
     loadGallery,
+    exportWarnings,
+    personPhotoTotal,
     hasViewDetails,
     insights: detailsView?.source.insights(),
     projectionGeneration: detailsView?.projectionGeneration,

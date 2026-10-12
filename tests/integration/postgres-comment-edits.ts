@@ -9,6 +9,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { writePortablePostgresBackup } from "../../src/server/postgres-portable-backup.ts";
+import { backupStore } from "../../src/server/backup-store.ts";
 
 export async function verifyPostgresCommentEdits(
   base: string,
@@ -57,16 +58,77 @@ export async function verifyPostgresCommentEdits(
   assert.equal(original.author, "Тестов Иван");
   assert.equal(original.authorPersonId, "person-a");
   assert.equal(original.attachments.length, 2);
-  const backupDirectory = await mkdtemp(join(tmpdir(), "drevo-comment-backup-"));
+  const backupDirectory = await mkdtemp(
+    join(tmpdir(), "drevo-comment-backup-"),
+  );
   try {
     const backupFile = join(backupDirectory, "backup.sqlite");
     await writePortablePostgresBackup(db, backupFile);
     const saved = new DatabaseSync(backupFile, { readOnly: true });
     try {
       assert.deepEqual(
-        JSON.parse(String(saved.prepare("SELECT attachments FROM person_comments WHERE id=?").get(original.id)?.attachments)),
-        original.attachments.map(({ id, name, type, size }) => ({ id, name, type, size })),
+        JSON.parse(
+          String(
+            saved
+              .prepare("SELECT attachments FROM person_comments WHERE id=?")
+              .get(original.id)?.attachments,
+          ),
+        ),
+        original.attachments.map(({ id, name, type, size }) => ({
+          id,
+          name,
+          type,
+          size,
+        })),
         "the downloadable PostgreSQL backup retains attachment metadata as SQLite JSON",
+      );
+      const originals = saved
+        .prepare(
+          "SELECT count(*) AS files,coalesce(sum(size_bytes),0) AS bytes FROM media_originals",
+        )
+        .get();
+      assert.deepEqual(
+        saved
+          .prepare("SELECT files,bytes FROM media_storage_usage WHERE id=1")
+          .get(),
+        originals,
+        "the portable SQLite counter is reconstructed from this snapshot's originals",
+      );
+      const chats = await db
+        .prepare(
+          "",
+          "SELECT id,messages_version,updated_at FROM ai_chats ORDER BY id",
+        )
+        .all();
+      const messages = await db
+        .prepare(
+          "",
+          "SELECT id,change_version FROM ai_chat_messages ORDER BY id",
+        )
+        .all();
+      assert.deepEqual(
+        saved
+          .prepare(
+            "SELECT id,messages_version,updated_at FROM ai_chats ORDER BY id",
+          )
+          .all()
+          .map((row) => ({ ...row })),
+        chats.map((row) => ({
+          id: row.id,
+          messages_version: Number(row.messages_version),
+          updated_at: row.updated_at,
+        })),
+        "copying history does not trigger fresh versions or touch chat timestamps",
+      );
+      assert.deepEqual(
+        saved
+          .prepare("SELECT id,change_version FROM ai_chat_messages ORDER BY id")
+          .all()
+          .map((row) => ({ ...row })),
+        messages.map((row) => ({
+          id: Number(row.id),
+          change_version: Number(row.change_version),
+        })),
       );
     } finally {
       saved.close();
@@ -74,6 +136,24 @@ export async function verifyPostgresCommentEdits(
   } finally {
     await rm(backupDirectory, { recursive: true, force: true });
   }
+  const rollbackRetryProbe = new Error("Rollback backup retry probe");
+  await assert.rejects(
+    db.transaction(async () => {
+      const store = await backupStore(db);
+      const next = (await store.settings()).next;
+      await store.schedule(next + 10_000);
+      await store.retryBy(next + 1000);
+      assert.equal((await store.settings()).next, next + 1000);
+      await store.retryBy(next + 2000);
+      assert.equal(
+        (await store.settings()).next,
+        next + 1000,
+        "a later retry does not delay the earlier PostgreSQL schedule",
+      );
+      throw rollbackRetryProbe;
+    }),
+    (error) => error === rollbackRetryProbe,
+  );
   assert.equal(
     await userStorageBytes(db, "owner"),
     userBytesBefore + image.length + note.length,

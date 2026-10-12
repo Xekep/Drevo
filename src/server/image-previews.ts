@@ -3,10 +3,17 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { workQueue, WorkQueueBusyError, type WorkQueue } from "./work-queue.ts";
+import {
+  preparationAdmission,
+  PREPARATION_BYTES,
+  type PreparationAdmission,
+} from "./preparation-admission.ts";
 
 export type ImagePreviewVariant =
   "tiny" | "avatar" | "thumb" | "display" | "ai";
 export type ImagePreviewSource = Buffer | { path: string; cacheKey: string };
+/** Consumers invoke previews; only the composition root owns their lifecycle. */
+export type ImagePreview = (original: ImagePreviewSource, variant: ImagePreviewVariant) => Promise<Buffer>;
 
 export const IMAGE_PREVIEW_SETTINGS = {
   tiny: { maxSize: 48, quality: 45 },
@@ -27,10 +34,20 @@ export class ImagePreviewBusyError extends Error {
   }
 }
 
-export function imagePreviews(directory: string, executionQueue?: WorkQueue) {
+export function imagePreviews(
+  directory: string,
+  executionQueue?: WorkQueue,
+  preparation?: PreparationAdmission,
+) {
   const pending = new Map<string, Promise<Buffer>>();
   const queue = executionQueue ?? workQueue(2, MAX_PENDING_PREVIEWS, 15_000);
-  return async (original: ImagePreviewSource, variant: ImagePreviewVariant) => {
+  const budget = preparation ?? preparationAdmission();
+  const controller = new AbortController();
+  const preview = async (
+    original: ImagePreviewSource,
+    variant: ImagePreviewVariant,
+  ) => {
+    controller.signal.throwIfAborted();
     const settings = IMAGE_PREVIEW_SETTINGS[variant];
     const sourceKey = Buffer.isBuffer(original)
       ? createHash("sha256").update(original).digest("hex")
@@ -39,7 +56,9 @@ export function imagePreviews(directory: string, executionQueue?: WorkQueue) {
     const key = `${sourceKey}-${variant}-v${IMAGE_PREVIEW_CACHE_VERSION}.${extension}`;
     if (pending.has(key)) return pending.get(key)!;
     try {
-      return await readFile(join(directory, key));
+      return await readFile(join(directory, key), {
+        signal: controller.signal,
+      });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
@@ -47,9 +66,10 @@ export function imagePreviews(directory: string, executionQueue?: WorkQueue) {
     if (pending.size >= MAX_PENDING_PREVIEWS) throw new ImagePreviewBusyError();
     const run = (async () => {
       let release: (() => void) | undefined;
+      let releaseMemory: (() => void) | undefined;
       try {
         try {
-          release = await queue.acquire();
+          release = await queue.acquire(controller.signal);
         } catch (error) {
           if (error instanceof WorkQueueBusyError)
             throw new ImagePreviewBusyError();
@@ -57,14 +77,29 @@ export function imagePreviews(directory: string, executionQueue?: WorkQueue) {
         }
         // A second process may have finished this variant while we waited.
         try {
-          return await readFile(join(directory, key));
+          return await readFile(join(directory, key), {
+            signal: controller.signal,
+          });
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         }
+        try {
+          releaseMemory = await budget.acquire(
+            PREPARATION_BYTES.image,
+            controller.signal,
+          );
+        } catch (error) {
+          if (error instanceof WorkQueueBusyError)
+            throw new ImagePreviewBusyError();
+          throw error;
+        }
+        controller.signal.throwIfAborted();
         const source = Buffer.isBuffer(original)
           ? original
-          : await readFile(original.path);
-        const input = sharp(source, { limitInputPixels: 50_000_000 });
+          : await readFile(original.path, { signal: controller.signal });
+        const input = sharp(source, { limitInputPixels: 50_000_000 }).timeout({
+          seconds: 25,
+        });
         const metadata = await input.metadata();
         if ((metadata.pages || 1) > 1)
           throw new Error("Для анимации используется оригинал");
@@ -91,6 +126,7 @@ export function imagePreviews(directory: string, executionQueue?: WorkQueue) {
                 smartSubsample: true,
               })
         ).toBuffer();
+        controller.signal.throwIfAborted();
         await mkdir(directory, { recursive: true });
         // Two backend processes share this directory. Never make a partial
         // preview visible under its final cache key.
@@ -122,10 +158,19 @@ export function imagePreviews(directory: string, executionQueue?: WorkQueue) {
         }
         return bytes;
       } finally {
+        releaseMemory?.();
         release?.();
       }
     })().finally(() => pending.delete(key));
     pending.set(key, run);
     return run;
   };
+  return Object.assign(preview, {
+    async close() {
+      controller.abort();
+      if (!executionQueue) queue.close();
+      await Promise.allSettled([...pending.values()]);
+      if (!preparation) budget.close();
+    },
+  });
 }

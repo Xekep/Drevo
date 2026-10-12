@@ -71,7 +71,7 @@ test("a failed collection read shows a retry action instead of an endless spinne
   expect(attempts).toBe(3);
 });
 
-test("a minimal save reply preserves album pages loaded while the write was in flight", async ({
+test("a minimal save reply preserves a bounded profile preview and the whole album remains available on demand", async ({
   page,
 }, info) => {
   test.skip(info.project.name !== "desktop");
@@ -94,22 +94,21 @@ test("a minimal save reply preserves album pages loaded while the write was in f
       },
     ],
   }));
-  let releasePage!: () => void, releaseSave!: () => void;
-  const pageGate = new Promise<void>((resolve) => {
-    releasePage = resolve;
-  });
+  let releaseSave!: () => void;
   const saveGate = new Promise<void>((resolve) => {
     releaseSave = resolve;
   });
-  let writeStarted = false,
-    secondPageFinished = false;
+  let writeStarted = false, revision = snapshot.revision as number;
+  const detailOffsets: number[] = [], galleryOffsets: number[] = [];
+  const token = () => `${revision}:fixture`;
   await page.route("**/api/family?projection=overview", (route) =>
     route.fulfill({
       json: {
         ...snapshot,
         family: archiveOverview(family),
         partial: true,
-        pageToken: "1:fixture",
+        revision,
+        pageToken: token(),
         totals: { people: family.people.length, photos: 41 },
       },
     }),
@@ -118,23 +117,30 @@ test("a minimal save reply preserves album pages loaded while the write was in f
     const offset = Number(
       new URL(route.request().url()).searchParams.get("offset"),
     );
-    if (offset) await pageGate;
+    detailOffsets.push(offset);
     await route.fulfill({
       json: {
-        pageToken: "1:fixture",
+        pageToken: token(),
         people: [personDetails(person)],
-        photos: photos.slice(offset, offset + 40),
+        photos: photos.slice(0, 30),
         photoTotal: photos.length,
+        personPhotoTotals: { [person.id]: photos.length },
       },
     });
-    if (offset) secondPageFinished = true;
+  });
+  await page.route("**/api/family?projection=gallery&**", route => {
+    const params = new URL(route.request().url()).searchParams;
+    const offset = Number(params.get("offset") || 0);
+    galleryOffsets.push(offset);
+    return route.fulfill({ json: { pageToken: token(), ...galleryProjection({ ...family, photos }, { mode: params.get("mode") as GalleryQuery["mode"], personId: params.get("personId"), year: params.get("year"), offset, includeIndex: params.get("index") !== "0" }) } });
   });
   await page.route("**/api/family/changes", async (route) => {
     writeStarted = true;
     await saveGate;
+    revision++;
     await route.fulfill({
       json: {
-        revision: snapshot.revision + 1,
+        revision,
         appliedChanges: route.request().postDataJSON().changes,
       },
     });
@@ -144,7 +150,7 @@ test("a minimal save reply preserves album pages loaded while the write was in f
     const dock = page.locator(".inspector-dock");
     await expect(
       dock.getByRole("button", {
-        name: "Открыть фотоальбом человека: 40 фото",
+        name: "Открыть фотоальбом человека: 41 фото",
         exact: true,
       }),
     ).toBeVisible();
@@ -154,16 +160,8 @@ test("a minimal save reply preserves album pages loaded while the write was in f
       .fill("Тестов Александр Иванович");
     await page.getByRole("button", { name: "Сохранить", exact: true }).click();
     await expect.poll(() => writeStarted).toBe(true);
-    releasePage();
-    await expect.poll(() => secondPageFinished).toBe(true);
-    // Editing replaces the inspector. Let the completed detail response commit
-    // in the browser before releasing the independent write response.
-    await page.evaluate(
-      () =>
-        new Promise<void>((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-        ),
-    );
+    expect(detailOffsets, "an open profile never downloads the remainder of a large album in the background").toEqual([0]);
+    expect(galleryOffsets).toEqual([]);
     releaseSave();
     await expect(
       page.getByRole("heading", { name: "Редактировать человека" }),
@@ -174,8 +172,13 @@ test("a minimal save reply preserves album pages loaded while the write was in f
         exact: true,
       }),
     ).toBeVisible();
+    expect(detailOffsets, "the new revision refreshes one bounded preview without full-album paging").toEqual([0, 0]);
+    await dock.getByRole("button", { name: "Открыть фотоальбом человека: 41 фото", exact: true }).click();
+    await expect(page.locator(".photo-grid .photo-tile")).toHaveCount(30);
+    await page.getByRole("button", { name: "Показать ещё", exact: true }).click();
+    await expect(page.locator(".photo-grid .photo-tile")).toHaveCount(41);
+    expect(galleryOffsets).toEqual([0, 30]);
   } finally {
-    releasePage();
     releaseSave();
   }
 });
@@ -218,6 +221,7 @@ test("a collection revision conflict reloads details of the person already open"
           .map(personDetails),
         photos: [],
         photoTotal: 0,
+        personPhotoTotals: Object.fromEntries(ids.map(id => [id, 0])),
       },
     });
   });
@@ -321,6 +325,7 @@ async function pagedArchive(page: Page, holdDetails = false) {
           .map(personDetails),
         photos: [],
         photoTotal: 0,
+        personPhotoTotals: Object.fromEntries(ids.map(id => [id, 0])),
       },
     });
   });

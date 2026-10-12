@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { aiChatDetailRoute, aiChatFixture } from "./ai-chat-fixture.ts";
 
 test("подписи карточек остаются читаемыми при отдалении дерева", async ({
   page,
@@ -80,14 +81,12 @@ test("tree card and assistant fit common viewport widths without hiding each oth
       },
     }),
   );
-  await page.route("**/api/ai/chats/chat-a", (route) =>
+  await page.route(aiChatDetailRoute("chat-a"), (route) =>
     route.fulfill({
-      json: {
-        messages: [
-          { role: "user", content: "Вопрос" },
-          { role: "assistant", content: "Ответ" },
-        ],
-      },
+      json: aiChatFixture(route.request().url(), "chat-a", [
+        { id: 1, version: 1, role: "user", content: "Вопрос" },
+        { id: 2, version: 2, role: "assistant", content: "Ответ" },
+      ]),
     }),
   );
   for (const width of [320, 360, 390, 768, 1024, 1440, 1920]) {

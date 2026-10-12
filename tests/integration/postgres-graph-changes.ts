@@ -84,15 +84,32 @@ test("PostgreSQL retains foster, presumed and twin details across graph reads", 
   next = connectPeople(next, "child", "peer", "twin", "", "identical");
   await graph(first, tokens.admin, "tree-a", archiveChanges(before, next), 0);
   const saved = (await read(first, "tree-a")).family;
-  assert.deepEqual(saved.links?.map((link) => ({ type: link.type, twinKind: link.twinKind, note: link.note })),
-    next.links?.map((link) => ({ type: link.type, twinKind: link.twinKind, note: link.note })));
+  assert.deepEqual(
+    saved.links?.map((link) => ({
+      type: link.type,
+      twinKind: link.twinKind,
+      note: link.note,
+    })),
+    next.links?.map((link) => ({
+      type: link.type,
+      twinKind: link.twinKind,
+      note: link.note,
+    })),
+  );
   assert.deepEqual(saved.people.find((p) => p.id === "own")?.parents, []);
   const changed = {
     ...saved,
-    links: saved.links?.map((link) => link.type === "twin" ? { ...link, twinKind: "fraternal" as const } : link),
+    links: saved.links?.map((link) =>
+      link.type === "twin" ? { ...link, twinKind: "fraternal" as const } : link,
+    ),
   };
   await graph(first, tokens.admin, "tree-a", archiveChanges(saved, changed), 1);
-  assert.equal((await read(first, "tree-a")).family.links?.find((link) => link.type === "twin")?.twinKind, "fraternal");
+  assert.equal(
+    (await read(first, "tree-a")).family.links?.find(
+      (link) => link.type === "twin",
+    )?.twinKind,
+    "fraternal",
+  );
 });
 
 test("additional link evidence has SQLite/PostgreSQL parity and cannot move to a different assertion", async (t) => {
@@ -100,57 +117,163 @@ test("additional link evidence has SQLite/PostgreSQL parity and cannot move to a
   const before = (await read(first, "tree-a")).family;
   const sqlite = await openArchive(":memory:", before);
   t.after(async () => await sqlite.close());
-  const after: Family = { ...before, links: [{ id: "guardianship", from: "father", to: "child",
-    type: "guardian", createdBy: "admin", sources: [{ title: "Guardianship record",
-      type: "archive", reference: "leaf 4" }] }] };
+  const after: Family = {
+    ...before,
+    links: [
+      {
+        id: "guardianship",
+        from: "father",
+        to: "child",
+        type: "guardian",
+        createdBy: "admin",
+        sources: [
+          {
+            title: "Guardianship record",
+            type: "archive",
+            reference: "leaf 4",
+          },
+        ],
+      },
+    ],
+  };
   await graph(first, tokens.admin, "tree-a", archiveChanges(before, after), 0);
   await sqlite.write(after, 1, actor);
-  assert.deepEqual((await read(first, "tree-a")).family, (await sqlite.read()).family);
+  assert.deepEqual(
+    (await read(first, "tree-a")).family,
+    (await sqlite.read()).family,
+  );
   const saved = (await read(first, "tree-a")).family;
-  const evidenced = { ...saved, links: saved.links!.map((link) => ({ ...link,
-    sources: [...(link.sources || []), { title: "Witness statement", type: "oral", reference: "2020" }] })) };
+  const evidenced = {
+    ...saved,
+    links: saved.links!.map((link) => ({
+      ...link,
+      sources: [
+        ...(link.sources || []),
+        { title: "Witness statement", type: "oral", reference: "2020" },
+      ],
+    })),
+  };
   const sourcePatch = archiveChanges(saved, evidenced);
-  assert.equal(sourcePatch.find((change) => change.collection === "links")?.field, "sources");
-  await assert.rejects(graph(first, tokens.relative, "tree-a", sourcePatch, 1), ForbiddenError);
+  assert.equal(
+    sourcePatch.find((change) => change.collection === "links")?.field,
+    "sources",
+  );
+  await assert.rejects(
+    graph(first, tokens.relative, "tree-a", sourcePatch, 1),
+    ForbiddenError,
+  );
   await graph(first, tokens.admin, "tree-a", sourcePatch, 1);
   await sqlite.write(evidenced, 2, actor);
-  assert.deepEqual((await read(first, "tree-a")).family, (await sqlite.read()).family);
-  const annotated = { ...evidenced, links: evidenced.links!.map((link) => ({ ...link, note: "reviewed" })) };
-  await graph(first, tokens.admin, "tree-a", archiveChanges(evidenced, annotated), 2);
+  assert.deepEqual(
+    (await read(first, "tree-a")).family,
+    (await sqlite.read()).family,
+  );
+  const annotated = {
+    ...evidenced,
+    links: evidenced.links!.map((link) => ({ ...link, note: "reviewed" })),
+  };
+  await graph(
+    first,
+    tokens.admin,
+    "tree-a",
+    archiveChanges(evidenced, annotated),
+    2,
+  );
   await sqlite.write(annotated, 3, actor);
-  assert.deepEqual((await read(first, "tree-a")).family, (await sqlite.read()).family);
-  const moved = { ...annotated, links: annotated.links!.map((link) => ({ ...link, to: "own" })) };
-  await assert.rejects(graph(first, tokens.admin, "tree-a", archiveChanges(annotated, moved), 3),
-    /снимите прежние источники/);
-  await assert.rejects(sqlite.write(moved, 4, actor), /снимите прежние источники/);
-  assert.equal((await read(first, "tree-a")).family.links?.[0].sources?.[0].reference, "leaf 4");
+  assert.deepEqual(
+    (await read(first, "tree-a")).family,
+    (await sqlite.read()).family,
+  );
+  const moved = {
+    ...annotated,
+    links: annotated.links!.map((link) => ({ ...link, to: "own" })),
+  };
+  await assert.rejects(
+    graph(first, tokens.admin, "tree-a", archiveChanges(annotated, moved), 3),
+    /снимите прежние источники/,
+  );
+  await assert.rejects(
+    sqlite.write(moved, 4, actor),
+    /снимите прежние источники/,
+  );
+  assert.equal(
+    (await read(first, "tree-a")).family.links?.[0].sources?.[0].reference,
+    "leaf 4",
+  );
 });
 
 test("PostgreSQL migration extends an existing relations table without losing rows", async (t) => {
   const { first } = await fixture(t);
   await first.query("ALTER TABLE relations DROP COLUMN twin_kind");
-  await first.query("ALTER TABLE relations DROP CONSTRAINT relations_type_check");
-  await first.query("ALTER TABLE relations ADD CONSTRAINT relations_type_check CHECK (type IN ('parent','spouse','adoptive_parent','step_parent','godparent','nurse','sworn_sibling','guardian'))");
-  await first.query(readFileSync(new URL("../../ops/postgres/044_family_link_types.sql", import.meta.url), "utf8"));
-  assert.equal((await first.query("SELECT count(*)::int AS n FROM relations WHERE archive_id=$1", ["tree-a"])).rows[0].n, 1);
+  await first.query(
+    "ALTER TABLE relations DROP CONSTRAINT relations_type_check",
+  );
+  await first.query(
+    "ALTER TABLE relations ADD CONSTRAINT relations_type_check CHECK (type IN ('parent','spouse','adoptive_parent','step_parent','godparent','nurse','sworn_sibling','guardian'))",
+  );
+  await first.query(
+    readFileSync(
+      new URL("../../ops/postgres/044_family_link_types.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.equal(
+    (
+      await first.query(
+        "SELECT count(*)::int AS n FROM relations WHERE archive_id=$1",
+        ["tree-a"],
+      )
+    ).rows[0].n,
+    1,
+  );
   await first.query(
     "INSERT INTO relations(archive_id,id,ordinal,source,target,type,twin_kind) VALUES($1,$2,$3,$4,$5,$6,$7)",
     ["tree-a", "new-twin", 2, "child", "own", "twin", "fraternal"],
   );
-  assert.equal((await first.query("SELECT twin_kind FROM relations WHERE archive_id=$1 AND id=$2", ["tree-a", "new-twin"])).rows[0].twin_kind, "fraternal");
+  assert.equal(
+    (
+      await first.query(
+        "SELECT twin_kind FROM relations WHERE archive_id=$1 AND id=$2",
+        ["tree-a", "new-twin"],
+      )
+    ).rows[0].twin_kind,
+    "fraternal",
+  );
 });
 
 test("PostgreSQL migration 060 adds empty sources to legacy relations without changing links", async (t) => {
   const { first } = await fixture(t);
   await first.query("ALTER TABLE relations DROP COLUMN sources");
-  const before = (await first.query("SELECT id,source,target,type FROM relations WHERE archive_id=$1 ORDER BY id", ["tree-a"])).rows;
-  const migration = readFileSync(new URL("../../ops/postgres/060_family_link_sources.sql", import.meta.url), "utf8");
+  const before = (
+    await first.query(
+      "SELECT id,source,target,type FROM relations WHERE archive_id=$1 ORDER BY id",
+      ["tree-a"],
+    )
+  ).rows;
+  const migration = readFileSync(
+    new URL("../../ops/postgres/060_family_link_sources.sql", import.meta.url),
+    "utf8",
+  );
   await first.query(migration);
   await first.query(migration);
-  const rows = (await first.query("SELECT id,source,target,type,sources FROM relations WHERE archive_id=$1 ORDER BY id", ["tree-a"])).rows;
-  assert.deepEqual(rows.map((row) => ({ id: row.id, source: row.source,
-    target: row.target, type: row.type })), before);
-  assert.ok(rows.every((row) => Array.isArray(row.sources) && row.sources.length === 0));
+  const rows = (
+    await first.query(
+      "SELECT id,source,target,type,sources FROM relations WHERE archive_id=$1 ORDER BY id",
+      ["tree-a"],
+    )
+  ).rows;
+  assert.deepEqual(
+    rows.map((row) => ({
+      id: row.id,
+      source: row.source,
+      target: row.target,
+      type: row.type,
+    })),
+    before,
+  );
+  assert.ok(
+    rows.every((row) => Array.isArray(row.sources) && row.sources.length === 0),
+  );
 });
 
 test("adding another spouse preserves prior marriages and makes a retry idempotent", async (t) => {
@@ -327,7 +450,21 @@ test("new people and parent/spouse relations commit together with the same famil
       "SELECT data FROM history WHERE archive_id='tree-a' AND revision=1",
     )
   ).rows[0].data;
-  assert.deepEqual(history, before);
+  assert.equal(history.format, "drevo-archive-changes-v1");
+  assert.deepEqual(
+    applyArchiveChanges(
+      (await read(first, "tree-a")).family,
+      history.changes,
+      "local",
+    ).family,
+    before,
+  );
+  // JSONB persists deletion patches without undefined-valued properties.
+  // Compare the storage contract while the full inverse replay above verifies data.
+  assert.deepEqual(
+    history.changes,
+    JSON.parse(JSON.stringify(inverseChanges(result.appliedChanges))),
+  );
   const audit = (await postgresAuditReader(first, "tree-a").list()).items;
   assert.ok(audit.length >= 2);
   assert.ok(
@@ -1006,4 +1143,170 @@ test("audit failure rolls back new people, relations, revision and history", asy
   await first.query("DROP TRIGGER reject_audit ON archive_audit_entries");
   await graph(first, tokens.admin, "tree-a", add("new"), 0);
   assert.equal((await read(first, "tree-a")).revision, 1);
+});
+
+test("projected graph writes preserve rich untouched cards and inverse patches reconstruct the full archive", async (t) => {
+  const { first } = await fixture(t);
+  const rich = {
+    biography: "untouched-biography-".repeat(3000),
+    occupation: "Teacher",
+    awards: [
+      {
+        id: "award-one",
+        name: "Test medal",
+        year: "1970",
+        source: { title: "Award source", url: "https://example.invalid/medal" },
+      },
+    ],
+    sources: [
+      {
+        title: "Family source",
+        type: "archive",
+        reference: "book-7",
+        url: "https://example.invalid/source",
+        note: "Source comment",
+      },
+    ],
+  };
+  await first.query("SELECT set_config('drevo.archive_id','tree-a',false)");
+  await first.query(
+    "UPDATE people SET data=data || $1::jsonb WHERE archive_id='tree-a'",
+    [JSON.stringify(rich)],
+  );
+  const before = (await read(first, "tree-a")).family;
+  const untouched = (
+    await first.query(
+      "SELECT id,xmin::text,data FROM people WHERE archive_id='tree-a' AND id IN ('father','own') ORDER BY id",
+    )
+  ).rows;
+  const other = await fingerprint(first, "tree-b");
+  let after = {
+    ...structuredClone(before),
+    people: [...before.people, draft("new-spouse", "1981")],
+  };
+  after = connectPeople(after, "child", "new-spouse", "spouse");
+  const result = await graph(
+    first,
+    tokens.admin,
+    "tree-a",
+    archiveChanges(before, after),
+    0,
+  );
+  const saved = (await read(first, "tree-a")).family;
+  assert.deepEqual(
+    (
+      await first.query(
+        "SELECT id,xmin::text,data FROM people WHERE archive_id='tree-a' AND id IN ('father','own') ORDER BY id",
+      )
+    ).rows,
+    untouched,
+  );
+  assert.deepEqual(
+    saved.people.find((p) => p.id === "child")!.sources,
+    rich.sources,
+  );
+  assert.equal(
+    saved.people.find((p) => p.id === "child")!.biography,
+    rich.biography,
+  );
+  assert.deepEqual(
+    saved.people.find((p) => p.id === "child")!.awards,
+    rich.awards,
+  );
+  assert.deepEqual(saved.photos, before.photos);
+  const history = (
+    await first.query(
+      "SELECT data FROM history WHERE archive_id='tree-a' AND revision=0",
+    )
+  ).rows[0].data;
+  assert.equal(history.format, "drevo-archive-changes-v1");
+  assert.deepEqual(
+    applyArchiveChanges(saved, history.changes, "local").family,
+    before,
+  );
+  // JSONB persists deletion patches without undefined-valued properties.
+  // Compare the storage contract while the full inverse replay above verifies data.
+  assert.deepEqual(
+    history.changes,
+    JSON.parse(JSON.stringify(inverseChanges(result.appliedChanges))),
+  );
+  assert.ok(!JSON.stringify(history).includes(rich.biography));
+  assert.ok(
+    !history.changes.some((change: Change) => change.collection === "photos"),
+  );
+  assert.deepEqual(await fingerprint(first, "tree-b"), other);
+});
+
+test("readRevision restores mixed legacy snapshots, legacy person patches and new graph patches", async (t) => {
+  const { first } = await fixture(t);
+  const source = {
+    title: "Persistent source",
+    type: "archive",
+    reference: "case-104",
+    url: "https://example.invalid/record",
+    note: "Keep comment",
+  };
+  await first.query("SELECT set_config('drevo.archive_id','tree-a',false)");
+  await first.query(
+    "UPDATE people SET data=data || $1::jsonb WHERE archive_id='tree-a' AND id='father'",
+    [
+      JSON.stringify({
+        biography: "Preserved full biography",
+        sources: [source],
+      }),
+    ],
+  );
+  const initial = (await read(first, "tree-a")).family;
+  await patch(
+    first,
+    tokens.admin,
+    "tree-a",
+    change("birth", "1950", "1951", "father"),
+    0,
+  );
+  const firstVersion = (await read(first, "tree-a")).family;
+  // Simulate already persisted records from older supported releases.
+  await first.query(
+    "UPDATE history SET data=$1::jsonb WHERE archive_id='tree-a' AND revision=0",
+    [JSON.stringify(initial)],
+  );
+  await patch(
+    first,
+    tokens.admin,
+    "tree-a",
+    change("birth", "2000", "2001", "own"),
+    1,
+  );
+  await first.query(
+    "UPDATE history SET data=jsonb_set(data,'{format}',to_jsonb('drevo-person-patches-v1'::text)) WHERE archive_id='tree-a' AND revision=1",
+  );
+  const secondVersion = (await read(first, "tree-a")).family;
+  await graph(first, tokens.admin, "tree-a", add("history-person"), 2);
+  const current = await read(first, "tree-a");
+  const records = (
+    await first.query(
+      "SELECT revision,data FROM history WHERE archive_id='tree-a' ORDER BY revision",
+    )
+  ).rows;
+  assert.equal(records[2].data.format, "drevo-archive-changes-v1");
+  // Exercise the actual shared restore implementation, not a copy of its loop.
+  const replay = await openArchive(":memory:", current.family);
+  t.after(() => replay.close());
+  await replay.db
+    .prepare("UPDATE archive SET revision=? WHERE id=1")
+    .run(current.revision);
+  await replay.db.exec("DELETE FROM history");
+  for (const row of records)
+    await replay.db
+      .prepare("INSERT INTO history(revision,data) VALUES(?,?)")
+      .run(Number(row.revision), JSON.stringify(row.data));
+  assert.deepEqual(await replay.readRevision(2), secondVersion);
+  assert.deepEqual(await replay.readRevision(1), firstVersion);
+  assert.deepEqual(await replay.readRevision(0), initial);
+  assert.deepEqual(
+    (await replay.readRevision(0)).people.find((p) => p.id === "father")!
+      .sources,
+    [source],
+  );
+  assert.deepEqual((await replay.readRevision(0)).photos, initial.photos);
 });

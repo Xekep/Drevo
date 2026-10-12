@@ -1,27 +1,48 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { finished } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
-import { accountDataExport, AccountAiHistoryTooLarge, AccountJsonTooLarge,
-  MAX_ACCOUNT_JSON_BYTES, accountMembershipsStillOverExportLimit } from "./account-data-export.ts";
+import {
+  accountDataExport,
+  AccountAiHistoryTooLarge,
+  AccountJsonTooLarge,
+  MAX_ACCOUNT_JSON_BYTES,
+  accountMembershipsStillOverExportLimit,
+} from "./account-data-export.ts";
 import type { StoreDatabase } from "./store-database.ts";
+import {
+  preparationAdmission,
+  withPreparation,
+  PREPARATION_BYTES,
+  type PreparationAdmission,
+} from "./preparation-admission.ts";
 
 export function accountDataExportHttp(
   db: StoreDatabase,
   auth: Awaited<ReturnType<typeof createAuth>>,
   beforeSend?: () => Promise<void>,
   deliveryDeadlineMs = 30_000,
+  preparation?: PreparationAdmission,
 ) {
   const exporter = accountDataExport(db);
+  const budget = preparation ?? preparationAdmission();
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (url.pathname !== "/api/account/export") return false;
-    const send = (status: number, value: unknown, download = false, json = JSON.stringify(value)) => {
+    const send = (
+      status: number,
+      value: unknown,
+      download = false,
+      json = JSON.stringify(value),
+    ) => {
       res.writeHead(status, {
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "no-referrer",
         ...(download
-          ? { "Content-Disposition": 'attachment; filename="drevo-account.json"' }
+          ? {
+              "Content-Disposition":
+                'attachment; filename="drevo-account.json"',
+            }
           : {}),
       });
       res.end(json);
@@ -32,69 +53,102 @@ export function accountDataExportHttp(
     if (db.kind !== "postgres")
       return send(404, { error: "Экспорт аккаунта здесь недоступен" });
     const session = await auth.accountSession(req);
-    if (!session)
-      return send(401, { error: "Требуется вход в аккаунт" });
-    let prepared: Awaited<ReturnType<typeof exporter.read>> = null;
-    let oversized: AccountAiHistoryTooLarge | AccountJsonTooLarge | null = null;
-    try {
-      prepared = await exporter.read(session.accountId);
-    } catch (error) {
-      if (error instanceof AccountAiHistoryTooLarge || error instanceof AccountJsonTooLarge)
-        oversized = error;
-      else throw error;
-    }
-    if (!prepared && !oversized) return send(404, { error: "Аккаунт не найден" });
-    let json = prepared ? JSON.stringify(prepared.download) : "";
-    if (prepared && Buffer.byteLength(json) > MAX_ACCOUNT_JSON_BYTES) {
-      oversized = new AccountJsonTooLarge(prepared.accessScopes);
-      prepared = null;
-      json = "";
-    }
-    await beforeSend?.();
-    let delivery: Awaited<ReturnType<typeof exporter.deliverWithCurrentSession>>;
-    try {
-      delivery = await exporter.deliverWithCurrentSession(
-        session.accountId,
-        session.tokenHash,
-        oversized?.accessScopes ?? prepared!.accessScopes,
-        async () => {
-          const delivered = finished(res, { cleanup: true });
-          const timer = setTimeout(
-            () => res.destroy(new Error("Account JSON export delivery timed out")),
-            deliveryDeadlineMs,
+    if (!session) return send(401, { error: "Требуется вход в аккаунт" });
+    return await withPreparation(
+      req,
+      res,
+      budget,
+      PREPARATION_BYTES.export,
+      async (signal) => {
+        let prepared: Awaited<ReturnType<typeof exporter.read>> = null;
+        let oversized: AccountAiHistoryTooLarge | AccountJsonTooLarge | null =
+          null;
+        try {
+          prepared = await exporter.read(
+            session.accountId,
+            true,
+            false,
+            signal,
           );
-          timer.unref();
-          try {
-            if (oversized)
-              send(413, {
-                error: oversized instanceof AccountAiHistoryTooLarge
-                  ? "Экспорт не сформирован: история ИИ превышает текущий лимит. Данные не изменены."
-                  : "Экспорт не сформирован: объём данных превышает текущий лимит. Данные не изменены.",
-              });
-            else
-              send(200, prepared!.download, true, json);
-            await delivered;
-          } finally {
-            clearTimeout(timer);
+        } catch (error) {
+          if (
+            error instanceof AccountAiHistoryTooLarge ||
+            error instanceof AccountJsonTooLarge
+          )
+            oversized = error;
+          else throw error;
+        }
+        if (!prepared && !oversized)
+          return send(404, { error: "Аккаунт не найден" });
+        signal.throwIfAborted();
+        let json = prepared ? JSON.stringify(prepared.download) : "";
+        if (prepared && Buffer.byteLength(json) > MAX_ACCOUNT_JSON_BYTES) {
+          oversized = new AccountJsonTooLarge(prepared.accessScopes);
+          prepared = null;
+          json = "";
+        }
+        await beforeSend?.();
+        signal.throwIfAborted();
+        let delivery: Awaited<
+          ReturnType<typeof exporter.deliverWithCurrentSession>
+        >;
+        try {
+          delivery = await exporter.deliverWithCurrentSession(
+            session.accountId,
+            session.tokenHash,
+            oversized?.accessScopes ?? prepared!.accessScopes,
+            async () => {
+              const delivered = finished(res, { cleanup: true });
+              const timer = setTimeout(
+                () =>
+                  res.destroy(
+                    new Error("Account JSON export delivery timed out"),
+                  ),
+                deliveryDeadlineMs,
+              );
+              timer.unref();
+              try {
+                if (oversized)
+                  send(413, {
+                    error:
+                      oversized instanceof AccountAiHistoryTooLarge
+                        ? "Экспорт не сформирован: история ИИ превышает текущий лимит. Данные не изменены."
+                        : "Экспорт не сформирован: объём данных превышает текущий лимит. Данные не изменены.",
+                  });
+                else send(200, prepared!.download, true, json);
+                await delivered;
+              } finally {
+                clearTimeout(timer);
+              }
+            },
+            oversized instanceof AccountJsonTooLarge &&
+              oversized.membershipBoundsExceeded
+              ? (client) =>
+                  accountMembershipsStillOverExportLimit(
+                    client,
+                    session.accountId,
+                  )
+              : undefined,
+          );
+        } catch (error) {
+          if (res.headersSent || res.destroyed) {
+            res.destroy(error as Error);
+            return true;
           }
-        },
-        oversized instanceof AccountJsonTooLarge && oversized.membershipBoundsExceeded
-          ? (client) => accountMembershipsStillOverExportLimit(client, session.accountId)
-          : undefined,
-      );
-    } catch (error) {
-      if (res.headersSent || res.destroyed) {
-        res.destroy(error as Error);
+          throw error;
+        }
+        if (delivery === "session-expired")
+          return send(401, { error: "Сеанс завершён. Войдите снова" });
+        if (delivery === "access-changed")
+          return send(409, {
+            error: "Доступ к древу изменился. Повторите экспорт",
+          });
+        if (delivery === "access-busy")
+          return send(409, {
+            error: "Права доступа меняются. Повторите экспорт",
+          });
         return true;
-      }
-      throw error;
-    }
-    if (delivery === "session-expired")
-      return send(401, { error: "Сеанс завершён. Войдите снова" });
-    if (delivery === "access-changed")
-      return send(409, { error: "Доступ к древу изменился. Повторите экспорт" });
-    if (delivery === "access-busy")
-      return send(409, { error: "Права доступа меняются. Повторите экспорт" });
-    return true;
+      },
+    );
   };
 }

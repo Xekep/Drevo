@@ -8,6 +8,7 @@ export async function persistPostgresGraphChanges(
   archiveId: string,
   before: Family,
   after: Family,
+  completePeople?: ReadonlySet<string>,
 ) {
   await client.query("SELECT set_config('drevo.archive_id',$1,true)", [
     archiveId,
@@ -34,6 +35,8 @@ export async function persistPostgresGraphChanges(
     } else if (
       !isDeepStrictEqual(oldPeople.get(row.id), JSON.parse(row.data))
     ) {
+      if (completePeople && !completePeople.has(row.id))
+        throw new Error("Изменяемая карточка не загружена полностью");
       await client.query(
         "UPDATE people SET data=$3::jsonb WHERE archive_id=$1 AND id=$2",
         [archiveId, row.id, row.data],
