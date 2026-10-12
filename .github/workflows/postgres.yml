@@ -6,7 +6,8 @@ permissions:
 jobs:
   postgres:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Native HTTP/RLS scenarios and both benchmarks can exceed 15 minutes on shared runners.
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:18
