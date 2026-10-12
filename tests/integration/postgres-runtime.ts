@@ -2,6 +2,7 @@ import { verifyPlatformBackupsHttp } from "./postgres-platform-backups-http.ts";
 import { readStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
+import type { ArchiveUser } from "../../src/domain/access.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createServer, get as httpGet, type IncomingMessage } from "node:http";
@@ -1980,8 +1981,8 @@ try {
   // backup must preserve historical evidence, not silently omit missing files.
   assert.equal(existsSync(join(uploads, citationUrl.slice("/media/".length))), true);
   await pendingFile.undo();
-  // A scoped AI export awaits archive.read() again while checking its final
-  // scope. Downgrading the account during that await must prevent delivery.
+  // A scoped AI export awaits the thin visible-ID reader while checking its
+  // final scope. Downgrading the account during that await must prevent delivery.
   await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='reader'");
   await client.query(`UPDATE archive_memberships
     SET tree_access='common_ancestors',person_id='person-a'
@@ -1990,16 +1991,16 @@ try {
   let reachedExportRead!: () => void;
   const atExportRead = new Promise<void>((resolve) => { reachedExportRead = resolve; });
   const continueExportRead = new Promise<void>((resolve) => { releaseExportRead = resolve; });
-  let exportReads = 0;
+  let exportScopeReads = 0;
   const exportArchive = {
     ...app.archive,
-    read: async () => {
-      if (++exportReads === 3) {
+    visibleIds: Object.assign(async (user: ArchiveUser) => {
+      if (++exportScopeReads === 2) {
         reachedExportRead();
         await continueExportRead;
       }
-      return app!.archive.read();
-    },
+      return app!.archive.visibleIds(user);
+    }, { close: app.archive.visibleIds.close }),
   };
   const exportAi = aiResearchHttp({
     archive: exportArchive,
@@ -6725,14 +6726,14 @@ try {
     let reads = 0;
     const delayedArchive = {
       ...app!.archive,
-      read: async () => {
-        const snapshot = await app!.archive.read();
+      visibleIds: Object.assign(async (user: ArchiveUser) => {
+        const ids = await app!.archive.visibleIds(user);
         if (reads++ === 0) {
           reachedRead();
           await readGate;
         }
-        return snapshot;
-      },
+        return ids;
+      }, { close: app!.archive.visibleIds.close }),
     };
     const handler = personDiscussionHttp({
       archive: delayedArchive,

@@ -437,11 +437,22 @@ async function initializeGlobalRuntimeSchema(db: StoreDatabase) {
         AND to_regclass('ai_chat_messages_change_cursor') IS NOT NULL`,
       "103_ai_chat_message_cursors.sql",
     ],
+    [
+      `SELECT 1 AS present WHERE
+        EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+          AND table_name='people' AND column_name='portrait_url' AND is_generated='ALWAYS')
+        AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+          AND table_name='photos' AND column_name='media_url' AND is_generated='ALWAYS')
+        AND to_regclass('people_portrait_url') IS NOT NULL
+        AND to_regclass('photos_media_url') IS NOT NULL`,
+      "104_media_url_lookup.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     if (
       file === "102_media_storage_usage.sql" ||
       file === "103_ai_chat_message_cursors.sql" ||
+      file === "104_media_url_lookup.sql" ||
       file === "090_global_staff_roles.sql" ||
       file === "092_discovery_branch_depth.sql" ||
       file === "094_archive_invitation_scope.sql"

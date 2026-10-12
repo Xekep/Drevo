@@ -27,9 +27,9 @@ export function mediaReferenceAccess(
          OR json_extract(p.data,'$.createdBy')=q.actor OR EXISTS(SELECT 1 FROM photo_tags t WHERE t.photo_id=p.id
            AND t.person_id IN (SELECT value FROM json_each(q.ids)))))`,
           `WITH request AS (SELECT ?::jsonb AS ids,?::text AS actor,?::text AS url)
-       SELECT 1 FROM request q WHERE EXISTS(SELECT 1 FROM people p WHERE p.data->>'photo'=q.url
+       SELECT 1 FROM request q WHERE EXISTS(SELECT 1 FROM people p WHERE p.portrait_url=q.url
          AND (q.ids IS NULL OR p.id IN (SELECT value FROM jsonb_array_elements_text(q.ids))))
-       OR EXISTS(SELECT 1 FROM photos p WHERE p.data->>'url'=q.url AND (q.ids IS NULL
+       OR EXISTS(SELECT 1 FROM photos p WHERE p.media_url=q.url AND (q.ids IS NULL
          OR p.data->>'createdBy'=q.actor OR EXISTS(SELECT 1 FROM photo_tags t WHERE t.archive_id=p.archive_id AND t.photo_id=p.id
            AND t.person_id IN (SELECT value FROM jsonb_array_elements_text(q.ids)))))`,
         )

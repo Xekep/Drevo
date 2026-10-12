@@ -12,3 +12,4 @@ import "./postgres-document-citation-index.ts";
 
 import "./postgres-media-storage-usage.ts";
 import "./postgres-ai-chat-cursors.ts";
+import "./postgres-media-url-lookup.ts";

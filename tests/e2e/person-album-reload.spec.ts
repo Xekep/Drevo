@@ -3,7 +3,8 @@ import { archiveOverview, personDetails } from "../../src/domain/archive-project
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
 
-test("the open profile refreshes its real album total after a minimal write without selecting it again", async ({ page }) => {
+test("the open profile refreshes its real album total after a minimal write without selecting it again", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop", "person editing is a desktop interaction");
   await page.emulateMedia({ reducedMotion: "reduce" });
   const initialResponse = await page.request.get("/api/family?projection=overview");
   const initial = await initialResponse.json();

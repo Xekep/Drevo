@@ -392,9 +392,11 @@ export function archiveDetails<T extends ArchivePageHeader>(
               ...header,
               family: { ...header.family, photos: photosWith(data.photos) },
             };
+            for (const id of batch) {
+              if (data.personPhotoTotals[id] === 0 || (data.photos as ArchivePhoto[]).some(photo => photo.tags.some(tag => tag.personId === id))) albums.add(id);
+            }
             emit();
           }
-          batch.forEach((id) => albums.add(id));
         }
       }, true);
     },

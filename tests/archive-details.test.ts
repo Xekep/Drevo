@@ -471,3 +471,26 @@ test("a minimal committed write invalidates the selected profile preview and rel
   assert.equal(calls, 2, "publishing fresh profile data never invalidates its projection again or loops");
   assert.equal(reader.projectionGeneration(), 1);
 });
+
+test("a shared profile preview does not complete an album whose photos fell outside the first thirty", async () => {
+  const setup = fixture(3);
+  setup.family.photos = setup.family.photos!.map((photo, index) => ({
+    ...photo,
+    tags: photo.tags.map(tag => ({ ...tag, personId: index < 41 ? "p0" : "p1" })),
+  }));
+  await setup.reader.loadPeople(["p0", "p1", "p2"]);
+  assert.equal(setup.calls.length, 1);
+  assert.equal(setup.reader.personPhotoTotal("p0"), 41);
+  assert.equal(setup.reader.personPhotoTotal("p1"), 41);
+  assert.equal(setup.reader.personPhotoTotal("p2"), 0);
+  assert.ok(setup.updates.at(-1)!.family.photos!.every(photo => photo.tags.every(tag => tag.personId === "p0")));
+  await setup.reader.loadPeople(["p1"]);
+  assert.equal(setup.calls.length, 2, "a known total alone does not replace that person's missing cover preview");
+  const solo = new URL(setup.calls[1], "https://example.test").searchParams;
+  assert.deepEqual(JSON.parse(solo.get("ids")!), ["p1"]);
+  assert.equal(solo.get("preview"), "1");
+  assert.equal(solo.get("offset"), "0");
+  assert.equal(setup.updates.at(-1)!.family.photos!.filter(photo => photo.tags.some(tag => tag.personId === "p1")).length, 30);
+  await setup.reader.loadPeople(["p0", "p1", "p2"]);
+  assert.equal(setup.calls.length, 2, "covered and genuinely empty albums are ready without repeat reads");
+});

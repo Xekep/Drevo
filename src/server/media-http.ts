@@ -53,7 +53,7 @@ export function mediaHttp({
       (await archive.db
         .prepare(
           "SELECT 1 FROM photos WHERE json_extract(data,'$.url')=? LIMIT 1",
-          "SELECT 1 FROM photos WHERE (data->>'url')=? LIMIT 1",
+          "SELECT 1 FROM photos WHERE media_url=? LIMIT 1",
         )
         .get(url))
     )
@@ -63,7 +63,7 @@ export function mediaHttp({
       !!(await archive.db
         .prepare(
           "SELECT 1 FROM people WHERE json_extract(data,'$.photo')=? LIMIT 1",
-          "SELECT 1 FROM people WHERE (data->>'photo')=? LIMIT 1",
+          "SELECT 1 FROM people WHERE portrait_url=? LIMIT 1",
         )
         .get(url))
     );

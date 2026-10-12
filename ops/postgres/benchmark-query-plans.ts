@@ -89,7 +89,8 @@ export async function benchmarkMediaReferencePlans(
     assert.equal(role.rolbypassrls, false);
     const indexes = (
       await client.query(`SELECT indexname,indexdef FROM pg_indexes
-      WHERE schemaname=current_schema() AND indexname IN ('people_photo','photos_url') ORDER BY indexname`)
+      WHERE schemaname=current_schema() AND indexname IN
+        ('people_photo','photos_url','people_portrait_url','photos_media_url') ORDER BY indexname`)
     ).rows;
     const plans = [];
     for (const [name, query] of candidates) {
