@@ -14,6 +14,7 @@ import {
   BookOpenText,
   Heart,
   ShieldCheck,
+  Network,
   LogOut,
   MapPin,
   ChartNoAxesCombined,
@@ -259,7 +260,7 @@ export function ArchiveNavigation({
                   aria-current={view === "manage" ? "page" : undefined}
                   onClick={(event) => navigate(event, "manage")}
                 >
-                  <ShieldCheck size={22} />
+                  <Network size={22} aria-hidden="true" />
                   <span>Управление древом</span>
                 </a>
               )}
