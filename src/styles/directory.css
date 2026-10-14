@@ -1,7 +1,8 @@
 .people-directory {
-  max-width: 1280px;
+  width: 100%;
+  max-width: var(--catalog-width);
   margin: 0 auto;
-  padding: 38px 32px 64px;
+  padding: 28px var(--catalog-gutter) 56px;
 }
 .flow-reference {
   position: absolute;
@@ -141,11 +142,11 @@
   align-items: end;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 28px;
+  margin-bottom: var(--catalog-heading-gap);
 }
 .people-directory h1 {
-  font: 400 36px/1.2 var(--serif);
-  margin-top: 9px;
+  font: 400 var(--catalog-heading-size)/1.2 var(--serif);
+  margin: 0;
 }
 .people-directory h1 small {
   font: 14px var(--sans);
@@ -157,6 +158,19 @@
   gap: 7px;
   font-size: 12px;
   color: #58695b;
+}
+.people-directory-actions {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.people-directory-actions .primary-action {
+  min-height: var(--control-height);
+  padding: 7px 12px;
+  white-space: nowrap;
 }
 .people-directory select {
   border: 1px solid #dae2d3;
@@ -584,20 +598,24 @@
     min-width: 60px;
   }
   .people-directory {
-    padding: 25px 16px 50px;
+    padding: 24px var(--catalog-gutter) 40px;
   }
   .people-directory header {
     align-items: start;
     gap: 14px;
     flex-wrap: wrap;
-    margin-bottom: 20px;
+    margin-bottom: var(--catalog-heading-gap);
   }
   .people-directory h1 {
-    font-size: 30px;
+    font-size: var(--catalog-heading-size);
   }
   .people-directory header label {
-    margin-left: auto;
     max-width: 100%;
+  }
+  .people-directory-actions {
+    width: 100%;
+    justify-content: space-between;
+    align-items: end;
   }
   .people-directory select {
     max-width: 100%;

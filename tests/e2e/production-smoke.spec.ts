@@ -400,7 +400,7 @@ test("действия карточки человека остаются в о�
   await page.goto("/tree");
   await page.getByTestId("rf__node-e2e-memorial-person").click();
   const actions = page.locator(
-    ".inspector-heading .inspector-person-actions button",
+    ".inspector-heading .inspector-person-actions > button",
   );
   await expect(actions.first()).toBeVisible();
   const positions = await actions.evaluateAll((buttons) =>
@@ -410,7 +410,7 @@ test("действия карточки человека остаются в о�
   const fits = await page
     .locator(".inspector-heading")
     .evaluate((heading) =>
-      [...heading.querySelectorAll("button")].every(
+      [...heading.querySelectorAll(".inspector-person-actions > button, .person-more-actions > summary, .inspector-heading > button")].every(
         (button) =>
           button.getBoundingClientRect().right <=
           heading.getBoundingClientRect().right,

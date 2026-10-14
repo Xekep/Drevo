@@ -1255,7 +1255,8 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
 }
 .ai-role-choices small {
   color: #586b59;
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 .ai-role-profile-main {
   display: grid;
@@ -1271,10 +1272,15 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
 }
 .ai-role-profile-main select { width: 100%; }
 .ai-model-catalog-status { display: grid; gap: 6px; }
+.ai-model-catalog-status small {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
 .ai-model-catalog-status button { justify-self: start; }
 .ai-model-catalog-status p { color: #a83f34; overflow-wrap: anywhere; }
 .ai-role-features[open] { display: grid; gap: 10px; }
-.ai-role-profile-custom > small { color: var(--muted); font-size: 11px; }
+.ai-role-profile-custom > small { color: var(--muted); font-size: 13px; line-height: 1.5; }
 .ai-role-profile-custom .ai-role-limits {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 0;
@@ -1282,7 +1288,7 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   border: 0;
   gap: 8px;
 }
-.ai-role-profile-custom .ai-role-limits label { font-size: 11px; }
+.ai-role-profile-custom .ai-role-limits label { font-size: 12px; line-height: 1.5; }
 .ai-role-capabilities {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

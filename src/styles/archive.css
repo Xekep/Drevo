@@ -339,6 +339,15 @@ button:disabled,
   padding: 30px;
   background: #f8f9f5;
 }
+.gallery-view:has(.gallery-photo-heading) {
+  width: 100%;
+  max-width: var(--catalog-width);
+  margin-inline: auto;
+  padding: 28px var(--catalog-gutter) 56px;
+}
+.gallery-view .gallery-photo-heading {
+  margin-bottom: var(--catalog-heading-gap);
+}
 .gallery-heading {
   display: flex;
   justify-content: space-between;
@@ -572,5 +581,11 @@ button:disabled,
   }
   .person-edit-actions {
     padding-top: 15px;
+  }
+}
+
+@media (max-width: 899px) {
+  .gallery-view:has(.gallery-photo-heading) {
+    padding: 24px var(--catalog-gutter) 40px;
   }
 }

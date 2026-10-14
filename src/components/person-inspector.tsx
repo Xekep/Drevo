@@ -1,5 +1,5 @@
-import { lazy, Suspense, useState } from "react";
-import { Plus, Pencil, Link2, History, Expand } from "lucide-react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { Plus, Pencil, Link2, History, Expand, Ellipsis } from "lucide-react";
 import { useDesktopEditing } from "../hooks/useDesktopEditing";
 import { EditorDialog } from "./editor-dialog";
 import { InspectorActions } from "./inspector-dock";
@@ -91,6 +91,31 @@ export function PersonInspector({
     [type, setType] = useState<"child" | ConnectionType>("child");
   const [history, setHistory] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const actionMenu = useRef<HTMLDetailsElement>(null);
+  const closeActions = () => {
+    if (actionMenu.current) actionMenu.current.open = false;
+  };
+  useEffect(() => {
+    if (actionMenu.current) actionMenu.current.open = false;
+    const outside = (event: PointerEvent) => {
+      if (!actionMenu.current?.contains(event.target as Node)) {
+        if (actionMenu.current) actionMenu.current.open = false;
+      }
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !actionMenu.current?.open) return;
+      event.preventDefault();
+      event.stopPropagation();
+      actionMenu.current.open = false;
+      actionMenu.current.querySelector("summary")?.focus();
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape, true);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape, true);
+    };
+  }, [person.id]);
   const desktop = useDesktopEditing();
   const photos = (family.photos || []).filter((p) =>
     p.tags.some((t) => t.personId === person.id),
@@ -99,41 +124,48 @@ export function PersonInspector({
     <>
       <InspectorActions>
         <div className="inspector-person-actions">
-          {onUrlPerson && (
-            <CopyArchiveLink target={{ kind: "person", id: person.id }} />
-          )}
-          {matchPath && <a className="person-action-icon" href={matchPath}
-            aria-label="Найти совпадения в других древах"
-            title="Найти совпадения в других древах"><Link2 size={16} /></a>}
           {canEdit && !detailsLoading && owns(user, person) && (
             <button
               onClick={onEdit}
-              className="person-edit-button"
+              className="person-edit-button person-primary-action"
               aria-label="Изменить человека"
               title="Изменить человека"
             >
               <Pencil size={16} />
+              <span>Изменить</span>
             </button>
           )}
           {canEdit && !detailsLoading && (
             <button
-              className="person-action-icon"
+              className="person-relative-button person-primary-action"
               onClick={() => setAdding(!adding)}
               aria-expanded={adding}
               title="Добавить родственника"
               aria-label="Добавить родственника"
             >
               <Plus size={18} />
+              <span>Родственник</span>
             </button>
           )}
+          {(onUrlPerson || matchPath || (desktop && !detailsLoading) || isArchiveOwner(user)) && (
+            <details ref={actionMenu} className="person-more-actions">
+              <summary aria-label="Другие действия с человеком" title="Другие действия">
+                <Ellipsis size={18} aria-hidden="true" />
+              </summary>
+              <div className="person-more-menu">
+                {onUrlPerson && <CopyArchiveLink target={{ kind: "person", id: person.id }} showLabel />}
+                {matchPath && <a href={matchPath} onClick={closeActions}>
+                  <Link2 size={16} aria-hidden="true" /><span>Найти совпадения</span>
+                </a>}
           {desktop && !detailsLoading && (
             <button
               className="person-expand-button"
               title="Развернуть карточку"
               aria-label="Развернуть карточку на весь экран"
-              onClick={() => setExpanded(true)}
+              onClick={() => { closeActions(); setExpanded(true); }}
             >
               <Expand size={16} />
+              <span>Развернуть карточку</span>
             </button>
           )}
           {isArchiveOwner(user) && (
@@ -141,10 +173,14 @@ export function PersonInspector({
               className="person-history-button"
               title="История изменений"
               aria-label="История изменений человека"
-              onClick={() => setHistory(true)}
+              onClick={() => { closeActions(); setHistory(true); }}
             >
               <History size={15} />
+              <span>История изменений</span>
             </button>
+          )}
+              </div>
+            </details>
           )}
         </div>
       </InspectorActions>

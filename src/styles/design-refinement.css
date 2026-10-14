@@ -1,16 +1,16 @@
 /* Dense archive pages, with the tree canvas left free for relationships. */
 @media (min-width: 900px) {
   .people-directory {
-    max-width: 1480px;
-    padding: 28px clamp(28px, 3vw, 48px) 56px;
+    max-width: var(--catalog-width);
+    padding: 28px var(--catalog-gutter) 56px;
   }
 
   .people-directory header {
-    margin-bottom: 19px;
+    margin-bottom: var(--catalog-heading-gap);
   }
 
   .people-directory h1 {
-    font-size: 34px;
+    font-size: var(--catalog-heading-size);
   }
 
   .directory-columns,

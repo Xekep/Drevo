@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, MapPin } from "lucide-react";
+import { ChevronRight, MapPin, Plus } from "lucide-react";
 import { fullName, plural, type Person } from "../domain";
 import {
   directoryPeople,
@@ -15,10 +15,12 @@ export function PeopleCatalog({
   people,
   query,
   onSelect,
+  onAdd,
 }: {
   people: Person[];
   query: string;
   onSelect: (id: string) => void;
+  onAdd?: () => void;
 }) {
   const [sort, setSort] = useState<PeopleSort>("name");
   const { limit, more } = useListLimit(`${sort}:${query}`);
@@ -41,19 +43,27 @@ export function PeopleCatalog({
             Люди <small>{list.length}</small>
           </h1>
         </div>
-        <label>
-          Порядок
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as PeopleSort)}
-          >
-            <option value="name">Фамилия: А — Я</option>
-            <option value="name-desc">Фамилия: Я — А</option>
-            <option value="birth">Рождение: раньше → позже</option>
-            <option value="birth-desc">Рождение: позже → раньше</option>
-            <option value="death">По году смерти</option>
-          </select>
-        </label>
+        <div className="people-directory-actions">
+          <label>
+            Порядок
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as PeopleSort)}
+            >
+              <option value="name">Фамилия: А — Я</option>
+              <option value="name-desc">Фамилия: Я — А</option>
+              <option value="birth">Рождение: раньше → позже</option>
+              <option value="birth-desc">Рождение: позже → раньше</option>
+              <option value="death">По году смерти</option>
+            </select>
+          </label>
+          {onAdd && (
+            <button className="primary-action" type="button" onClick={onAdd}>
+              <Plus size={18} aria-hidden="true" />
+              Добавить человека
+            </button>
+          )}
+        </div>
       </header>
       <div className="directory-columns" aria-hidden="true">
         <span>Человек</span>
