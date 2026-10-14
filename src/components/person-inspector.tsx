@@ -154,7 +154,8 @@ export function PersonInspector({
               </summary>
               <div className="person-more-menu">
                 {onUrlPerson && <CopyArchiveLink target={{ kind: "person", id: person.id }} showLabel />}
-                {matchPath && <a href={matchPath} onClick={closeActions}>
+                {matchPath && <a href={matchPath} onClick={closeActions}
+                  aria-label="Найти совпадения в других древах" title="Найти совпадения в других древах">
                   <Link2 size={16} aria-hidden="true" /><span>Найти совпадения</span>
                 </a>}
           {desktop && !detailsLoading && (
