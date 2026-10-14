@@ -81,10 +81,18 @@ export function LoginButtons({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, name, password, token }),
+      }).catch(() => {
+        throw new Error("Не удалось связаться с сервером. Проверьте интернет и попробуйте ещё раз.");
       });
-      const result = await response.json();
+      const result = await response.json().catch(() => {
+        throw new Error("Не удалось получить ответ сервера. Попробуйте ещё раз через несколько минут.");
+      });
+      if (!result || typeof result !== "object" || Array.isArray(result))
+        throw new Error("Не удалось получить ответ сервера. Попробуйте ещё раз через несколько минут.");
       if (!response.ok)
-        throw new Error(result.error || "Не удалось выполнить запрос.");
+        throw new Error(response.status >= 500
+          ? "Сервис входа временно недоступен. Попробуйте ещё раз через несколько минут."
+          : result.error || "Не удалось выполнить запрос. Проверьте введённые данные и попробуйте ещё раз.");
       if (result.archiveId) {
         onBeforeNavigate?.();
         markEntrySequence();

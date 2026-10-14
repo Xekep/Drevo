@@ -16,7 +16,7 @@ import {
   LoaderCircle,
   Plus,
 } from "lucide-react";
-import { fullName, resolvedSex, years, type Person } from "../../domain";
+import { fullName, plural, resolvedSex, years, type Person } from "../../domain";
 import { useTreePublicationStatus } from "./tree-publication-provider";
 import { Avatar } from "../person-panel";
 import { PortraitPlaceholder } from "../portrait-placeholder";
@@ -287,7 +287,7 @@ export const PersonNode = memo(function PersonNode({
           style={{
             "--branch-target": `${controlTarget}px`,
           } as CSSProperties}
-          aria-label={`${branchTitle}: ${data.childrenCount} потомков`}
+          aria-label={`${branchTitle}: ${data.childrenCount} ${plural(data.childrenCount, "потомок", "потомка", "потомков")}`}
           title={branchTitle}
           onClick={() => collapse(data.person.id, id)}
         >

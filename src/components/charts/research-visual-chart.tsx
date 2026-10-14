@@ -20,7 +20,56 @@ const colors = [
   "#bc8276",
 ];
 
-function visualOption(visual: ResearchVisual, expanded: boolean, layout?: ElkNode): EChartsOption {
+function graphSpan(layout?: ElkNode) {
+  const points = layout?.children || [];
+  const xs = points.map((node) => (node.x || 0) + 70);
+  const ys = points.map((node) => (node.y || 0) + 40);
+  return {
+    x: points.length ? Math.max(2, Math.max(...xs) - Math.min(...xs)) : 2,
+    y: points.length ? Math.max(2, Math.max(...ys) - Math.min(...ys)) : 2,
+  };
+}
+
+function graphEdgeName(edge: { label?: string; type: string }) {
+  return edge.label || (edge.type === "parent" ? "родитель → ребёнок"
+    : edge.type === "spouse" ? "супруги" : "дополнительная связь");
+}
+
+function graphLabelScale(visual: ResearchVisual, expanded: boolean, layout?: ElkNode) {
+  if (visual.kind !== "graph" || !layout?.children?.length) return 0;
+  const context = document.createElement("canvas").getContext("2d")!;
+  const font = expanded ? 12 : 10, maxWidth = expanded ? 160 : 110;
+  context.font = `${font}px sans-serif`;
+  const positions = new Map(layout.children.map((node) => [node.id, node]));
+  const labels = visual.graph.nodes.map((node) => {
+    const lines = (node.label || node.name).split("\n");
+    const widths = lines.map((line) => context.measureText(line).width);
+    return { id: node.id, x: positions.get(node.id)?.x || 0, y: positions.get(node.id)?.y || 0,
+      width: Math.min(maxWidth, Math.max(...widths)),
+      height: widths.reduce((rows, width) => rows + Math.max(1, Math.ceil(width / maxWidth)), 0) * (font + 2) };
+  });
+  let scale = 0;
+  for (let i = 0; i < labels.length; i++) for (const other of labels.slice(i + 1)) {
+    const node = labels[i];
+    if (node.y === other.y && node.x !== other.x)
+      scale = Math.max(scale, ((node.width + other.width) / 2 + 12) / Math.abs(node.x - other.x));
+  }
+  context.font = "10px sans-serif";
+  for (const edge of visual.graph.edges) {
+    const from = labels.find((node) => node.id === edge.from), to = labels.find((node) => node.id === edge.to);
+    if (!from || !to) continue;
+    const dx = Math.abs(from.x - to.x), dy = Math.abs(from.y - to.y);
+    if (!dy || dy < dx) continue;
+    const upper = from.y < to.y ? from : to;
+    const edgeHeight = (context.measureText(graphEdgeName(edge)).width + 8) *
+      dy / Math.hypot(dx, dy) + 14 * dx / Math.hypot(dx, dy);
+    scale = Math.max(scale, 2 * (20 + upper.height + edgeHeight / 2 + 12) / dy);
+  }
+  return scale;
+}
+
+function visualOption(visual: ResearchVisual, expanded: boolean, layout?: ElkNode,
+  viewport?: { width: number; height: number }): EChartsOption {
   const base: EChartsOption = {
     color: colors,
     animationDuration: 350,
@@ -82,6 +131,11 @@ function visualOption(visual: ResearchVisual, expanded: boolean, layout?: ElkNod
     visual.graph.nodes.map((node) => [node.id, node.name]),
   );
   const positions = new Map(layout?.children?.map((node) => [node.id, node]));
+  const span = graphSpan(layout);
+  const horizontalMargin = expanded ? 190 : 140;
+  const fitScale = viewport
+    ? Math.min(Math.max(1, viewport.width - horizontalMargin) / span.x,
+      Math.max(1, viewport.height - 96) / span.y) : 1;
   return {
     ...base,
     tooltip: {
@@ -103,6 +157,9 @@ function visualOption(visual: ResearchVisual, expanded: boolean, layout?: ElkNod
         type: "graph",
         layout: "none",
         preserveAspect: "contain",
+        // ECharts fits node centres, while text keeps its pixel size. Retain
+        // ELK's label clearance; large graphs can be panned instead of crushing it.
+        zoom: Math.max(1, graphLabelScale(visual, expanded, layout) / fitScale),
         left: expanded ? 95 : 70,
         right: expanded ? 95 : 70,
         top: 48,
@@ -120,12 +177,7 @@ function visualOption(visual: ResearchVisual, expanded: boolean, layout?: ElkNod
         links: visual.graph.edges.map((edge) => ({
           source: edge.from,
           target: edge.to,
-          name: edge.label ||
-            (edge.type === "parent"
-              ? "родитель → ребёнок"
-              : edge.type === "spouse"
-                ? "супруги"
-                : "дополнительная связь"),
+          name: graphEdgeName(edge),
           symbol: ["none", edge.type === "spouse" ? "none" : "arrow"],
           symbolSize: [0, 9],
           lineStyle: {
@@ -180,16 +232,22 @@ export function ResearchVisualChart({ source }: { source: string }) {
   const chart = useRef<EChartsType | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const expandButton = useRef<HTMLButtonElement>(null);
+  const inlineFrame = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState<{ width: number; height: number }>();
   const closeButton = useRef<HTMLButtonElement>(null);
   const visual = parsed.visual;
   const graphLayout = useResearchGraphLayout(visual?.kind === "graph" ? visual.graph : undefined);
+  const inlineHeight = useMemo(() => visual?.kind === "graph"
+    ? Math.min(480, Math.max(290,
+      graphSpan(graphLayout?.layout).y * graphLabelScale(visual, false, graphLayout?.layout) + 96)) : undefined,
+  [visual, graphLayout]);
   const inlineOption = useMemo(
-    () => (visual ? visualOption(visual, false, graphLayout?.layout) : {}),
-    [visual, graphLayout],
+    () => (visual ? visualOption(visual, false, graphLayout?.layout, !expanded ? viewport : undefined) : {}),
+    [visual, graphLayout, viewport, expanded],
   );
   const expandedOption = useMemo(
-    () => (visual ? visualOption(visual, true, graphLayout?.layout) : {}),
-    [visual, graphLayout],
+    () => (visual ? visualOption(visual, true, graphLayout?.layout, expanded ? viewport : undefined) : {}),
+    [visual, graphLayout, viewport, expanded],
   );
 
   useEffect(() => {
@@ -207,13 +265,31 @@ export function ResearchVisualChart({ source }: { source: string }) {
     };
   }, [expanded]);
 
+  useEffect(() => {
+    if (visual?.kind !== "graph" || !graphLayout?.layout) return;
+    const plot = expanded
+      ? dialog.current?.querySelector<HTMLElement>(".research-visual-dialog-plot")
+      : inlineFrame.current;
+    if (!plot) return;
+    const measure = () => {
+      const width = plot.clientWidth, height = plot.clientHeight;
+      if (width && height) setViewport((previous) =>
+        previous?.width === width && previous.height === height ? previous : { width, height });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(plot);
+    return () => observer.disconnect();
+  }, [expanded, visual, graphLayout]);
+
   if (!visual) return <p className="research-visual-error">{parsed.error}</p>;
   if (visual.kind === "graph" && !graphLayout?.layout)
     return <p role="status" className="research-visual-error">{graphLayout?.error || "Готовлю схему…"}</p>;
   const label = visualLabel(visual);
   return (
     <>
-      <div className="research-visual" hidden={expanded}>
+      <div ref={inlineFrame} className="research-visual" hidden={expanded}
+        style={inlineHeight ? { height: inlineHeight } : undefined}>
           <ChartCanvas
             option={inlineOption}
             className="research-visual-plot"

@@ -117,6 +117,9 @@ test("shared search selects only shared people and disappears after revocation",
   await search.press("Enter");
   await expect(results).toHaveCount(0);
   await expect(page.locator(".inspector-dock")).toContainText("Пётр");
+  await expect(page).toHaveTitle(/Тестов Пётр Иванович/);
+  if (isMobile) await expect(page.locator(".tree-canvas")).toHaveAttribute("inert", "");
+  else await expect(page.locator(".tree-canvas")).not.toHaveAttribute("inert");
   const tabs = page.locator(".inspector-dock .panel-tabs [role=tab]");
   await expect(tabs).toHaveCount(2);
   const firstTab = (await tabs.nth(0).boundingBox())!;

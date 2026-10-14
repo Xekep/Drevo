@@ -2,6 +2,7 @@ import {
   useState,
   useRef,
   useEffect,
+  useLayoutEffect,
   useCallback,
   createContext,
   useContext,
@@ -24,6 +25,7 @@ export function InspectorDock({
   initialExpanded = true,
   suspended = false,
   allowExpand = true,
+  onCoveredSceneChange,
 }: {
   children: ReactNode;
   onClose: () => void;
@@ -32,6 +34,7 @@ export function InspectorDock({
   initialExpanded?: boolean;
   suspended?: boolean;
   allowExpand?: boolean;
+  onCoveredSceneChange?: (covered: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(initialExpanded);
   const [mobile, setMobile] = useState(
@@ -44,6 +47,10 @@ export function InspectorDock({
   const ref = useRef<HTMLElement>(null);
   const heading = useRef<HTMLDivElement>(null);
   const expand = useCallback(() => setExpanded(true), []);
+  useLayoutEffect(() => {
+    onCoveredSceneChange?.(mobile && expanded && !mobileSuspended);
+    return () => onCoveredSceneChange?.(false);
+  }, [mobile, expanded, mobileSuspended, onCoveredSceneChange]);
   useDockSwipe(ref, heading, expanded || !allowExpand, !editing, onClose, expand, true);
   useEffect(() => {
     const query = window.matchMedia("(max-width: 899px)");
@@ -60,7 +67,14 @@ export function InspectorDock({
       ?.querySelector<HTMLElement>("button,input,select,textarea,[tabindex]")
       ?.focus();
     return () => {
-      previous?.focus?.({ preventScroll: true });
+      requestAnimationFrame(() => {
+        const active = document.activeElement;
+        // A replacement dock or navigation action may already own focus.
+        if (active && active !== document.body && active !== previous &&
+            active !== node && !node?.contains(active)) return;
+        if (previous?.isConnected && !previous.closest('[inert]'))
+          previous.focus({ preventScroll: true });
+      });
     };
   }, [mobile, expanded, mobileSuspended]);
   useEffect(() => {

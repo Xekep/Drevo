@@ -7,6 +7,7 @@ import { useNavigationChanges } from "./hooks/useNavigationChanges";
 import { ArrowDownUp, ImagePlus, Link2, Plus, X } from "lucide-react";
 import {
   analyzeKinship,
+  fullName,
   suggestConnectionOrder,
   type Person,
   type GraphConnection,
@@ -15,6 +16,7 @@ import {
 import { useAccountSession } from "./hooks/useAccountSession";
 import { useArchive } from "./hooks/useArchive";
 import { useArchiveView } from "./hooks/useArchiveView";
+import { useArchivePageTitle } from "./hooks/useArchivePageTitle";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
 import { usePhotoWorkspace } from "./hooks/usePhotoWorkspace";
 import {
@@ -166,6 +168,7 @@ export default function App() {
       dispatch,
     } = selection;
   const treeCanvas = useRef<TreeCanvasHandle>(null);
+  const [treeSceneCovered, setTreeSceneCovered] = useState(false);
   const exportWarnings = archive.exportWarnings;
   const checkExportWarnings = useCallback(async (signal: AbortSignal) => {
     if (!family) return { parentEvidence: false, catalogLinks: false };
@@ -573,6 +576,13 @@ export default function App() {
     () => selected.flatMap((id) => (map.has(id) ? [map.get(id)!] : [])),
     [selected, map],
   );
+  const titledPerson = urlPhotoTarget?.kind === "person" ? map.get(urlPhotoTarget.id) : null;
+  const titledPhoto = urlPhotoTarget?.kind === "photo"
+    ? family?.photos?.find((photo) => photo.id === urlPhotoTarget.id) : null;
+  useArchivePageTitle(view, currentPath, family?.title,
+    titledPerson ? fullName(titledPerson)
+      : titledPhoto ? titledPhoto.title?.trim() || ["Фотография", titledPhoto.year, titledPhoto.place].filter(Boolean).join(" · ")
+        : undefined);
   const relation = useMemo(
     () =>
       chosen.length === 2
@@ -974,6 +984,7 @@ export default function App() {
                   >
                     <TreeCanvas
                       ref={treeCanvas}
+                      covered={treeSceneCovered}
                       restricted={Boolean(participantPreview)}
                       onPreferences={() => setTreePreferencesOpen(true)}
                       onExport={participantPreview ? undefined : () => setTreeExportOpen(true)}
@@ -1097,6 +1108,7 @@ export default function App() {
                       <InspectorDock
                         key={personDraft.key}
                         onClose={closeEditor}
+                        onCoveredSceneChange={setTreeSceneCovered}
                         editing
                         label={personDraft.person ? "Редактировать человека" : "Новый человек"}
                         suspended={assistantOpen}
@@ -1107,6 +1119,7 @@ export default function App() {
                       <InspectorDock
                         key={connectionDraft.original?.key || "new-connection"}
                         onClose={closeConnection}
+                        onCoveredSceneChange={setTreeSceneCovered}
                         editing={canEdit}
                         label={connectionDraft.original ? "Редактировать связь" : "Новая связь"}
                         suspended={assistantOpen}
@@ -1128,6 +1141,7 @@ export default function App() {
                       !selectionOnly &&
                       (compare || chosen.length > 0) ? (
                       <InspectorDock
+                        onCoveredSceneChange={setTreeSceneCovered}
                         key={
                           compare
                             ? `comparison:${chosen.length}`

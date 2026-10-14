@@ -232,7 +232,7 @@
 }
 .person-editor-form
   :is(input, select, textarea):where(:not([type="checkbox"], [type="file"])) {
-  border-color: #dce3d7;
+  border-color: var(--field-border);
   background-color: #fdfefb;
 }
 .person-editor-form :is(input, select, textarea):focus {

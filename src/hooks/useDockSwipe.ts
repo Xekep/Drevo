@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { dockSwipeAction } from "../components/dock-swipe";
 import { bindDockContentSwipe } from "../components/dock-content-swipe";
 
@@ -11,12 +11,18 @@ export function useDockSwipe(
   onExpand: () => void,
   wholePanel = false,
 ) {
+  const close = useRef(onClose), expand = useRef(onExpand);
+  useLayoutEffect(() => {
+    close.current = onClose;
+    expand.current = onExpand;
+  }, [onClose, onExpand]);
   useEffect(() => {
     const element = panel.current,
       handle = heading.current;
     if (!element || !handle || !enabled) return;
     if (wholePanel)
-      return bindDockContentSwipe(element, handle, expanded, onClose, onExpand);
+      return bindDockContentSwipe(element, handle, expanded,
+        () => close.current(), () => expand.current());
     let gesture: { id: number; x: number; y: number; time: number } | null =
       null;
     let moved = false;
@@ -75,8 +81,8 @@ export function useDockSwipe(
           )
         : "reset";
       reset();
-      if (action === "close") onClose();
-      if (action === "expand") onExpand();
+      if (action === "close") close.current();
+      if (action === "expand") expand.current();
     };
     const click = (event: MouseEvent) => {
       if (moved && event.detail !== 0) {
@@ -106,5 +112,5 @@ export function useDockSwipe(
       handle.removeEventListener("click", click, true);
       window.removeEventListener("resize", reset);
     };
-  }, [panel, heading, expanded, enabled, onClose, onExpand, wholePanel]);
+  }, [panel, heading, expanded, enabled, wholePanel]);
 }

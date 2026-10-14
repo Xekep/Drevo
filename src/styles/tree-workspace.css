@@ -589,7 +589,7 @@
 .inspector-dock .archive-form input,
 .inspector-dock .archive-form textarea,
 .inspector-dock .archive-form select {
-  font-size: 14px;
+  font-size: var(--touch-field-font-size, 14px);
 }
 .inspector-dock .archive-form footer {
   position: sticky;

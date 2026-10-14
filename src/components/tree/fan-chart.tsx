@@ -3,6 +3,7 @@ import "../../styles/fan-chart.css";
 import {
   ancestorFanSlots,
   fullName,
+  plural,
   safeUrl,
   years,
   type Family,
@@ -111,7 +112,7 @@ export function FanChart({
       <div className="fan-chart-meta">
         <strong>{fullName(root)}</strong>
         <span>
-          {generations} поколений · {Math.max(0, known - 1)} известных предков
+          {generations} {plural(generations, "поколение", "поколения", "поколений")} · {Math.max(0, known - 1)} {plural(Math.max(0, known - 1), "известный предок", "известных предка", "известных предков")}
         </span>
       </div>
       <svg

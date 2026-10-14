@@ -2,7 +2,8 @@ import { pagedPhotoFixture } from "./paged-photo-fixture";
 import { familyViewAction } from "./tree-toolbar-actions";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-async function touchGesture(page: Page, target: Locator, dy: number, hold = 0) {
+async function touchGesture(page: Page, target: Locator, dy: number, hold = 0,
+  afterStart?: () => Promise<void>) {
   const box = await target.boundingBox();
   expect(box).not.toBeNull();
   const x = box!.x + box!.width / 2;
@@ -13,6 +14,7 @@ async function touchGesture(page: Page, target: Locator, dy: number, hold = 0) {
     type: "touchStart",
     touchPoints: point(0),
   });
+  await afterStart?.();
   if (hold) await page.waitForTimeout(hold);
   if (dy) {
     for (const offset of [dy / 3, (dy * 2) / 3, dy]) {
@@ -99,6 +101,14 @@ test("downward swipes dismiss mobile photo details and a person's card", async (
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile");
+  let releaseDetails!: () => void;
+  const detailsGate = new Promise<void>((resolve) => { releaseDetails = resolve; });
+  await page.route("**/api/family?projection=details&**", async (route) => {
+    const response = await route.fetch();
+    const ids = JSON.parse(new URL(route.request().url()).searchParams.get("ids") || "[]") as string[];
+    if (ids.includes("e2e-memorial-person")) await detailsGate;
+    await route.fulfill({ response });
+  });
   const photo = {
     id: "e2e-mobile-photo",
     url: "/media/e2e-mobile-photo.png",
@@ -143,7 +153,10 @@ test("downward swipes dismiss mobile photo details and a person's card", async (
   const person = page.locator(".photo-person-sidebar");
   await expect(person).toBeVisible();
   await expect(info).toBeHidden();
-  await touchGesture(page, person, 110);
+  await touchGesture(page, person, 110, 0, async () => {
+    releaseDetails();
+    await expect(person.getByRole("status", { name: "Загрузка сведений человека" })).toHaveCount(0);
+  });
   await expect(person).toHaveCount(0);
   await expect(info).toBeVisible();
 });
