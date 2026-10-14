@@ -335,6 +335,10 @@ export function DocumentsCatalog({
         ? directFailure.message
         : "";
   const activeSelected = selected?.id === documentId ? selected : null;
+  useEffect(() => {
+    if (activeSelected)
+      document.title = `${activeSelected.title} · Документы · Drevo`;
+  }, [activeSelected]);
 
   const upload = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

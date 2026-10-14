@@ -845,7 +845,7 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   border-radius: 9px;
   outline: none;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--touch-field-font-size, 13px);
   line-height: 18px;
 }
 .research-assistant > form .primary-action {

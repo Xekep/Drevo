@@ -259,6 +259,10 @@
 .photo-lightbox .photo-person-sidebar {
   gap: 0;
 }
+.photo-person-sidebar .archive-status {
+  /* A disappearing loading node must not become the native touch target. */
+  pointer-events: none;
+}
 .photo-person-sidebar-actions {
   position: fixed;
   z-index: 7;

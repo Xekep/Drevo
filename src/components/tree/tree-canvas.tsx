@@ -140,6 +140,7 @@ type Props = {
   onAddSelf?: () => void;
   comparisonAction?: ReactNode;
   restricted?: boolean;
+  covered?: boolean;
   onShare?: (anchorId: string, personIds: string[]) => void;
   onPublishPerson?: (personId: string) => void;
   publicationUpdate?: { personId: string; published: boolean; archiveId: string | null } | null;
@@ -1511,6 +1512,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           ? props.publicationUpdate : null}>
       <div
         ref={container}
+        inert={props.covered || undefined}
         data-layout-ready={ready}
         data-layout-people={renderVisible.size}
         className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} has-portrait-cards ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}

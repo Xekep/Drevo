@@ -3,6 +3,7 @@
   --control-height: 36px;
   --field-height: 38px;
   --control-radius: 8px;
+  --field-border: #7e8d76;
 }
 
 .archive-form {
@@ -287,6 +288,7 @@
   :root {
     --control-height: 44px;
     --field-height: 44px;
+    --touch-field-font-size: 16px;
   }
   .icon-button,
   .archive-form .icon-button {

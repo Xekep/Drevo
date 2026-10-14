@@ -2,6 +2,8 @@ import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownUp, Clock3, Search, X } from "lucide-react";
 import type { Family } from "../domain/types";
+import { fullName } from "../domain/dates";
+import { useArchivePageTitle } from "../hooks/useArchivePageTitle";
 import { analyzeKinship } from "../domain/kinship-analysis";
 import { TreeCanvas, type TreeCanvasHandle } from "./tree/tree-canvas";
 import { InspectorDock } from "./inspector-dock";
@@ -29,6 +31,7 @@ type SharedData = {
 };
 export default function SharedTree({ token }: { token: string }) {
   const treeCanvas = useRef<TreeCanvasHandle>(null);
+  const [treeSceneCovered, setTreeSceneCovered] = useState(false);
   const [data, setData] = useState<SharedData | null>(null),
     [error, setError] = useState("");
   const [preferences, setPreferences] = useState<TreePreferences | null>(null);
@@ -134,6 +137,8 @@ export default function SharedTree({ token }: { token: string }) {
         : null,
     [chosen, data],
   );
+  useArchivePageTitle("tree", window.location.pathname, data?.family.title,
+    chosen.length === 1 ? fullName(chosen[0]) : undefined);
   return (
     <div className="archive-app shared-app">
       <div className="archive-main">
@@ -187,6 +192,7 @@ export default function SharedTree({ token }: { token: string }) {
             <div className="tree-view">
               <TreeCanvas
                 ref={treeCanvas}
+                covered={treeSceneCovered}
                 restricted
                 onPreferences={() => setPreferencesOpen(true)}
                 animateOnLoad={preferences?.animateOnLoad}
@@ -247,6 +253,7 @@ export default function SharedTree({ token }: { token: string }) {
               />
               {!selectionOnly && (compare || chosen.length > 0) && (
                 <InspectorDock
+                  onCoveredSceneChange={setTreeSceneCovered}
                   key={compare ? `comparison:${chosen.length}` : chosen[0]?.id}
                   onClose={() => dispatch({ type: "clear" })}
                 >
