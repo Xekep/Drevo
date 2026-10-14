@@ -1,6 +1,6 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { LoginButtons } from "./login-buttons";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import type { DiscoveryReadAccess } from "./discovery-access";
 import { adminMatchTargetPath } from "../domain/archive-routes.ts";
 
 type PublicPerson = {
@@ -45,7 +45,7 @@ function PersonCard({ person }: { person: PublicPerson }) {
   );
 }
 
-export default function PublicPeople() {
+export default function PublicPeople({ checking, revision, requireLogin }: DiscoveryReadAccess) {
   const [query, setQuery] = useState(() => discoveryLocation().query || "");
   const [results, setResults] = useState<PublicPerson[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -55,15 +55,15 @@ export default function PublicPeople() {
   const [linkedCards, setLinkedCards] = useState<PublicPerson[]>([]);
   const [linkedCardsTruncated, setLinkedCardsTruncated] = useState(false);
   const [error, setError] = useState("");
-  const [needsLogin, setNeedsLogin] = useState(false);
   const [busy, setBusy] = useState(() => Boolean(discoveryLocation().query || discoveryLocation().personId));
   const request = useRef<AbortController | null>(null);
   const requestVersion = useRef(0);
   useEffect(() => {
-    if (!detail?.archiveId) return;
+    if (checking || !detail?.archiveId) return;
     const controller = new AbortController();
     void archiveFetch("/api/account/archives", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
+        if (controller.signal.aborted) return null;
         if (response.status === 501) return null;
         if (!response.ok) throw new Error("Не удалось проверить ваши древа для сопоставления");
         return response.json() as Promise<{ archives: OwnedArchive[] }>;
@@ -76,25 +76,24 @@ export default function PublicPeople() {
         if (!controller.signal.aborted) setMatchArchivesError("Не удалось проверить ваши древа для сопоставления");
       });
     return () => controller.abort();
-  }, [detail?.archiveId, detail?.id]);
-  async function read(url: string) {
+  }, [checking, revision, detail?.archiveId, detail?.id]);
+  const read = useCallback(async (url: string) => {
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
     const version = ++requestVersion.current;
     setBusy(true);
     setError("");
-    setNeedsLogin(false);
     try {
       let response = await archiveFetch(url, { cache: "no-store", signal: controller.signal });
       if (response.status === 501 && url.startsWith("/api/discovery/people?"))
         response = await archiveFetch(url.replace("/api/discovery/people?", "/api/published-people/search?"),
           { cache: "no-store", signal: controller.signal });
+      if (controller.signal.aborted || version !== requestVersion.current) return null;
+      if (response.status === 401) { requireLogin(revision); return null; }
       const data = await response.json();
       if (controller.signal.aborted || version !== requestVersion.current) return null;
-      if (response.status === 401) setNeedsLogin(true);
       if (!response.ok) throw new Error(data.error || "Поиск недоступен");
-      setNeedsLogin(false);
       return data;
     } catch (reason) {
       if (!controller.signal.aborted && version === requestVersion.current)
@@ -103,8 +102,9 @@ export default function PublicPeople() {
     } finally {
       if (!controller.signal.aborted && version === requestVersion.current) setBusy(false);
     }
-  }
+  }, [requireLogin, revision]);
   useEffect(() => {
+    if (checking) return;
     function load() {
       const { personId, archiveId, query: currentQuery } = discoveryLocation();
       const url = personId
@@ -134,17 +134,12 @@ export default function PublicPeople() {
         }
       });
     }
-    const recheck = () => { if (document.visibilityState === "visible") load(); };
     load();
-    window.addEventListener("focus", recheck);
-    document.addEventListener("visibilitychange", recheck);
     return () => {
       requestVersion.current += 1;
       request.current?.abort();
-      window.removeEventListener("focus", recheck);
-      document.removeEventListener("visibilitychange", recheck);
     };
-  }, []);
+  }, [checking, revision, read]);
   function search(event: FormEvent) {
     event.preventDefault();
     const value = query.trim();
@@ -199,7 +194,6 @@ export default function PublicPeople() {
         </div>
       </form>
       {error && <p role="alert">{error}</p>}
-      {needsLogin && <LoginButtons />}
       {busy && <p role="status">Ищем…</p>}
       {detail && <PersonCard person={detail} />}
       {detail?.archiveId && matchArchives.length > 0 && <section className="public-people-match">

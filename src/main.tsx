@@ -35,7 +35,9 @@ import { NotFoundPage } from "./components/not-found-page.tsx";
 
 const App = lazy(() => import("./App"));
 const SharedTree = lazy(() => import("./components/shared-tree"));
-const PublicPeople = lazy(() => import("./components/public-people"));
+const DiscoveryAccess = lazy(() => import("./components/discovery-access").then((module) => ({
+  default: module.DiscoveryAccess,
+})));
 const DiscoveryLinkedBranchPerson = lazy(() =>
   import("./components/discovery-linked-branch-person").then((module) => ({
     default: module.DiscoveryLinkedBranchPerson,
@@ -100,7 +102,7 @@ function Entry() {
     <DiscoveryLinkedBranchPerson archiveId={linkedBranch[0]}
       matchId={linkedBranch[1]} personId={linkedBranch[2]} />
   ) : location.pathname === "/discover" || location.pathname.startsWith("/discover/") ? (
-    <PublicPeople />
+    <DiscoveryAccess />
   ) : archiveViewAt(location.pathname) ? (
     <App />
   ) : (
