@@ -115,9 +115,14 @@ test("the avatar opens the compact menu without replacing archive tabs", async (
   await expect(account).toHaveAttribute("href", "/account");
   await expect(account).toBeVisible();
   const bounds = (await menu.locator(".nav-bottom").boundingBox())!;
-  expect(bounds.width).toBeLessThanOrEqual(280);
+  // Mobile uses two columns for archive sections; both variants must stay in the viewport.
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  expect(bounds.width).toBeLessThanOrEqual(testInfo.project.name === "mobile" ? 320 : 280);
   await page.keyboard.press("Tab");
-  await expect(account).toBeFocused();
+  await expect(testInfo.project.name === "mobile"
+    ? menu.locator(".nav-section-links").getByRole("link", { name: "Древо", exact: true })
+    : account).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(menu).not.toHaveAttribute("open");
   await expect(avatar).toBeFocused();

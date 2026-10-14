@@ -1973,19 +1973,21 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           }}
           onMoveEnd={(_, camera) => rememberViewport(camera)}
         >
-          {props.canEdit && !narrow && (
-            <Panel position="bottom-left" className="flow-add-tools">
-              <button onClick={props.onAdd}>
-                <Plus size={18} />
-                Человек
+          {props.canEdit && (!narrow || family.people.length > 0) && (
+            <Panel position="bottom-left" className={`flow-add-tools${narrow ? " is-mobile" : ""}`}>
+              <button type="button" onClick={props.onAdd} disabled={props.busy}>
+                <Plus size={18} aria-hidden="true" />
+                {narrow ? "Добавить человека" : "Человек"}
               </button>
-              <button
-                onClick={props.onLink}
-                title="Связать последовательным выбором двух карточек"
-              >
-                <Link2 size={18} />
-                Связь
-              </button>
+              {!narrow && (
+                <button
+                  onClick={props.onLink}
+                  title="Связать последовательным выбором двух карточек"
+                >
+                  <Link2 size={18} />
+                  Связь
+                </button>
+              )}
             </Panel>
           )}
           {narrow ? (

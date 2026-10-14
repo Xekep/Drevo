@@ -36,6 +36,7 @@ test("a selected tree card opens matching with its exact published source", asyn
   });
   await page.goto("/a/tree-a/tree");
   await page.getByTestId("rf__node-e2e-memorial-person").click();
+  await page.getByLabel("Другие действия с человеком", { exact: true }).click();
   const handoff = page.getByRole("link", { name: "Найти совпадения в других древах" });
   await expect(handoff).toHaveAttribute("href", "/a/tree-a/manage/matches/from/e2e-memorial-person");
   await handoff.click();

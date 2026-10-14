@@ -4,6 +4,16 @@
   --field-height: 38px;
   --control-radius: 8px;
   --field-border: #7e8d76;
+  --catalog-width: 1480px;
+  --catalog-gutter: 32px;
+  --catalog-heading-size: 32px;
+  --catalog-heading-gap: 24px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
 }
 
 .archive-form {
@@ -299,5 +309,13 @@
       :not([type="checkbox"], [type="radio"], [type="file"], [type="range"])
     ) {
     font-size: 16px;
+  }
+}
+
+@media (max-width: 899px) {
+  :root {
+    --catalog-gutter: 16px;
+    --catalog-heading-size: 28px;
+    --catalog-heading-gap: 20px;
   }
 }

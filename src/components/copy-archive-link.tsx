@@ -6,9 +6,11 @@ import { scopedArchivePath } from "../domain/archive-context.ts";
 export function CopyArchiveLink({
   target,
   className,
+  showLabel = false,
 }: {
   target: ArchiveTarget;
   className?: string;
+  showLabel?: boolean;
 }) {
   const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
   const label =
@@ -35,6 +37,7 @@ export function CopyArchiveLink({
       }}
     >
       {status === "copied" ? <Check size={18} /> : <Link2 size={18} />}
+      {showLabel && <span aria-hidden="true">{label}</span>}
       <span className="archive-copy-status" role="status">
         {status === "idle" ? "" : label}
       </span>

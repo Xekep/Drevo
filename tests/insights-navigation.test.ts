@@ -5,18 +5,14 @@ import { archivePaths, archiveViewAt } from "../src/domain/archive-routes.ts";
 
 const root = new URL("..", import.meta.url);
 
-test("interesting data is a regular archive section on desktop and mobile", () => {
+test("interesting data has a regular archive route and navigation entry", () => {
   assert.equal(archivePaths.insights, "/insights");
   assert.equal(archiveViewAt("/insights"), "insights");
   const navigation = readFileSync(
     new URL("src/components/archive-navigation.tsx", root),
     "utf8",
   );
-  assert.equal(
-    (navigation.match(/\["insights", "Сводка", ChartNoAxesCombined\]/g) || [])
-      .length,
-    2,
-  );
+  assert.match(navigation, /\["insights", "Сводка", ChartNoAxesCombined\]/);
 });
 
 test("resource directory replaces quality navigation while its direct route is retained", () => {
@@ -28,10 +24,7 @@ test("resource directory replaces quality navigation while its direct route is r
     new URL("src/components/archive-navigation.tsx", root),
     "utf8",
   );
-  assert.equal(
-    (navigation.match(/\["resources", "Ресурсы", LibraryBig\]/g) || []).length,
-    2,
-  );
+  assert.match(navigation, /\["resources", "Ресурсы", LibraryBig\]/);
   assert.doesNotMatch(navigation, /\["quality",/);
   const insights = readFileSync(
     new URL("src/components/insights-page.tsx", root),

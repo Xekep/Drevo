@@ -11,6 +11,7 @@ test("ссылка на человека открывает карточку и 
   await expect(page.locator(".inspector-dock .profile-head")).toBeVisible();
   await page.goto("/people/e2e-memorial-person");
   await expect(page.locator(".inspector-dock .profile-head")).toBeVisible();
+  await page.getByLabel("Другие действия с человеком", { exact: true }).click();
   await expect(
     page
       .locator(".inspector-dock")
@@ -56,6 +57,7 @@ test("выбор человека записывается в адрес и во
   await expect(page.locator(".inspector-dock .profile-head")).toBeVisible();
   await page.reload();
   await expect(page.locator(".inspector-dock .profile-head")).toBeVisible();
+  await page.getByLabel("Другие действия с человеком", { exact: true }).click();
   await page.locator(".inspector-person-actions .person-expand-button").click();
   await page
     .locator(".person-full-dialog")

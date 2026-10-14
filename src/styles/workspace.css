@@ -333,8 +333,17 @@ body,
 .gallery-heading :is(h1, h2) {
   font-size: 30px;
 }
+.gallery-photo-heading h1 {
+  font-size: var(--catalog-heading-size);
+  line-height: 1.2;
+  margin: 0 0 8px;
+}
 .gallery-heading .primary-action {
   white-space: nowrap;
+}
+.gallery-photo-heading .primary-action {
+  min-height: var(--control-height);
+  padding: 7px 12px;
 }
 
 /* Самостоятельная админская панель. */
@@ -404,7 +413,8 @@ body,
 .admin-nav-label {
   padding: 0 11px 8px;
   color: #58695b;
-  font-size: 10px;
+  font-size: 12px;
+  line-height: 1.5;
   font-weight: 700;
   letter-spacing: 1px;
   text-transform: uppercase;

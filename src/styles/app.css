@@ -341,7 +341,8 @@ h1 {
   padding: 8px 0;
 }
 .search-box input::placeholder {
-  color: #9aa298;
+  color: var(--muted);
+  opacity: 1;
 }
 .search-box kbd {
   font-family: inherit;

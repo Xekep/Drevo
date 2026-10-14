@@ -20,6 +20,7 @@ import {
   LibraryBig,
   Info,
   Settings,
+  Menu,
 } from "lucide-react";
 import { isArchiveOwner, type Person, type ArchiveUser } from "../domain";
 import { AccountPortrait } from "./account-portrait";
@@ -75,6 +76,20 @@ export function ArchiveNavigation({
     : null;
   const initial =
     identity?.name.trim().charAt(0).toLocaleUpperCase("ru-RU") || "Д";
+  const sections = ([
+    ["tree", "Древо", TreeDeciduous],
+    ["list", "Люди", Users],
+    ["families", "Семьи", Heart],
+    ["gallery", "Фото", Image],
+    ["documents", "Документы", BookOpenText],
+    ["places", "Места", MapPin],
+    ["insights", "Сводка", ChartNoAxesCombined],
+    ["resources", "Ресурсы", LibraryBig],
+  ] as const).filter(([id]) =>
+    id === "gallery" ? readPhotos : id === "documents"
+      ? user?.approved === true || local : id === "places"
+        ? readTree || readPhotos : readTree,
+  );
   const navigate = (
     event: MouseEvent<HTMLAnchorElement>,
     next: ArchiveView,
@@ -158,28 +173,7 @@ export function ArchiveNavigation({
         <span>древо.</span>
       </a>
       <div className="nav-sections">
-        {(
-          [
-            ["tree", "Древо", TreeDeciduous],
-            ["list", "Люди", Users],
-            ["families", "Семьи", Heart],
-            ["gallery", "Фото", Image],
-            ["documents", "Документы", BookOpenText],
-            ["places", "Места", MapPin],
-            ["insights", "Сводка", ChartNoAxesCombined],
-            ["resources", "Ресурсы", LibraryBig],
-          ] as const
-        )
-          .filter(([id]) =>
-            id === "gallery"
-              ? readPhotos
-              : id === "documents"
-                ? user?.approved === true || local
-                : id === "places"
-                  ? readTree || readPhotos
-                  : readTree,
-          )
-          .map(([id, label, Icon]) => (
+        {sections.map(([id, label, Icon]) => (
             <a
               key={id}
               href={scopedArchivePath(archivePaths[id])}
@@ -212,8 +206,23 @@ export function ArchiveNavigation({
                 fallback={identity ? initial : <UserRound size={20} />}
               />
             </span>
+            <span className="nav-account-menu-mark" aria-hidden="true"><Menu size={12} /></span>
           </summary>
           <div className="nav-bottom">
+            <div className={participantPreview ? "preview-sections" : "mobile-sections"}>
+              <span className="nav-menu-label">Разделы</span>
+              <div className="nav-section-links">
+                {sections.map(([id, label, Icon]) => (
+                  <a key={id} href={scopedArchivePath(archivePaths[id])}
+                    aria-current={view === id ? "page" : undefined}
+                    onClick={(event) => navigate(event, id)}>
+                    <Icon size={18} aria-hidden="true" />{label}
+                  </a>
+                ))}
+              </div>
+            </div>
+            <div className="nav-account-links">
+            {!participantPreview && <span className="nav-menu-label">Аккаунт и доступ</span>}
             {!participantPreview && !local && (
               <button
                 type="button"
@@ -268,44 +277,6 @@ export function ArchiveNavigation({
                   <span>Админка платформы</span>
                 </a>
               )}
-            <div
-              className={
-                participantPreview ? "preview-sections" : "mobile-sections"
-              }
-            >
-              {(
-                [
-                  ["tree", "Древо", TreeDeciduous],
-                  ["list", "Люди", Users],
-                  ["families", "Семьи", Heart],
-                  ["gallery", "Фото", Image],
-                  ["documents", "Документы", BookOpenText],
-                  ["places", "Места", MapPin],
-                  ["insights", "Сводка", ChartNoAxesCombined],
-                  ["resources", "Ресурсы", LibraryBig],
-                ] as const
-              )
-                .filter(([id]) =>
-                  id === "gallery"
-                    ? readPhotos
-                    : id === "documents"
-                      ? user?.approved === true || local
-                      : id === "places"
-                        ? readTree || readPhotos
-                        : readTree,
-                )
-                .map(([id, label, Icon]) => (
-                  <a
-                    key={id}
-                    href={scopedArchivePath(archivePaths[id])}
-                    aria-current={view === id ? "page" : undefined}
-                    onClick={(event) => navigate(event, id)}
-                  >
-                    <Icon size={18} />
-                    {label}
-                  </a>
-                ))}
-            </div>
             {participantPreview && onTreePreferences && (
               <button
                 type="button"
@@ -346,6 +317,7 @@ export function ArchiveNavigation({
                 <span>Выйти</span>
               </button>
             )}
+            </div>
           </div>
         </details>
       )}
