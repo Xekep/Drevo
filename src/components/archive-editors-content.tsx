@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useId, type FormEvent } from "react";
+import type { EditorFocusRequest } from "../hooks/useWorkspaceFocus";
 import { PersonDocumentsEditor } from "./person-documents-editor";
 import { DocumentSourcePicker } from "./document-source-picker";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
@@ -153,6 +154,7 @@ export function PersonEditor({
   busy,
   inline = false,
   suspended = false,
+  focusRequest,
   initialRelationship = "child",
 }: {
   family: Family;
@@ -168,6 +170,7 @@ export function PersonEditor({
   busy: boolean;
   inline?: boolean;
   suspended?: boolean;
+  focusRequest?: EditorFocusRequest;
   initialRelationship?: "child" | ConnectionType;
 }) {
   const [draft, setDraft] = useState<Person>(() =>
@@ -508,6 +511,7 @@ export function PersonEditor({
       className="person-editor-shell"
       inline={inline}
       suspended={suspended}
+      focusRequest={focusRequest}
       title={person ? "Редактировать человека" : "Новый человек"}
       onClose={close}
     >

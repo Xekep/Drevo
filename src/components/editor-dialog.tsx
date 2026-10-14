@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { MemberPreviewExit } from "./member-preview-exit";
+import { useInlineEditorFocus, type EditorFocusRequest } from "../hooks/useWorkspaceFocus";
 export function EditorDialog({
   title,
   onClose,
@@ -11,6 +12,7 @@ export function EditorDialog({
   className = "",
   headerActions,
   dismissOnOutside = false,
+  focusRequest,
 }: {
   title: string;
   onClose: () => void;
@@ -21,8 +23,11 @@ export function EditorDialog({
   className?: string;
   headerActions?: ReactNode;
   dismissOnOutside?: boolean;
+  focusRequest?: EditorFocusRequest;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const inlineRef = useRef<HTMLElement>(null);
+  useInlineEditorFocus(inlineRef, focusRequest, inline && !suspended);
   const backdropPress = useRef(false);
   useLayoutEffect(() => {
     const dialog = ref.current;
@@ -55,9 +60,9 @@ export function EditorDialog({
   }, [dismissOnOutside, inline, onClose]);
   if (inline)
     return (
-      <section className={`inline-editor ${className}`} aria-label={title}>
+      <section ref={inlineRef} className={`inline-editor ${className}`} aria-label={title}>
         <header>
-          <h2>{title}</h2>
+          <h2 tabIndex={-1}>{title}</h2>
           {headerActions}
           <button
             type="button"

@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import type { ArchiveUser, ConnectionType, Family, Person } from "../domain";
 import { LazyChunkBoundary } from "./lazy-chunk-boundary";
 import { loadLazyModule } from "./lazy-section-recovery";
+import type { EditorFocusRequest } from "../hooks/useWorkspaceFocus";
 
 type Save = (data: Family) => Promise<Family>;
 
@@ -19,6 +20,7 @@ type PersonEditorProps = {
   busy: boolean;
   inline?: boolean;
   suspended?: boolean;
+  focusRequest?: EditorFocusRequest;
   initialRelationship?: "child" | ConnectionType;
 };
 

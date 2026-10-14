@@ -107,7 +107,6 @@ export function ArchiveNavigation({
     event.preventDefault();
     if (menu.current) {
       menu.current.open = false;
-      menu.current.querySelector("summary")?.focus();
     }
     onView(next);
   };

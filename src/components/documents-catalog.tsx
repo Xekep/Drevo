@@ -30,7 +30,7 @@ import { PdfBookReader } from "./pdf-book-reader";
 import { ConfirmDeleteButton } from "./confirm-delete-button";
 import { DocumentDetailsFields } from "./document-details-fields";
 import { DocumentRelationsFields } from "./document-relations-fields";
-import { fullName, type Person } from "../domain";
+import { fullName, plural, type Person } from "../domain";
 import type { DocumentDetails } from "../shared/document-details";
 import type { DocumentEventLink, DocumentPage } from "../shared/document-links";
 import "../styles/documents.css";
@@ -619,7 +619,9 @@ export function DocumentsCatalog({
         </div>
         <div className="documents-heading-actions">
           {total > 0 && (
-            <span className="documents-count">{total} документов</span>
+            <span className="documents-count">
+              {total} {plural(total, "документ", "документа", "документов")}
+            </span>
           )}
           {mayEdit && (
             <button

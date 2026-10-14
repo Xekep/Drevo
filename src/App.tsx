@@ -17,6 +17,7 @@ import { useAccountSession } from "./hooks/useAccountSession";
 import { useArchive } from "./hooks/useArchive";
 import { useArchiveView } from "./hooks/useArchiveView";
 import { useArchivePageTitle } from "./hooks/useArchivePageTitle";
+import { captureEditorFocus, useExplicitViewFocus, type EditorFocusRequest } from "./hooks/useWorkspaceFocus";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
 import { usePhotoWorkspace } from "./hooks/usePhotoWorkspace";
 import {
@@ -79,6 +80,7 @@ type PersonDraft = {
   type?: "child" | ConnectionType;
   bindSelf?: boolean;
   key: string;
+  focusRequest?: EditorFocusRequest;
 };
 const targetKey = (target: ArchiveTarget | null) =>
   target ? `${target.kind}:${target.id}` : "";
@@ -185,6 +187,7 @@ export default function App() {
           : requestedView === "gallery" && !readPhotos
             ? "tree"
             : requestedView;
+  const requestViewFocus = useExplicitViewFocus(view);
   const [query, setQuery] = useState(""),
     [help, setHelp] = useState(false),
     [settings, setSettings] = useState(false),
@@ -273,6 +276,8 @@ export default function App() {
     ),
     [preview, setPreview] = useState<ConnectionDraft | null>(null);
   const personDirty = useRef(false);
+  const personEditorFocus = useRef<EditorFocusRequest | undefined>(undefined);
+  const [editorFocusReturn, setEditorFocusReturn] = useState<EditorFocusRequest | undefined>(undefined);
   const [connectionDirty, setConnectionDirty] = useState(false);
   const finishConnection = useCallback(() => {
     setConnectionDirty(false);
@@ -293,7 +298,13 @@ export default function App() {
     if (!confirmDiscardChanges(personDirty.current)) return false;
     personDirty.current = false;
     reportDirty("person", false);
-    setPersonDraftState(next);
+    if (next) personEditorFocus.current = captureEditorFocus();
+    else if (personEditorFocus.current) {
+      personEditorFocus.current.restorePending = personEditorFocus.current.hasOpened();
+      setEditorFocusReturn(personEditorFocus.current);
+      personEditorFocus.current = undefined;
+    }
+    setPersonDraftState(next ? { ...next, focusRequest: personEditorFocus.current } : null);
     return true;
   }, [reportDirty]);
   const photoWorkspace = usePhotoWorkspace(family),
@@ -595,6 +606,7 @@ export default function App() {
     (next: ArchiveView) => {
       if (next !== view && personDraft && !setPersonDraft(null)) return;
       if (next !== view && connectionDraft && !closeConnection()) return;
+      requestViewFocus(next);
       const target: ArchiveTarget | undefined =
         next === "tree" && selected.length === 1 && !compare && !selectionOnly
           ? { kind: "person", id: selected[0] }
@@ -617,6 +629,7 @@ export default function App() {
       compare,
       selectionOnly,
       closePhoto,
+      requestViewFocus,
     ],
   );
   useEffect(() => {
@@ -784,6 +797,7 @@ export default function App() {
         key={personDraft.key}
         inline
         suspended={!canEdit}
+        focusRequest={personDraft.focusRequest}
         isAdmin={isArchiveOwner(user)}
         user={user}
         family={family}
@@ -1110,6 +1124,7 @@ export default function App() {
                         onClose={closeEditor}
                         onCoveredSceneChange={setTreeSceneCovered}
                         editing
+                        manageFocus={false}
                         label={personDraft.person ? "Редактировать человека" : "Новый человек"}
                         suspended={assistantOpen}
                       >
@@ -1148,6 +1163,7 @@ export default function App() {
                             : chosen[0]?.id
                         }
                         initialExpanded={!compare || chosen.length === 2}
+                        skipInitialFocus={editorFocusReturn?.restorePending}
                         allowExpand={!compare}
                         onClose={clear}
                         suspended={assistantOpen}

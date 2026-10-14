@@ -41,7 +41,7 @@ export function makeDrevoPlugin(
   },
 ) {
   return class DrevoPlugin extends BookReaderPlugin {
-    declare br: BookReaderInstance;
+    declare br: BookReaderInstance & { isFullscreen(): boolean };
     private layers = new Map<number, PageLayer[]>();
     private lens: HTMLDivElement | null = null;
     private lensButton: HTMLButtonElement | null = null;
@@ -53,6 +53,101 @@ export function makeDrevoPlugin(
     private annotating = false;
     private magnifier = false;
     private fittedOnePage = false;
+    private labelsBound = false;
+
+    // Pinned BookReader overwrites UI strings after building the toolbar and
+    // when its view-mode/fullscreen buttons change. Use its lifecycle hooks,
+    // rather than observing page transforms or replacing native commands.
+    private localizeControls(root: ParentNode = document) {
+      const labels: Record<string, string> = {
+        ".BRicon.toggle_slider": "Переключить управление страницами",
+        ".BRicon.book_left": "Предыдущая страница",
+        ".BRicon.book_right": "Следующая страница",
+        ".BRicon.onepg": "Одна страница",
+        ".BRicon.twopg": "Разворот",
+        ".BRicon.thumb": "Миниатюры страниц",
+        ".BRicon.zoom_in": "Увеличить масштаб",
+        ".BRicon.zoom_out": "Уменьшить масштаб",
+        ".BRicon.full": this.br.isFullscreen()
+          ? "Выйти из полноэкранного режима"
+          : "Полноэкранный режим",
+        ".BRpill.info": "О документе",
+        ".BRsearch-navigation .prev": "Предыдущее совпадение",
+        ".BRsearch-navigation .next": "Следующее совпадение",
+        ".BRsearch-navigation .clear": "Очистить поиск",
+        ".BRsearch-navigation .toggle-sidebar": "Результаты поиска",
+        ".BRsearchSubmit": "Найти",
+      };
+      for (const [selector, label] of Object.entries(labels)) {
+        for (const control of root.querySelectorAll<HTMLElement>(selector)) {
+          control.title = label;
+          control.setAttribute("aria-label", label);
+          for (const tooltip of control.querySelectorAll(".BRtooltip"))
+            tooltip.textContent = label;
+          for (const icon of control.querySelectorAll(".icon"))
+            icon.setAttribute("aria-hidden", "true");
+        }
+      }
+      for (const control of root.querySelectorAll<HTMLElement>(
+        ".BRicon.viewmode",
+      )) {
+        const label = control.querySelector(".icon-onepg")
+          ? "Одна страница"
+          : control.querySelector(".icon-twopg")
+            ? "Разворот"
+            : "Миниатюры страниц";
+        control.title = label;
+        control.setAttribute("aria-label", label);
+        const tooltip = control.querySelector(".BRtooltip");
+        if (tooltip) tooltip.textContent = label;
+        control.querySelector(".icon")?.setAttribute("aria-hidden", "true");
+      }
+      for (const slider of root.querySelectorAll(".BRpager .ui-slider-handle"))
+        slider.setAttribute("aria-label", "Перейти к странице");
+      const resultsHeading = root.querySelector(".BRsearch-navigation h4");
+      if (resultsHeading) resultsHeading.textContent = "Результаты поиска";
+      for (const pin of root.querySelectorAll<HTMLElement>(
+        ".BRnavline .BRsearch",
+      )) {
+        pin.title = "Перейти к совпадению";
+        const footer = pin.querySelector(".BRquery footer");
+        if (footer?.textContent?.startsWith("Page"))
+          footer.textContent = footer.textContent.replace(
+            /^Page\b/u,
+            "Страница",
+          );
+      }
+      for (const image of root.querySelectorAll<HTMLImageElement>(
+        ".BRsearchSubmit img",
+      )) {
+        image.alt = "";
+        image.setAttribute("aria-hidden", "true");
+      }
+    }
+
+    extendNavBar(navbar: { 0: HTMLElement }) {
+      this.localizeControls(navbar[0]);
+    }
+
+    _bindNavigationHandlers() {
+      this.localizeControls();
+      if (this.labelsBound) return;
+      this.labelsBound = true;
+      const refresh = () => queueMicrotask(() => this.localizeControls());
+      // The desktop vendor plugin uses native fullscreen instead of emitting
+      // BookReader's fullscreenToggled event.
+      document.addEventListener("fullscreenchange", refresh);
+      for (const event of [
+        "PostInit",
+        "1PageViewSelected",
+        "2PageViewSelected",
+        "3PageViewSelected",
+        "pageChanged",
+        "fullscreenToggled",
+        "SearchCallback",
+      ])
+        this.br.bind(event, refresh);
+    }
 
     init() {
       const sizeEdgeLabel = (event: MouseEvent) => {
@@ -60,22 +155,33 @@ export function makeDrevoPlugin(
         const edge = event.target.closest<HTMLElement>("br-leaf-edges");
         const book = edge?.closest<HTMLElement>(".br-mode-2up__book");
         if (!edge || !book) return;
+        const label = edge.querySelector(".br-leaf-edges__label");
+        if (label?.textContent?.startsWith("Page"))
+          label.textContent = label.textContent.replace(/^Page\b/u, "Страница");
         // The native label lives inside the zoomed book. Keep its screen size fixed.
         const matrix = new DOMMatrixReadOnly(getComputedStyle(book).transform);
         const scale = Math.hypot(matrix.a, matrix.b);
-        if (scale > 0) edge.style.setProperty("--drevo-edge-scale", String(scale));
+        if (scale > 0)
+          edge.style.setProperty("--drevo-edge-scale", String(scale));
       };
       document.addEventListener("mouseover", sizeEdgeLabel);
       document.addEventListener("mousemove", sizeEdgeLabel);
-      const closeInfo = document.querySelector<HTMLButtonElement>(
-        ".BRinfo .floatShut",
-      );
+      const closeInfo =
+        document.querySelector<HTMLButtonElement>(".BRinfo .floatShut");
       if (!closeInfo) return;
       // BookReader's inline onclick is blocked by Drevo's production CSP.
       closeInfo.removeAttribute("onclick");
       closeInfo.removeAttribute("href");
       closeInfo.type = "button";
       closeInfo.setAttribute("aria-label", "Закрыть сведения");
+      closeInfo.title = "Закрыть сведения";
+      const closeText = closeInfo.querySelector(".br-colorbox-shift");
+      if (closeText) closeText.textContent = "Закрыть сведения";
+      const infoHeading = closeInfo.parentElement;
+      if (infoHeading?.firstChild?.nodeType === Node.TEXT_NODE)
+        infoHeading.firstChild.textContent = "О документе ";
+      const readerAbout = document.querySelector(".BRinfo .BRfloatFoot a");
+      if (readerAbout) readerAbout.textContent = "О программе BookReader";
       closeInfo.addEventListener("click", () => {
         const jquery = (
           window as Window & {
@@ -87,6 +193,7 @@ export function makeDrevoPlugin(
     }
 
     _configureToolbar($toolbar: { 0: HTMLElement }) {
+      this.localizeControls($toolbar[0]);
       const section = $toolbar[0].querySelector(".BRtoolbarSectionInfo");
       if (!section) return;
       // The stock Share dialog links to this iframe rather than to the document.
@@ -124,27 +231,28 @@ export function makeDrevoPlugin(
       download.download = options.downloadName;
       download.setAttribute("aria-label", "Скачать оригинал");
       download.title = "Скачать оригинал";
-      download.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" /></svg>';
+      download.innerHTML =
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" /></svg>';
       section.append(download);
       this.commentsButton = button(
         "Комментарии",
         "M20 11.5a8.5 8.5 0 0 1-8.5 8.5 9 9 0 0 1-3.6-.8L3 21l1.8-4.9a8.5 8.5 0 1 1 15.2-4.6Z",
-        (event) => emit({
-          source: "drevo-bookreader",
-          type: "toggle-comments",
-          keyboard: event.detail === 0,
-        }),
+        (event) =>
+          emit({
+            source: "drevo-bookreader",
+            type: "toggle-comments",
+            keyboard: event.detail === 0,
+          }),
         "drevo-toolbar-comments",
       );
-      button(
-        "Закрыть документ",
-        "M18 6 6 18M6 6l12 12",
-        () => emit({ source: "drevo-bookreader", type: "close" }),
+      button("Закрыть документ", "M18 6 6 18M6 6l12 12", () =>
+        emit({ source: "drevo-bookreader", type: "close" }),
       );
     }
 
     _configurePageContainer(pageContainer: PageContainer) {
-      if (!pageContainer.page || this.br.mode === this.br.constModeThumb) return;
+      if (!pageContainer.page || this.br.mode === this.br.constModeThumb)
+        return;
       const onePage = document.querySelector<OnePageView>("br-mode-1up");
       if (options.fitSinglePage && onePage && !this.fittedOnePage) {
         this.fittedOnePage = true;
@@ -157,7 +265,9 @@ export function makeDrevoPlugin(
           const pixels = onePage.coordSpace.worldUnitsToRenderedPixels;
           const padding = 2 * onePage.SPACING_IN;
           const bounds = onePage.getBoundingClientRect();
-          const footer = document.querySelector(".BRfooter")?.getBoundingClientRect();
+          const footer = document
+            .querySelector(".BRfooter")
+            ?.getBoundingClientRect();
           const height = Math.min(
             onePage.clientHeight,
             footer?.height ? footer.top - bounds.top : onePage.clientHeight,
@@ -174,11 +284,14 @@ export function makeDrevoPlugin(
         setTimeout(() => {
           fit();
           let fullscreenChanged = false;
-          this.br.bind("fullscreenToggled", () => { fullscreenChanged = true; });
+          this.br.bind("fullscreenToggled", () => {
+            fullscreenChanged = true;
+          });
           this.br.bind("resize", () => {
             if (
               fullscreenChanged ||
-              (fittedScale !== undefined && Math.abs(onePage.scale - fittedScale) < 1e-6)
+              (fittedScale !== undefined &&
+                Math.abs(onePage.scale - fittedScale) < 1e-6)
             ) {
               fullscreenChanged = false;
               // Fullscreen also sets the native default scale after resize.
@@ -222,7 +335,10 @@ export function makeDrevoPlugin(
       this.annotating = state.annotating;
       this.magnifier = state.magnifier;
       this.lensButton?.setAttribute("aria-pressed", String(this.magnifier));
-      this.commentsButton?.setAttribute("aria-expanded", String(state.commentsOpen));
+      this.commentsButton?.setAttribute(
+        "aria-expanded",
+        String(state.commentsOpen),
+      );
       document.body.classList.toggle("drevo-annotating", this.annotating);
       document.body.classList.toggle("drevo-magnifying", this.magnifier);
       for (const layers of this.layers.values()) {
@@ -236,7 +352,8 @@ export function makeDrevoPlugin(
     private bindLens(container: HTMLElement) {
       container.addEventListener("pointermove", (event) => {
         if (!this.magnifier || this.annotating) return;
-        const image = container.querySelector<HTMLImageElement>("img.BRpageimage");
+        const image =
+          container.querySelector<HTMLImageElement>("img.BRpageimage");
         if (!image?.complete || !image.naturalWidth) return;
         const bounds = image.getBoundingClientRect();
         const zoom = 2.5;
@@ -262,8 +379,9 @@ export function makeDrevoPlugin(
 
     private renderLayer(layer: PageLayer) {
       const existing = new Map(
-        Array.from(layer.marks.querySelectorAll<HTMLButtonElement>("button"))
-          .map((mark) => [mark.dataset.annotationId, mark] as const),
+        Array.from(
+          layer.marks.querySelectorAll<HTMLButtonElement>("button"),
+        ).map((mark) => [mark.dataset.annotationId, mark] as const),
       );
       const marks = this.annotations
         .filter((item) => item.page === layer.page)
@@ -290,7 +408,9 @@ export function makeDrevoPlugin(
               event.stopPropagation(),
             );
             // Native 2up navigation turns pages on mouseup, before click fires.
-            mark.addEventListener("mouseup", (event) => event.stopPropagation());
+            mark.addEventListener("mouseup", (event) =>
+              event.stopPropagation(),
+            );
             mark.addEventListener("click", (event) => {
               event.stopPropagation();
               emit({

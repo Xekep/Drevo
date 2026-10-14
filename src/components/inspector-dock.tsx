@@ -26,6 +26,8 @@ export function InspectorDock({
   suspended = false,
   allowExpand = true,
   onCoveredSceneChange,
+  manageFocus = true,
+  skipInitialFocus = false,
 }: {
   children: ReactNode;
   onClose: () => void;
@@ -35,6 +37,8 @@ export function InspectorDock({
   suspended?: boolean;
   allowExpand?: boolean;
   onCoveredSceneChange?: (covered: boolean) => void;
+  manageFocus?: boolean;
+  skipInitialFocus?: boolean;
 }) {
   const [expanded, setExpanded] = useState(initialExpanded);
   const [mobile, setMobile] = useState(
@@ -45,6 +49,7 @@ export function InspectorDock({
   const [actionsHost, setActionsHost] = useState<HTMLDivElement | null>(null);
   const mobileSuspended = mobile && suspended;
   const ref = useRef<HTMLElement>(null);
+  const skipFocusOnMount = useRef(skipInitialFocus);
   const heading = useRef<HTMLDivElement>(null);
   const expand = useCallback(() => setExpanded(true), []);
   useLayoutEffect(() => {
@@ -59,7 +64,7 @@ export function InspectorDock({
     return () => query.removeEventListener("change", update);
   }, []);
   useEffect(() => {
-    if (!mobile || !expanded || mobileSuspended) return;
+    if (!manageFocus || skipFocusOnMount.current || !mobile || !expanded || mobileSuspended) return;
     const previous = document.activeElement as HTMLElement | null;
     const node = ref.current;
     // This is a complementary panel: the global navigation stays available.
@@ -76,9 +81,9 @@ export function InspectorDock({
           previous.focus({ preventScroll: true });
       });
     };
-  }, [mobile, expanded, mobileSuspended]);
+  }, [manageFocus, mobile, expanded, mobileSuspended]);
   useEffect(() => {
-    if (document.activeElement?.matches(":focus-visible")) {
+    if (manageFocus && !skipFocusOnMount.current && document.activeElement?.matches(":focus-visible")) {
       const target =
         (editing
           ? ref.current?.querySelector<HTMLElement>(".name-entry input,select")
@@ -88,7 +93,12 @@ export function InspectorDock({
         );
       target?.focus({ preventScroll: true });
     }
-  }, [editing]);
+  }, [editing, manageFocus]);
+  useEffect(() => {
+    // Only the replacement mount yields to the editor's restoration. Later
+    // expansion or suspension cycles retain the dock's usual focus behavior.
+    queueMicrotask(() => { skipFocusOnMount.current = false; });
+  }, []);
   return (
     <ActionsHost.Provider value={actionsHost}>
       <aside
