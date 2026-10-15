@@ -118,6 +118,8 @@ export function parseYandexResponse(response: RawResponse) {
       response.usage?.input_tokens ?? response.usage?.prompt_tokens ?? 0,
     outputTokens:
       response.usage?.output_tokens ?? response.usage?.completion_tokens ?? 0,
+    usageConfirmed: typeof (response.usage?.input_tokens ?? response.usage?.prompt_tokens) === "number" &&
+      typeof (response.usage?.output_tokens ?? response.usage?.completion_tokens) === "number",
     cachedTokens: response.usage?.input_tokens_details?.cached_tokens ?? 0,
   };
 }

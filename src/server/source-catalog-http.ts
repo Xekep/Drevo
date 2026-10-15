@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { finished } from "node:stream/promises";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { readArchive } from "./database.ts";
-import { assertCurrentArchiveActor } from "./users.ts";
+import { assertCurrentArchiveActor, ForbiddenError } from "./users.ts";
+import { isArchiveOwner, type ArchiveUser } from "../domain/access.ts";
+import { AccountSessionBusy, AccountSessionExpired, assertActiveAccountSession } from "./account-session-guard.ts";
 import { allCitations, sourceCatalogStore } from "./source-catalog-store.ts";
 import { parseCatalogSource, sourceCitation } from "../shared/source-catalog.ts";
 
@@ -35,11 +38,57 @@ export function sourceCatalogHttp(
     "UPDATE archive SET revision=revision+1 WHERE id=1",
     "UPDATE archives SET revision=revision+1 WHERE id=current_setting('drevo.archive_id', true)",
   ).run();
+  const deliver = async (req: IncomingMessage, res: ServerResponse,
+    actor: ArchiveUser, status: number, value: unknown) => {
+    // Prepare potentially large catalog JSON before taking permission locks.
+    const serialized = JSON.stringify(value);
+    try {
+      return await db.transaction(async () => {
+        if (!auth.local) {
+          const session = await auth.accountSession(req);
+          if (!session || session.accountId !== actor.id)
+            throw new AccountSessionExpired("Сеанс завершён");
+          await assertActiveAccountSession(db, actor.id, session.tokenHash);
+        }
+        await assertCurrentArchiveActor(db, actor);
+        const current = await auth.currentUser(req);
+        if (current?.id !== actor.id || !current.approved || !isArchiveOwner(current))
+          throw new ForbiddenError("Доступ к каталогу источников отозван");
+        if (res.destroyed) return true;
+        // A stalled client must not keep permission rows locked indefinitely.
+        const delivered = finished(res, { cleanup: true });
+        const deadline = setTimeout(() => res.destroy(), 5_000);
+        deadline.unref();
+        try {
+          res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+          res.end(serialized);
+          await delivered;
+        } catch (error) {
+          const disconnected = res.destroyed;
+          res.destroy();
+          await delivered.catch(() => {});
+          if (!disconnected && !res.headersSent) throw error;
+        } finally { clearTimeout(deadline); }
+        return true;
+      }, false, { archiveLock: "share", graphReadOnly: true });
+    } catch (error) {
+      if (res.headersSent || res.destroyed) return true;
+      if (error instanceof AccountSessionExpired)
+        return json(res, 401, { error: error.message });
+      if (error instanceof ForbiddenError)
+        return json(res, 403, { error: error.message });
+      if (error instanceof AccountSessionBusy || (error as { code?: string }).code === "55P03")
+        return json(res, 409, { error: "Доступ изменяется. Повторите запрос" });
+      throw error;
+    }
+  };
   return async (req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> => {
     const match = /^\/api\/sources(?:\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})(?:\/links)?)?$/.exec(url.pathname);
     if (!match) return false;
     const linksRoute = url.pathname.endsWith("/links");
     if (!await auth.isAdmin(req)) return json(res, 403, { error: "Каталог источников доступен администратору архива" });
+    const actor = await auth.currentUser(req);
+    if (!actor?.approved || !isArchiveOwner(actor)) return json(res, 403, { error: "Недостаточно прав" });
     if (req.method === "GET" && !match[1]) {
       const offset = Number(url.searchParams.get("offset") || 0);
       const limit = Number(url.searchParams.get("limit") || 20);
@@ -47,13 +96,12 @@ export function sourceCatalogHttp(
       if (!Number.isSafeInteger(offset) || offset < 0 ||
         !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || query.length > 100)
         return json(res, 400, { error: "Некорректная страница каталога" });
-      return json(res, 200, await catalog.page(query, offset, limit));
+      return deliver(req, res, actor, 200, await catalog.page(query, offset, limit));
     }
     if (req.method === "GET" && match[1] && !linksRoute) {
       const source = await catalog.get(match[1]);
-      return source ? json(res, 200, { source }) : json(res, 404, { error: "Источник не найден" });
+      return source ? deliver(req, res, actor, 200, { source }) : deliver(req, res, actor, 404, { error: "Источник не найден" });
     }
-    const actor = await auth.currentUser(req);
     if (!actor || !await auth.canEdit(req)) return json(res, 403, { error: "Недостаточно прав" });
     if (!isSameOriginRequest(req, publicOrigin)) return json(res, 403, { error: "Недопустимый источник запроса" });
     let input: Record<string, unknown>;

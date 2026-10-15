@@ -58,6 +58,8 @@ import { verifyGeneratedFileGlobalCap } from "./generated-file-cap-test.ts";
 import { verifyPortablePreviewGlobalCap } from "./portable-preview-cap.ts";
 import { verifyPlatformAiOrphanSweep } from "./platform-ai-orphan-sweep.ts";
 import { verifyOwnerTransferGetRevocation } from "./postgres-owner-transfer-reads.ts";
+import { verifySourceCatalogDelivery } from "./postgres-source-catalog-delivery.ts";
+import { verifyAiTokenBudget } from "./postgres-ai-token-budget.ts";
 import { verifyInvitationAcceptSessionRevocation } from "./postgres-invitation-accept-session.ts";
 import { verifyInvitationPreviewDelivery } from "./postgres-invitation-preview-delivery.ts";
 import { verifyInvitationScopeAndMembershipRemoval } from "./postgres-invitation-scope.ts";
@@ -640,6 +642,7 @@ try {
     JSON.stringify({ ...family.people[0], name: "Чужой" }),
   ]);
   const other = await openPostgresDatabase("other-archive", source);
+  await verifyAiTokenBudget(live.db, other, client);
   try {
     await verifyPortablePreviewGlobalCap(client, directory);
     const diskOptions = {
@@ -1180,6 +1183,7 @@ try {
   app = await startServer(0, source, true);
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   await verifyOwnerTransferGetRevocation(app.archive.db, client);
+  await verifySourceCatalogDelivery(app.archive, client);
   await verifyInvitationAcceptSessionRevocation(app.archive.db, client);
   await verifyInvitationPreviewDelivery(app.archive.db, client);
   await verifyInvitationScopeAndMembershipRemoval(app.archive.db, client);

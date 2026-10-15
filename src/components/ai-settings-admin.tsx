@@ -56,6 +56,7 @@ type AiAdminStatus = {
   };
   usage: {
     today: {
+      reservedTokens?: number;
       requests: number;
       providerCalls: number;
       inputTokens: number;
@@ -570,6 +571,10 @@ export function AiSettingsAdmin({
                   >
                     <h3>Использование сегодня</h3>
                     <p>Все пользователи и древа платформы.</p>
+                    {!!status.usage.today.reservedTokens && <p>
+                      В резерве: {status.usage.today.reservedTokens.toLocaleString("ru-RU")} токенов.
+                      {" "}Выполняющиеся ответы и вызовы с неподтверждённым расходом.
+                    </p>}
                     <div className="ai-usage-stats">
                       <div>
                         <b>{status.usage.today.requests}</b>

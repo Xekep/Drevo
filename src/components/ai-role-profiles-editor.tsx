@@ -151,7 +151,7 @@ export function AiRoleProfilesEditor({
               [
                 "dailyTokens",
                 "Токенов в день на пользователя",
-                "Токенов / день",
+                "Порог токенов / день",
                 1000000000,
               ],
             ] as const
@@ -161,6 +161,7 @@ export function AiRoleProfilesEditor({
               <input
                 id={`ai-profile-${key}`}
                 aria-label={label}
+                aria-describedby={key === "dailyTokens" ? "ai-token-budget-hint" : undefined}
                 type="number"
                 min={0}
                 max={max}
@@ -174,6 +175,9 @@ export function AiRoleProfilesEditor({
         </div>
         <small>
           Лимиты на одного пользователя во всех древах. 0 — без ограничения.
+        </small>
+        <small id="ai-token-budget-hint">
+          Порог токенов учитывает резерв выполняющихся ответов. Уже начатые вызовы могут его превысить.
         </small>
         <details className="ai-context-settings ai-role-features">
           <summary>Возможности ИИ</summary>

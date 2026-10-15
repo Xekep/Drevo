@@ -5,6 +5,67 @@ import { DatabaseSync } from "node:sqlite";
 import { initializeArchiveSchema } from "../src/server/schema.ts";
 import { aiUsageStore, AiLimitError } from "../src/server/ai-usage.ts";
 
+test("parallel turns reserve a shared token threshold, then release only confirmed unused tokens", async () => {
+  const raw = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(raw);
+    const db = storeDatabase(raw), usage = aiUsageStore(db);
+    const limits = { requestsPerMinute: 0, dailyRequests: 0, dailyTokens: 100 };
+    const attempts = await Promise.allSettled(Array.from({ length: 8 }, (_, i) =>
+      aiUsageStore(db).admit(`user-${i}`, "model", limits)));
+    const admitted = attempts.filter((value) => value.status === "fulfilled");
+    assert.equal(admitted.length, 1);
+    assert.equal((await usage.summary()).today.reservedTokens, 100);
+    for (const attempt of attempts) if (attempt.status === "rejected") assert.ok(attempt.reason instanceof AiLimitError);
+    const run = admitted[0].value;
+    await usage.finish(run.id, run.started, { status: "ok", providerCalls: 1, inputTokens: 20, outputTokens: 10 });
+    assert.equal((await usage.summary()).today.reservedTokens, 0);
+    await usage.admit("another", "model", limits);
+    assert.equal((await usage.summary()).today.reservedTokens, 70);
+    await assert.rejects(aiUsageStore(db).admit("restart", "model", limits), AiLimitError);
+    initializeArchiveSchema(raw);
+    assert.equal((await usage.summary()).today.reservedTokens, 70, "schema startup cannot erase an in-flight/uncertain charge");
+  } finally { raw.close(); }
+});
+
+test("personal reservations cross chats but not users; continuation does not consume another request", async () => {
+  const raw = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(raw);
+    const usage = aiUsageStore(storeDatabase(raw));
+    const unlimited = { requestsPerMinute: 0, dailyRequests: 0, dailyTokens: 0 };
+    const personal = { ...unlimited, requestsPerMinute: 1, dailyRequests: 1, dailyTokens: 100 };
+    const first = await usage.admit("first", "model", unlimited, personal);
+    const second = await usage.admit("second", "model", unlimited, personal);
+    await usage.advance(first.id, "first", 20, 10, unlimited, personal);
+    assert.equal((await usage.summary()).today.totalTokens, 30);
+    assert.equal((await usage.summary()).today.reservedTokens, 170);
+    await assert.rejects(usage.advance(first.id, "first", 70, 40, unlimited, personal), AiLimitError);
+    await usage.finish(first.id, first.started, { status: "ok", providerCalls: 1, inputTokens: 70, outputTokens: 40 });
+    await usage.advance(second.id, "second", 1, 1, unlimited, personal);
+    await usage.finish(second.id, second.started, { status: "error", providerCalls: 0, inputTokens: 1, outputTokens: 1 });
+    assert.equal((await usage.summary()).today.reservedTokens, 0, "cancellation before a paid call releases the unused window");
+  } finally { raw.close(); }
+});
+
+test("uncertain provider charges retain the window until UTC rollover, independently of process lifetime", async () => {
+  const raw = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(raw);
+    const db = storeDatabase(raw), usage = aiUsageStore(db);
+    const limits = { requestsPerMinute: 0, dailyRequests: 0, dailyTokens: 100 };
+    const run = await usage.admit("user", "model", limits);
+    await usage.finish(run.id, run.started, { status: "error", providerCalls: 1, inputTokens: 10, outputTokens: 20, uncertainTokens: 70 });
+    assert.equal((await usage.summary()).today.reservedTokens, 70);
+    await assert.rejects(aiUsageStore(db).admit("user", "model", limits), AiLimitError);
+    await db.prepare("UPDATE ai_usage SET started_ms=0 WHERE id=?").run(run.id);
+    await assert.rejects(usage.advance(run.id, "user", 10, 20, limits), /новые сутки/);
+    const fresh = await usage.admit("user", "model", limits);
+    assert.ok(fresh.id !== run.id);
+    assert.equal((await usage.summary()).today.reservedTokens, 100);
+  } finally { raw.close(); }
+});
+
 test("concurrent AI admission reserves the minute limit before the next turn", async () => {
   const raw = new DatabaseSync(":memory:");
   try {

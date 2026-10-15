@@ -390,6 +390,7 @@ for (const exhausted of [false, true])
         searchCalls++;
         return Response.json({
           status: "completed",
+          usage: { input_tokens: 20, output_tokens: 10 },
           output: [
             {
               type: "message",
@@ -425,6 +426,7 @@ for (const exhausted of [false, true])
       return Response.json({
         id: `round-${agentCalls}`,
         status: "completed",
+        usage: { input_tokens: 20, output_tokens: 10 },
         ...(exhausted || agentCalls <= 4
           ? {
               output: [

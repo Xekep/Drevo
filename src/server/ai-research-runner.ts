@@ -126,6 +126,7 @@ export function createResearchRunner({
     runtime: Awaited<ReturnType<typeof aiRuntimeConfig>>,
     metrics: ResearchMetrics,
     assertAiAccess: () => Promise<void>,
+    client: ReturnType<typeof yandexResponsesClient>,
   ) => ReturnType<typeof createWebSearchService> | undefined;
   chats: ReturnType<typeof aiChatStore>;
   generatedFiles: ReturnType<typeof generatedResearchFileStore>;
@@ -134,8 +135,8 @@ export function createResearchRunner({
   renderPdf?: typeof researchPdf;
   preparation?: PreparationAdmission;
 }) {
-  const responses = yandexResponsesClient(fetcher);
-  const vision = aiVision(fetcher);
+  const providerResponses = yandexResponsesClient(fetcher);
+  const providerVision = aiVision(fetcher);
 
   async function runResearch({
     body,
@@ -150,6 +151,9 @@ export function createResearchRunner({
     chatId,
     turnToken,
     assertAiAccess,
+    beforeProviderCall,
+    onUnconfirmedProviderCall,
+    onProviderTokens,
     assertGeneratedFileInstall,
     commitSuggestion,
   }: {
@@ -167,11 +171,48 @@ export function createResearchRunner({
     chatId: string;
     turnToken: string;
     assertAiAccess: () => Promise<void>;
+    beforeProviderCall?: () => Promise<void>;
+    onUnconfirmedProviderCall?: (estimatedTokens: number) => void;
+    onProviderTokens?: (tokens: number) => void;
     assertGeneratedFileInstall?: () => Promise<void>;
     commitSuggestion: typeof suggestions.createFromTool;
   }): Promise<ResearchResult> {
+    // All billable agent, search, calculation and image calls pass through
+    // this turn's budget. File/conversation lifecycle calls remain unmetered.
+    const paid = async <T,>(model: string, work: () => Promise<T>): Promise<T> => {
+      await beforeProviderCall?.();
+      recordModelCall(metrics, model);
+      try {
+        const result = await work();
+        const value = result as { inputTokens?: number; outputTokens?: number; usageConfirmed?: boolean;
+          usage?: { input_tokens?: number; output_tokens?: number } };
+        const input = value.inputTokens ?? value.usage?.input_tokens;
+        const output = value.outputTokens ?? value.usage?.output_tokens;
+        if (value.usageConfirmed === false || !Number.isFinite(input) || !Number.isFinite(output) || input! < 0 || output! < 0 || (!input && !output))
+          onUnconfirmedProviderCall?.((Number.isFinite(input) ? Math.max(0, input!) : 0) +
+            (Number.isFinite(output) ? Math.max(0, output!) : 0));
+        else onProviderTokens?.(Math.max(0, input!) + Math.max(0, output!));
+        return result;
+      } catch (error) {
+        // Validation/auth/rate-limit rejections do not run the model. A lost
+        // connection or incomplete answer may already have incurred a charge.
+        if (!(error instanceof YandexResponseError && [400, 401, 403, 404, 422, 429].includes(error.status)))
+          onUnconfirmedProviderCall?.(0);
+        throw error;
+      }
+    };
+    const responses = {
+      ...providerResponses,
+      respond: (options: Parameters<typeof providerResponses.respond>[0]) => paid(options.runtime.modelUri, () => providerResponses.respond(options)),
+      webSearch: (options: Parameters<typeof providerResponses.webSearch>[0]) => paid(options.runtime.modelUri, () => providerResponses.webSearch(options)),
+      codeInterpreter: (options: Parameters<typeof providerResponses.codeInterpreter>[0]) => paid(options.runtime.modelUri, () => providerResponses.codeInterpreter(options)),
+    };
+    const vision = {
+      ...providerVision,
+      analyze: (...args: Parameters<typeof providerVision.analyze>) => paid(args[3], () => providerVision.analyze(...args)),
+    };
     canPropose = canPropose && runtime.capabilities.proposals;
-    const search = webSearch?.(runtime, metrics, assertAiAccess);
+    const search = webSearch?.(runtime, metrics, assertAiAccess, responses);
     const searchTool = search
       ? webSearchTool(
           await search.categories(),
@@ -729,7 +770,6 @@ export function createResearchRunner({
       };
       try {
         await assertAiAccess();
-        recordModelCall(metrics, runtime.modelUri);
         completion = await responses.respond(requestOptions);
       } catch (error) {
         if (
@@ -772,7 +812,6 @@ export function createResearchRunner({
           )
             throw new Error("AI chat lease was lost before provider binding");
           await assertAiAccess();
-          recordModelCall(metrics, runtime.modelUri);
           completion = await responses.respond({
             ...requestOptions,
             conversationId,
@@ -1327,7 +1366,7 @@ export function createResearchRunner({
               allowPdf: runtime.capabilities.pdf,
               attachments: attachmentContext.files,
               inputFileCleanup: providerCleanup,
-              onCall: () => recordModelCall(metrics, runtime.modelUri),
+              onCall: () => {}, // The metered client counts admitted calls.
               onUsage: (input, output) =>
                 recordModelTokens(metrics, runtime.modelUri, input, output),
             });
@@ -1422,7 +1461,6 @@ export function createResearchRunner({
             await assertAiAccess();
             const visionModel = await vision.modelUri(runtime);
             await assertAiAccess();
-            recordModelCall(metrics, visionModel);
             const visual = await vision.analyze(
               question,
               `data:image/jpeg;base64,${bytes.toString("base64")}`,
