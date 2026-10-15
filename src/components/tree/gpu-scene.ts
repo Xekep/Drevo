@@ -352,11 +352,11 @@ export function createGpuScene(
       text(name, node, 146, 22, 24, 2, true, 0, 0.18);
       const overviewLines = text(name, node, 146, 22, 24, 2, true, 0.18, 0.52);
       const overviewDates = 146 + overviewLines * 24 + 4;
-      text(dates, node, overviewDates, 12, 16, 1, false, 0.18, 0.52);
+      text(dates, node, overviewDates, 20, 24, 1, false, 0.18, 0.52);
       text(
         relation,
         node,
-        overviewDates + (dates ? 20 : 0),
+        overviewDates + (dates ? 28 : 0),
         14,
         16,
         1,
@@ -366,11 +366,11 @@ export function createGpuScene(
       );
       const fullLines = text(name, node, 146, 22, 24, 2, true, 0.52, 10);
       const fullDates = 146 + fullLines * 24 + 4;
-      text(dates, node, fullDates, 12, 16, 1, false, 0.52, 10);
+      text(dates, node, fullDates, 20, 24, 1, false, 0.52, 10);
       text(
         relation,
         node,
-        fullDates + (dates ? 20 : 0),
+        fullDates + (dates ? 28 : 0),
         14,
         16,
         2,

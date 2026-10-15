@@ -229,10 +229,11 @@ export const PersonNode = memo(function PersonNode({
           )}
         </span>
       </button>
-      {publishPerson && (
+      {publishPerson && detail !== "distant" && (
         <button
           type="button"
           className="flow-privacy nodrag nopan"
+          style={{ "--privacy-target": `${controlTarget}px` } as CSSProperties}
           data-publication-state={publicationStatus}
           aria-label={`${privacyLabel}: ${fullName(data.person)}. Изменить приватность`}
           title={`${privacyLabel} · изменить приватность`}

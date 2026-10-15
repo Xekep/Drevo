@@ -759,6 +759,7 @@ test("ИИ-исследователь не перекрывает навигац
   await expect(panel.getByRole("button", { name: "Ещё снимок" })).toBeVisible();
   await expect(panel.locator("img")).toHaveCount(0);
   await expect(clearDialog).toBeEnabled();
+  page.once("dialog", (dialog) => dialog.accept());
   await clearDialog.click();
   await expect(panel.locator("article")).toHaveCount(0);
   await expect(panel.locator(".research-assistant-empty")).toBeVisible();

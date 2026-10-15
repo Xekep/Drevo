@@ -125,6 +125,27 @@ test("only explicitly published people are searchable without tree access, and u
       (await request("/api/published-people/published-person")).status,
       200,
     );
+    const anonymousPaths = [query,
+      "/api/published-people/published-person",
+      "/api/discovery/people?q=Иванов",
+      "/api/discovery/people/tree-a/published-person"];
+    const expired = await cookie("reader");
+    const expiredToken = expired.slice("drevo_session=".length);
+    await app.archive.db.prepare("UPDATE auth_sessions SET expires_at=? WHERE token_hash=?")
+      .run(Date.now() - 1, createHash("sha256").update(expiredToken).digest("hex"));
+    const revoked = await cookie("reader");
+    const revokedToken = revoked.slice("drevo_session=".length);
+    await app.archive.db.prepare("DELETE FROM auth_sessions WHERE token_hash=?")
+      .run(createHash("sha256").update(revokedToken).digest("hex"));
+    for (const path of anonymousPaths) {
+      for (const session of ["", expired, revoked]) {
+        const denied = await request(path, session);
+        assert.equal(denied.status, 401, path);
+        assert.match(denied.headers.get("cache-control") || "", /no-store/);
+        const body = await denied.text();
+        assert.doesNotMatch(body, /Иванов|Петрович|1908|1980|Private biography/);
+      }
+    }
     const chosenFields = {
       birthSurname: true,
       birthYear: false,

@@ -120,7 +120,6 @@ export function LoginButtons({
   }
   return (
     <div className="login-providers">
-      <a href="/discover">Поиск опубликованных людей</a>
       <div
         className="login-provider-buttons"
         role="group"

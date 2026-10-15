@@ -103,13 +103,15 @@ export function discoveryPeopleHttp(
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const detail = /^\/api\/discovery\/people\/([A-Za-z0-9-]{3,64})\/([^/]{1,1200})$/.exec(url.pathname);
     if (url.pathname !== "/api/discovery/people" && !detail) return false;
-    if (db.kind !== "postgres")
-      return json(res, 501, { error: "Общий поиск доступен с PostgreSQL" });
     if (req.method !== "GET")
       return json(res, 405, { error: "Метод не поддерживается" });
     const accountId = await auth.accountId(req);
-    if (!accountId)
+    // Only the trusted local SQLite test/import mode uses the legacy search
+    // bridge. All externally served requests authenticate before backend checks.
+    if (!accountId && !(auth.local && db.kind === "sqlite"))
       return json(res, 401, { error: "Войдите, чтобы искать опубликованных людей" });
+    if (db.kind !== "postgres")
+      return json(res, 501, { error: "Общий поиск доступен с PostgreSQL" });
     if (!(await limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress))))
       return json(res, 429, { error: "Слишком много поисковых запросов" });
     const state = await db.prepare("", "SELECT ready FROM discovery_index_state WHERE singleton=true").get();

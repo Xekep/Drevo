@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, Search, X } from "lucide-react";
+import { ChevronDown, ExternalLink, Search, X } from "lucide-react";
 import type { ResearchDirectoryCategory } from "../shared/research-catalog";
 import { safeUrl } from "../domain";
 import { fetchWithTimeout } from "../data/request-timeout";
@@ -8,6 +8,26 @@ import "../styles/research-resources-page.css";
 
 const normalize = (text: string) =>
   text.toLocaleLowerCase("ru-RU").replaceAll("ё", "е");
+
+function ResourceDescription({ text }: { text: string }) {
+  const compact = text.trim().replace(/\s+/gu, " ");
+  if (!compact) return null;
+  if (compact.length <= 140) return <p>{compact}</p>;
+  const preview = `${compact.slice(0, 140).replace(/\s+\S*$/u, "")}…`;
+  return (
+    <details className="research-resource-description">
+      <summary>
+        <span className="research-resource-preview">{preview}</span>
+        <span className="research-resource-disclosure">
+          <span className="description-expand">Подробнее</span>
+          <span className="description-collapse">Свернуть</span>
+          <ChevronDown size={14} aria-hidden="true" />
+        </span>
+      </summary>
+      <p>{text}</p>
+    </details>
+  );
+}
 
 export default function ResearchResourcesPage() {
   const [categories, setCategories] = useState<ResearchDirectoryCategory[]>([]);
@@ -71,7 +91,6 @@ export default function ResearchResourcesPage() {
   return (
     <section className="research-directory">
       <header className="research-directory-heading">
-        <span>Справочник</span>
         <h1>Ресурсы поиска</h1>
         <p>
           Архивы, базы и библиотеки для исследования истории семьи. Из этого же
@@ -165,28 +184,37 @@ export default function ResearchResourcesPage() {
                   const href = /^https?:\/\//i.test(resource.url)
                     ? safeUrl(resource.url)
                     : undefined;
+                  const hostname = href
+                    ? new URL(href).hostname.replace(/^www\./, "")
+                    : "";
                   return (
                     <li key={resource.id}>
-                      <h3>
-                        {href ? (
-                          <a
-                            href={href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {resource.name}
-                            <ExternalLink size={16} aria-hidden="true" />
-                          </a>
-                        ) : (
-                          resource.name
+                      <div className="research-resource-heading">
+                        <h3>
+                          {href ? (
+                            <a
+                              href={href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              {resource.name}
+                              <ExternalLink size={16} aria-hidden="true" />
+                            </a>
+                          ) : (
+                            resource.name
+                          )}
+                        </h3>
+                        {href && (
+                          <small title={hostname}>
+                            {hostname
+                              .split(".")
+                              .some((part) => part.startsWith("xn--"))
+                              ? "Внешний сайт"
+                              : hostname}
+                          </small>
                         )}
-                      </h3>
-                      <p>{resource.description}</p>
-                      {href && (
-                        <small>
-                          {new URL(href).hostname.replace(/^www\./, "")}
-                        </small>
-                      )}
+                      </div>
+                      <ResourceDescription text={resource.description} />
                     </li>
                   );
                 })}

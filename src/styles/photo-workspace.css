@@ -316,6 +316,7 @@
 }
 .photo-albums small {
   color: var(--muted);
+  font-size: 12px;
 }
 .load-more {
   display: block;

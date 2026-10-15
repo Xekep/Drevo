@@ -345,6 +345,7 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
         image.draggable = false;
         const index = Number(uri.slice("drevo-page:".length));
         if (!Number.isInteger(index) || index < 0 || index >= pageCount) return;
+        image.alt = `Страница ${index + 1} документа`;
         void render(index)
           .then((url) => {
             image.src = url;

@@ -5,6 +5,7 @@ import "leaflet/dist/leaflet.css";
 import { List, LocateFixed, MapPin, Search, X } from "lucide-react";
 import {
   fullName,
+  plural,
   dateLabel,
   owns,
   type Family,
@@ -64,7 +65,13 @@ function MapSurface({
       attribution:
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(instance);
-    L.control.zoom({ position: "bottomright" }).addTo(instance);
+    L.control
+      .zoom({
+        position: "bottomright",
+        zoomInTitle: "Увеличить масштаб",
+        zoomOutTitle: "Уменьшить масштаб",
+      })
+      .addTo(instance);
     instance.on("click", (e: L.LeafletMouseEvent) => {
       if (handlers.current.picking)
         handlers.current.onPoint({
@@ -449,7 +456,8 @@ export default function PlacesMap({
           <h1>Места, которые нас связывают</h1>
         </div>
         <p>
-          {places.length} мест · {points.length} на карте
+          {places.length} {plural(places.length, "место", "места", "мест")} ·{" "}
+          {points.length} на карте
           {loading ? " · ищем остальные…" : ""}
         </p>
       </header>

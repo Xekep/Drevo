@@ -166,6 +166,7 @@ for (const action of ["stop", "delete", "complete"] as const)
       await stop.click();
       await expect.poll(() => stops).toBe(1);
     } else if (action === "delete") {
+      page.once("dialog", (dialog) => dialog.accept());
       await panel.getByRole("button", { name: "Удалить диалог" }).click();
       await expect.poll(() => deleted).toBe(true);
     } else {
