@@ -61,7 +61,12 @@ export async function verifySourceCatalogDelivery(archive: Awaited<ReturnType<ty
         try {
           await Promise.race([entered, pending.then(() => { throw new Error("Source delivery barrier missed"); })]);
           if (revoke === "approval") await client.query("UPDATE archive_memberships SET approved=false WHERE archive_id='runtime-test' AND user_id='owner'");
-          if (revoke === "membership") await client.query("DELETE FROM archive_memberships WHERE archive_id='runtime-test' AND user_id='owner'");
+          if (revoke === "membership") {
+            // A current owner cannot lose membership before ownership transfer:
+            // exercise a valid revocation without weakening that FK invariant.
+            await client.query("UPDATE archive_owners SET user_id='reader' WHERE archive_id='runtime-test'");
+            await client.query("DELETE FROM archive_memberships WHERE archive_id='runtime-test' AND user_id='owner'");
+          }
           if (revoke === "owner") await client.query("DELETE FROM archive_owners WHERE archive_id='runtime-test' AND user_id='owner'");
           if (revoke === "session") await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [hash]);
           release();
