@@ -145,7 +145,7 @@ test("slot exchanges reject different generations and nonadjacent blocks", () =>
   assert.equal(locallySwapFamilyBlocks(original, "left", "right", [], [], size), undefined);
 });
 
-test("cold equal-width family order stays stable for subsequent edits without new ELK passes", async () => {
+test("cold equal-width family order stays stable within the bounded solver budget", async () => {
   const people = randomFamily(1, 4);
   const engine = new ELK({ algorithms: ["layered"] });
   let calls = 0;
@@ -153,7 +153,7 @@ test("cold equal-width family order stays stable for subsequent edits without ne
     calls++;
     return engine.layout(graph);
   }, false, [], treeNodeSize());
-  assert.equal(calls, 7);
+  assert.equal(calls, 8, "six seeds, one compact placement and one couple-order alternative");
   assert.equal(result.positions.length, people.length);
   // Moving these equal-width blocks reduced fresh contacts but degraded the ancestor edit.
   assert.equal(branchContactCounts(result.branches || []).distinct, 217);

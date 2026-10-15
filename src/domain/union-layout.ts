@@ -100,6 +100,7 @@ async function geometryForSeed(
   sketch?: Pick<TreeGeometry, "positions" | "occurrences">,
   flippedPairs?: ReadonlySet<string>,
   profile?: LargeDecrossProfile,
+  compact = false,
 ): Promise<TreeGeometry> {
   if (!people.length)
     return {
@@ -365,6 +366,9 @@ async function geometryForSeed(
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
       "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
       "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+      ...(compact
+        ? { "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX" }
+        : {}),
       "elk.layered.thoroughness": people.length > 900 ? "1" : "12",
       "elk.separateConnectedComponents": "true",
       ...(profile
@@ -381,10 +385,10 @@ async function geometryForSeed(
   const hinted = sketch && fromSketchUnionGraph(baseGraph, sketch, reverse);
   if (sketch && !hinted) throw new Error("insufficient prior layout overlap");
   const ordered = hinted || (sift ? siftUnionOrder(baseGraph) : baseGraph);
-  // Поколения уже вычислены выше. На больших проекциях передаём их напрямую:
+  // Поколения уже вычислены выше. Передаём их напрямую:
   // partitioning создаёт полный двудольный граф между соседними поколениями.
   // Порядок блоков, минимизация пересечений и фиксированные порты остаются ELK.
-  const input = people.length > 300 ? presetGenerationLayers(ordered) : ordered;
+  const input = presetGenerationLayers(ordered);
   const laidOut = await layout(structuredClone(input));
   const { graph, bands, offsets } = alignGenerationBands(laidOut, size);
   const placed = new Map(
@@ -855,6 +859,49 @@ export async function unionGeometry(
   }
   // No speculative task outlives this layout or competes with the next request.
   await Promise.all(pending.values());
+  if (!previous && people.length >= 100 && people.length <= 300) {
+    // One bounded alternative also optimizes empty horizontal space. The usual
+    // crossing scorer deliberately ignores size, so equally crossed candidates
+    // otherwise keep the first, sometimes needlessly wide, placement.
+    try {
+      const candidate = await geometryForSeed(
+        people,
+        layout,
+        reverse,
+        links,
+        bestSeed,
+        size,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+      const currentExtent = extent(best),
+        nextExtent = extent(candidate);
+      const currentRoutes = geometryQuality(best),
+        nextRoutes = geometryQuality(candidate);
+      const next = geometryContacts(candidate);
+      if (
+        nextExtent.width <= currentExtent.width * 0.95 &&
+        nextExtent.height <= currentExtent.height * 1.05 &&
+        nextExtent.width * nextExtent.height <
+          currentExtent.width * currentExtent.height &&
+        next.distinct <= contacts.distinct &&
+        nextRoutes.crossings <= currentRoutes.crossings &&
+        nextRoutes.contacts <= currentRoutes.contacts &&
+        nextRoutes.length <= currentRoutes.length &&
+        nextRoutes.bends <= currentRoutes.bends &&
+        routeCardContacts(candidate) <= routeCardContacts(best) &&
+        cardOverlapCount(candidate) <= cardOverlapCount(best)
+      ) {
+        best = candidate;
+        contacts = next;
+      }
+    } catch {
+      // An unsupported placement keeps the already calculated family layout.
+    }
+  }
   if (
     previous?.mode === "generations" &&
     previous.reverse === reverse &&
