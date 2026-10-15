@@ -11,7 +11,7 @@ import {
 const namespace = "http://www.w3.org/2000/svg";
 const fontName = "Drevo";
 
-export function downloadBlob(
+function downloadBlob(
   blob: Blob,
   title: string,
   extension: "pdf" | "png",
@@ -29,7 +29,7 @@ export function downloadBlob(
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-export function base64(bytes: Uint8Array) {
+function base64(bytes: Uint8Array) {
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += 8192)
     binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
@@ -82,7 +82,7 @@ export async function downloadTreePng(
   }
 }
 
-export async function loadPdfFontBytes(signal?: AbortSignal) {
+async function loadPdfFontBytes(signal?: AbortSignal) {
   const response = await archiveFetch(fontUrl, { signal });
   if (!response.ok) throw new Error("Не удалось загрузить шрифт PDF.");
   return new Uint8Array(await response.arrayBuffer());
@@ -110,7 +110,7 @@ function svgElement<K extends keyof SVGElementTagNameMap>(
 /** A vector scene from the already measured, full-detail tree. No foreignObject,
  * HTML screenshot, remote converter, or archive-sized bitmap is involved.
  */
-export function treePdfSvg(target: Document, width: number, height: number) {
+function treePdfSvg(target: Document, width: number, height: number) {
   const view = target.defaultView!;
   const svg = svgElement(target, "svg", {
     width,

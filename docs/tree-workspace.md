@@ -197,7 +197,7 @@ GPU отменяют ненужные запросы и обработку за�
 | `useWorkspaceSelection.ts`                      | Выбор, сравнение, последовательное связывание, запрос фокуса |
 | `tree/tree-canvas.tsx`                          | React Flow, камера, фильтр ветки, сворачивание               |
 | `tree/person-node.tsx`, `relationship-edge.tsx` | Карточки, точки, линии и подписи                             |
-| `tree/era-overlay.tsx`                          | Эпохи; подписка на камеру изолирована от форм                |
+| `tree/horizontal-timeline.tsx`                  | Горизонтальная хронология, эпохи и прокрутка времени         |
 | `tree/layout.worker.ts`                         | Раскладка вне основного потока                               |
 | `connection-inspector.tsx`                      | Участники, тип, направление, единое сохранение               |
 | `person-inspector.tsx`, `inspector-dock.tsx`    | Карточка, альбом, родственник, мобильная панель              |
