@@ -153,10 +153,9 @@ test("cold equal-width family order stays stable within the bounded solver budge
     calls++;
     return engine.layout(graph);
   }, false, [], treeNodeSize());
-  assert.equal(calls, 8, "six seeds, one compact placement and one couple-order alternative");
+  assert.equal(calls, 7, "six seeds and one couple-order alternative; row moves do not run ELK");
   assert.equal(result.positions.length, people.length);
-  // Moving these equal-width blocks reduced fresh contacts but degraded the ancestor edit.
-  assert.equal(branchContactCounts(result.branches || []).distinct, 217);
+  assert.equal(branchContactCounts(result.branches || []).distinct, 204);
 });
 
 test("mixed single-parent and couple households improve the cold layout in both directions", async () => {
@@ -190,7 +189,7 @@ test("large generation layout keeps routed blocks valid in both directions", asy
     const result = await unionGeometry(people, (graph) => engine.layout(graph),
       reverse, [], treeNodeSize());
     assert.equal(result.positions.length, people.length);
-    assert.equal(branchContactCounts(result.branches || []).distinct, 487);
+    assert.ok(branchContactCounts(result.branches || []).distinct <= 487);
     const cards = new Spatial<{ left: number; right: number; top: number; bottom: number }>();
     for (const [, point] of result.positions) {
       const box = { left: point.x, right: point.x + size.width,

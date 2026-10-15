@@ -32,18 +32,30 @@ function placedBlocks(geometry: TreeGeometry, size: TreeNodeSize) {
   }));
 }
 
-/** Neighboring unions can exchange their space without shifting another block. */
-export function adjacentFamilyBlocks(geometry: TreeGeometry, size: TreeNodeSize) {
+/** Household slots in each generation; partners remain one movable block. */
+export function placedFamilyRows(geometry: TreeGeometry, size: TreeNodeSize) {
   const blocks = placedBlocks(geometry, size);
-  const result: [string, string][] = [];
-  for (const band of geometry.generationBands || []) {
+  return (geometry.generationBands || []).map((band) => {
     const inBand = new Set(band.members);
-    const row = [...blocks.values()]
-      .filter((block): block is Block => !!block &&
-        block.members.every((member) => inBand.has(member)))
+    return [...blocks.values()]
+      .filter(
+        (block): block is Block =>
+          !!block && block.members.every((member) => inBand.has(member)),
+      )
       .sort((a, b) => a.x - b.x);
+  });
+}
+
+/** Neighboring unions can exchange their space without shifting another block. */
+export function adjacentFamilyBlocks(
+  geometry: TreeGeometry,
+  size: TreeNodeSize,
+) {
+  const result: [string, string][] = [];
+  for (const row of placedFamilyRows(geometry, size)) {
     for (let i = 1; i < row.length; i++) {
-      const left = row[i - 1], right = row[i];
+      const left = row[i - 1],
+        right = row[i];
       if (left.x + left.width > right.x) continue;
       result.push([left.id, right.id]);
     }

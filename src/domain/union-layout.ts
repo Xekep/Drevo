@@ -19,6 +19,7 @@ import type { FamilyLink } from "./types.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
+import { optimizeFamilyRows } from "./family-row-order.ts";
 import { routingContactScore } from "./routing-quality.ts";
 import { incrementalRouteScorer } from "./incremental-route-score.ts";
 import {
@@ -100,7 +101,6 @@ async function geometryForSeed(
   sketch?: Pick<TreeGeometry, "positions" | "occurrences">,
   flippedPairs?: ReadonlySet<string>,
   profile?: LargeDecrossProfile,
-  compact = false,
   historyPlacement: "balanced" | "interactive" = "balanced",
 ): Promise<TreeGeometry> {
   if (!people.length)
@@ -367,9 +367,6 @@ async function geometryForSeed(
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
       "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
       "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
-      ...(compact
-        ? { "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX" }
-        : {}),
       "elk.layered.thoroughness": people.length > 900 ? "1" : "12",
       "elk.separateConnectedComponents": "true",
       ...(profile
@@ -868,49 +865,6 @@ export async function unionGeometry(
   }
   // No speculative task outlives this layout or competes with the next request.
   await Promise.all(pending.values());
-  if (!previous && people.length >= 100 && people.length <= 300) {
-    // One bounded alternative also optimizes empty horizontal space. The usual
-    // crossing scorer deliberately ignores size, so equally crossed candidates
-    // otherwise keep the first, sometimes needlessly wide, placement.
-    try {
-      const candidate = await geometryForSeed(
-        people,
-        layout,
-        reverse,
-        links,
-        bestSeed,
-        size,
-        false,
-        undefined,
-        undefined,
-        undefined,
-        true,
-      );
-      const currentExtent = extent(best),
-        nextExtent = extent(candidate);
-      const currentRoutes = geometryQuality(best),
-        nextRoutes = geometryQuality(candidate);
-      const next = geometryContacts(candidate);
-      if (
-        nextExtent.width <= currentExtent.width * 0.95 &&
-        nextExtent.height <= currentExtent.height * 1.05 &&
-        nextExtent.width * nextExtent.height <
-          currentExtent.width * currentExtent.height &&
-        next.distinct <= contacts.distinct &&
-        nextRoutes.crossings <= currentRoutes.crossings &&
-        nextRoutes.contacts <= currentRoutes.contacts &&
-        nextRoutes.length <= currentRoutes.length &&
-        nextRoutes.bends <= currentRoutes.bends &&
-        routeCardContacts(candidate) <= routeCardContacts(best) &&
-        cardOverlapCount(candidate) <= cardOverlapCount(best)
-      ) {
-        best = candidate;
-        contacts = next;
-      }
-    } catch {
-      // An unsupported placement keeps the already calculated family layout.
-    }
-  }
   if (
     previous?.mode === "generations" &&
     previous.reverse === reverse &&
@@ -989,7 +943,6 @@ export async function unionGeometry(
             previous,
             undefined,
             undefined,
-            false,
             historyPlacement,
           );
           const sketchMovement = axisDisplacement(previous, candidate, "x");
@@ -1261,6 +1214,23 @@ export async function unionGeometry(
       }
       if (!changed) break;
     }
+  }
+  if (
+    (!previous && people.length <= 1200) ||
+    (previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE)
+  ) {
+    best = optimizeFamilyRows(
+      best,
+      people,
+      links,
+      size,
+      (geometry) => ({
+        ...geometryQuality(geometry),
+        cardHits: routeCardContacts(geometry),
+        overlaps: cardOverlapCount(geometry),
+      }),
+      previous,
+    );
   }
   return best;
 }

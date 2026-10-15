@@ -177,7 +177,7 @@ test("small trees refine individual couples after choosing an ELK layout", async
     treeNodeSize(),
   );
   assert.equal(elkCalls, 7);
-  assert.equal(branchContactCounts(geometry.branches || []).distinct, 16);
+  assert.equal(branchContactCounts(geometry.branches || []).distinct, 12);
   verify(people, geometry);
 });
 
