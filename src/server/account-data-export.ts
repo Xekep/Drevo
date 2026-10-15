@@ -270,7 +270,7 @@ export function accountDataExport(db: StoreDatabase) {
           const saved = await db
             .prepare(
               "",
-              `SELECT reverse_timeline,card_variant,color_scheme,generation_limits
+              `SELECT reverse_timeline,card_variant,color_scheme,generation_limits,presentation
                FROM user_tree_preferences
                WHERE archive_id=? AND user_id=?`,
             )
@@ -540,6 +540,7 @@ export function accountDataExport(db: StoreDatabase) {
                   reverseTimeline: !!saved.reverse_timeline,
                   cardVariant: String(saved.card_variant),
                   colorScheme: String(saved.color_scheme),
+                  presentation: String(saved.presentation),
                   generationLimits: saved.generation_limits
                     ? JSON.parse(String(saved.generation_limits))
                     : null,

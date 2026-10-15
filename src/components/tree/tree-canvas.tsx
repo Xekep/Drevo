@@ -73,6 +73,8 @@ import { generationScope } from "../../domain/tree-generation-scope";
 import { createCrossingPathCache } from "../../domain/route-crossings";
 import type { TreeGenerationLimits } from "../../domain/tree-preferences";
 import { useTreeLayout } from "./use-tree-layout";
+import { useDepthTree, useDepthPlaneMotion } from "./use-depth-tree";
+import { TreeDepthLayers } from "./tree-depth-layers";
 import { FamilyViewTools } from "./family-view-tools";
 import "../../styles/family-view.css";
 import { useTreeFullscreen } from "./use-tree-fullscreen";
@@ -151,6 +153,8 @@ type Props = {
   busy: boolean;
   reverse: boolean;
   colorScheme?: TreeColorScheme;
+  presentation?: "flat" | "depth";
+  kinshipReferenceId?: string;
   generationLimits?: TreeGenerationLimits | null;
   onGenerationAnchor?: (id: string) => Promise<void>;
   onResetGenerations?: () => Promise<void>;
@@ -471,7 +475,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     if (!generationRange) return familyView.visible;
     return new Set([...familyView.visible].filter((id) => generationRange.has(id)));
   }, [generationRange, familyView.visible]);
-  const visible = useMemo(() => {
+  const scopedVisible = useMemo(() => {
     if (!props.assistantFilter) return generationVisible;
     if ("excludeNeedsReview" in props.assistantFilter)
       return withoutReviewPeople(renderFamily.people, generationVisible);
@@ -479,6 +483,24 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       props.assistantFilter.ids.filter((id) => generationVisible.has(id)),
     );
   }, [renderFamily.people, generationVisible, props.assistantFilter]);
+  const depthEnabled = props.presentation === "depth" && mode === "generations" && !activeFanAnchor;
+  const depth = useDepthTree(renderFamily, scopedVisible, depthEnabled,
+    selected[0] || props.kinshipReferenceId || user?.personId || familyView.defaultAnchor || undefined, focus);
+  const previousDepthEnabled = useRef(depthEnabled);
+  useEffect(() => {
+    const entering = depthEnabled && !previousDepthEnabled.current;
+    previousDepthEnabled.current = depthEnabled;
+    if (!entering || !initialCameraReady || growing) return;
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setIntroCameraFinished(true);
+      setManualCameraOverride(true);
+      returnToPerson(depth.anchorId);
+    });
+    return () => { active = false; };
+  }, [depthEnabled, depth.anchorId, growing, initialCameraReady, returnToPerson]);
+  const visible = depth.front;
   const timelinePeople = useMemo(
     () => family.people.filter((person) => visible.has(person.id)),
     [family.people, visible],
@@ -494,7 +516,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const lastAssistantZoom = useRef(0);
   const context = props.assistantFilter
     ? `${mode}:research:${props.assistantFilter.token}:portrait`
-    : `${mode}:${familyView.mode}:${root || "all"}:portrait`;
+    : `${mode}:${depthEnabled ? `depth:${depth.anchorId}` : "flat"}:${familyView.mode}:${root || "all"}:portrait`;
   useTouchZoom(container, flow, !cameraLocked && !screen.fullscreen && !activeFanAnchor && mode !== "timeline");
   useCtrlWheelZoom(container, flow, !cameraLocked && !activeFanAnchor && mode !== "timeline");
   const { geometry, renderVisible, ready, problem, layoutBusy, layoutKey } =
@@ -513,6 +535,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           ])
         : null,
     );
+  useDepthPlaneMotion(container, depthEnabled, depth.anchorId, ready);
   const nodeWidth = geometry?.nodeSize?.width ?? treeNodeSize().width;
   const nodeHeight = geometry?.nodeSize?.height ?? treeNodeSize().height;
   useEffect(() => {
@@ -558,8 +581,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const progressiveIntroRequested = growing && renderVisible.size >= 500 &&
     (distantZoom || !initialCameraReady) && !extraVisible && !activeFanAnchor && mode !== "timeline";
   const growthInputKey = useMemo(
-    () => treeGrowthInputKey(renderFamily.people),
-    [renderFamily.people],
+    () => treeGrowthInputKey(depthEnabled
+      ? renderFamily.people.filter((person) => visible.has(person.id))
+      : renderFamily.people),
+    [renderFamily.people, depthEnabled, visible],
   );
   const growthPeople = useMemo(
     () => JSON.parse(growthInputKey) as LayoutPerson[],
@@ -590,7 +615,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         hidden: familyView.hidden,
         expanded: familyView.expanded,
         query: props.query,
-        spotlight: new Set(spotlight),
+        spotlight: new Set(depthEnabled ? [...spotlight, depth.anchorId] : spotlight),
         spotlightOccurrences: spotlightNodes
           ? new Set(spotlightNodes)
           : undefined,
@@ -610,6 +635,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       familyView.expanded,
       props.query,
       spotlight,
+      depthEnabled,
+      depth.anchorId,
       spotlightNodes,
       growthDelays,
     ],
@@ -626,6 +653,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const generationAnchor = props.generationLimits
     ? peopleMap.get(props.generationLimits.anchorId)
     : undefined;
+  const shareAnchorId = [depthEnabled ? depth.anchorId : undefined, root, generationAnchor?.id]
+    .find((id): id is string => !!id && visible.has(id));
   const cameraModel = useRef({ nodes: displayNodes, personOccurrences });
   useLayoutEffect(() => {
     cameraModel.current = { nodes: displayNodes, personOccurrences };
@@ -908,14 +937,16 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     return createCrossingPathCache();
   }, [gpuScope]);
   const kinshipDay = new Date().toISOString().slice(0, 10);
-  const labelKey = useMemo(() => user?.personId ? kinshipLabelKey(
+  const kinshipReference = props.kinshipReferenceId || (user?.id ? user.personId : undefined);
+  const labelKey = useMemo(() => kinshipReference ? kinshipLabelKey(
     renderFamily.people, renderFamily.links || [], renderFamily.unions || [], kinshipDay, gpuScope,
-  ) : "", [renderFamily.people, renderFamily.links, renderFamily.unions, kinshipDay, gpuScope, user?.personId]);
+  ) : "", [renderFamily.people, renderFamily.links, renderFamily.unions, kinshipDay, gpuScope, kinshipReference]);
   const relationLabel = useMemo(() => {
-    if (!user?.id || !user.personId) return () => "";
-    return createPersonRelationLabels(labelKey, user?.personId || undefined);
+    if (!kinshipReference) return () => "";
+    return createPersonRelationLabels(labelKey, kinshipReference,
+      props.kinshipReferenceId ? "Опорный человек" : "Это вы");
     // Archive, share grant and read policy isolate the retained snapshot/cache.
-  }, [labelKey, user?.id, user?.personId]);
+  }, [labelKey, kinshipReference, props.kinshipReferenceId]);
   const actions = useMemo(
     () => ({
       relationLabel,
@@ -1515,6 +1546,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         inert={props.covered || undefined}
         data-layout-ready={ready}
         data-layout-people={renderVisible.size}
+        data-depth-anchor={depthEnabled ? depth.anchorId : undefined}
         className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} has-portrait-cards ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         data-renderer={gpuActive ? "webgl2" : "react-flow"}
@@ -1731,8 +1763,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             <FamilyViewTools
               compact={narrow}
               onShare={
-                root && props.onShare
-                  ? () => props.onShare!(root, [...visible])
+                shareAnchorId && props.onShare
+                  ? () => props.onShare!(shareAnchorId, [...visible])
                   : undefined
               }
                 anchor={
@@ -1831,6 +1863,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             {preferencesAction}
           </div>
         )}
+        <div className="tree-flow-plane">
         {activeFanAnchor ? (
           <FanChart
             family={family}
@@ -2035,6 +2068,20 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             cameraReady={initialCameraReady}
           />
         )}
+        </div>
+        {depthEnabled && <TreeDepthLayers branches={depth.back} people={peopleMap}
+          anchorId={depth.anchorId} previous={depth.previous} disabled={growthLocked}
+          onChoose={(id) => {
+            if (depth.choose(id)) {
+              setIntroCameraFinished(true); setManualCameraOverride(true);
+              clearRestoreViewport(); returnToPerson(id);
+            }
+          }}
+          onBack={() => {
+            if (depth.previous && depth.choose(depth.previous, true)) {
+              clearRestoreViewport(); returnToPerson(depth.previous);
+            }
+          }} />}
         {!activeFanAnchor && (
           <TreeEdgeChoices
           choices={edgeChoices}

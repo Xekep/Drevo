@@ -162,6 +162,7 @@ test("guest HTTP share exposes only selected person's evidence until revoked", a
     assert.equal(body.family.people.length, 1);
     assert.equal(body.family.people[0].birthDateClaim.sources[0].title, "Дата рождения");
     assert.equal(body.family.people[0].factAlternatives[0].value, "1881");
+    assert.equal(body.anchorId, "visible");
     assert.ok(!JSON.stringify(body).includes("Скрытая запись"));
     await shares.revoke(issued.share.id, actor);
     assert.equal((await fetch(`${base}/api/shared/${issued.token}`)).status, 410);

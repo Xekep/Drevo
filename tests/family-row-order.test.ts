@@ -276,3 +276,21 @@ test("cold portrait placement does not select a solver solely to reduce the tota
   assert.equal(score()(result).cardHits, 0);
   assert.equal(score()(result).overlaps, 0);
 });
+
+test("medium cold graphs compare at most two independent placements above the history range", async () => {
+  const engine = new ELK({ algorithms: ["layered"] });
+  const family = randomFamily(1, 4);
+  for (let i = 0; i < 10; i++) family.push({ id: `isolated-${i}`, birth: "", parents: [], spouses: [] });
+  assert.ok(family.length > 200 && family.length <= 300);
+  let calls = 0, alternatives = 0;
+  const geometry = await unionGeometry(family, (graph) => {
+    calls++;
+    if (graph.layoutOptions?.["elk.layered.nodePlacement.strategy"] === "NETWORK_SIMPLEX") alternatives++;
+    return engine.layout(graph);
+  }, false, [], size);
+  assert.ok(calls <= 9);
+  assert.equal(alternatives, 2);
+  assert.equal(geometry.positions.length, family.length);
+  assert.equal(score()(geometry).cardHits, 0);
+  assert.equal(score()(geometry).overlaps, 0);
+});

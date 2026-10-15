@@ -1027,7 +1027,7 @@ export default function App() {
                         </div>
                       }
                       onShare={
-                        isArchiveOwner(user) && canEdit && desktop
+                        isArchiveOwner(user) && canEdit
                           ? (anchorId, ids) => {
                               const anchor = map.get(anchorId);
                               if (anchor)
@@ -1058,6 +1058,7 @@ export default function App() {
                       busy={busy}
                       reverse={archive.reverseTimeline}
                       colorScheme={archive.treePreferences.colorScheme}
+                      presentation={archive.treePreferences.presentation}
                       generationLimits={archive.treePreferences.generationLimits}
                       onGenerationAnchor={async (id) => {
                         await archive.saveTreePreferences(

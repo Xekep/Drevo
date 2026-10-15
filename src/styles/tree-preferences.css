@@ -7,7 +7,7 @@
 }
 .tree-preferences {
   display: grid;
-  gap: 10px;
+  gap: 6px;
   padding: 12px 16px 10px;
 }
 .tree-preferences > p {
@@ -28,6 +28,14 @@
   font-size: 12px;
   color: #4d604e;
 }
+.tree-preferences .tree-presentation-setting legend {
+  float: left;
+  width: 85px;
+  padding: 0;
+  line-height: 42px;
+}
+.tree-presentation-setting .tree-preference-options { margin-left: 85px; }
+.tree-presentation-setting .tree-generation-hint { clear: both; margin: 4px 0 0; }
 .tree-generation-settings {
   display: grid;
   gap: 7px;

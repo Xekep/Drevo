@@ -74,6 +74,7 @@ export function kinshipLabelKey(
 export function createPersonRelationLabels(
   key: string,
   referenceId: string | undefined,
+  referenceLabel = "Это вы",
 ) {
   type LabelPerson = Pick<
     Person,
@@ -111,7 +112,7 @@ export function createPersonRelationLabels(
   const labels = new Map<string, string>();
   const byId = new Map(people.map((person) => [person.id, person]));
   return (person: Person) => {
-    if (person.id === reference.id) return "Это вы";
+    if (person.id === reference.id) return referenceLabel;
     const cached = labels.get(person.id);
     if (cached !== undefined) return cached;
     // Исчезающая карточка прошлого графа не подтверждает родство в текущем снимке.

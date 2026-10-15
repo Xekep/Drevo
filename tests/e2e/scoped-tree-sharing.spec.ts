@@ -14,7 +14,7 @@ const family: Family = {
 const prefix = "/a/shared-archive";
 const token = "S".repeat(43);
 
-async function mockArchive(page: Page, owner: boolean) {
+async function mockArchive(page: Page, owner: boolean, preferences = {}) {
   const requests: { path: string; method: string; body: unknown }[] = [];
   const user = {
     id: "viewer", name: "Участник", role: "relative", treeRole: "relative",
@@ -29,7 +29,7 @@ async function mockArchive(page: Page, owner: boolean) {
     if (url.pathname.endsWith("/api/family"))
       return route.fulfill({ json: {
         family, user, revision: 7, local: false, canEdit: true,
-        readTree: true, readPhotos: true, treePreferences: {},
+        readTree: true, readPhotos: true, treePreferences: preferences,
       } });
     if (url.pathname.endsWith("/api/session"))
       return route.fulfill({ json: { user, local: false, account: user } });
@@ -43,6 +43,7 @@ async function mockArchive(page: Page, owner: boolean) {
     if (url.pathname === `${prefix}/api/shared/${token}`)
       return route.fulfill({ json: {
         family: { ...family, people: family.people.filter((p) => p.id !== "outside") },
+        anchorId: "child",
         expiresAt: new Date(Date.now() + 3600000).toISOString(),
         serverTime: new Date().toISOString(),
       } });
@@ -75,6 +76,24 @@ test("owner shares a fixed branch of the selected archive and opens its scoped g
   await expect(page.locator('.flow-person[data-person-id="outside"]')).toHaveCount(0);
   expect(requests.some((r) => r.path === `${prefix}/api/shared/${token}`)).toBe(true);
   expect(requests.filter((r) => r.path === "/api/shares" || r.path === `/api/shared/${token}`)).toEqual([]);
+});
+
+test("an anchor alone enables sharing, and public kinship uses that person without impersonating the viewer", async ({ page, context, isMobile }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const requests = await mockArchive(page, true, { animateOnLoad: false,
+    generationLimits: { anchorId: "child", ancestors: 3, descendants: 1, collateral: 0 } });
+  await page.goto(`${prefix}/tree`);
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("data-layout-ready", "true");
+  if (isMobile) await page.getByLabel("Область просмотра", { exact: true }).click();
+  await page.getByRole("button", { name: "Поделиться", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Поделиться семьёй" });
+  await dialog.getByRole("button", { name: "Создать и скопировать" }).click();
+  await expect.poll(() => requests.find((r) => r.method === "POST" && r.path.endsWith("/api/shares"))?.body)
+    .toMatchObject({ anchorId: "child", personIds: ["parent", "child"] });
+  await page.goto(`${prefix}/s/${token}`);
+  await expect(page.locator('.flow-person[data-person-id="child"]')).toContainText("Опорный человек");
+  await expect(page.locator('.flow-person[data-person-id="parent"]')).toContainText("Отец");
+  await expect(page.getByText("Это вы", { exact: true })).toHaveCount(0);
 });
 
 test("editing member cannot issue public branch links in another owner's archive", async ({ page, isMobile }) => {

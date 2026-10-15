@@ -7,21 +7,22 @@ import {
 
 export function treePreferencesStore(db: StoreDatabase) {
   const lookup = db.prepare(
-    "SELECT reverse_timeline,card_variant,color_scheme,generation_limits,animate_on_load FROM user_tree_preferences WHERE user_id=?",
-    "SELECT reverse_timeline,card_variant,color_scheme,generation_limits,animate_on_load FROM user_tree_preferences WHERE user_id=?",
+    "SELECT reverse_timeline,card_variant,color_scheme,generation_limits,animate_on_load,presentation FROM user_tree_preferences WHERE user_id=?",
+    "SELECT reverse_timeline,card_variant,color_scheme,generation_limits,animate_on_load,presentation FROM user_tree_preferences WHERE user_id=?",
   );
   const save = db.prepare(
     `
-    INSERT INTO user_tree_preferences(user_id,reverse_timeline,card_variant,color_scheme,generation_limits,animate_on_load)
-    VALUES(?,?,?,?,?,?)
+    INSERT INTO user_tree_preferences(user_id,reverse_timeline,card_variant,color_scheme,generation_limits,animate_on_load,presentation)
+    VALUES(?,?,?,?,?,?,?)
     ON CONFLICT(user_id) DO UPDATE SET
       reverse_timeline=excluded.reverse_timeline,
       card_variant=excluded.card_variant,
       color_scheme=excluded.color_scheme,
       generation_limits=excluded.generation_limits,
-      animate_on_load=excluded.animate_on_load
+      animate_on_load=excluded.animate_on_load,
+      presentation=excluded.presentation
   `,
-    "\n    INSERT INTO user_tree_preferences(user_id,reverse_timeline,card_variant,color_scheme,generation_limits,animate_on_load)\n    VALUES(?,?,?,?,?,?)\n    ON CONFLICT(archive_id,user_id) DO UPDATE SET\n      reverse_timeline=excluded.reverse_timeline,\n      card_variant=excluded.card_variant,\n      color_scheme=excluded.color_scheme,\n      generation_limits=excluded.generation_limits,\n      animate_on_load=excluded.animate_on_load\n  ",
+    "\n    INSERT INTO user_tree_preferences(user_id,reverse_timeline,card_variant,color_scheme,generation_limits,animate_on_load,presentation)\n    VALUES(?,?,?,?,?,?,?)\n    ON CONFLICT(archive_id,user_id) DO UPDATE SET\n      reverse_timeline=excluded.reverse_timeline,\n      card_variant=excluded.card_variant,\n      color_scheme=excluded.color_scheme,\n      generation_limits=excluded.generation_limits,\n      animate_on_load=excluded.animate_on_load,\n      presentation=excluded.presentation\n  ",
   );
   async function read(userId: string): Promise<TreePreferences> {
     const row = await lookup.get(userId);
@@ -34,6 +35,7 @@ export function treePreferencesStore(db: StoreDatabase) {
           cardVariant: "portrait",
           colorScheme: row.color_scheme as TreePreferences["colorScheme"],
           animateOnLoad: !!row.animate_on_load,
+          presentation: row.presentation === "depth" ? "depth" : "flat",
           ...(isTreeGenerationLimits(limits)
             ? { generationLimits: limits }
             : {}),
@@ -47,7 +49,7 @@ export function treePreferencesStore(db: StoreDatabase) {
         !value ||
         typeof value !== "object" ||
         Array.isArray(value) ||
-        ![1, 2, 3, 4, 5].includes(Object.keys(value).length) ||
+        ![1, 2, 3, 4, 5, 6].includes(Object.keys(value).length) ||
         Object.keys(value).some(
           (key) =>
             ![
@@ -56,9 +58,11 @@ export function treePreferencesStore(db: StoreDatabase) {
               "colorScheme",
               "generationLimits",
               "animateOnLoad",
+              "presentation",
             ].includes(key),
         ) ||
         typeof (value as TreePreferences).reverseTimeline !== "boolean" ||
+        ("presentation" in value && !["flat", "depth"].includes(String(value.presentation))) ||
         ("animateOnLoad" in value &&
           typeof value.animateOnLoad !== "boolean") ||
         ("cardVariant" in value &&
@@ -85,6 +89,7 @@ export function treePreferencesStore(db: StoreDatabase) {
         preferences.colorScheme || previous.colorScheme,
         limits ? JSON.stringify(limits) : null,
         Number(preferences.animateOnLoad ?? previous.animateOnLoad ?? true),
+        preferences.presentation ?? previous.presentation ?? "flat",
       );
       return await read(userId);
     },

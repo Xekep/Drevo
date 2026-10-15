@@ -26,6 +26,7 @@ import { ArchiveLoading } from "./archive-loading";
 const noop = () => {};
 type SharedData = {
   family: Family;
+  anchorId?: string;
   expiresAt: string;
   serverTime: string;
 };
@@ -219,6 +220,8 @@ export default function SharedTree({ token }: { token: string }) {
                   DEFAULT_TREE_PREFERENCES.reverseTimeline
                 }
                 colorScheme={preferences?.colorScheme}
+                presentation={preferences?.presentation}
+                kinshipReferenceId={data.anchorId}
                 generationLimits={preferences?.generationLimits}
                 onResetGenerations={async () => {
                   const value = { ...(preferences ?? DEFAULT_TREE_PREFERENCES), generationLimits: null };
