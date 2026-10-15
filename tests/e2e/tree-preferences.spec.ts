@@ -140,6 +140,7 @@ test("each viewer can switch direction and colors; legacy card variants stay por
     cardVariant: "portrait",
     colorScheme: "white",
     animateOnLoad: true,
+    presentation: "flat",
   });
   const bounds = await dialog.boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);

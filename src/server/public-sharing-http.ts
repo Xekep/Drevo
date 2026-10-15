@@ -140,6 +140,7 @@ export function publicSharingHttp({
     if (!stillValid) return json(410, { error: "Срок ссылки истёк" });
     const payload = {
       family: sharedFamily(family, share, shared![1]),
+      anchorId: share.personIds.includes(share.anchorId) && family.people.some((person) => person.id === share.anchorId) ? share.anchorId : undefined,
       expiresAt: share.expiresAt,
       serverTime: new Date().toISOString(),
       reverseTimeline: DEFAULT_TREE_PREFERENCES.reverseTimeline,

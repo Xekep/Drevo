@@ -54,6 +54,7 @@ function treePreferencesFromResponse(data: {
         ? data.treePreferences.reverseTimeline
         : DEFAULT_TREE_PREFERENCES.reverseTimeline,
     cardVariant: "portrait",
+    presentation: data.treePreferences?.presentation === "depth" ? "depth" : "flat",
     animateOnLoad: data.treePreferences?.animateOnLoad !== false,
     colorScheme:
       data.treePreferences?.colorScheme === "white" ? "white" : "warm",

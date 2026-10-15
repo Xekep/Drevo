@@ -60,7 +60,7 @@ export function FamilyViewTools({
       menu.current.querySelector("summary")?.focus();
     }
   }
-  if (!anchor && !selected && !changed) return null;
+  if (!anchor && !selected && !changed && !onShare) return null;
   const controls = (
     <div
       className="tree-family-tools"
@@ -111,7 +111,7 @@ export function FamilyViewTools({
         </button>
       )}
       {anchor && <button onClick={() => runAction(onAll)}>Всё древо</button>}
-      {anchor && onShare && (
+      {onShare && (
         <button
           className="tree-family-share"
           onClick={() => runAction(onShare)}

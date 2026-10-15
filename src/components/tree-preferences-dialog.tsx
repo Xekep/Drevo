@@ -130,6 +130,20 @@ export function TreePreferencesDialog({
       }
     >
       <div className="tree-preferences">
+        <fieldset disabled={saving} className="tree-presentation-setting">
+          <legend>Отображение</legend>
+          <div className="tree-preference-options">
+            {([{ value: "flat", title: "Обычное" }, { value: "depth", title: "2.5D" }] as const).map(({ value, title }) => (
+              <label key={value} className={(draft.presentation || "flat") === value ? "is-selected" : ""}>
+                <input type="radio" name="tree-presentation" aria-label={title}
+                  checked={(draft.presentation || "flat") === value}
+                  onChange={() => void choose({ ...draft, presentation: value })} />
+                <strong>{title}</strong>
+              </label>
+            ))}
+          </div>
+          {draft.presentation === "depth" && <p className="tree-generation-hint">Выбранная ветвь впереди. Нажмите на ветвь позади, чтобы перейти к ней.</p>}
+        </fieldset>
         <fieldset disabled={saving}>
           <legend>Направление</legend>
           <div className="tree-preference-options">

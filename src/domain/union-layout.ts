@@ -19,7 +19,8 @@ import type { FamilyLink } from "./types.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
-import { optimizeFamilyRows } from "./family-row-order.ts";
+import { optimizeFamilyRows, refineColdPlacement } from "./family-row-order.ts";
+import { optimizeMultiPartnerOrder } from "./multi-partner-order.ts";
 import { routingContactScore } from "./routing-quality.ts";
 import { incrementalRouteScorer } from "./incremental-route-score.ts";
 import {
@@ -102,6 +103,7 @@ async function geometryForSeed(
   flippedPairs?: ReadonlySet<string>,
   profile?: LargeDecrossProfile,
   historyPlacement: "balanced" | "interactive" = "balanced",
+  nodePlacement?: "NETWORK_SIMPLEX",
 ): Promise<TreeGeometry> {
   if (!people.length)
     return {
@@ -367,6 +369,7 @@ async function geometryForSeed(
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
       "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
       "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+      ...(nodePlacement ? { "elk.layered.nodePlacement.strategy": nodePlacement } : {}),
       "elk.layered.thoroughness": people.length > 900 ? "1" : "12",
       "elk.separateConnectedComponents": "true",
       ...(profile
@@ -745,6 +748,10 @@ export async function unionGeometry(
     initialProfile,
   );
   let bestSeed = 1;
+  // Above the incremental-history range, reserve two independent placements
+  // for the best seed orders. Width reduction is never an acceptance criterion.
+  const placementCandidates = !previous && people.length > MAX_INCREMENTAL_LAYOUT_PEOPLE && people.length <= 300
+    ? [{ seed: 1, geometry: best }] : [];
   let contacts = geometryContacts(best);
   let profileQuality = initialProfile && geometryQuality(best);
   let profileCardContacts = initialProfile ? routeCardContacts(best) : 0;
@@ -828,6 +835,7 @@ export async function unionGeometry(
     pending.delete(index);
     if (!geometry) continue;
     const candidate = geometry;
+    if (placementCandidates.length) placementCandidates.push({ seed, geometry: candidate });
     const candidateExtent = extent(candidate);
     if (
       Math.max(candidateExtent.width, candidateExtent.height) >
@@ -1231,6 +1239,29 @@ export async function unionGeometry(
       }),
       previous,
     );
+  }
+  if (!previous && people.length <= 1200)
+    best = optimizeMultiPartnerOrder(best, people, links, size, (geometry) => ({
+      ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
+    }));
+  if (placementCandidates.length && geometryQuality(best).crossings) {
+    const score = (geometry: TreeGeometry) => ({ ...geometryQuality(geometry),
+      cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry) });
+    placementCandidates.sort((a, b) => compare(a.geometry, b.geometry));
+    for (const { seed } of placementCandidates.slice(0, 2)) {
+      try {
+        const geometry = await geometryForSeed(people, layout, reverse, links, seed, size,
+          false, undefined, undefined, undefined, "balanced", "NETWORK_SIMPLEX");
+        const candidate = refineColdPlacement(geometry, people, links, size, score);
+        const next = score(candidate), current = score(best);
+        if (next.crossings < current.crossings && next.contacts <= current.contacts &&
+          next.cardHits <= current.cardHits && next.overlaps <= current.overlaps &&
+          next.length <= current.length * 1.15 && next.bends <= current.bends + 4)
+          best = candidate;
+      } catch {
+        // Keep the valid layout if the independent solver cannot place this graph.
+      }
+    }
   }
   return best;
 }

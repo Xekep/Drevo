@@ -7,6 +7,22 @@ import { treePreferencesStore } from "../src/server/tree-preferences.ts";
 import { userStore } from "../src/server/users.ts";
 import { DEFAULT_TREE_PREFERENCES } from "../src/domain/tree-preferences.ts";
 
+test("2.5D is personal, validated and retained by older clients changing other preferences", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(db);
+    const store = treePreferencesStore(storeDatabase(db));
+    await store.write("reader", { ...DEFAULT_TREE_PREFERENCES, presentation: "depth" });
+    assert.equal((await store.read("reader")).presentation, "depth");
+    assert.equal((await store.read("other")).presentation, "flat");
+    await store.write("reader", { reverseTimeline: true });
+    assert.equal((await store.read("reader")).presentation, "depth");
+    await assert.rejects(store.write("reader", { reverseTimeline: false, presentation: "3d" }), /Некорректные/);
+    initializeArchiveSchema(db);
+    assert.equal((await treePreferencesStore(storeDatabase(db)).read("reader")).presentation, "depth");
+  } finally { db.close(); }
+});
+
 test("startup animation is personal, survives reopen and legacy writes, and validates without changing saved state", async () => {
   const db = new DatabaseSync(":memory:");
   try {
@@ -62,6 +78,7 @@ test("resetting a reader's view clears limits without changing another viewer or
       reverseTimeline: true,
       colorScheme: "white" as const,
       animateOnLoad: true,
+      presentation: "flat",
     };
     await store.write("owner", owner);
     assert.deepEqual(
@@ -163,6 +180,7 @@ test("legacy direction becomes individual preferences; deleting an account remov
       cardVariant: "portrait",
       colorScheme: "warm",
       animateOnLoad: true,
+      presentation: "flat",
     });
     assert.deepEqual(
       await preferences.read("reader"),
@@ -177,6 +195,7 @@ test("legacy direction becomes individual preferences; deleting an account remov
       cardVariant: "portrait",
       colorScheme: "white",
       animateOnLoad: true,
+      presentation: "flat",
     });
     assert.equal((await preferences.read("admin")).cardVariant, "portrait");
     assert.equal((await preferences.read("reader")).reverseTimeline, false);
@@ -194,6 +213,7 @@ test("legacy direction becomes individual preferences; deleting an account remov
       cardVariant: "portrait",
       colorScheme: "warm",
       animateOnLoad: true,
+      presentation: "flat",
     });
   } finally {
     db.close();
@@ -210,6 +230,7 @@ test("legacy classic preferences always resolve to portrait without resetting di
       cardVariant: "classic",
       colorScheme: "white",
       animateOnLoad: true,
+      presentation: "flat",
     });
     db.exec("DELETE FROM migrations WHERE id='2026-09-default-portrait-cards'");
     initializeArchiveSchema(db);
@@ -218,12 +239,14 @@ test("legacy classic preferences always resolve to portrait without resetting di
       cardVariant: "portrait",
       colorScheme: "white",
       animateOnLoad: true,
+      presentation: "flat",
     });
     await preferences.write("reader", {
       reverseTimeline: true,
       cardVariant: "classic",
       colorScheme: "white",
       animateOnLoad: true,
+      presentation: "flat",
     });
     initializeArchiveSchema(db);
     assert.equal((await preferences.read("reader")).cardVariant, "portrait");
@@ -253,6 +276,7 @@ test("adding color schemes preserves existing personal card and direction choice
       cardVariant: "portrait",
       colorScheme: "warm",
       animateOnLoad: true,
+      presentation: "flat",
     });
     assert.deepEqual(
       await preferences.write("reader", {
@@ -260,12 +284,14 @@ test("adding color schemes preserves existing personal card and direction choice
         cardVariant: "portrait",
         colorScheme: "white",
         animateOnLoad: true,
+      presentation: "flat",
       }),
       {
         reverseTimeline: true,
         cardVariant: "portrait",
         colorScheme: "white",
         animateOnLoad: true,
+      presentation: "flat",
       },
     );
     initializeArchiveSchema(db);

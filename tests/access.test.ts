@@ -267,6 +267,7 @@ test("OAuth roles, ownership, public sections and selected tree backup work thro
       reverseTimeline: true,
       cardVariant: "portrait",
       colorScheme: "white",
+      presentation: "flat",
       animateOnLoad: true,
     };
     assert.equal(
@@ -299,6 +300,7 @@ test("OAuth roles, ownership, public sections and selected tree backup work thro
         cardVariant: "portrait",
         colorScheme: "warm",
         animateOnLoad: true,
+        presentation: "flat",
       },
       "другой участник не наследует выбор администратора",
     );
@@ -332,6 +334,7 @@ test("OAuth roles, ownership, public sections and selected tree backup work thro
         cardVariant: "portrait",
         colorScheme: "white",
         animateOnLoad: true,
+        presentation: "flat",
       },
       "старый клиент не сбрасывает выбранную цветовую схему",
     );
@@ -418,6 +421,7 @@ test("OAuth roles, ownership, public sections and selected tree backup work thro
         cardVariant: "portrait",
         colorScheme: "warm",
         animateOnLoad: true,
+        presentation: "flat",
       },
     );
     assert.deepEqual(

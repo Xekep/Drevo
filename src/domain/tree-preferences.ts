@@ -1,6 +1,7 @@
 /** Kept in the wire format for older clients; only portrait is rendered. */
 export type TreeCardVariant = "portrait";
 export type TreeColorScheme = "warm" | "white";
+export type TreePresentation = "flat" | "depth";
 
 export const ANCESTOR_GENERATIONS = [3, 4, 5, 6, 7] as const;
 export const DESCENDANT_GENERATIONS = [1, 2, 3, 4, 5, 50] as const;
@@ -33,6 +34,7 @@ export type TreePreferences = {
   reverseTimeline: boolean;
   cardVariant: TreeCardVariant;
   colorScheme: TreeColorScheme;
+  presentation?: TreePresentation;
   /** Missing on older clients retains the default startup animation. */
   animateOnLoad?: boolean;
   /** Missing/null retains the complete view, including disconnected people. */
@@ -43,6 +45,7 @@ export const DEFAULT_TREE_PREFERENCES: TreePreferences = {
   reverseTimeline: false,
   cardVariant: "portrait",
   colorScheme: "warm",
+  presentation: "flat",
   animateOnLoad: true,
 };
 

@@ -32,6 +32,10 @@ export async function initializePostgresRuntimeSchema(
 async function initializeGlobalRuntimeSchema(db: StoreDatabase) {
   for (const [query, file] of [
     [
+      "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='user_tree_preferences' AND column_name='presentation'",
+      "106_tree_depth_presentation.sql",
+    ],
+    [
       "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='user_tree_preferences' AND column_name='animate_on_load'",
       "100_tree_load_animation.sql",
     ],

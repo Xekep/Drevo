@@ -1223,6 +1223,10 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     db.exec(
       "ALTER TABLE user_tree_preferences ADD COLUMN generation_limits TEXT CHECK(generation_limits IS NULL OR json_valid(generation_limits))",
     );
+  if (!tableHasColumn(db, "user_tree_preferences", "presentation"))
+    db.exec(
+      "ALTER TABLE user_tree_preferences ADD COLUMN presentation TEXT NOT NULL DEFAULT 'flat' CHECK(presentation IN ('flat','depth'))",
+    );
   if (!tableHasColumn(db, "user_tree_preferences", "animate_on_load"))
     db.exec(
       "ALTER TABLE user_tree_preferences ADD COLUMN animate_on_load INTEGER NOT NULL DEFAULT 1 CHECK(animate_on_load IN (0,1))",

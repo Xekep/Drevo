@@ -7,6 +7,8 @@ import {
   placedFamilyRows,
 } from "./local-family-order.ts";
 import { restoreFamilyRowHistory } from "./family-row-history.ts";
+import { optimizeMultiPartnerOrder } from "./multi-partner-order.ts";
+import { coupleBlocksWithContactedAncestry, locallyReverseCouples } from "./local-couple-order.ts";
 import {
   translateFamilyBlocks as translate,
   reorderFamilyRow as reordered,
@@ -66,6 +68,28 @@ function shifts(geometry: TreeGeometry, size: TreeNodeSize): Move[] {
       result.push(translate(geometry, new Map([[block.id, x - block.x]])));
     }
   return result;
+}
+
+/** Small, cold alternative placements may need their own spouse orientation. */
+export function refineColdPlacement(
+  original: TreeGeometry, people: LayoutPerson[],
+  links: Pick<FamilyLink, "type" | "from" | "to">[], size: TreeNodeSize, score: Score,
+) {
+  let best = original;
+  const initial = score(original);
+  for (let pass = 0; pass < 2; pass++) {
+    let changed = false;
+    for (const id of coupleBlocksWithContactedAncestry(best, size.width).slice(0, 64)) {
+      const candidate = locallyReverseCouples(best, people, links, size, new Set([id]));
+      if (!candidate) continue;
+      const next = score(candidate), current = score(best);
+      if (!safer(next, current) || !safer(next, initial) || next.crossings >= current.crossings) continue;
+      best = candidate;
+      changed = true;
+    }
+    if (!changed) break;
+  }
+  return optimizeMultiPartnerOrder(optimizeFamilyRows(best, people, links, size, score), people, links, size, score);
 }
 
 /** A bounded cold-layout pass: order within generations first, then close unused gaps. */
