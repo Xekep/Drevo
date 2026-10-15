@@ -110,7 +110,7 @@ function svgElement<K extends keyof SVGElementTagNameMap>(
 /** A vector scene from the already measured, full-detail tree. No foreignObject,
  * HTML screenshot, remote converter, or archive-sized bitmap is involved.
  */
-export function treePdfSvg(target: Document, width: number, height: number) {
+function treePdfSvg(target: Document, width: number, height: number) {
   const view = target.defaultView!;
   const svg = svgElement(target, "svg", {
     width,
