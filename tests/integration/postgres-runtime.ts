@@ -1567,6 +1567,10 @@ try {
   assert.equal(preview.status, 200);
   const previewData = await preview.json();
   assert.equal(previewData.documents, 1);
+  // PDF metadata warming creates this derived-cache directory asynchronously.
+  // Include it in the baseline so the strict rollback checks below compare
+  // originals and directories without racing the independent reader worker.
+  mkdirSync(join(uploads, ".reader-cache"), { recursive: true });
   const uploadsBefore = readdirSync(uploads).sort();
   await blockRestoreSpace("restore-apply-blocker", 0);
   try {
