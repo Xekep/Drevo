@@ -270,6 +270,7 @@ test("switching chats keeps the earlier answer running and isolated", async ({
     "Первый вопрос",
   );
   await page.keyboard.press("Escape");
+  page.once("dialog", (dialog) => dialog.accept());
   await panel.getByRole("button", { name: "Удалить диалог" }).click();
   await expect(panel.locator("article")).toHaveCount(0);
   expect(deleted).toBe(true);

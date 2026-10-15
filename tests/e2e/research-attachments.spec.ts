@@ -151,6 +151,7 @@ test("paperclip and dropping files share a saved, clearable chat library", async
     .first()
     .click();
   await expect(panel.locator("textarea")).toHaveValue(/список.csv/);
+  page.once("dialog", (dialog) => dialog.accept());
   await panel
     .getByRole("button", { name: "Удалить диалог", exact: true })
     .click();

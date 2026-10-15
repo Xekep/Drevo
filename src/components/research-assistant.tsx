@@ -331,6 +331,7 @@ export function ResearchAssistant({
     >([]),
     [chatMenuOpen, setChatMenuOpen] = useState(false),
     [chatSearch, setChatSearch] = useState(""),
+    [unavailableDeletingId, setUnavailableDeletingId] = useState<string | null>(null),
     [chatLoading, setChatLoading] = useState(true),
     [olderBusy, setOlderBusy] = useState(false),
     [nextBefore, setNextBefore] = useState<number | null>(null),
@@ -865,6 +866,9 @@ export function ResearchAssistant({
   }
 
   async function clearDialog() {
+    if (!window.confirm(chatId
+      ? "Удалить диалог и все его вложения? Это действие нельзя отменить."
+      : "Очистить диалог? Сообщения, черновик и вложения будут удалены.")) return;
     const deletingId = chatId;
     const deletingKey = selectedChatKey.current;
     activeRequests.current.get(deletingKey)?.abort();
@@ -923,6 +927,23 @@ export function ResearchAssistant({
     setError("");
     setReviewedSuggestions({});
     setChatLoading(false);
+  }
+
+  async function deleteUnavailableChat(id: string) {
+    if (unavailableDeletingId || !window.confirm(
+      "Удалить недоступный диалог и все его вложения? Это действие нельзя отменить.",
+    )) return;
+    setUnavailableDeletingId(id);
+    setError("");
+    try {
+      const response = await archiveFetch(`/api/ai/chats/${id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Не удалось удалить диалог");
+      setChats((current) => current.filter((chat) => chat.id !== id));
+    } catch {
+      setError("Не удалось удалить диалог. Попробуйте ещё раз.");
+    } finally {
+      setUnavailableDeletingId(null);
+    }
   }
 
   async function send(text = draft, selectedPersonId?: string) {
@@ -1442,39 +1463,34 @@ export function ResearchAssistant({
                           .toLocaleLowerCase("ru")
                           .includes(chatSearch.trim().toLocaleLowerCase("ru")),
                       )
-                      .map((item) => (
+                      .map((item) => item.unavailable ? (
+                        <div className="research-chat-unavailable" key={item.id}>
+                          <span title={item.title}>
+                            {item.title}
+                            <small>Содержимое недоступно</small>
+                          </span>
+                          <button
+                            type="button"
+                            className="research-chat-delete"
+                            aria-label={`Удалить недоступный диалог: ${item.title}`}
+                            title="Удалить диалог"
+                            disabled={unavailableDeletingId !== null}
+                            onClick={() => void deleteUnavailableChat(item.id)}
+                          >
+                            {unavailableDeletingId === item.id
+                              ? <LoaderCircle size={15} aria-hidden="true" />
+                              : <Trash2 size={15} aria-hidden="true" />}
+                          </button>
+                        </div>
+                      ) : (
                         <button
                           key={item.id}
                           type="button"
                           aria-current={item.id === chatId ? "true" : undefined}
                           title={item.title}
-                          aria-label={
-                            item.unavailable
-                              ? "Удалить диалог с прежними правами доступа"
-                              : undefined
-                          }
-                          onClick={() => {
-                            if (!item.unavailable) {
-                              void openChat(item.id);
-                              return;
-                            }
-                            void archiveFetch(`/api/ai/chats/${item.id}`, {
-                              method: "DELETE",
-                            })
-                              .then((response) => {
-                                if (!response.ok)
-                                  throw new Error("Не удалось удалить диалог");
-                                setChats((current) =>
-                                  current.filter((chat) => chat.id !== item.id),
-                                );
-                              })
-                              .catch(() =>
-                                setError("Не удалось удалить диалог"),
-                              );
-                          }}
+                          onClick={() => void openChat(item.id)}
                         >
                           <span>{item.title}</span>
-                          {item.unavailable && <Trash2 size={15} />}
                           {workingChats[item.id] && (
                             <LoaderCircle
                               className="research-chat-working"

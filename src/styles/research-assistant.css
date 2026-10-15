@@ -352,6 +352,30 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
 .research-chat-menu-list button[aria-current="true"] {
   background: #eef4e9;
 }
+.research-chat-unavailable {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 10px;
+}
+.research-chat-unavailable > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.research-chat-unavailable small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+.research-chat-menu-list .research-chat-delete {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  justify-content: center;
+  padding: 0;
+  color: #963c2e;
+}
 .research-chat-picker :is(button, input):focus-visible {
   outline: 2px solid #6f8d67;
   outline-offset: 2px;

@@ -215,6 +215,7 @@ test("AI chat drafts and files survive switching and deletion is scoped", async 
   await expect(panel.locator(".research-attachment-draft")).toContainText(
     "note.txt",
   );
+  page.once("dialog", (dialog) => dialog.accept());
   await panel
     .getByRole("button", { name: "Удалить диалог", exact: true })
     .click();
