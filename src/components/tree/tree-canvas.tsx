@@ -28,6 +28,7 @@ import {
   Scan,
   Plus,
   GitBranch,
+  Share2,
   Link2,
   RotateCcw,
   Settings,
@@ -1723,6 +1724,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 <span className="tree-family-count">
                   {visible.size} из {family.people.length}
                 </span>
+                {!root && !depthEnabled && shareAnchorId && props.onShare && <button
+                  type="button" className="tree-family-share"
+                  aria-label="Поделиться" title="Поделиться"
+                  onClick={() => props.onShare!(shareAnchorId, [...visible])}>
+                  <Share2 size={15} aria-hidden="true" />
+                  {!narrow && <span>Поделиться</span>}
+                </button>}
                 {props.onResetGenerations && <button type="button"
                   className="tree-family-reset"
                   disabled={savingGenerationPreferences}
@@ -1763,7 +1771,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             <FamilyViewTools
               compact={narrow}
               onShare={
-                shareAnchorId && props.onShare
+                (root || depthEnabled) && shareAnchorId && props.onShare
                   ? () => props.onShare!(shareAnchorId, [...visible])
                   : undefined
               }

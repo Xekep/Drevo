@@ -78,13 +78,12 @@ test("owner shares a fixed branch of the selected archive and opens its scoped g
   expect(requests.filter((r) => r.path === "/api/shares" || r.path === `/api/shared/${token}`)).toEqual([]);
 });
 
-test("an anchor alone enables sharing, and public kinship uses that person without impersonating the viewer", async ({ page, context, isMobile }) => {
+test("an anchor alone enables sharing, and public kinship uses that person without impersonating the viewer", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const requests = await mockArchive(page, true, { animateOnLoad: false,
     generationLimits: { anchorId: "child", ancestors: 3, descendants: 1, collateral: 0 } });
   await page.goto(`${prefix}/tree`);
   await expect(page.locator(".tree-canvas")).toHaveAttribute("data-layout-ready", "true");
-  if (isMobile) await page.getByLabel("Область просмотра", { exact: true }).click();
   await page.getByRole("button", { name: "Поделиться", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Поделиться семьёй" });
   await dialog.getByRole("button", { name: "Создать и скопировать" }).click();
