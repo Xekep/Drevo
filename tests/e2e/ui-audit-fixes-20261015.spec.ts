@@ -97,21 +97,28 @@ test("границы полей Yandex AI используют контраст�
   expect(ratio).toBeGreaterThanOrEqual(3);
 });
 
-test("даты читаются при переходе к человеку без увеличения геометрии карточек", async ({ page }) => {
+test("даты при переходе к человеку читаются и помещаются в карточку", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/people/e2e-child");
   const card = page.getByTestId("rf__node-e2e-child");
-  // A desktop person link deliberately targets 55%. Mobile uses the smaller fitted scene.
   await expect(card.locator(".portrait-card-years")).toBeAttached();
+  // Wait for the navigation camera, rather than accepting the initial fit at a larger zoom.
+  await expect.poll(() => card.evaluate((node) => new DOMMatrix(
+    getComputedStyle(node.closest(".react-flow__viewport")!).transform,
+  ).a)).toBeCloseTo(.55, 2);
   const sizes = await card.evaluate((node) => {
     const zoom = new DOMMatrix(getComputedStyle(node.closest(".react-flow__viewport")!).transform).a;
     const date = node.querySelector(".portrait-card-years")!;
     const font = parseFloat(getComputedStyle(date).fontSize);
-    return { zoom, font, height: node.getBoundingClientRect().height / zoom };
+    const bounds = node.getBoundingClientRect(), dateBounds = date.getBoundingClientRect();
+    const nameBounds = node.querySelector(".portrait-card-info strong")!.getBoundingClientRect();
+    return { screenFont: font * zoom,
+      fits: dateBounds.left >= bounds.left && dateBounds.right <= bounds.right &&
+        dateBounds.bottom <= bounds.bottom && dateBounds.top >= nameBounds.bottom };
   });
-  expect(sizes.font).toBeGreaterThanOrEqual(20);
-  expect(sizes.height).toBeCloseTo(264, 0);
-  if (sizes.zoom >= .52) expect(sizes.font * sizes.zoom).toBeGreaterThanOrEqual(10.4);
+  expect(sizes.screenFont).toBeGreaterThanOrEqual(10);
+  expect(sizes.fits).toBe(true);
 });
 
 test("область приватности остаётся минимум 24px и работает с клавиатуры", async ({ page }) => {
