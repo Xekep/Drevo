@@ -23,11 +23,23 @@ test("sifting reorders union blocks to remove an adjacent-layer crossing", () =>
     ],
   };
   const result = siftUnionOrder(graph);
-  const order = new Map(result.children!.map((entry, index) => [entry.id, index]));
-  assert.ok((order.get("a")! - order.get("b")!) *
-    (order.get("d")! - order.get("c")!) > 0);
-  assert.equal(result.layoutOptions?.["elk.layered.crossingMinimization.forceNodeModelOrder"], "true");
-  assert.deepEqual(graph.children!.map((entry) => entry.id), ["a", "b", "c", "d"]);
+  const order = new Map(
+    result.children!.map((entry, index) => [entry.id, index]),
+  );
+  assert.ok(
+    (order.get("a")! - order.get("b")!) * (order.get("d")! - order.get("c")!) >
+      0,
+  );
+  assert.equal(
+    result.layoutOptions?.[
+      "elk.layered.crossingMinimization.forceNodeModelOrder"
+    ],
+    "true",
+  );
+  assert.deepEqual(
+    graph.children!.map((entry) => entry.id),
+    ["a", "b", "c", "d"],
+  );
 });
 
 test("cyclic layout input keeps its original order", () => {
@@ -61,16 +73,86 @@ test("interactive ordering passes previous union positions to ELK without changi
     ],
   };
   const result = fromSketchUnionGraph(graph, previous)!;
-  assert.equal(result.layoutOptions?.["elk.layered.crossingMinimization.semiInteractive"], "true");
-  assert.equal(result.children?.[0].layoutOptions?.["elk.position"], "(100, 0)");
-  assert.equal(result.children?.[2].layoutOptions?.["elk.position"], "(100, 300)");
+  assert.equal(
+    result.layoutOptions?.["elk.layered.crossingMinimization.semiInteractive"],
+    "true",
+  );
+  assert.equal(
+    result.children?.[0].layoutOptions?.["elk.position"],
+    "(100, 0)",
+  );
+  assert.equal(
+    result.children?.[2].layoutOptions?.["elk.position"],
+    "(100, 300)",
+  );
   assert.equal(graph.children?.[0].layoutOptions, undefined);
-  assert.equal(fromSketchUnionGraph(graph, { ...previous, occurrences: [] }), undefined);
-  const reversed = fromSketchUnionGraph(graph, {
-    ...previous,
-    positions: previous.positions.map(([id, point]) => [
-      id, { x: point.x, y: 300 - point.y },
-    ] as [string, { x: number; y: number }]),
-  }, true)!;
-  assert.equal(reversed.children?.[2].layoutOptions?.["elk.position"], "(100, 300)");
+  assert.equal(
+    fromSketchUnionGraph(graph, { ...previous, occurrences: [] }),
+    undefined,
+  );
+  const reversed = fromSketchUnionGraph(
+    graph,
+    {
+      ...previous,
+      positions: previous.positions.map(
+        ([id, point]) =>
+          [id, { x: point.x, y: 300 - point.y }] as [
+            string,
+            { x: number; y: number },
+          ],
+      ),
+    },
+    true,
+  )!;
+  assert.equal(
+    reversed.children?.[2].layoutOptions?.["elk.position"],
+    "(100, 300)",
+  );
+});
+
+test("fixed-order hints retain renamed households and place new ancestors near their children", () => {
+  const graph: ElkNode = {
+    id: "family",
+    children: [node("renamed"), node("b"), node("c"), node("ancestor")],
+    edges: [
+      {
+        id: "ancestor-a",
+        sources: ["ancestor:port"],
+        targets: ["renamed:port"],
+      },
+    ],
+  };
+  const previous = {
+    positions: [
+      ["A", { x: 100, y: 300 }],
+      ["B", { x: 500, y: 300 }],
+      ["C", { x: 900, y: 300 }],
+    ] as [string, { x: number; y: number }][],
+    occurrences: [
+      { id: "A", personId: "A", block: "old-household" },
+      { id: "B", personId: "B", block: "b" },
+      { id: "C", personId: "C", block: "c" },
+    ],
+  };
+  const original = structuredClone(graph);
+  const result = fromSketchUnionGraph(
+    graph,
+    previous,
+    false,
+    new Map([["renamed", ["A"]]]),
+    "interactive",
+  )!;
+  assert.equal(result.children![0].x, 100);
+  assert.equal(result.children![0].y, 300);
+  assert.equal(
+    result.children![3].y,
+    120,
+    "new ancestor is inferred in the reverse direction",
+  );
+  assert.equal(result.children![3].x, 100);
+  assert.equal(
+    result.layoutOptions!["elk.layered.nodePlacement.strategy"],
+    "INTERACTIVE",
+  );
+  assert.deepEqual(graph, original);
 });
