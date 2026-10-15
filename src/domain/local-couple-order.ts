@@ -7,6 +7,7 @@ import {
   segmentContact,
   simplifyRoute,
   Spatial,
+  routeKey,
 } from "./edge-routing.ts";
 import type { UnionBranch } from "./union-layout.ts";
 
@@ -120,6 +121,7 @@ export function locallyReverseCouples(
   links: Pick<FamilyLink, "type" | "from" | "to">[],
   size: TreeNodeSize,
   requested: ReadonlySet<string> = invertedCoupleBlocks(geometry, size.width),
+  rerouteAncestry = false,
 ): TreeGeometry | undefined {
   const flipped = familyPairBlocks(geometry).filter(
     (block) => requested.has(block.id) && block.members.length === 2,
@@ -141,7 +143,7 @@ export function locallyReverseCouples(
   const moved = new Set(swapped.keys());
   const placed = new Map(positions);
   let valid = true;
-  const branches: UnionBranch[] = (geometry.branches || []).map((branch) => {
+  let branches: UnionBranch[] = (geometry.branches || []).map((branch) => {
     if (
       branch.id.startsWith("pair:") &&
       moved.has(branch.source) &&
@@ -189,6 +191,70 @@ export function locallyReverseCouples(
     return { ...branch, route: { ...branch.route, points: route } };
   });
   if (!valid) return;
+  if (rerouteAncestry) {
+    // Keeping the previous channel after a pair reversal can leave a turn on
+    // another family's vertical trunk. Reroute only the changed arrivals with
+    // the existing obstacle-aware router; the family joint stays fixed.
+    const routingPeople: LayoutPerson[] = positions.map(([id]) => ({
+      id,
+      birth: "",
+      parents: [],
+      spouses: [],
+    }));
+    let jointId = "routing-joint";
+    while (placed.has(jointId)) jointId += ":";
+    const searchBudget = { remaining: 2 };
+    for (const branch of branches.filter(
+      (b) => b.id.startsWith("child:") && moved.has(b.target),
+    )) {
+      const start = branch.route.points[0];
+      const direction = branch.route.sourceHandle === "bottom" ? 1 : -1;
+      const link = {
+        type: "parent" as const,
+        from: jointId,
+        to: branch.target,
+      };
+      const route = routeRelationships(
+        [
+          ...routingPeople.map((p) =>
+            p.id === branch.target ? { ...p, parents: [jointId] } : p,
+          ),
+          { id: jointId, birth: "", parents: [], spouses: [] },
+        ],
+        [],
+        [...positions, [jointId, { x: start.x, y: start.y + 10 * direction }]],
+        size.width,
+        size.height,
+        new Set([jointId]),
+        branches
+          .filter((b) => b.id !== branch.id)
+          .map((b) => ({ group: b.union, route: b.route })),
+        new Map([
+          [
+            routeKey(link),
+            {
+              group: branch.union,
+              sourceHandle: branch.route.sourceHandle,
+              targetHandle: branch.route.targetHandle,
+              searchBudget,
+            },
+          ],
+        ]),
+      )[0]?.[1];
+      if (!route) continue;
+      branches = branches.map((b) =>
+        b.id === branch.id
+          ? {
+              ...b,
+              route: {
+                ...route,
+                points: simplifyRoute([start, ...route.points]),
+              },
+            }
+          : b,
+      );
+    }
+  }
   let extraRoutes = geometry.routes;
   if (links.length) {
     const personIds = new Map(

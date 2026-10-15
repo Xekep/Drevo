@@ -100,6 +100,8 @@ async function geometryForSeed(
   sketch?: Pick<TreeGeometry, "positions" | "occurrences">,
   flippedPairs?: ReadonlySet<string>,
   profile?: LargeDecrossProfile,
+  compact = false,
+  historyPlacement: "balanced" | "interactive" = "balanced",
 ): Promise<TreeGeometry> {
   if (!people.length)
     return {
@@ -365,6 +367,9 @@ async function geometryForSeed(
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
       "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
       "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+      ...(compact
+        ? { "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX" }
+        : {}),
       "elk.layered.thoroughness": people.length > 900 ? "1" : "12",
       "elk.separateConnectedComponents": "true",
       ...(profile
@@ -378,13 +383,21 @@ async function geometryForSeed(
         : {}),
     },
   };
-  const hinted = sketch && fromSketchUnionGraph(baseGraph, sketch, reverse);
+  const hinted =
+    sketch &&
+    fromSketchUnionGraph(
+      baseGraph,
+      sketch,
+      reverse,
+      unitOccurrences,
+      historyPlacement,
+    );
   if (sketch && !hinted) throw new Error("insufficient prior layout overlap");
   const ordered = hinted || (sift ? siftUnionOrder(baseGraph) : baseGraph);
-  // Поколения уже вычислены выше. На больших проекциях передаём их напрямую:
+  // Поколения уже вычислены выше. Передаём их напрямую:
   // partitioning создаёт полный двудольный граф между соседними поколениями.
   // Порядок блоков, минимизация пересечений и фиксированные порты остаются ELK.
-  const input = people.length > 300 ? presetGenerationLayers(ordered) : ordered;
+  const input = presetGenerationLayers(ordered);
   const laidOut = await layout(structuredClone(input));
   const { graph, bands, offsets } = alignGenerationBands(laidOut, size);
   const placed = new Map(
@@ -855,6 +868,49 @@ export async function unionGeometry(
   }
   // No speculative task outlives this layout or competes with the next request.
   await Promise.all(pending.values());
+  if (!previous && people.length >= 100 && people.length <= 300) {
+    // One bounded alternative also optimizes empty horizontal space. The usual
+    // crossing scorer deliberately ignores size, so equally crossed candidates
+    // otherwise keep the first, sometimes needlessly wide, placement.
+    try {
+      const candidate = await geometryForSeed(
+        people,
+        layout,
+        reverse,
+        links,
+        bestSeed,
+        size,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+      const currentExtent = extent(best),
+        nextExtent = extent(candidate);
+      const currentRoutes = geometryQuality(best),
+        nextRoutes = geometryQuality(candidate);
+      const next = geometryContacts(candidate);
+      if (
+        nextExtent.width <= currentExtent.width * 0.95 &&
+        nextExtent.height <= currentExtent.height * 1.05 &&
+        nextExtent.width * nextExtent.height <
+          currentExtent.width * currentExtent.height &&
+        next.distinct <= contacts.distinct &&
+        nextRoutes.crossings <= currentRoutes.crossings &&
+        nextRoutes.contacts <= currentRoutes.contacts &&
+        nextRoutes.length <= currentRoutes.length &&
+        nextRoutes.bends <= currentRoutes.bends &&
+        routeCardContacts(candidate) <= routeCardContacts(best) &&
+        cardOverlapCount(candidate) <= cardOverlapCount(best)
+      ) {
+        best = candidate;
+        contacts = next;
+      }
+    } catch {
+      // An unsupported placement keeps the already calculated family layout.
+    }
+  }
   if (
     previous?.mode === "generations" &&
     previous.reverse === reverse &&
@@ -916,55 +972,103 @@ export async function unionGeometry(
     }
     const movement = axisDisplacement(previous, best, "x");
     if (movement >= 150 && Number.isFinite(movement)) {
-      try {
-        const candidate = await geometryForSeed(
-          people,
-          layout,
-          reverse,
-          links,
-          1,
-          size,
-          false,
-          previous,
-        );
-        const next = geometryContacts(candidate);
-        const currentRoutes = geometryQuality(best);
-        const nextRoutes = geometryQuality(candidate);
-        const oldSize = extent(previous);
-        const currentSize = extent(best);
-        const nextSize = extent(candidate);
-        const nextMovement = axisDisplacement(previous, candidate, "x");
-        if (
-          next.distinct <= contacts.distinct &&
-          nextRoutes.contacts <= currentRoutes.contacts &&
-          nextRoutes.crossings <= currentRoutes.crossings &&
-          nextRoutes.length <= currentRoutes.length * 1.15 &&
-          nextRoutes.bends <= currentRoutes.bends * 1.15 + 2 &&
-          routeCardContacts(candidate) <= routeCardContacts(best) &&
-          Math.max(nextSize.width, nextSize.height) <=
-            Math.max(
-              oldSize.width,
-              oldSize.height,
-              currentSize.width,
-              currentSize.height,
-            ) *
-              1.2 &&
-          nextSize.width * nextSize.height <=
-            Math.max(
-              oldSize.width * oldSize.height,
-              currentSize.width * currentSize.height,
-            ) *
-              1.5 &&
-          nextMovement <= movement * 0.7 &&
-          movement - nextMovement >= 100 &&
-          axisDisplacement(previous, candidate, "y") <=
-            Math.max(axisDisplacement(previous, best, "y"), 32) + 32
-        ) {
-          best = candidate;
-          contacts = next;
+      // The balanced candidate remains useful on dense pedigrees. Only try a
+      // fixed-order placement when the accepted layout still moves old families.
+      for (const historyPlacement of ["balanced", "interactive"] as const) {
+        const movement = axisDisplacement(previous, best, "x");
+        if (movement < 150) break;
+        try {
+          let candidate = await geometryForSeed(
+            people,
+            layout,
+            reverse,
+            links,
+            1,
+            size,
+            false,
+            previous,
+            undefined,
+            undefined,
+            false,
+            historyPlacement,
+          );
+          const sketchMovement = axisDisplacement(previous, candidate, "x");
+          for (const id of historyPlacement === "interactive"
+            ? coupleBlocksWithContactedAncestry(candidate, W).slice(0, 12)
+            : []) {
+            const refined = locallyReverseCouples(
+              candidate,
+              people,
+              links,
+              size,
+              new Set([id]),
+              true,
+            );
+            if (!refined) continue;
+            const before = geometryQuality(candidate),
+              after = geometryQuality(refined);
+            if (
+              after.contacts < before.contacts &&
+              after.crossings <= before.crossings &&
+              after.length <= before.length * 1.02 &&
+              after.bends <= before.bends + 4 &&
+              axisDisplacement(previous, refined, "x") <= sketchMovement + 32 &&
+              routeCardContacts(refined) <= routeCardContacts(candidate) &&
+              cardOverlapCount(refined) <= cardOverlapCount(candidate)
+            )
+              candidate = refined;
+          }
+          const next = geometryContacts(candidate);
+          const currentRoutes = geometryQuality(best);
+          const nextRoutes = geometryQuality(candidate);
+          const previousRoutes = geometryQuality(previous);
+          const oldSize = extent(previous);
+          const currentSize = extent(best);
+          const nextSize = extent(candidate);
+          const nextMovement = axisDisplacement(previous, candidate, "x");
+          // A local edit may keep existing crossings rather than reshuffle nearly
+          // the entire archive to remove one or two. Never add a crossing over the
+          // previous view, and permit this trade only when old cards barely move.
+          const retainedOrder =
+            historyPlacement === "interactive" &&
+            nextMovement <= W / 8 &&
+            next.distinct <= contacts.distinct + 2 &&
+            nextRoutes.contacts <= previousRoutes.contacts &&
+            nextRoutes.crossings <= previousRoutes.crossings;
+          if (
+            (next.distinct <= contacts.distinct || retainedOrder) &&
+            (nextRoutes.contacts <= currentRoutes.contacts || retainedOrder) &&
+            (nextRoutes.crossings <= currentRoutes.crossings ||
+              retainedOrder) &&
+            nextRoutes.length <= currentRoutes.length * 1.15 &&
+            nextRoutes.bends <= currentRoutes.bends * 1.15 + 2 &&
+            routeCardContacts(candidate) <= routeCardContacts(best) &&
+            cardOverlapCount(candidate) <= cardOverlapCount(best) &&
+            Math.max(nextSize.width, nextSize.height) <=
+              Math.max(
+                oldSize.width,
+                oldSize.height,
+                currentSize.width,
+                currentSize.height,
+              ) *
+                1.2 &&
+            nextSize.width * nextSize.height <=
+              Math.max(
+                oldSize.width * oldSize.height,
+                currentSize.width * currentSize.height,
+              ) *
+                1.5 &&
+            nextMovement <= movement * 0.7 &&
+            movement - nextMovement >= 100 &&
+            axisDisplacement(previous, candidate, "y") <=
+              Math.max(axisDisplacement(previous, best, "y"), 32) + 32
+          ) {
+            best = candidate;
+            contacts = next;
+          }
+        } catch {
+          // Если инкрементальный ELK не смог построить вариант, остаётся обычная раскладка.
         }
-      } catch {
-        // Если инкрементальный ELK не смог построить вариант, остаётся обычная раскладка.
       }
     }
   }

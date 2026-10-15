@@ -2,12 +2,121 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { TreeGeometry } from "../src/domain/tree-layout.ts";
 import { branchContactCounts } from "../src/domain/union-layout.ts";
+import type { UnionBranch } from "../src/domain/union-layout.ts";
 import { routeRelationships } from "../src/domain/edge-routing.ts";
 import {
   coupleBlocksWithContactedAncestry,
   invertedCoupleBlocks,
   locallyReverseCouples,
 } from "../src/domain/local-couple-order.ts";
+
+test("historical pair reversal clears foreign T contacts without changing family joints", () => {
+  const child = (
+    id: string,
+    source: string,
+    target: string,
+    union: string,
+    points: { x: number; y: number }[],
+  ): UnionBranch => ({
+    id: `child:${id}`,
+    source,
+    target,
+    union,
+    relations: [{ from: source, to: target, type: "parent" }],
+    route: { sourceHandle: "bottom", targetHandle: "top", points },
+  });
+  const geometry: TreeGeometry = {
+    mode: "generations",
+    reverse: false,
+    start: 1700,
+    offset: 0,
+    positions: [
+      ["P", { x: 5816, y: 4014 }],
+      ["Q", { x: 6068, y: 4014 }],
+      ["R", { x: 6352, y: 4024 }],
+      ["S", { x: 4366, y: 4368 }],
+      ["A", { x: 5690, y: 4382 }],
+      ["B", { x: 5942, y: 4382 }],
+    ],
+    blocks: [
+      {
+        id: "pair",
+        members: ["A", "B"],
+        x: 5690,
+        y: 4382,
+        width: 472,
+        height: 264,
+      },
+    ],
+    branches: [
+      child("S", "P", "S", "siblings", [
+        { x: 6052, y: 4146 },
+        { x: 6052, y: 4320 },
+        { x: 4476, y: 4320 },
+        { x: 4476, y: 4368 },
+      ]),
+      child("B", "P", "B", "siblings", [
+        { x: 6052, y: 4146 },
+        { x: 6052, y: 4308 },
+        { x: 6052, y: 4344 },
+        { x: 6052, y: 4382 },
+      ]),
+      child("A", "R", "A", "other-parent", [
+        { x: 6462, y: 4288 },
+        { x: 6462, y: 4332 },
+        { x: 5800, y: 4332 },
+        { x: 5800, y: 4382 },
+      ]),
+      {
+        id: "pair:marriage",
+        source: "A",
+        target: "B",
+        union: "marriage",
+        relations: [{ from: "A", to: "B", type: "spouse" }],
+        route: {
+          sourceHandle: "right",
+          targetHandle: "left",
+          points: [
+            { x: 5910, y: 4514 },
+            { x: 5942, y: 4514 },
+          ],
+        },
+      },
+    ],
+    routes: [],
+  };
+  const before = structuredClone(geometry),
+    size = { width: 220, height: 264 };
+  const simple = locallyReverseCouples(
+    geometry,
+    [],
+    [],
+    size,
+    new Set(["pair"]),
+  )!;
+  const improved = locallyReverseCouples(
+    geometry,
+    [],
+    [],
+    size,
+    new Set(["pair"]),
+    true,
+  )!;
+  assert.ok(branchContactCounts(simple.branches!).distinct > 0);
+  assert.equal(branchContactCounts(improved.branches!).distinct, 0);
+  assert.deepEqual(improved.positions, simple.positions);
+  assert.deepEqual(
+    improved.branches!.map((b) => b.relations),
+    before.branches!.map((b) => b.relations),
+  );
+  for (const branch of improved.branches!.filter((b) =>
+    b.id.startsWith("child:"),
+  )) {
+    const old = before.branches!.find((b) => b.id === branch.id)!;
+    assert.deepEqual(branch.route.points[0], old.route.points[0]);
+  }
+  assert.deepEqual(geometry, before);
+});
 
 test("a local couple swap reroutes ancestry without moving the surrounding blocks", () => {
   const geometry: TreeGeometry = {
