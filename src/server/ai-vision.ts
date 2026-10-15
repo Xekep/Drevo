@@ -98,6 +98,7 @@ export function aiVision(fetcher: typeof fetch) {
     const reported = usageTokens(data.usage);
     return {
       content,
+      usageConfirmed: reported.input !== undefined && reported.output !== undefined,
       inputTokens: reported.input ?? estimateTokens(body),
       outputTokens: reported.output ?? estimateTokens(message),
     };

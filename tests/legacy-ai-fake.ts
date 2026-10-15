@@ -1,6 +1,9 @@
 // Keep existing behavioral fixtures while the transport moves to Responses.
 // This adapter emulates provider-side conversation history; production does not use it.
-export function adaptLegacyAiFake(legacy: typeof fetch): typeof fetch {
+export function adaptLegacyAiFake(
+  legacy: typeof fetch,
+  options: { usageWhenAbsent?: { input_tokens: number; output_tokens: number } } = {},
+): typeof fetch {
   const histories = new Map<string, Array<Record<string, unknown>>>();
   let conversation = 0;
   let responseId = 0;
@@ -151,7 +154,7 @@ export function adaptLegacyAiFake(legacy: typeof fetch): typeof fetch {
         name: call.function.name,
         arguments: call.function.arguments,
       })),
-      usage,
+      usage: usage ?? options.usageWhenAbsent,
     };
     return request.stream
       ? new Response(

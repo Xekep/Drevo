@@ -16,6 +16,7 @@ export type AiModelUsage = {
 
 export type AiUsageSummary = {
   today: {
+    reservedTokens?: number;
     requests: number;
     providerCalls: number;
     inputTokens: number;
@@ -56,6 +57,21 @@ export class AiLimitError extends Error {
 }
 
 export function aiUsageStore(db: StoreDatabase) {
+  // Scheduling window, not an estimate of provider billing. The last paid
+  // call can exceed this soft threshold; do not present it as a hard cap.
+  const reservationWindow = 32_000;
+  const lockBudget = async () => {
+    if (db.kind === "postgres")
+      await db.prepare("", "SELECT pg_advisory_xact_lock(186743300)").get();
+  };
+  const reserve = async (id: number, remaining: Array<number | null>) => {
+    const finite = remaining.filter((value): value is number => value !== null);
+    if (!finite.length) return 0;
+    const tokens = Math.min(reservationWindow, ...finite);
+    await db.prepare("UPDATE ai_usage SET reserved_tokens=? WHERE id=?",
+      "UPDATE platform_ai_usage SET reserved_tokens=? WHERE id=?").run(tokens, id);
+    return tokens;
+  };
   const todayStart = () => {
     const now = new Date(),
       utc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
@@ -67,10 +83,14 @@ export function aiUsageStore(db: StoreDatabase) {
       userId: string,
       limits: AiUsageLimits,
       dailyScope: "archive" | "user" = "archive",
+      tokensOnly = false,
     ) {
+      if (tokensOnly ? limits.dailyTokens <= 0 :
+        limits.requestsPerMinute <= 0 && limits.dailyRequests <= 0 && limits.dailyTokens <= 0)
+        return null;
       const now = Date.now(),
         minuteAgo = now - 60_000,
-        recent = Number(
+        recent = tokensOnly || limits.requestsPerMinute <= 0 ? 0 : Number(
           (await db
             .prepare(
               "SELECT count(*) AS n FROM ai_usage WHERE user_id=? AND started_ms>=?",
@@ -98,19 +118,19 @@ export function aiUsageStore(db: StoreDatabase) {
         dailyScope === "user"
           ? (await db
               .prepare(
-                "SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens FROM ai_usage WHERE started_ms>=? AND user_id=?",
-                "SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens FROM platform_ai_usage WHERE started_ms>=? AND user_id=?",
+                "SELECT count(*) AS requests,coalesce(sum(total_tokens+reserved_tokens+uncertain_tokens),0) AS tokens FROM ai_usage WHERE started_ms>=? AND user_id=?",
+                "SELECT count(*) AS requests,coalesce(sum(total_tokens+reserved_tokens+uncertain_tokens),0) AS tokens FROM platform_ai_usage WHERE started_ms>=? AND user_id=?",
               )
               .get(todayStart(), userId))!
           : (await db
               .prepare(
-                `SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens
+                `SELECT count(*) AS requests,coalesce(sum(total_tokens+reserved_tokens+uncertain_tokens),0) AS tokens
            FROM ai_usage WHERE started_ms>=?`,
-                "SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens\n           FROM platform_ai_usage WHERE started_ms>=?",
+                "SELECT count(*) AS requests,coalesce(sum(total_tokens+reserved_tokens+uncertain_tokens),0) AS tokens\n           FROM platform_ai_usage WHERE started_ms>=?",
               )
               .get(todayStart()))!;
       if (
-        limits.dailyRequests > 0 &&
+        !tokensOnly && limits.dailyRequests > 0 &&
         Number(daily.requests) >= limits.dailyRequests
       )
         throw new AiLimitError(
@@ -124,6 +144,7 @@ export function aiUsageStore(db: StoreDatabase) {
             ? "Ваш дневной лимит токенов ИИ исчерпан. Лимит обновится завтра."
             : "Дневной лимит токенов ИИ исчерпан. Лимит обновится завтра.",
         );
+      return limits.dailyTokens > 0 ? Math.max(0, limits.dailyTokens - Number(daily.tokens)) : null;
     },
 
     async begin(userId: string, model: string) {
@@ -154,13 +175,38 @@ export function aiUsageStore(db: StoreDatabase) {
       userLimits?: AiUsageLimits,
     ) {
       const work = async () => {
-        if (db.kind === "postgres")
-          await db.prepare("", "SELECT pg_advisory_xact_lock(186743300)").get();
-        await store.check(userId, limits);
-        if (userLimits) await store.check(userId, userLimits, "user");
-        return await store.begin(userId, model);
+        await lockBudget();
+        const remaining = [await store.check(userId, limits)];
+        if (userLimits) remaining.push(await store.check(userId, userLimits, "user"));
+        const run = await store.begin(userId, model);
+        await reserve(run.id, remaining);
+        return run;
       };
-      return db.inTransaction() ? await work() : await db.transaction(work);
+      return db.inTransaction() ? await work() : await db.transaction(work, false, { archiveLock: "share", graphReadOnly: true });
+    },
+
+    /** Settle known progress and reserve the next window before another paid
+     * call. Request-count limits are admission-only, never re-applied here. */
+    async advance(id: number, userId: string, input: number, output: number,
+      limits: AiUsageLimits, userLimits?: AiUsageLimits, uncertainTokens = 0) {
+      if (!limits.dailyTokens && !userLimits?.dailyTokens) return 0;
+      const work = async () => {
+        await lockBudget();
+        const row = await db.prepare("SELECT user_id,started_ms FROM ai_usage WHERE id=?",
+          "SELECT user_id,started_ms FROM platform_ai_usage WHERE id=?").get(id);
+        if (row?.user_id !== userId || Number(row.started_ms) < todayStart())
+          throw new AiLimitError("Начались новые сутки. Отправьте запрос ещё раз.");
+        const knownInput = Math.max(0, Math.round(input));
+        const knownOutput = Math.max(0, Math.round(output));
+        await db.prepare(
+          "UPDATE ai_usage SET input_tokens=?,output_tokens=?,total_tokens=?,reserved_tokens=0,uncertain_tokens=? WHERE id=?",
+          "UPDATE platform_ai_usage SET input_tokens=?,output_tokens=?,total_tokens=?,reserved_tokens=0,uncertain_tokens=? WHERE id=?",
+        ).run(knownInput, knownOutput, knownInput + knownOutput, Math.max(0, Math.round(uncertainTokens)), id);
+        const remaining = [await store.check(userId, limits, "archive", true)];
+        if (userLimits) remaining.push(await store.check(userId, userLimits, "user", true));
+        return await reserve(id, remaining);
+      };
+      return db.inTransaction() ? await work() : await db.transaction(work, false, { archiveLock: "share", graphReadOnly: true });
     },
 
     async finish(
@@ -173,6 +219,7 @@ export function aiUsageStore(db: StoreDatabase) {
         outputTokens: number;
         cachedInputTokens?: number;
         models?: AiModelUsage[];
+        uncertainTokens?: number;
       },
     ) {
       const input = Math.max(0, Math.round(value.inputTokens)),
@@ -183,8 +230,9 @@ export function aiUsageStore(db: StoreDatabase) {
           `UPDATE ai_usage SET
           status=?,provider_calls=?,input_tokens=?,output_tokens=?,
           total_tokens=?,cached_input_tokens=?,latency_ms=?
+          ,reserved_tokens=0,uncertain_tokens=?
          WHERE id=?`,
-          "UPDATE platform_ai_usage SET\n          status=?,provider_calls=?,input_tokens=?,output_tokens=?,\n          total_tokens=?,cached_input_tokens=?,latency_ms=?\n         WHERE id=?",
+          "UPDATE platform_ai_usage SET\n          status=?,provider_calls=?,input_tokens=?,output_tokens=?,\n          total_tokens=?,cached_input_tokens=?,latency_ms=?,reserved_tokens=0,uncertain_tokens=?\n         WHERE id=?",
         )
         .run(
           value.status,
@@ -194,6 +242,7 @@ export function aiUsageStore(db: StoreDatabase) {
           input + output,
           Math.max(0, Math.round(value.cachedInputTokens || 0)),
           Math.max(0, Date.now() - started),
+          Math.max(0, Math.round(value.uncertainTokens || 0)),
           id,
         );
 
@@ -247,6 +296,10 @@ export function aiUsageStore(db: StoreDatabase) {
     },
 
     async summary(limit = 20): Promise<AiUsageSummary> {
+      const held = await db.prepare(
+        "SELECT coalesce(sum(reserved_tokens+uncertain_tokens),0) AS tokens FROM ai_usage WHERE started_ms>=?",
+        "SELECT coalesce(sum(reserved_tokens+uncertain_tokens),0) AS tokens FROM platform_ai_usage WHERE started_ms>=?",
+      ).get(todayStart());
       const historyStart = todayStart() - 13 * 86_400_000,
         day = (await db
           .prepare(
@@ -294,6 +347,7 @@ export function aiUsageStore(db: StoreDatabase) {
           .all(Math.max(1, Math.min(100, limit)));
       return {
         today: {
+          reservedTokens: Number(held?.tokens || 0),
           requests: Number(day.requests),
           providerCalls: Number(day.provider_calls),
           inputTokens: Number(day.input_tokens),

@@ -1483,6 +1483,10 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     }
   }
   initializeSqliteAiChatCursors(db);
+  if (!db.prepare("PRAGMA table_info(ai_usage)").all().some((column) => column.name === "reserved_tokens"))
+    db.exec("ALTER TABLE ai_usage ADD COLUMN reserved_tokens INTEGER NOT NULL DEFAULT 0 CHECK(reserved_tokens>=0)");
+  if (!db.prepare("PRAGMA table_info(ai_usage)").all().some((column) => column.name === "uncertain_tokens"))
+    db.exec("ALTER TABLE ai_usage ADD COLUMN uncertain_tokens INTEGER NOT NULL DEFAULT 0 CHECK(uncertain_tokens>=0)");
 }
 
 

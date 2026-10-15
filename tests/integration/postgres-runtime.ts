@@ -58,6 +58,8 @@ import { verifyGeneratedFileGlobalCap } from "./generated-file-cap-test.ts";
 import { verifyPortablePreviewGlobalCap } from "./portable-preview-cap.ts";
 import { verifyPlatformAiOrphanSweep } from "./platform-ai-orphan-sweep.ts";
 import { verifyOwnerTransferGetRevocation } from "./postgres-owner-transfer-reads.ts";
+import { verifySourceCatalogDelivery } from "./postgres-source-catalog-delivery.ts";
+import { verifyAiTokenBudget } from "./postgres-ai-token-budget.ts";
 import { verifyInvitationAcceptSessionRevocation } from "./postgres-invitation-accept-session.ts";
 import { verifyInvitationPreviewDelivery } from "./postgres-invitation-preview-delivery.ts";
 import { verifyInvitationScopeAndMembershipRemoval } from "./postgres-invitation-scope.ts";
@@ -139,7 +141,14 @@ import { discoveryNamePartsBatch } from "../../ops/postgres/backfill-discovery-n
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
 import { restoreStore } from "../../src/server/restore.ts";
 import { startServer } from "../../src/server/index.ts";
-import { adaptLegacyAiFake } from "../legacy-ai-fake.ts";
+import { adaptLegacyAiFake as adaptLegacyAiTransport } from "../legacy-ai-fake.ts";
+
+// These fixtures exercise permission barriers, not unknown provider billing.
+// Report a small explicit synthetic cost so preceding successful calls cannot
+// exhaust the conservative missing-usage budget before reaching those barriers.
+const fixtureAiUsage = { input_tokens: 20, output_tokens: 10 };
+const adaptLegacyAiFake = (legacy: typeof fetch) =>
+  adaptLegacyAiTransport(legacy, { usageWhenAbsent: fixtureAiUsage });
 import { verifyAiLegacyChatRekey } from "./postgres-ai-legacy-rekey.ts";
 import { verifyAiBufferedDelivery } from "./postgres-ai-buffered-delivery.ts";
 import {
@@ -640,6 +649,7 @@ try {
     JSON.stringify({ ...family.people[0], name: "Чужой" }),
   ]);
   const other = await openPostgresDatabase("other-archive", source);
+  await verifyAiTokenBudget(live.db, other, client);
   try {
     await verifyPortablePreviewGlobalCap(client, directory);
     const diskOptions = {
@@ -1180,6 +1190,7 @@ try {
   app = await startServer(0, source, true);
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   await verifyOwnerTransferGetRevocation(app.archive.db, client);
+  await verifySourceCatalogDelivery(app.archive, client);
   await verifyInvitationAcceptSessionRevocation(app.archive.db, client);
   await verifyInvitationPreviewDelivery(app.archive.db, client);
   await verifyInvitationScopeAndMembershipRemoval(app.archive.db, client);
@@ -3924,14 +3935,14 @@ try {
             JSON.parse(String(init?.body)).tools?.some((tool: { type: string }) => tool.type === "code_interpreter")) {
             calculationCalls++;
             if (returnCalculationFile)
-              return Response.json({ status: "completed", output: [
+              return Response.json({ status: "completed", usage: fixtureAiUsage, output: [
                 { type: "code_interpreter_call", status: "completed", container_id: "container-new" },
                 { type: "message", content: [{ type: "output_text", text: "Расчёт завершён", annotations: [
                   { type: "container_file_citation", container_id: "container-new",
                     file_id: "file-output", filename: "result.csv" },
                 ] }] },
               ] });
-            return Response.json({ status: "completed", output: [] });
+            return Response.json({ status: "completed", usage: fixtureAiUsage, output: [] });
           }
           return adapted(url, init);
         };

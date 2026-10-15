@@ -192,13 +192,17 @@ test("a role budget and Python setting are independent of hidden legacy common l
       dailyTokens: 0,
     });
     const usage = aiUsageStore(db);
-    for (let request = 0; request < 5; request++)
-      await usage.admit(
+    for (let request = 0; request < 5; request++) {
+      const run = await usage.admit(
         "researcher",
         runtime.modelUri,
         runtime.limits,
         runtime.userLimits!,
       );
+      await usage.finish(run.id, run.started, {
+        status: "ok", providerCalls: 0, inputTokens: 0, outputTokens: 0,
+      });
+    }
     await assert.rejects(
       usage.admit(
         "researcher",

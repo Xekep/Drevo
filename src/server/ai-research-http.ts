@@ -8,7 +8,7 @@ import {
   type GeneratedResearchFileMeta,
 } from "./generated-research-files.ts";
 import { yandexWebSearchProvider } from "./yandex-web-search.ts";
-import { recordModelCall, recordModelTokens } from "./ai-research-support.ts";
+import { recordModelTokens } from "./ai-research-support.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ArchiveUser, Role } from "../domain/access.ts";
 import { exportGedcom } from "../domain/gedcom.ts";
@@ -25,6 +25,7 @@ import type { researchCatalogStore } from "./research-catalog.ts";
 import { type researchSuggestionStore } from "./research-suggestions.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { YandexResponseError } from "./yandex-responses.ts";
+import { yandexResponsesClient } from "./yandex-responses.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
 import { aiProfileRole } from "../domain/access.ts";
 import {
@@ -46,7 +47,6 @@ import {
 import { scopedArchiveReader } from "./scoped-archive-reader.ts";
 
 import { createResearchRunner } from "./ai-research-runner.ts";
-import { yandexResponsesClient } from "./yandex-responses.ts";
 import {
   modelUsage,
   readJson,
@@ -667,14 +667,13 @@ export function aiResearchHttp({
     attachments,
     providerCleanup,
     renderPdf,
-    webSearch: (runtime, metrics, assertAiAccess) =>
+    webSearch: (runtime, metrics, assertAiAccess, responseClient) =>
       runtime.webSearchEnabled && runtime.webSearchProvider === "yandex"
         ? createWebSearchService({
             provider: yandexWebSearchProvider({
-              client: responses,
+              client: responseClient,
               runtime,
               assertAiAccess,
-              onCall: () => recordModelCall(metrics, runtime.modelUri),
               onUsage: (usage) =>
                 recordModelTokens(
                   metrics,
@@ -1664,6 +1663,9 @@ export function aiResearchHttp({
       }
 
       let releaseExecution: (() => void) | undefined;
+      let confirmedProviderTokens = 0;
+      let uncertainTokens = 0;
+      let heldWindow = 0;
       try {
         if (
           stream &&
@@ -1685,6 +1687,15 @@ export function aiResearchHttp({
           runtime,
           stream,
           metrics,
+          beforeProviderCall: async () => {
+            await assertTurnRunning();
+            heldWindow = await usage.advance(usageRun.id, user.id, metrics.inputTokens, metrics.outputTokens,
+              runtime.limits, runtime.userLimits ?? undefined, uncertainTokens);
+          },
+          onUnconfirmedProviderCall: (estimatedTokens) => {
+            uncertainTokens += Math.max(0, heldWindow - estimatedTokens);
+          },
+          onProviderTokens: (tokens) => { confirmedProviderTokens += tokens; },
           // The browser does not consume deltas. Delivering them before the
           // final access check would leak an answer after a tier downgrade.
           onDelta: () => {},
@@ -1857,6 +1868,7 @@ export function aiResearchHttp({
         await assertAnswerDelivery();
         await usage.finish(usageRun.id, usageRun.started, {
           status: "ok",
+          uncertainTokens: uncertainTokens + Math.max(0, confirmedProviderTokens - metrics.inputTokens - metrics.outputTokens),
           providerCalls: metrics.providerCalls,
           inputTokens: metrics.inputTokens,
           outputTokens: metrics.outputTokens,
@@ -1987,6 +1999,7 @@ export function aiResearchHttp({
         );
         await usage.finish(usageRun.id, usageRun.started, {
           status: "error",
+          uncertainTokens: uncertainTokens + Math.max(0, confirmedProviderTokens - metrics.inputTokens - metrics.outputTokens),
           providerCalls: metrics.providerCalls,
           inputTokens: metrics.inputTokens,
           outputTokens: metrics.outputTokens,
@@ -2041,6 +2054,8 @@ export function aiResearchHttp({
           res,
           accessRevoked
             ? 403
+            : error instanceof AiLimitError
+              ? 429
             : error instanceof WorkQueueBusyError
               ? 503
               : error instanceof RangeError

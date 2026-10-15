@@ -551,6 +551,15 @@ async function initializeGlobalRuntimeSchema(db: StoreDatabase) {
           ),
         );
     });
+  // The platform usage table is created by 099 above on a clean installation.
+  const budgetProbe = "SELECT 1 AS present WHERE (SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name IN ('platform_ai_usage','ai_usage') AND column_name IN ('reserved_tokens','uncertain_tokens'))=4";
+  if (!(await db.prepare("", budgetProbe).get())?.present) {
+    await db.postgresTransaction!(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(186743291)");
+      if ((await client.query(budgetProbe)).rows[0]?.present) return;
+      await client.query(readFileSync(new URL("../../ops/postgres/105_ai_token_reservations.sql", import.meta.url), "utf8"));
+    });
+  }
 }
 
 async function initializeArchiveRuntimeSchema(db: StoreDatabase) {
