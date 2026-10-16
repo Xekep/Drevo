@@ -78,6 +78,15 @@ export function useDepthPlaneMotion(
   ready: boolean,
 ) {
   const previous = useRef("");
+  const source = useRef<{ x: number; y: number } | null>(null);
+  const prepare = (id: string) => {
+    const host = root.current, box = host?.getBoundingClientRect();
+    const card = host && [...host.querySelectorAll<SVGGraphicsElement>("[data-depth-person]")]
+      .find((node) => node.dataset.depthPerson === id);
+    const rect = card?.getBoundingClientRect();
+    source.current = rect && box ? { x: rect.left + rect.width / 2 - box.left,
+      y: rect.top + rect.height / 2 - box.top } : null;
+  };
   useLayoutEffect(() => {
     if (!ready) return;
     const key = enabled ? anchorId : "flat";
@@ -87,22 +96,40 @@ export function useDepthPlaneMotion(
       !changed ||
       !enabled ||
       matchMedia("(prefers-reduced-motion: reduce)").matches
-    )
+    ) {
+      source.current = null;
       return;
+    }
     const plane = root.current?.querySelector<HTMLElement>(".tree-flow-plane");
+    const host = root.current, box = host?.getBoundingClientRect();
+    const card = host && [...host.querySelectorAll<HTMLElement>(".flow-person[data-person-id]")]
+      .find((node) => node.dataset.personId === anchorId);
+    const rect = card?.getBoundingClientRect();
+    const dx = source.current && rect && box
+      ? Math.max(-box.width * .65, Math.min(box.width * .65, source.current.x - (rect.left + rect.width / 2 - box.left))) : 0;
+    const dy = source.current && rect && box
+      ? Math.max(-box.height * .65, Math.min(box.height * .65, source.current.y - (rect.top + rect.height / 2 - box.top))) : 0;
+    const direction = dx < 0 ? -1 : 1;
+    source.current = null;
     const motion = plane?.animate(
       [
         {
-          opacity: 0.65,
-          transform: "perspective(1400px) translateZ(-65px) translateY(-14px)",
+          opacity: 0.66,
+          transform: `perspective(1400px) translate3d(${dx}px, ${dy}px, -300px) rotateY(${direction * 14}deg) rotateX(5deg)`,
+        },
+        {
+          offset: .6,
+          opacity: .94,
+          transform: `perspective(1400px) translate3d(${dx * .14}px, ${dy * .14}px, -45px) rotateY(${direction * 3}deg) rotateX(1deg)`,
         },
         {
           opacity: 1,
-          transform: "perspective(1400px) translateZ(0) translateY(0)",
+          transform: "perspective(1400px) translate3d(0, 0, 0) rotateY(0deg) rotateX(0deg)",
         },
       ],
-      { duration: 420, easing: "cubic-bezier(.2,.8,.2,1)" },
+      { duration: 620, easing: "cubic-bezier(.16,1,.3,1)" },
     );
     return () => motion?.cancel();
   }, [enabled, anchorId, ready, root]);
+  return prepare;
 }

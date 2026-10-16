@@ -7,9 +7,11 @@ import {
 
 const p = (id: string, parents: string[] = []): Person => ({
   id,
-  name: id,
-  surname: "Тестов",
-  patronymic: "",
+  name: ({ dad: "Александр", me: "Михаил", child: "Николай", sibling: "Алексей", nephew: "Евгений",
+    aunt: "Надежда", cousin: "Варвара", another: "Сергей", "another-child": "Анастасия",
+    isolate: "Наталья", "distant-a": "Павел", "distant-b": "Анна", "distant-c": "Ирина" } as Record<string, string>)[id] || id,
+  surname: "Соколов",
+  patronymic: id === "sibling" ? "Александрович" : "",
   sex: "m",
   birth: "1970",
   birthPlace: "",
@@ -32,6 +34,8 @@ const family: Family = {
     p("child", ["me"]),
     p("sibling", ["dad"]),
     p("nephew", ["sibling"]),
+    p("aunt", ["dad"]), p("cousin", ["aunt"]),
+    p("another", ["dad"]), p("another-child", ["another"]),
     p("isolate"),
     p("distant-a"),
     p("distant-b"),
@@ -99,16 +103,32 @@ test("2.5D switches whole branches, leaves profiles in place and restores normal
     page.locator('.flow-person[data-person-id="sibling"]'),
   ).toHaveCount(0);
   const branch = page.getByRole("button", {
-    name: /Перейти к ветви: Тестов sibling,/,
+    name: /Перейти к ветви: Соколов Алексей Александрович,/,
   });
   await expect(branch).toBeVisible();
+  await expect(page.locator('.tree-depth-connection[data-depth-from="dad"][data-depth-to="sibling"]')).toHaveCount(1);
+  await expect(page.locator('.tree-depth-connection[data-depth-to="isolate"]')).toHaveCount(0);
+  const originalPosition = await branch.boundingBox();
+  await page.getByRole("button", { name: "Повернуть пространство вправо", exact: true }).click();
+  await expect(page.locator(".tree-depth-world")).toHaveAttribute("data-depth-yaw", "12.00");
+  await expect.poll(async () => Math.abs((await branch.boundingBox())!.x - originalPosition!.x)).toBeGreaterThan(10);
+  await page.getByRole("button", { name: "Вернуть исходный ракурс", exact: true }).click();
+  await expect(page.locator(".tree-depth-world")).toHaveAttribute("data-depth-yaw", "0.00");
   expect(await branch.evaluate((node) => !!node.closest(".react-flow__viewport"))).toBe(true);
   await expect(page.locator(".tree-depth-stack, .tree-depth-layers")).toHaveCount(0);
   const before = await branch.boundingBox();
-  const pane = await page.locator(".react-flow").boundingBox();
-  await page.mouse.move(pane!.x + 12, pane!.y + pane!.height - 12);
+  expect((await branch.locator(".tree-depth-person-years").boundingBox())!.height).toBeGreaterThanOrEqual(12);
+  const dragStart = await page.locator(".react-flow").evaluate((flow) => {
+    const box = flow.getBoundingClientRect();
+    for (const ry of [.18, .35, .65, .8]) for (const rx of [.12, .4, .75]) {
+      const x = box.x + box.width * rx, y = box.y + box.height * ry;
+      if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane")) return { x, y };
+    }
+    throw new Error("No empty tree pane for a real drag gesture");
+  });
+  await page.mouse.move(dragStart.x, dragStart.y);
   await page.mouse.down();
-  await page.mouse.move(pane!.x + 60, pane!.y + pane!.height - 36, { steps: 5 });
+  await page.mouse.move(dragStart.x + 48, dragStart.y - 24, { steps: 5 });
   await page.mouse.up();
   await expect.poll(async () => Math.abs((await branch.boundingBox())!.x - before!.x)).toBeGreaterThan(20);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -117,6 +137,9 @@ test("2.5D switches whole branches, leaves profiles in place and restores normal
   await page.keyboard.press("Enter");
   await expect(scene).toHaveAttribute("data-depth-anchor", "sibling");
   await expect(scene).toHaveAttribute("data-layout-ready", "true");
+  await expect.poll(() => page.locator(".tree-flow-plane").evaluate((node) =>
+    node.getAnimations().some((motion) => (motion.effect as KeyframeEffect).getKeyframes()
+      .some((frame) => String(frame.transform).includes("rotateY"))))).toBe(true);
   await expect(
     page.getByRole("button", { name: "Предыдущая ветвь", exact: true }),
   ).toBeFocused();
@@ -139,7 +162,7 @@ test("2.5D switches whole branches, leaves profiles in place and restores normal
     .click();
   await expect(scene).toHaveAttribute("data-depth-anchor", "me");
   // Rear cards are real pointer targets on the canvas, not just keyboard links.
-  await page.getByRole("button", { name: /Перейти к ветви: Тестов sibling,/ }).click();
+  await page.getByRole("button", { name: /Перейти к ветви: Соколов Алексей Александрович,/ }).click();
   await expect(scene).toHaveAttribute("data-depth-anchor", "sibling");
   await page.getByRole("button", { name: "Предыдущая ветвь", exact: true }).click();
   await expect(scene).toHaveAttribute("data-depth-anchor", "me");
@@ -149,5 +172,14 @@ test("2.5D switches whole branches, leaves profiles in place and restores normal
   await dialog.getByRole("radio", { name: "Обычное", exact: true }).check();
   await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
   await expect(scene).not.toHaveAttribute("data-depth-anchor");
-  await expect(scene).toHaveAttribute("data-layout-people", "9");
+  await expect(scene).toHaveAttribute("data-layout-people", String(family.people.length));
+  // Reduced motion keeps navigation and the same geometry, without the plane flight.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.getByRole("button", { name: "Настройки древа", exact: true }).click();
+  await dialog.getByRole("radio", { name: "2.5D", exact: true }).check();
+  await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
+  await expect(scene).toHaveAttribute("data-layout-ready", "true");
+  expect(await page.locator(".tree-flow-plane").evaluate((node) => node.getAnimations().length)).toBe(0);
+  await page.getByRole("button", { name: "Повернуть пространство влево", exact: true }).click();
+  await expect(page.locator(".tree-depth-world")).toHaveAttribute("data-depth-yaw", "-12.00");
 });

@@ -1,20 +1,26 @@
 .tree-flow-plane { position: absolute; inset: 0; }
 .tree-depth-world { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
-.tree-depth-branch-plane { position: absolute; left: 0; top: 0; overflow: visible; transform-origin: 0 0; pointer-events: none; }
-.tree-depth-rear-line { fill: none; stroke: #9cab94; stroke-width: 2; opacity: .5; }
+.tree-depth-space { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.tree-depth-branch-plane { pointer-events: none; }
+.tree-depth-rear-line, .tree-depth-connection { fill: none; stroke: #879e7b; stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+.tree-depth-connection { stroke: #648456; stroke-width: 2; }
 .tree-depth-rear-person { cursor: pointer; pointer-events: all; }
-.tree-depth-rear-person :is(.tree-depth-rear-portrait, image) { opacity: .55; transition: opacity 140ms ease-out; }
-.tree-depth-rear-person:is(:hover, :focus-visible) :is(.tree-depth-rear-portrait, image) { opacity: 1; }
+.tree-depth-rear-person { transform-origin: 0 0; }
 .tree-depth-rear-person:hover, .tree-depth-rear-person:focus-visible { opacity: 1; outline: none; }
-.tree-depth-rear-hit { fill: #f4f6ef; fill-opacity: .55; stroke: transparent; }
+.tree-depth-rear-hit { fill: #f4f7ef; stroke: #b9c9ae; stroke-width: 1.2; }
 .theme-white .tree-depth-rear-hit { fill: #fff; }
 .tree-depth-rear-person:focus-visible .tree-depth-rear-hit { stroke: #496e3b; stroke-width: 3; }
 .tree-depth-rear-portrait { fill: #e2e9da; stroke: #829875; stroke-width: 2; }
 .tree-depth-initial { font: 28px var(--sans); fill: #4e6945; }
-.tree-depth-person-name { font: 500 20px var(--sans); fill: #344b2e; }
-.tree-depth-person-given { font: 17px var(--sans); fill: #40573a; }
-.tree-depth-person-years, .tree-depth-more { font: 16px var(--sans); fill: #506548; }
+.tree-depth-person-name { font: 500 22px var(--sans); fill: #344b2e; }
+.tree-depth-person-given { font: 18px var(--sans); fill: #40573a; }
+.tree-depth-person-years, .tree-depth-more { font: 18px var(--sans); fill: #506548; }
 .tree-depth-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.tree-depth-back-controls { position: absolute; left: 18px; bottom: 24px; z-index: 6; }
+.tree-depth-back-controls { position: absolute; left: 18px; bottom: 24px; z-index: 6; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; max-width: calc(100% - 180px); }
 .tree-depth-back-controls button { display: inline-flex; align-items: center; gap: 6px; min-height: 42px; padding: 8px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; }
+.tree-depth-orbit { display: flex; align-items: center; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.tree-depth-orbit button { min-width: 42px; min-height: 42px; padding: 8px; border: 0; border-radius: 0; }
+.tree-depth-orbit button:hover:not(:disabled) { background: var(--green-soft, #e8efdf); }
+.tree-depth-orbit button:focus-visible { outline: 2px solid #496e3b; outline-offset: -3px; }
+@media (max-width: 600px) { .tree-depth-back-controls { max-width: calc(100% - 150px); } .tree-depth-back-controls > button span { display: none; } .tree-depth-back-controls > button { padding: 10px; } }
 @media (prefers-reduced-motion: reduce) { .tree-depth-rear-person * { transition: none; } }
