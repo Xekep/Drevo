@@ -1,3 +1,4 @@
+import { savePersonDetails } from "./person-editor-actions";
 import { expect, test, type Page } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
@@ -45,7 +46,7 @@ test("разные даты события остаются рядом с отд
   await expect(alternative.getByLabel("Другая дата события")).toHaveValue("1902");
   await expect(alternative.getByLabel("Название")).toHaveValue(sourceTitle);
   await alternative.getByLabel("Достоверность").selectOption("probable");
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect.poll(() => readFamily().people.find((person) => person.id === "e2e-child")
     ?.events?.find((item) => item.alternatives?.[0].sources[0].title === sourceTitle)
     ?.alternatives?.[0].value).toBe("1902");

@@ -43,6 +43,15 @@ const family: Family = {
   links: [{ id: "extra", from: "nephew", to: "isolate", type: "godparent" }],
 };
 const all = new Set(family.people.map((person) => person.id));
+
+test("2.5D preserves an explicit civil partner without inventing marriage or opening that partner's ancestors", () => {
+  const graph: Family = { ...family, people: [p("me"), p("partner", ["parent"]), p("parent")],
+    unions: [{ id: "civil", participants: ["me", "partner"], type: "civil_union" }] };
+  const before = structuredClone(graph);
+  assert.deepEqual([...treeDepthBranches(graph, new Set(["me", "partner", "parent"]), "me").front], ["me", "partner"]);
+  assert.deepEqual([...treeDepthBranches(graph, new Set(["me", "parent"]), "me").front], ["me"]);
+  assert.deepEqual(graph, before);
+});
 test("2.5D exposes the anchor's direct lines and partners, keeping collateral branches behind", () => {
   const before = structuredClone(family);
   const view = treeDepthBranches(family, all, "me");

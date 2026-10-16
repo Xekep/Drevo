@@ -1,3 +1,4 @@
+import { savePersonDetails } from "./person-editor-actions";
 import { expect, test, type Page } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
@@ -42,7 +43,7 @@ test("источник точной даты события не перенос�
   await expect(claim.getByLabel("Название")).toHaveValue(title);
   await claim.getByLabel("Достоверность").selectOption("probable");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect.poll(() => readFamily().people.find((person) => person.id === "e2e-child")
     ?.events?.find((item) => item.dateClaim?.sources[0].title === title)?.dateClaim?.value)
     .toBe("1909-01-01");
@@ -63,12 +64,12 @@ test("источник точной даты события не перенос�
   const oldClaim = reopened.locator(".event-date-claim");
   await oldClaim.locator(":scope > summary").click();
   await expect(oldClaim.getByRole("alert")).toContainText("Источники относятся к прежней дате 01.01.1909");
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect(page.getByText("Источник даты события относится к другому значению", { exact: false })).toBeVisible();
   expect(readFamily().people.find((person) => person.id === "e2e-child")!
     .events!.find((item) => item.id === savedEvent.id)!.date).toBe("1909-01-01");
   await oldClaim.getByRole("button", { name: "Снять связи с прежней датой" }).click();
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect.poll(() => readFamily().people.find((person) => person.id === "e2e-child")
     ?.events?.find((item) => item.id === savedEvent.id)?.date).toBe("1909-01-02");
   expect(readFamily().people.find((person) => person.id === "e2e-child")!

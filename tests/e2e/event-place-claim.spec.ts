@@ -1,3 +1,4 @@
+import { savePersonDetails } from "./person-editor-actions";
 import { expect, test, type Page } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
@@ -44,7 +45,7 @@ test("источник точного места события сохраняе
   await expect(claim.getByRole("button", { name: "Добавить источник вручную" })).toHaveCount(0);
   await claim.getByLabel("Достоверность").selectOption("conflicting");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect.poll(() => readFamily().people.find((person) => person.id === "e2e-child")
     ?.events?.find((item) => item.placeClaim?.sources[0].title === title)?.placeClaim?.value)
     .toBe("Москва");
@@ -64,12 +65,12 @@ test("источник точного места события сохраняе
   const oldClaim = reopened.locator(".event-place-claim");
   await oldClaim.locator(":scope > summary").click();
   await expect(oldClaim.getByRole("alert")).toContainText("Источники относятся к прежнему месту Москва");
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect(page.getByText("Источник места события относится к другому значению", { exact: false })).toBeVisible();
   expect(readFamily().people.find((person) => person.id === "e2e-child")!
     .events!.find((item) => item.id === savedEvent.id)!.place).toBe("Москва");
   await oldClaim.getByRole("button", { name: "Снять связи с прежним местом" }).click();
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect.poll(() => readFamily().people.find((person) => person.id === "e2e-child")
     ?.events?.find((item) => item.id === savedEvent.id)?.place).toBe("Казань");
   expect(readFamily().people.find((person) => person.id === "e2e-child")!

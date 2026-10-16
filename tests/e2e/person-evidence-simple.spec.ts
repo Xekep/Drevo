@@ -1,3 +1,4 @@
+import { savePersonDetails, finishPersonDetail } from "./person-editor-actions";
 import { expect, test } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
@@ -47,13 +48,14 @@ test("сведения и события не создают привязок к
   await event.locator(".event-extra > summary").click();
   await expect(event.locator(".event-date-claim, .event-place-claim, .event-alternatives")).toHaveCount(0);
   await expect(event.getByRole("button", { name: "Добавить источник", exact: true })).toHaveCount(0);
+  await finishPersonDetail(page);
   await form.locator(".form-details > summary").filter({ hasText: /^Источники$/ }).click();
   await form.getByRole("button", { name: "+ Источник", exact: true }).click();
   const source = form.locator(".source-editor").last();
   await source.getByLabel("Название", { exact: true }).fill("Семейные воспоминания");
   await source.getByLabel("Ссылка", { exact: true }).fill("https://example.test/memories");
   await source.getByLabel("Примечание", { exact: true }).fill("Общие сведения о человеке");
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect.poll(() => family.people.find((person) => person.id === "e2e-child")?.birth)
     .toBe("1966");
   const saved = family.people.find((person) => person.id === "e2e-child")!;
@@ -74,7 +76,7 @@ test("сведения и события не создают привязок к
   await expect(form.getByLabel("Занятие", { exact: true })).toHaveValue("Учитель");
   await expect(form.locator(".person-evidence-details")).toHaveCount(0);
   await form.locator("[data-field=birth]").fill("1967");
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect.poll(() => family.people.find((person) => person.id === "e2e-child")?.birth).toBe("1967");
   expect(family.people.find((person) => person.id === "e2e-child")?.sources).toEqual(saved.sources);
   await page.locator(".inspector-person-actions .person-edit-button").click();

@@ -5,11 +5,20 @@ export type DepthBranch = { anchorId: string; members: string[] };
 
 /** A presentation of accessible people only; never infers or changes family links. */
 export function treeDepthBranches(
-  family: Pick<Family, "people" | "links">,
+  family: Pick<Family, "people" | "links" | "unions">,
   available: ReadonlySet<string>,
   anchorId: string,
 ) {
-  const scoped = family.people.filter((person) => available.has(person.id));
+  const partners = new Map<string, Set<string>>();
+  for (const { participants: [first, second] } of family.unions || []) {
+    if (!available.has(first) || !available.has(second)) continue;
+    for (const [id, partner] of [[first, second], [second, first]]) {
+      if (!partners.has(id)) partners.set(id, new Set());
+      partners.get(id)!.add(partner);
+    }
+  }
+  const scoped = family.people.filter((person) => available.has(person.id))
+    .map((person) => ({ ...person, spouses: [...new Set([...person.spouses, ...(partners.get(person.id) || [])])] }));
   // Extra relationships do not join otherwise separate genealogical branches.
   const index = familyNeighbors({ people: scoped, links: [] });
   const front = new Set<string>();

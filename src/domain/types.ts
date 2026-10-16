@@ -89,9 +89,12 @@ export type Person = {
   sex: "m" | "f" | "u";
   /** Пустая строка означает неизвестную дату, без подстановки текущего года. */
   birth: string;
+  /** Original Julian date; birth holds the Gregorian equivalent for complete dates. */
+  birthJulian?: string;
   /** Citations for this exact birth-date value, separate from general person sources. */
   birthDateClaim?: PersonValueClaim;
   death?: string;
+  deathJulian?: string;
   /** Citations for this exact death-date value, separate from general person sources. */
   deathDateClaim?: PersonValueClaim;
   deceased?: boolean;

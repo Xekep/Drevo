@@ -396,6 +396,25 @@
 .person-editor-form .person-source-note textarea {
   min-height: 66px;
 }
+.calendar-date-field { min-width: 0; display: grid; align-content: start; gap: 5px; }
+.calendar-style-control { display: grid; gap: 3px; }
+.calendar-style-control .check-field { min-height: 32px; font-size: 12px; }
+.calendar-style-control small, .calendar-original-date { display: block; color: var(--muted); font-size: 12px; }
+.editor-dialog.person-detail-dialog { width: min(680px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); padding: 0; overflow: auto; }
+.person-detail-dialog > header { padding: 14px 18px; }
+.person-detail-dialog .person-detail-body { padding: 16px 18px; }
+.person-detail-dialog > footer { display: flex; justify-content: flex-end; gap: 8px; margin: 0; padding: 12px 18px; background: var(--paper); border-top: 1px solid var(--line); position: sticky; bottom: 0; z-index: 2; }
+.person-detail-dialog .person-source-fields { padding: 0; }
+.person-detail-dialog .life-event-fields { padding: 0; }
+.person-detail-dialog > .form-error { margin: 0 18px 12px; }
+.education-editor .person-detail-dialog .life-event-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.education-editor .person-detail-dialog .life-event-fields > * { grid-column: 1 / -1; }
+.education-editor .person-detail-dialog .life-event-fields > :is(.event-date-field, .event-end-date-field) { grid-column: auto; }
+@media (max-width: 599px) {
+  .education-editor .person-detail-dialog .life-event-fields { grid-template-columns: 1fr; }
+  .person-detail-dialog .person-source-fields { grid-template-columns: 1fr; }
+  .person-detail-dialog :is(input, select):not([type="checkbox"]) { min-height: 44px; font-size: 16px; }
+}
 .person-editor-form .education-editor .life-event-fields {
   gap: 8px;
 }

@@ -1,3 +1,4 @@
+import { savePersonDetails, finishPersonDetail } from "./person-editor-actions";
 import { expect, test } from "@playwright/test";
 import PDFDocument from "pdfkit";
 import sharp from "sharp";
@@ -282,18 +283,21 @@ test("источник карточки связывается с PDF без к�
   const source = page.locator(".source-editor").last();
   await source.getByRole("button", { name: "Связать с документом" }).click();
   await source.getByLabel("Найти документ человека").fill(title);
+  await source.getByLabel("Найти документ человека").press("Enter");
+  await expect(source.getByLabel("Найти документ человека")).toBeFocused();
   await source.getByRole("button", { name: title, exact: true }).click();
   await source.getByRole("spinbutton", { name: "Страница документа" }).fill("2");
   await expect(
     source.getByRole("link", { name: "Открыть связанный документ" }),
   ).toHaveAttribute("href", `/documents/${id}/page/2`);
+  await finishPersonDetail(page);
   await page.locator(".event-editor > summary").click();
   await page.getByRole("button", { name: "Добавить событие" }).click();
   const event = page.locator(".life-event-editor").last();
   await event.locator(".event-extra > summary").click();
   await expect(event.getByRole("button", { name: "Добавить источник" })).toHaveCount(0);
   await event.getByLabel("Дата", { exact: true }).fill("1991");
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect(page.locator(".life-event").last()).toContainText("1991");
   await page.getByRole("tab", { name: /Источники/ }).click();
   const card = page.locator(".source-card").filter({ hasText: title });

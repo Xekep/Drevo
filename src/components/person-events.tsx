@@ -6,6 +6,9 @@ import { repositorySummary } from "../domain/person-sources.ts";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
 import { claimableEventDate, eventHasEvidence, retypeEvent, EVENT_NAMES } from "../domain/person-events";
 import { dateInputLabel, dateLabel, normalizeDateInput, safeUrl } from "../domain/dates";
+import { PersonDetailDialog } from "./person-detail-dialog";
+import { validateEvents } from "../domain/person-events";
+import { validateEventEvidence } from "../domain/validation";
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
 import { archiveDocumentPath } from "../domain/archive-routes.ts";
 import { DocumentSourcePicker } from "./document-source-picker.tsx";
@@ -62,8 +65,8 @@ function EventAlternatives({ event, onChange, isAdmin, canAssess, savedIds }: {
   </details>;
 }
 export function EventsEditor({
-  events,
-  onChange,
+  events: storedEvents,
+  onChange: commitEvents,
   personId,
   isAdmin,
   canAssess,
@@ -79,7 +82,31 @@ export function EventsEditor({
   section?: "events" | "education" | "legacy-marriage";
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<PersonEvent | null>(null);
   const [resetEventIds, setResetEventIds] = useState<Set<string>>(() => new Set());
+  const events = editing ? storedEvents.some((item) => item.id === editing.id)
+    ? storedEvents.map((item) => item.id === editing.id ? editing : item)
+    : [...storedEvents, editing] : storedEvents;
+  const onChange = (next: PersonEvent[]) => setEditing(next.find((item) => item.id === openId) || null);
+  const close = () => {
+    setEditing(null); setOpenId(null);
+    setResetEventIds((ids) => new Set([...ids].filter((id) => id !== openId)));
+  };
+  const apply = () => {
+    if (!editing) return;
+    const normalized = { ...editing,
+      date: editing.date ? normalizeDateInput(editing.date) : undefined,
+      endDate: editing.endDate ? normalizeDateInput(editing.endDate) : undefined,
+      alternatives: editing.alternatives?.map((item) => ({ ...item,
+        value: item.field === "date" ? normalizeDateInput(item.value) : item.value.trim() })),
+    };
+    validateEvents([normalized]);
+    validateEventEvidence(normalized);
+    commitEvents(storedEvents.some((item) => item.id === normalized.id)
+      ? storedEvents.map((item) => item.id === normalized.id ? normalized : item)
+      : [...storedEvents, normalized]);
+    close();
+  };
   const update = (id: string, patch: Partial<PersonEvent>) =>
     onChange(
       events.map((event) => (event.id === id ? { ...event, ...patch } : event)),
@@ -113,7 +140,8 @@ export function EventsEditor({
           <summary
             onClick={(e) => {
               e.preventDefault();
-              setOpenId(openId === event.id ? null : event.id);
+              setOpenId(event.id);
+              setEditing(structuredClone(event));
             }}
           >
             <span>
@@ -134,6 +162,9 @@ export function EventsEditor({
               </small>
             </span>
           </summary>
+          {openId === event.id && editing && <PersonDetailDialog
+            title={section === "education" ? "Образование" : "Событие жизни"}
+            onClose={close} onApply={apply}>
           <div className="life-event-fields">
             {section === "education" && <label className="education-school">
               Учебное заведение
@@ -176,7 +207,7 @@ export function EventsEditor({
                 />
               </label>
             )}
-            <label>
+            <label className="event-date-field">
               Дата
               <input
                 value={event.date ? dateInputLabel(event.date) : ""}
@@ -186,7 +217,7 @@ export function EventsEditor({
                 }
               />
             </label>
-            {section === "education" && <label>
+            {section === "education" && <label className="event-end-date-field">
               Окончание учёбы
               <input value={event.endDate ? dateInputLabel(event.endDate) : ""}
                 placeholder="Год или д.м.г"
@@ -427,17 +458,18 @@ export function EventsEditor({
                 </>}
               </div>
             </details>
-            <button
+            {storedEvents.some((item) => item.id === event.id) && <button
               className="event-remove"
               type="button"
               disabled={!canAssess && hasAssessment(event)}
-              onClick={() => onChange(events.filter((e) => e.id !== event.id))}
+              onClick={() => { commitEvents(storedEvents.filter((e) => e.id !== event.id)); close(); }}
             >
-              <Trash2 size={14} /> Убрать событие
-            </button>
+              <Trash2 size={14} /> {section === "education" ? "Убрать образование" : "Убрать событие"}
+            </button>}
             {!canAssess && hasAssessment(event) &&
               <small>Оценённое событие может удалить исследователь или администратор.</small>}
           </div>
+          </PersonDetailDialog>}
         </details>
       ))}
       {section !== "legacy-marriage" && <button
@@ -446,7 +478,7 @@ export function EventsEditor({
         disabled={events.length >= 200}
         onClick={() => {
           const id = crypto.randomUUID();
-          onChange([...events, { id, type: section === "education" ? "education" : "residence" }]);
+          setEditing({ id, type: section === "education" ? "education" : "residence" });
           setOpenId(id);
         }}
       >

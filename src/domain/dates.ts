@@ -1,12 +1,17 @@
 import type { Person } from "./types.ts";
 /** Каноническое хранение сохраняет точность: год, месяц или день. */
-export function validDate(value: unknown): value is string {
+export function validDate(value: unknown, calendar: "gregorian" | "julian" = "gregorian"): value is string {
   if (
     typeof value !== "string" ||
     !/^\d{4}(?:-\d{2}(?:-\d{2})?)?$/.test(value) ||
     Number(value.slice(0, 4)) < 1
   )
     return false;
+  if (calendar === "julian") {
+    const [year, month = 1, day = 1] = value.split("-").map(Number);
+    const days = [31, year % 4 === 0 ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    return month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1];
+  }
   const full =
     value.length === 4
       ? value + "-01-01"
@@ -18,7 +23,7 @@ export function validDate(value: unknown): value is string {
     new Date(full).toISOString().slice(0, 10) === full
   );
 }
-export function normalizeDateInput(value: string) {
+export function normalizeDateInput(value: string, calendar: "gregorian" | "julian" = "gregorian") {
   const text = value.trim();
   if (!text) return "";
   let result = text;
@@ -30,7 +35,7 @@ export function normalizeDateInput(value: string) {
   else if (month) result = `${month[2]}-${month[1].padStart(2, "0")}`;
   else if (iso)
     result = `${iso[1]}-${iso[2].padStart(2, "0")}${iso[3] ? "-" + iso[3].padStart(2, "0") : ""}`;
-  if (!validDate(result))
+  if (!validDate(result, calendar))
     throw new Error("Проверьте дату. Например: 1.5.1980, 05.1980 или 1980.");
   return result;
 }
