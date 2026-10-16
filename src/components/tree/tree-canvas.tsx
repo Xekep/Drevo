@@ -536,7 +536,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           ])
         : null,
     );
-  useDepthPlaneMotion(container, depthEnabled, depth.anchorId, ready);
+  const prepareDepthMotion = useDepthPlaneMotion(container, depthEnabled, depth.anchorId, ready);
   const nodeWidth = geometry?.nodeSize?.width ?? treeNodeSize().width;
   const nodeHeight = geometry?.nodeSize?.height ?? treeNodeSize().height;
   useEffect(() => {
@@ -2085,12 +2085,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         {depthEnabled && <TreeDepthLayers branches={depth.back} people={peopleMap}
           anchorId={depth.anchorId} geometry={geometry} previous={depth.previous} disabled={growthLocked}
           onChoose={(id) => {
+            prepareDepthMotion(id);
             if (depth.choose(id)) {
               setIntroCameraFinished(true); setManualCameraOverride(true);
               clearRestoreViewport(); returnToPerson(id);
             }
           }}
           onBack={() => {
+            if (depth.previous) prepareDepthMotion(depth.previous);
             if (depth.previous && depth.choose(depth.previous, true)) {
               clearRestoreViewport(); returnToPerson(depth.previous);
             }

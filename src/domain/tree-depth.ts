@@ -1,7 +1,8 @@
 import type { Family } from "./types.ts";
 import { familyNeighbors } from "./family-neighborhood.ts";
 
-export type DepthBranch = { anchorId: string; members: string[] };
+export type DepthConnection = { from: string; to: string; type: "parent" | "partner" };
+export type DepthBranch = { anchorId: string; members: string[]; connections: DepthConnection[] };
 
 /** A presentation of accessible people only; never infers or changes family links. */
 export function treeDepthBranches(
@@ -62,7 +63,24 @@ export function treeDepthBranches(
       members.find((id) =>
         [...(index.neighbors.get(id) || [])].some((near) => front.has(near)),
       ) || members[0];
-    back.push({ anchorId: anchor, members });
+    const connections: DepthConnection[] = [];
+    const included = new Set(members);
+    const partnerEdges = new Set<string>();
+    for (const id of members) {
+      const person = index.people.get(id)!;
+      for (const parent of person.parents)
+        if (front.has(parent) || included.has(parent)) connections.push({ from: parent, to: id, type: "parent" });
+      for (const child of index.children.get(id) || [])
+        if (front.has(child)) connections.push({ from: id, to: child, type: "parent" });
+      for (const partner of person.spouses) {
+        const key = JSON.stringify([id, partner].sort());
+        if ((front.has(partner) || included.has(partner)) && !partnerEdges.has(key)) {
+          partnerEdges.add(key);
+          connections.push({ from: id, to: partner, type: "partner" });
+        }
+      }
+    }
+    back.push({ anchorId: anchor, members, connections });
   }
   return { front, back };
 }
