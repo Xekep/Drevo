@@ -1,3 +1,4 @@
+import { savePersonDetails, finishPersonDetail } from "./person-editor-actions";
 import { expect, test } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family, Source } from "../../src/domain/types.ts";
@@ -57,16 +58,18 @@ test("редактор человека показывает каталожны�
   await expect(sources.nth(1).getByRole("link", { name: "Открыть источник" })).toHaveCount(0);
   await expect(sources.nth(1).locator("input, textarea, select")).toHaveCount(0);
 
+  await finishPersonDetail(page);
   const manual = sources.nth(2);
   await manual.locator(":scope > summary").click();
   await manual.getByLabel("Название").fill("Письмо семьи");
   await manual.getByLabel("Ссылка").fill("https://example.org/letter");
   await expect(manual.getByRole("button", { name: "Добавить хранилище источника" })).toBeVisible();
+  await finishPersonDetail(page);
   await linked.locator(":scope > summary").click();
   await linked.getByRole("button", { name: "Убрать источник 1" }).click();
   await expect(sources).toHaveCount(2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect.poll(() => family.people.find((person) => person.id === "e2e-child")?.sources.length).toBe(2);
   const saved = family.people.find((person) => person.id === "e2e-child")!.sources;
   expect(saved[0]).toEqual(unsafe);

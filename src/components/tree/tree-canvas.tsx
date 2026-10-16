@@ -897,6 +897,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     });
   const toggleBranch = useCallback(
     (id: string, occurrenceId?: string) => {
+      // An explicit branch action after growth owns the camera from this point.
+      introHandled.current = true;
+      setManualCameraOverride(true);
+      setIntroCameraFinished(true);
+      void flow.setViewport(flow.getViewport(), { duration: 0 });
       const occurrence =
         occurrenceId && positions.has(occurrenceId)
           ? occurrenceId
@@ -2078,7 +2083,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         )}
         </div>
         {depthEnabled && <TreeDepthLayers branches={depth.back} people={peopleMap}
-          anchorId={depth.anchorId} previous={depth.previous} disabled={growthLocked}
+          anchorId={depth.anchorId} geometry={geometry} previous={depth.previous} disabled={growthLocked}
           onChoose={(id) => {
             if (depth.choose(id)) {
               setIntroCameraFinished(true); setManualCameraOverride(true);

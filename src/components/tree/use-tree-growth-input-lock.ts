@@ -26,7 +26,7 @@ export function useTreeGrowthInputLock(
         event.type !== "wheel" &&
         event.target instanceof Element &&
         event.target.closest(
-          ".flow-person-content, .tree-mode-bar, .tree-display-actions",
+          ".flow-person-content, .flow-collapse, .flow-expand-family, .tree-depth-rear-person, .tree-depth-back-controls, .tree-mode-bar, .tree-display-actions",
         )
       )
         return;

@@ -101,18 +101,16 @@ test("2.5D switches whole branches, leaves profiles in place and restores normal
   const branch = page.getByRole("button", {
     name: /Перейти к ветви: Тестов sibling,/,
   });
-  await page
-    .getByRole("button", { name: "Следующие боковые ветви", exact: true })
-    .click();
-  await expect(branch).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Предыдущие боковые ветви", exact: true })
-    .click();
-  await expect(branch).toBeEnabled();
-  const planeBounds = await page.locator(".react-flow").boundingBox();
-  const layerBounds = await page.getByRole("navigation", { name: "Ветви 2.5D" }).boundingBox();
-  if (info.project.name === "mobile") expect(planeBounds!.y + planeBounds!.height).toBeLessThanOrEqual(layerBounds!.y + 1);
-  else expect(planeBounds!.x + planeBounds!.width).toBeLessThanOrEqual(layerBounds!.x + 1);
+  await expect(branch).toBeVisible();
+  expect(await branch.evaluate((node) => !!node.closest(".react-flow__viewport"))).toBe(true);
+  await expect(page.locator(".tree-depth-stack, .tree-depth-layers")).toHaveCount(0);
+  const before = await branch.boundingBox();
+  const pane = await page.locator(".react-flow").boundingBox();
+  await page.mouse.move(pane!.x + 12, pane!.y + pane!.height - 12);
+  await page.mouse.down();
+  await page.mouse.move(pane!.x + 60, pane!.y + pane!.height - 36, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.abs((await branch.boundingBox())!.x - before!.x)).toBeGreaterThan(20);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: info.outputPath("depth-branches.png") });
   await branch.focus();
@@ -139,6 +137,11 @@ test("2.5D switches whole branches, leaves profiles in place and restores normal
   await page
     .getByRole("button", { name: "Предыдущая ветвь", exact: true })
     .click();
+  await expect(scene).toHaveAttribute("data-depth-anchor", "me");
+  // Rear cards are real pointer targets on the canvas, not just keyboard links.
+  await page.getByRole("button", { name: /Перейти к ветви: Тестов sibling,/ }).click();
+  await expect(scene).toHaveAttribute("data-depth-anchor", "sibling");
+  await page.getByRole("button", { name: "Предыдущая ветвь", exact: true }).click();
   await expect(scene).toHaveAttribute("data-depth-anchor", "me");
   await page
     .getByRole("button", { name: "Настройки древа", exact: true })

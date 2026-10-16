@@ -1,3 +1,4 @@
+import { savePersonDetails } from "./person-editor-actions";
 import { expect, test } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
@@ -42,7 +43,7 @@ test("каталожный источник добавляется ко всей
   await section.getByRole("button", { name: "Выбрать из каталога" }).click();
   await section.getByLabel("Поиск источника").fill(title);
   await section.locator(".union-catalog-results").getByRole("button", { name: new RegExp(title) }).click();
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect.poll(() => readFamily().people.find((person) => person.id === "e2e-child")?.sources.at(-1)?.catalogId).toBe(source.id);
   expect(readFamily().people.find((person) => person.id === "e2e-child")?.events?.[0].sources?.[0].title).toBe("Семейная запись");
 
@@ -53,10 +54,10 @@ test("каталожный источник добавляется ко всей
   await event.locator(".event-extra > summary").click();
   await expect(event.getByLabel("Источник", { exact: true })).toHaveValue("Семейная запись");
   await expect(event.getByRole("button", { name: "Добавить источник", exact: true })).toHaveCount(0);
-  await event.getByLabel("Событие").selectOption("military");
+  await event.getByRole("combobox", { name: /^Событие/ }).selectOption("military");
   await expect(event.getByRole("status")).toContainText("из черновика сняты данные прежнего события");
   await expect(event.locator(".event-source-editor")).toHaveCount(0);
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect.poll(() => readFamily().people.find((person) => person.id === "e2e-child")?.events?.[0].type).toBe("military");
   expect(readFamily().people.find((person) => person.id === "e2e-child")?.events?.[0].sources).toBeUndefined();
   expect(readFamily().people.find((person) => person.id === "e2e-child")?.sources.at(-1)?.catalogId).toBe(source.id);

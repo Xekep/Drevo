@@ -1,3 +1,4 @@
+import { savePersonDetails, finishPersonDetail } from "./person-editor-actions";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
@@ -75,6 +76,7 @@ test("inline хранилище сохраняется у источника ч�
   const personSource = page.locator(".source-editor").last();
   await personSource.getByLabel("Название").fill("Метрическая книга");
   await fillRepository(personSource, "12");
+  await finishPersonDetail(page);
 
   await ensureOpen(page.locator(".event-editor"));
   const event = page.locator(".life-event-editor").last();
@@ -90,7 +92,7 @@ test("inline хранилище сохраняется у источника ч�
       () => document.documentElement.scrollWidth <= window.innerWidth + 1,
     ),
   ).toBe(true);
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect
     .poll(
       () =>
@@ -131,6 +133,7 @@ test("inline хранилище сохраняется у источника ч�
   await ensureOpen(savedPersonSource);
   await ensureOpen(savedPersonSource.locator(".source-repository-editor"));
   await savedPersonSource.getByLabel("Шифр хранилища (CALN)").fill("Ф. 12а");
+  await finishPersonDetail(page);
   await ensureOpen(page.locator(".event-editor"));
   const savedEvent = page
     .locator(".life-event-editor")
@@ -141,7 +144,7 @@ test("inline хранилище сохраняется у источника ч�
   await savedEvent
     .getByRole("button", { name: "Убрать сведения о хранилище" })
     .click();
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect
     .poll(
       () =>
@@ -230,7 +233,7 @@ test("пустое NAME нельзя спрятать или сохранить 
   await expect(repository.getByRole("alert")).toHaveText(
     "Укажите название хранилища перед сохранением.",
   );
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect(page.locator(".person-editor-form .form-error")).toHaveText(
     "Укажите название хранилища перед сохранением.",
   );
@@ -238,7 +241,7 @@ test("пустое NAME нельзя спрятать или сохранить 
     readFamily().people.find((person) => person.id === "e2e-child")?.sources,
   ).toEqual(beforeSources);
   await repository.getByLabel("Название хранилища (NAME)").fill("Архив");
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect
     .poll(
       () =>

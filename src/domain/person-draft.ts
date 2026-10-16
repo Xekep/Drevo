@@ -46,6 +46,14 @@ export function rebasePersonDraft(
   const next = structuredClone(fresh) as Person & Record<string, unknown>;
   const old = base as Person & Record<string, unknown>;
   const edited = draft as Person & Record<string, unknown>;
+  for (const kind of ["birth", "death"] as const) {
+    const calendar = `${kind}Julian` as const;
+    const pair = (p: Person) => [p[kind], p[calendar]];
+    if ((base[calendar] || fresh[calendar] || draft[calendar]) &&
+      !sameValue(pair(base), pair(draft)) && !sameValue(pair(base), pair(fresh)) &&
+      !sameValue(pair(draft), pair(fresh)))
+      throw new Error("Дата или календарь изменились в архиве. Обновите карточку и повторите правку.");
+  }
   for (const key of new Set([...Object.keys(old), ...Object.keys(edited)])) {
     if (sameValue(old[key], edited[key])) continue;
     if (isClaimKey(key)) {

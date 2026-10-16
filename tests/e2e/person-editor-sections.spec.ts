@@ -1,3 +1,4 @@
+import { savePersonDetails, finishPersonDetail } from "./person-editor-actions";
 import { expect, test, type Page } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type {
@@ -60,6 +61,74 @@ async function editor(
   await page.locator(".inspector-person-actions .person-edit-button").click();
   return () => family;
 }
+
+test("старый стиль сохраняет исходную дату и показывает пересчёт после повторного открытия", async ({ page }) => {
+  const read = await editor(page);
+  const form = page.locator(".person-editor-form");
+  await form.locator('[data-field="birth"]').fill("29.2.1900");
+  await form.getByRole("checkbox", { name: "Дата рождения по старому стилю" }).check();
+  await expect(form.locator('[data-field="birth"]')).not.toHaveAttribute("aria-invalid", "true");
+  await expect(form.getByText("Новый стиль: 13.03.1900", { exact: true })).toBeVisible();
+  await form.locator('[data-field="birth"]').fill("25.12.1965");
+  await expect(form.getByText("Новый стиль: 07.01.1966", { exact: true })).toBeVisible();
+  await form.locator('[data-field="death"]').fill("29.2.2000");
+  await form.getByRole("checkbox", { name: "Дата смерти по старому стилю" }).check();
+  await expect(form.getByText("Новый стиль: 13.03.2000", { exact: true })).toBeVisible();
+  await savePersonDetails(page);
+  await expect(form).toHaveCount(0);
+  const saved = read().people.find((person) => person.id === "e2e-child")!;
+  expect(saved).toMatchObject({ birth: "1966-01-07", birthJulian: "1965-12-25", death: "2000-03-13", deathJulian: "2000-02-29" });
+  await expect(page.getByText("25.12.1965 по старому стилю", { exact: false })).toBeVisible();
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  await expect(form.locator('[data-field="birth"]')).toHaveValue("25.12.1965");
+  await expect(form.getByRole("checkbox", { name: "Дата рождения по старому стилю" })).toBeChecked();
+  await expect(form.locator('[data-field="death"]')).toHaveValue("29.02.2000");
+});
+
+test("событие, образование и источник открываются по центру и применяются только через Готово", async ({ page }, info) => {
+  const read = await editor(page);
+  const form = page.locator(".person-editor-form");
+  const initial = structuredClone(read().people.find((person) => person.id === "e2e-child")!);
+  await form.locator(".event-editor > summary").click();
+  await form.getByRole("button", { name: "Добавить событие", exact: true }).click();
+  let dialog = page.getByRole("dialog", { name: "Событие жизни", exact: true });
+  const unloadPrevented = () => page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  await expect.poll(unloadPrevented).toBe(false);
+  await dialog.getByLabel("Дата", { exact: true }).fill("1991");
+  await expect.poll(unloadPrevented).toBe(true);
+  await dialog.getByRole("button", { name: "Отмена", exact: true }).click();
+  await expect.poll(unloadPrevented).toBe(false);
+  await expect(form.locator(".event-editor .life-event-editor")).toHaveCount(0);
+  await form.locator(".education-editor > summary").click();
+  await form.getByRole("button", { name: "Добавить образование", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Образование", exact: true });
+  const bounds = (await dialog.boundingBox())!, viewport = page.viewportSize()!;
+  expect(Math.abs(bounds.x + bounds.width / 2 - viewport.width / 2)).toBeLessThan(2);
+  expect(bounds.width).toBeLessThanOrEqual(viewport.width - 16);
+  await dialog.getByLabel("Учебное заведение").fill("Университет");
+  await dialog.getByLabel("Дата", { exact: true }).fill("1985");
+  await expect.poll(unloadPrevented).toBe(true);
+  await page.screenshot({ path: info.outputPath("education-dialog.png") });
+  await dialog.getByLabel("Дата", { exact: true }).press("Enter");
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(unloadPrevented).toBe(true);
+  await expect(form).toBeVisible();
+  expect(read().people.find((person) => person.id === initial.id)).toEqual(initial);
+  await form.locator(".person-sources-editor > summary").click();
+  await form.getByRole("button", { name: "+ Источник", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Источник", exact: true });
+  await dialog.getByLabel("Название", { exact: true }).fill("Семейная запись");
+  await dialog.getByRole("button", { name: "Отмена", exact: true }).click();
+  await expect(form.locator(".source-editor")).toHaveCount(initial.sources.length);
+  await savePersonDetails(page);
+  await expect(form).toHaveCount(0);
+  expect(read().people.find((person) => person.id === initial.id)!.events)
+    .toContainEqual(expect.objectContaining({ type: "education", title: "Университет", date: "1985" }));
+});
 
 test("круглый портрет и награды с подписями без перестановки полей", async ({
   page,
@@ -140,7 +209,7 @@ test("круглый портрет и награды с подписями бе
       path: info.outputPath(`person-awards-${width}.png`),
     });
   }
-  await form.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect(form).toHaveCount(0);
   expect(
     read().people.find((person) => person.id === "e2e-child")!.awards,
@@ -179,6 +248,7 @@ test("отдельные образование и брак, поиск толь
   const school = form.locator(".education-editor .life-event-editor");
   await school.locator(":scope > summary").click();
   await school.getByLabel("Дата", { exact: true }).fill("1982");
+  await finishPersonDetail(page);
   await form.locator(".person-marriages-editor > summary").click();
   const marriage = form.locator(".person-marriages-editor");
   const search = marriage.getByRole("combobox", { name: "Супруг / супруга" });
@@ -201,7 +271,7 @@ test("отдельные образование и брак, поиск толь
     "1.5.1990",
   );
   await marriage.getByLabel("Дата развода", { exact: true }).fill("1980");
-  await form.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect(form.locator(".form-error")).toContainText("раньше заключения");
   expect(read().unions).toEqual([]);
   await marriage.getByLabel("Дата развода", { exact: true }).fill("2001");
@@ -226,7 +296,7 @@ test("отдельные образование и брак, поиск толь
     ),
   ).toBe(true);
   await page.screenshot({ path: info.outputPath("person-editor-compact.png") });
-  await form.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect(form).toHaveCount(0);
   const saved = read().people.find((person) => person.id === "e2e-child")!;
   expect(saved.occupation).toBe("Инженер");
@@ -290,7 +360,7 @@ test("несколько браков одной пары редактируют
   await marriage.getByLabel("Брак с этим человеком").selectOption("second");
   await marriage.getByLabel("Дата брака", { exact: true }).fill("2002");
   await marriage.getByLabel("Дата развода", { exact: true }).fill("2010");
-  await form.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await savePersonDetails(page);
   await expect(form).toHaveCount(0);
   expect(read().unions![0]).toEqual(unions[0]);
   expect(read().unions![1]).toEqual({

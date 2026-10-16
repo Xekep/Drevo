@@ -149,7 +149,12 @@ test("each viewer can switch direction and colors; legacy card variants stay por
   );
   await expect(dialog.getByText("Портрет", { exact: true })).toHaveCount(0);
   await expect(dialog.getByText("Классика", { exact: true })).toHaveCount(0);
-  expect(bounds!.height).toBeLessThan(470);
+  // Presentation now has its own heading, like direction and theme.
+  const presentation = dialog.locator(".tree-presentation-setting");
+  const legend = (await presentation.locator("legend").boundingBox())!;
+  const options = (await presentation.locator(".tree-preference-options").boundingBox())!;
+  expect(options.y).toBeGreaterThanOrEqual(legend.y + legend.height);
+  expect(bounds!.height).toBeLessThan(Math.min(520, page.viewportSize()!.height - 24));
   await dialog.screenshot({
     path: testInfo.outputPath("tree-settings-dialog.png"),
   });
@@ -158,6 +163,8 @@ test("each viewer can switch direction and colors; legacy card variants stay por
     const narrowBounds = await dialog.boundingBox();
     expect(narrowBounds!.x).toBeGreaterThanOrEqual(0);
     expect(narrowBounds!.x + narrowBounds!.width).toBeLessThanOrEqual(320);
+    expect(narrowBounds!.y).toBeGreaterThanOrEqual(12);
+    expect(narrowBounds!.height).toBeLessThanOrEqual(616);
     await dialog.getByRole("radio", { name: "Белая" }).scrollIntoViewIfNeeded();
   }
 

@@ -1,11 +1,12 @@
 import { EXTRA_LINK_TYPES, type Family, type PersonEvent, type Source } from "./types.ts";
 import { isClaimConfidence } from "./claim-confidence.ts";
 import { validDate, dateBound, safeUrl } from "./dates.ts";
+import { validCalendarPair } from "./calendar-dates.ts";
 import { claimableEventDate, validateEvents } from "./person-events.ts";
 import { validateUnions } from "./family-unions.ts";
 import { validSourceRepository } from "./source-repository.ts";
 
-function validPersonSource(s: Source): boolean {
+export function validPersonSource(s: Source): boolean {
   return !!s &&
     (s.catalogId === undefined || (typeof s.catalogId === "string" &&
       /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(s.catalogId))) &&
@@ -79,6 +80,14 @@ export function validEventAlternatives(event: Pick<PersonEvent,
   }
   return true;
 }
+export function validateEventEvidence(event: PersonEvent) {
+  if (!validValueClaim(event.placeClaim, event.place))
+    throw new Error("Источник места события относится к другому значению; снимите связь перед изменением места");
+  if (!validValueClaim(event.dateClaim, claimableEventDate(event)))
+    throw new Error("Источник даты события относится к другому значению; снимите связь перед изменением даты");
+  if (!validEventAlternatives(event))
+    throw new Error("Проверьте альтернативные значения события: каждому варианту нужен отдельный источник");
+}
 export function validateFamily(value: unknown): Family {
   if (!value || typeof value !== "object")
     throw new Error("Некорректный формат архива");
@@ -94,6 +103,8 @@ export function validateFamily(value: unknown): Family {
   const ids = new Set<string>();
   const today = new Date().toISOString().slice(0, 10);
   for (const p of data.people) {
+    if (p && (!validCalendarPair(p.birth, p.birthJulian) || !validCalendarPair(p.death, p.deathJulian)))
+      throw new Error("Дата по старому стилю не соответствует дате по новому стилю.");
     validateEvents(p?.events);
     if (p?.deceased !== undefined && typeof p.deceased !== "boolean")
       throw new Error("Некорректный признак смерти");
@@ -153,15 +164,7 @@ export function validateFamily(value: unknown): Family {
         throw new Error("Некорректные сведения о человеке");
     for (const s of p.sources)
       if (!validPersonSource(s)) throw new Error("Некорректный источник");
-    for (const event of p.events || [])
-      if (!validValueClaim(event.placeClaim, event.place))
-        throw new Error("Источник места события относится к другому значению; снимите связь перед изменением места");
-    for (const event of p.events || [])
-      if (!validValueClaim(event.dateClaim, claimableEventDate(event)))
-        throw new Error("Источник даты события относится к другому значению; снимите связь перед изменением даты");
-    for (const event of p.events || [])
-      if (!validEventAlternatives(event))
-        throw new Error("Проверьте альтернативные значения события: каждому варианту нужен отдельный источник");
+    for (const event of p.events || []) validateEventEvidence(event);
     if (!validValueClaim(p.birthDateClaim, p.birth))
       throw new Error("Источник даты рождения относится к другому значению; снимите связь перед изменением даты");
     if (!validValueClaim(p.deathDateClaim, p.death))

@@ -1,12 +1,7 @@
+import { PersonSourcesEditor } from "./person-sources-editor";
 import { useEffect, useRef, useState, useId, type FormEvent } from "react";
 import type { EditorFocusRequest } from "../hooks/useWorkspaceFocus";
-import { PersonDocumentsEditor } from "./person-documents-editor";
-import { DocumentSourcePicker } from "./document-source-picker";
-import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
-import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
-import { archiveDocumentPath } from "../domain/archive-routes.ts";
-import { CatalogPicker, CitationSourcesEditor } from "./union-sources-editor.tsx";
-import { sourceCitation } from "../shared/source-catalog.ts";
+import { CitationSourcesEditor } from "./union-sources-editor.tsx";
 import { PersonAlternativeClaims } from "./person-alternative-claims.tsx";
 import {
   Pencil,
@@ -15,7 +10,6 @@ import {
   Undo2,
   CalendarDays,
   BookOpen,
-  Files,
   UsersRound,
   ContactRound,
 } from "lucide-react";
@@ -36,7 +30,6 @@ import {
   birthSurnameHints,
   deceasedStatusSuggestion,
   removePerson,
-  safeUrl,
   type Connection,
   type ConnectionType,
   type Family,
@@ -49,6 +42,8 @@ import {
   owns,
 } from "../domain";
 import { EditorDialog } from "./editor-dialog";
+import { normalizeLifeDate, julianInputLabel } from "../domain/calendar-dates";
+import { CalendarStyleControl } from "./calendar-style-control";
 import { PlaceField } from "./place-field";
 import { AwardsEditor } from "./person-awards";
 import { EventsEditor } from "./person-events";
@@ -197,14 +192,15 @@ export function PersonEditor({
   const [autoSex, setAutoSex] = useState(!person || person.sex === "u");
   const [accepted, setAccepted] = useState<string[]>([]);
   const [birthText, setBirthText] = useState(
-    dateInputLabel(person?.birth || ""),
+    person?.birthJulian ? julianInputLabel(person.birthJulian) : dateInputLabel(person?.birth || ""),
   );
   const [deathText, setDeathText] = useState(
-    dateInputLabel(person?.death || ""),
+    person?.deathJulian ? julianInputLabel(person.deathJulian) : dateInputLabel(person?.death || ""),
   );
-  const hintDate = (value: string) => {
+  const [oldStyles, setOldStyles] = useState({ birth: !!person?.birthJulian, death: !!person?.deathJulian });
+  const hintDate = (value: string, kind: "birth" | "death") => {
     try {
-      return normalizeDateInput(value);
+      return normalizeLifeDate(value, oldStyles[kind]).date;
     } catch {
       return "";
     }
@@ -221,9 +217,9 @@ export function PersonEditor({
     [],
   );
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [detailDirty, setDetailDirty] = useState(false);
   const [baselineUnions] = useState(() => structuredClone(family.unions || []));
   const [unionDrafts, setUnionDrafts] = useState<FamilyUnion[]>([]);
-  const [openSourceIndex, setOpenSourceIndex] = useState(-1);
   const formRef = useRef<HTMLFormElement>(null);
   const fieldId = useId();
   const snapshot = JSON.stringify([
@@ -231,6 +227,7 @@ export function PersonEditor({
     nameText,
     birthText,
     deathText,
+    oldStyles,
     autoSex,
     relationship,
     twinKind,
@@ -240,7 +237,7 @@ export function PersonEditor({
     unionDrafts,
   ]);
   const [initialSnapshot] = useState(snapshot);
-  const dirty = initialSnapshot !== snapshot;
+  const dirty = initialSnapshot !== snapshot || detailDirty;
   useUnsavedChanges(dirty);
   useEffect(() => {
     onDirtyChange?.(dirty);
@@ -257,12 +254,19 @@ export function PersonEditor({
         const parts = splitFullName(value);
         if (!parts.name.trim() || !parts.surname.trim())
           problem = "Укажите фамилию и имя. Отчество необязательно.";
-      } else normalizeDateInput(value);
+      } else normalizeLifeDate(value, oldStyles[key]);
     } catch (error) {
       problem = (error as Error).message;
     }
     setFieldErrors((current) => ({ ...current, [key]: problem }));
     return problem;
+  }
+  function changeDateStyle(kind: "birth" | "death", checked: boolean) {
+    setOldStyles((old) => ({ ...old, [kind]: checked }));
+    let problem = "";
+    try { normalizeLifeDate(kind === "birth" ? birthText : deathText, checked); }
+    catch (error) { problem = (error as Error).message; }
+    setFieldErrors((old) => ({ ...old, [kind]: problem }));
   }
   const portraitPhotos = (family.photos || []).filter((photo) =>
     photo.tags.some((tag) => tag.personId === draft.id),
@@ -286,8 +290,8 @@ export function PersonEditor({
     guessSex({ name: nameParts[1], patronymic: "" }) === "u";
   const hintDraft = {
     ...draft,
-    birth: hintDate(birthText),
-    death: hintDate(deathText) || undefined,
+    birth: hintDate(birthText, "birth"),
+    death: hintDate(deathText, "death") || undefined,
     sex: autoSex ? suggestedSex : draft.sex,
     parents:
       !person && relativeTo && relationship === "child"
@@ -399,8 +403,9 @@ export function PersonEditor({
       if (draft.events?.some((event) => event.alternatives?.some((alternative) =>
         !alternative.value.trim() || !alternative.sources.length)))
         throw new Error("У каждого альтернативного варианта события должны быть значение и источник.");
-      const birth = normalizeDateInput(birthText),
-        death = normalizeDateInput(deathText) || undefined;
+      const birthDate = normalizeLifeDate(birthText, oldStyles.birth),
+        deathDate = normalizeLifeDate(deathText, oldStyles.death),
+        birth = birthDate.date, death = deathDate.date || undefined;
       const current = family;
       let portrait = draft.photo;
       if (portraitFile) {
@@ -413,6 +418,8 @@ export function PersonEditor({
         ...draft,
         birth,
         death,
+        birthJulian: birthDate.julian,
+        deathJulian: deathDate.julian,
         factAlternatives: draft.factAlternatives?.map((alternative) => ({
           ...alternative,
           value: alternative.field === "birth" || alternative.field === "death"
@@ -498,7 +505,7 @@ export function PersonEditor({
   function dateEvidenceStatus(kind: "birth" | "death") {
     const dateClaim = kind === "birth" ? draft.birthDateClaim : draft.deathDateClaim;
     const placeClaim = kind === "birth" ? draft.birthPlaceClaim : draft.deathPlaceClaim;
-    const date = hintDate(kind === "birth" ? birthText : deathText);
+    const date = hintDate(kind === "birth" ? birthText : deathText, kind);
     const place = kind === "birth" ? draft.birthPlace : draft.deathPlace || "";
     if ((dateClaim && dateClaim.value !== date) ||
         (placeClaim && placeClaim.value !== place)) return " · требуется решение";
@@ -703,7 +710,7 @@ export function PersonEditor({
             <section className="person-date-group" key={kind}>
               <h3>{kind === "birth" ? "Рождение" : "Смерть"}</h3>
               <div className="form-grid">
-                <label>
+                <div className="calendar-date-field"><label>
                   Дата
                   <input
                     data-field={kind}
@@ -723,9 +730,10 @@ export function PersonEditor({
                       );
                       try {
                         (kind === "birth" ? setBirthText : setDeathText)(
-                          dateInputLabel(
+                          (oldStyles[kind] ? julianInputLabel : dateInputLabel)(
                             normalizeDateInput(
                               kind === "birth" ? birthText : deathText,
+                              oldStyles[kind] ? "julian" : "gregorian",
                             ),
                           ),
                         );
@@ -734,14 +742,14 @@ export function PersonEditor({
                       }
                     }}
                   />
-                  <small
-                    id={`${fieldId}-${kind}-error`}
-                    className="field-error"
-                    role="alert"
-                  >
-                    {fieldErrors[kind]}
-                  </small>
                 </label>
+                <CalendarStyleControl text={kind === "birth" ? birthText : deathText}
+                  label={kind === "birth" ? "Дата рождения по старому стилю" : "Дата смерти по старому стилю"}
+                  checked={oldStyles[kind]} onChange={(checked) => changeDateStyle(kind, checked)} />
+                <small id={`${fieldId}-${kind}-error`} className="field-error" role="alert">
+                  {fieldErrors[kind]}
+                </small>
+                </div>
                 <PlaceField
                   label="Место"
                   value={
@@ -770,7 +778,7 @@ export function PersonEditor({
                 <ValueClaimSourcesEditor
                   kind={kind}
                   subject="date"
-                  value={hintDate(kind === "birth" ? birthText : deathText)}
+                  value={hintDate(kind === "birth" ? birthText : deathText, kind)}
                   claim={kind === "birth" ? draft.birthDateClaim : draft.deathDateClaim}
                   onChange={(claim) => field(kind === "birth" ? "birthDateClaim" : "deathDateClaim", claim)}
                   isAdmin={isAdmin}
@@ -980,6 +988,7 @@ export function PersonEditor({
         </details>
         <EventsEditor
           section="education"
+          onEditingChange={setDetailDirty}
           events={draft.events || []}
           savedEvents={person?.events}
           onChange={(events) => field("events", events)}
@@ -998,6 +1007,7 @@ export function PersonEditor({
         />
         <EventsEditor
           section="legacy-marriage"
+          onEditingChange={setDetailDirty}
           events={draft.events || []}
           savedEvents={person?.events}
           onChange={(events) => field("events", events)}
@@ -1007,137 +1017,16 @@ export function PersonEditor({
         />
         <EventsEditor
           events={draft.events || []}
+          onEditingChange={setDetailDirty}
           savedEvents={person?.events}
           onChange={(events) => field("events", events)}
           personId={person?.id}
           isAdmin={isAdmin}
           canAssess={canAssessArchiveEvidence(user)}
         />
-        <details className="form-details">
-          <summary>
-            <Files size={17} aria-hidden="true" />
-            Источники
-          </summary>
-          <section>
-            <p className="field-hint">Общие источники о человеке.</p>
-            {draft.sources.map((s, i) => (
-              <details className="source-editor" key={i} open={openSourceIndex === i}>
-                <summary onClick={(event) => {
-                  event.preventDefault();
-                  setOpenSourceIndex(openSourceIndex === i ? -1 : i);
-                }}><BookOpen size={15} aria-hidden="true" /><span>{s.title || "Новый источник"}
-                  {s.reference && <small>{s.reference}</small>}</span></summary>
-                <div className="person-source-fields">
-                {s.catalogId ? <div className="source-catalog-citation">
-                  <small>Источник из каталога{s.type ? ` · ${s.type}` : ""}</small>
-                  <strong>{s.title}</strong>
-                  {s.reference && <span>{s.reference}</span>}
-                  {s.note && <span>{s.note}</span>}
-                  {safeUrl(s.url) && <a href={archiveResourceUrl(safeUrl(s.url) || "")}
-                    target="_blank" rel="noopener noreferrer">Открыть источник</a>}
-                  {s.documentId && <a
-                    href={scopedArchivePath(archiveDocumentPath(null, s.documentId, s.documentPage))}
-                    target="_blank" rel="noopener noreferrer">Открыть документ{s.documentPage
-                      ? ` · стр. ${s.documentPage}` : ""}</a>}
-                </div> : <>
-                <SourceRepositoryEditor source={s} onChange={(next) =>
-                  field("sources", draft.sources.map((source, index) =>
-                    index === i ? next : source))} />
-                {(
-                  [
-                    ["title", "Название"],
-                    ["type", "Тип документа"],
-                    ["reference", "Архивный шифр"],
-                    ["url", "Ссылка"],
-                    ["note", "Примечание"],
-                  ] as const
-                ).map(([key, label]) => (
-                  <label key={key} className={`person-source-${key}`}>
-                    {label}
-                    {key === "note" ? <textarea rows={2} value={s.note || ""}
-                      onChange={(e) => field("sources", draft.sources.map((x, j) =>
-                        i === j ? { ...x, note: e.target.value } : x))} /> : <input
-                      value={s[key] || ""}
-                      onChange={(e) =>
-                        field(
-                          "sources",
-                          draft.sources.map((x, j) =>
-                            i === j ? { ...x, [key]: e.target.value } : x,
-                          ),
-                        )
-                      }
-                    />}
-                  </label>
-                ))}
-                <DocumentSourcePicker
-                  personId={person?.id}
-                  documentId={s.documentId}
-                  pageNumber={s.documentPage}
-                  onChange={(document) =>
-                    field(
-                      "sources",
-                      draft.sources.map((source, index) =>
-                        i === index
-                          ? {
-                              ...source,
-                              title: source.title || document?.title || "",
-                              documentId: document?.id,
-                              documentPage:
-                                document?.id === source.documentId
-                                  ? source.documentPage
-                                  : undefined,
-                            }
-                          : source,
-                      ),
-                    )
-                  }
-                  onPageChange={(documentPage) =>
-                    field(
-                      "sources",
-                      draft.sources.map((source, index) =>
-                        i === index ? { ...source, documentPage } : source,
-                      ),
-                    )
-                  }
-                />
-                </>}
-                <button
-                  type="button"
-                  className="icon-button source-remove"
-                  aria-label={`Убрать источник ${i + 1}`}
-                  title="Убрать источник"
-                  onClick={() =>
-                    field(
-                      "sources",
-                      draft.sources.filter((_, j) => i !== j),
-                    )
-                  }
-                >
-                  <Trash2 size={16} />
-                </button>
-                </div>
-              </details>
-            ))}
-            <button
-              type="button"
-              disabled={draft.sources.length >= 50}
-              onClick={() => {
-                setOpenSourceIndex(draft.sources.length);
-                field("sources", [
-                  ...draft.sources,
-                  { title: "", type: "", reference: "" },
-                ]);
-              }}
-            >
-              + Источник
-            </button>
-            {isAdmin && draft.sources.length < 50 && <CatalogPicker
-              existing={draft.sources}
-              onChoose={(entry) => field("sources", [...draft.sources, sourceCitation(entry)])}
-            />}
-          </section>
-          <PersonDocumentsEditor personId={person?.id} disabled={busy} />
-        </details>
+        <PersonSourcesEditor sources={draft.sources} onChange={(sources) => field("sources", sources)}
+          onEditingChange={setDetailDirty}
+          personId={person?.id} isAdmin={isAdmin} busy={busy} />
         <details className="form-details">
           <summary>
             <UsersRound size={17} aria-hidden="true" />

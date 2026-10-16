@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode, type KeyboardEventHandler } from "react";
 import { X } from "lucide-react";
 import { MemberPreviewExit } from "./member-preview-exit";
 import { useInlineEditorFocus, type EditorFocusRequest } from "../hooks/useWorkspaceFocus";
@@ -13,6 +13,7 @@ export function EditorDialog({
   headerActions,
   dismissOnOutside = false,
   focusRequest,
+  onDialogKeyDown,
 }: {
   title: string;
   onClose: () => void;
@@ -24,6 +25,7 @@ export function EditorDialog({
   headerActions?: ReactNode;
   dismissOnOutside?: boolean;
   focusRequest?: EditorFocusRequest;
+  onDialogKeyDown?: KeyboardEventHandler<HTMLDialogElement>;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const inlineRef = useRef<HTMLElement>(null);
@@ -86,6 +88,7 @@ export function EditorDialog({
         onClose();
       }}
       aria-label={title}
+      onKeyDown={onDialogKeyDown}
     >
       <MemberPreviewExit />
       <header>

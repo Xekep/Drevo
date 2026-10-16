@@ -13,6 +13,7 @@ import type {
 import { EXTRA_LINK_TYPES } from "./types.ts";
 import { isClaimConfidence } from "./claim-confidence.ts";
 import { validDate, fullName, safeUrl } from "./dates.ts";
+import { julianToGregorian } from "./calendar-dates.ts";
 import { validateFamily, validEventAlternatives } from "./validation.ts";
 import { claimableEventDate, EVENT_NAMES } from "./person-events.ts";
 import { parseDocumentDetails } from "../shared/document-details.ts";
@@ -199,6 +200,14 @@ function gedcomDate(text: string): string | undefined {
 function exportDate(date: string) {
   const [y, m, d] = date.split("-");
   return `${d ? `${Number(d)} ` : ""}${m ? `${months[Number(m) - 1]} ` : ""}${y}`;
+}
+function julianGedcomDate(raw: string) {
+  const match = /^(?:@#DJULIAN@|JULIAN) (?:(\d{1,2}) )?(?:([A-Z]{3}) )?(\d{4})$/i.exec(raw.trim());
+  if (!match) return undefined;
+  const month = match[2] ? months.indexOf(match[2].toUpperCase()) + 1 : 0;
+  if ((match[2] && !month) || (match[1] && !month)) return undefined;
+  const original = `${match[3]}${month ? `-${String(month).padStart(2, "0")}` : ""}${match[1] ? `-${match[1].padStart(2, "0")}` : ""}`;
+  try { return { original, date: julianToGregorian(original) }; } catch { return undefined; }
 }
 
 function portableDate(
@@ -699,7 +708,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     if (n.tag === "ADOP" && child(n, "FAMC"))
       warnings.add("Привязка события ADOP.FAMC к конкретной приёмной семье не перенесена; событие и родительские связи сохранены отдельно.");
     const raw = value(n, "DATE"),
-      date = gedcomDate(raw);
+      date = ((n.tag === "BIRT" || n.tag === "DEAT") && julianGedcomDate(raw)?.date) || gedcomDate(raw);
     const phrase = child(n, "DATE") ? value(child(n, "DATE")!, "PHRASE") : "";
     const period = /^FROM (.+) TO (.+)$/.exec(raw),
       start = period && gedcomDate(period[1]),
@@ -829,8 +838,10 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       );
     const birth = child(n, "BIRT"),
       death = child(n, "DEAT");
-    const parsedBirthDate = birth ? gedcomDate(value(birth, "DATE")) || "" : "";
-    const parsedDeathDate = death ? gedcomDate(value(death, "DATE")) || "" : "";
+    const birthJulian = birth && julianGedcomDate(value(birth, "DATE"));
+    const deathJulian = death && julianGedcomDate(value(death, "DATE"));
+    const parsedBirthDate = birthJulian?.date || (birth ? gedcomDate(value(birth, "DATE")) || "" : "");
+    const parsedDeathDate = deathJulian?.date || (death ? gedcomDate(value(death, "DATE")) || "" : "");
     const parsedBirthPlace = birth ? value(birth, "PLAC") : "";
     const parsedDeathPlace = death ? value(death, "PLAC") : "";
     const birthSources = eventClaimSources(birth, parsedBirthDate, parsedBirthPlace, "BIRTH");
@@ -880,10 +891,12 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       patronymic: value(n, "_PATR"),
       sex: value(n, "SEX") === "M" ? "m" : value(n, "SEX") === "F" ? "f" : "u",
       birth: parsedBirthDate,
+      ...(birthJulian ? { birthJulian: birthJulian.original } : {}),
       ...(birthSources.date.length
         ? { birthDateClaim: valueClaim(parsedBirthDate, birthSources.date, birth, "_DREVO_DATE_CONFIDENCE") }
         : {}),
       death: parsedDeathDate || undefined,
+      ...(deathJulian ? { deathJulian: deathJulian.original } : {}),
       ...(deathSources.date.length
         ? { deathDateClaim: valueClaim(parsedDeathDate, deathSources.date, death, "_DREVO_DATE_CONFIDENCE") }
         : {}),
@@ -2107,7 +2120,9 @@ export function exportGedcom(
           (kind === "death" && p.deceased))
       ) {
         emit(1, kind === "birth" ? "BIRT" : "DEAT", "Y");
-        if (p[kind]) emit(2, "DATE", exportDate(p[kind]));
+        if (p[kind]) emit(2, "DATE", p[`${kind}Julian`]
+          ? `${modern ? "JULIAN" : "@#DJULIAN@"} ${exportDate(p[`${kind}Julian`]!)}`
+          : exportDate(p[kind]));
         emitPlace(2, p[`${kind}Place`], p[`${kind}Location`]);
         emitEventClaims(kind);
       }
@@ -2210,7 +2225,9 @@ export function exportGedcom(
           : "",
       );
       emit(2, "TYPE", e.title || EVENT_NAMES[e.type]);
-      if (e.date)
+      if (kind && p[`${kind}Julian`])
+        emit(2, "DATE", `${modern ? "JULIAN" : "@#DJULIAN@"} ${exportDate(p[`${kind}Julian`]!)}`);
+      else if (e.date)
         emit(
           2,
           "DATE",
