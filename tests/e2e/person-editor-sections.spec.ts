@@ -65,8 +65,11 @@ async function editor(
 test("старый стиль сохраняет исходную дату и показывает пересчёт после повторного открытия", async ({ page }) => {
   const read = await editor(page);
   const form = page.locator(".person-editor-form");
-  await form.locator('[data-field="birth"]').fill("25.12.1965");
+  await form.locator('[data-field="birth"]').fill("29.2.1900");
   await form.getByRole("checkbox", { name: "Дата рождения по старому стилю" }).check();
+  await expect(form.locator('[data-field="birth"]')).not.toHaveAttribute("aria-invalid", "true");
+  await expect(form.getByText("Новый стиль: 13.03.1900", { exact: true })).toBeVisible();
+  await form.locator('[data-field="birth"]').fill("25.12.1965");
   await expect(form.getByText("Новый стиль: 07.01.1966", { exact: true })).toBeVisible();
   await form.locator('[data-field="death"]').fill("29.2.2000");
   await form.getByRole("checkbox", { name: "Дата смерти по старому стилю" }).check();

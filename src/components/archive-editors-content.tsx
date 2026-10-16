@@ -260,6 +260,13 @@ export function PersonEditor({
     setFieldErrors((current) => ({ ...current, [key]: problem }));
     return problem;
   }
+  function changeDateStyle(kind: "birth" | "death", checked: boolean) {
+    setOldStyles((old) => ({ ...old, [kind]: checked }));
+    let problem = "";
+    try { normalizeLifeDate(kind === "birth" ? birthText : deathText, checked); }
+    catch (error) { problem = (error as Error).message; }
+    setFieldErrors((old) => ({ ...old, [kind]: problem }));
+  }
   const portraitPhotos = (family.photos || []).filter((photo) =>
     photo.tags.some((tag) => tag.personId === draft.id),
   );
@@ -734,17 +741,13 @@ export function PersonEditor({
                       }
                     }}
                   />
-                  <small
-                    id={`${fieldId}-${kind}-error`}
-                    className="field-error"
-                    role="alert"
-                  >
-                    {fieldErrors[kind]}
-                  </small>
                 </label>
                 <CalendarStyleControl text={kind === "birth" ? birthText : deathText}
                   label={kind === "birth" ? "Дата рождения по старому стилю" : "Дата смерти по старому стилю"}
-                  checked={oldStyles[kind]} onChange={(checked) => setOldStyles((old) => ({ ...old, [kind]: checked }))} />
+                  checked={oldStyles[kind]} onChange={(checked) => changeDateStyle(kind, checked)} />
+                <small id={`${fieldId}-${kind}-error`} className="field-error" role="alert">
+                  {fieldErrors[kind]}
+                </small>
                 </div>
                 <PlaceField
                   label="Место"
