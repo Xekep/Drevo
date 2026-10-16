@@ -1,5 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
 import { EditorDialog } from "./editor-dialog";
+import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
 
 /** A focused sub-editor. Its controls remain separate from the person save action. */
 export function PersonDetailDialog({
@@ -7,12 +8,17 @@ export function PersonDetailDialog({
   children,
   onApply,
   onClose,
+  dirty = false,
+  onDirtyChange,
 }: {
   title: string;
   children: ReactNode;
   onApply: () => void;
   onClose: () => void;
+  dirty?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
+  useUnsavedChanges(dirty, onDirtyChange);
   const body = useRef<HTMLDivElement>(null);
   const [error, setError] = useState("");
   const apply = () => {

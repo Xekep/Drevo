@@ -21,12 +21,14 @@ export function PersonSourcesEditor({
   personId,
   isAdmin,
   busy,
+  onEditingChange,
 }: {
   sources: Source[];
   onChange: (sources: Source[]) => void;
   personId?: string;
   isAdmin: boolean;
   busy: boolean;
+  onEditingChange?: (dirty: boolean) => void;
 }) {
   const [editing, setEditing] = useState<{
     index: number;
@@ -84,6 +86,9 @@ export function PersonSourcesEditor({
               {editing?.index === index && (
                 <PersonDetailDialog
                   title="Источник"
+                  dirty={JSON.stringify(editing.source) !== JSON.stringify(sources[editing.index]
+                    || { title: "", type: "", reference: "" })}
+                  onDirtyChange={onEditingChange}
                   onClose={close}
                   onApply={apply}
                 >

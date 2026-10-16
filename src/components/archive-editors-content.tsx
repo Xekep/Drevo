@@ -217,6 +217,7 @@ export function PersonEditor({
     [],
   );
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [detailDirty, setDetailDirty] = useState(false);
   const [baselineUnions] = useState(() => structuredClone(family.unions || []));
   const [unionDrafts, setUnionDrafts] = useState<FamilyUnion[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
@@ -236,7 +237,7 @@ export function PersonEditor({
     unionDrafts,
   ]);
   const [initialSnapshot] = useState(snapshot);
-  const dirty = initialSnapshot !== snapshot;
+  const dirty = initialSnapshot !== snapshot || detailDirty;
   useUnsavedChanges(dirty);
   useEffect(() => {
     onDirtyChange?.(dirty);
@@ -987,6 +988,7 @@ export function PersonEditor({
         </details>
         <EventsEditor
           section="education"
+          onEditingChange={setDetailDirty}
           events={draft.events || []}
           savedEvents={person?.events}
           onChange={(events) => field("events", events)}
@@ -1005,6 +1007,7 @@ export function PersonEditor({
         />
         <EventsEditor
           section="legacy-marriage"
+          onEditingChange={setDetailDirty}
           events={draft.events || []}
           savedEvents={person?.events}
           onChange={(events) => field("events", events)}
@@ -1014,6 +1017,7 @@ export function PersonEditor({
         />
         <EventsEditor
           events={draft.events || []}
+          onEditingChange={setDetailDirty}
           savedEvents={person?.events}
           onChange={(events) => field("events", events)}
           personId={person?.id}
@@ -1021,6 +1025,7 @@ export function PersonEditor({
           canAssess={canAssessArchiveEvidence(user)}
         />
         <PersonSourcesEditor sources={draft.sources} onChange={(sources) => field("sources", sources)}
+          onEditingChange={setDetailDirty}
           personId={person?.id} isAdmin={isAdmin} busy={busy} />
         <details className="form-details">
           <summary>

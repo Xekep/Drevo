@@ -92,8 +92,16 @@ test("событие, образование и источник открыва�
   await form.locator(".event-editor > summary").click();
   await form.getByRole("button", { name: "Добавить событие", exact: true }).click();
   let dialog = page.getByRole("dialog", { name: "Событие жизни", exact: true });
+  const unloadPrevented = () => page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  await expect.poll(unloadPrevented).toBe(false);
   await dialog.getByLabel("Дата", { exact: true }).fill("1991");
+  await expect.poll(unloadPrevented).toBe(true);
   await dialog.getByRole("button", { name: "Отмена", exact: true }).click();
+  await expect.poll(unloadPrevented).toBe(false);
   await expect(form.locator(".event-editor .life-event-editor")).toHaveCount(0);
   await form.locator(".education-editor > summary").click();
   await form.getByRole("button", { name: "Добавить образование", exact: true }).click();
@@ -103,9 +111,11 @@ test("событие, образование и источник открыва�
   expect(bounds.width).toBeLessThanOrEqual(viewport.width - 16);
   await dialog.getByLabel("Учебное заведение").fill("Университет");
   await dialog.getByLabel("Дата", { exact: true }).fill("1985");
+  await expect.poll(unloadPrevented).toBe(true);
   await page.screenshot({ path: info.outputPath("education-dialog.png") });
   await dialog.getByLabel("Дата", { exact: true }).press("Enter");
   await expect(dialog).toHaveCount(0);
+  await expect.poll(unloadPrevented).toBe(true);
   await expect(form).toBeVisible();
   expect(read().people.find((person) => person.id === initial.id)).toEqual(initial);
   await form.locator(".person-sources-editor > summary").click();

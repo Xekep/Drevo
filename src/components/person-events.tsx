@@ -71,6 +71,7 @@ export function EventsEditor({
   isAdmin,
   canAssess,
   savedEvents,
+  onEditingChange,
   section = "events",
 }: {
   events: PersonEvent[];
@@ -79,6 +80,7 @@ export function EventsEditor({
   isAdmin: boolean;
   canAssess: boolean;
   savedEvents?: PersonEvent[];
+  onEditingChange?: (dirty: boolean) => void;
   section?: "events" | "education" | "legacy-marriage";
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -164,6 +166,9 @@ export function EventsEditor({
           </summary>
           {openId === event.id && editing && <PersonDetailDialog
             title={section === "education" ? "Образование" : "Событие жизни"}
+            dirty={JSON.stringify(editing) !== JSON.stringify(storedEvents.find((item) => item.id === editing.id)
+              || { id: editing.id, type: section === "education" ? "education" : "residence" })}
+            onDirtyChange={onEditingChange}
             onClose={close} onApply={apply}>
           <div className="life-event-fields">
             {section === "education" && <label className="education-school">
