@@ -409,7 +409,7 @@ test("member preview keeps all archive sections and deep links in the member sco
     ["families", "Семьи"],
     ["photos", "Семейный альбом"],
     ["documents", "Документы"],
-    ["places", "Места, которые нас связывают"],
+    ["places", "Места"],
     ["insights", "Сводка архива"],
     ["resources", "Ресурсы поиска"],
   ] as const) {

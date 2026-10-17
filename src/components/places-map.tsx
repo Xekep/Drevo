@@ -450,14 +450,7 @@ export default function PlacesMap({
       : points;
   return (
     <section className="places-workspace">
-      <header className="places-heading">
-        <h1>Места, которые нас связывают</h1>
-        <p>
-          {places.length} {plural(places.length, "место", "места", "мест")} ·{" "}
-          {points.length} на карте
-          {loading ? " · ищем остальные…" : ""}
-        </p>
-      </header>
+      <h1 className="sr-only">Места</h1>
       <div className="places-content">
         <MapSurface
           points={displayPoints}
@@ -500,6 +493,11 @@ export default function PlacesMap({
               <X size={20} />
             </button>
           </div>
+          <p className="places-count">
+            {places.length} {plural(places.length, "место", "места", "мест")} ·{" "}
+            {points.length} на карте
+            {loading ? " · ищем остальные…" : ""}
+          </p>
           {!current ? (
             <>
               <p className="places-intro">
