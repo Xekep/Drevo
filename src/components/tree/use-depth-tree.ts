@@ -11,7 +11,6 @@ export function useDepthTree(
 ) {
   const [navigation, setNavigation] = useState({
     anchorId: "",
-    sceneAnchorId: "",
     active: false,
     focusToken: -1,
     history: [] as string[],
@@ -27,21 +26,15 @@ export function useDepthTree(
     : preferred && available.has(preferred)
       ? preferred
       : available.values().next().value || "";
-  // Latch the initial choice. Opening a profile is not a request to change planes.
+  // Opening a profile does not implicitly select a new camera target.
   if (
     navigation.active !== enabled ||
-    (enabled &&
-      (navigation.anchorId !== anchorId ||
-        (!!anchorId && !available.has(navigation.sceneAnchorId))))
+    (enabled && navigation.anchorId !== anchorId)
   )
     setNavigation({
       ...navigation,
       active: enabled,
       anchorId,
-      sceneAnchorId:
-        !navigation.active || !available.has(navigation.sceneAnchorId)
-          ? anchorId
-          : navigation.sceneAnchorId,
       focusToken: focus?.token ?? -1,
     });
   const projection = useMemo(
@@ -51,19 +44,11 @@ export function useDepthTree(
         : { front: available, back: [] },
     [family, available, anchorId, enabled],
   );
-  const sceneAnchorId = navigation.sceneAnchorId || anchorId;
-  const scene = useMemo(
-    () =>
-      enabled ? treeDepthBranches(family, available, sceneAnchorId) : null,
-    [family, available, sceneAnchorId, enabled],
-  );
   const history = navigation.history.filter(
     (id) => available.has(id) && id !== anchorId,
   );
   return {
     ...projection,
-    branches: scene?.back || [],
-    sceneAnchorId,
     anchorId,
     previous: history.at(-1),
     choose(id: string, backwards = false) {

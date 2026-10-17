@@ -2,269 +2,227 @@
   position: absolute;
   inset: 0;
 }
-.tree-depth-world {
+.tree-canvas[data-depth-anchor] .tree-flow-plane {
+  visibility: hidden;
+  pointer-events: none;
+}
+.tree-spatial {
   position: absolute;
   inset: 0;
-  pointer-events: none;
-  isolation: isolate;
   user-select: none;
 }
-.tree-depth-space {
-  position: absolute;
-  left: 0;
-  top: 0;
-  overflow: visible;
-  pointer-events: none;
-}
-.tree-depth-connection {
-  fill: none;
-  stroke: #7e9772;
-  stroke-width: 1.6;
-  vector-effect: non-scaling-stroke;
-  pointer-events: none;
-}
-.tree-depth-connection.is-partner {
-  stroke: #b47d70;
-}
-.tree-depth-label-leader {
-  fill: none;
-  stroke: var(--muted);
-  stroke-width: 1;
-  stroke-dasharray: 2 3;
-  vector-effect: non-scaling-stroke;
-  pointer-events: none;
-}
-.tree-depth-person {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 220px;
-  height: 264px;
-  margin: -132px 0 0 -110px;
-  transform-origin: 110px 132px;
-  pointer-events: none;
-}
-.tree-depth-person-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  width: 220px;
-  height: 264px;
-  padding: 12px 6px 4px;
-  border: 0;
-  border-radius: 14px;
-  background: var(--paper);
-  color: var(--ink);
-  cursor: pointer;
-  pointer-events: auto;
-  user-select: none;
-  -webkit-touch-callout: none;
-}
-.tree-depth-person-content:hover {
-  background: var(--soft-green);
-}
-.tree-depth-person-content:focus-visible {
-  outline: 3px solid var(--green);
-  outline-offset: 5px;
-}
-.tree-depth-person .person-avatar {
-  display: block;
-  flex: 0 0 116px;
-  width: 116px;
-  height: 116px;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  overflow: hidden;
-  border: 2px solid var(--line);
-}
-.tree-depth-person .person-avatar img,
-.tree-depth-person .person-avatar svg {
+.tree-spatial-canvas {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  touch-action: none;
+  outline: none;
 }
-.tree-depth-person.is-anchor .person-avatar,
-.tree-depth-person.is-selected .person-avatar {
-  border-color: var(--green);
-  box-shadow: 0 0 0 4px var(--soft-green);
-}
-.tree-depth-person-copy {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-  margin-top: 10px;
-}
-.tree-depth-person-name {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: 500 25px/30px var(--sans);
-}
-.tree-depth-person-given {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: 22px/28px var(--sans);
-}
-.tree-depth-person-years {
-  font: 20px/26px var(--sans);
-  color: var(--muted);
-}
-.tree-depth-person-relation,
-.tree-depth-more {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: 18px/24px var(--sans);
-  color: var(--green);
-}
-.tree-depth-person-actions {
-  position: absolute;
-  display: flex;
-  gap: 6px;
-  justify-content: center;
-  top: calc(100% + 8px);
-  left: 0;
-  width: 100%;
-  pointer-events: none;
-}
-.tree-depth-person-actions button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--depth-control-size, 44px);
-  height: var(--depth-control-size, 44px);
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  color: var(--green);
-  background: var(--paper);
-  pointer-events: auto;
-}
-.tree-depth-person-actions button:hover {
-  background: var(--soft-green);
-}
-.tree-depth-person.is-context {
-  height: 90px;
-  margin-top: -45px;
-  transform-origin: 110px 45px;
-}
-.tree-depth-person.is-context .tree-depth-person-content {
-  flex-direction: row;
-  height: 90px;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-}
-.tree-depth-person.is-context .person-avatar {
-  flex-basis: 46px;
-  width: 46px;
-  height: 46px;
-}
-.tree-depth-person.is-context .tree-depth-person-copy {
-  align-items: flex-start;
-  margin: 0;
-}
-.tree-depth-person.is-context .tree-depth-person-name {
-  font-size: 18px;
-  line-height: 21px;
-}
-.tree-depth-person.is-context .tree-depth-person-given {
-  font-size: 16px;
-  line-height: 19px;
-}
-.tree-depth-person.is-context .tree-depth-person-years {
-  font-size: 14px;
-  line-height: 17px;
-}
-.tree-depth-person.is-context .tree-depth-more {
-  font-size: 13px;
-  line-height: 16px;
-}
-.tree-depth-person.is-marker {
-  width: 60px;
-  height: 60px;
-  margin: -30px 0 0 -30px;
-  transform-origin: 30px 30px;
-}
-.tree-depth-person.is-marker .tree-depth-person-content {
-  width: 60px;
-  height: 60px;
-  padding: 6px;
-  border-radius: 50%;
-}
-.tree-depth-person.is-marker .tree-depth-person-copy {
-  display: none;
-}
-.tree-depth-announcement {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
-.tree-depth-back-controls {
-  position: absolute;
-  left: 18px;
-  bottom: 80px;
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-width: calc(100% - 170px);
-}
-.tree-depth-back-controls > button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 44px;
-  padding: 8px 12px;
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-.tree-depth-orbit {
-  display: flex;
-  align-items: center;
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.tree-depth-orbit button {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 8px;
-  border: 0;
-  border-radius: 0;
-}
-.tree-depth-orbit button:hover:not(:disabled) {
-  background: var(--soft-green);
-}
-.tree-depth-orbit button:focus-visible {
+.tree-spatial-canvas:focus-visible {
   outline: 2px solid var(--green);
   outline-offset: -3px;
 }
-@media (max-width: 600px) {
-  .tree-depth-back-controls {
-    left: 12px;
-    bottom: 76px;
-    max-width: calc(100% - 130px);
+.tree-spatial-add {
+  position: absolute;
+  left: 14px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.tree-spatial:has(.tree-spatial-add) .tree-spatial-orbit {
+  bottom: 64px;
+}
+.tree-spatial-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  background: var(--paper);
+}
+.tree-spatial-state button {
+  padding: 10px 16px;
+  border: 1px solid var(--green);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.tree-spatial-people {
+  position: absolute;
+  top: 64px;
+  left: 14px;
+  max-width: min(320px, calc(100% - 28px));
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.tree-spatial-people summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.tree-spatial-people summary::-webkit-details-marker {
+  display: none;
+}
+.tree-spatial-people[open] {
+  width: 320px;
+  z-index: 5;
+}
+.tree-spatial-people label {
+  display: block;
+  padding: 0 8px 8px;
+}
+.tree-spatial-people input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px;
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.tree-spatial-people ul {
+  list-style: none;
+  padding: 0 8px 8px;
+  margin: 0;
+  max-height: min(45dvh, 360px);
+  overflow-y: auto;
+}
+.tree-spatial-people li button {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px;
+  text-align: left;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+}
+.tree-spatial-people li button:hover {
+  background: var(--soft-green);
+}
+.tree-spatial-people p {
+  margin: 8px 12px;
+  font-size: 13px;
+}
+.tree-spatial-orbit,
+.tree-spatial-tools,
+.tree-spatial-person {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+.tree-spatial-orbit {
+  left: 14px;
+  bottom: 48px;
+}
+.tree-spatial-tools {
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.tree-spatial button {
+  cursor: pointer;
+}
+.tree-spatial-orbit button,
+.tree-spatial-tools button,
+.tree-spatial-person button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+}
+.tree-spatial button:hover:not(:disabled) {
+  background: var(--soft-green);
+}
+.tree-spatial button:focus-visible,
+.tree-spatial summary:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+.tree-spatial button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.tree-spatial-person {
+  top: 64px;
+  right: 14px;
+  max-width: min(420px, calc(100% - 28px));
+}
+.tree-spatial-person .tree-spatial-person-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 10px;
+  font-size: 13px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.tree-spatial-hint {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+@media (max-width: 700px) {
+  .tree-spatial-people {
+    top: 58px;
+    left: 8px;
   }
-  .tree-depth-back-controls > button span {
+  .tree-spatial-people:not([open]) summary span {
     display: none;
   }
-  .tree-depth-back-controls > button {
-    min-width: 44px;
-    padding: 10px;
+  .tree-spatial-people summary {
+    padding: 0 12px;
+  }
+  .tree-spatial-person {
+    top: 58px;
+    right: 8px;
+    max-width: calc(100% - 72px);
+  }
+  .tree-spatial-orbit {
+    left: 8px;
+    bottom: 84px;
+  }
+  .tree-spatial-tools {
+    bottom: 28px;
+  }
+  .tree-spatial-hint {
+    max-width: calc(100% - 16px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 11px;
   }
 }
