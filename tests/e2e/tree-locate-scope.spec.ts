@@ -57,7 +57,10 @@ for (const presentation of ["flat", "depth"] as const) {
           contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"/>',
         }));
         await page.goto(`/photos/${photo.id}`);
-        if (isMobile) await page.locator(".photo-people-names .photo-person-name").click();
+        if (isMobile) {
+          await page.getByRole("button", { name: "О снимке", exact: true }).click();
+          await page.locator(".photo-people-names .photo-person-name").click();
+        }
         else await page.getByRole("button", { name: /Показать сведения:.*Мария/ }).click();
         await expect(page.locator(".photo-person-sidebar")).toBeVisible();
         // Viewing information alone does not change the generation window.
