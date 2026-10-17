@@ -93,6 +93,7 @@ export function useArchive(enabled = true) {
   const [needsLogin, setNeedsLogin] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [collectionError, setCollectionError] = useState("");
+  const [personDetailsErrors, setPersonDetailsErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const revision = useRef(0),
     saving = useRef(false);
   const accessEpoch = useRef(0);
@@ -149,6 +150,7 @@ export function useArchive(enabled = true) {
     const controller = new AbortController();
     detailsController.current = controller;
     details.current = null;
+    setPersonDetailsErrors(new Map());
     loadingController.current = controller;
     let active = true;
     const epoch = accessEpoch.current;
@@ -716,12 +718,32 @@ export function useArchive(enabled = true) {
   );
   const loadDetails = useCallback(async (demand: { people?: string[]; photos?: string[];
     view?: "places" | "insights" | "timeline"; collections?: Array<"people" | "photos">; signal?: AbortSignal }) => {
-    await withDetailsRead(async (reader) => {
-      if (demand.people?.length) await reader.loadPeople(demand.people);
-      if (demand.photos?.length) await reader.loadPhotos(demand.photos);
-      if (demand.view) await reader.loadView(demand.view, demand.signal);
-      if (demand.collections?.length) await reader.loadCollections(demand.collections, demand.signal);
-    }, !!demand.view || !!demand.collections?.length);
+    const source = details.current;
+    if (demand.people?.length) setPersonDetailsErrors(previous => {
+      if (!demand.people?.some(id => previous.has(id))) return previous;
+      const next = new Map(previous);
+      demand.people.forEach(id => next.delete(id));
+      return next;
+    });
+    try {
+      await withDetailsRead(async (reader) => {
+        if (demand.people?.length) await reader.loadPeople(demand.people);
+        if (demand.photos?.length) await reader.loadPhotos(demand.photos);
+        if (demand.view) await reader.loadView(demand.view, demand.signal);
+        if (demand.collections?.length) await reader.loadCollections(demand.collections, demand.signal);
+      }, !!demand.view || !!demand.collections?.length);
+    } catch (reason) {
+      if (source && source === details.current && demand.people?.length &&
+        !(reason instanceof Error && reason.name === "AbortError")) {
+        const missing = demand.people.filter(id => !source.loadedPeople().has(id));
+        if (missing.length) setPersonDetailsErrors(previous => {
+          const next = new Map(previous);
+          missing.forEach(id => next.set(id, reason instanceof Error ? reason.message : "Не удалось загрузить карточку"));
+          return next;
+        });
+      }
+      throw reason;
+    }
   }, [withDetailsRead]);
   const loadGallery = useCallback(async (query: GalleryQuery) => {
     const result = await withDetailsRead((reader) => reader.gallery(query));
@@ -776,6 +798,7 @@ export function useArchive(enabled = true) {
     family,
     loadingDetails,
     collectionError,
+    personDetailsErrors,
     error,
     committedUploadNotice,
     dismissCommittedUploadNotice: () => setCommittedUploadNotice(""),

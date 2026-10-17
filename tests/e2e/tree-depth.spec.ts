@@ -133,6 +133,8 @@ async function setup(page: Page, graph = family, canEdit = false) {
           treePreferences: preferences,
         },
       });
+    if (path.endsWith("/api/ai/status"))
+      return route.fulfill({ json: { enabled: true, streaming: true } });
     if (path.endsWith("/api/session"))
       return route.fulfill({ json: { user, account: user, local: false } });
     if (path.endsWith("/api/tree-preferences")) {
@@ -216,17 +218,16 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   await page.keyboard.press("Home");
   await settle(page);
   await page.screenshot({ path: info.outputPath("3d-overview.png") });
-  await page.locator(".tree-spatial-people summary").click();
+  await expect(page.getByText("Люди в 3D", { exact: true })).toHaveCount(0);
+  await page.locator(".tree-spatial-person-name").click();
+  await expect(page.getByRole("searchbox", { name: "Поиск в 3D-древе" })).toBeFocused();
   await page
     .getByRole("searchbox", { name: "Поиск в 3D-древе" })
     .fill("Алексей");
   await page.locator(".tree-spatial-people li button").focus();
   await page.keyboard.press("Enter");
   await expect(canvas).toBeFocused();
-  await expect(page.locator(".tree-spatial-people")).not.toHaveAttribute(
-    "open",
-    "",
-  );
+  await expect(page.locator(".tree-spatial-people")).toHaveCount(0);
   await settle(page);
   await expect(page.locator(".tree-canvas")).toHaveAttribute(
     "data-depth-anchor",
@@ -239,7 +240,13 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   await page.screenshot({ path: info.outputPath("3d-selected.png") });
   const atSibling = await world(page).getAttribute("data-depth-camera");
   await page.locator(".tree-spatial-person-name").click();
-  await expect(page.getByRole("tab", { name: /О человеке/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /О человеке/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".tree-spatial-person-name")).toBeFocused();
+  await expect(page.locator(".tree-spatial-people")).toHaveCount(0);
+  await page.locator(".tree-spatial-person-name").click();
+  await canvas.click({ position: { x: 6, y: 6 } });
+  await expect(page.locator(".tree-spatial-people")).toHaveCount(0);
   expect(await world(page).getAttribute("data-depth-camera")).toBe(atSibling);
   await settle(page);
   // In an idle scene no requestAnimationFrame/render loop remains alive.
@@ -248,6 +255,27 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   await page.waitForTimeout(500);
   expect(await world(page).getAttribute("data-depth-frames")).toBe(frames);
   expect(errors).toEqual([]);
+});
+
+test("3D assistant follows the visible camera controls and the mobile canvas boundary", async ({ page, isMobile }, info) => {
+  await setup(page);
+  await settle(page);
+  const launcher = page.getByRole("button", { name: "Открыть ИИ-исследователя" });
+  for (const width of isMobile ? [320, 390, 768] : [1024, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(launcher).toBeVisible();
+    await expect.poll(async () => {
+      const bounds = (await launcher.boundingBox())!;
+      if (isMobile) {
+        const canvas = (await page.locator(".tree-canvas").boundingBox())!;
+        return Math.abs(bounds.x - (canvas.x + canvas.width - 62));
+      }
+      const controls = (await page.locator(".tree-spatial-tools").boundingBox())!;
+      return Math.abs(bounds.x + bounds.width + 8 - controls.x) +
+        Math.abs(bounds.y + bounds.height / 2 - controls.y - controls.height / 2);
+    }).toBeLessThan(1);
+  }
+  await page.screenshot({ path: info.outputPath("3d-assistant-controls.png") });
 });
 
 test("a thousand-person 3D archive keeps GPU batches, textures and detail bounded", async ({

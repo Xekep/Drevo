@@ -1,17 +1,38 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { validateFamily, type Family } from "../domain";
 
 export function JsonArchiveImport({
   save,
   canEdit,
+  initialFile,
+  onBusyChange,
+  onImported,
 }: {
   save: (family: Family) => Promise<Family>;
   canEdit: boolean;
+  initialFile: File;
+  onBusyChange?: (busy: boolean) => void;
+  onImported?: () => void;
 }) {
   const [imported, setImported] = useState<Family | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
+  useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
+  useEffect(() => {
+    if (!initialFile) return;
+    let active = true;
+    void (async () => {
+      try {
+        if (initialFile.size > 8 * 1024 * 1024) throw new Error("Архив превышает 8 МБ");
+        const family = validateFamily(JSON.parse((await initialFile.text()).replace(/^\uFEFF/, "")));
+        if (active) setImported(family);
+      } catch (reason) {
+        if (active) setError((reason as Error).message);
+      }
+    })();
+    return () => { active = false; };
+  }, [initialFile]);
 
   return (
     <div className="json-archive-import">
@@ -20,30 +41,7 @@ export function JsonArchiveImport({
         Заменяет людей и связи текущего архива. Сначала скачайте полную копию:
         файлы фотографий переносятся отдельно.
       </p>
-      {!canEdit && <p>Редактирование доступно с компьютера.</p>}
-      <label>
-        Выберите экспорт архива
-        <input
-          type="file"
-          accept=".json,application/json"
-          disabled={busy || !canEdit}
-          onChange={async (event) => {
-            setError("");
-            setDone("");
-            setImported(null);
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            if (!file) return;
-            try {
-              if (file.size > 8 * 1024 * 1024)
-                throw new Error("Архив превышает 8 МБ");
-              setImported(validateFamily(JSON.parse(await file.text())));
-            } catch (reason) {
-              setError((reason as Error).message);
-            }
-          }}
-        />
-      </label>
+      {!canEdit && <p>Для импорта нужен доступ к редактированию.</p>}
       {imported && (
         <div className="gedcom-preview">
           <p>
@@ -60,6 +58,7 @@ export function JsonArchiveImport({
                 await save(imported);
                 setImported(null);
                 setDone("Данные архива заменены.");
+                onImported?.();
               } catch (reason) {
                 setError((reason as Error).message);
               } finally {

@@ -976,7 +976,6 @@ export default function App() {
                   onClose={() => navigate("tree")}
                   onChanged={archive.reload}
                   save={save}
-                  canEdit={canEdit && desktop}
                   onDirtyChange={onPlatformSettingsDirtyChange}
                 />
               ) : (
@@ -1187,6 +1186,7 @@ export default function App() {
                               user={user}
                               canEdit={canEdit}
                               detailsLoading={!hasPersonDetails(chosen[0].id)}
+                              detailsError={archive.personDetailsErrors.get(chosen[0].id)}
                               loadPersonDetails={loadPersonDetails}
                               hasPersonDetails={hasPersonDetails}
                               personPhotoTotal={archive.personPhotoTotal}
@@ -1481,6 +1481,7 @@ export default function App() {
       {treeImportOpen && family && isArchiveOwner(user) && (
         <TreeImportDialog
           canEdit={canEdit}
+          save={save}
           onClose={() => setTreeImportOpen(false)}
           onImported={archive.reload}
         />

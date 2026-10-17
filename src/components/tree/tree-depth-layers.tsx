@@ -8,10 +8,10 @@ import {
   Minus,
   Plus,
   Scan,
-  Users,
 } from "lucide-react";
-import { fullName, years, type Person, type FamilyUnion } from "../../domain";
+import { fullName, type Person, type FamilyUnion } from "../../domain";
 import { useSpatialWorld } from "./use-spatial-world";
+import { SpatialPersonPicker } from "./spatial-person-picker";
 import type { TreeGeometry } from "../../domain/tree-layout";
 import type { FitTree } from "./tree-camera-fit";
 import type { SpatialRenderer } from "./spatial-renderer";
@@ -70,7 +70,6 @@ export function TreeDepthLayers({
   const [status, setStatus] = useState<"loading" | "ready" | "failed">(
     "loading",
   );
-  const [query, setQuery] = useState("");
   const { world, failed } = useSpatialWorld(layoutPeople, geometry, unions);
   const callbacks = {
     profile: onProfile,
@@ -145,13 +144,6 @@ export function TreeDepthLayers({
     [...(world?.connections || [])].some(
       (edge) => edge.type === "parent" && edge.from === focused.id,
     );
-  const matches = [...people.values()].filter(
-    (p) =>
-      world?.points.has(p.id) &&
-      fullName(p)
-        .toLocaleLowerCase("ru")
-        .includes(query.toLocaleLowerCase("ru")),
-  );
   const viewStatus = failed ? "failed" : !world || !ready ? "loading" : status;
   return (
     <div
@@ -179,63 +171,22 @@ export function TreeDepthLayers({
       )}
       {viewStatus === "ready" && (
         <>
-          <details
-            className="tree-spatial-people"
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <summary title="Найти человека в 3D-древе">
-              <Users size={18} aria-hidden="true" />
-              <span>Люди в 3D</span>
-            </summary>
-            <label>
-              <span className="sr-only">Поиск в 3D-древе</span>
-              <input
-                type="search"
-                placeholder="Имя или фамилия"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </label>
-            <ul>
-              {matches.slice(0, 50).map((person) => (
-                <li key={person.id}>
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    onClick={(e) => {
-                      onChoose(person.id);
-                      e.currentTarget
-                        .closest("details")
-                        ?.removeAttribute("open");
-                      host.current
-                        ?.querySelector<HTMLCanvasElement>(
-                          ".tree-spatial-canvas",
-                        )
-                        ?.focus({ preventScroll: true });
-                      renderer.current?.focus(person.id);
-                    }}
-                  >
-                    {fullName(person)} · {years(person)}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {!matches.length && <p>Никого не нашли</p>}
-            {matches.length > 50 && <p>Уточните имя для поиска остальных</p>}
-          </details>
           {focused && (
             <div
               className="tree-spatial-person"
               aria-label="Выбранный человек в 3D"
             >
-              <button
-                type="button"
-                className="tree-spatial-person-name"
-                onClick={() => onProfile(focused.id)}
+              <SpatialPersonPicker
+                people={[...people.values()].filter(person => world?.points.has(person.id))}
+                focused={focused}
                 disabled={disabled}
-              >
-                {fullName(focused)}
-              </button>
+                onChoose={(id) => {
+                  onChoose(id);
+                  renderer.current?.focus(id);
+                  host.current?.querySelector<HTMLCanvasElement>(".tree-spatial-canvas")
+                    ?.focus({ preventScroll: true });
+                }}
+              />
               <button
                 type="button"
                 title="Перейти к ветви"
