@@ -1,9 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import { DEFAULT_TREE_PREFERENCES, type TreePreferences } from "../../src/domain/tree-preferences";
+import { pagedPhotoFixture } from "./paged-photo-fixture";
 
-async function limitedTree(page: Page, assistantFilterIds?: string[]) {
+async function limitedTree(page: Page, assistantFilterIds?: string[], presentation: "flat" | "depth" = "flat") {
   let preferences: TreePreferences = {
     ...DEFAULT_TREE_PREFERENCES,
+    presentation,
     generationLimits: { anchorId: "e2e-child", ancestors: 3, descendants: 1, collateral: 0 },
   };
   const writes: TreePreferences[] = [];
@@ -39,6 +41,67 @@ async function limitedTree(page: Page, assistantFilterIds?: string[]) {
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
   await expect(page.locator(".tree-canvas")).toHaveAttribute("data-layout-people", "4");
   return { writes, original: structuredClone(preferences) };
+}
+
+for (const presentation of ["flat", "depth"] as const) {
+  for (const source of ["photo", "place"] as const) {
+    test(`navigation from ${source} reveals a hidden person by changing the ${presentation} anchor`, async ({ page, isMobile }) => {
+      const { writes, original } = await limitedTree(page, undefined, presentation);
+      if (source === "photo") {
+        const photo = {
+          id: "anchor-navigation-photo", title: "Снимок Марии", url: "/media/anchor-navigation.png",
+          tags: [{ id: "maria", personId: "e2e-sibling", x: 0.1, y: 0.1, width: 0.2, height: 0.3 }],
+        };
+        await pagedPhotoFixture(page, [photo]);
+        await page.route("**/media/anchor-navigation.png**", route => route.fulfill({
+          contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"/>',
+        }));
+        await page.goto(`/photos/${photo.id}`);
+        if (isMobile) {
+          await page.getByRole("button", { name: "О снимке", exact: true }).click();
+          await page.locator(".photo-people-names .photo-person-name").click();
+        }
+        else await page.getByRole("button", { name: /Показать сведения:.*Мария/ }).click();
+        await expect(page.locator(".photo-person-sidebar")).toBeVisible();
+        // Viewing information alone does not change the generation window.
+        expect(writes).toEqual([]);
+        await page.getByRole("button", { name: "Показать в древе" }).click();
+      } else {
+        await page.route("**/api/places/locate**", route => route.fulfill({ json: { candidates: [] } }));
+        await page.route("https://tile.openstreetmap.org/**", route => route.abort());
+        await page.goto("/places");
+        if (isMobile) await page.locator(".map-list-toggle").click();
+        await page.locator(".places-list").getByRole("button", { name: /Москва/ }).click();
+        await page.locator(".place-events").getByRole("button", { name: /Тестова Мария Ивановна/ }).click();
+      }
+      await expect(page).toHaveURL(/\/people\/e2e-sibling$/);
+      await expect.poll(() => writes.length).toBe(1);
+      expect(writes[0]).toEqual({
+        ...original,
+        generationLimits: { ...original.generationLimits!, anchorId: "e2e-sibling" },
+      });
+      const canvas = page.locator(".tree-canvas");
+      await expect(canvas.getByRole("status", { name: "Опорный человек" })).toContainText("Мария");
+      await expect(canvas).not.toHaveClass(/is-grow|is-layout-settling/);
+      if (presentation === "depth") {
+        await expect(canvas).toHaveAttribute("data-depth-anchor", "e2e-sibling");
+        await expect(page.locator(".tree-spatial")).toHaveAttribute("aria-busy", "false");
+      } else {
+        await expect(page.locator('.flow-person[data-person-id="e2e-sibling"]')).toBeVisible();
+        if (!isMobile) await expectCentered(page, "e2e-sibling");
+      }
+      if (source === "place") {
+        await page.goto("/places");
+        if (isMobile) await page.locator(".map-list-toggle").click();
+        await page.locator(".places-list").getByRole("button", { name: /Москва/ }).click();
+        await page.locator(".place-events").getByRole("button", { name: /Тестова Ольга/ }).click();
+        await expect(page).toHaveURL(/\/people\/e2e-sibling-child$/);
+        await expect(canvas).not.toHaveClass(/is-grow|is-layout-settling/);
+        await expect(canvas.getByRole("status", { name: "Опорный человек" })).toContainText("Мария");
+        expect(writes).toHaveLength(1);
+      }
+    });
+  }
 }
 
 async function searchPerson(page: Page, query: string, name: RegExp) {

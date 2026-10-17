@@ -12,7 +12,7 @@ type State = {
 type Action =
   | { type: "choose"; id: string; additive: boolean }
   | { type: "selectOnly"; id: string }
-  | { type: "reveal"; ids: string[] }
+  | { type: "reveal"; ids: string[]; reanchor?: boolean }
   | { type: "revealFamily"; ids: string[]; groupId: string }
   | { type: "compare" }
   | { type: "link" }
@@ -60,7 +60,7 @@ function reducer(state: State, action: Action): State {
         linkFrom: null,
         spotlight: [],
         focusSerial: state.focusSerial + 1,
-        focus: { ids: action.ids, token: state.focusSerial + 1 },
+        focus: { ids: action.ids, token: state.focusSerial + 1, ...(action.reanchor ? { reanchor: true } : {}) },
       };
     case "revealFamily":
       return {
@@ -133,7 +133,7 @@ export function useWorkspaceSelection() {
     [],
   );
   const reveal = useCallback(
-    (ids: string[]) => dispatch({ type: "reveal", ids }),
+    (ids: string[], reanchor = false) => dispatch({ type: "reveal", ids, reanchor }),
     [],
   );
   const revealFamily = useCallback(

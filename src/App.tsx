@@ -714,12 +714,12 @@ export default function App() {
     [closeConnection, setPersonDraft, dispatch, setView],
   );
   const showPerson = useCallback(
-    (id: string) => {
+    (id: string, reanchor = false) => {
       if (!closeConnection()) return;
       const target: ArchiveTarget = { kind: "person", id };
       lastUrlTarget.current = targetKey(target);
       setView("tree", target);
-      reveal([id]);
+      reveal([id], reanchor);
     },
     [reveal, closeConnection, setView],
   );
@@ -1257,7 +1257,7 @@ export default function App() {
                   galleryGeneration={archive.projectionGeneration}
                   onRetryDetails={retryViewDetails}
                   save={save}
-                  onPerson={showPerson}
+                  onPerson={(id) => showPerson(id, true)}
                   onAddPerson={canEdit ? newPerson : undefined}
                   onQuality={() => navigate("quality")}
                   onReveal={(ids, groupId) => {
@@ -1368,7 +1368,7 @@ export default function App() {
           upload={upload}
           onPerson={(id) => {
             closePhoto();
-            showPerson(id);
+            showPerson(id, true);
           }}
         />
       )}
