@@ -32,6 +32,7 @@ import { ArchiveLoading } from "./components/archive-loading";
 import { memberPreviewAt } from "./domain/archive-context.ts";
 import { archiveViewAt, invitationAt } from "./domain/archive-routes.ts";
 import { NotFoundPage } from "./components/not-found-page.tsx";
+import { usePageZoomGuard } from "./hooks/usePageZoomGuard";
 
 const App = lazy(() => import("./App"));
 const SharedTree = lazy(() => import("./components/shared-tree"));
@@ -73,6 +74,7 @@ const pendingInvite = (() => {
 })();
 
 function Entry() {
+  usePageZoomGuard();
   const [ready, setReady] = useState(
     !!join || !!memberPreviewAt(location.pathname) || !pendingInvite || pendingInvite === location.pathname,
   );

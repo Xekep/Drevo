@@ -1,4 +1,5 @@
 import { expect, test, type CDPSession, type Page } from "@playwright/test";
+import { pagedPhotoFixture } from "./paged-photo-fixture";
 
 async function pinch(page: Page, session: CDPSession, x: number, y: number) {
   const points = (distance: number) => [
@@ -24,6 +25,61 @@ async function pinch(page: Page, session: CDPSession, x: number, y: number) {
 async function pageScale(page: Page) {
   return page.evaluate(() => window.visualViewport?.scale ?? 1);
 }
+
+test("mobile section headers and content never zoom the page", async ({ page }, info) => {
+  test.skip(info.project.name !== "mobile");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.route("https://tile.openstreetmap.org/**", route => route.abort());
+  const session = await page.context().newCDPSession(page);
+  try {
+    for (const section of ["people", "families", "photos", "documents", "places", "insights", "resources", "account", "manage", "admin"]) {
+      await page.goto(`/${section}`);
+      await expect(page.locator(".archive-header")).toBeVisible();
+      await pinch(page, session, 195, 32);
+      expect(await pageScale(page), section).toBeCloseTo(1, 3);
+      await pinch(page, session, 195, 350);
+      expect(await pageScale(page), section).toBeCloseTo(1, 3);
+    }
+  } finally { await session.detach(); }
+});
+
+test("mobile photo pinch changes only the photograph", async ({ page }, info) => {
+  test.skip(info.project.name !== "mobile");
+  const photo = { id: "zoom-photo", title: "Фото", url: "/media/zoom-photo.png", tags: [] };
+  await pagedPhotoFixture(page, [photo]);
+  await page.route("**/media/zoom-photo.png**", route => route.fulfill({
+    contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#738273"/></svg>',
+  }));
+  await page.goto(`/photos/${photo.id}`);
+  const image = page.locator(".photo-slide-current .tag-image");
+  await expect(image).toBeVisible();
+  const toolbar = page.getByRole("group", { name: "Действия с фотографией" });
+  const toolbarBefore = (await toolbar.boundingBox())!;
+  const box = (await page.locator(".photo-image-space").boundingBox())!;
+  const session = await page.context().newCDPSession(page);
+  try {
+    await pinch(page, session, box.x + box.width / 2, box.y + box.height / 2);
+    await expect.poll(() => image.evaluate(el => new DOMMatrix(getComputedStyle(el).transform).a)).toBeGreaterThan(1.2);
+    expect(await pageScale(page)).toBeCloseTo(1, 3);
+    const toolbarAfter = (await toolbar.boundingBox())!;
+    expect(toolbarAfter.width).toBeCloseTo(toolbarBefore.width, 1);
+    expect(toolbarAfter.height).toBeCloseTo(toolbarBefore.height, 1);
+    await page.getByRole("button", { name: "О снимке", exact: true }).click();
+    const panel = (await page.locator("#photo-information").boundingBox())!;
+    await pinch(page, session, panel.x + panel.width / 2, panel.y + panel.height / 2);
+    expect(await pageScale(page)).toBeCloseTo(1, 3);
+  } finally { await session.detach(); }
+});
+
+test("trackpad page zoom is cancelled outside the content viewers", async ({ page }) => {
+  await page.goto("/people");
+  await expect(page.locator(".archive-header")).toBeVisible();
+  expect(await page.locator(".archive-header").evaluate(el => {
+    const wheel = new WheelEvent("wheel", { bubbles: true, cancelable: true, ctrlKey: true, deltaY: -100 });
+    el.dispatchEvent(wheel);
+    return wheel.defaultPrevented;
+  })).toBe(true);
+});
 
 test("mobile pinch belongs to the tree from loading through growth, then moves its camera", async ({ page }, info) => {
   test.skip(info.project.name !== "mobile");
@@ -80,7 +136,7 @@ test("mobile pinch belongs to the tree from loading through growth, then moves i
   }
 });
 
-test("mobile native page zoom remains available outside the canvas and on ordinary section loaders", async ({ page }, info) => {
+test("mobile section loaders and content keep page zoom fixed", async ({ page }, info) => {
   test.skip(info.project.name !== "mobile");
   let releaseOverview!: () => void;
   const overview = new Promise<void>((resolve) => { releaseOverview = resolve; });
@@ -97,9 +153,11 @@ test("mobile native page zoom remains available outside the canvas and on ordina
     expect(await page.locator('meta[name="viewport"]').getAttribute("content"))
       .not.toMatch(/user-scalable\s*=\s*no|maximum-scale\s*=\s*1/);
     await pinch(page, session, 195, 350);
-    await expect.poll(() => pageScale(page)).toBeGreaterThan(1.2);
+    expect(await pageScale(page)).toBeCloseTo(1, 3);
     releaseOverview();
     await expect(page.getByRole("heading", { name: /^Люди/ })).toBeVisible();
+    await pinch(page, session, 195, 350);
+    expect(await pageScale(page)).toBeCloseTo(1, 3);
   } finally {
     releaseOverview();
     await session.detach();
