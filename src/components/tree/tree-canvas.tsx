@@ -126,6 +126,8 @@ export type TreeFocus = {
   token: number;
   purpose?: "family";
   groupId?: string;
+  /** Explicit navigation from another section may move the generation window. */
+  reanchor?: boolean;
 };
 export type AssistantTreeFilter =
   | { ids: string[]; label: string; token: number }
@@ -1305,6 +1307,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         !currentPeople.has(id)) return false;
     return saveGenerationAnchor(id);
   }, [props.generationLimits, generationRange, currentPeople, saveGenerationAnchor]);
+  const reanchoredFocus = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focus?.reanchor || focus.ids.length !== 1 ||
+        reanchoredFocus.current === focus.token || savingGenerationPreferences) return;
+    reanchoredFocus.current = focus.token;
+    void reanchorHiddenPerson(focus.ids[0]);
+  }, [focus, savingGenerationPreferences, reanchorHiddenPerson]);
   const focusSelected = async () => {
     if (selected.length === 1 && props.assistantFilter &&
         ("excludeNeedsReview" in props.assistantFilter

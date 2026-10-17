@@ -14,9 +14,12 @@ export function useDepthTree(
     active: false,
     focusToken: -1,
   });
+  const focusId = focus?.ids.length === 1 && focus.token !== navigation.focusToken
+    ? focus.ids[0] : undefined;
+  const focusReady = focusId !== undefined && available.has(focusId);
   const requested =
-    focus?.ids.length === 1 && focus.token !== navigation.focusToken
-      ? focus.ids[0]
+    focusId !== undefined
+      ? focusId
       : enabled && !navigation.active
         ? preferred || ""
         : navigation.anchorId;
@@ -28,13 +31,15 @@ export function useDepthTree(
   // Opening a profile does not implicitly select a new camera target.
   if (
     navigation.active !== enabled ||
-    (enabled && navigation.anchorId !== anchorId)
+    (enabled && navigation.anchorId !== anchorId) || focusReady
   )
     setNavigation({
       ...navigation,
       active: enabled,
       anchorId,
-      focusToken: focus?.token ?? -1,
+      // Keep explicit navigation pending while its generation window is saving.
+      // Otherwise the temporary fallback becomes a permanent camera target.
+      focusToken: focusReady ? focus!.token : navigation.focusToken,
     });
   const projection = useMemo(
     () =>
