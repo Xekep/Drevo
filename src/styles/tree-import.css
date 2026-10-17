@@ -21,6 +21,10 @@
   min-width: 0;
   padding: 16px;
 }
+.archive-file-import { display: grid; gap: 14px; min-width: 0; }
+.archive-import-selected { display: grid; gap: 10px; min-width: 0; }
+.archive-import-selected > fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.archive-import-selected .genealogy-import { display: grid; gap: 10px; }
 .tree-import-dialog
   :is(.json-additions-import, .json-import-undo, .gedcom-preview) {
   display: grid;

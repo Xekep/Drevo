@@ -44,6 +44,7 @@ export function PersonInspector({
   user,
   canEdit,
   detailsLoading = false,
+  detailsError,
   onRetryDetails,
   loadPersonDetails,
   hasPersonDetails,
@@ -68,6 +69,7 @@ export function PersonInspector({
   user: ArchiveUser | null;
   canEdit: boolean;
   detailsLoading?: boolean;
+  detailsError?: string;
   onRetryDetails?: () => void;
   loadPersonDetails?: (id: string) => Promise<void>;
   hasPersonDetails?: (id: string) => boolean;
@@ -290,13 +292,13 @@ export function PersonInspector({
       {detailsLoading ? (
         <div
           className="archive-status"
-          role="status"
+          role={detailsError ? "alert" : "status"}
           aria-label="Загрузка сведений человека"
         >
-          <span className="archive-loader-ring" aria-hidden="true" />
-          <button type="button" onClick={onRetryDetails}>
+          {detailsError ? <p>{detailsError}</p> : <span className="archive-loader-ring" aria-hidden="true" />}
+          {detailsError && onRetryDetails && <button type="button" onClick={onRetryDetails}>
             Повторить загрузку
-          </button>
+          </button>}
         </div>
       ) : <PersonPanel
         idPrefix="person-inspector"

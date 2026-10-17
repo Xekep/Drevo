@@ -46,7 +46,7 @@ test("import keeps real preview warnings and blocks invalid cards at narrow widt
     ],
   };
   const chooseFile = async (data: unknown) => {
-    await dialog.getByLabel("JSON с новыми карточками").setInputFiles({
+    await dialog.getByLabel("Файл для импорта").setInputFiles({
       name: "Очень-длинное-название-пакета-с-новыми-карточками-родственников.json",
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(data)),
@@ -190,7 +190,7 @@ test("tree import previews a JSON batch and preserves every existing card", asyn
     await page.screenshot({
       path: info.outputPath("tree-import-initial-page.png"),
     });
-    await dialog.getByLabel("JSON с новыми карточками").setInputFiles({
+    await dialog.getByLabel("Файл для импорта").setInputFiles({
       name: "batch.json",
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(packet)),
@@ -220,7 +220,7 @@ test("tree import previews a JSON batch and preserves every existing card", asyn
       sources: packet.newPeople[0].sources,
     });
     // Same file cannot duplicate the inserted card.
-    await dialog.getByLabel("JSON с новыми карточками").setInputFiles({
+    await dialog.getByLabel("Файл для импорта").setInputFiles({
       name: "batch.json",
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(packet)),
@@ -231,7 +231,7 @@ test("tree import previews a JSON batch and preserves every existing card", asyn
       dialog.getByRole("button", { name: "Добавить 1 карточек" }),
     ).toHaveCount(0);
     const undo = dialog.getByRole("region", { name: "Отмена импорта" });
-    await dialog.getByText("История и отмена импорта", { exact: true }).click();
+    await dialog.getByText("История и отмена JSON-добавлений", { exact: true }).click();
     await undo
       .getByRole("button", { name: "Показать импортированные пакеты" })
       .click();

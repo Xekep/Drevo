@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import {
   ADDITIONS_MAX_BYTES,
@@ -8,11 +8,15 @@ import {
 export function JsonAdditionsImport({
   canEdit,
   onImported,
+  initialFile,
+  onBusyChange,
 }: {
   canEdit: boolean;
   onImported: () => void;
+  initialFile: File;
+  onBusyChange?: (busy: boolean) => void;
 }) {
-  const [file, setFile] = useState<File | null>(null);
+  const [file, setFile] = useState<File | null>(initialFile || null);
   const [checked, setChecked] = useState<{
     data: unknown;
     preview: AdditionsPreview;
@@ -20,6 +24,7 @@ export function JsonAdditionsImport({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
+  useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
   async function inspect() {
     if (!file) return;
     setBusy(true);
@@ -95,21 +100,6 @@ export function JsonAdditionsImport({
         фотографии и документы сохранятся. Все новые карточки получат отметку
         «Требует проверки».
       </p>
-      <label className="json-additions-file">
-        JSON с новыми карточками
-        <input
-          type="file"
-          accept=".json,application/json"
-          disabled={busy || !canEdit}
-          onChange={(event) => {
-            setFile(event.target.files?.[0] || null);
-            setChecked(null);
-            setError("");
-            setDone("");
-            event.target.value = "";
-          }}
-        />
-      </label>
       {file && <p className="json-additions-filename">{file.name}</p>}
       <button
         type="button"

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { scopedArchivePath } from "../domain/archive-context.ts";
 
@@ -14,16 +14,23 @@ type Preview = {
   warning: string | null;
 };
 
-export function PortableImport() {
-  const [file, setFile] = useState<File | null>(null);
+export function PortableImport({ initialFile, onImported, onBusyChange }: {
+  initialFile?: File;
+  onImported?: () => void;
+  onBusyChange?: (busy: boolean) => void;
+} = {}) {
+  const [file, setFile] = useState<File | null>(initialFile || null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [done, setDone] = useState("");
+  useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
 
   async function inspect() {
     if (!file) return;
     setBusy(true);
     setError("");
+    setDone("");
     setPreview(null);
     try {
       const response = await archiveFetch("/api/drevo/preview", {
@@ -58,7 +65,13 @@ export function PortableImport() {
       const data = await response.json();
       if (!response.ok)
         throw new Error(data.error || "Не удалось импортировать архив");
-      window.location.assign(scopedArchivePath("/tree"));
+      if (onImported) {
+        setPreview(null);
+        setFile(null);
+        setBusy(false);
+        setDone("Архив перенесён в это древо.");
+        onImported();
+      } else window.location.assign(scopedArchivePath("/tree"));
     } catch (cause) {
       setError((cause as Error).message);
       setBusy(false);
@@ -71,7 +84,7 @@ export function PortableImport() {
       <p>
         Фото, документы, источники и обсуждения будут проверены перед импортом.
       </p>
-      <label>
+      {!initialFile && <label>
         Файл .drevo
         <input
           type="file"
@@ -83,7 +96,7 @@ export function PortableImport() {
             setError("");
           }}
         />
-      </label>
+      </label>}
       <button
         type="button"
         disabled={!file || busy}
@@ -125,6 +138,7 @@ export function PortableImport() {
           {error}
         </p>
       )}
+      {done && <p role="status">{done}</p>}
     </div>
   );
 }
