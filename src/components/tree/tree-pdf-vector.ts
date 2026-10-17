@@ -213,7 +213,7 @@ function treePdfSvg(target: Document, width: number, height: number) {
         const rect = range.getBoundingClientRect();
         if (
           !rect.width ||
-          rect.top >= clip.bottom ||
+          rect.top + fontSize * 0.93 > clip.bottom + 1 ||
           rect.right > clip.right + 1
         )
           continue;
@@ -253,7 +253,6 @@ function treePdfSvg(target: Document, width: number, height: number) {
     box(person, svg);
     const avatar = person.querySelector<HTMLElement>(".person-avatar");
     if (avatar) {
-      box(avatar, svg);
       const image = avatar.querySelector("img");
       if (image) {
         const bounds = image.getBoundingClientRect();
@@ -296,9 +295,11 @@ function treePdfSvg(target: Document, width: number, height: number) {
           }),
         );
         canvas.width = canvas.height = 0;
-      } else
+      } else {
+        box(avatar, svg);
         for (const placeholder of avatar.querySelectorAll<SVGSVGElement>("svg"))
           nativeSvg(placeholder, svg);
+      }
     }
     const content = person.querySelector(".flow-person-content");
     if (content) text(content, svg);
