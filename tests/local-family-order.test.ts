@@ -8,6 +8,7 @@ import { treeNodeSize } from "../src/domain/tree-layout-constants.ts";
 import { randomFamily } from "./layout-fixtures.ts";
 import {
   adjacentFamilyBlocks,
+  familyBlockConflicts,
   locallySwapFamilyBlocks,
 } from "../src/domain/local-family-order.ts";
 
@@ -207,4 +208,34 @@ test("large generation layout keeps routed blocks valid in both directions", asy
           assert.equal(segmentHitsBox(a, b, card), false);
       }
   }
+});
+
+
+test("a deduplicated T contact does not hide the households of a later strict crossing", () => {
+  const original = geometry();
+  const branch = (id: string, union: string, coordinates: number[][]) => ({
+    id, union, source: `${id}-source`, target: `${id}-target`, relations: [],
+    route: { sourceHandle: "bottom" as const, targetHandle: "top" as const,
+      points: coordinates.map(([x, y]) => ({ x, y })) },
+  });
+  original.branches = [
+    branch("horizontal", "family-a", [[0, 0], [100, 0]]),
+    branch("touch", "family-b", [[50, -10], [50, 0]]),
+    branch("cross", "family-b", [[50, -10], [50, 10]]),
+  ];
+  original.occurrences = original.branches.flatMap((b) =>
+    [b.source, b.target].map((id) => ({ id, personId: id, block: id })),
+  );
+  const conflicts = familyBlockConflicts(original);
+  assert.equal(branchContactCounts(original.branches).distinct, 1);
+  assert.deepEqual(new Set(conflicts.contacts.keys()), new Set([
+    "horizontal-source", "horizontal-target", "touch-source", "touch-target",
+  ]));
+  assert.deepEqual(conflicts.crossed, new Set([
+    "horizontal-source", "horizontal-target", "cross-source", "cross-target",
+  ]));
+  // A shared family junction remains valid, including a geometric crossing.
+  for (const b of original.branches) b.union = "same-family";
+  assert.equal(familyBlockConflicts(original).crossed.size, 0);
+  assert.equal(familyBlockConflicts(original).contacts.size, 0);
 });

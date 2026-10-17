@@ -16,6 +16,7 @@ import {
   type EdgeRoute,
 } from "./edge-routing.ts";
 import type { FamilyLink } from "./types.ts";
+import { repairFamilyRoutes } from "./family-route-repair.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
@@ -1262,6 +1263,11 @@ export async function unionGeometry(
         // Keep the valid layout if the independent solver cannot place this graph.
       }
     }
+  }
+  if (previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE) {
+    best = repairFamilyRoutes(best, size, (geometry) => ({
+      ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
+    })).geometry;
   }
   return best;
 }
