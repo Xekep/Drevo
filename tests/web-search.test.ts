@@ -2,7 +2,6 @@ import { storeDatabase } from "../src/server/store-database.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { setTimeout as delay } from "node:timers/promises";
 import { initializeArchiveSchema } from "../src/server/schema.ts";
 import { researchCatalogStore } from "../src/server/research-catalog.ts";
 import { aiSettingsStore, publicAiStatus } from "../src/server/ai-settings.ts";
@@ -186,7 +185,7 @@ test("unknown filters, client domains, invalid categories and empty trusted cata
   assert.equal(empty.calls.length, 0);
 });
 
-test("deadline bounds even a stalled provider, cancellation propagates", async () => {
+test("deadline bounds even a stalled provider, cancellation propagates", { timeout: 2000 }, async () => {
   const provider: WebSearchProvider = {
     name: "stalled",
     maxDomains: 5,
@@ -198,16 +197,19 @@ test("deadline bounds even a stalled provider, cancellation propagates", async (
     timeoutMs: 10,
     log: () => {},
   });
-  const keepAlive = delay(50);
-  await assert.rejects(
-    search.search({ query: "query" }, signal()),
-    /WEB_SEARCH_TIMEOUT/,
-  );
-  await keepAlive;
-  const controller = new AbortController();
-  const pending = search.search({ query: "query" }, controller.signal);
-  controller.abort();
-  await assert.rejects(pending, /WEB_SEARCH_CANCELLED/);
+  const keepAlive = setInterval(() => {}, 1000);
+  try {
+    await assert.rejects(
+      search.search({ query: "query" }, signal()),
+      /WEB_SEARCH_TIMEOUT/,
+    );
+    const controller = new AbortController();
+    const pending = search.search({ query: "query" }, controller.signal);
+    controller.abort();
+    await assert.rejects(pending, /WEB_SEARCH_CANCELLED/);
+  } finally {
+    clearInterval(keepAlive);
+  }
 });
 
 const runtime = {
