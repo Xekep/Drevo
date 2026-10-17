@@ -1,7 +1,11 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { Person } from "../../domain";
-import { spatialDetailIds, type SpatialWorld } from "../../domain/tree-spatial";
+import {
+  spatialDetailIds,
+  spatialCardLimit,
+  type SpatialWorld,
+} from "../../domain/tree-spatial";
 import type { TreeFitOptions } from "./tree-camera-fit";
 import {
   SpatialCardAtlas,
@@ -23,12 +27,17 @@ type ProjectedPerson = {
   distance: number;
   z: number;
 };
-const pointVertex = `attribute vec3 color; varying vec3 vColor;
-void main(){vColor=color;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);gl_PointSize=9.;}`;
-const pointFragment = `varying vec3 vColor;
-void main(){if(length(gl_PointCoord-.5)>.5)discard;gl_FragColor=vec4(vColor,1.);}`;
-const cardVertex = `attribute vec3 center; attribute vec4 tile; varying vec2 vUv;
-void main(){vUv=tile.xy+uv*tile.zw;vec4 p=viewMatrix*vec4(center,1.);p.xy+=position.xy*220.;p.z+=2.;gl_Position=projectionMatrix*p;}`;
+const pointVertex = `attribute vec3 color; attribute float shown; uniform float pointScale; varying vec3 vColor; varying float vShown;
+void main(){vColor=color;vShown=shown;vec4 p=modelViewMatrix*vec4(position,1.);gl_Position=projectionMatrix*p;gl_PointSize=clamp(pointScale/max(1.,-p.z),3.,11.);}`;
+const labelDeclarations =
+  "uniform vec4 labelRects[32]; uniform int labelCount;";
+const labelClip = `for(int i=0;i<32;i++){if(i>=labelCount)break;vec4 b=labelRects[i];if(all(greaterThanEqual(gl_FragCoord.xy,b.xy))&&all(lessThanEqual(gl_FragCoord.xy,b.zw)))discard;}`;
+const pointFragment = `${labelDeclarations} varying vec3 vColor; varying float vShown;
+void main(){if(vShown<.5||length(gl_PointCoord-.5)>.5)discard;${labelClip}gl_FragColor=vec4(vColor,1.);
+#include <colorspace_fragment>
+}`;
+const cardVertex = `attribute vec3 center; attribute vec4 tile; uniform float focal; uniform float maxPixels; varying vec2 vUv;
+void main(){vUv=tile.xy+uv*tile.zw;vec4 p=viewMatrix*vec4(center,1.);float scale=min(1.,maxPixels*max(1.,-p.z)/(220.*focal));p.xy+=position.xy*220.*scale;gl_Position=projectionMatrix*p;}`;
 const cardFragment = `uniform sampler2D atlas; varying vec2 vUv;
 void main(){vec4 c=texture2D(atlas,vUv);if(c.a<.1)discard;gl_FragColor=c;
 #include <colorspace_fragment>
@@ -64,6 +73,10 @@ export class SpatialRenderer {
   private anchor = "";
   private active: ReadonlySet<string> = new Set();
   private details = new Set<string>();
+  private labelRects = {
+    value: Array.from({ length: 32 }, () => new THREE.Vector4()),
+  };
+  private labelCount = { value: 0 };
   private fly: {
     start: number;
     duration: number;
@@ -83,6 +96,7 @@ export class SpatialRenderer {
   private reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
   private positions: number[] = [];
   private ids: string[];
+  private indexById: Map<string, number>;
   constructor(
     private host: HTMLDivElement,
     private world: SpatialWorld,
@@ -125,11 +139,19 @@ export class SpatialRenderer {
     this.controls.addEventListener("change", this.invalidate);
     this.controls.addEventListener("start", this.interrupt);
     this.ids = [...world.points.keys()];
+    this.indexById = new Map(this.ids.map((id, i) => [id, i]));
     for (const p of world.points.values()) this.positions.push(p.x, p.y, p.z);
     const dotGeometry = new THREE.BufferGeometry();
     dotGeometry.setAttribute(
       "position",
       new THREE.Float32BufferAttribute(this.positions, 3),
+    );
+    dotGeometry.setAttribute(
+      "shown",
+      new THREE.Float32BufferAttribute(
+        new Float32Array(this.ids.length).fill(1),
+        1,
+      ),
     );
     dotGeometry.setAttribute(
       "color",
@@ -141,6 +163,11 @@ export class SpatialRenderer {
     this.dots = new THREE.Points(
       dotGeometry,
       new THREE.ShaderMaterial({
+        uniforms: {
+          pointScale: { value: 16000 },
+          labelRects: this.labelRects,
+          labelCount: this.labelCount,
+        },
         vertexShader: pointVertex,
         fragmentShader: pointFragment,
         depthTest: true,
@@ -151,16 +178,7 @@ export class SpatialRenderer {
     for (const edge of world.connections) {
       const a = world.points.get(edge.from)!,
         b = world.points.get(edge.to)!;
-      const length = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
-      const inset = Math.min(125, length * 0.35) / Math.max(1, length);
-      linePositions.push(
-        a.x + (b.x - a.x) * inset,
-        a.y + (b.y - a.y) * inset,
-        a.z + (b.z - a.z) * inset,
-        b.x + (a.x - b.x) * inset,
-        b.y + (a.y - b.y) * inset,
-        b.z + (a.z - b.z) * inset,
-      );
+      linePositions.push(a.x, a.y, a.z, b.x, b.y, b.z);
     }
     const lineGeometry = new THREE.BufferGeometry();
     lineGeometry.setAttribute(
@@ -182,6 +200,7 @@ export class SpatialRenderer {
         opacity: 0.65,
       }),
     );
+    this.maskUnderLabels(this.edges.material);
     this.scene.add(this.edges);
     const parents = world.connections.filter((e) => e.type === "parent");
     this.arrows = new THREE.InstancedMesh(
@@ -189,6 +208,7 @@ export class SpatialRenderer {
       new THREE.MeshBasicMaterial({ color: palette.green }),
       parents.length,
     );
+    this.maskUnderLabels(this.arrows.material as THREE.Material);
     const dummy = new THREE.Object3D(),
       direction = new THREE.Vector3();
     parents.forEach((edge, i) => {
@@ -232,7 +252,11 @@ export class SpatialRenderer {
     this.cards = new THREE.Mesh(
       cardGeometry,
       new THREE.ShaderMaterial({
-        uniforms: { atlas: { value: this.atlas.texture } },
+        uniforms: {
+          atlas: { value: this.atlas.texture },
+          focal: { value: 1 },
+          maxPixels: { value: 190 },
+        },
         vertexShader: cardVertex,
         fragmentShader: cardFragment,
         transparent: true,
@@ -305,8 +329,26 @@ export class SpatialRenderer {
     this.renderer.setSize(this.width, this.height, false);
     this.camera.aspect = this.width / this.height;
     this.camera.updateProjectionMatrix();
+    this.cards.material.uniforms.focal.value =
+      this.height /
+      (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2));
+    this.cards.material.uniforms.maxPixels.value = spatialCardLimit(this.width);
+    this.dots.material.uniforms.pointScale.value =
+      (this.height * this.renderer.getPixelRatio() * 8) /
+      Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2);
     this.invalidate();
   };
+  private maskUnderLabels(material: THREE.Material) {
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.labelRects = this.labelRects;
+      shader.uniforms.labelCount = this.labelCount;
+      shader.fragmentShader =
+        `${labelDeclarations}\n${shader.fragmentShader}`.replace(
+          "#include <clipping_planes_fragment>",
+          `#include <clipping_planes_fragment>\n${labelClip}`,
+        );
+    };
+  }
   private visibility = () => {
     this.hidden = document.hidden;
     if (this.hidden) {
@@ -336,7 +378,11 @@ export class SpatialRenderer {
   personAt(x: number, y: number) {
     const b = this.renderer.domElement.getBoundingClientRect();
     return [...this.projected]
-      .sort((a, c) => a.distance - c.distance)
+      .sort(
+        (a, c) =>
+          Number(this.details.has(c.id)) - Number(this.details.has(a.id)) ||
+          a.distance - c.distance,
+      )
       .find((p) => {
         const full = this.details.has(p.id),
           width = full ? p.size * 0.5 : 13,
@@ -478,7 +524,7 @@ export class SpatialRenderer {
         id,
         x: ((vector.x + 1) * this.width) / 2,
         y: ((1 - vector.y) * this.height) / 2,
-        size: (220 * focal) / distance,
+        size: Math.min((220 * focal) / distance, spatialCardLimit(this.width)),
         distance,
         z: vector.z,
       });
@@ -491,7 +537,24 @@ export class SpatialRenderer {
       this.anchor,
       SPATIAL_ATLAS_CAPACITY,
     );
+    const shown = this.dots.geometry.getAttribute("shown");
+    for (const id of this.details) shown.setX(this.indexById.get(id)!, 1);
+    for (const id of ids) shown.setX(this.indexById.get(id)!, 0);
+    shown.needsUpdate = true;
     this.details = new Set(ids);
+    const byId = new Map(projected.map((p) => [p.id, p]));
+    const dpr = this.renderer.getPixelRatio();
+    ids.forEach((id, i) => {
+      const p = byId.get(id)!,
+        half = p.size / 2 + 3;
+      this.labelRects.value[i].set(
+        (p.x - half) * dpr,
+        (this.height - p.y - half) * dpr,
+        (p.x + half) * dpr,
+        (this.height - p.y + half) * dpr,
+      );
+    });
+    this.labelCount.value = ids.length;
     this.atlas.update(ids.map((id) => this.people.get(id)!).filter(Boolean));
     const centers = this.cards.geometry.getAttribute("center"),
       tiles = this.cards.geometry.getAttribute("tile");
@@ -513,6 +576,9 @@ export class SpatialRenderer {
       return;
     }
     this.host.dataset.depthCards = String(ids.length);
+    this.host.dataset.depthLargestCard = String(
+      Math.max(0, ...ids.map((id) => byId.get(id)!.size)),
+    );
     this.host.dataset.depthDrawCalls = String(this.renderer.info.render.calls);
     this.host.dataset.depthTextures = String(
       this.renderer.info.memory.textures,
@@ -564,7 +630,7 @@ export class SpatialRenderer {
       .add(
         new THREE.Vector3(
           Math.sin(p.angle) * distance,
-          distance * 0.12,
+          distance * 0.25,
           Math.cos(p.angle) * distance,
         ),
       );
@@ -581,17 +647,28 @@ export class SpatialRenderer {
       if (!ids || ids.includes(id))
         box.expandByPoint(new THREE.Vector3(p.x, p.y, p.z));
     if (box.isEmpty()) return false;
-    const target = box.getCenter(new THREE.Vector3()),
-      size = box.getSize(new THREE.Vector3());
-    const distance =
-      (Math.max(size.y + 300, (size.x + 300) / this.camera.aspect) /
-        (2 * Math.tan(THREE.MathUtils.degToRad(42) / 2))) *
-        1.2 +
-      size.z / 2;
+    const target = box.getCenter(new THREE.Vector3());
+    const view = new THREE.Vector3(0.55, 0.42, 1).normalize();
+    const right = new THREE.Vector3()
+      .crossVectors(new THREE.Vector3(0, 1, 0), view)
+      .normalize();
+    const up = new THREE.Vector3().crossVectors(view, right);
+    const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2),
+      tanH = tanV * this.camera.aspect;
+    let distance = 850;
+    const relative = new THREE.Vector3();
+    for (const [id, p] of this.world.points)
+      if (!ids || ids.includes(id)) {
+        relative.set(p.x, p.y, p.z).sub(target);
+        const depth = relative.dot(view);
+        distance = Math.max(
+          distance,
+          (Math.abs(relative.dot(right)) + 150) / tanH + depth,
+          (Math.abs(relative.dot(up)) + 150) / tanV + depth,
+        );
+      }
     this.move(
-      target
-        .clone()
-        .add(new THREE.Vector3(0, distance * 0.1, Math.max(distance, 850))),
+      target.clone().addScaledVector(view, distance * 1.1),
       target,
       options?.duration ?? 620,
     );

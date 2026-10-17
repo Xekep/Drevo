@@ -95,10 +95,6 @@ export class SpatialCardAtlas {
     c.clearRect(x, y, TILE, TILE);
     c.save();
     c.translate(x, y);
-    c.fillStyle = this.palette.paper;
-    c.beginPath();
-    c.roundRect(6, 3, 244, 250, 14);
-    c.fill();
     c.save();
     c.beginPath();
     c.arc(128, 69, 51, 0, Math.PI * 2);
@@ -138,7 +134,12 @@ export class SpatialCardAtlas {
       let label = value;
       while (label.length && c.measureText(label).width > 228)
         label = label.slice(0, -1);
-      c.fillText(label === value ? label : `${label.slice(0, -1)}…`, 128, y);
+      const visible = label === value ? label : `${label.slice(0, -1)}…`;
+      c.lineWidth = 3;
+      c.lineJoin = "round";
+      c.strokeStyle = this.palette.paper;
+      c.strokeText(visible, 128, y);
+      c.fillText(visible, 128, y);
     };
     text(
       tile.person.surname || tile.person.name,

@@ -107,7 +107,7 @@ async function setup(page: Page, graph = family) {
         message &&
         typeof message === "object" &&
         "requestId" in message &&
-        "people" in message
+        ("people" in message || "flat" in message)
       )
         state.depthLayoutRequests++;
       return Reflect.apply(
@@ -164,6 +164,13 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   test.setTimeout(90_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (
+      message.type() === "error" &&
+      /THREE.WebGLProgram|Shader Error|VALIDATE_STATUS/.test(message.text())
+    )
+      errors.push(message.text());
+  });
   await setup(page);
   await settle(page);
   await expect(page.locator(".tree-spatial-canvas")).toHaveCount(1);
@@ -185,6 +192,7 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   await page.screenshot({ path: info.outputPath("3d-initial.png") });
   const requests = await workerRequests(page),
     camera = await world(page).getAttribute("data-depth-camera");
+  expect(requests).toBeGreaterThanOrEqual(2);
   await page
     .getByRole("button", { name: "Повернуть пространство вправо", exact: true })
     .click();
@@ -222,6 +230,9 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
     "sibling",
   );
   expect(await workerRequests(page)).toBe(requests);
+  expect(
+    Number(await world(page).getAttribute("data-depth-largest-card")),
+  ).toBeLessThanOrEqual(info.project.name === "mobile" ? 150 : 190);
   await page.screenshot({ path: info.outputPath("3d-selected.png") });
   const atSibling = await world(page).getAttribute("data-depth-camera");
   await page.locator(".tree-spatial-person-name").click();

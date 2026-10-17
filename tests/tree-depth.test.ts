@@ -2,7 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { Family, Person } from "../src/domain/types.ts";
 import { treeDepthBranches } from "../src/domain/tree-depth.ts";
-import { spatialWorld, spatialDetailIds } from "../src/domain/tree-spatial.ts";
+import {
+  spatialWorld,
+  spatialDetailIds,
+  spatialCardLimit,
+} from "../src/domain/tree-spatial.ts";
 import type { TreeGeometry } from "../src/domain/tree-layout.ts";
 
 const p = (
@@ -200,15 +204,102 @@ test("3D has real depth and keeps ordered generations in either direction", () =
     );
     for (const point of world.points.values())
       assert.ok(Object.values(point).every(Number.isFinite));
-    // Horizontal arc length is the Worker spacing; curvature cannot fold a row over itself.
-    assert.ok(
-      [...world.points.values()].every((p) => Math.abs(p.angle) <= 1.2 + 1e-9),
-    );
     assert.deepEqual(
       spatialWorld(new Map(family.people.map((p) => [p.id, p])), geometry),
       world,
     );
   }
+});
+
+test("a real family fork has noncoplanar depth instead of a single bent sheet", () => {
+  const people = [
+    p("a", [], ["b"]),
+    p("b", [], ["a"]),
+    p("c", ["a", "b"]),
+    p("d", ["a", "b"]),
+  ];
+  const geometry: TreeGeometry = {
+    mode: "generations",
+    reverse: false,
+    start: 0,
+    offset: 0,
+    positions: [
+      ["a", { x: -140, y: 0 }],
+      ["b", { x: 140, y: 0 }],
+      ["c", { x: -200, y: 400 }],
+      ["d", { x: 200, y: 400 }],
+    ],
+  };
+  const world = spatialWorld(new Map(people.map((p) => [p.id, p])), geometry);
+  const [a, b, c, d] = ["a", "b", "c", "d"].map((id) => world.points.get(id)!);
+  const u = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z },
+    v = { x: c.x - a.x, y: c.y - a.y, z: c.z - a.z },
+    w = { x: d.x - a.x, y: d.y - a.y, z: d.z - a.z };
+  const volume =
+    u.x * (v.y * w.z - v.z * w.y) -
+    u.y * (v.x * w.z - v.z * w.x) +
+    u.z * (v.x * w.y - v.y * w.x);
+  assert.ok(
+    Math.abs(volume) > 1_000_000,
+    "four people must not all lie in a plane",
+  );
+  assert.ok(
+    c.z * d.z < 0,
+    "two descendant branches extend in opposite depth directions",
+  );
+  assert.equal(Math.hypot(b.x - a.x, b.z - a.z), 280);
+  assert.equal(a.y, b.y);
+  assert.equal(c.y, d.y);
+  assert.deepEqual(
+    spatialWorld(new Map([...people].reverse().map((p) => [p.id, p])), {
+      ...geometry,
+      positions: [...geometry.positions].reverse(),
+    }).points,
+    world.points,
+  );
+});
+
+test("unmarried co-parents stay close without creating a partner edge", () => {
+  const people = [p("a"), p("b"), p("c", ["a", "b"])];
+  const world = spatialWorld(new Map(people.map((p) => [p.id, p])), {
+    mode: "generations",
+    reverse: false,
+    start: 0,
+    offset: 0,
+    positions: [
+      ["a", { x: 0, y: 0 }],
+      ["b", { x: 280, y: 0 }],
+      ["c", { x: 100, y: 400 }],
+    ],
+  });
+  assert.equal(world.connections.filter((e) => e.type === "partner").length, 0);
+  assert.equal(world.connections.filter((e) => e.type === "parent").length, 2);
+  const a = world.points.get("a")!,
+    b = world.points.get("b")!;
+  assert.equal(Math.hypot(a.x - b.x, a.z - b.z), 280);
+});
+
+test("dense and cyclic imported coordinates terminate without duplicate or inaccessible points", () => {
+  const people = Array.from({ length: 1000 }, (_, i) =>
+    p(String(i), i ? [String(i - 1)] : ["999"]),
+  );
+  const world = spatialWorld(new Map(people.map((p) => [p.id, p])), {
+    mode: "generations",
+    reverse: false,
+    start: 0,
+    offset: 0,
+    positions: people.map((p) => [p.id, { x: 0, y: 0 }]),
+  });
+  assert.equal(world.points.size, 1000);
+  assert.equal(
+    new Set([...world.points.values()].map((p) => `${p.x}:${p.z}`)).size,
+    1000,
+  );
+  assert.ok(
+    [...world.points.values()].every((p) =>
+      Object.values(p).every(Number.isFinite),
+    ),
+  );
 });
 
 test("3D includes only authorised geometry, coalesces occurrences and terminates on bad imported cycles", () => {
@@ -236,6 +327,8 @@ test("3D includes only authorised geometry, coalesces occurrences and terminates
 });
 
 test("3D screen LOD is bounded, prioritises the anchor and suppresses overlapping labels", () => {
+  assert.equal(spatialCardLimit(390), 150);
+  assert.equal(spatialCardLimit(1440), 190);
   const candidates = Array.from({ length: 10_000 }, (_, i) => ({
     id: String(i),
     x: 50 + (i % 50) * 100,
