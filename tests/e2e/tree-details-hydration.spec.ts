@@ -225,7 +225,10 @@ test("a minimal save reply preserves a bounded profile preview and the whole alb
     expect(detailOffsets, "the new revision refreshes one bounded preview without full-album paging").toEqual([0, 0]);
     await dock.getByRole("button", { name: "Открыть фотоальбом человека: 41 фото", exact: true }).click();
     await expect(page.locator(".photo-grid .photo-tile")).toHaveCount(30);
-    await page.getByRole("button", { name: "Показать ещё", exact: true }).click();
+    // Scrolling to the button already triggers LoadMore's IntersectionObserver
+    // and removes it once the final page arrives. Scroll a stable photo instead
+    // of racing a manual click against that successful automatic load.
+    await page.locator(".photo-grid .photo-tile").last().scrollIntoViewIfNeeded();
     await expect(page.locator(".photo-grid .photo-tile")).toHaveCount(41);
     expect(galleryOffsets).toEqual([0, 30]);
   } finally {
