@@ -47,7 +47,7 @@ export function translateFamilyBlocks(
       target = shifted.get(branch.target) || 0;
     if (!source && !target) return branch;
     const old = branch.route.points;
-    if (branch.id.startsWith("pair:"))
+    if (source === target || branch.id.startsWith("pair:"))
       return {
         ...branch,
         route: {

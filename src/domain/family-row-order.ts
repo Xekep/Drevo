@@ -6,6 +6,7 @@ import {
   familyBlockConflicts,
   placedFamilyRows,
 } from "./local-family-order.ts";
+import { familyBranchMoves } from "./family-branch-moves.ts";
 import { restoreFamilyRowHistory } from "./family-row-history.ts";
 import { optimizeMultiPartnerOrder } from "./multi-partner-order.ts";
 import { coupleBlocksWithContactedAncestry, locallyReverseCouples } from "./local-couple-order.ts";
@@ -120,6 +121,7 @@ export function optimizeFamilyRows(
     best = retained;
   }
   let budget = small ? 24 : 8;
+  let cheapCandidates = 0;
   for (let pass = 0; !previous && pass < 2 && budget > 0; pass++) {
     const before = score(best),
       { contacts, crossed } = familyBlockConflicts(best);
@@ -150,6 +152,7 @@ export function optimizeFamilyRows(
           }
         }
     }
+    cheapCandidates += candidates.length;
     candidates.sort(
       (a, b) =>
         a.quality.cardHits - b.quality.cardHits ||
@@ -179,6 +182,8 @@ export function optimizeFamilyRows(
     if (!selected) break;
     best = selected;
   }
+  const rowUnchanged = best === primary;
+  let reorderBudget = budget;
   budget = small ? 8 : 4;
   for (let pass = 0; !previous && pass < 3 && budget > 0; pass++) {
     const before = score(best),
@@ -216,6 +221,37 @@ export function optimizeFamilyRows(
     }
     if (!selected) break;
     best = selected;
+  }
+  // A failed one-generation move may merely carry its crossing downstream.
+  // Try rigid descendant moves using the existing unspent search allowance.
+  if (!previous && rowUnchanged && score(best).crossings) {
+    const { contacts, crossed } = familyBlockConflicts(best);
+    const branchRoots = [...contacts].filter(([id]) => crossed.has(id))
+      .sort((a, b) => b[1] - a[1]).map(([id]) => id);
+    const cap = Math.min(small ? 32 : 8, (small ? 1024 : 128) - cheapCandidates);
+    const borrowed = reorderBudget <= 0 && !small;
+    const routeLimit = Math.min(small ? 12 : 2, borrowed ? budget : reorderBudget);
+    if (cap > 0 && routeLimit > 0) {
+      const before = score(best);
+      const candidates = familyBranchMoves(best, size, branchRoots, cap)
+        .map((move) => ({ move, quality: score(move.geometry) }))
+        .filter(({ quality }) => safer(quality, before) && safer(quality, initial) &&
+          quality.crossings < before.crossings)
+        .sort((a, b) => a.quality.crossings - b.quality.crossings ||
+          a.quality.contacts - b.quality.contacts || a.quality.length - b.quality.length ||
+          a.move.distance - b.move.distance);
+      let selected: TreeGeometry | undefined;
+      for (const { move } of candidates.slice(0, routeLimit)) {
+        if (borrowed) budget--;
+        else reorderBudget--;
+        const candidate = routeMove(move, size, move.preserved), next = score(candidate);
+        if (!safer(next, before) || !safer(next, initial) || next.crossings >= before.crossings) continue;
+        if (!selected || next.crossings < score(selected).crossings ||
+            (next.crossings === score(selected).crossings && next.length < score(selected).length))
+          selected = candidate;
+      }
+      if (selected) best = selected;
+    }
   }
   if (best === primary) return original;
   if (!links.length) return best;
