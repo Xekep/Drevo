@@ -22,24 +22,6 @@
   outline: 2px solid var(--green);
   outline-offset: -3px;
 }
-.tree-spatial-add {
-  position: absolute;
-  left: 14px;
-  bottom: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 6px 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--paper);
-  color: var(--ink);
-}
-.tree-spatial:has(.tree-spatial-add) .tree-spatial-orbit {
-  bottom: 64px;
-}
 .tree-spatial-state {
   position: absolute;
   inset: 0;
@@ -123,7 +105,6 @@
   margin: 8px 12px;
   font-size: 13px;
 }
-.tree-spatial-orbit,
 .tree-spatial-tools,
 .tree-spatial-person {
   position: absolute;
@@ -135,10 +116,6 @@
   border-radius: 12px;
   background: var(--paper);
 }
-.tree-spatial-orbit {
-  left: 14px;
-  bottom: 48px;
-}
 .tree-spatial-tools {
   bottom: 32px;
   left: 50%;
@@ -147,7 +124,6 @@
 .tree-spatial button {
   cursor: pointer;
 }
-.tree-spatial-orbit button,
 .tree-spatial-tools button,
 .tree-spatial-person button {
   display: inline-flex;
@@ -212,17 +188,16 @@
     right: 8px;
     max-width: calc(100% - 72px);
   }
-  .tree-spatial-orbit {
-    left: 8px;
-    bottom: 84px;
-  }
-  .tree-spatial-tools {
-    bottom: 28px;
-  }
   .tree-spatial-hint {
     max-width: calc(100% - 16px);
     overflow: hidden;
     text-overflow: ellipsis;
     font-size: 11px;
+  }
+}
+
+@media (max-width: 899px) {
+  .tree-spatial-tools {
+    display: none;
   }
 }

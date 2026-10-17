@@ -1,12 +1,13 @@
 import { CanvasTexture, LinearFilter, SRGBColorSpace } from "three";
-import { safeUrl, years, type Person } from "../../domain";
-import { mediaPreview } from "../../domain/media-preview";
-import { portraitLoadTimeoutMs } from "../portrait-retry";
+import { safeUrl } from "../../domain/dates.ts";
+import type { Person } from "../../domain/types.ts";
+import { mediaPreview } from "../../domain/media-preview.ts";
+import { portraitLoadTimeoutMs } from "../portrait-retry.ts";
 
-const TILE = 256,
-  COLUMNS = 4,
-  ROWS = 8;
-export const SPATIAL_ATLAS_CAPACITY = COLUMNS * ROWS;
+export const SPATIAL_ATLAS_SIDE = 2048;
+export function spatialPortraitTile(people: number) {
+  return people <= 256 ? 128 : people <= 1024 ? 64 : people <= 4096 ? 32 : 16;
+}
 export type SpatialPalette = {
   paper: string;
   ink: string;
@@ -15,11 +16,14 @@ export type SpatialPalette = {
   red: string;
 };
 
-/** Fixed 8 MiB RGBA page without mipmaps. At most four decoded portraits are
- * in flight; offscreen images are cancelled and never form an unbounded cache. */
+/** Fixed 16 MiB RGBA portrait page without mipmaps. At most four decoded portraits
+ * are in flight; revoked images are cancelled and never form an unbounded cache. */
 export class SpatialCardAtlas {
   readonly canvas = document.createElement("canvas");
   readonly texture: CanvasTexture;
+  readonly tile: number;
+  readonly columns: number;
+  readonly capacity: number;
   private context: CanvasRenderingContext2D;
   private slots = new Map<string, { slot: number; person: Person }>();
   private pending = new Map<
@@ -28,12 +32,19 @@ export class SpatialCardAtlas {
   >();
   private settled = new Set<string>();
   private stopped = false;
+  private palette: SpatialPalette;
+  private invalidate: () => void;
   constructor(
-    private palette: SpatialPalette,
-    private invalidate: () => void,
+    palette: SpatialPalette,
+    invalidate: () => void,
+    peopleCount: number,
   ) {
-    this.canvas.width = TILE * COLUMNS;
-    this.canvas.height = TILE * ROWS;
+    this.palette = palette;
+    this.invalidate = invalidate;
+    this.tile = spatialPortraitTile(peopleCount);
+    this.columns = SPATIAL_ATLAS_SIDE / this.tile;
+    this.capacity = this.columns ** 2;
+    this.canvas.width = this.canvas.height = SPATIAL_ATLAS_SIDE;
     this.context = this.canvas.getContext("2d")!;
     this.texture = new CanvasTexture(this.canvas);
     this.texture.colorSpace = SRGBColorSpace;
@@ -41,7 +52,8 @@ export class SpatialCardAtlas {
     this.texture.minFilter = this.texture.magFilter = LinearFilter;
   }
   update(people: Person[]) {
-    const wanted = new Set(people.map((p) => p.id));
+    const selected = people.slice(0, this.capacity);
+    const wanted = new Set(selected.map((p) => p.id));
     for (const [id, load] of this.pending)
       if (!wanted.has(id)) {
         clearTimeout(load.timer);
@@ -55,12 +67,23 @@ export class SpatialCardAtlas {
         this.settled.delete(id);
       }
     const used = new Set([...this.slots.values()].map((s) => s.slot));
-    for (const person of people.slice(0, SPATIAL_ATLAS_CAPACITY)) {
+    let nextFree = 0;
+    for (const person of selected) {
       const old = this.slots.get(person.id);
       if (old && old.person === person) continue;
-      let slot = old?.slot ?? 0;
+      if (
+        old &&
+        old.person.photo === person.photo &&
+        old.person.name === person.name &&
+        old.person.surname === person.surname
+      ) {
+        old.person = person;
+        continue;
+      }
+      let slot = old?.slot ?? nextFree;
       while (!old && used.has(slot)) slot++;
-      if (slot >= SPATIAL_ATLAS_CAPACITY) break;
+      if (slot >= this.capacity) break;
+      if (!old) nextFree = slot + 1;
       if (old) {
         const load = this.pending.get(person.id);
         if (load) {
@@ -80,28 +103,29 @@ export class SpatialCardAtlas {
   uv(id: string) {
     const slot = this.slots.get(id)!.slot;
     return [
-      (slot % COLUMNS) / COLUMNS,
-      1 - (Math.floor(slot / COLUMNS) + 1) / ROWS,
-      1 / COLUMNS,
-      1 / ROWS,
+      (slot % this.columns) / this.columns,
+      1 - (Math.floor(slot / this.columns) + 1) / this.columns,
+      1 / this.columns,
+      1 / this.columns,
     ];
   }
   private draw(id: string, image?: HTMLImageElement) {
     const tile = this.slots.get(id);
     if (!tile || this.stopped) return;
     const c = this.context,
-      x = (tile.slot % COLUMNS) * TILE,
-      y = Math.floor(tile.slot / COLUMNS) * TILE;
-    c.clearRect(x, y, TILE, TILE);
+      x = (tile.slot % this.columns) * this.tile,
+      y = Math.floor(tile.slot / this.columns) * this.tile;
+    c.clearRect(x, y, this.tile, this.tile);
     c.save();
     c.translate(x, y);
+    c.scale(this.tile / 256, this.tile / 256);
     c.save();
     c.beginPath();
-    c.arc(128, 69, 51, 0, Math.PI * 2);
+    c.arc(128, 128, 124, 0, Math.PI * 2);
     c.clip();
     c.fillStyle = this.palette.green;
     c.globalAlpha = 0.12;
-    c.fillRect(77, 18, 102, 102);
+    c.fillRect(0, 0, 256, 256);
     c.globalAlpha = 1;
     if (image) {
       const side = Math.min(image.naturalWidth, image.naturalHeight);
@@ -111,55 +135,22 @@ export class SpatialCardAtlas {
         (image.naturalHeight - side) / 2,
         side,
         side,
-        77,
-        18,
-        102,
-        102,
+        0,
+        0,
+        256,
+        256,
       );
     } else {
       c.fillStyle = this.palette.green;
-      c.font = "500 30px sans-serif";
+      c.font = "500 76px sans-serif";
       c.textAlign = "center";
       c.fillText(
         [tile.person.name[0], tile.person.surname[0]].filter(Boolean).join(""),
         128,
-        80,
+        153,
       );
     }
     c.restore();
-    c.textAlign = "center";
-    const text = (value: string, y: number, font: string, color: string) => {
-      c.font = font;
-      c.fillStyle = color;
-      let label = value;
-      while (label.length && c.measureText(label).width > 228)
-        label = label.slice(0, -1);
-      const visible = label === value ? label : `${label.slice(0, -1)}…`;
-      c.lineWidth = 3;
-      c.lineJoin = "round";
-      c.strokeStyle = this.palette.paper;
-      c.strokeText(visible, 128, y);
-      c.fillText(visible, 128, y);
-    };
-    text(
-      tile.person.surname || tile.person.name,
-      151,
-      "600 23px sans-serif",
-      this.palette.ink,
-    );
-    text(
-      tile.person.surname ? tile.person.name : "",
-      180,
-      "21px sans-serif",
-      this.palette.ink,
-    );
-    text(
-      tile.person.patronymic || "",
-      205,
-      "19px sans-serif",
-      this.palette.ink,
-    );
-    text(years(tile.person), 236, "19px sans-serif", this.palette.muted);
     c.restore();
     this.texture.needsUpdate = true;
     this.invalidate();

@@ -492,7 +492,7 @@ export function EventsEditor({
     </details>
   );
 }
-function EventSourceList({ label, sources, canLoadDocuments }: {
+export function EventSourceList({ label, sources, canLoadDocuments }: {
   label: string; sources: Source[]; canLoadDocuments: boolean;
 }) {
   return <details className="event-sources">

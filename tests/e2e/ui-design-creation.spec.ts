@@ -42,13 +42,21 @@ async function isolatedCreation(page: Page, reader = false) {
 }
 
 for (const route of ["tree", "people"] as const) {
-  test(`телефон создаёт независимого человека из ${route} в заполненном архиве`, async ({ page }) => {
+  test(`телефон создаёт независимого человека через каталог после открытия ${route}`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     const archive = await isolatedCreation(page);
     expect(archive.baseline.people.length).toBeGreaterThan(0);
     await page.goto(`/${route}`);
     const add = page.getByRole("button", { name: "Добавить человека", exact: true });
+    if (route === "tree") {
+      await expect(page.locator(".tree-canvas")).toBeVisible();
+      await expect(add).toHaveCount(0);
+      await expect(page.locator(".flow-add-tools")).toHaveCount(0);
+      await page.getByLabel("Меню проекта").click();
+      await page.locator(".mobile-sections").getByRole("link", { name: "Люди", exact: true }).click();
+      await expect(page).toHaveURL(/\/people$/);
+    }
     await expect(add).toBeVisible();
     await expect.poll(() => add.evaluate((element) => {
       const rect = element.getBoundingClientRect();

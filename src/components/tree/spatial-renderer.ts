@@ -2,16 +2,14 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { Person } from "../../domain";
 import {
-  spatialDetailIds,
+  spatialCardFloor,
   spatialCardLimit,
   type SpatialWorld,
 } from "../../domain/tree-spatial";
 import type { TreeFitOptions } from "./tree-camera-fit";
-import {
-  SpatialCardAtlas,
-  SPATIAL_ATLAS_CAPACITY,
-  type SpatialPalette,
-} from "./spatial-card-atlas";
+import { SpatialCardAtlas, type SpatialPalette } from "./spatial-card-atlas";
+import { SpatialNameAtlas } from "./spatial-name-atlas";
+import { SpatialLabelMask } from "./spatial-label-mask";
 
 type Callbacks = {
   profile: (id: string) => void;
@@ -27,19 +25,19 @@ type ProjectedPerson = {
   distance: number;
   z: number;
 };
-const pointVertex = `attribute vec3 color; attribute float shown; uniform float pointScale; varying vec3 vColor; varying float vShown;
-void main(){vColor=color;vShown=shown;vec4 p=modelViewMatrix*vec4(position,1.);gl_Position=projectionMatrix*p;gl_PointSize=clamp(pointScale/max(1.,-p.z),3.,11.);}`;
-const labelDeclarations =
-  "uniform vec4 labelRects[32]; uniform int labelCount;";
-const labelClip = `for(int i=0;i<32;i++){if(i>=labelCount)break;vec4 b=labelRects[i];if(all(greaterThanEqual(gl_FragCoord.xy,b.xy))&&all(lessThanEqual(gl_FragCoord.xy,b.zw)))discard;}`;
-const pointFragment = `${labelDeclarations} varying vec3 vColor; varying float vShown;
-void main(){if(vShown<.5||length(gl_PointCoord-.5)>.5)discard;${labelClip}gl_FragColor=vec4(vColor,1.);
-#include <colorspace_fragment>
-}`;
-const cardVertex = `attribute vec3 center; attribute vec4 tile; uniform float focal; uniform float maxPixels; varying vec2 vUv;
-void main(){vUv=tile.xy+uv*tile.zw;vec4 p=viewMatrix*vec4(center,1.);float scale=min(1.,maxPixels*max(1.,-p.z)/(220.*focal));p.xy+=position.xy*220.*scale;gl_Position=projectionMatrix*p;}`;
-const cardFragment = `uniform sampler2D atlas; varying vec2 vUv;
-void main(){vec4 c=texture2D(atlas,vUv);if(c.a<.1)discard;gl_FragColor=c;
+const labelDeclarations = "uniform sampler2D labelMask; uniform vec2 viewport;";
+const labelClip =
+  "if(texture2D(labelMask,gl_FragCoord.xy/viewport).a>.5)discard;";
+const cardVertex = `attribute vec3 center; attribute vec4 tile; attribute vec4 offset; attribute float date;
+uniform float focal; uniform float maxPixels; uniform float minPixels;
+varying vec2 vUv; varying float vAlpha;
+void main(){vUv=tile.xy+uv*tile.zw;vec4 p=viewMatrix*vec4(center,1.);
+float pixels=clamp(220.*focal/max(1.,-p.z),minPixels,maxPixels);
+vAlpha=mix(1.,smoothstep(110.,140.,pixels),date);
+p.xy+=(offset.xy+position.xy*offset.zw)*pixels*max(1.,-p.z)/focal;
+gl_Position=p.z>=-1.?vec4(2.,2.,2.,1.):projectionMatrix*p;}`;
+const cardFragment = `uniform sampler2D atlas; varying vec2 vUv; varying float vAlpha;
+void main(){vec4 c=texture2D(atlas,vUv);c.a*=vAlpha;if(c.a<.1)discard;gl_FragColor=c;
 #include <colorspace_fragment>
 }`;
 
@@ -56,7 +54,15 @@ export class SpatialRenderer {
     THREE.InstancedBufferGeometry,
     THREE.ShaderMaterial
   >;
-  private dots: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial>;
+  private names: THREE.Mesh<
+    THREE.InstancedBufferGeometry,
+    THREE.ShaderMaterial
+  >;
+  private nameAtlas: SpatialNameAtlas;
+  private labelMask = new SpatialLabelMask();
+  private viewport = { value: new THREE.Vector2(1, 1) };
+  private minPixels = { value: 96 };
+  private labelPeople: ReadonlyMap<string, Person> | null = null;
   private edges: THREE.LineSegments<
     THREE.BufferGeometry,
     THREE.LineBasicMaterial
@@ -73,10 +79,6 @@ export class SpatialRenderer {
   private anchor = "";
   private active: ReadonlySet<string> = new Set();
   private details = new Set<string>();
-  private labelRects = {
-    value: Array.from({ length: 32 }, () => new THREE.Vector4()),
-  };
-  private labelCount = { value: 0 };
   private fly: {
     start: number;
     duration: number;
@@ -94,9 +96,7 @@ export class SpatialRenderer {
   } | null = null;
   private pressTimer: ReturnType<typeof setTimeout> | null = null;
   private reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
-  private positions: number[] = [];
   private ids: string[];
-  private indexById: Map<string, number>;
   constructor(
     private host: HTMLDivElement,
     private world: SpatialWorld,
@@ -139,41 +139,6 @@ export class SpatialRenderer {
     this.controls.addEventListener("change", this.invalidate);
     this.controls.addEventListener("start", this.interrupt);
     this.ids = [...world.points.keys()];
-    this.indexById = new Map(this.ids.map((id, i) => [id, i]));
-    for (const p of world.points.values()) this.positions.push(p.x, p.y, p.z);
-    const dotGeometry = new THREE.BufferGeometry();
-    dotGeometry.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(this.positions, 3),
-    );
-    dotGeometry.setAttribute(
-      "shown",
-      new THREE.Float32BufferAttribute(
-        new Float32Array(this.ids.length).fill(1),
-        1,
-      ),
-    );
-    dotGeometry.setAttribute(
-      "color",
-      new THREE.Float32BufferAttribute(
-        new Float32Array(this.ids.length * 3),
-        3,
-      ),
-    );
-    this.dots = new THREE.Points(
-      dotGeometry,
-      new THREE.ShaderMaterial({
-        uniforms: {
-          pointScale: { value: 16000 },
-          labelRects: this.labelRects,
-          labelCount: this.labelCount,
-        },
-        vertexShader: pointVertex,
-        fragmentShader: pointFragment,
-        depthTest: true,
-      }),
-    );
-    this.scene.add(this.dots);
     const linePositions: number[] = [];
     for (const edge of world.connections) {
       const a = world.points.get(edge.from)!,
@@ -229,7 +194,12 @@ export class SpatialRenderer {
     });
     this.arrows.computeBoundingSphere();
     this.scene.add(this.arrows);
-    this.atlas = new SpatialCardAtlas(palette, this.invalidate);
+    this.atlas = new SpatialCardAtlas(
+      palette,
+      this.invalidate,
+      this.ids.length,
+    );
+    this.nameAtlas = new SpatialNameAtlas(palette);
     const cardGeometry = new THREE.InstancedBufferGeometry();
     const plane = new THREE.PlaneGeometry(1, 1);
     cardGeometry.index = plane.index;
@@ -237,36 +207,63 @@ export class SpatialRenderer {
     cardGeometry.setAttribute(
       "center",
       new THREE.InstancedBufferAttribute(
-        new Float32Array(SPATIAL_ATLAS_CAPACITY * 3),
+        new Float32Array(this.atlas.capacity * 3),
         3,
       ),
     );
     cardGeometry.setAttribute(
       "tile",
       new THREE.InstancedBufferAttribute(
-        new Float32Array(SPATIAL_ATLAS_CAPACITY * 4),
+        new Float32Array(this.atlas.capacity * 4),
         4,
       ),
     );
+    cardGeometry.setAttribute(
+      "offset",
+      new THREE.InstancedBufferAttribute(
+        new Float32Array(this.atlas.capacity * 4),
+        4,
+      ),
+    );
+    cardGeometry.setAttribute(
+      "date",
+      new THREE.InstancedBufferAttribute(
+        new Float32Array(this.atlas.capacity),
+        1,
+      ),
+    );
     cardGeometry.instanceCount = 0;
-    this.cards = new THREE.Mesh(
-      cardGeometry,
+    const material = (texture: THREE.Texture) =>
       new THREE.ShaderMaterial({
         uniforms: {
-          atlas: { value: this.atlas.texture },
+          atlas: { value: texture },
           focal: { value: 1 },
           maxPixels: { value: 190 },
+          minPixels: this.minPixels,
         },
         vertexShader: cardVertex,
         fragmentShader: cardFragment,
         transparent: true,
-        depthWrite: true,
+        depthWrite: false,
+        depthTest: false,
         side: THREE.DoubleSide,
-      }),
-    );
+      });
+    this.cards = new THREE.Mesh(cardGeometry, material(this.atlas.texture));
     this.cards.frustumCulled = false;
     this.cards.renderOrder = 1;
     this.scene.add(this.cards);
+    const nameGeometry = new THREE.InstancedBufferGeometry();
+    nameGeometry.index = plane.index;
+    nameGeometry.attributes = {
+      position: plane.attributes.position.clone(),
+      uv: plane.attributes.uv.clone(),
+      normal: plane.attributes.normal.clone(),
+    };
+    nameGeometry.instanceCount = 0;
+    this.names = new THREE.Mesh(nameGeometry, material(this.nameAtlas.texture));
+    this.names.frustumCulled = false;
+    this.names.renderOrder = 2;
+    this.scene.add(this.names);
     this.observer = new ResizeObserver(this.resize);
     this.observer.observe(host);
     document.addEventListener("visibilitychange", this.visibility);
@@ -289,21 +286,10 @@ export class SpatialRenderer {
     this.people = people;
     this.active = active;
     this.callbacks = callbacks;
-    const dots = this.dots.geometry.getAttribute("color"),
-      lines = this.edges.geometry.getAttribute("color");
+    const lines = this.edges.geometry.getAttribute("color");
     const green = new THREE.Color(this.palette.green),
       muted = new THREE.Color(this.palette.muted),
       red = new THREE.Color(this.palette.red);
-    this.ids.forEach((id, i) =>
-      dots.setXYZ(
-        i,
-        ...((active.has(id) ? green : muted).toArray() as [
-          number,
-          number,
-          number,
-        ]),
-      ),
-    );
     this.world.connections.forEach((edge, i) => {
       const color =
         edge.type === "partner"
@@ -314,7 +300,50 @@ export class SpatialRenderer {
       lines.setXYZ(i * 2, ...(color.toArray() as [number, number, number]));
       lines.setXYZ(i * 2 + 1, ...(color.toArray() as [number, number, number]));
     });
-    dots.needsUpdate = lines.needsUpdate = true;
+    lines.needsUpdate = true;
+    if (this.labelPeople !== people) {
+      this.labelPeople = people;
+      const visiblePeople = this.ids
+        .map((id) => people.get(id)!)
+        .filter(Boolean);
+      this.atlas.update(visiblePeople);
+      this.nameAtlas.update(visiblePeople);
+      const centers: number[] = [],
+        tiles: number[] = [],
+        layouts: number[] = [],
+        dates: number[] = [];
+      for (const person of visiblePeople) {
+        const point = this.world.points.get(person.id)!;
+        for (const glyph of this.nameAtlas.layout(person)) {
+          centers.push(point.x, point.y, point.z);
+          tiles.push(...glyph.tile);
+          layouts.push(...glyph.layout);
+          dates.push(glyph.date);
+        }
+      }
+      const geometry = this.names.geometry;
+      // Release replaced instance buffers on data edits, while keeping the
+      // independently owned base plane available for the next upload.
+      if (geometry.getAttribute("center")) geometry.dispose();
+      geometry.setAttribute(
+        "center",
+        new THREE.InstancedBufferAttribute(new Float32Array(centers), 3),
+      );
+      geometry.setAttribute(
+        "tile",
+        new THREE.InstancedBufferAttribute(new Float32Array(tiles), 4),
+      );
+      geometry.setAttribute(
+        "offset",
+        new THREE.InstancedBufferAttribute(new Float32Array(layouts), 4),
+      );
+      geometry.setAttribute(
+        "date",
+        new THREE.InstancedBufferAttribute(new Float32Array(dates), 1),
+      );
+      geometry.instanceCount = dates.length;
+      this.host.dataset.depthNamePeople = String(visiblePeople.length);
+    }
     if (anchor && this.anchor !== anchor) {
       const initial = !this.anchor;
       this.anchor = anchor;
@@ -330,18 +359,23 @@ export class SpatialRenderer {
     this.camera.aspect = this.width / this.height;
     this.camera.updateProjectionMatrix();
     this.cards.material.uniforms.focal.value =
-      this.height /
-      (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2));
-    this.cards.material.uniforms.maxPixels.value = spatialCardLimit(this.width);
-    this.dots.material.uniforms.pointScale.value =
-      (this.height * this.renderer.getPixelRatio() * 8) /
-      Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2);
+      this.names.material.uniforms.focal.value =
+        this.height /
+        (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2));
+    this.cards.material.uniforms.maxPixels.value =
+      this.names.material.uniforms.maxPixels.value = spatialCardLimit(
+        this.width,
+      );
+    this.viewport.value.set(
+      this.width * this.renderer.getPixelRatio(),
+      this.height * this.renderer.getPixelRatio(),
+    );
     this.invalidate();
   };
   private maskUnderLabels(material: THREE.Material) {
     material.onBeforeCompile = (shader) => {
-      shader.uniforms.labelRects = this.labelRects;
-      shader.uniforms.labelCount = this.labelCount;
+      shader.uniforms.labelMask = { value: this.labelMask.texture };
+      shader.uniforms.viewport = this.viewport;
       shader.fragmentShader =
         `${labelDeclarations}\n${shader.fragmentShader}`.replace(
           "#include <clipping_planes_fragment>",
@@ -483,6 +517,7 @@ export class SpatialRenderer {
   private render = (time: number) => {
     this.frame = 0;
     if (this.stopped || this.hidden || this.contextLost) return;
+    const started = performance.now();
     if (this.fly) {
       const p = Math.min(
           1,
@@ -511,11 +546,12 @@ export class SpatialRenderer {
       vector.set(p.x, p.y, p.z).applyMatrix4(this.camera.matrixWorldInverse);
       const distance = -vector.z;
       if (distance <= 1) continue;
-      // Project the original world point; the view-space depth above sets LOD.
+      // Project the original world point, retaining billboards that intersect
+      // the viewport even when their center sits just outside it.
       vector.set(p.x, p.y, p.z).project(this.camera);
       if (
-        Math.abs(vector.x) > 1.3 ||
-        Math.abs(vector.y) > 1.3 ||
+        Math.abs(vector.x) > 1 + spatialCardLimit(this.width) / this.width ||
+        Math.abs(vector.y) > 1 + spatialCardLimit(this.width) / this.height ||
         vector.z > 1 ||
         vector.z < -1
       )
@@ -524,50 +560,58 @@ export class SpatialRenderer {
         id,
         x: ((vector.x + 1) * this.width) / 2,
         y: ((1 - vector.y) * this.height) / 2,
-        size: Math.min((220 * focal) / distance, spatialCardLimit(this.width)),
+        size: (220 * focal) / distance,
         distance,
         z: vector.z,
       });
     }
-    this.projected = projected;
-    const ids = spatialDetailIds(
-      projected,
+    let minX = this.width,
+      minY = this.height,
+      maxX = 0,
+      maxY = 0;
+    for (const p of projected) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+    const minimum = spatialCardFloor(
       this.width,
-      this.height,
-      this.anchor,
-      SPATIAL_ATLAS_CAPACITY,
+      projected.length,
+      projected.length < 2
+        ? Infinity
+        : Math.max(1, maxX - minX) * Math.max(1, maxY - minY),
     );
-    const shown = this.dots.geometry.getAttribute("shown");
-    for (const id of this.details) shown.setX(this.indexById.get(id)!, 1);
-    for (const id of ids) shown.setX(this.indexById.get(id)!, 0);
-    shown.needsUpdate = true;
+    this.minPixels.value = minimum;
+    for (const p of projected)
+      p.size = Math.max(
+        minimum,
+        Math.min(p.size, spatialCardLimit(this.width)),
+      );
+    this.projected = projected;
+    const ids = projected.map((p) => p.id);
     this.details = new Set(ids);
     const byId = new Map(projected.map((p) => [p.id, p]));
-    const dpr = this.renderer.getPixelRatio();
-    ids.forEach((id, i) => {
-      const p = byId.get(id)!,
-        half = p.size / 2 + 3;
-      this.labelRects.value[i].set(
-        (p.x - half) * dpr,
-        (this.height - p.y - half) * dpr,
-        (p.x + half) * dpr,
-        (this.height - p.y + half) * dpr,
-      );
-    });
-    this.labelCount.value = ids.length;
-    this.atlas.update(ids.map((id) => this.people.get(id)!).filter(Boolean));
+    this.labelMask.update(projected, this.width, this.height);
+    // Very large worlds keep all names. Portrait slots virtualize only beyond
+    // the fixed page's 16,384-person capacity, never based on zoom or overlap.
+    if (this.ids.length > this.atlas.capacity)
+      this.atlas.update(ids.map((id) => this.people.get(id)!).filter(Boolean));
+    const portraitIds = ids.slice(0, this.atlas.capacity);
     const centers = this.cards.geometry.getAttribute("center"),
-      tiles = this.cards.geometry.getAttribute("tile");
-    ids.forEach((id, i) => {
+      tiles = this.cards.geometry.getAttribute("tile"),
+      layouts = this.cards.geometry.getAttribute("offset");
+    portraitIds.forEach((id, i) => {
       const p = this.world.points.get(id)!;
       centers.setXYZ(i, p.x, p.y, p.z);
+      layouts.setXYZW(i, 0, 0.24, 0.4, 0.4);
       tiles.setXYZW(
         i,
         ...(this.atlas.uv(id) as [number, number, number, number]),
       );
     });
-    centers.needsUpdate = tiles.needsUpdate = true;
-    this.cards.geometry.instanceCount = ids.length;
+    centers.needsUpdate = tiles.needsUpdate = layouts.needsUpdate = true;
+    this.cards.geometry.instanceCount = portraitIds.length;
     try {
       this.renderer.render(this.scene, this.camera);
     } catch {
@@ -575,7 +619,18 @@ export class SpatialRenderer {
       this.callbacks.failure();
       return;
     }
-    this.host.dataset.depthCards = String(ids.length);
+    this.host.dataset.depthCards = String(portraitIds.length);
+    this.host.dataset.depthVisiblePeople = String(projected.length);
+    this.host.dataset.depthPortraitTile = String(this.atlas.tile);
+    this.host.dataset.depthTextureBytes = String(
+      [this.atlas.canvas, this.nameAtlas.canvas, this.labelMask.canvas].reduce(
+        (bytes, canvas) => bytes + canvas.width * canvas.height * 4,
+        0,
+      ),
+    );
+    this.host.dataset.depthCpuMs = String(
+      Number(this.host.dataset.depthCpuMs || 0) + performance.now() - started,
+    );
     this.host.dataset.depthLargestCard = String(
       Math.max(0, ...ids.map((id) => byId.get(id)!.size)),
     );
@@ -721,7 +776,9 @@ export class SpatialRenderer {
     canvas.removeEventListener("keydown", this.keyDown);
     this.controls.dispose();
     this.atlas.dispose();
-    for (const object of [this.cards, this.dots, this.edges, this.arrows]) {
+    this.nameAtlas.dispose();
+    this.labelMask.dispose();
+    for (const object of [this.cards, this.names, this.edges, this.arrows]) {
       object.geometry.dispose();
       const materials = Array.isArray(object.material)
         ? object.material

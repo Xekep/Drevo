@@ -2035,21 +2035,19 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           }}
           onMoveEnd={(_, camera) => rememberViewport(camera)}
         >
-          {props.canEdit && (!narrow || family.people.length > 0) && (
-            <Panel position="bottom-left" className={`flow-add-tools${narrow ? " is-mobile" : ""}`}>
+          {props.canEdit && !narrow && !depthEnabled && (
+            <Panel position="bottom-left" className="flow-add-tools">
               <button type="button" onClick={props.onAdd} disabled={props.busy}>
                 <Plus size={18} aria-hidden="true" />
-                {narrow ? "Добавить человека" : "Человек"}
+                Человек
               </button>
-              {!narrow && (
-                <button
-                  onClick={props.onLink}
-                  title="Связать последовательным выбором двух карточек"
-                >
-                  <Link2 size={18} />
-                  Связь
-                </button>
-              )}
+              <button
+                onClick={props.onLink}
+                title="Связать последовательным выбором двух карточек"
+              >
+                <Link2 size={18} />
+                Связь
+              </button>
             </Panel>
           )}
           {narrow ? (
@@ -2104,20 +2102,16 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         {depthEnabled && <TreeDepthLayers people={currentPeople} layoutPeople={depthPeople} unions={renderFamily.unions}
           active={depth.front} selected={selected} ready={ready && initialCameraReady} onProfile={actions.choose} onSelect={actions.selectOnly}
           cameraRef={depthCameraRef} collapsed={collapsed} onCollapse={actions.collapse} onFallback={() => setDepthUnavailable(true)}
-          onAdd={props.canEdit ? props.onAdd : undefined} fullscreen={screen.fullscreen} onFullscreen={screen.fullscreen ? screen.exit : screen.enter}
+          fullscreen={screen.fullscreen} onFullscreen={screen.fullscreen ? screen.exit : screen.enter}
           focusToken={focus?.ids.length === 1 ? focus.token : undefined}
-          anchorId={depth.anchorId} geometry={geometry} previous={depth.previous} disabled={growthLocked}
+          anchorId={depth.anchorId} geometry={geometry} disabled={growthLocked}
           onChoose={(id) => {
             if (depth.choose(id)) {
               setIntroCameraFinished(true); setManualCameraOverride(true);
               clearRestoreViewport(); returnToPerson(id);
             }
           }}
-          onBack={() => {
-            if (depth.previous && depth.choose(depth.previous, true)) {
-              clearRestoreViewport(); returnToPerson(depth.previous);
-            }
-          }} />}
+          />}
         {!activeFanAnchor && (
           <TreeEdgeChoices
           choices={edgeChoices}

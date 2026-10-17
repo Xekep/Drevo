@@ -4,7 +4,7 @@ import type { Family, Person } from "../src/domain/types.ts";
 import { treeDepthBranches } from "../src/domain/tree-depth.ts";
 import {
   spatialWorld,
-  spatialDetailIds,
+  spatialCardFloor,
   spatialCardLimit,
 } from "../src/domain/tree-spatial.ts";
 import type { TreeGeometry } from "../src/domain/tree-layout.ts";
@@ -326,31 +326,22 @@ test("3D includes only authorised geometry, coalesces occurrences and terminates
   );
 });
 
-test("3D screen LOD is bounded, prioritises the anchor and suppresses overlapping labels", () => {
+test("3D keeps a positive shared size floor without a label count or zoom gate", () => {
   assert.equal(spatialCardLimit(390), 150);
   assert.equal(spatialCardLimit(1440), 190);
-  const candidates = Array.from({ length: 10_000 }, (_, i) => ({
-    id: String(i),
-    x: 50 + (i % 50) * 100,
-    y: 50 + Math.floor(i / 50) * 110,
-    size: 90,
-    distance: i + 1,
-  }));
-  const ids = spatialDetailIds(candidates, 1440, 900, "51", 32);
-  assert.equal(ids[0], "51");
-  assert.ok(ids.length <= 32);
-  const coincident = candidates
-    .slice(0, 100)
-    .map((c) => ({ ...c, x: 150, y: 150 }));
-  assert.deepEqual(spatialDetailIds(coincident, 390, 844, "51", 32), ["51"]);
-  assert.equal(
-    spatialDetailIds(
-      candidates.map((c) => ({ ...c, size: 5 })),
-      1440,
-      900,
-      "51",
-      32,
-    ).length,
-    0,
+  for (const width of [390, 1440]) {
+    let previous = Infinity;
+    for (const count of [0, 16, 100, 200, 1000, 20_000]) {
+      const floor = spatialCardFloor(width, count);
+      assert.ok(floor > 0 && floor <= spatialCardLimit(width));
+      assert.ok(floor <= previous);
+      previous = floor;
+    }
+  }
+  assert.equal(spatialCardFloor(1440, 100), 112);
+  assert.equal(spatialCardFloor(390, 100), 96);
+  assert.ok(
+    spatialCardFloor(390, 16, 40_000) < spatialCardFloor(390, 16, 200_000),
   );
+  assert.ok(spatialCardFloor(1440, 200, 300_000) < 50);
 });
