@@ -72,54 +72,23 @@ export function spatialWorld(
   };
 }
 
-/** Bounded screen-space LOD: detailed labels never grow with archive size. */
+/** Shared by the CPU projection and billboard shaders. */
 export function spatialCardLimit(viewportWidth: number) {
   return viewportWidth < 600 ? 150 : 190;
 }
 
-export function spatialDetailIds(
-  candidates: readonly {
-    id: string;
-    x: number;
-    y: number;
-    size: number;
-    distance: number;
-  }[],
-  width: number,
-  height: number,
-  anchor: string,
-  limit: number,
+/** Density reduces size, never the set of available names and portraits. */
+export function spatialCardFloor(
+  viewportWidth: number,
+  visibleCount: number,
+  occupiedArea = Infinity,
 ) {
-  const result: string[] = [],
-    boxes: { x: number; y: number; w: number; h: number }[] = [];
-  const ordered = [...candidates].sort(
-    (a, b) =>
-      Number(b.id === anchor) - Number(a.id === anchor) ||
-      a.distance - b.distance ||
-      a.id.localeCompare(b.id),
+  return Math.max(
+    viewportWidth < 600 ? 18 : 20,
+    Math.min(
+      (viewportWidth < 600 ? 96 : 112) *
+        Math.min(1, Math.sqrt(100 / Math.max(1, visibleCount))),
+      1.2 * Math.sqrt(occupiedArea / Math.max(1, visibleCount)),
+    ),
   );
-  for (const c of ordered) {
-    if (result.length >= limit) break;
-    if (
-      c.size < 42 ||
-      c.x < -c.size ||
-      c.y < -c.size ||
-      c.x > width + c.size ||
-      c.y > height + c.size
-    )
-      continue;
-    const box = { x: c.x, y: c.y, w: c.size * 0.5 + 5, h: c.size * 0.5 + 5 };
-    if (
-      c.id !== anchor &&
-      boxes.some(
-        (b) =>
-          Math.abs(b.x - box.x) < b.w + box.w &&
-          Math.abs(b.y - box.y) < b.h + box.h,
-      )
-    )
-      continue;
-    result.push(c.id);
-    boxes.push(box);
-  }
-  return result;
 }
