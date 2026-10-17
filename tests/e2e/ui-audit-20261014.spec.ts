@@ -68,7 +68,7 @@ for (const failure of ["network", "invalid-json", "server"] as const) {
 
 test("вкладки браузера различают раздел и человека при навигации", async ({ page }) => {
   await page.goto("/people/e2e-child");
-  await expect(page).toHaveTitle(/Тестов Пётр Иванович.*Drevo/);
+  await expect(page).toHaveTitle(/Тестов Пётр Иванович.*Семейный архив$/);
   await page.goto("/people");
   await expect(page).toHaveTitle(/^Люди ·/);
   await page.goto("/photos");

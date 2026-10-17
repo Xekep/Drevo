@@ -62,7 +62,7 @@ export default function PlatformSettingsPage({
   const sectionPath = (next: Section) =>
     next === "roles" ? "/admin" : `/admin?section=${next}`;
   useEffect(() => {
-    document.title = `${sections.find((item) => item.id === section)!.label} · Админка · Drevo`;
+    document.title = `${sections.find((item) => item.id === section)!.label} · Админка · Семейный архив`;
   }, [section]);
   const sectionDirty = useRef(false);
   const reportDirty = useCallback(

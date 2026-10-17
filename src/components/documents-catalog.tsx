@@ -337,7 +337,7 @@ export function DocumentsCatalog({
   const activeSelected = selected?.id === documentId ? selected : null;
   useEffect(() => {
     if (activeSelected)
-      document.title = `${activeSelected.title} · Документы · Drevo`;
+      document.title = `${activeSelected.title} · Документы · Семейный архив`;
   }, [activeSelected]);
 
   const upload = async (event: FormEvent<HTMLFormElement>) => {

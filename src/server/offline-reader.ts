@@ -23,7 +23,7 @@ export function offlineReaderHtml(
   );
   return `<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Семейный архив · Drevo</title>
+<title>Семейный архив</title>
 <style>
 :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#26382b;background:#f5f7f2;font-synthesis:none}
 *{box-sizing:border-box}body{margin:0}button,input{font:inherit}button{cursor:pointer}

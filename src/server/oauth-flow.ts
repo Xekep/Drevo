@@ -76,7 +76,7 @@ export function createOAuthFlow(
       "Referrer-Policy": "no-referrer",
     });
     res.end(
-      `<!doctype html><html lang="ru"><meta charset="utf-8"><title>Вход в Древо</title><body><h1>Вход в Древо</h1><p>${message}</p><a href="/">Вернуться к архиву</a></body></html>`,
+      `<!doctype html><html lang="ru"><meta charset="utf-8"><title>Вход · Семейный архив</title><body><h1>Вход в Древо</h1><p>${message}</p><a href="/">Вернуться к архиву</a></body></html>`,
     );
   }
   return {

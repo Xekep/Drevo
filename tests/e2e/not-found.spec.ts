@@ -17,7 +17,7 @@ test("404 лёгкая, доступная и возвращает на глав
   await expect(
     page.getByRole("heading", { name: "Здесь пока нет ветви" }),
   ).toBeVisible();
-  await expect(page).toHaveTitle("Страница не найдена · Drevo");
+  await expect(page).toHaveTitle("Страница не найдена · Семейный архив");
   expect(api).toEqual([]);
   expect(errors).toEqual([]);
   expect(

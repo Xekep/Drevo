@@ -20,4 +20,4 @@ export const notFoundStyles = `
 @media(max-width:360px){.lost-page-break{display:none}.lost-page-mark{margin-top:36px}}
 `;
 
-export const notFoundHtml = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Страница не найдена · Drevo</title><link rel="icon" href="/favicon.svg"><style>body{margin:0}${notFoundStyles}</style></head><body><main class="lost-page">${notFoundContent}</main></body></html>`;
+export const notFoundHtml = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Страница не найдена · Семейный архив</title><link rel="icon" href="/favicon.svg"><style>body{margin:0}${notFoundStyles}</style></head><body><main class="lost-page">${notFoundContent}</main></body></html>`;
