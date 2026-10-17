@@ -348,10 +348,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     };
   }, [activeFanAnchor, fanRevealing]);
   const [initialCameraReady, setInitialCameraReady] = useState(false);
+  const [depthUnavailable, setDepthUnavailable] = useState(false);
+  useEffect(() => { if (props.presentation !== "depth") setDepthUnavailable(false); }, [props.presentation]);
+  const depthEnabled = props.presentation === "depth" && !depthUnavailable && mode === "generations" && !activeFanAnchor;
   const [manualCameraOverride, setManualCameraOverride] = useState(false);
   const [introCameraFinished, setIntroCameraFinished] = useState(false);
   const introMoving =
-    !growing && initialCameraReady && !introCameraFinished &&
+    !depthEnabled && !growing && initialCameraReady && !introCameraFinished &&
     !!user?.personId && !props.skipInitialGrowth && !focus &&
     !selected.length && !manualCameraOverride;
   const canvasWidth = useStore((state) => state.width);
@@ -383,7 +386,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   }, [growthLocked, onGrowthChange]);
   // Timeline has its own scroll controls and does not wait for the hidden
   // React Flow camera to finish its initial positioning.
-  useTreeGrowthInputLock(container, mode !== "timeline" && cameraLocked, !growthLocked);
+  useTreeGrowthInputLock(container, !depthEnabled && mode !== "timeline" && cameraLocked, !growthLocked);
   useEffect(() => {
     if (!growthActive || growthRevealed) return;
     // Let the browser apply the first animation frame while the viewport is
@@ -485,24 +488,23 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       props.assistantFilter.ids.filter((id) => generationVisible.has(id)),
     );
   }, [renderFamily.people, generationVisible, props.assistantFilter]);
-  const depthEnabled = props.presentation === "depth" && mode === "generations" && !activeFanAnchor;
   const depth = useDepthTree(renderFamily, scopedVisible, depthEnabled,
     selected[0] || props.kinshipReferenceId || user?.personId || familyView.defaultAnchor || undefined, focus);
   const previousDepthEnabled = useRef(depthEnabled);
   useEffect(() => {
     const entering = depthEnabled && !previousDepthEnabled.current;
     previousDepthEnabled.current = depthEnabled;
-    if (!entering || !initialCameraReady) return;
+    if (!depthEnabled || !initialCameraReady || (!entering && introCameraFinished && !growing)) return;
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
       setGrowing(false);
       setIntroCameraFinished(true);
       setManualCameraOverride(true);
-      returnToPerson(depth.anchorId);
+      if (entering) returnToPerson(depth.anchorId);
     });
     return () => { active = false; };
-  }, [depthEnabled, depth.anchorId, growing, initialCameraReady, returnToPerson]);
+  }, [depthEnabled, depth.anchorId, growing, initialCameraReady, returnToPerson, introCameraFinished]);
   const visible = depthEnabled ? scopedVisible : depth.front;
   const timelinePeople = useMemo(
     () => family.people.filter((person) => visible.has(person.id)),
@@ -520,8 +522,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const context = props.assistantFilter
     ? `${mode}:research:${props.assistantFilter.token}:portrait`
     : `${mode}:${depthEnabled ? "depth" : "flat"}:${familyView.mode}:${root || "all"}:portrait`;
-  useTouchZoom(container, flow, !cameraLocked && !screen.fullscreen && !activeFanAnchor && mode !== "timeline");
-  useCtrlWheelZoom(container, flow, !cameraLocked && !activeFanAnchor && mode !== "timeline");
+  useTouchZoom(container, flow, !depthEnabled && !cameraLocked && !screen.fullscreen && !activeFanAnchor && mode !== "timeline");
+  useCtrlWheelZoom(container, flow, !depthEnabled && !cameraLocked && !activeFanAnchor && mode !== "timeline");
   const { geometry, renderVisible, ready, problem, layoutBusy, layoutKey } =
     useTreeLayout(
       renderFamily,
@@ -556,10 +558,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       .matches
       ? 0
       : 320;
-    if (request.direction === "in") void flow.zoomIn({ duration });
+    if (depthEnabled && depthCameraRef.current) depthCameraRef.current.zoom(request.direction === "in" ? 1 : -1);
+    else if (request.direction === "in") void flow.zoomIn({ duration });
     else void flow.zoomOut({ duration });
   }, [
     flow,
+    depthEnabled,
     props.zoomRequest,
     ready,
     initialCameraReady,
@@ -1323,8 +1327,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     !!props.onGenerationAnchor && !cameraLocked && !layoutBusy && !activeFanAnchor,
     (target, x, y) => {
       if (!(target instanceof Element)) return null;
-      const spatial = target.closest("[data-depth-person]");
-      if (spatial) return spatial.getAttribute("data-depth-person");
+      if (target.closest(".tree-spatial-canvas")) return depthCameraRef.current?.personAt(x, y) || null;
       const content = target.closest(".flow-person-content, .timeline-person");
       if (content)
         return content.closest("[data-person-id]")?.getAttribute("data-person-id") ?? null;
@@ -2098,9 +2101,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           />
         )}
         </div>
-        {depthEnabled && <TreeDepthLayers branches={depth.branches} people={currentPeople} layoutPeople={depthPeople} unions={renderFamily.unions}
+        {depthEnabled && <TreeDepthLayers people={currentPeople} layoutPeople={depthPeople} unions={renderFamily.unions}
           active={depth.front} selected={selected} ready={ready && initialCameraReady} onProfile={actions.choose} onSelect={actions.selectOnly}
-          sceneAnchorId={depth.sceneAnchorId} cameraRef={depthCameraRef} collapsed={collapsed} relationLabel={relationLabel} onCollapse={actions.collapse}
+          cameraRef={depthCameraRef} collapsed={collapsed} onCollapse={actions.collapse} onFallback={() => setDepthUnavailable(true)}
+          onAdd={props.canEdit ? props.onAdd : undefined} fullscreen={screen.fullscreen} onFullscreen={screen.fullscreen ? screen.exit : screen.enter}
+          focusToken={focus?.ids.length === 1 ? focus.token : undefined}
           anchorId={depth.anchorId} geometry={geometry} previous={depth.previous} disabled={growthLocked}
           onChoose={(id) => {
             if (depth.choose(id)) {

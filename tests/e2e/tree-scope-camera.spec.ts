@@ -255,7 +255,9 @@ test("opening a card cancels scope focus while its Worker layout is pending", as
     (window as Window & { releaseCardScopeLayout?: () => void })
       .releaseCardScopeLayout!(),
   );
-  await expect(page.locator(".flow-person")).toHaveCount(4);
+  // The mobile inspector can cull offscreen DOM cards after the camera settles.
+  // Assert the authorised Worker scope, not the transient mounted-card count.
+  await expect(canvas).toHaveAttribute("data-layout-people", "4");
   await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
   await page.waitForTimeout(900);
   expect(await viewport.getAttribute("style")).toBe(before);

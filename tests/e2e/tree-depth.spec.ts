@@ -6,81 +6,93 @@ import {
 } from "../../src/domain/tree-preferences.ts";
 
 const names: Record<string, string> = {
-  dad: "Александр", me: "Михаил", child: "Николай", sibling: "Алексей",
-  nephew: "Евгений", aunt: "Надежда", cousin: "Варвара", another: "Сергей",
-  "another-child": "Анастасия", isolate: "Наталья", "distant-a": "Павел",
-  "distant-b": "Анна", "distant-c": "Ирина", wife: "Ольга", partner: "Елена",
+  dad: "Александр",
+  me: "Михаил",
+  child: "Николай",
+  sibling: "Алексей",
+  nephew: "Евгений",
+  aunt: "Надежда",
+  cousin: "Варвара",
+  another: "Сергей",
+  "another-child": "Анастасия",
+  isolate: "Наталья",
+  "distant-a": "Павел",
+  "distant-b": "Анна",
+  "distant-c": "Ирина",
+  wife: "Ольга",
+  partner: "Елена",
   "second-child": "Иван",
 };
-const p = (id: string, parents: string[] = [], spouses: string[] = []): Person => ({
-  id, name: names[id], surname: "Соколов",
+const p = (
+  id: string,
+  parents: string[] = [],
+  spouses: string[] = [],
+): Person => ({
+  id,
+  name: names[id] || `Человек ${id}`,
+  surname: "Соколов",
   patronymic: id === "sibling" ? "Александрович" : "",
   sex: id === "wife" || id === "partner" ? "f" : "m",
-  birth: "1970", birthPlace: "", parents, spouses, sources: [], generation: 1, column: 0,
+  birth: "1970",
+  birthPlace: "",
+  parents,
+  spouses,
+  sources: [],
+  generation: 1,
+  column: 0,
 });
 // The common ancestor and two unions must remain the same people during navigation.
 const family: Family = {
-  title: "Ветви", description: "", demo: false, photos: [], links: [],
+  title: "Ветви",
+  description: "",
+  demo: false,
+  photos: [],
+  links: [],
   unions: [
     { id: "marriage", participants: ["sibling", "wife"], type: "marriage" },
     { id: "civil", participants: ["sibling", "partner"], type: "civil_union" },
   ],
   people: [
-    p("dad"), p("me", ["dad"]), p("child", ["me"]),
-    p("sibling", ["dad"], ["wife"]), p("wife", [], ["sibling"]),
-    p("partner"), p("nephew", ["sibling", "wife"]),
+    p("dad"),
+    p("me", ["dad"]),
+    p("child", ["me"]),
+    p("sibling", ["dad"], ["wife"]),
+    p("wife", [], ["sibling"]),
+    p("partner"),
+    p("nephew", ["sibling", "wife"]),
     p("second-child", ["sibling", "partner"]),
-    p("aunt", ["dad"]), p("cousin", ["aunt"]),
-    p("another", ["dad"]), p("another-child", ["another"]),
-    p("isolate"), p("distant-a"), p("distant-b"), p("distant-c"),
+    p("aunt", ["dad"]),
+    p("cousin", ["aunt"]),
+    p("another", ["dad"]),
+    p("another-child", ["another"]),
+    p("isolate"),
+    p("distant-a"),
+    p("distant-b"),
+    p("distant-c"),
   ],
 };
 
-const card = (page: Page, id: string) => page.locator(`[data-depth-person="${id}"]`);
-const world = (page: Page) => page.locator(".tree-depth-world");
-
+const world = (page: Page) => page.locator(".tree-spatial");
 async function settle(page: Page) {
-  await expect(world(page)).toHaveAttribute("data-depth-moving", "false");
-  // Both the spatial camera and React Flow pan/zoom must finish, rather than sleeping
-  // for an assumed animation duration (which differs with reduced motion).
-  let previous = "", repeats = 0;
-  await expect.poll(async () => {
-    const current = await page.locator(".react-flow__viewport").getAttribute("style");
-    repeats = current === previous ? repeats + 1 : 0;
-    previous = current || "";
-    return repeats;
-  }, { intervals: [100], timeout: 10_000 }).toBeGreaterThanOrEqual(3);
+  await expect(world(page)).toHaveAttribute("aria-busy", "false");
   await expect(world(page)).toHaveAttribute("data-depth-moving", "false");
 }
-
-const workerRequests = (page: Page) => page.evaluate(() =>
-  (window as unknown as { depthLayoutRequests: number }).depthLayoutRequests);
-
-const worldPoint = (page: Page, id: string) => card(page, id).evaluate((node) => ({
-  x: node.getAttribute("data-world-x"),
-  y: node.getAttribute("data-world-y"),
-  z: node.getAttribute("data-world-z"),
-}));
-
-async function wholeTree(page: Page) {
-  await page.getByRole("button", { name: "Вписать видимую часть древа", exact: true }).click();
-  await settle(page);
-}
-
-async function roundPortrait(page: Page, id: string) {
-  const avatar = card(page, id).locator(".person-avatar");
-  const box = await avatar.boundingBox();
-  expect(box).not.toBeNull();
-  expect(Math.abs(box!.width - box!.height)).toBeLessThan(1);
-  expect(await avatar.evaluate((node) => getComputedStyle(node).borderRadius)).toBe("50%");
-}
-
-test("2.5D keeps one connected world while the camera rotates and changes branches", async ({ page }, info) => {
-  test.setTimeout(90_000);
-  let preferences: TreePreferences = { ...DEFAULT_TREE_PREFERENCES, animateOnLoad: false };
+async function setup(page: Page, graph = family) {
+  const preferences: TreePreferences = {
+    ...DEFAULT_TREE_PREFERENCES,
+    animateOnLoad: false,
+    presentation: "depth",
+  };
   const user = {
-    id: "depth-user", name: "Участник", personId: "me", role: "reader", treeRole: "reader",
-    approved: true, archiveOwner: false, treeAccess: "all", createdAt: "2026-10-15",
+    id: "depth-user",
+    name: "Участник",
+    personId: "me",
+    role: "reader",
+    treeRole: "reader",
+    approved: true,
+    archiveOwner: false,
+    treeAccess: "all",
+    createdAt: "2026-10-15",
   };
   await page.addInitScript(() => {
     const state = window as unknown as { depthLayoutRequests: number };
@@ -89,187 +101,258 @@ test("2.5D keeps one connected world while the camera rotates and changes branch
     Worker.prototype.postMessage = function (
       this: Worker,
       message: unknown,
-      transferOrOptions?: Transferable[] | StructuredSerializeOptions,
+      options?: Transferable[] | StructuredSerializeOptions,
     ) {
-      if (message && typeof message === "object" && "requestId" in message && "people" in message)
+      if (
+        message &&
+        typeof message === "object" &&
+        "requestId" in message &&
+        "people" in message
+      )
         state.depthLayoutRequests++;
-      return Reflect.apply(send, this, transferOrOptions === undefined
-        ? [message]
-        : [message, transferOrOptions]);
+      return Reflect.apply(
+        send,
+        this,
+        options === undefined ? [message] : [message, options],
+      );
     };
   });
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path.endsWith("/api/family")) return route.fulfill({ json: {
-      family, user, revision: 1, local: false, canEdit: false, readTree: true,
-      readPhotos: true, treePreferences: preferences,
-    } });
-    if (path.endsWith("/api/session")) return route.fulfill({ json: { user, account: user, local: false } });
+    if (path.endsWith("/api/family"))
+      return route.fulfill({
+        json: {
+          family: graph,
+          user,
+          revision: 1,
+          local: false,
+          canEdit: false,
+          readTree: true,
+          readPhotos: true,
+          treePreferences: preferences,
+        },
+      });
+    if (path.endsWith("/api/session"))
+      return route.fulfill({ json: { user, account: user, local: false } });
     if (path.endsWith("/api/tree-preferences")) {
-      if (route.request().method() === "PUT") preferences = route.request().postDataJSON();
+      if (route.request().method() === "PUT")
+        Object.assign(preferences, route.request().postDataJSON());
       return route.fulfill({ json: preferences });
     }
-    return route.fulfill({ json: { items: [], comments: [], unread: 0, categories: [] } });
+    return route.fulfill({
+      json: { items: [], comments: [], unread: 0, categories: [] },
+    });
   });
   await page.goto("/tree");
-  const scene = page.locator(".tree-canvas");
-  await expect(scene).toHaveAttribute("data-layout-ready", "true");
-  await page.getByRole("button", { name: "Настройки древа", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Вид древа" });
-  await dialog.getByRole("radio", { name: "2.5D", exact: true }).check();
-  await expect.poll(() => preferences.presentation).toBe("depth");
-  await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
-  await expect(scene).toHaveAttribute("data-depth-anchor", "me");
-  await expect(scene).toHaveAttribute("data-layout-people", String(family.people.length));
-  await expect(world(page)).toHaveAttribute("data-depth-world-people", String(family.people.length));
-  await settle(page);
-  await roundPortrait(page, "me");
-  const initialCard = card(page, "me");
-  const initialButton = initialCard.locator(".tree-depth-person-content");
-  await initialButton.hover();
-  await expect.poll(() => initialButton.evaluate((node) => getComputedStyle(node).backgroundColor))
-    .toBe("rgb(237, 242, 234)");
-  expect(await initialCard.locator(".person-avatar").evaluate((node) => getComputedStyle(node).boxShadow))
-    .toContain("rgb(237, 242, 234)");
-  // Restore the resting appearance for the shared visual evidence.
-  await page.mouse.move(5, 5);
-  await page.screenshot({ path: info.outputPath("depth-initial.png") });
-  await wholeTree(page);
+  await expect(page.locator(".tree-canvas")).toHaveAttribute(
+    "data-layout-ready",
+    "true",
+    { timeout: 60_000 },
+  );
+  return preferences;
+}
+const workerRequests = (page: Page) =>
+  page.evaluate(
+    () =>
+      (window as unknown as { depthLayoutRequests: number })
+        .depthLayoutRequests,
+  );
 
-  const branch = page.getByRole("button", { name: /Перейти к ветви: Соколов Алексей Александрович,/ });
-  await expect(branch).toBeVisible();
-  const edge = page.locator('.tree-depth-connection[data-depth-from="dad"][data-depth-to="sibling"]');
-  await expect(edge).toHaveCount(1);
-  await expect(page.locator('.tree-depth-connection[data-depth-to="isolate"]')).toHaveCount(0);
-  const sharedAncestor = await worldPoint(page, "dad");
-  const siblingPoint = await worldPoint(page, "sibling");
-  expect(Object.values(sharedAncestor).every((value) => value !== null)).toBe(true);
-  const requests = await workerRequests(page);
-  expect(requests).toBeGreaterThan(0);
-  await card(page, "sibling").evaluate((node) => node.setAttribute("data-test-identity", "same-person"));
-  const beforeTransform = await card(page, "sibling").getAttribute("style");
-  const beforePath = await edge.getAttribute("d");
-  await page.getByRole("button", { name: "Повернуть пространство вправо", exact: true }).click();
-  await expect(world(page)).toHaveAttribute("data-depth-moving", "true");
-  // Read line and card coordinates from the same browser frame. Independently animated
-  // layers used to leave a line pointing at the old position during a camera turn.
-  const samples = await page.evaluate(async () => {
-    const errors: number[] = [], paths = new Set<string>();
-    for (let i = 0; i < 12; i++) {
-      await new Promise(requestAnimationFrame);
-      const line = document.querySelector<SVGPathElement>('[data-depth-from="dad"][data-depth-to="sibling"]');
-      const person = document.querySelector<HTMLElement>('[data-depth-person="sibling"]');
-      if (!line || !person || !line.getScreenCTM()) continue;
-      const endpoint = line.getPointAtLength(line.getTotalLength()).matrixTransform(line.getScreenCTM()!);
-      const box = person.getBoundingClientRect();
-      const leader = document.querySelector<SVGPathElement>('[data-depth-leader="sibling"]');
-      if (leader && leader.getScreenCTM()) {
-        // Dense overviews may move only a compact hit target away from its true
-        // projected point. The visible leader must keep that exact connection.
-        const start = leader.getPointAtLength(0).matrixTransform(leader.getScreenCTM()!);
-        const end = leader.getPointAtLength(leader.getTotalLength()).matrixTransform(leader.getScreenCTM()!);
-        errors.push(
-          Math.abs(endpoint.x - start.x), Math.abs(endpoint.y - start.y),
-          Math.abs(end.x - (box.left + box.width / 2)),
-          Math.abs(end.y - (box.top + box.height / 2)),
-        );
-      } else {
-        errors.push(Math.abs(endpoint.x - (box.left + box.width / 2)));
-      }
-      paths.add(line.getAttribute("d") || "");
-    }
-    return { errors, paths: paths.size };
-  });
-  expect(samples.errors.length).toBeGreaterThan(5);
-  expect(Math.max(...samples.errors)).toBeLessThan(2);
-  expect(samples.paths).toBeGreaterThan(1);
+test("3D uses a bounded WebGL scene, free camera and native people navigation without new layout", async ({
+  page,
+}, info) => {
+  test.setTimeout(90_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await setup(page);
   await settle(page);
-  await expect(world(page)).toHaveAttribute("data-depth-yaw", "12.00");
-  expect(await card(page, "sibling").getAttribute("style")).not.toBe(beforeTransform);
-  expect(await edge.getAttribute("d")).not.toBe(beforePath);
-  await expect(card(page, "sibling")).toHaveAttribute("data-test-identity", "same-person");
-  await page.getByRole("button", { name: "Вернуть ракурс ветви", exact: true }).click();
+  await expect(page.locator(".tree-spatial-canvas")).toHaveCount(1);
+  await expect(world(page)).toHaveAttribute(
+    "data-depth-world-people",
+    String(family.people.length),
+  );
+  await expect
+    .poll(async () =>
+      Number(await world(page).getAttribute("data-depth-cards")),
+    )
+    .toBeGreaterThan(0);
+  expect(
+    Number(await world(page).getAttribute("data-depth-cards")),
+  ).toBeLessThanOrEqual(32);
+  expect(
+    Number(await world(page).getAttribute("data-depth-draw-calls")),
+  ).toBeLessThanOrEqual(4);
+  await page.screenshot({ path: info.outputPath("3d-initial.png") });
+  const requests = await workerRequests(page),
+    camera = await world(page).getAttribute("data-depth-camera");
+  await page
+    .getByRole("button", { name: "Повернуть пространство вправо", exact: true })
+    .click();
+  await expect
+    .poll(() => world(page).getAttribute("data-depth-camera"))
+    .not.toBe(camera);
   await settle(page);
-  await expect(world(page)).toHaveAttribute("data-depth-yaw", "0.00");
-  expect(await card(page, "sibling").getAttribute("style")).toBe(beforeTransform);
-  expect(await edge.getAttribute("d")).toBe(beforePath);
-  expect(await workerRequests(page)).toBe(requests);
-  expect(await branch.evaluate((node) => !!node.closest(".react-flow__viewport"))).toBe(true);
-  await expect(page.locator(".tree-depth-stack, .tree-depth-layers")).toHaveCount(0);
-
-  // Use an actual empty pan surface, not a point accidentally covered by a card.
-  const dragStart = await page.locator(".react-flow").evaluate((flow) => {
-    const box = flow.getBoundingClientRect();
-    for (const ry of [.18, .35, .65, .8]) for (const rx of [.12, .4, .75]) {
-      const x = box.x + box.width * rx, y = box.y + box.height * ry;
-      if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane")) return { x, y };
-    }
-    throw new Error("No empty tree pane for a real drag gesture");
-  });
-  const beforePan = await branch.boundingBox();
-  await page.mouse.move(dragStart.x, dragStart.y);
-  await page.mouse.down();
-  await page.mouse.move(dragStart.x + 48, dragStart.y - 24, { steps: 5 });
-  await page.mouse.up();
-  await expect.poll(async () => Math.abs((await branch.boundingBox())!.x - beforePan!.x)).toBeGreaterThan(20);
-  await wholeTree(page);
-  await page.screenshot({ path: info.outputPath("depth-branches.png") });
-
-  await branch.focus();
+  const canvas = page.locator(".tree-spatial-canvas");
+  await canvas.focus();
+  const beforePitch = await world(page).getAttribute("data-depth-camera");
+  await page.keyboard.press("ArrowUp");
+  await settle(page);
+  await expect
+    .poll(() => world(page).getAttribute("data-depth-camera"))
+    .not.toBe(beforePitch);
+  await page
+    .getByRole("button", { name: "Вписать видимую часть древа", exact: true })
+    .click();
+  await settle(page);
+  await page.screenshot({ path: info.outputPath("3d-overview.png") });
+  await page.locator(".tree-spatial-people summary").click();
+  await page
+    .getByRole("searchbox", { name: "Поиск в 3D-древе" })
+    .fill("Алексей");
+  await page.locator(".tree-spatial-people li button").focus();
   await page.keyboard.press("Enter");
-  await expect(scene).toHaveAttribute("data-depth-anchor", "sibling");
+  await expect(canvas).toBeFocused();
+  await expect(page.locator(".tree-spatial-people")).not.toHaveAttribute(
+    "open",
+    "",
+  );
   await settle(page);
-  const chosen = page.getByRole("button", { name: "Открыть карточку: Соколов Алексей Александрович", exact: true });
-  await expect(chosen).toBeFocused();
-  await expect(world(page)).toHaveAttribute("data-depth-world-people", String(family.people.length));
-  await expect(scene).toHaveAttribute("data-layout-people", String(family.people.length));
-  expect(await worldPoint(page, "dad")).toEqual(sharedAncestor);
-  expect(await worldPoint(page, "sibling")).toEqual(siblingPoint);
-  await roundPortrait(page, "sibling");
-  expect((await card(page, "sibling").locator(".tree-depth-person-years").boundingBox())!.height)
-    .toBeGreaterThanOrEqual(12);
+  await expect(page.locator(".tree-canvas")).toHaveAttribute(
+    "data-depth-anchor",
+    "sibling",
+  );
   expect(await workerRequests(page)).toBe(requests);
-  await expect(page.locator('.tree-depth-connection[data-depth-to="nephew"][data-depth-from="sibling"]')).toHaveCount(1);
-  await expect(page.locator('.tree-depth-connection[data-depth-to="second-child"][data-depth-from="partner"]')).toHaveCount(1);
-  await page.screenshot({ path: info.outputPath("depth-selected-branch.png") });
+  await page.screenshot({ path: info.outputPath("3d-selected.png") });
+  const atSibling = await world(page).getAttribute("data-depth-camera");
+  await page.locator(".tree-spatial-person-name").click();
+  await expect(page.getByRole("tab", { name: /О человеке/ })).toBeVisible();
+  expect(await world(page).getAttribute("data-depth-camera")).toBe(atSibling);
+  await settle(page);
+  // In an idle scene no requestAnimationFrame/render loop remains alive.
+  await page.waitForTimeout(700);
+  const frames = await world(page).getAttribute("data-depth-frames");
+  await page.waitForTimeout(500);
+  expect(await world(page).getAttribute("data-depth-frames")).toBe(frames);
+  expect(errors).toEqual([]);
+});
 
-  const cameraBeforeProfile = await page.locator(".react-flow__viewport").getAttribute("style");
-  const yawBeforeProfile = await world(page).getAttribute("data-depth-yaw");
-  const pointBeforeProfile = await card(page, "sibling").getAttribute("style");
-  await chosen.click();
-  await expect(page.getByRole("button", { name: "Закрыть панель", exact: true })).toBeVisible();
-  await expect(scene).toHaveAttribute("data-depth-anchor", "sibling");
-  await expect(world(page)).toHaveAttribute("data-depth-moving", "false");
-  expect(await world(page).getAttribute("data-depth-yaw")).toBe(yawBeforeProfile);
-  expect(await card(page, "sibling").getAttribute("style")).toBe(pointBeforeProfile);
-  expect(await page.locator(".react-flow__viewport").getAttribute("style")).toBe(cameraBeforeProfile);
-  await page.getByRole("button", { name: "Закрыть панель", exact: true }).click();
-  await page.getByRole("button", { name: "Предыдущая ветвь", exact: true }).click();
-  await expect(scene).toHaveAttribute("data-depth-anchor", "me");
+test("a thousand-person 3D archive keeps GPU batches, textures and detail bounded", async ({
+  page,
+}, info) => {
+  test.setTimeout(120_000);
+  const graph: Family = {
+    ...family,
+    unions: [],
+    people: Array.from({ length: 1000 }, (_, i) =>
+      p(String(i), i > 40 ? [String(Math.floor((i - 40) / 2))] : []),
+    ),
+  };
+  await setup(page, graph);
   await settle(page);
-  await wholeTree(page);
-  await branch.click();
-  await expect(scene).toHaveAttribute("data-depth-anchor", "sibling");
+  await expect(world(page)).toHaveAttribute("data-depth-world-people", "1000");
+  const requests = await workerRequests(page);
+  await page
+    .getByRole("button", { name: "Вписать видимую часть древа", exact: true })
+    .click();
   await settle(page);
+  const before = await world(page).getAttribute("data-depth-camera");
+  await page
+    .getByRole("button", { name: "Повернуть пространство вправо", exact: true })
+    .click();
+  await expect
+    .poll(() => world(page).getAttribute("data-depth-camera"))
+    .not.toBe(before);
+  await settle(page);
+  const stats = await world(page).evaluate((node) => ({
+    people: node.getAttribute("data-depth-world-people"),
+    cards: Number(node.getAttribute("data-depth-cards")),
+    calls: Number(node.getAttribute("data-depth-draw-calls")),
+    textures: Number(node.getAttribute("data-depth-textures")),
+  }));
+  expect(stats.cards).toBeLessThanOrEqual(32);
+  expect(stats.calls).toBeLessThanOrEqual(4);
+  expect(stats.textures).toBeLessThanOrEqual(1);
   expect(await workerRequests(page)).toBe(requests);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await info.attach("webgl-1000-bounds", {
+    body: JSON.stringify(stats),
+    contentType: "application/json",
+  });
+  await page.waitForTimeout(700);
+  const frames = await world(page).getAttribute("data-depth-frames");
+  await page.waitForTimeout(500);
+  expect(await world(page).getAttribute("data-depth-frames")).toBe(frames);
+});
 
-  await page.getByRole("button", { name: "Настройки древа", exact: true }).click();
-  await dialog.getByRole("radio", { name: "Обычное", exact: true }).check();
-  await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
-  await expect(scene).not.toHaveAttribute("data-depth-anchor");
-  await expect(world(page)).toHaveCount(0);
-  await expect(scene).toHaveAttribute("data-layout-people", String(family.people.length));
+test("3D has an explicit ordinary-view recovery when WebGL is unavailable", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (
+      this: HTMLCanvasElement,
+      ...args: Parameters<HTMLCanvasElement["getContext"]>
+    ) {
+      if (String(args[0]).startsWith("webgl")) return null;
+      return Reflect.apply(original, this, args);
+    } as HTMLCanvasElement["getContext"];
+  });
+  await setup(page);
+  await page
+    .getByRole("button", { name: "Открыть обычное древо", exact: true })
+    .click();
+  await expect(page.locator(".tree-spatial")).toHaveCount(0);
+  await expect(page.locator(".tree-canvas")).not.toHaveAttribute(
+    "data-depth-anchor",
+    /.+/,
+  );
+  await expect(page.locator(".flow-person-content").first()).toBeVisible();
+});
 
-  // Reduced motion changes the same camera immediately instead of flying a CSS plane.
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.getByRole("button", { name: "Настройки древа", exact: true }).click();
-  await dialog.getByRole("radio", { name: "2.5D", exact: true }).check();
-  await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
+test("native mobile hold selects a 3D person without opening the profile", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "mobile");
+  await setup(page);
   await settle(page);
-  const initialYaw = Number(await world(page).getAttribute("data-depth-yaw"));
-  await page.getByRole("button", { name: "Повернуть пространство влево", exact: true }).click();
-  await expect(world(page)).toHaveAttribute("data-depth-yaw", (initialYaw - 12).toFixed(2));
-  await expect(world(page)).toHaveAttribute("data-depth-moving", "false");
-  expect(await page.locator(".tree-flow-plane").evaluate((node) => node.getAnimations().length)).toBe(0);
+  const canvas = page.locator(".tree-spatial-canvas"),
+    box = (await canvas.boundingBox())!;
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const session = await page.context().newCDPSession(page);
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [point],
+  });
+  await page.waitForTimeout(650);
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  await session.detach();
+  await expect(world(page)).toHaveAttribute("data-depth-selected", "me");
+  await expect(page.locator(".inspector-dock")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/tree$/);
+  await page.touchscreen.tap(point.x, point.y);
+  await expect(page.getByRole("tab", { name: /О человеке/ })).toBeVisible();
+});
+
+test("3D middle click sets the generation anchor and middle drag only pans", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "desktop");
+  const preferences = await setup(page);
+  await settle(page);
+  const box = (await page.locator(".tree-spatial-canvas").boundingBox())!;
+  const x = box.x + box.width / 2,
+    y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down({ button: "middle" });
+  await page.mouse.move(x + 80, y + 40, { steps: 8 });
+  await page.mouse.up({ button: "middle" });
+  expect(preferences.generationLimits).toBeUndefined();
+  await page
+    .getByRole("button", { name: "Вернуть ракурс ветви", exact: true })
+    .click();
+  await settle(page);
+  await page.mouse.click(x, y, { button: "middle" });
+  await expect.poll(() => preferences.generationLimits?.anchorId).toBe("me");
 });

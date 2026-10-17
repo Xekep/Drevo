@@ -1,206 +1,36 @@
-import { memo, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
-import { ViewportPortal, useReactFlow, useStore } from "@xyflow/react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   ArrowLeft,
   ChevronDown,
   ChevronUp,
-  GitBranch,
+  Focus,
+  Maximize2,
+  Minimize2,
+  Minus,
+  Plus,
   RotateCcw,
   RotateCw,
+  Scan,
+  Users,
 } from "lucide-react";
 import { fullName, years, type Person, type FamilyUnion } from "../../domain";
-import {
-  depthWorld,
-  projectDepth,
-  depthLabelMarkers,
-  depthContextOffsets,
-  type DepthCamera,
-  type DepthPoint,
-} from "../../domain/tree-depth-scene";
+import { spatialWorld } from "../../domain/tree-spatial";
 import type { TreeGeometry } from "../../domain/tree-layout";
-import type { DepthBranch } from "../../domain/tree-depth";
-import { Avatar } from "../person-panel";
-import { useLongPress } from "./use-long-press";
-import { useDepthCamera } from "./use-depth-camera";
-import { fitTreeNodes, type FitTree } from "./tree-camera-fit";
+import type { FitTree } from "./tree-camera-fit";
+import type { SpatialRenderer } from "./spatial-renderer";
 import "../../styles/tree-depth.css";
 
-export type DepthSceneHandle = { fit: FitTree };
-type Projected = ReturnType<typeof projectDepth>;
+export type DepthSceneHandle = {
+  fit: FitTree;
+  zoom: (direction: number) => void;
+  personAt: (x: number, y: number) => string | null;
+};
 
-function familyPath(
-  from: DepthPoint,
-  to: DepthPoint,
-  camera: DepthCamera,
-  partner: boolean,
-  a: Projected,
-  b: Projected,
-  sourceSize: number,
-  targetSize: number,
-  sourceHeight: number,
-  targetHeight: number,
-) {
-  const down = Math.sign(to.y - from.y) || 1,
-    side = Math.sign(b.x - a.x) || 1;
-  if (partner)
-    return `M${a.x + side * (sourceHeight === 0 ? 0 : sourceHeight === 30 ? 30 : 110) * sourceSize},${a.y} L${b.x - side * (targetHeight === 0 ? 0 : targetHeight === 30 ? 30 : 110) * targetSize},${b.y}`;
-  const middle = (from.y + to.y) / 2;
-  const c = projectDepth({ ...from, y: middle }, camera),
-    d = projectDepth({ ...to, y: middle }, camera);
-  return `M${a.x},${a.y + down * sourceHeight * sourceSize} C${c.x},${c.y} ${d.x},${d.y} ${b.x},${b.y - down * targetHeight * targetSize}`;
-}
-
-const DepthPerson = memo(function DepthPerson({
-  person,
-  point,
-  worldPoint,
-  projectedPoint,
-  marker,
-  zoom,
-  scale,
-  active,
-  front,
-  anchor,
-  selected,
-  more,
-  relation,
-  collapsed,
-  hasChildren,
-  disabled,
-  onChoose,
-  onProfile,
-  onSelect,
-  onCollapse,
-}: {
-  person: Person;
-  point: Projected;
-  worldPoint: DepthPoint;
-  projectedPoint: Projected;
-  marker: boolean;
-  zoom: number;
-  scale: number;
-  active: boolean;
-  front: boolean;
-  anchor: boolean;
-  selected: boolean;
-  more: number;
-  relation: string;
-  collapsed: boolean;
-  hasChildren: boolean;
-  disabled: boolean;
-  onChoose: (id: string) => void;
-  onProfile: (id: string, additive?: boolean) => void;
-  onSelect: (id: string) => void;
-  onCollapse: (id: string) => void;
-}) {
-  const press = useLongPress(() => onSelect(person.id));
-  return (
-    <div
-      className={`tree-depth-person ${active ? "is-active" : "is-context"} ${marker ? "is-marker" : ""} ${anchor ? "is-anchor" : ""} ${selected ? "is-selected" : ""}`}
-      data-depth-person={person.id}
-      data-depth-z={point.z.toFixed(2)}
-      data-world-x={worldPoint.x}
-      data-world-y={worldPoint.y}
-      data-world-z={worldPoint.z}
-      data-depth-project-x={projectedPoint.x}
-      data-depth-project-y={projectedPoint.y}
-      data-world-scale={scale.toFixed(3)}
-      style={{
-        transform: `translate(${point.x}px, ${point.y}px) scale(${scale})`,
-        zIndex: Math.round(point.z) + 100000,
-        ["--depth-control-size" as string]: `${Math.max(44, 44 / (scale * zoom))}px`,
-      }}
-    >
-      <button
-        type="button"
-        className="tree-depth-person-content nodrag nopan"
-        disabled={disabled}
-        data-person-id={person.id}
-        title={`${fullName(person)} · ${years(person)}${!active && more ? ` · Ещё ${more} в ветви` : ""}`}
-        aria-label={
-          front
-            ? `Открыть карточку: ${fullName(person)}`
-            : `Перейти к ветви: ${fullName(person)}, людей: ${more + 1}`
-        }
-        onPointerDown={press.handlers.onPointerDown}
-        onPointerMove={press.handlers.onPointerMove}
-        onPointerUp={press.handlers.onPointerUp}
-        onPointerCancel={press.handlers.onPointerCancel}
-        onLostPointerCapture={press.handlers.onLostPointerCapture}
-        onContextMenu={(event) => event.preventDefault()}
-        onClick={(event) => {
-          event.stopPropagation();
-          if (press.suppressClick.current) {
-            press.cancel();
-            return;
-          }
-          if (event.shiftKey) onSelect(person.id);
-          else if (front) onProfile(person.id);
-          else onChoose(person.id);
-        }}
-      >
-        <Avatar person={person} loading="lazy" />
-        <span className="tree-depth-person-copy">
-          <span className="tree-depth-person-name">{person.surname}</span>
-          <span className="tree-depth-person-given">
-            {[person.name, person.patronymic].filter(Boolean).join(" ")}
-          </span>
-          <span className="tree-depth-person-years">{years(person)}</span>
-          {active && relation && (
-            <span className="tree-depth-person-relation">{relation}</span>
-          )}
-          {!active && more > 0 && (
-            <span className="tree-depth-more">Ещё {more} в ветви</span>
-          )}
-        </span>
-      </button>
-      {active && (
-        <div className="tree-depth-person-actions nodrag nopan">
-          {!anchor && (
-            <button
-              type="button"
-              title="Перейти к этой ветви"
-              aria-label={`Перейти к ветви: ${fullName(person)}`}
-              disabled={disabled}
-              onClick={(event) => {
-                event.stopPropagation();
-                onChoose(person.id);
-              }}
-            >
-              <GitBranch size={18} aria-hidden="true" />
-            </button>
-          )}
-          {(hasChildren || collapsed) && (
-            <button
-              type="button"
-              disabled={disabled}
-              title={collapsed ? "Раскрыть ветвь" : "Свернуть ветвь"}
-              aria-label={`${collapsed ? "Раскрыть" : "Свернуть"} ветвь: ${fullName(person)}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onCollapse(person.id);
-              }}
-            >
-              {collapsed ? (
-                <ChevronDown size={18} aria-hidden="true" />
-              ) : (
-                <ChevronUp size={18} aria-hidden="true" />
-              )}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-});
-
-/** All people, branch hinges and edges share a world and camera. No CSS plane flight. */
+/** Lazy loads the renderer only on entry into 3D. No Three.js in the flat chunk. */
 export function TreeDepthLayers({
-  branches,
   people,
   layoutPeople,
   unions,
-  sceneAnchorId,
   active,
   selected,
   ready,
@@ -210,18 +40,20 @@ export function TreeDepthLayers({
   disabled,
   cameraRef,
   collapsed,
-  relationLabel,
   onChoose,
   onProfile,
   onSelect,
   onCollapse,
   onBack,
+  onFallback,
+  onAdd,
+  fullscreen,
+  onFullscreen,
+  focusToken,
 }: {
-  branches: DepthBranch[];
   people: Map<string, Person>;
   layoutPeople: Map<string, Person>;
   unions?: FamilyUnion[];
-  sceneAnchorId: string;
   active: ReadonlySet<string>;
   selected: string[];
   ready: boolean;
@@ -231,302 +63,340 @@ export function TreeDepthLayers({
   disabled: boolean;
   cameraRef: RefObject<DepthSceneHandle | null>;
   collapsed: ReadonlySet<string>;
-  relationLabel: (person: Person) => string;
   onChoose: (id: string) => void;
   onProfile: (id: string, additive?: boolean) => void;
   onSelect: (id: string) => void;
   onCollapse: (id: string) => void;
   onBack: () => void;
+  onFallback: () => void;
+  onAdd?: () => void;
+  fullscreen: boolean;
+  onFullscreen: () => void;
+  focusToken?: number;
 }) {
-  const [tx, ty, zoom] = useStore((state) => state.transform);
-  const width = useStore((state) => state.width),
-    height = useStore((state) => state.height);
-  const flow = useReactFlow();
+  const host = useRef<HTMLDivElement>(null),
+    renderer = useRef<SpatialRenderer | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "failed">(
+    "loading",
+  );
+  const [query, setQuery] = useState("");
   const world = useMemo(
-    () =>
-      depthWorld(
-        branches,
-        layoutPeople,
-        geometry || {
-          positions: [],
-          mode: "generations",
-          reverse: false,
-          start: 0,
-          offset: 0,
-        },
-        sceneAnchorId,
-        unions,
-      ),
-    [branches, layoutPeople, geometry, sceneAnchorId, unions],
+    () => (geometry ? spatialWorld(layoutPeople, geometry, unions) : null),
+    [layoutPeople, geometry, unions],
   );
-  const { camera, moving, offset, turn } = useDepthCamera(
-    world,
-    anchorId,
-    ready,
-  );
-  const projected = useMemo(
-    () =>
-      new Map(
-        [...world.points].map(([id, p]) => [id, projectDepth(p, camera)]),
-      ),
-    [world, camera],
-  );
-  const lastFocused = useRef("");
-  const root = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    // A keyboard branch choice keeps focus on that same person as their card comes forward.
-    if (!moving && lastFocused.current) {
-      const id = lastFocused.current;
-      lastFocused.current = "";
-      [
-        ...(root.current?.querySelectorAll<HTMLButtonElement>(
-          "[data-person-id]",
-        ) || []),
-      ]
-        .find((button) => button.dataset.personId === id)
-        ?.focus({ preventScroll: true });
-    }
-  }, [moving, anchorId]);
-  const navigate = (id: string) => {
-    if (disabled) return;
-    if (root.current?.contains(document.activeElement))
-      lastFocused.current = id;
-    onChoose(id);
+  const callbacks = {
+    profile: onProfile,
+    choose: onChoose,
+    select: onSelect,
+    failure: () => setStatus("failed"),
   };
-  const detail = (id: string) =>
-    active.has(id) && zoom * (projected.get(id)?.scale || 1) >= 0.3;
-  const scaleOf = (id: string) =>
-    detail(id)
-      ? projected.get(id)!.scale
-      : Math.max(0.75 / zoom, projected.get(id)!.scale);
-  const landmarks = new Set(
-    world.planes.flatMap((plane) => [plane.id, ...plane.attachment]),
-  );
-  const included = new Set(
-    [...projected.keys()].filter(
-      (id) =>
-        detail(id) ||
-        landmarks.has(id) ||
-        id === anchorId ||
-        selected.includes(id),
-    ),
-  );
-  useLayoutEffect(() => {
-    cameraRef.current = {
-      fit: (options) =>
-        fitTreeNodes(
-          flow,
-          [...projected]
-            .filter(([id]) => included.has(id) || options?.ids?.includes(id))
-            .map(([id, p]) => {
-              const scale = scaleOf(id),
-                full = detail(id);
-              return {
-                id,
-                position: {
-                  x: p.x - 110 * scale,
-                  y: p.y - (full ? 132 : 45) * scale,
-                },
-                width: 220 * scale,
-                height: (full ? 264 : 90) * scale,
-              };
-            }),
-          { width, height },
-          options,
-        ),
-    };
+  const live = useRef({ people, anchorId, active, callbacks });
+  useEffect(() => {
+    live.current = { people, anchorId, active, callbacks };
+    renderer.current?.update(people, anchorId, active, callbacks);
+    if (renderer.current) renderer.current.controls.enabled = !disabled;
+  });
+  useEffect(() => {
+    // A repeated external request for the same person still recentres after an orbit.
+    if (focusToken) renderer.current?.focus(anchorId);
+  }, [focusToken, anchorId]);
+  useEffect(() => {
+    const root = host.current;
+    if (!root || !world || !ready) return;
+    let cancelled = false,
+      instance: SpatialRenderer | null = null;
+    void import("./spatial-renderer")
+      .then(({ SpatialRenderer: Renderer }) => {
+        if (cancelled) return;
+        try {
+          const css = getComputedStyle(root);
+          const color = (name: string) => css.getPropertyValue(name).trim();
+          instance = new Renderer(
+            root,
+            world,
+            live.current.people,
+            {
+              paper: color("--paper"),
+              ink: color("--ink"),
+              muted: color("--muted"),
+              green: color("--green"),
+              red: color("--red") || "#9c655b",
+            },
+            live.current.callbacks,
+          );
+          renderer.current = instance;
+          instance.update(
+            live.current.people,
+            live.current.anchorId,
+            live.current.active,
+            live.current.callbacks,
+          );
+          cameraRef.current = {
+            fit: instance.fit,
+            zoom: (direction) => instance?.zoom(direction),
+            personAt: (x, y) => instance?.personAt(x, y) || null,
+          };
+          setStatus("ready");
+        } catch {
+          if (!cancelled) setStatus("failed");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("failed");
+      });
     return () => {
+      cancelled = true;
+      instance?.dispose();
+      renderer.current = null;
       cameraRef.current = null;
     };
-  });
-  const candidates = [...projected].filter(
-    ([id, p]) =>
-      included.has(id) &&
-      p.x * zoom + tx > -250 &&
-      p.x * zoom + tx < width + 250 &&
-      p.y * zoom + ty > -250 &&
-      p.y * zoom + ty < height + 250,
-  );
-  const screenCards = candidates.map(([id, p]) => ({
-    id,
-    x: p.x * zoom + tx,
-    y: p.y * zoom + ty,
-    scale: scaleOf(id) * zoom,
-    full: detail(id),
-  }));
-  const offsets = depthContextOffsets(screenCards, width, height);
-  const markers = depthLabelMarkers(
-    screenCards.map((card) => ({
-      ...card,
-      x: card.x + (offsets.get(card.id)?.x || 0),
-      y: card.y + (offsets.get(card.id)?.y || 0),
-    })),
-  );
-  const offsetPoint = (id: string, p: Projected) => ({
-    ...p,
-    x: p.x + (offsets.get(id)?.x || 0) / zoom,
-    y: p.y + (offsets.get(id)?.y || 0) / zoom,
-  });
-  const shifted = (id: string) =>
-    Math.hypot(offsets.get(id)?.x || 0, offsets.get(id)?.y || 0) > 0.01;
-  const hasChildren = new Set(
-    world.connections
-      .filter((edge) => edge.type === "parent")
-      .map((edge) => edge.from),
+  }, [world, ready, cameraRef]);
+  const focused = people.get(selected[0] || anchorId);
+  const children =
+    focused &&
+    [...(world?.connections || [])].some(
+      (edge) => edge.type === "parent" && edge.from === focused.id,
+    );
+  const matches = [...people.values()].filter(
+    (p) =>
+      world?.points.has(p.id) &&
+      fullName(p)
+        .toLocaleLowerCase("ru")
+        .includes(query.toLocaleLowerCase("ru")),
   );
   return (
-    <>
-      <ViewportPortal>
-        <div
-          ref={root}
-          className="tree-depth-world"
-          role="navigation"
-          aria-label="Ветви 2.5D"
-          data-depth-yaw={camera.yaw.toFixed(2)}
-          data-depth-moving={moving}
-          data-depth-world-people={world.points.size}
-          style={{ visibility: ready ? "visible" : "hidden" }}
-        >
-          <svg
-            className="tree-depth-space"
-            width="1"
-            height="1"
-            aria-hidden="true"
+    <div
+      className="tree-spatial"
+      ref={host}
+      data-depth-moving="false"
+      data-depth-world-people={world?.points.size || 0}
+      data-depth-selected={selected.join(",")}
+      data-depth-connections={world?.connections.length || 0}
+      data-renderer="webgl"
+      aria-busy={status === "loading"}
+    >
+      {status === "loading" && (
+        <div className="tree-spatial-state" role="status">
+          Загружаем 3D-древо…
+        </div>
+      )}
+      {status === "failed" && (
+        <div className="tree-spatial-state" role="alert">
+          <p>Не удалось отобразить 3D-древо. Возможно, WebGL недоступен.</p>
+          <button type="button" onClick={onFallback}>
+            Открыть обычное древо
+          </button>
+        </div>
+      )}
+      {status === "ready" && (
+        <>
+          <details
+            className="tree-spatial-people"
+            onPointerDown={(e) => e.stopPropagation()}
           >
-            {world.connections
-              .filter(
-                (edge) => included.has(edge.from) && included.has(edge.to),
-              )
-              .map((edge) => {
-                const a = projected.get(edge.from)!,
-                  b = projected.get(edge.to)!;
-                return (
-                  <path
-                    key={`${edge.type}:${edge.from}:${edge.to}`}
-                    className={`tree-depth-connection ${edge.type === "partner" ? "is-partner" : ""}`}
-                    data-depth-from={edge.from}
-                    data-depth-to={edge.to}
-                    d={familyPath(
-                      world.points.get(edge.from)!,
-                      world.points.get(edge.to)!,
-                      camera,
-                      edge.type === "partner",
-                      a,
-                      b,
-                      scaleOf(edge.from),
-                      scaleOf(edge.to),
-                      shifted(edge.from)
-                        ? 0
-                        : detail(edge.from)
-                          ? 132
-                          : markers.has(edge.from)
-                            ? 30
-                            : 45,
-                      shifted(edge.to)
-                        ? 0
-                        : detail(edge.to)
-                          ? 132
-                          : markers.has(edge.to)
-                            ? 30
-                            : 45,
-                    )}
-                  />
-                );
-              })}
-            {candidates
-              .filter(([id]) => shifted(id))
-              .map(([id, p]) => {
-                const label = offsetPoint(id, p);
-                return (
-                  <path
-                    key={`leader:${id}`}
-                    data-depth-leader={id}
-                    className="tree-depth-label-leader"
-                    d={`M${p.x},${p.y} L${label.x},${label.y}`}
-                  />
-                );
-              })}
-          </svg>
-          {candidates.map(([id, point]) => (
-            <DepthPerson
-              key={id}
-              person={people.get(id)!}
-              point={offsetPoint(id, point)}
-              projectedPoint={point}
-              worldPoint={world.points.get(id)!}
-              marker={markers.has(id)}
-              zoom={zoom}
-              scale={scaleOf(id)}
-              active={detail(id)}
-              front={active.has(id)}
-              anchor={id === anchorId}
-              selected={selected.includes(id)}
-              more={Math.max(
-                0,
-                (world.planeOf.get(id)?.members.length || 1) - 1,
+            <summary title="Найти человека в 3D-древе">
+              <Users size={18} aria-hidden="true" />
+              <span>Люди в 3D</span>
+            </summary>
+            <label>
+              <span className="sr-only">Поиск в 3D-древе</span>
+              <input
+                type="search"
+                placeholder="Имя или фамилия"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            <ul>
+              {matches.slice(0, 50).map((person) => (
+                <li key={person.id}>
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={(e) => {
+                      onChoose(person.id);
+                      e.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
+                      host.current
+                        ?.querySelector<HTMLCanvasElement>(
+                          ".tree-spatial-canvas",
+                        )
+                        ?.focus({ preventScroll: true });
+                      renderer.current?.focus(person.id);
+                    }}
+                  >
+                    {fullName(person)} · {years(person)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {!matches.length && <p>Никого не нашли</p>}
+            {matches.length > 50 && <p>Уточните имя для поиска остальных</p>}
+          </details>
+          <div
+            className="tree-spatial-orbit"
+            role="group"
+            aria-label="Поворот 3D-древа"
+          >
+            {previous && (
+              <button
+                type="button"
+                aria-label="Предыдущая ветвь"
+                title="Предыдущая ветвь"
+                onClick={onBack}
+                disabled={disabled}
+              >
+                <ArrowLeft size={18} />
+              </button>
+            )}
+            <button
+              type="button"
+              aria-label="Повернуть пространство влево"
+              title="Повернуть влево"
+              onClick={() => renderer.current?.rotate(-0.35)}
+              disabled={disabled}
+            >
+              <RotateCcw size={18} />
+            </button>
+            <button
+              type="button"
+              aria-label="Вернуть ракурс ветви"
+              title="Вернуть ракурс ветви"
+              onClick={() => renderer.current?.focus(anchorId)}
+              disabled={disabled}
+            >
+              3D
+            </button>
+            <button
+              type="button"
+              aria-label="Повернуть пространство вправо"
+              title="Повернуть вправо"
+              onClick={() => renderer.current?.rotate(0.35)}
+              disabled={disabled}
+            >
+              <RotateCw size={18} />
+            </button>
+          </div>
+          {focused && (
+            <div
+              className="tree-spatial-person"
+              aria-label="Выбранный человек в 3D"
+            >
+              <button
+                type="button"
+                className="tree-spatial-person-name"
+                onClick={() => onProfile(focused.id)}
+                disabled={disabled}
+              >
+                {fullName(focused)}
+              </button>
+              <button
+                type="button"
+                title="Перейти к ветви"
+                aria-label={`Перейти к ветви: ${fullName(focused)}`}
+                onClick={() => {
+                  onChoose(focused.id);
+                  renderer.current?.focus(focused.id);
+                }}
+                disabled={disabled}
+              >
+                <Focus size={18} />
+              </button>
+              {(children || collapsed.has(focused.id)) && (
+                <button
+                  type="button"
+                  onClick={() => onCollapse(focused.id)}
+                  disabled={disabled}
+                  title={
+                    collapsed.has(focused.id)
+                      ? "Раскрыть ветвь"
+                      : "Свернуть ветвь"
+                  }
+                  aria-label={`${collapsed.has(focused.id) ? "Раскрыть" : "Свернуть"} ветвь: ${fullName(focused)}`}
+                >
+                  {collapsed.has(focused.id) ? (
+                    <ChevronDown size={18} />
+                  ) : (
+                    <ChevronUp size={18} />
+                  )}
+                </button>
               )}
-              relation={relationLabel(people.get(id)!)}
-              collapsed={collapsed.has(id)}
-              hasChildren={hasChildren.has(id)}
-              disabled={disabled || !ready}
-              onChoose={navigate}
-              onProfile={onProfile}
-              onSelect={onSelect}
-              onCollapse={onCollapse}
-            />
-          ))}
-        </div>
-      </ViewportPortal>
-      <span className="tree-depth-announcement" role="status">
-        Ветвь: {people.get(anchorId) ? fullName(people.get(anchorId)!) : ""}.
-      </span>
-      <div className="tree-depth-back-controls">
-        {previous && (
-          <button
-            type="button"
-            disabled={disabled}
-            aria-label="Предыдущая ветвь"
-            title="Предыдущая ветвь"
-            onClick={onBack}
+            </div>
+          )}
+          <div
+            className="tree-spatial-tools"
+            role="group"
+            aria-label="Масштаб 3D-древа"
           >
-            <ArrowLeft size={17} aria-hidden="true" />
-            <span>Предыдущая ветвь</span>
-          </button>
-        )}
-        <div
-          className="tree-depth-orbit"
-          role="group"
-          aria-label="Поворот пространства"
-        >
-          <button
-            type="button"
-            disabled={disabled || offset <= -36}
-            title="Повернуть пространство влево"
-            aria-label="Повернуть пространство влево"
-            onClick={() => turn(-12)}
-          >
-            <RotateCcw size={17} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            disabled={disabled || offset === 0}
-            title="Вернуть ракурс ветви"
-            aria-label="Вернуть ракурс ветви"
-            onClick={() => turn(null)}
-          >
-            2.5D
-          </button>
-          <button
-            type="button"
-            disabled={disabled || offset >= 36}
-            title="Повернуть пространство вправо"
-            aria-label="Повернуть пространство вправо"
-            onClick={() => turn(12)}
-          >
-            <RotateCw size={17} aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-    </>
+            <button
+              type="button"
+              aria-label="Уменьшить"
+              onClick={() => renderer.current?.zoom(-1)}
+              disabled={disabled}
+            >
+              <Minus size={18} />
+            </button>
+            <button
+              type="button"
+              aria-label="Увеличить"
+              onClick={() => renderer.current?.zoom(1)}
+              disabled={disabled}
+            >
+              <Plus size={18} />
+            </button>
+            <button
+              type="button"
+              title="Вписать видимую часть древа"
+              aria-label="Вписать видимую часть древа"
+              onClick={() => void renderer.current?.fit()}
+              disabled={disabled}
+            >
+              <Scan size={18} />
+            </button>
+            <button
+              type="button"
+              aria-label={
+                fullscreen
+                  ? "Выйти из полного экрана"
+                  : "Развернуть на весь экран"
+              }
+              title={
+                fullscreen
+                  ? "Выйти из полного экрана"
+                  : "Развернуть на весь экран"
+              }
+              onClick={onFullscreen}
+              disabled={disabled}
+            >
+              {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+          </div>
+          {onAdd && (
+            <button
+              type="button"
+              className="tree-spatial-add"
+              aria-label="Добавить человека"
+              title="Добавить человека"
+              onClick={onAdd}
+              disabled={disabled}
+            >
+              <Plus size={18} />
+              <span>Человек</span>
+            </button>
+          )}
+          <span className="tree-spatial-hint">
+            Перетаскивайте для поворота ·{" "}
+            {"ontouchstart" in window
+              ? "Два пальца — масштаб и сдвиг"
+              : "Колесо — масштаб, правая кнопка — сдвиг"}
+          </span>
+          <span className="sr-only" role="status">
+            Ветвь: {people.get(anchorId) ? fullName(people.get(anchorId)!) : ""}
+            . {world?.points.size || 0} человек.
+          </span>
+        </>
+      )}
+    </div>
   );
 }

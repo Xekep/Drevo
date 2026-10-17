@@ -7,7 +7,7 @@ import { treePreferencesStore } from "../src/server/tree-preferences.ts";
 import { userStore } from "../src/server/users.ts";
 import { DEFAULT_TREE_PREFERENCES } from "../src/domain/tree-preferences.ts";
 
-test("2.5D is personal, validated and retained by older clients changing other preferences", async () => {
+test("3D is personal, validated and retained by older clients changing other preferences", async () => {
   const db = new DatabaseSync(":memory:");
   try {
     initializeArchiveSchema(db);

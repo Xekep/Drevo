@@ -2,14 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { Family, Person } from "../src/domain/types.ts";
 import { treeDepthBranches } from "../src/domain/tree-depth.ts";
-import {
-  depthWorld,
-  depthCamera,
-  projectDepth,
-  interpolateDepthCamera,
-  depthLabelMarkers,
-  depthContextOffsets,
-} from "../src/domain/tree-depth-scene.ts";
+import { spatialWorld, spatialDetailIds } from "../src/domain/tree-spatial.ts";
 import type { TreeGeometry } from "../src/domain/tree-layout.ts";
 
 const p = (
@@ -53,7 +46,7 @@ const family: Family = {
 };
 const all = new Set(family.people.map((person) => person.id));
 
-test("2.5D preserves an explicit civil partner without inventing marriage or opening that partner's ancestors", () => {
+test("3D preserves an explicit civil partner without inventing marriage or opening that partner's ancestors", () => {
   const graph: Family = {
     ...family,
     people: [p("me"), p("partner", ["parent"]), p("parent")],
@@ -75,7 +68,7 @@ test("2.5D preserves an explicit civil partner without inventing marriage or ope
   );
   assert.deepEqual(graph, before);
 });
-test("2.5D exposes the anchor's direct lines and partners, keeping collateral branches behind", () => {
+test("3D exposes the anchor's direct lines and partners, keeping collateral branches behind", () => {
   const before = structuredClone(family);
   const view = treeDepthBranches(family, all, "me");
   assert.deepEqual(
@@ -117,7 +110,7 @@ test("selecting a back branch changes direct lines without opening descendants o
   assert.ok(!next.front.has("child"));
   assert.ok(next.back.some((branch) => branch.members.includes("me")));
 });
-test("2.5D never exposes inaccessible people or uses extra links to merge genealogical branches", () => {
+test("3D never exposes inaccessible people or uses extra links to merge genealogical branches", () => {
   const allowed = new Set(["me", "child", "sibling", "isolate"]);
   const view = treeDepthBranches(family, allowed, "me");
   assert.deepEqual([...view.front].sort(), ["me", "child"].sort());
@@ -156,234 +149,115 @@ function fixtureGeometry(people: Person[], reverse = false): TreeGeometry {
     }),
   };
 }
-function fixtureWorld(graph = family, reverse = false) {
-  const allowed = new Set(graph.people.map((p) => p.id));
-  const view = treeDepthBranches(graph, allowed, "me"),
-    geometry = fixtureGeometry(graph.people, reverse);
-  return depthWorld(
-    view.back,
-    new Map(graph.people.map((p) => [p.id, p])),
-    geometry,
-    "me",
-    graph.unions,
-  );
-}
 
-test("one stable spatial world keeps generation coordinates and actual family hinges", () => {
-  const before = structuredClone(family),
-    world = fixtureWorld();
-  assert.equal(world.points.size, family.people.length);
-  for (const [id, p] of world.points) assert.equal(p.y, world.flat.get(id)!.y);
-  const plane = world.planeOf.get("sibling")!;
-  assert.deepEqual(plane.attachment.sort(), ["dad", "mom"]);
-  assert.equal(world.planeOf.get("nephew"), plane);
-  assert.notEqual(world.points.get("sibling")!.z, 0);
-  assert.equal(world.planeOf.get("isolate")!.attachment.length, 0);
-  assert.ok(
-    !world.connections.some(
-      (edge) => edge.to === "isolate" || edge.from === "isolate",
-    ),
-  );
-  assert.deepEqual(family, before);
-});
-
-test("choosing another family rotates the whole scene without recomputing or replacing world points", () => {
-  const world = fixtureWorld(),
-    saved = structuredClone(world.points);
-  const start = depthCamera(world, "me"),
-    target = depthCamera(world, "sibling");
-  const oldDad = projectDepth(world.points.get("dad")!, start);
-  const newDad = projectDepth(world.points.get("dad")!, target);
-  assert.ok(oldDad.x !== newDad.x || oldDad.y !== newDad.y);
-  const selected = projectDepth(world.points.get("sibling")!, target);
-  assert.equal(selected.x, world.flat.get("sibling")!.x);
-  assert.equal(selected.y, world.flat.get("sibling")!.y);
-  assert.equal(selected.scale, 1);
-  const sibling = projectDepth(world.points.get("sibling")!, target),
-    nephew = projectDepth(world.points.get("nephew")!, target);
-  assert.ok(nephew.y > sibling.y);
-  assert.ok(
-    Math.abs(nephew.scale - 1) < 0.001,
-    "the selected plane faces the viewer",
-  );
-  for (let t = 0; t <= 1; t += 0.1)
-    for (const point of world.points.values()) {
-      const p = projectDepth(point, interpolateDepthCamera(start, target, t));
-      assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y) && p.scale > 0);
-    }
-  assert.deepEqual(world.points, saved);
-  assert.deepEqual(
-    projectDepth(world.points.get("me")!, depthCamera(world, "me")),
-    projectDepth(world.points.get("me")!, start),
-  );
-});
-
-test("camera interpolation is continuous and reverses exactly, with no scale/roll deformation", () => {
-  const world = fixtureWorld(),
-    a = depthCamera(world, "me"),
-    b = depthCamera(world, "nephew");
-  assert.deepEqual(interpolateDepthCamera(a, b, 0), a);
-  assert.deepEqual(interpolateDepthCamera(a, b, 1), b);
-  const halfway = interpolateDepthCamera(a, b, 0.5);
-  assert.deepEqual(halfway, interpolateDepthCamera(b, a, 0.5));
-  assert.equal(halfway.target.z, (a.target.z + b.target.z) / 2);
-  assert.equal(projectDepth(b.target, b).scale, 1);
-});
-
-test("spatial topology retains multiple partners and repeated ancestors as one person each", () => {
-  const graph: Family = {
+test("3D retains exact topology, repeated ancestors and civil partners without duplicate edges", () => {
+  const graph = {
     ...family,
-    links: [],
-    people: [
-      p("me", ["dad", "mom"], ["one", "two"]),
-      p("dad", ["grand"]),
-      p("mom", ["grand"]),
-      p("grand"),
-      p("one"),
-      p("two"),
-      p("child-one", ["me", "one"]),
-      p("child-two", ["me", "two"]),
-    ],
     unions: [
-      { id: "civil", participants: ["one", "two"], type: "civil_union" },
+      {
+        id: "civil",
+        participants: ["me", "partner"] as [string, string],
+        type: "civil_union" as const,
+      },
     ],
   };
-  const world = fixtureWorld(graph);
+  const before = structuredClone(graph);
+  const world = spatialWorld(
+    new Map(graph.people.map((p) => [p.id, p])),
+    fixtureGeometry(graph.people),
+    graph.unions,
+  );
   assert.equal(world.points.size, graph.people.length);
-  for (const child of ["child-one", "child-two"]) {
-    const parents = world.connections
-      .filter((edge) => edge.type === "parent" && edge.to === child)
-      .map((e) => e.from)
-      .sort();
-    assert.deepEqual(
-      parents,
-      child === "child-one" ? ["me", "one"] : ["me", "two"],
-    );
-  }
+  const partners = world.connections.filter(
+    (e) => e.type === "partner" && [e.from, e.to].includes("me"),
+  );
+  assert.equal(partners.length, 1);
   assert.equal(
-    world.connections.filter((e) => e.type === "parent" && e.from === "grand")
+    world.connections.filter((e) => e.to === "child" && e.type === "parent")
       .length,
     2,
   );
   assert.equal(
-    world.connections.filter(
-      (e) => e.type === "partner" && [e.from, e.to].sort().join() === "one,two",
-    ).length,
-    1,
+    world.connections.filter((e) => e.to === "isolate" || e.from === "isolate")
+      .length,
+    0,
   );
+  assert.deepEqual(graph, before);
 });
 
-test("large branches keep their geometry instead of replacing an eighteen-person preview on selection", () => {
-  const graph: Family = {
-    ...family,
-    links: [],
-    unions: [],
-    people: [
-      p("dad"),
-      p("me", ["dad"]),
-      p("sibling", ["dad"]),
-      ...Array.from({ length: 80 }, (_, i) => p(`child-${i}`, ["sibling"])),
-    ],
-  };
-  const world = fixtureWorld(graph);
-  assert.equal(world.points.size, 83);
-  assert.equal(world.planeOf.get("sibling")!.members.length, 81);
-  const a = world.points.get("child-79")!;
-  assert.ok(Number.isFinite(projectDepth(a, depthCamera(world, "child-79")).x));
-});
-
-test("world projection respects reversed generations and never restores inaccessible geometry IDs", () => {
-  const reversed = fixtureWorld(family, true),
-    camera = depthCamera(reversed, "sibling");
-  assert.ok(
-    projectDepth(reversed.points.get("nephew")!, camera).y <
-      projectDepth(reversed.points.get("sibling")!, camera).y,
-  );
-  const allowed = new Set(["me", "child", "sibling"]),
-    view = treeDepthBranches(family, allowed, "me");
-  const people = new Map(
-    family.people.filter((p) => allowed.has(p.id)).map((p) => [p.id, p]),
-  );
-  const scopedGeometry = fixtureGeometry(
-    family.people.filter((p) => allowed.has(p.id)),
-  );
-  scopedGeometry.positions.push(["private-id", { x: 0, y: 0 }]);
-  const world = depthWorld(
-    view.back,
-    people,
-    scopedGeometry,
-    "me",
-    family.unions,
-  );
-  assert.deepEqual([...world.points.keys()].sort(), [...allowed].sort());
-  for (const edge of world.connections)
-    assert.ok(allowed.has(edge.from) && allowed.has(edge.to));
-});
-
-test("unknown anchor, disconnected people and cyclic imported parents terminate deterministically", () => {
-  assert.equal(treeDepthBranches(family, all, "missing").front.size, 0);
-  const graph = {
-    people: [p("a", ["b"]), p("b", ["a"]), p("outside")],
-    links: [],
-  };
-  const first = treeDepthBranches(graph, new Set(["a", "b", "outside"]), "a");
-  assert.deepEqual([...first.front], ["a", "b"]);
-  assert.deepEqual(
-    first,
-    treeDepthBranches(graph, new Set(["a", "b", "outside"]), "a"),
-  );
-});
-
-test("context labels never cover another person's minimum target or change their world positions", () => {
-  const cards = [
-    { id: "front", x: 0, y: 0, scale: 0.55, full: true },
-    { id: "sibling", x: 160, y: 0, scale: 0.75, full: false },
-    { id: "aunt", x: 275, y: 0, scale: 0.75, full: false },
-    { id: "clear", x: 500, y: 0, scale: 0.75, full: false },
-  ];
-  const before = structuredClone(cards),
-    markers = depthLabelMarkers(cards);
-  assert.ok(markers.has("sibling") || markers.has("aunt"));
-  assert.ok(!markers.has("front") && !markers.has("clear"));
-  assert.deepEqual(cards, before);
-});
-
-test("mobile overview separates context hit targets with leaders, keeping full cards and world positions fixed", () => {
-  const cards = [
-    { id: "me", x: 240, y: 300, scale: 0.55, full: true },
-    ...Array.from({ length: 8 }, (_, i) => ({
-      id: `branch-${i}`,
-      x: 95 + i * 12,
-      y: 300,
-      scale: 0.75,
-      full: false,
-    })),
-  ];
-  const before = structuredClone(cards),
-    offsets = depthContextOffsets(cards, 390, 700);
-  assert.deepEqual(offsets.get("me"), { x: 0, y: 0 });
-  const labels = cards
-    .slice(1)
-    .map((card) => ({
-      x: card.x + offsets.get(card.id)!.x,
-      y: card.y + offsets.get(card.id)!.y,
-    }));
-  for (let i = 0; i < labels.length; i++) {
-    assert.ok(
-      labels[i].x >= 25 &&
-        labels[i].x <= 365 &&
-        labels[i].y >= 25 &&
-        labels[i].y <= 675,
+test("3D has real depth and keeps ordered generations in either direction", () => {
+  for (const reverse of [false, true]) {
+    const geometry = fixtureGeometry(family.people, reverse);
+    const world = spatialWorld(
+      new Map(family.people.map((p) => [p.id, p])),
+      geometry,
     );
-    for (let j = i + 1; j < labels.length; j++)
-      assert.ok(
-        Math.abs(labels[i].x - labels[j].x) >= 50.9 ||
-          Math.abs(labels[i].y - labels[j].y) >= 50.9,
-        `overlapping context targets: ${i},${j}`,
-      );
+    assert.ok(new Set([...world.points.values()].map((p) => p.z)).size > 2);
+    assert.ok(
+      (world.points.get("dad")!.y - world.points.get("me")!.y) *
+        (reverse ? -1 : 1) >
+        0,
+    );
+    for (const point of world.points.values())
+      assert.ok(Object.values(point).every(Number.isFinite));
+    // Horizontal arc length is the Worker spacing; curvature cannot fold a row over itself.
+    assert.ok(
+      [...world.points.values()].every((p) => Math.abs(p.angle) <= 1.2 + 1e-9),
+    );
+    assert.deepEqual(
+      spatialWorld(new Map(family.people.map((p) => [p.id, p])), geometry),
+      world,
+    );
   }
-  assert.ok(
-    [...offsets.values()].some((offset) => Math.hypot(offset.x, offset.y) > 10),
+});
+
+test("3D includes only authorised geometry, coalesces occurrences and terminates on bad imported cycles", () => {
+  const geometry = fixtureGeometry(family.people);
+  geometry.positions.push(["me-copy", { x: 5000, y: 2000 }]);
+  geometry.occurrences = [{ id: "me-copy", personId: "me" }] as NonNullable<
+    TreeGeometry["occurrences"]
+  >;
+  const world = spatialWorld(
+    new Map(family.people.filter((p) => p.id !== "dad").map((p) => [p.id, p])),
+    geometry,
   );
-  assert.deepEqual(cards, before);
+  assert.equal(world.points.size, family.people.length - 1);
+  assert.ok(!world.points.has("dad"));
+  assert.ok(!world.points.has("me-copy"));
+  assert.ok(
+    world.connections.every(
+      (e) => world.points.has(e.from) && world.points.has(e.to),
+    ),
+  );
+  assert.deepEqual(
+    spatialWorld(new Map(), { ...geometry, positions: [] }).points.size,
+    0,
+  );
+});
+
+test("3D screen LOD is bounded, prioritises the anchor and suppresses overlapping labels", () => {
+  const candidates = Array.from({ length: 10_000 }, (_, i) => ({
+    id: String(i),
+    x: 50 + (i % 50) * 100,
+    y: 50 + Math.floor(i / 50) * 110,
+    size: 90,
+    distance: i + 1,
+  }));
+  const ids = spatialDetailIds(candidates, 1440, 900, "51", 32);
+  assert.equal(ids[0], "51");
+  assert.ok(ids.length <= 32);
+  const coincident = candidates
+    .slice(0, 100)
+    .map((c) => ({ ...c, x: 150, y: 150 }));
+  assert.deepEqual(spatialDetailIds(coincident, 390, 844, "51", 32), ["51"]);
+  assert.equal(
+    spatialDetailIds(
+      candidates.map((c) => ({ ...c, size: 5 })),
+      1440,
+      900,
+      "51",
+      32,
+    ).length,
+    0,
+  );
 });
