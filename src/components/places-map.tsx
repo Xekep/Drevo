@@ -451,10 +451,7 @@ export default function PlacesMap({
   return (
     <section className="places-workspace">
       <header className="places-heading">
-        <div>
-          <span className="eyebrow">География семьи</span>
-          <h1>Места, которые нас связывают</h1>
-        </div>
+        <h1>Места, которые нас связывают</h1>
         <p>
           {places.length} {plural(places.length, "место", "места", "мест")} ·{" "}
           {points.length} на карте
