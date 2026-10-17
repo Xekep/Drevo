@@ -3,7 +3,7 @@ import type { FamilyLink } from "./types.ts";
 import type { TreeNodeSize } from "./tree-layout-constants.ts";
 import { routeRelationships } from "./edge-routing.ts";
 import {
-  familyBlockContactScores,
+  familyBlockConflicts,
   placedFamilyRows,
 } from "./local-family-order.ts";
 import { restoreFamilyRowHistory } from "./family-row-history.ts";
@@ -122,12 +122,15 @@ export function optimizeFamilyRows(
   let budget = small ? 24 : 8;
   for (let pass = 0; !previous && pass < 2 && budget > 0; pass++) {
     const before = score(best),
-      contacts = familyBlockContactScores(best);
+      { contacts, crossed } = familyBlockConflicts(best);
     if (!before.crossings || !contacts.size) break;
     const candidates: { move: Move; quality: Quality }[] = [];
     const seen = new Set<string>();
     for (const row of placedFamilyRows(best, size)) {
       if (row.length < 2 || row.length > 64) continue;
+      // Moving this row can only change its incident branches. A crossing
+      // between two untouched branches cannot disappear after rerouting.
+      if (!row.some((block) => crossed.has(block.id))) continue;
       const active = row
         .map((block, index) => ({ block, index }))
         .filter(({ block }) => contacts.has(block.id))

@@ -8,6 +8,7 @@ import {
 } from "../src/domain/union-layout.ts";
 import ELK from "elkjs/lib/elk.bundled.js";
 import { randomFamily } from "./layout-fixtures.ts";
+import { familyBlockConflicts } from "../src/domain/local-family-order.ts";
 import { routeRelationships } from "../src/domain/edge-routing.ts";
 
 const size = { width: 220, height: 264 };
@@ -294,3 +295,79 @@ test("medium cold graphs compare at most two independent placements above the hi
   assert.equal(score()(geometry).cardHits, 0);
   assert.equal(score()(geometry).overlaps, 0);
 });
+
+/** Twenty-five early households have 576 distinct insertions but only T contacts. */
+function lateCrossingFixture(large: boolean): TreeGeometry {
+  const early = fixture(
+    Array.from({ length: 25 }, (_, i) => (i + 1) * 300),
+    Array.from({ length: 25 }, (_, i) => i * 300),
+  );
+  for (const branch of early.branches!) {
+    branch.route.points[1].y = 340;
+    branch.route.points[2].y = 340;
+  }
+  const late = fixture([1200, 0, 600]);
+  const rename = (id: string) => `late-${id}`;
+  early.positions.push(...late.positions.map(([id, p]) =>
+    [rename(id), { ...p, y: p.y + 2000 }] as [string, { x: number; y: number }],
+  ));
+  early.occurrences!.push(...late.occurrences!.map((o) => ({
+    id: rename(o.id), personId: rename(o.personId), block: rename(o.block),
+  })));
+  early.generationBands!.push(...late.generationBands!.map((band) => ({
+    ...band, level: band.level + 2, targetY: band.targetY + 2000,
+    minY: band.minY + 2000, maxY: band.maxY + 2000,
+    members: band.members.map(rename),
+  })));
+  early.branches!.push(...late.branches!.map((branch) => ({
+    ...branch, id: rename(branch.id), source: rename(branch.source),
+    target: rename(branch.target), union: rename(branch.union),
+    relations: branch.relations.map((r) => ({ ...r, from: rename(r.from), to: rename(r.to) })),
+    route: { ...branch.route, points: branch.route.points.map((p) => ({ ...p, y: p.y + 2000 })) },
+  })));
+  // Routing recognizes child branches by this prefix.
+  for (const branch of early.branches!)
+    if (branch.id.startsWith("late-")) branch.id = `child:${branch.id}`;
+  if (large) {
+    const isolated = Array.from({ length: 301 - early.positions.length }, (_, i) => `isolated-${i}`);
+    early.positions.push(...isolated.map((id, i) =>
+      [id, { x: i * 300, y: 4000 }] as [string, { x: number; y: number }],
+    ));
+    early.occurrences!.push(...isolated.map((id) => ({ id, personId: id, block: id })));
+    early.generationBands!.push({
+      level: 4, targetY: 4000, minY: 3970, maxY: 4030, members: isolated,
+    });
+  }
+  return early;
+}
+
+for (const reverse of [false, true]) for (const large of [false, true]) {
+  test(`T-only early rows cannot starve a later crossing (reverse=${reverse}, large=${large})`, () => {
+    const original = lateCrossingFixture(large),
+      before = reverse ? mirrored(original) : original,
+      saved = structuredClone(before), metrics = score(),
+      conflicts = familyBlockConflicts(before);
+    assert.equal(conflicts.crossed.has("p0"), false);
+    assert.ok(Array.from({ length: 25 }, (_, i) => `p${i}`).every((id) => conflicts.contacts.has(id)));
+    assert.ok([...conflicts.crossed].some((id) => id.startsWith("late-")));
+    assert.ok(metrics(before).crossings > 0);
+    assert.equal(metrics(before).cardHits, 0);
+    assert.equal(metrics(before).overlaps, 0);
+    let firstMoved: string[] | undefined;
+    const old = new Map(before.positions);
+    const after = optimizeFamilyRows(before, people(before), [], size, (geometry) => {
+      const moved = geometry.positions.filter(([id, p]) => old.get(id)!.x !== p.x).map(([id]) => id);
+      if (moved.length && !firstMoved) firstMoved = moved;
+      return metrics(geometry);
+    });
+    assert.equal(metrics(after).crossings, 0);
+    assert.ok(firstMoved?.length);
+    assert.ok(firstMoved.every((id) => id.startsWith("late-")));
+    assert.ok(metrics(after).contacts <= metrics(before).contacts);
+    assert.equal(metrics(after).cardHits, 0);
+    assert.equal(metrics(after).overlaps, 0);
+    unchangedStructure(before, after);
+    assert.deepEqual(before, saved);
+    assert.deepEqual(optimizeFamilyRows(before, people(before), [], size, score()), after);
+  });
+}

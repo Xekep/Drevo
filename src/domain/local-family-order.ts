@@ -8,6 +8,7 @@ import {
   simplifyRoute,
   Spatial,
 } from "./edge-routing.ts";
+import { segmentsCross } from "./layout-order.ts";
 import type { UnionBranch } from "./union-layout.ts";
 
 type Block = { id: string; members: string[]; x: number; width: number };
@@ -65,6 +66,11 @@ export function adjacentFamilyBlocks(
 
 /** Count existing contacts incident to each union before testing slot exchanges. */
 export function familyBlockContactScores(geometry: TreeGeometry) {
+  return familyBlockConflicts(geometry).contacts;
+}
+
+/** Contacts for ranking, plus endpoint households of strict crossings. */
+export function familyBlockConflicts(geometry: TreeGeometry) {
   type Point = { x: number; y: number };
   type Segment = ReturnType<typeof bounds> & {
     a: Point; b: Point; branch: UnionBranch;
@@ -73,6 +79,7 @@ export function familyBlockContactScores(geometry: TreeGeometry) {
     (geometry.occurrences || []).map((item) => [item.id, item.block]),
   );
   const scores = new Map<string, number>();
+  const crossed = new Set<string>();
   const segments = new Spatial<Segment>();
   const seen = new Set<string>();
   for (const branch of geometry.branches || []) {
@@ -85,20 +92,22 @@ export function familyBlockContactScores(geometry: TreeGeometry) {
         if (other.branch.union === branch.union) continue;
         const contact = segmentContact(a, b, other.a, other.b);
         if (!contact) continue;
-        const key = JSON.stringify([[branch.union, other.branch.union].sort(), contact]);
-        if (seen.has(key)) continue;
-        seen.add(key);
         const touched = new Set([
           owner.get(branch.source), owner.get(branch.target),
           owner.get(other.branch.source), owner.get(other.branch.target),
         ]);
+        if (segmentsCross([a, b], [other.a, other.b]))
+          for (const block of touched) if (block) crossed.add(block);
+        const key = JSON.stringify([[branch.union, other.branch.union].sort(), contact]);
+        if (seen.has(key)) continue;
+        seen.add(key);
         for (const block of touched)
           if (block) scores.set(block, (scores.get(block) || 0) + 1);
       }
       segments.add({ ...box, a, b, branch });
     }
   }
-  return scores;
+  return { contacts: scores, crossed };
 }
 
 /** Exchange union slots and reconnect only their terminal branch segments. */
