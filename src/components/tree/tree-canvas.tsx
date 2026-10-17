@@ -659,7 +659,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const generationAnchor = props.generationLimits
     ? peopleMap.get(props.generationLimits.anchorId)
     : undefined;
-  const shareAnchorId = [depthEnabled ? depth.anchorId : undefined, root, generationAnchor?.id]
+  const shareAnchorId = [!activeFanAnchor ? generationAnchor?.id : undefined, root]
     .find((id): id is string => !!id && visible.has(id));
   const depthCameraRef = useRef<DepthSceneHandle | null>(null);
   const cameraModel = useRef({ nodes: displayNodes, personOccurrences });
@@ -1745,7 +1745,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 <span className="tree-family-count">
                   {visible.size} из {family.people.length}
                 </span>
-                {!root && !depthEnabled && shareAnchorId && props.onShare && <button
+                {shareAnchorId && props.onShare && <button
                   type="button" className="tree-family-share"
                   aria-label="Поделиться" title="Поделиться"
                   onClick={() => props.onShare!(shareAnchorId, [...visible])}>
@@ -1792,8 +1792,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             <FamilyViewTools
               compact={narrow}
               onShare={
-                (root || depthEnabled) && shareAnchorId && props.onShare
-                  ? () => props.onShare!(shareAnchorId, [...(depthEnabled ? depth.front : visible)])
+                (!generationAnchor || activeFanAnchor) && root && shareAnchorId && props.onShare
+                  ? () => props.onShare!(shareAnchorId, [...visible])
                   : undefined
               }
                 anchor={
