@@ -19,20 +19,30 @@ export function downloadVisibleGenealogy(
       onError(result.error || "Не удалось экспортировать древо.");
       frame.remove();
     } catch {
-      // A successful file download does not load a document into the frame.
+      onError("Не удалось экспортировать древо: сервер вернул неожиданный ответ.");
+      frame.remove();
     }
   });
-  const form = document.createElement("form");
+  document.body.append(frame);
+  const target = frame.contentDocument!;
+  // A navigation POST from a no-referrer document sends Origin: null. Keep
+  // strict CSRF checks and streaming downloads by submitting from a same-origin
+  // frame whose referrer policy permits only same-origin referrers.
+  const policy = target.createElement("meta");
+  policy.name = "referrer";
+  policy.content = "same-origin";
+  target.head.append(policy);
+  const form = target.createElement("form");
   form.hidden = true;
   form.method = "POST";
   form.action = archiveResourceUrl(`/api/gedcom/export-visible?format=${format}`);
   form.target = frame.name;
-  const field = document.createElement("input");
+  const field = target.createElement("input");
   field.type = "hidden";
   field.name = "ids";
   field.value = JSON.stringify(personIds);
   form.append(field);
-  document.body.append(frame, form);
+  target.body.append(form);
   form.submit();
   form.remove();
   window.setTimeout(() => frame.remove(), 5 * 60_000);

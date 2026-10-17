@@ -54,7 +54,11 @@ export function TreeExportDialog({
     try {
       if (format === "pdf") await onExportPdf(next.signal);
       else if (format === "generation-text") await onExportText(next.signal);
-      else await onExportGenealogy?.(format, next.signal, setError);
+      else await onExportGenealogy?.(format, next.signal, (message) => {
+        if (next.signal.aborted) return;
+        setError(message);
+        setStatus("");
+      });
       if (!next.signal.aborted)
         setStatus(format === "pdf" ? "PDF готов." : "Скачивание началось.");
     } catch (reason) {

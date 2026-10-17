@@ -378,6 +378,10 @@ for (const variant of ["portrait", "classic"] as const)
       .toBuffer();
     data.family.people.find((p: { id: string }) => p.id === "e2e-child").photo =
       "/media/pdf-portrait.png";
+    if (variant === "portrait") Object.assign(
+      data.family.people.find((p: { id: string }) => p.id === "e2e-child"),
+      { surname: "Воскресенская", name: "Екатерина", patronymic: "Александровна" },
+    );
     const token = "p".repeat(43);
     await context.route("**/media/pdf-portrait.png**", (route) =>
       route.fulfill({ contentType: "image/png", body: portrait }),
@@ -432,9 +436,21 @@ for (const variant of ["portrait", "classic"] as const)
       const first = await pdf.getPage(1),
         viewport = first.getViewport({ scale: 96 / 72 });
       expect(viewport.width).toBeGreaterThan(viewport.height);
-      const text = (await first.getTextContent()).items
+      const content = await first.getTextContent();
+      const text = content.items
         .flatMap((item) => ("str" in item ? item.str : []))
         .join(" ");
+      if (variant === "portrait") {
+        const names = content.items.filter(item => "str" in item &&
+          ["Воскресенская", "Екатерина", "Александровна"].some(name => item.str.includes(name)));
+        const dates = content.items.find(item => "str" in item && item.str.includes("1965"));
+        expect(names).toHaveLength(3);
+        expect(dates && "transform" in dates).toBeTruthy();
+        if (dates && "transform" in dates) {
+          const nameBottom = Math.min(...names.map(item => "transform" in item ? item.transform[5] : Infinity));
+          expect(nameBottom - dates.transform[5] - dates.height).toBeGreaterThan(2);
+        }
+      }
       expect(text).toContain("Тестов");
       expect(text).toContain("1940");
       expect(text).toContain("Анна");
@@ -466,13 +482,19 @@ for (const variant of ["portrait", "classic"] as const)
       const pixels = await sharp(png).removeAlpha().raw().toBuffer();
       expect([...pixels.subarray(0, 3)]).toEqual([255, 255, 255]);
       let portraitPixels = 0;
+      let portraitLeft = Infinity, portraitTop = Infinity;
       for (let i = 0; i < pixels.length; i += 3)
         if (
           Math.abs(pixels[i] - 49) < 4 &&
           Math.abs(pixels[i + 1] - 119) < 4 &&
           Math.abs(pixels[i + 2] - 154) < 4
-        )
+        ) {
           portraitPixels++;
+          portraitLeft = Math.min(portraitLeft, (i / 3) % rendered.canvas.width);
+          portraitTop = Math.min(portraitTop, Math.floor(i / 3 / rendered.canvas.width));
+        }
+      const corner = ((portraitTop + 14) * rendered.canvas.width + portraitLeft + 14) * 3;
+      expect([...pixels.subarray(corner, corner + 3)]).toEqual([255, 255, 255]);
       expect(portraitPixels).toBeGreaterThan(1000);
     } finally {
       await pdf.loadingTask.destroy();

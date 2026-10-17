@@ -201,6 +201,10 @@ async function exportTreeGraphic(
       .tree-print-canvas * { font-family: Drevo, sans-serif !important; font-weight: 400 !important; }
       .tree-print-canvas { position: absolute !important; inset: 0 auto auto 0 !important; background: transparent !important; }
       .tree-print-canvas .react-flow { background: transparent !important; }
+      .tree-print-canvas .flow-person-content { gap: 6px !important; }
+      .tree-print-canvas .portrait-card-info { gap: 3px !important; }
+      .tree-print-canvas .portrait-card-info strong { font-size: 18px !important; line-height: 20px !important; -webkit-line-clamp: 3 !important; }
+      .tree-print-canvas .portrait-card-years { font-size: 16px !important; line-height: 20px !important; }
       .react-flow__handle { visibility: hidden !important; }
       .react-flow__panel, .react-flow__attribution { display: none !important; }
       .flow-collapse, .flow-expand-family, .flow-reference { display: none !important; }
