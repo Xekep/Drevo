@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import {
-  ArrowLeft,
   ChevronDown,
   ChevronUp,
   Focus,
@@ -8,8 +7,6 @@ import {
   Minimize2,
   Minus,
   Plus,
-  RotateCcw,
-  RotateCw,
   Scan,
   Users,
 } from "lucide-react";
@@ -36,7 +33,6 @@ export function TreeDepthLayers({
   ready,
   anchorId,
   geometry,
-  previous,
   disabled,
   cameraRef,
   collapsed,
@@ -44,9 +40,7 @@ export function TreeDepthLayers({
   onProfile,
   onSelect,
   onCollapse,
-  onBack,
   onFallback,
-  onAdd,
   fullscreen,
   onFullscreen,
   focusToken,
@@ -59,7 +53,6 @@ export function TreeDepthLayers({
   ready: boolean;
   anchorId: string;
   geometry: TreeGeometry | null;
-  previous?: string;
   disabled: boolean;
   cameraRef: RefObject<DepthSceneHandle | null>;
   collapsed: ReadonlySet<string>;
@@ -67,9 +60,7 @@ export function TreeDepthLayers({
   onProfile: (id: string, additive?: boolean) => void;
   onSelect: (id: string) => void;
   onCollapse: (id: string) => void;
-  onBack: () => void;
   onFallback: () => void;
-  onAdd?: () => void;
   fullscreen: boolean;
   onFullscreen: () => void;
   focusToken?: number;
@@ -232,50 +223,6 @@ export function TreeDepthLayers({
             {!matches.length && <p>Никого не нашли</p>}
             {matches.length > 50 && <p>Уточните имя для поиска остальных</p>}
           </details>
-          <div
-            className="tree-spatial-orbit"
-            role="group"
-            aria-label="Поворот 3D-древа"
-          >
-            {previous && (
-              <button
-                type="button"
-                aria-label="Предыдущая ветвь"
-                title="Предыдущая ветвь"
-                onClick={onBack}
-                disabled={disabled}
-              >
-                <ArrowLeft size={18} />
-              </button>
-            )}
-            <button
-              type="button"
-              aria-label="Повернуть пространство влево"
-              title="Повернуть влево"
-              onClick={() => renderer.current?.rotate(-0.35)}
-              disabled={disabled}
-            >
-              <RotateCcw size={18} />
-            </button>
-            <button
-              type="button"
-              aria-label="Вернуть ракурс ветви"
-              title="Вернуть ракурс ветви"
-              onClick={() => renderer.current?.focus(anchorId)}
-              disabled={disabled}
-            >
-              3D
-            </button>
-            <button
-              type="button"
-              aria-label="Повернуть пространство вправо"
-              title="Повернуть вправо"
-              onClick={() => renderer.current?.rotate(0.35)}
-              disabled={disabled}
-            >
-              <RotateCw size={18} />
-            </button>
-          </div>
           {focused && (
             <div
               className="tree-spatial-person"
@@ -370,19 +317,6 @@ export function TreeDepthLayers({
               {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             </button>
           </div>
-          {onAdd && (
-            <button
-              type="button"
-              className="tree-spatial-add"
-              aria-label="Добавить человека"
-              title="Добавить человека"
-              onClick={onAdd}
-              disabled={disabled}
-            >
-              <Plus size={18} />
-              <span>Человек</span>
-            </button>
-          )}
           <span className="tree-spatial-hint">
             Перетаскивайте для поворота ·{" "}
             {"ontouchstart" in window

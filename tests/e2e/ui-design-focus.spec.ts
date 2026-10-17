@@ -19,7 +19,7 @@ test("явная клавиатурная навигация переводит 
   await expect(page.getByRole("combobox", { name: "Порядок", exact: true })).toBeFocused();
 });
 
-test("создание получает статический заголовок и Tab остаётся в форме", async ({ page }, info) => {
+test("создание получает статический заголовок и Tab остаётся в форме", async ({ page }) => {
   await page.goto("/people");
   await keyboardActivate(page, page.getByRole("button", { name: "Добавить человека", exact: true }));
   await expect(page.locator(".inline-editor h2")).toBeFocused();
@@ -35,10 +35,8 @@ test("создание получает статический заголово�
   await page.keyboard.press("Enter");
   await expect(page.locator(".inline-editor")).toHaveCount(0);
   // The catalog opener no longer exists after creation switches to the tree.
-  // Restore the equivalent mobile action, or the available desktop canvas.
-  await expect(info.project.name === "mobile"
-    ? page.getByRole("button", { name: "Добавить человека", exact: true })
-    : page.locator(".tree-canvas")).toBeFocused();
+  // Creation switches to the tree, where the catalog opener no longer exists.
+  await expect(page.locator(".tree-canvas")).toBeFocused();
 });
 
 test("редактирование возвращает фокус к заменённому инициатору", async ({ page }) => {

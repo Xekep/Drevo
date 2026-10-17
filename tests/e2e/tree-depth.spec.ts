@@ -78,7 +78,7 @@ async function settle(page: Page) {
   await expect(world(page)).toHaveAttribute("aria-busy", "false");
   await expect(world(page)).toHaveAttribute("data-depth-moving", "false");
 }
-async function setup(page: Page, graph = family) {
+async function setup(page: Page, graph = family, canEdit = false) {
   const preferences: TreePreferences = {
     ...DEFAULT_TREE_PREFERENCES,
     animateOnLoad: false,
@@ -88,8 +88,8 @@ async function setup(page: Page, graph = family) {
     id: "depth-user",
     name: "Участник",
     personId: "me",
-    role: "reader",
-    treeRole: "reader",
+    role: canEdit ? "editor" : "reader",
+    treeRole: canEdit ? "editor" : "reader",
     approved: true,
     archiveOwner: false,
     treeAccess: "all",
@@ -127,7 +127,7 @@ async function setup(page: Page, graph = family) {
           user,
           revision: 1,
           local: false,
-          canEdit: false,
+          canEdit,
           readTree: true,
           readPhotos: true,
           treePreferences: preferences,
@@ -172,9 +172,13 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
     )
       errors.push(message.text());
   });
-  await setup(page);
+  await setup(page, family, true);
   await settle(page);
   await expect(page.locator(".tree-spatial-canvas")).toHaveCount(1);
+  await expect(page.locator(".tree-spatial-orbit, .tree-spatial-add, .flow-add-tools")).toHaveCount(0);
+  const cameraTools = page.getByRole("group", { name: "Масштаб 3D-древа", includeHidden: true });
+  if (info.project.name === "mobile") await expect(cameraTools).toBeHidden();
+  else await expect(cameraTools).toBeVisible();
   await expect(world(page)).toHaveAttribute(
     "data-depth-world-people",
     String(family.people.length),
@@ -194,9 +198,8 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   const requests = await workerRequests(page),
     camera = await world(page).getAttribute("data-depth-camera");
   expect(requests).toBeGreaterThanOrEqual(2);
-  await page
-    .getByRole("button", { name: "Повернуть пространство вправо", exact: true })
-    .click();
+  await page.locator(".tree-spatial-canvas").focus();
+  await page.keyboard.press("ArrowRight");
   await expect
     .poll(() => world(page).getAttribute("data-depth-camera"))
     .not.toBe(camera);
@@ -209,9 +212,8 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   await expect
     .poll(() => world(page).getAttribute("data-depth-camera"))
     .not.toBe(beforePitch);
-  await page
-    .getByRole("button", { name: "Вписать видимую часть древа", exact: true })
-    .click();
+  await canvas.focus();
+  await page.keyboard.press("Home");
   await settle(page);
   await page.screenshot({ path: info.outputPath("3d-overview.png") });
   await page.locator(".tree-spatial-people summary").click();
@@ -263,14 +265,11 @@ test("a thousand-person 3D archive keeps GPU batches, textures and detail bounde
   await settle(page);
   await expect(world(page)).toHaveAttribute("data-depth-world-people", "1000");
   const requests = await workerRequests(page);
-  await page
-    .getByRole("button", { name: "Вписать видимую часть древа", exact: true })
-    .click();
+  await page.locator(".tree-spatial-canvas").focus();
+  await page.keyboard.press("Home");
   await settle(page);
   const before = await world(page).getAttribute("data-depth-camera");
-  await page
-    .getByRole("button", { name: "Повернуть пространство вправо", exact: true })
-    .click();
+  await page.keyboard.press("ArrowRight");
   await expect
     .poll(() => world(page).getAttribute("data-depth-camera"))
     .not.toBe(before);
@@ -373,14 +372,14 @@ test("all two hundred portraits and names stay present in the overview and after
   await setup(page, graph);
   await settle(page);
   const requests = await workerRequests(page);
-  await page
-    .getByRole("button", { name: "Вписать видимую часть древа", exact: true })
-    .click();
+  await page.locator(".tree-spatial-canvas").focus();
+  await page.keyboard.press("Home");
   await settle(page);
   await expect.poll(() => loads).toBe(200);
   await expect(world(page)).toHaveAttribute("data-depth-cards", "200");
   await page.screenshot({ path: info.outputPath("3d-200-overview.png") });
-  await page.getByRole("button", { name: "Уменьшить", exact: true }).click();
+  await page.locator(".tree-spatial-canvas").focus();
+  await page.keyboard.press("-");
   await settle(page);
   await expect(world(page)).toHaveAttribute("data-depth-cards", "200");
   expect(loads).toBe(200);
@@ -454,7 +453,7 @@ test("3D middle click sets the generation anchor and middle drag only pans", asy
   await page.mouse.up({ button: "middle" });
   expect(preferences.generationLimits).toBeUndefined();
   await page
-    .getByRole("button", { name: "Вернуть ракурс ветви", exact: true })
+    .getByRole("button", { name: "Перейти к ветви: Соколов Михаил", exact: true })
     .click();
   await settle(page);
   await page.mouse.click(x, y, { button: "middle" });

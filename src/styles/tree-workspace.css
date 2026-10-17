@@ -2129,16 +2129,6 @@
   left: 20px !important;
   flex-direction: row;
 }
-.tree-canvas .flow-add-tools.is-mobile {
-  left: 12px !important;
-  bottom: calc(76px + env(safe-area-inset-bottom)) !important;
-  pointer-events: none;
-}
-.flow-add-tools.is-mobile button {
-  min-height: 44px;
-  padding-inline: 10px;
-  pointer-events: auto;
-}
 .flow-branch-tools {
   top: auto !important;
   bottom: 66px !important;

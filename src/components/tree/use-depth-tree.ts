@@ -13,7 +13,6 @@ export function useDepthTree(
     anchorId: "",
     active: false,
     focusToken: -1,
-    history: [] as string[],
   });
   const requested =
     focus?.ids.length === 1 && focus.token !== navigation.focusToken
@@ -44,23 +43,16 @@ export function useDepthTree(
         : { front: available, back: [] },
     [family, available, anchorId, enabled],
   );
-  const history = navigation.history.filter(
-    (id) => available.has(id) && id !== anchorId,
-  );
   return {
     ...projection,
     anchorId,
-    previous: history.at(-1),
-    choose(id: string, backwards = false) {
+    choose(id: string) {
       if (!available.has(id) || id === anchorId) return false;
       setNavigation({
         ...navigation,
         anchorId: id,
         active: enabled,
         focusToken: focus?.token ?? -1,
-        history: backwards
-          ? history.slice(0, -1)
-          : [...history, anchorId].slice(-24),
       });
       return true;
     },
