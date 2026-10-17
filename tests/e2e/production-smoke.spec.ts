@@ -370,7 +370,7 @@ test("Ctrl+A не выделяет страницу, но работает в п
   expect(selection.end).toBe(selection.length);
 });
 
-test("Ctrl+колесо перехватывается только на полотне древа", async ({
+test("Ctrl+колесо не масштабирует интерфейс разделов", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
@@ -388,7 +388,11 @@ test("Ctrl+колесо перехватывается только на пол�
       });
       return !window.dispatchEvent(event);
     });
-    expect(blocked, path).toBe(path === "/tree");
+    expect(blocked, path).toBe(true);
+    const scrollingBlocked = await page.evaluate(() => !window.dispatchEvent(
+      new WheelEvent("wheel", { deltaY: 100, bubbles: true, cancelable: true }),
+    ));
+    expect(scrollingBlocked, path).toBe(false);
   }
 });
 
