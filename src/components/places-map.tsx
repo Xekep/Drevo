@@ -2,7 +2,7 @@ import { archiveFetch } from "../data/archive-fetch.ts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { List, LocateFixed, MapPin, Search, X } from "lucide-react";
+import { List, LocateFixed, MapPin, PanelRightClose, PanelRightOpen, Search, X } from "lucide-react";
 import {
   fullName,
   plural,
@@ -24,6 +24,7 @@ import {
 import { Avatar } from "./person-panel";
 import { portraitMarker, markerPeople } from "./map-portrait-marker";
 import { useDockSwipe } from "../hooks/useDockSwipe";
+import { useNarrowScreen } from "../hooks/useNarrowScreen";
 import { photoLabel } from "../domain/photo-metadata";
 import { mediaPreview } from "../domain/media-preview";
 
@@ -202,6 +203,8 @@ export default function PlacesMap({
     [family.people, family.photos],
   );
   const [listOpen, setListOpen] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const narrow = useNarrowScreen();
   const sidebar = useRef<HTMLElement>(null),
     drawerHeading = useRef<HTMLDivElement>(null),
     listButton = useRef<HTMLButtonElement>(null);
@@ -314,6 +317,7 @@ export default function PlacesMap({
     request.current++;
     setSelected(id);
     setListOpen(true);
+    setSidebarHidden(false);
     sidebar.current?.scrollTo({ top: 0 });
     setCandidates([]);
     setSearch(places.find((p) => p.key === id)?.name || "");
@@ -451,7 +455,7 @@ export default function PlacesMap({
   return (
     <section className="places-workspace">
       <h1 className="sr-only">Места</h1>
-      <div className="places-content">
+      <div className={`places-content${!narrow && sidebarHidden ? " is-sidebar-hidden" : ""}`}>
         <MapSurface
           points={displayPoints}
           selected={selected}
@@ -471,17 +475,20 @@ export default function PlacesMap({
         <button
           ref={listButton}
           className="map-list-toggle"
-          aria-expanded={listOpen}
+          aria-expanded={narrow ? listOpen : !sidebarHidden}
           aria-controls="places-list-panel"
-          onClick={() => select("")}
+          aria-label={narrow || sidebarHidden ? "Показать список мест" : "Скрыть список мест"}
+          title={narrow || sidebarHidden ? "Показать список мест" : "Скрыть список мест"}
+          onClick={() => narrow ? select("") : setSidebarHidden(hidden => !hidden)}
         >
-          <List size={18} />
-          Список мест · {places.length}
+          {narrow ? <List size={18} /> : sidebarHidden ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
+          {narrow && <>Список мест · {places.length}</>}
         </button>
         <aside
           ref={sidebar}
           id="places-list-panel"
           className={`places-sidebar${listOpen ? " is-open" : ""}`}
+          hidden={!narrow && sidebarHidden}
           aria-label="Места и люди"
         >
           <div ref={drawerHeading} className="places-drawer-heading">

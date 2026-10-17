@@ -21,10 +21,29 @@
   flex: 1;
   min-height: 0;
 }
-.map-list-toggle,
 .places-drawer-heading {
   display: none;
 }
+.map-list-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  right: 334px;
+  top: 14px;
+  z-index: 2;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 8px;
+  background: #fffef5f5;
+  border: 1px solid #cdd6c7;
+  border-radius: 10px;
+  box-shadow: 0 3px 12px #304d3520;
+  color: #30483a;
+}
+.map-list-toggle:focus-visible { outline: 2px solid #416b50; outline-offset: 3px; }
+.places-content.is-sidebar-hidden { grid-template-columns: minmax(0, 1fr); }
+.places-content.is-sidebar-hidden .map-list-toggle { right: 14px; }
 .family-map-surface {
   position: relative;
   isolation: isolate;
