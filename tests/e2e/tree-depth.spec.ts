@@ -375,7 +375,9 @@ test("all two hundred portraits and names stay present in the overview and after
   await page.locator(".tree-spatial-canvas").focus();
   await page.keyboard.press("Home");
   await settle(page);
-  await expect.poll(() => loads).toBe(200);
+  // Four bounded loaders share the software-rendered CI main thread. This is
+  // a completeness/cache check, not a five-second loading benchmark.
+  await expect.poll(() => loads, { timeout: 30_000 }).toBe(200);
   await expect(world(page)).toHaveAttribute("data-depth-cards", "200");
   await page.screenshot({ path: info.outputPath("3d-200-overview.png") });
   await page.locator(".tree-spatial-canvas").focus();
