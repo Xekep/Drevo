@@ -3,7 +3,7 @@ import { notFoundContent, notFoundStyles } from "../shared/not-found-page.ts";
 
 export function NotFoundPage() {
   useEffect(() => {
-    document.title = "Страница не найдена · Drevo";
+    document.title = "Страница не найдена · Семейный архив";
   }, []);
   return (
     <>

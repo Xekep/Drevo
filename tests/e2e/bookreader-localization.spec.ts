@@ -262,7 +262,7 @@ test("карта склоняет места и сохраняет русски�
   await page.route("**://tile.openstreetmap.org/**", (route) => route.abort());
   for (count of [1, 2]) {
     await page.goto("/places");
-    await expect(page.locator(".places-heading p")).toHaveText(
+    await expect(page.locator(".places-sidebar .places-count")).toHaveText(
       count === 1 ? "1 место · 1 на карте" : "2 места · 2 на карте",
     );
     for (const label of ["Увеличить масштаб", "Уменьшить масштаб"]) {

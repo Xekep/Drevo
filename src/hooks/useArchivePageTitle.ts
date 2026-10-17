@@ -23,7 +23,8 @@ export function useArchivePageTitle(
   useEffect(() => {
     const section = sectionTitles[view];
     if (!section) return;
-    document.title = [entityTitle || section, archiveTitle, "Drevo"]
-      .filter(Boolean).join(" · ");
+    document.title = [...new Set([
+      entityTitle || section, archiveTitle, "Семейный архив",
+    ].filter(Boolean))].join(" · ");
   }, [view, path, archiveTitle, entityTitle]);
 }

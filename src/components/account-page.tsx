@@ -163,7 +163,7 @@ export function AccountPage({
   const [archivesAttempt, setArchivesAttempt] = useState(0);
   const [loggingOut, setLoggingOut] = useState(false);
   useEffect(() => {
-    document.title = "Личный кабинет · Drevo";
+    document.title = "Личный кабинет · Семейный архив";
   }, []);
   const [capacityState, setCapacityState] = useState<{
     key: string;

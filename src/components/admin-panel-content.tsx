@@ -436,7 +436,7 @@ export function AdminPanel({
     onNavigate(sectionPath(next));
   };
   useEffect(() => {
-    document.title = `${ADMIN_INTRO[visibleSection].title} · ${family.title} · Drevo`;
+    document.title = `${ADMIN_INTRO[visibleSection].title} · ${family.title} · Семейный архив`;
   }, [visibleSection, family.title]);
   useEffect(() => {
     if (visibleSection !== section)
