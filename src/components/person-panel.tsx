@@ -34,6 +34,7 @@ import { PortraitPlaceholder } from "./portrait-placeholder";
 import { PortraitImage } from "./portrait-image";
 import { PersonAwards } from "./person-awards";
 import { PersonEvents } from "./person-events";
+import { PersonUnions } from "./person-unions";
 import { MemorialName } from "./memorial-name";
 import { mediaPreview } from "../domain/media-preview";
 import { useDiscussionCount } from "./discussion/use-discussion-count";
@@ -428,6 +429,8 @@ export function PersonPanel({
               </div>
             )}
             <PersonEvents events={person.events} canLoadDocuments={canLoadDocuments} />
+            <PersonUnions personId={person.id} people={people} unions={unions}
+              onSelect={onSelect} canLoadDocuments={canLoadDocuments} />
             <div className="relatives">
               <h3>
                 Семейные связи <span>{relatives.length}</span>

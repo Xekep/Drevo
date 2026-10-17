@@ -1,6 +1,7 @@
 import { savePersonDetails, finishPersonDetail } from "./person-editor-actions";
 import { expect, test, type Page } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
+import { fullName } from "../../src/domain/dates.ts";
 import type {
   Family,
   FamilyUnion,
@@ -328,6 +329,49 @@ test("отдельные образование и брак, поиск толь
   await expect(
     marriage.getByLabel("Дата развода", { exact: true }),
   ).toHaveValue("2001");
+});
+
+test("брак и развод видны в обеих карточках и правка второго супруга обновляет первую", async ({ page }, info) => {
+  const read = await editor(page);
+  const originalEvents = structuredClone(read().people.map((person) => [person.id, person.events]));
+  const first = read().people.find((person) => person.id === "e2e-child")!;
+  const second = read().people.find((person) => person.id === "e2e-spouse")!;
+  const form = page.locator(".person-editor-form");
+  const marriage = form.locator(".person-marriages-editor");
+  await marriage.locator(":scope > summary").click();
+  await marriage.getByRole("combobox", { name: "Супруг / супруга" }).fill(fullName(second));
+  await marriage.getByRole("option").click();
+  await marriage.getByLabel("Дата брака", { exact: true }).fill("1990");
+  await marriage.getByLabel("Дата развода", { exact: true }).fill("2001");
+  await savePersonDetails(page);
+  await expect(form).toHaveCount(0);
+  const shared = page.locator(".person-unions");
+  await expect(shared).toContainText("Заключение брака: 1990 год");
+  await expect(shared).toContainText("Развод: 2001 год");
+  await shared.locator(".person-union-partner").click();
+  await expect(shared.locator(".person-union-partner")).toHaveText(fullName(first));
+  await expect(shared).toContainText("Заключение брака: 1990 год");
+  await expect(shared).toContainText("Развод: 2001 год");
+  await shared.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath("marriage-second-profile.png") });
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  await marriage.locator(":scope > summary").click();
+  await marriage.getByRole("combobox", { name: "Супруг / супруга" }).fill(fullName(first));
+  await marriage.getByRole("option").click();
+  await expect(marriage.getByLabel("Дата брака", { exact: true })).toHaveValue("1990");
+  await marriage.getByLabel("Дата брака", { exact: true }).fill("1991");
+  await marriage.getByLabel("Дата развода", { exact: true }).fill("2002");
+  await savePersonDetails(page);
+  await expect(form).toHaveCount(0);
+  await shared.locator(".person-union-partner").click();
+  await expect(shared.locator(".person-union-partner")).toHaveText(fullName(second));
+  await expect(shared).toContainText("Заключение брака: 1991 год");
+  await expect(shared).toContainText("Развод: 2002 год");
+  await shared.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath("marriage-first-profile.png") });
+  expect(read().unions).toHaveLength(1);
+  expect(read().unions![0]).toMatchObject({ formation: { date: "1991" }, divorce: { date: "2002" } });
+  expect(read().people.map((person) => [person.id, person.events])).toEqual(originalEvents);
 });
 
 test("несколько браков одной пары редактируются по отдельности", async ({
