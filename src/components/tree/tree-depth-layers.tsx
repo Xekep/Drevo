@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import {
   ArrowLeft,
   ChevronDown,
@@ -14,7 +14,7 @@ import {
   Users,
 } from "lucide-react";
 import { fullName, years, type Person, type FamilyUnion } from "../../domain";
-import { spatialWorld } from "../../domain/tree-spatial";
+import { useSpatialWorld } from "./use-spatial-world";
 import type { TreeGeometry } from "../../domain/tree-layout";
 import type { FitTree } from "./tree-camera-fit";
 import type { SpatialRenderer } from "./spatial-renderer";
@@ -80,10 +80,7 @@ export function TreeDepthLayers({
     "loading",
   );
   const [query, setQuery] = useState("");
-  const world = useMemo(
-    () => (geometry ? spatialWorld(layoutPeople, geometry, unions) : null),
-    [layoutPeople, geometry, unions],
-  );
+  const { world, failed } = useSpatialWorld(layoutPeople, geometry, unions);
   const callbacks = {
     profile: onProfile,
     choose: onChoose,
@@ -164,6 +161,7 @@ export function TreeDepthLayers({
         .toLocaleLowerCase("ru")
         .includes(query.toLocaleLowerCase("ru")),
   );
+  const viewStatus = failed ? "failed" : !world || !ready ? "loading" : status;
   return (
     <div
       className="tree-spatial"
@@ -173,14 +171,14 @@ export function TreeDepthLayers({
       data-depth-selected={selected.join(",")}
       data-depth-connections={world?.connections.length || 0}
       data-renderer="webgl"
-      aria-busy={status === "loading"}
+      aria-busy={viewStatus === "loading"}
     >
-      {status === "loading" && (
+      {viewStatus === "loading" && (
         <div className="tree-spatial-state" role="status">
           Загружаем 3D-древо…
         </div>
       )}
-      {status === "failed" && (
+      {viewStatus === "failed" && (
         <div className="tree-spatial-state" role="alert">
           <p>Не удалось отобразить 3D-древо. Возможно, WebGL недоступен.</p>
           <button type="button" onClick={onFallback}>
@@ -188,7 +186,7 @@ export function TreeDepthLayers({
           </button>
         </div>
       )}
-      {status === "ready" && (
+      {viewStatus === "ready" && (
         <>
           <details
             className="tree-spatial-people"

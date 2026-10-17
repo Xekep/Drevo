@@ -58,6 +58,28 @@ test(`production worker retains ${1 + familyCount * 6} people and every relation
   }
 });
 assert.ok(bundle, "Сначала выполните npm run build");
+test("production spatial worker branches a real family in depth and fails closed on a malformed request", { timeout: 10000 }, async () => {
+  const spatialBundle = readdirSync(join(dist, "assets")).find(p => p.startsWith("spatial-layout-worker-") && p.endsWith(".js"));
+  assert.ok(spatialBundle, "Build must include the separate 3D geometry Worker");
+  const worker = new Worker(new URL("./helpers/worker-runtime.mjs", import.meta.url), {
+    workerData: { url: pathToFileURL(join(dist, "assets", spatialBundle)).href, dist },
+  });
+  const request = data => new Promise((resolve, reject) => {
+    worker.once("error", reject); worker.once("message", value => { worker.off("error", reject); resolve(value); });
+    worker.postMessage(data);
+  });
+  try {
+    const result = await request({ requestId: 77, reverse: false,
+      flat: [["a", { x: -140, y: 0 }], ["b", { x: 140, y: 0 }], ["c", { x: -200, y: 400 }], ["d", { x: 200, y: 400 }]],
+      connections: [{ from: "a", to: "b", type: "partner" }, ...["c", "d"].flatMap(to => ["a", "b"].map(from => ({ from, to, type: "parent" })))] });
+    assert.equal(result.requestId, 77); assert.equal(result.failed, undefined);
+    const points = new Map(result.points);
+    assert.equal(points.size, 4);
+    assert.ok(points.get("c").z * points.get("d").z < 0);
+    assert.ok([...points.values()].every(p => Object.values(p).every(Number.isFinite)));
+    assert.deepEqual(await request({ requestId: 78, flat: null }), { requestId: 78, failed: true });
+  } finally { await worker.terminate(); }
+});
 const people = [
   { id: "a", birth: "1900", parents: [], spouses: ["b", "c"] },
   { id: "b", birth: "", parents: [], spouses: ["a"] },

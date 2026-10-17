@@ -1,23 +1,28 @@
 import type { Person, FamilyUnion } from "./types.ts";
 import type { TreeGeometry } from "./tree-layout.ts";
 import type { DepthConnection } from "./tree-depth.ts";
+import {
+  spatialBranchLayout,
+  type SpatialPoint,
+} from "./spatial-branch-layout.ts";
 
-export type SpatialPoint = { x: number; y: number; z: number; angle: number };
+export type { SpatialPoint } from "./spatial-branch-layout.ts";
 export type SpatialWorld = {
   points: Map<string, SpatialPoint>;
   connections: DepthConnection[];
-  radius: number;
+};
+export type SpatialTopology = {
+  flat: Map<string, { x: number; y: number }>;
+  connections: DepthConnection[];
+  reverse: boolean;
 };
 
-/** Bend the authoritative generation layout into space. No force simulation,
- * invented relationships, duplicated ancestors or dependence on camera/selection.
- * Arc length preserves horizontal clearance; Y retains the generation ordering.
- */
-export function spatialWorld(
+/** Accessible topology only; no names, portraits or biographies needed by Worker. */
+export function spatialTopology(
   people: ReadonlyMap<string, Person>,
   geometry: TreeGeometry,
   unions: readonly FamilyUnion[] = [],
-): SpatialWorld {
+): SpatialTopology {
   const flat = new Map<string, { x: number; y: number }>();
   const occurrences = new Map(
     geometry.occurrences?.map((o) => [o.id, o.personId]),
@@ -26,31 +31,10 @@ export function spatialWorld(
     const personId = occurrences.get(id) || id;
     if (people.has(personId) && !flat.has(personId)) flat.set(personId, p);
   }
-  let left = Infinity,
-    right = -Infinity,
-    top = Infinity,
-    bottom = -Infinity;
-  for (const p of flat.values()) {
-    left = Math.min(left, p.x);
-    right = Math.max(right, p.x);
-    top = Math.min(top, p.y);
-    bottom = Math.max(bottom, p.y);
-  }
-  const radius = Math.max(700, (right - left || 0) / 2.4);
-  const points = new Map<string, SpatialPoint>();
-  for (const [id, p] of flat) {
-    const angle = (p.x - (left + right) / 2) / radius;
-    points.set(id, {
-      x: radius * Math.sin(angle),
-      y: (top + bottom) / 2 - p.y,
-      z: radius * (Math.cos(angle) - 1),
-      angle,
-    });
-  }
   const connections: DepthConnection[] = [],
     seen = new Set<string>();
   const add = (from: string, to: string, type: DepthConnection["type"]) => {
-    if (!points.has(from) || !points.has(to) || from === to) return;
+    if (!flat.has(from) || !flat.has(to) || from === to) return;
     const key = JSON.stringify(
       type === "partner" ? [type, ...[from, to].sort()] : [type, from, to],
     );
@@ -59,7 +43,7 @@ export function spatialWorld(
       connections.push({ from, to, type });
     }
   };
-  for (const id of points.keys()) {
+  for (const id of flat.keys()) {
     const person = people.get(id)!;
     for (const parent of person.parents) add(parent, id, "parent");
     for (const spouse of person.spouses) add(id, spouse, "partner");
@@ -68,10 +52,31 @@ export function spatialWorld(
     participants: [a, b],
   } of unions)
     add(a, b, "partner");
-  return { points, connections, radius };
+  return { flat, connections, reverse: geometry.reverse };
+}
+
+/** Synchronous pure entry for tests/offline callers; the UI uses the Worker. */
+export function spatialWorld(
+  people: ReadonlyMap<string, Person>,
+  geometry: TreeGeometry,
+  unions: readonly FamilyUnion[] = [],
+): SpatialWorld {
+  const topology = spatialTopology(people, geometry, unions);
+  return {
+    points: spatialBranchLayout(
+      topology.flat,
+      topology.connections,
+      topology.reverse,
+    ),
+    connections: topology.connections,
+  };
 }
 
 /** Bounded screen-space LOD: detailed labels never grow with archive size. */
+export function spatialCardLimit(viewportWidth: number) {
+  return viewportWidth < 600 ? 150 : 190;
+}
+
 export function spatialDetailIds(
   candidates: readonly {
     id: string;
