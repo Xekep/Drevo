@@ -17,7 +17,9 @@
 .places-heading h1 {
   font-family: var(--serif);
   font-weight: 400;
-  font-size: clamp(23px, 2.5vw, 34px);
+  font-size: clamp(1.375rem, 2vw, 1.75rem);
+  line-height: 1.25;
+  letter-spacing: -0.015em;
   margin: 0;
 }
 .places-heading p {
