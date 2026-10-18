@@ -46,6 +46,23 @@ async function mockWorkspace(page: Page) {
   );
 }
 
+test("the primary archive opens its server-provided short address from the switcher and account", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.route("**/api/account/archives", route => route.fulfill({ json: { archives: [
+    { id: "other-tree", title: "Другое древо", current: true, owned: true, approved: true, role: "relative", href: "/a/other-tree/tree" },
+    { id: "legacy-primary", title: "Основное древо", current: false, owned: false, approved: true, role: "reader", href: "/tree" },
+  ] } }));
+  await page.goto("/a/other-tree/tree");
+  await page.getByLabel("Меню проекта", { exact: true }).click();
+  await page.getByRole("button", { name: "Сменить древо", exact: true }).click();
+  const link = page.getByRole("dialog", { name: "Доступные древа" }).getByRole("link", { name: /Основное древо/ });
+  await expect(link).toHaveAttribute("href", "/tree");
+  await link.click();
+  await expect.poll(() => new URL(page.url()).pathname).toBe("/tree");
+  await page.goto("/account");
+  await expect(page.getByRole("link", { name: "Открыть древо «Основное древо»" })).toHaveAttribute("href", "/tree");
+});
+
 test("menu switches between owned and invited archives without offering pending access", async ({
   page,
 }, testInfo) => {

@@ -71,6 +71,7 @@ export async function archiveHttp({
   aiFetch,
   uploadsDirectory,
   selectedArchiveId,
+  primaryArchiveId,
   geocoding,
   restores,
   providerCleanup,
@@ -92,6 +93,7 @@ export async function archiveHttp({
   aiFetch?: typeof fetch;
   uploadsDirectory: string;
   selectedArchiveId?: string;
+  primaryArchiveId?: string;
   geocoding: GeocodingStore;
   restores: RestoreStore;
   providerCleanup?: AiProviderCleanup;
@@ -245,6 +247,7 @@ export async function archiveHttp({
       audit,
       publicOrigin,
       selectedArchiveId,
+      primaryArchiveId,
     }),
     invitations = archiveInvitationsHttp(archive.db, auth, publicOrigin),
     publicSharing = publicSharingHttp({

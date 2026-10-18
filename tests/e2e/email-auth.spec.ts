@@ -8,6 +8,25 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("email sign-in follows the short primary archive path returned by the server", async ({ page }) => {
+  let signedIn = false;
+  await page.route("**/api/session", async route => {
+    const response = await route.fetch(), data = await response.json();
+    await route.fulfill({ response, json: { ...data, email: true, local: false,
+      user: signedIn ? data.user : null, account: signedIn ? data.account : null } });
+  });
+  await page.route("**/api/auth/email/login", route => {
+    signedIn = true;
+    return route.fulfill({ json: { archiveId: "legacy-primary", path: "/tree", account: true } });
+  });
+  await page.goto("/account");
+  await page.getByRole("button", { name: "Войти по почте", exact: true }).click();
+  await page.getByLabel("Почта").fill("person@example.org");
+  await page.getByLabel("Пароль").fill("correct horse battery staple");
+  await page.locator(".login-email-form").getByRole("button", { name: "Войти", exact: true }).click();
+  await expect.poll(() => new URL(page.url()).pathname).toBe("/tree");
+});
+
 test("email login and registration remain compact on desktop and mobile", async ({
   page,
 }) => {

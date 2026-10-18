@@ -19,7 +19,7 @@ for (const archiveId of ["legacy-primary", "family-two"]) {
     await page.route("**/auth/yandex", (route) => route.fulfill({ contentType: "text/html", body: "<title>OAuth</title>" }));
     await page.route("**/api/account/invitations/accept", (route) => {
       bodies.push(route.request().postDataJSON());
-      return route.fulfill({ json: { archiveId, path: `/a/${archiveId}/tree` } });
+      return route.fulfill({ json: { archiveId, path: archiveId === "legacy-primary" ? "/tree" : `/a/${archiveId}/tree` } });
     });
     await page.goto(shortPath);
     await expect(page.getByRole("heading", { name: "Приглашённое древо" })).toBeVisible();
@@ -30,7 +30,7 @@ for (const archiveId of ["legacy-primary", "family-two"]) {
     await page.goto("/tree");
     await expect(page).toHaveURL(new RegExp(`${shortPath}$`));
     await page.getByRole("button", { name: "Присоединиться" }).click();
-    await expect(page).toHaveURL(new RegExp(`/a/${archiveId}/tree$`));
+    await expect(page).toHaveURL(new RegExp(archiveId === "legacy-primary" ? "/tree$" : `/a/${archiveId}/tree$`));
     expect(bodies.length).toBeGreaterThanOrEqual(3);
     expect(bodies.every((body) => Object.keys(body).length === 1 && body.token === token)).toBe(true);
   });

@@ -1,5 +1,16 @@
 const selectedArchive = /^\/a\/([A-Za-z0-9][A-Za-z0-9-]{2,63})(?=\/|$)/;
 
+/** The primary archive uses root routes; other archives keep their own scope. */
+export function archivePagePath(
+  archiveId: string | undefined,
+  path = "/tree",
+  primaryArchiveId?: string,
+) {
+  return archiveId && archiveId !== primaryArchiveId
+    ? `/a/${encodeURIComponent(archiveId)}${path}`
+    : path;
+}
+
 export function archiveContextAt(pathname: string) {
   const match = selectedArchive.exec(pathname);
   if (!match) return null;
