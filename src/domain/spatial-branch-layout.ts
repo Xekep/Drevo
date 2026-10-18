@@ -17,7 +17,7 @@ type Unit = {
 };
 const CELL = 320;
 
-/** Generational family branching in X/Z, not a projection onto one surface.
+/** Vertical generation axes with centred family forks in X/Z.
  * Partners/co-parents share a local unit only in the same authoritative row.
  * Every actual person still has their own point and all original edges survive.
  * Bounded placement probes reserve disjoint per-row footprints; a strip beyond
@@ -135,16 +135,15 @@ export function spatialBranchLayout(
       const index = primary.childSlots.get(unit.id)!,
         count = siblings.length;
       const width = primary.span;
-      const spread =
-        count > 1 ? (index / (count - 1) - 0.5) * Math.PI * 0.78 : 0;
-      // Rotate each real fork relative to its incoming branch. Unary lines
-      // continue straight; different forks do not share a universal depth axis.
-      unit.angle = primary.angle + spread + (count > 1 ? Math.PI / 4 : 0);
-      const step = Math.max(
+      // A single continuation inherits its family's vertical axis. Only a real
+      // fork uses horizontal space: balanced sectors around the parent centre,
+      // rather than a forward step at every level that bends a line diagonally.
+      unit.angle = primary.angle + (count > 1 ? index / count * Math.PI * 2 - Math.PI * 0.75 : 0);
+      const step = count > 1 ? Math.max(
         520,
-        count > 1 ? width / 2.45 : 0,
+        width / (Math.PI * 2),
         unit.radius + primary.radius + 120,
-      );
+      ) : 0;
       desiredX =
         parents.reduce((sum, p) => sum + p.x, 0) / parents.length +
         Math.sin(unit.angle) * step;

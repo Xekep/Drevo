@@ -4,6 +4,143 @@ import sharp from "sharp";
 import type { SpatialRenderer } from "../../src/components/tree/spatial-renderer";
 import type { Person } from "../../src/domain";
 
+test("nearby arrow pixels move without camera motion and stop outside the radius", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 8 });
+    Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
+  });
+  await page.setViewportSize({ width: 600, height: 600 });
+  const chunk = (await readdir("dist/assets")).find(name => /^spatial-renderer-.*\.js$/.test(name));
+  expect(chunk).toBeTruthy();
+  await page.goto("/people");
+  await expect(page.getByRole("heading", { name: /^Люди(?:\s|$)/ })).toBeVisible();
+  await page.evaluate(async chunk => {
+    const module = await import(`/assets/${chunk}`);
+    const Renderer = Object.values(module).find(value => typeof value === "function" && value.prototype?.personAt) as typeof SpatialRenderer;
+    const host = document.createElement("div");
+    host.id = "arrow-motion-scene";
+    host.style.cssText = "position:fixed;inset:0;width:400px;height:400px;background:#fff;z-index:100";
+    document.body.append(host);
+    const points = new Map([['a', { x: 0, y: 200, z: 0, angle: 0 }], ['b', { x: 0, y: -200, z: 0, angle: 0 }]]);
+    const people = new Map([...points.keys()].map(id => [id, {
+      id, name: id, surname: "", patronymic: "", sex: "u", birth: "", birthPlace: "",
+      parents: [], spouses: [], sources: [], generation: 1, column: 0,
+    } as Person]));
+    const scene = new Renderer(host, { points, connections: [{ from: 'a', to: 'b', type: 'parent' }] }, people,
+      { paper: "#fff", ink: "#000", muted: "#00ff00", green: "#00ff00", red: "#900" },
+      { choose() {}, select() {}, profile() {}, failure() { throw Error("WebGL failed"); } });
+    scene.camera.position.set(0, 0, 1000);
+    scene.controls.target.set(0, 0, 0);
+    scene.controls.update();
+    scene.invalidate();
+    (window as unknown as { arrowMotion: SpatialRenderer }).arrowMotion = scene;
+  }, chunk!);
+  const host = page.locator("#arrow-motion-scene");
+  await expect(host).toHaveAttribute("data-depth-animated-arrows", "1");
+  const pixels = async () => sharp(await host.screenshot()).resize(400, 400)
+    .extract({ left: 190, top: 160, width: 20, height: 120 }).removeAlpha().raw().toBuffer();
+  const before = await pixels();
+  await expect.poll(async () => {
+    const after = await pixels();
+    let changed = 0;
+    for (let i = 0; i < before.length; i += 3)
+      if (Math.abs(before[i] - after[i]) + Math.abs(before[i + 1] - after[i + 1]) + Math.abs(before[i + 2] - after[i + 2]) > 60) changed++;
+    return changed;
+  }).toBeGreaterThan(5);
+  await page.evaluate(() => {
+    const scene = (window as unknown as { arrowMotion: SpatialRenderer }).arrowMotion;
+    scene.camera.position.set(0, 0, 20_000);
+    scene.controls.update();
+    scene.invalidate();
+  });
+  await expect(host).toHaveAttribute("data-depth-animated-arrows", "0");
+  const frames = await host.getAttribute("data-depth-arrow-frames");
+  await page.waitForTimeout(300);
+  await expect(host).toHaveAttribute("data-depth-arrow-frames", frames!);
+  await page.evaluate(() => (window as unknown as { arrowMotion: SpatialRenderer }).arrowMotion.dispose());
+});
+
+test("near edges cross distant portraits while near portraits hide distant edges", async ({ page }, info) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 600, height: 600 });
+  const chunk = (await readdir("dist/assets")).find(name => /^spatial-renderer-.*\.js$/.test(name));
+  expect(chunk).toBeTruthy();
+  const png = await sharp({ create: { width: 64, height: 64, channels: 4, background: "#ff0000" } }).png().toBuffer();
+  await page.route("**/media/depth-face.png*", route => route.fulfill({ contentType: "image/png", body: png }));
+  await page.goto("/people");
+  await expect(page.getByRole("heading", { name: /^Люди(?:\s|$)/ })).toBeVisible();
+  await page.evaluate(async chunk => {
+    const module = await import(`/assets/${chunk}`);
+    const Renderer = Object.values(module).find(value => typeof value === "function" && value.prototype?.personAt) as typeof SpatialRenderer;
+    const host = document.createElement("div");
+    host.id = "edge-depth-scene";
+    host.style.cssText = "position:fixed;inset:0;width:400px;height:400px;background:#fff;z-index:100";
+    document.body.append(host);
+    const focal = 200 / Math.tan(42 * Math.PI / 360);
+    const y = 30 / focal * 600;
+    const points = new Map([
+      ["face", { x: 0, y: 0, z: 0, angle: 0 }],
+      ["a", { x: -1500, y, z: 400, angle: 0 }],
+      ["b", { x: 1500, y, z: 400, angle: 0 }],
+    ]);
+    const people = new Map([...points.keys()].map(id => [id, {
+      id, name: id, surname: "Портрет", patronymic: "", sex: "u", birth: "", birthPlace: "",
+      photo: id === "face" ? "/media/depth-face.png" : undefined,
+      parents: [], spouses: [], sources: [], generation: 1, column: 0,
+    } as Person]));
+    const world = { points, connections: [{ from: "a", to: "b", type: "parent" as const }] };
+    const scene = new Renderer(host, world, people,
+      { paper: "#fff", ink: "#000", muted: "#00ff00", green: "#00ff00", red: "#900" },
+      { choose() {}, select() {}, profile() {}, failure() { throw Error("WebGL failed"); } });
+    scene.camera.position.set(0, 0, 1000);
+    scene.controls.target.set(0, 0, 0);
+    scene.controls.update();
+    scene.invalidate();
+    (window as unknown as { edgeDepth: { scene: SpatialRenderer; points: typeof points; world: typeof world; people: typeof people } }).edgeDepth = { scene, points, world, people };
+  }, chunk!);
+  const host = page.locator("#edge-depth-scene");
+  await expect(host).toHaveAttribute("data-depth-cards", "1");
+  const redPoint = async () => {
+    const { data, info: pixels } = await sharp(await host.screenshot()).resize(400, 400).raw().toBuffer({ resolveWithObject: true });
+    const i = (180 * 400 + 200) * pixels.channels;
+    return [...data.subarray(i, i + 3)];
+  };
+  const greenPixels = async () => {
+    const { data, info: pixels } = await sharp(await host.screenshot()).resize(400, 400).raw().toBuffer({ resolveWithObject: true });
+    let green = 0;
+    for (let y = 166; y <= 174; y++) for (let x = 195; x <= 205; x++) {
+      const i = (y * 400 + x) * pixels.channels;
+      // A subpixel antialiased green line blends with red at fractional DPR.
+      // Its green contribution must survive; it need not dominate red.
+      if (data[i + 1] > 30 && data[i + 1] > data[i + 2] + 30) green++;
+    }
+    return green;
+  };
+  await expect.poll(redPoint).toEqual([255, 0, 0]);
+  await host.screenshot({ path: info.outputPath("edge-before-depth-assertion.png") });
+  await expect.poll(greenPixels).toBeGreaterThan(5);
+  await host.screenshot({ path: info.outputPath("edge-in-front-of-face.png") });
+  await page.evaluate(() => {
+    const state = (window as unknown as { edgeDepth: { scene: SpatialRenderer; points: Map<string, { x: number; y: number; z: number; angle: number }>; world: ConstructorParameters<typeof SpatialRenderer>[1]; people: Map<string, Person> } }).edgeDepth;
+    state.scene.dispose();
+    for (const id of ["a", "b"]) Object.assign(state.points.get(id)!, { z: -400, y: 30 / (200 / Math.tan(42 * Math.PI / 360)) * 1400 });
+    // Create the actual renderer again: both edge buffers and label depths change.
+    const Constructor = state.scene.constructor as typeof SpatialRenderer;
+    state.scene = new Constructor(document.querySelector("#edge-depth-scene") as HTMLDivElement, state.world, state.people,
+      { paper: "#fff", ink: "#000", muted: "#00ff00", green: "#00ff00", red: "#900" },
+      { choose() {}, select() {}, profile() {}, failure() { throw Error("WebGL failed"); } });
+    state.scene.camera.position.set(0, 0, 1000);
+    state.scene.controls.target.set(0, 0, 0);
+    state.scene.controls.update();
+    state.scene.invalidate();
+  });
+  await expect(host).toHaveAttribute("data-depth-cards", "1");
+  await expect.poll(redPoint).toEqual([255, 0, 0]);
+  await expect.poll(greenPixels).toBe(0);
+  await host.screenshot({ path: info.outputPath("face-in-front-of-edge.png") });
+  await page.evaluate(() => (window as unknown as { edgeDepth: { scene: SpatialRenderer } }).edgeDepth.scene.dispose());
+});
+
 // Isolated, deterministic camera/points exercise the real production shader.
 // No app data, force simulation or screenshot baseline can hide a depth error.
 for (const reverse of [false, true]) {
