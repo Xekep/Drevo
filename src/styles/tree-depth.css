@@ -186,11 +186,15 @@
   position: relative;
   inset: auto;
   max-width: min(330px, 32vw);
+  width: 100%;
   padding: 0;
   gap: 8px;
   border: 0;
   border-radius: 0;
   background: none;
+}
+.tree-spatial-toolbar-slot {
+  min-width: 0;
 }
 .tree-canvas[data-depth-anchor] .tree-display-actions .workspace-actions button {
   height: 38px;
@@ -243,5 +247,19 @@
 @media (max-width: 899px) {
   .tree-spatial-tools {
     display: none;
+  }
+}
+@media (min-width: 900px) and (max-width: 1199px) {
+  .archive-workspace:has(.inspector-dock)
+    .tree-canvas[data-depth-anchor]
+    .tree-mode-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .archive-workspace:has(.inspector-dock)
+    .tree-canvas[data-depth-anchor]
+    .tree-display-actions {
+    max-width: calc(100% - 220px);
   }
 }

@@ -302,6 +302,20 @@ test("desktop 3D person picker shares the relationship and preferences row", asy
     await page.keyboard.press("Escape");
   }
   await page.screenshot({ path: info.outputPath("3d-toolbar-row.png") });
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await page.locator(".tree-spatial-canvas").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".inspector-dock")).toBeVisible();
+  for (const width of [900, 1024, 1199]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect.poll(async () => {
+      const tools = (await page.locator(".tree-display-actions").boundingBox())!;
+      const summary = (await page.locator(".tree-mode-bar > .archive-summary").boundingBox())!;
+      const mode = (await page.locator(".tree-mode-bar > .segmented").boundingBox())!;
+      return Math.min(summary.y - tools.y - tools.height, tools.x - mode.x - mode.width);
+    }).toBeGreaterThanOrEqual(0);
+  }
+  await page.screenshot({ path: info.outputPath("3d-toolbar-with-profile.png") });
 });
 
 test("a thousand-person 3D archive keeps GPU batches, textures and detail bounded", async ({
