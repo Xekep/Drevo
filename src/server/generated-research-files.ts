@@ -23,15 +23,15 @@ export type GeneratedResearchFileMeta = {
   expires: number;
 };
 
-export function pruneGeneratedResearchFiles(
-  files: Map<string, GeneratedResearchFile>,
+export function pruneGeneratedResearchFiles<T extends { expires: number }>(
+  files: Map<string, T>,
   now = Date.now(),
 ) {
   for (const [id, current] of files)
     if (current.expires <= now) files.delete(id);
 }
 
-/** All generated files share one bounded, process-local download cache. */
+/** SQLite downloads share one bounded, process-local byte cache. */
 export function storeGeneratedResearchFile(
   files: Map<string, GeneratedResearchFile>,
   file: GeneratedResearchFile,
@@ -58,6 +58,7 @@ export function generatedResearchFileStore(
   } = {},
 ) {
   const files = new Map<string, GeneratedResearchFile>();
+  const metadata = new Map<string, GeneratedResearchFileMeta & { chatId: string }>();
   const shared = db.kind === "postgres";
   const archiveDirectory = dirname(uploadsDirectory);
   const root = join(archiveDirectory, "ai-generated-files");
@@ -144,7 +145,7 @@ export function generatedResearchFileStore(
   }
   return {
     async save(file: GeneratedResearchFile, assertInstallAccess?: () => Promise<void>) {
-      const id = storeGeneratedResearchFile(files, file);
+      const id = shared ? randomUUID() : storeGeneratedResearchFile(files, file);
       if (!id) return null;
       const url = shared
         ? `/api/ai/files/${file.chatId}/${id}`
@@ -189,7 +190,6 @@ export function generatedResearchFileStore(
               renamed = true;
             });
           } catch (error) {
-            files.delete(id);
             if (staged) await rm(staged, { force: true }).catch(() => {});
             if (renamed) await rm(installed, { force: true }).catch(() => {});
             throw error;
@@ -197,18 +197,21 @@ export function generatedResearchFileStore(
             await reservation?.release();
           }
           return true;
-        }).catch((error) => { files.delete(id); throw error; });
-        if (!saved) { files.delete(id); return null; }
+        });
+        if (!saved) return null;
       }
+      pruneGeneratedResearchFiles(metadata);
+      metadata.set(id, { chatId: file.chatId, name: file.name, url,
+        contentType: file.contentType, size: file.bytes.length, expires: file.expires });
       return { name: file.name, url };
     },
     metadata(links: Array<{ name: string; url: string }>): GeneratedResearchFileMeta[] {
       return links.flatMap((link) => {
         const id = link.url.split("/").at(-1) || "";
-        const file = files.get(id);
-        return file && file.name === link.name
-          ? [{ name: file.name, url: link.url, contentType: file.contentType,
-            size: file.bytes.length, expires: file.expires }]
+        const file = metadata.get(id);
+        return file && file.name === link.name && file.url === link.url
+          ? [{ name: file.name, url: file.url, contentType: file.contentType,
+            size: file.size, expires: file.expires }]
           : [];
       });
     },
@@ -243,6 +246,8 @@ export function generatedResearchFileStore(
       if (!uuid.test(chatId)) return;
       for (const [id, file] of files)
         if (file.chatId === chatId) files.delete(id);
+      for (const [id, file] of metadata)
+        if (file.chatId === chatId) metadata.delete(id);
       if (shared) await withPhysicalLock(async () => {
         if (await regularDirectory(root) && await regularDirectory(folder(chatId)))
           await rm(folder(chatId), { recursive: true, force: true });
@@ -250,6 +255,7 @@ export function generatedResearchFileStore(
     },
     async prune(now = Date.now()) {
       pruneGeneratedResearchFiles(files, now);
+      pruneGeneratedResearchFiles(metadata, now);
       if (!shared) return;
       await withPhysicalLock(async () => {
         if (!(await regularDirectory(root))) return;
@@ -273,6 +279,6 @@ export function generatedResearchFileStore(
         }
       });
     },
-    close() { files.clear(); },
+    close() { files.clear(); metadata.clear(); },
   };
 }

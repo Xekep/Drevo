@@ -476,7 +476,7 @@ test("invited admin sees owner-only publication explanation without forbidden co
     return route.fulfill({ response, json: { ...data, local: false } });
   });
   await page.route((url) => url.pathname === "/api/account/archives", (route) =>
-    route.fulfill({ json: { archives: [{ id: "invited-tree", title: "Чужое дерево",
+    route.fulfill({ json: { archives: [{ id: "invited-tree", href: "/a/invited-tree/tree", title: "Чужое дерево",
       role: "admin", approved: true, owned: false, current: true }] } }));
   await page.route((url) => url.pathname.startsWith("/api/admin/published-people/"), (route) => {
     forbiddenCalls += 1;
@@ -503,7 +503,7 @@ test("archive owner retains publication controls in a multi-archive account view
     return route.fulfill({ response, json: { ...data, local: false } });
   });
   await page.route((url) => url.pathname === "/api/account/archives", (route) =>
-    route.fulfill({ json: { archives: [{ id: "owned-tree", title: "Моё дерево",
+    route.fulfill({ json: { archives: [{ id: "owned-tree", href: "/a/owned-tree/tree", title: "Моё дерево",
       role: "admin", approved: true, owned: true, current: true }] } }));
 
   await page.goto("/manage");

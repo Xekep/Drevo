@@ -27,6 +27,26 @@ test("email sign-in follows the short primary archive path returned by the serve
   await expect.poll(() => new URL(page.url()).pathname).toBe("/tree");
 });
 
+test("email sign-in rejects missing or external archive paths without guessing an old URL", async ({ page }) => {
+  await page.route("**/api/session", route => route.fulfill({ json: {
+    user: null, account: null, local: false, email: true, yandex: false, vk: false,
+  } }));
+  let path: string | undefined;
+  await page.route("**/api/auth/email/login", route => route.fulfill({ json: {
+    archiveId: "legacy-primary", account: true, ...(path === undefined ? {} : { path }),
+  } }));
+  await page.goto("/account");
+  await page.getByRole("button", { name: "Войти по почте", exact: true }).click();
+  await page.getByLabel("Почта").fill("person@example.org");
+  await page.getByLabel("Пароль").fill("correct horse battery staple");
+  const form = page.locator(".login-email-form");
+  for (path of [undefined, "//other.example/tree", "/\\other.example/tree"]) {
+    await form.getByRole("button", { name: "Войти", exact: true }).click();
+    await expect(form.getByRole("alert")).toContainText("Сервер не вернул адрес древа");
+    await expect.poll(() => new URL(page.url()).pathname).toBe("/account");
+  }
+});
+
 test("email login and registration remain compact on desktop and mobile", async ({
   page,
 }) => {

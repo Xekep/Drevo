@@ -69,7 +69,7 @@ type AccountArchive = {
   approved: boolean;
   owned: boolean;
   current: boolean;
-  href?: string;
+  href: string;
 };
 function ArchiveList({ archives }: { archives: AccountArchive[] }) {
   return (
@@ -87,8 +87,7 @@ function ArchiveList({ archives }: { archives: AccountArchive[] }) {
           )}
           {item.approved ? (
             <a
-              // Compatibility with an older API; remove after the next release.
-              href={item.href || `/a/${encodeURIComponent(item.id)}/tree`}
+              href={item.href}
               aria-label={`Открыть древо «${item.title}»`}
             >
               Открыть <ArrowRight size={15} aria-hidden="true" />

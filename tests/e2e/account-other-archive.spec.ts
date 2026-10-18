@@ -29,7 +29,7 @@ test("account without membership in the current archive can open another tree", 
       json: {
         archives: [
           {
-            id: "other-archive",
+            id: "other-archive", href: "/a/other-archive/tree",
             title: "Дерево семьи",
             role: "reader",
             approved: true,
