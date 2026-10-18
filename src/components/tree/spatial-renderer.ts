@@ -17,7 +17,7 @@ import {
   edgeEndpointVertex,
   edgeEndpointVertexDeclarations,
   setSpatialEdgeEndpoints,
-} from "./spatial-edge-occlusion";
+} from "./spatial-edge-occlusion.ts";
 
 type Callbacks = {
   profile: (id: string) => void;

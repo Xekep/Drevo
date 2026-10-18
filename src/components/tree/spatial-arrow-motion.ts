@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { SpatialWorld } from "../../domain/tree-spatial";
-import { setSpatialEdgeEndpoints } from "./spatial-edge-occlusion";
+import { setSpatialEdgeEndpoints } from "./spatial-edge-occlusion.ts";
 
 export const ARROW_MOTION_RADIUS = 2200;
 export const ARROW_MOTION_LIMIT = 64;
