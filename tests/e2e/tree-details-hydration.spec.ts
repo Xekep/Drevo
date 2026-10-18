@@ -15,6 +15,56 @@ const occupation = "Мастер архивной реставрации";
 const sourceTitle = "Личное дело из догруженной страницы";
 const awardName = "Почётная грамота семейной мастерской";
 
+test("profile loading has no retry flash; a failed request exposes a retry until restarted", async ({ page }) => {
+  const snapshot = await (await page.request.get("/api/family")).json();
+  const family = structuredClone(snapshot.family) as Family;
+  await page.route("**/api/family?projection=overview", route => route.fulfill({ json: {
+    ...snapshot, family: archiveOverview(family), partial: true, pageToken: "profile-loading",
+    totals: { people: family.people.length, photos: 0 },
+  } }));
+  let release!: () => void;
+  let gate = new Promise<void>(resolve => { release = resolve; });
+  let attempts = 0;
+  await page.route("**/api/family?projection=details&**", async route => {
+    const attempt = ++attempts;
+    await gate;
+    if (attempt === 1) return route.fulfill({ status: 503, json: { error: "Проверочная ошибка карточки" } });
+    const ids = JSON.parse(new URL(route.request().url()).searchParams.get("ids")!) as string[];
+    return route.fulfill({ json: { pageToken: "profile-loading",
+      people: ids.map(id => personDetails(family.people.find(person => person.id === id)!)),
+      photos: [], photoTotal: 0, personPhotoTotals: Object.fromEntries(ids.map(id => [id, 0])),
+    } });
+  });
+  await page.addInitScript(() => {
+    const state = window as unknown as { profileRetriesShown: number };
+    state.profileRetriesShown = 0;
+    new MutationObserver(records => {
+      for (const record of records) for (const node of record.addedNodes) {
+        if (node instanceof Element && (node.matches(".inspector-dock button") || node.querySelector(".inspector-dock button")) &&
+          node.textContent?.includes("Повторить загрузку")) state.profileRetriesShown++;
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
+  await page.goto("/people/e2e-child");
+  const loading = page.getByRole("status", { name: "Загрузка сведений человека" });
+  const retry = page.locator(".inspector-dock").getByRole("button", { name: "Повторить загрузку", exact: true });
+  await expect(loading).toBeVisible();
+  await expect(retry).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { profileRetriesShown: number }).profileRetriesShown)).toBe(0);
+  release();
+  await expect(retry).toBeVisible();
+  const alert = page.getByRole("alert", { name: "Загрузка сведений человека" });
+  await expect(alert).toContainText("Проверочная ошибка карточки");
+  gate = new Promise<void>(resolve => { release = resolve; });
+  await retry.click();
+  await expect(loading).toBeVisible();
+  await expect(retry).toHaveCount(0);
+  release();
+  await expect(page.getByRole("tab", { name: /О человеке/ })).toBeVisible();
+  await expect(loading).toHaveCount(0);
+  await expect(retry).toHaveCount(0);
+});
+
 test("a failed collection read shows a retry action instead of an endless spinner", async ({
   page,
 }) => {
@@ -175,7 +225,10 @@ test("a minimal save reply preserves a bounded profile preview and the whole alb
     expect(detailOffsets, "the new revision refreshes one bounded preview without full-album paging").toEqual([0, 0]);
     await dock.getByRole("button", { name: "Открыть фотоальбом человека: 41 фото", exact: true }).click();
     await expect(page.locator(".photo-grid .photo-tile")).toHaveCount(30);
-    await page.getByRole("button", { name: "Показать ещё", exact: true }).click();
+    // Scrolling to the button already triggers LoadMore's IntersectionObserver
+    // and removes it once the final page arrives. Scroll a stable photo instead
+    // of racing a manual click against that successful automatic load.
+    await page.locator(".photo-grid .photo-tile").last().scrollIntoViewIfNeeded();
     await expect(page.locator(".photo-grid .photo-tile")).toHaveCount(41);
     expect(galleryOffsets).toEqual([0, 30]);
   } finally {

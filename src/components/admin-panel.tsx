@@ -16,7 +16,6 @@ type AdminPanelProps = {
   onClose: () => void;
   onChanged: () => void;
   save: (family: Family) => Promise<Family>;
-  canEdit: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 };
 

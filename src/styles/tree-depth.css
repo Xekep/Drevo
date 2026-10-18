@@ -42,36 +42,26 @@
 }
 .tree-spatial-people {
   position: absolute;
-  top: 64px;
-  left: 14px;
-  max-width: min(320px, calc(100% - 28px));
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(360px, calc(100vw - 28px));
+  z-index: 5;
+  padding-top: 8px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--paper);
   color: var(--ink);
 }
-.tree-spatial-people summary {
+.tree-spatial-people label {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 44px;
-  padding: 0 12px;
-  cursor: pointer;
-  list-style: none;
-}
-.tree-spatial-people summary::-webkit-details-marker {
-  display: none;
-}
-.tree-spatial-people[open] {
-  width: 320px;
-  z-index: 5;
-}
-.tree-spatial-people label {
-  display: block;
   padding: 0 8px 8px;
 }
+.tree-spatial-people label > svg { flex: 0 0 auto; }
 .tree-spatial-people input {
   width: 100%;
+  min-width: 0;
   min-height: 40px;
   padding: 8px;
   border: 1px solid var(--field-border);
@@ -85,6 +75,7 @@
   margin: 0;
   max-height: min(45dvh, 360px);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .tree-spatial-people li button {
   display: block;
@@ -98,7 +89,16 @@
   color: var(--ink);
   font-size: 13px;
 }
+.tree-spatial-people li button small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .tree-spatial-people li button:hover {
+  background: var(--soft-green);
+}
+.tree-spatial-people li button[aria-current="true"] {
   background: var(--soft-green);
 }
 .tree-spatial-people p {
@@ -140,8 +140,7 @@
 .tree-spatial button:hover:not(:disabled) {
   background: var(--soft-green);
 }
-.tree-spatial button:focus-visible,
-.tree-spatial summary:focus-visible {
+.tree-spatial button:focus-visible {
   outline: 2px solid var(--green);
   outline-offset: 2px;
 }
@@ -154,14 +153,26 @@
   right: 14px;
   max-width: min(420px, calc(100% - 28px));
 }
-.tree-spatial-person .tree-spatial-person-name {
+.tree-spatial-person:focus-within { z-index: 5; }
+.tree-spatial-picker {
   flex: 1 1 auto;
   min-width: 0;
+}
+.tree-spatial-person .tree-spatial-person-name {
+  width: 100%;
+  min-width: 0;
+  gap: 8px;
   padding: 5px 10px;
   font-size: 13px;
   text-align: left;
-  overflow-wrap: anywhere;
 }
+.tree-spatial-person-name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-spatial-person-name > svg { flex: 0 0 auto; }
+.tree-spatial-person-name[aria-expanded="true"] > svg { transform: rotate(180deg); }
 .tree-spatial-hint {
   position: absolute;
   bottom: 8px;
@@ -173,20 +184,10 @@
   pointer-events: none;
 }
 @media (max-width: 700px) {
-  .tree-spatial-people {
-    top: 58px;
-    left: 8px;
-  }
-  .tree-spatial-people:not([open]) summary span {
-    display: none;
-  }
-  .tree-spatial-people summary {
-    padding: 0 12px;
-  }
   .tree-spatial-person {
     top: 58px;
     right: 8px;
-    max-width: calc(100% - 72px);
+    max-width: calc(100% - 16px);
   }
   .tree-spatial-hint {
     max-width: calc(100% - 16px);

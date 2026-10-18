@@ -162,7 +162,7 @@ export function ArchiveNavigation({
     onHelp();
   };
   return (
-    <nav className="archive-nav" aria-label="Разделы архива">
+    <nav className={`archive-nav${identity ? "" : " is-guest"}`} aria-label="Разделы архива">
       <a
         className="nav-brand"
         href={scopedArchivePath(archivePaths.tree)}
@@ -172,7 +172,7 @@ export function ArchiveNavigation({
         <TreeDeciduous size={32} strokeWidth={1.5} />
         <span>древо.</span>
       </a>
-      <div className="nav-sections">
+      {identity && <div className="nav-sections">
         {sections.map(([id, label, Icon]) => (
             <a
               key={id}
@@ -184,7 +184,7 @@ export function ArchiveNavigation({
               <span>{label}</span>
             </a>
           ))}
-      </div>
+      </div>}
       <button className="nav-about" type="button" onClick={showAbout}>
         О проекте
       </button>
@@ -338,6 +338,7 @@ export function ArchiveHeader({
   onSelectDocument,
   busy,
   navigation,
+  canSearch,
 }: {
   people: Person[];
   query: string;
@@ -346,18 +347,19 @@ export function ArchiveHeader({
   onSelectDocument?: (id: string) => void;
   busy: boolean;
   navigation: ReactNode;
+  canSearch: boolean;
 }) {
   return (
     <header className="archive-header">
       {navigation}
-      <TreeSearch
+      {canSearch && <TreeSearch
         globalSearch
         people={people}
         query={query}
         onQuery={onQuery}
         onSelect={onSelect}
         onSelectDocument={onSelectDocument}
-      />
+      />}
       <div className="archive-header-actions">
         {busy && <span role="status">Сохраняем…</span>}
       </div>

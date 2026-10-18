@@ -345,7 +345,6 @@ export function AdminPanel({
   onClose,
   onChanged,
   save,
-  canEdit,
   onDirtyChange,
 }: {
   family: Family;
@@ -359,7 +358,6 @@ export function AdminPanel({
   onClose: () => void;
   onChanged: () => void;
   save: (family: Family) => Promise<Family>;
-  canEdit: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const section =
@@ -776,7 +774,7 @@ export function AdminPanel({
             <GedcomTransfer
               onImported={onChanged}
               save={save}
-              canEdit={canEdit}
+              canEdit={archiveOwner}
             />
           </section>
         )}

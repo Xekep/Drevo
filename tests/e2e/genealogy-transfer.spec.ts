@@ -67,7 +67,7 @@ test("форматы экспорта и импорт GEDCOM с предпрос
   const text =
     "0 HEAD\n1 GEDC\n2 VERS 7.0.18\n0 @I1@ INDI\n1 NAME Проверка /Переноса/\n0 TRLR\n";
   await panel
-    .getByLabel("Файл GEDCOM, GEDZIP или XML «Древа Жизни 6»")
+    .getByLabel("Файл для импорта")
     .setInputFiles({
       name: "example.ged",
       mimeType: "text/plain",
@@ -92,13 +92,8 @@ test("форматы экспорта и импорт GEDCOM с предпрос
     .getByRole("button", { name: "Подтвердить добавление 1 человек" })
     .click();
   await expect(panel.getByRole("status")).toContainText("Добавлено людей: 1");
-  await panel
-    .getByText("Полная замена архива из JSON", { exact: true })
-    .click();
-  const jsonInput = panel.getByLabel("Выберите экспорт архива");
-  if (testInfo.project.name === "mobile") {
-    await expect(jsonInput).toBeDisabled();
-  } else {
+  const jsonInput = panel.getByLabel("Файл для импорта");
+  await expect(jsonInput).toBeEnabled();
     await jsonInput.setInputFiles({
       name: "archive.json",
       mimeType: "application/json",
@@ -117,7 +112,6 @@ test("форматы экспорта и импорт GEDCOM с предпрос
     await expect(
       panel.getByRole("button", { name: "Заменить архив этими данными" }),
     ).toBeVisible();
-  }
 });
 
 test("XML Древа Жизни показывает сохранённые текстом поля до импорта", async ({ page }) => {
@@ -125,7 +119,7 @@ test("XML Древа Жизни показывает сохранённые те
   await openAdminSection(page, "data", "Экспорт и импорт");
   const panel = page.locator(".gedcom-transfer");
   const xml = `<agelongtree><persons><person id="a" sex="Ж" fn="Анна" sn="Тестова" bdate="1900"><family id="f"/></person></persons><events><event id="e" type="Поездка" date="1920" custom="value"><persons><person id="a" role="Участник" /></persons></event></events><families><family id="f" name="Род Тестовых" fs="Тестов предок" ms="Род Тестовых"/></families></agelongtree>`;
-  await panel.getByLabel("Файл GEDCOM, GEDZIP или XML «Древа Жизни 6»").setInputFiles({
+  await panel.getByLabel("Файл для импорта").setInputFiles({
     name: "archive.xml",
     mimeType: "application/xml",
     buffer: Buffer.from(xml),

@@ -14,6 +14,7 @@ import {
 } from "react";
 import {
   BookOpenText,
+  FileText,
   Image as ImageIcon,
   Pencil,
   Plus,
@@ -604,7 +605,6 @@ export function DocumentsCatalog({
         )}
       <header className="documents-heading">
         <div>
-          <span className="documents-eyebrow">Семейный архив</span>
           <h1>Документы</h1>
           <p>
             {personFilter !== null
@@ -893,11 +893,11 @@ export function DocumentsCatalog({
                       onSelectDocument(document.id);
                     }}
                   >
-                    <span className="document-item-icon">
+                    <span className="document-item-icon" aria-hidden="true">
                       {document.mimeType?.startsWith("image/") ? (
-                        <ImageIcon size={25} strokeWidth={1.5} />
+                        <ImageIcon size={24} strokeWidth={1.5} />
                       ) : (
-                        <BookOpenText size={25} strokeWidth={1.5} />
+                        <FileText size={24} strokeWidth={1.5} />
                       )}
                     </span>
                     <span className="document-item-text">

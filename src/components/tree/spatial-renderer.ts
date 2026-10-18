@@ -244,8 +244,11 @@ export class SpatialRenderer {
         vertexShader: cardVertex,
         fragmentShader: cardFragment,
         transparent: true,
-        depthWrite: false,
-        depthTest: false,
+        // Instances share one draw call, so object-level transparent sorting
+        // cannot order people. Discarded texels leave holes; visible texels
+        // must participate in the same depth buffer for portraits AND names.
+        depthWrite: true,
+        depthTest: true,
         side: THREE.DoubleSide,
       });
     this.cards = new THREE.Mesh(cardGeometry, material(this.atlas.texture));

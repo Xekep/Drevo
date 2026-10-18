@@ -585,7 +585,7 @@ export function ResearchAssistant({
     let active = true;
     let observedCanvas: HTMLElement | null = null;
     let observedControls: HTMLElement | null = null;
-    const controlsSelector = ".flow-camera-tools, .flow-fullscreen-tools";
+    const controlsSelector = ".tree-spatial-tools, .flow-camera-tools, .flow-fullscreen-tools";
     const containsControls = (node: Node) =>
       node instanceof Element &&
       (node.matches(controlsSelector) || !!node.querySelector(controlsSelector));
@@ -611,7 +611,8 @@ export function ResearchAssistant({
         if (!canvas) return;
         const controls = [
           ...canvas.querySelectorAll<HTMLElement>(controlsSelector),
-        ].find((item) => item.getBoundingClientRect().width > 0);
+        ].find((item) => item.getBoundingClientRect().width > 0 &&
+          getComputedStyle(item).visibility !== "hidden");
         if (observedControls !== controls) {
           if (observedControls) observer.unobserve(observedControls);
           if (controls) observer.observe(controls);
@@ -622,7 +623,7 @@ export function ResearchAssistant({
           next = rect
             ? {
                 left: Math.max(8, rect.left - 50),
-                top: Math.max(8, rect.bottom - 42),
+                top: Math.max(8, rect.top + (rect.height - 42) / 2),
               }
             : {
                 left: Math.max(8, canvasRect.right - 62),
