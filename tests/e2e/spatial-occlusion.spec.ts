@@ -7,7 +7,7 @@ import type { Person } from "../../src/domain";
 // Isolated, deterministic camera/points exercise the real production shader.
 // No app data, force simulation or screenshot baseline can hide a depth error.
 for (const reverse of [false, true]) {
-  test(`near portraits occlude distant portraits and glyphs, insertion reversed=${reverse}`, async ({ page }, info) => {
+  test(`near portraits occlude distant portraits and glyphs, insertion reversed=${reverse}`, async ({ page, isMobile }, info) => {
     await page.setViewportSize({ width: 600, height: 600 });
     const chunk = (await readdir("dist/assets"))
       .find(name => /^spatial-renderer-.*\.js$/.test(name));
@@ -74,6 +74,31 @@ for (const reverse of [false, true]) {
       if (data[offset] > 250 && data[offset + 1] < 5 && data[offset + 2] < 5) redPixels++;
     }
     expect(redPixels / (18 * 30)).toBeGreaterThan(.99);
+    if (!isMobile) {
+      const calls = await host.getAttribute("data-depth-draw-calls");
+      const textures = await host.getAttribute("data-depth-textures");
+      await page.mouse.move(200, 170);
+      await expect(host).toHaveAttribute("data-depth-hovered", "near");
+      await expect(host.locator("canvas")).toHaveCSS("cursor", "pointer");
+      const highlighted = await sharp(await host.screenshot()).resize(400, 400).raw().toBuffer();
+      let changed = 0;
+      for (let y = 115; y < 195; y++) for (let x = 155; x < 245; x++) {
+        const offset = (y * 400 + x) * pixels.channels;
+        if (Math.abs(data[offset] - highlighted[offset]) > 40) changed++;
+      }
+      expect(changed, "hover must paint a visible portrait rim").toBeGreaterThan(60);
+      await host.screenshot({ path: info.outputPath("portrait-hover.png") });
+      await expect(host).toHaveAttribute("data-depth-draw-calls", calls!);
+      await expect(host).toHaveAttribute("data-depth-textures", textures!);
+      const frames = await host.getAttribute("data-depth-frames");
+      await page.mouse.move(202, 172);
+      await page.waitForTimeout(100);
+      await expect(host).toHaveAttribute("data-depth-frames", frames!);
+      await page.mouse.move(450, 450);
+      await expect(host).toHaveAttribute("data-depth-hovered", "");
+      await expect(host.locator("canvas")).toHaveCSS("cursor", "grab");
+      await expect.poll(sample).toEqual([255, 0, 0]);
+    }
     await host.screenshot({ path: info.outputPath("near-over-far.png") });
     await page.evaluate(() => (window as unknown as { occlusion: { scene: SpatialRenderer } }).occlusion.scene.dispose());
   });

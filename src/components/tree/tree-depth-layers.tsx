@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronDown,
   ChevronUp,
@@ -44,6 +45,7 @@ export function TreeDepthLayers({
   fullscreen,
   onFullscreen,
   focusToken,
+  toolbarHost,
 }: {
   people: Map<string, Person>;
   layoutPeople: Map<string, Person>;
@@ -64,6 +66,7 @@ export function TreeDepthLayers({
   fullscreen: boolean;
   onFullscreen: () => void;
   focusToken?: number;
+  toolbarHost?: HTMLElement | null;
 }) {
   const host = useRef<HTMLDivElement>(null),
     renderer = useRef<SpatialRenderer | null>(null);
@@ -145,6 +148,53 @@ export function TreeDepthLayers({
       (edge) => edge.type === "parent" && edge.from === focused.id,
     );
   const viewStatus = failed ? "failed" : !world || !ready ? "loading" : status;
+  const personControls = focused ? (
+    <div className="tree-spatial-person" aria-label="Выбранный человек в 3D">
+      <SpatialPersonPicker
+        people={[...people.values()].filter((person) =>
+          world?.points.has(person.id),
+        )}
+        focused={focused}
+        disabled={disabled}
+        onChoose={(id) => {
+          onChoose(id);
+          renderer.current?.focus(id);
+          host.current
+            ?.querySelector<HTMLCanvasElement>(".tree-spatial-canvas")
+            ?.focus({ preventScroll: true });
+        }}
+      />
+      <button
+        type="button"
+        title="Перейти к ветви"
+        aria-label={`Перейти к ветви: ${fullName(focused)}`}
+        onClick={() => {
+          onChoose(focused.id);
+          renderer.current?.focus(focused.id);
+        }}
+        disabled={disabled}
+      >
+        <Focus size={18} />
+      </button>
+      {(children || collapsed.has(focused.id)) && (
+        <button
+          type="button"
+          onClick={() => onCollapse(focused.id)}
+          disabled={disabled}
+          title={
+            collapsed.has(focused.id) ? "Раскрыть ветвь" : "Свернуть ветвь"
+          }
+          aria-label={`${collapsed.has(focused.id) ? "Раскрыть" : "Свернуть"} ветвь: ${fullName(focused)}`}
+        >
+          {collapsed.has(focused.id) ? (
+            <ChevronDown size={18} />
+          ) : (
+            <ChevronUp size={18} />
+          )}
+        </button>
+      )}
+    </div>
+  ) : null;
   return (
     <div
       className="tree-spatial"
@@ -171,55 +221,9 @@ export function TreeDepthLayers({
       )}
       {viewStatus === "ready" && (
         <>
-          {focused && (
-            <div
-              className="tree-spatial-person"
-              aria-label="Выбранный человек в 3D"
-            >
-              <SpatialPersonPicker
-                people={[...people.values()].filter(person => world?.points.has(person.id))}
-                focused={focused}
-                disabled={disabled}
-                onChoose={(id) => {
-                  onChoose(id);
-                  renderer.current?.focus(id);
-                  host.current?.querySelector<HTMLCanvasElement>(".tree-spatial-canvas")
-                    ?.focus({ preventScroll: true });
-                }}
-              />
-              <button
-                type="button"
-                title="Перейти к ветви"
-                aria-label={`Перейти к ветви: ${fullName(focused)}`}
-                onClick={() => {
-                  onChoose(focused.id);
-                  renderer.current?.focus(focused.id);
-                }}
-                disabled={disabled}
-              >
-                <Focus size={18} />
-              </button>
-              {(children || collapsed.has(focused.id)) && (
-                <button
-                  type="button"
-                  onClick={() => onCollapse(focused.id)}
-                  disabled={disabled}
-                  title={
-                    collapsed.has(focused.id)
-                      ? "Раскрыть ветвь"
-                      : "Свернуть ветвь"
-                  }
-                  aria-label={`${collapsed.has(focused.id) ? "Раскрыть" : "Свернуть"} ветвь: ${fullName(focused)}`}
-                >
-                  {collapsed.has(focused.id) ? (
-                    <ChevronDown size={18} />
-                  ) : (
-                    <ChevronUp size={18} />
-                  )}
-                </button>
-              )}
-            </div>
-          )}
+          {toolbarHost
+            ? createPortal(personControls, toolbarHost)
+            : personControls}
           <div
             className="tree-spatial-tools"
             role="group"

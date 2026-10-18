@@ -11,6 +11,8 @@ import type { FamilyLink } from "../src/domain/types.ts";
 import { crossingPaths } from "../src/domain/route-crossings.ts";
 import { segmentHitsBox } from "../src/domain/edge-routing.ts";
 import { segmentsCross } from "../src/domain/layout-order.ts";
+import { placedFamilyRows } from "../src/domain/local-family-order.ts";
+import { FAMILY_ROW_GAP } from "../src/domain/tree-layout-constants.ts";
 import type { ElkNode } from "elkjs";
 import type { LayoutPerson, TreeGeometry } from "../src/domain/tree-layout.ts";
 import {
@@ -259,7 +261,9 @@ test("incremental ordering also protects edited families above one hundred peopl
     assert.ok(drift(incremental) < drift(plain) * 0.2);
     assert.ok(
       branchContactCounts(incremental.branches || []).distinct <=
-        branchContactCounts(plain.branches || []).distinct,
+        Math.max(branchContactCounts(before.branches || []).distinct,
+          branchContactCounts(plain.branches || []).distinct),
+      "retained families must not add contacts beyond the previous scene or the edited cold layout",
     );
   }
 });
@@ -375,6 +379,10 @@ test("122 people preserve three readable generation bands and compact vertical s
   verify(people, g);
   const positions = new Map(g.positions);
   assert.equal(g.generationBands!.length, 3);
+  for (const row of placedFamilyRows(g, g.nodeSize!))
+    for (let i = 1; i < row.length; i++)
+      assert.ok(row[i].x - row[i - 1].x - row[i - 1].width >= FAMILY_ROW_GAP - 0.01,
+        "separate households keep their breathing room after local reorderings");
   assert.ok(
     Math.max(...g.positions.map(([, p]) => p.y)) -
       Math.min(...g.positions.map(([, p]) => p.y)) +
@@ -383,6 +391,8 @@ test("122 people preserve three readable generation bands and compact vertical s
   );
   for (let i = 0; i < 24; i++) {
     assert.equal(positions.get(`c${i}`)!.y, positions.get(`s${i}`)!.y);
+    assert.equal(Math.abs(positions.get(`c${i}`)!.x - positions.get(`s${i}`)!.x), g.nodeSize!.width + 32,
+      "the compact space inside a couple stays unchanged");
     const y = positions.get(`g${i}-0`)!.y;
     for (let j = 1; j < 3; j++) assert.equal(positions.get(`g${i}-${j}`)!.y, y);
   }

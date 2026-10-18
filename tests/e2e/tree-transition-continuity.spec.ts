@@ -1,15 +1,37 @@
 import { familyViewAction, showTree } from "./tree-toolbar-actions";
 import { expect, test } from "@playwright/test";
+import type { TreeGeometry } from "../../src/domain/tree-layout.ts";
 
 test("family layout keeps the focused card mounted throughout its move", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
+  // Exercise interpolation with a guaranteed rigid scene translation. The
+  // layout solver may legitimately retain this person's exact coordinates.
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        if (!/layout[.-]worker/.test(String(url))) return;
+        this.addEventListener("message", (event: MessageEvent<{ geometry?: TreeGeometry }>) => {
+          const g = event.data.geometry;
+          if (!g || g.positions.some(([id]) => id === "000-unrelated")) return;
+          const points = new Set<{ x: number }>([
+            ...g.positions.map(([, p]) => p),
+            ...(g.branches || []).flatMap((b) => b.route.points),
+            ...(g.routes || []).flatMap(([, route]) => route.points),
+            ...(g.blocks || []), ...(g.siblingGroups || []),
+          ]);
+          points.forEach((p) => { p.x += 240; });
+        });
+      }
+    };
+  });
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch(),
       data = await response.json();
-    // Removing this unrelated component changes the focused card's X.
-    // The six-person family alone can retain its coordinates in both views.
+    // Removing this component requests the filtered scene's translated geometry.
     data.family.people.push({
       ...data.family.people[0],
       id: "000-unrelated",

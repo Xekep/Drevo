@@ -30,14 +30,22 @@ const labelClip =
   "if(texture2D(labelMask,gl_FragCoord.xy/viewport).a>.5)discard;";
 const cardVertex = `attribute vec3 center; attribute vec4 tile; attribute vec4 offset; attribute float date;
 uniform float focal; uniform float maxPixels; uniform float minPixels;
-varying vec2 vUv; varying float vAlpha;
-void main(){vUv=tile.xy+uv*tile.zw;vec4 p=viewMatrix*vec4(center,1.);
+uniform vec3 hoverCenter; uniform float hoverEnabled;
+varying vec2 vUv; varying vec2 vLocal; varying float vAlpha; varying float vHover;
+void main(){vUv=tile.xy+uv*tile.zw;vLocal=uv;
+vHover=hoverEnabled*(1.-step(.1,distance(center,hoverCenter)));
+vec4 p=viewMatrix*vec4(center,1.);
 float pixels=clamp(220.*focal/max(1.,-p.z),minPixels,maxPixels);
 vAlpha=mix(1.,smoothstep(110.,140.,pixels),date);
 p.xy+=(offset.xy+position.xy*offset.zw)*pixels*max(1.,-p.z)/focal;
 gl_Position=p.z>=-1.?vec4(2.,2.,2.,1.):projectionMatrix*p;}`;
-const cardFragment = `uniform sampler2D atlas; varying vec2 vUv; varying float vAlpha;
-void main(){vec4 c=texture2D(atlas,vUv);c.a*=vAlpha;if(c.a<.1)discard;gl_FragColor=c;
+const cardFragment = `uniform sampler2D atlas; uniform vec3 hoverColor; uniform float portrait;
+varying vec2 vUv; varying vec2 vLocal; varying float vAlpha; varying float vHover;
+void main(){vec4 c=texture2D(atlas,vUv);
+float r=distance(vLocal,vec2(.5));
+float ring=smoothstep(.435,.45,r)*(1.-smoothstep(.48,.495,r))*vHover*portrait;
+c.rgb=mix(c.rgb,hoverColor,ring);c.a=max(c.a,ring);
+c.a*=vAlpha;if(c.a<.1)discard;gl_FragColor=c;
 #include <colorspace_fragment>
 }`;
 
@@ -62,6 +70,9 @@ export class SpatialRenderer {
   private labelMask = new SpatialLabelMask();
   private viewport = { value: new THREE.Vector2(1, 1) };
   private minPixels = { value: 96 };
+  private hoverCenter = { value: new THREE.Vector3() };
+  private hoverEnabled = { value: 0 };
+  private hovered: string | null = null;
   private labelPeople: ReadonlyMap<string, Person> | null = null;
   private edges: THREE.LineSegments<
     THREE.BufferGeometry,
@@ -233,13 +244,17 @@ export class SpatialRenderer {
       ),
     );
     cardGeometry.instanceCount = 0;
-    const material = (texture: THREE.Texture) =>
+    const material = (texture: THREE.Texture, portrait = 0) =>
       new THREE.ShaderMaterial({
         uniforms: {
           atlas: { value: texture },
           focal: { value: 1 },
           maxPixels: { value: 190 },
           minPixels: this.minPixels,
+          hoverCenter: this.hoverCenter,
+          hoverEnabled: this.hoverEnabled,
+          hoverColor: { value: new THREE.Color(palette.green) },
+          portrait: { value: portrait },
         },
         vertexShader: cardVertex,
         fragmentShader: cardFragment,
@@ -251,7 +266,7 @@ export class SpatialRenderer {
         depthTest: true,
         side: THREE.DoubleSide,
       });
-    this.cards = new THREE.Mesh(cardGeometry, material(this.atlas.texture));
+    this.cards = new THREE.Mesh(cardGeometry, material(this.atlas.texture, 1));
     this.cards.frustumCulled = false;
     this.cards.renderOrder = 1;
     this.scene.add(this.cards);
@@ -276,6 +291,7 @@ export class SpatialRenderer {
     canvas.addEventListener("pointermove", this.pointerMove);
     canvas.addEventListener("pointerup", this.pointerUp);
     canvas.addEventListener("pointercancel", this.pointerCancel);
+    canvas.addEventListener("pointerleave", this.pointerLeave);
     canvas.addEventListener("keydown", this.keyDown);
     this.resize();
     this.update(people, "", new Set(), callbacks);
@@ -405,6 +421,7 @@ export class SpatialRenderer {
     this.invalidate();
   };
   private interrupt = () => {
+    this.setHover(null);
     this.fly = null;
     this.host.dataset.depthMoving = "false";
   };
@@ -414,23 +431,36 @@ export class SpatialRenderer {
   }
   personAt(x: number, y: number) {
     const b = this.renderer.domElement.getBoundingClientRect();
-    return [...this.projected]
-      .sort(
-        (a, c) =>
-          Number(this.details.has(c.id)) - Number(this.details.has(a.id)) ||
-          a.distance - c.distance,
+    let nearest: ProjectedPerson | undefined;
+    for (const p of this.projected) {
+      const full = this.details.has(p.id),
+        width = full ? p.size * 0.5 : 13,
+        height = full ? p.size * 0.5 : 13;
+      if (
+        Math.abs(p.x - (x - b.left)) <= width &&
+        Math.abs(p.y - (y - b.top)) <= height &&
+        (!nearest ||
+          Number(full) > Number(this.details.has(nearest.id)) ||
+          (full === this.details.has(nearest.id) &&
+            p.distance < nearest.distance))
       )
-      .find((p) => {
-        const full = this.details.has(p.id),
-          width = full ? p.size * 0.5 : 13,
-          height = full ? p.size * 0.5 : 13;
-        return (
-          Math.abs(p.x - (x - b.left)) <= width &&
-          Math.abs(p.y - (y - b.top)) <= height
-        );
-      })?.id;
+        nearest = p;
+    }
+    return nearest?.id;
   }
+  private setHover(id: string | null) {
+    if (this.hovered === id) return;
+    this.hovered = id;
+    const point = id ? this.world.points.get(id) : undefined;
+    this.hoverEnabled.value = point ? 1 : 0;
+    if (point) this.hoverCenter.value.set(point.x, point.y, point.z);
+    this.host.dataset.depthHovered = id || "";
+    this.renderer.domElement.style.cursor = id ? "pointer" : "grab";
+    this.invalidate();
+  }
+  private pointerLeave = () => this.setHover(null);
   private pointerDown = (event: PointerEvent) => {
+    this.setHover(null);
     const hit = this.personAt(event.clientX, event.clientY);
     if (this.pointer) {
       this.clearPress();
@@ -453,6 +483,8 @@ export class SpatialRenderer {
       }, 500);
   };
   private pointerMove = (event: PointerEvent) => {
+    if (event.pointerType === "mouse" && !event.buttons)
+      this.setHover(this.personAt(event.clientX, event.clientY) || null);
     if (
       this.pointer?.id === event.pointerId &&
       Math.hypot(
@@ -480,6 +512,7 @@ export class SpatialRenderer {
     else this.callbacks.profile(press.hit);
   };
   private pointerCancel = () => {
+    this.setHover(null);
     this.clearPress();
     this.pointer = null;
   };
@@ -653,6 +686,7 @@ export class SpatialRenderer {
     if (this.fly) this.invalidate();
   };
   private move(position: THREE.Vector3, target: THREE.Vector3, duration = 620) {
+    this.setHover(null);
     if (this.reduced.matches || !duration) {
       this.fly = null;
       this.camera.position.copy(position);
@@ -776,6 +810,7 @@ export class SpatialRenderer {
     canvas.removeEventListener("pointermove", this.pointerMove);
     canvas.removeEventListener("pointerup", this.pointerUp);
     canvas.removeEventListener("pointercancel", this.pointerCancel);
+    canvas.removeEventListener("pointerleave", this.pointerLeave);
     canvas.removeEventListener("keydown", this.keyDown);
     this.controls.dispose();
     this.atlas.dispose();

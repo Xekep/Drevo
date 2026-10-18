@@ -5,6 +5,17 @@ async function keyboardActivate(page: Page, target: ReturnType<Page["locator"]>)
   await page.keyboard.press("Enter");
 }
 
+async function openEmptyTree(page: Page) {
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch(), data = await response.json();
+    data.family = { ...data.family, people: [], links: [], unions: [], photos: [] };
+    data.partial = false;
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto("/tree");
+  return page.getByRole("button", { name: "Добавить первого человека", exact: true });
+}
+
 test("явная клавиатурная навигация переводит фокус в новый каталог", async ({ page }, info) => {
   await page.goto("/tree");
   if (info.project.name === "mobile")
@@ -20,8 +31,8 @@ test("явная клавиатурная навигация переводит 
 });
 
 test("создание получает статический заголовок и Tab остаётся в форме", async ({ page }) => {
-  await page.goto("/people");
-  await keyboardActivate(page, page.getByRole("button", { name: "Добавить человека", exact: true }));
+  const add = await openEmptyTree(page);
+  await keyboardActivate(page, add);
   await expect(page.locator(".inline-editor h2")).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Закрыть редактор", exact: true })).toBeFocused();
@@ -34,9 +45,7 @@ test("создание получает статический заголово�
   page.once("dialog", (dialog) => dialog.accept());
   await page.keyboard.press("Enter");
   await expect(page.locator(".inline-editor")).toHaveCount(0);
-  // The catalog opener no longer exists after creation switches to the tree.
-  // Creation switches to the tree, where the catalog opener no longer exists.
-  await expect(page.locator(".tree-canvas")).toBeFocused();
+  await expect(add).toBeFocused();
 });
 
 test("редактирование возвращает фокус к заменённому инициатору", async ({ page }) => {
@@ -58,8 +67,8 @@ test("поздний lazy редактор сохраняет выбранный
     await route.continue();
   });
   try {
-    await page.goto("/people");
-    await keyboardActivate(page, page.getByRole("button", { name: "Добавить человека", exact: true }));
+    const add = await openEmptyTree(page);
+    await keyboardActivate(page, add);
     await expect(page.getByText("Открываем редактор…", { exact: true })).toBeVisible();
     const search = page.locator(".archive-search input");
     await search.focus();

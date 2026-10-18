@@ -278,6 +278,46 @@ test("3D assistant follows the visible camera controls and the mobile canvas bou
   await page.screenshot({ path: info.outputPath("3d-assistant-controls.png") });
 });
 
+test("desktop 3D person picker shares the relationship and preferences row", async ({ page, isMobile }, info) => {
+  test.skip(isMobile, "The compact desktop toolbar is separate from mobile controls");
+  await setup(page);
+  await settle(page);
+  for (const width of [1024, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    const toolbar = page.locator(".tree-display-actions");
+    const name = toolbar.locator(".tree-spatial-person-name");
+    const relation = toolbar.getByRole("button", { name: /Родство/ });
+    const focus = toolbar.getByRole("button", { name: /^Перейти к ветви:/ });
+    const gear = toolbar.locator(".tree-preferences-trigger");
+    await expect(name).toBeVisible();
+    const boxes = await Promise.all([relation, name, focus, gear].map(element => element.boundingBox()));
+    for (let i = 0; i < boxes.length; i++) {
+      expect(boxes[i]).not.toBeNull();
+      expect(boxes[i]!.height).toBe(38);
+      expect(Math.abs(boxes[i]!.y - boxes[3]!.y)).toBeLessThan(1);
+      if (i) expect(boxes[i]!.x).toBeGreaterThanOrEqual(boxes[i - 1]!.x + boxes[i - 1]!.width);
+    }
+    await name.click();
+    await expect(page.getByRole("searchbox", { name: "Поиск в 3D-древе" })).toBeFocused();
+    await page.keyboard.press("Escape");
+  }
+  await page.screenshot({ path: info.outputPath("3d-toolbar-row.png") });
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await page.locator(".tree-spatial-canvas").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".inspector-dock")).toBeVisible();
+  for (const width of [900, 1024, 1199]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect.poll(async () => {
+      const tools = (await page.locator(".tree-display-actions").boundingBox())!;
+      const summary = (await page.locator(".tree-mode-bar > .archive-summary").boundingBox())!;
+      const mode = (await page.locator(".tree-mode-bar > .segmented").boundingBox())!;
+      return Math.min(summary.y - tools.y - tools.height, tools.x - mode.x - mode.width);
+    }).toBeGreaterThanOrEqual(0);
+  }
+  await page.screenshot({ path: info.outputPath("3d-toolbar-with-profile.png") });
+});
+
 test("a thousand-person 3D archive keeps GPU batches, textures and detail bounded", async ({
   page,
 }, info) => {

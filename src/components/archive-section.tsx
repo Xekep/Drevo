@@ -61,7 +61,6 @@ type Props = {
   onRetryDetails?: () => void;
   save: (family: Family) => Promise<Family>;
   onPerson: (id: string) => void;
-  onAddPerson?: () => void;
   onQuality: () => void;
   onReveal: (ids: string[], groupId: string) => void;
   onPhoto: (id: string, photoIds?: string[]) => void;
@@ -138,7 +137,6 @@ export function ArchiveSection(props: Props) {
         people={props.people}
         query={props.query}
         onSelect={props.onPerson}
-        onAdd={props.onAddPerson}
       />
     );
   else if (props.view === "places")

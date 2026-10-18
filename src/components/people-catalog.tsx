@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, MapPin, Plus } from "lucide-react";
+import { ChevronRight, MapPin } from "lucide-react";
 import { fullName, plural, type Person } from "../domain";
 import {
   directoryPeople,
@@ -15,12 +15,10 @@ export function PeopleCatalog({
   people,
   query,
   onSelect,
-  onAdd,
 }: {
   people: Person[];
   query: string;
   onSelect: (id: string) => void;
-  onAdd?: () => void;
 }) {
   const [sort, setSort] = useState<PeopleSort>("name");
   const { limit, more } = useListLimit(`${sort}:${query}`);
@@ -57,12 +55,6 @@ export function PeopleCatalog({
               <option value="death">По году смерти</option>
             </select>
           </label>
-          {onAdd && (
-            <button className="primary-action" type="button" onClick={onAdd}>
-              <Plus size={18} aria-hidden="true" />
-              Добавить человека
-            </button>
-          )}
         </div>
       </header>
       <div className="directory-columns" aria-hidden="true">

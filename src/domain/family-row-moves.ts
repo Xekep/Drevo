@@ -20,7 +20,7 @@ export type FamilyRowMove = {
   moved: Set<string>;
   distance: number;
 };
-export const FAMILY_ROW_GAP = 64;
+export { FAMILY_ROW_GAP } from "./tree-layout-constants.ts";
 
 /** Translate complete households; identity, spouse order and generation Y stay fixed. */
 export function translateFamilyBlocks(

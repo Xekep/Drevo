@@ -334,7 +334,8 @@ test("section links survive refresh, browser history and opening a new tab", asy
     exact: true,
   });
   const newPage = page.context().waitForEvent("page");
-  await storage.click({ modifiers: ["Control"] });
+  await page.bringToFront();
+  await storage.click({ modifiers: ["ControlOrMeta"] });
   const opened = await newPage;
   await expect(opened).toHaveURL(/\/admin\?section=storage$/);
   await opened.close();
