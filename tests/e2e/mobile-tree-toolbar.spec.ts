@@ -27,6 +27,7 @@ async function expectSingleRow(page: Page, width: number) {
 
 test("мобильная панель помещается в один ряд и сохраняет переключение и действия с семьёй", async ({
   page,
+  baseURL,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile");
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -90,6 +91,10 @@ test("мобильная панель помещается в один ряд и
   await mode.click();
   await expect(mode).not.toBeChecked();
   await expect(extra).toHaveAttribute("aria-pressed", "true");
+  // The selected person's camera may leave the godparent off-screen; culled
+  // edges are not mounted until their endpoints enter the visible scene.
+  await page.getByRole("button", { name: "Закрыть панель", exact: true }).click();
+  await page.getByRole("button", { name: "Вписать видимую часть древа" }).click();
   await expect(page.locator(".relationship-godparent")).toBeAttached();
   await page.screenshot({ path: testInfo.outputPath("toolbar-320.png") });
   await page.getByRole("button", { name: "Родство", exact: true }).click();
@@ -99,7 +104,7 @@ test("мобильная панель помещается в один ряд и
   const archive = await (await page.request.get("/api/family")).json();
   const shared = await page.request.post("/api/shares", {
     headers: {
-      Origin: "http://127.0.0.1:4173",
+      Origin: baseURL!,
       "If-Match": String(archive.revision),
     },
     data: {

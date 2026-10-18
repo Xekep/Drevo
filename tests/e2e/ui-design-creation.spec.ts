@@ -42,26 +42,24 @@ async function isolatedCreation(page: Page, reader = false) {
 }
 
 for (const route of ["tree", "people"] as const) {
-  test(`телефон создаёт независимого человека через каталог после открытия ${route}`, async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
+  test(`древо создаёт независимого человека после открытия ${route}`, async ({ page }, info) => {
+    test.skip(info.project.name !== "desktop");
+    await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     const archive = await isolatedCreation(page);
     expect(archive.baseline.people.length).toBeGreaterThan(0);
     await page.goto(`/${route}`);
-    const add = page.getByRole("button", { name: "Добавить человека", exact: true });
-    if (route === "tree") {
-      await expect(page.locator(".tree-canvas")).toBeVisible();
-      await expect(add).toHaveCount(0);
-      await expect(page.locator(".flow-add-tools")).toHaveCount(0);
-      await page.getByLabel("Меню проекта").click();
-      await page.locator(".mobile-sections").getByRole("link", { name: "Люди", exact: true }).click();
-      await expect(page).toHaveURL(/\/people$/);
+    if (route === "people") {
+      await expect(page.locator(".people-directory h1")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Добавить человека", exact: true })).toHaveCount(0);
+      await page.locator(".nav-sections").getByRole("link", { name: "Древо", exact: true }).click();
     }
+    const add = page.locator(".flow-add-tools").getByRole("button", { name: "Человек", exact: true });
     await expect(add).toBeVisible();
     await expect.poll(() => add.evaluate((element) => {
       const rect = element.getBoundingClientRect();
       const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
-      return rect.height >= 44 && rect.left >= 0 && rect.right <= window.innerWidth &&
+      return rect.height >= 24 && rect.left >= 0 && rect.right <= window.innerWidth &&
         rect.bottom <= window.innerHeight && !!hit && element.contains(hit);
     })).toBe(true);
     await add.click();
@@ -82,6 +80,17 @@ for (const route of ["tree", "people"] as const) {
     await expect(page.getByRole("heading", { name: fullName(added), exact: true })).toBeVisible();
   });
 }
+
+test("каталог людей не показывает создание на телефоне и компьютере", async ({ page }) => {
+  await isolatedCreation(page);
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/people");
+    await expect(page.locator(".people-directory h1")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Добавить человека", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Порядок", exact: true })).toBeVisible();
+  }
+});
 
 test("читатель не получает создание человека ни на телефоне, ни на компьютере", async ({ page }) => {
   const archive = await isolatedCreation(page, true);

@@ -664,6 +664,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const shareAnchorId = [!activeFanAnchor ? generationAnchor?.id : undefined, root]
     .find((id): id is string => !!id && visible.has(id));
   const depthCameraRef = useRef<DepthSceneHandle | null>(null);
+  const [depthToolbarHost, setDepthToolbarHost] = useState<HTMLDivElement | null>(null);
   const cameraModel = useRef({ nodes: displayNodes, personOccurrences });
   useLayoutEffect(() => {
     cameraModel.current = { nodes: displayNodes, personOccurrences };
@@ -1895,9 +1896,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           )}
           {narrow && preferencesAction}
         </div>
-        {!narrow && (props.comparisonAction || preferencesAction) && (
+        {!narrow && (props.comparisonAction || preferencesAction || depthEnabled) && (
           <div className="tree-display-actions">
             {props.comparisonAction}
+            {depthEnabled && <div className="tree-spatial-toolbar-slot" ref={setDepthToolbarHost} />}
             {preferencesAction}
           </div>
         )}
@@ -2109,6 +2111,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         )}
         </div>
         {depthEnabled && <TreeDepthLayers people={currentPeople} layoutPeople={depthPeople} unions={renderFamily.unions}
+          toolbarHost={narrow ? null : depthToolbarHost}
           active={depth.front} selected={selected} ready={ready && initialCameraReady} onProfile={actions.choose} onSelect={actions.selectOnly}
           cameraRef={depthCameraRef} collapsed={collapsed} onCollapse={actions.collapse} onFallback={() => setDepthUnavailable(true)}
           fullscreen={screen.fullscreen} onFullscreen={screen.fullscreen ? screen.exit : screen.enter}

@@ -1259,7 +1259,6 @@ export default function App() {
                   onRetryDetails={retryViewDetails}
                   save={save}
                   onPerson={(id) => showPerson(id, true)}
-                  onAddPerson={canEdit ? newPerson : undefined}
                   onQuality={() => navigate("quality")}
                   onReveal={(ids, groupId) => {
                     lastUrlTarget.current = "";
