@@ -155,7 +155,9 @@ export function emailAuthHttp(
           );
           return json(res, 200, {
             archiveId: account.archiveId,
-            path: archivePagePath(account.archiveId, "/tree", primaryArchiveId),
+            ...(account.archiveId ? {
+              path: archivePagePath(account.archiveId, "/tree", primaryArchiveId),
+            } : {}),
             account: true,
           });
         }
