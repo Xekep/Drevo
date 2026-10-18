@@ -469,6 +469,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     token: number;
     previousFocusToken: number | null;
   } | null>(null);
+  const activeScopeFocus = scopeFocus?.previousFocusToken === (focus?.token ?? null)
+    ? scopeFocus : null;
+  // All person-based views consume the same one-shot scope navigation. Ordinary
+  // profile selection is not a focus request and must not move the 3D camera.
+  const effectivePersonFocus = useMemo(() => activeScopeFocus
+    ? { ids: [activeScopeFocus.id], token: activeScopeFocus.token }
+    : focus, [activeScopeFocus, focus]);
   const generationRange = useMemo(
     () => props.generationLimits
       ? generationScope(
@@ -491,7 +498,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     );
   }, [renderFamily.people, generationVisible, props.assistantFilter]);
   const depth = useDepthTree(renderFamily, scopedVisible, depthEnabled,
-    selected[0] || props.kinshipReferenceId || user?.personId || familyView.defaultAnchor || undefined, focus);
+    props.generationLimits?.anchorId || selected[0] || props.kinshipReferenceId || user?.personId || familyView.defaultAnchor || undefined,
+    effectivePersonFocus);
   const previousDepthEnabled = useRef(depthEnabled);
   useEffect(() => {
     const entering = depthEnabled && !previousDepthEnabled.current;
@@ -703,8 +711,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     setScopeFocus((current) => current && current.previousFocusToken !== (focus?.token ?? null)
       ? null : current);
   }, [focus?.token]);
-  const activeScopeFocus = scopeFocus?.previousFocusToken === (focus?.token ?? null)
-    ? scopeFocus : null;
   const scopeOccurrence = activeScopeFocus
     ? personOccurrences.get(activeScopeFocus.id)?.find((id) => positions.has(id))
     : undefined;
@@ -713,9 +719,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       ids: [scopeOccurrence], token: activeScopeFocus.token, recenterOnResize: false,
     } : null
     : cameraFocus, [scopeOccurrence, activeScopeFocus, cameraFocus]);
-  const effectiveTimelineFocus = useMemo(() => activeScopeFocus
-    ? { ids: [activeScopeFocus.id], token: activeScopeFocus.token }
-    : focus, [activeScopeFocus, focus]);
   useEffect(() => {
     if (problem) {
       const timer = window.setTimeout(() => setGrowing(false), 0);
@@ -2115,7 +2118,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           active={depth.front} selected={selected} ready={ready && initialCameraReady} onProfile={actions.choose} onSelect={actions.selectOnly}
           cameraRef={depthCameraRef} collapsed={collapsed} onCollapse={actions.collapse} onFallback={() => setDepthUnavailable(true)}
           fullscreen={screen.fullscreen} onFullscreen={screen.fullscreen ? screen.exit : screen.enter}
-          focusToken={focus?.ids.length === 1 ? focus.token : undefined}
+          focusToken={effectivePersonFocus?.ids.length === 1 ? effectivePersonFocus.token : undefined}
           anchorId={depth.anchorId} geometry={geometry} disabled={growthLocked}
           onChoose={(id) => {
             if (depth.choose(id)) {
@@ -2147,7 +2150,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           <HorizontalTimeline
             people={timelinePeople}
             selected={selected}
-            focus={effectiveTimelineFocus}
+            focus={effectivePersonFocus}
             onChoose={actions.choose}
           />
         )}

@@ -78,11 +78,12 @@ async function settle(page: Page) {
   await expect(world(page)).toHaveAttribute("aria-busy", "false");
   await expect(world(page)).toHaveAttribute("data-depth-moving", "false");
 }
-async function setup(page: Page, graph = family, canEdit = false) {
+async function setup(page: Page, graph = family, canEdit = false, initial: Partial<TreePreferences> = {}) {
   const preferences: TreePreferences = {
     ...DEFAULT_TREE_PREFERENCES,
     animateOnLoad: false,
     presentation: "depth",
+    ...initial,
   };
   const user = {
     id: "depth-user",
@@ -528,4 +529,48 @@ test("3D middle click sets the generation anchor and middle drag only pans", asy
   await settle(page);
   await page.mouse.click(x, y, { button: "middle" });
   await expect.poll(() => preferences.generationLimits?.anchorId).toBe("me");
+});
+
+test("3D centers a changed generation anchor and restores it on reload", async ({ page, isMobile }) => {
+  const preferences = await setup(page, family, false, {
+    generationLimits: { anchorId: "me", ancestors: 3, descendants: 3, collateral: 2 },
+  });
+  await settle(page);
+  const tree = page.locator(".tree-canvas");
+  await expect(tree).toHaveAttribute("data-depth-anchor", "me");
+  const population = await world(page).getAttribute("data-depth-world-people");
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  const dialog = page.getByRole("dialog", { name: "Вид древа" });
+  await dialog.getByRole("combobox", { name: "Относительно человека" }).fill("Алексей");
+  await dialog.getByRole("option", { name: /Соколов Алексей/ }).click();
+  await expect.poll(() => preferences.generationLimits?.anchorId).toBe("sibling");
+  await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
+  await expect(tree).toHaveAttribute("data-depth-anchor", "sibling");
+  await expect(tree).toHaveAttribute("data-layout-ready", "true");
+  await settle(page);
+  await expect(world(page)).toHaveAttribute("data-depth-world-people", population!);
+  // Check the real WebGL camera, rather than only the chosen ID: the new
+  // anchor's portrait must be hit at the center of the scene.
+  const canvas = page.locator(".tree-spatial-canvas");
+  const box = (await canvas.boundingBox())!;
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  if (isMobile) await page.touchscreen.tap(point.x, point.y);
+  else await page.mouse.click(point.x, point.y);
+  await expect(page).toHaveURL(/\/people\/sibling$/);
+  await expect(tree).toHaveAttribute("data-depth-anchor", "sibling");
+  await page.goto("/tree");
+  await settle(page);
+  // The linked account person is still "me", but the saved anchor wins.
+  await expect(tree).toHaveAttribute("data-depth-anchor", "sibling");
+
+  const camera = await world(page).getAttribute("data-depth-camera");
+  await page.route("**/api/tree-preferences", (route) => route.fulfill({
+    status: 503, json: { error: "Сохранение временно недоступно" },
+  }));
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  await dialog.getByRole("combobox", { name: "Относительно человека" }).fill("Александр");
+  await dialog.getByRole("option", { name: /Соколов Александр/ }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("Сохранение временно недоступно");
+  await expect(tree).toHaveAttribute("data-depth-anchor", "sibling");
+  await expect(world(page)).toHaveAttribute("data-depth-camera", camera!);
 });
