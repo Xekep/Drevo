@@ -688,7 +688,7 @@ test("an invited member can create their own private tree", async ({
       json: {
         archives: [
           {
-            id: "shared-tree",
+            id: "shared-tree", href: "/a/shared-tree/tree",
             title: "Дерево родственника",
             role: "reader",
             approved: true,

@@ -54,6 +54,7 @@ import { researchPdf } from "../../src/server/research-pdf.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
 import { aiChatAccessScope } from "../../src/server/ai-chat-access-scope.ts";
 import { generatedResearchFileStore } from "../../src/server/generated-research-files.ts";
+import { verifyGeneratedFileCache } from "./generated-file-cache-test.ts";
 import { verifyGeneratedFileGlobalCap } from "./generated-file-cap-test.ts";
 import { verifyPortablePreviewGlobalCap } from "./portable-preview-cap.ts";
 import { verifyPlatformAiOrphanSweep } from "./platform-ai-orphan-sweep.ts";
@@ -2214,7 +2215,10 @@ try {
   });
   assert.ok(generatedLink);
   await generatedChats.append(generatedChat.id, "assistant", "Отчёт готов.", {
-    files: [generatedLink], generatedFileMeta: generatedStore.metadata([generatedLink]),
+    files: [generatedLink], generatedFileMeta: await verifyGeneratedFileCache(
+      generatedStore, app.archive.db, join(dirname(source), "uploads"),
+      generatedChat.id, generatedLink, generatedBytes,
+    ),
   });
   const generatedUrl = securedBase + generatedLink.url;
   const ownGenerated = await fetch(generatedUrl, { headers: ownerHeaders });

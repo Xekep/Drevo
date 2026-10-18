@@ -54,7 +54,7 @@ async function identity(page: Page, member = true) {
       json: {
         archives: [
           {
-            id: "primary",
+            id: "primary", href: "/a/primary/tree",
             title: "Древо Петровых",
             role: "relative",
             approved: true,
@@ -276,7 +276,7 @@ test("account can retry the tree directory and keeps a failed logout on screen",
             json: {
               archives: [
                 {
-                  id: "other",
+                  id: "other", href: "/a/other/tree",
                   title: "Архив Ивановых",
                   role: "reader",
                   approved: true,

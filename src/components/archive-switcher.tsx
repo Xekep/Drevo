@@ -18,7 +18,7 @@ type AccessibleArchive = {
   owned: boolean;
   approved: boolean;
   role: Role;
-  href?: string;
+  href: string;
 };
 export function ArchiveSwitcher({
   onClose,
@@ -149,8 +149,7 @@ export function ArchiveSwitcher({
                     {item.approved && !item.current ? (
                       <a
                         className="archive-switcher-row"
-                        // Compatibility with an older API; remove after the next release.
-                        href={item.href || `/a/${encodeURIComponent(item.id)}/tree`}
+                        href={item.href}
                         title={item.title}
                         onClick={leave}
                       >

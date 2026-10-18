@@ -72,7 +72,7 @@ test("menu switches between owned and invited archives without offering pending 
       json: {
         archives: [
           {
-            id: "own-archive",
+            id: "own-archive", href: "/a/own-archive/tree",
             title: "Моё древо",
             current: true,
             owned: true,
@@ -80,7 +80,7 @@ test("menu switches between owned and invited archives without offering pending 
             role: "relative",
           },
           {
-            id: "invited-archive",
+            id: "invited-archive", href: "/a/invited-archive/tree",
             title: "Древо родственника",
             current: false,
             owned: false,
@@ -88,7 +88,7 @@ test("menu switches between owned and invited archives without offering pending 
             role: "reader",
           },
           {
-            id: "pending-archive",
+            id: "pending-archive", href: "/a/pending-archive/tree",
             title: "Ожидающее древо",
             current: false,
             owned: false,
@@ -151,6 +151,7 @@ test("switcher searches many trees and contains long names at narrow widths", as
   const archives = [
     {
       id: "own-archive",
+      href: "/a/own-archive/tree",
       title: "Моё древо",
       owned: true,
       current: true,
@@ -159,6 +160,7 @@ test("switcher searches many trees and contains long names at narrow widths", as
     },
     {
       id: "long-title",
+      href: "/a/long-title/tree",
       title: longTitle,
       owned: false,
       current: false,
@@ -167,6 +169,7 @@ test("switcher searches many trees and contains long names at narrow widths", as
     },
     {
       id: "long-word",
+      href: "/a/long-word/tree",
       title:
         "НевероятноДлинноеНазваниеСемейногоДреваБезПробеловДляПроверкиПереноса",
       owned: false,
@@ -182,6 +185,7 @@ test("switcher searches many trees and contains long names at narrow widths", as
       "Семья Ивановых",
     ].map((title, index) => ({
       id: `invited-${index}`,
+      href: `/a/invited-${index}/tree`,
       title,
       owned: false,
       current: false,

@@ -94,11 +94,12 @@ export function LoginButtons({
           ? "Сервис входа временно недоступен. Попробуйте ещё раз через несколько минут."
           : result.error || "Не удалось выполнить запрос. Проверьте введённые данные и попробуйте ещё раз.");
       if (result.archiveId) {
+        if (typeof result.path !== "string" || !/^\/(?!\/)/.test(result.path) ||
+          new URL(result.path, window.location.origin).origin !== window.location.origin)
+          throw new Error("Сервер не вернул адрес древа. Обновите страницу и попробуйте ещё раз.");
         onBeforeNavigate?.();
         markEntrySequence();
-        // Compatibility with an older API; remove after the next release.
-        window.location.replace(typeof result.path === "string" && /^\/(?!\/)/.test(result.path)
-          ? result.path : `/a/${encodeURIComponent(result.archiveId)}/tree`);
+        window.location.replace(result.path);
         return;
       }
       if (result.account) {

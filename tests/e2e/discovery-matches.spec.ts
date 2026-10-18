@@ -9,7 +9,7 @@ test("a selected tree card opens matching with its exact published source", asyn
     url: route.request().url().replace("/a/tree-a/api/", "/api/"),
   }));
   await page.route("**/api/account/archives", (route) => route.fulfill({ json: { archives: [
-    { id: "tree-a", title: "Моё дерево", role: "admin", approved: true, owned: true, current: true },
+    { id: "tree-a", href: "/a/tree-a/tree", title: "Моё дерево", role: "admin", approved: true, owned: true, current: true },
   ] } }));
   await page.route("**/api/discovery/matches/own-people?**", (route) => {
     const params = new URL(route.request().url()).searchParams;
@@ -93,7 +93,7 @@ test("a non-owner does not get the cross-tree handoff on a tree card", async ({ 
     return route.fulfill({ response, json: { ...data, local: false } });
   });
   await page.route("**/api/account/archives", (route) => route.fulfill({ json: { archives: [
-    { id: "tree-a", title: "Чужое дерево", role: "admin", approved: true, owned: false, current: true },
+    { id: "tree-a", href: "/a/tree-a/tree", title: "Чужое дерево", role: "admin", approved: true, owned: false, current: true },
   ] } }));
   await page.goto("/a/tree-a/tree");
   await page.getByTestId("rf__node-e2e-memorial-person").click();
@@ -112,9 +112,9 @@ test("a published-card link preselects its exact target for an owning archive", 
   await page.route("**/api/discovery/people/tree-b/person-b", (route) =>
     route.fulfill({ json: { person: target, linkedCards: [] } }));
   await page.route("**/api/account/archives", (route) => route.fulfill({ json: { archives: [
-    { id: "tree-a", title: "Моё дерево", role: "admin", approved: true, owned: true, current: true },
-    { id: "tree-b", title: "Дерево адресата", role: "admin", approved: true, owned: false, current: false },
-    { id: "tree-c", title: "Чужое дерево", role: "admin", approved: true, owned: false, current: false },
+    { id: "tree-a", href: "/a/tree-a/tree", title: "Моё дерево", role: "admin", approved: true, owned: true, current: true },
+    { id: "tree-b", href: "/a/tree-b/tree", title: "Дерево адресата", role: "admin", approved: true, owned: false, current: false },
+    { id: "tree-c", href: "/a/tree-c/tree", title: "Чужое дерево", role: "admin", approved: true, owned: false, current: false },
   ] } }));
   await page.route("**/api/discovery/matches/own-people?**", (route) =>
     route.fulfill({ json: { archiveId: "tree-a", people: [own] } }));
