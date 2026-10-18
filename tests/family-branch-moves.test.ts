@@ -6,6 +6,7 @@ import { familyRowNoWorse, reorderFamilyRow, routeFamilyMove, translateFamilyBlo
 import { optimizeFamilyRows } from "../src/domain/family-row-order.ts";
 import { placedFamilyRows } from "../src/domain/local-family-order.ts";
 import { createGeometryContactScorer, type UnionBranch } from "../src/domain/union-layout.ts";
+import { FAMILY_ROW_GAP } from "../src/domain/tree-layout-constants.ts";
 
 const size = { width: 220, height: 264 };
 function child(source: string, target: string, positions: TreeGeometry["positions"], lane: number): UnionBranch {
@@ -305,7 +306,8 @@ test("two distinct union joints translate with a three-person household and keep
 test("touching forbidden intervals retain a gap that fits the translated household exactly", () => {
   const positions: TreeGeometry["positions"] = [
     ["P", { x: 0, y: 0 }], ["A", { x: 1200, y: 500 }], ["a", { x: 1200, y: 1000 }],
-    ["left", { x: -284, y: 500 }], ["right", { x: 284, y: 500 }],
+    ["left", { x: -size.width - FAMILY_ROW_GAP, y: 500 }],
+    ["right", { x: size.width + FAMILY_ROW_GAP, y: 500 }],
   ];
   const before = geometry(positions, [child("P", "A", positions, 350), child("A", "a", positions, 850)]);
   const move = familyBranchMoves(before, size, ["A"]).find((m) => new Map(m.geometry.positions).get("A")!.x === 0)!;

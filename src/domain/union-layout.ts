@@ -4,6 +4,7 @@ import {
   TREE_NODE_WIDTH,
   TREE_NODE_HEIGHT,
   MAX_INCREMENTAL_LAYOUT_PEOPLE,
+  FAMILY_ROW_GAP,
   type TreeNodeSize,
 } from "./tree-layout-constants.ts";
 import {
@@ -18,6 +19,7 @@ import {
 import type { FamilyLink } from "./types.ts";
 import { repairFamilyRoutes } from "./family-route-repair.ts";
 import { optimizeBranches } from "./branch-routing.ts";
+import { bundleFamilyBranches } from "./family-branch-bundling.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
 import { optimizeFamilyRows, refineColdPlacement } from "./family-row-order.ts";
@@ -361,7 +363,7 @@ async function geometryForSeed(
       "elk.direction": "DOWN",
       "elk.edgeRouting": "ORTHOGONAL",
       "elk.randomSeed": String(seed),
-      "elk.spacing.nodeNode": "64",
+      "elk.spacing.nodeNode": String(FAMILY_ROW_GAP),
       "elk.spacing.componentComponent": "100",
       "elk.partitioning.activate": "true",
       "elk.layered.spacing.nodeNodeBetweenLayers": "36",
@@ -1269,5 +1271,5 @@ export async function unionGeometry(
       ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
     })).geometry;
   }
-  return best;
+  return bundleFamilyBranches(best);
 }
