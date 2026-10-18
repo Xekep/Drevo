@@ -52,7 +52,7 @@ export function AboutProject({ onClose }: { onClose: () => void }) {
         <details className="about-stack">
           <summary>Как это работает</summary>
           <div className="about-stack-content">
-            <p>Основной стек Drevo:</p>
+            <p>Технологии и форматы Drevo:</p>
             <ul>
               <li>
                 <b>TypeScript</b> — основной язык проекта.
@@ -68,21 +68,26 @@ export function AboutProject({ onClose }: { onClose: () => void }) {
               </li>
               <li>
                 <b>React Flow и ELK</b> — отображение и автоматическая раскладка
-                семейного древа.
+                древа в 2D.
+              </li>
+              <li>
+                <b>WebGL2 и Three.js</b> — ускоренная отрисовка и 3D-режим древа.
               </li>
               <li>
                 <b>Human / TensorFlow.js</b> — нейросетевой анализ фотографий и
                 распознавание лиц.
               </li>
               <li>
+                <b>PDF.js и BookReader</b> — чтение и перелистывание документов.
+              </li>
+              <li>
                 <b>Leaflet</b> — отображение мест и семейной географии на карте.
               </li>
               <li>
-                <b>Yandex AI Studio</b> — встроенные функции искусственного
-                интеллекта.
+                <b>Yandex AI Studio</b> — ИИ-ассистент с подтверждением изменений.
               </li>
               <li>
-                <b>GEDCOM</b> — импорт и экспорт генеалогических данных.
+                <b>GEDCOM и GEDZIP</b> — импорт и экспорт генеалогических данных.
               </li>
             </ul>
           </div>

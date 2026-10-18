@@ -37,6 +37,7 @@ import { gedcomHttp } from "./gedcom-http.ts";
 import { portableExportHttp } from "./portable-http.ts";
 import { portableImportHttp } from "./portable-import-http.ts";
 import { productionStaticHttp } from "./production-static-http.ts";
+import { archiveCanonicalHttp } from "./archive-canonical-http.ts";
 import { backupCoordinator } from "./backup-coordinator.ts";
 import { platformBackupCoordinator } from "./platform-backup-coordinator.ts";
 import { platformBackupHttp } from "./platform-backup-http.ts";
@@ -113,6 +114,7 @@ export async function startServer(
   sharedPdfDecoder?: ReturnType<typeof pdfDecodeCoordinator>,
   sharedConnections?: PostgresConnections,
   sharedWork?: SharedWork,
+  sharedPrimaryArchiveId?: string,
 ): Promise<StartedServer> {
   assertProductionOrigin(
     process.env.NODE_ENV === "production",
@@ -206,6 +208,8 @@ export async function startServer(
       work.snapshots,
     );
     own(() => archive.close());
+    const primaryArchiveId = sharedPrimaryArchiveId ?? (!archiveId ? archive.db.archiveId : undefined);
+    const canonicalPage = archiveCanonicalHttp(primaryArchiveId);
     if (!archiveId)
       await initializePlatformConfiguration(
         archive.db,
@@ -323,7 +327,7 @@ export async function startServer(
     const serveStatic = productionStaticHttp(resolve(root, "dist"), production);
     const visibility = await settingsStore(archive.db);
     const users = await userStore(archive.db);
-    const auth = await createAuth(users, archive.db, publicOrigin);
+    const auth = await createAuth(users, archive.db, publicOrigin, primaryArchiveId);
     const managePlatformRoles = platformRolesHttp(
       archive.db,
       auth,
@@ -356,6 +360,7 @@ export async function startServer(
           publicOrigin,
           null,
           emailSettings.runtime,
+          primaryArchiveId,
         )
       : null;
     const listAccountArchives = accountArchivesHttp(
@@ -364,6 +369,7 @@ export async function startServer(
       archive.db,
       publicOrigin,
       !archiveId,
+      primaryArchiveId,
     );
     const exportAccountData = accountDataExportHttp(
       archive.db,
@@ -407,7 +413,7 @@ export async function startServer(
     );
     const searchPublishedPeople = discoveryPeopleHttp(archive.db, auth);
     const manageAccountInvitations = !archiveId
-      ? accountInvitationsHttp(archive.db, auth, publicOrigin)
+      ? accountInvitationsHttp(archive.db, auth, publicOrigin, primaryArchiveId)
       : null;
     const directory = accountArchiveDirectory(archive.db);
     const canOpenShared = publicShareAccess(archive.db);
@@ -435,6 +441,7 @@ export async function startServer(
                 pdfDecoder,
                 connections,
                 work,
+                primaryArchiveId,
               ),
             { maxOpen: 128 },
           )
@@ -480,6 +487,7 @@ export async function startServer(
       aiFetch,
       uploadsDirectory: resolve(dirname(dbPath), "uploads"),
       selectedArchiveId: archiveId,
+      primaryArchiveId,
       providerCleanup,
       decodePdf: pdfDecoder.decode,
       aiQueue: work.ai,
@@ -599,6 +607,7 @@ export async function startServer(
           `http://${host}`,
         ),
         path = parsedUrl.pathname;
+      if (!overridePath && canonicalPage(req, res, parsedUrl)) return;
       if (path === "/api/admin/runtime" && req.method === "GET") {
         if (!(await auth.isPlatformAdmin(req)))
           return json(res, 403, { error: "Требуется администратор платформы" });

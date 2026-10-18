@@ -6,6 +6,7 @@ import type { auditStore } from "./audit.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
 import { isArchiveOwner } from "../domain/access.ts";
+import { archivePagePath } from "../domain/archive-context.ts";
 
 export function adminSharingHttp({
   archive,
@@ -14,6 +15,7 @@ export function adminSharingHttp({
   audit,
   publicOrigin,
   selectedArchiveId,
+  primaryArchiveId,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -21,6 +23,7 @@ export function adminSharingHttp({
   audit: ReturnType<typeof auditStore>;
   publicOrigin?: string;
   selectedArchiveId?: string;
+  primaryArchiveId?: string;
 }) {
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -137,7 +140,7 @@ export function adminSharingHttp({
         );
         return json(res, 201, {
           share: result.share,
-          path: `${selectedArchiveId ? `/a/${selectedArchiveId}` : ""}/s/${result.token}`,
+          path: archivePagePath(selectedArchiveId, `/s/${result.token}`, primaryArchiveId),
         });
       }
 

@@ -15,6 +15,7 @@ import {
   requestClientKey,
 } from "./request-rate-limit.ts";
 import { postgresEmailRateLimit } from "./postgres-email-rate-limit.ts";
+import { archivePagePath } from "../domain/archive-context.ts";
 
 function configuredSender(): EmailSender | null {
   const { SMTP_HOST, SMTP_PORT, SMTP_FROM, SMTP_USER, SMTP_PASSWORD } =
@@ -32,6 +33,7 @@ export function emailAuthHttp(
     ? configuredSender()
     : null,
   configuration?: () => Promise<{ enabled: boolean; sender: EmailSender | null }>,
+  primaryArchiveId?: string,
 ) {
   const enabled =
     process.env.EMAIL_AUTH_ENABLED === "1" &&
@@ -137,7 +139,8 @@ export function emailAuthHttp(
         if (url.pathname === "/api/auth/email/verify") {
           const account = await requestCredentials.verifyRegistration(body.token);
           await auth.issueAccountSession(req, res, account.accountId);
-          return json(res, 200, { archiveId: account.archiveId });
+          return json(res, 200, { archiveId: account.archiveId,
+            path: archivePagePath(account.archiveId, "/tree", primaryArchiveId) });
         }
         if (url.pathname === "/api/auth/email/login") {
           const account = await requestCredentials.login({
@@ -152,6 +155,9 @@ export function emailAuthHttp(
           );
           return json(res, 200, {
             archiveId: account.archiveId,
+            ...(account.archiveId ? {
+              path: archivePagePath(account.archiveId, "/tree", primaryArchiveId),
+            } : {}),
             account: true,
           });
         }

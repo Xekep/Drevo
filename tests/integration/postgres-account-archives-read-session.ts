@@ -82,7 +82,7 @@ export async function verifyAccountArchivesReadSessionRevocation(db: StoreDataba
         await deliver();
       });
     },
-  }, db, origin, false);
+  }, db, origin, false, archiveId);
   const server = createServer((req, res) => {
     if (req.headers["x-test-stall"] === "1") {
       // Model a client that never receives the small JSON body; production's
@@ -151,6 +151,8 @@ export async function verifyAccountArchivesReadSessionRevocation(db: StoreDataba
     const currentArchives = currentBody.archives;
     assert.deepEqual(currentArchives.map((archive: { id: string }) => archive.id),
       ["other-archive", "runtime-test"]);
+    assert.deepEqual(currentArchives.map((archive: { href: string }) => archive.href),
+      ["/a/other-archive/tree", "/tree"]);
     assert.deepEqual(currentArchives.map((archive: { role: string; current: boolean; owned: boolean }) =>
       [archive.role, archive.current, archive.owned]),
     [["relative", false, true], ["reader", true, false]]);

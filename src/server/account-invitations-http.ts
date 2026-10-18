@@ -8,12 +8,14 @@ import {
 } from "./archive-invitations.ts";
 import { AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
+import { archivePagePath } from "../domain/archive-context.ts";
 
 /** The root account session can accept a link without prior archive membership. */
 export function accountInvitationsHttp(
   db: StoreDatabase,
   auth: Awaited<ReturnType<typeof createAuth>>,
   publicOrigin?: string,
+  primaryArchiveId?: string,
 ) {
   const invitations = accountInvitations(db);
   const json = (res: ServerResponse, status: number, value: unknown) => {
@@ -70,8 +72,9 @@ export function accountInvitationsHttp(
         });
         return true;
       }
-      return json(res, 200,
-        await invitations.accept(input.archiveId, input.token, session!.accountId, session!.tokenHash));
+      const accepted = await invitations.accept(input.archiveId, input.token, session!.accountId, session!.tokenHash);
+      return json(res, 200, { ...accepted,
+        path: archivePagePath(accepted.archiveId, "/tree", primaryArchiveId) });
     } catch (error) {
       if (res.headersSent || res.destroyed) {
         res.destroy(error as Error);

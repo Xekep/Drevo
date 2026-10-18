@@ -87,6 +87,7 @@ function ArchiveList({ archives }: { archives: AccountArchive[] }) {
           )}
           {item.approved ? (
             <a
+              // Compatibility with an older API; remove after the next release.
               href={item.href || `/a/${encodeURIComponent(item.id)}/tree`}
               aria-label={`Открыть древо «${item.title}»`}
             >

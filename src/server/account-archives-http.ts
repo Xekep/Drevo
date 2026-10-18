@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { ARCHIVE_SCHEMA_VERSION } from "./schema.ts";
 import { provisionPrivateArchiveInTransaction } from "./postgres-private-archive.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
+import { archivePagePath } from "../domain/archive-context.ts";
 
 export function accountArchivesHttp(
   auth: Awaited<ReturnType<typeof createAuth>>,
@@ -16,6 +17,7 @@ export function accountArchivesHttp(
   db: StoreDatabase,
   publicOrigin?: string,
   allowCreate = false,
+  primaryArchiveId?: string,
 ) {
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (url.pathname !== "/api/account/archives") return false;
@@ -111,7 +113,9 @@ export function accountArchivesHttp(
     const archives = await directory.list(accountId);
     if (!archives)
       return send(501, { error: "Список древ доступен с PostgreSQL" });
-    const body = JSON.stringify({ archives });
+    const body = JSON.stringify({ archives: archives.map((item) => ({
+      ...item, href: archivePagePath(item.id, "/tree", primaryArchiveId),
+    })) });
     try {
       await directory.deliverList(accountId, session!.tokenHash, archives, async () => {
         const timeout = setTimeout(() => res.destroy(new Error("Archive list delivery timed out")), 4_000);

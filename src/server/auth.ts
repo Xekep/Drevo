@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ArchiveUser } from "../domain/access.ts";
 import { canEditArchive, isArchiveOwner } from "../domain/access.ts";
 import { hasCurrentPlatformAdmin } from "./platform-access.ts";
+import { archivePagePath } from "../domain/archive-context.ts";
 import { memberPreviewTarget } from "./member-preview-access.ts";
 import type { userStore } from "./users.ts";
 import {
@@ -45,6 +46,7 @@ export async function createAuth(
   users: Awaited<ReturnType<typeof userStore>>,
   db: StoreDatabase,
   publicOrigin?: string,
+  primaryArchiveId?: string,
 ) {
   const local = !publicOrigin,
     secure = publicOrigin?.startsWith("https://") ? "; Secure" : "";
@@ -282,7 +284,7 @@ export async function createAuth(
         return login;
       });
       setCookie(res, result.session.token);
-      return `/a/${result.archiveId}/tree`;
+      return archivePagePath(result.archiveId, "/tree", primaryArchiveId);
     },
     async sessionSummary(req: IncomingMessage) {
       if (local) return { currentExpiresAt: null, otherCount: 0 };

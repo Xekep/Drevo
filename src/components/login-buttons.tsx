@@ -96,7 +96,9 @@ export function LoginButtons({
       if (result.archiveId) {
         onBeforeNavigate?.();
         markEntrySequence();
-        window.location.replace(`/a/${result.archiveId}/tree`);
+        // Compatibility with an older API; remove after the next release.
+        window.location.replace(typeof result.path === "string" && /^\/(?!\/)/.test(result.path)
+          ? result.path : `/a/${encodeURIComponent(result.archiveId)}/tree`);
         return;
       }
       if (result.account) {
