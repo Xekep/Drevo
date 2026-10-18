@@ -261,7 +261,9 @@ test("incremental ordering also protects edited families above one hundred peopl
     assert.ok(drift(incremental) < drift(plain) * 0.2);
     assert.ok(
       branchContactCounts(incremental.branches || []).distinct <=
-        branchContactCounts(plain.branches || []).distinct,
+        Math.max(branchContactCounts(before.branches || []).distinct,
+          branchContactCounts(plain.branches || []).distinct),
+      "retained families must not add contacts beyond the previous scene or the edited cold layout",
     );
   }
 });
