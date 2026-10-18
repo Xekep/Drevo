@@ -10,6 +10,7 @@ import type { TreeFitOptions } from "./tree-camera-fit";
 import { SpatialCardAtlas, type SpatialPalette } from "./spatial-card-atlas";
 import { SpatialNameAtlas } from "./spatial-name-atlas";
 import { SpatialLabelMask } from "./spatial-label-mask";
+import { SpatialArrowMotion } from "./spatial-arrow-motion";
 
 type Callbacks = {
   profile: (id: string) => void;
@@ -27,7 +28,9 @@ type ProjectedPerson = {
 };
 const labelDeclarations = "uniform sampler2D labelMask; uniform vec2 viewport;";
 const labelClip =
-  "if(texture2D(labelMask,gl_FragCoord.xy/viewport).a>.5)discard;";
+  `vec4 label=texture2D(labelMask,gl_FragCoord.xy/viewport);
+float labelDepth=dot(floor(label.rgb*255.+.5),vec3(65536.,256.,1.))/16777215.;
+if(label.a>.95&&gl_FragCoord.z>=labelDepth-0.0000001)discard;`;
 const cardVertex = `attribute vec3 center; attribute vec4 tile; attribute vec4 offset; attribute float date;
 uniform float focal; uniform float maxPixels; uniform float minPixels;
 uniform vec3 hoverCenter; uniform float hoverEnabled;
@@ -49,7 +52,7 @@ c.a*=vAlpha;if(c.a<.1)discard;gl_FragColor=c;
 #include <colorspace_fragment>
 }`;
 
-/** Owns the WebGL context, controls, demand-only RAF and all GPU/image resources.
+/** Owns the WebGL context, controls, demand-only projection and GPU/image resources.
  * React never receives camera frames. Geometry uploads once per topology change.
  */
 export class SpatialRenderer {
@@ -78,7 +81,7 @@ export class SpatialRenderer {
     THREE.BufferGeometry,
     THREE.LineBasicMaterial
   >;
-  private arrows: THREE.InstancedMesh;
+  private arrows: SpatialArrowMotion;
   private frame = 0;
   private stopped = false;
   private hidden = document.hidden;
@@ -177,34 +180,15 @@ export class SpatialRenderer {
       }),
     );
     this.maskUnderLabels(this.edges.material);
+    // Fill portraits/names first: transparent foreground lines must blend with
+    // the real distant surface, rather than the clear canvas colour.
+    this.edges.renderOrder = 3;
     this.scene.add(this.edges);
-    const parents = world.connections.filter((e) => e.type === "parent");
-    this.arrows = new THREE.InstancedMesh(
-      new THREE.ConeGeometry(5, 17, 4),
-      new THREE.MeshBasicMaterial({ color: palette.green }),
-      parents.length,
-    );
-    this.maskUnderLabels(this.arrows.material as THREE.Material);
-    const dummy = new THREE.Object3D(),
-      direction = new THREE.Vector3();
-    parents.forEach((edge, i) => {
-      const a = world.points.get(edge.from)!,
-        b = world.points.get(edge.to)!;
-      dummy.position.set(
-        a.x + (b.x - a.x) * 0.6,
-        a.y + (b.y - a.y) * 0.6,
-        a.z + (b.z - a.z) * 0.6,
-      );
-      direction.set(b.x - a.x, b.y - a.y, b.z - a.z).normalize();
-      dummy.quaternion.setFromUnitVectors(
-        new THREE.Vector3(0, 1, 0),
-        direction,
-      );
-      dummy.updateMatrix();
-      this.arrows.setMatrixAt(i, dummy.matrix);
-    });
-    this.arrows.computeBoundingSphere();
-    this.scene.add(this.arrows);
+    this.arrows = new SpatialArrowMotion(world, palette.green, this.drawArrowFrame,
+      () => !this.stopped && !this.hidden && !this.contextLost && !this.host.closest("[inert]"));
+    this.maskUnderLabels(this.arrows.mesh.material);
+    this.arrows.mesh.renderOrder = 3;
+    this.scene.add(this.arrows.mesh);
     this.atlas = new SpatialCardAtlas(
       palette,
       this.invalidate,
@@ -285,6 +269,7 @@ export class SpatialRenderer {
     this.observer = new ResizeObserver(this.resize);
     this.observer.observe(host);
     document.addEventListener("visibilitychange", this.visibility);
+    this.reduced.addEventListener("change", this.invalidate);
     canvas.addEventListener("webglcontextlost", this.lost);
     canvas.addEventListener("webglcontextrestored", this.restored);
     canvas.addEventListener("pointerdown", this.pointerDown);
@@ -392,7 +377,9 @@ export class SpatialRenderer {
     this.invalidate();
   };
   private maskUnderLabels(material: THREE.Material) {
-    material.onBeforeCompile = (shader) => {
+    const previous = material.onBeforeCompile;
+    material.onBeforeCompile = (shader, renderer) => {
+      previous.call(material, shader, renderer);
       shader.uniforms.labelMask = { value: this.labelMask.texture };
       shader.uniforms.viewport = this.viewport;
       shader.fragmentShader =
@@ -405,6 +392,7 @@ export class SpatialRenderer {
   private visibility = () => {
     this.hidden = document.hidden;
     if (this.hidden) {
+      this.arrows.stop();
       cancelAnimationFrame(this.frame);
       this.frame = 0;
     } else this.invalidate();
@@ -412,6 +400,7 @@ export class SpatialRenderer {
   private lost = (event: Event) => {
     event.preventDefault();
     this.contextLost = true;
+    this.arrows.stop();
     cancelAnimationFrame(this.frame);
     this.frame = 0;
     this.callbacks.failure();
@@ -553,6 +542,7 @@ export class SpatialRenderer {
   private render = (time: number) => {
     this.frame = 0;
     if (this.stopped || this.hidden || this.contextLost) return;
+    this.arrows.stop();
     const started = performance.now();
     if (this.fly) {
       const p = Math.min(
@@ -648,6 +638,10 @@ export class SpatialRenderer {
     });
     centers.needsUpdate = tiles.needsUpdate = layouts.needsUpdate = true;
     this.cards.geometry.instanceCount = portraitIds.length;
+    const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+    this.arrows.refresh(this.camera, !this.reduced.matches && navigator.hardwareConcurrency > 2 &&
+      (memory === undefined || memory > 2) && !this.host.closest("[inert]"));
+    this.host.dataset.depthAnimatedArrows = String(this.arrows.count);
     try {
       this.renderer.render(this.scene, this.camera);
     } catch {
@@ -684,6 +678,15 @@ export class SpatialRenderer {
       .map((v) => v.toFixed(2))
       .join(",");
     if (this.fly) this.invalidate();
+    else this.arrows.schedule();
+  };
+  private drawArrowFrame = () => {
+    // Reuse the uploaded scene and screen mask. Only one shader time uniform
+    // changes; topology, projections and portrait/text buffers remain cached.
+    if (this.frame || this.fly) return;
+    try { this.renderer.render(this.scene, this.camera); }
+    catch { this.lost(new Event("webglcontextlost", { cancelable: true })); return; }
+    this.host.dataset.depthArrowFrames = String(Number(this.host.dataset.depthArrowFrames || 0) + 1);
   };
   private move(position: THREE.Vector3, target: THREE.Vector3, duration = 620) {
     this.setHover(null);
@@ -803,6 +806,7 @@ export class SpatialRenderer {
     this.clearPress();
     this.observer.disconnect();
     document.removeEventListener("visibilitychange", this.visibility);
+    this.reduced.removeEventListener("change", this.invalidate);
     const canvas = this.renderer.domElement;
     canvas.removeEventListener("webglcontextlost", this.lost);
     canvas.removeEventListener("webglcontextrestored", this.restored);
@@ -816,7 +820,7 @@ export class SpatialRenderer {
     this.atlas.dispose();
     this.nameAtlas.dispose();
     this.labelMask.dispose();
-    for (const object of [this.cards, this.names, this.edges, this.arrows]) {
+    for (const object of [this.cards, this.names, this.edges]) {
       object.geometry.dispose();
       const materials = Array.isArray(object.material)
         ? object.material

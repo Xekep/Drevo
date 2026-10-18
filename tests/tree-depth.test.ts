@@ -211,6 +211,38 @@ test("3D has real depth and keeps ordered generations in either direction", () =
   }
 });
 
+test("single-child 3D lines remain vertical without accumulating depth over generations", () => {
+  const people = Array.from({ length: 40 }, (_, i) => p(String(i), i ? [String(i - 1)] : []));
+  for (const reverse of [false, true]) {
+    const geometry = fixtureGeometry(people, reverse);
+    const before = structuredClone(geometry);
+    const world = spatialWorld(new Map(people.map(person => [person.id, person])), geometry);
+    const root = world.points.get("0")!;
+    for (let i = 1; i < people.length; i++) {
+      const point = world.points.get(String(i))!;
+      assert.equal(point.x, root.x);
+      assert.equal(point.z, root.z);
+      assert.equal(point.y - root.y, -i * 400 * (reverse ? -1 : 1));
+    }
+    assert.equal(world.connections.length, 39);
+    assert.deepEqual(geometry, before);
+  }
+});
+
+test("3D forks separate around the family axis and their unary continuations keep that axis", () => {
+  const people = [p("a", [], ["b"]), p("b", [], ["a"]),
+    p("c", ["a", "b"]), p("d", ["a", "b"]), p("e", ["c"]), p("f", ["d"])];
+  const world = spatialWorld(new Map(people.map(person => [person.id, person])), fixtureGeometry(people));
+  const [a, b, c, d, e, f] = ["a", "b", "c", "d", "e", "f"].map(id => world.points.get(id)!);
+  for (const axis of ["x", "z"] as const) {
+    assert.ok(Math.abs((c[axis] + d[axis] - a[axis] - b[axis]) / 2) < 1e-8);
+    assert.equal(e[axis], c[axis]);
+    assert.equal(f[axis], d[axis]);
+  }
+  assert.notEqual(c.x, d.x);
+  assert.notEqual(c.z, d.z);
+});
+
 test("a real family fork has noncoplanar depth instead of a single bent sheet", () => {
   const people = [
     p("a", [], ["b"]),

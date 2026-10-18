@@ -14,7 +14,7 @@ export class SpatialLabelMask {
     this.texture.minFilter = this.texture.magFilter = NearestFilter;
   }
   update(
-    people: readonly { x: number; y: number; size: number }[],
+    people: readonly { x: number; y: number; size: number; z: number }[],
     width: number,
     height: number,
   ) {
@@ -22,8 +22,12 @@ export class SpatialLabelMask {
     c.clearRect(0, 0, 512, 512);
     c.save();
     c.scale(512 / width, 512 / height);
-    c.fillStyle = "#fff";
-    for (const p of people) {
+    // Paint far to near so overlapping masks retain the closest billboard.
+    // RGB holds the same 24-bit window depth used by gl_FragCoord.z, rather
+    // than treating every label as an overlay in front of the whole world.
+    for (const p of [...people].sort((a, b) => b.z - a.z)) {
+      const depth = Math.round(Math.max(0, Math.min(1, p.z * 0.5 + 0.5)) * 0xffffff);
+      c.fillStyle = `rgb(${depth >>> 16},${(depth >>> 8) & 255},${depth & 255})`;
       c.beginPath();
       c.arc(p.x, p.y - p.size * 0.24, p.size * 0.205 + 1, 0, Math.PI * 2);
       c.fill();

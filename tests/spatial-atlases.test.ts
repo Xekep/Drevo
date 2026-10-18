@@ -166,7 +166,7 @@ test("screen mask remains bounded across large viewports and dense archives", (t
   const mask = new SpatialLabelMask();
   t.after(() => mask.dispose());
   mask.update(
-    Array.from({ length: 1000 }, (_, i) => ({ x: i, y: i / 2, size: 40 })),
+    Array.from({ length: 1000 }, (_, i) => ({ x: i, y: i / 2, size: 40, z: 0.99 })),
     7680,
     4320,
   );

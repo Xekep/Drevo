@@ -250,12 +250,34 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   await expect(page.locator(".tree-spatial-people")).toHaveCount(0);
   expect(await world(page).getAttribute("data-depth-camera")).toBe(atSibling);
   await settle(page);
-  // In an idle scene no requestAnimationFrame/render loop remains alive.
+  // Nearby arrow motion must not rerun projection or upload the scene buffers.
   await page.waitForTimeout(700);
   const frames = await world(page).getAttribute("data-depth-frames");
   await page.waitForTimeout(500);
   expect(await world(page).getAttribute("data-depth-frames")).toBe(frames);
   expect(errors).toEqual([]);
+});
+
+test("near-camera arrow motion reuses the scene and stops with reduced motion", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 8 });
+    Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
+  });
+  await setup(page);
+  await settle(page);
+  await expect.poll(async () => Number(await world(page).getAttribute("data-depth-animated-arrows"))).toBeGreaterThan(0);
+  expect(Number(await world(page).getAttribute("data-depth-animated-arrows"))).toBeLessThanOrEqual(64);
+  const requests = await workerRequests(page);
+  const textures = await world(page).getAttribute("data-depth-textures");
+  const frame = Number(await world(page).getAttribute("data-depth-arrow-frames") || 0);
+  await expect.poll(async () => Number(await world(page).getAttribute("data-depth-arrow-frames") || 0)).toBeGreaterThan(frame);
+  await expect(world(page)).toHaveAttribute("data-depth-textures", textures!);
+  expect(await workerRequests(page)).toBe(requests);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(world(page)).toHaveAttribute("data-depth-animated-arrows", "0");
+  const stopped = await world(page).getAttribute("data-depth-arrow-frames");
+  await page.waitForTimeout(300);
+  await expect(world(page)).toHaveAttribute("data-depth-arrow-frames", stopped!);
 });
 
 test("3D assistant follows the visible camera controls and the mobile canvas boundary", async ({ page, isMobile }, info) => {
