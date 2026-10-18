@@ -52,7 +52,11 @@ export function bundleFamilyBranches(geometry: TreeGeometry): TreeGeometry {
       !cards.query(bounds(trimmed[i], b)).some((box) => segmentHitsBox(trimmed[i], b, box)));
   };
   const groups = new Map<string, UnionBranch[]>();
+  const byUnion = new Map<string, UnionBranch[]>();
   for (const branch of branches) {
+    const family = byUnion.get(branch.union) || [];
+    family.push(branch);
+    byUnion.set(branch.union, family);
     const points = branch.route.points, start = points[0], end = points.at(-1);
     const level = levels.get(branch.target);
     if (!branch.id.startsWith("child:") || !start || !end || level === undefined ||
@@ -78,6 +82,21 @@ export function bundleFamilyBranches(geometry: TreeGeometry): TreeGeometry {
       .sort((a, b) => Math.abs(a - middle) - Math.abs(b - middle) || sign * (a - b))
       .slice(0, 12);
     const before = siblings.map((b) => contacts(b.route.points, b));
+    const footprint = (replacement?: Map<string, Point[]>) => {
+      const found = new Map<string, { contacts: Set<string>; crossings: Set<string> }>();
+      for (const member of byUnion.get(siblings[0].union)!) {
+        const branch = current.get(member.id)!;
+        for (const [id, counts] of contacts(replacement?.get(member.id) || branch.route.points, branch)) {
+          const union = current.get(id)!.union;
+          const list = found.get(union) || { contacts: new Set<string>(), crossings: new Set<string>() };
+          counts.contacts.forEach((key) => list.contacts.add(key));
+          counts.crossings.forEach((key) => list.crossings.add(key));
+          found.set(union, list);
+        }
+      }
+      return found;
+    };
+    const familyBefore = footprint();
     for (const y of candidates) {
       const routes = siblings.map((branch) => {
         const end = branch.route.points.at(-1)!;
@@ -88,6 +107,10 @@ export function bundleFamilyBranches(geometry: TreeGeometry): TreeGeometry {
           [...contacts(points, siblings[i])].some(([id, counts]) =>
             counts.contacts.size > (before[i].get(id)?.contacts.size || 0) ||
             counts.crossings.size > (before[i].get(id)?.crossings.size || 0)))) continue;
+      const familyAfter = footprint(new Map(siblings.map((branch, i) => [branch.id, routes[i]])));
+      if ([...familyAfter].some(([union, counts]) =>
+        counts.contacts.size > (familyBefore.get(union)?.contacts.size || 0) ||
+        counts.crossings.size > (familyBefore.get(union)?.crossings.size || 0))) continue;
       siblings.forEach((branch, i) => {
         const updated = { ...branch, route: { ...branch.route, points: routes[i] } };
         current.set(branch.id, updated);

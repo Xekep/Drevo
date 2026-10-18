@@ -20,6 +20,7 @@ import type { FamilyLink } from "./types.ts";
 import { repairFamilyRoutes } from "./family-route-repair.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
+import { spaceFamilyRows } from "./family-row-spacing.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
 import { optimizeFamilyRows, refineColdPlacement } from "./family-row-order.ts";
@@ -1271,5 +1272,8 @@ export async function unionGeometry(
       ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
     })).geometry;
   }
+  best = spaceFamilyRows(best, size, (geometry) => ({
+    ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
+  }));
   return bundleFamilyBranches(best);
 }

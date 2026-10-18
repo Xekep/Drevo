@@ -71,6 +71,21 @@ test("different unions, junctions and generations never merge even when routes a
   }
 });
 
+test("one shared foreign-family crossing cannot split into two crossings", () => {
+  const input = fixture();
+  input.positions[1][1].x = 300;
+  input.positions[2][1].x = 600;
+  input.branches!.forEach((branch, i) => {
+    const x = 410 + i * 300;
+    branch.route.points = [{ x: 110, y: 84 }, { x: 110, y: 280 }, { x, y: 280 }, { x, y: 400 }];
+  });
+  input.branches!.push({ id: "pair:foreign", union: "foreign", source: "x", target: "y", relations: [],
+    route: { sourceHandle: "right", targetHandle: "left", points: [{ x: 0, y: 260 }, { x: 1000, y: 260 }] } });
+  const result = bundleFamilyBranches(input);
+  assert.deepEqual(result.branches!.slice(0, 2).map(horizontal), [[280], [280]],
+    "the middle corridor would split a shared trunk contact into two child-leg contacts");
+});
+
 test("shared sibling corridors mirror exactly with ancestors below", () => {
   const input = fixture(), reversed = structuredClone(input);
   reversed.reverse = true;
