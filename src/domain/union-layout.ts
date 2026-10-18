@@ -1267,13 +1267,14 @@ export async function unionGeometry(
       }
     }
   }
+  if (!previous) best = spaceFamilyRows(best, size, (geometry) => ({
+    ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
+  }));
+  best = bundleFamilyBranches(best);
   if (previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE) {
     best = repairFamilyRoutes(best, size, (geometry) => ({
       ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
     })).geometry;
   }
-  best = spaceFamilyRows(best, size, (geometry) => ({
-    ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
-  }));
   return bundleFamilyBranches(best);
 }
