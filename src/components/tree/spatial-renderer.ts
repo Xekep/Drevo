@@ -11,6 +11,13 @@ import { SpatialCardAtlas, type SpatialPalette } from "./spatial-card-atlas";
 import { SpatialNameAtlas } from "./spatial-name-atlas";
 import { SpatialLabelMask } from "./spatial-label-mask";
 import { SpatialArrowMotion } from "./spatial-arrow-motion";
+import {
+  edgeEndpointClip,
+  edgeEndpointFragmentDeclarations,
+  edgeEndpointVertex,
+  edgeEndpointVertexDeclarations,
+  setSpatialEdgeEndpoints,
+} from "./spatial-edge-occlusion";
 
 type Callbacks = {
   profile: (id: string) => void;
@@ -72,6 +79,7 @@ export class SpatialRenderer {
   private nameAtlas: SpatialNameAtlas;
   private labelMask = new SpatialLabelMask();
   private viewport = { value: new THREE.Vector2(1, 1) };
+  private labelViewport = { value: new THREE.Vector2(1, 1) };
   private minPixels = { value: 96 };
   private hoverCenter = { value: new THREE.Vector3() };
   private hoverEnabled = { value: 0 };
@@ -160,6 +168,7 @@ export class SpatialRenderer {
       linePositions.push(a.x, a.y, a.z, b.x, b.y, b.z);
     }
     const lineGeometry = new THREE.BufferGeometry();
+    setSpatialEdgeEndpoints(lineGeometry, world, world.connections);
     lineGeometry.setAttribute(
       "position",
       new THREE.Float32BufferAttribute(linePositions, 3),
@@ -374,6 +383,7 @@ export class SpatialRenderer {
       this.width * this.renderer.getPixelRatio(),
       this.height * this.renderer.getPixelRatio(),
     );
+    this.labelViewport.value.set(this.width, this.height);
     this.invalidate();
   };
   private maskUnderLabels(material: THREE.Material) {
@@ -382,10 +392,16 @@ export class SpatialRenderer {
       previous.call(material, shader, renderer);
       shader.uniforms.labelMask = { value: this.labelMask.texture };
       shader.uniforms.viewport = this.viewport;
+      shader.uniforms.labelViewport = this.labelViewport;
+      shader.uniforms.labelFocal = this.cards.material.uniforms.focal;
+      shader.uniforms.labelMinPixels = this.minPixels;
+      shader.uniforms.labelMaxPixels = this.cards.material.uniforms.maxPixels;
+      shader.vertexShader = `${edgeEndpointVertexDeclarations}\n${shader.vertexShader}`
+        .replace("#include <begin_vertex>", `#include <begin_vertex>\n${edgeEndpointVertex}`);
       shader.fragmentShader =
-        `${labelDeclarations}\n${shader.fragmentShader}`.replace(
+        `${labelDeclarations}\n${edgeEndpointFragmentDeclarations}\n${shader.fragmentShader}`.replace(
           "#include <clipping_planes_fragment>",
-          `#include <clipping_planes_fragment>\n${labelClip}`,
+          `#include <clipping_planes_fragment>\n${edgeEndpointClip}\n${labelClip}`,
         );
     };
   }

@@ -4,6 +4,80 @@ import sharp from "sharp";
 import type { SpatialRenderer } from "../../src/components/tree/spatial-renderer";
 import type { Person } from "../../src/domain";
 
+for (const arrowsOnly of [false, true]) {
+  test(`incident edges never paint over their endpoint portrait, arrows only=${arrowsOnly}`, async ({ page }, info) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 8 });
+      Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
+    });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 600, height: 600 });
+    const chunk = (await readdir("dist/assets")).find(name => /^spatial-renderer-.*\.js$/.test(name));
+    expect(chunk).toBeTruthy();
+    const png = await sharp({ create: { width: 64, height: 64, channels: 4, background: "#ff0000" } }).png().toBuffer();
+    await page.route("**/media/endpoint-face.png*", route => route.fulfill({ contentType: "image/png", body: png }));
+    await page.goto("/people");
+    await expect(page.getByRole("heading", { name: /^Люди(?:\s|$)/ })).toBeVisible();
+    await page.evaluate(async ({ chunk, arrowsOnly }) => {
+      const module = await import(`/assets/${chunk}`);
+      const Renderer = Object.values(module).find(value => typeof value === "function" && value.prototype?.personAt) as typeof SpatialRenderer;
+      const host = document.createElement("div");
+      host.id = "endpoint-scene";
+      host.style.cssText = "position:fixed;inset:0;width:400px;height:400px;background:#fff;z-index:100";
+      document.body.append(host);
+      const points = new Map([
+        ["face", { x: 0, y: 0, z: 0, angle: 0 }],
+        ["parent", { x: 0, y: 125, z: 600, angle: 0 }],
+      ]);
+      const people = new Map([...points.keys()].map(id => [id, {
+        id, name: id, surname: "", patronymic: "", sex: "u", birth: "", birthPlace: "",
+        photo: id === "face" ? "/media/endpoint-face.png" : undefined,
+        parents: [], spouses: [], sources: [], generation: 1, column: 0,
+      } as Person]));
+      const scene = new Renderer(host, { points,
+        connections: [{ from: "parent", to: "face", type: "parent" }] }, people,
+        { paper: "#fff", ink: "#000", muted: "#00ff00", green: "#00ff00", red: "#900" },
+        { choose() {}, select() {}, profile() {}, failure() { throw Error("WebGL failed"); } });
+      if (arrowsOnly)
+        (scene as unknown as { edges: { visible: boolean } }).edges.visible = false;
+      scene.camera.position.set(0, 0, 1000);
+      scene.controls.target.set(0, 0, 0);
+      scene.controls.update();
+      scene.invalidate();
+      (window as unknown as { endpointScene: SpatialRenderer }).endpointScene = scene;
+    }, { chunk: chunk!, arrowsOnly });
+    const host = page.locator("#endpoint-scene");
+    await expect(host).toHaveAttribute("data-depth-cards", "2");
+    const sample = async () => {
+      const { data, info: pixels } = await sharp(await host.screenshot()).resize(400, 400).raw().toBuffer({ resolveWithObject: true });
+      const offset = (175 * 400 + 210) * pixels.channels;
+      let green = 0;
+      // Include the gap below the portrait: a clipped terminal line must not
+      // reappear between the photograph and the person's name.
+      for (let y = 155; y <= 206; y++) for (let x = 194; x <= 206; x++) {
+        const i = (y * 400 + x) * pixels.channels;
+        if (data[i + 1] > 30 && data[i + 1] > data[i + 2] + 30) green++;
+      }
+      return { red: [...data.subarray(offset, offset + 3)], green };
+    };
+    await expect.poll(sample).toEqual({ red: [255, 0, 0], green: 0 });
+    const calls = await host.getAttribute("data-depth-draw-calls");
+    const textures = await host.getAttribute("data-depth-textures");
+    await host.screenshot({ path: info.outputPath(`endpoint-${arrowsOnly ? "arrow" : "line"}.png`) });
+    // Moving arrows use the same endpoint protection without new textures or
+    // projection work. Check several actual frames, not just a static image.
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await expect(host).toHaveAttribute("data-depth-animated-arrows", "1");
+    for (let frame = 0; frame < 3; frame++) {
+      await page.waitForTimeout(200);
+      expect(await sample()).toEqual({ red: [255, 0, 0], green: 0 });
+    }
+    await expect(host).toHaveAttribute("data-depth-draw-calls", calls!);
+    await expect(host).toHaveAttribute("data-depth-textures", textures!);
+    await page.evaluate(() => (window as unknown as { endpointScene: SpatialRenderer }).endpointScene.dispose());
+  });
+}
+
 test("nearby arrow pixels move without camera motion and stop outside the radius", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 8 });
