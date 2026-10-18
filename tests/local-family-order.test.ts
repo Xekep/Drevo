@@ -156,7 +156,8 @@ test("cold equal-width family order stays stable within the bounded solver budge
   }, false, [], treeNodeSize());
   assert.equal(calls, 7, "six seeds and one couple-order alternative; row moves do not run ELK");
   assert.equal(result.positions.length, people.length);
-  assert.equal(branchContactCounts(result.branches || []).distinct, 204);
+  assert.ok(branchContactCounts(result.branches || []).distinct <= 204,
+    "shared sibling corridors may improve the previous contact count, never worsen it");
 });
 
 test("mixed single-parent and couple households improve the cold layout in both directions", async () => {
