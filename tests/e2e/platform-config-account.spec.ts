@@ -15,9 +15,9 @@ test("platform admin without membership opens global settings and AI without cho
     local: false, yandex: false, vk: false, email: true,
   } }));
   await page.route("**/api/account/archives", (route) => route.fulfill({ json: { archives: [
-    { id: "primary-tree", title: "Основной архив", approved: true, current: true },
-    { id: "other-tree", title: "Другое древо", approved: true, current: false },
-    { id: "hidden-tree", title: "Закрытое дерево", approved: false, current: false },
+    { id: "primary-tree", href: "/a/primary-tree/tree", title: "Основной архив", approved: true, current: true },
+    { id: "other-tree", href: "/a/other-tree/tree", title: "Другое древо", approved: true, current: false },
+    { id: "hidden-tree", href: "/a/hidden-tree/tree", title: "Закрытое дерево", approved: false, current: false },
   ] } }));
   await page.route("**/api/account/sessions", (route) => route.fulfill({ json: {
     currentExpiresAt: null, otherCount: 0,

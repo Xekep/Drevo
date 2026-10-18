@@ -156,3 +156,65 @@ test("a failed schema initialization remains retryable, concurrent callers share
   });
   assert.equal(attempts, 2);
 });
+
+test("extension installation rechecks under its lock when another backend finishes first", async () => {
+  for (const target of [
+    "document_citation_refs",
+    "reserved_tokens",
+    "portrait_url",
+  ]) {
+    let installed = false,
+      probes = 0,
+      schemaTransactions = 0;
+    const query = (sql: string) => {
+      if (sql.includes("pg_advisory_xact_lock")) installed = true;
+      if (sql.includes(target)) {
+        probes++;
+        return { present: installed ? 1 : null };
+      }
+      return { present: 1 };
+    };
+    const db: StoreDatabase = {
+      kind: "postgres",
+      file: "concurrent-schema",
+      archiveId: "concurrent-schema",
+      inTransaction: () => false,
+      canReuseGraphCache: () => true,
+      prepare(_sqlite, sql = "") {
+        return {
+          get: async () => query(sql),
+          all: async () => [],
+          run: async () => ({ changes: 0, lastInsertRowid: 0 }),
+        };
+      },
+      exec: async (_sqlite, sql = "") => {
+        assert.ok(
+          !/CREATE|ALTER/.test(sql),
+          "already installed DDL must not run again",
+        );
+        query(sql);
+      },
+      transaction: async (work) => work(),
+      postgresTransaction: async (work) => {
+        schemaTransactions++;
+        return work({
+          query: async (sql: string) => {
+            assert.ok(
+              !/CREATE|ALTER/.test(sql),
+              "already installed DDL must not run again",
+            );
+            return { rows: [query(sql)] };
+          },
+        } as unknown as pg.PoolClient);
+      },
+      close: async () => {},
+    };
+    await initializePostgresRuntimeSchema(db);
+    assert.equal(probes, 2, `${target}: probe before and after the lock`);
+    assert.equal(
+      schemaTransactions,
+      target === "document_citation_refs" ? 0 : 1,
+      "relation-wide migrations must bypass the archive row-lock transaction",
+    );
+  }
+});
