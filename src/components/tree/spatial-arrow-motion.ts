@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { SpatialWorld } from "../../domain/tree-spatial";
+import { setSpatialEdgeEndpoints } from "./spatial-edge-occlusion.ts";
 
 export const ARROW_MOTION_RADIUS = 2200;
 export const ARROW_MOTION_LIMIT = 64;
@@ -58,6 +59,7 @@ export class SpatialArrowMotion {
     this.visible = visible;
     const parents = world.connections.filter(e => e.type === "parent");
     const geometry = new THREE.ConeGeometry(5, 17, 4);
+    setSpatialEdgeEndpoints(geometry, world, parents, true);
     this.ranges = new THREE.InstancedBufferAttribute(new Float32Array(parents.length * 3), 3);
     const deltas = new THREE.InstancedBufferAttribute(new Float32Array(parents.length * 3), 3);
     geometry.setAttribute("flowRange", this.ranges);
