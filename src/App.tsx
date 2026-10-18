@@ -863,6 +863,7 @@ export default function App() {
             onHelp={() => setHelp(true)}
           />
         </header> : <ArchiveHeader
+          canSearch={Boolean(navigationUser || accountSession?.account)}
           navigation={
             <ArchiveNavigation
               view={view}

@@ -216,7 +216,7 @@ test("a failed portrait falls back to the account initial without hiding the men
   await expect(page.locator(".nav-menu-account")).toBeVisible();
 });
 
-test("a guest has no avatar menu and can still sign in", async ({
+test("a guest sees only about in the header and can still sign in", async ({
   page,
 }) => {
   await page.route("**/api/family?projection=overview", async (route) => {
@@ -231,6 +231,20 @@ test("a guest has no avatar menu and can still sign in", async ({
   );
   await page.goto("/account");
   await expect(page.locator(".archive-more, .nav-account")).toHaveCount(0);
+  const header = page.locator(".archive-header");
+  await expect(header.locator(".archive-search, .nav-sections")).toHaveCount(0);
+  await expect(header.getByRole("button")).toHaveCount(1);
+  const about = header.getByRole("button", { name: "О проекте", exact: true });
+  await expect(about).toBeVisible();
+  await about.click();
+  await expect(page.getByRole("dialog", { name: "О проекте" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(about).toBeFocused();
+  await page.setViewportSize({ width: 320, height: 640 });
+  await expect(about).toBeVisible();
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  )).toBeLessThanOrEqual(1);
   await expect(
     page.getByRole("heading", { name: "Войдите в Drevo" }),
   ).toBeVisible();

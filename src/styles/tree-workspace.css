@@ -1508,6 +1508,10 @@
 .archive-nav .nav-about-menu {
   display: none;
 }
+.archive-nav.is-guest .nav-about {
+  display: flex;
+  margin-left: auto;
+}
 .archive-header-actions .primary-action {
   border-radius: 7px;
   padding: 9px 13px;
