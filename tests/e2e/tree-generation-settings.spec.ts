@@ -261,6 +261,7 @@ test("a 1023-person archive sends only the bounded projection to the layout Work
     }));
     data.treePreferences = {
       ...DEFAULT_TREE_PREFERENCES,
+      fragmentThreshold: 0,
       generationLimits: {
         anchorId: "31",
         ancestors: 3,

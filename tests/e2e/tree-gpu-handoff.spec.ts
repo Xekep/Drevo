@@ -127,7 +127,7 @@ test("ready GPU survives pending native scope without manufacturing exiting card
       attributeFilter: ["class", "data-renderer"],
     });
   });
-  let preferences: TreePreferences = { ...DEFAULT_TREE_PREFERENCES };
+  let preferences: TreePreferences = { ...DEFAULT_TREE_PREFERENCES, fragmentThreshold: 0 };
   await page.route("**/api/tree-preferences", async (route) => {
     if (route.request().method() === "PUT")
       preferences = route.request().postDataJSON();

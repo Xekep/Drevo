@@ -307,7 +307,7 @@ test("middle click hits a person in the Canvas fallback overview of a 600-person
   test.skip(isMobile, "Shortcut for a mouse with a wheel");
   test.setTimeout(90_000);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  let preferences: TreePreferences = { ...DEFAULT_TREE_PREFERENCES };
+  let preferences: TreePreferences = { ...DEFAULT_TREE_PREFERENCES, fragmentThreshold: 0 };
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const archive = await response.json();

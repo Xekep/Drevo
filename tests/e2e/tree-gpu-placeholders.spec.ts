@@ -68,6 +68,7 @@ test("ordinary GPU portraits keep their silhouettes without photo, review or sel
     data.family.links = [];
     data.family.unions = [];
     data.family.photos = [];
+    data.treePreferences = { ...data.treePreferences, fragmentThreshold: 0 };
     data.partial = false;
     data.user.personId = null;
     await route.fulfill({ response, json: data });

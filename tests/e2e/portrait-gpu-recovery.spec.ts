@@ -32,6 +32,7 @@ test("GPU portraits recover after a transient preview denial", async ({ page }) 
     data.family.links = [];
     data.family.unions = [];
     data.family.photos = [];
+    data.treePreferences = { ...data.treePreferences, fragmentThreshold: 0 };
     data.partial = false;
     data.user.personId = null;
     await route.fulfill({ response, json: data });
@@ -105,6 +106,7 @@ test("visible GPU and distant status probes keep their combined request budget",
     data.family.links = [];
     data.family.unions = [];
     data.family.photos = [];
+    data.treePreferences = { ...data.treePreferences, fragmentThreshold: 0 };
     data.partial = false;
     data.user.personId = null;
     await route.fulfill({ response, json: data });

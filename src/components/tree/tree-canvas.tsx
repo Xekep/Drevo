@@ -1342,6 +1342,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const reanchoredFocus = useRef<number | null>(null);
   const chooseFragmentPerson = async (id: string) => {
     if (props.generationLimits && !(await saveGenerationAnchor(id))) return;
+    setIntroCameraFinished(true);
+    setManualCameraOverride(true);
+    setBranchAnchor(null);
+    clearRestoreViewport();
     fragment.choose(id);
     returnToPerson(id);
     setFragmentOwner(null);
@@ -1776,7 +1780,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           {narrow && props.comparisonAction}
           {fragment.active && <div className="tree-fragment-status" role="region" aria-label="Фрагмент большого древа">
             <span>Фрагмент: {visible.size} из {family.people.length}</span>
-            {fragment.continuations.size > 0 && <button type="button" onClick={() => setFragmentOwner(fragment.continuations.keys().next().value || null)}><GitBranch size={15} /> Продолжения ветвей</button>}
+            {fragment.continuations.size > 0 && <button type="button" disabled={growthLocked || layoutBusy} onClick={() => { const id = fragment.continuations.keys().next().value; if (id) toggleBranch(id); }}><GitBranch size={15} /> Продолжения ветвей</button>}
             <button type="button" onClick={fragment.showAll}>Полный обзор</button>
           </div>}
           {generationAnchor && !activeFanAnchor && (

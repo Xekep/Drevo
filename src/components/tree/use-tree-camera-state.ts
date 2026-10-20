@@ -160,7 +160,8 @@ export function useTreeCameraState({
         if (
           manualCameraOverride &&
           !initialViewSent.current &&
-          !(focusReady && focus)
+          !(focusReady && focus) &&
+          !(returnPersonId && returnToken !== lastReturn.current)
         ) {
           initialViewSent.current = true;
           previousContext.current = context;
