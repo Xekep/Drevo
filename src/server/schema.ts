@@ -1241,6 +1241,10 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     }
   }
   const portraitCardsExtension = "2026-09-default-portrait-cards";
+  if (!tableHasColumn(db, "user_tree_preferences", "fragment_threshold"))
+    db.exec(
+      "ALTER TABLE user_tree_preferences ADD COLUMN fragment_threshold INTEGER CHECK(fragment_threshold IS NULL OR fragment_threshold=0 OR fragment_threshold BETWEEN 100 AND 10000)",
+    );
   if (!tableHasColumn(db, "user_tree_preferences", "generation_limits"))
     db.exec(
       "ALTER TABLE user_tree_preferences ADD COLUMN generation_limits TEXT CHECK(generation_limits IS NULL OR json_valid(generation_limits))",

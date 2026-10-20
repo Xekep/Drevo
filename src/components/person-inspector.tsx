@@ -140,6 +140,7 @@ export function PersonInspector({
               <span>Изменить</span>
             </button>
           )}
+          <BookmarkButton target={{ kind: "person", id: person.id }} />
           {canEdit && !detailsLoading && (
             <button
               className="person-relative-button person-primary-action"
@@ -174,7 +175,6 @@ export function PersonInspector({
               <span>Развернуть карточку</span>
             </button>
           )}
-          <BookmarkButton target={{ kind: "person", id: person.id }} />
           {isArchiveOwner(user) && (
             <button
               className="person-history-button"

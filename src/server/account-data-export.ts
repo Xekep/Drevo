@@ -271,7 +271,7 @@ export function accountDataExport(db: StoreDatabase) {
           const saved = await db
             .prepare(
               "",
-              `SELECT reverse_timeline,card_variant,color_scheme,generation_limits,presentation
+              `SELECT reverse_timeline,card_variant,color_scheme,generation_limits,presentation,fragment_threshold
                FROM user_tree_preferences
                WHERE archive_id=? AND user_id=?`,
             )
@@ -551,6 +551,7 @@ export function accountDataExport(db: StoreDatabase) {
                   cardVariant: String(saved.card_variant),
                   colorScheme: String(saved.color_scheme),
                   presentation: String(saved.presentation),
+                  ...(saved.fragment_threshold === null ? {} : { fragmentThreshold: Number(saved.fragment_threshold) }),
                   generationLimits: saved.generation_limits
                     ? JSON.parse(String(saved.generation_limits))
                     : null,

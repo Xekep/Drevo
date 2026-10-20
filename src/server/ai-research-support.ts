@@ -5,6 +5,7 @@ import { isArchiveOwner } from "../domain/access.ts";
 import { fullName } from "../domain/dates.ts";
 import { PEOPLE_FILTER_SCHEMA } from "../domain/research-people-filter.ts";
 import type { Family } from "../domain/types.ts";
+import { archiveTargetPath } from "../domain/archive-links.ts";
 import { type ResearchGraph } from "./research-pdf.ts";
 
 export type ToolCall = {
@@ -402,6 +403,9 @@ export function researchToolStatus(name: string) {
     get_evidence_coverage: "Сверяю записи с прикреплёнными источниками…",
     find_evidence_gaps: "Ищу записи без прикреплённых источников…",
     search_people: "Ищу людей в архиве…",
+    query_events: "Отбираю записанные события…",
+    query_places: "Проверяю места и связанные события…",
+    get_event: "Проверяю событие и его источники…",
     query_people: "Отбираю и считаю людей по условиям…",
     list_people: "Составляю список людей…",
     get_sources: "Изучаю указанные источники…",
@@ -581,6 +585,34 @@ export function repairArchiveMarkers(
       return repaired ? `[[${kind}:${repaired}|${label}]]` : label;
     },
   );
+}
+
+/** Only constructed evidence records from the typed read tools enter this path. */
+export function collectEventEvidenceReferences(
+  value: unknown,
+  people: ReadonlyMap<string, string>,
+  sources: Map<string, Extract<AnswerReference, { kind: "source" }>>,
+) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const row = value as Record<string, unknown>;
+  const accept = (raw: unknown) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+    const evidence = raw as { person?: { id?: string }; event?: { label?: string; href?: string }; sources?: Array<{ title?: string; reference?: string; href?: string }> };
+    const id = evidence.person?.id;
+    if (!id || !people.has(id)) return;
+    const prefix = archiveTargetPath({ kind: "person", id });
+    const add = (label: string | undefined, href: string | undefined, reference?: string) => {
+      if (!label || !href?.startsWith(prefix + "#")) return;
+      if (!/^#drevo-(?:birth|death|event|source|union)-[a-f0-9]{2,16}$/.test(href.slice(prefix.length))) return;
+      sources.set(href, { kind: "source", personId: id, label, url: href, ...(reference ? { reference } : {}) });
+    };
+    add(evidence.event?.label, evidence.event?.href);
+    for (const source of evidence.sources || []) add(source.title, source.href, source.reference);
+  };
+  if (Array.isArray(row.evidence)) row.evidence.forEach(accept);
+  else accept(row.evidence);
+  for (const key of ["events", "places", "people"])
+    if (Array.isArray(row[key])) for (const item of row[key]) collectEventEvidenceReferences(item, people, sources);
 }
 
 export function collectSourceReferences(

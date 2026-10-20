@@ -37,6 +37,8 @@ export type TreePreferences = {
   presentation?: TreePresentation;
   /** Missing on older clients retains the default startup animation. */
   animateOnLoad?: boolean;
+  /** Automatic fragments start at this many accessible people; 0 is manual. */
+  fragmentThreshold?: number;
   /** Missing/null retains the complete view, including disconnected people. */
   generationLimits?: TreeGenerationLimits | null;
 };

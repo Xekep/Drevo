@@ -12,7 +12,19 @@ import { archiveConnections } from "./connections.ts";
 import { repositorySummary } from "./person-sources.ts";
 import type { Family, Person } from "./types.ts";
 import { normalizeResearchText, surnameKeys } from "./research-names.ts";
-import { PEOPLE_FILTER_SCHEMA, queryResearchPeople } from "./research-people-filter.ts";
+import {
+  PEOPLE_FILTER_SCHEMA,
+  queryResearchPeople,
+} from "./research-people-filter.ts";
+import {
+  EVENT_QUERY_SCHEMA,
+  queryResearchEvents,
+  getResearchEvent,
+} from "./research-event-query.ts";
+import {
+  PLACE_QUERY_SCHEMA,
+  queryResearchPlaces,
+} from "./research-place-query.ts";
 
 const graphRelationLabels: Record<string, string> = {
   adoptive_parent: "усыновитель",
@@ -142,6 +154,30 @@ const objectSchema = (
 
 export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
   {
+    name: "query_events",
+    scope: "analysis:read",
+    inputSchema: EVENT_QUERY_SCHEMA,
+    description:
+      "Точный отбор рождений, смертей, жизненных событий, браков и разводов. criteria: type, personId, placeContains, titleContains, yearFrom/yearTo (год начала), sourceType, sourceTitleContains, sourceReferenceContains, hasSources. Поля действуют как И на одно событие; source-поля — на один прикреплённый источник. Один союз считается один раз. Неизвестные даты не совпадают с диапазоном лет. total — все совпадения, events — страница; limit=0 — подсчёт. evidence содержит ссылки на человека, событие и источники с областью их привязки. Не делай вывод о достоверности только по наличию источника.",
+  },
+  {
+    name: "get_event",
+    scope: "analysis:read",
+    inputSchema: objectSchema(
+      { eventId: { type: "string", minLength: 2, maxLength: 1000 } },
+      ["eventId"],
+    ),
+    description:
+      "Получить найденное query_events событие, дату, место и точные ссылки на прикреплённые основания. eventId бери только из результата инструмента, не показывай пользователю. Источники даты, места, события и союза имеют разный scope. В ответе до трёх кратких источников; полный текст доступен по href или через get_sources/get_person.",
+  },
+  {
+    name: "query_places",
+    scope: "analysis:read",
+    inputSchema: PLACE_QUERY_SCHEMA,
+    description:
+      "Отобрать записанные места по nameContains/nameEquals, hasCoordinates и связанному event с критериями query_events. Например места браков 1900–1920 годов с прикреплённым источником указанного типа. Возвращает точные количества событий, фотографий и людей, записанные координаты и ограниченные примеры оснований. Разные исторические названия автоматически не объединяются. limit=0 — подсчёт, offset/limit — страницы.",
+  },
+  {
     name: "get_distribution_statistics",
     description:
       "Точно посчитать частоты и энтропию Шеннона в битах по всей доступной выборке. Выбери признак: фамилия, поколение, пол, десятилетие рождения, место рождения, число известных родителей. Для неоднозначной «энтропии древа» объясни выбранное определение или уточни его. Это не оценка документальных доказательств. Не считай по усечённой странице list_people.",
@@ -173,12 +209,19 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
     description:
       "Отобрать и точно посчитать людей по формальным условиям во всём доступном архиве: фамилия (также при рождении), имя, пол, годы рождения/смерти, возраст смерти, места, занятие, наличие дат/источников/фото, события и записанные родственные связи. Все поля действуют как И; allOf — И, anyOf — ИЛИ, noneOf — исключить совпадения. Группы содержат простые условия без вложенных групп. mode=exclude оставляет остальных, включая неизвестные даты. total — точный размер выборки, people — только страница; limit=0 нужен для одного подсчёта. Не перебирай list_people и не считай по странице. Для показа всей выборки вызови control_archive_view/filter_by_criteria с теми же criteria и mode, не собирай ID.",
     scope: "tree:read",
-    inputSchema: objectSchema({
-      criteria: PEOPLE_FILTER_SCHEMA,
-      mode: { type: "string", enum: ["include", "exclude"], default: "include" },
-      offset: { type: "integer", minimum: 0, maximum: 1_000_000, default: 0 },
-      limit: { type: "integer", minimum: 0, maximum: 100, default: 50 },
-    }, ["criteria"]),
+    inputSchema: objectSchema(
+      {
+        criteria: PEOPLE_FILTER_SCHEMA,
+        mode: {
+          type: "string",
+          enum: ["include", "exclude"],
+          default: "include",
+        },
+        offset: { type: "integer", minimum: 0, maximum: 1_000_000, default: 0 },
+        limit: { type: "integer", minimum: 0, maximum: 100, default: 50 },
+      },
+      ["criteria"],
+    ),
   },
   {
     name: "search_people",
@@ -552,9 +595,11 @@ function minimumTokenSimilarity(token: string) {
 function withoutResearchCitations(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutResearchCitations);
   if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => key !== "sources" && key !== "source")
-    .map(([key, nested]) => [key, withoutResearchCitations(nested)]));
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== "sources" && key !== "source")
+      .map(([key, nested]) => [key, withoutResearchCitations(nested)]),
+  );
 }
 
 function cleanPerson(person: Person) {
@@ -600,11 +645,19 @@ function relativeRole(type: string, direction: "from" | "to", person: Person) {
       : child;
   if (type === "foster_parent")
     return direction === "from"
-      ? female ? "приёмная мать" : male ? "приёмный отец" : "приёмный родитель"
+      ? female
+        ? "приёмная мать"
+        : male
+          ? "приёмный отец"
+          : "приёмный родитель"
       : child;
   if (type === "presumed_parent")
     return direction === "from"
-      ? female ? "предполагаемая мать" : male ? "предполагаемый отец" : "предполагаемый родитель"
+      ? female
+        ? "предполагаемая мать"
+        : male
+          ? "предполагаемый отец"
+          : "предполагаемый родитель"
       : child;
   if (type === "step_parent")
     return direction === "from"
@@ -1090,7 +1143,14 @@ export function executeResearchTool(
       ? (rawArgs as Record<string, unknown>)
       : {};
 
-  if (name === "query_people") return queryResearchPeople(family, rawArgs);
+  if (name === "query_people")
+    return queryResearchPeople(family, rawArgs, sourceAccess);
+  if (name === "query_events")
+    return queryResearchEvents(family, rawArgs, sourceAccess);
+  if (name === "query_places")
+    return queryResearchPlaces(family, rawArgs, sourceAccess);
+  if (name === "get_event")
+    return getResearchEvent(family, rawArgs, sourceAccess);
 
   if (name === "get_distribution_statistics")
     return distributionStatistics(
@@ -1487,7 +1547,13 @@ export function executeResearchTool(
   if (name === "get_relationship") {
     const first = personOrThrow(family, stringArg(args, "firstPersonId")),
       second = personOrThrow(family, stringArg(args, "secondPersonId")),
-      relation = analyzeKinship(first, second, family.people, family.links, family.unions);
+      relation = analyzeKinship(
+        first,
+        second,
+        family.people,
+        family.links,
+        family.unions,
+      );
     const people = new Map(family.people.map((person) => [person.id, person]));
     const pathIds = new Set(relation.path),
       pathPeople = family.people.filter((person) => pathIds.has(person.id)),
@@ -1666,7 +1732,13 @@ export function executeResearchTool(
           });
       for (const source of sourceAccess ? person.sources : [])
         if (
-          contains([source.title, source.type, source.reference, repositorySummary(source), source.note])
+          contains([
+            source.title,
+            source.type,
+            source.reference,
+            repositorySummary(source),
+            source.note,
+          ])
         )
           matches.push({
             kind: "source",
@@ -1950,7 +2022,9 @@ export function executeResearchTool(
         (person) =>
           person.sources.length > 0 ||
           (person.events || []).some((event) => event.sources?.length) ||
-          (person.awards || []).some((award) => award.source || award.sources?.length),
+          (person.awards || []).some(
+            (award) => award.source || award.sources?.length,
+          ),
       ).length;
     return {
       anchor: { id: anchor.id, name: fullName(anchor) },

@@ -76,6 +76,7 @@ import {
   archiveGraph,
   collectPersonReferences,
   collectSourceReferences,
+  collectEventEvidenceReferences,
   containsInternalSelectionText,
   containsInternalToolText,
   CONTROL_VIEW_TOOL,
@@ -342,6 +343,8 @@ export function createResearchRunner({
         "Опирайся только на данные инструментов и слова пользователя.",
         "Не превращай предположение в факт. Явно разделяй подтверждённые сведения, вычисляемые противоречия и гипотезы для дальнейшего поиска.",
         "Если для ответа нужны данные архива, вызывай инструменты вместо догадок.",
+        "Для точного списка и подсчёта событий используй query_events, для мест — query_places; limit=0 возвращает только точный total. Не считай по странице. В query_places.criteria.event все ограничения относятся к одному событию. Для людей с событием в месте и источником указанного типа используй query_people с eventType/eventPlaceContains/eventYearFrom/eventYearTo/eventSourceType: это одно событие и один его источник, а не разные записи человека. Браки и разводы из общей записи союза поддерживаются; общие события супругов считаются один раз.",
+        "В результатах query_events/get_event/query_places/query_people evidence содержит человека, событие и прикреплённые источники. Связывай конкретный вывод с подходящим основанием готовой Markdown-ссылкой из href, прямо в тексте. Не выводи eventId и другие служебные идентификаторы. scope=date/place/event/union обозначает область источника: источник союза не является отдельным доказательством даты, а общий источник карточки не доказывает рождение или брак. Если источника нет, называй факт записанными сведениями, а не подтверждённым фактом. Не выдумывай ссылки, источники и недостающие даты.",
         "Для частот и энтропии вызывай get_distribution_statistics. У «энтропии древа» нет одного определения: назови выбранное распределение и формулу либо уточни задачу. Не выдавай распределение фамилий за меру документальной достоверности. Не выполняй сложные вычисления в уме и не считай весь архив по усечённой странице списка.",
         "Для вопроса о документальной обоснованности сначала получи get_evidence_coverage и используй summary всей выборки. Счётчики источников и наличие прикреплённого файла не доказывают факт. Если содержимое документов не проверено, явно скажи, что оцениваешь только оформление ссылок; не объявляй исследование недостаточным или доказанным по одному этому показателю.",
         "Для продолжительности жизни вызывай get_lifespan_statistics: по умолчанию учитывай и детские смерти; adultsOnly=true только если пользователь просит взрослых. Используй sampleSize и approximateDates для оговорки о выборке и приблизительности. Живущие не входят в среднюю завершённую жизнь. Вставляй готовое поле mermaid без изменения чисел.",
@@ -532,6 +535,9 @@ export function createResearchRunner({
           [
             "search_people",
             "query_people",
+            "query_events",
+            "query_places",
+            "get_event",
             "get_person",
             "get_sources",
             "get_evidence_coverage",
@@ -1696,6 +1702,8 @@ export function createResearchRunner({
             graphInPdfRequested ? "PDF со схемой связей готов" : "PDF готов",
           );
         collectPersonReferences(result, peopleById, referencedPeople);
+        if (["query_events", "query_places", "get_event", "query_people"].includes(call.function.name))
+          collectEventEvidenceReferences(result, peopleById, referencedSources);
         if (
           (call.function.name === "get_relationship" ||
             call.function.name === "get_genealogy_graph" ||

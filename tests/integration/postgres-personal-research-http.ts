@@ -32,6 +32,17 @@ export async function verifyPersonalResearchHttp(
     return response.json();
   };
   const initial = await read("/api/family");
+  const originalPreferences = await read("/api/tree-preferences");
+  const readerPreferences = await read("/api/tree-preferences", true);
+  const preferenceHeaders = new Headers(ownerHeaders);
+  preferenceHeaders.set("Content-Type", "application/json");
+  const configured = await fetch(base + "/api/tree-preferences", { method: "PUT", headers: preferenceHeaders,
+    body: JSON.stringify({ ...originalPreferences, fragmentThreshold: 1000 }) });
+  assert.equal(configured.status, 200, await configured.clone().text());
+  assert.equal((await read("/api/tree-preferences")).fragmentThreshold, 1000);
+  assert.deepEqual(await read("/api/tree-preferences", true), readerPreferences);
+  await fetch(base + "/api/tree-preferences", { method: "PUT", headers: preferenceHeaders,
+    body: JSON.stringify({ ...originalPreferences, fragmentThreshold: originalPreferences.fragmentThreshold ?? 500 }) });
   const person = initial.family.people[0];
   assert.ok(person, "the synthetic runtime has an accessible person");
   let filterId: string | undefined;

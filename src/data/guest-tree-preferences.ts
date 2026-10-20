@@ -2,6 +2,7 @@ import {
   isTreeGenerationLimits,
   type TreePreferences,
 } from "../domain/tree-preferences.ts";
+import { isFragmentThreshold } from "../domain/tree-fragment.ts";
 
 const KEY = "drevo:guest-tree-preferences:v1";
 
@@ -19,6 +20,8 @@ export function readGuestTreePreferences(
           ? value.reverseTimeline
           : fallback.reverseTimeline,
       cardVariant: "portrait",
+      ...(isFragmentThreshold(value.fragmentThreshold)
+        ? { fragmentThreshold: value.fragmentThreshold } : {}),
       presentation: ["depth", "flat"].includes(value.presentation) ? value.presentation : fallback.presentation || "flat",
       animateOnLoad:
         typeof value.animateOnLoad === "boolean"
@@ -43,6 +46,8 @@ export function writeGuestTreePreferences(value: TreePreferences) {
       JSON.stringify({
         reverseTimeline: value.reverseTimeline,
         cardVariant: "portrait",
+        ...(isFragmentThreshold(value.fragmentThreshold)
+          ? { fragmentThreshold: value.fragmentThreshold } : {}),
         presentation: value.presentation || "flat",
         animateOnLoad: value.animateOnLoad ?? true,
         colorScheme: value.colorScheme,

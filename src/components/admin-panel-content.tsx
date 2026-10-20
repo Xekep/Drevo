@@ -9,6 +9,7 @@ import {
   Download,
   ShieldCheck,
   Users,
+  UserPlus,
   History,
   Link2,
   Trash2,
@@ -66,7 +67,7 @@ const ADMIN_SECTIONS = [
     label: "Доступ",
     items: [
       { id: "users", label: "Участники", icon: Users },
-      { id: "invitations", label: "Приглашения", icon: Link2 },
+      { id: "invitations", label: "Приглашения", icon: UserPlus },
       { id: "shares", label: "Общий доступ", icon: Link2 },
       { id: "publications", label: "Можно найти", icon: ScanSearch },
       { id: "matches", label: "Связи древ", icon: GitCompareArrows },
