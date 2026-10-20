@@ -7,6 +7,7 @@ import { PersonPanel } from "./person-panel";
 import { PersonHints } from "./person-hints";
 import { PersonPhotoAlbum } from "./person-photo-album";
 import { CopyArchiveLink } from "./copy-archive-link";
+import { BookmarkButton } from "./personal-bookmarks";
 import { LazyChunkBoundary } from "./lazy-chunk-boundary";
 import { loadLazyModule } from "./lazy-section-recovery";
 import type { Connection } from "../domain";
@@ -63,6 +64,7 @@ export function PersonInspector({
   uploadPortrait,
   busy = false,
   onConnection,
+  onArchiveChanged,
 }: {
   person: Person;
   family: Family;
@@ -88,6 +90,7 @@ export function PersonInspector({
   uploadPortrait?: (file: File) => Promise<string>;
   busy?: boolean;
   onConnection?: (connection: Connection & { hint?: string }) => void;
+  onArchiveChanged?: () => void;
 }) {
   const [adding, setAdding] = useState(false),
     [type, setType] = useState<"child" | ConnectionType>("child");
@@ -171,6 +174,7 @@ export function PersonInspector({
               <span>Развернуть карточку</span>
             </button>
           )}
+          <BookmarkButton target={{ kind: "person", id: person.id }} />
           {isArchiveOwner(user) && (
             <button
               className="person-history-button"
@@ -201,7 +205,7 @@ export function PersonInspector({
                 </div>
               }
             >
-              <AuditLog personId={person.id} />
+              <AuditLog personId={person.id} onChanged={onArchiveChanged} />
             </Suspense>
           </LazyChunkBoundary>
         </EditorDialog>

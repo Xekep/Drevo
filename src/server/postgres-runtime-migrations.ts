@@ -14,6 +14,11 @@ export const postgresRuntimeMigrations: ReadonlyArray<
   ]
 > = [
   [
+    "SELECT 1 AS present WHERE to_regclass('personal_bookmarks') IS NOT NULL AND to_regclass('personal_people_filters') IS NOT NULL AND to_regclass('audit_reverts') IS NOT NULL",
+    "107_personal_research.sql",
+    { transaction: "schema" },
+  ],
+  [
     "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='user_tree_preferences' AND column_name='presentation'",
     "106_tree_depth_presentation.sql",
   ],

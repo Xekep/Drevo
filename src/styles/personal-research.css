@@ -1,0 +1,267 @@
+.archive-nav .nav-bookmarks {
+  order: 5;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  justify-content: center;
+  color: var(--ink);
+  background: transparent;
+}
+.nav-bookmarks:hover,
+.bookmark-button:hover {
+  background: #edf1e6;
+}
+.bookmark-button {
+  flex: none;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 7px;
+}
+.bookmark-button[aria-pressed="true"] {
+  color: #436337;
+  background: #edf1e6;
+}
+.bookmark-button svg {
+  flex: none;
+}
+.photo-toolbar > .bookmark-button {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  background: #ffffff0d;
+  color: #fff;
+}
+.bookmark-error {
+  font-size: 12px;
+}
+.bookmarks-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 12px;
+  width: min(360px, calc(100vw - 16px));
+  max-height: min(480px, calc(100dvh - 100px));
+  overflow: auto;
+  border: 1px solid #dce4d5;
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 14px/1.4 var(--sans);
+}
+.bookmarks-popover > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.bookmarks-popover h2 {
+  font: 600 16px/1.3 var(--sans);
+  margin: 0;
+}
+.bookmarks-popover > input {
+  width: 100%;
+}
+.bookmarks-popover ul,
+.saved-people-filters ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+.bookmarks-popover li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #e0e5dc;
+}
+.bookmarks-popover li a {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 9px 0;
+  color: inherit;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.bookmarks-popover li a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.bookmarks-popover small {
+  font-size: 12px;
+  color: #52664f;
+}
+.people-directory > ul > li:has(> .bookmark-button) {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.people-directory > ul > li > .directory-person {
+  flex: 1;
+  min-width: 0;
+}
+.people-directory > ul > li > .bookmark-button {
+  margin-right: 8px;
+}
+.people-filter-builder {
+  margin: 0 0 16px;
+}
+.people-filter-builder button,
+.audit-undo button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+}
+.people-filter-builder button > svg,
+.audit-undo button > svg {
+  flex: none;
+}
+.people-filter-builder > button {
+  margin: 0 8px 6px 0;
+}
+.people-filter-panel {
+  max-width: 920px;
+  padding: 14px 0;
+  border-block: 1px solid #dce4d5;
+}
+.filter-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.people-filter-rows {
+  display: grid;
+  gap: 8px;
+}
+.people-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.people-filter-row > select:first-child {
+  flex: 1 1 240px;
+}
+.people-filter-row > input,
+.people-filter-row > select:nth-child(2) {
+  flex: 1 1 180px;
+  min-width: 100px;
+}
+.people-filter-row > .person-search {
+  flex: 1 1 220px;
+}
+.people-filter-row > .icon-button {
+  flex: none;
+}
+.people-filter-row input,
+.people-filter-row select,
+.filter-mode select,
+.saved-people-filters input {
+  min-height: 38px;
+  max-width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.people-filter-row input,
+.saved-people-filters input,
+.bookmarks-popover > input {
+  border: 1px solid #dce4d3;
+  border-radius: 8px;
+  background: #fffef9;
+  color: var(--ink);
+}
+.people-filter-row > input {
+  width: 0;
+}
+.filter-actions,
+.saved-people-filters form,
+.audit-undo .form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.filter-actions > span {
+  font-size: 13px;
+}
+.saved-people-filters form > input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.saved-people-filters li {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 6px 8px 0 0;
+}
+.saved-people-filters li > button:first-child {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.audit-undo {
+  margin-top: 12px;
+  font-size: 13px;
+}
+.audit-undo-preview {
+  padding-block: 8px;
+}
+.audit-undo-preview > p {
+  margin: 0 0 8px;
+}
+.audit-undo-preview ul {
+  padding-left: 20px;
+  max-height: 180px;
+  overflow: auto;
+}
+.document-item-row:has(> .bookmark-button) .document-item {
+  padding-right: 60px;
+}
+.document-item-row.can-edit:has(> .bookmark-button) .document-item {
+  padding-right: 144px;
+}
+.document-item-row > .bookmark-button {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+}
+.document-item-row.can-edit > .bookmark-button {
+  right: 94px;
+}
+@media (max-width: 600px) {
+  .people-filter-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 38px;
+  }
+  .people-filter-row > select:first-child {
+    grid-column: 1;
+  }
+  .people-filter-row > input,
+  .people-filter-row > select:nth-child(2),
+  .people-filter-row > .person-search {
+    grid-column: 1;
+    width: 100%;
+    min-width: 0;
+  }
+  .people-filter-row > .icon-button {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+  .people-filter-rows {
+    gap: 14px;
+  }
+  .archive-nav .nav-bookmarks {
+    width: 36px;
+    height: 36px;
+  }
+}

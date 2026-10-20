@@ -27,6 +27,7 @@ import { isArchiveOwner, type Person, type ArchiveUser } from "../domain";
 import { AccountPortrait } from "./account-portrait";
 import { ArchiveSwitcher } from "./archive-switcher";
 import { ArchiveNotifications } from "./archive-notifications";
+import { BookmarksMenu } from "./personal-bookmarks";
 import { archivePaths, type ArchiveView } from "../domain/archive-routes";
 import {
   memberPreviewAt,
@@ -190,6 +191,7 @@ export function ArchiveNavigation({
       </button>
       {user?.approved && !participantPreview && view !== "admin" &&
         <ArchiveNotifications userId={user.id} beforeLeave={onPlatformLeave} />}
+      {user?.approved && !participantPreview && view !== "admin" && <BookmarksMenu beforeLeave={onPlatformLeave} />}
       {identity && (
         <details ref={menu} className="archive-more">
           <summary

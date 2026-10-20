@@ -1,17 +1,21 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useState } from "react";
 import type { AuditEntry } from "../domain/audit";
+import { AuditUndo } from "./audit-undo";
 export function AuditLog({
   personId,
   actorId,
+  onChanged,
 }: {
   personId?: string;
   actorId?: string;
+  onChanged?: () => void;
 }) {
   const [items, setItems] = useState<AuditEntry[]>([]),
     [next, setNext] = useState<number | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(true);
+  const [refresh, setRefresh] = useState(0);
   const endpoint = `/api/audit?${new URLSearchParams({ ...(personId ? { personId } : {}), ...(actorId ? { actorId } : {}) })}`;
   useEffect(() => {
     const controller = new AbortController();
@@ -30,7 +34,7 @@ export function AuditLog({
         }
       });
     return () => controller.abort();
-  }, [endpoint]);
+  }, [endpoint, refresh]);
   async function more() {
     setBusy(true);
     setError("");
@@ -85,6 +89,12 @@ export function AuditLog({
               ))}
             </div>
           )}
+          {entry.revision !== null && entry.revision > 0 &&
+            ["people", "photos", "links", "unions", "archive"].includes(entry.entity) &&
+            <AuditUndo revision={entry.revision} onApplied={() => {
+              setRefresh(value => value + 1);
+              onChanged?.();
+            }} />}
         </details>
       ))}
       {error && (

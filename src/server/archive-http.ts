@@ -44,6 +44,8 @@ import { pdfDocumentPages } from "./document-pdf.ts";
 import { join } from "node:path";
 import { personDiscussionHttp } from "./person-discussion-http.ts";
 import { archiveNotificationsHttp } from "./archive-notifications-http.ts";
+import { personalResearchHttp } from "./personal-research-http.ts";
+import { auditUndoHttp } from "./audit-undo-http.ts";
 import { treePreferencesStore } from "./tree-preferences.ts";
 import { treePreferencesHttp } from "./tree-preferences-http.ts";
 import { publishedPeopleStore } from "./published-people.ts";
@@ -189,6 +191,7 @@ export async function archiveHttp({
     publicOrigin,
   });
   const archiveQuery = archiveQueryHttp({
+    publicOrigin,
     preparation,
     archive,
     auth,
@@ -231,6 +234,8 @@ export async function archiveHttp({
     auth,
     publicOrigin,
   });
+  const personalResearch = personalResearchHttp({ archive, auth, publicOrigin });
+  const undoAudit = auditUndoHttp({ archive, auth, publicOrigin, preparation });
   const places = placesHttp({
     archive,
     auth,
@@ -312,7 +317,7 @@ export async function archiveHttp({
         return true;
       };
       if (!preview || preview.archiveId) return deny(404);
-      if (req.method !== "GET") return deny(405);
+      if (req.method !== "GET" && !(req.method === "POST" && path === "/api/people/filter")) return deny(405);
       const previewView = archiveViewAt(url.pathname);
       if (
         previewView &&
@@ -340,6 +345,7 @@ export async function archiveHttp({
         path === "/api/session" ||
         path === "/api/family" ||
         path === "/api/people/search" ||
+        path === "/api/people/filter" ||
         path === "/api/research-resources" ||
         path === "/api/places/locate" ||
         /^\/api\/documents(?:\/[a-f0-9-]{36}(?:\/file|\/annotations(?:\/[a-f0-9-]{36})?)?)?$/.test(
@@ -422,6 +428,7 @@ export async function archiveHttp({
       if (
         path === "/api/family" ||
         path === "/api/people/search" ||
+        path === "/api/people/filter" ||
         path === "/api/research-resources"
       )
         return (await archiveQuery(req, res, inner)) || deny(404);
@@ -441,6 +448,8 @@ export async function archiveHttp({
     if (await adminResearchResources(req, res, url)) return true;
     if (await personalTreeSettings(req, res, url)) return true;
     if (await notifications(req, res, url)) return true;
+    if (await personalResearch(req, res, url)) return true;
+    if (await undoAudit(req, res, url)) return true;
     if (await archiveQuery(req, res, url)) return true;
     if (await offlinePackage(req, res, url)) return true;
     if (await documents(req, res, url)) return true;

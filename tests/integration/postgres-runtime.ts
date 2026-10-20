@@ -69,6 +69,7 @@ import { verifyAccountArchiveCreateSessionRevocation } from "./postgres-account-
 import { verifyAccountArchivesReadSessionRevocation } from "./postgres-account-archives-read-session.ts";
 import { verifySessionDelivery } from "./postgres-session-delivery.ts";
 import { verifyAccountExportDelivery } from "./postgres-account-export-delivery.ts";
+import { verifyPersonalResearchHttp } from "./postgres-personal-research-http.ts";
 import { verifyOfflineExportDelivery } from "./postgres-offline-export-delivery.ts";
 import { verifyAiAttachmentDelivery } from "./postgres-ai-attachment-delivery.ts";
 import { verifyDiscussionAttachmentDelivery } from "./postgres-discussion-attachment-delivery.ts";
@@ -1934,6 +1935,7 @@ try {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
   };
+  await verifyPersonalResearchHttp(securedBase, ownerHeaders, headers);
   await verifyPlatformBackupsHttp(securedBase, ownerHeaders, headers, client);
   await verifyFaceSessionMutation(app.archive, client, process.env.PUBLIC_ORIGIN!, source);
   await verifyPlatformTiers(client, app.archive.db, securedBase,

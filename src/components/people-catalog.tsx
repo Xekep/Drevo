@@ -11,20 +11,27 @@ import { LoadMore, useListLimit } from "./load-more";
 import { ArchiveLink } from "./archive-link";
 import { archiveTargetPath } from "../domain/archive-links";
 import { scopedArchivePath } from "../domain/archive-context";
+import { PeopleFilterBuilder } from "./people-filter-builder";
+import { BookmarkButton } from "./personal-bookmarks";
 export function PeopleCatalog({
   people,
   query,
   onSelect,
+  revision,
+  personal,
 }: {
   people: Person[];
   query: string;
   onSelect: (id: string) => void;
+  revision: number;
+  personal: boolean;
 }) {
   const [sort, setSort] = useState<PeopleSort>("name");
-  const { limit, more } = useListLimit(`${sort}:${query}`);
+  const [filteredIds, setFilteredIds] = useState<string[] | null>(null);
+  const { limit, more } = useListLimit(`${sort}:${query}:${filteredIds?.join(",") || ""}`);
   const list = useMemo(
-    () => directoryPeople(people, query, sort),
-    [people, query, sort],
+    () => { const ids = filteredIds ? new Set(filteredIds) : null; return directoryPeople(ids ? people.filter(person => ids.has(person.id)) : people, query, sort); },
+    [people, query, sort, filteredIds],
   );
   const children = useMemo(() => {
     const counts = new Map<string, number>();
@@ -36,7 +43,6 @@ export function PeopleCatalog({
     <section className="people-directory">
       <header>
         <div>
-          <span className="section-label">СЕМЕЙНЫЙ АРХИВ</span>
           <h1>
             Люди <small>{list.length}</small>
           </h1>
@@ -57,6 +63,7 @@ export function PeopleCatalog({
           </label>
         </div>
       </header>
+      <PeopleFilterBuilder people={people} revision={revision} personal={personal} onResults={setFilteredIds} />
       <div className="directory-columns" aria-hidden="true">
         <span>Человек</span>
         <span>Годы жизни</span>
@@ -113,6 +120,7 @@ export function PeopleCatalog({
                 </span>
                 <ChevronRight className="directory-arrow" size={17} />
               </ArchiveLink>
+              <BookmarkButton target={{ kind: "person", id: p.id }} />
             </li>
           );
         })}

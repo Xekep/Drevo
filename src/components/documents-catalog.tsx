@@ -4,6 +4,7 @@ import {
   useUnsavedChanges,
 } from "../hooks/useUnsavedChanges";
 import { archiveFetch } from "../data/archive-fetch.ts";
+import { BookmarkButton } from "./personal-bookmarks";
 import {
   useCallback,
   useEffect,
@@ -915,6 +916,7 @@ export function DocumentsCatalog({
                       </small>
                     </span>
                   </button>
+                  <BookmarkButton target={{ kind: "document", id: document.id }} />
                   {mayEdit && document.canDelete && (
                     <button
                       type="button"
