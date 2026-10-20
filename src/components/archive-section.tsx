@@ -136,6 +136,7 @@ export function ArchiveSection(props: Props) {
   if (props.view === "list")
     content = (
       <PeopleCatalog
+        key={`${props.user?.id}:${props.user?.role}:${props.user?.treeAccess}:${props.user?.personId}:${props.user?.approved}`}
         people={props.people}
         query={props.query}
         onSelect={props.onPerson}

@@ -838,7 +838,7 @@ export default function App() {
     ? family?.people.find((person) => person.id === navigationUser.personId)
     : undefined;
   return (
-    <PersonalBookmarks key={`${archiveContextAt(window.location.pathname)?.id || "primary"}:${user?.id || "guest"}:${user?.role}:${user?.treeAccess}:${user?.personId}:${user?.approved}`} enabled={!!user?.approved && !accountSession?.participantPreview && view !== "admin"}>
+    <PersonalBookmarks scopeKey={`${archiveContextAt(window.location.pathname)?.id || "primary"}:${user?.id || "guest"}:${user?.role}:${user?.treeAccess}:${user?.personId}:${user?.approved}`} enabled={!!user?.approved && !accountSession?.participantPreview && view !== "admin"}>
     <MemberPreviewName.Provider value={accountSession?.participantPreview?.name || user?.name || ""}>
     <div className={`archive-app${restoredSessionState === "ready" ? "" : " is-validating-restored-session"}`}>
       {shareDraft && (

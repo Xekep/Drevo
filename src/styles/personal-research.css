@@ -27,6 +27,14 @@
 .bookmark-button svg {
   flex: none;
 }
+.photo-toolbar > .bookmark-button {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  background: #ffffff0d;
+  color: #fff;
+}
 .bookmark-error {
   font-size: 12px;
 }

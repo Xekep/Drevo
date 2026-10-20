@@ -350,7 +350,7 @@ function PhotoViewerContent({
           className="photo-copy-link"
           target={{ kind: "photo", id: photo.id }}
         />
-        <BookmarkButton target={{ kind: "photo", id: photo.id }} />
+        {!viewedPerson && <BookmarkButton target={{ kind: "photo", id: photo.id }} />}
         <button
           className="photo-close"
           onClick={onClose}

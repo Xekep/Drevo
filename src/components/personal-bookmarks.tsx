@@ -31,22 +31,30 @@ const Bookmarks = createContext<Library | null>(null);
 
 export function PersonalBookmarks({
   enabled,
+  scopeKey,
   children,
 }: {
   enabled: boolean;
+  scopeKey: string;
   children: ReactNode;
 }) {
-  const [items, setItems] = useState<PersonalBookmark[]>([]);
-  const [unavailable, setUnavailable] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [loaded, setLoaded] = useState(false);
+  const empty = {
+    scopeKey,
+    items: [] as PersonalBookmark[],
+    unavailable: 0,
+    busy: false,
+    error: "",
+    loaded: false,
+  };
+  const [state, setState] = useState(empty);
+  const { items, unavailable, busy, error, loaded } =
+    state.scopeKey === scopeKey ? state : empty;
   const [attempt, setAttempt] = useState(0);
-  const writing = useRef(false);
-  const mounted = useRef(false);
+  const writing = useRef<symbol | null>(null);
+  const lifetime = useRef<AbortController | null>(null);
   useEffect(() => {
-    mounted.current = true;
     const controller = new AbortController();
+    lifetime.current = controller;
     if (enabled) {
       void archiveFetch("/api/bookmarks", { signal: controller.signal })
         .then(async (response) => {
@@ -54,46 +62,81 @@ export function PersonalBookmarks({
           if (!response.ok)
             throw new Error(data.error || "Закладки не загрузились");
           if (!controller.signal.aborted) {
-            setItems(data.items);
-            setUnavailable(data.unavailable || 0);
-            setError("");
-            setLoaded(true);
+            setState({
+              scopeKey,
+              items: data.items,
+              unavailable: data.unavailable || 0,
+              busy: false,
+              error: "",
+              loaded: true,
+            });
           }
         })
         .catch((reason) => {
           if (!controller.signal.aborted) {
-            setError(String(reason.message));
-            setItems([]);
-            setLoaded(true);
+            setState({
+              scopeKey,
+              items: [],
+              unavailable: 0,
+              busy: false,
+              error: String(reason.message),
+              loaded: true,
+            });
           }
         });
     }
     return () => {
-      mounted.current = false;
       controller.abort();
+      writing.current = null;
     };
-  }, [enabled, attempt]);
+  }, [enabled, attempt, scopeKey]);
   const mutate = async (body: Record<string, unknown>) => {
-    if (writing.current) return;
-    writing.current = true;
-    setBusy(true);
+    const controller = lifetime.current;
+    if (
+      writing.current ||
+      !enabled ||
+      !loaded ||
+      !controller ||
+      controller.signal.aborted
+    )
+      return;
+    const operation = Symbol();
+    writing.current = operation;
+    setState((previous) =>
+      previous.scopeKey === scopeKey ? { ...previous, busy: true } : previous,
+    );
     try {
       const response = await archiveFetch("/api/bookmarks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
       const data = await response.json();
       if (!response.ok)
         throw new Error(data.error || "Не удалось сохранить закладку");
-      if (mounted.current) {
-        setItems(data.items);
-        setUnavailable(data.unavailable || 0);
-        setError("");
+      if (!controller.signal.aborted) {
+        setState((previous) =>
+          previous.scopeKey === scopeKey
+            ? {
+                ...previous,
+                items: data.items,
+                unavailable: data.unavailable || 0,
+                error: "",
+              }
+            : previous,
+        );
       }
+    } catch (reason) {
+      if (!controller.signal.aborted) throw reason;
     } finally {
-      writing.current = false;
-      if (mounted.current) setBusy(false);
+      if (writing.current === operation) writing.current = null;
+      if (!controller.signal.aborted)
+        setState((previous) =>
+          previous.scopeKey === scopeKey
+            ? { ...previous, busy: false }
+            : previous,
+        );
     }
   };
   return (
@@ -112,7 +155,11 @@ export function PersonalBookmarks({
                 }),
               clearUnavailable: () => mutate({ clearUnavailable: true }),
               reload: () => {
-                setLoaded(false);
+                setState((previous) =>
+                  previous.scopeKey === scopeKey
+                    ? { ...previous, loaded: false }
+                    : previous,
+                );
                 setAttempt((value) => value + 1);
               },
             }
@@ -200,7 +247,10 @@ export function BookmarksMenu({
         ref={button}
         popoverTarget={id}
         aria-expanded={open}
-        onClick={() => { place(); if (!open) library.reload(); }}
+        onClick={() => {
+          place();
+          if (!open) library.reload();
+        }}
         aria-label="Личные закладки"
         title="Личные закладки"
       >
