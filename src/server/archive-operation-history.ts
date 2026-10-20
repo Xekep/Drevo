@@ -22,6 +22,7 @@ export async function readArchiveOperation(
   const rows = await db
     .prepare(
       "SELECT revision FROM history WHERE revision>=? ORDER BY revision DESC",
+      "SELECT revision FROM history WHERE revision>=? ORDER BY revision DESC",
     )
     .all(revision - 1);
   let state = current.family;
@@ -34,7 +35,12 @@ export async function readArchiveOperation(
     if (previousRevision !== nextRevision - 1) break;
     // Read one retained snapshot at a time: fifty full imports must not become
     // fifty resident JSON blobs just to preview a single undo.
-    const stored = await db.prepare("SELECT data FROM history WHERE revision=?").get(previousRevision);
+    const stored = await db
+      .prepare(
+        "SELECT data FROM history WHERE revision=?",
+        "SELECT data FROM history WHERE revision=?",
+      )
+      .get(previousRevision);
     if (!stored) break;
     const saved = JSON.parse(String(stored.data));
     const delta = [

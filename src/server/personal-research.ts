@@ -84,12 +84,14 @@ export function personalResearchStore(db: StoreDatabase) {
       await db
         .prepare(
           `DELETE FROM personal_bookmarks WHERE user_id=? AND (kind,entity_id) IN (${targets.map(() => "(?,?)").join(",")})`,
+          `DELETE FROM personal_bookmarks WHERE user_id=? AND (kind,entity_id) IN (${targets.map(() => "(?,?)").join(",")})`,
         )
         .run(userId, ...targets.flatMap((target) => [target.kind, target.id]));
     },
     async bookmarks(userId: string) {
       const rows = await db
         .prepare(
+          "SELECT kind,entity_id FROM personal_bookmarks WHERE user_id=? ORDER BY created_ms DESC,kind,entity_id",
           "SELECT kind,entity_id FROM personal_bookmarks WHERE user_id=? ORDER BY created_ms DESC,kind,entity_id",
         )
         .all(userId);
@@ -103,6 +105,7 @@ export function personalResearchStore(db: StoreDatabase) {
         await db
           .prepare(
             "DELETE FROM personal_bookmarks WHERE user_id=? AND kind=? AND entity_id=?",
+            "DELETE FROM personal_bookmarks WHERE user_id=? AND kind=? AND entity_id=?",
           )
           .run(userId, target.kind, target.id);
         return;
@@ -110,16 +113,21 @@ export function personalResearchStore(db: StoreDatabase) {
       const previous = await db
         .prepare(
           "SELECT 1 AS present FROM personal_bookmarks WHERE user_id=? AND kind=? AND entity_id=?",
+          "SELECT 1 AS present FROM personal_bookmarks WHERE user_id=? AND kind=? AND entity_id=?",
         )
         .get(userId, target.kind, target.id);
       if (previous) return;
       const count = await db
-        .prepare("SELECT count(*) AS n FROM personal_bookmarks WHERE user_id=?")
+        .prepare(
+          "SELECT count(*) AS n FROM personal_bookmarks WHERE user_id=?",
+          "SELECT count(*) AS n FROM personal_bookmarks WHERE user_id=?",
+        )
         .get(userId);
       if (Number(count?.n) >= 200)
         throw new Error("Можно сохранить до 200 закладок в одном древе");
       await db
         .prepare(
+          "INSERT INTO personal_bookmarks(user_id,kind,entity_id,created_ms) VALUES(?,?,?,?)",
           "INSERT INTO personal_bookmarks(user_id,kind,entity_id,created_ms) VALUES(?,?,?,?)",
         )
         .run(userId, target.kind, target.id, Date.now());
@@ -127,6 +135,7 @@ export function personalResearchStore(db: StoreDatabase) {
     async filters(userId: string): Promise<SavedPeopleFilter[]> {
       const rows = await db
         .prepare(
+          "SELECT id,name,criteria FROM personal_people_filters WHERE user_id=? ORDER BY created_ms DESC,id",
           "SELECT id,name,criteria FROM personal_people_filters WHERE user_id=? ORDER BY created_ms DESC,id",
         )
         .all(userId);
@@ -151,6 +160,7 @@ export function personalResearchStore(db: StoreDatabase) {
       const count = await db
         .prepare(
           "SELECT count(*) AS n FROM personal_people_filters WHERE user_id=?",
+          "SELECT count(*) AS n FROM personal_people_filters WHERE user_id=?",
         )
         .get(userId);
       if (Number(count?.n) >= 30)
@@ -158,6 +168,7 @@ export function personalResearchStore(db: StoreDatabase) {
       const id = randomUUID();
       await db
         .prepare(
+          "INSERT INTO personal_people_filters(user_id,id,name,criteria,created_ms) VALUES(?,?,?,?,?)",
           "INSERT INTO personal_people_filters(user_id,id,name,criteria,created_ms) VALUES(?,?,?,?,?)",
         )
         .run(userId, id, name.trim(), JSON.stringify(criteria), Date.now());
@@ -167,7 +178,10 @@ export function personalResearchStore(db: StoreDatabase) {
       if (typeof id !== "string" || !/^[a-f0-9-]{36}$/i.test(id))
         throw new Error("Некорректный поиск");
       await db
-        .prepare("DELETE FROM personal_people_filters WHERE user_id=? AND id=?")
+        .prepare(
+          "DELETE FROM personal_people_filters WHERE user_id=? AND id=?",
+          "DELETE FROM personal_people_filters WHERE user_id=? AND id=?",
+        )
         .run(userId, id);
     },
   };

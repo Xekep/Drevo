@@ -4,6 +4,8 @@ import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import { personalResearchStore, bookmarkTarget } from "./personal-research.ts";
 import { projectFamilyForUser } from "../domain/tree-access.ts";
+import { isScopedUser } from "../domain/tree-access.ts";
+import type { Family } from "../domain/types.ts";
 import { memberPreviewTarget } from "./member-preview-access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { researchRequestBody } from "./research-request-body.ts";
@@ -87,13 +89,50 @@ export function personalResearchHttp({
         async () => {
           const user = await checkUser(!!body);
           const bookmarks = url.pathname === "/api/bookmarks";
-          const snapshot =
-            bookmarks || (body && body.remove !== true)
-              ? await archive.read()
+          let revision = (await archive.meta()).revision;
+          let family: Family = {
+            title: "",
+            description: "",
+            demo: false,
+            people: [],
+            photos: [],
+          };
+          const existing = bookmarks ? await store.bookmarks(user.id) : [];
+          const incoming =
+            bookmarks && body && body.clearUnavailable !== true
+              ? bookmarkTarget(body)
               : null;
-          const family = snapshot
-            ? projectFamilyForUser(snapshot.family, user)
-            : null;
+          if (bookmarks && (existing.length || incoming)) {
+            const overview = await archive.overview();
+            revision = overview.revision;
+            family = projectFamilyForUser(overview.family, user);
+            const ids = new Set(
+              [...existing, ...(incoming ? [incoming] : [])]
+                .filter((item) => item.kind === "photo")
+                .map((item) => item.id),
+            );
+            if (ids.size)
+              family.photos = await archive.photoPage(
+                0,
+                201,
+                isScopedUser(user)
+                  ? {
+                      visible: new Set(
+                        family.people.map((person) => person.id),
+                      ),
+                      userId: user.id,
+                    }
+                  : undefined,
+                undefined,
+                ids,
+              );
+          } else if (!bookmarks && body && body.remove !== true) {
+            // Full evidence is needed only for an explicitly saved criterion,
+            // never just because a signed-in user opened the application.
+            const snapshot = await archive.read();
+            revision = snapshot.revision;
+            family = projectFamilyForUser(snapshot.family, user);
+          }
           if (body) {
             if (bookmarks) {
               if (body.clearUnavailable === true) {
@@ -145,7 +184,7 @@ export function personalResearchHttp({
           return {
             result,
             scope: scope(user),
-            revision: (snapshot || (await archive.meta())).revision,
+            revision,
           };
         },
         false,

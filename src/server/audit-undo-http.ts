@@ -104,6 +104,7 @@ export function auditUndoHttp({
             const done = await archive.db
               .prepare(
                 "SELECT reverted_revision FROM audit_reverts WHERE revision=?",
+                "SELECT reverted_revision FROM audit_reverts WHERE revision=?",
               )
               .get(revision);
             if (done) preview.reason = "Эта операция уже отменена";
@@ -129,6 +130,10 @@ export function auditUndoHttp({
                   if (!remaining.has(person.id)) {
                     const references = await archive.db
                       .prepare(
+                        `SELECT 1 AS present WHERE
+                EXISTS(SELECT 1 FROM document_people WHERE person_id=?) OR
+                EXISTS(SELECT 1 FROM person_comments WHERE person_id=?) OR
+                EXISTS(SELECT 1 FROM published_people WHERE person_id=?)`,
                         `SELECT 1 AS present WHERE
                 EXISTS(SELECT 1 FROM document_people WHERE person_id=?) OR
                 EXISTS(SELECT 1 FROM person_comments WHERE person_id=?) OR
@@ -163,6 +168,7 @@ export function auditUndoHttp({
                     async (db) => {
                       await db
                         .prepare(
+                          "INSERT INTO audit_reverts(revision,reverted_revision) VALUES(?,?)",
                           "INSERT INTO audit_reverts(revision,reverted_revision) VALUES(?,?)",
                         )
                         .run(revision, current.revision + 1);

@@ -100,6 +100,16 @@ test("personal saves and undo obey identities, current scope, origin, revision a
       (await (await request("/api/bookmarks", "reader")).json()).items.length,
       1,
     );
+    const read = app.archive.read;
+    app.archive.read = async () => {
+      throw new Error("Bookmarked names must not hydrate the full archive");
+    };
+    try {
+      assert.equal((await request("/api/bookmarks", "reader")).status, 200);
+      assert.equal((await request("/api/bookmarks", "other")).status, 200);
+    } finally {
+      app.archive.read = read;
+    }
     assert.equal(
       (await request("/api/bookmarks", "reader", target)).status,
       200,

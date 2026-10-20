@@ -48,7 +48,11 @@ test("personal research migration and store isolate archives under ordinary FORC
   const store = personalResearchStore({
     kind: "postgres",
     archiveId: "tree-a",
-    prepare(sqlite: string, postgres = sqlite) {
+    prepare(_sqlite: string, postgres?: string) {
+      assert.ok(
+        postgres,
+        "The production adapter requires an explicit PostgreSQL statement",
+      );
       const sql = postgresBindings(postgres);
       return {
         async get(...values: unknown[]) {
