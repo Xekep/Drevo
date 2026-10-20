@@ -1021,26 +1021,6 @@ export function PhotoViewer(props: PhotoViewerProps) {
       ref={dialog}
       className="photo-lightbox"
       aria-label={`Просмотр фото: ${photoLabel(props.photo)}`}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        if (
-          e.altKey ||
-          e.ctrlKey ||
-          e.metaKey ||
-          e.shiftKey ||
-          (e.target instanceof HTMLElement &&
-            e.target.closest("input, textarea, select, [contenteditable=true]"))
-        )
-          return;
-        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-          e.preventDefault();
-          dialog.current
-            ?.querySelector<HTMLButtonElement>(
-              e.key === "ArrowLeft" ? ".photo-previous" : ".photo-next",
-            )
-            ?.click();
-        }
-      }}
       onCancel={(e) => {
         e.preventDefault();
         e.stopPropagation();

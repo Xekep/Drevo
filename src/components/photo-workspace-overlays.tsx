@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import type { ArchiveUser, Family, PhotoMetadata } from "../domain";
 import { isArchiveOwner, owns } from "../domain";
 import { viewerPhotos } from "../domain/photo-albums";
@@ -41,6 +41,34 @@ export function PhotoWorkspaceOverlays({
   onDirtyChange,
 }: Props) {
   const photo = workspace.photo;
+  useEffect(() => {
+    const keyDown = (event: KeyboardEvent) => {
+      const dialog = document.querySelector<HTMLDialogElement>(
+        ".photo-lightbox[open]",
+      );
+      if (
+        !dialog ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        (event.target instanceof HTMLElement &&
+          dialog.contains(event.target) &&
+          event.target.closest("input, textarea, select, [contenteditable=true]")) ||
+        (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
+      )
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      dialog
+        .querySelector<HTMLButtonElement>(
+          event.key === "ArrowLeft" ? ".photo-previous" : ".photo-next",
+        )
+        ?.click();
+    };
+    document.addEventListener("keydown", keyDown, true);
+    return () => document.removeEventListener("keydown", keyDown, true);
+  }, []);
   return (
     <>
       {workspace.uploadOpen && canUpload && (
