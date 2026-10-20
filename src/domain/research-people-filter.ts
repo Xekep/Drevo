@@ -251,6 +251,7 @@ function compileCriteria(family: Family, value: unknown, sourceAccess = true) {
   };
   const available = new Set(family.people.map((person) => person.id));
   const sources = new Map<string, boolean>();
+  let unionSources: Set<string> | undefined;
   const photographed = new Set(
     family.photos?.flatMap((photo) => photo.tags.map((tag) => tag.personId)) ||
       [],
@@ -407,8 +408,27 @@ function compileCriteria(family: Family, value: unknown, sourceAccess = true) {
         tests.push((person) => Boolean(validDate(person.death)) === item);
       if (key === "hasSources")
         tests.push((person) => {
+          if (!unionSources) {
+            unionSources = new Set();
+            for (const union of family.unions || [])
+              if (
+                union.participants.every((id) => available.has(id)) &&
+                [
+                  union,
+                  union.formation,
+                  union.divorce,
+                  union.ending,
+                  union.ongoing,
+                ].some((record) => record?.sources?.length)
+              )
+                for (const id of union.participants) unionSources.add(id);
+          }
           if (!sources.has(person.id))
-            sources.set(person.id, collectPersonSources(person).length > 0);
+            sources.set(
+              person.id,
+              unionSources.has(person.id) ||
+                collectPersonSources(person).length > 0,
+            );
           return sources.get(person.id) === item;
         });
       if (key === "hasPhoto")

@@ -394,3 +394,38 @@ test("evidence includes only sources satisfying the related filter and retains t
   });
   assert.equal(dates.events[0].evidence.sources[0].scope, "date");
 });
+
+test("a compact shared-event source can be read in full through get_sources and is discoverable by hasSources", () => {
+  const data: Family = {
+    ...family,
+    unions: family.unions!.map((union) => ({
+      ...union,
+      formation: {
+        ...union.formation,
+        sources: [{ ...source, note: "Полная архивная расшифровка" }],
+      },
+    })),
+  };
+  const result = executeResearchTool(data, "get_sources", {
+    personId: "partner-a",
+  }) as { summary: Array<Source & { origin?: string }> };
+  assert.equal(result.summary[0].note, "Полная архивная расшифровка");
+  assert.equal(result.summary[0].origin, "Начало союза");
+  assert.ok(
+    queryResearchPeople(data, { criteria: { hasSources: true } }).people.some(
+      (person) => person.id === "partner-a",
+    ),
+  );
+  const partial = {
+    ...data,
+    people: data.people.filter((p) => p.id !== "partner-b"),
+  };
+  assert.deepEqual(
+    (
+      executeResearchTool(partial, "get_sources", {
+        personId: "partner-a",
+      }) as typeof result
+    ).summary,
+    [],
+  );
+});

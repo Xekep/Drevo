@@ -9,7 +9,7 @@ import {
 import { analyzeKinship } from "./kinship-analysis.ts";
 import { findPossibleDuplicates } from "./duplicate-analysis.ts";
 import { archiveConnections } from "./connections.ts";
-import { repositorySummary } from "./person-sources.ts";
+import { repositorySummary, collectPersonSources } from "./person-sources.ts";
 import type { Family, Person } from "./types.ts";
 import { normalizeResearchText, surnameKeys } from "./research-names.ts";
 import {
@@ -168,7 +168,7 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
       ["eventId"],
     ),
     description:
-      "Получить найденное query_events событие, дату, место и точные ссылки на прикреплённые основания. eventId бери только из результата инструмента, не показывай пользователю. Источники даты, места, события и союза имеют разный scope. В ответе до трёх кратких источников; полный текст доступен по href или через get_sources/get_person.",
+      "Получить найденное query_events событие, дату, место и точные ссылки на прикреплённые основания. eventId бери только из результата инструмента, не показывай пользователю. Источники даты, места, события и союза имеют разный scope. В ответе до трёх кратких источников; полный текст доступен по href или через get_sources.",
   },
   {
     name: "query_places",
@@ -352,7 +352,7 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
   {
     name: "get_sources",
     description:
-      "Получить источники карточки, жизненных событий и наград конкретного человека.",
+      "Получить полные источники карточки, жизненных событий, фактов, наград и общих союзов конкретного человека. summary объединяет их с обозначением происхождения, не доказывая достоверность сведений.",
     scope: "sources:read",
     inputSchema: objectSchema(
       { personId: { type: "string", minLength: 1, maxLength: 200 } },
@@ -1592,8 +1592,15 @@ export function executeResearchTool(
 
   if (name === "get_sources") {
     const person = personOrThrow(family, stringArg(args, "personId"));
+    const available = new Set(family.people.map((p) => p.id));
     return {
       person: { id: person.id, name: fullName(person) },
+      summary: collectPersonSources(
+        person,
+        (family.unions || []).filter((union) =>
+          union.participants.every((id) => available.has(id)),
+        ),
+      ),
       card: person.sources,
       events: (person.events || [])
         .filter((event) => event.sources?.length)
