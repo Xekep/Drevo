@@ -566,6 +566,7 @@ test("3D centers a changed generation anchor and restores it on reload", async (
   await dialog.getByRole("combobox", { name: "Относительно человека" }).fill("Алексей");
   await dialog.getByRole("option", { name: /Соколов Алексей/ }).click();
   await expect.poll(() => preferences.generationLimits?.anchorId).toBe("sibling");
+  await expect(world(page)).toHaveAttribute("data-depth-moving", "true");
   await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
   await expect(tree).toHaveAttribute("data-depth-anchor", "sibling");
   await expect(tree).toHaveAttribute("data-layout-ready", "true");
@@ -595,4 +596,31 @@ test("3D centers a changed generation anchor and restores it on reload", async (
   await expect(dialog.getByRole("alert")).toHaveText("Сохранение временно недоступно");
   await expect(tree).toHaveAttribute("data-depth-anchor", "sibling");
   await expect(world(page)).toHaveAttribute("data-depth-camera", camera!);
+});
+
+test("возврат из 3D фокусирует 2D на текущем опорном человеке", async ({ page }) => {
+  await setup(page, family, false, {
+    generationLimits: { anchorId: "me", ancestors: 3, descendants: 3, collateral: 2 },
+  });
+  await settle(page);
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  const dialog = page.getByRole("dialog", { name: "Вид древа" });
+  await dialog.getByRole("combobox", { name: "Относительно человека" }).fill("Алексей");
+  await dialog.getByRole("option", { name: /Соколов Алексей/ }).click();
+  await settle(page);
+  await dialog.getByRole("radio", { name: "Обычное" }).check();
+  await expect(page.locator(".tree-spatial")).toHaveCount(0);
+  const card = page.getByTestId("rf__node-sibling");
+  await expect(card).toBeVisible();
+  await expect.poll(async () => {
+    const canvas = await page.locator(".tree-canvas").boundingBox();
+    const bounds = await card.boundingBox();
+    if (!canvas || !bounds) return false;
+    const center = {
+      x: bounds.x + bounds.width / 2,
+      y: bounds.y + bounds.height / 2,
+    };
+    return center.x >= canvas.x && center.x <= canvas.x + canvas.width &&
+      center.y >= canvas.y && center.y <= canvas.y + canvas.height;
+  }).toBe(true);
 });

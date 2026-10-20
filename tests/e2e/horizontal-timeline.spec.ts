@@ -68,6 +68,33 @@ test("хронология переключает десятилетия без 
   await expect(year).toHaveText("1940");
 });
 
+test("хронология сохраняет будущий год после открытия и закрытия карточки", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tree");
+  await expect(page.locator(".react-flow__node").first()).toBeAttached();
+  await page
+    .getByRole("button", { name: "Хронология", exact: true })
+    .or(page.getByRole("switch", { name: "Древо / Хронология" }))
+    .click();
+  const timeline = page.getByRole("region", {
+    name: /Горизонтальная хронология/,
+  });
+  const marker = page.getByLabel("Год в центре хронологии");
+  await timeline.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+  });
+  const futureYear = String(new Date().getFullYear() + 20);
+  await expect(marker).toHaveText(futureYear);
+  await timeline.locator(".timeline-person-row:not(.is-exiting) .timeline-person").first().click();
+  const inspector = page.locator(".inspector-dock");
+  await expect(inspector).toBeVisible();
+  await inspector.getByRole("button", { name: /Закрыть панель/ }).click();
+  await expect(inspector).toHaveCount(0);
+  await expect(marker).toHaveText(futureYear);
+});
+
 test("chronology has a horizontal era strip, sticky portraits and draggable dates", async ({
   page,
 }, testInfo) => {

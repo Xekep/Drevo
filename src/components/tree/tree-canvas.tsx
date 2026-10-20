@@ -501,9 +501,17 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     props.generationLimits?.anchorId || selected[0] || props.kinshipReferenceId || user?.personId || familyView.defaultAnchor || undefined,
     effectivePersonFocus);
   const previousDepthEnabled = useRef(depthEnabled);
+  const lastDepthAnchor = useRef(depth.anchorId);
   useEffect(() => {
     const entering = depthEnabled && !previousDepthEnabled.current;
+    const leaving = !depthEnabled && previousDepthEnabled.current;
     previousDepthEnabled.current = depthEnabled;
+    if (depthEnabled) lastDepthAnchor.current = depth.anchorId;
+    if (leaving) {
+      clearRestoreViewport();
+      returnToPerson(lastDepthAnchor.current);
+      return;
+    }
     if (!depthEnabled || !initialCameraReady || (!entering && introCameraFinished && !growing)) return;
     let active = true;
     queueMicrotask(() => {
@@ -514,7 +522,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       if (entering) returnToPerson(depth.anchorId);
     });
     return () => { active = false; };
-  }, [depthEnabled, depth.anchorId, growing, initialCameraReady, returnToPerson, introCameraFinished]);
+  }, [depthEnabled, depth.anchorId, growing, initialCameraReady, returnToPerson,
+    clearRestoreViewport, introCameraFinished]);
   const visible = depthEnabled ? scopedVisible : depth.front;
   const timelinePeople = useMemo(
     () => family.people.filter((person) => visible.has(person.id)),

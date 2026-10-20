@@ -246,8 +246,12 @@ export function HorizontalTimeline({
     number | null
   >(null);
   const model = useMemo(() => horizontalTimeline(people), [people]);
+  const previousModel = useRef(model);
   const firstYear = model.rows[0]?.birthYear ?? model.start;
   const [year, setYear] = useState(firstYear);
+  const selectedKey = selected.join("\u0000");
+  const previousSelectedKey = useRef(selectedKey);
+  const yearToPreserveOnResize = useRef<number | null>(null);
   const visibleRows = useMemo(
     () => timelineRowsAtYear(model.rows, year, model.currentYear),
     [model, year],
@@ -260,7 +264,7 @@ export function HorizontalTimeline({
     visibleRows.map((row) => ({ row, exiting: false })),
   );
   const rowsRef = useRef(renderedRows);
-  const metrics = useRef({ height: 640, rowHeight: 64 });
+  const metrics = useRef({ width: 0, height: 640, rowHeight: 64 });
   const [view, setView] = useState({ top: 0, height: 640, rowHeight: 64 });
   const [focusedPerson, setFocusedPerson] = useState<string | null>(null);
   const focusedPersonRef = useRef<string | null>(null);
@@ -378,9 +382,10 @@ export function HorizontalTimeline({
       const width = scroll.clientWidth;
       const height = scroll.clientHeight;
       const scrollTop = scroll.scrollTop;
-      currentScrollLeft.current = scroll.scrollLeft;
+      const preservedLeft = currentScrollLeft.current;
+      const previousWidth = metrics.current.width;
       const previousHeight = metrics.current.rowHeight;
-      metrics.current = { height, rowHeight };
+      metrics.current = { width, height, rowHeight };
       const resizedRows =
         rowsRef.current.length > VIRTUAL_ROW_THRESHOLD &&
         previousHeight !== rowHeight;
@@ -396,6 +401,17 @@ export function HorizontalTimeline({
         viewportHeight
       )
         scroll.style.setProperty("--timeline-viewport-height", viewportHeight);
+      // When the inspector closes, the viewport grows before ResizeObserver
+      // updates the two centring pads. The browser temporarily clamps
+      // scrollLeft against the old board width. Restore the last committed
+      // chronology position after the pads match the new viewport.
+      if (previousWidth > 0 && previousWidth !== width) {
+        scroll.scrollLeft = yearToPreserveOnResize.current === null
+          ? preservedLeft
+          : model.yearX(yearToPreserveOnResize.current);
+        yearToPreserveOnResize.current = null;
+      }
+      currentScrollLeft.current = scroll.scrollLeft;
       if (resizedRows) scroll.scrollTop = top;
       syncViewport(top);
     };
@@ -403,7 +419,7 @@ export function HorizontalTimeline({
     const observer = new ResizeObserver(measure);
     observer.observe(scroll);
     return () => observer.disconnect();
-  }, [syncViewport]);
+  }, [model, syncViewport]);
 
   useEffect(() => {
     const ids = new Set(visibleRowIds ? visibleRowIds.split("\u0000") : []);
@@ -520,6 +536,42 @@ export function HorizontalTimeline({
   }, [firstYear, model]);
 
   useLayoutEffect(() => {
+    const scroll = viewport.current;
+    const previous = previousModel.current;
+    previousModel.current = model;
+    if (!scroll || previous === model || !initialScrollDone.current) return;
+    // Detailed person data can extend the chronology and move its start year.
+    // Preserve the year under the centre marker rather than reusing a pixel
+    // offset that now belongs to a different date.
+    const preservedYear = previous.yearAtX(currentScrollLeft.current);
+    scroll.scrollLeft = model.yearX(preservedYear);
+    currentScrollLeft.current = scroll.scrollLeft;
+    const next = model.yearAtX(scroll.scrollLeft);
+    if (yearLabel.current) yearLabel.current.textContent = String(next);
+    setYear((current) => (current === next ? current : next));
+  }, [model]);
+
+  useLayoutEffect(() => {
+    const previous = previousSelectedKey.current;
+    previousSelectedKey.current = selectedKey;
+    const scroll = viewport.current;
+    if (!scroll || previous === selectedKey || !initialScrollDone.current) return;
+    // Opening or closing a profile changes the desktop canvas width. Keep the
+    // chronology on the year the user was viewing instead of accepting the
+    // browser's temporary horizontal-scroll clamp during that layout change.
+    const focusedBirthYear =
+      focusId &&
+      focusToken !== undefined &&
+      focusToken !== lastHorizontalFocusToken.current
+        ? model.rows.find((row) => row.person.id === focusId)?.birthYear
+        : undefined;
+    // A search result both opens the inspector and explicitly moves the
+    // chronology. In that case the resize must preserve the destination year,
+    // not the year that was visible before the search started.
+    yearToPreserveOnResize.current = focusedBirthYear ?? year;
+  }, [focusId, focusToken, model, selectedKey, year]);
+
+  useLayoutEffect(() => {
     lifelines.current = Array.from(
       board.current?.querySelectorAll<HTMLElement>(".timeline-life") || [],
     );
@@ -578,6 +630,10 @@ export function HorizontalTimeline({
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
+        // A width change can make the browser clamp scrollLeft before the
+        // ResizeObserver has rebuilt the centring pads. Do not commit that
+        // transient value as a new year; measure() restores the last position.
+        if (scroll.clientWidth !== metrics.current.width) return;
         // Capture both axes before mutating the label or lifeline styles.
         // Newly mounted rows use this same position without a layout read.
         const left = scroll.scrollLeft;

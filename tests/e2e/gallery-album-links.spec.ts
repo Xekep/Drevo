@@ -160,6 +160,18 @@ test("предзагруженные фото перелистываются б�
   }
 });
 
+test("просмотр фотографий переключается стрелками клавиатуры", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/photos/album-child-1990");
+  await expect(page.getByRole("dialog", { name: /Просмотр фото/ })).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await expect(page).toHaveURL(/\/photos\/album-child-1980$/);
+  await expect(page.getByRole("dialog", { name: /Просмотр фото: 1980/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Предыдущая фотография" })).toBeEnabled();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page).toHaveURL(/\/photos\/album-child-1990$/);
+});
+
 test("медленная загрузка показывает статус, а ошибку снимка можно повторить", async ({
   page,
 }) => {
