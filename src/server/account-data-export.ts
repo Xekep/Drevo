@@ -14,6 +14,7 @@ import {
   type OwnAiAttachment,
 } from "./account-attachment-export.ts";
 import type { PoolClient } from "pg";
+import { personalResearchStore } from "./personal-research.ts";
 
 const MAX_EXPORTED_AI_MESSAGE_BYTES = 16 * 1024 * 1024;
 const MAX_EXPORTED_AI_MESSAGES = 50_000;
@@ -526,7 +527,16 @@ export function accountDataExport(db: StoreDatabase) {
               }
             }
           }
+          const personal = membership.approved === true ? {
+            bookmarks: await personalResearchStore(db).bookmarks(accountId),
+            savedPeopleFilters: await personalResearchStore(db).filters(accountId),
+          } : null;
+          if (personal) {
+            metadataRawBytes += Buffer.byteLength(JSON.stringify(personal));
+            if (metadataRawBytes > MAX_EXPORTED_METADATA_RAW_BYTES) { jsonTooLarge = true; continue; }
+          }
           archives.push({
+            personal,
             id: String(membership.archive_id),
             title: String(membership.title),
             role: String(membership.role),

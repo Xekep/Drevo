@@ -45,7 +45,29 @@ CREATE TABLE IF NOT EXISTS history (
 ) STRICT;
 `;
 
-const serviceSchema = `
+const personalResearchSchema = `
+CREATE TABLE IF NOT EXISTS personal_bookmarks (
+  user_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('person','photo','document')),
+  entity_id TEXT NOT NULL CHECK(length(entity_id) BETWEEN 1 AND 200),
+  created_ms INTEGER NOT NULL,
+  PRIMARY KEY(user_id,kind,entity_id)
+) STRICT;
+CREATE TABLE IF NOT EXISTS personal_people_filters (
+  user_id TEXT NOT NULL,
+  id TEXT NOT NULL,
+  name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 80),
+  criteria TEXT NOT NULL CHECK(json_valid(criteria)),
+  created_ms INTEGER NOT NULL,
+  PRIMARY KEY(user_id,id)
+) STRICT;
+CREATE TABLE IF NOT EXISTS audit_reverts (
+  revision INTEGER PRIMARY KEY CHECK(revision>0),
+  reverted_revision INTEGER NOT NULL CHECK(reverted_revision>revision)
+) STRICT;
+`;
+
+const serviceSchema = `${personalResearchSchema}
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -1487,6 +1509,12 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     }
   }
   initializeSqliteAiChatCursors(db);
+  db.exec(personalResearchSchema);
+  db.exec(`CREATE TRIGGER IF NOT EXISTS remove_personal_research_after_user
+    AFTER DELETE ON users BEGIN
+      DELETE FROM personal_bookmarks WHERE user_id=OLD.id;
+      DELETE FROM personal_people_filters WHERE user_id=OLD.id;
+    END`);
   if (!db.prepare("PRAGMA table_info(ai_usage)").all().some((column) => column.name === "reserved_tokens"))
     db.exec("ALTER TABLE ai_usage ADD COLUMN reserved_tokens INTEGER NOT NULL DEFAULT 0 CHECK(reserved_tokens>=0)");
   if (!db.prepare("PRAGMA table_info(ai_usage)").all().some((column) => column.name === "uncertain_tokens"))

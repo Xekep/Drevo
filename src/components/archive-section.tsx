@@ -3,6 +3,7 @@ import type { ArchiveUser, Family, Person } from "../domain";
 import type { ArchiveView } from "../domain/archive-routes";
 import { ArchiveLoading } from "./archive-loading";
 import { loadLazyModule } from "./lazy-section-recovery";
+import { memberPreviewAt } from "../domain/archive-context";
 import type { GalleryPage, GalleryQuery } from "../domain/archive-view-projection";
 import type { FamilyInsights } from "../domain/family-insights";
 
@@ -57,6 +58,7 @@ type Props = {
   insights?: FamilyInsights;
   loadGallery?: (query: GalleryQuery) => Promise<GalleryPage>;
   galleryGeneration?: number;
+  revision?: number;
   detailsError?: string;
   onRetryDetails?: () => void;
   save: (family: Family) => Promise<Family>;
@@ -137,6 +139,8 @@ export function ArchiveSection(props: Props) {
         people={props.people}
         query={props.query}
         onSelect={props.onPerson}
+        revision={props.revision || 0}
+        personal={!!props.user?.approved && !memberPreviewAt(window.location.pathname)}
       />
     );
   else if (props.view === "places")

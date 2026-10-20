@@ -37,6 +37,7 @@ import { MemberPreviewExit } from "./member-preview-exit";
 import { archiveResourceUrl } from "../domain/archive-context.ts";
 import { PlaceField } from "./place-field";
 import { CopyArchiveLink } from "./copy-archive-link";
+import { BookmarkButton } from "./personal-bookmarks";
 import { PhotoPersonSidebar } from "./photo-person-sidebar";
 import {
   confirmDiscardChanges,
@@ -349,6 +350,7 @@ function PhotoViewerContent({
           className="photo-copy-link"
           target={{ kind: "photo", id: photo.id }}
         />
+        <BookmarkButton target={{ kind: "photo", id: photo.id }} />
         <button
           className="photo-close"
           onClick={onClose}

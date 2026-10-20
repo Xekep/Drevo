@@ -761,7 +761,7 @@ export function AdminPanel({
         {visibleSection === "audit" && (
           <section className="admin-card archive-form">
             <AuditActorFilter value={auditActor} onChange={setAuditActor} />
-            <AuditLog key={auditActor} actorId={auditActor || undefined} />
+            <AuditLog key={auditActor} actorId={auditActor || undefined} onChanged={onChanged} />
           </section>
         )}
         {visibleSection === "backups" && backupAccess && (

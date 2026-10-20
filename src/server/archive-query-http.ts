@@ -32,6 +32,11 @@ import {
 import { publicPersonId } from "./public-person-id.ts";
 import { analyzeFamilyInsights } from "../domain/family-insights.ts";
 import { withPreparation, preparationAdmission, type PreparationAdmission } from "./preparation-admission.ts";
+import { filterResearchPeople } from "../domain/research-people-filter.ts";
+import { researchRequestBody } from "./research-request-body.ts";
+import { isSameOriginRequest } from "./same-origin.ts";
+import { isInfrastructureError } from "./infrastructure-error.ts";
+import { WorkQueueBusyError } from "./work-queue.ts";
 
 export function archiveQueryHttp({
   archive,
@@ -42,6 +47,7 @@ export function archiveQueryHttp({
   beforeDelivery,
   beforeLockedDelivery,
   preparation = preparationAdmission(),
+  publicOrigin,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -51,6 +57,7 @@ export function archiveQueryHttp({
   beforeDelivery?: () => Promise<void>;
   beforeLockedDelivery?: () => Promise<void>;
   preparation?: PreparationAdmission;
+  publicOrigin?: string;
 }) {
   const searchPeople = peopleSearchStore(archive.db, archive.cacheBudget);
   const scopedIds = scopedArchiveReader(archive);
@@ -146,6 +153,7 @@ export function archiveQueryHttp({
     const path = url.pathname;
     if (
       path !== "/api/people/search" &&
+      path !== "/api/people/filter" &&
       path !== "/api/account/portrait" &&
       path !== "/api/research-resources" &&
       path !== "/api/export.json" &&
@@ -290,6 +298,26 @@ export function archiveQueryHttp({
         });
       return valid || res.headersSent || res.destroyed ? true : changed();
     };
+
+    if (path === "/api/people/filter") {
+      if (req.method !== "POST") return json(res, 405, { error: "Ожидается POST" });
+      if (!memberCanRead) return json(res, 401, { error: "Войдите для поиска по условиям" });
+      if (!isSameOriginRequest(req, publicOrigin)) return json(res, 403, { error: "Недопустимый источник запроса" });
+      try {
+        const body = await researchRequestBody(req);
+        return await withPreparation(req, res, preparation, 64 * 1024 ** 2, async signal => {
+          const data = await scopedSnapshot(visitor!);
+          signal.throwIfAborted();
+          const result = filterResearchPeople(data.family, body.criteria, "include");
+          return deliverArchiveJson({ ...result, revision: data.revision }, undefined, data.revision);
+        });
+      } catch (error) {
+        if (isInfrastructureError(error)) throw error;
+        if (error instanceof WorkQueueBusyError) return json(res, 503, { error: error.message });
+        if ((error as { code?: unknown })?.code) throw error;
+        return json(res, 400, { error: error instanceof Error ? error.message : "Проверьте условия поиска" });
+      }
+    }
 
     if (path === "/api/account/portrait") {
       if (req.method !== "GET") {
