@@ -509,7 +509,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     scopeKey: JSON.stringify([typeof window === "undefined" ? null : archiveContextAt(window.location.pathname)?.id, user?.id, user?.role, user?.treeAccess, user?.personId]),
     focus: effectivePersonFocus,
   });
-  const [fragmentOwner, setFragmentOwner] = useState<string | null>(null);
+  const { ownerId: fragmentOwner, setOwner: setFragmentOwner } = fragment;
   const root = fragment.active ? fragment.anchorId : familyRoot;
   const scopedVisible = fragment.visible;
   const depth = useDepthTree(renderFamily, scopedVisible, depthEnabled,
@@ -961,7 +961,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       if (fragment.active) setFragmentOwner(id);
       else toggleView(id);
     },
-    [flow, layoutKey, personOccurrences, positions, toggleView, fragment.active],
+    [flow, layoutKey, personOccurrences, positions, toggleView, fragment.active, setFragmentOwner],
   );
   const gpuArchiveContext = typeof window === "undefined" ? null :
     archiveContextAt(window.location.pathname);

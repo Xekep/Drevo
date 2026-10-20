@@ -49,11 +49,15 @@ test("a large tree starts as a fragment, shows real continuations and keeps the 
   await expect(
     dialog.getByRole("button", { name: /Родитель|Ребёнок/ }).first(),
   ).toBeVisible();
-  await dialog
-    .getByRole("button", { name: /Родитель|Ребёнок/ })
-    .first()
-    .click();
+  const next = dialog.getByRole("button", { name: /Родитель|Ребёнок/ }).first();
+  const nextId = /Человек (\d+)/.exec(await next.innerText())![1];
+  await next.click();
   await expect(dialog).not.toBeVisible();
+  await expect(
+    page.locator(
+      `.flow-person[data-person-id="fragment-${nextId}"][data-anchor="true"]`,
+    ),
+  ).toHaveCount(1);
   await expect(status).toBeVisible();
   await page
     .getByRole("button", { name: "Настройки древа", exact: true })

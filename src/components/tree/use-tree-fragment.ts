@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { Family } from "../../domain/types";
 import { familyNeighbors } from "../../domain/family-neighborhood";
 import {
@@ -38,6 +38,7 @@ export function useTreeFragment({
     full: false,
     focusToken: -1,
     moveToken: 0,
+    ownerId: null as string | null,
   });
   const current =
     navigation.key === key
@@ -49,8 +50,12 @@ export function useTreeFragment({
           full: false,
           focusToken: focus?.token ?? -1,
           moveToken: 0,
+          ownerId: null,
         };
   if (navigation.key !== key) setNavigation(current);
+  const setOwner = useCallback((ownerId: string | null) => {
+    setNavigation((previous) => ({ ...previous, ownerId }));
+  }, []);
   const anchorId = allowed.has(current.anchorId)
     ? current.anchorId
     : preferredAnchor && allowed.has(preferredAnchor)
@@ -108,6 +113,8 @@ export function useTreeFragment({
       projection?.continuations || new Map<string, FragmentContinuation>(),
     atLimit: projection?.atLimit || false,
     expanded: current.expanded,
+    ownerId: current.ownerId,
+    setOwner,
     focus:
       active && current.moveToken
         ? { ids: [anchorId], token: current.moveToken }
@@ -122,7 +129,7 @@ export function useTreeFragment({
       const expanded = new Set(current.expanded);
       if (expanded.has(id)) expanded.delete(id);
       else expanded.add(id);
-      setNavigation({ ...current, anchorId, expanded });
+      setNavigation({ ...current, anchorId, expanded, ownerId: null });
     },
     choose(id: string) {
       if (!allowed.has(id)) return;
@@ -133,10 +140,11 @@ export function useTreeFragment({
         full: false,
         focusToken: focus?.token ?? -1,
         moveToken: Math.max(Date.now(), current.moveToken + 1),
+        ownerId: null,
       });
     },
     showAll() {
-      setNavigation({ ...current, full: true });
+      setNavigation({ ...current, full: true, ownerId: null });
     },
   };
 }
