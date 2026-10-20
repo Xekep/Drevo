@@ -419,7 +419,7 @@ export function HorizontalTimeline({
     const observer = new ResizeObserver(measure);
     observer.observe(scroll);
     return () => observer.disconnect();
-  }, [syncViewport]);
+  }, [model, syncViewport]);
 
   useEffect(() => {
     const ids = new Set(visibleRowIds ? visibleRowIds.split("\u0000") : []);
@@ -559,8 +559,17 @@ export function HorizontalTimeline({
     // Opening or closing a profile changes the desktop canvas width. Keep the
     // chronology on the year the user was viewing instead of accepting the
     // browser's temporary horizontal-scroll clamp during that layout change.
-    yearToPreserveOnResize.current = year;
-  }, [model, selectedKey, year]);
+    const focusedBirthYear =
+      focusId &&
+      focusToken !== undefined &&
+      focusToken !== lastHorizontalFocusToken.current
+        ? model.rows.find((row) => row.person.id === focusId)?.birthYear
+        : undefined;
+    // A search result both opens the inspector and explicitly moves the
+    // chronology. In that case the resize must preserve the destination year,
+    // not the year that was visible before the search started.
+    yearToPreserveOnResize.current = focusedBirthYear ?? year;
+  }, [focusId, focusToken, model, selectedKey, year]);
 
   useLayoutEffect(() => {
     lifelines.current = Array.from(
