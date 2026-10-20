@@ -513,6 +513,16 @@
   font-size: 12px;
   white-space: nowrap;
 }
+.inspector-heading .inspector-person-actions > .person-relative-button {
+  width: var(--control-height);
+  padding: 0;
+}
+.inspector-heading .inspector-person-actions > .person-relative-button > span {
+  display: none;
+}
+.inspector-heading .inspector-person-actions > .person-relative-button > svg {
+  display: block;
+}
 .person-more-actions {
   position: relative;
   flex: none;
