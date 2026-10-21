@@ -140,6 +140,7 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
     data.family.photos = [];
     data.partial = false;
     data.user.personId = null;
+    data.treePreferences = { ...data.treePreferences, fragmentThreshold: 0 };
     await route.fulfill({ response, json: data });
   });
   const portraits = process.env.DREVO_RENDER_PROFILE
@@ -689,6 +690,7 @@ test("shared GPU tree keeps review rings and releases its scene when access is r
   test.setTimeout(180_000);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() => {
+    localStorage.setItem("drevo:guest-tree-preferences:v1", JSON.stringify({ fragmentThreshold: 0 }));
     const get = WebGL2RenderingContext.prototype.getParameter;
     WebGL2RenderingContext.prototype.getParameter = function (
       parameter: number,

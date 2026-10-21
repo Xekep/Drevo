@@ -1009,6 +1009,7 @@ export default function App() {
                       onAddSelf={canEdit && user && isArchiveOwner(user) && !user.personId ? newSelf : undefined}
                       skipInitialGrowth={initialPersonLink}
                       animateOnLoad={archive.treePreferences.animateOnLoad}
+                      fragmentThreshold={archive.treePreferences.fragmentThreshold}
                       onGrowthChange={setTreeGrowing}
                       comparisonAction={
                         <div className="workspace-actions">

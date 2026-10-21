@@ -115,6 +115,7 @@ test("the distant portrait layer recovers from one transient tiny response", asy
     data.family.links = [];
     data.family.unions = [];
     data.family.photos = [];
+    data.treePreferences = { ...data.treePreferences, fragmentThreshold: 0 };
     data.partial = false;
     data.user.personId = null;
     await route.fulfill({ response, json: data });
@@ -158,6 +159,7 @@ test("stalled distant portraits release their slots for later visible faces", as
     data.family.links = [];
     data.family.unions = [];
     data.family.photos = [];
+    data.treePreferences = { ...data.treePreferences, fragmentThreshold: 0 };
     data.partial = false;
     data.user.personId = null;
     await route.fulfill({ response, json: data });

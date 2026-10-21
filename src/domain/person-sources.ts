@@ -1,4 +1,4 @@
-import type { Person, Source } from "./types.ts";
+import type { Person, Source, FamilyUnion } from "./types.ts";
 
 export type PersonSourceEntry = Source & {
   origin?: string;
@@ -20,7 +20,7 @@ function normalized(value?: string) {
   return (value || "").trim().toLocaleLowerCase("ru-RU").replace(/\s+/g, " ");
 }
 
-function sourceKey(source: Source) {
+export function personSourceKey(source: Source) {
   const repository = source.repository ? `|repository:${JSON.stringify(source.repository)}` : "";
   if (source.documentId)
     return `document:${source.documentId}:${source.documentPage || 1}${repository}`;
@@ -34,7 +34,7 @@ function sourceKey(source: Source) {
  * Вкладка «Источники» должна быть сводной, а не заставлять искать ссылку
  * внутри конкретной награды или события.
  */
-export function collectPersonSources(person: Person): PersonSourceEntry[] {
+export function collectPersonSources(person: Person, unions: FamilyUnion[] = []): PersonSourceEntry[] {
   const result: PersonSourceEntry[] = [];
   const seen = new Map<string, number>();
 
@@ -49,7 +49,7 @@ export function collectPersonSources(person: Person): PersonSourceEntry[] {
       documentId: source.documentId,
       origin,
     };
-    const key = sourceKey(clean);
+    const key = personSourceKey(clean);
     const existing = seen.get(key);
     if (existing !== undefined) {
       if (origin && !result[existing].origin?.split("; ").includes(origin))
@@ -114,5 +114,10 @@ export function collectPersonSources(person: Person): PersonSourceEntry[] {
     }
   }
 
+  for (const union of unions) if (union.participants.includes(person.id)) {
+    for (const source of union.sources || []) add(source, "Союз");
+    for (const [key, label] of [["formation", "Начало союза"], ["divorce", "Развод"], ["ending", "Окончание союза"], ["ongoing", "Продолжение союза"]] as const)
+      for (const source of union[key]?.sources || []) add(source, label);
+  }
   return result;
 }

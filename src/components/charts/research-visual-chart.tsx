@@ -165,7 +165,10 @@ function visualOption(visual: ResearchVisual, expanded: boolean, layout?: ElkNod
         top: 48,
         bottom: 48,
         roam: true,
-        draggable: true,
+        // Gestures start anywhere in the plot, including empty margins. The
+        // default "self" trigger only accepts the graph's drawn bounding box.
+        roamTrigger: "global",
+        draggable: false,
         data: visual.graph.nodes.map((node) => ({
           id: node.id,
           name: node.label || node.name,
@@ -292,7 +295,7 @@ export function ResearchVisualChart({ source }: { source: string }) {
         style={inlineHeight ? { height: inlineHeight } : undefined}>
           <ChartCanvas
             option={inlineOption}
-            className="research-visual-plot"
+            className={`research-visual-plot${visual.kind === "graph" ? " research-graph-plot" : ""}`}
             label={label}
           />
           <button
@@ -388,7 +391,7 @@ export function ResearchVisualChart({ source }: { source: string }) {
               </header>
               <ChartCanvas
                 option={expandedOption}
-                className="research-visual-dialog-plot"
+                className={`research-visual-dialog-plot${visual.kind === "graph" ? " research-graph-plot" : ""}`}
                 label={label}
                 onReady={(instance) => {
                   chart.current = instance;

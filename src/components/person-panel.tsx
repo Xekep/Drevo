@@ -1,7 +1,9 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
-import { archiveDocumentPath, archiveEntityAt } from "../domain/archive-routes.ts";
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { archiveDocumentPath } from "../domain/archive-routes.ts";
+import { lazy, Suspense, useEffect, useState, useMemo, type ReactNode } from "react";
+import { usePersonEvidence } from "./use-person-evidence";
+import { researchEvidenceAnchor } from "../domain/research-evidence";
 import { julianInputLabel } from "../domain/calendar-dates";
 import {
   ArrowDownUp,
@@ -148,9 +150,7 @@ export function PersonPanel({
   canLoadDocuments?: boolean;
   idPrefix?: string;
 }) {
-  const [tab, setTab] = useState<"bio" | "sources" | "discussion">(() =>
-    canDiscuss && typeof window !== "undefined" && window.location.hash === "#discussion" && archiveEntityAt(window.location.pathname)?.id === person.id
-      ? "discussion" : "bio");
+  const { tab, setTab, content: evidenceContent } = usePersonEvidence(person, unions, canDiscuss);
   const discussionCount = useDiscussionCount(person.id, canDiscuss);
   const [documents, setDocuments] = useState<{
     personId: string;
@@ -243,7 +243,11 @@ export function PersonPanel({
           documentCount.retry === documentRetry
         ? documentCount.total
         : 0;
-  const sources = collectPersonSources(person);
+  const sourceUnions = useMemo(() => {
+    const ids = new Set(people.map(p => p.id));
+    return unions?.filter(union => union.participants.every(id => ids.has(id)));
+  }, [people, unions]);
+  const sources = collectPersonSources(person, sourceUnions);
   const relatives = people.filter(
     (p) =>
       links?.some(
@@ -369,6 +373,7 @@ export function PersonPanel({
       </div>
       <div
         className="profile-content"
+        ref={evidenceContent}
         id={`${idPrefix}-tab-content`}
         role="tabpanel"
         aria-labelledby={`${idPrefix}-${tab}-tab`}
@@ -377,7 +382,7 @@ export function PersonPanel({
           <>
             {(person.birth || person.birthPlace || person.factAlternatives?.some((alternative) =>
               alternative.field === "birth" || alternative.field === "birthPlace")) && (
-              <div className="life-event">
+              <div className="life-event" data-evidence={researchEvidenceAnchor("birth", person.id)} tabIndex={-1}>
                 <span className="event-icon">
                   <Sprout size={13} />
                 </span>
@@ -396,7 +401,7 @@ export function PersonPanel({
             )}
             {hasRecordedDeath(person) || person.factAlternatives?.some((alternative) =>
               alternative.field === "death" || alternative.field === "deathPlace") ? (
-              <div className="life-event">
+              <div className="life-event" data-evidence={researchEvidenceAnchor("death", person.id)} tabIndex={-1}>
                 <span className="event-icon">†</span>
                 <div>
                   <span className="event-label">{hasRecordedDeath(person)
@@ -513,6 +518,8 @@ export function PersonPanel({
               sources.map((s, i) => (
                 <div
                   className="source-card"
+                  data-evidence={researchEvidenceAnchor("source", s)}
+                  tabIndex={-1}
                   key={`${s.title}-${s.url || s.reference}-${i}`}
                 >
                   <div className="source-type">

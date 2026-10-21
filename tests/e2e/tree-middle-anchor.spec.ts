@@ -192,7 +192,8 @@ for (const firstOperation of ["reset", "anchor"] as const) {
     const reset = anchor.getByRole("button", { name: "Снять ограничения поколений", exact: true });
     const parent = page.locator('.flow-person[data-person-id="e2e-memorial-person"] .flow-person-content').first();
     await expect(canvas).toHaveAttribute("data-layout-people", "4");
-    await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
+    await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+    await expect(canvas).not.toHaveClass(/is-growth-preparing|is-growing|is-layout-settling/);
     try {
       if (firstOperation === "reset") await reset.click();
       else await parent.click({ button: "middle" });
@@ -307,7 +308,7 @@ test("middle click hits a person in the Canvas fallback overview of a 600-person
   test.skip(isMobile, "Shortcut for a mouse with a wheel");
   test.setTimeout(90_000);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  let preferences: TreePreferences = { ...DEFAULT_TREE_PREFERENCES };
+  let preferences: TreePreferences = { ...DEFAULT_TREE_PREFERENCES, fragmentThreshold: 0 };
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const archive = await response.json();

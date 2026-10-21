@@ -2,7 +2,14 @@ import { dateBound, fullName, hasRecordedDeath, validDate } from "./dates.ts";
 import { archiveConnections } from "./connections.ts";
 import { collectPersonSources } from "./person-sources.ts";
 import { normalizeResearchText, surnameKeys } from "./research-names.ts";
-import type { Family, Person, PersonEvent } from "./types.ts";
+import type { Family, Person, Source } from "./types.ts";
+import {
+  RESEARCH_EVENT_TYPES,
+  researchEventRecords,
+  eventEvidence,
+  boundedResearchItems,
+  type ResearchEventRecord,
+} from "./research-event-query.ts";
 
 const textSchema = { type: "string", minLength: 1, maxLength: 200 } as const;
 const yearSchema = { type: "integer", minimum: 1, maximum: 9999 } as const;
@@ -14,18 +21,7 @@ const relations = [
   "spouses",
   "siblings",
 ] as const;
-const eventTypes = [
-  "residence",
-  "move",
-  "education",
-  "work",
-  "military",
-  "marriage",
-  "divorce",
-  "baptism",
-  "burial",
-  "other",
-] as const;
+const eventTypes = RESEARCH_EVENT_TYPES;
 
 const leafSchema = {
   type: "object",
@@ -79,6 +75,13 @@ const leafSchema = {
         "Год начала записанного события. Все event-поля должны совпасть в одном событии.",
     },
     eventYearTo: yearSchema,
+    eventSourceType: {
+      ...textSchema,
+      description:
+        "Точный тип прикреплённого к тому же событию источника; все eventSource-поля совпадают в одном источнике.",
+    },
+    eventSourceTitleContains: textSchema,
+    eventSourceReferenceContains: textSchema,
     relativeOf: {
       ...textSchema,
       description:
@@ -230,9 +233,25 @@ function matches(person: Person, criteria: Criteria) {
   return true;
 }
 
-function compileCriteria(family: Family, value: unknown) {
+function compileCriteria(family: Family, value: unknown, sourceAccess = true) {
+  let usesEvents = false;
+  let usesEventSources = false;
+  let byPerson: Map<string, ResearchEventRecord[]> | undefined;
+  const recordedEvents = (person: Person) => {
+    if (!byPerson) {
+      byPerson = new Map();
+      for (const event of researchEventRecords(family))
+        for (const id of event.people) {
+          const rows = byPerson.get(id) || [];
+          rows.push(event);
+          byPerson.set(id, rows);
+        }
+    }
+    return byPerson.get(person.id) || [];
+  };
   const available = new Set(family.people.map((person) => person.id));
   const sources = new Map<string, boolean>();
+  let unionSources: Set<string> | undefined;
   const photographed = new Set(
     family.photos?.flatMap((photo) => photo.tags.map((tag) => tag.personId)) ||
       [],
@@ -300,12 +319,14 @@ function compileCriteria(family: Family, value: unknown) {
   function compile(
     value: unknown,
     grouped = false,
-  ): (person: Person, event?: PersonEvent) => boolean {
+  ): (person: Person, event?: ResearchEventRecord) => boolean {
     if (!value || typeof value !== "object" || Array.isArray(value))
       throw new Error("Укажите условия отбора людей");
     const entries = Object.entries(value);
     if (!entries.length) throw new Error("Укажите хотя бы одно условие отбора");
-    const tests: Array<(person: Person, event?: PersonEvent) => boolean> = [];
+    const tests: Array<
+      (person: Person, event?: ResearchEventRecord) => boolean
+    > = [];
     for (const [key, item] of entries) {
       if (["allOf", "anyOf", "noneOf"].includes(key)) {
         if (grouped || !Array.isArray(item) || !item.length || item.length > 10)
@@ -321,7 +342,7 @@ function compileCriteria(family: Family, value: unknown) {
               : !children.some(
                   (test) =>
                     test(person) ||
-                    (person.events || []).some((candidate) =>
+                    recordedEvents(person).some((candidate) =>
                       test(person, candidate),
                     ),
                 ),
@@ -387,8 +408,27 @@ function compileCriteria(family: Family, value: unknown) {
         tests.push((person) => Boolean(validDate(person.death)) === item);
       if (key === "hasSources")
         tests.push((person) => {
+          if (!unionSources) {
+            unionSources = new Set();
+            for (const union of family.unions || [])
+              if (
+                union.participants.every((id) => available.has(id)) &&
+                [
+                  union,
+                  union.formation,
+                  union.divorce,
+                  union.ending,
+                  union.ongoing,
+                ].some((record) => record?.sources?.length)
+              )
+                for (const id of union.participants) unionSources.add(id);
+          }
           if (!sources.has(person.id))
-            sources.set(person.id, collectPersonSources(person).length > 0);
+            sources.set(
+              person.id,
+              unionSources.has(person.id) ||
+                collectPersonSources(person).length > 0,
+            );
           return sources.get(person.id) === item;
         });
       if (key === "hasPhoto")
@@ -421,6 +461,14 @@ function compileCriteria(family: Family, value: unknown) {
       tests.push((person) => ids.has(person.id));
     }
     if (entries.some(([key]) => key.startsWith("event"))) {
+      usesEvents = true;
+      if (entries.some(([key]) => key.startsWith("eventSource")))
+        usesEventSources = true;
+      if (
+        !sourceAccess &&
+        entries.some(([key]) => key.startsWith("eventSource"))
+      )
+        throw new Error("Для отбора по источникам нужен доступ к источникам");
       const place =
         typeof fields.eventPlaceContains === "string"
           ? normalizeResearchText(fields.eventPlaceContains)
@@ -447,6 +495,30 @@ function compileCriteria(family: Family, value: unknown) {
           )
             return false;
         }
+        if (
+          entries.some(([key]) => key.startsWith("eventSource")) &&
+          !event.sources.some(
+            (source) =>
+              (fields.eventSourceType === undefined ||
+                normalizeResearchText(source.type) ===
+                  normalizeResearchText(String(fields.eventSourceType))) &&
+              (fields.eventSourceTitleContains === undefined ||
+                contains(
+                  source.title,
+                  normalizeResearchText(
+                    String(fields.eventSourceTitleContains),
+                  ),
+                )) &&
+              (fields.eventSourceReferenceContains === undefined ||
+                contains(
+                  source.reference,
+                  normalizeResearchText(
+                    String(fields.eventSourceReferenceContains),
+                  ),
+                )),
+          )
+        )
+          return false;
         return true;
       });
     }
@@ -454,16 +526,39 @@ function compileCriteria(family: Family, value: unknown) {
       matches(person, criteria) && tests.every((test) => test(person, event));
   }
   const test = compile(value);
-  return (person: Person) =>
-    test(person) || (person.events || []).some((event) => test(person, event));
+  const eventMatches = (person: Person, event: ResearchEventRecord) =>
+    !usesEventSources || !event.sources.length
+      ? test(person, event)
+      : event.sources.some((source) =>
+          test(person, { ...event, sources: [source] }),
+        );
+  return {
+    matches: (person: Person) =>
+      test(person) ||
+      (usesEvents &&
+        recordedEvents(person).some((event) => eventMatches(person, event))),
+    matchingEvents: (person: Person) =>
+      usesEvents && !test(person)
+        ? recordedEvents(person).filter((event) => eventMatches(person, event))
+        : [],
+    sourcePredicate: (person: Person, event: ResearchEventRecord) =>
+      usesEventSources
+        ? (source: Source) => test(person, { ...event, sources: [source] })
+        : undefined,
+  };
 }
 
-function selectResearchPeople(family: Family, value: unknown, mode: unknown) {
+function selectResearchPeople(
+  family: Family,
+  value: unknown,
+  mode: unknown,
+  sourceAccess = true,
+) {
   if (mode !== "include" && mode !== "exclude")
     throw new Error("Выберите включение или исключение по условию");
-  const match = compileCriteria(family, value);
+  const match = compileCriteria(family, value, sourceAccess);
   const matched = new Set(
-    family.people.filter(match).map((person) => person.id),
+    family.people.filter(match.matches).map((person) => person.id),
   );
   return {
     people: family.people.filter((person) =>
@@ -471,6 +566,8 @@ function selectResearchPeople(family: Family, value: unknown, mode: unknown) {
     ),
     matchedCount: matched.size,
     totalPeople: family.people.length,
+    matchingEvents: match.matchingEvents,
+    sourcePredicate: match.sourcePredicate,
   };
 }
 
@@ -487,7 +584,11 @@ export function filterResearchPeople(
   };
 }
 
-export function queryResearchPeople(family: Family, raw: unknown) {
+export function queryResearchPeople(
+  family: Family,
+  raw: unknown,
+  sourceAccess = true,
+) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     throw new Error("Укажите параметры поиска");
   const args = raw as Record<string, unknown>;
@@ -511,38 +612,58 @@ export function queryResearchPeople(family: Family, raw: unknown) {
   const offset = pageNumber("offset", 0, 1_000_000),
     limit = pageNumber("limit", 50, 100);
   const mode = args.mode === undefined ? "include" : args.mode;
-  const selected = selectResearchPeople(family, args.criteria, mode);
+  const selected = selectResearchPeople(
+    family,
+    args.criteria,
+    mode,
+    sourceAccess,
+  );
+  const peopleById = new Map(
+    family.people.map((person) => [person.id, person]),
+  );
   const total = selected.people.length;
-  const hasMore = limit > 0 && offset + limit < total;
+  const ordered = selected.people.sort(
+    (a, b) =>
+      fullName(a).localeCompare(fullName(b), "ru") || a.id.localeCompare(b.id),
+  );
+  const { records: people, ...page } = boundedResearchItems(
+    ordered,
+    offset,
+    limit,
+    (person) => ({
+      id: person.id,
+      name: fullName(person),
+      sex: person.sex,
+      birth: person.birth || null,
+      death: person.death || null,
+      deceased: hasRecordedDeath(person),
+      birthPlace: person.birthPlace || null,
+      deathPlace: person.deathPlace || null,
+      ...(selected.matchingEvents(person).length
+        ? {
+            evidence: selected
+              .matchingEvents(person)
+              .slice(0, 3)
+              .map((event) =>
+                eventEvidence(
+                  event,
+                  peopleById,
+                  sourceAccess,
+                  selected.sourcePredicate(person, event),
+                ),
+              ),
+          }
+        : {}),
+    }),
+  );
   return {
     mode,
     total,
     matchedCount: selected.matchedCount,
     totalPeople: selected.totalPeople,
     offset,
-    limit,
     countOnly: limit === 0,
-    hasMore,
-    nextOffset: hasMore ? offset + limit : null,
-    people:
-      limit === 0
-        ? []
-        : selected.people
-            .sort(
-              (a, b) =>
-                fullName(a).localeCompare(fullName(b), "ru") ||
-                a.id.localeCompare(b.id),
-            )
-            .slice(offset, offset + limit)
-            .map((person) => ({
-              id: person.id,
-              name: fullName(person),
-              sex: person.sex,
-              birth: person.birth || null,
-              death: person.death || null,
-              deceased: hasRecordedDeath(person),
-              birthPlace: person.birthPlace || null,
-              deathPlace: person.deathPlace || null,
-            })),
+    ...page,
+    people,
   };
 }

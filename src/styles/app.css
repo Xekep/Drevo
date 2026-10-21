@@ -1623,6 +1623,11 @@ h1 {
   color: #8c9780;
   line-height: 1.7;
 }
+.research-evidence-target {
+  outline: 2px solid var(--accent, #55734a);
+  outline-offset: 4px;
+  scroll-margin-block: 16px;
+}
 .source-card {
   padding: 19px 0;
   border-bottom: 1px solid #e8edde;

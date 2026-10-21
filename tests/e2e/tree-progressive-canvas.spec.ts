@@ -21,6 +21,7 @@ async function routeLargeFamily(page: Page, withRelations = false) {
         to: "growth-2394", type: "godparent" }];
     }
     data.family.photos = [];
+    data.treePreferences = { ...data.treePreferences, fragmentThreshold: 0 };
     data.partial = false;
     data.user.personId = null;
     await route.fulfill({ response, json: data });

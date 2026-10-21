@@ -17,6 +17,7 @@ import {
 } from "../../domain/research-answer.ts";
 import { normalizeResearchMath } from "../../domain/research-math.ts";
 import { archiveResourceUrl } from "../../domain/archive-context.ts";
+import { scopedArchivePath } from "../../domain/archive-context.ts";
 
 export type ResearchMessage = {
   role: "user" | "assistant";
@@ -69,7 +70,7 @@ const MarkdownAnswerBody = memo(function MarkdownAnswerBody({
         if (!link && href.startsWith("#drevo-")) return <span>{children}</span>;
         if (!link)
           return (
-            <a href={href} target="_blank" rel="noreferrer">
+            <a href={/^\/people\/[^/]+#drevo-(?:event|source|union|birth|death)-[a-f0-9]+$/.test(href) ? scopedArchivePath(href) : href} target="_blank" rel="noreferrer">
               {children}
             </a>
           );

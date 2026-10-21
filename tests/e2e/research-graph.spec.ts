@@ -1,4 +1,40 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+
+async function graphView(plot: Locator) {
+  return plot.evaluate(async (element) => {
+    const url = performance.getEntriesByType("resource")
+      .find((entry) => /\/echarts-runtime-[^/]+\.js(?:\?|$)/.test(entry.name))!.name;
+    const { echarts } = await import(url);
+    const series = echarts.getInstanceByDom(element).getOption().series[0];
+    return { zoom: series.zoom, center: series.center };
+  });
+}
+
+async function navigateGraph(page: Page, plot: Locator) {
+  await plot.scrollIntoViewIfNeeded();
+  const box = (await plot.boundingBox())!;
+  const messages = await page.locator(".research-assistant-messages").boundingBox();
+  const x = box.x + 12;
+  const fullscreen = await page.locator(".research-visual-overlay").count();
+  const y = Math.max(box.y + 12, messages && !fullscreen ? messages.y + 12 : 0);
+  const before = await graphView(plot);
+  const pageBefore = await page.evaluate(() => ({ x: scrollX, y: scrollY }));
+  const chatBefore = await page.locator(".research-assistant-messages").evaluate((element) => element.scrollTop);
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 40, y + 32, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => (await graphView(plot)).center).not.toEqual(before.center);
+  const moved = await graphView(plot);
+  await page.mouse.move(x, y);
+  await page.mouse.wheel(0, -100);
+  await expect.poll(async () => (await graphView(plot)).zoom).toBeGreaterThan(moved.zoom);
+  const zoomed = await graphView(plot);
+  await page.mouse.wheel(0, 100);
+  await expect.poll(async () => (await graphView(plot)).zoom).toBeLessThan(zoomed.zoom);
+  expect(await page.evaluate(() => ({ x: scrollX, y: scrollY }))).toEqual(pageBefore);
+  expect(await page.locator(".research-assistant-messages").evaluate((element) => element.scrollTop)).toBe(chatBefore);
+}
 
 test("экранированная ссылка ИИ на фото становится кнопкой", async ({
   page,
@@ -63,6 +99,7 @@ test("ИИ показывает готовый ответ и раскрывае�
   await page.locator(".research-assistant textarea").fill("Покажи схему");
   await page.getByRole("button", { name: "Отправить запрос" }).click();
   await expect(page.locator(".research-visual canvas")).toBeVisible();
+  await navigateGraph(page, page.locator(".research-visual-plot"));
   await expect(
     page.locator(".research-assistant article.is-assistant"),
   ).toHaveCount(1);
@@ -73,6 +110,7 @@ test("ИИ показывает готовый ответ и раскрывае�
   ).toBeVisible();
   const close = dialog.getByRole("button", { name: "Закрыть схему" });
   await expect(close).toBeFocused();
+  await navigateGraph(page, dialog.locator(".research-visual-dialog-plot"));
   await page.keyboard.press("Tab");
   await expect(
     dialog.getByRole("button", { name: "Уменьшить схему" }),

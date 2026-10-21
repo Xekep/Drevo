@@ -69,6 +69,8 @@ export async function backfillRuntimeServicesInTransaction(
   const counts: Record<string, number> = {};
   await client.query(readFileSync(new URL("./046_tree_generation_limits.sql", import.meta.url), "utf8"));
   await client.query(readFileSync(new URL("./100_tree_load_animation.sql", import.meta.url), "utf8"));
+  await client.query(readFileSync(new URL("./108_tree_fragments.sql", import.meta.url), "utf8"));
+  await client.query(readFileSync(new URL("./106_tree_depth_presentation.sql", import.meta.url), "utf8"));
   await client.query(
     readFileSync(
       new URL("./020_code_interpreter.sql", import.meta.url),

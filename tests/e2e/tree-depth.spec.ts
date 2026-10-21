@@ -78,7 +78,12 @@ async function settle(page: Page) {
   await expect(world(page)).toHaveAttribute("aria-busy", "false");
   await expect(world(page)).toHaveAttribute("data-depth-moving", "false");
 }
-async function setup(page: Page, graph = family, canEdit = false, initial: Partial<TreePreferences> = {}) {
+async function setup(
+  page: Page,
+  graph = family,
+  canEdit = false,
+  initial: Partial<TreePreferences> = {},
+) {
   const preferences: TreePreferences = {
     ...DEFAULT_TREE_PREFERENCES,
     animateOnLoad: false,
@@ -178,8 +183,13 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   await setup(page, family, true);
   await settle(page);
   await expect(page.locator(".tree-spatial-canvas")).toHaveCount(1);
-  await expect(page.locator(".tree-spatial-orbit, .tree-spatial-add, .flow-add-tools")).toHaveCount(0);
-  const cameraTools = page.getByRole("group", { name: "Масштаб 3D-древа", includeHidden: true });
+  await expect(
+    page.locator(".tree-spatial-orbit, .tree-spatial-add, .flow-add-tools"),
+  ).toHaveCount(0);
+  const cameraTools = page.getByRole("group", {
+    name: "Масштаб 3D-древа",
+    includeHidden: true,
+  });
   if (info.project.name === "mobile") await expect(cameraTools).toBeHidden();
   else await expect(cameraTools).toBeVisible();
   await expect(world(page)).toHaveAttribute(
@@ -221,7 +231,9 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   await page.screenshot({ path: info.outputPath("3d-overview.png") });
   await expect(page.getByText("Люди в 3D", { exact: true })).toHaveCount(0);
   await page.locator(".tree-spatial-person-name").click();
-  await expect(page.getByRole("searchbox", { name: "Поиск в 3D-древе" })).toBeFocused();
+  await expect(
+    page.getByRole("searchbox", { name: "Поиск в 3D-древе" }),
+  ).toBeFocused();
   await page
     .getByRole("searchbox", { name: "Поиск в 3D-древе" })
     .fill("Алексей");
@@ -258,51 +270,87 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   expect(errors).toEqual([]);
 });
 
-test("near-camera arrow motion reuses the scene and stops with reduced motion", async ({ page }) => {
+test("near-camera arrow motion reuses the scene and stops with reduced motion", async ({
+  page,
+}) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 8 });
     Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
   });
   await setup(page);
   await settle(page);
-  await expect.poll(async () => Number(await world(page).getAttribute("data-depth-animated-arrows"))).toBeGreaterThan(0);
-  expect(Number(await world(page).getAttribute("data-depth-animated-arrows"))).toBeLessThanOrEqual(64);
+  await expect
+    .poll(async () =>
+      Number(await world(page).getAttribute("data-depth-animated-arrows")),
+    )
+    .toBeGreaterThan(0);
+  expect(
+    Number(await world(page).getAttribute("data-depth-animated-arrows")),
+  ).toBeLessThanOrEqual(64);
   const requests = await workerRequests(page);
   const textures = await world(page).getAttribute("data-depth-textures");
-  const frame = Number(await world(page).getAttribute("data-depth-arrow-frames") || 0);
-  await expect.poll(async () => Number(await world(page).getAttribute("data-depth-arrow-frames") || 0)).toBeGreaterThan(frame);
+  const frame = Number(
+    (await world(page).getAttribute("data-depth-arrow-frames")) || 0,
+  );
+  await expect
+    .poll(async () =>
+      Number((await world(page).getAttribute("data-depth-arrow-frames")) || 0),
+    )
+    .toBeGreaterThan(frame);
   await expect(world(page)).toHaveAttribute("data-depth-textures", textures!);
   expect(await workerRequests(page)).toBe(requests);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(world(page)).toHaveAttribute("data-depth-animated-arrows", "0");
   const stopped = await world(page).getAttribute("data-depth-arrow-frames");
   await page.waitForTimeout(300);
-  await expect(world(page)).toHaveAttribute("data-depth-arrow-frames", stopped!);
+  await expect(world(page)).toHaveAttribute(
+    "data-depth-arrow-frames",
+    stopped!,
+  );
 });
 
-test("3D assistant follows the visible camera controls and the mobile canvas boundary", async ({ page, isMobile }, info) => {
+test("3D assistant follows the visible camera controls and the mobile canvas boundary", async ({
+  page,
+  isMobile,
+}, info) => {
   await setup(page);
   await settle(page);
-  const launcher = page.getByRole("button", { name: "Открыть ИИ-исследователя" });
+  const launcher = page.getByRole("button", {
+    name: "Открыть ИИ-исследователя",
+  });
   for (const width of isMobile ? [320, 390, 768] : [1024, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
     await expect(launcher).toBeVisible();
-    await expect.poll(async () => {
-      const bounds = (await launcher.boundingBox())!;
-      if (isMobile) {
-        const canvas = (await page.locator(".tree-canvas").boundingBox())!;
-        return Math.abs(bounds.x - (canvas.x + canvas.width - 62));
-      }
-      const controls = (await page.locator(".tree-spatial-tools").boundingBox())!;
-      return Math.abs(bounds.x + bounds.width + 8 - controls.x) +
-        Math.abs(bounds.y + bounds.height / 2 - controls.y - controls.height / 2);
-    }).toBeLessThan(1);
+    await expect
+      .poll(async () => {
+        const bounds = (await launcher.boundingBox())!;
+        if (isMobile) {
+          const canvas = (await page.locator(".tree-canvas").boundingBox())!;
+          return Math.abs(bounds.x - (canvas.x + canvas.width - 62));
+        }
+        const controls = (await page
+          .locator(".tree-spatial-tools")
+          .boundingBox())!;
+        return (
+          Math.abs(bounds.x + bounds.width + 8 - controls.x) +
+          Math.abs(
+            bounds.y + bounds.height / 2 - controls.y - controls.height / 2,
+          )
+        );
+      })
+      .toBeLessThan(1);
   }
   await page.screenshot({ path: info.outputPath("3d-assistant-controls.png") });
 });
 
-test("desktop 3D person picker shares the relationship and preferences row", async ({ page, isMobile }, info) => {
-  test.skip(isMobile, "The compact desktop toolbar is separate from mobile controls");
+test("desktop 3D person picker shares the relationship and preferences row", async ({
+  page,
+  isMobile,
+}, info) => {
+  test.skip(
+    isMobile,
+    "The compact desktop toolbar is separate from mobile controls",
+  );
   await setup(page);
   await settle(page);
   for (const width of [1024, 1440, 1920]) {
@@ -313,15 +361,22 @@ test("desktop 3D person picker shares the relationship and preferences row", asy
     const focus = toolbar.getByRole("button", { name: /^Перейти к ветви:/ });
     const gear = toolbar.locator(".tree-preferences-trigger");
     await expect(name).toBeVisible();
-    const boxes = await Promise.all([relation, name, focus, gear].map(element => element.boundingBox()));
+    const boxes = await Promise.all(
+      [relation, name, focus, gear].map((element) => element.boundingBox()),
+    );
     for (let i = 0; i < boxes.length; i++) {
       expect(boxes[i]).not.toBeNull();
       expect(boxes[i]!.height).toBe(38);
       expect(Math.abs(boxes[i]!.y - boxes[3]!.y)).toBeLessThan(1);
-      if (i) expect(boxes[i]!.x).toBeGreaterThanOrEqual(boxes[i - 1]!.x + boxes[i - 1]!.width);
+      if (i)
+        expect(boxes[i]!.x).toBeGreaterThanOrEqual(
+          boxes[i - 1]!.x + boxes[i - 1]!.width,
+        );
     }
     await name.click();
-    await expect(page.getByRole("searchbox", { name: "Поиск в 3D-древе" })).toBeFocused();
+    await expect(
+      page.getByRole("searchbox", { name: "Поиск в 3D-древе" }),
+    ).toBeFocused();
     await page.keyboard.press("Escape");
   }
   await page.screenshot({ path: info.outputPath("3d-toolbar-row.png") });
@@ -331,14 +386,27 @@ test("desktop 3D person picker shares the relationship and preferences row", asy
   await expect(page.locator(".inspector-dock")).toBeVisible();
   for (const width of [900, 1024, 1199]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect.poll(async () => {
-      const tools = (await page.locator(".tree-display-actions").boundingBox())!;
-      const summary = (await page.locator(".tree-mode-bar > .archive-summary").boundingBox())!;
-      const mode = (await page.locator(".tree-mode-bar > .segmented").boundingBox())!;
-      return Math.min(summary.y - tools.y - tools.height, tools.x - mode.x - mode.width);
-    }).toBeGreaterThanOrEqual(0);
+    await expect
+      .poll(async () => {
+        const tools = (await page
+          .locator(".tree-display-actions")
+          .boundingBox())!;
+        const summary = (await page
+          .locator(".tree-mode-bar > .archive-summary")
+          .boundingBox())!;
+        const mode = (await page
+          .locator(".tree-mode-bar > .segmented")
+          .boundingBox())!;
+        return Math.min(
+          summary.y - tools.y - tools.height,
+          tools.x - mode.x - mode.width,
+        );
+      })
+      .toBeGreaterThanOrEqual(0);
   }
-  await page.screenshot({ path: info.outputPath("3d-toolbar-with-profile.png") });
+  await page.screenshot({
+    path: info.outputPath("3d-toolbar-with-profile.png"),
+  });
 });
 
 test("a thousand-person 3D archive keeps GPU batches, textures and detail bounded", async ({
@@ -352,7 +420,8 @@ test("a thousand-person 3D archive keeps GPU batches, textures and detail bounde
       p(String(i), i > 40 ? [String(Math.floor((i - 40) / 2))] : []),
     ),
   };
-  await setup(page, graph);
+  // Benchmark the full scene explicitly; the product default now opens a fragment.
+  await setup(page, graph, false, { fragmentThreshold: 0 });
   await settle(page);
   await expect(world(page)).toHaveAttribute("data-depth-world-people", "1000");
   const requests = await workerRequests(page);
@@ -439,6 +508,40 @@ test("a thousand-person 3D archive keeps GPU batches, textures and detail bounde
   const frames = await world(page).getAttribute("data-depth-frames");
   await page.waitForTimeout(500);
   expect(await world(page).getAttribute("data-depth-frames")).toBe(frames);
+});
+
+test("automatic 3D fragments follow an actual continuation with a new central person", async ({
+  page,
+}) => {
+  const graph: Family = {
+    ...family,
+    unions: [],
+    people: Array.from({ length: 100 }, (_, i) =>
+      p(String(i), i ? [String(Math.floor((i - 1) / 2))] : []),
+    ),
+  };
+  await setup(page, graph, false, { fragmentThreshold: 100 });
+  await settle(page);
+  const status = page.getByRole("region", { name: "Фрагмент большого древа" });
+  await expect(status).toBeVisible();
+  expect(
+    Number(await world(page).getAttribute("data-depth-world-people")),
+  ).toBeLessThan(100);
+  await status.getByRole("button", { name: "Продолжения ветвей" }).click();
+  const dialog = page.getByRole("dialog", { name: "Продолжение ветвей" });
+  const next = dialog.getByRole("button", { name: /Родитель|Ребёнок/ }).first();
+  const text = await next.innerText();
+  const id = /Человек (\d+)/.exec(text)![1];
+  await next.click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator(".tree-canvas")).toHaveAttribute(
+    "data-depth-anchor",
+    id,
+  );
+  await settle(page);
+  expect(
+    Number(await world(page).getAttribute("data-depth-world-people")),
+  ).toBeLessThanOrEqual(100);
 });
 
 test("all two hundred portraits and names stay present in the overview and after zoom", async ({
@@ -546,16 +649,27 @@ test("3D middle click sets the generation anchor and middle drag only pans", asy
   await page.mouse.up({ button: "middle" });
   expect(preferences.generationLimits).toBeUndefined();
   await page
-    .getByRole("button", { name: "Перейти к ветви: Соколов Михаил", exact: true })
+    .getByRole("button", {
+      name: "Перейти к ветви: Соколов Михаил",
+      exact: true,
+    })
     .click();
   await settle(page);
   await page.mouse.click(x, y, { button: "middle" });
   await expect.poll(() => preferences.generationLimits?.anchorId).toBe("me");
 });
 
-test("3D centers a changed generation anchor and restores it on reload", async ({ page, isMobile }) => {
+test("3D centers a changed generation anchor and restores it on reload", async ({
+  page,
+  isMobile,
+}) => {
   const preferences = await setup(page, family, false, {
-    generationLimits: { anchorId: "me", ancestors: 3, descendants: 3, collateral: 2 },
+    generationLimits: {
+      anchorId: "me",
+      ancestors: 3,
+      descendants: 3,
+      collateral: 2,
+    },
   });
   await settle(page);
   const tree = page.locator(".tree-canvas");
@@ -563,15 +677,22 @@ test("3D centers a changed generation anchor and restores it on reload", async (
   const population = await world(page).getAttribute("data-depth-world-people");
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
-  await dialog.getByRole("combobox", { name: "Относительно человека" }).fill("Алексей");
+  await dialog
+    .getByRole("combobox", { name: "Относительно человека" })
+    .fill("Алексей");
   await dialog.getByRole("option", { name: /Соколов Алексей/ }).click();
-  await expect.poll(() => preferences.generationLimits?.anchorId).toBe("sibling");
+  await expect
+    .poll(() => preferences.generationLimits?.anchorId)
+    .toBe("sibling");
   await expect(world(page)).toHaveAttribute("data-depth-moving", "true");
   await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
   await expect(tree).toHaveAttribute("data-depth-anchor", "sibling");
   await expect(tree).toHaveAttribute("data-layout-ready", "true");
   await settle(page);
-  await expect(world(page)).toHaveAttribute("data-depth-world-people", population!);
+  await expect(world(page)).toHaveAttribute(
+    "data-depth-world-people",
+    population!,
+  );
   // Check the real WebGL camera, rather than only the chosen ID: the new
   // anchor's portrait must be hit at the center of the scene.
   const canvas = page.locator(".tree-spatial-canvas");
@@ -587,40 +708,62 @@ test("3D centers a changed generation anchor and restores it on reload", async (
   await expect(tree).toHaveAttribute("data-depth-anchor", "sibling");
 
   const camera = await world(page).getAttribute("data-depth-camera");
-  await page.route("**/api/tree-preferences", (route) => route.fulfill({
-    status: 503, json: { error: "Сохранение временно недоступно" },
-  }));
+  await page.route("**/api/tree-preferences", (route) =>
+    route.fulfill({
+      status: 503,
+      json: { error: "Сохранение временно недоступно" },
+    }),
+  );
   await page.getByRole("button", { name: "Настройки древа" }).click();
-  await dialog.getByRole("combobox", { name: "Относительно человека" }).fill("Александр");
+  await dialog
+    .getByRole("combobox", { name: "Относительно человека" })
+    .fill("Александр");
   await dialog.getByRole("option", { name: /Соколов Александр/ }).click();
-  await expect(dialog.getByRole("alert")).toHaveText("Сохранение временно недоступно");
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "Сохранение временно недоступно",
+  );
   await expect(tree).toHaveAttribute("data-depth-anchor", "sibling");
   await expect(world(page)).toHaveAttribute("data-depth-camera", camera!);
 });
 
-test("возврат из 3D фокусирует 2D на текущем опорном человеке", async ({ page }) => {
+test("возврат из 3D фокусирует 2D на текущем опорном человеке", async ({
+  page,
+}) => {
   await setup(page, family, false, {
-    generationLimits: { anchorId: "me", ancestors: 3, descendants: 3, collateral: 2 },
+    generationLimits: {
+      anchorId: "me",
+      ancestors: 3,
+      descendants: 3,
+      collateral: 2,
+    },
   });
   await settle(page);
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
-  await dialog.getByRole("combobox", { name: "Относительно человека" }).fill("Алексей");
+  await dialog
+    .getByRole("combobox", { name: "Относительно человека" })
+    .fill("Алексей");
   await dialog.getByRole("option", { name: /Соколов Алексей/ }).click();
   await settle(page);
   await dialog.getByRole("radio", { name: "Обычное" }).check();
   await expect(page.locator(".tree-spatial")).toHaveCount(0);
   const card = page.getByTestId("rf__node-sibling");
   await expect(card).toBeVisible();
-  await expect.poll(async () => {
-    const canvas = await page.locator(".tree-canvas").boundingBox();
-    const bounds = await card.boundingBox();
-    if (!canvas || !bounds) return false;
-    const center = {
-      x: bounds.x + bounds.width / 2,
-      y: bounds.y + bounds.height / 2,
-    };
-    return center.x >= canvas.x && center.x <= canvas.x + canvas.width &&
-      center.y >= canvas.y && center.y <= canvas.y + canvas.height;
-  }).toBe(true);
+  await expect
+    .poll(async () => {
+      const canvas = await page.locator(".tree-canvas").boundingBox();
+      const bounds = await card.boundingBox();
+      if (!canvas || !bounds) return false;
+      const center = {
+        x: bounds.x + bounds.width / 2,
+        y: bounds.y + bounds.height / 2,
+      };
+      return (
+        center.x >= canvas.x &&
+        center.x <= canvas.x + canvas.width &&
+        center.y >= canvas.y &&
+        center.y <= canvas.y + canvas.height
+      );
+    })
+    .toBe(true);
 });

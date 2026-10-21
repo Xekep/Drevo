@@ -1,4 +1,5 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
+import { isFragmentThreshold } from "../domain/tree-fragment.ts";
 import {
   archiveContextAt,
   memberPreviewAt,
@@ -56,6 +57,8 @@ function treePreferencesFromResponse(data: {
     cardVariant: "portrait",
     presentation: data.treePreferences?.presentation === "depth" ? "depth" : "flat",
     animateOnLoad: data.treePreferences?.animateOnLoad !== false,
+    ...(isFragmentThreshold(data.treePreferences?.fragmentThreshold)
+      ? { fragmentThreshold: data.treePreferences.fragmentThreshold } : {}),
     colorScheme:
       data.treePreferences?.colorScheme === "white" ? "white" : "warm",
     ...(isTreeGenerationLimits(data.treePreferences?.generationLimits)

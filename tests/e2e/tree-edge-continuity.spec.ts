@@ -119,6 +119,7 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
         }));
         data.family.links = [];
         data.family.photos = [];
+        data.treePreferences = { ...data.treePreferences, fragmentThreshold: 0 };
         data.partial = false;
         data.user.personId = null;
         await route.fulfill({ response, json: data });

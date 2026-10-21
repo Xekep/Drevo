@@ -197,6 +197,7 @@ export default function SharedTree({ token }: { token: string }) {
                 restricted
                 onPreferences={() => setPreferencesOpen(true)}
                 animateOnLoad={preferences?.animateOnLoad}
+                fragmentThreshold={preferences?.fragmentThreshold}
                 onExport={() => setExportOpen(true)}
                 comparisonAction={
                   <div className="workspace-actions">

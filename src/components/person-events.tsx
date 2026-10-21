@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { researchEvidenceAnchor } from "../domain/research-evidence";
 import { CalendarDays, GraduationCap, Plus, Trash2 } from "lucide-react";
 import type { ClaimConfidence, EventFactAlternative, PersonEvent, Source } from "../domain/types";
 import { CLAIM_CONFIDENCE_LABELS } from "../domain/claim-confidence.ts";
@@ -526,7 +527,7 @@ export function PersonEvents({
       {[...events]
         .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"))
         .map((event) => (
-          <article key={event.id} className="life-event">
+          <article key={event.id} className="life-event" data-evidence={researchEvidenceAnchor("event", event.id)} tabIndex={-1}>
             <span className="event-icon">
               <CalendarDays size={14} />
             </span>

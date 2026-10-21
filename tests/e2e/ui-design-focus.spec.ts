@@ -56,6 +56,8 @@ test("редактирование возвращает фокус к замен
   await keyboardActivate(page, page.getByRole("button", { name: "Закрыть редактор", exact: true }));
   await expect(edit).toBeFocused();
   await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: /^(Добавить в закладки|Удалить из закладок)$/ })).toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Добавить родственника", exact: true })).toBeFocused();
 });
 

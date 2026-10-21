@@ -47,6 +47,9 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
       { timeout: 180_000, intervals: [500, 1000] },
     )
     .toBe(count);
+  // Measure the complete scene, independently of the automatic fragment default.
+  const preferencesResponse = await page.request.put("/api/tree-preferences", { data: { reverseTimeline: false, fragmentThreshold: 0 } });
+  expect(preferencesResponse.ok()).toBe(true);
   await installTreeAcceptanceProbe(page);
   const session = await page.context().newCDPSession(page);
   await session.send("Performance.enable");

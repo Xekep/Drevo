@@ -7,6 +7,23 @@ import { treePreferencesStore } from "../src/server/tree-preferences.ts";
 import { userStore } from "../src/server/users.ts";
 import { DEFAULT_TREE_PREFERENCES } from "../src/domain/tree-preferences.ts";
 
+test("fragment activation is private, validated, durable and retained by an older preference client", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(db);
+    const store = treePreferencesStore(storeDatabase(db));
+    await store.write("reader", { ...DEFAULT_TREE_PREFERENCES, fragmentThreshold: 250 });
+    await store.write("reader", { reverseTimeline: true });
+    assert.equal((await store.read("reader")).fragmentThreshold, 250);
+    assert.equal((await store.read("other")).fragmentThreshold, undefined);
+    for (const invalid of [null, "500", -1, 99, 10001, 500.5])
+      await assert.rejects(store.write("reader", { reverseTimeline: false, fragmentThreshold: invalid }), /Некорректные/);
+    initializeArchiveSchema(db);
+    assert.equal((await store.read("reader")).fragmentThreshold, 250);
+    assert.equal((await store.write("reader", { reverseTimeline: true, fragmentThreshold: 0 })).fragmentThreshold, 0);
+  } finally { db.close(); }
+});
+
 test("3D is personal, validated and retained by older clients changing other preferences", async () => {
   const db = new DatabaseSync(":memory:");
   try {

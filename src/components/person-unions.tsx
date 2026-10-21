@@ -3,6 +3,7 @@ import { dateLabel, fullName } from "../domain/dates";
 import { CLAIM_CONFIDENCE_LABELS } from "../domain/claim-confidence";
 import type { FamilyUnion, Person, UnionMilestone } from "../domain/types";
 import { EventSourceList } from "./person-events";
+import { researchEvidenceAnchor } from "../domain/research-evidence";
 
 const names = {
   marriage: "Брак",
@@ -37,7 +38,7 @@ export function PersonUnions({ personId, people, unions, onSelect, canLoadDocume
     {[...records].sort((a, b) => (a.formation?.date || "9999").localeCompare(b.formation?.date || "9999")
       || a.id.localeCompare(b.id)).map((union) => {
       const partner = known.get(union.participants.find((id) => id !== personId)!)!;
-      return <article className="life-event" key={union.id}>
+      return <article className="life-event" key={union.id} data-evidence={researchEvidenceAnchor("union", union.id)} tabIndex={-1}>
         <span className="event-icon"><Heart size={14} aria-hidden="true" /></span>
         <div>
           <span className="event-label">{names[union.type]}</span>
