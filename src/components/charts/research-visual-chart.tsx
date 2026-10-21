@@ -168,7 +168,7 @@ function visualOption(visual: ResearchVisual, expanded: boolean, layout?: ElkNod
         // Gestures start anywhere in the plot, including empty margins. The
         // default "self" trigger only accepts the graph's drawn bounding box.
         roamTrigger: "global",
-        draggable: false,
+        draggable: true,
         data: visual.graph.nodes.map((node) => ({
           id: node.id,
           name: node.label || node.name,

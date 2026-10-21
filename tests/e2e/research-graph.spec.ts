@@ -36,6 +36,56 @@ async function navigateGraph(page: Page, plot: Locator) {
   expect(await page.locator(".research-assistant-messages").evaluate((element) => element.scrollTop)).toBe(chatBefore);
 }
 
+async function graphGeometry(plot: Locator) {
+  return plot.evaluate(async (element) => {
+    const url = performance.getEntriesByType("resource")
+      .find((entry) => /\/echarts-runtime-[^/]+\.js(?:\?|$)/.test(entry.name))!.name;
+    const { echarts } = await import(url);
+    const chart = echarts.getInstanceByDom(element);
+    const series = chart.getModel().getSeriesByIndex(0);
+    const data = series.getData();
+    const edges = series.getEdgeData();
+    return {
+      nodes: Array.from({ length: data.count() }, (_, index) => ({
+        id: data.getId(index) as string,
+        position: data.getItemLayout(index) as number[],
+        pixel: chart.convertToPixel({ seriesIndex: 0 }, data.getItemLayout(index)) as number[],
+      })),
+      edges: Array.from({ length: edges.count() }, (_, index) => edges.getItemLayout(index)),
+    };
+  });
+}
+
+async function dragGraphNode(page: Page, plot: Locator) {
+  await plot.scrollIntoViewIfNeeded();
+  const box = (await plot.boundingBox())!;
+  const fullscreen = await page.locator(".research-visual-overlay").count();
+  const messages = fullscreen ? null : await page.locator(".research-assistant-messages").boundingBox();
+  const top = Math.max(box.y, messages?.y ?? box.y);
+  const bottom = Math.min(box.y + box.height, messages ? messages.y + messages.height : box.y + box.height);
+  const before = await graphGeometry(plot);
+  const camera = await graphView(plot);
+  const node = before.nodes.find(({ pixel }) =>
+    pixel[0] > 20 && pixel[0] < box.width - 60 &&
+    box.y + pixel[1] > top + 20 && box.y + pixel[1] < bottom - 45,
+  );
+  expect(node, "a visible graph vertex can be dragged").toBeDefined();
+  const x = box.x + node!.pixel[0], y = box.y + node!.pixel[1];
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 36, y + 24, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () =>
+    (await graphGeometry(plot)).nodes.find((item) => item.id === node!.id)!.position,
+  ).not.toEqual(node!.position);
+  const after = await graphGeometry(plot);
+  expect(after.nodes.filter((item) => item.id !== node!.id)).toEqual(
+    before.nodes.filter((item) => item.id !== node!.id),
+  );
+  expect(after.edges).not.toEqual(before.edges);
+  expect(await graphView(plot)).toEqual(camera);
+}
+
 test("экранированная ссылка ИИ на фото становится кнопкой", async ({
   page,
 }) => {
@@ -100,6 +150,7 @@ test("ИИ показывает готовый ответ и раскрывае�
   await page.getByRole("button", { name: "Отправить запрос" }).click();
   await expect(page.locator(".research-visual canvas")).toBeVisible();
   await navigateGraph(page, page.locator(".research-visual-plot"));
+  await dragGraphNode(page, page.locator(".research-visual-plot"));
   await expect(
     page.locator(".research-assistant article.is-assistant"),
   ).toHaveCount(1);
@@ -111,6 +162,7 @@ test("ИИ показывает готовый ответ и раскрывае�
   const close = dialog.getByRole("button", { name: "Закрыть схему" });
   await expect(close).toBeFocused();
   await navigateGraph(page, dialog.locator(".research-visual-dialog-plot"));
+  await dragGraphNode(page, dialog.locator(".research-visual-dialog-plot"));
   await page.keyboard.press("Tab");
   await expect(
     dialog.getByRole("button", { name: "Уменьшить схему" }),
