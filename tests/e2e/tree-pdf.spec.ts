@@ -79,7 +79,8 @@ test("settings have no export; canvas dialog offers one visible tree format sele
   );
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const settings = page.getByRole("dialog");
-  await expect(settings.locator("select")).toHaveCount(0);
+  await expect(settings.getByRole("combobox", { name: "Формат экспорта" })).toHaveCount(0);
+  await expect(settings.getByRole("combobox", { name: "Порог автоматических фрагментов" })).toHaveValue("500");
   await settings.getByRole("button", { name: "Закрыть" }).click();
   const dialog = await openExport(page);
   await expect(dialog.getByRole("combobox", { name: "Область экспорта" })).toHaveCount(0);

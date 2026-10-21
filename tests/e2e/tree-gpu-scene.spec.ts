@@ -140,6 +140,7 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
     data.family.photos = [];
     data.partial = false;
     data.user.personId = null;
+    data.treePreferences = { ...data.treePreferences, fragmentThreshold: 0 };
     await route.fulfill({ response, json: data });
   });
   const portraits = process.env.DREVO_RENDER_PROFILE

@@ -41,7 +41,8 @@ test("действия профиля доступны в один ряд на �
     await page.goto("/people/e2e-child");
     const actions = page.locator(".inspector-person-actions");
     await expect(actions.getByText("Изменить", { exact: true })).toBeVisible();
-    await expect(actions.getByText("Родственник", { exact: true })).toBeVisible();
+    await expect(actions.getByRole("button", { name: "Добавить родственника", exact: true })).toBeVisible();
+    await expect(actions.getByRole("button", { name: /^(Добавить в закладки|Удалить из закладок)$/ })).toBeVisible();
     expect(await page.locator(".inspector-heading").evaluate((heading) => {
       const bounds = heading.getBoundingClientRect();
       const controls = [...heading.querySelectorAll(".inspector-person-actions > button, .person-more-actions > summary, .inspector-heading > button")]

@@ -36,6 +36,7 @@ async function preparePortraitTree(page: Page, accountPerson: boolean,
     data.family.photos = [];
     data.partial = false;
     data.user.personId = accountPerson ? "portrait-layer-0" : null;
+    data.treePreferences = { ...data.treePreferences, fragmentThreshold: 0 };
     await route.fulfill({ response, json: data });
   });
   await page.addInitScript(() => {

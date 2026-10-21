@@ -181,9 +181,9 @@ for (const prefix of ["", "/a/foreign-archive"]) {
     ).not.toBeChecked();
     expect(state.writes.at(-1)).toEqual({
       path: `${prefix}/api/tree-preferences`,
-      value: { ...DEFAULT_TREE_PREFERENCES, generationLimits: null },
+      value: { ...DEFAULT_TREE_PREFERENCES, fragmentThreshold: 500, generationLimits: null },
     });
-    expect(state.saved()).toEqual(DEFAULT_TREE_PREFERENCES);
+    expect(state.saved()).toEqual({ ...DEFAULT_TREE_PREFERENCES, fragmentThreshold: 500 });
     await page.reload();
     await expect(parent).toBeVisible();
     await expect(child).toBeVisible();

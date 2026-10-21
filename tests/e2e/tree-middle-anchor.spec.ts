@@ -192,7 +192,8 @@ for (const firstOperation of ["reset", "anchor"] as const) {
     const reset = anchor.getByRole("button", { name: "Снять ограничения поколений", exact: true });
     const parent = page.locator('.flow-person[data-person-id="e2e-memorial-person"] .flow-person-content').first();
     await expect(canvas).toHaveAttribute("data-layout-people", "4");
-    await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
+    await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+    await expect(canvas).not.toHaveClass(/is-growth-preparing|is-growing|is-layout-settling/);
     try {
       if (firstOperation === "reset") await reset.click();
       else await parent.click({ button: "middle" });

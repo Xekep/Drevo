@@ -77,6 +77,7 @@ async function fixture(
     data.family.photos = [];
     data.partial = false;
     data.user.personId = null;
+    data.treePreferences = { ...data.treePreferences, fragmentThreshold: 0 };
     await route.fulfill({ response, json: data });
   });
   await page.goto("/tree");
