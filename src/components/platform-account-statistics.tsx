@@ -69,8 +69,8 @@ export function PlatformAccountStatisticsDialog({
           <dl className="platform-statistics-grid">
             {[
               ["Всего пользователей", data.accounts],
-              ["Базовый доступ", data.basic],
-              ["Полный доступ", data.full],
+              ["Базовые возможности", data.basic],
+              ["Расширенные возможности", data.full],
               ["Администраторы", data.admins],
               ["Исследователи", data.researchers],
             ].map(([label, value]) => (

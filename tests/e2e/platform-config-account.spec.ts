@@ -88,7 +88,7 @@ test("platform admin without membership opens global settings and AI without cho
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole("heading", { name: "Админка платформы" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Пользователи", exact: true })).toBeVisible();
-  const tier = page.getByLabel("Уровень доступа Новый владелец");
+  const tier = page.getByLabel("Возможности аккаунта Новый владелец");
   await expect(tier).toHaveValue("basic");
   await tier.selectOption("full");
   await expect(page.getByRole("alert")).toContainText("Уровень изменился");
@@ -101,11 +101,22 @@ test("platform admin without membership opens global settings and AI without cho
   await page.getByRole("button", { name: "Расход Новый владелец", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Расход: Новый владелец" })).toContainText("20 МБ");
   await page.getByRole("dialog").getByRole("button", { name: "Закрыть", exact: true }).click();
-  await page.getByLabel("Уровень доступа Администратор платформы").selectOption("full");
-  await expect(page.getByLabel("Уровень доступа Администратор платформы")).toHaveValue("full");
+  await page.getByLabel("Возможности аккаунта Администратор платформы").selectOption("full");
+  await expect(page.getByLabel("Возможности аккаунта Администратор платформы")).toHaveValue("full");
   if (info.project.name === "mobile") {
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 844 });
+      const clipped = await page.locator(".platform-account-row select").evaluateAll((fields) =>
+        fields.filter((field) => {
+          const select = field as HTMLSelectElement;
+          const style = getComputedStyle(select);
+          const context = document.createElement("canvas").getContext("2d")!;
+          context.font = style.font;
+          return context.measureText(select.selectedOptions[0].text).width >
+            select.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - 24;
+        }).map((field) => field.getAttribute("aria-label")),
+      );
+      expect(clipped, `${width}px role and capability names fit`).toEqual([]);
       await page.screenshot({ path: info.outputPath(`platform-admin-${width}.png`), fullPage: true });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     }
@@ -176,7 +187,7 @@ test("own tier downgrade and upgrade refresh the locked session without a family
     ], next: null, totals: { basic: Number(!fullAccess), full: Number(fullAccess) } } });
   });
   await page.goto("/admin");
-  const tier = page.getByLabel("Уровень доступа Владелец");
+  const tier = page.getByLabel("Возможности аккаунта Владелец");
   await expect(tier).toHaveValue("full");
   const initialFamilyReads = familyReads;
   const initialSessionReads = sessionAvailability.length;

@@ -204,9 +204,9 @@ function AdminUserRow({
         </span>
       </div>
       <label className="admin-user-select">
-        <span>Роль</span>
+        <span>Права в древе</span>
         <select
-          aria-label={`Роль: ${user.name}`}
+          aria-label={`Права в древе: ${user.name}`}
           value={user.treeRole || user.role}
           disabled={busy || user.archiveOwner === true}
           onChange={(event) =>
@@ -227,17 +227,17 @@ function AdminUserRow({
       </label>
       {platformAdmin && user.fullAccess !== undefined && (
         <label className="admin-user-select">
-          <span>Уровень аккаунта</span>
+          <span>Возможности аккаунта</span>
           <select
-            aria-label={`Уровень аккаунта: ${user.name}`}
+            aria-label={`Возможности аккаунта: ${user.name}`}
             value={user.fullAccess ? "full" : "basic"}
             disabled={busy}
             onChange={(event) =>
               void onPatch({ fullAccess: event.target.value === "full" })
             }
           >
-            <option value="basic">Базовый</option>
-            <option value="full">Полный</option>
+            <option value="basic">Базовые</option>
+            <option value="full">Расширенные</option>
           </select>
         </label>
       )}
@@ -611,10 +611,10 @@ export function AdminPanel({
                 >
                   <div className="admin-users-head" aria-hidden="true">
                     <span>Участник</span>
-                    <span>Роль</span>
+                    <span>Права в древе</span>
                     {platformAdmin &&
                       users.some((user) => user.fullAccess !== undefined) && (
-                        <span>Уровень</span>
+                        <span>Возможности аккаунта</span>
                       )}
                     <span>Кто это в древе</span>
                     <span>Доступ к древу</span>

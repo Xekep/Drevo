@@ -19,7 +19,7 @@ test("platform sections stay reachable and forms fit desktop and mobile screens"
   await expect(page.getByRole("heading", { name: "Пользователи", exact: true })).toBeVisible();
   for (const width of info.project.name === "desktop" ? [1440, 1024, 768] : [390, 320]) {
     await page.setViewportSize({ width, height: 900 });
-    const bounds = await page.getByLabel("Роль Александра Константиновна Петрова").boundingBox();
+    const bounds = await page.getByLabel("Роль на платформе Александра Константиновна Петрова").boundingBox();
     expect(bounds!.width).toBeGreaterThan(100);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);

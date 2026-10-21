@@ -80,10 +80,10 @@ test("Back from platform settings revalidates a cached account and ignores late 
       ], next: null, totals: { basic: Number(!fullAccess), full: Number(fullAccess) } } });
     });
     await page.goto(`${origin}/account`);
-    await expect(page.locator(".account-tier")).toContainText("Полный");
+    await expect(page.locator(".account-tier")).toContainText("Расширенный");
     await page.getByRole("button", { name: "Админка платформы" }).click();
-    await page.getByLabel("Уровень доступа Synthetic administrator").selectOption("basic");
-    await expect(page.getByLabel("Уровень доступа Synthetic administrator")).toHaveValue("basic");
+    await page.getByLabel("Возможности аккаунта Synthetic administrator").selectOption("basic");
+    await expect(page.getByLabel("Возможности аккаунта Synthetic administrator")).toHaveValue("basic");
     const beforeBack = sessionReads;
     await page.goBack({ waitUntil: "commit" });
     await expectRestored(page);
@@ -99,9 +99,9 @@ test("Back from platform settings revalidates a cached account and ignores late 
     await expect(page.locator(".restored-session-gate:modal")).toBeVisible();
     fullAccess = true;
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
-    await expect(page.locator(".account-tier")).toContainText("Полный");
+    await expect(page.locator(".account-tier")).toContainText("Расширенный");
     await (releaseOlderSession as (() => Promise<void>) | null)?.();
-    await expect(page.locator(".account-tier")).toContainText("Полный");
+    await expect(page.locator(".account-tier")).toContainText("Расширенный");
 
     releaseOlderSession = null;
     holdNextSession = true;
@@ -189,7 +189,7 @@ test("cached scoped tree stays hidden on busy validation, then retains its graph
     });
     await page.evaluate(() => window.location.assign("/admin"));
     const beforeTierSession = sessionPaths.length;
-    await page.getByLabel("Уровень доступа Synthetic owner").selectOption("basic");
+    await page.getByLabel("Возможности аккаунта Synthetic owner").selectOption("basic");
     await expect.poll(() => sessionPaths.length).toBeGreaterThan(beforeTierSession);
     failNextSession = true;
     await page.goBack({ waitUntil: "commit" });

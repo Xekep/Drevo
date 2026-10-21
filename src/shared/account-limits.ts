@@ -1,0 +1,2 @@
+export const BASIC_PEOPLE_LIMIT = 150;
+export const BASIC_MEDIA_BYTES = 500_000_000;

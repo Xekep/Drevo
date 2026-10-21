@@ -488,7 +488,7 @@ export async function userStore(
             "SELECT account_id FROM platform_admins WHERE account_id=? FOR SHARE NOWAIT")
             .get(actor.id);
           if (!account || !admin)
-            throw new ForbiddenError("Уровень аккаунта меняет администратор платформы");
+            throw new ForbiddenError("Возможности аккаунта меняет администратор платформы");
         }
       }
       const target = await get(id);
@@ -499,7 +499,7 @@ export async function userStore(
           "SELECT full_access FROM account_tiers WHERE account_id=? FOR UPDATE",
         )
         .get(id);
-      if (!current) throw new Error("Уровень аккаунта не найден");
+      if (!current) throw new Error("Настройки возможностей аккаунта не найдены");
       if (!!current.full_access === enabled) return target;
       await db
         .prepare(
@@ -509,16 +509,16 @@ export async function userStore(
         .run(enabled ? "true" : "false", id);
       await audit.record(
         {
-          action: "Изменён уровень аккаунта",
+          action: "Изменены возможности аккаунта",
           entity: "user",
           entityId: id,
           label: target.name,
           personIds: target.personId ? [target.personId] : [],
           details: [
             {
-              field: "Уровень",
-              before: current.full_access ? "Полный" : "Базовый",
-              after: enabled ? "Полный" : "Базовый",
+              field: "Возможности аккаунта",
+              before: current.full_access ? "Расширенные" : "Базовые",
+              after: enabled ? "Расширенные" : "Базовые",
             },
           ],
         },

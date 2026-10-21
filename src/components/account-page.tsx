@@ -35,6 +35,7 @@ import { AccountOwnerTransfer } from "./account-owner-transfer";
 import { AccountArchiveDeletion } from "./account-archive-deletion";
 import { AccountSelfDeletion } from "./account-self-deletion";
 import { CreatePersonalArchive } from "./create-personal-archive";
+import { accountCapabilitySummary } from "./account-capability-copy";
 
 export type { AccountSession } from "../shared/account-session.ts";
 
@@ -378,7 +379,7 @@ export function AccountPage({
                   user?.fullAccess !== undefined) && (
                   <span className="account-tier">
                     {(session?.account?.fullAccess ?? user?.fullAccess)
-                      ? "Полный аккаунт"
+                      ? "Расширенный аккаунт"
                       : "Базовый аккаунт"}
                   </span>
                 )}
@@ -398,6 +399,11 @@ export function AccountPage({
                 </span>
               </div>
             </section>
+            {(session?.account?.fullAccess ?? user?.fullAccess) !== undefined && (
+              <p className="account-capability-summary">
+                Возможности аккаунта: {accountCapabilitySummary(!!(session?.account?.fullAccess ?? user?.fullAccess))}
+              </p>
+            )}
             <nav
               className="account-section-links"
               aria-label="Разделы личного кабинета"
@@ -483,10 +489,10 @@ export function AccountPage({
                             "Семейный архив"}
                         </h3>
                       </div>
-                      <h4 id="account-access-title">Доступ и роль</h4>
+                      <h4 id="account-access-title">Права в выбранном древе</h4>
                       <div className="account-facts">
                         <div>
-                          <span>Роль</span>
+                          <span>Права в древе</span>
                           <strong>
                             {isArchiveOwner(user)
                               ? "Владелец архива"

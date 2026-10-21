@@ -24,7 +24,7 @@ test("one directory searches and replaces AJAX pages, loading statistics only on
   });
   await page.goto("/admin");
   const list = page.getByRole("region", { name: "Пользователи", exact: true });
-  await expect(list.getByLabel("Роль Александра Константиновна Петрова")).toBeVisible();
+  await expect(list.getByLabel("Роль на платформе Александра Константиновна Петрова")).toBeVisible();
   expect(statsReads).toBe(0);
   await expect(page.getByRole("heading", { name: "Уровень доступа", exact: true })).toHaveCount(0);
   for (const width of info.project.name === "desktop" ? [1440, 1024, 768] : [390, 320]) {
@@ -35,24 +35,25 @@ test("one directory searches and replaces AJAX pages, loading statistics only on
       return { fit: controls.every((field) => field.left >= 0 && field.right <= innerWidth + 1),
         separated: controls.every((field, index) => controls.slice(index + 1).every((other) =>
           field.right <= other.left || other.right <= field.left || field.bottom <= other.top || other.bottom <= field.top)),
+        stacked: getComputedStyle(element.querySelector(".platform-account-field-label")!).display !== "none",
         height: element.getBoundingClientRect().height };
     });
     expect(layout.fit).toBe(true); expect(layout.separated).toBe(true);
-    expect(layout.height).toBeLessThan(width <= 600 ? 180 : 100);
+    expect(layout.height).toBeLessThan(layout.stacked ? 180 : 100);
     await page.screenshot({ path: info.outputPath(`accounts-directory-${width}.png`) });
   }
   await list.getByRole("button", { name: "Далее", exact: true }).click();
   await expect(list.getByText("Пользователь второй страницы", { exact: true })).toBeVisible();
   await expect(list.getByText("Александра Константиновна Петрова", { exact: true })).toHaveCount(0);
   await list.getByRole("button", { name: "Назад", exact: true }).click();
-  await expect(list.getByLabel("Роль Александра Константиновна Петрова")).toBeVisible();
+  await expect(list.getByLabel("Роль на платформе Александра Константиновна Петрова")).toBeVisible();
   await page.getByLabel("Поиск пользователей").fill("Найденный");
   await expect(list.getByText("Найденный пользователь", { exact: true })).toBeVisible();
   await expect(list.getByText("Страница 1", { exact: true })).toBeVisible();
   await page.getByLabel("Поиск пользователей").fill("Нет такого");
   await expect(list.getByText("Пользователи не найдены.")).toBeVisible();
   await page.getByLabel("Очистить поиск").click();
-  await expect(list.getByLabel("Роль Александра Константиновна Петрова")).toBeVisible();
+  await expect(list.getByLabel("Роль на платформе Александра Константиновна Петрова")).toBeVisible();
   await list.getByRole("button", { name: "Статистика", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Статистика пользователей" });
   await expect(dialog).toContainText("Всего пользователей");
@@ -91,12 +92,17 @@ test("slow search cannot overwrite newer results and mutations keep role and tie
   await expect(page.getByText("Новый результат", { exact: true })).toBeVisible();
   await release!();
   await expect(page.getByText("Устаревший результат", { exact: true })).toHaveCount(0);
-  await page.getByLabel("Роль Новый результат").selectOption("researcher");
-  await expect(page.getByLabel("Роль Новый результат")).toHaveValue("researcher");
-  await expect(page.getByLabel("Уровень доступа Новый результат")).toHaveValue("basic");
-  await page.getByLabel("Уровень доступа Новый результат").selectOption("full");
-  await expect(page.getByLabel("Уровень доступа Новый результат")).toHaveValue("full");
-  await expect(page.getByLabel("Роль Новый результат")).toHaveValue("researcher");
+  const account = page.getByRole("article", { name: "Пользователь: Новый результат", exact: true });
+  const capabilities = account.getByRole("combobox", { name: "Возможности аккаунта Новый результат" });
+  await expect(capabilities).toHaveAccessibleDescription("150 человек · 500 МБ · Без ИИ");
+  await page.getByLabel("Роль на платформе Новый результат").selectOption("researcher");
+  await expect(page.getByLabel("Роль на платформе Новый результат")).toHaveValue("researcher");
+  await expect(page.getByLabel("Возможности аккаунта Новый результат")).toHaveValue("basic");
+  await expect(account.locator(".platform-account-capabilities")).toHaveText("150 человек · 500 МБ · Без ИИ");
+  await capabilities.selectOption({ label: "Расширенные" });
+  await expect(page.getByLabel("Возможности аккаунта Новый результат")).toHaveValue("full");
+  await expect(capabilities).toHaveAccessibleDescription("Базовые лимиты сняты · ИИ по роли и древу");
+  await expect(page.getByLabel("Роль на платформе Новый результат")).toHaveValue("researcher");
   expect(mutations).toEqual([
     { path: "/api/platform/roles/member", body: { role: "researcher" } },
     { path: "/api/platform/tiers/member", body: { fullAccess: true, expectedFullAccess: false } },

@@ -978,7 +978,7 @@ test("мобильная админка доступна и не разъезж�
   await touch.detach();
   const row = page.locator(".admin-user-row").first();
   await expect(row).toBeVisible();
-  await expect(row.getByText("Роль", { exact: true })).toBeVisible();
+  await expect(row.getByText("Права в древе", { exact: true })).toBeVisible();
   await expect(row.getByText("Кто это в древе", { exact: true })).toBeVisible();
   const layout = await page.locator(".admin-page").evaluate((element) => ({
     pageOverflow: document.documentElement.scrollWidth > innerWidth + 1,

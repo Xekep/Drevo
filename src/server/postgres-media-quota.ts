@@ -4,7 +4,8 @@ import { UploadQuotaError } from "./upload-quota.ts";
 import { postgresMediaReferencesSql, scopedPostgresMediaReferencesSql } from "./media-reference-sql.ts";
 export { postgresMediaReferencesSql } from "./media-reference-sql.ts";
 
-export const BASIC_MEDIA_BYTES = 500_000_000;
+import { BASIC_MEDIA_BYTES } from "../shared/account-limits.ts";
+export { BASIC_MEDIA_BYTES } from "../shared/account-limits.ts";
 
 /** The legacy person-undo writer owns a pg.Client transaction rather than a
  * StoreDatabase. Count its archive explicitly, including temporary grants.
