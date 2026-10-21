@@ -225,13 +225,40 @@ export function BookmarksMenu({
   const place = useCallback(() => {
     const rect = button.current?.getBoundingClientRect();
     if (!rect || !panel.current) return;
-    panel.current.style.top = `${Math.min(rect.bottom + 8, Math.max(8, window.innerHeight - 200))}px`;
-    panel.current.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
+    const viewport = window.visualViewport;
+    const left = viewport?.offsetLeft ?? 0;
+    const top = viewport?.offsetTop ?? 0;
+    const right = left + (viewport?.width ?? window.innerWidth);
+    const bottom = top + (viewport?.height ?? window.innerHeight);
+    const width = Math.min(390, right - left - 16);
+    const panelTop = Math.max(top + 8, Math.min(rect.bottom + 8, bottom - 140));
+    Object.assign(panel.current.style, {
+      width: `${width}px`,
+      left: `${Math.max(left + 8, Math.min(rect.right - width, right - width - 8))}px`,
+      top: `${panelTop}px`,
+      maxHeight: `${Math.min(520, bottom - panelTop - 8)}px`,
+    });
   }, []);
   useEffect(() => {
     if (!open) return;
+    place();
+    const onScroll = (event: Event) => {
+      if (
+        !(event.target instanceof Node) ||
+        !panel.current?.contains(event.target)
+      )
+        place();
+    };
     window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
+    window.addEventListener("scroll", onScroll, true);
+    window.visualViewport?.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("scroll", place);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", onScroll, true);
+      window.visualViewport?.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("scroll", place);
+    };
   }, [open, place]);
   if (!library) return null;
   const list = library.items.filter((item) =>
@@ -277,94 +304,96 @@ export function BookmarksMenu({
             <X size={18} />
           </button>
         </header>
-        <input
-          type="search"
-          aria-label="Найти в закладках"
-          placeholder="Найти в закладках"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        {(error || library.error) && (
-          <p role="alert" className="form-error">
-            {error || library.error}
-          </p>
-        )}
-        {library.error && (
-          <button
-            type="button"
-            disabled={library.busy}
-            onClick={library.reload}
-          >
-            Повторить загрузку
-          </button>
-        )}
-        {library.unavailable > 0 && (
-          <button
-            type="button"
-            disabled={library.busy}
-            onClick={() => {
-              setError("");
-              void library
-                .clearUnavailable()
-                .catch((reason) => setError(reason.message));
-            }}
-          >
-            Убрать недоступные · {library.unavailable}
-          </button>
-        )}
-        {library.busy && !library.items.length && (
-          <p role="status">Загружаем закладки…</p>
-        )}
-        {!library.busy && !list.length && (
-          <p className="muted-copy">
-            {library.items.length
-              ? "Совпадений нет."
-              : "Сохраняйте людей, фотографии и документы кнопкой закладки."}
-          </p>
-        )}
-        <ul>
-          {list.map((item) => (
-            <li key={keyOf(item)}>
-              <a
-                href={scopedArchivePath(item.href)}
-                onClick={(event) => {
-                  if (
-                    !event.ctrlKey &&
-                    !event.metaKey &&
-                    !event.shiftKey &&
-                    !event.altKey &&
-                    beforeLeave &&
-                    !beforeLeave()
-                  )
-                    event.preventDefault();
-                }}
-              >
-                <span>{item.label}</span>
-                <small>
-                  {item.kind === "person"
-                    ? "Человек"
-                    : item.kind === "photo"
-                      ? "Фотография"
-                      : "Документ"}
-                </small>
-              </a>
-              <button
-                type="button"
-                className="icon-button"
-                disabled={library.busy}
-                aria-label={`Удалить закладку: ${item.label}`}
-                onClick={() => {
-                  setError("");
-                  void library
-                    .toggle(item)
-                    .catch((reason) => setError(reason.message));
-                }}
-              >
-                <Trash2 size={15} />
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="bookmarks-content">
+          <input
+            type="search"
+            aria-label="Найти в закладках"
+            placeholder="Найти в закладках"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {(error || library.error) && (
+            <p role="alert" className="form-error">
+              {error || library.error}
+            </p>
+          )}
+          {library.error && (
+            <button
+              type="button"
+              disabled={library.busy}
+              onClick={library.reload}
+            >
+              Повторить загрузку
+            </button>
+          )}
+          {library.unavailable > 0 && (
+            <button
+              type="button"
+              disabled={library.busy}
+              onClick={() => {
+                setError("");
+                void library
+                  .clearUnavailable()
+                  .catch((reason) => setError(reason.message));
+              }}
+            >
+              Убрать недоступные · {library.unavailable}
+            </button>
+          )}
+          {library.busy && !library.items.length && (
+            <p role="status">Загружаем закладки…</p>
+          )}
+          {!library.busy && !list.length && (
+            <p className="muted-copy">
+              {library.items.length
+                ? "Совпадений нет."
+                : "Сохраняйте людей, фотографии и документы кнопкой закладки."}
+            </p>
+          )}
+          <ul>
+            {list.map((item) => (
+              <li key={keyOf(item)}>
+                <a
+                  href={scopedArchivePath(item.href)}
+                  onClick={(event) => {
+                    if (
+                      !event.ctrlKey &&
+                      !event.metaKey &&
+                      !event.shiftKey &&
+                      !event.altKey &&
+                      beforeLeave &&
+                      !beforeLeave()
+                    )
+                      event.preventDefault();
+                  }}
+                >
+                  <span>{item.label}</span>
+                  <small>
+                    {item.kind === "person"
+                      ? "Человек"
+                      : item.kind === "photo"
+                        ? "Фотография"
+                        : "Документ"}
+                  </small>
+                </a>
+                <button
+                  type="button"
+                  className="icon-button"
+                  disabled={library.busy}
+                  aria-label={`Удалить закладку: ${item.label}`}
+                  onClick={() => {
+                    setError("");
+                    void library
+                      .toggle(item)
+                      .catch((reason) => setError(reason.message));
+                  }}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </>
   );
