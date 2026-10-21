@@ -451,6 +451,69 @@ test("virtual rows retain event details and keyboard focus across unmounts and r
   ).toBe(true);
 });
 
+test("continuous chronology dragging never leaves departed rows blocking living people", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, "Desktop pointer drag");
+  const people = peopleFixture();
+  people.forEach((person, index) => {
+    const birth = 1900 + Math.floor(index / 4);
+    person.birth = `${birth}-01-01`;
+    person.death = `${birth + 1}-01-01`;
+  });
+  await fixture(page, people, false);
+  const timeline = await enterTimeline(page);
+  await year(page, timeline, 1950);
+  await expectBounded(timeline, 8);
+  await expect(timeline.locator(".is-exiting")).toHaveCount(0);
+  const bounds = (await timeline.boundingBox())!;
+  const x = bounds.x + bounds.width - 30;
+  const y = bounds.y + 110;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  const samples: { year: number; visible: number; exits: number }[] = [];
+  try {
+    const steps = [
+      ...Array.from({ length: 20 }, (_, index) => index + 1),
+      ...Array.from({ length: 20 }, (_, index) => 19 - index),
+    ];
+    for (const step of steps) {
+      await page.mouse.move(x - step * 12, y);
+      // Sample during continuous motion, before any 260-ms idle cleanup.
+      await page.waitForTimeout(45);
+      samples.push(
+        await timeline.evaluate((element) => {
+          const viewport = element.getBoundingClientRect();
+          return {
+            year: Number(
+              document.querySelector(".timeline-center-marker output")
+                ?.textContent,
+            ),
+            visible: [
+              ...element.querySelectorAll(
+                ".timeline-person-row:not(.is-exiting)",
+              ),
+            ].filter((row) => {
+              const box = row.getBoundingClientRect();
+              return (
+                box.bottom > viewport.top + 86 && box.top < viewport.bottom - 36
+              );
+            }).length,
+            exits: element.querySelectorAll(".is-exiting").length,
+          };
+        }),
+      );
+    }
+    expect(samples[19].year).toBe(1970);
+    expect(samples.at(-1)?.year).toBe(1950);
+    expect(samples.filter((sample) => sample.visible === 0)).toEqual([]);
+    expect(samples.filter((sample) => sample.exits !== 0)).toEqual([]);
+  } finally {
+    await page.mouse.up();
+  }
+});
+
 test("smooth focus remains on its person while intervening historical rows appear", async ({
   page,
   isMobile,
