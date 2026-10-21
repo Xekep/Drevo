@@ -426,23 +426,13 @@ export function HorizontalTimeline({
     const update = window.setTimeout(() => {
       if (model.rows.length > VIRTUAL_ROW_THRESHOLD) setWindowed(true);
       captureScrollAnchor();
-      const scroll = viewport.current;
       const previousRows = rowsRef.current;
-      const previousWindow = timelineRowWindow(
-        previousRows.length,
-        scroll?.scrollTop ?? 0,
-        metrics.current.height,
-        metrics.current.rowHeight,
-      );
+      // Virtual rows have fixed-height slots: retaining faded-out people
+      // pushes the current year's people below the viewport. Continuous year
+      // changes also postpone the exit timer indefinitely. Only the small,
+      // nonvirtual list can collapse exits without leaving those empty slots.
       const retainedIds = new Set(
-        previousRows
-          .filter(
-            ({ row }, index) =>
-              previousRows.length <= VIRTUAL_ROW_THRESHOLD ||
-              (index >= previousWindow.start && index < previousWindow.end) ||
-              row.person.id === focusedPersonRef.current,
-          )
-          .map(({ row }) => row.person.id),
+        virtualized ? [] : previousRows.map(({ row }) => row.person.id),
       );
       setRenderedRows((previous) => {
         const next = model.rows
@@ -460,19 +450,21 @@ export function HorizontalTimeline({
           : next;
       });
     }, 0);
-    const remove = window.setTimeout(() => {
-      captureScrollAnchor();
-      setRenderedRows((current) =>
-        current.some(({ exiting }) => exiting)
-          ? current.filter(({ exiting }) => !exiting)
-          : current,
-      );
-    }, 260);
+    const remove = virtualized
+      ? undefined
+      : window.setTimeout(() => {
+          captureScrollAnchor();
+          setRenderedRows((current) =>
+            current.some(({ exiting }) => exiting)
+              ? current.filter(({ exiting }) => !exiting)
+              : current,
+          );
+        }, 260);
     return () => {
       window.clearTimeout(update);
       window.clearTimeout(remove);
     };
-  }, [model, visibleRowIds, captureScrollAnchor]);
+  }, [model, visibleRowIds, captureScrollAnchor, virtualized]);
 
   useEffect(() => {
     const prune = window.setTimeout(() => {

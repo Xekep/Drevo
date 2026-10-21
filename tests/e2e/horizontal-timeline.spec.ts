@@ -213,6 +213,44 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
   await expect(page.getByTestId("rf__node-e2e-child")).toBeVisible();
 });
 
+test("chronology reveals people and events before a held mouse drag ends", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  await expect(page.locator(".react-flow__node").first()).toBeAttached();
+  await page.getByRole("button", { name: "Хронология", exact: true }).click();
+  const timeline = page.getByRole("region", {
+    name: /Горизонтальная хронология/,
+  });
+  const marker = page.getByLabel("Год в центре хронологии");
+  await expect(marker).toHaveText("1940");
+  const bounds = await timeline.boundingBox();
+  if (!bounds) throw new Error("Timeline has no bounds");
+  const x = bounds.x + bounds.width - 40;
+  const y = bounds.y + 110;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  try {
+    await page.mouse.move(x - 52 * 12, y, { steps: 52 });
+    await expect(timeline).toHaveClass(/is-dragging/);
+    await expect(marker).toHaveText("1992");
+    await expect(
+      timeline.locator(".timeline-person-row:not(.is-exiting)"),
+    ).toHaveCount(6, { timeout: 1000 });
+    await expect(timeline.locator(".timeline-event.is-birth")).toHaveCount(6, {
+      timeout: 1000,
+    });
+    await page.mouse.move(x - 81 * 12, y, { steps: 29 });
+    await expect(marker).toHaveText("2021");
+    await expect(
+      timeline.locator(".timeline-person-row:not(.is-exiting)"),
+    ).toHaveCount(5, { timeout: 1000 });
+  } finally {
+    await page.mouse.up();
+  }
+});
+
 test("wheel moves through years, Shift+wheel moves people, and life bars track fractional scroll", async ({
   page,
 }, testInfo) => {

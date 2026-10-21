@@ -294,8 +294,8 @@
   pointer-events: none;
 }
 .timeline-rows.is-virtualized .timeline-person-row {
-  /* Keep a fixed row grid during the short exit fade. Offscreen exits are
-     discarded; scrolling a row into view does not replay its enter animation. */
+  /* Fixed slots contain only the current year's people; exiting rows must
+     not leave blank slots. Vertical scrolling does not replay entry motion. */
   height: var(--timeline-row-height);
   min-height: var(--timeline-row-height);
   flex: none;
