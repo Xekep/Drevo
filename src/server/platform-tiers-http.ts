@@ -173,7 +173,7 @@ export function platformTiersHttp(db: StoreDatabase,
           ? { accountId: targetId, fullAccess: input.fullAccess,
             changed: result.changed }
           : { error: result.status === 404 ? "Аккаунт не найден"
-            : "Уровень аккаунта изменился. Обновите список" }, guarded(client)));
+            : "Возможности аккаунта изменились. Обновите список" }, guarded(client)));
     } catch (error) {
       if (res.headersSent || res.destroyed) { res.destroy(error as Error); return true; }
       const known = error instanceof PlatformAccessBusy ||

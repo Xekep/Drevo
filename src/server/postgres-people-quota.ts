@@ -2,7 +2,8 @@ import type pg from "pg";
 import type { StoreDatabase } from "./store-database.ts";
 import { ForbiddenError } from "./users.ts";
 
-export const BASIC_PEOPLE_LIMIT = 150;
+import { BASIC_PEOPLE_LIMIT } from "../shared/account-limits.ts";
+export { BASIC_PEOPLE_LIMIT } from "../shared/account-limits.ts";
 
 const missingOwner = () => new ForbiddenError("Не определён владелец архива");
 const missingTier = () => new ForbiddenError("Не определён уровень доступа владельца");

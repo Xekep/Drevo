@@ -182,7 +182,7 @@ export function adminAccessHttp({
         if (body.fullAccess !== undefined) {
           if (!(await auth.isPlatformAdmin(req)))
             return json(res, 403, {
-              error: "Уровень аккаунта меняет администратор платформы",
+              error: "Возможности аккаунта меняет администратор платформы",
             });
           const user = await users.setFullAccess(
             (await auth.currentUser(req))!,

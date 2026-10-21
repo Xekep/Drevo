@@ -107,13 +107,13 @@ test("platform administrator changes the account tier separately from tree role"
   await page.goto("/manage");
   await openAdminSection(page, "users", "Участники");
   const tier = page.getByRole("combobox", {
-    name: "Уровень аккаунта: Участник",
+    name: "Возможности аккаунта: Участник",
   });
   await expect(tier).toHaveValue("basic");
   await tier.selectOption("full");
   await expect(tier).toHaveValue("full");
   expect(patches).toEqual([{ fullAccess: true }]);
   await expect(
-    page.getByRole("combobox", { name: "Роль: Участник" }),
+    page.getByRole("combobox", { name: "Права в древе: Участник" }),
   ).toHaveValue("reader");
 });
