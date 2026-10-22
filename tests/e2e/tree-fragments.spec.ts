@@ -154,6 +154,10 @@ test("a large tree starts as a fragment, shows real continuations and keeps the 
   await page.goto("/tree");
   const status = page.getByRole("region", { name: "Фрагмент большого древа" });
   await expect(status).toContainText(/Фрагмент: \d+ из 500/);
+  // The fragment count precedes the worker result. A transient enabled frame
+  // before layout starts does not mean its branch controls are ready yet.
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("data-layout-ready", "true");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-layout-settling/);
   await status.getByRole("button", { name: "Продолжения ветвей" }).click();
   const dialog = page.getByRole("dialog", { name: "Продолжение ветвей" });
   await expect(dialog).toBeVisible();
