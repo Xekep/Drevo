@@ -1,5 +1,116 @@
 import { test, expect } from "@playwright/test";
 
+for (const [count, label] of [
+  [1, "родственник"],
+  [2, "родственника"],
+  [5, "родственников"],
+  [21, "родственник"],
+] as const) {
+  test(`fragment continuation under a person shows ${count} ${label} and opens their relatives`, async ({
+    page,
+  }, info) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.route("**/api/family?projection=overview", async (route) => {
+      const response = await route.fetch();
+      const data = await response.json();
+      const template = data.family.people[0];
+      data.family.people = Array.from({ length: 100 }, (_, index) => ({
+        ...template,
+        id: `continuation-${index}`,
+        name: `Человек ${index}`,
+        surname: "Проверка",
+        patronymic: "",
+        birth: "1900",
+        photo: undefined,
+        parents:
+          index > 0 && index < 4
+            ? [`continuation-${index - 1}`]
+            : index >= 4 && index < count + 4
+              ? ["continuation-3"]
+              : [],
+        spouses: [],
+        generation: index < 4 ? index + 1 : 5,
+      }));
+      data.family.links = [];
+      data.family.unions = [];
+      data.family.photos = [];
+      data.partial = false;
+      data.totals.people = 100;
+      data.user.personId = "continuation-0";
+      data.treePreferences = {
+        ...data.treePreferences,
+        fragmentThreshold: 100,
+        animateOnLoad: false,
+      };
+      await route.fulfill({ response, json: data });
+    });
+    await page.goto("/tree");
+    await page
+      .getByRole("combobox", { name: /Найти человека/ })
+      .fill("Человек 3");
+    await page
+      .getByRole("option", { name: /^Проверка Человек 3(?:\s|$)/ })
+      .click();
+    const card = page.locator('.flow-person[data-person-id="continuation-3"]');
+    await expect(card).toBeInViewport({ ratio: 0.8 });
+    const closeProfile = page.getByRole("button", { name: /Закрыть панель/ });
+    await expect(closeProfile).toBeVisible();
+    await closeProfile.click();
+    const button = card.getByRole("button", {
+      name: `Ещё ${count} ${label}: Проверка Человек 3`,
+      exact: true,
+    });
+    await expect(button).toHaveText(`Ещё ${count} ${label}`);
+    // Inspect the actual geometry at the displayed zoom, rather than only CSS.
+    const geometry = await button.evaluate((element) => {
+      const button = element.getBoundingClientRect();
+      const card = element.closest(".flow-person")!.getBoundingClientRect();
+      return {
+        center: button.x + button.width / 2 - card.x - card.width / 2,
+        gap: button.top - card.bottom,
+        fits: element.scrollWidth <= element.clientWidth + 1,
+        hitHeight:
+          (parseFloat(getComputedStyle(element, "::before").height) *
+            button.width) /
+          (element as HTMLElement).offsetWidth,
+      };
+    });
+    expect(Math.abs(geometry.center)).toBeLessThan(1);
+    expect(geometry.gap).toBeGreaterThan(0);
+    expect(geometry.fits).toBe(true);
+    expect(geometry.hitHeight).toBeGreaterThanOrEqual(
+      info.project.name === "mobile" ? 44 : 24,
+    );
+    expect(await card.locator(".flow-collapse").count()).toBe(0);
+    await page.screenshot({
+      path: info.outputPath(`continuation-button-${count}.png`),
+    });
+    if (info.project.name === "mobile") {
+      await button.tap();
+    } else {
+      await button.focus();
+      await expect(button).toBeFocused();
+      await page.keyboard.press("Enter");
+    }
+    const dialog = page.getByRole("dialog", { name: "Продолжение ветвей" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /Ребёнок/ })).toHaveCount(
+      Math.min(count, 30),
+    );
+    await page.screenshot({
+      path: info.outputPath(`continuation-${count}.png`),
+    });
+    await dialog.getByRole("button", { name: "Раскрыть ветви здесь" }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(
+      page.locator('.flow-person[data-person-id="continuation-4"]'),
+    ).toBeAttached();
+    await expect(
+      card.getByRole("button", { name: /Свернуть раскрытую ветвь/ }),
+    ).toHaveText("Свернуть");
+  });
+}
+
 test("a large tree starts as a fragment, shows real continuations and keeps the personal threshold after reload", async ({
   page,
 }) => {

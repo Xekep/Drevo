@@ -142,6 +142,9 @@ export const PersonNode = memo(function PersonNode({
   const cardLabel = `${fullName(data.person)}${lifespan ? `, ${lifespan}` : ""}${relationLabel ? `, ${relationLabel}` : ""}${data.person.needsReview ? ", требует проверки" : ""}`;
   const branchAction = data.collapsed ? "Развернуть" : "Свернуть";
   const branchTitle = `${branchAction} ветвь`;
+  const continuationLabel = data.expanded
+    ? "Свернуть"
+    : `Ещё ${data.hiddenRelatives} ${plural(data.hiddenRelatives || 0, "родственник", "родственника", "родственников")}`;
   const privacyLabel =
     publicationStatus === "published"
       ? "Доступен для поиска"
@@ -267,8 +270,10 @@ export const PersonNode = memo(function PersonNode({
       )}
       {data.familyFocus && (!!data.hiddenRelatives || data.expanded) && (
         <button
+          type="button"
           className="flow-expand-family nodrag nopan"
-          aria-label={`${data.expanded ? "Свернуть раскрытую ветвь" : `Показать ещё ${data.hiddenRelatives} родственников`}: ${fullName(data.person)}`}
+          style={{ "--family-target": `${controlTarget}px` } as CSSProperties}
+          aria-label={`${data.expanded ? "Свернуть раскрытую ветвь" : continuationLabel}: ${fullName(data.person)}`}
           onClick={() => expand(data.person.id, id)}
           title={
             data.expanded
@@ -276,10 +281,12 @@ export const PersonNode = memo(function PersonNode({
               : "Показать скрытых родственников"
           }
         >
-          {data.expanded ? <ChevronUp size={15} /> : <Plus size={15} />}
-          <span>
-            {data.expanded ? "Свернуть" : `Ещё ${data.hiddenRelatives}`}
-          </span>
+          {data.expanded ? (
+            <ChevronUp size={16} aria-hidden="true" />
+          ) : (
+            <Plus size={16} aria-hidden="true" />
+          )}
+          <span>{continuationLabel}</span>
         </button>
       )}
       {!data.familyFocus && detail !== "distant" && data.childrenCount > 0 && (

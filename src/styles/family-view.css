@@ -85,23 +85,54 @@
 }
 .flow-expand-family {
   position: absolute;
-  right: 10px;
-  bottom: -18px;
-  display: flex;
+  left: 50%;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  min-height: 32px;
-  padding: 4px 8px;
+  justify-content: center;
+  gap: 5px;
+  width: max-content;
+  max-width: calc(100% - 8px);
+  min-height: 36px;
+  padding: 6px 10px;
+  box-sizing: border-box;
   border: 1px solid #cfddc3;
   background: #f8fbf2;
   color: #4b653e;
-  border-radius: 7px;
-  font-size: 12px;
+  border-radius: 999px;
+  font-size: 16px;
+  line-height: 22px;
   white-space: nowrap;
   cursor: pointer;
 }
-.flow-expand-family:hover {
-  background: #e9f1e1;
+.flow-expand-family svg {
+  flex: none;
+}
+.flow-expand-family::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--family-target, 24px));
+  height: max(100%, var(--family-target, 24px));
+  transform: translate(-50%, -50%);
+}
+.flow-expand-family:focus-visible {
+  outline: 2px solid #315d3b;
+  outline-offset: 3px;
+}
+@media (hover: hover) {
+  .flow-expand-family:hover {
+    background: #e9f1e1;
+  }
+}
+@media (pointer: coarse) {
+  .flow-expand-family::before {
+    /* The zoom-adjusted mouse target is 24px; touch needs 44px on screen. */
+    width: max(100%, calc(var(--family-target, 24px) * 44 / 24));
+    height: max(100%, calc(var(--family-target, 24px) * 44 / 24));
+  }
 }
 .tree-canvas .flow-household--siblings > span {
   left: 14px;
@@ -188,7 +219,5 @@
   }
   .flow-expand-family {
     min-height: 44px;
-    bottom: -22px;
-    font-size: 14px;
   }
 }
