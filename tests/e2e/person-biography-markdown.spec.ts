@@ -74,7 +74,10 @@ test("saved biography renders Markdown and line breaks without executing HTML", 
     ).toHaveCount(0);
     await verify();
     await page.reload();
-    await open();
+    // The profile URL restores the open sheet; on mobile it covers the card.
+    await expect(
+      page.locator(".inspector-person-actions .person-edit-button"),
+    ).toBeVisible();
     await verify();
     await page.locator(".person-biography-text").scrollIntoViewIfNeeded();
     await page.screenshot({
