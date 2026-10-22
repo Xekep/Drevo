@@ -101,9 +101,16 @@ for (const [count, label] of [
     await page.screenshot({
       path: info.outputPath(`continuation-${count}.png`),
     });
-    await expect(
-      page.locator('.flow-person[data-person-id="continuation-4"]'),
-    ).toBeAttached();
+    // Cards outside the viewport are deliberately unmounted. In a wide family
+    // the first child can be off-screen while its siblings appear below the owner.
+    const descendants = page.locator(
+      Array.from(
+        { length: count },
+        (_, index) =>
+          `.flow-person[data-person-id="continuation-${index + 4}"]`,
+      ).join(","),
+    );
+    await expect(descendants.first()).toBeAttached();
     const collapse = card.getByRole("button", {
       name: /Свернуть раскрытую ветвь/,
     });
