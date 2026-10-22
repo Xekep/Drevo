@@ -33,7 +33,7 @@
     "@vladmandic/human": "3.3.6",
     "@xyflow/react": "^12.11.6",
     "@xyflow/system": "0.0.82",
-    "dompurify": "^3.4.16",
+    "dompurify": "^3.4.17",
     "echarts": "^6.1.0",
     "elkjs": "^0.12.0",
     "jquery-ui": "1.14.2",

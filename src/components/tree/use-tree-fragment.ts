@@ -3,6 +3,8 @@ import type { Family } from "../../domain/types";
 import { familyNeighbors } from "../../domain/family-neighborhood";
 import {
   DEFAULT_FRAGMENT_THRESHOLD,
+  FRAGMENT_PEOPLE_LIMIT,
+  fragmentContinuationWindow,
   treeFragment,
   type FragmentContinuation,
 } from "../../domain/tree-fragment";
@@ -39,19 +41,26 @@ export function useTreeFragment({
     focusToken: -1,
     moveToken: 0,
     ownerId: null as string | null,
+    priority: [] as string[],
+    visited: new Set<string>(),
   });
-  const current =
-    navigation.key === key
-      ? navigation
-      : {
-          key,
-          anchorId: "",
-          expanded: new Set<string>(),
-          full: false,
-          focusToken: focus?.token ?? -1,
-          moveToken: 0,
-          ownerId: null,
-        };
+  const current = useMemo(
+    () =>
+      navigation.key === key
+        ? navigation
+        : {
+            key,
+            anchorId: "",
+            expanded: new Set<string>(),
+            full: false,
+            focusToken: focus?.token ?? -1,
+            moveToken: 0,
+            ownerId: null,
+            priority: [],
+            visited: new Set<string>(),
+          },
+    [navigation, key, focus?.token],
+  );
   if (navigation.key !== key) setNavigation(current);
   const setOwner = useCallback((ownerId: string | null) => {
     setNavigation((previous) => ({ ...previous, ownerId }));
@@ -82,9 +91,19 @@ export function useTreeFragment({
               anchorId,
             },
             current.expanded,
+            FRAGMENT_PEOPLE_LIMIT,
+            current.priority,
           )
         : null,
-    [active, index, allowed, limits, anchorId, current.expanded],
+    [
+      active,
+      index,
+      allowed,
+      limits,
+      anchorId,
+      current.expanded,
+      current.priority,
+    ],
   );
   // An explicit locate can change the fragment. Opening a profile cannot.
   if (
@@ -100,9 +119,40 @@ export function useTreeFragment({
       moveToken: 0,
       ...(projection?.visible.has(focus.ids[0])
         ? {}
-        : { anchorId: focus.ids[0], expanded: new Set<string>() }),
+        : {
+            anchorId: focus.ids[0],
+            expanded: new Set<string>(),
+            priority: [],
+            visited: new Set<string>(),
+          }),
     });
   }
+  const expand = useCallback(
+    (id: string) => {
+      if (!projection?.visible.has(id)) return;
+      const continuation = projection.continuations.get(id);
+      if (projection.atLimit && continuation) {
+        const nextWindow = fragmentContinuationWindow(
+          continuation,
+          projection.visible,
+          current.visited,
+        );
+        setNavigation({
+          ...current,
+          ...nextWindow,
+          anchorId: id,
+          expanded: new Set(),
+          ownerId: null,
+        });
+        return;
+      }
+      const expanded = new Set(current.expanded);
+      if (expanded.has(id)) expanded.delete(id);
+      else expanded.add(id);
+      setNavigation({ ...current, anchorId, expanded, ownerId: null });
+    },
+    [projection, current, anchorId],
+  );
   return {
     active,
     anchorId,
@@ -119,18 +169,7 @@ export function useTreeFragment({
       active && current.moveToken
         ? { ids: [anchorId], token: current.moveToken }
         : null,
-    expand(id: string) {
-      if (
-        !projection ||
-        !projection.visible.has(id) ||
-        (projection.atLimit && !current.expanded.has(id))
-      )
-        return;
-      const expanded = new Set(current.expanded);
-      if (expanded.has(id)) expanded.delete(id);
-      else expanded.add(id);
-      setNavigation({ ...current, anchorId, expanded, ownerId: null });
-    },
+    expand,
     choose(id: string) {
       if (!allowed.has(id)) return;
       setNavigation({
@@ -141,6 +180,8 @@ export function useTreeFragment({
         focusToken: focus?.token ?? -1,
         moveToken: Math.max(Date.now(), current.moveToken + 1),
         ownerId: null,
+        priority: [],
+        visited: new Set(),
       });
     },
     showAll() {

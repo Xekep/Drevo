@@ -24,6 +24,28 @@ export type FragmentContinuation = {
   other: string[];
 };
 
+/** Page through a wide boundary without repeatedly returning to the same people. */
+export function fragmentContinuationWindow(
+  continuation: FragmentContinuation,
+  visible: ReadonlySet<string>,
+  visited: ReadonlySet<string>,
+) {
+  const seen = new Set([...visited, ...visible]);
+  const neighbors = [
+    ...continuation.parents,
+    ...continuation.children,
+    ...continuation.partners,
+    ...continuation.other,
+  ];
+  return {
+    visited: seen,
+    priority: [
+      ...neighbors.filter((id) => !seen.has(id)),
+      ...neighbors.filter((id) => seen.has(id)),
+    ],
+  };
+}
+
 /** Work only with an already authorized, explicitly filtered graph. Counts never
  * refer to the original archive or to paths through people outside `allowed`. */
 export function treeFragment(
@@ -32,6 +54,7 @@ export function treeFragment(
   limits: TreeGenerationLimits,
   expanded: ReadonlySet<string> = new Set(),
   budget = FRAGMENT_PEOPLE_LIMIT,
+  priority: readonly string[] = [],
 ) {
   const visible = new Set<string>();
   const queue: string[] = [];
@@ -52,6 +75,10 @@ export function treeFragment(
   };
   const scoped = generationScope(index, limits);
   add(limits.anchorId);
+  // A full fragment can replace its window with the requested boundary's
+  // omitted neighbors. Keep the owner and only real, authorized one-edge paths.
+  for (const id of priority)
+    if (index.neighbors.get(limits.anchorId)?.has(id)) add(id);
   // A deleted anchor uses a real available person, never an empty scene.
   if (!queue.length) {
     const first = allowed.values().next().value;

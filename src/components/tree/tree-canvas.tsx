@@ -509,7 +509,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     scopeKey: JSON.stringify([typeof window === "undefined" ? null : archiveContextAt(window.location.pathname)?.id, user?.id, user?.role, user?.treeAccess, user?.personId]),
     focus: effectivePersonFocus,
   });
-  const { ownerId: fragmentOwner, setOwner: setFragmentOwner } = fragment;
+  const { ownerId: fragmentOwner, setOwner: setFragmentOwner, expand: expandFragment } = fragment;
   const root = fragment.active ? fragment.anchorId : familyRoot;
   const scopedVisible = fragment.visible;
   const depth = useDepthTree(renderFamily, scopedVisible, depthEnabled,
@@ -929,13 +929,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           ? user?.personId || null : null,
       onInitialViewReady: markInitialCameraReady,
       manualCameraOverride,
-      expanded: familyView.expanded,
+      expanded: fragment.active ? fragment.expanded : familyView.expanded,
       collapsed,
       layoutKey,
       branchAnchor,
     });
   const toggleBranch = useCallback(
-    (id: string, occurrenceId?: string) => {
+    (id: string, occurrenceId?: string, inline = false) => {
       // An explicit branch action after growth owns the camera from this point.
       introHandled.current = true;
       setManualCameraOverride(true);
@@ -958,10 +958,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         });
       }
       setGrowing(false);
-      if (fragment.active) setFragmentOwner(id);
+      if (fragment.active) {
+        if (inline) expandFragment(id);
+        else setFragmentOwner(id);
+      }
       else toggleView(id);
     },
-    [flow, layoutKey, personOccurrences, positions, toggleView, fragment.active, setFragmentOwner],
+    [flow, layoutKey, personOccurrences, positions, toggleView, fragment.active, expandFragment, setFragmentOwner],
   );
   const gpuArchiveContext = typeof window === "undefined" ? null :
     archiveContextAt(window.location.pathname);
@@ -1017,7 +1020,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         onSelectOnly(id);
       },
       collapse: toggleBranch,
-      expand: toggleBranch,
+      expand: (id: string, occurrenceId?: string) => toggleBranch(id, occurrenceId, true),
       reference: (personId: string, occurrenceId: string) => {
         const ids = personOccurrences.get(personId) || [];
         const next = ids[(ids.indexOf(occurrenceId) + 1) % ids.length];
