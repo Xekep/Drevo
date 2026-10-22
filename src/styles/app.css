@@ -722,6 +722,34 @@ h1 {
   color: #88917e;
   line-height: 1.9;
 }
+.person-biography-text {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.person-biography-text > :first-child { margin-top: 0; }
+.person-biography-text > :last-child { margin-bottom: 0; }
+.person-biography-text p,
+.person-biography-text li { white-space: pre-wrap; }
+.biography .person-biography-text p { margin: 8px 0; color: inherit; line-height: inherit; }
+.person-biography-text :is(h1, h2, h3, h4, h5, h6) {
+  margin: 16px 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.person-biography-text :is(ul, ol) { margin: 8px 0; padding-left: 22px; }
+.person-biography-text ul { list-style: disc; }
+.person-biography-text ol { list-style: decimal; }
+.person-biography-text blockquote { margin: 12px 0; padding-left: 12px; border-left: 3px solid var(--line); }
+.person-biography-text a { color: var(--green); text-decoration: underline; }
+.person-biography-text pre { max-width: 100%; overflow-x: auto; padding: 10px; background: var(--surface-soft, #f2f5ee); }
+.person-biography-text code { font-size: 0.92em; }
+.person-biography-text img { max-width: 100%; height: auto; }
+.person-biography-text table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.person-biography-text :is(th, td) { padding: 6px 8px; border: 1px solid var(--line); }
+.person-biography-text hr { margin: 12px 0; border: 0; border-top: 1px solid var(--line); }
 .profile-quote {
   font-family: var(--serif);
   font-style: italic;

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { familyNeighbors } from "../src/domain/family-neighborhood.ts";
 import {
   treeFragment,
+  fragmentContinuationWindow,
   FRAGMENT_PEOPLE_LIMIT,
   isFragmentThreshold,
 } from "../src/domain/tree-fragment.ts";
@@ -28,6 +29,46 @@ const limits = {
   descendants: 3,
   collateral: 0,
 } as const;
+
+test("full fragment windows expose every omitted sibling without a dialog or exceeding the layout budget", () => {
+  const people = [
+    person("parent"),
+    ...Array.from({ length: 1500 }, (_, n) => person(`c${n}`, ["parent"])),
+  ];
+  const index = familyNeighbors({ people });
+  const allowed = new Set(people.map((p) => p.id));
+  const scoped = { ...limits, anchorId: "parent" };
+  let projection = treeFragment(index, allowed, scoped);
+  let visited = new Set<string>();
+  const exposed = new Set(projection.visible);
+  for (let page = 0; page < 3; page++) {
+    const next = fragmentContinuationWindow(
+      projection.continuations.get("parent")!,
+      projection.visible,
+      visited,
+    );
+    projection = treeFragment(
+      index,
+      allowed,
+      scoped,
+      new Set(),
+      FRAGMENT_PEOPLE_LIMIT,
+      next.priority,
+    );
+    visited = next.visited;
+    assert.equal(projection.visible.size, FRAGMENT_PEOPLE_LIMIT);
+    assert.ok(projection.visible.has("parent"));
+    for (const id of projection.visible) exposed.add(id);
+  }
+  assert.equal(exposed.size, people.length);
+  const restricted = new Set(["parent", "c0", "c1"]);
+  const limited = treeFragment(index, restricted, scoped, new Set(), 500, [
+    "c100",
+    "c1",
+  ]);
+  assert.deepEqual(limited.visible, restricted);
+  assert.equal(limited.hidden.size, 0);
+});
 test("fragments have explicit parent/child continuations, expand, collapse and can move through a deep tree", () => {
   const people = Array.from({ length: 20 }, (_, n) =>
     person(`p${n}`, n ? [`p${n - 1}`] : []),

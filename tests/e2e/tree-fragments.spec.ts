@@ -93,21 +93,32 @@ for (const [count, label] of [
       await page.keyboard.press("Enter");
     }
     const dialog = page.getByRole("dialog", { name: "Продолжение ветвей" });
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole("button", { name: /Ребёнок/ })).toHaveCount(
-      Math.min(count, 30),
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator(".tree-canvas")).toHaveAttribute(
+      "data-layout-people",
+      String(4 + count),
     );
     await page.screenshot({
       path: info.outputPath(`continuation-${count}.png`),
     });
-    await dialog.getByRole("button", { name: "Раскрыть ветви здесь" }).click();
-    await expect(dialog).not.toBeVisible();
     await expect(
       page.locator('.flow-person[data-person-id="continuation-4"]'),
     ).toBeAttached();
-    await expect(
-      card.getByRole("button", { name: /Свернуть раскрытую ветвь/ }),
-    ).toHaveText("Свернуть");
+    const collapse = card.getByRole("button", {
+      name: /Свернуть раскрытую ветвь/,
+    });
+    await expect(collapse).toHaveText("Свернуть");
+    await expect(page.locator(".tree-canvas")).toHaveAttribute(
+      "data-layout-ready",
+      "true",
+    );
+    await collapse.click();
+    await expect(page.locator(".tree-canvas")).toHaveAttribute(
+      "data-layout-people",
+      "4",
+    );
+    await expect(button).toHaveText(`Ещё ${count} ${label}`);
+    await expect(dialog).toHaveCount(0);
   });
 }
 
@@ -156,8 +167,13 @@ test("a large tree starts as a fragment, shows real continuations and keeps the 
   await expect(status).toContainText(/Фрагмент: \d+ из 500/);
   // The fragment count precedes the worker result. A transient enabled frame
   // before layout starts does not mean its branch controls are ready yet.
-  await expect(page.locator(".tree-canvas")).toHaveAttribute("data-layout-ready", "true");
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-layout-settling/);
+  await expect(page.locator(".tree-canvas")).toHaveAttribute(
+    "data-layout-ready",
+    "true",
+  );
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(
+    /is-layout-settling/,
+  );
   await status.getByRole("button", { name: "Продолжения ветвей" }).click();
   const dialog = page.getByRole("dialog", { name: "Продолжение ветвей" });
   await expect(dialog).toBeVisible();
