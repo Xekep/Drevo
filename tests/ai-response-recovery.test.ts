@@ -183,6 +183,23 @@ for (const failure of [
         for (let index = 0; index < 12; index++)
           await chats.append(first.chatId, "user", "ку");
       }
+      if (failure === "token-limit")
+        await aiChatStore(app.archive.db).append(
+          first.chatId,
+          "assistant",
+          "Найден каталог архива.",
+          {
+            references: [
+              {
+                kind: "web",
+                label: "Каталог",
+                url: "https://archive.example.org/catalog",
+                domain: "archive.example.org",
+                snippet: "Опись",
+              },
+            ],
+          },
+        );
       const response = await fetch(base + "/api/ai/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -204,9 +221,39 @@ for (const failure of [
         assert.equal(requests[2].stream, undefined);
         if (failure.startsWith("token-limit"))
           assert.equal(requests[2].max_output_tokens, 16000);
+        if (failure.startsWith("token-limit"))
+          assert.deepEqual(requests[2].reasoning, { effort: "none" });
+        else assert.equal(requests[2].reasoning, undefined);
+        // Tools remain available when no tool has completed yet.
+        assert.ok((requests[2].tools as unknown[]).length > 0);
         const input = JSON.stringify(requests[2].input);
         assert.match(input, /Ф\.6, Оп\.13, Д\.104/);
         assert.match(input, /Уточните архив/);
+        if (failure === "token-limit") {
+          const history = requests[2].input as Array<{
+            role: string;
+            content: Array<{ text: string }>;
+          }>;
+          const assistantText = history
+            .filter((item) => item.role === "assistant")
+            .flatMap((item) => item.content)
+            .map((item) => item.text)
+            .join("\n");
+          assert.match(assistantText, /Найден каталог архива/);
+          assert.doesNotMatch(
+            assistantText,
+            /Служебный контекст|"kind"|archive\.example\.org/,
+          );
+          assert.ok(
+            history.some(
+              (item) =>
+                item.role === "user" &&
+                JSON.stringify(item.content).includes(
+                  "https://archive.example.org/catalog",
+                ),
+            ),
+          );
+        }
         assert.equal((input.match(/да ищи в гасо/g) || []).length, 1);
         assert.match(
           text,
@@ -259,7 +306,7 @@ for (const failure of [
     const env = {
       YANDEX_AI_API_KEY: "test-key",
       YANDEX_AI_FOLDER_ID: "folder",
-      YANDEX_AI_MODEL: "model",
+      YANDEX_AI_MODEL: "qwen3.6-35b-a3b/latest",
     };
     const previous = Object.fromEntries(
       Object.keys(env).map((key) => [key, process.env[key]]),
@@ -273,7 +320,9 @@ for (const failure of [
         return Response.json({ id: "conv" });
       }
       calls++;
-      if (calls === 1)
+      const body = JSON.parse(String(init?.body));
+      if (calls === 1) {
+        assert.equal(body.reasoning, undefined);
         return Response.json({
           id: "tools",
           status: "completed",
@@ -286,10 +335,12 @@ for (const failure of [
             },
           ],
         });
-      const body = JSON.parse(String(init?.body));
+      }
       if (calls === 3) {
         assert.deepEqual(body.tools, []);
         assert.equal(body.tool_choice, "none");
+        assert.deepEqual(body.reasoning, { effort: "none" });
+        assert.match(body.instructions, /Новые инструменты недоступны/);
         assert.match(JSON.stringify(body.input), /get_archive_insights/);
         assert.match(JSON.stringify(body.input), /completeness/);
         if (failure === "token-limit")
@@ -316,6 +367,7 @@ for (const failure of [
               : "Обзор составлен по сохранённым данным.",
         });
       }
+      assert.equal(body.reasoning, undefined);
       assert.equal(body.input[0].call_id, "lookup");
       if (failure === "token-limit")
         return Response.json({
@@ -364,13 +416,95 @@ for (const failure of [
     }
   });
 
+test("Qwen exhaustion before tools permits one non-thinking retry then restores agent reasoning", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-first-tool-recovery-"));
+  const env = {
+    YANDEX_AI_API_KEY: "test-key",
+    YANDEX_AI_FOLDER_ID: "folder",
+    YANDEX_AI_MODEL: "qwen3.6-35b-a3b/latest",
+  };
+  const previous = Object.fromEntries(
+    Object.keys(env).map((key) => [key, process.env[key]]),
+  );
+  Object.assign(process.env, env);
+  let calls = 0;
+  const fake: typeof fetch = async (url, init) => {
+    if (String(url).endsWith("/conversations"))
+      return Response.json({ id: "conv" });
+    const body = JSON.parse(String(init?.body));
+    calls++;
+    assert.ok(
+      body.tools.some(
+        (tool: { name: string }) => tool.name === "get_archive_insights",
+      ),
+    );
+    if (calls === 1) {
+      assert.equal(body.reasoning, undefined);
+      return Response.json({
+        id: "limited",
+        status: "incomplete",
+        incomplete_details: { reason: "max_output_tokens" },
+      });
+    }
+    if (calls === 2) {
+      assert.deepEqual(body.reasoning, { effort: "none" });
+      return Response.json({
+        id: "lookup",
+        status: "completed",
+        output: [
+          {
+            type: "function_call",
+            call_id: "lookup",
+            name: "get_archive_insights",
+            arguments: "{}",
+          },
+        ],
+      });
+    }
+    assert.equal(body.reasoning, undefined);
+    assert.equal(body.input[0].call_id, "lookup");
+    return Response.json({
+      id: "done",
+      status: "completed",
+      output_text: "Сводка получена из архива.",
+    });
+  };
+  const app = await startServer(
+    0,
+    join(dir, "drevo.sqlite"),
+    true,
+    undefined,
+    fake,
+  );
+  try {
+    const result = await fetch(
+      `http://127.0.0.1:${(app.server.address() as { port: number }).port}/api/ai/chat`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Посчитай людей в архиве" }),
+      },
+    );
+    assert.equal(result.status, 200);
+    assert.match((await result.json()).answer, /Сводка получена/);
+    assert.equal(calls, 3);
+  } finally {
+    await app.close();
+    for (const key of Object.keys(env)) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 for (const exhausted of [false, true])
   test(`external search budget retains sources (agent exhausted: ${exhausted})`, async () => {
     const dir = mkdtempSync(join(tmpdir(), "drevo-ai-search-budget-"));
     const env = {
       YANDEX_AI_API_KEY: "test-key",
       YANDEX_AI_FOLDER_ID: "folder",
-      YANDEX_AI_MODEL: "model",
+      YANDEX_AI_MODEL: "qwen3.6-35b-a3b/latest",
       AI_WEB_SEARCH_ENABLED: "true",
       AI_WEB_SEARCH_PROVIDER: "yandex",
     };
@@ -415,6 +549,9 @@ for (const exhausted of [false, true])
       if (agentCalls === 9) {
         assert.deepEqual(body.tools, []);
         assert.equal(body.tool_choice, "none");
+        assert.deepEqual(body.reasoning, { effort: "none" });
+      } else {
+        assert.equal(body.reasoning, undefined);
       }
       if (agentCalls >= 4)
         assert.equal(
@@ -480,7 +617,7 @@ for (const exhausted of [false, true])
     }
   });
 
-test("only the Qwen search summarizer disables reasoning; other models retain provider defaults", async () => {
+test("Qwen search synthesis disables reasoning; other models retain provider defaults", async () => {
   const requests: Array<Record<string, unknown>> = [];
   const client = yandexResponsesClient(async (_url, init) => {
     requests.push(JSON.parse(String(init?.body)));
@@ -498,4 +635,43 @@ test("only the Qwen search summarizer disables reasoning; other models retain pr
   });
   assert.deepEqual(requests[0].reasoning, { effort: "none" });
   assert.equal(requests[1].reasoning, undefined);
+});
+
+test("only explicit Qwen synthesis or exhaustion recovery disables reasoning", async () => {
+  const synthesisOptions = { ...options, stream: false };
+  const requests: Array<Record<string, unknown>> = [];
+  const client = yandexResponsesClient(async (_url, init) => {
+    requests.push(JSON.parse(String(init?.body)));
+    return Response.json({
+      id: "done",
+      status: "completed",
+      output_text: "Готово",
+    });
+  });
+  await client.respond(synthesisOptions);
+  await client.respond({ ...synthesisOptions, skipReasoning: true });
+  await client.respond({
+    ...synthesisOptions,
+    skipReasoning: true,
+    tools: [
+      {
+        type: "function",
+        name: "query_people",
+        description: "Поиск",
+        parameters: {},
+      },
+    ],
+  });
+  await client.respond({
+    ...synthesisOptions,
+    skipReasoning: true,
+    runtime: {
+      ...options.runtime,
+      modelUri: "gpt://folder/deepseek-v3/latest",
+    },
+  });
+  assert.equal(requests[0].reasoning, undefined);
+  assert.deepEqual(requests[1].reasoning, { effort: "none" });
+  assert.deepEqual(requests[2].reasoning, { effort: "none" });
+  assert.equal(requests[3].reasoning, undefined);
 });
