@@ -1466,19 +1466,15 @@ try {
   };
   const neighborBeforeRestore = await neighborState();
   const stagingRoot = join(dirname(source), "staging");
-  const diskFree = async () => {
-    const disk = await statfs(stagingRoot);
-    return disk.bavail * disk.bsize;
-  };
-  const platformPending = async () => Number((await app!.archive.db
-    .prepare("", "SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM platform_upload_reservations")
-    .get())?.bytes || 0);
   const reservationCount = async () => Number((await app!.archive.db
     .prepare("", "SELECT count(*) AS count FROM platform_upload_reservations")
     .get())?.count || 0);
-  const blockRestoreSpace = async (id: string, headroom: number) => {
-    const bytes = (await diskFree()) - (await platformPending()) -
-      256 * 1024 ** 2 - headroom;
+  const blockRestoreSpace = async (id: string) => {
+    // Free space can grow between this fixture and the HTTP request as other CI
+    // processes delete files. Reserving the volume's entire capacity guarantees
+    // rejection even if every other file disappears; no physical bytes are written.
+    const disk = await statfs(stagingRoot);
+    const bytes = disk.blocks * disk.bsize;
     assert.ok(Number.isSafeInteger(bytes) && bytes > 0);
     await app!.archive.db.prepare("", `INSERT INTO platform_upload_reservations
       (id,reserved_bytes,expires_ms) VALUES(?,?,?)`).run(id, bytes, Date.now() + 5 * 60_000);
@@ -1493,7 +1489,6 @@ try {
   const stageNamesBefore = readdirSync(stagingRoot).filter((name) => name.startsWith("restore-"));
   const reservationsBefore = await reservationCount();
   try {
-    await blockRestoreSpace("restore-preview-blocker", 48 * 1024 ** 2);
     heldPreview = firstRestores.previewStream(Readable.from((async function* () {
       yield restoreBytes.subarray(0, 1024);
       firstChunkReady();
@@ -1502,10 +1497,12 @@ try {
     })()), owner);
     await firstChunk;
     for (let attempt = 0; attempt < 100; attempt++) {
-      if (await reservationCount() > reservationsBefore + 1) break;
+      if (await reservationCount() > reservationsBefore) break;
       if (attempt === 99) throw new Error("First restore did not reserve disk space");
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
+    // Fill the remaining capacity only after the first stream owns its lease.
+    await blockRestoreSpace("restore-preview-blocker");
     await assert.rejects(
       secondRestores.previewStream(Readable.from([restoreBytes]), owner),
       (error: unknown) => error instanceof UploadQuotaError && error.status === 507,
@@ -1515,12 +1512,12 @@ try {
       stageNamesBefore.length + 1,
       "a rejected preview removes its partial staging directory");
   } finally {
+    await app.archive.db.prepare("", "DELETE FROM platform_upload_reservations WHERE id='restore-preview-blocker'").run();
     unblockFirst();
     try {
       const held = await heldPreview;
       if (held) await firstRestores.discard(held.token);
     } finally {
-      await app.archive.db.prepare("", "DELETE FROM platform_upload_reservations WHERE id='restore-preview-blocker'").run();
       await firstRestores.close();
       await secondRestores.close();
     }
@@ -1574,7 +1571,7 @@ try {
   // originals and directories without racing the independent reader worker.
   mkdirSync(join(uploads, ".reader-cache"), { recursive: true });
   const uploadsBefore = readdirSync(uploads).sort();
-  await blockRestoreSpace("restore-apply-blocker", 0);
+  await blockRestoreSpace("restore-apply-blocker");
   try {
     const blockedApply = await fetch(base + "/api/restore/apply", {
       method: "POST",
