@@ -17,7 +17,8 @@ test("switching from archive research to a standalone greeting does not force a 
   );
   Object.assign(process.env, env);
   let phase = "archive",
-    greetingCalls = 0;
+    greetingCalls = 0,
+    namedId = "";
   const providerRequests: Array<{ phase: string; input: unknown }> = [];
   const fake: typeof fetch = async (url, init) => {
     if (String(url).endsWith("/conversations"))
@@ -48,6 +49,27 @@ test("switching from archive research to a standalone greeting does not force a 
         status: "completed",
         output_text: "Посчитал людей с датой рождения в архиве.",
       });
+    if (phase === "person") {
+      phase = "person-result";
+      return Response.json({
+        id: `person-${namedId}`,
+        status: "completed",
+        output: [
+          {
+            type: "function_call",
+            call_id: `call-${namedId}`,
+            name: "get_person",
+            arguments: JSON.stringify({ personId: namedId }),
+          },
+        ],
+      });
+    }
+    if (phase === "person-result")
+      return Response.json({
+        id: `person-answer-${namedId}`,
+        status: "completed",
+        output_text: `Вот найденная карточка: [[person:${namedId}|Тестовый человек]].`,
+      });
     greetingCalls++;
     return Response.json({
       id: `greeting-${greetingCalls}`,
@@ -63,6 +85,13 @@ test("switching from archive research to a standalone greeting does not force a 
     fake,
   );
   try {
+    // This scenario exercises several user turns, independently of rate limits.
+    await app.archive.db
+      .prepare(
+        "UPDATE ai_settings SET requests_per_minute=50,daily_tokens=5000000 WHERE id=1",
+        "UPDATE platform_ai_settings SET requests_per_minute=50,daily_tokens=5000000 WHERE id=1",
+      )
+      .run();
     const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
     const ask = async (message: string, chatId?: string) => {
       const response = await fetch(base + "/api/ai/chat", {
@@ -70,8 +99,9 @@ test("switching from archive research to a standalone greeting does not force a 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message, chatId, context: { view: "tree" } }),
       });
-      assert.equal(response.status, 200);
-      return await response.json();
+      const payload = await response.json();
+      assert.equal(response.status, 200, payload.error);
+      return payload;
     };
     const first = await ask("Сколько людей с датой рождения в архиве?");
     phase = "greeting";
@@ -112,6 +142,53 @@ test("switching from archive research to a standalone greeting does not force a 
       "switching topics must not reset the user's chat",
     );
     assert.match(returned.answer, /Посчитал людей/);
+    const snapshot = await app.archive.read();
+    await app.archive.write(
+      {
+        ...snapshot.family,
+        photos: [],
+        links: [],
+        unions: [],
+        people: ["subject-a", "subject-b"].map((id) => ({
+          id,
+          name: id,
+          surname: "Тест",
+          patronymic: "",
+          birth: "1900",
+          birthPlace: "",
+          sex: "u" as const,
+          generation: 1,
+          column: 0,
+          sources: [],
+          parents: [],
+          spouses: [],
+          photo: undefined,
+        })),
+      },
+      snapshot.revision,
+    );
+    for (const id of ["subject-a", "subject-b"]) {
+      namedId = id;
+      phase = "person";
+      const result = await ask(`Расскажи о человеке ${id}`, first.chatId);
+      assert.ok(
+        result.references.some(
+          (reference: { kind: string; id: string }) =>
+            reference.kind === "person" && reference.id === id,
+        ),
+      );
+      const saved = await app.archive.db
+        .prepare(
+          "SELECT session_state FROM ai_chats WHERE id=?",
+          "SELECT session_state FROM ai_chats WHERE id=?",
+        )
+        .get(first.chatId);
+      assert.deepEqual(
+        JSON.parse(String(saved?.session_state)).activePersonIds,
+        [id],
+        "a newly discussed person replaces previous active subjects",
+      );
+    }
   } finally {
     await app.close();
     for (const [key, value] of Object.entries(previous)) {

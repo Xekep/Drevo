@@ -1833,14 +1833,15 @@ export function aiResearchHttp({
               : latestFamily
             ).people.map((person) => person.id),
           );
-          const activeIds = [
-            ...new Set([
-              ...chat.sessionState.activePersonIds,
-              ...result.references
-                .filter((item) => item.kind === "person")
-                .map((item) => item.id),
-            ]),
-          ].filter((id) => accessiblePeople.has(id));
+          const currentPeople = result.references
+            .filter((item) => item.kind === "person")
+            .map((item) => item.id)
+            .filter((id) => accessiblePeople.has(id));
+          // A new subject replaces the previous subject set. Accumulating every
+          // person mentioned in a chat biases later pronouns toward stale people.
+          const activeIds = [...new Set(currentPeople.length
+            ? currentPeople : chat.sessionState.activePersonIds)]
+            .filter((id) => accessiblePeople.has(id));
           await chats.setActivePeople(chat.id, activeIds);
           return true;
         });
