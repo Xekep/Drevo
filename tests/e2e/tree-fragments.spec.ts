@@ -1,4 +1,129 @@
 import { test, expect } from "@playwright/test";
+import { familyViewAction } from "./tree-toolbar-actions";
+
+test("close family keeps compact controls and recursive collapse independently of automatic fragments", async ({
+  page,
+}, info) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    const template = data.family.people[0];
+    data.family.people = Array.from({ length: 100 }, (_, index) => ({
+      ...template,
+      id: `scope-${index}`,
+      name: `Человек ${index}`,
+      surname: "Проверка",
+      patronymic: "",
+      birth: "1900",
+      photo: undefined,
+      parents: index > 0 && index < 5 ? [`scope-${index - 1}`] : [],
+      spouses: [],
+      generation: index + 1,
+    }));
+    data.family.links = [];
+    data.family.unions = [];
+    data.family.photos = [];
+    data.partial = false;
+    data.totals.people = 100;
+    data.user.personId = "scope-0";
+    data.treePreferences = {
+      ...data.treePreferences,
+      fragmentThreshold: 100,
+      animateOnLoad: false,
+    };
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  const status = page.getByRole("region", { name: "Фрагмент большого древа" });
+  await expect(status).toBeVisible();
+  await expect(page.locator('.tree-family-name[title^="Близкие:"]')).toHaveCount(0);
+  await page
+    .getByRole("combobox", { name: /Найти человека/ })
+    .fill("Человек 0");
+  await page
+    .getByRole("option", { name: /^Проверка Человек 0(?:\s|$)/ })
+    .click();
+  if (info.project.name === "mobile")
+    await page.getByRole("button", { name: "Свернуть панель" }).click();
+  await familyViewAction(page, "Близкие");
+  await page.getByRole("button", { name: /Закрыть панель/ }).click();
+  await expect(status).toHaveCount(0);
+  await expect(page.locator('.tree-family-name[title^="Близкие:"]')).toHaveCount(1);
+  await expect(canvas).toHaveAttribute("data-layout-people", "2");
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect(canvas).not.toHaveClass(/is-layout-settling/);
+  const card = (index: number) =>
+    page.locator(`.flow-person[data-person-id="scope-${index}"]`);
+  const first = card(1).getByRole("button", {
+    name: /^Показать ещё 1 родственников:/,
+  });
+  await expect(first).toHaveText("Ещё 1");
+  await expect(first).not.toHaveClass(/is-fragment-continuation/);
+  const style = await first.evaluate((button) => {
+    const css = getComputedStyle(button);
+    return {
+      font: css.fontSize,
+      radius: css.borderRadius,
+      padding: css.padding,
+      right: css.right,
+    };
+  });
+  expect(style.font).toBe(info.project.name === "mobile" ? "14px" : "12px");
+  expect(style.radius).toBe("7px");
+  expect(style.right).toBe("10px");
+  await first.click();
+  await expect(canvas).toHaveAttribute("data-layout-people", "3");
+  const second = card(2).getByRole("button", {
+    name: /^Показать ещё 1 родственников:/,
+  });
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await second.click();
+  await expect(canvas).toHaveAttribute("data-layout-people", "4");
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await card(1)
+    .getByRole("button", { name: /^Свернуть раскрытую ветвь:/ })
+    .click();
+  await expect(canvas).toHaveAttribute("data-layout-people", "2");
+  await expect(card(0)).toHaveAttribute("data-anchor", "true");
+  await expect(card(2)).toHaveCount(0);
+  await expect(card(3)).toHaveCount(0);
+  await expect(first).toHaveText("Ещё 1");
+  await page.screenshot({ path: info.outputPath("close-family-restored.png") });
+  await familyViewAction(page, "Всё древо");
+  await expect(status).toBeVisible();
+  await expect(page.locator('.tree-family-name[title^="Близкие:"]')).toHaveCount(0);
+  await expect(canvas).toHaveAttribute("data-layout-people", "4");
+  const fragmentButton = card(3).getByRole("button", {
+    name: /^Ещё 1 родственник:/,
+  });
+  await expect(fragmentButton).toHaveText("Ещё 1");
+  const fragmentStyle = await fragmentButton.evaluate((button) => {
+    const css = getComputedStyle(button);
+    return {
+      font: css.fontSize,
+      radius: css.borderRadius,
+      padding: css.padding,
+      right: css.right,
+    };
+  });
+  expect(fragmentStyle).toEqual(style);
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await fragmentButton.click();
+  await expect(canvas).toHaveAttribute("data-layout-people", "5");
+  await expect(
+    page.getByRole("dialog", { name: "Продолжение ветвей" }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: info.outputPath("fragment-compact-control.png"),
+  });
+  await card(0).locator(".flow-person-content").click();
+  if (info.project.name === "mobile")
+    await page.getByRole("button", { name: "Свернуть панель" }).click();
+  await familyViewAction(page, "Близкие");
+  await expect(canvas).toHaveAttribute("data-layout-people", "2");
+});
 
 for (const [count, label] of [
   [1, "родственник"],
@@ -60,23 +185,33 @@ for (const [count, label] of [
       name: `Ещё ${count} ${label}: Проверка Человек 3`,
       exact: true,
     });
-    await expect(button).toHaveText(`Ещё ${count} ${label}`);
+    await expect(button).toHaveText(`Ещё ${count}`);
     // Inspect the actual geometry at the displayed zoom, rather than only CSS.
     const geometry = await button.evaluate((element) => {
       const button = element.getBoundingClientRect();
       const card = element.closest(".flow-person")!.getBoundingClientRect();
       return {
-        center: button.x + button.width / 2 - card.x - card.width / 2,
-        gap: button.top - card.bottom,
-        fits: element.scrollWidth <= element.clientWidth + 1,
+        rightInset:
+          ((card.right - button.right) * (element as HTMLElement).offsetWidth) /
+          button.width,
+        fontSize: getComputedStyle(element).fontSize,
+        radius: getComputedStyle(element).borderRadius,
+        fits:
+          element.querySelector("span")!.getBoundingClientRect().left >=
+            button.left - 0.5 &&
+          element.querySelector("span")!.getBoundingClientRect().right <=
+            button.right + 0.5,
         hitHeight:
           (parseFloat(getComputedStyle(element, "::before").height) *
             button.width) /
           (element as HTMLElement).offsetWidth,
       };
     });
-    expect(Math.abs(geometry.center)).toBeLessThan(1);
-    expect(geometry.gap).toBeGreaterThan(0);
+    expect(geometry.rightInset).toBeCloseTo(10, 0);
+    expect(geometry.fontSize).toBe(
+      info.project.name === "mobile" ? "14px" : "12px",
+    );
+    expect(geometry.radius).toBe("7px");
     expect(geometry.fits).toBe(true);
     expect(geometry.hitHeight).toBeGreaterThanOrEqual(
       info.project.name === "mobile" ? 44 : 24,
@@ -124,7 +259,7 @@ for (const [count, label] of [
       "data-layout-people",
       "4",
     );
-    await expect(button).toHaveText(`Ещё ${count} ${label}`);
+    await expect(button).toHaveText(`Ещё ${count}`);
     await expect(dialog).toHaveCount(0);
   });
 }
@@ -181,21 +316,31 @@ test("a large tree starts as a fragment, shows real continuations and keeps the 
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-layout-settling/,
   );
-  await status.getByRole("button", { name: "Продолжения ветвей" }).click();
+  await page
+    .getByRole("combobox", { name: /Найти человека/ })
+    .fill("Человек 247");
+  await page
+    .getByRole("option", { name: /^Проверка Человек 247(?:\s|$)/ })
+    .click();
+  await page.getByRole("button", { name: /Закрыть панель/ }).click();
+  const boundary = page.locator('.flow-person[data-person-id="fragment-247"]');
+  const initialSize = Number(
+    await page.locator(".tree-canvas").getAttribute("data-layout-people"),
+  );
+  await boundary.getByRole("button", { name: /^Ещё 1 родственник:/ }).click();
   const dialog = page.getByRole("dialog", { name: "Продолжение ветвей" });
-  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveCount(0);
   await expect(
-    dialog.getByRole("button", { name: /Родитель|Ребёнок/ }).first(),
-  ).toBeVisible();
-  const next = dialog.getByRole("button", { name: /Родитель|Ребёнок/ }).first();
-  const nextId = /Человек (\d+)/.exec(await next.innerText())![1];
-  await next.click();
-  await expect(dialog).not.toBeVisible();
-  await expect(
-    page.locator(
-      `.flow-person[data-person-id="fragment-${nextId}"][data-anchor="true"]`,
-    ),
-  ).toHaveCount(1);
+    status.getByRole("button", { name: "Продолжения ветвей" }),
+  ).toHaveCount(0);
+  await expect(page.locator(".tree-canvas")).toHaveAttribute(
+    "data-layout-people",
+    String(initialSize + 1),
+  );
+  await expect(page.locator(".tree-canvas")).toHaveAttribute(
+    "data-fragment-anchor",
+    "fragment-250",
+  );
   await expect(status).toBeVisible();
   await page
     .getByRole("button", { name: "Настройки древа", exact: true })

@@ -12,33 +12,3 @@
   gap: 5px;
   min-height: 32px;
 }
-.fragment-branches-dialog ul {
-  list-style: none;
-  padding: 0;
-  margin: 12px 0;
-}
-.fragment-branches-dialog li + li {
-  border-top: 1px solid var(--line);
-}
-.fragment-branches-dialog li button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  padding: 10px 4px;
-  border: 0;
-  background: transparent;
-  text-align: left;
-}
-.fragment-branches-dialog li button span {
-  min-width: 0;
-}
-.fragment-branches-dialog small {
-  display: block;
-  color: var(--muted);
-}
-.fragment-branches-dialog input[type="search"] {
-  width: 100%;
-  margin-top: 12px;
-}

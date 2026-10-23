@@ -71,7 +71,6 @@ import { HorizontalTimeline } from "./horizontal-timeline";
 import { useNarrowScreen } from "../../hooks/useNarrowScreen";
 import { useFamilyView } from "./use-family-view";
 import { useTreeFragment } from "./use-tree-fragment";
-import { FragmentBranchesDialog } from "./fragment-branches-dialog";
 import "../../styles/tree-fragments.css";
 import { generationScope } from "../../domain/tree-generation-scope";
 import { createCrossingPathCache } from "../../domain/route-crossings";
@@ -509,7 +508,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     scopeKey: JSON.stringify([typeof window === "undefined" ? null : archiveContextAt(window.location.pathname)?.id, user?.id, user?.role, user?.treeAccess, user?.personId]),
     focus: effectivePersonFocus,
   });
-  const { ownerId: fragmentOwner, setOwner: setFragmentOwner, expand: expandFragment } = fragment;
+  const { expand: expandFragment } = fragment;
   const root = fragment.active ? fragment.anchorId : familyRoot;
   const scopedVisible = fragment.visible;
   const depth = useDepthTree(renderFamily, scopedVisible, depthEnabled,
@@ -652,6 +651,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         collapsed,
         root:
           (fragment.active || familyView.mode === "family") && !props.assistantFilter ? root : null,
+        fragmentActive: fragment.active,
         hidden: fragment.active ? fragment.hidden : familyView.hidden,
         expanded: fragment.active ? fragment.expanded : familyView.expanded,
         query: props.query,
@@ -935,7 +935,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       branchAnchor,
     });
   const toggleBranch = useCallback(
-    (id: string, occurrenceId?: string, inline = false) => {
+    (id: string, occurrenceId?: string) => {
       // An explicit branch action after growth owns the camera from this point.
       introHandled.current = true;
       setManualCameraOverride(true);
@@ -958,13 +958,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         });
       }
       setGrowing(false);
-      if (fragment.active) {
-        if (inline) expandFragment(id);
-        else setFragmentOwner(id);
-      }
+      if (fragment.active) expandFragment(id);
       else toggleView(id);
     },
-    [flow, layoutKey, personOccurrences, positions, toggleView, fragment.active, expandFragment, setFragmentOwner],
+    [flow, layoutKey, personOccurrences, positions, toggleView, fragment.active, expandFragment],
   );
   const gpuArchiveContext = typeof window === "undefined" ? null :
     archiveContextAt(window.location.pathname);
@@ -1020,7 +1017,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         onSelectOnly(id);
       },
       collapse: toggleBranch,
-      expand: (id: string, occurrenceId?: string) => toggleBranch(id, occurrenceId, true),
+      expand: toggleBranch,
       reference: (personId: string, occurrenceId: string) => {
         const ids = personOccurrences.get(personId) || [];
         const next = ids[(ids.indexOf(occurrenceId) + 1) % ids.length];
@@ -1351,7 +1348,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     clearRestoreViewport();
     fragment.choose(id);
     returnToPerson(id);
-    setFragmentOwner(null);
   };
   useEffect(() => {
     if (!focus?.reanchor || focus.ids.length !== 1 ||
@@ -1622,6 +1618,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         inert={props.covered || undefined}
         data-layout-ready={ready}
         data-layout-people={renderVisible.size}
+        data-fragment-anchor={fragment.active ? fragment.anchorId : undefined}
         data-depth-anchor={depthEnabled ? depth.anchorId : undefined}
         className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} has-portrait-cards ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
@@ -1783,7 +1780,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           {narrow && props.comparisonAction}
           {fragment.active && <div className="tree-fragment-status" role="region" aria-label="Фрагмент большого древа">
             <span>Фрагмент: {visible.size} из {family.people.length}</span>
-            {fragment.continuations.size > 0 && <button type="button" disabled={growthLocked || layoutBusy} onClick={() => { const id = fragment.continuations.keys().next().value; if (id) toggleBranch(id); }}><GitBranch size={15} /> Продолжения ветвей</button>}
             <button type="button" onClick={fragment.showAll}>Полный обзор</button>
           </div>}
           {generationAnchor && !activeFanAnchor && (
@@ -1858,8 +1854,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 anchor={
                   activeFanAnchor
                     ? peopleMap.get(activeFanAnchor)
-                    : root
-                      ? peopleMap.get(root)
+                    : familyRoot
+                      ? peopleMap.get(familyRoot)
                       : undefined
                 }
               selected={peopleMap.get(selected[0])}
@@ -1915,7 +1911,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               fanActive={!!activeFanAnchor}
               onAll={() => {
                 setFanRevealing(false);
-                if (!activeFanAnchor) fragment.showAll();
+                if (!activeFanAnchor && fragment.active) fragment.showAll();
                 props.onClearAssistantFilter?.();
                 const target = selected[0] || activeFanAnchor || root;
                 const entry = fanEntry.current;
@@ -2244,19 +2240,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             )}
           </div>
         )}
-        {fragment.active && fragmentOwner && currentPeople.has(fragmentOwner) && <FragmentBranchesDialog
-          key={fragmentOwner}
-          owner={currentPeople.get(fragmentOwner)!}
-          people={currentPeople}
-          continuation={fragment.continuations.get(fragmentOwner)}
-          owners={[...new Set([...fragment.continuations.keys(), fragmentOwner])]}
-          onOwner={setFragmentOwner}
-          atLimit={fragment.atLimit}
-          expanded={fragment.expanded.has(fragmentOwner)}
-          onExpand={() => { fragment.expand(fragmentOwner); setFragmentOwner(null); }}
-          onChoose={id => { void chooseFragmentPerson(id); }}
-          onClose={() => setFragmentOwner(null)}
-        />}
         {contextMenu && !narrow && (
           <div className="tree-context-menu" role="menu" aria-label="Действия с древом"
             style={{ left: contextMenu.x, top: contextMenu.y }}>

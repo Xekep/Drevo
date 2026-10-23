@@ -16,7 +16,7 @@ export function useTreeGrowthInputLock(
       if (
         event.type !== "wheel" &&
         event.target instanceof Element &&
-        event.target.closest(".tree-preferences-trigger, .fragment-branches-dialog")
+        event.target.closest(".tree-preferences-trigger")
       )
         return;
       // An explicit selection or mode change may cancel the personal camera

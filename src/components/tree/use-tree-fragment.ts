@@ -6,7 +6,6 @@ import {
   FRAGMENT_PEOPLE_LIMIT,
   fragmentContinuationWindow,
   treeFragment,
-  type FragmentContinuation,
 } from "../../domain/tree-fragment";
 import type { TreeGenerationLimits } from "../../domain/tree-preferences";
 import type { TreeFocus } from "./tree-canvas";
@@ -40,7 +39,6 @@ export function useTreeFragment({
     full: false,
     focusToken: -1,
     moveToken: 0,
-    ownerId: null as string | null,
     priority: [] as string[],
     visited: new Set<string>(),
   });
@@ -55,16 +53,12 @@ export function useTreeFragment({
             full: false,
             focusToken: focus?.token ?? -1,
             moveToken: 0,
-            ownerId: null,
             priority: [],
             visited: new Set<string>(),
           },
     [navigation, key, focus?.token],
   );
   if (navigation.key !== key) setNavigation(current);
-  const setOwner = useCallback((ownerId: string | null) => {
-    setNavigation((previous) => ({ ...previous, ownerId }));
-  }, []);
   const anchorId = allowed.has(current.anchorId)
     ? current.anchorId
     : preferredAnchor && allowed.has(preferredAnchor)
@@ -142,14 +136,13 @@ export function useTreeFragment({
           ...nextWindow,
           anchorId: id,
           expanded: new Set(),
-          ownerId: null,
         });
         return;
       }
       const expanded = new Set(current.expanded);
       if (expanded.has(id)) expanded.delete(id);
       else expanded.add(id);
-      setNavigation({ ...current, anchorId, expanded, ownerId: null });
+      setNavigation({ ...current, anchorId, expanded });
     },
     [projection, current, anchorId],
   );
@@ -159,12 +152,7 @@ export function useTreeFragment({
     index,
     visible: projection?.visible || allowed,
     hidden: projection?.hidden || new Map<string, number>(),
-    continuations:
-      projection?.continuations || new Map<string, FragmentContinuation>(),
-    atLimit: projection?.atLimit || false,
     expanded: current.expanded,
-    ownerId: current.ownerId,
-    setOwner,
     focus:
       active && current.moveToken
         ? { ids: [anchorId], token: current.moveToken }
@@ -179,13 +167,12 @@ export function useTreeFragment({
         full: false,
         focusToken: focus?.token ?? -1,
         moveToken: Math.max(Date.now(), current.moveToken + 1),
-        ownerId: null,
         priority: [],
         visited: new Set(),
       });
     },
     showAll() {
-      setNavigation({ ...current, full: true, ownerId: null });
+      setNavigation({ ...current, full: true });
     },
   };
 }

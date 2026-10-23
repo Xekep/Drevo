@@ -41,4 +41,12 @@ test("person node invalidates memo when visible card state changes", () => {
     changedPerson = { ...data(), person: { ...person, name: "Пётр" } };
   assert.equal(samePersonNodeData(first, selectedBySearch), false);
   assert.equal(samePersonNodeData(first, changedPerson), false);
+  assert.equal(
+    samePersonNodeData(
+      { ...first, familyFocus: true, fragmentFocus: false },
+      { ...first, familyFocus: true, fragmentFocus: true },
+    ),
+    false,
+    "switching family/fragment must refresh the branch control",
+  );
 });
