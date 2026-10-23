@@ -28,6 +28,134 @@ function person(id: string, overrides: Partial<Person> = {}): Person {
   };
 }
 
+test("pruning old leaves combines birth date and recorded descendants without cascading", () => {
+  const family = {
+    title: "Тест",
+    description: "",
+    demo: false,
+    people: [
+      person("root", { birth: "1850" }),
+      person("oldLeaf", { birth: "1890", parents: ["root"] }),
+      person("parent", { birth: "1900" }),
+      person("linkedParent", { birth: "1910" }),
+      person("child", { birth: "2000", parents: ["parent"] }),
+      person("linkedChild", { birth: "2010", parents: ["linkedParent"] }),
+      person("boundary", { birth: "1946-10-23" }),
+      person("before", { birth: "1946-10-22" }),
+      person("after", { birth: "1946-10-24" }),
+      person("yearBoundary", { birth: "1946" }),
+      person("monthBefore", { birth: "1946-09" }),
+      person("monthBoundary", { birth: "1946-10" }),
+      person("unknown", { birth: "" }),
+      person("invalid", { birth: "около 1900" }),
+      person("youngDeceased", { birth: "1960", death: "1970" }),
+      person("godparent", { birth: "1800" }),
+    ],
+    links: [
+      {
+        id: "godparent-edge",
+        from: "godparent",
+        to: "child",
+        type: "godparent",
+      },
+    ],
+    photos: [],
+  } as Family;
+  const before = structuredClone(family);
+  const criteria = { bornMoreThanYearsAgo: 80, hasDescendants: false };
+  const result = filterResearchPeople(
+    family,
+    criteria,
+    "exclude",
+    "2026-10-23",
+  );
+  assert.deepEqual(
+    family.people
+      .filter((p) => !result.personIds.includes(p.id))
+      .map((p) => p.id),
+    ["oldLeaf", "before", "monthBefore", "godparent"],
+  );
+  assert.ok(
+    result.personIds.includes("root"),
+    "a parent does not become a leaf after its old child is hidden",
+  );
+  const count = executeResearchTool(
+    family,
+    "query_people",
+    { criteria, limit: 0 },
+    "2026-10-23",
+  ) as { total: number };
+  assert.equal(count.total, result.matchedCount);
+  assert.deepEqual(
+    family,
+    before,
+    "display pruning must never mutate archive data",
+  );
+  assert.throws(
+    () => filterResearchPeople(family, criteria, "exclude"),
+    /текущая дата/,
+  );
+  for (const value of [-1, 1.5, "80", 10000])
+    assert.throws(() =>
+      filterResearchPeople(
+        family,
+        { bornMoreThanYearsAgo: value },
+        "exclude",
+        "2026-10-23",
+      ),
+    );
+});
+
+test("descendant criteria only inspect supplied accessible parent edges and keep unknown births", () => {
+  const family = {
+    title: "Тест",
+    description: "",
+    demo: false,
+    people: [
+      person("visible", { birth: "1900", parents: [] }),
+      person("unknown", { birth: "" }),
+    ],
+    links: [
+      {
+        id: "hidden",
+        from: "visible",
+        to: "inaccessible",
+        type: "adoptive_parent",
+      },
+    ],
+    photos: [],
+  } as Family;
+  assert.deepEqual(
+    filterResearchPeople(family, { hasDescendants: false }, "include")
+      .personIds,
+    ["visible", "unknown"],
+  );
+  assert.deepEqual(
+    filterResearchPeople(
+      family,
+      { bornMoreThanYearsAgo: 9999, hasDescendants: false },
+      "exclude",
+      "2026-10-23",
+    ).personIds,
+    ["visible", "unknown"],
+  );
+  const leap = {
+    people: [
+      person("before", { birth: "1943-02-27" }),
+      person("on", { birth: "1943-02-28" }),
+    ],
+  } as Family;
+  assert.deepEqual(
+    filterResearchPeople(
+      leap,
+      { bornMoreThanYearsAgo: 81 },
+      "include",
+      "2024-02-29",
+    ).personIds,
+    ["before"],
+  );
+});
+
 test("exclude deaths before 18 keeps adults, living children and unknown or borderline dates across the whole tree", () => {
   const people = [
     person("infant", { death: "2000-06-15" }),

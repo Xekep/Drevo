@@ -156,7 +156,7 @@ export function personalResearchStore(db: StoreDatabase) {
     ) {
       if (typeof name !== "string" || !name.trim() || name.trim().length > 80)
         throw new Error("Название поиска должно содержать от 1 до 80 символов");
-      filterResearchPeople(family, criteria, "include");
+      filterResearchPeople(family, criteria, "include", new Date().toISOString().slice(0, 10));
       const count = await db
         .prepare(
           "SELECT count(*) AS n FROM personal_people_filters WHERE user_id=?",

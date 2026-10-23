@@ -1144,7 +1144,7 @@ export function executeResearchTool(
       : {};
 
   if (name === "query_people")
-    return queryResearchPeople(family, rawArgs, sourceAccess);
+    return queryResearchPeople(family, rawArgs, sourceAccess, referenceDate);
   if (name === "query_events")
     return queryResearchEvents(family, rawArgs, sourceAccess);
   if (name === "query_places")
