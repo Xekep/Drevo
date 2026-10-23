@@ -48,16 +48,14 @@ export function aiChatStore(db: StoreDatabase, cleanup?: AiProviderCleanup) {
   async function read(id: string, userId: string) {
     const row = (await getRow.get(id, userId)) as ChatRow | undefined;
     if (!row) return null;
+    const session = JSON.parse(row.session_state) as { schemaVersion: number; activePersonIds: string[] };
     return {
       id: row.id,
       userId: row.user_id,
       accessScope: row.access_scope,
       yandexConversationId: row.yandex_conversation_id,
       providerCleanupRef: row.provider_cleanup_ref,
-      sessionState: JSON.parse(row.session_state) as {
-        schemaVersion: number;
-        activePersonIds: string[];
-      },
+      sessionState: { schemaVersion: session.schemaVersion, activePersonIds: session.activePersonIds },
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -238,7 +236,7 @@ export function aiChatStore(db: StoreDatabase, cleanup?: AiProviderCleanup) {
       content: string,
       data: unknown = {},
     ) {
-      await db
+      const inserted = await db
         .prepare(
           "INSERT INTO ai_chat_messages(chat_id,role,content,data) VALUES(?,?,?,?)",
           "INSERT INTO ai_chat_messages(chat_id,role,content,data) VALUES(?,?,?,?) RETURNING id",
@@ -250,6 +248,7 @@ export function aiChatStore(db: StoreDatabase, cleanup?: AiProviderCleanup) {
           "UPDATE ai_chats SET updated_at=to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') WHERE id=?",
         )
         .run(id);
+      return Number(inserted.lastInsertRowid);
     },
     async setRemote(id: string, conversationId: string | null, token?: string) {
       const work = async () => {
@@ -324,6 +323,8 @@ export function aiChatStore(db: StoreDatabase, cleanup?: AiProviderCleanup) {
       return bound;
     },
     async setActivePeople(id: string, personIds: string[]) {
+      const current = await db.prepare("SELECT session_state FROM ai_chats WHERE id=?",
+        "SELECT session_state FROM ai_chats WHERE id=?").get(id);
       await db
         .prepare(
           "UPDATE ai_chats SET session_state=? WHERE id=?",
@@ -331,6 +332,7 @@ export function aiChatStore(db: StoreDatabase, cleanup?: AiProviderCleanup) {
         )
         .run(
           JSON.stringify({
+            ...(current ? JSON.parse(String(current.session_state)) : {}),
             schemaVersion: 1,
             activePersonIds: personIds.slice(-8),
           }),

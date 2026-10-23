@@ -15,6 +15,7 @@ import { exportGedcom } from "../domain/gedcom.ts";
 import { lineageReport } from "../domain/lineage-report.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { aiChatStore, AiChatLimitError } from "./ai-chats.ts";
+import { aiChatFollowups, FollowupError } from "./ai-chat-followups.ts";
 import { aiRuntimeConfig, type aiSettingsStore } from "./ai-settings.ts";
 import { AiLimitError, type aiUsageStore } from "./ai-usage.ts";
 import type { createAuth } from "./auth.ts";
@@ -45,6 +46,7 @@ import {
   type PreparationAdmission,
 } from "./preparation-admission.ts";
 import { scopedArchiveReader } from "./scoped-archive-reader.ts";
+import { researchTreeViewContext } from "../shared/research-protocol.ts";
 
 import { createResearchRunner } from "./ai-research-runner.ts";
 import {
@@ -120,6 +122,7 @@ export function aiResearchHttp({
   const visibleIds = scopedArchiveReader(archive);
   const preparing = new Map<AbortController, Promise<void>>();
   const chats = aiChatStore(archive.db, providerCleanup);
+  const followups = aiChatFollowups(archive.db, chats);
   const attachments = aiAttachmentStore(
     uploadsDirectory || join(dirname(archive.db.file), "uploads"),
     chats,
@@ -1057,10 +1060,26 @@ export function aiResearchHttp({
     }
     if (path.startsWith("/api/ai/chats/")) {
       const stopRequested = path.endsWith("/stop");
-      const id = path.slice("/api/ai/chats/".length).replace(/\/stop$/, "");
+      const followupRequested = path.endsWith("/followup");
+      const id = path.slice("/api/ai/chats/".length).replace(/\/(?:stop|followup)$/, "");
       const user = (await auth.currentUser(req))!;
       if (!/^[a-f0-9-]{36}$/i.test(id))
         return json(res, 404, { error: "Диалог не найден" });
+      if (followupRequested) {
+        if (req.method !== "POST") return json(res, 405, { error: "Ожидается POST" });
+        if (!isSameOriginRequest(req, publicOrigin)) return json(res, 403, { error: "Invalid origin" });
+        try {
+          const input = await readJson(req, 32 * 1024) as { requestId?: unknown; message?: unknown };
+          if (!input || typeof input.requestId !== "string" || typeof input.message !== "string")
+            return json(res, 400, { error: "Некорректное уточнение" });
+          const result = await followups.enqueue(id, user.id, input.requestId, input.message.trim(),
+            scope => canDeliverAiData(req, scope, user.id, true));
+          return json(res, 202, result);
+        } catch (error) {
+          return json(res, error instanceof FollowupError ? error.status : error instanceof RangeError ? 413 : error instanceof SyntaxError ? 400 : 500,
+            { error: error instanceof FollowupError ? error.message : "Не удалось сохранить уточнение" });
+        }
+      }
       if (stopRequested) {
         if (req.method !== "POST")
           return json(res, 405, { error: "Ожидается POST" });
@@ -1286,6 +1305,8 @@ export function aiResearchHttp({
               .filter((id) => typeof id === "string" && id.length <= 200)
               .slice(0, 2)
           : [];
+        const treeView = researchTreeViewContext(rawContext.treeView);
+        if (treeView) (body.context as Record<string, unknown>).treeView = treeView;
       } catch (error) {
         return json(res, error instanceof RangeError ? 413 : 400, {
           error:
@@ -1680,11 +1701,12 @@ export function aiResearchHttp({
           accessRevoked = true;
           throw new DOMException("Доступ к ИИ отключён", "AbortError");
         }
-        const result = await runResearch({
-          body: { ...body, message },
+        const run = (nextMessage: string, additionalInput: string[] = []) => runResearch({
+          body: { ...body, message: nextMessage },
+          additionalInput,
           user,
           canPropose,
-          runtime,
+          runtime: { ...runtime, maxToolIterations: Math.max(1, runtime.maxToolIterations - metrics.agentIterations) },
           stream,
           metrics,
           beforeProviderCall: async () => {
@@ -1705,6 +1727,7 @@ export function aiResearchHttp({
           signal: controller.signal,
           chatId: chat.id,
           turnToken: lockToken,
+          takeFollowups: () => followups.take(chat.id, user.id, lockToken),
           assertAiAccess: async () => {
             await assertTurnRunning();
             if (
@@ -1806,6 +1829,18 @@ export function aiResearchHttp({
               );
             }),
         });
+        let result = await run(message);
+        // Seal under the same chat-row lock as admission. A last-moment accepted
+        // followup must be handled too, rather than silently falling past done.
+        for (;;) {
+          const pending = await followups.take(chat.id, user.id, lockToken, true);
+          if (!pending.length) break;
+          if (metrics.agentIterations >= runtime.maxToolIterations) {
+            result = { answer: "Уточнение сохранено, но лимит шагов текущего ответа исчерпан. Продолжите новым запросом.", references: [], suggestionIds: [], uiActions: [], files: [] };
+            continue;
+          }
+          result = await run(pending[0], pending.slice(1));
+        }
         if (controller.signal.aborted)
           throw new DOMException("Запрос остановлен", "AbortError");
         const answerSaved = await archive.db.transaction(async () => {

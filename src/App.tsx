@@ -64,6 +64,7 @@ import { ShareDialog } from "./components/share-dialog";
 import { PublishPersonDialog } from "./components/publish-person-dialog";
 import { ArchiveLoading } from "./components/archive-loading";
 import { ResearchAssistant } from "./components/research-assistant";
+import { excludeAssistantPeople, hideReviewAssistantPeople } from "./domain/research-tree-view.ts";
 import { AccountPage } from "./components/account-page";
 import { LazyChunkBoundary } from "./components/lazy-chunk-boundary";
 import { loadLazyModule } from "./components/lazy-section-recovery";
@@ -1380,6 +1381,7 @@ export default function App() {
       {family && readTree && user && !participantPreview && view !== "admin" && view !== "manage" && view !== "account" && (
         <ResearchAssistant
           view={view}
+          getTreeViewContext={() => treeCanvas.current?.getViewContext()}
           onOpenChange={setAssistantOpen}
           personIds={selected.slice(0, 2)}
           openPersonId={
@@ -1412,11 +1414,17 @@ export default function App() {
           }}
           onHideReview={() => {
             setView("tree");
-            setAssistantFilter({
-              excludeNeedsReview: true,
-              label: "Без карточек на проверке",
-              token: Date.now(),
-            });
+            setAssistantFilter(current => hideReviewAssistantPeople(current, Date.now()));
+          }}
+          onExclude={(ids, label) => {
+            setView("tree");
+            setAssistantFilter(current => excludeAssistantPeople(current, ids, label, Date.now()));
+          }}
+          onOptimizeLayout={async () => {
+            if (!treeCanvas.current) throw new Error("Откройте древо для оптимизации расположения.");
+            setNotice("Оптимизируем расположение…");
+            try { setNotice(await treeCanvas.current.optimizeLayout()); }
+            catch (error) { setNotice(""); throw error; }
           }}
           onZoom={(direction) =>
             setAssistantZoom((previous) => ({

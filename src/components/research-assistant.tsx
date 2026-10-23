@@ -14,7 +14,7 @@ import {
   encodeResearchFiles,
 } from "./research/use-research-attachments";
 import { archiveResourceUrl } from "../domain/archive-context.ts";
-import type { ResearchResult, UiAction } from "../shared/research-protocol.ts";
+import type { ResearchResult, ResearchTreeViewContext, UiAction } from "../shared/research-protocol.ts";
 import { browserTimeZone } from "../data/browser-time-zone";
 import {
   useResearchPanel,
@@ -290,6 +290,9 @@ export function ResearchAssistant({
   onPhoto,
   onReveal,
   onFilter,
+  onExclude,
+  onOptimizeLayout,
+  getTreeViewContext,
   onHideReview,
   onZoom,
   onExportTreePdf,
@@ -307,11 +310,15 @@ export function ResearchAssistant({
   onPhoto: (id: string) => void;
   onReveal: (ids: string[]) => void;
   onFilter: (ids: string[], label: string) => void;
+  onExclude: (ids: string[], label: string) => void;
+  onOptimizeLayout: () => Promise<void>;
+  getTreeViewContext?: () => ResearchTreeViewContext | undefined;
   onHideReview: () => void;
   onZoom: (direction: "in" | "out") => void;
   onExportTreePdf?: (scope: "current" | "all") => Promise<void>;
 }) {
   const [enabled, setEnabled] = useState(false),
+    [followupSending, setFollowupSending] = useState<string | null>(null),
     [open, setOpen] = useState(false),
     [draft, setDraft] = useState(""),
     [messages, setMessages] = useState<Message[]>([]),
@@ -368,6 +375,8 @@ export function ResearchAssistant({
     newDraftKey = useRef("new:initial"),
     selectedChatKey = useRef("new:initial"),
     activeRequests = useRef(new Map<string, AbortController>()),
+    followupIds = useRef(new Map<string, { text: string; id: string }>()),
+    followupRequests = useRef(new Set<string>()),
     chatMessages = useRef(new Map<string, Message[]>()),
     chatDrafts = useRef(new Map<string, { text: string; files: File[] }>()),
     chatErrors = useRef(new Map<string, string>()),
@@ -408,6 +417,7 @@ export function ResearchAssistant({
   useLayoutEffect(() => {
     const field = composer.current;
     if (!field) return;
+    if (!draft) { field.style.height = ""; return; }
     field.style.height = "auto";
     field.style.height = `${Math.min(field.scrollHeight, 150)}px`;
   }, [draft, open]);
@@ -763,6 +773,9 @@ export function ResearchAssistant({
       if (action.type === "focus_people") onReveal(action.personIds);
       else if (action.type === "filter_people")
         onFilter(action.personIds, action.label);
+      else if (action.type === "exclude_people") onExclude(action.personIds, action.label);
+      else if (action.type === "optimize_tree_layout")
+        void onOptimizeLayout().catch(reason => setError(reason instanceof Error ? reason.message : "Не удалось оптимизировать расположение."));
       else if (action.type === "hide_review_people") onHideReview();
       else if (action.type === "open_person") onPerson(action.personId);
       else if (action.type === "open_photo") onPhoto(action.photoId);
@@ -947,11 +960,69 @@ export function ResearchAssistant({
     }
   }
 
+  async function sendFollowup(message: string) {
+    const id = selectedChatKey.current;
+    if (!chatId || id !== chatId || followupRequests.current.has(id)) return;
+    if (attachmentDraft.files.length) { setError("Во время ответа уточнения отправляются текстом. Файлы можно прикрепить следующим запросом."); return; }
+    followupRequests.current.add(id);
+    setFollowupSending(id);
+    const saved = followupIds.current.get(id);
+    const request = saved?.text === message ? saved : { text: message, id: crypto.randomUUID() };
+    followupIds.current.set(id, request);
+    try {
+      const response = await archiveFetch(`/api/ai/chats/${id}/followup`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: request.id, message }),
+      });
+      const data = await response.json() as { error?: string; message?: Message };
+      if (response.status === 409) followupIds.current.delete(id);
+      if (!response.ok) throw new Error(data.error || "Не удалось отправить уточнение");
+      followupIds.current.delete(id);
+      // Resolve the original optimistic user message before merging the persisted
+      // followup, otherwise its larger id would sort ahead of the first question.
+      if ((chatMessages.current.get(id) || []).some(item => item.id === undefined && item.role === "user")) {
+        const history = await archiveFetch(`/api/ai/chats/${id}`).catch(() => undefined);
+        if (history?.ok) {
+          const detail = await history.json().catch(() => undefined) as AiChatResponse<Message> | undefined;
+          if (detail) {
+            const current = chatMessages.current.get(id) || [];
+            const optimistic = current.filter(item => item.id === undefined && item.role === "user");
+            const resolved = detail.messages.filter(item => item.role === "user" && optimistic.some(pending => pending.content === item.content));
+            const next = mergeChatDelta(current, resolved, true);
+            chatMessages.current.set(id, next);
+          }
+        }
+      }
+      if (data.message) {
+        const next = mergeChatDelta(chatMessages.current.get(id) || [], [data.message]);
+        chatMessages.current.set(id, next);
+        if (selectedChatKey.current === id) setMessages(next);
+      }
+      const savedDraft = chatDrafts.current.get(id);
+      if (savedDraft?.text.trim() === message) chatDrafts.current.delete(id);
+      chatErrors.current.delete(id);
+      if (selectedChatKey.current === id) {
+        setDraft(current => current.trim() === message ? "" : current);
+        setError("");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось отправить уточнение";
+      chatErrors.current.set(id, message);
+      if (selectedChatKey.current === id) setError(message);
+    } finally {
+      followupRequests.current.delete(id);
+      setFollowupSending(current => current === id ? null : current);
+    }
+  }
   async function send(text = draft, selectedPersonId?: string) {
     const selectedFiles = selectedPersonId ? [] : attachmentDraft.files;
     const message =
       text.trim() || (selectedFiles.length ? "Изучи прикреплённые файлы." : "");
     let jobKey = selectedChatKey.current;
+    if (message && !selectedPersonId && (activeRequests.current.has(jobKey) || serverBusyChats[chatId] || followupIds.current.get(jobKey)?.text === message)) {
+      await sendFollowup(message);
+      return;
+    }
     if (
       (!message && !selectedPersonId) ||
       activeRequests.current.has(jobKey) ||
@@ -1015,6 +1086,7 @@ export function ResearchAssistant({
             personIds,
             openPersonId,
             openPhotoId,
+            ...(view === "tree" ? { treeView: getTreeViewContext?.() } : {}),
             timeZone: browserTimeZone(),
           },
         }),
@@ -1762,7 +1834,7 @@ export function ResearchAssistant({
               disabled={chatLoading}
               rows={1}
               maxLength={8000}
-              placeholder="Спросите об архиве…"
+              placeholder={busy ? "Добавьте уточнение к текущему запросу…" : "Спросите об архиве…"}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
@@ -1773,20 +1845,24 @@ export function ResearchAssistant({
             />
             {(busy || draft.trim() || attachmentDraft.files.length > 0) && (
               <button
-                type={busy ? "button" : "submit"}
+                type={busy && !draft.trim() ? "button" : "submit"}
                 className="primary-action"
-                disabled={chatLoading}
-                aria-label={busy ? "Остановить ответ" : "Отправить запрос"}
-                title={busy ? "Остановить ответ" : "Отправить запрос"}
-                onClick={busy ? () => void stopGeneration() : undefined}
+                disabled={chatLoading || followupSending === chatId || (busy && !!draft.trim() && !chatId)}
+                aria-label={busy ? draft.trim() ? "Отправить уточнение" : "Остановить ответ" : "Отправить запрос"}
+                title={busy ? draft.trim() ? "Отправить уточнение" : "Остановить ответ" : "Отправить запрос"}
+                onClick={busy && !draft.trim() ? () => void stopGeneration() : undefined}
               >
-                {busy ? (
+                {busy && !draft.trim() ? (
                   <Square size={15} fill="currentColor" />
                 ) : (
                   <Send size={17} />
                 )}
               </button>
             )}
+            {busy && draft.trim() && <button type="button" className="research-stop-button"
+              aria-label="Остановить ответ" title="Остановить ответ" onClick={() => void stopGeneration()}>
+              <Square size={15} fill="currentColor" />
+            </button>}
           </form>
         </ResearchPanelSurface>
       )}

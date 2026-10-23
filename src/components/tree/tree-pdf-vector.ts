@@ -11,11 +11,7 @@ import {
 const namespace = "http://www.w3.org/2000/svg";
 const fontName = "Drevo";
 
-function downloadBlob(
-  blob: Blob,
-  title: string,
-  extension: "pdf" | "png",
-) {
+function downloadBlob(blob: Blob, title: string, extension: "pdf" | "png") {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -43,9 +39,10 @@ export async function downloadTreePng(
   title: string,
   font: Uint8Array,
   signal?: AbortSignal,
+  portraits: ReadonlyMap<string, string> = new Map(),
 ) {
   signal?.throwIfAborted();
-  const svg = treePdfSvg(target, width, height);
+  const svg = treePdfSvg(target, width, height, portraits);
   const style = svgElement(target, "style");
   style.textContent = `@font-face{font-family:${fontName};src:url(data:font/ttf;base64,${base64(font)}) format('truetype')}`;
   svg.prepend(style);
@@ -110,7 +107,12 @@ function svgElement<K extends keyof SVGElementTagNameMap>(
 /** A vector scene from the already measured, full-detail tree. No foreignObject,
  * HTML screenshot, remote converter, or archive-sized bitmap is involved.
  */
-function treePdfSvg(target: Document, width: number, height: number) {
+function treePdfSvg(
+  target: Document,
+  width: number,
+  height: number,
+  portraits: ReadonlyMap<string, string>,
+) {
   const view = target.defaultView!;
   const svg = svgElement(target, "svg", {
     width,
@@ -205,23 +207,40 @@ function treePdfSvg(target: Document, width: number, height: number) {
       const fontSize = parseFloat(style.fontSize);
       const clip = owner.getBoundingClientRect();
       const lines: { value: string; x: number; y: number }[] = [];
-      // Browser ranges retain actual wrapping and letter positions, including
-      // Cyrillic names; no second text-layout algorithm to drift from the cards.
-      for (let index = 0; index < node.textContent.length; index++) {
-        range.setStart(node, index);
-        range.setEnd(node, index + 1);
-        const rect = range.getBoundingClientRect();
-        if (
-          !rect.width ||
-          rect.top + fontSize * 0.93 > clip.bottom + 1 ||
-          rect.right > clip.right + 1
-        )
-          continue;
-        const last = lines.at(-1);
-        if (last && Math.abs(last.y - rect.y) < 1)
-          last.value += node.textContent[index];
-        else
-          lines.push({ value: node.textContent[index], x: rect.x, y: rect.y });
+      range.selectNodeContents(node);
+      const rects = range.getClientRects();
+      const single = rects.length === 1 ? rects[0] : undefined;
+      if (
+        single?.width &&
+        single.top + fontSize * 0.93 <= clip.bottom + 1 &&
+        single.right <= clip.right + 1
+      ) {
+        // Dates and short labels usually fit one line. One range gives exactly
+        // the same browser placement without a measurement for every character.
+        lines.push({ value: node.textContent, x: single.x, y: single.y });
+      } else {
+        // Browser ranges retain actual wrapping and letter positions, including
+        // Cyrillic names; no second text-layout algorithm to drift from the cards.
+        for (let index = 0; index < node.textContent.length; index++) {
+          range.setStart(node, index);
+          range.setEnd(node, index + 1);
+          const rect = range.getBoundingClientRect();
+          if (
+            !rect.width ||
+            rect.top + fontSize * 0.93 > clip.bottom + 1 ||
+            rect.right > clip.right + 1
+          )
+            continue;
+          const last = lines.at(-1);
+          if (last && Math.abs(last.y - rect.y) < 1)
+            last.value += node.textContent[index];
+          else
+            lines.push({
+              value: node.textContent[index],
+              x: rect.x,
+              y: rect.y,
+            });
+        }
       }
       for (const line of lines) {
         const label = svgElement(target, "text", {
@@ -253,48 +272,29 @@ function treePdfSvg(target: Document, width: number, height: number) {
     box(person, svg);
     const avatar = person.querySelector<HTMLElement>(".person-avatar");
     if (avatar) {
-      const image = avatar.querySelector("img");
-      if (image) {
-        const bounds = image.getBoundingClientRect();
-        // Only the photograph is raster. Bound memory to one small portrait,
-        // preserving much more detail than its screen-sized thumbnail.
-        const canvas = target.createElement("canvas");
-        canvas.width = canvas.height = Math.min(
-          1024,
-          Math.max(256, Math.min(image.naturalWidth, image.naturalHeight)),
-        );
-        const context = canvas.getContext("2d")!;
-        const crop = Math.min(image.naturalWidth, image.naturalHeight);
-        context.beginPath();
-        context.arc(
-          canvas.width / 2,
-          canvas.height / 2,
-          canvas.width / 2,
-          0,
-          2 * Math.PI,
-        );
-        context.clip();
-        context.drawImage(
-          image,
-          (image.naturalWidth - crop) / 2,
-          (image.naturalHeight - crop) / 2,
-          crop,
-          crop,
-          0,
-          0,
-          canvas.width,
-          canvas.height,
-        );
+      const portrait = portraits.get(
+        (person as HTMLElement).dataset.personId || "",
+      );
+      if (portrait) {
+        const bounds = avatar.getBoundingClientRect();
+        const style = styles(avatar);
+        const left =
+          parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft);
+        const top =
+          parseFloat(style.borderTopWidth) + parseFloat(style.paddingTop);
+        const right =
+          parseFloat(style.borderRightWidth) + parseFloat(style.paddingRight);
+        const bottom =
+          parseFloat(style.borderBottomWidth) + parseFloat(style.paddingBottom);
         svg.append(
           svgElement(target, "image", {
-            x: bounds.x,
-            y: bounds.y,
-            width: bounds.width,
-            height: bounds.height,
-            href: canvas.toDataURL("image/png"),
+            x: bounds.x + left,
+            y: bounds.y + top,
+            width: bounds.width - left - right,
+            height: bounds.height - top - bottom,
+            href: portrait,
           }),
         );
-        canvas.width = canvas.height = 0;
       } else {
         box(avatar, svg);
         for (const placeholder of avatar.querySelectorAll<SVGSVGElement>("svg"))
@@ -333,6 +333,7 @@ export async function downloadTreeVectorPdf(
   title: string,
   font: Uint8Array,
   signal?: AbortSignal,
+  portraits: ReadonlyMap<string, string> = new Map(),
   options: TreePrintOptions = DEFAULT_TREE_PRINT,
 ) {
   signal?.throwIfAborted();
@@ -349,7 +350,7 @@ export async function downloadTreeVectorPdf(
     pdf.addFont("Drevo.ttf", fontName, "normal");
     pdf.setFont(fontName);
     pdf.setProperties({ title, creator: "Drevo" });
-    const svg = treePdfSvg(target, width, height);
+    const svg = treePdfSvg(target, width, height, portraits);
     const usableWidth = plan.widthPt - 2 * plan.marginPt;
     const usableHeight = plan.heightPt - 2 * plan.marginPt;
     const tileWidth = usableWidth / (0.75 * plan.scale);
@@ -402,7 +403,7 @@ export async function downloadTreeVectorPdf(
   pdf.addFont("Drevo.ttf", fontName, "normal");
   pdf.setFont(fontName);
   pdf.setProperties({ title, creator: "Drevo" });
-  const svg = treePdfSvg(target, width, height);
+  const svg = treePdfSvg(target, width, height, portraits);
   await pdf.svg(svg, {
     width: (width * 0.75) / userUnit,
     height: (height * 0.75) / userUnit,

@@ -508,6 +508,18 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   color: inherit;
   overflow: visible;
 }
+.research-markdown pre > code {
+  display: block;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 0.95em;
+  line-height: 1.55;
+}
+.research-markdown pre > code:not([class]) {
+  background: transparent;
+  color: inherit;
+}
 .research-markdown pre:has(.katex-display) {
   padding: 0;
   background: transparent;
@@ -717,6 +729,21 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   background: #eef3e9;
   color: var(--ink);
 }
+.research-stop-button {
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  background: white;
+}
+@media (hover: hover) {
+  .research-stop-button:hover { color: var(--ink); background: #eef3e9; }
+}
 .research-attachment-drafts {
   flex: 0 0 100%;
   display: flex;
@@ -923,6 +950,12 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
     padding-block: 12px;
   }
   .research-assistant > form .primary-action {
+    flex-basis: 44px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+  .research-stop-button {
     flex-basis: 44px;
     width: 44px;
     min-width: 44px;

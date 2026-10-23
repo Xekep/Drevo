@@ -24,6 +24,8 @@ test("AI prunes old childless people across the whole authorized tree as one rev
       return Response.json({ id: "conv-prune" });
     calls++;
     const body = JSON.parse(String(init?.body));
+    assert.match(body.instructions, /Текущий вид древа: generations; показано 2 человек; фильтр включён; фрагмент включён/);
+    assert.doesNotMatch(body.instructions, /unavailable-context-person/);
     const tool = body.tools.find(
       (item: { name: string }) => item.name === "control_archive_view",
     );
@@ -102,7 +104,8 @@ test("AI prunes old childless people across the whole authorized tree as one rev
       body: JSON.stringify({
         message:
           "Убери из древа тех кто родился больше 80 лет назад и у кого нет потомков",
-        context: { view: "tree", personIds: ["old-parent"], timeZone: "UTC" },
+        context: { view: "tree", personIds: ["old-parent"], timeZone: "UTC",
+          treeView: { mode: "generations", personIds: ["old-parent", "old-leaf-0", "unavailable-context-person"], filtered: true, fragment: true } },
       }),
     });
     assert.equal(response.status, 200);
@@ -114,19 +117,14 @@ test("AI prunes old childless people across the whole authorized tree as one rev
     );
     assert.deepEqual(result.uiActions, [
       {
-        type: "filter_people",
-        personIds: [
-          "old-parent",
-          "child-parent",
-          "child",
-          "unknown",
-          "exact80",
-        ],
+        type: "exclude_people",
+        personIds: Array.from({ length: 550 }, (_, index) => `old-leaf-${index}`),
         label: "Без старших ветвей без потомков",
       },
     ]);
-    assert.match(result.answer, /550/);
-    assert.match(result.answer, /Всё древо/);
+    assert.match(result.answer, /В текущем виде скрою 1 карточку/);
+    assert.match(result.answer, /В текущем виде останется 1/);
+    assert.match(result.answer, /Прежние фильтры и свёрнутые ветви сохраняются/);
     assert.deepEqual(
       result.suggestionIds,
       [],
