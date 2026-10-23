@@ -194,6 +194,9 @@ for (const firstOperation of ["reset", "anchor"] as const) {
     await expect(canvas).toHaveAttribute("data-layout-people", "4");
     await expect(canvas).toHaveAttribute("data-layout-ready", "true");
     await expect(canvas).not.toHaveClass(/is-growth-preparing|is-growing|is-layout-settling/);
+    // Geometry can be ready before the first camera placement enables gestures.
+    // A middle click during that placement is intentionally ignored.
+    await expect(canvas.getByRole("button", { name: "Вписать видимую часть древа", exact: true })).toBeEnabled();
     try {
       if (firstOperation === "reset") await reset.click();
       else await parent.click({ button: "middle" });
