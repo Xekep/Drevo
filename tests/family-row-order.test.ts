@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { LayoutPerson, TreeGeometry } from "../src/domain/tree-layout.ts";
 import { optimizeFamilyRows } from "../src/domain/family-row-order.ts";
+import { optimizeDisplayedTree } from "../src/domain/optimize-tree-layout.ts";
 import {
   createGeometryContactScorer,
   unionGeometry,
@@ -232,6 +233,18 @@ for (const reverse of [false, true]) {
       optimizeFamilyRows(before, people(before), [], size, score()),
       after,
     );
+  });
+  test(`explicit print optimization improves the displayed permutation, not family data (reverse=${reverse})`, () => {
+    const before = reverse ? mirrored(fixture([1200, 0, 600])) : fixture([1200, 0, 600]);
+    const saved = structuredClone(before), peopleBefore = people(before);
+    const input = structuredClone(peopleBefore);
+    const { geometry: after, optimization } = optimizeDisplayedTree(before, input, []);
+    assert.equal(optimization.changed, true);
+    assert.ok(optimization.after.crossings < optimization.before.crossings);
+    unchangedStructure(before, after);
+    assert.deepEqual(before, saved);
+    assert.deepEqual(input, peopleBefore);
+    assert.throws(() => optimizeDisplayedTree({ ...before, mode: "timeline" }, input, []), /2D/);
   });
   test(`a needless gap closes toward family anchors without making cards smaller (reverse=${reverse})`, () => {
     const before = reverse

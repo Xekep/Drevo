@@ -20,6 +20,7 @@ import {
   downloadTreePng,
 } from "./tree-pdf-vector";
 import { treeGraphicBounds } from "./tree-print-plan";
+import { prepareTreePdfPortraits } from "./tree-pdf-portraits";
 
 export type ExportTree = {
   nodes: Array<PersonNodeType | HouseholdNodeType>;
@@ -65,7 +66,19 @@ function PrintTree({
     >
       <ReactFlowProvider>
         <ReactFlow<PersonNodeType | HouseholdNodeType, RelationshipEdgeType>
-          defaultNodes={nodes}
+          // Measure cards with placeholders. The separate, bounded loader owns
+          // originals; the print DOM must not start another batch of previews.
+          defaultNodes={nodes.map((node) =>
+            node.type === "person"
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    person: { ...node.data.person, photo: undefined },
+                  },
+                }
+              : node,
+          )}
           defaultEdges={edges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
@@ -100,11 +113,27 @@ function PrintTree({
  * Explicit vector PDF geometry is independent of browser printer preferences.
  */
 async function exportTreeGraphic(
-  tree: ExportTree,
+  source: ExportTree,
   format: "pdf" | "png",
   signal?: AbortSignal,
 ) {
   signal?.throwIfAborted();
+  const tree: ExportTree = {
+    ...source,
+    nodes: source.nodes.map((node) =>
+      node.type === "person"
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              person:
+                source.actions.currentPeople?.get(node.data.person.id) ||
+                node.data.person,
+            },
+          }
+        : node,
+    ),
+  };
   const work = new AbortController();
   const { width, height, x, y } = treeGraphicBounds(tree);
   // Browsers cannot allocate a bitmap for a full large archive. Vector PDF
@@ -212,7 +241,15 @@ async function exportTreeGraphic(
       target.head.append(styles);
       const ready = new Promise<void>((resolve) => {
         root.render(
-          <TreeActions.Provider value={tree.actions}>
+          <TreeActions.Provider
+            value={{
+              ...tree.actions,
+              gpu: false,
+              deferPortraits: false,
+              currentPeople: undefined,
+              publishPerson: undefined,
+            }}
+          >
             <PrintTree
               {...tree}
               width={width}
@@ -227,21 +264,18 @@ async function exportTreeGraphic(
       // Timeout cleans up failed exports and aborts any later download.
       await ready;
       const photos = new Map(
-        tree.nodes.flatMap((node) =>
-          node.type === "person"
-            ? [[node.data.person.id, archiveResourceUrl(safeUrl(node.data.person.photo) || "")] as const]
-            : [],
-        ),
-      );
-      await Promise.all(
-        Array.from(target.images, async (image) => {
-          image.loading = "eager";
-          const id =
-            image.closest<HTMLElement>(".flow-person")?.dataset.personId;
-          const original = id ? photos.get(id) : undefined;
-          if (original) image.src = original;
-          if (image.src) await image.decode();
+        tree.nodes.flatMap((node) => {
+          if (node.type !== "person") return [];
+          const photo = safeUrl(node.data.person.photo);
+          return photo
+            ? [[node.data.person.id, archiveResourceUrl(photo)] as const]
+            : [];
         }),
+      );
+      const portraits = await prepareTreePdfPortraits(
+        target,
+        photos,
+        work.signal,
       );
       await target.fonts.ready;
       if (disposed) return;
@@ -250,7 +284,6 @@ async function exportTreeGraphic(
       const snapshot = target.body.firstElementChild!.cloneNode(true);
       root.unmount();
       target.body.replaceChildren(snapshot);
-      await Promise.all(Array.from(target.images, (image) => image.decode()));
       if (!disposed) {
         if (format === "pdf")
           await downloadTreeVectorPdf(
@@ -260,6 +293,7 @@ async function exportTreeGraphic(
             tree.title,
             font,
             work.signal,
+            portraits,
           );
         else
           await downloadTreePng(
@@ -269,6 +303,7 @@ async function exportTreeGraphic(
             tree.title,
             font,
             work.signal,
+            portraits,
           );
       }
     })();

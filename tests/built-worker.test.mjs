@@ -117,6 +117,29 @@ function productionWorker() {
     },
   });
 }
+test("production worker refines an explicit displayed geometry without dropping people or generations", { timeout: 20_000 }, async () => {
+  const worker = productionWorker();
+  try {
+    const geometry = await calculate(worker, "generations", false, people, "portrait");
+    const snapshot = structuredClone(geometry);
+    const result = await new Promise((resolve, reject) => {
+      worker.once("error", reject);
+      worker.once("message", message => { worker.off("error", reject); resolve(message); });
+      worker.postMessage({ requestId: 915, people, links: [], mode: "generations", reverse: false,
+        previousGeometry: geometry, optimizeDisplayed: true });
+    });
+    assert.equal(result.requestId, 915);
+    assert.equal(result.error, undefined);
+    assert.equal(typeof result.optimization.changed, "boolean");
+    assert.deepEqual(new Map(result.geometry.positions.map(([id, p]) => [id, p.y])),
+      new Map(geometry.positions.map(([id, p]) => [id, p.y])));
+    assert.deepEqual(result.geometry.occurrences, geometry.occurrences);
+    assert.ok(result.optimization.after.crossings <= result.optimization.before.crossings);
+    assert.ok(result.optimization.after.contacts <= result.optimization.before.contacts);
+    assert.deepEqual(geometry, snapshot);
+  } finally { await worker.terminate(); }
+});
+
 test("two ELK workers preserve the exact large-archive geometry and subsequent single-worker reuse", { timeout: 60_000 }, async () => {
   const data = randomFamily(5, 9);
   assert.equal(data.length, 977);

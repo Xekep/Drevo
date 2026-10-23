@@ -194,11 +194,14 @@ export const CONTROL_VIEW_TOOL = {
     properties: {
       action: {
         type: "string",
+        description: "exclude_branch скрывает только найденного человека (personId) и его записанных предков/потомков (direction), без удаления и фильтра по фамилии. optimize_layout запускает оптимизацию текущей 2D-раскладки для печати: без координат, изменения людей или связей. filter_surname только показывает фамильную группу, не исключает её.",
         enum: [
           "focus_people",
           "filter_surname",
           "filter_people",
           "filter_by_criteria",
+          "exclude_branch",
+          "optimize_layout",
           "hide_review_people",
           "open_person",
           "open_photo",
@@ -213,6 +216,7 @@ export const CONTROL_VIEW_TOOL = {
         maxItems: 300,
       },
       personId: { type: "string", minLength: 1, maxLength: 200 },
+      direction: { type: "string", enum: ["ancestors", "descendants", "self"], description: "Для exclude_branch: скрыть найденного человека вместе с записанными предками, потомками или только его. Не фамильную группу." },
       photoId: { type: "string", minLength: 1, maxLength: 200 },
       surname: { type: "string", minLength: 2, maxLength: 100 },
       label: { type: "string", minLength: 1, maxLength: 100 },
@@ -255,7 +259,11 @@ export function explicitViewControlRequest(message: string, view = "") {
         message,
       );
   const treeFilterRequest = view === "tree" && /(?:^|[\s,.!?])(?:скрой|скрыть|убери|убрать|исключи|исключить|оставь|оставить|отфильтруй)(?:\s|[,.!?]|$)/iu.test(message);
-  return directInterfaceRequest || treeMovementRequest || treeFilterRequest;
+  return directInterfaceRequest || treeMovementRequest || treeFilterRequest || treeLayoutRequest(message, view);
+}
+
+export function treeLayoutRequest(message: string, view: string) {
+  return view === "tree" && /(?:оптимизир|упорядоч|перестав|разлож|размест|располож|распут|улучш).{0,90}(?:карточ|расклад|древ|дерев|печат|красив)|(?:древ|дерев|карточ|расклад).{0,90}(?:оптимизир|упорядоч|перестав|разлож|размест|располож|распут|улучш)/iu.test(message);
 }
 
 export function shortTreeZoomRequest(message: string, view: string) {

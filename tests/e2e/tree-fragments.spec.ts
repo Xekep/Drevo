@@ -79,9 +79,15 @@ test("close family keeps compact controls and recursive collapse independently o
     name: /^Показать ещё 1 родственников:/,
   });
   await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect(canvas).not.toHaveClass(/is-layout-settling/);
+  // Branch expansion preserves the clicked card's screen position. A further
+  // generation can be outside a short desktop viewport and be virtualized.
+  await page.getByRole("button", { name: "Вписать видимую часть древа" }).click();
+  await expect(second).toBeInViewport();
   await second.click();
   await expect(canvas).toHaveAttribute("data-layout-people", "4");
   await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect(canvas).not.toHaveClass(/is-layout-settling/);
   await card(1)
     .getByRole("button", { name: /^Свернуть раскрытую ветвь:/ })
     .click();
@@ -110,6 +116,9 @@ test("close family keeps compact controls and recursive collapse independently o
   });
   expect(fragmentStyle).toEqual(style);
   await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect(canvas).not.toHaveClass(/is-layout-settling/);
+  await page.getByRole("button", { name: "Вписать видимую часть древа" }).click();
+  await expect(fragmentButton).toBeInViewport();
   await fragmentButton.click();
   await expect(canvas).toHaveAttribute("data-layout-people", "5");
   await expect(
@@ -118,7 +127,12 @@ test("close family keeps compact controls and recursive collapse independently o
   await page.screenshot({
     path: info.outputPath("fragment-compact-control.png"),
   });
-  await card(0).locator(".flow-person-content").click();
+  // Closing the initial profile cleared selection. Locate the anchor through
+  // search: its card may now be behind the fixed toolbar after fitting.
+  const search = page.getByRole("combobox", { name: /Найти человека/ });
+  await search.fill("");
+  await search.fill("Человек 0");
+  await page.getByRole("option", { name: /^Проверка Человек 0(?:\s|$)/ }).click();
   if (info.project.name === "mobile")
     await page.getByRole("button", { name: "Свернуть панель" }).click();
   await familyViewAction(page, "Близкие");

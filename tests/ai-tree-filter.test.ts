@@ -165,10 +165,10 @@ test("a tree exclusion uses one compact tool call after token recovery, preserve
     assert.equal(requests.length, 2);
     assert.equal(conversations, 2);
     assert.equal(requests[1].max_output_tokens, 16000);
-    assert.equal(result.uiActions[0].personIds.length, 501);
-    assert.equal(result.uiActions[0].personIds.includes("child"), false);
-    assert.equal(result.uiActions[0].personIds.includes("adult"), true);
-    assert.match(result.answer, /Исключил из показа 1 карточку/);
+    assert.equal(result.uiActions[0].type, "exclude_people");
+    assert.deepEqual(result.uiActions[0].personIds, ["child"]);
+    assert.match(result.answer, /Скрою 1 карточку/);
+    assert.match(result.answer, /Прежние фильтры/);
     assert.deepEqual(
       await app.archive.read(),
       before,
@@ -194,7 +194,7 @@ test("a tree exclusion uses one compact tool call after token recovery, preserve
     );
     assert.match(
       JSON.stringify(requests[2].input),
-      /Исключил из показа 1 карточку/,
+      /Скрою 1 карточку/,
     );
     const chat = await (
       await fetch(base + `/api/ai/chats/${result.chatId}`)
@@ -268,14 +268,15 @@ test("a filter in a batch retains other analysis and sends only counts back to t
     );
     const filtered = JSON.parse(body.input[0].output);
     assert.equal(filtered.scheduled, true);
-    assert.equal(typeof filtered.visibleCount, "number");
+    assert.equal(filtered.visibleCount, undefined, "without a UI snapshot the archive remainder is not the visible tree");
+    assert.equal(typeof filtered.excludedCount, "number");
     assert.equal(filtered.personIds, undefined);
     assert.equal(filtered.action, undefined);
     assert.ok(JSON.parse(body.input[1].output).completeness);
     const query = JSON.parse(body.input[2].output);
     assert.equal(query.countOnly, true);
     assert.equal(query.totalPeople, JSON.parse(body.input[1].output).totals.people);
-    assert.equal(query.total, filtered.visibleCount);
+    assert.equal(query.total, filtered.remainingInArchiveCount);
     assert.equal(typeof query.total, "number");
     assert.deepEqual(query.people, []);
     return Response.json({

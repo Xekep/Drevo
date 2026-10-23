@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import {
   archiveConnections,
+  ancestorFanSlots,
   fullName,
   safeUrl,
   type Family,
@@ -49,7 +50,10 @@ import {
 } from "../../domain";
 import { archiveContextAt } from "../../domain/archive-context.ts";
 import { mediaPreview } from "../../domain/media-preview.ts";
-import { familyNeighbors, withoutReviewPeople } from "../../domain/family-neighborhood.ts";
+import { familyNeighbors } from "../../domain/family-neighborhood.ts";
+import { assistantProjectionPeople, assistantVisiblePeople, type AssistantTreeFilter } from "../../domain/research-tree-view.ts";
+import type { ResearchTreeViewContext } from "../../shared/research-protocol.ts";
+export type { AssistantTreeFilter } from "../../domain/research-tree-view.ts";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
 import { TreePublicationProvider } from "./tree-publication-provider";
 import { DistantPortraits } from "./distant-portraits";
@@ -76,6 +80,7 @@ import { generationScope } from "../../domain/tree-generation-scope";
 import { createCrossingPathCache } from "../../domain/route-crossings";
 import type { TreeGenerationLimits } from "../../domain/tree-preferences";
 import { useTreeLayout } from "./use-tree-layout";
+import { useTreeOptimization } from "./use-tree-optimization";
 import { useDepthTree } from "./use-depth-tree";
 import { TreeDepthLayers, type DepthSceneHandle } from "./tree-depth-layers";
 import { FamilyViewTools } from "./family-view-tools";
@@ -131,10 +136,9 @@ export type TreeFocus = {
   /** Explicit navigation from another section may move the generation window. */
   reanchor?: boolean;
 };
-export type AssistantTreeFilter =
-  | { ids: string[]; label: string; token: number }
-  | { excludeNeedsReview: true; label: string; token: number };
 export type TreeCanvasHandle = {
+  getViewContext: () => ResearchTreeViewContext;
+  optimizeLayout: () => Promise<string>;
   visiblePersonIds: (signal?: AbortSignal) => Promise<string[]>;
   exportPdf: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number) => Promise<void>;
   exportPng: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number) => Promise<void>;
@@ -443,16 +447,20 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   const showAllBranches = familyView.showAll;
   const filterToken = props.assistantFilter?.token;
+  const preservingFilter = !!props.assistantFilter?.preserveView;
+  const replacingFilter = !!props.assistantFilter && "ids" in props.assistantFilter;
   useEffect(() => {
     if (filterToken) {
       // An explicit projection replaces the intro, including a zero-card
       // result that has no animation frame to release the input lock.
       setGrowing(false);
       setIntroCameraFinished(true);
-      showAllBranches();
-      setFanAnchor(null);
+      if (!preservingFilter) {
+        showAllBranches();
+        setFanAnchor(null);
+      }
     }
-  }, [filterToken, showAllBranches]);
+  }, [filterToken, showAllBranches, preservingFilter]);
   const { anchor: familyRoot, collapsed, toggle: toggleView } = familyView;
   const generationLimitsKey = JSON.stringify(
     props.generationLimits ? [
@@ -493,24 +501,27 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     return new Set([...familyView.visible].filter((id) => generationRange.has(id)));
   }, [generationRange, familyView.visible]);
   const policyVisible = useMemo(() => {
-    if (!props.assistantFilter) return generationVisible;
-    if ("excludeNeedsReview" in props.assistantFilter)
-      return withoutReviewPeople(renderFamily.people, generationVisible);
-    return new Set(
-      props.assistantFilter.ids.filter((id) => generationVisible.has(id)),
-    );
-  }, [renderFamily.people, generationVisible, props.assistantFilter]);
+    // Calculate the same fragment before subtracting excluded people. Otherwise
+    // hiding its anchor can reopen distant relatives and reset branch navigation.
+    return assistantProjectionPeople(generationVisible, props.assistantFilter);
+  }, [generationVisible, props.assistantFilter]);
   const fragment = useTreeFragment({
     family: renderFamily, allowed: policyVisible, threshold: props.fragmentThreshold,
     preferredAnchor: props.generationLimits?.anchorId || familyRoot || user?.personId || familyView.defaultAnchor || undefined,
     limits: props.generationLimits,
-    enabled: mode === "generations" && !activeFanAnchor && !props.assistantFilter && !props.preview && familyView.mode === "all",
+    enabled: mode === "generations" && !activeFanAnchor && !replacingFilter && !props.preview && familyView.mode === "all",
     scopeKey: JSON.stringify([typeof window === "undefined" ? null : archiveContextAt(window.location.pathname)?.id, user?.id, user?.role, user?.treeAccess, user?.personId]),
     focus: effectivePersonFocus,
   });
   const { expand: expandFragment } = fragment;
   const root = fragment.active ? fragment.anchorId : familyRoot;
-  const scopedVisible = fragment.visible;
+  const scopedVisible = useMemo(() => assistantVisiblePeople(renderFamily.people, fragment.visible, props.assistantFilter),
+    [renderFamily.people, fragment.visible, props.assistantFilter]);
+  const fanFamily = useMemo(() => {
+    if (!props.assistantFilter) return family;
+    const included = assistantVisiblePeople(family.people, new Set(family.people.map(person => person.id)), props.assistantFilter);
+    return { ...family, people: family.people.filter(person => included.has(person.id)) };
+  }, [family, props.assistantFilter]);
   const depth = useDepthTree(renderFamily, scopedVisible, depthEnabled,
     fragment.active ? fragment.anchorId : props.generationLimits?.anchorId || selected[0] || props.kinshipReferenceId || user?.personId || familyView.defaultAnchor || undefined,
     fragment.focus || effectivePersonFocus);
@@ -552,12 +563,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     !cameraLocked && !activeFanAnchor && mode !== "timeline",
   );
   const lastAssistantZoom = useRef(0);
-  const context = props.assistantFilter
-    ? `${mode}:research:${props.assistantFilter.token}:portrait`
+  const researchViewToken = props.assistantFilter?.preserveView
+    ? props.assistantFilter.viewToken : props.assistantFilter?.token;
+  const context = researchViewToken
+    ? `${mode}:research:${researchViewToken}:portrait`
     : `${mode}:${depthEnabled ? "depth" : "flat"}:${familyView.mode}:${root || "all"}:portrait`;
   useTouchZoom(container, flow, !depthEnabled && !cameraLocked && !screen.fullscreen && !activeFanAnchor && mode !== "timeline");
   useCtrlWheelZoom(container, flow, !depthEnabled && !cameraLocked && !activeFanAnchor && mode !== "timeline");
-  const { geometry, renderVisible, ready, problem, layoutBusy, layoutKey } =
+  const { geometry: originalGeometry, renderVisible, ready, problem, layoutBusy: calculatingLayout, layoutKey: originalLayoutKey } =
     useTreeLayout(
       renderFamily,
       visible,
@@ -573,6 +586,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           ])
         : null,
     );
+  const { geometry, optimize, busy: optimizingLayout, layoutKey } = useTreeOptimization(
+    originalGeometry, originalLayoutKey, renderFamily, renderVisible, ready,
+  );
+  const layoutBusy = calculatingLayout || optimizingLayout;
   const nodeWidth = geometry?.nodeSize?.width ?? treeNodeSize().width;
   const nodeHeight = geometry?.nodeSize?.height ?? treeNodeSize().height;
   useEffect(() => {
@@ -650,7 +667,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         selected,
         collapsed,
         root:
-          (fragment.active || familyView.mode === "family") && !props.assistantFilter ? root : null,
+          (fragment.active || familyView.mode === "family") && !replacingFilter ? root : null,
         fragmentActive: fragment.active,
         hidden: fragment.active ? fragment.hidden : familyView.hidden,
         expanded: fragment.active ? fragment.expanded : familyView.expanded,
@@ -669,7 +686,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       selected,
       collapsed,
       root,
-      props.assistantFilter,
+      replacingFilter,
       familyView.mode,
       familyView.hidden,
       familyView.expanded,
@@ -1357,9 +1374,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   }, [focus, savingGenerationPreferences, reanchorHiddenPerson]);
   const focusSelected = async () => {
     if (selected.length === 1 && props.assistantFilter &&
-        ("excludeNeedsReview" in props.assistantFilter
-          ? currentPeople.get(selected[0])?.needsReview
-          : !props.assistantFilter.ids.includes(selected[0]))) {
+        !assistantVisiblePeople(renderFamily.people, new Set(selected), props.assistantFilter).has(selected[0])) {
       setAnchorNotice("Человек скрыт фильтром исследования. Снимите фильтр, чтобы перейти к нему");
       return;
     }
@@ -1415,6 +1430,18 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const overviewHouseholds = useMemo(() => displayNodes.filter(
     (node): node is HouseholdNodeType => node.type === "household",
   ), [displayNodes]);
+  const viewContext = useRef<ResearchTreeViewContext>({ mode: "generations", personIds: [], filtered: false, fragment: false });
+  useLayoutEffect(() => {
+    viewContext.current = {
+      mode: activeFanAnchor ? "fan" : depthEnabled ? "depth" : mode,
+      personIds: activeFanAnchor
+        ? [...new Set(ancestorFanSlots(fanFamily.people, activeFanAnchor).flatMap(slot => slot.personId ? [slot.personId] : []))]
+        : [...visible],
+      filtered: !!props.assistantFilter || !!generationRange || familyView.mode !== "all" || collapsed.size > 0,
+      fragment: fragment.active,
+    };
+  }, [activeFanAnchor, depthEnabled, mode, fanFamily.people, visible, props.assistantFilter,
+    generationRange, familyView.mode, collapsed.size, fragment.active]);
   const exportSnapshot = useRef({
     ready,
     layoutBusy,
@@ -1484,6 +1511,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         );
       };
       return {
+        getViewContext() { return viewContext.current; },
+        async optimizeLayout() {
+          if (mode !== "generations" || activeFanAnchor || depthEnabled)
+            throw new Error("Откройте обычное 2D-древо для оптимизации расположения.");
+          if (cameraLocked || calculatingLayout) throw new Error("Дождитесь отрисовки древа.");
+          return optimize();
+        },
         async visiblePersonIds(signal) {
           signal?.throwIfAborted();
           if (exportSnapshot.current.depthScope) return [...exportSnapshot.current.depthScope];
@@ -1504,7 +1538,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         },
       };
     },
-    [],
+    [mode, activeFanAnchor, depthEnabled, cameraLocked, calculatingLayout, optimize],
   );
   useEffect(() => {
     if (!growing || !ready || !initialCameraReady || growthStarted)
@@ -1952,7 +1986,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         <div className="tree-flow-plane">
         {activeFanAnchor ? (
           <FanChart
-            family={family}
+            family={fanFamily}
             anchorId={activeFanAnchor}
             selected={selected}
             onChoose={actions.choose}
