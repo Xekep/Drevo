@@ -107,6 +107,7 @@ test("tree node model keeps occurrences, family state, backgrounds and query dim
   assert.equal(anna.data.occurrences, 2);
   assert.equal(anna.data.collapsed, true);
   assert.equal(anna.data.familyFocus, true);
+  assert.equal(anna.data.fragmentFocus, false);
   assert.equal(anna.data.anchor, true);
   assert.equal(anna.data.hiddenRelatives, 2);
   assert.equal(anna.data.childrenCount, 2);
@@ -137,6 +138,32 @@ test("tree node model keeps occurrences, family state, backgrounds and query dim
   if (siblings.type !== "household") assert.fail("Ожидался фоновый узел");
   assert.equal(siblings.data.label, "Дети · 2");
   assert.equal(siblings.data.reverse, true);
+});
+
+test("fragment controls require an explicit fragment projection, not just a family root", () => {
+  for (const [root, fragmentActive, expected] of [
+    ["a", true, true],
+    ["a", false, false],
+    [null, true, false],
+  ] as const) {
+    const model = buildTreeNodeModel({
+      family,
+      geometry,
+      mode: "generations",
+      visible: new Set(["a", "b", "c"]),
+      selected: [],
+      collapsed: new Set(),
+      root,
+      fragmentActive,
+      hidden: new Map([["a", 2]]),
+      expanded: new Set(),
+      query: "",
+      growthDelays,
+    });
+    assert.ok(model.nodes.length);
+    for (const node of model.nodes)
+      assert.equal(node.data.fragmentFocus, expected);
+  }
 });
 
 test("tree node model excludes hidden people and ignores geometry for another mode", () => {

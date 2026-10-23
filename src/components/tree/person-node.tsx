@@ -142,10 +142,13 @@ export const PersonNode = memo(function PersonNode({
   const cardLabel = `${fullName(data.person)}${lifespan ? `, ${lifespan}` : ""}${relationLabel ? `, ${relationLabel}` : ""}${data.person.needsReview ? ", требует проверки" : ""}`;
   const branchAction = data.collapsed ? "Развернуть" : "Свернуть";
   const branchTitle = `${branchAction} ветвь`;
-  const collapseContinuation = data.expanded && !data.hiddenRelatives;
+  const collapseContinuation =
+    data.expanded && (!data.fragmentFocus || !data.hiddenRelatives);
   const continuationLabel = collapseContinuation
     ? "Свернуть"
-    : `Ещё ${data.hiddenRelatives} ${plural(data.hiddenRelatives || 0, "родственник", "родственника", "родственников")}`;
+    : data.fragmentFocus
+      ? `Ещё ${data.hiddenRelatives} ${plural(data.hiddenRelatives || 0, "родственник", "родственника", "родственников")}`
+      : `Ещё ${data.hiddenRelatives}`;
   const privacyLabel =
     publicationStatus === "published"
       ? "Доступен для поиска"
@@ -272,9 +275,9 @@ export const PersonNode = memo(function PersonNode({
       {data.familyFocus && (!!data.hiddenRelatives || data.expanded) && (
         <button
           type="button"
-          className="flow-expand-family nodrag nopan"
+          className={`flow-expand-family nodrag nopan${data.fragmentFocus ? " is-fragment-continuation" : ""}`}
           style={{ "--family-target": `${controlTarget}px` } as CSSProperties}
-          aria-label={`${collapseContinuation ? "Свернуть раскрытую ветвь" : continuationLabel}: ${fullName(data.person)}`}
+          aria-label={`${collapseContinuation ? "Свернуть раскрытую ветвь" : data.fragmentFocus ? continuationLabel : `Показать ещё ${data.hiddenRelatives} родственников`}: ${fullName(data.person)}`}
           onClick={() => expand(data.person.id, id)}
           title={
             collapseContinuation
@@ -283,11 +286,13 @@ export const PersonNode = memo(function PersonNode({
           }
         >
           {collapseContinuation ? (
-            <ChevronUp size={16} aria-hidden="true" />
+            <ChevronUp size={15} aria-hidden="true" />
           ) : (
-            <Plus size={16} aria-hidden="true" />
+            <Plus size={15} aria-hidden="true" />
           )}
-          <span>{continuationLabel}</span>
+          <span>
+            {collapseContinuation ? "Свернуть" : `Ещё ${data.hiddenRelatives}`}
+          </span>
         </button>
       )}
       {!data.familyFocus && detail !== "distant" && data.childrenCount > 0 && (

@@ -510,7 +510,7 @@ test("a thousand-person 3D archive keeps GPU batches, textures and detail bounde
   expect(await world(page).getAttribute("data-depth-frames")).toBe(frames);
 });
 
-test("automatic 3D fragments follow an actual continuation with a new central person", async ({
+test("automatic 3D fragments navigate to a hidden person without a continuations dialog", async ({
   page,
 }) => {
   const graph: Family = {
@@ -527,16 +527,13 @@ test("automatic 3D fragments follow an actual continuation with a new central pe
   expect(
     Number(await world(page).getAttribute("data-depth-world-people")),
   ).toBeLessThan(100);
-  await status.getByRole("button", { name: "Продолжения ветвей" }).click();
-  const dialog = page.getByRole("dialog", { name: "Продолжение ветвей" });
-  const next = dialog.getByRole("button", { name: /Родитель|Ребёнок/ }).first();
-  const text = await next.innerText();
-  const id = /Человек (\d+)/.exec(text)![1];
-  await next.click();
-  await expect(dialog).not.toBeVisible();
+  await expect(status.getByRole("button", { name: "Продолжения ветвей" })).toHaveCount(0);
+  await page.getByRole("combobox", { name: /Найти человека/ }).fill("Человек 99");
+  await page.getByRole("option", { name: /^Соколов Человек 99(?:\s|$)/ }).click();
+  await expect(page.getByRole("dialog", { name: "Продолжение ветвей" })).toHaveCount(0);
   await expect(page.locator(".tree-canvas")).toHaveAttribute(
     "data-depth-anchor",
-    id,
+    "99",
   );
   await settle(page);
   expect(

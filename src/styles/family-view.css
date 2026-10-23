@@ -85,24 +85,18 @@
 }
 .flow-expand-family {
   position: absolute;
-  left: 50%;
-  top: calc(100% + 6px);
-  transform: translateX(-50%);
-  display: inline-flex;
+  right: 10px;
+  bottom: -18px;
+  display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 5px;
-  width: max-content;
-  max-width: calc(100% - 8px);
-  min-height: 36px;
-  padding: 6px 10px;
-  box-sizing: border-box;
+  gap: 4px;
+  min-height: 32px;
+  padding: 4px 8px;
   border: 1px solid #cfddc3;
   background: #f8fbf2;
   color: #4b653e;
-  border-radius: 999px;
-  font-size: 16px;
-  line-height: 22px;
+  border-radius: 7px;
+  font-size: 12px;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -219,5 +213,7 @@
   }
   .flow-expand-family {
     min-height: 44px;
+    bottom: -22px;
+    font-size: 14px;
   }
 }

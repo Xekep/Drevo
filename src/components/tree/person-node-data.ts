@@ -10,6 +10,7 @@ export type PersonNodeData = {
   household?: boolean;
   occurrences?: number;
   familyFocus?: boolean;
+  fragmentFocus?: boolean;
   anchor?: boolean;
   hiddenRelatives?: number;
   expanded?: boolean;
@@ -27,6 +28,7 @@ export function samePersonNodeData(a: PersonNodeData, b: PersonNodeData) {
     a.household === b.household &&
     a.occurrences === b.occurrences &&
     a.familyFocus === b.familyFocus &&
+    a.fragmentFocus === b.fragmentFocus &&
     a.anchor === b.anchor &&
     a.hiddenRelatives === b.hiddenRelatives &&
     a.expanded === b.expanded

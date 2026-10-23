@@ -35,6 +35,7 @@ type TreeNodeModelInput = {
   selected: readonly string[];
   collapsed: ReadonlySet<string>;
   root: string | null;
+  fragmentActive?: boolean;
   hidden: ReadonlyMap<string, number>;
   expanded: ReadonlySet<string>;
   query: string;
@@ -51,6 +52,7 @@ export function buildTreeNodeModel({
   selected,
   collapsed,
   root,
+  fragmentActive = false,
   hidden,
   expanded,
   query,
@@ -185,6 +187,7 @@ export function buildTreeNodeModel({
           occurrences: personOccurrences.get(person.id)?.length || 1,
           collapsed: collapsed.has(person.id),
           familyFocus: !!root,
+          fragmentFocus: !!root && fragmentActive,
           anchor: person.id === root,
           hiddenRelatives: hidden.get(person.id) || 0,
           expanded: expanded.has(person.id),
