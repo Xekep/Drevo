@@ -62,6 +62,18 @@ const leafSchema = {
       type: "boolean",
       description: "Есть портрет или отметка на доступной фотографии.",
     },
+    hasDescendants: {
+      type: "boolean",
+      description:
+        "Есть записанные потомки по parent-связям во всём доступном архиве, включая не отрисованных. false означает отсутствие записанных потомков, а не доказанную бездетность. Супруги, крестники и пасынки не считаются потомками.",
+    },
+    bornMoreThanYearsAgo: {
+      type: "integer",
+      minimum: 0,
+      maximum: 9999,
+      description:
+        "Родился строго более указанного числа календарных лет назад относительно текущей даты сервера. Не возраст смерти. Неизвестные и пограничные неполные даты не совпадают. Для «убрать родившихся более 80 лет назад без потомков»: 80 вместе с hasDescendants=false и mode=exclude.",
+    },
     sex: { type: "string", enum: ["m", "f", "u"] },
     birthYearFrom: yearSchema,
     birthYearTo: yearSchema,
@@ -233,7 +245,12 @@ function matches(person: Person, criteria: Criteria) {
   return true;
 }
 
-function compileCriteria(family: Family, value: unknown, sourceAccess = true) {
+function compileCriteria(
+  family: Family,
+  value: unknown,
+  sourceAccess = true,
+  referenceDate?: string,
+) {
   let usesEvents = false;
   let usesEventSources = false;
   let byPerson: Map<string, ResearchEventRecord[]> | undefined;
@@ -264,12 +281,7 @@ function compileCriteria(family: Family, value: unknown, sourceAccess = true) {
         spouses: Map<string, string[]>;
       }
     | undefined;
-  function relatives(id: string, relation: string) {
-    if (!available.has(id))
-      throw new Error("Человек не найден в доступном архиве");
-    const key = `${id}\0${relation}`;
-    const cached = relativeSets.get(key);
-    if (cached) return cached;
+  function getGraph() {
     if (!graph) {
       graph = { parents: new Map(), children: new Map(), spouses: new Map() };
       const add = (map: Map<string, string[]>, from: string, to: string) => {
@@ -288,6 +300,15 @@ function compileCriteria(family: Family, value: unknown, sourceAccess = true) {
         }
       }
     }
+    return graph;
+  }
+  function relatives(id: string, relation: string) {
+    if (!available.has(id))
+      throw new Error("Человек не найден в доступном архиве");
+    const key = `${id}\0${relation}`;
+    const cached = relativeSets.get(key);
+    if (cached) return cached;
+    const graph = getGraph();
     const found = new Set<string>();
     if (relation === "siblings") {
       for (const parent of graph.parents.get(id) || [])
@@ -404,6 +425,27 @@ function compileCriteria(family: Family, value: unknown, sourceAccess = true) {
       }
       if (key === "hasBirthDate")
         tests.push((person) => Boolean(validDate(person.birth)) === item);
+      if (key === "hasDescendants") {
+        const children = getGraph().children;
+        tests.push(
+          (person) => Boolean(children.get(person.id)?.length) === item,
+        );
+      }
+      if (key === "bornMoreThanYearsAgo") {
+        if (!validDate(referenceDate) || referenceDate.length !== 10)
+          throw new Error("Для относительной даты нужна текущая дата сервера");
+        const year = Number(referenceDate.slice(0, 4)) - (item as number);
+        let cutoff = `${String(year).padStart(4, "0")}${referenceDate.slice(4)}`;
+        // A leap-day anniversary falls on the last day of February.
+        if (year > 0 && !validDate(cutoff))
+          cutoff = `${String(year).padStart(4, "0")}-02-28`;
+        tests.push(
+          (person) =>
+            year > 0 &&
+            validDate(person.birth) &&
+            dateBound(person.birth, true) < cutoff,
+        );
+      }
       if (key === "hasDeathDate")
         tests.push((person) => Boolean(validDate(person.death)) === item);
       if (key === "hasSources")
@@ -553,10 +595,11 @@ function selectResearchPeople(
   value: unknown,
   mode: unknown,
   sourceAccess = true,
+  referenceDate?: string,
 ) {
   if (mode !== "include" && mode !== "exclude")
     throw new Error("Выберите включение или исключение по условию");
-  const match = compileCriteria(family, value, sourceAccess);
+  const match = compileCriteria(family, value, sourceAccess, referenceDate);
   const matched = new Set(
     family.people.filter(match.matches).map((person) => person.id),
   );
@@ -575,8 +618,15 @@ export function filterResearchPeople(
   family: Family,
   value: unknown,
   mode: unknown,
+  referenceDate?: string,
 ) {
-  const selected = selectResearchPeople(family, value, mode);
+  const selected = selectResearchPeople(
+    family,
+    value,
+    mode,
+    true,
+    referenceDate,
+  );
   return {
     personIds: selected.people.map((person) => person.id),
     matchedCount: selected.matchedCount,
@@ -588,6 +638,7 @@ export function queryResearchPeople(
   family: Family,
   raw: unknown,
   sourceAccess = true,
+  referenceDate?: string,
 ) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     throw new Error("Укажите параметры поиска");
@@ -617,6 +668,7 @@ export function queryResearchPeople(
     args.criteria,
     mode,
     sourceAccess,
+    referenceDate,
   );
   const peopleById = new Map(
     family.people.map((person) => [person.id, person]),

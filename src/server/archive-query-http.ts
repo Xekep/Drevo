@@ -308,7 +308,7 @@ export function archiveQueryHttp({
         return await withPreparation(req, res, preparation, 64 * 1024 ** 2, async signal => {
           const data = await scopedSnapshot(visitor!);
           signal.throwIfAborted();
-          const result = filterResearchPeople(data.family, body.criteria, "include");
+          const result = filterResearchPeople(data.family, body.criteria, "include", new Date().toISOString().slice(0, 10));
           return deliverArchiveJson({ ...result, revision: data.revision }, undefined, data.revision);
         });
       } catch (error) {
