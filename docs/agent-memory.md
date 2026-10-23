@@ -43,6 +43,11 @@ SQLite. Живые ответы Yandex и выполнение inbox-тесто�
 
 ## Резерв диска в PostgreSQL-тестах — 23 октября 2026
 
+При публикации блока 24 октября npm audit в CI обнаружил обновлённый
+GHSA-mrhx-c7xc-m3w5 для Zod: dev-зависимость eslint-plugin-react-hooks.
+Lockfile обновлён до 4.6.7, без override и изменения production-зависимостей;
+повторный audit показывает 0 advisory. Старые «0 уязвимостей» — снимок во времени.
+
 Проверка нехватки места в `tests/integration/postgres-runtime.ts` резервирует
 полную ёмкость тестового тома в `platform_upload_reservations`, без записи файлов.
 Не рассчитывать блокирующий резерв по текущему `bavail`: параллельная очистка CI
