@@ -1,5 +1,75 @@
 import { expect, test, type Page } from "@playwright/test";
 import { randomFamily } from "../layout-fixtures";
+import { crowdedFamily } from "../local-family-space-fixture";
+
+for (const reverse of [false, true]) test(`saved crowded scene opens a partner slot through the real Worker (reverse=${reverse})`, async ({ page }) => {
+  // Reuse a real server fixture ID so opening its profile exercises the actual
+  // revision-conflict refresh rather than the unavailable-person screen.
+  const fixture = JSON.parse(JSON.stringify(crowdedFamily(205, 2, reverse)).replaceAll("anchor", "e2e-child")) as ReturnType<typeof crowdedFamily>;
+  let phase = false, invalidated = false;
+  const errors: string[] = [];
+  page.on("pageerror", e => errors.push(e.message));
+  await page.route("**/api/family**", async route => {
+    const url = new URL(route.request().url());
+    if (phase && !invalidated && url.searchParams.get("projection") === "details") {
+      invalidated = true;
+      return route.fulfill({ status: 409, json: { error: "Changed concurrently" } });
+    }
+    if (url.searchParams.get("projection") !== "overview") return route.continue();
+    const response = await route.fetch(), data = await response.json();
+    const sample = data.family.people[0];
+    data.family.people = (phase ? fixture.next : fixture.input).people.map(p => ({ ...sample, ...p,
+      name: p.id, awards: [], sources: [], photos: [], events: [] }));
+    data.family.links = [];
+    data.user.personId = null;
+    data.reverseTimeline = reverse;
+    data.treePreferences = { ...data.treePreferences, reverseTimeline: reverse };
+    await route.fulfill({ response, json: data });
+  });
+  // Seed a deliberate, valid saved layout. All subsequent computation is the
+  // production Worker: the test doesn't replace its local update result.
+  await page.addInitScript(seed => {
+    const responses: { kind: string; positions: [string, { x: number; y: number }][] }[] = [];
+    Object.assign(window, { __spaceLayouts: responses });
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      private layout: boolean;
+      private seeded = false;
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        this.layout = String(url).includes("layout.worker");
+        if (this.layout) this.addEventListener("message", e => {
+          if (e.data.geometry) responses.push({ kind: e.data.updateKind, positions: e.data.geometry.positions });
+        });
+      }
+      postMessage(message: unknown) {
+        const body = message as { people: unknown[]; links: unknown[]; previousInput?: unknown };
+        if (this.layout && !this.seeded && !body.previousInput) {
+          this.seeded = true;
+          super.postMessage({ ...body, previousInput: { people: body.people, links: body.links }, previousGeometry: seed });
+        } else super.postMessage(message);
+      }
+    };
+  }, fixture.geometry);
+  const results = () => page.evaluate(() => (window as typeof window & {
+    __spaceLayouts: { kind: string; positions: [string, { x: number; y: number }][] }[];
+  }).__spaceLayouts);
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect(canvas).not.toHaveClass(/is-grow|is-layout-settling/);
+  const before = (await results()).at(-1)!;
+  expect(before.positions).toEqual(fixture.geometry.positions);
+  phase = true;
+  await page.evaluate(() => { history.pushState(null, "", "/people/e2e-child"); dispatchEvent(new PopStateEvent("popstate")); });
+  await expect(canvas).toHaveAttribute("data-layout-update", "local");
+  const after = (await results()).at(-1)!, points = new Map(after.positions);
+  expect(before.positions.filter(([id, p]) => p.x !== points.get(id)!.x).map(([id]) => id)).toEqual(["left-1", "left-2"]);
+  for (const [id, p] of before.positions) expect(points.get(id)!.y).toBe(p.y);
+  expect(points.get("partner")!.x).toBe(-252);
+  await expect(canvas).not.toHaveClass(/is-grow|is-layout-settling/);
+  expect(errors).toEqual([]);
+});
 
 for (const reverse of [false, true]) test(`large live overview grows a family without resetting existing card positions (reverse=${reverse})`, async ({ page }) => {
   let phase = 0, invalidated = 0;

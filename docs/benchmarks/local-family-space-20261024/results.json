@@ -1,0 +1,372 @@
+{
+  "measuredAt": "2026-10-24T19:03:26.177Z",
+  "node": "v22.14.0",
+  "os": "win32 10.0.19045",
+  "cpu": "AMD Ryzen 9 5950X 16-Core Processor            ",
+  "hardwareThreads": 32,
+  "size": {
+    "width": 220,
+    "height": 264
+  },
+  "sourceHash": "e9426e2abea4d1a9b86d6b757f997278b4a52f5a007175b12c46fbff68756463",
+  "method": "Synthetic Node. Local check: one warmup, nine samples per implementation, alternating order. Full: one sample, fresh ELK, no history. Controlled scenes deliberately have a gap beyond nearby chains; connected fixture uses actual cold ELK geometry. No browser FPS, memory or general acceptance-rate claim. Reference 2368960b.",
+  "rows": [
+    {
+      "case": "controlled-crowded-row",
+      "count": 205,
+      "inputHash": "192e60710995de0e1b04cee8c9ba213ea6fb06d6c932853b824d9a8a27c18aa6",
+      "referenceMedianMs": 1.2633000000000152,
+      "currentMedianMs": 2.4120000000000346,
+      "samples": {
+        "reference": [
+          1.6597000000000435,
+          1.0176999999999907,
+          1.533299999999997,
+          0.9884999999999877,
+          1.2633000000000152,
+          1.20859999999999,
+          1.368600000000015,
+          1.9891000000000076,
+          0.9602999999999611
+        ],
+        "current": [
+          3.215499999999963,
+          2.988900000000001,
+          2.4120000000000346,
+          2.261599999999987,
+          3.220700000000022,
+          1.9362999999999602,
+          2.571200000000033,
+          2.04219999999998,
+          1.7712000000000216
+        ]
+      },
+      "referenceAccepted": false,
+      "accepted": true,
+      "movedExistingCards": 2,
+      "before": {
+        "crossings": 0,
+        "contacts": 0,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "after": {
+        "crossings": 0,
+        "contacts": 0,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "editedFullSingleMs": 353.1064
+    },
+    {
+      "case": "controlled-crowded-row",
+      "count": 977,
+      "inputHash": "98d54390ff7bd5e9116ef0fcaf841886cea3151309152d0b60b30b379fdff02f",
+      "referenceMedianMs": 2.7589000000000397,
+      "currentMedianMs": 5.471299999999928,
+      "samples": {
+        "reference": [
+          2.783900000000017,
+          2.6239000000000487,
+          2.838799999999992,
+          2.5616999999999734,
+          2.7589000000000397,
+          2.30619999999999,
+          3.208500000000072,
+          2.3760999999999513,
+          2.973899999999958
+        ],
+        "current": [
+          9.132600000000025,
+          7.245600000000081,
+          8.00630000000001,
+          6.202800000000025,
+          4.816500000000019,
+          5.471299999999928,
+          4.706299999999942,
+          5.062599999999975,
+          4.492899999999963
+        ]
+      },
+      "referenceAccepted": false,
+      "accepted": true,
+      "movedExistingCards": 2,
+      "before": {
+        "crossings": 0,
+        "contacts": 0,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "after": {
+        "crossings": 0,
+        "contacts": 0,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "editedFullSingleMs": 620.8582
+    },
+    {
+      "case": "controlled-crowded-row",
+      "count": 3000,
+      "inputHash": "cadb63730ba0dcc844a41efb83160f85770882bec0045409380997109e213a93",
+      "referenceMedianMs": 8.440499999999929,
+      "currentMedianMs": 16.447799999999916,
+      "samples": {
+        "reference": [
+          10.888400000000047,
+          9.346900000000005,
+          7.860900000000129,
+          7.742899999999963,
+          8.5621000000001,
+          8.440499999999929,
+          8.97140000000013,
+          7.787700000000086,
+          7.998499999999922
+        ],
+        "current": [
+          18.264599999999973,
+          16.132700000000114,
+          15.949800000000096,
+          17.8916999999999,
+          19.94100000000003,
+          16.092300000000023,
+          25.05639999999994,
+          16.447799999999916,
+          16.125
+        ]
+      },
+      "referenceAccepted": false,
+      "accepted": true,
+      "movedExistingCards": 2,
+      "before": {
+        "crossings": 0,
+        "contacts": 0,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "after": {
+        "crossings": 0,
+        "contacts": 0,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "editedFullSingleMs": 1328.7564
+    },
+    {
+      "case": "connected-977",
+      "count": 977,
+      "anchorIndex": 0,
+      "referenceMedianMs": 6.884100000001126,
+      "currentMedianMs": 6.684400000000096,
+      "samples": {
+        "reference": [
+          10.501099999999497,
+          8.147400000001653,
+          8.466099999999642,
+          7.696000000001732,
+          5.684900000000198,
+          6.884100000001126,
+          5.855999999999767,
+          6.803600000001097,
+          5.561999999999898
+        ],
+        "current": [
+          8.32550000000083,
+          7.845399999998335,
+          6.978799999998955,
+          6.271999999999025,
+          6.882100000000719,
+          5.749100000000908,
+          6.382999999999811,
+          5.994300000000294,
+          6.684400000000096
+        ]
+      },
+      "referenceAccepted": true,
+      "accepted": true,
+      "movedExistingCards": 0,
+      "before": {
+        "crossings": 4938,
+        "contacts": 4938,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "after": {
+        "crossings": 4938,
+        "contacts": 4938,
+        "cardHits": 0,
+        "overlaps": 0
+      }
+    },
+    {
+      "case": "connected-977",
+      "count": 977,
+      "anchorIndex": 81,
+      "referenceMedianMs": 7.980499999999665,
+      "currentMedianMs": 36.85399999999936,
+      "samples": {
+        "reference": [
+          8.067699999999604,
+          5.726599999999962,
+          5.701900000000023,
+          6.876500000000306,
+          7.980499999999665,
+          5.841399999999339,
+          9.77929999999833,
+          10.443600000000515,
+          8.423300000000381
+        ],
+        "current": [
+          38.755300000000716,
+          35.11039999999957,
+          35.54600000000028,
+          35.04119999999966,
+          34.32290000000103,
+          36.85399999999936,
+          44.91859999999906,
+          42.649499999999534,
+          42.07469999999921
+        ]
+      },
+      "referenceAccepted": false,
+      "accepted": false,
+      "before": {
+        "crossings": 4938,
+        "contacts": 4938,
+        "cardHits": 0,
+        "overlaps": 0
+      }
+    },
+    {
+      "case": "connected-977",
+      "count": 977,
+      "anchorIndex": 163,
+      "referenceMedianMs": 6.806500000000597,
+      "currentMedianMs": 37.26590000000033,
+      "samples": {
+        "reference": [
+          9.334100000000035,
+          5.822700000000623,
+          7.7708999999995285,
+          7.494099999999889,
+          6.806500000000597,
+          5.767499999999927,
+          8.050999999999476,
+          5.94970000000103,
+          5.977100000000064
+        ],
+        "current": [
+          40.91330000000016,
+          38.190599999999904,
+          43.729699999999866,
+          34.45640000000094,
+          35.86160000000018,
+          36.13580000000002,
+          37.26590000000033,
+          35.896200000001045,
+          37.70320000000174
+        ]
+      },
+      "referenceAccepted": false,
+      "accepted": true,
+      "movedExistingCards": 2,
+      "before": {
+        "crossings": 4938,
+        "contacts": 4938,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "after": {
+        "crossings": 4938,
+        "contacts": 4938,
+        "cardHits": 0,
+        "overlaps": 0
+      }
+    },
+    {
+      "case": "connected-977",
+      "count": 977,
+      "anchorIndex": 244,
+      "referenceMedianMs": 6.653599999999642,
+      "currentMedianMs": 7.772299999998722,
+      "samples": {
+        "reference": [
+          6.012899999999718,
+          6.9417000000012195,
+          5.774699999999939,
+          6.653599999999642,
+          8.053299999999581,
+          5.840100000001257,
+          5.796400000001086,
+          6.6789000000007945,
+          9.315300000000207
+        ],
+        "current": [
+          8.349699999998847,
+          6.886500000000524,
+          7.871499999999287,
+          7.7620999999999185,
+          8.137300000000323,
+          7.543400000000474,
+          7.772299999998722,
+          6.8685999999997875,
+          11.100000000000364
+        ]
+      },
+      "referenceAccepted": false,
+      "accepted": false,
+      "before": {
+        "crossings": 4938,
+        "contacts": 4938,
+        "cardHits": 0,
+        "overlaps": 0
+      }
+    },
+    {
+      "case": "connected-977",
+      "count": 977,
+      "anchorIndex": 326,
+      "referenceMedianMs": 6.718799999998737,
+      "currentMedianMs": 6.415600000000268,
+      "samples": {
+        "reference": [
+          6.955500000000029,
+          6.901900000000751,
+          6.099799999999959,
+          7.050900000000183,
+          6.181000000000495,
+          6.718799999998737,
+          6.959500000000844,
+          5.96020000000135,
+          6.672899999999572
+        ],
+        "current": [
+          6.415600000000268,
+          6.341000000000349,
+          6.86830000000009,
+          6.146700000001147,
+          7.010599999999613,
+          6.788300000000163,
+          6.096099999998842,
+          6.6358000000000175,
+          6.157299999998941
+        ]
+      },
+      "referenceAccepted": true,
+      "accepted": true,
+      "movedExistingCards": 0,
+      "before": {
+        "crossings": 4938,
+        "contacts": 4938,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "after": {
+        "crossings": 4938,
+        "contacts": 4938,
+        "cardHits": 0,
+        "overlaps": 0
+      }
+    }
+  ]
+}
