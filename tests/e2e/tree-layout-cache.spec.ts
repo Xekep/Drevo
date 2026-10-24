@@ -1,6 +1,75 @@
 import { expect, test, type Page } from "@playwright/test";
 import { randomFamily } from "../layout-fixtures";
 
+test("large live overview changes reuse history without resetting existing card positions", async ({ page }) => {
+  let phase = 0, invalidated = 0;
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.route("**/api/family**", async route => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("projection") === "details" && phase > invalidated) {
+      invalidated = phase;
+      await route.fulfill({ status: 409, json: { error: "Changed concurrently" } });
+      return;
+    }
+    if (url.searchParams.get("projection") !== "overview") return route.continue();
+    const response = await route.fetch(), data = await response.json();
+    // A family with a free sibling slot plus unrelated people exercises the
+    // large-graph path. Dense/crossing families are covered by full-solve tests.
+    data.family.people = data.family.people.filter((p: { id: string }) =>
+      ["e2e-child", "e2e-spouse", "e2e-grandchild", "e2e-memorial-person"].includes(p.id));
+    data.family.links = [];
+    const sample = data.family.people.find((p: { id: string }) => p.id === "e2e-child");
+    sample.parents = [];
+    data.family.people.find((p: { id: string }) => p.id === "e2e-grandchild").parents = ["e2e-child", "e2e-spouse"];
+    if (phase) sample.birth = "1966-02-03";
+    data.family.people.push(...Array.from({ length: 210 }, (_, i) => ({ ...sample,
+      id: `isolated-${i}`, name: `Тест ${i}`, birth: "", parents: [], spouses: [], awards: [] })));
+    if (phase >= 2) data.family.people.push({ ...sample, id: "new-leaf", name: "Новый потомок", birth: "1995",
+      parents: ["e2e-child", "e2e-spouse"], spouses: [], awards: [] });
+    data.user.personId = null;
+    if (phase >= 3) data.user.id = "different-account";
+    await route.fulfill({ response, json: data });
+  });
+  await page.addInitScript(() => {
+    const responses: { kind: string; positions: unknown[] }[] = [];
+    Object.assign(window, { __localLayouts: responses });
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        if (String(url).includes("layout.worker")) this.addEventListener("message", event => {
+          if (event.data.geometry) responses.push({ kind: event.data.updateKind, positions: event.data.geometry.positions });
+        });
+      }
+    };
+  });
+  const results = () => page.evaluate(() => (window as typeof window & {
+    __localLayouts: { kind: string; positions: [string, { x: number; y: number }][] }[];
+  }).__localLayouts);
+  const canvas = page.locator(".tree-canvas");
+  await page.goto("/tree");
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect(canvas).not.toHaveClass(/is-grow|is-layout-settling/);
+  const before = (await results())[0];
+  expect(before.positions.length).toBeGreaterThan(200);
+  phase = 1;
+  await page.evaluate(() => { history.pushState(null, "", "/people/e2e-child"); dispatchEvent(new PopStateEvent("popstate")); });
+  await expect(canvas).toHaveAttribute("data-layout-update", "retained");
+  expect((await results()).at(-1)!.positions).toEqual(before.positions);
+  phase = 2;
+  await page.evaluate(() => { history.pushState(null, "", "/people/e2e-memorial-person"); dispatchEvent(new PopStateEvent("popstate")); });
+  await expect(canvas).toHaveAttribute("data-layout-update", "local");
+  const local = (await results()).at(-1)!;
+  expect(local.positions.filter(([id]) => id !== "new-leaf")).toEqual(before.positions);
+  expect(local.positions.some(([id]) => id === "new-leaf")).toBe(true);
+  phase = 3;
+  await page.evaluate(() => { history.pushState(null, "", "/people/e2e-spouse"); dispatchEvent(new PopStateEvent("popstate")); });
+  await expect(canvas).toHaveAttribute("data-layout-update", "full");
+  expect((await results()).at(-1)!.kind).toBe("full");
+  expect(errors).toEqual([]);
+});
+
 test("medium tree edits pass the previous geometry to the layout worker", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   const people = randomFamily(5, 4);

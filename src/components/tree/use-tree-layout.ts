@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Family } from "../../domain/types";
 import type { TreeGeometry, TreeMode } from "../../domain/tree-layout";
-import { MAX_INCREMENTAL_LAYOUT_PEOPLE } from "../../domain/tree-layout-constants";
+import { MAX_INCREMENTAL_LAYOUT_PEOPLE, MAX_LOCAL_LAYOUT_PEOPLE } from "../../domain/tree-layout-constants";
 import { projectTree } from "../../domain/family-neighborhood";
 import type { TaggedLayoutWorkerResponse } from "./layout-worker-protocol";
 import type { LayoutWorkerRequest } from "./layout-worker-protocol";
@@ -47,6 +47,7 @@ export function useTreeLayout(
     visible: ReadonlySet<string>;
     error: string;
     scope: string | null;
+    updateKind?: "retained" | "local" | "full";
   }>({ key: "", geometry: null, visible, error: "", scope: cacheScope });
   const [busy, setBusy] = useState(false);
   const workerRef = useRef<Worker | null>(null);
@@ -56,6 +57,7 @@ export function useTreeLayout(
     key: string;
     scope: string | null;
     geometry: TreeGeometry;
+    input: Pick<LayoutWorkerRequest, "people" | "links" | "mode" | "reverse">;
   } | null>(null);
 
   useEffect(
@@ -78,7 +80,11 @@ export function useTreeLayout(
     }
     const requestId = ++requestRef.current;
     const last = lastGeometryRef.current;
-    const previousGeometry =
+    const localHistory = mode === "generations" && last !== null && last.scope === cacheScope && last.key !== key &&
+      last.geometry.mode === mode && last.geometry.reverse === reverse &&
+      input.people.length > MAX_INCREMENTAL_LAYOUT_PEOPLE && input.people.length <= MAX_LOCAL_LAYOUT_PEOPLE &&
+      last.geometry.positions.length <= 6000 ? last : undefined;
+    const previousGeometry = localHistory?.geometry || (
       mode === "generations" &&
       input.people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE &&
       last !== null &&
@@ -96,7 +102,7 @@ export function useTreeLayout(
             positions: last.geometry.positions,
             occurrences: last.geometry.occurrences,
           }
-        : undefined;
+        : undefined);
     let cancelled = false;
     let detach = () => {};
     const timer = setTimeout(() => {
@@ -113,7 +119,7 @@ export function useTreeLayout(
       pendingRef.current = false;
       setBusy(false);
       if (!("error" in data))
-        lastGeometryRef.current = { key, scope: cacheScope, geometry: data.geometry };
+        lastGeometryRef.current = { key, scope: cacheScope, geometry: data.geometry, input };
       setResult((previous) =>
         "error" in data
           ? {
@@ -121,6 +127,7 @@ export function useTreeLayout(
               key,
               error: data.error,
               scope: cacheScope,
+              updateKind: undefined,
               geometry:
                 previous.scope === cacheScope ? previous.geometry : null,
             }
@@ -130,6 +137,7 @@ export function useTreeLayout(
               visible: layoutVisible,
               error: "",
               scope: cacheScope,
+              updateKind: data.updateKind,
             },
       );
     };
@@ -171,7 +179,7 @@ export function useTreeLayout(
         const parallelCandidates = window.innerWidth >= 1024 &&
           window.matchMedia("(pointer: fine)").matches &&
           navigator.hardwareConcurrency >= 8 && memory !== undefined && memory >= 8;
-        worker.postMessage({ requestId, ...input, previousGeometry, parallelCandidates });
+        worker.postMessage({ requestId, ...input, previousGeometry, previousInput: localHistory?.input, parallelCandidates });
       } catch {
         finish({
           requestId,
@@ -207,5 +215,6 @@ export function useTreeLayout(
     problem: sameScope && result.key === key ? result.error : "",
     layoutBusy: busy,
     layoutKey: key,
+    updateKind: sameScope && result.key === key ? result.updateKind : undefined,
   };
 }

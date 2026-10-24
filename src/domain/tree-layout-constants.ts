@@ -6,6 +6,8 @@ export const FAMILY_ROW_GAP = 64;
 export const FAMILY_DISPLAY_GAP = 88;
 /** Upper bound for an extra ELK pass using previous positions after an edit. */
 export const MAX_INCREMENTAL_LAYOUT_PEOPLE = 200;
+/** Conservative single-leaf edits checked against the frozen scene, without ELK. */
+export const MAX_LOCAL_LAYOUT_PEOPLE = 4000;
 
 export type TreeNodeSize = { width: number; height: number };
 export function treeNodeSize(): TreeNodeSize {

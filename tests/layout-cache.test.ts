@@ -72,6 +72,9 @@ test("layout key ignores metadata and object identity but includes dates, relati
     reverse: false,
   };
   assert.equal(JSON.parse(layoutCacheKey(input)).height, 264);
+  const withHistory = { ...input, previousGeometry: geometry, previousInput: input, requestId: 12 };
+  assert.equal(layoutCacheKey(withHistory), layoutCacheKey(input));
+  assert.equal(JSON.parse(layoutCacheKey(withHistory)).input.previousGeometry, undefined);
   assert.notEqual(
     layoutCacheKey(input),
     layoutCacheKey({ ...input, reverse: true }),
