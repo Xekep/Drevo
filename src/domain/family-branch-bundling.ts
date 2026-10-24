@@ -26,8 +26,12 @@ export function bundleFamilyBranches(geometry: TreeGeometry): TreeGeometry {
         lines.add({ ...bounds(points[i - 1], points[i]), a: points[i - 1], b: points[i], branch });
   };
   branches.forEach(index);
+  type Contacts = Map<string, { contacts: Set<string>; crossings: Set<string> }>;
+  let contactCache = new WeakMap<Point[], Map<string, Contacts>>();
   const contacts = (points: Point[], branch: UnionBranch) => {
-    const found = new Map<string, { contacts: Set<string>; crossings: Set<string> }>();
+    const cached = contactCache.get(points)?.get(branch.union);
+    if (cached) return cached;
+    const found: Contacts = new Map();
     for (let i = 1; i < points.length; i++)
       for (const line of lines.query(bounds(points[i - 1], points[i]))) {
         if (line.branch.union === branch.union || current.get(line.branch.id) !== line.branch) continue;
@@ -38,6 +42,9 @@ export function bundleFamilyBranches(geometry: TreeGeometry): TreeGeometry {
         if (segmentsCross([points[i - 1], points[i]], [line.a, line.b])) list.crossings.add(contact);
         found.set(line.branch.id, list);
       }
+    const entry = contactCache.get(points) || new Map<string, Contacts>();
+    entry.set(branch.union, found);
+    contactCache.set(points, entry);
     return found;
   };
   const clear = (points: Point[]) => {
@@ -70,6 +77,10 @@ export function bundleFamilyBranches(geometry: TreeGeometry): TreeGeometry {
   let changed = false;
   for (const siblings of groups.values()) {
     if (siblings.length < 2) continue;
+    // Candidate checks and the complete union footprint query the same routes.
+    // Foreign routes stay fixed within one group, but earlier groups may have
+    // replaced them: never reuse these contacts across groups or layout calls.
+    contactCache = new WeakMap();
     const start = siblings[0].route.points[0];
     const sign = siblings[0].route.sourceHandle === "bottom" ? 1 : -1;
     const nearest = Math.min(...siblings.map((b) => sign * (b.route.points.at(-1)!.y - start.y)));
