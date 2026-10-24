@@ -1,4 +1,6 @@
 import type { LayoutPerson, TreeGeometry } from "./tree-layout.ts";
+import type { FamilyLink } from "./types.ts";
+import { localFamilySpace } from "./local-family-space.ts";
 import type { TreeNodeSize } from "./tree-layout-constants.ts";
 import { FAMILY_DISPLAY_GAP } from "./tree-layout-constants.ts";
 import { familyUnions, type UnionBranch } from "./union-layout.ts";
@@ -9,7 +11,8 @@ import { bounds, segmentContact, segmentHitsBox } from "./edge-routing.ts";
 /** A bounded atomic family edit; crowded or ambiguous plans use the full solver. */
 export const MAX_LOCAL_FAMILY_ADDITIONS = 16;
 
-/** Place a first partner beside an existing terminal person, keeping old routes.
+/** Place a first partner beside an existing terminal person. Try frozen positions
+ * first, then a bounded same-generation shift of neighboring households.
  * The caller appends the new children with the normal guarded leaf placer and
  * publishes only a complete plan. No partial family is returned to the Worker.
  */
@@ -18,6 +21,7 @@ export function* localFamilyGrowth(
   previousPeople: LayoutPerson[],
   previous: TreeGeometry,
   size: TreeNodeSize,
+  links: Pick<FamilyLink, "type" | "from" | "to">[] = [],
 ) {
   const old = new Map(previousPeople.map((p) => [p.id, p]));
   const added = people.filter((p) => !old.has(p.id));
@@ -99,112 +103,142 @@ export function* localFamilyGrowth(
     children.some((p) => levels.get(p.id) !== levels.get(anchorId)! + 1)
   )
     return;
-  const routes = [
-    ...previous.branches!.map((b) => b.route),
-    ...(previous.routes || []).map(([, route]) => route),
-  ];
-  const segments = routes.flatMap((route) =>
-    route.points.slice(1).map((b, i) => ({ a: route.points[i], b })),
-  );
-  if (segments.length > 64000) return;
-  const cards = previous.positions.map(([id, p]) => ({
-    id,
-    p,
-    box: {
-      left: p.x,
-      right: p.x + size.width,
-      top: p.y,
-      bottom: p.y + size.height,
-    },
-  }));
-  for (const side of [1, -1]) {
-    const partnerPoint = { x: point.x + side * (size.width + 32), y: point.y };
-    const box = {
-      left: partnerPoint.x,
-      right: partnerPoint.x + size.width,
-      top: partnerPoint.y,
-      bottom: partnerPoint.y + size.height,
-    };
-    if (
-      cards.some(
-        (card) =>
-          card.id !== anchorId &&
-          Math.abs(card.p.y - point.y) < size.height + FAMILY_DISPLAY_GAP / 2 &&
-          !(
-            box.right + FAMILY_DISPLAY_GAP <= card.box.left ||
-            box.left >= card.box.right + FAMILY_DISPLAY_GAP
-          ),
-      ) ||
-      segments.some((s) => segmentHitsBox(s.a, s.b, box))
-    )
-      continue;
-    const members = side === 1 ? [anchorId, partnerId] : [partnerId, anchorId];
-    const x = Math.min(point.x, partnerPoint.x);
-    const pair = localUnionRoutes(
-      { id: family.id, members, families: [family] },
-      size,
-    ).families[0].pair!;
-    const branch: UnionBranch = {
-      id: `pair:${family.id}`,
-      union: family.id,
-      source: family.members[0],
-      target: family.members[1],
-      relations: [
-        { from: family.members[0], to: family.members[1], type: "spouse" },
-      ],
-      route: {
-        ...pair,
-        points: pair.points.map((p) => ({ x: x + p.x, y: point.y + p.y })),
-      },
-    };
-    const a = branch.route.points[0],
-      b = branch.route.points[1],
-      rect = bounds(a, b);
-    if (
-      cards.some((card) => segmentHitsBox(a, b, card.box)) ||
-      segments.some((s) => {
-        const other = bounds(s.a, s.b);
-        return (
-          rect.left <= other.right &&
-          rect.right >= other.left &&
-          rect.top <= other.bottom &&
-          rect.bottom >= other.top &&
-          !!segmentContact(a, b, s.a, s.b)
-        );
-      })
-    )
-      continue;
-    const basePeople = people.filter(
-      (p) => old.has(p.id) || p.id === partnerId,
+  function* scenes() {
+    yield previous;
+    const fixed = new Set(links.flatMap((link) => [link.from, link.to]));
+    // Route keys may include occurrence IDs. Unknown diagnostic/legacy keys
+    // cannot safely identify fixed endpoints, so only the frozen scene is used.
+    for (const [key] of previous.routes || []) {
+      let tuple: unknown;
+      try {
+        tuple = JSON.parse(key);
+      } catch {
+        return;
+      }
+      if (
+        !Array.isArray(tuple) ||
+        tuple.length !== 3 ||
+        tuple.some((v) => typeof v !== "string")
+      )
+        return;
+      fixed.add(tuple[1]);
+      fixed.add(tuple[2]);
+    }
+    yield* localFamilySpace(previous, anchorId, size, fixed);
+  }
+  for (const scene of scenes()) {
+    const routes = [
+      ...scene.branches!.map((b) => b.route),
+      ...(scene.routes || []).map(([, route]) => route),
+    ];
+    const segments = routes.flatMap((route) =>
+      route.points.slice(1).map((b, i) => ({ a: route.points[i], b })),
     );
-    const geometry: TreeGeometry = {
-      ...previous,
-      positions: [...previous.positions, [partnerId, partnerPoint]],
-      occurrences: [
-        ...previous.occurrences!.map((o) =>
-          o.id === anchorId ? { ...o, block: family.id } : o,
-        ),
-        { id: partnerId, personId: partnerId, block: family.id },
-      ],
-      blocks: [
-        ...(previous.blocks || []),
-        {
-          id: family.id,
-          members,
-          x,
-          y: point.y,
-          width: 2 * size.width + 32,
-          height: size.height,
+    if (segments.length > 64000) return;
+    const cards = scene.positions.map(([id, p]) => ({
+      id,
+      p,
+      box: {
+        left: p.x,
+        right: p.x + size.width,
+        top: p.y,
+        bottom: p.y + size.height,
+      },
+    }));
+    for (const side of [1, -1]) {
+      const partnerPoint = {
+        x: point.x + side * (size.width + 32),
+        y: point.y,
+      };
+      const box = {
+        left: partnerPoint.x,
+        right: partnerPoint.x + size.width,
+        top: partnerPoint.y,
+        bottom: partnerPoint.y + size.height,
+      };
+      if (
+        cards.some(
+          (card) =>
+            card.id !== anchorId &&
+            Math.abs(card.p.y - point.y) <
+              size.height + FAMILY_DISPLAY_GAP / 2 &&
+            !(
+              box.right + FAMILY_DISPLAY_GAP <= card.box.left ||
+              box.left >= card.box.right + FAMILY_DISPLAY_GAP
+            ),
+        ) ||
+        segments.some((s) => segmentHitsBox(s.a, s.b, box))
+      )
+        continue;
+      const members =
+        side === 1 ? [anchorId, partnerId] : [partnerId, anchorId];
+      const x = Math.min(point.x, partnerPoint.x);
+      const pair = localUnionRoutes(
+        { id: family.id, members, families: [family] },
+        size,
+      ).families[0].pair!;
+      const branch: UnionBranch = {
+        id: `pair:${family.id}`,
+        union: family.id,
+        source: family.members[0],
+        target: family.members[1],
+        relations: [
+          { from: family.members[0], to: family.members[1], type: "spouse" },
+        ],
+        route: {
+          ...pair,
+          points: pair.points.map((p) => ({ x: x + p.x, y: point.y + p.y })),
         },
-      ],
-      generationBands: previous.generationBands!.map((b) =>
-        b.members.includes(anchorId)
-          ? { ...b, members: [...b.members, partnerId] }
-          : b,
-      ),
-      branches: [...previous.branches!, branch],
-      coveredRelations: undefined,
-    };
-    yield { people: basePeople, geometry, children };
+      };
+      const a = branch.route.points[0],
+        b = branch.route.points[1],
+        rect = bounds(a, b);
+      if (
+        cards.some((card) => segmentHitsBox(a, b, card.box)) ||
+        segments.some((s) => {
+          const other = bounds(s.a, s.b);
+          return (
+            rect.left <= other.right &&
+            rect.right >= other.left &&
+            rect.top <= other.bottom &&
+            rect.bottom >= other.top &&
+            !!segmentContact(a, b, s.a, s.b)
+          );
+        })
+      )
+        continue;
+      const basePeople = people.filter(
+        (p) => old.has(p.id) || p.id === partnerId,
+      );
+      const geometry: TreeGeometry = {
+        ...scene,
+        positions: [...scene.positions, [partnerId, partnerPoint]],
+        occurrences: [
+          ...scene.occurrences!.map((o) =>
+            o.id === anchorId ? { ...o, block: family.id } : o,
+          ),
+          { id: partnerId, personId: partnerId, block: family.id },
+        ],
+        blocks: [
+          ...(scene.blocks || []),
+          {
+            id: family.id,
+            members,
+            x,
+            y: point.y,
+            width: 2 * size.width + 32,
+            height: size.height,
+          },
+        ],
+        generationBands: scene.generationBands!.map((b) =>
+          b.members.includes(anchorId)
+            ? { ...b, members: [...b.members, partnerId] }
+            : b,
+        ),
+        branches: [...scene.branches!, branch],
+        coveredRelations: undefined,
+      };
+      yield { people: basePeople, geometry, children };
+    }
   }
 }

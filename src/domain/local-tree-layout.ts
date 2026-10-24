@@ -51,7 +51,7 @@ export function localTreeLayout(
     };
     if (!changed && added.every(p => !p.spouses.length))
       return append(previousInput.people, previous, added);
-    for (const plan of localFamilyGrowth(input.people, previousInput.people, previous, size)) {
+    for (const plan of localFamilyGrowth(input.people, previousInput.people, previous, size, input.links)) {
       const result = append(plan.people, plan.geometry, plan.children);
       if (result) return result;
     }

@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { randomFamily } from "./layout-fixtures.ts";
+import { crowdedFamily } from "./local-family-space-fixture.ts";
 const dist = fileURLToPath(new URL("../dist/", import.meta.url));
 const bundle = readdirSync(join(dist, "assets")).find(
   (p) => p.startsWith("layout.worker-") && p.endsWith(".js"),
@@ -117,6 +118,27 @@ function productionWorker() {
     },
   });
 }
+test("production worker opens a crowded partner slot without moving distant cards or generations", { timeout: 10000 }, async () => {
+  const worker = productionWorker();
+  try {
+    for (const reverse of [false, true]) {
+      const { input, next, geometry } = crowdedFamily(205, 2, reverse);
+      const result = await new Promise((resolve, reject) => {
+        const onError = error => { worker.off("message", onMessage); reject(error); };
+        const onMessage = message => { worker.off("error", onError); resolve(message); };
+        worker.once("message", onMessage); worker.once("error", onError);
+        worker.postMessage({ requestId: 904, ...next, mode: "generations", reverse,
+          previousInput: input, previousGeometry: geometry });
+      });
+      assert.equal(result.error, undefined); assert.equal(result.updateKind, "local");
+      const points = new Map(result.geometry.positions);
+      assert.deepEqual(geometry.positions.filter(([id, p]) => p.x !== points.get(id).x).map(([id]) => id), ["left-1", "left-2"]);
+      for (const [id, p] of geometry.positions) assert.equal(points.get(id).y, p.y);
+      assert.deepEqual(result.geometry.branches[0], geometry.branches[0]);
+      assert.equal(result.geometry.occurrences.length, next.people.length);
+    }
+  } finally { await worker.terminate(); }
+});
 test("production worker retains a large edited scene, adds a safe leaf and rebuilds structural edits", { timeout: 40_000 }, async () => {
   const original = [
     { id: "a", birth: "1900", parents: [], spouses: ["b"] },
