@@ -8,6 +8,9 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
+    // Full Chromium: headless-shell can strand middle/modifier-click tabs.
+    // Recheck upstream #42142 before considering a return to that shell.
+    channel: "chromium",
     baseURL: `http://127.0.0.1:${port}`,
     trace: "retain-on-failure",
     reducedMotion: "no-preference",
