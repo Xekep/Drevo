@@ -1,0 +1,368 @@
+{
+  "measuredAt": "2026-10-24T17:25:04.416Z",
+  "node": "v22.14.0",
+  "os": "win32 10.0.19045",
+  "cpu": "AMD Ryzen 9 5950X 16-Core Processor            ",
+  "size": {
+    "width": 220,
+    "height": 264
+  },
+  "repeats": 3,
+  "currentSourceHash": "9d741229843cb65540b70064fe8aea67d130952ee1ca79f24597746887161abd",
+  "referenceSourceHash": "6ab597cff47de32cb4fb52eb20f6ce4f11d3cf0ffdfdc1e418878c9d271fb9ac",
+  "method": "Alternating reference/current uncached Node geometry after a small JS warmup; new ELK per call. Exact JSON geometry hashes. Growth: left edge/middle/right edge terminal cards, one warmup plus nine trials. Synthetic inputs, not production, browser FPS or peak-memory measurement.",
+  "cold": [
+    {
+      "label": "dense-500",
+      "people": 500,
+      "inputHash": "374b4164e83c65bc8de565bc0ff1c1e7643ebc68cab38fae4908a3edf98fed51",
+      "geometryHash": "05e87ff3a9dead0981da7a7e03d20de11d82a03291cc48fd2e57f1563a275bfb",
+      "samples": [
+        {
+          "repeat": 0,
+          "implementation": "reference",
+          "ms": 3043.2803000000004
+        },
+        {
+          "repeat": 0,
+          "implementation": "current",
+          "ms": 2980.6157999999987
+        },
+        {
+          "repeat": 1,
+          "implementation": "current",
+          "ms": 2931.0005999999994
+        },
+        {
+          "repeat": 1,
+          "implementation": "reference",
+          "ms": 2889.1517000000003
+        },
+        {
+          "repeat": 2,
+          "implementation": "reference",
+          "ms": 2851.919099999999
+        },
+        {
+          "repeat": 2,
+          "implementation": "current",
+          "ms": 2860.691999999999
+        }
+      ],
+      "referenceMedianMs": 2889.1517000000003,
+      "currentMedianMs": 2931.0005999999994
+    },
+    {
+      "label": "dense-1000",
+      "people": 1000,
+      "inputHash": "407537bc0d378d44cb5829413021c68c85d73031138b8da2398d3b5b324715dd",
+      "geometryHash": "c0e5770fca30d8e4c32f6503a4a7e50769673a5d9392ebc59a546a8bb76d9c9f",
+      "samples": [
+        {
+          "repeat": 0,
+          "implementation": "reference",
+          "ms": 7890.337800000001
+        },
+        {
+          "repeat": 0,
+          "implementation": "current",
+          "ms": 7667.188099999999
+        },
+        {
+          "repeat": 1,
+          "implementation": "current",
+          "ms": 7555.357499999998
+        },
+        {
+          "repeat": 1,
+          "implementation": "reference",
+          "ms": 7815.3562999999995
+        },
+        {
+          "repeat": 2,
+          "implementation": "reference",
+          "ms": 7720.449500000002
+        },
+        {
+          "repeat": 2,
+          "implementation": "current",
+          "ms": 7616.670999999995
+        }
+      ],
+      "referenceMedianMs": 7815.3562999999995,
+      "currentMedianMs": 7616.670999999995
+    },
+    {
+      "label": "dense-3000",
+      "people": 3000,
+      "inputHash": "56a13a2ec99b86ed42e7c0af6dde0d8e1d00ece2a7d31763deb4a34322ef25da",
+      "geometryHash": "3d4b9fe4186b05039b0702d9e751302581a47375d78f2ffa4ae0188730986b28",
+      "samples": [
+        {
+          "repeat": 0,
+          "implementation": "reference",
+          "ms": 9128.3502
+        },
+        {
+          "repeat": 0,
+          "implementation": "current",
+          "ms": 8007.393299999996
+        },
+        {
+          "repeat": 1,
+          "implementation": "current",
+          "ms": 7816.405899999998
+        },
+        {
+          "repeat": 1,
+          "implementation": "reference",
+          "ms": 9021.709800000011
+        },
+        {
+          "repeat": 2,
+          "implementation": "reference",
+          "ms": 8929.490900000004
+        },
+        {
+          "repeat": 2,
+          "implementation": "current",
+          "ms": 7779.286000000007
+        }
+      ],
+      "referenceMedianMs": 9021.709800000011,
+      "currentMedianMs": 7816.405899999998
+    },
+    {
+      "label": "other-seed-1000",
+      "people": 1000,
+      "inputHash": "dd14a5721b535af3bcb7b8d79138f8b9060abaab0dc0c19653af7c6d27ca2cc2",
+      "geometryHash": "f363cb18d594b770ad4af8f636e2c63abe0396cdfaeb4400a4faa79873d56408",
+      "samples": [
+        {
+          "repeat": 0,
+          "implementation": "reference",
+          "ms": 7335.908200000005
+        },
+        {
+          "repeat": 0,
+          "implementation": "current",
+          "ms": 7098.024300000005
+        },
+        {
+          "repeat": 1,
+          "implementation": "current",
+          "ms": 6849.322400000005
+        },
+        {
+          "repeat": 1,
+          "implementation": "reference",
+          "ms": 7153.510099999985
+        },
+        {
+          "repeat": 2,
+          "implementation": "reference",
+          "ms": 7196.117400000017
+        },
+        {
+          "repeat": 2,
+          "implementation": "current",
+          "ms": 6809.802299999981
+        }
+      ],
+      "referenceMedianMs": 7196.117400000017,
+      "currentMedianMs": 6849.322400000005
+    },
+    {
+      "label": "wide-501",
+      "people": 501,
+      "inputHash": "7dfde45e63f08c1db4cf8082aed17630bf1262cfb8805108e0827a19dc4f9d2a",
+      "geometryHash": "047a5a86968ef85e1728ee0bf7b32217e4921fdadb19cfccc61906921d3d26df",
+      "samples": [
+        {
+          "repeat": 0,
+          "implementation": "reference",
+          "ms": 7565.233000000007
+        },
+        {
+          "repeat": 0,
+          "implementation": "current",
+          "ms": 6938.8677000000025
+        },
+        {
+          "repeat": 1,
+          "implementation": "current",
+          "ms": 6937.647800000006
+        },
+        {
+          "repeat": 1,
+          "implementation": "reference",
+          "ms": 7741.496499999979
+        },
+        {
+          "repeat": 2,
+          "implementation": "reference",
+          "ms": 7841.059600000008
+        },
+        {
+          "repeat": 2,
+          "implementation": "current",
+          "ms": 6930.268900000025
+        }
+      ],
+      "referenceMedianMs": 7741.496499999979,
+      "currentMedianMs": 6937.647800000006
+    }
+  ],
+  "growth": [
+    {
+      "people": 202,
+      "inputHash": "f1b845676eba96dc08a1b507ce139bc02de557738957f6a009b56a2033892136",
+      "before": {
+        "length": 420614,
+        "bends": 372,
+        "contacts": 187,
+        "crossings": 182,
+        "groups": {},
+        "hits": 0,
+        "overlaps": 0
+      },
+      "attempts": [
+        {
+          "anchor": "left-edge",
+          "accepted": true,
+          "medianMs": 6.074400000012247,
+          "movedExistingCards": 0,
+          "after": {
+            "length": 421410,
+            "bends": 374,
+            "contacts": 187,
+            "crossings": 182,
+            "groups": {},
+            "hits": 0,
+            "overlaps": 0
+          }
+        },
+        {
+          "anchor": "middle",
+          "accepted": false,
+          "medianMs": 1.2825000000011642
+        },
+        {
+          "anchor": "right-edge",
+          "accepted": true,
+          "medianMs": 5.293600000004517,
+          "movedExistingCards": 0,
+          "after": {
+            "length": 421410,
+            "bends": 374,
+            "contacts": 187,
+            "crossings": 182,
+            "groups": {},
+            "hits": 0,
+            "overlaps": 0
+          }
+        }
+      ]
+    },
+    {
+      "people": 441,
+      "inputHash": "a5d610f016b2dc6a57220b27ee624197d4c372294a09c823b755418e8071caec",
+      "before": {
+        "length": 1717300,
+        "bends": 806,
+        "contacts": 987,
+        "crossings": 987,
+        "groups": {},
+        "hits": 0,
+        "overlaps": 0
+      },
+      "attempts": [
+        {
+          "anchor": "left-edge",
+          "accepted": true,
+          "medianMs": 10.923500000004424,
+          "movedExistingCards": 0,
+          "after": {
+            "length": 1718096,
+            "bends": 808,
+            "contacts": 987,
+            "crossings": 987,
+            "groups": {},
+            "hits": 0,
+            "overlaps": 0
+          }
+        },
+        {
+          "anchor": "middle",
+          "accepted": false,
+          "medianMs": 2.5266000000119675
+        },
+        {
+          "anchor": "right-edge",
+          "accepted": true,
+          "medianMs": 10.870999999984633,
+          "movedExistingCards": 0,
+          "after": {
+            "length": 1718096,
+            "bends": 808,
+            "contacts": 987,
+            "crossings": 987,
+            "groups": {},
+            "hits": 0,
+            "overlaps": 0
+          }
+        }
+      ]
+    },
+    {
+      "people": 977,
+      "inputHash": "5d62ca590652e87824d8c16bec964d6fbc2226f8a91509380d1c6c38689b2d2a",
+      "before": {
+        "length": 8037536,
+        "bends": 1838,
+        "contacts": 4938,
+        "crossings": 4938,
+        "groups": {},
+        "hits": 0,
+        "overlaps": 0
+      },
+      "attempts": [
+        {
+          "anchor": "left-edge",
+          "accepted": true,
+          "medianMs": 25.849400000006426,
+          "movedExistingCards": 0,
+          "after": {
+            "length": 8038332,
+            "bends": 1840,
+            "contacts": 4938,
+            "crossings": 4938,
+            "groups": {},
+            "hits": 0,
+            "overlaps": 0
+          }
+        },
+        {
+          "anchor": "middle",
+          "accepted": false,
+          "medianMs": 6.248200000001816
+        },
+        {
+          "anchor": "right-edge",
+          "accepted": true,
+          "medianMs": 26.199499999987893,
+          "movedExistingCards": 0,
+          "after": {
+            "length": 8038332,
+            "bends": 1840,
+            "contacts": 4938,
+            "crossings": 4938,
+            "groups": {},
+            "hits": 0,
+            "overlaps": 0
+          }
+        }
+      ]
+    }
+  ]
+}
