@@ -5,6 +5,8 @@ import { familyUnions, type UnionBranch } from "./union-layout.ts";
 import { groupFamilyUnions, localUnionRoutes } from "./union-groups.ts";
 import { FAMILY_DISPLAY_GAP, MAX_LOCAL_LAYOUT_PEOPLE, type TreeNodeSize } from "./tree-layout-constants.ts";
 import { bounds, segmentContact, segmentHitsBox, simplifyRoute } from "./edge-routing.ts";
+import { localFamilyGrowth, MAX_LOCAL_FAMILY_ADDITIONS } from "./local-family-growth.ts";
+import { GENERATION_DEVIATION } from "./generation-bands.ts";
 
 export type LocalLayoutInput = { people: LayoutPerson[]; links: Pick<FamilyLink, "type" | "from" | "to">[] };
 export type LocalLayoutResult = { geometry: TreeGeometry; kind: "retained" | "local" };
@@ -25,13 +27,37 @@ export function localTreeLayout(
   if (old.size !== previousInput.people.length || current.size !== input.people.length) return;
   const added = input.people.filter(p => !old.has(p.id));
   const removed = previousInput.people.filter(p => !current.has(p.id));
-  if (input.people.some(p => old.has(p.id) && relations(p) !== relations(old.get(p.id)!))) return;
+  const changed = input.people.some(p => old.has(p.id) && relations(p) !== relations(old.get(p.id)!));
   const positions = new Map(previous.positions);
   const occurrences = new Map(previous.occurrences.map(o => [o.id, o]));
   if (positions.size !== previous.positions.length || occurrences.size !== positions.size ||
       [...positions].some(([id, p]) => !occurrences.has(id) || !Number.isFinite(p.x) || !Number.isFinite(p.y)) ||
       previous.occurrences.some(o => !old.has(o.personId)) ||
       previousInput.people.some(p => !occurrences.has(p.id) || occurrences.get(p.id)!.personId !== p.id)) return;
+  if (added.some(p => positions.has(p.id)) || input.links.some(link =>
+    [...added, ...removed].some(p => p.id === link.from || p.id === link.to))) return;
+  if (added.length && !removed.length && added.length <= MAX_LOCAL_FAMILY_ADDITIONS &&
+      (changed || added.length > 1 || added.some(p => p.spouses.length))) {
+    const append = (people: LayoutPerson[], geometry: TreeGeometry, additions: LayoutPerson[]) => {
+      let history = { people, links: input.links };
+      for (const person of additions) {
+        const next = { people: [...history.people, person], links: input.links };
+        const result = localTreeLayout(next, history, geometry, size);
+        if (!result) return;
+        geometry = result.geometry;
+        history = next;
+      }
+      return { geometry, kind: "local" as const };
+    };
+    if (!changed && added.every(p => !p.spouses.length))
+      return append(previousInput.people, previous, added);
+    for (const plan of localFamilyGrowth(input.people, previousInput.people, previous, size)) {
+      const result = append(plan.people, plan.geometry, plan.children);
+      if (result) return result;
+    }
+    return;
+  }
+  if (changed) return;
   if (!added.length && !removed.length) {
     // Generation geometry does not depend on a changed date; animation still reads fresh person data.
     if (input.people.some((p, i) => p.id !== previousInput.people[i]?.id)) return;
@@ -82,9 +108,9 @@ export function localTreeLayout(
   let band = bands.find(b => b.level === rank);
   if (!band) {
     const last = bands.at(-1)!;
-    if (rank !== last.level + 1 || previous.reverse) return;
-    const targetY = last.targetY + Math.max(size.height + 96, 360);
-    band = { level: rank, targetY, minY: targetY - 30, maxY: targetY + 30, members: [] };
+    if (rank !== last.level + 1) return;
+    const targetY = last.targetY + (previous.reverse ? -1 : 1) * Math.max(size.height + 96, 360);
+    band = { level: rank, targetY, minY: targetY - GENERATION_DEVIATION, maxY: targetY + GENERATION_DEVIATION, members: [] };
     bands.push(band);
   }
   const y = band.targetY - (previous.reverse ? -10 : 10);

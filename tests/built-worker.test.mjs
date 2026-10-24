@@ -144,12 +144,19 @@ test("production worker retains a large edited scene, adds a safe leaf and rebui
     assert.ok(local.geometry.branches.some(b => b.target === "d" && b.relations.length === 2));
     const removed = await send({ requestId: 4, ...dated, previousInput: added, previousGeometry: local.geometry });
     assert.equal(removed.updateKind, "local"); assert.deepEqual(removed.geometry.positions, before.geometry.positions);
-    const structural = { ...dated, people: [...dated.people.map(p => p.id === "c" ? { ...p, spouses: ["new-spouse"] } : p),
-      { id: "new-spouse", birth: "1930", parents: [], spouses: ["c"] }] };
-    const full = await send({ requestId: 5, ...structural, previousInput: dated, previousGeometry: retained.geometry });
+    const family = { ...dated, people: [...dated.people.map(p => p.id === "c" ? { ...p, spouses: ["new-spouse"] } : p),
+      { id: "new-spouse", birth: "1930", parents: [], spouses: ["c"] },
+      ...[1, 2].map(i => ({ id: `new-child-${i}`, birth: "1960", parents: ["c", "new-spouse"], spouses: [] }))] };
+    const grown = await send({ requestId: 5, ...family, previousInput: dated, previousGeometry: retained.geometry });
+    assert.equal(grown.error, undefined); assert.equal(grown.updateKind, "local");
+    assert.deepEqual(grown.geometry.positions.filter(([id]) => dated.people.some(p => p.id === id)), before.geometry.positions);
+    assert.equal(grown.geometry.occurrences.length, family.people.length);
+    // Moving an existing child to another parent still requires a complete solve.
+    const structural = { ...family, people: family.people.map(p => p.id === "c" ? { ...p, parents: ["a"] } : p) };
+    const full = await send({ requestId: 6, ...structural, previousInput: family, previousGeometry: grown.geometry });
     assert.equal(full.error, undefined); assert.equal(full.updateKind, "full");
     assert.equal(full.geometry.occurrences.length, structural.people.length);
-    const cold = await send({ requestId: 6, ...structural });
+    const cold = await send({ requestId: 7, ...structural });
     assert.deepEqual(full.geometry, cold.geometry);
   } finally { await worker.terminate(); }
 });

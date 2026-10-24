@@ -127,3 +127,31 @@ test("fractional coordinates and reordered routes preserve the full scorer's add
   current = [...current].reverse();
   assert.deepEqual(score(current), routingContactScore(current));
 });
+
+test("contact overlays preserve group iteration order after removal and re-insertion without mutating the full anchor", () => {
+  const horizontal = (y: number) => route([{ x: 0, y }, { x: 10, y }]);
+  const initial: Edge[] = [
+    { id: "first", group: "A", route: horizontal(0) },
+    { id: "vertical", group: "B", route: route([{ x: 5, y: -5 }, { x: 5, y: 5 }]) },
+    { id: "middle", group: "C", route: horizontal(2) },
+    { id: "last", group: "A", route: horizontal(4) },
+    ...Array.from({ length: 220 }, (_, i) => ({ id: `filler-${i}`, group: `isolated-${i}`,
+      route: route([{ x: 1000 + i * 20, y: 1000 }, { x: 1000 + i * 20 + 10, y: 1000 }]) })),
+  ];
+  const score = incrementalRouteScorer(), anchor = score(initial), snapshot = structuredClone(anchor);
+  assert.deepEqual([...anchor.quality.groups.keys()], ["A", "B", "C"]);
+  for (const first of [
+    { ...initial[0], route: horizontal(10) },
+    { ...initial[0], route: horizontal(0) },
+  ]) {
+    const next = [first, ...initial.slice(1)], result = score(next);
+    assert.deepEqual(result, routingContactScore(next));
+    assert.deepEqual([...result.quality.groups.keys()], ["B", "C", "A"]);
+    assert.deepEqual(anchor, snapshot);
+    assert.strictEqual(score(initial), anchor);
+  }
+  const next = [{ ...initial[0], group: "D" }, ...initial.slice(1)];
+  assert.deepEqual(score(next), routingContactScore(next));
+  assert.deepEqual([...score(next).quality.groups.keys()], ["B", "C", "A", "D"]);
+  assert.deepEqual(anchor, snapshot);
+});

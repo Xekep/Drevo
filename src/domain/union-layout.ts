@@ -11,7 +11,6 @@ import {
   bounds,
   routeRelationships,
   segmentContact,
-  segmentHitsBox,
   Spatial,
   type Box,
   type EdgeRoute,
@@ -27,6 +26,7 @@ import { optimizeFamilyRows, refineColdPlacement } from "./family-row-order.ts";
 import { optimizeMultiPartnerOrder } from "./multi-partner-order.ts";
 import { routingContactScore } from "./routing-quality.ts";
 import { incrementalRouteScorer } from "./incremental-route-score.ts";
+import { incrementalCardContacts } from "./incremental-card-contacts.ts";
 import {
   coupleBlocksWithContactedAncestry,
   familyPairBlocks,
@@ -607,34 +607,6 @@ function axisDisplacement(
   );
 }
 
-function routeCardContacts(
-  geometry: TreeGeometry,
-  width: number,
-  height: number,
-) {
-  const cards = new Spatial<Box>();
-  for (const [, point] of geometry.positions)
-    cards.add({
-      left: point.x,
-      right: point.x + width,
-      top: point.y,
-      bottom: point.y + height,
-    });
-  let contacts = 0;
-  const routes = [
-    ...(geometry.branches || []).map((branch) => branch.route),
-    ...(geometry.routes || []).map(([, route]) => route),
-  ];
-  for (const route of routes)
-    for (let index = 1; index < route.points.length; index++) {
-      const a = route.points[index - 1],
-        b = route.points[index];
-      for (const card of cards.query(bounds(a, b)))
-        if (segmentHitsBox(a, b, card)) contacts++;
-    }
-  return contacts;
-}
-
 function cardOverlapCount(
   geometry: TreeGeometry,
   width: number,
@@ -668,6 +640,7 @@ export function createGeometryContactScorer(
   height = TREE_NODE_HEIGHT,
 ) {
   const routeScore = incrementalRouteScorer();
+  const cardContactScore = incrementalCardContacts(width, height);
   const cardScores = new WeakMap<
     TreeGeometry,
     { contacts?: number; overlaps?: number }
@@ -700,7 +673,7 @@ export function createGeometryContactScorer(
   };
   return {
     cardContacts: (geometry: TreeGeometry) =>
-      (cards(geometry).contacts ??= routeCardContacts(geometry, width, height)),
+      (cards(geometry).contacts ??= cardContactScore(geometry)),
     cardOverlaps: (geometry: TreeGeometry) =>
       (cards(geometry).overlaps ??= cardOverlapCount(geometry, width, height)),
     contacts: (geometry: TreeGeometry) => score(geometry).contacts,
