@@ -1,10 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import type { ArchiveNotificationsPage } from "../../src/shared/archive-notifications";
 
-test("bell opens a compact accessible inbox, reads events and links straight to discussion", async ({
-  page,
-}, info) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
+async function mockInbox(page: Page) {
   let inbox: ArchiveNotificationsPage = {
     unread: 2,
     next: null,
@@ -44,6 +41,13 @@ test("bell opens a compact accessible inbox, reads events and links straight to 
     }
     await route.fulfill({ json: inbox });
   });
+}
+
+test("bell opens a compact accessible inbox, reads events and links straight to discussion", async ({
+  page,
+}, info) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await mockInbox(page);
   await page.goto("/tree");
   if (info.project.name === "mobile")
     await page.setViewportSize({ width: 320, height: 640 });
@@ -105,15 +109,6 @@ test("bell opens a compact accessible inbox, reads events and links straight to 
   await expect(dialog.locator(".is-unread")).toHaveCount(0);
   const comment = dialog.getByRole("link", { name: /Тестов Потомок/ });
   await expect(comment).toHaveAttribute("href", "/people/e2e-child#discussion");
-  const newTab = page.context().waitForEvent("page");
-  await comment.click({ button: "middle" });
-  const opened = await newTab;
-  // The new-page event may arrive while Chromium still exposes about:blank.
-  await expect(opened).toHaveURL(/\/people\/e2e-child#discussion$/);
-  await opened.waitForLoadState("domcontentloaded");
-  expect(new URL(page.url()).pathname).toBe("/tree");
-  await opened.close();
-  await expect(dialog).toBeVisible();
   await comment.click();
   await expect(page).toHaveURL(/\/people\/e2e-child#discussion$/);
   await expect(page.getByRole("tab", { name: "Обсуждение" })).toHaveAttribute(
@@ -123,6 +118,66 @@ test("bell opens a compact accessible inbox, reads events and links straight to 
   await expect(
     page.getByRole("region", { name: "Обсуждение человека" }),
   ).toBeVisible();
+});
+
+test("a read notification keeps its native middle-click navigation after the inbox refreshes", async ({
+  page,
+}, info) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await mockInbox(page);
+  await page.goto("/tree");
+  await page.getByRole("button", { name: /^Уведомления(?::|$)/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Уведомления" });
+  await dialog.getByRole("button", { name: "Прочитать все" }).click();
+  await expect(dialog.locator(".is-unread")).toHaveCount(0);
+  const comment = dialog.getByRole("link", { name: /Тестов Потомок/ });
+  await expect(comment).toHaveAttribute("href", "/people/e2e-child#discussion");
+  // Keep browser navigation separate from screenshots and the keyboard tour:
+  // its timeout and failure trace must describe this interaction alone.
+  const events: string[] = [];
+  await page.exposeFunction("recordNotificationClick", (value: string) =>
+    events.push(value),
+  );
+  await page.evaluate(() => {
+    for (const name of ["mousedown", "mouseup", "auxclick"]) {
+      document.addEventListener(name, (event) => {
+        const mouse = event as MouseEvent;
+        const target = event.target as Element;
+        const link = target.closest("a");
+        void (
+          window as unknown as {
+            recordNotificationClick(value: string): Promise<void>;
+          }
+        ).recordNotificationClick(
+          JSON.stringify({
+            type: event.type,
+            button: mouse.button,
+            prevented: event.defaultPrevented,
+            href: link?.getAttribute("href"),
+            target: target.tagName,
+          }),
+        );
+      });
+    }
+  });
+  try {
+    const newTab = page.context().waitForEvent("page");
+    await comment.click({ button: "middle" });
+    const opened = await newTab;
+    try {
+      await expect(opened).toHaveURL(/\/people\/e2e-child#discussion$/);
+      await opened.waitForLoadState("domcontentloaded");
+      expect(new URL(page.url()).pathname).toBe("/tree");
+      await expect(dialog).toBeVisible();
+    } finally {
+      await opened.close();
+    }
+  } finally {
+    await info.attach("notification-click-events", {
+      body: events.join("\n"),
+      contentType: "text/plain",
+    });
+  }
 });
 
 test("live polling refreshes loaded pages, preserves reading and sounds once per new batch", async ({
