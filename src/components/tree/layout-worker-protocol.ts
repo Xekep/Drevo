@@ -1,5 +1,5 @@
 import type { FamilyLink } from "../../domain/types";
-import type { TreeOptimization } from "../../domain/optimize-tree-layout";
+import type { TreeOptimization, TreeOptimizationGoal } from "../../domain/optimize-tree-layout";
 import type { LocalLayoutInput, LocalLayoutResult } from "../../domain/local-tree-layout";
 import type {
   LayoutPerson,
@@ -21,6 +21,7 @@ export type LayoutWorkerRequest = LayoutWorkerInput & {
   previousInput?: LocalLayoutInput;
   parallelCandidates?: boolean;
   optimizeDisplayed?: boolean;
+  layoutGoal?: TreeOptimizationGoal;
 };
 
 export type TaggedLayoutWorkerResponse =

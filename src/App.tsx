@@ -1420,10 +1420,10 @@ export default function App() {
             setView("tree");
             setAssistantFilter(current => excludeAssistantPeople(current, ids, label, Date.now()));
           }}
-          onOptimizeLayout={async () => {
+          onOptimizeLayout={async (goal) => {
             if (!treeCanvas.current) throw new Error("Откройте древо для оптимизации расположения.");
-            setNotice("Оптимизируем расположение…");
-            try { setNotice(await treeCanvas.current.optimizeLayout()); }
+            setNotice(goal === "compact" ? "Уплотняем расположение…" : "Оптимизируем расположение…");
+            try { setNotice(await treeCanvas.current.optimizeLayout(goal)); }
             catch (error) { setNotice(""); throw error; }
           }}
           onZoom={(direction) =>

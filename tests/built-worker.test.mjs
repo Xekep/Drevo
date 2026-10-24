@@ -205,6 +205,28 @@ test("production worker refines an explicit displayed geometry without dropping 
   } finally { await worker.terminate(); }
 });
 
+test("production Worker packs a displayed scene while preserving households and card size", { timeout: 10000 }, async () => {
+  const worker = productionWorker();
+  try {
+    const { input, geometry } = crowdedFamily(205);
+    const result = await new Promise((resolve, reject) => {
+      const onError = error => { worker.off("message", onMessage); reject(error); };
+      const onMessage = message => { worker.off("error", onError); resolve(message); };
+      worker.once("message", onMessage); worker.once("error", onError);
+      worker.postMessage({ requestId: 916, ...input, mode: "generations", reverse: false,
+        previousGeometry: geometry, optimizeDisplayed: true, layoutGoal: "compact" });
+    });
+    assert.equal(result.error, undefined); assert.equal(result.optimization.changed, true);
+    assert.deepEqual(result.geometry.occurrences, geometry.occurrences);
+    assert.deepEqual(result.geometry.nodeSize, geometry.nodeSize);
+    const points = new Map(result.geometry.positions);
+    const extent = positions => Math.max(...positions.map(([, p]) => p.x)) - Math.min(...positions.map(([, p]) => p.x));
+    assert.ok(extent(result.geometry.positions) < extent(geometry.positions));
+    for (const [id, p] of geometry.positions) assert.equal(points.get(id).y, p.y);
+    assert.equal(points.get("neighbor-partner").x - points.get("right-1").x, 252);
+  } finally { await worker.terminate(); }
+});
+
 test("two ELK workers preserve the exact large-archive geometry and subsequent single-worker reuse", { timeout: 60_000 }, async () => {
   const data = randomFamily(5, 9);
   assert.equal(data.length, 977);

@@ -15,6 +15,7 @@ import {
 } from "./research/use-research-attachments";
 import { archiveResourceUrl } from "../domain/archive-context.ts";
 import type { ResearchResult, ResearchTreeViewContext, UiAction } from "../shared/research-protocol.ts";
+import type { TreeOptimizationGoal } from "../domain/optimize-tree-layout.ts";
 import { browserTimeZone } from "../data/browser-time-zone";
 import {
   useResearchPanel,
@@ -311,7 +312,7 @@ export function ResearchAssistant({
   onReveal: (ids: string[]) => void;
   onFilter: (ids: string[], label: string) => void;
   onExclude: (ids: string[], label: string) => void;
-  onOptimizeLayout: () => Promise<void>;
+  onOptimizeLayout: (goal?: TreeOptimizationGoal) => Promise<void>;
   getTreeViewContext?: () => ResearchTreeViewContext | undefined;
   onHideReview: () => void;
   onZoom: (direction: "in" | "out") => void;
@@ -775,7 +776,7 @@ export function ResearchAssistant({
         onFilter(action.personIds, action.label);
       else if (action.type === "exclude_people") onExclude(action.personIds, action.label);
       else if (action.type === "optimize_tree_layout")
-        void onOptimizeLayout().catch(reason => setError(reason instanceof Error ? reason.message : "Не удалось оптимизировать расположение."));
+        void onOptimizeLayout(action.goal).catch(reason => setError(reason instanceof Error ? reason.message : "Не удалось оптимизировать расположение."));
       else if (action.type === "hide_review_people") onHideReview();
       else if (action.type === "open_person") onPerson(action.personId);
       else if (action.type === "open_photo") onPhoto(action.photoId);
