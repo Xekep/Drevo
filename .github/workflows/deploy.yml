@@ -28,6 +28,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --audit-level=high
+      - run: npm audit --prefix ops/runtime --omit=dev --audit-level=high
       - run: npm run typecheck
       - run: npm run lint
       - run: bash -n ops/deploy.sh
@@ -74,6 +75,13 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: deploy-e2e-failures
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Test all suites on Node 22
         # Node 22: ошибка IPC в node --test (nodejs/node#64061, #64706).
         # Прямой запуск оставляет каждый файл в отдельном процессе, без IPC runner.
