@@ -570,7 +570,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     : `${mode}:${depthEnabled ? "depth" : "flat"}:${familyView.mode}:${root || "all"}:portrait`;
   useTouchZoom(container, flow, !depthEnabled && !cameraLocked && !screen.fullscreen && !activeFanAnchor && mode !== "timeline");
   useCtrlWheelZoom(container, flow, !depthEnabled && !cameraLocked && !activeFanAnchor && mode !== "timeline");
-  const { geometry: originalGeometry, renderVisible, ready, problem, layoutBusy: calculatingLayout, layoutKey: originalLayoutKey } =
+  const { geometry: originalGeometry, renderVisible, ready, problem, layoutBusy: calculatingLayout, layoutKey: originalLayoutKey, updateKind } =
     useTreeLayout(
       renderFamily,
       visible,
@@ -1651,6 +1651,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         ref={container}
         inert={props.covered || undefined}
         data-layout-ready={ready}
+        data-layout-update={updateKind || "cached"}
         data-layout-people={renderVisible.size}
         data-fragment-anchor={fragment.active ? fragment.anchorId : undefined}
         data-depth-anchor={depthEnabled ? depth.anchorId : undefined}

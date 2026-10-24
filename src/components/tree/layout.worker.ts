@@ -1,9 +1,10 @@
-import { treeNodeSize } from "../../domain/tree-layout-constants";
+import { MAX_INCREMENTAL_LAYOUT_PEOPLE, treeNodeSize } from "../../domain/tree-layout-constants";
 import { unionGeometry } from "../../domain/union-layout";
 import { unionTimeline } from "../../domain/union-timeline";
 import { createUnionLayout } from "./elk-layout";
 import type { LayoutWorkerRequest } from "./layout-worker-protocol";
 import { optimizeDisplayedTree } from "../../domain/optimize-tree-layout";
+import { localTreeLayout } from "../../domain/local-tree-layout";
 
 let engine: ReturnType<typeof createUnionLayout> | undefined;
 self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
@@ -14,6 +15,7 @@ self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
     mode,
     reverse,
     previousGeometry,
+    previousInput,
     parallelCandidates,
     optimizeDisplayed,
   } = event.data;
@@ -24,6 +26,13 @@ self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
       self.postMessage({ requestId, ...result });
       return;
     }
+    if (mode === "generations" && previousGeometry?.mode === mode && previousGeometry.reverse === reverse && previousInput) {
+      const local = localTreeLayout({ people, links }, previousInput, previousGeometry, treeNodeSize());
+      if (local) {
+        self.postMessage({ requestId, geometry: local.geometry, updateKind: local.kind });
+        return;
+      }
+    }
     engine ??= createUnionLayout();
     const geometry =
       mode === "generations"
@@ -33,7 +42,7 @@ self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
             reverse,
             links,
             treeNodeSize(),
-            previousGeometry,
+            people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE ? previousGeometry : undefined,
             true,
             parallelCandidates ? 2 : 1,
           )
@@ -45,7 +54,7 @@ self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
           );
     // Совместимость с built-worker тестом и старым протоколом оставляем намеренно.
     self.postMessage(
-      requestId === undefined ? geometry : { requestId, geometry },
+      requestId === undefined ? geometry : { requestId, geometry, updateKind: "full" },
     );
   } catch (reason) {
     engine?.dispose();

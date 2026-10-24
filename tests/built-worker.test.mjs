@@ -117,6 +117,42 @@ function productionWorker() {
     },
   });
 }
+test("production worker retains a large edited scene, adds a safe leaf and rebuilds structural edits", { timeout: 40_000 }, async () => {
+  const original = [
+    { id: "a", birth: "1900", parents: [], spouses: ["b"] },
+    { id: "b", birth: "1900", parents: [], spouses: ["a"] },
+    { id: "c", birth: "1930", parents: ["a", "b"], spouses: [] },
+    ...Array.from({ length: 500 }, (_, i) => ({ id: `isolated-${i}`, birth: "", parents: [], spouses: [] })),
+  ];
+  const worker = productionWorker();
+  const send = body => new Promise((resolve, reject) => {
+    const onMessage = message => { worker.off("error", onError); resolve(message); };
+    const onError = error => { worker.off("message", onMessage); reject(error); };
+    worker.once("message", onMessage); worker.once("error", onError); worker.postMessage(body);
+  });
+  try {
+    const input = { people: original, links: [], mode: "generations", reverse: false };
+    const before = await send({ requestId: 1, ...input });
+    assert.equal(before.error, undefined); assert.equal(before.updateKind, "full");
+    const dated = { ...input, people: original.map(p => p.id === "c" ? { ...p, birth: "1932" } : p) };
+    const retained = await send({ requestId: 2, ...dated, previousInput: input, previousGeometry: before.geometry });
+    assert.equal(retained.updateKind, "retained"); assert.deepEqual(retained.geometry, before.geometry);
+    const added = { ...dated, people: [...dated.people, { id: "d", birth: "1940", parents: ["a", "b"], spouses: [] }] };
+    const local = await send({ requestId: 3, ...added, previousInput: dated, previousGeometry: retained.geometry });
+    assert.equal(local.error, undefined); assert.equal(local.updateKind, "local");
+    assert.deepEqual(local.geometry.positions.filter(([id]) => id !== "d"), before.geometry.positions);
+    assert.ok(local.geometry.branches.some(b => b.target === "d" && b.relations.length === 2));
+    const removed = await send({ requestId: 4, ...dated, previousInput: added, previousGeometry: local.geometry });
+    assert.equal(removed.updateKind, "local"); assert.deepEqual(removed.geometry.positions, before.geometry.positions);
+    const structural = { ...dated, people: [...dated.people.map(p => p.id === "c" ? { ...p, spouses: ["new-spouse"] } : p),
+      { id: "new-spouse", birth: "1930", parents: [], spouses: ["c"] }] };
+    const full = await send({ requestId: 5, ...structural, previousInput: dated, previousGeometry: retained.geometry });
+    assert.equal(full.error, undefined); assert.equal(full.updateKind, "full");
+    assert.equal(full.geometry.occurrences.length, structural.people.length);
+    const cold = await send({ requestId: 6, ...structural });
+    assert.deepEqual(full.geometry, cold.geometry);
+  } finally { await worker.terminate(); }
+});
 test("production worker refines an explicit displayed geometry without dropping people or generations", { timeout: 20_000 }, async () => {
   const worker = productionWorker();
   try {

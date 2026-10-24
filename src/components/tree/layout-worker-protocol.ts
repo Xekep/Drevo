@@ -1,5 +1,6 @@
 import type { FamilyLink } from "../../domain/types";
 import type { TreeOptimization } from "../../domain/optimize-tree-layout";
+import type { LocalLayoutInput, LocalLayoutResult } from "../../domain/local-tree-layout";
 import type {
   LayoutPerson,
   TreeGeometry,
@@ -17,10 +18,11 @@ export type LayoutWorkerRequest = LayoutWorkerInput & {
   /** Старые production-worker тесты могут посылать сообщение без id. */
   requestId?: number;
   previousGeometry?: TreeGeometry;
+  previousInput?: LocalLayoutInput;
   parallelCandidates?: boolean;
   optimizeDisplayed?: boolean;
 };
 
 export type TaggedLayoutWorkerResponse =
-  | { requestId: number; geometry: TreeGeometry; optimization?: TreeOptimization }
+  | { requestId: number; geometry: TreeGeometry; optimization?: TreeOptimization; updateKind?: LocalLayoutResult["kind"] | "full" }
   | { requestId: number; error: string };

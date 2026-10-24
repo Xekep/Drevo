@@ -1,0 +1,251 @@
+{
+  "measuredAt": "2026-10-24T09:20:40.206Z",
+  "node": "v22.14.0",
+  "os": "win32 10.0.19045",
+  "cpu": "AMD Ryzen 9 5950X 16-Core Processor            ",
+  "hardwareThreads": 32,
+  "size": {
+    "width": 220,
+    "height": 264
+  },
+  "sourceHash": "f2ac04cc30ae465e61874f98d734441967da1272f7617f57dcc94c30f7f8ac38",
+  "method": "Cold layout: one sample per case. Local/date: one warmup, nine samples, median. Rejected local checks precede a full layout. Synthetic seed 5, twelve generations truncated in model order. No browser or memory claim.",
+  "rows": [
+    {
+      "count": 500,
+      "inputHash": "8fac79f990de8cbf58171fa8dca4b6129b5e778c8bb18edb7fedb1fe4bca12f8",
+      "coldMs": 4491.9427,
+      "editedColdMs": 3747.1811,
+      "dateOnlyMedianMs": 0.7416999999995824,
+      "before": {
+        "crossings": 2164,
+        "contacts": 2167,
+        "length": 3191067,
+        "cardOverlaps": 0,
+        "cardContacts": 0
+      },
+      "accepted": 1,
+      "attempted": 10,
+      "samples": [
+        {
+          "index": 0,
+          "accepted": false,
+          "medianMs": 6.684700000000703
+        },
+        {
+          "index": 1,
+          "accepted": false,
+          "medianMs": 6.190599999999904
+        },
+        {
+          "index": 2,
+          "accepted": false,
+          "medianMs": 6.0009000000000015
+        },
+        {
+          "index": 3,
+          "accepted": false,
+          "medianMs": 5.950699999999415
+        },
+        {
+          "index": 4,
+          "accepted": true,
+          "medianMs": 5.604000000000269,
+          "after": {
+            "crossings": 2164,
+            "contacts": 2167,
+            "length": 3191509,
+            "cardOverlaps": 0,
+            "cardContacts": 0
+          },
+          "movedExistingCards": 0
+        },
+        {
+          "index": 5,
+          "accepted": false,
+          "medianMs": 6.017700000000332
+        },
+        {
+          "index": 6,
+          "accepted": false,
+          "medianMs": 6.385400000000118
+        },
+        {
+          "index": 7,
+          "accepted": false,
+          "medianMs": 5.650700000000143
+        },
+        {
+          "index": 8,
+          "accepted": false,
+          "medianMs": 7.147700000000441
+        },
+        {
+          "index": 9,
+          "accepted": false,
+          "medianMs": 7.777200000000448
+        }
+      ]
+    },
+    {
+      "count": 1000,
+      "inputHash": "4870b1ae4d39229e834d2df1f3f52f78780555eabf5b0cfaeb3e1d8809cb6516",
+      "coldMs": 12455.074499999999,
+      "editedColdMs": 10593.768500000002,
+      "dateOnlyMedianMs": 1.1264999999984866,
+      "before": {
+        "crossings": 12976,
+        "contacts": 12979,
+        "length": 13569184,
+        "cardOverlaps": 0,
+        "cardContacts": 0
+      },
+      "accepted": 1,
+      "attempted": 10,
+      "samples": [
+        {
+          "index": 0,
+          "accepted": true,
+          "medianMs": 11.557499999998981,
+          "after": {
+            "crossings": 12976,
+            "contacts": 12979,
+            "length": 13569731,
+            "cardOverlaps": 0,
+            "cardContacts": 0
+          },
+          "movedExistingCards": 0
+        },
+        {
+          "index": 1,
+          "accepted": false,
+          "medianMs": 12.243400000003021
+        },
+        {
+          "index": 2,
+          "accepted": false,
+          "medianMs": 12.66700000000128
+        },
+        {
+          "index": 3,
+          "accepted": false,
+          "medianMs": 11.306700000001001
+        },
+        {
+          "index": 4,
+          "accepted": false,
+          "medianMs": 16.148600000000442
+        },
+        {
+          "index": 5,
+          "accepted": false,
+          "medianMs": 12.873600000002625
+        },
+        {
+          "index": 6,
+          "accepted": false,
+          "medianMs": 13.260300000001735
+        },
+        {
+          "index": 7,
+          "accepted": false,
+          "medianMs": 12.532999999999447
+        },
+        {
+          "index": 8,
+          "accepted": false,
+          "medianMs": 13.532100000000355
+        },
+        {
+          "index": 9,
+          "accepted": false,
+          "medianMs": 11.656399999999849
+        }
+      ]
+    },
+    {
+      "count": 3000,
+      "inputHash": "6de97b0627a2753bf4fbad881231f99d9bd5339e17ed28fe8bd58112db21e097",
+      "coldMs": 9813.818399999996,
+      "editedColdMs": 11233.842099999994,
+      "dateOnlyMedianMs": 3.5477000000028056,
+      "before": {
+        "crossings": 67422,
+        "contacts": 67422,
+        "length": 75994394,
+        "cardOverlaps": 0,
+        "cardContacts": 0
+      },
+      "accepted": 2,
+      "attempted": 10,
+      "samples": [
+        {
+          "index": 0,
+          "accepted": true,
+          "medianMs": 32.34150000000227,
+          "after": {
+            "crossings": 67422,
+            "contacts": 67422,
+            "length": 75994645,
+            "cardOverlaps": 0,
+            "cardContacts": 0
+          },
+          "movedExistingCards": 0
+        },
+        {
+          "index": 1,
+          "accepted": false,
+          "medianMs": 31.688499999996566
+        },
+        {
+          "index": 2,
+          "accepted": false,
+          "medianMs": 36.58610000000044
+        },
+        {
+          "index": 3,
+          "accepted": false,
+          "medianMs": 37.190199999997276
+        },
+        {
+          "index": 4,
+          "accepted": false,
+          "medianMs": 35.58429999999498
+        },
+        {
+          "index": 5,
+          "accepted": false,
+          "medianMs": 35.34979999999632
+        },
+        {
+          "index": 6,
+          "accepted": false,
+          "medianMs": 38.4291000000012
+        },
+        {
+          "index": 7,
+          "accepted": false,
+          "medianMs": 41.09070000000065
+        },
+        {
+          "index": 8,
+          "accepted": false,
+          "medianMs": 38.05949999999575
+        },
+        {
+          "index": 9,
+          "accepted": true,
+          "medianMs": 35.27360000000044,
+          "after": {
+            "crossings": 67422,
+            "contacts": 67422,
+            "length": 75995338,
+            "cardOverlaps": 0,
+            "cardContacts": 0
+          },
+          "movedExistingCards": 0
+        }
+      ]
+    }
+  ]
+}
