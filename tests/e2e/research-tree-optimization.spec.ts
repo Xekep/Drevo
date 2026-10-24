@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("AI optimizes the displayed layout in a real Worker without changing people or the camera", async ({ page, request }) => {
+for (const goal of ["routing", "compact"] as const) test(`AI ${goal} uses a real Worker without changing people or the camera`, async ({ page, request }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
@@ -10,8 +10,25 @@ test("AI optimizes the displayed layout in a real Worker without changing people
   await page.route("**/api/ai/chat/stream", route => route.fulfill({
     contentType: "text/event-stream; charset=utf-8",
     body: `event: done\ndata: ${JSON.stringify({ answer: "Запускаю оптимизацию.", references: [], suggestionIds: [],
-      uiActions: [{ type: "optimize_tree_layout" }], files: [] })}\n\n`,
+      uiActions: [{ type: "optimize_tree_layout", ...(goal === "compact" ? { goal } : {}) }], files: [] })}\n\n`,
   }));
+  await page.addInitScript(() => {
+    type G = { positions: [string, { x: number; y: number }][]; generationBands: { members: string[] }[] };
+    const state: { goal?: string; before?: G; after?: G } = {};
+    Object.assign(window, { __optimizedScene: state });
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        this.addEventListener("message", e => { if (e.data.optimization) state.after = e.data.geometry; });
+      }
+      postMessage(message: unknown) {
+        const body = message as { optimizeDisplayed?: boolean; layoutGoal?: string; previousGeometry?: G };
+        if (body.optimizeDisplayed) { state.goal = body.layoutGoal; state.before = body.previousGeometry; }
+        super.postMessage(message);
+      }
+    };
+  });
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
   await expect(canvas, JSON.stringify(errors)).toHaveAttribute("data-layout-ready", "true");
@@ -25,13 +42,35 @@ test("AI optimizes the displayed layout in a real Worker without changing people
   const workerURLs: string[] = [];
   page.on("worker", worker => workerURLs.push(worker.url()));
   const assistant = page.locator(".research-assistant");
-  await assistant.getByRole("textbox").fill("Оптимизируй расположение карточек для печати");
+  await assistant.getByRole("textbox").fill(goal === "compact" ? "Размести карточки плотнее для печати" : "Оптимизируй расположение карточек для печати");
   await assistant.getByRole("button", { name: "Отправить запрос" }).click();
-  await expect(page.locator(".archive-toast")).toContainText(/Расположение обновлено|Дополнительного улучшения/);
+  await expect(page.locator(".archive-toast")).toContainText(goal === "compact" ? /Древо уплотнено/ : /Расположение обновлено|Дополнительного улучшения/);
   expect(workerURLs.some(url => /layout\.worker/.test(url))).toBe(true);
   await expect(canvas).not.toHaveClass(/is-layout-settling/);
   expect(await canvas.locator(".react-flow__node").evaluateAll(nodes => nodes.map(n => n.getAttribute("data-id")).sort())).toEqual(ids);
   expect(await viewport.getAttribute("style")).toEqual(transform);
+  const packing = await page.evaluate(() => {
+    type G = { positions: [string, { x: number; y: number }][]; generationBands: { members: string[] }[] };
+    const state = (window as typeof window & { __optimizedScene: { goal?: string; before: G; after: G } }).__optimizedScene;
+    const span = (g: G) => {
+      const positions = new Map(g.positions);
+      return g.generationBands.reduce((sum, band) => {
+        const xs = band.members.map(id => positions.get(id)!.x);
+        return sum + Math.max(...xs) - Math.min(...xs);
+      }, 0);
+    };
+    return { goal: state.goal, before: span(state.before), after: span(state.after),
+      oldY: state.before.positions.map(([id, p]) => [id, p.y]), newY: state.after.positions.map(([id, p]) => [id, p.y]) };
+  });
+  expect(packing.goal).toBe(goal);
+  expect(packing.newY).toEqual(packing.oldY);
+  if (goal === "compact") expect(packing.after).toBeLessThan(packing.before);
+  if (goal === "compact") {
+    await page.screenshot({ path: testInfo.outputPath("compact-tree.png") });
+    await assistant.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
+    await expect(assistant).toBeHidden();
+    await page.screenshot({ path: testInfo.outputPath("compact-tree-unobstructed.png") });
+  }
   expect(await (await request.get("/api/family")).json()).toEqual(before);
   expect(errors).toEqual([]);
 });

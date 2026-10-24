@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
 
-for (const scenario of ["ancestors", "descendants", "optimize", "wrong-surname", "unrequested", "generic-complement", "generic-surname", "generic-include", "self"] as const)
+for (const scenario of ["ancestors", "descendants", "optimize", "compact", "compact-implicit", "compact-gaps", "compact-short", "compact-wrong-zoom", "compact-wrong-filter", "unrequested-compact", "invalid-goal", "wrong-surname", "unrequested", "generic-complement", "generic-surname", "generic-include", "self"] as const)
 test(`AI view command: ${scenario}`, async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-ai-view-"));
   const env = { YANDEX_AI_API_KEY: "test-key", YANDEX_AI_FOLDER_ID: "folder", YANDEX_AI_MODEL: "yandexgpt/rc" };
@@ -15,7 +15,11 @@ test(`AI view command: ${scenario}`, async () => {
   const fake: typeof fetch = async url => {
     if (String(url).endsWith("/conversations")) return Response.json({ id: "conv-view" });
     calls++;
-    const action = scenario === "optimize" || scenario === "unrequested" ? { action: "optimize_layout" }
+    const action = scenario === "compact-wrong-zoom" ? { action: "zoom_out" }
+      : scenario === "compact-wrong-filter" ? { action: "filter_people", personIds: ["raya"] }
+      : scenario.startsWith("compact") || scenario === "unrequested-compact" || scenario === "invalid-goal"
+      ? { action: "optimize_layout", ...(scenario === "compact-implicit" ? {} : { goal: scenario === "invalid-goal" ? "tiny" : "compact" }) }
+      : scenario === "optimize" || scenario === "unrequested" ? { action: "optimize_layout" }
       : scenario === "wrong-surname" ? { action: "filter_surname", surname: "Кочнева" }
       : scenario === "generic-complement" ? { action: "filter_people", personIds: ["parent", "child", "other"] }
       : scenario === "generic-surname" ? { action: "filter_surname", surname: "Кочнева" }
@@ -38,7 +42,11 @@ test(`AI view command: ${scenario}`, async () => {
     ] }, before.revision);
     const snapshot = await app.archive.read();
     const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
-    const message = scenario === "optimize" ? "Оптимизируй расположение карточек древа для печати"
+    const message = scenario === "compact-wrong-zoom" ? "Уменьши расстояния между карточками древа"
+      : scenario === "compact-gaps" ? "Убери лишние промежутки между карточками древа"
+      : scenario === "compact-short" ? "Ещё плотнее"
+      : scenario.startsWith("compact") || scenario === "invalid-goal" ? "Сделай карточки в древе плотнее для печати"
+      : scenario === "optimize" || scenario === "unrequested-compact" ? "Оптимизируй расположение карточек древа для печати"
       : scenario === "unrequested" ? "Сколько людей в архиве?"
       : scenario.startsWith("generic-") || scenario === "self" ? "Убери Кочневу Раю из древа"
       : `Убери Кочневу Раю вместе с ${scenario === "descendants" ? "потомками" : "предками"}`;
@@ -46,12 +54,13 @@ test(`AI view command: ${scenario}`, async () => {
       body: JSON.stringify({ message, context: { view: "tree" } }) });
     assert.equal(response.status, 200);
     const data = await response.json();
-    if (scenario === "wrong-surname" || scenario === "unrequested" || scenario.startsWith("generic-")) {
+    if (scenario === "wrong-surname" || scenario.startsWith("unrequested") || scenario.startsWith("compact-wrong") || scenario === "invalid-goal" || scenario.startsWith("generic-")) {
       assert.deepEqual(data.uiActions, []);
       if (scenario === "wrong-surname" || scenario.startsWith("generic-")) assert.match(data.answer, /не изменён/);
     } else {
       assert.equal(calls, 1, "a verified display command requires no model synthesis");
-      assert.deepEqual(data.uiActions, scenario === "optimize" ? [{ type: "optimize_tree_layout" }]
+      assert.deepEqual(data.uiActions, scenario.startsWith("compact") ? [{ type: "optimize_tree_layout", goal: "compact" }]
+        : scenario === "optimize" ? [{ type: "optimize_tree_layout" }]
         : [{ type: "exclude_people", personIds: scenario === "self" ? ["raya"] : ["raya", scenario === "ancestors" ? "parent" : "child"], label: "Без ветви: Кочнева Раиса" }]);
       assert.doesNotMatch(data.answer, /filter_surname|exclude_branch|optimize_layout/);
     }

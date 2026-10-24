@@ -5,6 +5,9 @@ import { createGeometryContactScorer } from "./union-layout.ts";
 import { refineColdPlacement } from "./family-row-order.ts";
 import { familyRowNoWorse } from "./family-row-moves.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
+import { compactTreeLayout } from "./compact-tree-layout.ts";
+
+export type TreeOptimizationGoal = "routing" | "compact";
 
 export type TreeOptimization = {
   changed: boolean;
@@ -16,6 +19,7 @@ export type TreeOptimization = {
 export function optimizeDisplayedTree(
   original: TreeGeometry, people: LayoutPerson[],
   links: Pick<FamilyLink, "type" | "from" | "to">[],
+  goal: TreeOptimizationGoal = "routing",
 ): { geometry: TreeGeometry; optimization: TreeOptimization } {
   if (original.mode !== "generations") throw new Error("Оптимизация доступна в обычном 2D-древе.");
   if (original.positions.length > 1600)
@@ -34,7 +38,12 @@ export function optimizeDisplayedTree(
   // Additional ties never decide where the primary family is placed.
   const before = score(original);
   let best = original;
-  for (let pass = 0; pass < 2; pass++) {
+  if (goal === "compact") {
+    const candidate = compactTreeLayout(original, people, links, size, score);
+    const full = createGeometryContactScorer(size.width, size.height);
+    if (full.cardContacts(candidate) <= full.cardContacts(original)) best = candidate;
+  }
+  for (let pass = 0; goal === "routing" && pass < 2; pass++) {
     const candidate = bundleFamilyBranches(refineColdPlacement(best, people, links, size,
       score));
     const next = score(candidate);

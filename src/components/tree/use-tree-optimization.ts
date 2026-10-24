@@ -3,6 +3,7 @@ import type { Family } from "../../domain/types";
 import type { TreeGeometry } from "../../domain/tree-layout";
 import { projectTree } from "../../domain/family-neighborhood";
 import type { LayoutWorkerRequest, TaggedLayoutWorkerResponse } from "./layout-worker-protocol";
+import type { TreeOptimizationGoal } from "../../domain/optimize-tree-layout";
 
 /** Owns an explicit local refinement. A changed graph/access scope cancels it. */
 export function useTreeOptimization(
@@ -16,7 +17,7 @@ export function useTreeOptimization(
   useEffect(() => () => { job.current?.cancel(); }, [original, key]);
   const current = result?.original === original && result?.key === key ? result : null;
   const geometry = current?.geometry || original;
-  const optimize = useCallback(async () => {
+  const optimize = useCallback(async (goal: TreeOptimizationGoal = "routing") => {
     if (!ready || !original || !geometry) throw new Error("Дождитесь отрисовки древа.");
     job.current?.cancel();
     const requestId = ++token.current;
@@ -46,13 +47,15 @@ export function useTreeOptimization(
         }
         if (data.optimization.changed)
           setResult({ original, key, geometry: data.geometry, token: requestId });
-        finish(data.optimization.changed
+        finish(goal === "compact" ? (data.optimization.changed
+          ? "Древо уплотнено."
+          : "Уплотнить расположение без ухудшения основных связей не удалось.") : data.optimization.changed
           ? `Расположение обновлено. Пересечения основных связей: ${data.optimization.before.crossings} → ${data.optimization.after.crossings}.`
           : "Дополнительного улучшения без ухудшения основных связей не найдено.");
       };
       worker.onerror = () => finish("Не удалось оптимизировать расположение.", true);
       const request: LayoutWorkerRequest = { requestId, ...projectTree(family, visible),
-        mode: "generations", reverse: geometry.reverse, previousGeometry: geometry, optimizeDisplayed: true };
+        mode: "generations", reverse: geometry.reverse, previousGeometry: geometry, optimizeDisplayed: true, layoutGoal: goal };
       try { worker.postMessage(request); }
       catch { finish("Не удалось передать раскладку для оптимизации.", true); }
     });

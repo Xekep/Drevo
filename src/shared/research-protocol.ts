@@ -1,4 +1,5 @@
 import type { ResearchAnswerReference } from "../domain/research-answer.ts";
+import type { TreeOptimizationGoal } from "../domain/optimize-tree-layout.ts";
 
 /** A bounded UI snapshot, never an access-control scope. */
 export type ResearchTreeViewContext = {
@@ -24,7 +25,7 @@ export type UiAction =
   | { type: "focus_people"; personIds: string[] }
   | { type: "filter_people"; personIds: string[]; label: string }
   | { type: "exclude_people"; personIds: string[]; label: string }
-  | { type: "optimize_tree_layout" }
+  | { type: "optimize_tree_layout"; goal?: TreeOptimizationGoal }
   | { type: "hide_review_people" }
   | { type: "open_person"; personId: string }
   | { type: "open_photo"; photoId: string }

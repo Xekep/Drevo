@@ -81,6 +81,7 @@ import { createCrossingPathCache } from "../../domain/route-crossings";
 import type { TreeGenerationLimits } from "../../domain/tree-preferences";
 import { useTreeLayout } from "./use-tree-layout";
 import { useTreeOptimization } from "./use-tree-optimization";
+import type { TreeOptimizationGoal } from "../../domain/optimize-tree-layout";
 import { useDepthTree } from "./use-depth-tree";
 import { TreeDepthLayers, type DepthSceneHandle } from "./tree-depth-layers";
 import { FamilyViewTools } from "./family-view-tools";
@@ -138,7 +139,7 @@ export type TreeFocus = {
 };
 export type TreeCanvasHandle = {
   getViewContext: () => ResearchTreeViewContext;
-  optimizeLayout: () => Promise<string>;
+  optimizeLayout: (goal?: TreeOptimizationGoal) => Promise<string>;
   visiblePersonIds: (signal?: AbortSignal) => Promise<string[]>;
   exportPdf: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number) => Promise<void>;
   exportPng: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number) => Promise<void>;
@@ -1512,11 +1513,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       };
       return {
         getViewContext() { return viewContext.current; },
-        async optimizeLayout() {
+        async optimizeLayout(goal) {
           if (mode !== "generations" || activeFanAnchor || depthEnabled)
             throw new Error("Откройте обычное 2D-древо для оптимизации расположения.");
           if (cameraLocked || calculatingLayout) throw new Error("Дождитесь отрисовки древа.");
-          return optimize();
+          return optimize(goal);
         },
         async visiblePersonIds(signal) {
           signal?.throwIfAborted();

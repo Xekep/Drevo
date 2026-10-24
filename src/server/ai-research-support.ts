@@ -194,7 +194,7 @@ export const CONTROL_VIEW_TOOL = {
     properties: {
       action: {
         type: "string",
-        description: "exclude_branch скрывает только найденного человека (personId) и его записанных предков/потомков (direction), без удаления и фильтра по фамилии. optimize_layout запускает оптимизацию текущей 2D-раскладки для печати: без координат, изменения людей или связей. filter_surname только показывает фамильную группу, не исключает её.",
+        description: "exclude_branch скрывает только найденного человека (personId) и его записанных предков/потомков (direction), без удаления и фильтра по фамилии. optimize_layout запускает оптимизацию текущей 2D-раскладки: goal=routing распутывает связи, goal=compact размещает карточки плотнее, сокращая горизонтальные промежутки между семьями. Размер карточек и поколения сохраняются. Без координат, изменения людей или связей. filter_surname только показывает фамильную группу, не исключает её.",
         enum: [
           "focus_people",
           "filter_surname",
@@ -217,6 +217,7 @@ export const CONTROL_VIEW_TOOL = {
       },
       personId: { type: "string", minLength: 1, maxLength: 200 },
       direction: { type: "string", enum: ["ancestors", "descendants", "self"], description: "Для exclude_branch: скрыть найденного человека вместе с записанными предками, потомками или только его. Не фамильную группу." },
+      goal: { type: "string", enum: ["routing", "compact"], description: "Для optimize_layout: compact только по просьбе сделать плотнее/компактнее, уменьшить пустоты между карточками; routing — обычная оптимизация связей. Это геометрия, не зум и не уменьшение шрифта или портретов." },
       photoId: { type: "string", minLength: 1, maxLength: 200 },
       surname: { type: "string", minLength: 2, maxLength: 100 },
       label: { type: "string", minLength: 1, maxLength: 100 },
@@ -263,7 +264,12 @@ export function explicitViewControlRequest(message: string, view = "") {
 }
 
 export function treeLayoutRequest(message: string, view: string) {
-  return view === "tree" && /(?:оптимизир|упорядоч|перестав|разлож|размест|располож|распут|улучш).{0,90}(?:карточ|расклад|древ|дерев|печат|красив)|(?:древ|дерев|карточ|расклад).{0,90}(?:оптимизир|упорядоч|перестав|разлож|размест|располож|распут|улучш)/iu.test(message);
+  return treeCompactRequest(message, view) || (view === "tree" && /(?:оптимизир|упорядоч|перестав|разлож|размест|располож|распут|улучш).{0,90}(?:карточ|расклад|древ|дерев|печат|красив)|(?:древ|дерев|карточ|расклад).{0,90}(?:оптимизир|упорядоч|перестав|разлож|размест|располож|распут|улучш)/iu.test(message));
+}
+
+export function treeCompactRequest(message: string, view: string) {
+  if (view !== "tree" || /не\s+(?:(?:надо|нужно|делай|делать|хочу|стоит)\s+){0,3}(?:карточки\s+)?(?:уплотн|плотне|компактне|сжим|уменьш|сократ)/iu.test(message)) return false;
+  return /(?:уплотни|уплотнить|сожми|ужми|плотнее|компактнее).{0,90}(?:карточ|древ|дерев|расклад|семь|вет[вк])|(?:карточ|древ|дерев|расклад).{0,90}(?:уплотни|уплотнить|сожми|ужми|плотнее|компактнее)|(?:уменьш|сократ|убери|убрать).{0,60}(?:пустот|промежут|отступ|расстояни).{0,60}(?:карточ|семь|древ|дерев)|^(?:(?:сделай|давай|ещ[её]|чуть|немного|пожалуйста)[\s,!]*)*(?:плотнее|компактнее)[\s.!?]*$/iu.test(message);
 }
 
 export function shortTreeZoomRequest(message: string, view: string) {

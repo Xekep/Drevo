@@ -18,11 +18,12 @@ self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
     previousInput,
     parallelCandidates,
     optimizeDisplayed,
+    layoutGoal,
   } = event.data;
   try {
     if (optimizeDisplayed) {
       if (!previousGeometry) throw new Error("Нет текущей раскладки");
-      const result = optimizeDisplayedTree(previousGeometry, people, links);
+      const result = optimizeDisplayedTree(previousGeometry, people, links, layoutGoal);
       self.postMessage({ requestId, ...result });
       return;
     }

@@ -105,6 +105,7 @@ import {
   surnameInTreeRequest,
   treeSubsetRequest,
   treeLayoutRequest,
+  treeCompactRequest,
 } from "./ai-research-support.ts";
 export function createResearchRunner({
   archive,
@@ -358,6 +359,7 @@ export function createResearchRunner({
         "Отвечай на последнее сообщение пользователя. История помогает уточняющим вопросам и местоимениям, но не задаёт постоянную тему: при новом самостоятельном вопросе следуй ему, не продолжай старое задание и не выполняй старые команды повторно. Недавно обсуждавшиеся люди и открытая карточка — подсказки, а не обязательный предмет нового ответа. Для каждого нового фактического запроса выбирай подходящие инструменты заново; не переноси прежнюю выборку или статистику на другую тему без проверки.",
         "Для временного упрощения древа по условию «родились больше N лет назад и нет потомков» вызови control_archive_view: action=filter_by_criteria, mode=exclude, criteria={bornMoreThanYearsAgo:N,hasDescendants:false}. Условия действуют одновременно. Это дата рождения относительно сегодняшнего дня, не возраст смерти. Не удаляй записи, не исключай всех старших людей и не считай отсутствие детей на экране отсутствием записанных потомков. Неизвестные и пограничные даты сохраняются. Для подсчёта той же выборки используй query_people с теми же criteria.",
         "По просьбе скрыть конкретного человека с предками или потомками сначала найди его через search_people; при неоднозначности предложи выбор. Затем control_archive_view/action=exclude_branch, personId найденной карточки, direction=ancestors/descendants/self. Код обойдёт записанные связи и временно скроет эту ветвь; это не удаление. Не заменяй точечную ветвь фильтром по фамилии: filter_surname только ПОКАЗЫВАЕТ фамильную группу и не предназначен для исключения. Для просьбы оптимизировать расположение, распутать или красиво переставить карточки для печати вызови control_archive_view/action=optimize_layout, без координат и без изменения записей. Браузер сравнит варианты и сохранит улучшение без ухудшения основных связей. Это запуск расчёта, а не обещание отсутствия всех пересечений. Не имитируй вызовы и не говори, что применил изменение, без результата инструмента.",
+        "Если просят разместить карточки плотнее, компактнее или убрать пустоты между семьями, вызывай control_archive_view/action=optimize_layout, goal=compact. Код уменьшит горизонтальные промежутки в текущем виде, сохранив размер портретов, шрифта и уровни поколений. Не подменяй уплотнение зумом, скрытием людей или фильтром. Для обычного распутывания goal=routing. Результат может оказаться без изменений: это честный безопасный отказ, не повод утверждать, что всё уже уплотнено.",
         "Не превращай предположение в факт. Явно разделяй подтверждённые сведения, вычисляемые противоречия и гипотезы для дальнейшего поиска.",
         "Общая фамилия, возраст или упоминание в предыдущем ответе не доказывают родство. Не добавляй прежнего собеседника как возможного родителя или родственника нового человека без записанных связей и расчёта инструментом. При пустых parents отвечай, что родители не указаны; не предлагай других однофамильцев без запроса пользователя.",
         "Если для ответа нужны данные архива, вызывай инструменты вместо догадок.",
@@ -509,7 +511,7 @@ export function createResearchRunner({
     let viewControlRequested =
         explicitViewControlRequest(message, view) ||
         hideReviewPeopleRequest(message),
-      exclusionRequested = view === "tree" && /(?:скрой|скрыть|убери|убрать|исключи|исключить)/iu.test(message),
+      exclusionRequested = view === "tree" && !treeCompactRequest(message, view) && /(?:скрой|скрыть|убери|убрать|исключи|исключить)/iu.test(message),
       layoutOptimizationRequested = treeLayoutRequest(message, view),
       reviewHideRequested = hideReviewPeopleRequest(message),
       filterSurnameRequested =
@@ -788,7 +790,7 @@ export function createResearchRunner({
       }
       message = researchFollowupMessage(message, updates);
       viewControlRequested = explicitViewControlRequest(message, view) || hideReviewPeopleRequest(message);
-      exclusionRequested = view === "tree" && /(?:скрой|скрыть|убери|убрать|исключи|исключить)/iu.test(message);
+      exclusionRequested = view === "tree" && !treeCompactRequest(message, view) && /(?:скрой|скрыть|убери|убрать|исключи|исключить)/iu.test(message);
       layoutOptimizationRequested = treeLayoutRequest(message, view);
       reviewHideRequested = hideReviewPeopleRequest(message);
       filterSurnameRequested = viewControlRequested && !/(?:убер|убра|скро|скры|исключ)/iu.test(message) && /(?:только|остав)/iu.test(message);
@@ -1176,6 +1178,7 @@ export function createResearchRunner({
             viewActionRetryUsed = true;
             pendingInput.push({ type: "message", role: "user", content: exclusionRequested
               ? "Команда скрытия ещё не выполнена. Найди именно запрошенного человека; при неоднозначности предложи выбор. Для точечного скрытия используй control_archive_view/exclude_branch, а не фамильный фильтр. Без успешного инструмента не утверждай, что изменил вид."
+              : treeCompactRequest(message, view) ? "Уплотнение ещё не запрошено. Вызови control_archive_view/action=optimize_layout, goal=compact; не подменяй уплотнение изменением масштаба или скрытием людей."
               : "Оптимизация ещё не запрошена. Вызови control_archive_view/optimize_layout; не выдумывай готовый результат расчёта." });
             continue;
           }
@@ -1608,6 +1611,8 @@ export function createResearchRunner({
                 "Пользователь явно не просил менять текущий экран",
               );
             const raw = toolArgs as Record<string, unknown>;
+            if (treeCompactRequest(message, view) && raw.action !== "optimize_layout")
+              throw new Error("Для уплотнения текущего вида используйте optimize_layout/goal=compact. Не меняйте масштаб, набор людей или открытые карточки вместо раскладки.");
             if (exclusionRequested && (["filter_surname", "filter_people"].includes(String(raw.action)) ||
                 (raw.action === "filter_by_criteria" && raw.mode !== "exclude")))
               throw new Error("Для скрытия используйте exclude_branch или filter_by_criteria/mode=exclude. Не заменяйте текущий вид включающим фильтром.");
@@ -1616,8 +1621,15 @@ export function createResearchRunner({
               if (raw.action === "optimize_layout") {
                 if (!treeLayoutRequest(message, view))
                   throw new Error("Нужна явная просьба оптимизировать расположение древа");
-                uiActions.push({ type: "optimize_tree_layout" });
-                answer = "Запускаю оптимизацию расположения текущего древа. Состав людей, связи и свёрнутые ветви сохранятся; результат расчёта появится на полотне.";
+                if (raw.goal !== undefined && raw.goal !== "compact" && raw.goal !== "routing")
+                  throw new Error("Неизвестная цель оптимизации расположения");
+                const compact = treeCompactRequest(message, view);
+                if (raw.goal === "compact" && !compact)
+                  throw new Error("Нужна явная просьба разместить карточки плотнее");
+                uiActions.push(compact ? { type: "optimize_tree_layout", goal: "compact" } : { type: "optimize_tree_layout" });
+                answer = compact
+                  ? "Запускаю уплотнение текущего древа: уменьшу горизонтальные промежутки между семьями там, где это безопасно для основных связей. Результат расчёта появится на полотне."
+                  : "Запускаю оптимизацию расположения текущего древа. Состав людей, связи и свёрнутые ветви сохранятся; результат расчёта появится на полотне.";
               } else {
                 if (view !== "tree" || !/(?:скрой|скрыть|убери|убрать|исключи|исключить)/iu.test(message))
                   throw new Error("Нужна явная просьба скрыть ветвь в текущем древе");
