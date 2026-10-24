@@ -27,6 +27,11 @@ export function visiblePersonIds(family: Family, user: ArchiveUser) {
 export function projectFamilyForUser(family: Family, user: ArchiveUser | null) {
   if (!isScopedUser(user)) return family;
   const visible = visiblePersonIds(family, user);
+  return projectFamilyToVisibleIds(family, visible, user.id);
+}
+
+/** Projection only: callers must supply a server-authorized set from the same revision. */
+export function projectFamilyToVisibleIds(family: Family, visible: ReadonlySet<string>, userId: string) {
   return {
     ...family,
     people: family.people
@@ -44,7 +49,7 @@ export function projectFamilyForUser(family: Family, user: ArchiveUser | null) {
     photos: family.photos
       ?.filter(
         (photo) =>
-          photo.createdBy === user.id ||
+          photo.createdBy === userId ||
           photo.tags.some((tag) => visible.has(tag.personId)),
       )
       .map((photo) => ({

@@ -7,6 +7,7 @@ import "./postgres-media-inventory.ts";
 import "./postgres-family-unions.ts";
 import "./postgres-family-link-confidence.ts";
 import "./postgres-archive-query-delivery.ts";
+import "./postgres-scoped-overview.ts";
 import "./postgres-award-citation-prep.ts";
 import "./postgres-document-citation-index.ts";
 
