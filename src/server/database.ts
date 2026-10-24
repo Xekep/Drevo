@@ -9,6 +9,8 @@ import {
   releaseAttachedMediaGrants,
 } from "./postgres-media-quota.ts";
 import type { ArchiveUser } from "../domain/access.ts";
+import { archiveOverview } from "../domain/archive-projection.ts";
+import { projectFamilyToVisibleIds } from "../domain/tree-access.ts";
 import { DatabaseSync } from "node:sqlite";
 import {
   storeDatabase,
@@ -433,6 +435,51 @@ export async function openArchive(
         )?.count || 0,
       );
     };
+  // Reuse the existing process-wide byte budget, never cache authentication or
+  // HTTP responses. Reader keys include every input used by visiblePersonIds.
+  const scopedOverviews = new Map<string, ReturnType<typeof archiveSnapshotReader<Awaited<ReturnType<typeof readArchiveOverview>>>>>();
+  const loadScopedOverview = async (actor: ArchiveUser) => {
+    const filtered = async (visible: ReadonlySet<string>) => {
+      const data = await readArchiveOverview(db, true, visible);
+      return { ...data, family: archiveOverview(data.family), totals: {
+        people: data.family.people.length, photos: await photoCount({ visible, userId: actor.id }),
+      } };
+    };
+    const prepared = await db.transaction(async () => {
+      const visible = await visibilityIds(actor), meta = await readArchiveMeta(db);
+      // A wide cache miss should share the existing base overview rather than
+      // reread nearly every JSON row separately for each newly arriving member.
+      if (visible.size * 2 > meta.people) return { visible, revision: meta.revision };
+      return { data: await filtered(visible) };
+    }, true);
+    if (prepared.data) return prepared.data;
+    const base = await overview();
+    return db.transaction(async () => {
+      const meta = await readArchiveMeta(db);
+      if (meta.revision !== prepared.revision || meta.revision !== base.revision)
+        return filtered(await visibilityIds(actor));
+      const family = archiveOverview(projectFamilyToVisibleIds(base.family, prepared.visible!, actor.id));
+      return { ...base, family, totals: { people: family.people.length,
+        photos: await photoCount({ visible: prepared.visible!, userId: actor.id }) } };
+    }, true);
+  };
+  const scopedOverview = (user: ArchiveUser) => {
+    const scope = JSON.stringify([user.id, user.personId, user.treeAccess, user.role,
+      user.approved, user.archiveOwner, user.globalRole]);
+    let reader = scopedOverviews.get(scope);
+    if (reader) scopedOverviews.delete(scope);
+    else {
+      const actor = { ...user };
+      reader = archiveSnapshotReader(db, () => loadScopedOverview(actor), cacheBytes, derivedBudget);
+      if (scopedOverviews.size >= 16) {
+        const oldest = scopedOverviews.keys().next().value!;
+        scopedOverviews.get(oldest)!.close();
+        scopedOverviews.delete(oldest);
+      }
+    }
+    scopedOverviews.set(scope, reader);
+    return reader();
+  };
   const personPhotoCounts = async (ids: ReadonlySet<string>, scope?: PhotoReadScope) => {
     const where = photoReadWhere(scope);
     const rows = await db.prepare(
@@ -790,6 +837,7 @@ export async function openArchive(
     read: () => read(),
     meta,
     overview,
+    scopedOverview,
     peoplePage,
     photoPage,
     photoCount,
@@ -837,7 +885,7 @@ export async function openArchive(
     exportWarnings: (ids: ReadonlySet<string>) => readExportWarnings(db, ids),
     visibleIds: visibilityIds,
     cacheBudget: derivedBudget,
-    close: async () => { read.close(); portraitOverview.close(); anonymousOverview.close(); visibilityIds.close(); galleryKeys.clear(); galleryPending.clear(); derivedBudget.close(); await db.close(); },
+    close: async () => { read.close(); portraitOverview.close(); anonymousOverview.close(); visibilityIds.close(); for (const reader of scopedOverviews.values()) reader.close(); scopedOverviews.clear(); galleryKeys.clear(); galleryPending.clear(); derivedBudget.close(); await db.close(); },
     db,
   };
 }
@@ -895,8 +943,10 @@ async function readExportWarnings(db: StoreDatabase, ids: ReadonlySet<string>) {
   return { parentEvidence: Number(result?.parent_evidence) === 1, catalogLinks: Number(result?.catalog_links) === 1 };
 }
 
-async function readArchiveOverview(db: StoreDatabase, includePortraits = true) {
+export async function readArchiveOverview(db: StoreDatabase, includePortraits = true, visible?: ReadonlySet<string>) {
   const meta = await readArchiveMeta(db);
+  const ids = visible ? JSON.stringify([...visible]) : undefined;
+  const sqliteIds = "SELECT value FROM json_each(?)", postgresIds = "SELECT value FROM jsonb_array_elements_text(?::jsonb)";
   const remove = [
     "$.sources",
     "$.biography",
@@ -910,10 +960,10 @@ async function readArchiveOverview(db: StoreDatabase, includePortraits = true) {
     await db
       .prepare(
         `SELECT json_set(json_remove(data, ${placeholders}), '$.sources', json('[]')) AS data
-       FROM people ORDER BY rowid`,
-        `SELECT (data - ARRAY[${remove.map(() => "substring(?::text FROM 3)").join(",")}]::text[]) || '{"sources":[]}'::jsonb AS data FROM people ORDER BY ordinal`,
+       FROM people${visible ? ` WHERE id IN (${sqliteIds})` : ""} ORDER BY rowid`,
+        `SELECT (data - ARRAY[${remove.map(() => "substring(?::text FROM 3)").join(",")}]::text[]) || '{"sources":[]}'::jsonb AS data FROM people${visible ? ` WHERE id IN (${postgresIds})` : ""} ORDER BY ordinal`,
       )
-      .all(...remove)
+      .all(...remove, ...(ids === undefined ? [] : [ids]))
   ).map(
     (row) =>
       ({
@@ -925,19 +975,19 @@ async function readArchiveOverview(db: StoreDatabase, includePortraits = true) {
   const links = hydrateRelations(
     await db
       .prepare(
-        "SELECT * FROM relations ORDER BY rowid",
-        "SELECT * FROM relations ORDER BY ordinal",
+        `SELECT * FROM relations${visible ? ` WHERE source IN (${sqliteIds}) AND target IN (${sqliteIds})` : ""} ORDER BY rowid`,
+        `SELECT * FROM relations${visible ? ` WHERE source IN (${postgresIds}) AND target IN (${postgresIds})` : ""} ORDER BY ordinal`,
       )
-      .all(),
+      .all(...(ids === undefined ? [] : [ids, ids])),
     people,
   );
   const unions = (
     await db
       .prepare(
-        "SELECT data FROM family_unions ORDER BY rowid",
-        "SELECT data FROM family_unions ORDER BY ordinal",
+        `SELECT data FROM family_unions${visible ? ` WHERE participant_a IN (${sqliteIds}) AND participant_b IN (${sqliteIds})` : ""} ORDER BY rowid`,
+        `SELECT data FROM family_unions${visible ? ` WHERE participant_a IN (${postgresIds}) AND participant_b IN (${postgresIds})` : ""} ORDER BY ordinal`,
       )
-      .all()
+      .all(...(ids === undefined ? [] : [ids, ids]))
   ).map((row) => JSON.parse(String(row.data)));
   const family: Family = {
     title: meta.title,

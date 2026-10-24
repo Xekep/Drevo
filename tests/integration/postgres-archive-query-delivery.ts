@@ -11,6 +11,8 @@ import {
 import { readPostgresArchive } from "../../src/server/postgres-archive-read.ts";
 import { archiveQueryHttp } from "../../src/server/archive-query-http.ts";
 import { archiveOverview } from "../../src/domain/archive-projection.ts";
+import { projectFamilyForUser } from "../../src/domain/tree-access.ts";
+import type { ArchiveUser } from "../../src/domain/access.ts";
 import { galleryProjection } from "../../src/domain/archive-view-projection.ts";
 import type { openArchive } from "../../src/server/database.ts";
 import type { createAuth } from "../../src/server/auth.ts";
@@ -140,6 +142,12 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
           photos: snapshot.family.photos?.length || 0,
         },
       };
+    },
+    scopedOverview: async (user: ArchiveUser) => {
+      const snapshot = await archive.read();
+      const family = projectFamilyForUser(snapshot.family, user);
+      return { family: archiveOverview(family), revision: snapshot.revision,
+        totals: { people: family.people.length, photos: family.photos?.length || 0 } };
     },
     meta: async () => {
       const snapshot = await readPostgresArchive(first, "tree-a");
@@ -386,6 +394,13 @@ test("prepared archive JSON is withheld after PostgreSQL access or graph changes
     }
     return await pending;
   }
+
+  const revokedOverview = await race("/api/family?projection=overview", () => second.query(
+    "UPDATE archive_memberships SET approved=false WHERE archive_id='tree-a' AND user_id='relative'",
+  ));
+  assert.equal(revokedOverview.status, 409);
+  assert.doesNotMatch(await revokedOverview.text(), /co-parent|partner|father/);
+  await second.query("UPDATE archive_memberships SET approved=true WHERE archive_id='tree-a' AND user_id='relative'");
 
   const removedCoParent = await race("/api/export.json", async () => {
     await second.query(

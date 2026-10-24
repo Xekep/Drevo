@@ -10,7 +10,6 @@ import { peopleSearchStore } from "./people-search.ts";
 import { scopedArchiveReader } from "./scoped-archive-reader.ts";
 import { analysisExport } from "../domain/analysis-export.ts";
 import {
-  archiveOverview,
   personDetails,
   archivePageSize,
 } from "../domain/archive-projection.ts";
@@ -661,20 +660,7 @@ export function archiveQueryHttp({
         let data: Awaited<ReturnType<typeof archive.overview>>;
         if (readTree) {
           if (isScopedUser(visitor)) {
-            const overview = await archive.overview();
-            const scoped = projectFamilyForUser(overview.family, visitor);
-            const ids = new Set(scoped.people.map((person) => person.id));
-            data = {
-              family: archiveOverview(scoped),
-              revision: overview.revision,
-              totals: {
-                people: scoped.people.length,
-                photos: await archive.photoCount({
-                  visible: ids,
-                  userId: visitor.id,
-                }),
-              },
-            };
+            data = await archive.scopedOverview(visitor);
           } else data = await archive.overview(readTree);
         } else {
           const meta = await archive.meta();
