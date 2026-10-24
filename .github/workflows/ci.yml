@@ -122,6 +122,9 @@ jobs:
           path: .
       - run: npx playwright install --with-deps chromium
       - run: npm run prepare:models
+      - name: Repeat native tab gestures in full Chromium
+        if: matrix.shard == 1
+        run: npm run test:e2e -- tests/e2e/native-tabs.spec.ts --repeat-each=25 --workers=4
       # Each VM owns its e2e-server and SQLite. No shard shares mutable fixtures.
       - run: npm run test:e2e -- --shard=${{ matrix.shard }}/4
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
