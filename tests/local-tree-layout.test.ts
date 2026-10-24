@@ -44,8 +44,8 @@ test("dates reuse generation geometry, but unrelated history, new unions and cha
   assert.equal(localTreeLayout(dated, input, { ...before, mode: "timeline" }, size), undefined);
   assert.equal(localTreeLayout(dated, input, before, { ...size, height: 84 }), undefined);
   assert.equal(localTreeLayout({ ...input, people: people.map(p => p.id === "c" ? { ...p, parents: ["a"] } : p) }, input, before, size), undefined);
-  const marriage = { ...input, people: [...people.map(p => p.id === "c" ? { ...p, spouses: ["d"] } : p), person("d", [], ["c"])] };
-  assert.equal(localTreeLayout(marriage, input, before, size), undefined);
+  const remarriage = { ...input, people: [...people.map(p => p.id === "a" ? { ...p, spouses: ["b", "d"] } : p), person("d", [], ["a"])] };
+  assert.equal(localTreeLayout(remarriage, input, before, size), undefined);
 });
 
 test("a new leaf cannot cover an old route or cross an unrelated family", async () => {
@@ -64,19 +64,16 @@ test("removing a final child of unmarried parents must rebuild the changed union
   assert.equal(localTreeLayout({ people: source.people.slice(0, 2), links: [] }, source, before, size), undefined);
 });
 
-test("a married couple can gain its first child on a new forward generation, but reverse requires full layout", async () => {
+test("a married couple gains its first child without moving old cards in either direction", async () => {
   const source = { people: people.slice(0, 2), links: [] };
   for (const reverse of [false, true]) {
     const elk = new ELK();
     const before = await unionGeometry(source.people, g => elk.layout(g), reverse, [], size);
     const result = localTreeLayout(input, source, before, size);
-    if (reverse) assert.equal(result, undefined);
-    else {
-      assert.equal(result?.kind, "local");
-      assert.deepEqual(result!.geometry.positions.slice(0, 2), before.positions);
-      assert.deepEqual(result!.geometry.generationBands!.map(b => b.level), [0, 1]);
-      assert.equal(createGeometryContactScorer(size.width, size.height).cardContacts(result!.geometry), 0);
-    }
+    assert.equal(result?.kind, "local");
+    assert.deepEqual(result!.geometry.positions.slice(0, 2), before.positions);
+    assert.deepEqual(result!.geometry.generationBands!.map(b => b.level), [0, 1]);
+    assert.equal(createGeometryContactScorer(size.width, size.height).cardContacts(result!.geometry), 0);
   }
 });
 
@@ -102,8 +99,8 @@ test("repeated leaf additions/removals retain identity, routes and generation co
 
 test("budgets, malformed history and structural batches always request a full solve", async () => {
   const before = await layout();
-  const twice = { ...input, people: [...people, person("d", ["a", "b"]), person("e", ["a", "b"])] };
-  assert.equal(localTreeLayout(twice, input, before, size), undefined);
+  const structuralBatch = { ...input, people: [...people, person("d", ["a", "b"]), person("e", ["d"])] };
+  assert.equal(localTreeLayout(structuralBatch, input, before, size), undefined);
   assert.equal(localTreeLayout(input, input, { ...before, positions: [...before.positions, before.positions[0]] }, size), undefined);
   assert.equal(localTreeLayout(input, input, { ...before, positions: before.positions.map(([id, p]) => [id, { ...p, x: NaN }]) }, size), undefined);
   const tooMany = { people: Array.from({ length: MAX_LOCAL_LAYOUT_PEOPLE + 1 }, (_, i) => person(`p-${i}`)), links: [] };

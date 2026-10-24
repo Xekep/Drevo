@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { randomFamily } from "../layout-fixtures";
 
-test("large live overview changes reuse history without resetting existing card positions", async ({ page }) => {
+for (const reverse of [false, true]) test(`large live overview grows a family without resetting existing card positions (reverse=${reverse})`, async ({ page }) => {
   let phase = 0, invalidated = 0;
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -19,6 +19,8 @@ test("large live overview changes reuse history without resetting existing card 
     data.family.people = data.family.people.filter((p: { id: string }) =>
       ["e2e-child", "e2e-spouse", "e2e-grandchild", "e2e-memorial-person"].includes(p.id));
     data.family.links = [];
+    data.reverseTimeline = reverse;
+    data.treePreferences = { ...data.treePreferences, reverseTimeline: reverse };
     const sample = data.family.people.find((p: { id: string }) => p.id === "e2e-child");
     sample.parents = [];
     data.family.people.find((p: { id: string }) => p.id === "e2e-grandchild").parents = ["e2e-child", "e2e-spouse"];
@@ -28,7 +30,15 @@ test("large live overview changes reuse history without resetting existing card 
     if (phase >= 2) data.family.people.push({ ...sample, id: "new-leaf", name: "Новый потомок", birth: "1995",
       parents: ["e2e-child", "e2e-spouse"], spouses: [], awards: [] });
     data.user.personId = null;
-    if (phase >= 3) data.user.id = "different-account";
+    if (phase >= 3) {
+      const anchor = data.family.people.find((p: { id: string }) => p.id === "e2e-grandchild");
+      anchor.spouses = ["new-partner"];
+      data.family.people.push({ ...sample, id: "new-partner", name: "Новый супруг", birth: "1990",
+        parents: [], spouses: [anchor.id], awards: [] },
+      ...[1, 2].map(i => ({ ...sample, id: `new-child-${i}`, name: `Ребёнок ${i}`, birth: "2020",
+        parents: [anchor.id, "new-partner"], spouses: [], awards: [] })));
+    }
+    if (phase >= 4) data.user.id = "different-account";
     await route.fulfill({ response, json: data });
   });
   await page.addInitScript(() => {
@@ -65,6 +75,11 @@ test("large live overview changes reuse history without resetting existing card 
   expect(local.positions.some(([id]) => id === "new-leaf")).toBe(true);
   phase = 3;
   await page.evaluate(() => { history.pushState(null, "", "/people/e2e-spouse"); dispatchEvent(new PopStateEvent("popstate")); });
+  await expect.poll(async () => (await results()).at(-1)!.positions.length).toBe(local.positions.length + 3);
+  await expect(canvas).toHaveAttribute("data-layout-update", "local");
+  expect((await results()).at(-1)!.positions.filter(([id]) => !["new-partner", "new-child-1", "new-child-2"].includes(id))).toEqual(local.positions);
+  phase = 4;
+  await page.evaluate(() => { history.pushState(null, "", "/people/e2e-child"); dispatchEvent(new PopStateEvent("popstate")); });
   await expect(canvas).toHaveAttribute("data-layout-update", "full");
   expect((await results()).at(-1)!.kind).toBe("full");
   expect(errors).toEqual([]);

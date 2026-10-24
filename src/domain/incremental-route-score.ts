@@ -21,6 +21,7 @@ type Contact = {
   crossingCount: number;
   first: number;
   second: number;
+  order: number;
 };
 type Index = {
   edges: Map<string, Edge>;
@@ -29,6 +30,9 @@ type Index = {
   lines: Spatial<Segment>;
   segments: Segment[];
   contacts: Map<string, Contact>;
+  groupKeys: Map<number, string[]>;
+  groupCounts: Map<number, number>;
+  nextOrder: number;
   pairs: number;
   bends: number;
   measures: Map<string, { sizes: number[]; bends: number }>;
@@ -122,9 +126,14 @@ export function incrementalRouteScorer() {
     // rounding and can otherwise break ties between geometry candidates.
     for (const edge of edges)
       for (const size of measures.get(edge.id)!.sizes) length += size;
-    const contacts = reuse
-      ? new Map(previous!.contacts)
-      : new Map<string, Contact>();
+    // Local candidates overlay only touched contact points. Cloning and
+    // recounting the full contact map made a tiny move O(all intersections).
+    const contacts = reuse ? previous!.contacts : new Map<string, Contact>();
+    const edits = new Map<string, Contact | null>();
+    const groupCounts = reuse ? new Map(previous!.groupCounts) : new Map<number, number>();
+    let distinct = reuse ? contacts.size : 0;
+    let crossings = reuse ? previous!.score.quality.crossings : 0;
+    let nextOrder = reuse ? previous!.nextOrder : 0;
     let pairs = reuse ? previous!.pairs : 0;
     const pair = (segment: Segment, other: Segment, delta: 1 | -1) => {
       if (segment.group === other.group) return;
@@ -133,18 +142,30 @@ export function incrementalRouteScorer() {
       pairs += delta;
       const first = Math.min(segment.group, other.group),
         second = Math.max(segment.group, other.group);
-      const key = `${first}:${second}:${contact}`,
-        old = contacts.get(key);
+      const key = `${first}:${second}:${contact}`;
+      const staged = reuse ? edits.get(key) : undefined;
+      const old = staged === undefined ? contacts.get(key) : staged || undefined;
       const count = (old?.count || 0) + delta;
+      const crossingCount = (old?.crossingCount || 0) +
+        delta * Number(segmentsCross([segment.a, segment.b], [other.a, other.b]));
+      crossings += Number(count > 0 && crossingCount > 0) - Number((old?.crossingCount || 0) > 0);
+      if (!old || !count) {
+        const change = count ? 1 : -1;
+        distinct += change;
+        for (const group of [first, second])
+          groupCounts.set(group, (groupCounts.get(group) || 0) + change);
+      }
       if (!count) {
-        contacts.delete(key);
+        if (reuse) edits.set(key, null);
+        else contacts.delete(key);
         return;
       }
-      const crossingCount =
-        (old?.crossingCount || 0) +
-        delta *
-          Number(segmentsCross([segment.a, segment.b], [other.a, other.b]));
-      contacts.set(key, { first, second, count, crossingCount });
+      const value = old && (!reuse || staged) ? old :
+        { first, second, count, crossingCount, order: old?.order ?? nextOrder++ };
+      value.count = count;
+      value.crossingCount = crossingCount;
+      if (reuse) edits.set(key, value);
+      else contacts.set(key, value);
     };
     const apply = (
       source: { lines: Spatial<Segment>; segments: Segment[] },
@@ -170,21 +191,48 @@ export function incrementalRouteScorer() {
       for (const segment of segments)
         for (const other of previous!.lines.query(segment))
           if (!changed.has(other.owner)) pair(segment, other, 1);
-    let crossings = 0;
-    const groupContacts = new Map<string, number>();
-    for (const contact of contacts.values()) {
-      if (contact.crossingCount > 0) crossings++;
-      for (const group of [contact.first, contact.second]) {
-        const name = names[group];
-        groupContacts.set(name, (groupContacts.get(name) || 0) + 1);
+    // Preserve the old Map iteration order too: local candidates may use it
+    // to break ties. A deleted and re-created contact moves to the end.
+    const firstOrder = new Map<number, number>();
+    const groupKeys = new Map<number, string[]>();
+    const firstContact = (contact: Contact) => {
+      for (const group of [contact.first, contact.second])
+        if (contact.order < (firstOrder.get(group) ?? Infinity))
+          firstOrder.set(group, contact.order);
+    };
+    if (reuse) {
+      for (const [group, keys] of previous!.groupKeys) {
+        if (!groupCounts.get(group)) continue;
+        for (const key of keys) {
+          const original = contacts.get(key)!;
+          const staged = edits.get(key);
+          const current = staged === undefined ? original : staged;
+          if (current && current.order === original.order) {
+            firstOrder.set(group, current.order);
+            break;
+          }
+        }
+      }
+      for (const contact of edits.values()) if (contact) firstContact(contact);
+    } else {
+      for (const [key, contact] of contacts) {
+        firstContact(contact);
+        for (const group of [contact.first, contact.second]) {
+          const keys = groupKeys.get(group) || [];
+          keys.push(key);
+          groupKeys.set(group, keys);
+        }
       }
     }
+    const groupContacts = new Map([...firstOrder]
+      .sort(([a, x], [b, y]) => x - y || a - b)
+      .map(([group]) => [names[group], groupCounts.get(group)!]));
     const score = {
-      contacts: { distinct: contacts.size, segments: pairs },
+      contacts: { distinct, segments: pairs },
       quality: {
         length,
         bends,
-        contacts: contacts.size,
+        contacts: distinct,
         crossings,
         groups: groupContacts,
       },
@@ -199,6 +247,9 @@ export function incrementalRouteScorer() {
         lines,
         segments,
         contacts,
+        groupKeys,
+        groupCounts,
+        nextOrder,
         pairs,
         bends,
         measures,
