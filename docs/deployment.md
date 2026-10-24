@@ -100,6 +100,12 @@ YANDEX_AI_MODEL=yandexgpt/rc
 
 ## GitHub Actions
 
+E2E запускаются в полном Chromium с `channel: "chromium"`, включая headless-режим.
+Chromium Headless Shell не используется из-за нестабильной инициализации вкладок
+при middle/modifier-click ([upstream #42142](https://github.com/microsoft/playwright/issues/42142));
+контрольный `native-tabs.spec.ts` проверяет те же жесты на HTML без JavaScript приложения.
+Установка `npx playwright install --with-deps chromium` уже включает полный браузер.
+
 `.github/workflows/ci.yml` выполняет проверки для pull request в `main`: `npm ci`, аудит production-зависимостей, TypeScript, ESLint, сборку, все тестовые файлы, проверку собранного Worker и Chromium smoke-тест production bundle на desktop/mobile viewport. Это позволяет увидеть красный набор проверок до merge, а не уже во время выкладки.
 
 Файл `.github/workflows/deploy.yml` запускается при push в `main` и вручную через **Actions → Deploy Drevo → Run workflow**. Ручная выкладка допускается только с `main`; job привязан к GitHub Environment `production`. Он повторяет проверки перед выкладкой. В отдельный каталог релиза устанавливаются серверные зависимости из `ops/runtime/package-lock.json`: Sharp с готовыми библиотеками для Linux. Этот небольшой `node_modules` входит в релиз; зависимости разработки, локальная база, фотографии и секреты не отправляются. При обновлении серверных зависимостей синхронно обновляйте основной и серверный lock-файлы; изменение только корневого lock не меняет production-релиз. CI и prepare отдельно проверяют аудит `ops/runtime`. При падении браузерных тестов prepare сохраняет `test-results` с трассами в артефакт `deploy-e2e-failures` на три дня.
