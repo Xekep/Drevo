@@ -5,6 +5,7 @@ import {
   useState,
   type ComponentProps,
 } from "react";
+import { flushSync } from "react-dom";
 import { loadLazyModule } from "../lazy-section-recovery";
 import type Editor from "./comment-editor";
 import { GitBranch } from "lucide-react";
@@ -41,28 +42,32 @@ export default function LazyCommentEditor(
         "comment-editor",
       );
       if (mounted.current) {
-        const node = input.current;
-        setEditor({
-          component: module.default,
-          focus: !!node && node === document.activeElement,
-          ...(insertedSelection.current
-            ? { selection: insertedSelection.current }
-            : node
-              ? {
-                  selection: {
-                    anchor:
-                      node.selectionDirection === "backward"
-                        ? node.selectionEnd
-                        : node.selectionStart,
-                    head:
-                      node.selectionDirection === "backward"
-                        ? node.selectionStart
-                        : node.selectionEnd,
-                  },
-                }
-              : {}),
+        // Capture the caret and transfer focus in one commit. A deferred React
+        // commit can otherwise replace the textarea after the next input event.
+        flushSync(() => {
+          const node = input.current;
+          setEditor({
+            component: module.default,
+            focus: !!node && node === document.activeElement,
+            ...(insertedSelection.current
+              ? { selection: insertedSelection.current }
+              : node
+                ? {
+                    selection: {
+                      anchor:
+                        node.selectionDirection === "backward"
+                          ? node.selectionEnd
+                          : node.selectionStart,
+                      head:
+                        node.selectionDirection === "backward"
+                          ? node.selectionStart
+                          : node.selectionEnd,
+                    },
+                  }
+                : {}),
+          });
+          setError("");
         });
-        setError("");
       }
     } catch {
       if (mounted.current)
@@ -120,7 +125,10 @@ export default function LazyCommentEditor(
         disabled={props.disabled}
         placeholder="Напишите вопрос или воспоминание…"
         onFocus={() => void load()}
-        onChange={(event) => { insertedSelection.current = null; props.onChange(event.target.value); }}
+        onChange={(event) => {
+          insertedSelection.current = null;
+          props.onChange(event.target.value);
+        }}
         onKeyDown={(event) => {
           if (
             (event.ctrlKey || event.metaKey) &&
