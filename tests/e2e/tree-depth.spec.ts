@@ -167,6 +167,117 @@ const workerRequests = (page: Page) =>
         .depthLayoutRequests,
   );
 
+async function spinGesture(page: Page, mobile: boolean, direction = 1, hold = 0, distance?: number) {
+  const box = (await page.locator(".tree-spatial-canvas").boundingBox())!;
+  const travel = distance ?? Math.min(240, box.width * .6);
+  const start = { x: box.x + box.width * (direction > 0 ? .2 : .8), y: box.y + box.height * .16 };
+  const session = await page.context().newCDPSession(page);
+  const timestamp = Date.now() / 1000;
+  // Native input timestamps describe the physical stroke independently of
+  // tracing/CI transport latency; camera motion itself is never mocked.
+  if (mobile) {
+    await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [start], timestamp });
+    for (let i = 1; i <= 4; i++) {
+      await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: start.x + direction * travel * i / 4, y: start.y }], timestamp: timestamp + i * .03 });
+    }
+    if (hold) await page.waitForTimeout(hold);
+    await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [], timestamp: timestamp + .13 + hold / 1000 });
+  } else {
+    await session.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...start, timestamp });
+    await session.send("Input.dispatchMouseEvent", { type: "mousePressed", ...start, button: "left", buttons: 1, clickCount: 1, timestamp });
+    for (let i = 1; i <= 4; i++) {
+      await session.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: start.x + direction * travel * i / 4, y: start.y,
+        button: "left", buttons: 1, timestamp: timestamp + i * .03 });
+    }
+    if (hold) await page.waitForTimeout(hold);
+    await session.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: start.x + direction * travel, y: start.y,
+      button: "left", buttons: 0, clickCount: 1, timestamp: timestamp + .13 + hold / 1000 });
+  }
+  await session.detach();
+}
+const orbitSample = (page: Page) => world(page).evaluate(node => {
+  const [x, y, z, tx, ty, tz] = node.getAttribute("data-depth-camera")!.split(",").map(Number);
+  return { yaw: Math.atan2(x - tx, z - tz), radius: Math.hypot(x - tx, y - ty, z - tz), time: performance.now() };
+});
+
+test("a strong 3D stroke commands a slow constant orbit, stopped by any canvas or toolbar press", async ({ page }, info) => {
+  await setup(page);
+  await settle(page);
+  const requests = await workerRequests(page);
+  for (const direction of [1, -1]) {
+    await spinGesture(page, info.project.name === "mobile", direction);
+    await expect(world(page)).toHaveAttribute("data-depth-spinning", "true");
+    await expect(world(page)).toHaveAttribute("data-depth-spin-direction", String(direction));
+    const frames = Number(await world(page).getAttribute("data-depth-frames"));
+    await expect.poll(async () => Number(await world(page).getAttribute("data-depth-frames"))).toBeGreaterThan(frames);
+    const a = await orbitSample(page);
+    await page.waitForTimeout(650);
+    const b = await orbitSample(page);
+    await page.waitForTimeout(650);
+    const c = await orbitSample(page);
+    const speed = (from: typeof a, to: typeof a) => Math.atan2(Math.sin(to.yaw - from.yaw), Math.cos(to.yaw - from.yaw)) / ((to.time - from.time) / 1000);
+    const first = speed(a, b), second = speed(b, c);
+    expect(Math.sign(first)).toBe(-direction);
+    expect(Math.abs(first)).toBeGreaterThan(.015);
+    expect(Math.abs(first)).toBeLessThan(.065);
+    expect(Math.abs(second / first)).toBeGreaterThan(.6);
+    expect(Math.abs(second / first)).toBeLessThan(1.4);
+    expect(Math.abs(c.radius - a.radius)).toBeLessThan(.1);
+    expect(await workerRequests(page)).toBe(requests);
+    if (direction === 1) {
+      await page.locator(".tree-spatial-person-name").click();
+      await expect(page.getByRole("searchbox", { name: "Поиск в 3D-древе" })).toBeVisible();
+      await page.keyboard.press("Escape");
+    } else await page.locator(".tree-spatial-canvas").click({ position: { x: 6, y: 6 } });
+    await expect(world(page)).toHaveAttribute("data-depth-spinning", "false");
+    await page.waitForTimeout(120);
+    const stopped = await world(page).getAttribute("data-depth-camera");
+    await page.waitForTimeout(350);
+    expect(await world(page).getAttribute("data-depth-camera")).toBe(stopped);
+  }
+  await page.screenshot({ path: info.outputPath("3d-spin-stopped.png") });
+});
+
+test("3D spin stays opt-in, respects reduced motion and stops on keyboard or hidden tabs", async ({ page }, info) => {
+  await setup(page);
+  await settle(page);
+  await spinGesture(page, info.project.name === "mobile", 1, 0, 50);
+  await expect(world(page)).toHaveAttribute("data-depth-spinning", "false");
+  await spinGesture(page, info.project.name === "mobile", 1, 250);
+  await expect(world(page)).toHaveAttribute("data-depth-spinning", "false");
+  const canvas = page.locator(".tree-spatial-canvas");
+  await canvas.focus();
+  await page.keyboard.press("Space");
+  await expect(world(page)).toHaveAttribute("data-depth-spinning", "true");
+  await page.keyboard.press("Space");
+  await expect(world(page)).toHaveAttribute("data-depth-spinning", "false");
+  await page.keyboard.press("Space");
+  await page.keyboard.press("Escape");
+  await expect(world(page)).toHaveAttribute("data-depth-spinning", "false");
+  await page.keyboard.press("Space");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(world(page)).toHaveAttribute("data-depth-spinning", "false");
+  await spinGesture(page, info.project.name === "mobile");
+  await expect(world(page)).toHaveAttribute("data-depth-spinning", "false");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await canvas.focus();
+  await page.keyboard.press("Space");
+  await expect(world(page)).toHaveAttribute("data-depth-spinning", "true");
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, value: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(world(page)).toHaveAttribute("data-depth-spinning", "false");
+  const before = await world(page).getAttribute("data-depth-camera");
+  await page.waitForTimeout(250);
+  expect(await world(page).getAttribute("data-depth-camera")).toBe(before);
+  await page.evaluate(() => {
+    delete (document as unknown as { hidden?: boolean }).hidden;
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(world(page)).toHaveAttribute("data-depth-spinning", "false");
+});
+
 test("3D uses a bounded WebGL scene, free camera and native people navigation without new layout", async ({
   page,
 }, info) => {
