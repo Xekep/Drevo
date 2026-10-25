@@ -100,7 +100,6 @@ export class SpatialRenderer {
   private height = 1;
   private projected: ProjectedPerson[] = [];
   private anchor = "";
-  private active: ReadonlySet<string> = new Set();
   private details = new Set<string>();
   private fly: {
     start: number;
@@ -123,6 +122,12 @@ export class SpatialRenderer {
   private spinTimer: ReturnType<typeof setTimeout> | undefined;
   private spinTime = 0;
   private spinDirection: SpinDirection = 1;
+  private spinActive = false;
+  private spinZoom: { from: number; to: number; start: number } | null = null;
+  private touchPointers = new Set<number>();
+  private pinchCandidate: { direction: SpinDirection; time: number; x: number; y: number } | null = null;
+  private pinchZoom = false;
+  private strokeClick: { x: number; y: number; time: number } | null = null;
   private updatingSpin = false;
   private ids: string[];
   constructor(
@@ -146,7 +151,7 @@ export class SpatialRenderer {
     canvas.setAttribute("role", "img");
     canvas.setAttribute(
       "aria-label",
-      "3D-древо. Стрелки — поворот, Shift и стрелки — сдвиг, плюс и минус — масштаб, Home — всё древо. Быстрый горизонтальный жест включает медленное вращение; любой клик останавливает его. Пробел — включить или остановить вращение. Люди доступны в списке рядом.",
+      "3D-древо. Стрелки — поворот, Shift и стрелки — сдвиг, плюс и минус — масштаб, Home — всё древо. Быстрый горизонтальный жест включает медленное вращение. Масштабирование сохраняет вращение; остальные нажатия останавливают его. Пробел — включить или остановить вращение. Люди доступны в списке рядом.",
     );
     host.prepend(canvas);
     this.controls = new OrbitControls(this.camera, canvas);
@@ -308,7 +313,6 @@ export class SpatialRenderer {
     callbacks: Callbacks,
   ) {
     this.people = people;
-    this.active = active;
     this.callbacks = callbacks;
     const lines = this.edges.geometry.getAttribute("color");
     const green = new THREE.Color(this.palette.green),
@@ -439,7 +443,7 @@ export class SpatialRenderer {
     this.invalidate();
   };
   private interrupt = () => {
-    this.stopSpin();
+    this.spinZoom = null;
     this.setHover(null);
     this.fly = null;
     this.host.dataset.depthMoving = "false";
@@ -448,6 +452,8 @@ export class SpatialRenderer {
     if (!this.updatingSpin) this.invalidate();
   };
   private stopSpin = () => {
+    this.spinActive = false;
+    this.spinZoom = null;
     this.controls.autoRotate = false;
     this.spinTime = 0;
     clearTimeout(this.spinTimer);
@@ -456,19 +462,41 @@ export class SpatialRenderer {
   };
   private cancelSpin = () => {
     this.spinGesture.cancel();
+    this.touchPointers.clear();
+    this.pinchCandidate = null;
+    this.pinchZoom = false;
+    this.strokeClick = null;
     this.stopSpin();
   };
+  private isZoomControl(target: EventTarget | null) {
+    const control = target instanceof Element ? target.closest("[data-tree-zoom]") : null;
+    return !!control && !!this.host.closest(".tree-canvas")?.contains(control);
+  }
   private documentPress = (event: PointerEvent) => {
+    this.strokeClick = null;
+    if (this.isZoomControl(event.target)) return;
+    // The second touch identifies a pinch. A single touch still stops the
+    // command immediately; only a genuine pinch may restore its prior state.
+    if (event.target === this.renderer.domElement && event.pointerType === "touch") return;
+    this.pinchCandidate = null;
     this.stopSpin();
     if (event.target !== this.renderer.domElement) this.spinGesture.cancel();
   };
   private documentClick = (event: MouseEvent) => {
+    if (this.isZoomControl(event.target)) return;
+    const stroke = this.strokeClick;
+    this.strokeClick = null;
+    if (stroke && event.isTrusted && event.target === this.renderer.domElement &&
+        event.timeStamp - stroke.time >= 0 && event.timeStamp - stroke.time < 350 &&
+        Math.hypot(event.clientX - stroke.x, event.clientY - stroke.y) < 4) return;
     // A drag can end with a native click on the canvas. The next pointerdown
     // already stops rotation; synthetic/assistive clicks must also stop it.
     if (!event.detail || event.target !== this.renderer.domElement) this.cancelSpin();
   };
   private documentKey = (event: KeyboardEvent) => {
-    if (event.key !== " " || event.target !== this.renderer.domElement) this.cancelSpin();
+    const canvasKey = event.target === this.renderer.domElement && [" ", "+", "=", "-"].includes(event.key);
+    const zoomKey = this.isZoomControl(event.target) && ["Enter", " "].includes(event.key);
+    if (!canvasKey && !zoomKey) this.cancelSpin();
   };
   private motionPreference = () => {
     if (this.reduced.matches) this.cancelSpin();
@@ -482,7 +510,7 @@ export class SpatialRenderer {
     this.host.dataset.depthMoving = "false";
     this.spinDirection = direction;
     this.controls.autoRotateSpeed = direction / 3; // 2 degrees/s; one turn in three minutes.
-    this.controls.autoRotate = true;
+    this.spinActive = true;
     this.spinTime = performance.now();
     this.host.dataset.depthSpinning = "true";
     this.host.dataset.depthSpinDirection = String(direction);
@@ -525,6 +553,22 @@ export class SpatialRenderer {
   private pointerLeave = () => this.setHover(null);
   private pointerDown = (event: PointerEvent) => {
     this.setHover(null);
+    if (event.pointerType === "touch") {
+      if (!this.touchPointers.size) {
+        const direction = this.spinActive ? this.spinDirection : 0;
+        this.stopSpin();
+        this.pinchZoom = false;
+        this.pinchCandidate = direction ? { direction, time: event.timeStamp, x: event.clientX, y: event.clientY } : null;
+      }
+      this.touchPointers.add(event.pointerId);
+      if (this.touchPointers.size === 2 && this.pinchCandidate) {
+        if (event.timeStamp - this.pinchCandidate.time <= 250) {
+          this.pinchZoom = true;
+          this.startSpin(this.pinchCandidate.direction);
+        }
+        this.pinchCandidate = null;
+      } else if (this.touchPointers.size > 2) this.cancelSpin();
+    }
     this.spinGesture.begin(event.pointerId,
       { x: event.clientX, y: event.clientY, time: event.timeStamp }, this.height,
       this.controls.enabled && !this.reduced.matches && event.button === 0 &&
@@ -551,6 +595,9 @@ export class SpatialRenderer {
       }, 500);
   };
   private pointerMove = (event: PointerEvent) => {
+    if (this.touchPointers.size === 1 && this.pinchCandidate &&
+        Math.hypot(event.clientX - this.pinchCandidate.x, event.clientY - this.pinchCandidate.y) > 12)
+      this.pinchCandidate = null;
     if (event.ctrlKey || event.shiftKey || event.metaKey || event.altKey) this.spinGesture.cancel();
     else this.spinGesture.move(event.pointerId, { x: event.clientX, y: event.clientY, time: event.timeStamp });
     if (event.pointerType === "mouse" && !event.buttons)
@@ -567,9 +614,17 @@ export class SpatialRenderer {
     }
   };
   private pointerUp = (event: PointerEvent) => {
+    const pinch = this.pinchZoom;
+    this.touchPointers.delete(event.pointerId);
     const spin = this.spinGesture.end(event.pointerId,
       { x: event.clientX, y: event.clientY, time: event.timeStamp });
     if (spin && event.button === 0) this.startSpin(spin);
+    if ((spin || pinch) && this.spinActive)
+      this.strokeClick = { x: event.clientX, y: event.clientY, time: event.timeStamp };
+    if (!this.touchPointers.size) {
+      this.pinchZoom = false;
+      this.pinchCandidate = null;
+    }
     const press = this.pointer;
     this.clearPress();
     this.pointer = null;
@@ -586,7 +641,7 @@ export class SpatialRenderer {
   };
   private pointerCancel = (event: PointerEvent) => {
     this.spinGesture.cancel(event.pointerId);
-    this.stopSpin();
+    this.cancelSpin();
     this.setHover(null);
     this.clearPress();
     this.pointer = null;
@@ -595,7 +650,7 @@ export class SpatialRenderer {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     let handled = true;
     if (event.key === " ") {
-      if (this.controls.autoRotate) this.cancelSpin(); else this.startSpin(this.spinDirection);
+      if (this.spinActive) this.cancelSpin(); else this.startSpin(this.spinDirection);
     } else if (event.key === "+" || event.key === "=") this.zoom(1);
     else if (event.key === "-") this.zoom(-1);
     else if (event.key === "Home") void this.fit();
@@ -634,14 +689,29 @@ export class SpatialRenderer {
     if (this.stopped || this.hidden || this.contextLost) return;
     this.arrows.stop();
     const started = performance.now();
-    if (this.controls.autoRotate) {
+    if (this.spinActive) {
       if (!this.controls.enabled || this.reduced.matches || this.host.closest("[inert]")) this.cancelSpin();
       else {
         const delta = Math.min(.1, Math.max(0, (time - this.spinTime) / 1000));
         this.spinTime = time;
         this.updatingSpin = true;
-        try { this.controls.update(delta); }
-        finally { this.updatingSpin = false; }
+        this.controls.autoRotate = true;
+        try {
+          this.controls.update(delta);
+          // Native wheel/pinch updates must not add an extra fixed-time orbit.
+          this.controls.autoRotate = false;
+          if (this.spinZoom) {
+            const p = Math.min(1, Math.max(0, (time - this.spinZoom.start) / 220));
+            const radius = THREE.MathUtils.lerp(this.spinZoom.from, this.spinZoom.to, 1 - (1 - p) ** 3);
+            const offset = this.camera.position.clone().sub(this.controls.target).setLength(radius);
+            this.camera.position.copy(this.controls.target).add(offset);
+            this.controls.update(0);
+            if (p === 1) this.spinZoom = null;
+          }
+        } finally {
+          this.controls.autoRotate = false;
+          this.updatingSpin = false;
+        }
       }
     }
     if (this.fly) {
@@ -778,7 +848,7 @@ export class SpatialRenderer {
       .map((v) => v.toFixed(2))
       .join(",");
     if (this.fly) this.invalidate();
-    else if (this.controls.autoRotate) this.spinTimer = setTimeout(() => {
+    else if (this.spinActive) this.spinTimer = setTimeout(() => {
       this.spinTimer = undefined;
       this.invalidate();
     }, Math.max(0, 1000 / 30 - (performance.now() - started)));
@@ -787,7 +857,7 @@ export class SpatialRenderer {
   private drawArrowFrame = () => {
     // Reuse the uploaded scene and screen mask. Only one shader time uniform
     // changes; topology, projections and portrait/text buffers remain cached.
-    if (this.frame || this.fly || this.controls.autoRotate) return;
+    if (this.frame || this.fly || this.spinActive) return;
     try { this.renderer.render(this.scene, this.camera); }
     catch { this.lost(new Event("webglcontextlost", { cancelable: true })); return; }
     this.host.dataset.depthArrowFrames = String(Number(this.host.dataset.depthArrowFrames || 0) + 1);
@@ -876,6 +946,7 @@ export class SpatialRenderer {
   };
   zoom(direction: number) {
     const offset = this.camera.position.clone().sub(this.controls.target);
+    const from = offset.length();
     offset.setLength(
       THREE.MathUtils.clamp(
         offset.length() * (direction > 0 ? 0.8 : 1.25),
@@ -883,6 +954,11 @@ export class SpatialRenderer {
         200_000,
       ),
     );
+    if (this.spinActive) {
+      this.spinZoom = { from, to: offset.length(), start: performance.now() };
+      this.invalidate();
+      return;
+    }
     this.move(
       this.controls.target.clone().add(offset),
       this.controls.target.clone(),

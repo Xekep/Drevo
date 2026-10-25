@@ -232,6 +232,7 @@ export function TreeDepthLayers({
             <button
               type="button"
               aria-label="Уменьшить"
+              data-tree-zoom="out"
               onClick={() => renderer.current?.zoom(-1)}
               disabled={disabled}
             >
@@ -240,6 +241,7 @@ export function TreeDepthLayers({
             <button
               type="button"
               aria-label="Увеличить"
+              data-tree-zoom="in"
               onClick={() => renderer.current?.zoom(1)}
               disabled={disabled}
             >

@@ -375,12 +375,16 @@
 }
 .tree-mode-bar {
   position: absolute;
+  pointer-events: none;
   left: 16px;
   top: 12px;
   display: flex;
   align-items: center;
   gap: 18px;
   z-index: 6;
+}
+.tree-mode-bar > * {
+  pointer-events: auto;
 }
 .tree-mode-bar > span {
   font-size: 12px;
