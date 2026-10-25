@@ -1,0 +1,4989 @@
+{
+  "date": "2026-10-25",
+  "node": "v22.23.2",
+  "platform": "win32",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 9 5950X 16-Core Processor",
+  "availableParallelism": 32,
+  "baseRevision": "2b82436b4f55fdce5cbe11f1ad68e91d15ac2280",
+  "coverageFingerprint": "46121019f97221c9b219863f5c4dd1a7a4b54c44b56e506be6ea788f256d340a",
+  "runs": [
+    {
+      "concurrency": 1,
+      "durationMs": 474597,
+      "selected": 352,
+      "completed": 352,
+      "successful": true,
+      "totals": {
+        "tests": 1621,
+        "pass": 1619,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 2,
+        "todo": 0
+      }
+    },
+    {
+      "concurrency": 2,
+      "durationMs": 257289,
+      "selected": 352,
+      "completed": 352,
+      "successful": true,
+      "totals": {
+        "tests": 1621,
+        "pass": 1619,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 2,
+        "todo": 0
+      }
+    },
+    {
+      "concurrency": 2,
+      "seed": 20261025,
+      "durationMs": 246202,
+      "selected": 352,
+      "completed": 352,
+      "successful": true,
+      "totals": {
+        "tests": 1621,
+        "pass": 1619,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 2,
+        "todo": 0
+      }
+    }
+  ],
+  "speedup": 1.844606648554738,
+  "suites": [
+    {
+      "file": "tests/access.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 4082,
+      "parallelMs": 4056,
+      "shuffledMs": 3940
+    },
+    {
+      "file": "tests/account-attachment-export.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 291,
+      "parallelMs": 291,
+      "shuffledMs": 280
+    },
+    {
+      "file": "tests/account-portrait.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 443,
+      "parallelMs": 455,
+      "shuffledMs": 446
+    },
+    {
+      "file": "tests/account-self-deletion.test.ts",
+      "counts": {
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 158,
+      "parallelMs": 129,
+      "shuffledMs": 139
+    },
+    {
+      "file": "tests/additions-import-http.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 889,
+      "parallelMs": 885,
+      "shuffledMs": 900
+    },
+    {
+      "file": "tests/additions-import.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 222,
+      "parallelMs": 190,
+      "shuffledMs": 194
+    },
+    {
+      "file": "tests/additions-undo.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1490,
+      "parallelMs": 1504,
+      "shuffledMs": 1459
+    },
+    {
+      "file": "tests/admin-bootstrap.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 418,
+      "parallelMs": 389,
+      "shuffledMs": 380
+    },
+    {
+      "file": "tests/agelong-external-control.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 510,
+      "parallelMs": 491,
+      "shuffledMs": 475
+    },
+    {
+      "file": "tests/agelong-fullname-preview.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 411,
+      "parallelMs": 378,
+      "shuffledMs": 388
+    },
+    {
+      "file": "tests/agelong-lifespan-preview.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 383,
+      "parallelMs": 451,
+      "shuffledMs": 432
+    },
+    {
+      "file": "tests/agelong-place-context.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 1,
+        "todo": 0
+      },
+      "serialMs": 376,
+      "parallelMs": 436,
+      "shuffledMs": 421
+    },
+    {
+      "file": "tests/ai-admin-revoked-session.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 627,
+      "parallelMs": 618,
+      "shuffledMs": 565
+    },
+    {
+      "file": "tests/ai-admin-settings.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1714,
+      "parallelMs": 1699,
+      "shuffledMs": 1688
+    },
+    {
+      "file": "tests/ai-attachments.test.ts",
+      "counts": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2109,
+      "parallelMs": 1993,
+      "shuffledMs": 2065
+    },
+    {
+      "file": "tests/ai-chat-access-scope.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 132,
+      "parallelMs": 137,
+      "shuffledMs": 131
+    },
+    {
+      "file": "tests/ai-chat-cancel.test.ts",
+      "counts": {
+        "tests": 21,
+        "pass": 21,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 15216,
+      "parallelMs": 15720,
+      "shuffledMs": 15515
+    },
+    {
+      "file": "tests/ai-chat-followups.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 651,
+      "parallelMs": 682,
+      "shuffledMs": 680
+    },
+    {
+      "file": "tests/ai-chat-history.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 746,
+      "parallelMs": 723,
+      "shuffledMs": 722
+    },
+    {
+      "file": "tests/ai-chat-selection.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1588,
+      "parallelMs": 1623,
+      "shuffledMs": 1587
+    },
+    {
+      "file": "tests/ai-execution-queue.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1609,
+      "parallelMs": 1587,
+      "shuffledMs": 1540
+    },
+    {
+      "file": "tests/ai-followups-http.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2893,
+      "parallelMs": 2967,
+      "shuffledMs": 3062
+    },
+    {
+      "file": "tests/ai-models.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 155,
+      "parallelMs": 156,
+      "shuffledMs": 183
+    },
+    {
+      "file": "tests/ai-provider-cleanup-status.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 547,
+      "parallelMs": 590,
+      "shuffledMs": 552
+    },
+    {
+      "file": "tests/ai-provider-cleanup.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1486,
+      "parallelMs": 1570,
+      "shuffledMs": 1475
+    },
+    {
+      "file": "tests/ai-provider-failure.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1808,
+      "parallelMs": 1822,
+      "shuffledMs": 1824
+    },
+    {
+      "file": "tests/ai-research-http.test.ts",
+      "counts": {
+        "tests": 19,
+        "pass": 19,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 4402,
+      "parallelMs": 4485,
+      "shuffledMs": 4540
+    },
+    {
+      "file": "tests/ai-research-stream.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1499,
+      "parallelMs": 1549,
+      "shuffledMs": 1566
+    },
+    {
+      "file": "tests/ai-response-recovery.test.ts",
+      "counts": {
+        "tests": 18,
+        "pass": 18,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 4442,
+      "parallelMs": 4667,
+      "shuffledMs": 4571
+    },
+    {
+      "file": "tests/ai-role-profiles-http.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2214,
+      "parallelMs": 2304,
+      "shuffledMs": 2232
+    },
+    {
+      "file": "tests/ai-role-profiles.test.ts",
+      "counts": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 829,
+      "parallelMs": 856,
+      "shuffledMs": 861
+    },
+    {
+      "file": "tests/ai-token-budget-http.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1750,
+      "parallelMs": 1817,
+      "shuffledMs": 1844
+    },
+    {
+      "file": "tests/ai-topic-switch.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1705,
+      "parallelMs": 1754,
+      "shuffledMs": 1739
+    },
+    {
+      "file": "tests/ai-tree-filter.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2167,
+      "parallelMs": 2359,
+      "shuffledMs": 2270
+    },
+    {
+      "file": "tests/ai-tree-prune.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1672,
+      "parallelMs": 1763,
+      "shuffledMs": 1704
+    },
+    {
+      "file": "tests/ai-usage.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 530,
+      "parallelMs": 576,
+      "shuffledMs": 546
+    },
+    {
+      "file": "tests/ai-view-commands.test.ts",
+      "counts": {
+        "tests": 17,
+        "pass": 17,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 4964,
+      "parallelMs": 5323,
+      "shuffledMs": 5314
+    },
+    {
+      "file": "tests/analysis-export.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 114,
+      "parallelMs": 116,
+      "shuffledMs": 116
+    },
+    {
+      "file": "tests/architecture-boundaries.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 110,
+      "parallelMs": 115,
+      "shuffledMs": 114
+    },
+    {
+      "file": "tests/architecture.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 3060,
+      "parallelMs": 3292,
+      "shuffledMs": 3257
+    },
+    {
+      "file": "tests/archive-canonical-http.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 399,
+      "parallelMs": 410,
+      "shuffledMs": 432
+    },
+    {
+      "file": "tests/archive-context.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 125,
+      "parallelMs": 132,
+      "shuffledMs": 136
+    },
+    {
+      "file": "tests/archive-coverage.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 153,
+      "parallelMs": 160,
+      "shuffledMs": 162
+    },
+    {
+      "file": "tests/archive-deletion-files.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 123,
+      "parallelMs": 124,
+      "shuffledMs": 133
+    },
+    {
+      "file": "tests/archive-details-http.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 791,
+      "parallelMs": 801,
+      "shuffledMs": 777
+    },
+    {
+      "file": "tests/archive-details.test.ts",
+      "counts": {
+        "tests": 11,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 408,
+      "parallelMs": 455,
+      "shuffledMs": 468
+    },
+    {
+      "file": "tests/archive-export-revision.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 347,
+      "parallelMs": 369,
+      "shuffledMs": 359
+    },
+    {
+      "file": "tests/archive-fetch-preview.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 160,
+      "parallelMs": 182,
+      "shuffledMs": 165
+    },
+    {
+      "file": "tests/archive-load-conflict.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 150,
+      "parallelMs": 182,
+      "shuffledMs": 150
+    },
+    {
+      "file": "tests/archive-notifications-scope.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 327,
+      "parallelMs": 357,
+      "shuffledMs": 339
+    },
+    {
+      "file": "tests/archive-notifications.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1799,
+      "parallelMs": 1887,
+      "shuffledMs": 1832
+    },
+    {
+      "file": "tests/archive-page-storage.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 604,
+      "parallelMs": 643,
+      "shuffledMs": 614
+    },
+    {
+      "file": "tests/archive-pages-progress.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 159,
+      "parallelMs": 148,
+      "shuffledMs": 149
+    },
+    {
+      "file": "tests/archive-quality.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 158,
+      "parallelMs": 167,
+      "shuffledMs": 175
+    },
+    {
+      "file": "tests/archive-read-cache.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 873,
+      "parallelMs": 916,
+      "shuffledMs": 925
+    },
+    {
+      "file": "tests/archive-report.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 155,
+      "parallelMs": 166,
+      "shuffledMs": 155
+    },
+    {
+      "file": "tests/archive-route-pool.test.ts",
+      "counts": {
+        "tests": 16,
+        "pass": 16,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 5427,
+      "parallelMs": 5383,
+      "shuffledMs": 5376
+    },
+    {
+      "file": "tests/archive-routes.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 126,
+      "parallelMs": 133,
+      "shuffledMs": 140
+    },
+    {
+      "file": "tests/archive-view-http.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 699,
+      "parallelMs": 739,
+      "shuffledMs": 734
+    },
+    {
+      "file": "tests/archive-view-projections.test.ts",
+      "counts": {
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 677,
+      "parallelMs": 693,
+      "shuffledMs": 727
+    },
+    {
+      "file": "tests/archive-visibility-cache.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 637,
+      "parallelMs": 606,
+      "shuffledMs": 694
+    },
+    {
+      "file": "tests/archive.test.ts",
+      "counts": {
+        "tests": 10,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 880,
+      "parallelMs": 890,
+      "shuffledMs": 923
+    },
+    {
+      "file": "tests/audit-actors.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 660,
+      "parallelMs": 665,
+      "shuffledMs": 693
+    },
+    {
+      "file": "tests/audit-regressions.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 608,
+      "parallelMs": 623,
+      "shuffledMs": 644
+    },
+    {
+      "file": "tests/audit-remediation.test.ts",
+      "counts": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 4708,
+      "parallelMs": 4747,
+      "shuffledMs": 4787
+    },
+    {
+      "file": "tests/award-catalog-citations.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 246,
+      "parallelMs": 254,
+      "shuffledMs": 265
+    },
+    {
+      "file": "tests/award-citation-backend-prep.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 648,
+      "parallelMs": 637,
+      "shuffledMs": 653
+    },
+    {
+      "file": "tests/award-citation-gedzip.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 767,
+      "parallelMs": 736,
+      "shuffledMs": 769
+    },
+    {
+      "file": "tests/award-citation-http-prep.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1531,
+      "parallelMs": 1599,
+      "shuffledMs": 1687
+    },
+    {
+      "file": "tests/award-citation-import-prep.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1248,
+      "parallelMs": 1295,
+      "shuffledMs": 1305
+    },
+    {
+      "file": "tests/awards-catalog.test.ts",
+      "counts": {
+        "tests": 12,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 215,
+      "parallelMs": 217,
+      "shuffledMs": 206
+    },
+    {
+      "file": "tests/backup-boundaries.test.ts",
+      "counts": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 3250,
+      "parallelMs": 3463,
+      "shuffledMs": 3209
+    },
+    {
+      "file": "tests/backup-management.test.ts",
+      "counts": {
+        "tests": 9,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 6462,
+      "parallelMs": 6930,
+      "shuffledMs": 6682
+    },
+    {
+      "file": "tests/backup.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 811,
+      "parallelMs": 807,
+      "shuffledMs": 853
+    },
+    {
+      "file": "tests/birth-date-claim.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1625,
+      "parallelMs": 1692,
+      "shuffledMs": 1704
+    },
+    {
+      "file": "tests/birth-surname-claim.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1643,
+      "parallelMs": 1644,
+      "shuffledMs": 1676
+    },
+    {
+      "file": "tests/bookreader-pdf-search.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 399,
+      "parallelMs": 395,
+      "shuffledMs": 401
+    },
+    {
+      "file": "tests/branch-routing.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 136,
+      "parallelMs": 133,
+      "shuffledMs": 132
+    },
+    {
+      "file": "tests/calendar-dates.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 198,
+      "parallelMs": 205,
+      "shuffledMs": 210
+    },
+    {
+      "file": "tests/claim-confidence.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1773,
+      "parallelMs": 1815,
+      "shuffledMs": 1845
+    },
+    {
+      "file": "tests/code-interpreter-http.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2710,
+      "parallelMs": 2724,
+      "shuffledMs": 2732
+    },
+    {
+      "file": "tests/code-interpreter.test.ts",
+      "counts": {
+        "tests": 14,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 251,
+      "parallelMs": 227,
+      "shuffledMs": 219
+    },
+    {
+      "file": "tests/comment-markdown.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 595,
+      "parallelMs": 580,
+      "shuffledMs": 571
+    },
+    {
+      "file": "tests/compact-tree-layout.test.ts",
+      "counts": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 3896,
+      "parallelMs": 3911,
+      "shuffledMs": 3874
+    },
+    {
+      "file": "tests/connection-labels.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 160,
+      "parallelMs": 161,
+      "shuffledMs": 177
+    },
+    {
+      "file": "tests/connection-suggestions.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 263,
+      "parallelMs": 239,
+      "shuffledMs": 286
+    },
+    {
+      "file": "tests/dates-places.test.ts",
+      "counts": {
+        "tests": 14,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 761,
+      "parallelMs": 837,
+      "shuffledMs": 775
+    },
+    {
+      "file": "tests/death-date-claim.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1691,
+      "parallelMs": 1726,
+      "shuffledMs": 1844
+    },
+    {
+      "file": "tests/derived-cache-maintenance.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 1,
+        "todo": 0
+      },
+      "serialMs": 132,
+      "parallelMs": 134,
+      "shuffledMs": 129
+    },
+    {
+      "file": "tests/directory.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 143,
+      "parallelMs": 151,
+      "shuffledMs": 175
+    },
+    {
+      "file": "tests/discovery-auth.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 258,
+      "parallelMs": 257,
+      "shuffledMs": 251
+    },
+    {
+      "file": "tests/discovery-candidate-ranking.test.ts",
+      "counts": {
+        "tests": 12,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 147,
+      "parallelMs": 159,
+      "shuffledMs": 137
+    },
+    {
+      "file": "tests/discovery-name-parts-backfill.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 254,
+      "parallelMs": 297,
+      "shuffledMs": 262
+    },
+    {
+      "file": "tests/discussion-attachments.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1888,
+      "parallelMs": 2023,
+      "shuffledMs": 1923
+    },
+    {
+      "file": "tests/distant-scene-hit.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 119,
+      "parallelMs": 118,
+      "shuffledMs": 117
+    },
+    {
+      "file": "tests/distribution-statistics.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 215,
+      "parallelMs": 218,
+      "shuffledMs": 218
+    },
+    {
+      "file": "tests/dock-content-swipe.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 120,
+      "parallelMs": 123,
+      "shuffledMs": 120
+    },
+    {
+      "file": "tests/dock-swipe.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 118,
+      "parallelMs": 115,
+      "shuffledMs": 115
+    },
+    {
+      "file": "tests/document-access-recheck.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 685,
+      "parallelMs": 665,
+      "shuffledMs": 663
+    },
+    {
+      "file": "tests/document-annotation-authors.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1562,
+      "parallelMs": 1555,
+      "shuffledMs": 1560
+    },
+    {
+      "file": "tests/document-annotation-edit.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2088,
+      "parallelMs": 2166,
+      "shuffledMs": 2025
+    },
+    {
+      "file": "tests/document-annotation-moderation.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1688,
+      "parallelMs": 1806,
+      "shuffledMs": 1843
+    },
+    {
+      "file": "tests/document-citation-integrity.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1894,
+      "parallelMs": 1964,
+      "shuffledMs": 1814
+    },
+    {
+      "file": "tests/document-file-revocation.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 713,
+      "parallelMs": 810,
+      "shuffledMs": 706
+    },
+    {
+      "file": "tests/document-images-preparation.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 264,
+      "parallelMs": 265,
+      "shuffledMs": 302
+    },
+    {
+      "file": "tests/document-images.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 388,
+      "parallelMs": 392,
+      "shuffledMs": 391
+    },
+    {
+      "file": "tests/document-pdf-decoder.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 949,
+      "parallelMs": 951,
+      "shuffledMs": 959
+    },
+    {
+      "file": "tests/document-pdf.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1117,
+      "parallelMs": 1172,
+      "shuffledMs": 1186
+    },
+    {
+      "file": "tests/documents-http.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 6114,
+      "parallelMs": 6317,
+      "shuffledMs": 6257
+    },
+    {
+      "file": "tests/documents-preparation.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 618,
+      "parallelMs": 678,
+      "shuffledMs": 588
+    },
+    {
+      "file": "tests/edge-label-placement.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 148,
+      "parallelMs": 136,
+      "shuffledMs": 122
+    },
+    {
+      "file": "tests/edge-routing.test.ts",
+      "counts": {
+        "tests": 15,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 263,
+      "parallelMs": 278,
+      "shuffledMs": 287
+    },
+    {
+      "file": "tests/email-auth-admin.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 263,
+      "parallelMs": 273,
+      "shuffledMs": 255
+    },
+    {
+      "file": "tests/email-auth-config.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 237,
+      "parallelMs": 299,
+      "shuffledMs": 275
+    },
+    {
+      "file": "tests/email-credentials.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1608,
+      "parallelMs": 1682,
+      "shuffledMs": 1661
+    },
+    {
+      "file": "tests/event-catalog-source.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 477,
+      "parallelMs": 534,
+      "shuffledMs": 470
+    },
+    {
+      "file": "tests/event-claim-confidence.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 459,
+      "parallelMs": 470,
+      "shuffledMs": 473
+    },
+    {
+      "file": "tests/event-date-claim.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1631,
+      "parallelMs": 1717,
+      "shuffledMs": 1683
+    },
+    {
+      "file": "tests/event-evidence-alternatives.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 520,
+      "parallelMs": 555,
+      "shuffledMs": 539
+    },
+    {
+      "file": "tests/event-place-claim.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1648,
+      "parallelMs": 1731,
+      "shuffledMs": 1733
+    },
+    {
+      "file": "tests/face-assistant-access.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 148,
+      "parallelMs": 184,
+      "shuffledMs": 192
+    },
+    {
+      "file": "tests/face-descriptor-import.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 531,
+      "parallelMs": 560,
+      "shuffledMs": 597
+    },
+    {
+      "file": "tests/face-descriptors-http.test.ts",
+      "counts": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2613,
+      "parallelMs": 2556,
+      "shuffledMs": 2492
+    },
+    {
+      "file": "tests/fact-alternatives.test.ts",
+      "counts": {
+        "tests": 10,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 626,
+      "parallelMs": 639,
+      "shuffledMs": 630
+    },
+    {
+      "file": "tests/family-branch-bundling.test.ts",
+      "counts": {
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 273,
+      "parallelMs": 301,
+      "shuffledMs": 267
+    },
+    {
+      "file": "tests/family-branch-moves.test.ts",
+      "counts": {
+        "tests": 15,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 384,
+      "parallelMs": 378,
+      "shuffledMs": 423
+    },
+    {
+      "file": "tests/family-changes-http.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2022,
+      "parallelMs": 2052,
+      "shuffledMs": 2067
+    },
+    {
+      "file": "tests/family-details.test.ts",
+      "counts": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 548,
+      "parallelMs": 535,
+      "shuffledMs": 530
+    },
+    {
+      "file": "tests/family-insights.test.ts",
+      "counts": {
+        "tests": 10,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 174,
+      "parallelMs": 215,
+      "shuffledMs": 182
+    },
+    {
+      "file": "tests/family-link-confidence.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 756,
+      "parallelMs": 740,
+      "shuffledMs": 706
+    },
+    {
+      "file": "tests/family-link-sources.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 723,
+      "parallelMs": 780,
+      "shuffledMs": 753
+    },
+    {
+      "file": "tests/family-neighborhood.test.ts",
+      "counts": {
+        "tests": 20,
+        "pass": 20,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 737,
+      "parallelMs": 808,
+      "shuffledMs": 767
+    },
+    {
+      "file": "tests/family-route-repair.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 17459,
+      "parallelMs": 17766,
+      "shuffledMs": 19066
+    },
+    {
+      "file": "tests/family-row-order.test.ts",
+      "counts": {
+        "tests": 16,
+        "pass": 16,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 9903,
+      "parallelMs": 9829,
+      "shuffledMs": 10103
+    },
+    {
+      "file": "tests/family-row-spacing.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 182,
+      "parallelMs": 183,
+      "shuffledMs": 183
+    },
+    {
+      "file": "tests/family-row-translation.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 137,
+      "parallelMs": 129,
+      "shuffledMs": 133
+    },
+    {
+      "file": "tests/family-spotlight.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 494,
+      "parallelMs": 568,
+      "shuffledMs": 541
+    },
+    {
+      "file": "tests/family-unions.test.ts",
+      "counts": {
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2018,
+      "parallelMs": 1944,
+      "shuffledMs": 2040
+    },
+    {
+      "file": "tests/family-write-access.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1583,
+      "parallelMs": 1499,
+      "shuffledMs": 1536
+    },
+    {
+      "file": "tests/fan-chart.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 118,
+      "parallelMs": 124,
+      "shuffledMs": 119
+    },
+    {
+      "file": "tests/fullscreen-interactions.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 138,
+      "parallelMs": 157,
+      "shuffledMs": 151
+    },
+    {
+      "file": "tests/gedcom-adoption-event-roundtrip.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 204,
+      "parallelMs": 191,
+      "shuffledMs": 192
+    },
+    {
+      "file": "tests/gedcom-archive-metadata-roundtrip.test.ts",
+      "counts": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 384,
+      "parallelMs": 365,
+      "shuffledMs": 407
+    },
+    {
+      "file": "tests/gedcom-citation-media-link-title.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 209,
+      "parallelMs": 189,
+      "shuffledMs": 186
+    },
+    {
+      "file": "tests/gedcom-confidence-schema.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 411,
+      "parallelMs": 434,
+      "shuffledMs": 384
+    },
+    {
+      "file": "tests/gedcom-date-time-roundtrip.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 417,
+      "parallelMs": 437,
+      "shuffledMs": 434
+    },
+    {
+      "file": "tests/gedcom-document-event-links-roundtrip.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 840,
+      "parallelMs": 868,
+      "shuffledMs": 865
+    },
+    {
+      "file": "tests/gedcom-event-age.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 192,
+      "parallelMs": 190,
+      "shuffledMs": 228
+    },
+    {
+      "file": "tests/gedcom-family-event-age.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 410,
+      "parallelMs": 445,
+      "shuffledMs": 424
+    },
+    {
+      "file": "tests/gedcom-multiple-givn-preview.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 373,
+      "parallelMs": 350,
+      "shuffledMs": 381
+    },
+    {
+      "file": "tests/gedcom-multiple-surn-preview.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 350,
+      "parallelMs": 355,
+      "shuffledMs": 360
+    },
+    {
+      "file": "tests/gedcom-name-citation-preview.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 412,
+      "parallelMs": 370,
+      "shuffledMs": 385
+    },
+    {
+      "file": "tests/gedcom-name-prefix-preview.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 375,
+      "parallelMs": 357,
+      "shuffledMs": 376
+    },
+    {
+      "file": "tests/gedcom-name-suffix-preview.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 352,
+      "parallelMs": 435,
+      "shuffledMs": 405
+    },
+    {
+      "file": "tests/gedcom-nickname-roundtrip.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 385,
+      "parallelMs": 445,
+      "shuffledMs": 361
+    },
+    {
+      "file": "tests/gedcom-photo-created-at-roundtrip.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 819,
+      "parallelMs": 858,
+      "shuffledMs": 882
+    },
+    {
+      "file": "tests/gedcom-place-citation.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 407,
+      "parallelMs": 411,
+      "shuffledMs": 440
+    },
+    {
+      "file": "tests/gedcom-place-form-roundtrip.test.ts",
+      "counts": {
+        "tests": 14,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 386,
+      "parallelMs": 442,
+      "shuffledMs": 430
+    },
+    {
+      "file": "tests/gedcom-repository.test.ts",
+      "counts": {
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 443,
+      "parallelMs": 414,
+      "shuffledMs": 463
+    },
+    {
+      "file": "tests/gedcom-review-marker-roundtrip.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 385,
+      "parallelMs": 388,
+      "shuffledMs": 383
+    },
+    {
+      "file": "tests/gedcom-source-abbr.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 191,
+      "parallelMs": 206,
+      "shuffledMs": 194
+    },
+    {
+      "file": "tests/gedcom-source-data-roundtrip.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 207,
+      "parallelMs": 196,
+      "shuffledMs": 192
+    },
+    {
+      "file": "tests/gedcom-source-note-place-roundtrip.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 227,
+      "parallelMs": 227,
+      "shuffledMs": 195
+    },
+    {
+      "file": "tests/gedcom-source-record-media.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 382,
+      "parallelMs": 470,
+      "shuffledMs": 449
+    },
+    {
+      "file": "tests/gedcom-standard-event-media.test.ts",
+      "counts": {
+        "tests": 9,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 914,
+      "parallelMs": 998,
+      "shuffledMs": 951
+    },
+    {
+      "file": "tests/gedcom-void-source-citation.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 205,
+      "parallelMs": 197,
+      "shuffledMs": 221
+    },
+    {
+      "file": "tests/gedzip-inline-citation-media.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1159,
+      "parallelMs": 1172,
+      "shuffledMs": 1169
+    },
+    {
+      "file": "tests/gedzip-shared-photo-document.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 397,
+      "parallelMs": 390,
+      "shuffledMs": 393
+    },
+    {
+      "file": "tests/genealogy-transfer.test.ts",
+      "counts": {
+        "tests": 48,
+        "pass": 48,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 3391,
+      "parallelMs": 3642,
+      "shuffledMs": 3428
+    },
+    {
+      "file": "tests/genealogy.test.ts",
+      "counts": {
+        "tests": 50,
+        "pass": 50,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 348,
+      "parallelMs": 405,
+      "shuffledMs": 351
+    },
+    {
+      "file": "tests/generated-research-files.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 507,
+      "parallelMs": 512,
+      "shuffledMs": 530
+    },
+    {
+      "file": "tests/generation-bands.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 137,
+      "parallelMs": 143,
+      "shuffledMs": 143
+    },
+    {
+      "file": "tests/generation-report.test.ts",
+      "counts": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 241,
+      "parallelMs": 288,
+      "shuffledMs": 253
+    },
+    {
+      "file": "tests/global-role-permissions.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 296,
+      "parallelMs": 283,
+      "shuffledMs": 269
+    },
+    {
+      "file": "tests/gpu-portrait-cache.test.ts",
+      "counts": {
+        "tests": 12,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 33303,
+      "parallelMs": 32518,
+      "shuffledMs": 33124
+    },
+    {
+      "file": "tests/gpu-route.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 124,
+      "parallelMs": 115,
+      "shuffledMs": 134
+    },
+    {
+      "file": "tests/gpu-text-layout.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 211,
+      "parallelMs": 213,
+      "shuffledMs": 223
+    },
+    {
+      "file": "tests/guest-tree-preferences.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 123,
+      "parallelMs": 124,
+      "shuffledMs": 156
+    },
+    {
+      "file": "tests/horizontal-timeline.test.ts",
+      "counts": {
+        "tests": 9,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 578,
+      "parallelMs": 568,
+      "shuffledMs": 562
+    },
+    {
+      "file": "tests/household-levels.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 206,
+      "parallelMs": 206,
+      "shuffledMs": 207
+    },
+    {
+      "file": "tests/http-byte-range.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 115,
+      "parallelMs": 114,
+      "shuffledMs": 154
+    },
+    {
+      "file": "tests/http-preparation-shared.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 701,
+      "parallelMs": 703,
+      "shuffledMs": 691
+    },
+    {
+      "file": "tests/image-previews-preparation.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 244,
+      "parallelMs": 243,
+      "shuffledMs": 251
+    },
+    {
+      "file": "tests/image-previews.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1322,
+      "parallelMs": 1309,
+      "shuffledMs": 1365
+    },
+    {
+      "file": "tests/import-file-format.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 153,
+      "parallelMs": 150,
+      "shuffledMs": 151
+    },
+    {
+      "file": "tests/incremental-archive-write.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 577,
+      "parallelMs": 585,
+      "shuffledMs": 574
+    },
+    {
+      "file": "tests/incremental-card-contacts.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 649,
+      "parallelMs": 635,
+      "shuffledMs": 655
+    },
+    {
+      "file": "tests/incremental-portrait-layout.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 9367,
+      "parallelMs": 9319,
+      "shuffledMs": 9779
+    },
+    {
+      "file": "tests/incremental-route-score.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 3092,
+      "parallelMs": 4427,
+      "shuffledMs": 3026
+    },
+    {
+      "file": "tests/insights-navigation.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 125,
+      "parallelMs": 154,
+      "shuffledMs": 133
+    },
+    {
+      "file": "tests/kinship-common-ancestors.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 262,
+      "parallelMs": 263,
+      "shuffledMs": 244
+    },
+    {
+      "file": "tests/kinship-generations.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 308,
+      "parallelMs": 251,
+      "shuffledMs": 280
+    },
+    {
+      "file": "tests/kinship-prepared.test.ts",
+      "counts": {
+        "tests": 12,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 523,
+      "parallelMs": 532,
+      "shuffledMs": 542
+    },
+    {
+      "file": "tests/kinship-scenario-matrix.test.ts",
+      "counts": {
+        "tests": 9,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 209,
+      "parallelMs": 223,
+      "shuffledMs": 191
+    },
+    {
+      "file": "tests/large-union-order.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 23650,
+      "parallelMs": 24845,
+      "shuffledMs": 24481
+    },
+    {
+      "file": "tests/layout-cache.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 129,
+      "parallelMs": 137,
+      "shuffledMs": 149
+    },
+    {
+      "file": "tests/layout-contact-score.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 280,
+      "parallelMs": 261,
+      "shuffledMs": 253
+    },
+    {
+      "file": "tests/lazy-section-recovery.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 139,
+      "parallelMs": 120,
+      "shuffledMs": 143
+    },
+    {
+      "file": "tests/lifespan-statistics.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 218,
+      "parallelMs": 230,
+      "shuffledMs": 228
+    },
+    {
+      "file": "tests/lineage-report.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 144,
+      "parallelMs": 152,
+      "shuffledMs": 143
+    },
+    {
+      "file": "tests/local-couple-order.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 196,
+      "parallelMs": 201,
+      "shuffledMs": 202
+    },
+    {
+      "file": "tests/local-family-growth.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 674,
+      "parallelMs": 650,
+      "shuffledMs": 691
+    },
+    {
+      "file": "tests/local-family-order.test.ts",
+      "counts": {
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 10018,
+      "parallelMs": 10419,
+      "shuffledMs": 10378
+    },
+    {
+      "file": "tests/local-family-space.test.ts",
+      "counts": {
+        "tests": 10,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 7636,
+      "parallelMs": 7951,
+      "shuffledMs": 8294
+    },
+    {
+      "file": "tests/local-tree-layout.test.ts",
+      "counts": {
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 644,
+      "parallelMs": 690,
+      "shuffledMs": 716
+    },
+    {
+      "file": "tests/media-filesystem-inventory.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 142,
+      "parallelMs": 143,
+      "shuffledMs": 137
+    },
+    {
+      "file": "tests/media-gc.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 325,
+      "parallelMs": 360,
+      "shuffledMs": 335
+    },
+    {
+      "file": "tests/media-reference-access.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 795,
+      "parallelMs": 824,
+      "shuffledMs": 853
+    },
+    {
+      "file": "tests/media-stream-upload.test.ts",
+      "counts": {
+        "tests": 9,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1976,
+      "parallelMs": 2015,
+      "shuffledMs": 1997
+    },
+    {
+      "file": "tests/media-upload-sqlite-session.test.ts",
+      "counts": {
+        "tests": 12,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2784,
+      "parallelMs": 2911,
+      "shuffledMs": 2877
+    },
+    {
+      "file": "tests/media-usage-ledger.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 707,
+      "parallelMs": 733,
+      "shuffledMs": 730
+    },
+    {
+      "file": "tests/memorial-motion.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 109,
+      "parallelMs": 112,
+      "shuffledMs": 105
+    },
+    {
+      "file": "tests/mobile-refinements.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1934,
+      "parallelMs": 2088,
+      "shuffledMs": 2061
+    },
+    {
+      "file": "tests/multi-partner-order.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 188,
+      "parallelMs": 208,
+      "shuffledMs": 191
+    },
+    {
+      "file": "tests/name-hints.test.ts",
+      "counts": {
+        "tests": 17,
+        "pass": 17,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 268,
+      "parallelMs": 277,
+      "shuffledMs": 275
+    },
+    {
+      "file": "tests/notification-arrivals.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 127,
+      "parallelMs": 124,
+      "shuffledMs": 124
+    },
+    {
+      "file": "tests/notification-query-cost.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 141,
+      "parallelMs": 116,
+      "shuffledMs": 121
+    },
+    {
+      "file": "tests/notification-sound.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 121,
+      "parallelMs": 133,
+      "shuffledMs": 128
+    },
+    {
+      "file": "tests/oauth-rate-limit.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 116,
+      "parallelMs": 133,
+      "shuffledMs": 124
+    },
+    {
+      "file": "tests/oauth-transactions.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 176,
+      "parallelMs": 238,
+      "shuffledMs": 177
+    },
+    {
+      "file": "tests/oauth.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 683,
+      "parallelMs": 659,
+      "shuffledMs": 650
+    },
+    {
+      "file": "tests/occupation-claim.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1629,
+      "parallelMs": 1770,
+      "shuffledMs": 2880
+    },
+    {
+      "file": "tests/offline-package.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 303,
+      "parallelMs": 337,
+      "shuffledMs": 296
+    },
+    {
+      "file": "tests/optional-person-data.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 500,
+      "parallelMs": 493,
+      "shuffledMs": 521
+    },
+    {
+      "file": "tests/parent-evidence-gedzip.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 744,
+      "parallelMs": 794,
+      "shuffledMs": 734
+    },
+    {
+      "file": "tests/parent-evidence-reports.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 184,
+      "parallelMs": 198,
+      "shuffledMs": 222
+    },
+    {
+      "file": "tests/parent-evidence-restore.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 992,
+      "parallelMs": 1075,
+      "shuffledMs": 1033
+    },
+    {
+      "file": "tests/parent-evidence.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 881,
+      "parallelMs": 980,
+      "shuffledMs": 912
+    },
+    {
+      "file": "tests/pdf-decode-coordinator.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 440,
+      "parallelMs": 438,
+      "shuffledMs": 442
+    },
+    {
+      "file": "tests/person-claim-draft-rebase.test.ts",
+      "counts": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 670,
+      "parallelMs": 672,
+      "shuffledMs": 674
+    },
+    {
+      "file": "tests/person-discussion.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2035,
+      "parallelMs": 2104,
+      "shuffledMs": 2077
+    },
+    {
+      "file": "tests/person-draft.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 165,
+      "parallelMs": 158,
+      "shuffledMs": 167
+    },
+    {
+      "file": "tests/person-inspector-lazy.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 104,
+      "parallelMs": 106,
+      "shuffledMs": 106
+    },
+    {
+      "file": "tests/person-node-rendering.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 114,
+      "parallelMs": 114,
+      "shuffledMs": 111
+    },
+    {
+      "file": "tests/person-patch-batch.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 693,
+      "parallelMs": 725,
+      "shuffledMs": 655
+    },
+    {
+      "file": "tests/person-source-fastguard.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1637,
+      "parallelMs": 1676,
+      "shuffledMs": 1712
+    },
+    {
+      "file": "tests/person-sources.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 116,
+      "parallelMs": 120,
+      "shuffledMs": 122
+    },
+    {
+      "file": "tests/person-union-display.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1078,
+      "parallelMs": 1108,
+      "shuffledMs": 1101
+    },
+    {
+      "file": "tests/person-union-draft.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 180,
+      "parallelMs": 171,
+      "shuffledMs": 168
+    },
+    {
+      "file": "tests/personal-research-http.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1902,
+      "parallelMs": 1902,
+      "shuffledMs": 1862
+    },
+    {
+      "file": "tests/personal-research.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 197,
+      "parallelMs": 184,
+      "shuffledMs": 203
+    },
+    {
+      "file": "tests/photo-workspace.test.ts",
+      "counts": {
+        "tests": 10,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 594,
+      "parallelMs": 612,
+      "shuffledMs": 586
+    },
+    {
+      "file": "tests/place-claims.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1672,
+      "parallelMs": 1696,
+      "shuffledMs": 1768
+    },
+    {
+      "file": "tests/places-http.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 646,
+      "parallelMs": 622,
+      "shuffledMs": 622
+    },
+    {
+      "file": "tests/platform-accounts-directory.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 241,
+      "parallelMs": 300,
+      "shuffledMs": 249
+    },
+    {
+      "file": "tests/platform-backup-startup.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 639,
+      "parallelMs": 695,
+      "shuffledMs": 634
+    },
+    {
+      "file": "tests/portable-contract.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 393,
+      "parallelMs": 412,
+      "shuffledMs": 405
+    },
+    {
+      "file": "tests/portable-http.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1006,
+      "parallelMs": 1059,
+      "shuffledMs": 1021
+    },
+    {
+      "file": "tests/portable-import-http.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1483,
+      "parallelMs": 1581,
+      "shuffledMs": 1505
+    },
+    {
+      "file": "tests/portable-package.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1160,
+      "parallelMs": 1201,
+      "shuffledMs": 1216
+    },
+    {
+      "file": "tests/portable-roundtrip-fixture.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1173,
+      "parallelMs": 1210,
+      "shuffledMs": 1353
+    },
+    {
+      "file": "tests/portrait-preview-retry.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 142,
+      "parallelMs": 145,
+      "shuffledMs": 144
+    },
+    {
+      "file": "tests/postgres-access-read.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 112,
+      "parallelMs": 130,
+      "shuffledMs": 124
+    },
+    {
+      "file": "tests/postgres-audit.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 189,
+      "parallelMs": 178,
+      "shuffledMs": 177
+    },
+    {
+      "file": "tests/postgres-authorized-archive-read.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 141,
+      "parallelMs": 139,
+      "shuffledMs": 149
+    },
+    {
+      "file": "tests/postgres-migration.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 473,
+      "parallelMs": 525,
+      "shuffledMs": 526
+    },
+    {
+      "file": "tests/postgres-portable-backup-compatibility.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 472,
+      "parallelMs": 517,
+      "shuffledMs": 551
+    },
+    {
+      "file": "tests/postgres-runtime-schema-coordinator.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 137,
+      "parallelMs": 150,
+      "shuffledMs": 139
+    },
+    {
+      "file": "tests/postgres-session-archives.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 117,
+      "parallelMs": 141,
+      "shuffledMs": 122
+    },
+    {
+      "file": "tests/postgres-sessions.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 146,
+      "parallelMs": 157,
+      "shuffledMs": 142
+    },
+    {
+      "file": "tests/postgres-task-session.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 280,
+      "parallelMs": 305,
+      "shuffledMs": 283
+    },
+    {
+      "file": "tests/preparation-admission.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 152,
+      "parallelMs": 148,
+      "shuffledMs": 142
+    },
+    {
+      "file": "tests/production-static-http.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 641,
+      "parallelMs": 666,
+      "shuffledMs": 559
+    },
+    {
+      "file": "tests/public-person-id.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 114,
+      "parallelMs": 108,
+      "shuffledMs": 113
+    },
+    {
+      "file": "tests/published-people.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2038,
+      "parallelMs": 2056,
+      "shuffledMs": 2062
+    },
+    {
+      "file": "tests/readonly-ui.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 3346,
+      "parallelMs": 3502,
+      "shuffledMs": 3599
+    },
+    {
+      "file": "tests/removed-mcp.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1615,
+      "parallelMs": 1677,
+      "shuffledMs": 1664
+    },
+    {
+      "file": "tests/repository-inline-edit.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 185,
+      "parallelMs": 192,
+      "shuffledMs": 194
+    },
+    {
+      "file": "tests/request-metrics.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 117,
+      "parallelMs": 116,
+      "shuffledMs": 130
+    },
+    {
+      "file": "tests/request-timeout.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 177,
+      "parallelMs": 159,
+      "shuffledMs": 159
+    },
+    {
+      "file": "tests/research-answer.test.ts",
+      "counts": {
+        "tests": 11,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 495,
+      "parallelMs": 501,
+      "shuffledMs": 487
+    },
+    {
+      "file": "tests/research-catalog.test.ts",
+      "counts": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2292,
+      "parallelMs": 2478,
+      "shuffledMs": 2298
+    },
+    {
+      "file": "tests/research-clock.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1641,
+      "parallelMs": 1815,
+      "shuffledMs": 1741
+    },
+    {
+      "file": "tests/research-export.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 115,
+      "parallelMs": 134,
+      "shuffledMs": 125
+    },
+    {
+      "file": "tests/research-graph-layout.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 573,
+      "parallelMs": 549,
+      "shuffledMs": 532
+    },
+    {
+      "file": "tests/research-math.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 582,
+      "parallelMs": 568,
+      "shuffledMs": 587
+    },
+    {
+      "file": "tests/research-pdf.test.ts",
+      "counts": {
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2589,
+      "parallelMs": 2716,
+      "shuffledMs": 2634
+    },
+    {
+      "file": "tests/research-people-filter.test.ts",
+      "counts": {
+        "tests": 11,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 432,
+      "parallelMs": 508,
+      "shuffledMs": 472
+    },
+    {
+      "file": "tests/research-record-query.test.ts",
+      "counts": {
+        "tests": 11,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 545,
+      "parallelMs": 524,
+      "shuffledMs": 592
+    },
+    {
+      "file": "tests/research-relationship.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 343,
+      "parallelMs": 367,
+      "shuffledMs": 356
+    },
+    {
+      "file": "tests/research-suggestions-projection.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 571,
+      "parallelMs": 581,
+      "shuffledMs": 585
+    },
+    {
+      "file": "tests/research-suggestions-tier-delivery.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 444,
+      "parallelMs": 515,
+      "shuffledMs": 486
+    },
+    {
+      "file": "tests/research-suggestions.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1949,
+      "parallelMs": 2086,
+      "shuffledMs": 2068
+    },
+    {
+      "file": "tests/research-tools.test.ts",
+      "counts": {
+        "tests": 16,
+        "pass": 16,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 258,
+      "parallelMs": 262,
+      "shuffledMs": 271
+    },
+    {
+      "file": "tests/research-tree-view.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 139,
+      "parallelMs": 126,
+      "shuffledMs": 124
+    },
+    {
+      "file": "tests/restore-stream.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2383,
+      "parallelMs": 2476,
+      "shuffledMs": 2375
+    },
+    {
+      "file": "tests/restore.test.ts",
+      "counts": {
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 6472,
+      "parallelMs": 6766,
+      "shuffledMs": 6664
+    },
+    {
+      "file": "tests/review-people.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 321,
+      "parallelMs": 273,
+      "shuffledMs": 281
+    },
+    {
+      "file": "tests/route-crossings.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 158,
+      "parallelMs": 139,
+      "shuffledMs": 141
+    },
+    {
+      "file": "tests/runtime-config.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 110,
+      "parallelMs": 111,
+      "shuffledMs": 118
+    },
+    {
+      "file": "tests/runtime-metrics-http.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1445,
+      "parallelMs": 1520,
+      "shuffledMs": 1513
+    },
+    {
+      "file": "tests/runtime-release.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 416,
+      "parallelMs": 413,
+      "shuffledMs": 436
+    },
+    {
+      "file": "tests/safe-request-route.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 109,
+      "parallelMs": 116,
+      "shuffledMs": 113
+    },
+    {
+      "file": "tests/same-origin.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 113,
+      "parallelMs": 134,
+      "shuffledMs": 119
+    },
+    {
+      "file": "tests/schema-version.test.ts",
+      "counts": {
+        "tests": 9,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 515,
+      "parallelMs": 641,
+      "shuffledMs": 565
+    },
+    {
+      "file": "tests/scoped-archive-pages.test.ts",
+      "counts": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 837,
+      "parallelMs": 863,
+      "shuffledMs": 899
+    },
+    {
+      "file": "tests/scoped-citation-media-undo.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 833,
+      "parallelMs": 859,
+      "shuffledMs": 889
+    },
+    {
+      "file": "tests/scoped-citation-media.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 519,
+      "parallelMs": 491,
+      "shuffledMs": 527
+    },
+    {
+      "file": "tests/search-clear.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 106,
+      "parallelMs": 112,
+      "shuffledMs": 108
+    },
+    {
+      "file": "tests/server-lifecycle.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1383,
+      "parallelMs": 1472,
+      "shuffledMs": 1502
+    },
+    {
+      "file": "tests/server-schema-ownership.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 131,
+      "parallelMs": 167,
+      "shuffledMs": 129
+    },
+    {
+      "file": "tests/session-http.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 270,
+      "parallelMs": 249,
+      "shuffledMs": 246
+    },
+    {
+      "file": "tests/sessions.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 698,
+      "parallelMs": 681,
+      "shuffledMs": 731
+    },
+    {
+      "file": "tests/shared-person-evidence.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1543,
+      "parallelMs": 1541,
+      "shuffledMs": 1558
+    },
+    {
+      "file": "tests/shared-portrait-media.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 4582,
+      "parallelMs": 4674,
+      "shuffledMs": 4649
+    },
+    {
+      "file": "tests/sharing-audit-gedcom.test.ts",
+      "counts": {
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2350,
+      "parallelMs": 2340,
+      "shuffledMs": 2363
+    },
+    {
+      "file": "tests/sibling-hints.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 245,
+      "parallelMs": 255,
+      "shuffledMs": 248
+    },
+    {
+      "file": "tests/source-catalog-delivery.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1590,
+      "parallelMs": 1588,
+      "shuffledMs": 1618
+    },
+    {
+      "file": "tests/source-catalog-http.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2341,
+      "parallelMs": 2472,
+      "shuffledMs": 2407
+    },
+    {
+      "file": "tests/source-catalog-unions.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 568,
+      "parallelMs": 639,
+      "shuffledMs": 615
+    },
+    {
+      "file": "tests/spatial-arrow-motion.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 164,
+      "parallelMs": 172,
+      "shuffledMs": 164
+    },
+    {
+      "file": "tests/spatial-atlases.test.ts",
+      "counts": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 391,
+      "parallelMs": 388,
+      "shuffledMs": 420
+    },
+    {
+      "file": "tests/spatial-spin-gesture.test.ts",
+      "counts": {
+        "tests": 14,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 129,
+      "parallelMs": 135,
+      "shuffledMs": 154
+    },
+    {
+      "file": "tests/starter-cleanup.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 511,
+      "parallelMs": 514,
+      "shuffledMs": 551
+    },
+    {
+      "file": "tests/static-assets-http.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 283,
+      "parallelMs": 259,
+      "shuffledMs": 296
+    },
+    {
+      "file": "tests/storage-limits.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 6668,
+      "parallelMs": 6659,
+      "shuffledMs": 6617
+    },
+    {
+      "file": "tests/store-database.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 185,
+      "parallelMs": 195,
+      "shuffledMs": 202
+    },
+    {
+      "file": "tests/timeline-positions.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 138,
+      "parallelMs": 167,
+      "shuffledMs": 140
+    },
+    {
+      "file": "tests/timeline-scale.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 161,
+      "parallelMs": 166,
+      "shuffledMs": 157
+    },
+    {
+      "file": "tests/timeline-window.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 151,
+      "parallelMs": 120,
+      "shuffledMs": 136
+    },
+    {
+      "file": "tests/touch-zoom.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 117,
+      "parallelMs": 117,
+      "shuffledMs": 136
+    },
+    {
+      "file": "tests/tree-access.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 2376,
+      "parallelMs": 2510,
+      "shuffledMs": 2421
+    },
+    {
+      "file": "tests/tree-camera-fit.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 251,
+      "parallelMs": 252,
+      "shuffledMs": 282
+    },
+    {
+      "file": "tests/tree-depth.test.ts",
+      "counts": {
+        "tests": 13,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 193,
+      "parallelMs": 168,
+      "shuffledMs": 179
+    },
+    {
+      "file": "tests/tree-edge-adapter.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 415,
+      "parallelMs": 421,
+      "shuffledMs": 468
+    },
+    {
+      "file": "tests/tree-edge-permissions.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 372,
+      "parallelMs": 405,
+      "shuffledMs": 386
+    },
+    {
+      "file": "tests/tree-export-selection.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 130,
+      "parallelMs": 123,
+      "shuffledMs": 133
+    },
+    {
+      "file": "tests/tree-fragment.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 175,
+      "parallelMs": 162,
+      "shuffledMs": 165
+    },
+    {
+      "file": "tests/tree-generation-anchor.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 112,
+      "parallelMs": 116,
+      "shuffledMs": 128
+    },
+    {
+      "file": "tests/tree-generation-scope.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 124,
+      "parallelMs": 133,
+      "shuffledMs": 133
+    },
+    {
+      "file": "tests/tree-growth.test.ts",
+      "counts": {
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 385,
+      "parallelMs": 406,
+      "shuffledMs": 381
+    },
+    {
+      "file": "tests/tree-node-model.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 460,
+      "parallelMs": 415,
+      "shuffledMs": 420
+    },
+    {
+      "file": "tests/tree-preferences.test.ts",
+      "counts": {
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 626,
+      "parallelMs": 667,
+      "shuffledMs": 753
+    },
+    {
+      "file": "tests/tree-print-plan.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 297,
+      "parallelMs": 306,
+      "shuffledMs": 301
+    },
+    {
+      "file": "tests/tree-publication-statuses.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 152,
+      "parallelMs": 159,
+      "shuffledMs": 155
+    },
+    {
+      "file": "tests/tree-render-family.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 123,
+      "parallelMs": 122,
+      "shuffledMs": 128
+    },
+    {
+      "file": "tests/tree-workspace.test.ts",
+      "counts": {
+        "tests": 14,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1947,
+      "parallelMs": 2003,
+      "shuffledMs": 1906
+    },
+    {
+      "file": "tests/union-assertion-confidence.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1525,
+      "parallelMs": 1567,
+      "shuffledMs": 1586
+    },
+    {
+      "file": "tests/union-confidence.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1510,
+      "parallelMs": 1608,
+      "shuffledMs": 1649
+    },
+    {
+      "file": "tests/union-layers.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 432,
+      "parallelMs": 466,
+      "shuffledMs": 471
+    },
+    {
+      "file": "tests/union-layout.test.ts",
+      "counts": {
+        "tests": 30,
+        "pass": 30,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 45539,
+      "parallelMs": 44497,
+      "shuffledMs": 45733
+    },
+    {
+      "file": "tests/union-order.test.ts",
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 131,
+      "parallelMs": 135,
+      "shuffledMs": 131
+    },
+    {
+      "file": "tests/union-timeline.test.ts",
+      "counts": {
+        "tests": 9,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 996,
+      "parallelMs": 977,
+      "shuffledMs": 1007
+    },
+    {
+      "file": "tests/unit-test-runner.test.ts",
+      "counts": {
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 3246,
+      "parallelMs": 3391,
+      "shuffledMs": 3272
+    },
+    {
+      "file": "tests/upload-quota-preparation.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 504,
+      "parallelMs": 500,
+      "shuffledMs": 492
+    },
+    {
+      "file": "tests/visible-genealogy-catalog-warning.test.ts",
+      "counts": {
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 648,
+      "parallelMs": 704,
+      "shuffledMs": 689
+    },
+    {
+      "file": "tests/vk-auth-settings.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1622,
+      "parallelMs": 1686,
+      "shuffledMs": 1630
+    },
+    {
+      "file": "tests/vk-oauth.test.ts",
+      "counts": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1879,
+      "parallelMs": 1854,
+      "shuffledMs": 2001
+    },
+    {
+      "file": "tests/web-search-http.test.ts",
+      "counts": {
+        "tests": 10,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 3506,
+      "parallelMs": 3613,
+      "shuffledMs": 3718
+    },
+    {
+      "file": "tests/web-search.test.ts",
+      "counts": {
+        "tests": 11,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 392,
+      "parallelMs": 384,
+      "shuffledMs": 406
+    },
+    {
+      "file": "tests/work-queue.test.ts",
+      "counts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 138,
+      "parallelMs": 158,
+      "shuffledMs": 123
+    },
+    {
+      "file": "tests/yandex-responses.test.ts",
+      "counts": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "serialMs": 1906,
+      "parallelMs": 1951,
+      "shuffledMs": 2000
+    }
+  ]
+}
