@@ -2066,117 +2066,99 @@ export function documentsHttp({
           let release: (() => Promise<unknown>) | undefined;
           const header: Buffer[] = [];
           let headerSize = 0;
-          try {
-            const uploader = await auth.currentUser(req);
-            if (!uploader?.approved || !(await auth.canEdit(req)))
-              return json(res, 403, { error: "Право загрузки отозвано" });
-            release = await quota.acquire(
-              uploader.id,
-              Number(req.headers["content-length"]) > 0
-                ? Math.min(
-                    Number(req.headers["content-length"]),
-                    fileType.maxBytes,
-                  )
-                : fileType.maxBytes,
-              async () => {
-                const disk = await statfs(uploadsDirectory);
-                return disk.bavail * disk.bsize;
-              },
-              () => media.usage(true),
-              signal,
-            );
-            const guard = new Transform({
-              transform(chunk: Buffer, _encoding, callback) {
-                size += chunk.length;
-                if (size > fileType.maxBytes)
-                  return callback(new Error(sizeLimitMessage));
-                if (headerSize < 12) {
-                  const part = chunk.subarray(0, 12 - headerSize);
-                  header.push(part);
-                  headerSize += part.length;
-                }
-                callback(null, chunk);
-              },
-            });
-            await pipeline(
-              req,
-              guard,
-              createWriteStream(temporary, { flags: "wx" }),
-              {
-                signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
-              },
-            );
-            const signature = Buffer.concat(header);
-            if (fileType.extension === "pdf") {
-              if (size < 8 || signature.toString("ascii", 0, 5) !== "%PDF-")
-                return json(res, 415, { error: "Файл не является PDF" });
-            } else {
-              try {
-                if (documentImageExtension(signature) !== fileType.extension)
-                  throw new Error("Тип файла не совпадает с содержимым");
-                // Buffer input releases the temporary OS handle before Sharp.
-                // libvips may otherwise retain a path loader and block rename on Windows.
-                const original = await readPreparedFile(
-                  temporary,
-                  fileType.maxBytes,
-                  signal,
-                );
-                if (fileType.extension === "tif")
-                  await tiffDocumentPages(original, signal);
-                await sharp(original, { limitInputPixels: 50_000_000 })
-                  .timeout({ seconds: 25 })
-                  .rotate()
-                  .resize({ width: 1, height: 1, fit: "inside" })
-                  .toBuffer();
-                signal.throwIfAborted();
-              } catch {
-                return json(res, 415, {
-                  error: "Файл не является поддерживаемым изображением",
-                });
-              }
-            }
-            signal.throwIfAborted();
-            await rename(temporary, target);
-            const latest = await auth.currentUser(req);
-            const latestPeople = (await visible(req)).people;
-            const latestVisible = new Set(
-              latestPeople.map((person) => person.id),
-            );
-            if (
-              !latest?.approved ||
-              !(await auth.canEdit(req)) ||
-              latest.id !== uploader.id ||
-              ids.some((personId) => !latestVisible.has(personId as string)) ||
-              eventLinks.some(
-                (link) =>
-                  !latestPeople.some(
-                    (person) =>
-                      person.id === link.personId &&
-                      person.events?.some((event) => event.id === link.eventId),
-                  ),
-              )
-            )
-              return json(res, 403, {
-                error: "Доступ к выбранным людям изменился",
+          // Stage the result: no HTTP response may escape before the upload's
+          // temporary files and quota reservation have been cleaned up.
+          const receive = async () => {
+            try {
+              const uploader = await auth.currentUser(req);
+              if (!uploader?.approved || !(await auth.canEdit(req)))
+                return { status: 403, error: "Право загрузки отозвано" };
+              release = await quota.acquire(
+                uploader.id,
+                Number(req.headers["content-length"]) > 0
+                  ? Math.min(
+                      Number(req.headers["content-length"]),
+                      fileType.maxBytes,
+                    )
+                  : fileType.maxBytes,
+                async () => {
+                  const disk = await statfs(uploadsDirectory);
+                  return disk.bavail * disk.bsize;
+                },
+                () => media.usage(true),
+                signal,
+              );
+              const guard = new Transform({
+                transform(chunk: Buffer, _encoding, callback) {
+                  size += chunk.length;
+                  if (size > fileType.maxBytes)
+                    return callback(new Error(sizeLimitMessage));
+                  if (headerSize < 12) {
+                    const part = chunk.subarray(0, 12 - headerSize);
+                    header.push(part);
+                    headerSize += part.length;
+                  }
+                  callback(null, chunk);
+                },
               });
-            const committed = await writeWithSession(async () => {
+              await pipeline(
+                req,
+                guard,
+                createWriteStream(temporary, { flags: "wx" }),
+                {
+                  signal: AbortSignal.any([
+                    signal,
+                    AbortSignal.timeout(120_000),
+                  ]),
+                },
+              );
+              const signature = Buffer.concat(header);
+              if (fileType.extension === "pdf") {
+                if (size < 8 || signature.toString("ascii", 0, 5) !== "%PDF-")
+                  return { status: 415, error: "Файл не является PDF" };
+              } else {
+                try {
+                  if (documentImageExtension(signature) !== fileType.extension)
+                    throw new Error("Тип файла не совпадает с содержимым");
+                  // Buffer input releases the temporary OS handle before Sharp.
+                  // libvips may otherwise retain a path loader and block rename on Windows.
+                  const original = await readPreparedFile(
+                    temporary,
+                    fileType.maxBytes,
+                    signal,
+                  );
+                  if (fileType.extension === "tif")
+                    await tiffDocumentPages(original, signal);
+                  await sharp(original, { limitInputPixels: 50_000_000 })
+                    .timeout({ seconds: 25 })
+                    .rotate()
+                    .resize({ width: 1, height: 1, fit: "inside" })
+                    .toBuffer();
+                  signal.throwIfAborted();
+                } catch {
+                  return {
+                    status: 415,
+                    error: "Файл не является поддерживаемым изображением",
+                  };
+                }
+              }
               signal.throwIfAborted();
-              const current = await auth.currentUser(req);
-              const currentAccess = await visible(req);
-              const currentPeople = currentAccess.people;
-              const currentVisible = new Set(
-                currentPeople.map((person) => person.id),
+              await rename(temporary, target);
+              const latest = await auth.currentUser(req);
+              const latestPeople = (await visible(req)).people;
+              const latestVisible = new Set(
+                latestPeople.map((person) => person.id),
               );
               if (
-                !current?.approved ||
+                !latest?.approved ||
                 !(await auth.canEdit(req)) ||
-                current.id !== uploader.id ||
+                latest.id !== uploader.id ||
                 ids.some(
-                  (personId) => !currentVisible.has(personId as string),
+                  (personId) => !latestVisible.has(personId as string),
                 ) ||
                 eventLinks.some(
                   (link) =>
-                    !currentPeople.some(
+                    !latestPeople.some(
                       (person) =>
                         person.id === link.personId &&
                         person.events?.some(
@@ -2185,93 +2167,129 @@ export function documentsHttp({
                     ),
                 )
               )
-                return false;
-              await checkedWriteSession(current.id, issuingSession);
-              signal.throwIfAborted();
-              await db
-                .prepare(
-                  "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                  "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                )
-                .run(
-                  id,
-                  title,
-                  documentSearchText(title, details),
-                  name,
-                  size,
-                  uploader.id,
-                  new Date().toISOString(),
-                  details.documentType,
-                  details.documentDate,
-                  details.place,
-                  details.description,
-                  details.provenance,
-                  JSON.stringify(eventLinks),
-                  JSON.stringify(pages),
+                return {
+                  status: 403,
+                  error: "Доступ к выбранным людям изменился",
+                };
+              const committed = await writeWithSession(async () => {
+                signal.throwIfAborted();
+                const current = await auth.currentUser(req);
+                const currentAccess = await visible(req);
+                const currentPeople = currentAccess.people;
+                const currentVisible = new Set(
+                  currentPeople.map((person) => person.id),
                 );
-              const link = db.prepare(
-                "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
-                "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
-              );
-              for (const personId of ids as string[])
-                await link.run(id, personId);
-              await enforcePostgresMediaQuota(db);
-              await enforceUserStorageLimit(db, uploader.id);
-              await checkedWriteSession(current.id, issuingSession);
-              const row = (await db
-                .prepare(
-                  "SELECT * FROM documents WHERE id=?",
-                  "SELECT * FROM documents WHERE id=?",
+                if (
+                  !current?.approved ||
+                  !(await auth.canEdit(req)) ||
+                  current.id !== uploader.id ||
+                  ids.some(
+                    (personId) => !currentVisible.has(personId as string),
+                  ) ||
+                  eventLinks.some(
+                    (link) =>
+                      !currentPeople.some(
+                        (person) =>
+                          person.id === link.personId &&
+                          person.events?.some(
+                            (event) => event.id === link.eventId,
+                          ),
+                      ),
+                  )
                 )
-                .get(id)) as Row;
-              return { access: currentAccess, row };
-            });
-            if (
-              committed &&
-              typeof committed === "object" &&
-              "error" in committed
-            )
-              return json(res, committed.status, { error: committed.error });
-            if (!committed)
-              return json(res, 403, { error: "Доступ к документу изменился" });
-            // Prepare once at upload. Older originals fill the same cache on demand.
-            // A damaged or encrypted PDF retains the existing upload behaviour.
-            // The pending manifest owns its lifecycle. Do not await a second
-            // preparation lease while this upload still owns its input budget.
-            if (fileType.extension === "pdf")
-              void readPdfPages(target).catch(() => {});
-            return deliverCommittedDocument(
-              req,
-              res,
-              committed.access,
-              committed.row,
-              ids as string[],
-              { id },
-              201,
-            );
-          } catch (error) {
-            if (res.destroyed) return true;
-            if (error instanceof UploadQuotaError) {
-              if (error.status === 429) res.setHeader("Retry-After", "60");
-              return json(res, error.status, { error: error.message });
+                  return false;
+                await checkedWriteSession(current.id, issuingSession);
+                signal.throwIfAborted();
+                await db
+                  .prepare(
+                    "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                  )
+                  .run(
+                    id,
+                    title,
+                    documentSearchText(title, details),
+                    name,
+                    size,
+                    uploader.id,
+                    new Date().toISOString(),
+                    details.documentType,
+                    details.documentDate,
+                    details.place,
+                    details.description,
+                    details.provenance,
+                    JSON.stringify(eventLinks),
+                    JSON.stringify(pages),
+                  );
+                const link = db.prepare(
+                  "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
+                  "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
+                );
+                for (const personId of ids as string[])
+                  await link.run(id, personId);
+                await enforcePostgresMediaQuota(db);
+                await enforceUserStorageLimit(db, uploader.id);
+                await checkedWriteSession(current.id, issuingSession);
+                const row = (await db
+                  .prepare(
+                    "SELECT * FROM documents WHERE id=?",
+                    "SELECT * FROM documents WHERE id=?",
+                  )
+                  .get(id)) as Row;
+                return { access: currentAccess, row };
+              });
+              if (
+                committed &&
+                typeof committed === "object" &&
+                "error" in committed
+              )
+                return committed;
+              if (!committed)
+                return { status: 403, error: "Доступ к документу изменился" };
+              // Prepare once at upload. Older originals fill the same cache on demand.
+              // A damaged or encrypted PDF retains the existing upload behaviour.
+              // The pending manifest owns its lifecycle. Do not await a second
+              // preparation lease while this upload still owns its input budget.
+              if (fileType.extension === "pdf")
+                void readPdfPages(target).catch(() => {});
+              return committed;
+            } catch (error) {
+              if (res.destroyed) return;
+              if (error instanceof UploadQuotaError) {
+                if (error.status === 429) res.setHeader("Retry-After", "60");
+                return { status: error.status, error: error.message };
+              }
+              if (size > fileType.maxBytes)
+                return { status: 413, error: sizeLimitMessage };
+              console.error("Не удалось сохранить загруженный документ", error);
+              return { status: 500, error: "Не удалось сохранить документ" };
+            } finally {
+              await release?.();
+              await unlink(temporary).catch(() => {});
+              if (
+                !(await db
+                  .prepare(
+                    "SELECT 1 FROM documents WHERE id=?",
+                    "SELECT 1 FROM documents WHERE id=?",
+                  )
+                  .get(id))
+              )
+                await unlink(target).catch(() => {});
             }
-            if (size > fileType.maxBytes)
-              return json(res, 413, { error: sizeLimitMessage });
-            console.error("Не удалось сохранить загруженный документ", error);
-            return json(res, 500, { error: "Не удалось сохранить документ" });
-          } finally {
-            await release?.();
-            await unlink(temporary).catch(() => {});
-            if (
-              !(await db
-                .prepare(
-                  "SELECT 1 FROM documents WHERE id=?",
-                  "SELECT 1 FROM documents WHERE id=?",
-                )
-                .get(id))
-            )
-              await unlink(target).catch(() => {});
-          }
+          };
+          const result = await receive();
+          if (!result || res.destroyed) return true;
+          if ("error" in result)
+            return json(res, result.status, { error: result.error });
+          return deliverCommittedDocument(
+            req,
+            res,
+            result.access,
+            result.row,
+            ids as string[],
+            { id },
+            201,
+          );
         },
       );
     }
