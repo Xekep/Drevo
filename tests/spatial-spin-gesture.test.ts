@@ -23,7 +23,7 @@ test("small, slow, vertical and paused drags remain ordinary camera gestures", (
     [60, 0, 30, 0],
     [240, 0, 150, 0],
     [240, 300, 30, 0],
-    [240, 0, 30, 150],
+    [240, 0, 30, 300],
   ]) {
     const gesture = new SpatialSpinGesture();
     gesture.begin(1, point(0, 0), 600, true);
@@ -88,4 +88,42 @@ test("sparse native events interpolate the window boundary rather than discardin
   gesture.move(1, point(180, 245));
   gesture.move(1, point(240, 310));
   assert.equal(gesture.end(1, point(240, 320)), 1);
+});
+
+test("a strong stroke tolerates natural deceleration and a short release pause", () => {
+  const gesture = new SpatialSpinGesture();
+  gesture.begin(1, point(0, 0), 600, true);
+  gesture.move(1, point(120, 80));
+  gesture.move(1, point(138, 150));
+  gesture.move(1, point(140, 210));
+  assert.equal(gesture.end(1, point(140, 260)), 1);
+});
+
+test("a latched command expires when the hand rests instead of releasing", () => {
+  const gesture = new SpatialSpinGesture();
+  gesture.begin(1, point(0, 0), 600, true);
+  gesture.move(1, point(120, 80));
+  assert.equal(gesture.end(1, point(120, 310)), 0);
+});
+
+test("high-resolution screens do not require an excessively long stroke", () => {
+  const gesture = new SpatialSpinGesture();
+  gesture.begin(1, point(0, 0), 1600, true);
+  gesture.move(1, point(-190, 100));
+  assert.equal(gesture.end(1, point(-190, 160)), -1);
+});
+
+test("a fast stroke sampled in one display frame still commands rotation", () => {
+  const gesture = new SpatialSpinGesture();
+  gesture.begin(1, point(0, 0), 600, true);
+  gesture.move(1, point(100, 20));
+  assert.equal(gesture.end(1, point(100, 40)), 1);
+});
+
+test("an intentional counter-stroke cancels an armed direction", () => {
+  const gesture = new SpatialSpinGesture();
+  gesture.begin(1, point(0, 0), 600, true);
+  gesture.move(1, point(200, 100));
+  gesture.move(1, point(170, 120));
+  assert.equal(gesture.end(1, point(170, 130)), 0);
 });

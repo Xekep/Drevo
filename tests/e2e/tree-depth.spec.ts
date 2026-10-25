@@ -200,6 +200,61 @@ const orbitSample = (page: Page) => world(page).evaluate(node => {
   return { yaw: Math.atan2(x - tx, z - tz), radius: Math.hypot(x - tx, y - ty, z - tz), time: performance.now() };
 });
 
+test("3D spin recognizes repeated natural flicks and keeps rotating while zooming", async ({ page }, info) => {
+  await setup(page);
+  await settle(page);
+  const mobile = info.project.name === "mobile";
+  const canvas = page.locator(".tree-spatial-canvas");
+  const requests = await workerRequests(page);
+  for (const direction of [1, -1, 1]) {
+    await spinGesture(page, mobile, direction, 100, 140);
+    await expect(world(page)).toHaveAttribute("data-depth-spinning", "true");
+    await expect(world(page)).toHaveAttribute("data-depth-spin-direction", String(direction));
+    await canvas.click({ position: { x: 6, y: 6 } });
+    await expect(world(page)).toHaveAttribute("data-depth-spinning", "false");
+  }
+  await spinGesture(page, mobile, 1, 100, 140);
+  const beforeZoom = await orbitSample(page);
+  if (mobile) {
+    const box = (await canvas.boundingBox())!;
+    const x = box.x + box.width / 2, y = box.y + box.height / 2;
+    const session = await page.context().newCDPSession(page);
+    const timestamp = Date.now() / 1000;
+    await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: x - 35, y, id: 1 }, { x: x + 35, y, id: 2 }], timestamp });
+    for (let step = 1; step <= 4; step++)
+      await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x - 35 - step * 12, y, id: 1 }, { x: x + 35 + step * 12, y, id: 2 }], timestamp: timestamp + step * .04 });
+    await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [], timestamp: timestamp + .18 });
+    await session.detach();
+  } else {
+    const box = (await canvas.boundingBox())!;
+    await page.mouse.move(box.x + box.width * .75, box.y + box.height * .5);
+    await page.mouse.wheel(0, -400);
+  }
+  await expect(world(page)).toHaveAttribute("data-depth-spinning", "true");
+  await expect.poll(async () => (await orbitSample(page)).radius).toBeLessThan(beforeZoom.radius * .95);
+  if (!mobile) {
+    const previous = await orbitSample(page);
+    await page.getByRole("button", { name: "Увеличить", exact: true }).click();
+    await expect(world(page)).toHaveAttribute("data-depth-spinning", "true");
+    await expect.poll(async () => (await orbitSample(page)).radius).toBeLessThan(previous.radius * .9);
+  }
+  await canvas.focus();
+  const beforeKey = await orbitSample(page);
+  await page.keyboard.press("+");
+  await expect(world(page)).toHaveAttribute("data-depth-spinning", "true");
+  await expect.poll(async () => (await orbitSample(page)).radius).toBeLessThan(beforeKey.radius * .9);
+  const a = await orbitSample(page);
+  await page.waitForTimeout(650);
+  const b = await orbitSample(page);
+  const velocity = Math.atan2(Math.sin(b.yaw - a.yaw), Math.cos(b.yaw - a.yaw)) / ((b.time - a.time) / 1000);
+  expect(velocity).toBeLessThan(-.015);
+  expect(velocity).toBeGreaterThan(-.065);
+  expect(await workerRequests(page)).toBe(requests);
+  await page.keyboard.press("Escape");
+  await expect(world(page)).toHaveAttribute("data-depth-spinning", "false");
+  await page.screenshot({ path: info.outputPath("3d-zoom-during-spin.png") });
+});
+
 test("a strong 3D stroke commands a slow constant orbit, stopped by any canvas or toolbar press", async ({ page }, info) => {
   await setup(page);
   await settle(page);
