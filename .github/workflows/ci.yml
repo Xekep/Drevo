@@ -152,12 +152,16 @@ jobs:
           path: .
       - name: Test all suites on Node 22
         # Node 22: ошибка IPC в node --test (nodejs/node#64061, #64706).
-        # Прямой запуск оставляет каждый файл в отдельном процессе, без IPC runner.
-        run: |
-          for test_file in tests/*.test.ts; do
-            node --experimental-strip-types "$test_file"
-          done
+        # Ограниченная очередь сохраняет прямой запуск каждого файла без IPC runner.
+        run: npm test
       - run: npm run test:worker
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: unit-failures
+          path: outputs/unit-tests/
+          if-no-files-found: ignore
+          retention-days: 3
   check:
     if: always()
     needs: [prepare, e2e, unit]
