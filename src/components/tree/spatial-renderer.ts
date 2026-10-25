@@ -129,6 +129,10 @@ export class SpatialRenderer {
   private pinchZoom = false;
   private strokeClick: { x: number; y: number; time: number } | null = null;
   private updatingSpin = false;
+  private dampingActive = false;
+  private dampingTime = 0;
+  private dampingUntil = 0;
+  private controlsInteracting = false;
   private ids: string[];
   constructor(
     private host: HTMLDivElement,
@@ -151,11 +155,12 @@ export class SpatialRenderer {
     canvas.setAttribute("role", "img");
     canvas.setAttribute(
       "aria-label",
-      "3D-древо. Стрелки — поворот, Shift и стрелки — сдвиг, плюс и минус — масштаб, Home — всё древо. Быстрый горизонтальный жест включает медленное вращение. Масштабирование сохраняет вращение; остальные нажатия останавливают его. Пробел — включить или остановить вращение. Люди доступны в списке рядом.",
+      "3D-древо. Перетаскивание — поворот с плавной остановкой. Стрелки — поворот, Shift и стрелки — сдвиг, плюс и минус — масштаб, Home — всё древо. Быстрый горизонтальный жест включает медленное вращение. Масштабирование сохраняет вращение; остальные нажатия останавливают его. Пробел — включить или остановить вращение. Люди доступны в списке рядом.",
     );
     host.prepend(canvas);
     this.controls = new OrbitControls(this.camera, canvas);
-    this.controls.enableDamping = false;
+    this.controls.enableDamping = !this.reduced.matches;
+    this.controls.dampingFactor = 0.14;
     this.controls.minDistance = 260;
     this.controls.maxDistance = 200_000;
     this.controls.maxPolarAngle = Math.PI - 0.06;
@@ -170,7 +175,8 @@ export class SpatialRenderer {
       TWO: THREE.TOUCH.DOLLY_PAN,
     };
     this.controls.addEventListener("change", this.controlsChanged);
-    this.controls.addEventListener("start", this.interrupt);
+    this.controls.addEventListener("start", this.controlsStarted);
+    this.controls.addEventListener("end", this.controlsEnded);
     host.dataset.depthSpinning = "false";
     this.ids = [...world.points.keys()];
     const linePositions: number[] = [];
@@ -448,19 +454,65 @@ export class SpatialRenderer {
     this.fly = null;
     this.host.dataset.depthMoving = "false";
   };
-  private controlsChanged = () => {
-    if (!this.updatingSpin) this.invalidate();
+  private controlsStarted = () => {
+    this.interrupt();
+    this.controlsInteracting = true;
+    if (!this.spinActive && !this.reduced.matches) {
+      this.dampingActive = true;
+      this.dampingTime = performance.now();
+      this.dampingUntil = Infinity;
+    }
+    this.host.dataset.depthMoving = String(this.dampingActive);
   };
+  private controlsEnded = () => {
+    this.controlsInteracting = false;
+    this.dampingUntil = performance.now() + 800;
+    if (this.dampingActive) this.invalidate();
+  };
+  private controlsChanged = () => {
+    if (!this.updatingSpin) {
+      if (this.controlsInteracting && !this.spinActive && !this.reduced.matches) {
+        if (!this.dampingActive) this.dampingTime = performance.now();
+        this.dampingActive = true;
+        this.host.dataset.depthMoving = "true";
+      }
+      this.invalidate();
+    }
+  };
+  private stopDamping() {
+    this.dampingActive = false;
+    this.host.dataset.depthMoving = String(!!this.fly);
+    // Consume pending OrbitControls deltas through its public API, restoring
+    // the visible pose so a click/explicit navigation never causes a last jump.
+    const position = this.camera.position.clone();
+    const target = this.controls.target.clone();
+    const enabled = this.controls.enableDamping;
+    const updating = this.updatingSpin;
+    this.updatingSpin = true;
+    this.controls.enableDamping = false;
+    try {
+      this.controls.update(0);
+      this.camera.position.copy(position);
+      this.controls.target.copy(target);
+      this.controls.update(0);
+    } finally {
+      this.controls.enableDamping = enabled;
+      this.updatingSpin = updating;
+    }
+  }
   private stopSpin = () => {
     this.spinActive = false;
     this.spinZoom = null;
     this.controls.autoRotate = false;
+    this.stopDamping();
+    this.controls.enableDamping = !this.reduced.matches;
     this.spinTime = 0;
     clearTimeout(this.spinTimer);
     this.spinTimer = undefined;
     this.host.dataset.depthSpinning = "false";
   };
   private cancelSpin = () => {
+    this.controlsInteracting = false;
     this.spinGesture.cancel();
     this.touchPointers.clear();
     this.pinchCandidate = null;
@@ -500,12 +552,15 @@ export class SpatialRenderer {
   };
   private motionPreference = () => {
     if (this.reduced.matches) this.cancelSpin();
+    this.controls.enableDamping = !this.reduced.matches && !this.spinActive;
     this.invalidate();
   };
   private startSpin(direction: SpinDirection) {
     if (!direction || this.reduced.matches || !this.controls.enabled || this.hidden || this.stopped ||
         this.contextLost || this.host.closest("[inert]")) return;
     this.setHover(null);
+    this.stopDamping();
+    this.controls.enableDamping = false;
     this.fly = null;
     this.host.dataset.depthMoving = "false";
     this.spinDirection = direction;
@@ -700,19 +755,32 @@ export class SpatialRenderer {
           this.controls.update(delta);
           // Native wheel/pinch updates must not add an extra fixed-time orbit.
           this.controls.autoRotate = false;
-          if (this.spinZoom) {
-            const p = Math.min(1, Math.max(0, (time - this.spinZoom.start) / 220));
-            const radius = THREE.MathUtils.lerp(this.spinZoom.from, this.spinZoom.to, 1 - (1 - p) ** 3);
-            const offset = this.camera.position.clone().sub(this.controls.target).setLength(radius);
-            this.camera.position.copy(this.controls.target).add(offset);
-            this.controls.update(0);
-            if (p === 1) this.spinZoom = null;
-          }
         } finally {
           this.controls.autoRotate = false;
           this.updatingSpin = false;
         }
       }
+    }
+    if (this.dampingActive && !this.spinActive && !this.fly) {
+      if (!this.controls.enabled || this.reduced.matches || this.host.closest("[inert]") || time >= this.dampingUntil)
+        this.stopDamping();
+      else {
+        const delta = Math.max(1 / 240, Math.min(.05, (time - this.dampingTime) / 1000));
+        this.dampingTime = time;
+        this.controls.dampingFactor = 1 - Math.exp(-9 * delta);
+        this.updatingSpin = true;
+        let changed: boolean;
+        try { changed = this.controls.update(delta); }
+        finally { this.updatingSpin = false; }
+        if (!changed) this.stopDamping();
+      }
+    }
+    if (this.spinZoom) {
+      const p = Math.min(1, Math.max(0, (time - this.spinZoom.start) / 220));
+      const radius = THREE.MathUtils.lerp(this.spinZoom.from, this.spinZoom.to, 1 - (1 - p) ** 3);
+      const offset = this.camera.position.clone().sub(this.controls.target).setLength(radius);
+      this.camera.position.copy(this.controls.target).add(offset);
+      if (p === 1) this.spinZoom = null;
     }
     if (this.fly) {
       const p = Math.min(
@@ -847,7 +915,7 @@ export class SpatialRenderer {
     ]
       .map((v) => v.toFixed(2))
       .join(",");
-    if (this.fly) this.invalidate();
+    if (this.fly || this.dampingActive || this.spinZoom) this.invalidate();
     else if (this.spinActive) this.spinTimer = setTimeout(() => {
       this.spinTimer = undefined;
       this.invalidate();
@@ -857,7 +925,7 @@ export class SpatialRenderer {
   private drawArrowFrame = () => {
     // Reuse the uploaded scene and screen mask. Only one shader time uniform
     // changes; topology, projections and portrait/text buffers remain cached.
-    if (this.frame || this.fly || this.spinActive) return;
+    if (this.frame || this.fly || this.spinActive || this.dampingActive || this.spinZoom) return;
     try { this.renderer.render(this.scene, this.camera); }
     catch { this.lost(new Event("webglcontextlost", { cancelable: true })); return; }
     this.host.dataset.depthArrowFrames = String(Number(this.host.dataset.depthArrowFrames || 0) + 1);
@@ -954,7 +1022,7 @@ export class SpatialRenderer {
         200_000,
       ),
     );
-    if (this.spinActive) {
+    if (this.spinActive || this.dampingActive) {
       this.spinZoom = { from, to: offset.length(), start: performance.now() };
       this.invalidate();
       return;
@@ -1002,6 +1070,9 @@ export class SpatialRenderer {
     canvas.removeEventListener("pointercancel", this.pointerCancel);
     canvas.removeEventListener("pointerleave", this.pointerLeave);
     canvas.removeEventListener("keydown", this.keyDown);
+    this.controls.removeEventListener("change", this.controlsChanged);
+    this.controls.removeEventListener("start", this.controlsStarted);
+    this.controls.removeEventListener("end", this.controlsEnded);
     this.controls.dispose();
     this.atlas.dispose();
     this.nameAtlas.dispose();

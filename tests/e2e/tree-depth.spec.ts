@@ -200,6 +200,45 @@ const orbitSample = (page: Page) => world(page).evaluate(node => {
   return { yaw: Math.atan2(x - tx, z - tz), radius: Math.hypot(x - tx, y - ty, z - tz), time: performance.now() };
 });
 
+test("ordinary 3D drags coast briefly, settle and respect reduced motion", async ({ page }, info) => {
+  await setup(page);
+  await settle(page);
+  const mobile = info.project.name === "mobile";
+  const requests = await workerRequests(page);
+  await spinGesture(page, mobile, 1, 0, 50);
+  await expect(world(page)).toHaveAttribute("data-depth-spinning", "false");
+  await expect(world(page)).toHaveAttribute("data-depth-moving", "true");
+  const a = await orbitSample(page);
+  await page.waitForTimeout(100);
+  const b = await orbitSample(page);
+  await page.waitForTimeout(100);
+  const c = await orbitSample(page);
+  const speed = (from: typeof a, to: typeof a) => Math.abs(Math.atan2(Math.sin(to.yaw - from.yaw), Math.cos(to.yaw - from.yaw)) / ((to.time - from.time) / 1000));
+  expect(speed(a, b)).toBeGreaterThan(.001);
+  expect(speed(b, c)).toBeLessThan(speed(a, b) * .9);
+  await settle(page);
+  const stopped = await world(page).getAttribute("data-depth-camera");
+  const frames = Number(await world(page).getAttribute("data-depth-frames"));
+  await page.waitForTimeout(200);
+  expect(await world(page).getAttribute("data-depth-camera")).toBe(stopped);
+  expect(Number(await world(page).getAttribute("data-depth-frames"))).toBeLessThanOrEqual(frames + 1);
+  expect(await workerRequests(page)).toBe(requests);
+
+  await spinGesture(page, mobile, 1, 0, 50);
+  await page.locator(".tree-spatial-canvas").click({ position: { x: 6, y: 6 } });
+  await settle(page);
+  const cancelled = await world(page).getAttribute("data-depth-camera");
+  await page.waitForTimeout(150);
+  expect(await world(page).getAttribute("data-depth-camera")).toBe(cancelled);
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await spinGesture(page, mobile, 1, 0, 50);
+  await settle(page);
+  const reduced = await world(page).getAttribute("data-depth-camera");
+  await page.waitForTimeout(150);
+  expect(await world(page).getAttribute("data-depth-camera")).toBe(reduced);
+});
+
 test("3D spin recognizes repeated natural flicks and keeps rotating while zooming", async ({ page }, info) => {
   await setup(page);
   await settle(page);
