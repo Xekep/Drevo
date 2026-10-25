@@ -11,6 +11,7 @@ import { SpatialCardAtlas, type SpatialPalette } from "./spatial-card-atlas";
 import { SpatialNameAtlas } from "./spatial-name-atlas";
 import { SpatialLabelMask } from "./spatial-label-mask";
 import { SpatialArrowMotion } from "./spatial-arrow-motion";
+import { SpatialSpinGesture, type SpinDirection } from "./spatial-spin-gesture";
 import {
   edgeEndpointClip,
   edgeEndpointFragmentDeclarations,
@@ -118,6 +119,11 @@ export class SpatialRenderer {
   } | null = null;
   private pressTimer: ReturnType<typeof setTimeout> | null = null;
   private reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+  private spinGesture = new SpatialSpinGesture();
+  private spinTimer: ReturnType<typeof setTimeout> | undefined;
+  private spinTime = 0;
+  private spinDirection: SpinDirection = 1;
+  private updatingSpin = false;
   private ids: string[];
   constructor(
     private host: HTMLDivElement,
@@ -140,7 +146,7 @@ export class SpatialRenderer {
     canvas.setAttribute("role", "img");
     canvas.setAttribute(
       "aria-label",
-      "3D-древо. Стрелки — поворот, Shift и стрелки — сдвиг, плюс и минус — масштаб, Home — всё древо. Люди доступны в списке рядом.",
+      "3D-древо. Стрелки — поворот, Shift и стрелки — сдвиг, плюс и минус — масштаб, Home — всё древо. Быстрый горизонтальный жест включает медленное вращение; любой клик останавливает его. Пробел — включить или остановить вращение. Люди доступны в списке рядом.",
     );
     host.prepend(canvas);
     this.controls = new OrbitControls(this.camera, canvas);
@@ -158,8 +164,9 @@ export class SpatialRenderer {
       ONE: THREE.TOUCH.ROTATE,
       TWO: THREE.TOUCH.DOLLY_PAN,
     };
-    this.controls.addEventListener("change", this.invalidate);
+    this.controls.addEventListener("change", this.controlsChanged);
     this.controls.addEventListener("start", this.interrupt);
+    host.dataset.depthSpinning = "false";
     this.ids = [...world.points.keys()];
     const linePositions: number[] = [];
     for (const edge of world.connections) {
@@ -278,7 +285,11 @@ export class SpatialRenderer {
     this.observer = new ResizeObserver(this.resize);
     this.observer.observe(host);
     document.addEventListener("visibilitychange", this.visibility);
-    this.reduced.addEventListener("change", this.invalidate);
+    this.reduced.addEventListener("change", this.motionPreference);
+    document.addEventListener("pointerdown", this.documentPress, true);
+    document.addEventListener("click", this.documentClick, true);
+    document.addEventListener("keydown", this.documentKey, true);
+    window.addEventListener("blur", this.cancelSpin);
     canvas.addEventListener("webglcontextlost", this.lost);
     canvas.addEventListener("webglcontextrestored", this.restored);
     canvas.addEventListener("pointerdown", this.pointerDown);
@@ -408,6 +419,7 @@ export class SpatialRenderer {
   private visibility = () => {
     this.hidden = document.hidden;
     if (this.hidden) {
+      this.cancelSpin();
       this.arrows.stop();
       cancelAnimationFrame(this.frame);
       this.frame = 0;
@@ -416,6 +428,7 @@ export class SpatialRenderer {
   private lost = (event: Event) => {
     event.preventDefault();
     this.contextLost = true;
+    this.cancelSpin();
     this.arrows.stop();
     cancelAnimationFrame(this.frame);
     this.frame = 0;
@@ -426,10 +439,56 @@ export class SpatialRenderer {
     this.invalidate();
   };
   private interrupt = () => {
+    this.stopSpin();
     this.setHover(null);
     this.fly = null;
     this.host.dataset.depthMoving = "false";
   };
+  private controlsChanged = () => {
+    if (!this.updatingSpin) this.invalidate();
+  };
+  private stopSpin = () => {
+    this.controls.autoRotate = false;
+    this.spinTime = 0;
+    clearTimeout(this.spinTimer);
+    this.spinTimer = undefined;
+    this.host.dataset.depthSpinning = "false";
+  };
+  private cancelSpin = () => {
+    this.spinGesture.cancel();
+    this.stopSpin();
+  };
+  private documentPress = (event: PointerEvent) => {
+    this.stopSpin();
+    if (event.target !== this.renderer.domElement) this.spinGesture.cancel();
+  };
+  private documentClick = (event: MouseEvent) => {
+    // A drag can end with a native click on the canvas. The next pointerdown
+    // already stops rotation; synthetic/assistive clicks must also stop it.
+    if (!event.detail || event.target !== this.renderer.domElement) this.cancelSpin();
+  };
+  private documentKey = (event: KeyboardEvent) => {
+    if (event.key !== " " || event.target !== this.renderer.domElement) this.cancelSpin();
+  };
+  private motionPreference = () => {
+    if (this.reduced.matches) this.cancelSpin();
+    this.invalidate();
+  };
+  private startSpin(direction: SpinDirection) {
+    if (!direction || this.reduced.matches || !this.controls.enabled || this.hidden || this.stopped ||
+        this.contextLost || this.host.closest("[inert]")) return;
+    this.setHover(null);
+    this.fly = null;
+    this.host.dataset.depthMoving = "false";
+    this.spinDirection = direction;
+    this.controls.autoRotateSpeed = direction / 3; // 2 degrees/s; one turn in three minutes.
+    this.controls.autoRotate = true;
+    this.spinTime = performance.now();
+    this.host.dataset.depthSpinning = "true";
+    this.host.dataset.depthSpinDirection = String(direction);
+    this.arrows.stop();
+    this.invalidate();
+  }
   private clearPress() {
     if (this.pressTimer) clearTimeout(this.pressTimer);
     this.pressTimer = null;
@@ -466,6 +525,10 @@ export class SpatialRenderer {
   private pointerLeave = () => this.setHover(null);
   private pointerDown = (event: PointerEvent) => {
     this.setHover(null);
+    this.spinGesture.begin(event.pointerId,
+      { x: event.clientX, y: event.clientY, time: event.timeStamp }, this.height,
+      this.controls.enabled && !this.reduced.matches && event.button === 0 &&
+        !event.ctrlKey && !event.shiftKey && !event.metaKey && !event.altKey);
     const hit = this.personAt(event.clientX, event.clientY);
     if (this.pointer) {
       this.clearPress();
@@ -488,6 +551,8 @@ export class SpatialRenderer {
       }, 500);
   };
   private pointerMove = (event: PointerEvent) => {
+    if (event.ctrlKey || event.shiftKey || event.metaKey || event.altKey) this.spinGesture.cancel();
+    else this.spinGesture.move(event.pointerId, { x: event.clientX, y: event.clientY, time: event.timeStamp });
     if (event.pointerType === "mouse" && !event.buttons)
       this.setHover(this.personAt(event.clientX, event.clientY) || null);
     if (
@@ -502,6 +567,9 @@ export class SpatialRenderer {
     }
   };
   private pointerUp = (event: PointerEvent) => {
+    const spin = this.spinGesture.end(event.pointerId,
+      { x: event.clientX, y: event.clientY, time: event.timeStamp });
+    if (spin && event.button === 0) this.startSpin(spin);
     const press = this.pointer;
     this.clearPress();
     this.pointer = null;
@@ -516,7 +584,9 @@ export class SpatialRenderer {
     if (event.shiftKey) this.callbacks.select(press.hit);
     else this.callbacks.profile(press.hit);
   };
-  private pointerCancel = () => {
+  private pointerCancel = (event: PointerEvent) => {
+    this.spinGesture.cancel(event.pointerId);
+    this.stopSpin();
     this.setHover(null);
     this.clearPress();
     this.pointer = null;
@@ -524,7 +594,9 @@ export class SpatialRenderer {
   private keyDown = (event: KeyboardEvent) => {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     let handled = true;
-    if (event.key === "+" || event.key === "=") this.zoom(1);
+    if (event.key === " ") {
+      if (this.controls.autoRotate) this.cancelSpin(); else this.startSpin(this.spinDirection);
+    } else if (event.key === "+" || event.key === "=") this.zoom(1);
     else if (event.key === "-") this.zoom(-1);
     else if (event.key === "Home") void this.fit();
     else if (event.key === "Enter" && this.anchor)
@@ -557,9 +629,21 @@ export class SpatialRenderer {
   };
   private render = (time: number) => {
     this.frame = 0;
+    clearTimeout(this.spinTimer);
+    this.spinTimer = undefined;
     if (this.stopped || this.hidden || this.contextLost) return;
     this.arrows.stop();
     const started = performance.now();
+    if (this.controls.autoRotate) {
+      if (!this.controls.enabled || this.reduced.matches || this.host.closest("[inert]")) this.cancelSpin();
+      else {
+        const delta = Math.min(.1, Math.max(0, (time - this.spinTime) / 1000));
+        this.spinTime = time;
+        this.updatingSpin = true;
+        try { this.controls.update(delta); }
+        finally { this.updatingSpin = false; }
+      }
+    }
     if (this.fly) {
       const p = Math.min(
           1,
@@ -694,17 +778,22 @@ export class SpatialRenderer {
       .map((v) => v.toFixed(2))
       .join(",");
     if (this.fly) this.invalidate();
+    else if (this.controls.autoRotate) this.spinTimer = setTimeout(() => {
+      this.spinTimer = undefined;
+      this.invalidate();
+    }, Math.max(0, 1000 / 30 - (performance.now() - started)));
     else this.arrows.schedule();
   };
   private drawArrowFrame = () => {
     // Reuse the uploaded scene and screen mask. Only one shader time uniform
     // changes; topology, projections and portrait/text buffers remain cached.
-    if (this.frame || this.fly) return;
+    if (this.frame || this.fly || this.controls.autoRotate) return;
     try { this.renderer.render(this.scene, this.camera); }
     catch { this.lost(new Event("webglcontextlost", { cancelable: true })); return; }
     this.host.dataset.depthArrowFrames = String(Number(this.host.dataset.depthArrowFrames || 0) + 1);
   };
   private move(position: THREE.Vector3, target: THREE.Vector3, duration = 620) {
+    this.cancelSpin();
     this.setHover(null);
     if (this.reduced.matches || !duration) {
       this.fly = null;
@@ -818,11 +907,16 @@ export class SpatialRenderer {
   }
   dispose() {
     this.stopped = true;
+    this.cancelSpin();
     cancelAnimationFrame(this.frame);
     this.clearPress();
     this.observer.disconnect();
     document.removeEventListener("visibilitychange", this.visibility);
-    this.reduced.removeEventListener("change", this.invalidate);
+    this.reduced.removeEventListener("change", this.motionPreference);
+    document.removeEventListener("pointerdown", this.documentPress, true);
+    document.removeEventListener("click", this.documentClick, true);
+    document.removeEventListener("keydown", this.documentKey, true);
+    window.removeEventListener("blur", this.cancelSpin);
     const canvas = this.renderer.domElement;
     canvas.removeEventListener("webglcontextlost", this.lost);
     canvas.removeEventListener("webglcontextrestored", this.restored);
