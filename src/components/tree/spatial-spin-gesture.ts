@@ -7,7 +7,7 @@ type Stroke = {
   height: number;
   samples: Sample[];
   lastMove: number;
-  armed: { direction: SpinDirection; time: number } | null;
+  armed: { direction: SpinDirection; time: number; x: number } | null;
 };
 
 function direction(stroke: Stroke, point: Sample): SpinDirection {
@@ -74,10 +74,19 @@ export class SpatialSpinGesture {
     stroke.samples =
       recent.length > 64 ? [recent[0], ...recent.slice(-63)] : recent;
     const dx = point.x - last.x;
-    if (stroke.armed && dx * stroke.armed.direction < -16) stroke.armed = null;
+    if (stroke.armed) {
+      const progress = (point.x - stroke.armed.x) * stroke.armed.direction;
+      if (progress < -16) {
+        stroke.armed = null;
+        stroke.samples = [last, point];
+      }
+      if (stroke.armed && progress > 0) stroke.armed.x = point.x;
+    }
     const command = direction(stroke, point);
-    if (command && Math.sign(dx) === command)
-      stroke.armed = { direction: command, time: point.time };
+    if (command && Math.sign(dx) === command &&
+        (!stroke.armed || stroke.armed.direction !== command ||
+          (point.x - stroke.armed.x) * command >= 0))
+      stroke.armed = { direction: command, time: point.time, x: point.x };
   }
   end(id: number, point: Sample): SpinDirection {
     this.move(id, point);

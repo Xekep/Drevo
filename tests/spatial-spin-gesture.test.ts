@@ -127,3 +127,14 @@ test("an intentional counter-stroke cancels an armed direction", () => {
   gesture.move(1, point(170, 120));
   assert.equal(gesture.end(1, point(170, 130)), 0);
 });
+
+test("several small reverse samples cancel the command as one counter-stroke", () => {
+  const gesture = new SpatialSpinGesture();
+  gesture.begin(1, point(0, 0), 600, true);
+  gesture.move(1, point(200, 100));
+  for (let i = 1; i <= 4; i++) {
+    gesture.move(1, point(200 - i * 5, 100 + i * 10));
+    gesture.move(1, point(201 - i * 5, 105 + i * 10));
+  }
+  assert.equal(gesture.end(1, point(181, 150)), 0);
+});
