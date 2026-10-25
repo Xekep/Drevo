@@ -24,6 +24,8 @@
 
 Нужен Node.js **22.13 или новее**; на сервере и в CI используется 22.23.2.
 
+Проверка типов (`npm run typecheck`) использует стабильный нативный TypeScript **7.0.2**. Пакет `@typescript/native` установлен через npm alias; совместимый `typescript` → `@typescript/typescript6` нужен ESLint и архитектурным тестам с Compiler API. Это рекомендованная Microsoft схема совместной установки: `npx tsc --version` показывает 7.0.2, а импорт `typescript` предоставляет API ветки 6. Не заменяйте alias прямой установкой TypeScript 7: у версии 7.0 нет прежнего JavaScript API. [Пояснение Microsoft](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/).
+
 ```powershell
 cd C:\Users\Xekep\Documents\GitHub\Drevo
 npm ci

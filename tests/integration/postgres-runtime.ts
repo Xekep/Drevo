@@ -7324,562 +7324,508 @@ try {
       .then((r) => r.json())).account.id,
     "other-only",
   );
-  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
-  await client.query("DELETE FROM archive_owners WHERE archive_id='other-archive' AND user_id='owner'");
-  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
-  await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
-  const primaryDb = app.archive.db;
-  assert.equal(
-    (await primaryDb.prepare("", "SELECT count(*) AS n FROM archives").get())?.n,
-    1,
-    "account context must not leak outside the listing transaction",
-  );
-  assert.deepEqual(
-    (await accountArchiveDirectory(primaryDb).list("reader"))?.map((archive) => archive.id),
-    ["runtime-test"],
-  );
-  await primaryDb.transaction(async () => {
-    await primaryDb.prepare("", "SELECT set_config('drevo.account_id',?,true)").get("owner");
+  await verifyDiscoveryPublication(app, otherApp);
+
+  async function verifyDiscoveryPublication(
+    app: Awaited<ReturnType<typeof startServer>>,
+    otherApp: Awaited<ReturnType<typeof startServer>>,
+  ) {
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+    await client.query("DELETE FROM archive_owners WHERE archive_id='other-archive' AND user_id='owner'");
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='runtime-test'");
+    const primaryDb = app.archive.db;
     assert.equal(
-      (await primaryDb.prepare("", "UPDATE archive_memberships SET role='reader' WHERE archive_id='other-archive' AND user_id='owner'").run()).changes,
-      0,
-      "the extra read policy must not permit cross-archive writes",
+      (await primaryDb.prepare("", "SELECT count(*) AS n FROM archives").get())?.n,
+      1,
+      "account context must not leak outside the listing transaction",
     );
-  });
-  assert.equal(
-    (await fetch(otherBase + "/api/session", { headers: ownerHeaders }).then((r) => r.json())).user.id,
-    "owner",
-  );
-  assert.equal(
-    (await fetch(otherBase + "/api/session", { headers }).then((r) => r.json())).user,
-    null,
-    "a session alone does not grant membership in another archive",
-  );
-  const samePhoto = JSON.stringify({
-    id: "same-photo",
-    title: "Same path",
-    url: "/media/same.png",
-    tags: [],
-  });
-  for (const runtime of [app, otherApp])
-    await runtime.archive.db
-      .prepare("", "INSERT INTO photos(id,data) VALUES('same-photo',?::jsonb)")
-      .run(samePhoto);
-  writeFileSync(join(directory, "uploads", "same.png"), "primary");
-  writeFileSync(
-    join(directory, "archives", "other-archive", "uploads", "same.png"),
-    "secondary",
-  );
-  assert.equal(
-    await fetch(securedBase + "/media/same.png", { headers: ownerHeaders }).then((r) => r.text()),
-    "primary",
-  );
-  assert.equal(
-    await fetch(otherBase + "/media/same.png", { headers: ownerHeaders }).then((r) => r.text()),
-    "secondary",
-  );
-  assert.equal(
-    await fetch(securedBase + "/a/other-archive/media/same.png", { headers: ownerHeaders }).then((r) => r.text()),
-    "secondary",
-  );
-  assert.equal(
-    (await fetch(securedBase + "/a/other-archive/media/same.png", { headers: otherOnlyHeaders })).status,
-    404,
-    "a revoked member cannot read media through a warmed selected archive",
-  );
-  assert.equal((await fetch(otherBase + "/media/same.png", { headers })).status, 401);
-  // Discovery reads a global projection, never another archive's private graph.
-  assert.equal(
-    (await fetch(securedBase + "/api/discovery/people?q=Исправленный", { headers })).status,
-    503,
-  );
-  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
-  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
-    VALUES('other-archive','vk:42','admin',true,'all') ON CONFLICT (archive_id,user_id)
-    DO UPDATE SET role='admin',approved=true,tree_access='all'`);
-  await client.query(`INSERT INTO archive_owners(archive_id,user_id)
-    VALUES('other-archive','vk:42') ON CONFLICT (archive_id) DO UPDATE SET user_id='vk:42'`);
-  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
-  const otherPublication = publishedPeopleStore(otherApp.archive.db);
-  const livingDiscovery = await otherApp.archive.read();
-  assert.notEqual(livingDiscovery.family.people[0].deceased, true);
-  assert.equal(Boolean(livingDiscovery.family.people[0].death), false);
-  await otherPublication.publish("person-a", "owner");
-  assert.equal(
-    (await fetch(otherBase + "/api/admin/published-people/person-a", { headers: archiveAdminHeaders })
-      .then((response) => response.json())).archiveId,
-    "other-archive",
-  );
-  assert.equal(
-    (await app.archive.db.prepare("", "SELECT count(*)::int AS count FROM discovery_people WHERE archive_id='other-archive' AND person_id='person-a'").get())?.count,
-    0,
-    "a living person cannot enter discovery even if a stale publication row exists",
-  );
-  await otherApp.archive.db.prepare("", `DELETE FROM discovery_publication_reconciled_archives
-    WHERE archive_id='other-archive'`).run();
-  await initializePostgresRuntimeSchema(otherApp.archive.db);
-  assert.equal(await otherPublication.getFields("person-a"), null,
-    "an archive opened after the global trigger migration reconciles its own legacy opt-ins");
-  assert.equal((await otherApp.archive.db.prepare("", `SELECT count(*)::int AS count
-    FROM discovery_publication_reconciled_archives WHERE archive_id='other-archive'`).get())?.count,
-    1);
-  await otherPublication.unpublish("person-a");
-  const beforeDiscovery = await otherApp.archive.read();
-  const deceasedFamily = structuredClone(beforeDiscovery.family);
-  deceasedFamily.people[0].deceased = true;
-  deceasedFamily.people[0].maidenName = "ПоискРождения";
-  await otherApp.archive.write(deceasedFamily, beforeDiscovery.revision);
-  const selectedDiscoveryFields = {
-    birthSurname: true, birthYear: false, deathYear: false,
-    birthPlace: false, deathPlace: false,
-  };
-  assert.equal((await fetch(otherBase + "/api/admin/published-people/batch/preview", {
-    method: "POST", headers: inviteeHeaders,
-    body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
-  })).status, 403, "a reader cannot preview a private publication batch");
-  assert.equal((await fetch(otherBase + "/api/admin/published-people/batch/preview", {
-    method: "POST", headers,
-    body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
-  })).status, 401, "a member of a different archive cannot preview this publication batch");
-  const batchPreviewUrl = otherBase + "/api/admin/published-people/batch/preview";
-  const oldBatchPreview = await fetch(batchPreviewUrl, {
-    method: "POST", headers: archiveAdminHeaders,
-    body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
-  });
-  assert.equal(oldBatchPreview.status, 200);
-  const oldReview = await oldBatchPreview.json();
-  const beforeBatchRevision = await otherApp.archive.read();
-  await otherApp.archive.write(beforeBatchRevision.family, beforeBatchRevision.revision);
-  assert.equal((await fetch(otherBase + "/api/admin/published-people/batch", {
-    method: "POST", headers: archiveAdminHeaders,
-    body: JSON.stringify({ personIds: ["person-a"], fields: selectedDiscoveryFields,
-      revision: oldReview.revision, reviewToken: oldReview.reviewToken }),
-  })).status, 409, "a PostgreSQL revision change invalidates an old publication review");
-  const batchReview = await fetch(batchPreviewUrl, {
-    method: "POST", headers: archiveAdminHeaders,
-    body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
-  });
-  assert.equal(batchReview.status, 200);
-  const reviewedPublication = await batchReview.json();
-  assert.equal(reviewedPublication.people[0].person.birthSurname, "ПоискРождения");
-  assert.equal((await fetch(otherBase + "/api/admin/published-people/batch", {
-    method: "POST", headers: archiveAdminHeaders,
-    body: JSON.stringify({ personIds: ["person-a"], fields: selectedDiscoveryFields,
-      revision: reviewedPublication.revision, reviewToken: reviewedPublication.reviewToken }),
-  })).status, 200);
-  await app!.archive.db.transaction(async () => {
-    await app!.archive.db.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
-    assert.equal((await app!.archive.db.prepare("", `SELECT count(*)::int AS count FROM published_people
-      WHERE archive_id='other-archive' AND person_id='person-a'`).get())?.count, 0,
-    "RLS hides the other archive's publication row from this archive");
-  }, true);
-  assert.deepEqual((await (await fetch(otherBase + "/api/admin/published-people/batch?id=person-a", {
-    headers: archiveAdminHeaders,
-  })).json()).fields["person-a"], selectedDiscoveryFields);
-  await app.archive.db.prepare("", "UPDATE discovery_index_state SET ready=true WHERE singleton=true").run();
-  const found = await fetch(securedBase + "/api/discovery/people?q=Исправленный", { headers });
-  assert.equal(found.status, 200);
-  assert.deepEqual(
-    (await found.json()).results.map((person: { archiveId: string; id: string }) => [person.archiveId,person.id]),
-    [["other-archive","person-a"]],
-    "a root-archive reader can find only the explicitly published projection from another archive",
-  );
-  const chosenProjection = await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers });
-  assert.deepEqual(Object.keys((await chosenProjection.json()).person).sort(),
-    ["archiveId", "birthSurname", "id", "name", "publicationVersion"].sort());
-  assert.equal((await (await fetch(securedBase + "/api/discovery/people?q=ПоискРождения", { headers })).json()).results.length, 1);
-  assert.equal(
-    (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
-    200,
-  );
-  const publicationWithdrawalWaiting = async () => {
-    for (let attempt = 0; attempt < 60; attempt++) {
-      const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
-        WHERE datname=current_database() AND pid<>pg_backend_pid()
-          AND wait_event_type='Lock'
-          AND (query ILIKE '%published_people%' OR query ILIKE '%archives%FOR UPDATE%')`);
-      if (waiting.rowCount) return true;
-      await new Promise<void>((resolve) => setTimeout(resolve, 50));
-    }
-    return false;
-  };
-  let legacyReached!: () => void, releaseLegacy!: () => void;
-  const legacyReady = new Promise<void>((resolve) => { legacyReached = resolve; });
-  const legacyGate = new Promise<void>((resolve) => { releaseLegacy = resolve; });
-  const legacyAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
-    process.env.PUBLIC_ORIGIN);
-  const legacyEndpoint = publishedPeopleHttp({ archive: otherApp.archive, auth: legacyAuth,
-    store: otherPublication, publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforePublicDelivery: async () => { legacyReached(); await legacyGate; },
-  });
-  const legacyServer = createServer((req, res) => {
-    void legacyEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => legacyServer.listen(0, "127.0.0.1", resolve));
-  const legacyPort = (legacyServer.address() as { port: number }).port;
-  const legacyPath = "/api/published-people/person-a";
-  const pausedLegacy = fetch(`http://127.0.0.1:${legacyPort}${legacyPath}`,
-    { headers: { ...headers, "X-Real-IP": "203.0.113.40" } });
-  let withdrawLegacy: Promise<Response> | undefined;
-  let legacyEarly = "";
-  let legacyDelivered!: Response;
-  try {
-    await Promise.race([legacyReady,
-      pausedLegacy.then((response) => { throw new Error(`Legacy card sent before delivery barrier: ${response.status}`); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Legacy card did not reach delivery barrier")), 30_000)),
-    ]);
-    withdrawLegacy = fetch(otherBase + "/api/admin/published-people/person-a", {
-      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.41" },
+    assert.deepEqual(
+      (await accountArchiveDirectory(primaryDb).list("reader"))?.map((archive) => archive.id),
+      ["runtime-test"],
+    );
+    await primaryDb.transaction(async () => {
+      await primaryDb.prepare("", "SELECT set_config('drevo.account_id',?,true)").get("owner");
+      assert.equal(
+        (await primaryDb.prepare("", "UPDATE archive_memberships SET role='reader' WHERE archive_id='other-archive' AND user_id='owner'").run()).changes,
+        0,
+        "the extra read policy must not permit cross-archive writes",
+      );
     });
-    assert.equal(await publicationWithdrawalWaiting(), true,
-      "legacy detail delivery holds the publication row");
-    legacyEarly = await Promise.race([
-      withdrawLegacy.then((response) => `completed ${response.status}`),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
-    ]);
-    releaseLegacy();
-    legacyDelivered = await pausedLegacy;
-    assert.equal((await withdrawLegacy).status, 200);
-  } finally {
-    releaseLegacy();
-    await pausedLegacy.catch(() => {});
-    await withdrawLegacy?.catch(() => {});
-    await new Promise<void>((resolve) => legacyServer.close(() => resolve()));
-  }
-  assert.equal(legacyDelivered.status, 200);
-  assert.ok((await legacyDelivered.json()).person.name);
-  assert.equal((await fetch(otherBase + legacyPath, { headers: archiveAdminHeaders })).status, 404);
-  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
-    method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.42" },
-    body: JSON.stringify({ fields: selectedDiscoveryFields }),
-  })).status, 200);
-  assert.equal(legacyEarly, "pending", "legacy detail delivery must serialize with withdrawal");
-  console.log("runtime_legacy_public_detail_delivery_revocation_ok");
-  let legacySearchReached!: () => void, releaseLegacySearch!: () => void;
-  const legacySearchReady = new Promise<void>((resolve) => { legacySearchReached = resolve; });
-  const legacySearchGate = new Promise<void>((resolve) => { releaseLegacySearch = resolve; });
-  const legacySearchEndpoint = publishedPeopleHttp({ archive: otherApp.archive, auth: legacyAuth,
-    store: otherPublication, publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeSearchDelivery: async () => { legacySearchReached(); await legacySearchGate; },
-  });
-  const legacySearchServer = createServer((req, res) => {
-    void legacySearchEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => legacySearchServer.listen(0, "127.0.0.1", resolve));
-  const legacySearchPort = (legacySearchServer.address() as { port: number }).port;
-  const legacySearchPath = "/api/published-people/search?q=Исправленный";
-  const pausedLegacySearch = fetch(`http://127.0.0.1:${legacySearchPort}${legacySearchPath}`,
-    { headers: { ...headers, "X-Real-IP": "203.0.113.50" } });
-  let withdrawLegacySearch: Promise<Response> | undefined;
-  let legacySearchEarly = "";
-  let legacySearchDelivered!: Response;
-  try {
-    await Promise.race([legacySearchReady,
-      pausedLegacySearch.then((response) => { throw new Error(`Legacy search sent before delivery barrier: ${response.status}`); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Legacy search did not reach delivery barrier")), 30_000)),
-    ]);
-    withdrawLegacySearch = fetch(otherBase + "/api/admin/published-people/person-a", {
-      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.51" },
+    assert.equal(
+      (await fetch(otherBase + "/api/session", { headers: ownerHeaders }).then((r) => r.json())).user.id,
+      "owner",
+    );
+    assert.equal(
+      (await fetch(otherBase + "/api/session", { headers }).then((r) => r.json())).user,
+      null,
+      "a session alone does not grant membership in another archive",
+    );
+    const samePhoto = JSON.stringify({
+      id: "same-photo",
+      title: "Same path",
+      url: "/media/same.png",
+      tags: [],
     });
-    assert.equal(await publicationWithdrawalWaiting(), true,
-      "legacy search delivery holds the publication row");
-    legacySearchEarly = await Promise.race([
-      withdrawLegacySearch.then((response) => `completed ${response.status}`),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
-    ]);
-    releaseLegacySearch();
-    legacySearchDelivered = await pausedLegacySearch;
-    assert.equal((await withdrawLegacySearch).status, 200);
-  } finally {
-    releaseLegacySearch();
-    await pausedLegacySearch.catch(() => {});
-    await withdrawLegacySearch?.catch(() => {});
-    await new Promise<void>((resolve) => legacySearchServer.close(() => resolve()));
-  }
-  assert.equal(legacySearchDelivered.status, 200);
-  assert.ok((await legacySearchDelivered.json()).results.some(
-    (person: { id: string }) => person.id === "person-a"));
-  assert.deepEqual((await fetch(otherBase + legacySearchPath, {
-    headers: archiveAdminHeaders,
-  }).then((response) => response.json())).results, []);
-  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
-    method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.52" },
-    body: JSON.stringify({ fields: selectedDiscoveryFields }),
-  })).status, 200);
-  assert.equal(legacySearchEarly, "pending", "legacy search delivery must serialize with withdrawal");
-  console.log("runtime_legacy_public_search_delivery_revocation_ok");
-  let detailReached!: () => void, releaseDetail!: () => void;
-  const detailReady = new Promise<void>((resolve) => { detailReached = resolve; });
-  const detailGate = new Promise<void>((resolve) => { releaseDetail = resolve; });
-  const detailAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
-    process.env.PUBLIC_ORIGIN);
-  const detailEndpoint = discoveryPeopleHttp(app.archive.db, detailAuth, undefined, undefined,
-    async () => { detailReached(); await detailGate; });
-  const detailServer = createServer((req, res) => {
-    void detailEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => detailServer.listen(0, "127.0.0.1", resolve));
-  const detailPort = (detailServer.address() as { port: number }).port;
-  const detailPath = "/api/discovery/people/other-archive/person-a";
-  const pausedDetail = fetch(`http://127.0.0.1:${detailPort}${detailPath}`,
-    { headers: { ...headers, "X-Real-IP": "203.0.113.11" } });
-  let withdrawDetail: Promise<Response> | undefined;
-  try {
-    await Promise.race([detailReady,
-      pausedDetail.then(() => { throw new Error("Discovery detail sent before delivery barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Discovery detail did not reach delivery barrier")), 30_000)),
-    ]);
-    withdrawDetail = fetch(otherBase + "/api/admin/published-people/person-a", {
-      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.12" },
+    for (const runtime of [app, otherApp])
+      await runtime.archive.db
+        .prepare("", "INSERT INTO photos(id,data) VALUES('same-photo',?::jsonb)")
+        .run(samePhoto);
+    writeFileSync(join(directory, "uploads", "same.png"), "primary");
+    writeFileSync(
+      join(directory, "archives", "other-archive", "uploads", "same.png"),
+      "secondary",
+    );
+    assert.equal(
+      await fetch(securedBase + "/media/same.png", { headers: ownerHeaders }).then((r) => r.text()),
+      "primary",
+    );
+    assert.equal(
+      await fetch(otherBase + "/media/same.png", { headers: ownerHeaders }).then((r) => r.text()),
+      "secondary",
+    );
+    assert.equal(
+      await fetch(securedBase + "/a/other-archive/media/same.png", { headers: ownerHeaders }).then((r) => r.text()),
+      "secondary",
+    );
+    assert.equal(
+      (await fetch(securedBase + "/a/other-archive/media/same.png", { headers: otherOnlyHeaders })).status,
+      404,
+      "a revoked member cannot read media through a warmed selected archive",
+    );
+    assert.equal((await fetch(otherBase + "/media/same.png", { headers })).status, 401);
+    // Discovery reads a global projection, never another archive's private graph.
+    assert.equal(
+      (await fetch(securedBase + "/api/discovery/people?q=Исправленный", { headers })).status,
+      503,
+    );
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+    await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+      VALUES('other-archive','vk:42','admin',true,'all') ON CONFLICT (archive_id,user_id)
+      DO UPDATE SET role='admin',approved=true,tree_access='all'`);
+    await client.query(`INSERT INTO archive_owners(archive_id,user_id)
+      VALUES('other-archive','vk:42') ON CONFLICT (archive_id) DO UPDATE SET user_id='vk:42'`);
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    const otherPublication = publishedPeopleStore(otherApp.archive.db);
+    const livingDiscovery = await otherApp.archive.read();
+    assert.notEqual(livingDiscovery.family.people[0].deceased, true);
+    assert.equal(Boolean(livingDiscovery.family.people[0].death), false);
+    await otherPublication.publish("person-a", "owner");
+    assert.equal(
+      (await fetch(otherBase + "/api/admin/published-people/person-a", { headers: archiveAdminHeaders })
+        .then((response) => response.json())).archiveId,
+      "other-archive",
+    );
+    assert.equal(
+      (await app.archive.db.prepare("", "SELECT count(*)::int AS count FROM discovery_people WHERE archive_id='other-archive' AND person_id='person-a'").get())?.count,
+      0,
+      "a living person cannot enter discovery even if a stale publication row exists",
+    );
+    await otherApp.archive.db.prepare("", `DELETE FROM discovery_publication_reconciled_archives
+      WHERE archive_id='other-archive'`).run();
+    await initializePostgresRuntimeSchema(otherApp.archive.db);
+    assert.equal(await otherPublication.getFields("person-a"), null,
+      "an archive opened after the global trigger migration reconciles its own legacy opt-ins");
+    assert.equal((await otherApp.archive.db.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_publication_reconciled_archives WHERE archive_id='other-archive'`).get())?.count,
+      1);
+    await otherPublication.unpublish("person-a");
+    const beforeDiscovery = await otherApp.archive.read();
+    const deceasedFamily = structuredClone(beforeDiscovery.family);
+    deceasedFamily.people[0].deceased = true;
+    deceasedFamily.people[0].maidenName = "ПоискРождения";
+    await otherApp.archive.write(deceasedFamily, beforeDiscovery.revision);
+    const selectedDiscoveryFields = {
+      birthSurname: true, birthYear: false, deathYear: false,
+      birthPlace: false, deathPlace: false,
+    };
+    assert.equal((await fetch(otherBase + "/api/admin/published-people/batch/preview", {
+      method: "POST", headers: inviteeHeaders,
+      body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
+    })).status, 403, "a reader cannot preview a private publication batch");
+    assert.equal((await fetch(otherBase + "/api/admin/published-people/batch/preview", {
+      method: "POST", headers,
+      body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
+    })).status, 401, "a member of a different archive cannot preview this publication batch");
+    const batchPreviewUrl = otherBase + "/api/admin/published-people/batch/preview";
+    const oldBatchPreview = await fetch(batchPreviewUrl, {
+      method: "POST", headers: archiveAdminHeaders,
+      body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
     });
-    assert.equal(await publicationWithdrawalWaiting(), true,
-      "detail delivery holds the published row against withdrawal");
-    const earlyWithdrawal = await Promise.race([
-      withdrawDetail.then((response) => `completed ${response.status}`),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
-    ]);
-    assert.equal(earlyWithdrawal, "pending",
-      "unpublishing a card waits until its discovery detail finishes delivery");
-    releaseDetail();
-    assert.equal((await pausedDetail).status, 200);
-    assert.equal((await withdrawDetail).status, 200);
-  } finally {
-    releaseDetail();
-    await pausedDetail.catch(() => {});
-    await withdrawDetail?.catch(() => {});
-    await new Promise<void>((resolve) => detailServer.close(() => resolve()));
-  }
-  assert.equal((await fetch(securedBase + detailPath, { headers })).status, 404);
-  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
-    method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.13" },
-    body: JSON.stringify({ fields: selectedDiscoveryFields }),
-  })).status, 200);
-  console.log("runtime_discovery_detail_delivery_revocation_ok");
-  const candidateRootBefore = await app.archive.read();
-  const candidateOtherBefore = await otherApp.archive.read();
-  const candidateRoot = structuredClone(candidateRootBefore.family);
-  const candidateOther = structuredClone(candidateOtherBefore.family);
-  const candidateSourceId = "revoke-candidate-root";
-  const candidateTargetId = "revoke-candidate-other";
-  for (const [family,id] of [[candidateRoot,candidateSourceId],
-    [candidateOther,candidateTargetId]] as const) {
-    family.people.push({ ...structuredClone(family.people[0]), id,
-      surname: "Stone", name: "Anna", patronymic: "", maidenName: undefined,
-      birth: "1900", death: "1970", deceased: true,
-      parents: [], spouses: [], sources: [], generation: 1 });
-  }
-  await app.archive.write(candidateRoot, candidateRootBefore.revision);
-  await otherApp.archive.write(candidateOther, candidateOtherBefore.revision);
-  await publishedPeopleStore(app.archive.db).publish(candidateSourceId, "owner");
-  await publishedPeopleStore(otherApp.archive.db).publish(candidateTargetId, "owner");
-  const revokeCandidatePath = `/api/discovery/matches/candidates?sourcePersonId=${candidateSourceId}`;
-  const candidateBeforeRevoke = await fetch(securedBase + revokeCandidatePath,
-    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.16" } });
-  assert.equal(candidateBeforeRevoke.status, 200);
-  assert.ok((await candidateBeforeRevoke.json()).candidates.some(
-    (item: { id: string }) => item.id === candidateTargetId),
-  "the synthetic published candidate must be present before revocation");
-  const beforeSwappedNames = await otherApp.archive.read();
-  const withSwappedNames = structuredClone(beforeSwappedNames.family);
-  const swappedIds = Array.from({ length: 24 }, (_, index) =>
-    `swapped-candidate-${String(index).padStart(2, "0")}`);
-  withSwappedNames.people.push(...swappedIds.map((id, index) => ({
-    ...structuredClone(withSwappedNames.people.find((person) => person.id === candidateTargetId)!),
-    id, surname: index < 12 ? "Anna" : "Other",
-    name: index < 12 ? "Stone" : "Anna Stone",
-  })));
-  const swappedWrite = await otherApp.archive.write(withSwappedNames, beforeSwappedNames.revision);
-  for (const id of swappedIds) await publishedPeopleStore(otherApp.archive.db).publish(id, "owner");
-  const swappedResponse = await fetch(securedBase + revokeCandidatePath,
-    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.61" } });
-  assert.equal(swappedResponse.status, 200);
-  const swappedPage = await swappedResponse.json();
-  assert.ok(swappedPage.candidates.some((item: { id: string }) => item.id === candidateTargetId),
-    "name-role false positives must not hide a genuine candidate behind an empty first page");
-  assert.ok(swappedPage.candidates.every((item: { id: string }) => !swappedIds.includes(item.id)),
-    "name tokens in the wrong published roles are not candidate evidence");
-  await otherApp.archive.write(beforeSwappedNames.family, swappedWrite.revision);
-  console.log("runtime_discovery_candidate_name_roles_ok");
-  const beforePlacePageRoot = await app.archive.read();
-  const beforePlacePageOther = await otherApp.archive.read();
-  const placePageRoot = structuredClone(beforePlacePageRoot.family);
-  const placePageOther = structuredClone(beforePlacePageOther.family);
-  placePageRoot.people.find((person) => person.id === candidateSourceId)!.birthPlace = "Amberton";
-  const wrongPlaceIds = Array.from({ length: 24 }, (_, index) =>
-    `wrong-place-${String(index).padStart(2, "0")}`);
-  const placeOnlyId = "place-role-valid";
-  placePageOther.people.push(...wrongPlaceIds.map((id) => ({
-    ...structuredClone(placePageOther.people.find((person) => person.id === candidateTargetId)!),
-    id, surname: "Aaa", birthPlace: "Otherburg", deathPlace: "Amberton",
-  })));
-  placePageOther.people.push({
-    ...structuredClone(placePageOther.people.find((person) => person.id === candidateTargetId)!),
-    id: placeOnlyId, surname: "Zed", birthPlace: "Amberton", deathPlace: "Otherburg",
-  });
-  const placeRootWrite = await app.archive.write(placePageRoot, beforePlacePageRoot.revision);
-  const placeOtherWrite = await otherApp.archive.write(placePageOther, beforePlacePageOther.revision);
-  for (const id of wrongPlaceIds) await publishedPeopleStore(otherApp.archive.db).publish(id, "owner");
-  await publishedPeopleStore(otherApp.archive.db).publish(placeOnlyId, "owner");
-  const placePageResponse = await fetch(securedBase + revokeCandidatePath,
-    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.62" } });
-  assert.equal(placePageResponse.status, 200);
-  const placePage = await placePageResponse.json();
-  assert.ok(placePage.candidates.some((item: { id: string }) => item.id === candidateTargetId),
-    "cross-field place matches must not hide an existing candidate past an empty first page");
-  assert.ok(placePage.candidates.some((item: { id: string; reasons: string[] }) =>
-    item.id === placeOnlyId && item.reasons.includes("Место рождения совпадает")),
-  "the same published birth settlement still finds a changed surname");
-  assert.ok(placePage.candidates.every((item: { id: string }) => !wrongPlaceIds.includes(item.id)),
-    "a published death settlement alone does not prove the same birth settlement");
-  await otherApp.archive.write(beforePlacePageOther.family, placeOtherWrite.revision);
-  console.log("runtime_discovery_candidate_place_roles_ok");
-  const beforeLocalityPage = await otherApp.archive.read();
-  const localityPageFamily = structuredClone(beforeLocalityPage.family);
-  const wrongLocalityIds = Array.from({ length: 24 }, (_, index) =>
-    `wrong-locality-${String(index).padStart(2, "0")}`);
-  localityPageFamily.people.push(...wrongLocalityIds.map((id) => ({
-    ...structuredClone(localityPageFamily.people.find((person) => person.id === candidateTargetId)!),
-    id, surname: "Aab", birthPlace: "Amberton, Otherburg",
-  })));
-  const localityWrite = await otherApp.archive.write(localityPageFamily, beforeLocalityPage.revision);
-  for (const id of wrongLocalityIds)
-    await publishedPeopleStore(otherApp.archive.db).publish(id, "owner");
-  const localityPageResponse = await fetch(securedBase + revokeCandidatePath,
-    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.63" } });
-  assert.equal(localityPageResponse.status, 200);
-  const localityPage = await localityPageResponse.json();
-  assert.ok(localityPage.candidates.some((item: { id: string }) => item.id === candidateTargetId),
-    "a place token outside the selected settlement must not hide a valid candidate page");
-  const cappedFamily = structuredClone(localityPageFamily);
-  // The exact tier no longer consumes the true candidate from the fuzzy
-  // 96-row budget, so retain a 97th false positive to exercise its cursor.
-  const additionalLocalityIds = Array.from({ length: 73 }, (_, index) =>
-    `wrong-locality-${String(index + 24).padStart(2, "0")}`);
-  cappedFamily.people.push(...additionalLocalityIds.map((id) => ({
-    ...structuredClone(cappedFamily.people.find((person) => person.id === wrongLocalityIds[0])!), id,
-  })));
-  const cappedWrite = await otherApp.archive.write(cappedFamily, localityWrite.revision);
-  for (const id of additionalLocalityIds)
-    await publishedPeopleStore(otherApp.archive.db).publish(id, "owner");
-  const cappedResponse = await fetch(securedBase + revokeCandidatePath,
-    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.64" } });
-  assert.equal(cappedResponse.status, 200);
-  const cappedPage = await cappedResponse.json();
-  assert.deepEqual(cappedPage.candidates.map((item: { id: string }) => item.id),
-    [candidateTargetId],
-  "an exact-name candidate is retrieved before 96 unrelated approximate rows");
-  assert.equal(cappedPage.approximate, true);
-  assert.equal(cappedPage.partial, true,
-    "the approximate tail still reports its bounded raw scan");
-  assert.equal(typeof cappedPage.nextCursor, "string");
-  const afterCapResponse = await fetch(securedBase + revokeCandidatePath +
-    `&cursor=${encodeURIComponent(cappedPage.nextCursor)}`,
-  { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.65" } });
-  assert.equal(afterCapResponse.status, 200);
-  assert.equal((await afterCapResponse.json()).candidates.some(
-    (item: { id: string }) => item.id === candidateTargetId), false,
-  "the approximate cursor cannot repeat a candidate already returned by an exact tier");
-  await otherApp.archive.write(beforeLocalityPage.family, cappedWrite.revision);
-  console.log("runtime_discovery_candidate_locality_pagination_ok");
-  const candidatePriorOwner = (await client.query(`SELECT user_id FROM archive_owners
-    WHERE archive_id='runtime-test'`)).rows[0].user_id as string;
-  const candidatePriorRole = (await client.query(`SELECT role FROM archive_memberships
-    WHERE archive_id='runtime-test' AND user_id=$1`, [candidatePriorOwner])).rows[0].role as string;
-  await client.query(`INSERT INTO accounts(id,name,created_at)
-    VALUES('candidate-owner-successor','Candidate successor',$1)`, [new Date().toISOString()]);
-  await client.query(`INSERT INTO account_tiers(account_id,full_access)
-    VALUES('candidate-owner-successor',true)`);
-  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
-    VALUES('runtime-test','candidate-owner-successor','admin',true,'all')`);
-  const candidateSuccessorToken = newSessionToken();
-  await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
-    VALUES($1,'candidate-owner-successor',$2)`, [
-    sessionTokenHash(candidateSuccessorToken), Date.now() + 600_000,
-  ]);
-  const ownerCandidateBarrier = async (beforeResponse: boolean, ip: string) => {
-    let reached!: () => void, release!: () => void;
-    const ready = new Promise<void>((resolve) => { reached = resolve; });
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const pause = async () => { reached(); await gate; };
-    const endpoint = discoveryMatchesHttp({ archive: app!.archive, auth: detailAuth,
-      publicOrigin: process.env.PUBLIC_ORIGIN,
-      beforeCandidateDelivery: beforeResponse ? undefined : pause,
-      beforeCandidateResponse: beforeResponse ? pause : undefined,
+    assert.equal(oldBatchPreview.status, 200);
+    const oldReview = await oldBatchPreview.json();
+    const beforeBatchRevision = await otherApp.archive.read();
+    await otherApp.archive.write(beforeBatchRevision.family, beforeBatchRevision.revision);
+    assert.equal((await fetch(otherBase + "/api/admin/published-people/batch", {
+      method: "POST", headers: archiveAdminHeaders,
+      body: JSON.stringify({ personIds: ["person-a"], fields: selectedDiscoveryFields,
+        revision: oldReview.revision, reviewToken: oldReview.reviewToken }),
+    })).status, 409, "a PostgreSQL revision change invalidates an old publication review");
+    const batchReview = await fetch(batchPreviewUrl, {
+      method: "POST", headers: archiveAdminHeaders,
+      body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
     });
-    const server = createServer((req, res) => {
-      void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+    assert.equal(batchReview.status, 200);
+    const reviewedPublication = await batchReview.json();
+    assert.equal(reviewedPublication.people[0].person.birthSurname, "ПоискРождения");
+    assert.equal((await fetch(otherBase + "/api/admin/published-people/batch", {
+      method: "POST", headers: archiveAdminHeaders,
+      body: JSON.stringify({ personIds: ["person-a"], fields: selectedDiscoveryFields,
+        revision: reviewedPublication.revision, reviewToken: reviewedPublication.reviewToken }),
+    })).status, 200);
+    await app!.archive.db.transaction(async () => {
+      await app!.archive.db.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+      assert.equal((await app!.archive.db.prepare("", `SELECT count(*)::int AS count FROM published_people
+        WHERE archive_id='other-archive' AND person_id='person-a'`).get())?.count, 0,
+      "RLS hides the other archive's publication row from this archive");
+    }, true);
+    assert.deepEqual((await (await fetch(otherBase + "/api/admin/published-people/batch?id=person-a", {
+      headers: archiveAdminHeaders,
+    })).json()).fields["person-a"], selectedDiscoveryFields);
+    await app.archive.db.prepare("", "UPDATE discovery_index_state SET ready=true WHERE singleton=true").run();
+    const found = await fetch(securedBase + "/api/discovery/people?q=Исправленный", { headers });
+    assert.equal(found.status, 200);
+    assert.deepEqual(
+      (await found.json()).results.map((person: { archiveId: string; id: string }) => [person.archiveId,person.id]),
+      [["other-archive","person-a"]],
+      "a root-archive reader can find only the explicitly published projection from another archive",
+    );
+    const chosenProjection = await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers });
+    assert.deepEqual(Object.keys((await chosenProjection.json()).person).sort(),
+      ["archiveId", "birthSurname", "id", "name", "publicationVersion"].sort());
+    assert.equal((await (await fetch(securedBase + "/api/discovery/people?q=ПоискРождения", { headers })).json()).results.length, 1);
+    assert.equal(
+      (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
+      200,
+    );
+    const publicationWithdrawalWaiting = async () => {
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
+          WHERE datname=current_database() AND pid<>pg_backend_pid()
+            AND wait_event_type='Lock'
+            AND (query ILIKE '%published_people%' OR query ILIKE '%archives%FOR UPDATE%')`);
+        if (waiting.rowCount) return true;
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      }
+      return false;
+    };
+    let legacyReached!: () => void, releaseLegacy!: () => void;
+    const legacyReady = new Promise<void>((resolve) => { legacyReached = resolve; });
+    const legacyGate = new Promise<void>((resolve) => { releaseLegacy = resolve; });
+    const legacyAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+      process.env.PUBLIC_ORIGIN);
+    const legacyEndpoint = publishedPeopleHttp({ archive: otherApp.archive, auth: legacyAuth,
+      store: otherPublication, publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforePublicDelivery: async () => { legacyReached(); await legacyGate; },
+    });
+    const legacyServer = createServer((req, res) => {
+      void legacyEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
         .catch((error) => { res.destroy(error); });
     });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const port = (server.address() as { port: number }).port;
-    const response = fetch(`http://127.0.0.1:${port}${revokeCandidatePath}`,
-      { headers: { ...ownerHeaders, "X-Real-IP": ip } });
-    const close = async () => {
-      release();
-      await response.catch(() => {});
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-    };
-    return { ready, release, response, close };
-  };
-  try {
-    await client.query("BEGIN");
+    await new Promise<void>((resolve) => legacyServer.listen(0, "127.0.0.1", resolve));
+    const legacyPort = (legacyServer.address() as { port: number }).port;
+    const legacyPath = "/api/published-people/person-a";
+    const pausedLegacy = fetch(`http://127.0.0.1:${legacyPort}${legacyPath}`,
+      { headers: { ...headers, "X-Real-IP": "203.0.113.40" } });
+    let withdrawLegacy: Promise<Response> | undefined;
+    let legacyEarly = "";
+    let legacyDelivered!: Response;
     try {
-      await client.query(`UPDATE archive_owners SET user_id='candidate-owner-successor'
-        WHERE archive_id='runtime-test'`);
-      const busy = await fetch(securedBase + revokeCandidatePath, {
-        headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.69" },
-        signal: AbortSignal.timeout(2_000),
+      await Promise.race([legacyReady,
+        pausedLegacy.then((response) => { throw new Error(`Legacy card sent before delivery barrier: ${response.status}`); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Legacy card did not reach delivery barrier")), 30_000)),
+      ]);
+      withdrawLegacy = fetch(otherBase + "/api/admin/published-people/person-a", {
+        method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.41" },
       });
-      assert.equal(busy.status, 409,
-        "a busy ownership row rejects a candidate response without waiting for transfer");
-    } finally { await client.query("ROLLBACK"); }
-    const proposedTransfer = await fetch(securedBase + "/api/account/owner-transfer", {
-      method: "POST",
-      headers: { ...ownerHeaders, "X-Drevo-Owner-Transfer": "1" },
-      body: JSON.stringify({ targetId: "candidate-owner-successor" }),
+      assert.equal(await publicationWithdrawalWaiting(), true,
+        "legacy detail delivery holds the publication row");
+      legacyEarly = await Promise.race([
+        withdrawLegacy.then((response) => `completed ${response.status}`),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]);
+      releaseLegacy();
+      legacyDelivered = await pausedLegacy;
+      assert.equal((await withdrawLegacy).status, 200);
+    } finally {
+      releaseLegacy();
+      await pausedLegacy.catch(() => {});
+      await withdrawLegacy?.catch(() => {});
+      await new Promise<void>((resolve) => legacyServer.close(() => resolve()));
+    }
+    assert.equal(legacyDelivered.status, 200);
+    assert.ok((await legacyDelivered.json()).person.name);
+    assert.equal((await fetch(otherBase + legacyPath, { headers: archiveAdminHeaders })).status, 404);
+    assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+      method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.42" },
+      body: JSON.stringify({ fields: selectedDiscoveryFields }),
+    })).status, 200);
+    assert.equal(legacyEarly, "pending", "legacy detail delivery must serialize with withdrawal");
+    console.log("runtime_legacy_public_detail_delivery_revocation_ok");
+    let legacySearchReached!: () => void, releaseLegacySearch!: () => void;
+    const legacySearchReady = new Promise<void>((resolve) => { legacySearchReached = resolve; });
+    const legacySearchGate = new Promise<void>((resolve) => { releaseLegacySearch = resolve; });
+    const legacySearchEndpoint = publishedPeopleHttp({ archive: otherApp.archive, auth: legacyAuth,
+      store: otherPublication, publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeSearchDelivery: async () => { legacySearchReached(); await legacySearchGate; },
     });
-    assert.equal(proposedTransfer.status, 200, await proposedTransfer.text());
-    assert.equal((await client.query(`SELECT 1 FROM published_people
-      WHERE archive_id='runtime-test' AND person_id='person-a'`)).rowCount, 0,
-    "the admin preview race must use an unpublished card");
-    const beforeBatchFields = await fetch(securedBase +
-      `/api/admin/published-people/batch?id=${candidateSourceId}`, { headers: ownerHeaders });
-    assert.equal(beforeBatchFields.status, 200);
-    assert.ok((await beforeBatchFields.json()).fields[candidateSourceId],
-      "the owner can inspect their selected publication fields");
-    const beforeBatchPreview = await fetch(securedBase +
-      "/api/admin/published-people/batch/preview", { method: "POST", headers: ownerHeaders,
-      body: JSON.stringify({ action: "unpublish", personIds: ["person-a"] }) });
-    assert.equal(beforeBatchPreview.status, 200);
-    assert.equal((await beforeBatchPreview.json()).people[0].person.id, "person-a",
-      "the owner can preview an unpublished living card");
-    const publicationBatchBarrier = async (kind: "fields" | "preview") => {
+    const legacySearchServer = createServer((req, res) => {
+      void legacySearchEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => legacySearchServer.listen(0, "127.0.0.1", resolve));
+    const legacySearchPort = (legacySearchServer.address() as { port: number }).port;
+    const legacySearchPath = "/api/published-people/search?q=Исправленный";
+    const pausedLegacySearch = fetch(`http://127.0.0.1:${legacySearchPort}${legacySearchPath}`,
+      { headers: { ...headers, "X-Real-IP": "203.0.113.50" } });
+    let withdrawLegacySearch: Promise<Response> | undefined;
+    let legacySearchEarly = "";
+    let legacySearchDelivered!: Response;
+    try {
+      await Promise.race([legacySearchReady,
+        pausedLegacySearch.then((response) => { throw new Error(`Legacy search sent before delivery barrier: ${response.status}`); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Legacy search did not reach delivery barrier")), 30_000)),
+      ]);
+      withdrawLegacySearch = fetch(otherBase + "/api/admin/published-people/person-a", {
+        method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.51" },
+      });
+      assert.equal(await publicationWithdrawalWaiting(), true,
+        "legacy search delivery holds the publication row");
+      legacySearchEarly = await Promise.race([
+        withdrawLegacySearch.then((response) => `completed ${response.status}`),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]);
+      releaseLegacySearch();
+      legacySearchDelivered = await pausedLegacySearch;
+      assert.equal((await withdrawLegacySearch).status, 200);
+    } finally {
+      releaseLegacySearch();
+      await pausedLegacySearch.catch(() => {});
+      await withdrawLegacySearch?.catch(() => {});
+      await new Promise<void>((resolve) => legacySearchServer.close(() => resolve()));
+    }
+    assert.equal(legacySearchDelivered.status, 200);
+    assert.ok((await legacySearchDelivered.json()).results.some(
+      (person: { id: string }) => person.id === "person-a"));
+    assert.deepEqual((await fetch(otherBase + legacySearchPath, {
+      headers: archiveAdminHeaders,
+    }).then((response) => response.json())).results, []);
+    assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+      method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.52" },
+      body: JSON.stringify({ fields: selectedDiscoveryFields }),
+    })).status, 200);
+    assert.equal(legacySearchEarly, "pending", "legacy search delivery must serialize with withdrawal");
+    console.log("runtime_legacy_public_search_delivery_revocation_ok");
+    let detailReached!: () => void, releaseDetail!: () => void;
+    const detailReady = new Promise<void>((resolve) => { detailReached = resolve; });
+    const detailGate = new Promise<void>((resolve) => { releaseDetail = resolve; });
+    const detailAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+      process.env.PUBLIC_ORIGIN);
+    const detailEndpoint = discoveryPeopleHttp(app.archive.db, detailAuth, undefined, undefined,
+      async () => { detailReached(); await detailGate; });
+    const detailServer = createServer((req, res) => {
+      void detailEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => detailServer.listen(0, "127.0.0.1", resolve));
+    const detailPort = (detailServer.address() as { port: number }).port;
+    const detailPath = "/api/discovery/people/other-archive/person-a";
+    const pausedDetail = fetch(`http://127.0.0.1:${detailPort}${detailPath}`,
+      { headers: { ...headers, "X-Real-IP": "203.0.113.11" } });
+    let withdrawDetail: Promise<Response> | undefined;
+    try {
+      await Promise.race([detailReady,
+        pausedDetail.then(() => { throw new Error("Discovery detail sent before delivery barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Discovery detail did not reach delivery barrier")), 30_000)),
+      ]);
+      withdrawDetail = fetch(otherBase + "/api/admin/published-people/person-a", {
+        method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.12" },
+      });
+      assert.equal(await publicationWithdrawalWaiting(), true,
+        "detail delivery holds the published row against withdrawal");
+      const earlyWithdrawal = await Promise.race([
+        withdrawDetail.then((response) => `completed ${response.status}`),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]);
+      assert.equal(earlyWithdrawal, "pending",
+        "unpublishing a card waits until its discovery detail finishes delivery");
+      releaseDetail();
+      assert.equal((await pausedDetail).status, 200);
+      assert.equal((await withdrawDetail).status, 200);
+    } finally {
+      releaseDetail();
+      await pausedDetail.catch(() => {});
+      await withdrawDetail?.catch(() => {});
+      await new Promise<void>((resolve) => detailServer.close(() => resolve()));
+    }
+    assert.equal((await fetch(securedBase + detailPath, { headers })).status, 404);
+    assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+      method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.13" },
+      body: JSON.stringify({ fields: selectedDiscoveryFields }),
+    })).status, 200);
+    console.log("runtime_discovery_detail_delivery_revocation_ok");
+    const candidateRootBefore = await app.archive.read();
+    const candidateOtherBefore = await otherApp.archive.read();
+    const candidateRoot = structuredClone(candidateRootBefore.family);
+    const candidateOther = structuredClone(candidateOtherBefore.family);
+    const candidateSourceId = "revoke-candidate-root";
+    const candidateTargetId = "revoke-candidate-other";
+    for (const [family,id] of [[candidateRoot,candidateSourceId],
+      [candidateOther,candidateTargetId]] as const) {
+      family.people.push({ ...structuredClone(family.people[0]), id,
+        surname: "Stone", name: "Anna", patronymic: "", maidenName: undefined,
+        birth: "1900", death: "1970", deceased: true,
+        parents: [], spouses: [], sources: [], generation: 1 });
+    }
+    await app.archive.write(candidateRoot, candidateRootBefore.revision);
+    await otherApp.archive.write(candidateOther, candidateOtherBefore.revision);
+    await publishedPeopleStore(app.archive.db).publish(candidateSourceId, "owner");
+    await publishedPeopleStore(otherApp.archive.db).publish(candidateTargetId, "owner");
+    const revokeCandidatePath = `/api/discovery/matches/candidates?sourcePersonId=${candidateSourceId}`;
+    const candidateBeforeRevoke = await fetch(securedBase + revokeCandidatePath,
+      { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.16" } });
+    assert.equal(candidateBeforeRevoke.status, 200);
+    assert.ok((await candidateBeforeRevoke.json()).candidates.some(
+      (item: { id: string }) => item.id === candidateTargetId),
+    "the synthetic published candidate must be present before revocation");
+    const beforeSwappedNames = await otherApp.archive.read();
+    const withSwappedNames = structuredClone(beforeSwappedNames.family);
+    const swappedIds = Array.from({ length: 24 }, (_, index) =>
+      `swapped-candidate-${String(index).padStart(2, "0")}`);
+    withSwappedNames.people.push(...swappedIds.map((id, index) => ({
+      ...structuredClone(withSwappedNames.people.find((person) => person.id === candidateTargetId)!),
+      id, surname: index < 12 ? "Anna" : "Other",
+      name: index < 12 ? "Stone" : "Anna Stone",
+    })));
+    const swappedWrite = await otherApp.archive.write(withSwappedNames, beforeSwappedNames.revision);
+    for (const id of swappedIds) await publishedPeopleStore(otherApp.archive.db).publish(id, "owner");
+    const swappedResponse = await fetch(securedBase + revokeCandidatePath,
+      { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.61" } });
+    assert.equal(swappedResponse.status, 200);
+    const swappedPage = await swappedResponse.json();
+    assert.ok(swappedPage.candidates.some((item: { id: string }) => item.id === candidateTargetId),
+      "name-role false positives must not hide a genuine candidate behind an empty first page");
+    assert.ok(swappedPage.candidates.every((item: { id: string }) => !swappedIds.includes(item.id)),
+      "name tokens in the wrong published roles are not candidate evidence");
+    await otherApp.archive.write(beforeSwappedNames.family, swappedWrite.revision);
+    console.log("runtime_discovery_candidate_name_roles_ok");
+    const beforePlacePageRoot = await app.archive.read();
+    const beforePlacePageOther = await otherApp.archive.read();
+    const placePageRoot = structuredClone(beforePlacePageRoot.family);
+    const placePageOther = structuredClone(beforePlacePageOther.family);
+    placePageRoot.people.find((person) => person.id === candidateSourceId)!.birthPlace = "Amberton";
+    const wrongPlaceIds = Array.from({ length: 24 }, (_, index) =>
+      `wrong-place-${String(index).padStart(2, "0")}`);
+    const placeOnlyId = "place-role-valid";
+    placePageOther.people.push(...wrongPlaceIds.map((id) => ({
+      ...structuredClone(placePageOther.people.find((person) => person.id === candidateTargetId)!),
+      id, surname: "Aaa", birthPlace: "Otherburg", deathPlace: "Amberton",
+    })));
+    placePageOther.people.push({
+      ...structuredClone(placePageOther.people.find((person) => person.id === candidateTargetId)!),
+      id: placeOnlyId, surname: "Zed", birthPlace: "Amberton", deathPlace: "Otherburg",
+    });
+    const placeRootWrite = await app.archive.write(placePageRoot, beforePlacePageRoot.revision);
+    const placeOtherWrite = await otherApp.archive.write(placePageOther, beforePlacePageOther.revision);
+    for (const id of wrongPlaceIds) await publishedPeopleStore(otherApp.archive.db).publish(id, "owner");
+    await publishedPeopleStore(otherApp.archive.db).publish(placeOnlyId, "owner");
+    const placePageResponse = await fetch(securedBase + revokeCandidatePath,
+      { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.62" } });
+    assert.equal(placePageResponse.status, 200);
+    const placePage = await placePageResponse.json();
+    assert.ok(placePage.candidates.some((item: { id: string }) => item.id === candidateTargetId),
+      "cross-field place matches must not hide an existing candidate past an empty first page");
+    assert.ok(placePage.candidates.some((item: { id: string; reasons: string[] }) =>
+      item.id === placeOnlyId && item.reasons.includes("Место рождения совпадает")),
+    "the same published birth settlement still finds a changed surname");
+    assert.ok(placePage.candidates.every((item: { id: string }) => !wrongPlaceIds.includes(item.id)),
+      "a published death settlement alone does not prove the same birth settlement");
+    await otherApp.archive.write(beforePlacePageOther.family, placeOtherWrite.revision);
+    console.log("runtime_discovery_candidate_place_roles_ok");
+    const beforeLocalityPage = await otherApp.archive.read();
+    const localityPageFamily = structuredClone(beforeLocalityPage.family);
+    const wrongLocalityIds = Array.from({ length: 24 }, (_, index) =>
+      `wrong-locality-${String(index).padStart(2, "0")}`);
+    localityPageFamily.people.push(...wrongLocalityIds.map((id) => ({
+      ...structuredClone(localityPageFamily.people.find((person) => person.id === candidateTargetId)!),
+      id, surname: "Aab", birthPlace: "Amberton, Otherburg",
+    })));
+    const localityWrite = await otherApp.archive.write(localityPageFamily, beforeLocalityPage.revision);
+    for (const id of wrongLocalityIds)
+      await publishedPeopleStore(otherApp.archive.db).publish(id, "owner");
+    const localityPageResponse = await fetch(securedBase + revokeCandidatePath,
+      { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.63" } });
+    assert.equal(localityPageResponse.status, 200);
+    const localityPage = await localityPageResponse.json();
+    assert.ok(localityPage.candidates.some((item: { id: string }) => item.id === candidateTargetId),
+      "a place token outside the selected settlement must not hide a valid candidate page");
+    const cappedFamily = structuredClone(localityPageFamily);
+    // The exact tier no longer consumes the true candidate from the fuzzy
+    // 96-row budget, so retain a 97th false positive to exercise its cursor.
+    const additionalLocalityIds = Array.from({ length: 73 }, (_, index) =>
+      `wrong-locality-${String(index + 24).padStart(2, "0")}`);
+    cappedFamily.people.push(...additionalLocalityIds.map((id) => ({
+      ...structuredClone(cappedFamily.people.find((person) => person.id === wrongLocalityIds[0])!), id,
+    })));
+    const cappedWrite = await otherApp.archive.write(cappedFamily, localityWrite.revision);
+    for (const id of additionalLocalityIds)
+      await publishedPeopleStore(otherApp.archive.db).publish(id, "owner");
+    const cappedResponse = await fetch(securedBase + revokeCandidatePath,
+      { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.64" } });
+    assert.equal(cappedResponse.status, 200);
+    const cappedPage = await cappedResponse.json();
+    assert.deepEqual(cappedPage.candidates.map((item: { id: string }) => item.id),
+      [candidateTargetId],
+    "an exact-name candidate is retrieved before 96 unrelated approximate rows");
+    assert.equal(cappedPage.approximate, true);
+    assert.equal(cappedPage.partial, true,
+      "the approximate tail still reports its bounded raw scan");
+    assert.equal(typeof cappedPage.nextCursor, "string");
+    const afterCapResponse = await fetch(securedBase + revokeCandidatePath +
+      `&cursor=${encodeURIComponent(cappedPage.nextCursor)}`,
+    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.65" } });
+    assert.equal(afterCapResponse.status, 200);
+    assert.equal((await afterCapResponse.json()).candidates.some(
+      (item: { id: string }) => item.id === candidateTargetId), false,
+    "the approximate cursor cannot repeat a candidate already returned by an exact tier");
+    await otherApp.archive.write(beforeLocalityPage.family, cappedWrite.revision);
+    console.log("runtime_discovery_candidate_locality_pagination_ok");
+    const candidatePriorOwner = (await client.query(`SELECT user_id FROM archive_owners
+      WHERE archive_id='runtime-test'`)).rows[0].user_id as string;
+    const candidatePriorRole = (await client.query(`SELECT role FROM archive_memberships
+      WHERE archive_id='runtime-test' AND user_id=$1`, [candidatePriorOwner])).rows[0].role as string;
+    await client.query(`INSERT INTO accounts(id,name,created_at)
+      VALUES('candidate-owner-successor','Candidate successor',$1)`, [new Date().toISOString()]);
+    await client.query(`INSERT INTO account_tiers(account_id,full_access)
+      VALUES('candidate-owner-successor',true)`);
+    await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+      VALUES('runtime-test','candidate-owner-successor','admin',true,'all')`);
+    const candidateSuccessorToken = newSessionToken();
+    await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
+      VALUES($1,'candidate-owner-successor',$2)`, [
+      sessionTokenHash(candidateSuccessorToken), Date.now() + 600_000,
+    ]);
+    const ownerCandidateBarrier = async (beforeResponse: boolean, ip: string) => {
       let reached!: () => void, release!: () => void;
       const ready = new Promise<void>((resolve) => { reached = resolve; });
       const gate = new Promise<void>((resolve) => { release = resolve; });
       const pause = async () => { reached(); await gate; };
-      const endpoint = publishedPeopleHttp({ archive: app!.archive, auth: detailAuth,
-        store: publishedPeopleStore(app!.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN,
-        beforeAdminBatchFinalLock: pause });
+      const endpoint = discoveryMatchesHttp({ archive: app!.archive, auth: detailAuth,
+        publicOrigin: process.env.PUBLIC_ORIGIN,
+        beforeCandidateDelivery: beforeResponse ? undefined : pause,
+        beforeCandidateResponse: beforeResponse ? pause : undefined,
+      });
       const server = createServer((req, res) => {
         void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
           .catch((error) => { res.destroy(error); });
       });
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
       const port = (server.address() as { port: number }).port;
-      const url = kind === "fields"
-        ? `/api/admin/published-people/batch?id=${candidateSourceId}`
-        : "/api/admin/published-people/batch/preview";
-      const response = fetch(`http://127.0.0.1:${port}${url}`, { headers: ownerHeaders,
-        ...(kind === "preview" ? { method: "POST",
-          body: JSON.stringify({ action: "unpublish", personIds: ["person-a"] }) } : {}),
-      });
+      const response = fetch(`http://127.0.0.1:${port}${revokeCandidatePath}`,
+        { headers: { ...ownerHeaders, "X-Real-IP": ip } });
       const close = async () => {
         release();
         await response.catch(() => {});
@@ -7887,4315 +7833,4377 @@ try {
       };
       return { ready, release, response, close };
     };
-    const pausedBatchFields = await publicationBatchBarrier("fields");
-    const pausedBatchPreview = await publicationBatchBarrier("preview");
-    let scalarReached!: () => void, releaseScalar!: () => void;
-    const scalarReady = new Promise<void>((resolve) => { scalarReached = resolve; });
-    const scalarGate = new Promise<void>((resolve) => { releaseScalar = resolve; });
-    const scalarEndpoint = publishedPeopleHttp({ archive: app!.archive, auth: detailAuth,
-      store: publishedPeopleStore(app!.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN,
-      beforeAdminMutationFinalLock: async () => { scalarReached(); await scalarGate; } });
-    const scalarServer = createServer((req, res) => {
-      void scalarEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-        .catch((error) => { res.destroy(error); });
-    });
-    await new Promise<void>((resolve) => scalarServer.listen(0, "127.0.0.1", resolve));
-    const scalarPort = (scalarServer.address() as { port: number }).port;
-    const pausedScalar = fetch(`http://127.0.0.1:${scalarPort}` +
-      "/api/admin/published-people/person-a", { method: "DELETE", headers: ownerHeaders });
-    let adminReached!: () => void, releaseAdmin!: () => void;
-    const adminReady = new Promise<void>((resolve) => { adminReached = resolve; });
-    const adminGate = new Promise<void>((resolve) => { releaseAdmin = resolve; });
-    const adminEndpoint = publishedPeopleHttp({
-      archive: app!.archive,
-      auth: detailAuth, store: publishedPeopleStore(app!.archive.db),
-      publicOrigin: process.env.PUBLIC_ORIGIN,
-      beforeAdminFinalLock: async () => { adminReached(); await adminGate; },
-    });
-    const adminServer = createServer((req, res) => {
-      void adminEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-        .catch((error) => { res.destroy(error); });
-    });
-    await new Promise<void>((resolve) => adminServer.listen(0, "127.0.0.1", resolve));
-    const adminPort = (adminServer.address() as { port: number }).port;
-    const pausedAdmin = fetch(`http://127.0.0.1:${adminPort}/api/admin/published-people/person-a`,
-      { headers: ownerHeaders });
-    const beforeLock = await ownerCandidateBarrier(false, "203.0.113.66");
     try {
-      await Promise.race([beforeLock.ready,
-        beforeLock.response.then(() => { throw new Error("Candidate page sent before owner barrier"); }),
-        new Promise<never>((_, reject) => setTimeout(() =>
-          reject(new Error("Candidate page did not reach owner barrier")), 30_000)),
-      ]);
-      await Promise.race([adminReady,
-        pausedAdmin.then(() => { throw new Error("Admin preview sent before final lock barrier"); }),
-        new Promise<never>((_, reject) => setTimeout(() =>
-          reject(new Error("Admin preview did not reach final lock barrier")), 30_000)),
-      ]);
-      await Promise.race([Promise.all([pausedBatchFields.ready,pausedBatchPreview.ready]),
-        pausedBatchFields.response.then(() => { throw new Error("Batch fields sent before barrier"); }),
-        pausedBatchPreview.response.then(() => { throw new Error("Batch preview sent before barrier"); }),
-        new Promise<never>((_, reject) => setTimeout(() =>
-          reject(new Error("Publication batch did not reach both barriers")), 30_000)),
-      ]);
-      await Promise.race([scalarReady,
-        pausedScalar.then(() => { throw new Error("Scalar publication mutation sent before barrier"); }),
-        new Promise<never>((_, reject) => setTimeout(() =>
-          reject(new Error("Scalar publication mutation did not reach post-commit barrier")), 30_000)),
-      ]);
-      const acceptedTransfer = await fetch(securedBase + "/api/account/owner-transfer/accept", {
+      await client.query("BEGIN");
+      try {
+        await client.query(`UPDATE archive_owners SET user_id='candidate-owner-successor'
+          WHERE archive_id='runtime-test'`);
+        const busy = await fetch(securedBase + revokeCandidatePath, {
+          headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.69" },
+          signal: AbortSignal.timeout(2_000),
+        });
+        assert.equal(busy.status, 409,
+          "a busy ownership row rejects a candidate response without waiting for transfer");
+      } finally { await client.query("ROLLBACK"); }
+      const proposedTransfer = await fetch(securedBase + "/api/account/owner-transfer", {
         method: "POST",
-        headers: { ...ownerHeaders, Cookie: `drevo_session=${candidateSuccessorToken}`,
-          "X-Drevo-Owner-Transfer": "1" },
+        headers: { ...ownerHeaders, "X-Drevo-Owner-Transfer": "1" },
+        body: JSON.stringify({ targetId: "candidate-owner-successor" }),
       });
-      assert.equal(acceptedTransfer.status, 200, await acceptedTransfer.text());
-      beforeLock.release();
-      releaseAdmin();
-      pausedBatchFields.release();
-      pausedBatchPreview.release();
-      releaseScalar();
-      assert.equal((await beforeLock.response).status, 403,
-        "a former owner cannot receive a candidate page after HTTP ownership transfer");
-      const revokedAdmin = await pausedAdmin;
-      assert.equal(revokedAdmin.status, 403,
-        "a former owner cannot receive an unpublished card after HTTP ownership transfer");
-      assert.equal("person" in await revokedAdmin.json(), false);
-      const revokedBatchFields = await pausedBatchFields.response;
-      const revokedBatchPreview = await pausedBatchPreview.response;
-      const fieldsBody = await revokedBatchFields.json();
-      const previewBody = await revokedBatchPreview.json();
-      assert.deepEqual([revokedBatchFields.status,revokedBatchPreview.status], [403,403],
-        "a former owner cannot receive batch fields or a living-card preview");
-      assert.equal("fields" in fieldsBody || "people" in previewBody, false);
-      const revokedScalar = await pausedScalar;
-      const scalarBody = await revokedScalar.json();
-      assert.equal(revokedScalar.status, 200,
-        "a committed publication mutation remains acknowledged after ownership transfer");
-      assert.equal(scalarBody.saved, true);
-      assert.equal(scalarBody.refreshRequired, true);
-      assert.equal("person" in scalarBody, false);
-      assert.equal((await fetch(securedBase + "/api/admin/published-people/person-a",
-        { headers: ownerHeaders })).status, 403,
-      "the former owner cannot read the card again after transfer");
-    } finally {
-      releaseAdmin();
-      releaseScalar();
-      await pausedBatchFields.close();
-      await pausedBatchPreview.close();
-      await pausedScalar.catch(() => {});
-      await new Promise<void>((resolve) => scalarServer.close(() => resolve()));
-      await pausedAdmin.catch(() => {});
-      await new Promise<void>((resolve) => adminServer.close(() => resolve()));
-      await beforeLock.close();
-    }
-    console.log("runtime_admin_published_owner_transfer_revocation_ok");
-    console.log("runtime_admin_published_batch_owner_transfer_revocation_ok");
-    console.log("runtime_admin_published_mutation_transfer_ack_ok");
-    console.log("runtime_discovery_candidate_owner_http_transfer_ok");
-    await client.query(`UPDATE archive_owners SET user_id=$1
-      WHERE archive_id='runtime-test'`, [candidatePriorOwner]);
-    await client.query(`UPDATE archive_memberships SET role=$2
-      WHERE archive_id='runtime-test' AND user_id=$1`, [candidatePriorOwner, candidatePriorRole]);
-    const adminSessionToken = newSessionToken();
-    const adminSessionHash = sessionTokenHash(adminSessionToken);
-    await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
-      VALUES($1,$2,$3)`, [adminSessionHash,candidatePriorOwner,Date.now() + 600_000]);
-    let finalAdminReached!: () => void, releaseFinalAdmin!: () => void;
-    const finalAdminReady = new Promise<void>((resolve) => { finalAdminReached = resolve; });
-    const finalAdminGate = new Promise<void>((resolve) => { releaseFinalAdmin = resolve; });
-    const adminStore = publishedPeopleStore(app!.archive.db);
-    const finalAdminEndpoint = publishedPeopleHttp({ archive: app!.archive, auth: detailAuth,
-      store: { ...adminStore, getFields: async (personId: string) => {
-        const fields = await adminStore.getFields(personId);
-        finalAdminReached();
-        await finalAdminGate;
-        return fields;
-      } }, publicOrigin: process.env.PUBLIC_ORIGIN,
-    });
-    const finalAdminServer = createServer((req, res) => {
-      void finalAdminEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-        .catch((error) => { res.destroy(error); });
-    });
-    await new Promise<void>((resolve) => finalAdminServer.listen(0, "127.0.0.1", resolve));
-    const finalAdminPort = (finalAdminServer.address() as { port: number }).port;
-    const adminSessionHeaders = { ...ownerHeaders, Cookie: `drevo_session=${adminSessionToken}` };
-    const heldAdmin = fetch(`http://127.0.0.1:${finalAdminPort}/api/admin/published-people/person-a`,
-      { headers: adminSessionHeaders });
-    let revokeAdminSession: Promise<unknown> | undefined;
-    try {
-      await Promise.race([finalAdminReady,
-        heldAdmin.then(() => { throw new Error("Admin preview sent before final barrier"); }),
-        new Promise<never>((_, reject) => setTimeout(() =>
-          reject(new Error("Admin preview did not reach final barrier")), 30_000)),
-      ]);
-      revokeAdminSession = client.query(`DELETE FROM account_sessions WHERE token_hash=$1`,
-        [adminSessionHash]);
-      assert.equal(await Promise.race([revokeAdminSession.then(() => "completed"),
-        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300))]), "pending",
-      "session revocation waits until the admin preview finishes delivery");
-      releaseFinalAdmin();
-      const deliveredAdmin = await heldAdmin;
-      assert.equal(deliveredAdmin.status, 200);
-      assert.equal((await deliveredAdmin.json()).published, false);
-      await revokeAdminSession;
-      assert.equal((await fetch(securedBase + "/api/admin/published-people/person-a",
-        { headers: adminSessionHeaders })).status, 401,
-      "the revoked session cannot request another admin preview");
-    } finally {
-      releaseFinalAdmin();
-      await heldAdmin.catch(() => {});
-      await new Promise<void>((resolve) => finalAdminServer.close(() => resolve()));
-      await revokeAdminSession?.catch(() => {});
-      await client.query(`DELETE FROM account_sessions WHERE token_hash=$1`, [adminSessionHash]);
-    }
-    console.log("runtime_admin_published_session_delivery_revocation_ok");
-    const batchSessionToken = newSessionToken();
-    const batchSessionHash = sessionTokenHash(batchSessionToken);
-    await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
-      VALUES($1,$2,$3)`, [batchSessionHash,candidatePriorOwner,Date.now() + 600_000]);
-    let batchReached!: () => void, releaseBatch!: () => void;
-    const batchReady = new Promise<void>((resolve) => { batchReached = resolve; });
-    const batchGate = new Promise<void>((resolve) => { releaseBatch = resolve; });
-    const batchArchive = { ...app!.archive, read: async () => {
-      const value = await app!.archive.read();
-      batchReached();
-      await batchGate;
-      return value;
-    } };
-    const finalBatchEndpoint = publishedPeopleHttp({ archive: batchArchive, auth: detailAuth,
-      store: publishedPeopleStore(app!.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN });
-    const finalBatchServer = createServer((req, res) => {
-      void finalBatchEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-        .catch((error) => { res.destroy(error); });
-    });
-    await new Promise<void>((resolve) => finalBatchServer.listen(0, "127.0.0.1", resolve));
-    const finalBatchPort = (finalBatchServer.address() as { port: number }).port;
-    const batchSessionHeaders = { ...ownerHeaders, Cookie: `drevo_session=${batchSessionToken}` };
-    const heldBatch = fetch(`http://127.0.0.1:${finalBatchPort}` +
-      "/api/admin/published-people/batch/preview", { method: "POST", headers: batchSessionHeaders,
-      body: JSON.stringify({ action: "unpublish", personIds: ["person-a"] }) });
-    let revokeBatchSession: Promise<unknown> | undefined;
-    try {
-      await Promise.race([batchReady,
-        heldBatch.then(() => { throw new Error("Batch preview sent before final barrier"); }),
-        new Promise<never>((_, reject) => setTimeout(() =>
-          reject(new Error("Batch preview did not reach final barrier")), 30_000)),
-      ]);
-      revokeBatchSession = client.query(`DELETE FROM account_sessions WHERE token_hash=$1`,
-        [batchSessionHash]);
-      assert.equal(await Promise.race([revokeBatchSession.then(() => "completed"),
-        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300))]), "pending",
-      "session revocation waits until the batch preview finishes delivery");
-      releaseBatch();
-      const deliveredBatch = await heldBatch;
-      assert.equal(deliveredBatch.status, 200);
-      assert.equal((await deliveredBatch.json()).people[0].person.id, "person-a");
-      await revokeBatchSession;
-      const afterBatchRevoke = await fetch(securedBase +
+      assert.equal(proposedTransfer.status, 200, await proposedTransfer.text());
+      assert.equal((await client.query(`SELECT 1 FROM published_people
+        WHERE archive_id='runtime-test' AND person_id='person-a'`)).rowCount, 0,
+      "the admin preview race must use an unpublished card");
+      const beforeBatchFields = await fetch(securedBase +
+        `/api/admin/published-people/batch?id=${candidateSourceId}`, { headers: ownerHeaders });
+      assert.equal(beforeBatchFields.status, 200);
+      assert.ok((await beforeBatchFields.json()).fields[candidateSourceId],
+        "the owner can inspect their selected publication fields");
+      const beforeBatchPreview = await fetch(securedBase +
+        "/api/admin/published-people/batch/preview", { method: "POST", headers: ownerHeaders,
+        body: JSON.stringify({ action: "unpublish", personIds: ["person-a"] }) });
+      assert.equal(beforeBatchPreview.status, 200);
+      assert.equal((await beforeBatchPreview.json()).people[0].person.id, "person-a",
+        "the owner can preview an unpublished living card");
+      const publicationBatchBarrier = async (kind: "fields" | "preview") => {
+        let reached!: () => void, release!: () => void;
+        const ready = new Promise<void>((resolve) => { reached = resolve; });
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const pause = async () => { reached(); await gate; };
+        const endpoint = publishedPeopleHttp({ archive: app!.archive, auth: detailAuth,
+          store: publishedPeopleStore(app!.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN,
+          beforeAdminBatchFinalLock: pause });
+        const server = createServer((req, res) => {
+          void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+            .catch((error) => { res.destroy(error); });
+        });
+        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const url = kind === "fields"
+          ? `/api/admin/published-people/batch?id=${candidateSourceId}`
+          : "/api/admin/published-people/batch/preview";
+        const response = fetch(`http://127.0.0.1:${port}${url}`, { headers: ownerHeaders,
+          ...(kind === "preview" ? { method: "POST",
+            body: JSON.stringify({ action: "unpublish", personIds: ["person-a"] }) } : {}),
+        });
+        const close = async () => {
+          release();
+          await response.catch(() => {});
+          await new Promise<void>((resolve) => server.close(() => resolve()));
+        };
+        return { ready, release, response, close };
+      };
+      const pausedBatchFields = await publicationBatchBarrier("fields");
+      const pausedBatchPreview = await publicationBatchBarrier("preview");
+      let scalarReached!: () => void, releaseScalar!: () => void;
+      const scalarReady = new Promise<void>((resolve) => { scalarReached = resolve; });
+      const scalarGate = new Promise<void>((resolve) => { releaseScalar = resolve; });
+      const scalarEndpoint = publishedPeopleHttp({ archive: app!.archive, auth: detailAuth,
+        store: publishedPeopleStore(app!.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN,
+        beforeAdminMutationFinalLock: async () => { scalarReached(); await scalarGate; } });
+      const scalarServer = createServer((req, res) => {
+        void scalarEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+          .catch((error) => { res.destroy(error); });
+      });
+      await new Promise<void>((resolve) => scalarServer.listen(0, "127.0.0.1", resolve));
+      const scalarPort = (scalarServer.address() as { port: number }).port;
+      const pausedScalar = fetch(`http://127.0.0.1:${scalarPort}` +
+        "/api/admin/published-people/person-a", { method: "DELETE", headers: ownerHeaders });
+      let adminReached!: () => void, releaseAdmin!: () => void;
+      const adminReady = new Promise<void>((resolve) => { adminReached = resolve; });
+      const adminGate = new Promise<void>((resolve) => { releaseAdmin = resolve; });
+      const adminEndpoint = publishedPeopleHttp({
+        archive: app!.archive,
+        auth: detailAuth, store: publishedPeopleStore(app!.archive.db),
+        publicOrigin: process.env.PUBLIC_ORIGIN,
+        beforeAdminFinalLock: async () => { adminReached(); await adminGate; },
+      });
+      const adminServer = createServer((req, res) => {
+        void adminEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+          .catch((error) => { res.destroy(error); });
+      });
+      await new Promise<void>((resolve) => adminServer.listen(0, "127.0.0.1", resolve));
+      const adminPort = (adminServer.address() as { port: number }).port;
+      const pausedAdmin = fetch(`http://127.0.0.1:${adminPort}/api/admin/published-people/person-a`,
+        { headers: ownerHeaders });
+      const beforeLock = await ownerCandidateBarrier(false, "203.0.113.66");
+      try {
+        await Promise.race([beforeLock.ready,
+          beforeLock.response.then(() => { throw new Error("Candidate page sent before owner barrier"); }),
+          new Promise<never>((_, reject) => setTimeout(() =>
+            reject(new Error("Candidate page did not reach owner barrier")), 30_000)),
+        ]);
+        await Promise.race([adminReady,
+          pausedAdmin.then(() => { throw new Error("Admin preview sent before final lock barrier"); }),
+          new Promise<never>((_, reject) => setTimeout(() =>
+            reject(new Error("Admin preview did not reach final lock barrier")), 30_000)),
+        ]);
+        await Promise.race([Promise.all([pausedBatchFields.ready,pausedBatchPreview.ready]),
+          pausedBatchFields.response.then(() => { throw new Error("Batch fields sent before barrier"); }),
+          pausedBatchPreview.response.then(() => { throw new Error("Batch preview sent before barrier"); }),
+          new Promise<never>((_, reject) => setTimeout(() =>
+            reject(new Error("Publication batch did not reach both barriers")), 30_000)),
+        ]);
+        await Promise.race([scalarReady,
+          pausedScalar.then(() => { throw new Error("Scalar publication mutation sent before barrier"); }),
+          new Promise<never>((_, reject) => setTimeout(() =>
+            reject(new Error("Scalar publication mutation did not reach post-commit barrier")), 30_000)),
+        ]);
+        const acceptedTransfer = await fetch(securedBase + "/api/account/owner-transfer/accept", {
+          method: "POST",
+          headers: { ...ownerHeaders, Cookie: `drevo_session=${candidateSuccessorToken}`,
+            "X-Drevo-Owner-Transfer": "1" },
+        });
+        assert.equal(acceptedTransfer.status, 200, await acceptedTransfer.text());
+        beforeLock.release();
+        releaseAdmin();
+        pausedBatchFields.release();
+        pausedBatchPreview.release();
+        releaseScalar();
+        assert.equal((await beforeLock.response).status, 403,
+          "a former owner cannot receive a candidate page after HTTP ownership transfer");
+        const revokedAdmin = await pausedAdmin;
+        assert.equal(revokedAdmin.status, 403,
+          "a former owner cannot receive an unpublished card after HTTP ownership transfer");
+        assert.equal("person" in await revokedAdmin.json(), false);
+        const revokedBatchFields = await pausedBatchFields.response;
+        const revokedBatchPreview = await pausedBatchPreview.response;
+        const fieldsBody = await revokedBatchFields.json();
+        const previewBody = await revokedBatchPreview.json();
+        assert.deepEqual([revokedBatchFields.status,revokedBatchPreview.status], [403,403],
+          "a former owner cannot receive batch fields or a living-card preview");
+        assert.equal("fields" in fieldsBody || "people" in previewBody, false);
+        const revokedScalar = await pausedScalar;
+        const scalarBody = await revokedScalar.json();
+        assert.equal(revokedScalar.status, 200,
+          "a committed publication mutation remains acknowledged after ownership transfer");
+        assert.equal(scalarBody.saved, true);
+        assert.equal(scalarBody.refreshRequired, true);
+        assert.equal("person" in scalarBody, false);
+        assert.equal((await fetch(securedBase + "/api/admin/published-people/person-a",
+          { headers: ownerHeaders })).status, 403,
+        "the former owner cannot read the card again after transfer");
+      } finally {
+        releaseAdmin();
+        releaseScalar();
+        await pausedBatchFields.close();
+        await pausedBatchPreview.close();
+        await pausedScalar.catch(() => {});
+        await new Promise<void>((resolve) => scalarServer.close(() => resolve()));
+        await pausedAdmin.catch(() => {});
+        await new Promise<void>((resolve) => adminServer.close(() => resolve()));
+        await beforeLock.close();
+      }
+      console.log("runtime_admin_published_owner_transfer_revocation_ok");
+      console.log("runtime_admin_published_batch_owner_transfer_revocation_ok");
+      console.log("runtime_admin_published_mutation_transfer_ack_ok");
+      console.log("runtime_discovery_candidate_owner_http_transfer_ok");
+      await client.query(`UPDATE archive_owners SET user_id=$1
+        WHERE archive_id='runtime-test'`, [candidatePriorOwner]);
+      await client.query(`UPDATE archive_memberships SET role=$2
+        WHERE archive_id='runtime-test' AND user_id=$1`, [candidatePriorOwner, candidatePriorRole]);
+      const adminSessionToken = newSessionToken();
+      const adminSessionHash = sessionTokenHash(adminSessionToken);
+      await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
+        VALUES($1,$2,$3)`, [adminSessionHash,candidatePriorOwner,Date.now() + 600_000]);
+      let finalAdminReached!: () => void, releaseFinalAdmin!: () => void;
+      const finalAdminReady = new Promise<void>((resolve) => { finalAdminReached = resolve; });
+      const finalAdminGate = new Promise<void>((resolve) => { releaseFinalAdmin = resolve; });
+      const adminStore = publishedPeopleStore(app!.archive.db);
+      const finalAdminEndpoint = publishedPeopleHttp({ archive: app!.archive, auth: detailAuth,
+        store: { ...adminStore, getFields: async (personId: string) => {
+          const fields = await adminStore.getFields(personId);
+          finalAdminReached();
+          await finalAdminGate;
+          return fields;
+        } }, publicOrigin: process.env.PUBLIC_ORIGIN,
+      });
+      const finalAdminServer = createServer((req, res) => {
+        void finalAdminEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+          .catch((error) => { res.destroy(error); });
+      });
+      await new Promise<void>((resolve) => finalAdminServer.listen(0, "127.0.0.1", resolve));
+      const finalAdminPort = (finalAdminServer.address() as { port: number }).port;
+      const adminSessionHeaders = { ...ownerHeaders, Cookie: `drevo_session=${adminSessionToken}` };
+      const heldAdmin = fetch(`http://127.0.0.1:${finalAdminPort}/api/admin/published-people/person-a`,
+        { headers: adminSessionHeaders });
+      let revokeAdminSession: Promise<unknown> | undefined;
+      try {
+        await Promise.race([finalAdminReady,
+          heldAdmin.then(() => { throw new Error("Admin preview sent before final barrier"); }),
+          new Promise<never>((_, reject) => setTimeout(() =>
+            reject(new Error("Admin preview did not reach final barrier")), 30_000)),
+        ]);
+        revokeAdminSession = client.query(`DELETE FROM account_sessions WHERE token_hash=$1`,
+          [adminSessionHash]);
+        assert.equal(await Promise.race([revokeAdminSession.then(() => "completed"),
+          new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300))]), "pending",
+        "session revocation waits until the admin preview finishes delivery");
+        releaseFinalAdmin();
+        const deliveredAdmin = await heldAdmin;
+        assert.equal(deliveredAdmin.status, 200);
+        assert.equal((await deliveredAdmin.json()).published, false);
+        await revokeAdminSession;
+        assert.equal((await fetch(securedBase + "/api/admin/published-people/person-a",
+          { headers: adminSessionHeaders })).status, 401,
+        "the revoked session cannot request another admin preview");
+      } finally {
+        releaseFinalAdmin();
+        await heldAdmin.catch(() => {});
+        await new Promise<void>((resolve) => finalAdminServer.close(() => resolve()));
+        await revokeAdminSession?.catch(() => {});
+        await client.query(`DELETE FROM account_sessions WHERE token_hash=$1`, [adminSessionHash]);
+      }
+      console.log("runtime_admin_published_session_delivery_revocation_ok");
+      const batchSessionToken = newSessionToken();
+      const batchSessionHash = sessionTokenHash(batchSessionToken);
+      await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
+        VALUES($1,$2,$3)`, [batchSessionHash,candidatePriorOwner,Date.now() + 600_000]);
+      let batchReached!: () => void, releaseBatch!: () => void;
+      const batchReady = new Promise<void>((resolve) => { batchReached = resolve; });
+      const batchGate = new Promise<void>((resolve) => { releaseBatch = resolve; });
+      const batchArchive = { ...app!.archive, read: async () => {
+        const value = await app!.archive.read();
+        batchReached();
+        await batchGate;
+        return value;
+      } };
+      const finalBatchEndpoint = publishedPeopleHttp({ archive: batchArchive, auth: detailAuth,
+        store: publishedPeopleStore(app!.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN });
+      const finalBatchServer = createServer((req, res) => {
+        void finalBatchEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+          .catch((error) => { res.destroy(error); });
+      });
+      await new Promise<void>((resolve) => finalBatchServer.listen(0, "127.0.0.1", resolve));
+      const finalBatchPort = (finalBatchServer.address() as { port: number }).port;
+      const batchSessionHeaders = { ...ownerHeaders, Cookie: `drevo_session=${batchSessionToken}` };
+      const heldBatch = fetch(`http://127.0.0.1:${finalBatchPort}` +
         "/api/admin/published-people/batch/preview", { method: "POST", headers: batchSessionHeaders,
         body: JSON.stringify({ action: "unpublish", personIds: ["person-a"] }) });
-      assert.equal(afterBatchRevoke.status, 401,
-        "the revoked session cannot request another batch preview");
-      assert.equal("people" in await afterBatchRevoke.json(), false);
+      let revokeBatchSession: Promise<unknown> | undefined;
+      try {
+        await Promise.race([batchReady,
+          heldBatch.then(() => { throw new Error("Batch preview sent before final barrier"); }),
+          new Promise<never>((_, reject) => setTimeout(() =>
+            reject(new Error("Batch preview did not reach final barrier")), 30_000)),
+        ]);
+        revokeBatchSession = client.query(`DELETE FROM account_sessions WHERE token_hash=$1`,
+          [batchSessionHash]);
+        assert.equal(await Promise.race([revokeBatchSession.then(() => "completed"),
+          new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300))]), "pending",
+        "session revocation waits until the batch preview finishes delivery");
+        releaseBatch();
+        const deliveredBatch = await heldBatch;
+        assert.equal(deliveredBatch.status, 200);
+        assert.equal((await deliveredBatch.json()).people[0].person.id, "person-a");
+        await revokeBatchSession;
+        const afterBatchRevoke = await fetch(securedBase +
+          "/api/admin/published-people/batch/preview", { method: "POST", headers: batchSessionHeaders,
+          body: JSON.stringify({ action: "unpublish", personIds: ["person-a"] }) });
+        assert.equal(afterBatchRevoke.status, 401,
+          "the revoked session cannot request another batch preview");
+        assert.equal("people" in await afterBatchRevoke.json(), false);
+      } finally {
+        releaseBatch();
+        await heldBatch.catch(() => {});
+        await new Promise<void>((resolve) => finalBatchServer.close(() => resolve()));
+        await revokeBatchSession?.catch(() => {});
+        await client.query(`DELETE FROM account_sessions WHERE token_hash=$1`, [batchSessionHash]);
+      }
+      console.log("runtime_admin_published_batch_session_delivery_revocation_ok");
+      const scalarSessionToken = newSessionToken();
+      const scalarSessionHash = sessionTokenHash(scalarSessionToken);
+      await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
+        VALUES($1,$2,$3)`, [scalarSessionHash,candidatePriorOwner,Date.now() + 600_000]);
+      let committedScalarReached!: () => void, releaseCommittedScalar!: () => void;
+      const committedScalarReady = new Promise<void>((resolve) => { committedScalarReached = resolve; });
+      const committedScalarGate = new Promise<void>((resolve) => { releaseCommittedScalar = resolve; });
+      const committedScalarEndpoint = publishedPeopleHttp({ archive: app!.archive, auth: detailAuth,
+        store: publishedPeopleStore(app!.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN,
+        beforeAdminMutationFinalLock: async () => {
+          committedScalarReached();
+          await committedScalarGate;
+        },
+      });
+      const committedScalarServer = createServer((req, res) => {
+        void committedScalarEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+          .catch((error) => { res.destroy(error); });
+      });
+      await new Promise<void>((resolve) => committedScalarServer.listen(0, "127.0.0.1", resolve));
+      const committedScalarPort = (committedScalarServer.address() as { port: number }).port;
+      const scalarSessionHeaders = { ...ownerHeaders, Cookie: `drevo_session=${scalarSessionToken}` };
+      const publishedFields = await publishedPeopleStore(app!.archive.db).getFields(candidateSourceId);
+      assert.ok(publishedFields);
+      const heldScalar = fetch(`http://127.0.0.1:${committedScalarPort}` +
+        `/api/admin/published-people/${candidateSourceId}`, { method: "PUT",
+        headers: scalarSessionHeaders, body: JSON.stringify({ fields: publishedFields }) });
+      try {
+        await Promise.race([committedScalarReady,
+          heldScalar.then(() => { throw new Error("Scalar publication update sent before final barrier"); }),
+          new Promise<never>((_, reject) => setTimeout(() =>
+            reject(new Error("Scalar publication update did not reach post-commit barrier")), 30_000)),
+        ]);
+        await client.query(`DELETE FROM account_sessions WHERE token_hash=$1`, [scalarSessionHash]);
+        releaseCommittedScalar();
+        const revokedScalarSession = await heldScalar;
+        assert.equal(revokedScalarSession.status, 200,
+          "a committed publication update remains acknowledged after session revocation");
+        const revokedScalarBody = await revokedScalarSession.json();
+        assert.equal(revokedScalarBody.saved, true);
+        assert.equal(revokedScalarBody.refreshRequired, true);
+        assert.equal("person" in revokedScalarBody, false);
+        assert.equal((await fetch(securedBase +
+          `/api/admin/published-people/${candidateSourceId}`,
+        { headers: scalarSessionHeaders })).status, 401,
+        "a revoked session cannot read the updated publication again");
+      } finally {
+        releaseCommittedScalar();
+        await heldScalar.catch(() => {});
+        await new Promise<void>((resolve) => committedScalarServer.close(() => resolve()));
+        await client.query(`DELETE FROM account_sessions WHERE token_hash=$1`, [scalarSessionHash]);
+      }
+      console.log("runtime_admin_published_mutation_session_ack_ok");
+      const duringLock = await ownerCandidateBarrier(true, "203.0.113.67");
+      let transfer: Promise<unknown> | undefined;
+      try {
+        await Promise.race([duringLock.ready,
+          duringLock.response.then(() => { throw new Error("Candidate page sent before owner lock barrier"); }),
+          new Promise<never>((_, reject) => setTimeout(() =>
+            reject(new Error("Candidate page did not reach owner lock barrier")), 30_000)),
+        ]);
+        transfer = client.query(`UPDATE archive_owners SET user_id='candidate-owner-successor'
+          WHERE archive_id='runtime-test'`);
+        assert.equal(await Promise.race([transfer.then(() => "completed"),
+          new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300))]), "pending",
+        "ownership transfer waits until the candidate response completes");
+        duringLock.release();
+        const delivered = await duringLock.response;
+        assert.equal(delivered.status, 200);
+        assert.ok((await delivered.json()).candidates.some(
+          (item: { id: string }) => item.id === candidateTargetId));
+        await transfer;
+        assert.equal((await fetch(securedBase + revokeCandidatePath,
+          { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.68" } })).status, 403,
+        "a later candidate request fails after ownership transfer");
+      } finally {
+        await duringLock.close();
+        await transfer?.catch(() => {});
+      }
     } finally {
-      releaseBatch();
-      await heldBatch.catch(() => {});
-      await new Promise<void>((resolve) => finalBatchServer.close(() => resolve()));
-      await revokeBatchSession?.catch(() => {});
-      await client.query(`DELETE FROM account_sessions WHERE token_hash=$1`, [batchSessionHash]);
+      await client.query(`UPDATE archive_owners SET user_id=$1
+        WHERE archive_id='runtime-test'`, [candidatePriorOwner]);
+      await client.query(`UPDATE archive_memberships SET role=$2
+        WHERE archive_id='runtime-test' AND user_id=$1`, [candidatePriorOwner, candidatePriorRole]);
+      await client.query(`DELETE FROM account_sessions
+        WHERE token_hash=$1`, [sessionTokenHash(candidateSuccessorToken)]);
+      await client.query(`DELETE FROM archive_memberships
+        WHERE archive_id='runtime-test' AND user_id='candidate-owner-successor'`);
+      await client.query(`DELETE FROM account_tiers
+        WHERE account_id='candidate-owner-successor'`);
+      await client.query(`DELETE FROM archive_audit_entries
+        WHERE archive_id='runtime-test' AND entity='user'
+          AND entity_id='candidate-owner-successor'
+          AND action IN ('Предложена передача владения древом','Передано владение древом')`);
+      await client.query(`DELETE FROM accounts WHERE id='candidate-owner-successor'`);
     }
-    console.log("runtime_admin_published_batch_session_delivery_revocation_ok");
-    const scalarSessionToken = newSessionToken();
-    const scalarSessionHash = sessionTokenHash(scalarSessionToken);
-    await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
-      VALUES($1,$2,$3)`, [scalarSessionHash,candidatePriorOwner,Date.now() + 600_000]);
-    let committedScalarReached!: () => void, releaseCommittedScalar!: () => void;
-    const committedScalarReady = new Promise<void>((resolve) => { committedScalarReached = resolve; });
-    const committedScalarGate = new Promise<void>((resolve) => { releaseCommittedScalar = resolve; });
-    const committedScalarEndpoint = publishedPeopleHttp({ archive: app!.archive, auth: detailAuth,
-      store: publishedPeopleStore(app!.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN,
-      beforeAdminMutationFinalLock: async () => {
-        committedScalarReached();
-        await committedScalarGate;
-      },
+    console.log("runtime_discovery_candidate_owner_revocation_ok");
+    let candidateReached!: () => void, releaseCandidate!: () => void;
+    const candidateReady = new Promise<void>((resolve) => { candidateReached = resolve; });
+    const candidateGate = new Promise<void>((resolve) => { releaseCandidate = resolve; });
+    const candidateEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeCandidateResponse: async () => { candidateReached(); await candidateGate; },
     });
-    const committedScalarServer = createServer((req, res) => {
-      void committedScalarEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+    const candidateServer = createServer((req, res) => {
+      void candidateEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
         .catch((error) => { res.destroy(error); });
     });
-    await new Promise<void>((resolve) => committedScalarServer.listen(0, "127.0.0.1", resolve));
-    const committedScalarPort = (committedScalarServer.address() as { port: number }).port;
-    const scalarSessionHeaders = { ...ownerHeaders, Cookie: `drevo_session=${scalarSessionToken}` };
-    const publishedFields = await publishedPeopleStore(app!.archive.db).getFields(candidateSourceId);
-    assert.ok(publishedFields);
-    const heldScalar = fetch(`http://127.0.0.1:${committedScalarPort}` +
-      `/api/admin/published-people/${candidateSourceId}`, { method: "PUT",
-      headers: scalarSessionHeaders, body: JSON.stringify({ fields: publishedFields }) });
+    await new Promise<void>((resolve) => candidateServer.listen(0, "127.0.0.1", resolve));
+    const candidatePort = (candidateServer.address() as { port: number }).port;
+    const pausedCandidates = fetch(`http://127.0.0.1:${candidatePort}${revokeCandidatePath}`,
+      { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.17" } });
+    let withdrawCandidate: Promise<Response> | undefined;
     try {
-      await Promise.race([committedScalarReady,
-        heldScalar.then(() => { throw new Error("Scalar publication update sent before final barrier"); }),
+      await Promise.race([candidateReady,
+        pausedCandidates.then(() => { throw new Error("Candidate page sent before delivery barrier"); }),
         new Promise<never>((_, reject) => setTimeout(() =>
-          reject(new Error("Scalar publication update did not reach post-commit barrier")), 30_000)),
+          reject(new Error("Candidate page did not reach delivery barrier")), 30_000)),
       ]);
-      await client.query(`DELETE FROM account_sessions WHERE token_hash=$1`, [scalarSessionHash]);
-      releaseCommittedScalar();
-      const revokedScalarSession = await heldScalar;
-      assert.equal(revokedScalarSession.status, 200,
-        "a committed publication update remains acknowledged after session revocation");
-      const revokedScalarBody = await revokedScalarSession.json();
-      assert.equal(revokedScalarBody.saved, true);
-      assert.equal(revokedScalarBody.refreshRequired, true);
-      assert.equal("person" in revokedScalarBody, false);
-      assert.equal((await fetch(securedBase +
-        `/api/admin/published-people/${candidateSourceId}`,
-      { headers: scalarSessionHeaders })).status, 401,
-      "a revoked session cannot read the updated publication again");
-    } finally {
-      releaseCommittedScalar();
-      await heldScalar.catch(() => {});
-      await new Promise<void>((resolve) => committedScalarServer.close(() => resolve()));
-      await client.query(`DELETE FROM account_sessions WHERE token_hash=$1`, [scalarSessionHash]);
-    }
-    console.log("runtime_admin_published_mutation_session_ack_ok");
-    const duringLock = await ownerCandidateBarrier(true, "203.0.113.67");
-    let transfer: Promise<unknown> | undefined;
-    try {
-      await Promise.race([duringLock.ready,
-        duringLock.response.then(() => { throw new Error("Candidate page sent before owner lock barrier"); }),
-        new Promise<never>((_, reject) => setTimeout(() =>
-          reject(new Error("Candidate page did not reach owner lock barrier")), 30_000)),
+      withdrawCandidate = fetch(otherBase + `/api/admin/published-people/${candidateTargetId}`, {
+        method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.18" },
+      });
+      assert.equal(await publicationWithdrawalWaiting(), true,
+        "candidate delivery holds the selected published row");
+      const earlyCandidateWithdrawal = await Promise.race([
+        withdrawCandidate.then((response) => `completed ${response.status}`),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
       ]);
-      transfer = client.query(`UPDATE archive_owners SET user_id='candidate-owner-successor'
-        WHERE archive_id='runtime-test'`);
-      assert.equal(await Promise.race([transfer.then(() => "completed"),
-        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300))]), "pending",
-      "ownership transfer waits until the candidate response completes");
-      duringLock.release();
-      const delivered = await duringLock.response;
-      assert.equal(delivered.status, 200);
-      assert.ok((await delivered.json()).candidates.some(
+      assert.equal(earlyCandidateWithdrawal, "pending",
+        "withdrawal waits while the candidate page carries its published card");
+      releaseCandidate();
+      const deliveredCandidates = await pausedCandidates;
+      assert.equal(deliveredCandidates.status, 200);
+      assert.ok((await deliveredCandidates.json()).candidates.some(
         (item: { id: string }) => item.id === candidateTargetId));
-      await transfer;
-      assert.equal((await fetch(securedBase + revokeCandidatePath,
-        { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.68" } })).status, 403,
-      "a later candidate request fails after ownership transfer");
+      assert.equal((await withdrawCandidate).status, 200);
     } finally {
-      await duringLock.close();
-      await transfer?.catch(() => {});
+      releaseCandidate();
+      await pausedCandidates.catch(() => {});
+      await withdrawCandidate?.catch(() => {});
+      await new Promise<void>((resolve) => candidateServer.close(() => resolve()));
     }
-  } finally {
-    await client.query(`UPDATE archive_owners SET user_id=$1
-      WHERE archive_id='runtime-test'`, [candidatePriorOwner]);
-    await client.query(`UPDATE archive_memberships SET role=$2
-      WHERE archive_id='runtime-test' AND user_id=$1`, [candidatePriorOwner, candidatePriorRole]);
-    await client.query(`DELETE FROM account_sessions
-      WHERE token_hash=$1`, [sessionTokenHash(candidateSuccessorToken)]);
-    await client.query(`DELETE FROM archive_memberships
-      WHERE archive_id='runtime-test' AND user_id='candidate-owner-successor'`);
-    await client.query(`DELETE FROM account_tiers
-      WHERE account_id='candidate-owner-successor'`);
-    await client.query(`DELETE FROM archive_audit_entries
-      WHERE archive_id='runtime-test' AND entity='user'
-        AND entity_id='candidate-owner-successor'
-        AND action IN ('Предложена передача владения древом','Передано владение древом')`);
-    await client.query(`DELETE FROM accounts WHERE id='candidate-owner-successor'`);
-  }
-  console.log("runtime_discovery_candidate_owner_revocation_ok");
-  let candidateReached!: () => void, releaseCandidate!: () => void;
-  const candidateReady = new Promise<void>((resolve) => { candidateReached = resolve; });
-  const candidateGate = new Promise<void>((resolve) => { releaseCandidate = resolve; });
-  const candidateEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
-    publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeCandidateResponse: async () => { candidateReached(); await candidateGate; },
-  });
-  const candidateServer = createServer((req, res) => {
-    void candidateEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => candidateServer.listen(0, "127.0.0.1", resolve));
-  const candidatePort = (candidateServer.address() as { port: number }).port;
-  const pausedCandidates = fetch(`http://127.0.0.1:${candidatePort}${revokeCandidatePath}`,
-    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.17" } });
-  let withdrawCandidate: Promise<Response> | undefined;
-  try {
-    await Promise.race([candidateReady,
-      pausedCandidates.then(() => { throw new Error("Candidate page sent before delivery barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Candidate page did not reach delivery barrier")), 30_000)),
-    ]);
-    withdrawCandidate = fetch(otherBase + `/api/admin/published-people/${candidateTargetId}`, {
-      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.18" },
-    });
-    assert.equal(await publicationWithdrawalWaiting(), true,
-      "candidate delivery holds the selected published row");
-    const earlyCandidateWithdrawal = await Promise.race([
-      withdrawCandidate.then((response) => `completed ${response.status}`),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
-    ]);
-    assert.equal(earlyCandidateWithdrawal, "pending",
-      "withdrawal waits while the candidate page carries its published card");
-    releaseCandidate();
-    const deliveredCandidates = await pausedCandidates;
-    assert.equal(deliveredCandidates.status, 200);
-    assert.ok((await deliveredCandidates.json()).candidates.some(
+    const afterCandidateRevocation = await fetch(securedBase + revokeCandidatePath,
+      { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.19" } });
+    assert.equal(afterCandidateRevocation.status, 200);
+    assert.ok(!(await afterCandidateRevocation.json()).candidates.some(
       (item: { id: string }) => item.id === candidateTargetId));
-    assert.equal((await withdrawCandidate).status, 200);
-  } finally {
-    releaseCandidate();
-    await pausedCandidates.catch(() => {});
-    await withdrawCandidate?.catch(() => {});
-    await new Promise<void>((resolve) => candidateServer.close(() => resolve()));
-  }
-  const afterCandidateRevocation = await fetch(securedBase + revokeCandidatePath,
-    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.19" } });
-  assert.equal(afterCandidateRevocation.status, 200);
-  assert.ok(!(await afterCandidateRevocation.json()).candidates.some(
-    (item: { id: string }) => item.id === candidateTargetId));
-  await app.archive.write(beforePlacePageRoot.family, placeRootWrite.revision);
-  await publishedPeopleStore(otherApp.archive.db).publish(candidateTargetId, "owner");
-  let postReached!: () => void, releasePost!: () => void;
-  const postReady = new Promise<void>((resolve) => { postReached = resolve; });
-  const postGate = new Promise<void>((resolve) => { releasePost = resolve; });
-  const postEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
-    publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeMutationDelivery: async () => { postReached(); await postGate; },
-  });
-  const postServer = createServer((req, res) => {
-    void postEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => postServer.listen(0, "127.0.0.1", resolve));
-  const postPort = (postServer.address() as { port: number }).port;
-  const pausedPost = fetch(`http://127.0.0.1:${postPort}/api/discovery/matches`, {
-    method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.43" },
-    body: JSON.stringify({ sourcePersonId: candidateSourceId,
-      targetArchiveId: "other-archive", targetPersonId: candidateTargetId }),
-  });
-  let withdrawPost: Promise<Response> | undefined;
-  let postEarly = "";
-  let postDelivered!: Response;
-  try {
-    await Promise.race([postReady,
-      pausedPost.then((response) => { throw new Error(`POST sent before delivery barrier: ${response.status}`); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("POST did not reach delivery barrier")), 30_000)),
-    ]);
-    withdrawPost = fetch(otherBase + `/api/admin/published-people/${candidateTargetId}`, {
-      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.44" },
+    await app.archive.write(beforePlacePageRoot.family, placeRootWrite.revision);
+    await publishedPeopleStore(otherApp.archive.db).publish(candidateTargetId, "owner");
+    let postReached!: () => void, releasePost!: () => void;
+    const postReady = new Promise<void>((resolve) => { postReached = resolve; });
+    const postGate = new Promise<void>((resolve) => { releasePost = resolve; });
+    const postEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeMutationDelivery: async () => { postReached(); await postGate; },
     });
-    assert.equal(await publicationWithdrawalWaiting(), true,
-      "POST delivery holds the target publication row");
-    postEarly = await Promise.race([
-      withdrawPost.then((response) => `completed ${response.status}`),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
-    ]);
-    releasePost();
-    postDelivered = await pausedPost;
-    assert.equal((await withdrawPost).status, 200);
-  } finally {
-    releasePost();
-    await pausedPost.catch(() => {});
-    await withdrawPost?.catch(() => {});
-    await new Promise<void>((resolve) => postServer.close(() => resolve()));
-  }
-  assert.equal(postDelivered.status, 200);
-  const postedMatch = (await postDelivered.json()).match;
-  assert.ok([postedMatch.left,postedMatch.right].some(
-    (side: { archiveId: string; name?: string }) =>
-      side.archiveId === "other-archive" && side.name));
-  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
-    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.45" },
-  }).then((response) => response.json())).matches.find(
-    (item: { id: string }) => item.id === postedMatch.id).status, "revoked");
-  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
-    method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.53" },
-    body: JSON.stringify({ sourcePersonId: candidateSourceId,
-      targetArchiveId: "other-archive", targetPersonId: candidateTargetId }),
-  })).status, 409, "a new match request cannot reuse a withdrawn publication");
-  await app.archive.db.prepare("", "DELETE FROM discovery_match_requests WHERE id=?")
-    .run(postedMatch.id);
-  await publishedPeopleStore(otherApp.archive.db).publish(candidateTargetId, "owner");
-  assert.equal(postEarly, "pending", "POST match response must serialize with withdrawal");
-  console.log("runtime_discovery_match_post_delivery_revocation_ok");
-  const candidateMatchRequest = await fetch(securedBase + "/api/discovery/matches", {
-    method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.20" },
-    body: JSON.stringify({ sourcePersonId: candidateSourceId,
-      targetArchiveId: "other-archive", targetPersonId: candidateTargetId }),
-  });
-  assert.equal(candidateMatchRequest.status, 200);
-  const candidateMatchId = (await candidateMatchRequest.json()).match.id as string;
-  const candidateReview = (await fetch(otherBase + "/api/discovery/matches", {
-    headers: archiveAdminHeaders,
-  }).then((response) => response.json())).matches.find(
-    (item: { id: string }) => item.id === candidateMatchId);
-  assert.ok(candidateReview?.reviewToken);
-  assert.equal((await fetch(otherBase + `/api/discovery/matches/${candidateMatchId}`, {
-    method: "PATCH", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.21" },
-    body: JSON.stringify({ decision: "accept", reviewToken: candidateReview.reviewToken }),
-  })).status, 200);
-  let matchListReached!: () => void, releaseMatchList!: () => void;
-  const matchListReady = new Promise<void>((resolve) => { matchListReached = resolve; });
-  const matchListGate = new Promise<void>((resolve) => { releaseMatchList = resolve; });
-  const matchListEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
-    publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeMatchListDelivery: async () => { matchListReached(); await matchListGate; },
-  });
-  const matchListServer = createServer((req, res) => {
-    void matchListEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => matchListServer.listen(0, "127.0.0.1", resolve));
-  const matchListPort = (matchListServer.address() as { port: number }).port;
-  const pausedMatchList = fetch(`http://127.0.0.1:${matchListPort}/api/discovery/matches`,
-    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.22" } });
-  let withdrawMatchCard: Promise<Response> | undefined;
-  try {
-    await Promise.race([matchListReady,
-      pausedMatchList.then(() => { throw new Error("Match list sent before delivery barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Match list did not reach delivery barrier")), 30_000)),
-    ]);
-    withdrawMatchCard = fetch(otherBase + `/api/admin/published-people/${candidateTargetId}`, {
-      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.23" },
-    });
-    assert.equal(await publicationWithdrawalWaiting(), true,
-      "match-list delivery holds the selected published row");
-    const earlyMatchWithdrawal = await Promise.race([
-      withdrawMatchCard.then((response) => `completed ${response.status}`),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
-    ]);
-    assert.equal(earlyMatchWithdrawal, "pending",
-      "withdrawal waits while the match list carries the published card");
-    releaseMatchList();
-    const deliveredMatches = await pausedMatchList;
-    assert.equal(deliveredMatches.status, 200);
-    assert.ok((await deliveredMatches.json()).matches.some(
-      (item: { id: string; status: string }) =>
-        item.id === candidateMatchId && item.status === "linked"));
-    assert.equal((await withdrawMatchCard).status, 200);
-  } finally {
-    releaseMatchList();
-    await pausedMatchList.catch(() => {});
-    await withdrawMatchCard?.catch(() => {});
-    await new Promise<void>((resolve) => matchListServer.close(() => resolve()));
-  }
-  const afterMatchWithdrawal = (await fetch(securedBase + "/api/discovery/matches", {
-    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.24" },
-  }).then((response) => response.json())).matches.find(
-    (item: { id: string }) => item.id === candidateMatchId);
-  assert.equal(afterMatchWithdrawal.status, "revoked");
-  assert.equal((afterMatchWithdrawal.left.archiveId === "other-archive"
-    ? afterMatchWithdrawal.left : afterMatchWithdrawal.right).name, undefined);
-  assert.equal(afterMatchWithdrawal.confirmation, undefined,
-    "a completed publication withdrawal hides the accepted historical facts over HTTP");
-  assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS n
-    FROM discovery_match_confirmation_fields WHERE match_id=?`).get(candidateMatchId))?.n, 0,
-  "RLS also hides the accepted historical facts after withdrawal");
-  console.log("runtime_discovery_match_list_delivery_revocation_ok");
-  await app.archive.db.prepare("", "DELETE FROM discovery_match_requests WHERE id=?")
-    .run(candidateMatchId);
-  const legacySourceArchive = app.archive, legacyOtherArchive = otherApp.archive;
-  async function verifyLegacyConfirmationHistory() {
-  // Existing linked rows predate migration 086. Their historical facts cannot
-  // be reconstructed from the current publication.
-  await publishedPeopleStore(legacyOtherArchive.db).publish(candidateTargetId,"owner");
-  const legacyConfirmationId = randomUUID();
-  try {
-    await legacySourceArchive.db.prepare("", `INSERT INTO discovery_match_requests(
-      id,left_archive_id,left_person_id,right_archive_id,right_person_id,
-      initiated_by_archive_id,requested_by,status,responded_by,responded_at)
-      VALUES(?,'other-archive',?,'runtime-test',?,'runtime-test','owner','linked','vk:42',now())`)
-      .run(legacyConfirmationId,candidateTargetId,candidateSourceId);
-    const legacyHistory = (await fetch(securedBase + "/api/discovery/matches", {
-      headers: ownerHeaders,
-    }).then((response) => response.json())).matches.find((item: { id: string }) =>
-      item.id === legacyConfirmationId);
-    assert.equal(legacyHistory.status, "linked");
-    assert.equal(legacyHistory.confirmationHistoryAvailable, false);
-    assert.equal(legacyHistory.confirmation, undefined,
-      "a legacy link never receives a fabricated historical snapshot");
-  } finally {
-    await legacySourceArchive.db.prepare("", "DELETE FROM discovery_match_requests WHERE id=?")
-      .run(legacyConfirmationId);
-    await publishedPeopleStore(legacyOtherArchive.db).unpublish(candidateTargetId);
-  }
-  console.log("runtime_discovery_confirmation_legacy_unavailable_ok");
-  }
-  await verifyLegacyConfirmationHistory();
-  const patchSource = await fetch(securedBase + "/api/discovery/matches", {
-    method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.46" },
-    body: JSON.stringify({ sourcePersonId: candidateSourceId,
-      targetArchiveId: "other-archive", targetPersonId: "person-a" }),
-  });
-  assert.equal(patchSource.status, 200);
-  const patchMatchId = (await patchSource.json()).match.id as string;
-  let patchReached!: () => void, releasePatch!: () => void;
-  const patchReady = new Promise<void>((resolve) => { patchReached = resolve; });
-  const patchGate = new Promise<void>((resolve) => { releasePatch = resolve; });
-  const patchEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
-    publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeMutationDelivery: async () => { patchReached(); await patchGate; },
-  });
-  const patchServer = createServer((req, res) => {
-    void patchEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => patchServer.listen(0, "127.0.0.1", resolve));
-  const patchPort = (patchServer.address() as { port: number }).port;
-  const pausedPatch = fetch(`http://127.0.0.1:${patchPort}/api/discovery/matches/${patchMatchId}`, {
-    method: "PATCH", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.47" },
-    body: JSON.stringify({ decision: "revoke" }),
-  });
-  let withdrawPatch: Promise<Response> | undefined;
-  let patchEarly = "";
-  let patchDelivered!: Response;
-  try {
-    await Promise.race([patchReady,
-      pausedPatch.then((response) => { throw new Error(`PATCH sent before delivery barrier: ${response.status}`); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("PATCH did not reach delivery barrier")), 30_000)),
-    ]);
-    withdrawPatch = fetch(otherBase + "/api/admin/published-people/person-a", {
-      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.48" },
-    });
-    assert.equal(await publicationWithdrawalWaiting(), true,
-      "PATCH delivery holds the target publication row");
-    patchEarly = await Promise.race([
-      withdrawPatch.then((response) => `completed ${response.status}`),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
-    ]);
-    releasePatch();
-    patchDelivered = await pausedPatch;
-    assert.equal((await withdrawPatch).status, 200);
-  } finally {
-    releasePatch();
-    await pausedPatch.catch(() => {});
-    await withdrawPatch?.catch(() => {});
-    await new Promise<void>((resolve) => patchServer.close(() => resolve()));
-  }
-  assert.equal(patchDelivered.status, 200);
-  const patchedMatch = (await patchDelivered.json()).match;
-  assert.equal(patchedMatch.status, "revoked");
-  assert.ok([patchedMatch.left,patchedMatch.right].some(
-    (side: { archiveId: string; name?: string }) =>
-      side.archiveId === "other-archive" && side.name));
-  const afterPatchWithdrawal = await fetch(securedBase + `/api/discovery/matches/${patchMatchId}`, {
-    method: "PATCH", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.54" },
-    body: JSON.stringify({ decision: "revoke" }),
-  });
-  assert.equal(afterPatchWithdrawal.status, 200);
-  const afterPatchMatch = (await afterPatchWithdrawal.json()).match;
-  assert.equal((afterPatchMatch.left.archiveId === "other-archive"
-    ? afterPatchMatch.left : afterPatchMatch.right).name, undefined,
-  "a repeated PATCH after withdrawal cannot return the unpublished name");
-  await app.archive.db.prepare("", "DELETE FROM discovery_match_requests WHERE id=?")
-    .run(patchMatchId);
-  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
-    method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.49" },
-    body: JSON.stringify({ fields: selectedDiscoveryFields }),
-  })).status, 200);
-  assert.equal(patchEarly, "pending", "PATCH match response must serialize with withdrawal");
-  console.log("runtime_discovery_match_patch_delivery_revocation_ok");
-  const revokeIgnoredArchivePath = "/api/discovery/matches/ignored-archives";
-  assert.equal((await fetch(securedBase + revokeIgnoredArchivePath, { method: "POST",
-    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.25" },
-    body: JSON.stringify({ targetArchiveId: "other-archive", ignored: true }),
-  })).status, 200);
-  const ignoredBeforeRevoke = (await fetch(securedBase + revokeIgnoredArchivePath, {
-    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.26" },
-  }).then((response) => response.json())).archives.find(
-    (item: { archiveId: string }) => item.archiveId === "other-archive");
-  assert.ok(ignoredBeforeRevoke?.exampleName);
-  let ignoredReached!: () => void, releaseIgnored!: () => void;
-  const ignoredReady = new Promise<void>((resolve) => { ignoredReached = resolve; });
-  const ignoredGate = new Promise<void>((resolve) => { releaseIgnored = resolve; });
-  const ignoredEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
-    publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeIgnoredArchivesDelivery: async () => { ignoredReached(); await ignoredGate; },
-  });
-  const ignoredServer = createServer((req, res) => {
-    void ignoredEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => ignoredServer.listen(0, "127.0.0.1", resolve));
-  const ignoredPort = (ignoredServer.address() as { port: number }).port;
-  const pausedIgnored = fetch(`http://127.0.0.1:${ignoredPort}${revokeIgnoredArchivePath}`,
-    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.27" } });
-  let withdrawExample: Promise<Response> | undefined;
-  try {
-    await Promise.race([ignoredReady,
-      pausedIgnored.then(() => { throw new Error("Ignored archive list sent before delivery barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Ignored archive list did not reach delivery barrier")), 30_000)),
-    ]);
-    withdrawExample = fetch(otherBase + "/api/admin/published-people/person-a", {
-      method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.28" },
-    });
-    assert.equal(await publicationWithdrawalWaiting(), true,
-      "ignored-archive delivery holds its published example row");
-    const earlyExampleWithdrawal = await Promise.race([
-      withdrawExample.then((response) => `completed ${response.status}`),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
-    ]);
-    assert.equal(earlyExampleWithdrawal, "pending",
-      "withdrawal waits while an ignored archive list carries its example name");
-    releaseIgnored();
-    const deliveredIgnored = await pausedIgnored;
-    assert.equal(deliveredIgnored.status, 200);
-    assert.ok((await deliveredIgnored.json()).archives.some(
-      (item: { exampleName?: string }) => item.exampleName === ignoredBeforeRevoke.exampleName));
-    assert.equal((await withdrawExample).status, 200);
-  } finally {
-    releaseIgnored();
-    await pausedIgnored.catch(() => {});
-    await withdrawExample?.catch(() => {});
-    await new Promise<void>((resolve) => ignoredServer.close(() => resolve()));
-  }
-  const ignoredAfterRevoke = (await fetch(securedBase + revokeIgnoredArchivePath, {
-    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.29" },
-  }).then((response) => response.json())).archives.find(
-    (item: { archiveId: string }) => item.archiveId === "other-archive");
-  assert.equal(ignoredAfterRevoke.exampleName, undefined);
-  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
-    method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.30" },
-    body: JSON.stringify({ fields: selectedDiscoveryFields }),
-  })).status, 200);
-  assert.equal((await fetch(securedBase + revokeIgnoredArchivePath, { method: "POST",
-    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.31" },
-    body: JSON.stringify({ targetArchiveId: "other-archive", ignored: false }),
-  })).status, 200);
-  console.log("runtime_discovery_ignored_example_delivery_revocation_ok");
-  await app.archive.write(candidateRootBefore.family, (await app.archive.read()).revision);
-  await otherApp.archive.write(candidateOtherBefore.family, (await otherApp.archive.read()).revision);
-  console.log("runtime_discovery_candidate_delivery_revocation_ok");
-  const beforeLivingEdit = await otherApp.archive.read();
-  const livingEdit = structuredClone(beforeLivingEdit.family);
-  livingEdit.people[0].deceased = false;
-  livingEdit.people[0].death = undefined;
-  await otherApp.archive.write(livingEdit, beforeLivingEdit.revision);
-  assert.equal((await otherPublication.getFields("person-a")), null,
-    "a living edit must revoke the publication consent, not just hide the projection");
-  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
-    headers: archiveAdminHeaders,
-  }).then((response) => response.json())).published, false);
-  assert.equal((await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
-    404, "the living edit closes the cross-archive card in the same transaction");
-  const beforeDeceasedRestore = await otherApp.archive.read();
-  const deceasedRestore = structuredClone(beforeDeceasedRestore.family);
-  deceasedRestore.people[0].deceased = true;
-  await otherApp.archive.write(deceasedRestore, beforeDeceasedRestore.revision);
-  assert.equal((await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
-    404, "a later deceased edit must not silently restore a revoked publication");
-  await otherPublication.publish("person-a", "owner", selectedDiscoveryFields);
-  const specialId = "family:человек.1";
-  const specialSegment = encodeURIComponent(specialId);
-  const specialBefore = await otherApp.archive.read();
-  const specialFamily = structuredClone(specialBefore.family);
-  specialFamily.people.push({ ...specialFamily.people[0], id: specialId,
-    name: "Особый", surname: "Тестовый", patronymic: "", deceased: true,
-    parents: [], spouses: [] });
-  await otherApp.archive.write(specialFamily, specialBefore.revision);
-  const specialDiscoveryUrl = securedBase + `/api/discovery/people/other-archive/${specialSegment}`;
-  const specialAdminUrl = otherBase + `/api/admin/published-people/${specialSegment}`;
-  assert.equal((await fetch(specialDiscoveryUrl, { headers })).status, 404,
-    "a private card with punctuation and Unicode in its ID is absent from discovery");
-  assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: inviteeHeaders })).status, 403,
-    "a reader cannot publish a card through an encoded ID");
-  assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers })).status, 401,
-    "another archive cannot publish the encoded ID");
-  assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: archiveAdminHeaders })).status, 200);
-  const specialSearch = await fetch(securedBase + "/api/discovery/people?q=Особый", { headers });
-  assert.equal(specialSearch.status, 200);
-  assert.deepEqual((await specialSearch.json()).results.map((person: { id: string }) => person.id), [specialId]);
-  const specialDetail = await fetch(specialDiscoveryUrl, { headers });
-  assert.equal(specialDetail.status, 200);
-  assert.equal((await specialDetail.json()).person.id, specialId);
-  const discoveryAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
-    process.env.PUBLIC_ORIGIN);
-  let searchReached!: () => void, resumeSearch!: () => void;
-  const searchReady = new Promise<void>((resolve) => { searchReached = resolve; });
-  const searchGate = new Promise<void>((resolve) => { resumeSearch = resolve; });
-  const searchEndpoint = discoveryPeopleHttp(app.archive.db, discoveryAuth, undefined,
-    async () => { searchReached(); await searchGate; });
-  const searchServer = createServer((req, res) => {
-    void searchEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => searchServer.listen(0, "127.0.0.1", resolve));
-  const searchPort = (searchServer.address() as { port: number }).port;
-  const pausedSearch = fetch(`http://127.0.0.1:${searchPort}/api/discovery/people?q=Особый`,
-    { headers: { ...headers, "X-Real-IP": "198.51.100.227" } });
-  let withdrawal: Promise<Response> | undefined;
-  try {
-    await Promise.race([
-      searchReady,
-      pausedSearch.then(() => { throw new Error("Discovery search sent before the delivery barrier"); }),
-      new Promise<never>((_, reject) => {
-        const timer = setTimeout(() => reject(new Error("Discovery search did not reach the delivery barrier")), 30_000);
-        timer.unref();
-      }),
-    ]);
-    let withdrawalFinished = false;
-    withdrawal = fetch(specialAdminUrl, { method: "DELETE", headers: archiveAdminHeaders })
-      .then((response) => { withdrawalFinished = true; return response; });
-    let withdrawalWaiting = false;
-    for (let attempt = 0; attempt < 40; attempt++) {
-      const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
-        WHERE datname=current_database() AND pid<>pg_backend_pid()
-          AND wait_event_type='Lock' AND query LIKE 'DELETE FROM published_people%'`);
-      if (waiting.rowCount) { withdrawalWaiting = true; break; }
-      await new Promise<void>((resolve) => setTimeout(resolve, 50));
-    }
-    assert.equal(withdrawalWaiting, true,
-      "publication withdrawal must wait on the search response's row lock");
-    assert.equal(withdrawalFinished, false,
-      "withdrawal waits while the selected search row is held for delivery");
-    resumeSearch();
-    const searched = await pausedSearch;
-    assert.equal(searched.status, 200);
-    assert.deepEqual((await searched.json()).results.map((person: { id: string }) => person.id),
-      [specialId], "the earlier search finishes before publication withdrawal");
-    assert.equal((await withdrawal).status, 200);
-    assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people?q=Особый", {
-      headers,
-    })).json()).results, [], "a later search cannot deliver the withdrawn card");
-  } finally {
-    resumeSearch();
-    await pausedSearch.catch(() => {});
-    await withdrawal?.catch(() => {});
-    await new Promise<void>((resolve) => searchServer.close(() => resolve()));
-  }
-  assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: archiveAdminHeaders })).status, 200);
-  const pausedDiscoveryDetail = async (change: () => Promise<void>) => {
-    let reached!: () => void, resume!: () => void;
-    const ready = new Promise<void>((resolve) => { reached = resolve; });
-    const gate = new Promise<void>((resolve) => { resume = resolve; });
-    const endpoint = discoveryPeopleHttp(app!.archive.db, discoveryAuth,
-      async () => { reached(); await gate; });
-    const server = createServer((req, res) => {
-      void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+    const postServer = createServer((req, res) => {
+      void postEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
         .catch((error) => { res.destroy(error); });
     });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const port = (server.address() as { port: number }).port;
-    const request = fetch(`http://127.0.0.1:${port}/api/discovery/people/other-archive/${specialSegment}`,
-      { headers: { ...headers, "X-Real-IP": "198.51.100.226" } });
+    await new Promise<void>((resolve) => postServer.listen(0, "127.0.0.1", resolve));
+    const postPort = (postServer.address() as { port: number }).port;
+    const pausedPost = fetch(`http://127.0.0.1:${postPort}/api/discovery/matches`, {
+      method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.43" },
+      body: JSON.stringify({ sourcePersonId: candidateSourceId,
+        targetArchiveId: "other-archive", targetPersonId: candidateTargetId }),
+    });
+    let withdrawPost: Promise<Response> | undefined;
+    let postEarly = "";
+    let postDelivered!: Response;
+    try {
+      await Promise.race([postReady,
+        pausedPost.then((response) => { throw new Error(`POST sent before delivery barrier: ${response.status}`); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("POST did not reach delivery barrier")), 30_000)),
+      ]);
+      withdrawPost = fetch(otherBase + `/api/admin/published-people/${candidateTargetId}`, {
+        method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.44" },
+      });
+      assert.equal(await publicationWithdrawalWaiting(), true,
+        "POST delivery holds the target publication row");
+      postEarly = await Promise.race([
+        withdrawPost.then((response) => `completed ${response.status}`),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]);
+      releasePost();
+      postDelivered = await pausedPost;
+      assert.equal((await withdrawPost).status, 200);
+    } finally {
+      releasePost();
+      await pausedPost.catch(() => {});
+      await withdrawPost?.catch(() => {});
+      await new Promise<void>((resolve) => postServer.close(() => resolve()));
+    }
+    assert.equal(postDelivered.status, 200);
+    const postedMatch = (await postDelivered.json()).match;
+    assert.ok([postedMatch.left,postedMatch.right].some(
+      (side: { archiveId: string; name?: string }) =>
+        side.archiveId === "other-archive" && side.name));
+    assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+      headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.45" },
+    }).then((response) => response.json())).matches.find(
+      (item: { id: string }) => item.id === postedMatch.id).status, "revoked");
+    assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+      method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.53" },
+      body: JSON.stringify({ sourcePersonId: candidateSourceId,
+        targetArchiveId: "other-archive", targetPersonId: candidateTargetId }),
+    })).status, 409, "a new match request cannot reuse a withdrawn publication");
+    await app.archive.db.prepare("", "DELETE FROM discovery_match_requests WHERE id=?")
+      .run(postedMatch.id);
+    await publishedPeopleStore(otherApp.archive.db).publish(candidateTargetId, "owner");
+    assert.equal(postEarly, "pending", "POST match response must serialize with withdrawal");
+    console.log("runtime_discovery_match_post_delivery_revocation_ok");
+    const candidateMatchRequest = await fetch(securedBase + "/api/discovery/matches", {
+      method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.20" },
+      body: JSON.stringify({ sourcePersonId: candidateSourceId,
+        targetArchiveId: "other-archive", targetPersonId: candidateTargetId }),
+    });
+    assert.equal(candidateMatchRequest.status, 200);
+    const candidateMatchId = (await candidateMatchRequest.json()).match.id as string;
+    const candidateReview = (await fetch(otherBase + "/api/discovery/matches", {
+      headers: archiveAdminHeaders,
+    }).then((response) => response.json())).matches.find(
+      (item: { id: string }) => item.id === candidateMatchId);
+    assert.ok(candidateReview?.reviewToken);
+    assert.equal((await fetch(otherBase + `/api/discovery/matches/${candidateMatchId}`, {
+      method: "PATCH", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.21" },
+      body: JSON.stringify({ decision: "accept", reviewToken: candidateReview.reviewToken }),
+    })).status, 200);
+    let matchListReached!: () => void, releaseMatchList!: () => void;
+    const matchListReady = new Promise<void>((resolve) => { matchListReached = resolve; });
+    const matchListGate = new Promise<void>((resolve) => { releaseMatchList = resolve; });
+    const matchListEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeMatchListDelivery: async () => { matchListReached(); await matchListGate; },
+    });
+    const matchListServer = createServer((req, res) => {
+      void matchListEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => matchListServer.listen(0, "127.0.0.1", resolve));
+    const matchListPort = (matchListServer.address() as { port: number }).port;
+    const pausedMatchList = fetch(`http://127.0.0.1:${matchListPort}/api/discovery/matches`,
+      { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.22" } });
+    let withdrawMatchCard: Promise<Response> | undefined;
+    try {
+      await Promise.race([matchListReady,
+        pausedMatchList.then(() => { throw new Error("Match list sent before delivery barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Match list did not reach delivery barrier")), 30_000)),
+      ]);
+      withdrawMatchCard = fetch(otherBase + `/api/admin/published-people/${candidateTargetId}`, {
+        method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.23" },
+      });
+      assert.equal(await publicationWithdrawalWaiting(), true,
+        "match-list delivery holds the selected published row");
+      const earlyMatchWithdrawal = await Promise.race([
+        withdrawMatchCard.then((response) => `completed ${response.status}`),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]);
+      assert.equal(earlyMatchWithdrawal, "pending",
+        "withdrawal waits while the match list carries the published card");
+      releaseMatchList();
+      const deliveredMatches = await pausedMatchList;
+      assert.equal(deliveredMatches.status, 200);
+      assert.ok((await deliveredMatches.json()).matches.some(
+        (item: { id: string; status: string }) =>
+          item.id === candidateMatchId && item.status === "linked"));
+      assert.equal((await withdrawMatchCard).status, 200);
+    } finally {
+      releaseMatchList();
+      await pausedMatchList.catch(() => {});
+      await withdrawMatchCard?.catch(() => {});
+      await new Promise<void>((resolve) => matchListServer.close(() => resolve()));
+    }
+    const afterMatchWithdrawal = (await fetch(securedBase + "/api/discovery/matches", {
+      headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.24" },
+    }).then((response) => response.json())).matches.find(
+      (item: { id: string }) => item.id === candidateMatchId);
+    assert.equal(afterMatchWithdrawal.status, "revoked");
+    assert.equal((afterMatchWithdrawal.left.archiveId === "other-archive"
+      ? afterMatchWithdrawal.left : afterMatchWithdrawal.right).name, undefined);
+    assert.equal(afterMatchWithdrawal.confirmation, undefined,
+      "a completed publication withdrawal hides the accepted historical facts over HTTP");
+    assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS n
+      FROM discovery_match_confirmation_fields WHERE match_id=?`).get(candidateMatchId))?.n, 0,
+    "RLS also hides the accepted historical facts after withdrawal");
+    console.log("runtime_discovery_match_list_delivery_revocation_ok");
+    await app.archive.db.prepare("", "DELETE FROM discovery_match_requests WHERE id=?")
+      .run(candidateMatchId);
+    const legacySourceArchive = app.archive, legacyOtherArchive = otherApp.archive;
+    async function verifyLegacyConfirmationHistory() {
+    // Existing linked rows predate migration 086. Their historical facts cannot
+    // be reconstructed from the current publication.
+    await publishedPeopleStore(legacyOtherArchive.db).publish(candidateTargetId,"owner");
+    const legacyConfirmationId = randomUUID();
+    try {
+      await legacySourceArchive.db.prepare("", `INSERT INTO discovery_match_requests(
+        id,left_archive_id,left_person_id,right_archive_id,right_person_id,
+        initiated_by_archive_id,requested_by,status,responded_by,responded_at)
+        VALUES(?,'other-archive',?,'runtime-test',?,'runtime-test','owner','linked','vk:42',now())`)
+        .run(legacyConfirmationId,candidateTargetId,candidateSourceId);
+      const legacyHistory = (await fetch(securedBase + "/api/discovery/matches", {
+        headers: ownerHeaders,
+      }).then((response) => response.json())).matches.find((item: { id: string }) =>
+        item.id === legacyConfirmationId);
+      assert.equal(legacyHistory.status, "linked");
+      assert.equal(legacyHistory.confirmationHistoryAvailable, false);
+      assert.equal(legacyHistory.confirmation, undefined,
+        "a legacy link never receives a fabricated historical snapshot");
+    } finally {
+      await legacySourceArchive.db.prepare("", "DELETE FROM discovery_match_requests WHERE id=?")
+        .run(legacyConfirmationId);
+      await publishedPeopleStore(legacyOtherArchive.db).unpublish(candidateTargetId);
+    }
+    console.log("runtime_discovery_confirmation_legacy_unavailable_ok");
+    }
+    await verifyLegacyConfirmationHistory();
+    const patchSource = await fetch(securedBase + "/api/discovery/matches", {
+      method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.46" },
+      body: JSON.stringify({ sourcePersonId: candidateSourceId,
+        targetArchiveId: "other-archive", targetPersonId: "person-a" }),
+    });
+    assert.equal(patchSource.status, 200);
+    const patchMatchId = (await patchSource.json()).match.id as string;
+    let patchReached!: () => void, releasePatch!: () => void;
+    const patchReady = new Promise<void>((resolve) => { patchReached = resolve; });
+    const patchGate = new Promise<void>((resolve) => { releasePatch = resolve; });
+    const patchEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeMutationDelivery: async () => { patchReached(); await patchGate; },
+    });
+    const patchServer = createServer((req, res) => {
+      void patchEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => patchServer.listen(0, "127.0.0.1", resolve));
+    const patchPort = (patchServer.address() as { port: number }).port;
+    const pausedPatch = fetch(`http://127.0.0.1:${patchPort}/api/discovery/matches/${patchMatchId}`, {
+      method: "PATCH", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.47" },
+      body: JSON.stringify({ decision: "revoke" }),
+    });
+    let withdrawPatch: Promise<Response> | undefined;
+    let patchEarly = "";
+    let patchDelivered!: Response;
+    try {
+      await Promise.race([patchReady,
+        pausedPatch.then((response) => { throw new Error(`PATCH sent before delivery barrier: ${response.status}`); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("PATCH did not reach delivery barrier")), 30_000)),
+      ]);
+      withdrawPatch = fetch(otherBase + "/api/admin/published-people/person-a", {
+        method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.48" },
+      });
+      assert.equal(await publicationWithdrawalWaiting(), true,
+        "PATCH delivery holds the target publication row");
+      patchEarly = await Promise.race([
+        withdrawPatch.then((response) => `completed ${response.status}`),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]);
+      releasePatch();
+      patchDelivered = await pausedPatch;
+      assert.equal((await withdrawPatch).status, 200);
+    } finally {
+      releasePatch();
+      await pausedPatch.catch(() => {});
+      await withdrawPatch?.catch(() => {});
+      await new Promise<void>((resolve) => patchServer.close(() => resolve()));
+    }
+    assert.equal(patchDelivered.status, 200);
+    const patchedMatch = (await patchDelivered.json()).match;
+    assert.equal(patchedMatch.status, "revoked");
+    assert.ok([patchedMatch.left,patchedMatch.right].some(
+      (side: { archiveId: string; name?: string }) =>
+        side.archiveId === "other-archive" && side.name));
+    const afterPatchWithdrawal = await fetch(securedBase + `/api/discovery/matches/${patchMatchId}`, {
+      method: "PATCH", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.54" },
+      body: JSON.stringify({ decision: "revoke" }),
+    });
+    assert.equal(afterPatchWithdrawal.status, 200);
+    const afterPatchMatch = (await afterPatchWithdrawal.json()).match;
+    assert.equal((afterPatchMatch.left.archiveId === "other-archive"
+      ? afterPatchMatch.left : afterPatchMatch.right).name, undefined,
+    "a repeated PATCH after withdrawal cannot return the unpublished name");
+    await app.archive.db.prepare("", "DELETE FROM discovery_match_requests WHERE id=?")
+      .run(patchMatchId);
+    assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+      method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.49" },
+      body: JSON.stringify({ fields: selectedDiscoveryFields }),
+    })).status, 200);
+    assert.equal(patchEarly, "pending", "PATCH match response must serialize with withdrawal");
+    console.log("runtime_discovery_match_patch_delivery_revocation_ok");
+    const revokeIgnoredArchivePath = "/api/discovery/matches/ignored-archives";
+    assert.equal((await fetch(securedBase + revokeIgnoredArchivePath, { method: "POST",
+      headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.25" },
+      body: JSON.stringify({ targetArchiveId: "other-archive", ignored: true }),
+    })).status, 200);
+    const ignoredBeforeRevoke = (await fetch(securedBase + revokeIgnoredArchivePath, {
+      headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.26" },
+    }).then((response) => response.json())).archives.find(
+      (item: { archiveId: string }) => item.archiveId === "other-archive");
+    assert.ok(ignoredBeforeRevoke?.exampleName);
+    let ignoredReached!: () => void, releaseIgnored!: () => void;
+    const ignoredReady = new Promise<void>((resolve) => { ignoredReached = resolve; });
+    const ignoredGate = new Promise<void>((resolve) => { releaseIgnored = resolve; });
+    const ignoredEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeIgnoredArchivesDelivery: async () => { ignoredReached(); await ignoredGate; },
+    });
+    const ignoredServer = createServer((req, res) => {
+      void ignoredEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => ignoredServer.listen(0, "127.0.0.1", resolve));
+    const ignoredPort = (ignoredServer.address() as { port: number }).port;
+    const pausedIgnored = fetch(`http://127.0.0.1:${ignoredPort}${revokeIgnoredArchivePath}`,
+      { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.27" } });
+    let withdrawExample: Promise<Response> | undefined;
+    try {
+      await Promise.race([ignoredReady,
+        pausedIgnored.then(() => { throw new Error("Ignored archive list sent before delivery barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Ignored archive list did not reach delivery barrier")), 30_000)),
+      ]);
+      withdrawExample = fetch(otherBase + "/api/admin/published-people/person-a", {
+        method: "DELETE", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.28" },
+      });
+      assert.equal(await publicationWithdrawalWaiting(), true,
+        "ignored-archive delivery holds its published example row");
+      const earlyExampleWithdrawal = await Promise.race([
+        withdrawExample.then((response) => `completed ${response.status}`),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]);
+      assert.equal(earlyExampleWithdrawal, "pending",
+        "withdrawal waits while an ignored archive list carries its example name");
+      releaseIgnored();
+      const deliveredIgnored = await pausedIgnored;
+      assert.equal(deliveredIgnored.status, 200);
+      assert.ok((await deliveredIgnored.json()).archives.some(
+        (item: { exampleName?: string }) => item.exampleName === ignoredBeforeRevoke.exampleName));
+      assert.equal((await withdrawExample).status, 200);
+    } finally {
+      releaseIgnored();
+      await pausedIgnored.catch(() => {});
+      await withdrawExample?.catch(() => {});
+      await new Promise<void>((resolve) => ignoredServer.close(() => resolve()));
+    }
+    const ignoredAfterRevoke = (await fetch(securedBase + revokeIgnoredArchivePath, {
+      headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.29" },
+    }).then((response) => response.json())).archives.find(
+      (item: { archiveId: string }) => item.archiveId === "other-archive");
+    assert.equal(ignoredAfterRevoke.exampleName, undefined);
+    assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+      method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.30" },
+      body: JSON.stringify({ fields: selectedDiscoveryFields }),
+    })).status, 200);
+    assert.equal((await fetch(securedBase + revokeIgnoredArchivePath, { method: "POST",
+      headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.31" },
+      body: JSON.stringify({ targetArchiveId: "other-archive", ignored: false }),
+    })).status, 200);
+    console.log("runtime_discovery_ignored_example_delivery_revocation_ok");
+    await app.archive.write(candidateRootBefore.family, (await app.archive.read()).revision);
+    await otherApp.archive.write(candidateOtherBefore.family, (await otherApp.archive.read()).revision);
+    console.log("runtime_discovery_candidate_delivery_revocation_ok");
+    const beforeLivingEdit = await otherApp.archive.read();
+    const livingEdit = structuredClone(beforeLivingEdit.family);
+    livingEdit.people[0].deceased = false;
+    livingEdit.people[0].death = undefined;
+    await otherApp.archive.write(livingEdit, beforeLivingEdit.revision);
+    assert.equal((await otherPublication.getFields("person-a")), null,
+      "a living edit must revoke the publication consent, not just hide the projection");
+    assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+      headers: archiveAdminHeaders,
+    }).then((response) => response.json())).published, false);
+    assert.equal((await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
+      404, "the living edit closes the cross-archive card in the same transaction");
+    const beforeDeceasedRestore = await otherApp.archive.read();
+    const deceasedRestore = structuredClone(beforeDeceasedRestore.family);
+    deceasedRestore.people[0].deceased = true;
+    await otherApp.archive.write(deceasedRestore, beforeDeceasedRestore.revision);
+    assert.equal((await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
+      404, "a later deceased edit must not silently restore a revoked publication");
+    await otherPublication.publish("person-a", "owner", selectedDiscoveryFields);
+    const specialId = "family:человек.1";
+    const specialSegment = encodeURIComponent(specialId);
+    const specialBefore = await otherApp.archive.read();
+    const specialFamily = structuredClone(specialBefore.family);
+    specialFamily.people.push({ ...specialFamily.people[0], id: specialId,
+      name: "Особый", surname: "Тестовый", patronymic: "", deceased: true,
+      parents: [], spouses: [] });
+    await otherApp.archive.write(specialFamily, specialBefore.revision);
+    const specialDiscoveryUrl = securedBase + `/api/discovery/people/other-archive/${specialSegment}`;
+    const specialAdminUrl = otherBase + `/api/admin/published-people/${specialSegment}`;
+    assert.equal((await fetch(specialDiscoveryUrl, { headers })).status, 404,
+      "a private card with punctuation and Unicode in its ID is absent from discovery");
+    assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: inviteeHeaders })).status, 403,
+      "a reader cannot publish a card through an encoded ID");
+    assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers })).status, 401,
+      "another archive cannot publish the encoded ID");
+    assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: archiveAdminHeaders })).status, 200);
+    const specialSearch = await fetch(securedBase + "/api/discovery/people?q=Особый", { headers });
+    assert.equal(specialSearch.status, 200);
+    assert.deepEqual((await specialSearch.json()).results.map((person: { id: string }) => person.id), [specialId]);
+    const specialDetail = await fetch(specialDiscoveryUrl, { headers });
+    assert.equal(specialDetail.status, 200);
+    assert.equal((await specialDetail.json()).person.id, specialId);
+    const discoveryAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+      process.env.PUBLIC_ORIGIN);
+    let searchReached!: () => void, resumeSearch!: () => void;
+    const searchReady = new Promise<void>((resolve) => { searchReached = resolve; });
+    const searchGate = new Promise<void>((resolve) => { resumeSearch = resolve; });
+    const searchEndpoint = discoveryPeopleHttp(app.archive.db, discoveryAuth, undefined,
+      async () => { searchReached(); await searchGate; });
+    const searchServer = createServer((req, res) => {
+      void searchEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => searchServer.listen(0, "127.0.0.1", resolve));
+    const searchPort = (searchServer.address() as { port: number }).port;
+    const pausedSearch = fetch(`http://127.0.0.1:${searchPort}/api/discovery/people?q=Особый`,
+      { headers: { ...headers, "X-Real-IP": "198.51.100.227" } });
+    let withdrawal: Promise<Response> | undefined;
     try {
       await Promise.race([
-        ready,
-        request.then(() => { throw new Error("Discovery detail sent before the lookup barrier"); }),
+        searchReady,
+        pausedSearch.then(() => { throw new Error("Discovery search sent before the delivery barrier"); }),
         new Promise<never>((_, reject) => {
-          const timer = setTimeout(() => reject(new Error("Discovery detail did not reach the lookup barrier")), 30_000);
+          const timer = setTimeout(() => reject(new Error("Discovery search did not reach the delivery barrier")), 30_000);
           timer.unref();
         }),
       ]);
-      await change();
-      resume();
-      return await request;
+      let withdrawalFinished = false;
+      withdrawal = fetch(specialAdminUrl, { method: "DELETE", headers: archiveAdminHeaders })
+        .then((response) => { withdrawalFinished = true; return response; });
+      let withdrawalWaiting = false;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
+          WHERE datname=current_database() AND pid<>pg_backend_pid()
+            AND wait_event_type='Lock' AND query LIKE 'DELETE FROM published_people%'`);
+        if (waiting.rowCount) { withdrawalWaiting = true; break; }
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      }
+      assert.equal(withdrawalWaiting, true,
+        "publication withdrawal must wait on the search response's row lock");
+      assert.equal(withdrawalFinished, false,
+        "withdrawal waits while the selected search row is held for delivery");
+      resumeSearch();
+      const searched = await pausedSearch;
+      assert.equal(searched.status, 200);
+      assert.deepEqual((await searched.json()).results.map((person: { id: string }) => person.id),
+        [specialId], "the earlier search finishes before publication withdrawal");
+      assert.equal((await withdrawal).status, 200);
+      assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people?q=Особый", {
+        headers,
+      })).json()).results, [], "a later search cannot deliver the withdrawn card");
     } finally {
-      resume();
-      await request.catch(() => {});
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      resumeSearch();
+      await pausedSearch.catch(() => {});
+      await withdrawal?.catch(() => {});
+      await new Promise<void>((resolve) => searchServer.close(() => resolve()));
     }
-  };
-  const unchangedDetail = await pausedDiscoveryDetail(async () => {});
-  assert.equal(unchangedDetail.status, 200,
-    "an unchanged published card is still delivered after the lookup barrier");
-  assert.deepEqual((await unchangedDetail.json()).linkedCards, []);
-  assert.equal((await pausedDiscoveryDetail(async () => {
-    assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: archiveAdminHeaders })).status, 200);
-  })).status, 404, "revocation between projection reads cannot deliver the old card");
-  assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: archiveAdminHeaders,
-    body: JSON.stringify({ fields: selectedDiscoveryFields }) })).status, 200);
-  assert.equal((await fetch(specialDiscoveryUrl, { headers }).then((response) => response.json()))
-    .person.birthSurname, "ПоискРождения");
-  assert.equal((await pausedDiscoveryDetail(async () => {
-    assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: archiveAdminHeaders })).status, 200);
     assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: archiveAdminHeaders })).status, 200);
-  })).status, 404,
-  "republication with narrower fields cannot deliver a card from the previous publication");
-  const narrowedDetail = await fetch(specialDiscoveryUrl, { headers });
-  assert.equal(narrowedDetail.status, 200);
-  assert.equal((await narrowedDetail.json()).person.birthSurname, undefined);
-  assert.equal((await fetch(otherBase + `/api/published-people/${specialSegment}`, {
-    headers: ownerHeaders,
-  })).status, 200, "the archive-local published card decodes the same ID");
-  assert.equal((await fetch(otherBase + `/api/admin/published-people/batch?id=${specialSegment}`, {
-    headers: archiveAdminHeaders,
-  })).status, 200, "batch status accepts a URL-encoded published ID");
-  assert.equal((await fetch(otherBase + "/api/admin/published-people/batch/preview", {
-    method: "POST", headers: archiveAdminHeaders,
-    body: JSON.stringify({ action: "unpublish", personIds: [specialId] }),
-  })).status, 200, "batch preview accepts the same ID without changing publication");
-  for (const invalid of ["family%2Fperson.1", "family%5Cperson.1", "family%252Fperson.1", "family%00person.1", "bad%"])
-    assert.equal((await fetch(securedBase + `/api/discovery/people/other-archive/${invalid}`, {
+    const pausedDiscoveryDetail = async (change: () => Promise<void>) => {
+      let reached!: () => void, resume!: () => void;
+      const ready = new Promise<void>((resolve) => { reached = resolve; });
+      const gate = new Promise<void>((resolve) => { resume = resolve; });
+      const endpoint = discoveryPeopleHttp(app!.archive.db, discoveryAuth,
+        async () => { reached(); await gate; });
+      const server = createServer((req, res) => {
+        void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+          .catch((error) => { res.destroy(error); });
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const port = (server.address() as { port: number }).port;
+      const request = fetch(`http://127.0.0.1:${port}/api/discovery/people/other-archive/${specialSegment}`,
+        { headers: { ...headers, "X-Real-IP": "198.51.100.226" } });
+      try {
+        await Promise.race([
+          ready,
+          request.then(() => { throw new Error("Discovery detail sent before the lookup barrier"); }),
+          new Promise<never>((_, reject) => {
+            const timer = setTimeout(() => reject(new Error("Discovery detail did not reach the lookup barrier")), 30_000);
+            timer.unref();
+          }),
+        ]);
+        await change();
+        resume();
+        return await request;
+      } finally {
+        resume();
+        await request.catch(() => {});
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    };
+    const unchangedDetail = await pausedDiscoveryDetail(async () => {});
+    assert.equal(unchangedDetail.status, 200,
+      "an unchanged published card is still delivered after the lookup barrier");
+    assert.deepEqual((await unchangedDetail.json()).linkedCards, []);
+    assert.equal((await pausedDiscoveryDetail(async () => {
+      assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: archiveAdminHeaders })).status, 200);
+    })).status, 404, "revocation between projection reads cannot deliver the old card");
+    assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: archiveAdminHeaders,
+      body: JSON.stringify({ fields: selectedDiscoveryFields }) })).status, 200);
+    assert.equal((await fetch(specialDiscoveryUrl, { headers }).then((response) => response.json()))
+      .person.birthSurname, "ПоискРождения");
+    assert.equal((await pausedDiscoveryDetail(async () => {
+      assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: archiveAdminHeaders })).status, 200);
+      assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: archiveAdminHeaders })).status, 200);
+    })).status, 404,
+    "republication with narrower fields cannot deliver a card from the previous publication");
+    const narrowedDetail = await fetch(specialDiscoveryUrl, { headers });
+    assert.equal(narrowedDetail.status, 200);
+    assert.equal((await narrowedDetail.json()).person.birthSurname, undefined);
+    assert.equal((await fetch(otherBase + `/api/published-people/${specialSegment}`, {
+      headers: ownerHeaders,
+    })).status, 200, "the archive-local published card decodes the same ID");
+    assert.equal((await fetch(otherBase + `/api/admin/published-people/batch?id=${specialSegment}`, {
+      headers: archiveAdminHeaders,
+    })).status, 200, "batch status accepts a URL-encoded published ID");
+    assert.equal((await fetch(otherBase + "/api/admin/published-people/batch/preview", {
+      method: "POST", headers: archiveAdminHeaders,
+      body: JSON.stringify({ action: "unpublish", personIds: [specialId] }),
+    })).status, 200, "batch preview accepts the same ID without changing publication");
+    for (const invalid of ["family%2Fperson.1", "family%5Cperson.1", "family%252Fperson.1", "family%00person.1", "bad%"])
+      assert.equal((await fetch(securedBase + `/api/discovery/people/other-archive/${invalid}`, {
+        headers,
+      })).status, 404, "unsafe encoded segments cannot reach another card");
+    assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: archiveAdminHeaders })).status, 200);
+    assert.equal((await fetch(specialDiscoveryUrl, { headers })).status, 404,
+      "revoking publication immediately closes the formerly addressable card");
+    assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people?q=Особый", {
       headers,
-    })).status, 404, "unsafe encoded segments cannot reach another card");
-  assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: archiveAdminHeaders })).status, 200);
-  assert.equal((await fetch(specialDiscoveryUrl, { headers })).status, 404,
-    "revoking publication immediately closes the formerly addressable card");
-  assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people?q=Особый", {
-    headers,
-  })).json()).results, []);
-  const specialAfter = await otherApp.archive.read();
-  const withoutSpecial = structuredClone(specialAfter.family);
-  withoutSpecial.people = withoutSpecial.people.filter((person) => person.id !== specialId);
-  await otherApp.archive.write(withoutSpecial, specialAfter.revision);
-  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
-  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
-    VALUES('other-archive','vk:42','admin',true,'all') ON CONFLICT (archive_id,user_id)
-    DO UPDATE SET role='admin',approved=true,tree_access='all'`);
-  await client.query(`INSERT INTO archive_owners(archive_id,user_id)
-    VALUES('other-archive','vk:42') ON CONFLICT (archive_id) DO UPDATE SET user_id='vk:42'`);
-  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
-  const rootBeforeMatch = await app.archive.read();
-  const rootWithPublishedPerson = structuredClone(rootBeforeMatch.family);
-  rootWithPublishedPerson.people[0].deceased = true;
-  await app.archive.write(rootWithPublishedPerson, rootBeforeMatch.revision);
-  const proposedPair = JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
-    targetPersonId: "person-a", reason: "Совпадают семейные записи" });
-  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
-    method: "POST", headers: ownerHeaders, body: proposedPair,
-  })).status, 409, "a private card cannot be used in a cross-archive match");
-  const exactOwnPath = "/api/discovery/matches/own-people?personId=person-a";
-  assert.equal((await fetch(securedBase + exactOwnPath, { headers: ownerHeaders })).status, 404,
-    "the source handoff cannot select an unpublished card");
-  await publishedPeopleStore(app.archive.db).publish("person-a", "owner");
-  const exactOwn = await fetch(securedBase + exactOwnPath, { headers: ownerHeaders });
-  assert.equal(exactOwn.status, 200);
-  assert.equal((await fetch(securedBase + exactOwnPath, { headers })).status, 403,
-    "a researcher cannot select a match source for the owner");
-  const exactOwnBody = await exactOwn.json();
-  assert.deepEqual(exactOwnBody.people.map((person: { archiveId: string; id: string }) =>
-    [person.archiveId,person.id]), [["runtime-test","person-a"]]);
-  assert.doesNotMatch(JSON.stringify(exactOwnBody), /biography|sources|parents/,
-    "source handoff returns only consented publication fields");
-  const exactSession = newSessionToken();
-  await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
-    VALUES($1,'owner',$2)`, [sessionTokenHash(exactSession), Date.now() + 600_000]);
-  let exactReached!: () => void, releaseExact!: () => void;
-  const exactReady = new Promise<void>((resolve) => { exactReached = resolve; });
-  const exactGate = new Promise<void>((resolve) => { releaseExact = resolve; });
-  const exactEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
-    publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeOwnPersonAccessLock: async () => { exactReached(); await exactGate; },
-  });
-  const exactServer = createServer((req, res) => {
-    void exactEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => exactServer.listen(0, "127.0.0.1", resolve));
-  const exactPort = (exactServer.address() as { port: number }).port;
-  try {
-    const pendingExact = fetch(`http://127.0.0.1:${exactPort}${exactOwnPath}`, {
-      headers: { ...ownerHeaders, Cookie: `drevo_session=${exactSession}` },
+    })).json()).results, []);
+    const specialAfter = await otherApp.archive.read();
+    const withoutSpecial = structuredClone(specialAfter.family);
+    withoutSpecial.people = withoutSpecial.people.filter((person) => person.id !== specialId);
+    await otherApp.archive.write(withoutSpecial, specialAfter.revision);
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+    await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+      VALUES('other-archive','vk:42','admin',true,'all') ON CONFLICT (archive_id,user_id)
+      DO UPDATE SET role='admin',approved=true,tree_access='all'`);
+    await client.query(`INSERT INTO archive_owners(archive_id,user_id)
+      VALUES('other-archive','vk:42') ON CONFLICT (archive_id) DO UPDATE SET user_id='vk:42'`);
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    const rootBeforeMatch = await app.archive.read();
+    const rootWithPublishedPerson = structuredClone(rootBeforeMatch.family);
+    rootWithPublishedPerson.people[0].deceased = true;
+    await app.archive.write(rootWithPublishedPerson, rootBeforeMatch.revision);
+    const proposedPair = JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+      targetPersonId: "person-a", reason: "Совпадают семейные записи" });
+    assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+      method: "POST", headers: ownerHeaders, body: proposedPair,
+    })).status, 409, "a private card cannot be used in a cross-archive match");
+    const exactOwnPath = "/api/discovery/matches/own-people?personId=person-a";
+    assert.equal((await fetch(securedBase + exactOwnPath, { headers: ownerHeaders })).status, 404,
+      "the source handoff cannot select an unpublished card");
+    await publishedPeopleStore(app.archive.db).publish("person-a", "owner");
+    const exactOwn = await fetch(securedBase + exactOwnPath, { headers: ownerHeaders });
+    assert.equal(exactOwn.status, 200);
+    assert.equal((await fetch(securedBase + exactOwnPath, { headers })).status, 403,
+      "a researcher cannot select a match source for the owner");
+    const exactOwnBody = await exactOwn.json();
+    assert.deepEqual(exactOwnBody.people.map((person: { archiveId: string; id: string }) =>
+      [person.archiveId,person.id]), [["runtime-test","person-a"]]);
+    assert.doesNotMatch(JSON.stringify(exactOwnBody), /biography|sources|parents/,
+      "source handoff returns only consented publication fields");
+    const exactSession = newSessionToken();
+    await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
+      VALUES($1,'owner',$2)`, [sessionTokenHash(exactSession), Date.now() + 600_000]);
+    let exactReached!: () => void, releaseExact!: () => void;
+    const exactReady = new Promise<void>((resolve) => { exactReached = resolve; });
+    const exactGate = new Promise<void>((resolve) => { releaseExact = resolve; });
+    const exactEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeOwnPersonAccessLock: async () => { exactReached(); await exactGate; },
     });
-    await Promise.race([exactReady, pendingExact.then(() => { throw new Error("Source sent before barrier"); })]);
-    await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(exactSession)]);
-    releaseExact();
-    const denied = await pendingExact;
-    assert.equal(denied.status, 403, "completed logout before final source read denies the card");
-    assert.doesNotMatch(await denied.text(), /Иван|Тестов|birthYear/);
-  } finally {
-    releaseExact();
-    await new Promise<void>((resolve) => exactServer.close(() => resolve()));
-    await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(exactSession)]);
-  }
-  const lockedSourceSession = newSessionToken();
-  await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
-    VALUES($1,'owner',$2)`, [sessionTokenHash(lockedSourceSession), Date.now() + 600_000]);
-  let sourceLocked!: () => void, releaseSource!: () => void;
-  const sourceReady = new Promise<void>((resolve) => { sourceLocked = resolve; });
-  const sourceGate = new Promise<void>((resolve) => { releaseSource = resolve; });
-  const lockedSourceEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
-    publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeOwnPersonResponse: async () => { sourceLocked(); await sourceGate; },
-  });
-  const lockedSourceServer = createServer((req, res) => {
-    void lockedSourceEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => lockedSourceServer.listen(0, "127.0.0.1", resolve));
-  const lockedSourcePort = (lockedSourceServer.address() as { port: number }).port;
-  let sessionWithdrawal: Promise<unknown> | undefined;
-  try {
-    const lockedSourceHeaders = { ...ownerHeaders, Cookie: `drevo_session=${lockedSourceSession}` };
-    const pendingSource = fetch(`http://127.0.0.1:${lockedSourcePort}${exactOwnPath}`,
-      { headers: lockedSourceHeaders });
-    await Promise.race([sourceReady, pendingSource.then(() => { throw new Error("Source sent before lock"); })]);
-    sessionWithdrawal = client.query("DELETE FROM account_sessions WHERE token_hash=$1",
-      [sessionTokenHash(lockedSourceSession)]);
-    assert.equal(await Promise.race([sessionWithdrawal.then(() => "revoked"),
-      new Promise<string>((resolve) => setTimeout(() => resolve("waiting"), 100))]), "waiting",
-    "logout waits while the exact source response holds the session");
-    releaseSource();
-    assert.equal((await pendingSource).status, 200);
-    await sessionWithdrawal;
-    assert.equal((await fetch(`http://127.0.0.1:${lockedSourcePort}${exactOwnPath}`,
-      { headers: lockedSourceHeaders })).status, 401);
-  } finally {
-    releaseSource();
-    await sessionWithdrawal?.catch(() => {});
-    await new Promise<void>((resolve) => lockedSourceServer.close(() => resolve()));
-    await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(lockedSourceSession)]);
-  }
-  assert.equal((await fetch(securedBase +
-    "/api/discovery/matches/own-people?personId=other-person", { headers: ownerHeaders })).status, 404,
-  "an exact lookup never crosses into another archive");
-  await publishedPeopleStore(app.archive.db).unpublish("person-a");
-  assert.equal((await fetch(securedBase + exactOwnPath, { headers: ownerHeaders })).status, 404);
-  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
-    method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.248" }, body: proposedPair,
-  })).status, 409, "withdrawing the selected source before submission denies the request");
-  await publishedPeopleStore(app.archive.db).publish("person-a", "owner");
-  console.log("runtime_discovery_source_handoff_ok");
-  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
-    method: "POST", headers: ownerHeaders,
-    body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
-      targetPersonId: "person-a", reason: "x".repeat(501) }),
-  })).status, 400);
-  const otherArchivesOnly = await fetch(securedBase +
-    "/api/discovery/people?q=Тестов&excludeArchiveId=runtime-test", { headers });
-  assert.deepEqual((await otherArchivesOnly.json()).results.map((person: { archiveId: string }) =>
-    person.archiveId), ["other-archive"],
-  "candidate search must exclude this archive before paginating, not after the client receives a page");
-  const exactLinkedTarget = await fetch(securedBase +
-    "/api/discovery/people/other-archive/person-a", { headers });
-  assert.equal(exactLinkedTarget.status, 200);
-  const handedOffPerson = (await exactLinkedTarget.json()).person as { archiveId: string; id: string };
-  assert.deepEqual([handedOffPerson.archiveId,handedOffPerson.id], ["other-archive", "person-a"],
-  "the handoff resolves the exact published card rather than a namesake search result");
-  await otherPublication.unpublish("person-a");
-  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
-    method: "POST", headers: ownerHeaders, body: proposedPair,
-  })).status, 409, "withdrawing the linked target before submission denies the request");
-  assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS count
-    FROM discovery_match_requests WHERE left_archive_id='other-archive' AND left_person_id='person-a'
-      AND right_archive_id='runtime-test' AND right_person_id='person-a'`).get())?.count, 0,
-  "the stale handoff creates no match request");
-  await otherPublication.publish("person-a", "owner");
-  console.log("runtime_discovery_handoff_revocation_ok");
-  const requestedMatch = await fetch(securedBase + "/api/discovery/matches", {
-    method: "POST", headers: ownerHeaders,
-    body: proposedPair,
-  });
-  assert.equal(requestedMatch.status, 200);
-  const matchBody = await requestedMatch.json();
-  assert.equal(matchBody.match.status, "pending");
-  assert.equal(matchBody.match.reason, "Совпадают семейные записи");
-  const matchDb = app.archive.db;
-  const requestedAudit = await matchDb.prepare("", `SELECT requested_by,request_review_token,
-    decision_review_token,responded_by FROM discovery_match_requests WHERE id=?`)
-    .get(matchBody.match.id);
-  assert.equal(requestedAudit?.requested_by, "owner");
-  assert.equal(requestedAudit?.request_review_token, matchBody.match.reviewToken);
-  assert.equal(requestedAudit?.decision_review_token, null);
-  assert.equal(requestedAudit?.responded_by, null);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
-      .get("unrelated-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id))?.count, 0,
-    "pending requests stay hidden outside the participating archives");
-  }, true);
-  assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", {
-    headers,
-  })).json()).linkedCards, [], "a pending request must not appear on a published card");
-  assert.equal([matchBody.match.left, matchBody.match.right]
-    .find((person: { archiveId: string }) => person.archiveId === "other-archive")?.name,
-    "Тестов Исправленный сосед");
-  assert.doesNotMatch(JSON.stringify(matchBody), /biography|sources|parents/);
-  const recipientReview = await fetch(otherBase + "/api/discovery/matches", {
-    headers: archiveAdminHeaders,
-  });
-  assert.equal(recipientReview.status, 200);
-  const reviewedPair = (await recipientReview.json()).matches.find((item: { id: string }) =>
-    item.id === matchBody.match.id);
-  assert.ok(reviewedPair?.reviewToken, "the recipient can review the current published pair");
-  for (const card of [reviewedPair.left, reviewedPair.right]) {
-    const current = await fetch(securedBase + `/api/discovery/people/${card.archiveId}/${card.id}`,
-      { headers: { ...headers, "X-Real-IP": "203.0.113.249" } });
-    assert.equal(current.status, 200);
-    const publishedCard = (await current.json()).person;
-    delete publishedCard.publicationVersion;
-    assert.deepEqual(card, publishedCard,
-      "pair review includes exactly the fields currently consented to on each public card");
-  }
-  assert.doesNotMatch(JSON.stringify(reviewedPair), /biography|sources|parents|media/,
-    "the recipient's comparison cannot include graph or document fields");
-  console.log("runtime_discovery_pair_review_projection_ok");
-  assert.deepEqual((await (await fetch(otherBase + "/api/discovery/matches/own-people?q=Исправленный", {
-    headers: archiveAdminHeaders,
-  })).json()).people.map((person: { id: string }) => person.id), ["person-a"]);
-  const duplicateFromOtherSide = await fetch(otherBase + "/api/discovery/matches", {
-    method: "POST", headers: archiveAdminHeaders,
-    body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "runtime-test", targetPersonId: "person-a" }),
-  });
-  assert.equal(duplicateFromOtherSide.status, 200);
-  assert.equal((await duplicateFromOtherSide.json()).match.id, matchBody.match.id,
-    "reversing the proposal must not create a second match");
-  assert.equal((await matchDb.prepare("", `SELECT request_review_token FROM discovery_match_requests
-    WHERE id=?`).get(matchBody.match.id))?.request_review_token, matchBody.match.reviewToken,
-  "an idempotent reverse proposal preserves the original reviewed revision");
-  const matchPath = `/api/discovery/matches/${matchBody.match.id}`;
-  assert.equal((await fetch(securedBase + matchPath + "/card-share", {
-    headers: ownerHeaders,
-  })).status, 404, "a pending proposal never grants additional card access");
-  const beforeReviewChange = await otherApp.archive.read();
-  const changedBeforeReview = structuredClone(beforeReviewChange.family);
-  changedBeforeReview.people[0].name = "Исправленный кандидат";
-  await otherApp.archive.write(changedBeforeReview, beforeReviewChange.revision);
-  assert.equal((await fetch(otherBase + matchPath, {
-    method: "PATCH", headers: archiveAdminHeaders,
-    body: JSON.stringify({ decision: "accept", reviewToken: matchBody.match.reviewToken,
-      note: "Устаревшее пояснение" }),
-  })).status, 409, "a changed published identity cannot be accepted using a stale review token");
-  const freshReview = (await (await fetch(otherBase + "/api/discovery/matches", {
-    headers: archiveAdminHeaders,
-  })).json()).matches[0];
-  assert.notEqual(freshReview.reviewToken, matchBody.match.reviewToken);
-  assert.equal(freshReview.changedSinceRequest, true,
-    "the responding owner sees that the published cards changed after proposal");
-  assert.equal((await fetch(securedBase + matchPath, {
-    method: "PATCH", headers: ownerHeaders,
-    body: JSON.stringify({ decision: "accept", note: "Пояснение отправителя" }),
-  })).status, 403, "an initiating archive cannot confirm its own request");
-  const acceptedAudit = await acceptWithDecisionNote({ db: matchDb,
-    matchId: matchBody.match.id, matchPath, reviewToken: freshReview.reviewToken,
-    requestReviewToken: matchBody.match.reviewToken, otherBase, securedBase,
-    recipientHeaders: archiveAdminHeaders, senderHeaders: ownerHeaders, publicHeaders: headers });
-  const confirmationAcceptedAudit = acceptedAudit;
-  const confirmationSourceArchive = app.archive;
-  const confirmationOtherArchive = otherApp.archive;
-  async function verifyConfirmationHistory() {
-  const confirmationRow = await matchDb.prepare("", `SELECT review_token,
-    left_publication_version,right_publication_version FROM discovery_match_confirmations
-    WHERE match_id=?`).get(matchBody.match.id);
-  assert.equal(confirmationRow?.review_token, freshReview.reviewToken);
-  assert.ok(confirmationRow?.left_publication_version && confirmationRow?.right_publication_version);
-  const confirmedFields = await matchDb.prepare("", `SELECT side,field_name,field_value
-    FROM discovery_match_confirmation_fields WHERE match_id=? ORDER BY side,field_name`)
-    .all(matchBody.match.id);
-  const expectedConfirmedFields = (["left","right"] as const).flatMap((side) =>
-    Object.keys(freshReview[side]).filter((field) => field !== "archiveId" && field !== "id")
-      .sort().map((field) => [side,field]));
-  assert.deepEqual(confirmedFields.map((field) => [field.side,field.field_name]),
-    expectedConfirmedFields,
-    "confirmation stores only the fields explicitly published at acceptance");
-  assert.equal((await matchDb.prepare("", `UPDATE discovery_match_confirmation_fields
-    SET field_value='overwritten' WHERE match_id=?`).run(matchBody.match.id)).changes, 0,
-  "a participant cannot overwrite the accepted facts through SQL");
-  assert.equal((await matchDb.prepare("", `DELETE FROM discovery_match_confirmation_fields
-    WHERE match_id=?`).run(matchBody.match.id)).changes, 0,
-  "a participant cannot erase the accepted facts through SQL");
-  await assert.rejects(matchDb.prepare("", `INSERT INTO discovery_match_confirmation_fields(
-    match_id,side,field_name,field_value) VALUES(?,'left','deathPlace','late addition')`)
-    .run(matchBody.match.id), (error: unknown) => (error as { code?: string }).code === "42501",
-  "a later transaction cannot append facts to an accepted snapshot");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("unrelated-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS n
-      FROM discovery_match_confirmations WHERE match_id=?`).get(matchBody.match.id))?.n, 0);
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS n
-      FROM discovery_match_confirmation_fields WHERE match_id=?`).get(matchBody.match.id))?.n, 0);
-  }, true);
-  const confirmedList = await fetch(otherBase + "/api/discovery/matches", { headers: archiveAdminHeaders });
-  assert.equal(confirmedList.status, 200);
-  const confirmedMatch = (await confirmedList.json()).matches.find((item: { id: string }) =>
-    item.id === matchBody.match.id);
-  assert.equal(confirmedMatch.confirmationHistoryAvailable, true);
-  assert.equal(confirmedMatch.changedSinceConfirmation, false);
-  assert.equal(confirmedMatch.confirmation.requestedBy, "owner");
-  assert.equal(confirmedMatch.confirmation.confirmedBy, "vk:42");
-  assert.equal(confirmedMatch.confirmation.reviewToken, undefined,
-    "a historical token that includes withdrawn fields is never delivered over HTTP");
-  assert.equal(Date.parse(confirmedMatch.confirmation.confirmedAt),
-    confirmationAcceptedAudit.responded_at instanceof Date ? confirmationAcceptedAudit.responded_at.getTime()
-      : Date.parse(String(confirmationAcceptedAudit.responded_at)),
-  "confirmation metadata identifies the actual accepted decision");
-  assert.deepEqual(Object.keys(confirmedMatch.confirmation.left).sort(),
-    Object.keys(freshReview.left).filter((field) => field !== "archiveId" && field !== "id").sort());
-  assert.deepEqual(Object.keys(confirmedMatch.confirmation.right).sort(),
-    Object.keys(freshReview.right).filter((field) => field !== "archiveId" && field !== "id").sort());
-  const beforeConfirmedEdit = await confirmationOtherArchive.read();
-  const editedConfirmedFamily = structuredClone(beforeConfirmedEdit.family);
-  editedConfirmedFamily.people[0].name = "Исправление после подтверждения";
-  const confirmedEdit = await confirmationOtherArchive.write(editedConfirmedFamily, beforeConfirmedEdit.revision);
-  const afterConfirmedEdit = (await fetch(otherBase + "/api/discovery/matches", {
-    headers: archiveAdminHeaders,
-  }).then((response) => response.json())).matches.find((item: { id: string }) =>
-    item.id === matchBody.match.id);
-  assert.equal(afterConfirmedEdit.status, "linked", "an ordinary correction keeps the identity link");
-  assert.equal(afterConfirmedEdit.changedSinceConfirmation, true);
-  assert.deepEqual(afterConfirmedEdit.changedFieldsSinceConfirmation, [{ side: "left", field: "name" }]);
-  assert.equal(afterConfirmedEdit.confirmation.left.name, confirmedMatch.confirmation.left.name,
-    "the accepted fact remains immutable after a published correction");
-  assert.equal(JSON.stringify(afterConfirmedEdit.changedFieldsSinceConfirmation).includes(
-    String(confirmedMatch.confirmation.left.name)), false,
-  "the diff contains field names, never historical values");
-  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS n FROM discovery_linked_pairs
-    WHERE left_archive_id='other-archive' AND left_person_id='person-a'
-      AND right_archive_id='runtime-test' AND right_person_id='person-a'`).get())?.n, 1);
-  await confirmationOtherArchive.write(beforeConfirmedEdit.family, confirmedEdit.revision);
-  let historyReached!: () => void, releaseHistory!: () => void;
-  const historyReady = new Promise<void>((resolve) => { historyReached = resolve; });
-  const historyGate = new Promise<void>((resolve) => { releaseHistory = resolve; });
-  const historyEndpoint = discoveryMatchesHttp({ archive: confirmationSourceArchive, auth: detailAuth,
-    publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeMatchListDelivery: async () => { historyReached(); await historyGate; },
-  });
-  const historyServer = createServer((req,res) => {
-    void historyEndpoint(req,res,new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => res.destroy(error));
-  });
-  await new Promise<void>((resolve) => historyServer.listen(0,"127.0.0.1",resolve));
-  const historyPort = (historyServer.address() as { port: number }).port;
-  const pausedHistory = fetch(`http://127.0.0.1:${historyPort}/api/discovery/matches`, {
-    headers: ownerHeaders,
-  });
-  let concurrentEdit: Promise<{ revision: number }> | undefined;
-  try {
-    await Promise.race([historyReady,
-      pausedHistory.then(() => { throw new Error("history sent before the final delivery barrier"); }),
-      new Promise<never>((_,reject) => setTimeout(() => reject(new Error("history barrier timed out")),30_000))]);
-    const beforeConcurrentEdit = await confirmationOtherArchive.read();
-    const concurrentFamily = structuredClone(beforeConcurrentEdit.family);
-    concurrentFamily.people[0].name = "Правка во время выдачи истории";
-    concurrentEdit = confirmationOtherArchive.write(concurrentFamily,beforeConcurrentEdit.revision);
-    assert.equal(await Promise.race([concurrentEdit.then(() => "completed"),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"),300))]), "pending",
-    "the edit waits while the confirmed facts and live projection are delivered");
-    releaseHistory();
-    const delivered = await pausedHistory;
-    assert.equal(delivered.status, 200);
-    const inFlight = (await delivered.json()).matches.find((item: { id: string }) =>
+    const exactServer = createServer((req, res) => {
+      void exactEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => exactServer.listen(0, "127.0.0.1", resolve));
+    const exactPort = (exactServer.address() as { port: number }).port;
+    try {
+      const pendingExact = fetch(`http://127.0.0.1:${exactPort}${exactOwnPath}`, {
+        headers: { ...ownerHeaders, Cookie: `drevo_session=${exactSession}` },
+      });
+      await Promise.race([exactReady, pendingExact.then(() => { throw new Error("Source sent before barrier"); })]);
+      await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(exactSession)]);
+      releaseExact();
+      const denied = await pendingExact;
+      assert.equal(denied.status, 403, "completed logout before final source read denies the card");
+      assert.doesNotMatch(await denied.text(), /Иван|Тестов|birthYear/);
+    } finally {
+      releaseExact();
+      await new Promise<void>((resolve) => exactServer.close(() => resolve()));
+      await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(exactSession)]);
+    }
+    const lockedSourceSession = newSessionToken();
+    await client.query(`INSERT INTO account_sessions(token_hash,user_id,expires_at)
+      VALUES($1,'owner',$2)`, [sessionTokenHash(lockedSourceSession), Date.now() + 600_000]);
+    let sourceLocked!: () => void, releaseSource!: () => void;
+    const sourceReady = new Promise<void>((resolve) => { sourceLocked = resolve; });
+    const sourceGate = new Promise<void>((resolve) => { releaseSource = resolve; });
+    const lockedSourceEndpoint = discoveryMatchesHttp({ archive: app.archive, auth: detailAuth,
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeOwnPersonResponse: async () => { sourceLocked(); await sourceGate; },
+    });
+    const lockedSourceServer = createServer((req, res) => {
+      void lockedSourceEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => lockedSourceServer.listen(0, "127.0.0.1", resolve));
+    const lockedSourcePort = (lockedSourceServer.address() as { port: number }).port;
+    let sessionWithdrawal: Promise<unknown> | undefined;
+    try {
+      const lockedSourceHeaders = { ...ownerHeaders, Cookie: `drevo_session=${lockedSourceSession}` };
+      const pendingSource = fetch(`http://127.0.0.1:${lockedSourcePort}${exactOwnPath}`,
+        { headers: lockedSourceHeaders });
+      await Promise.race([sourceReady, pendingSource.then(() => { throw new Error("Source sent before lock"); })]);
+      sessionWithdrawal = client.query("DELETE FROM account_sessions WHERE token_hash=$1",
+        [sessionTokenHash(lockedSourceSession)]);
+      assert.equal(await Promise.race([sessionWithdrawal.then(() => "revoked"),
+        new Promise<string>((resolve) => setTimeout(() => resolve("waiting"), 100))]), "waiting",
+      "logout waits while the exact source response holds the session");
+      releaseSource();
+      assert.equal((await pendingSource).status, 200);
+      await sessionWithdrawal;
+      assert.equal((await fetch(`http://127.0.0.1:${lockedSourcePort}${exactOwnPath}`,
+        { headers: lockedSourceHeaders })).status, 401);
+    } finally {
+      releaseSource();
+      await sessionWithdrawal?.catch(() => {});
+      await new Promise<void>((resolve) => lockedSourceServer.close(() => resolve()));
+      await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(lockedSourceSession)]);
+    }
+    assert.equal((await fetch(securedBase +
+      "/api/discovery/matches/own-people?personId=other-person", { headers: ownerHeaders })).status, 404,
+    "an exact lookup never crosses into another archive");
+    await publishedPeopleStore(app.archive.db).unpublish("person-a");
+    assert.equal((await fetch(securedBase + exactOwnPath, { headers: ownerHeaders })).status, 404);
+    assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+      method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.248" }, body: proposedPair,
+    })).status, 409, "withdrawing the selected source before submission denies the request");
+    await publishedPeopleStore(app.archive.db).publish("person-a", "owner");
+    console.log("runtime_discovery_source_handoff_ok");
+    assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+      method: "POST", headers: ownerHeaders,
+      body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+        targetPersonId: "person-a", reason: "x".repeat(501) }),
+    })).status, 400);
+    const otherArchivesOnly = await fetch(securedBase +
+      "/api/discovery/people?q=Тестов&excludeArchiveId=runtime-test", { headers });
+    assert.deepEqual((await otherArchivesOnly.json()).results.map((person: { archiveId: string }) =>
+      person.archiveId), ["other-archive"],
+    "candidate search must exclude this archive before paginating, not after the client receives a page");
+    const exactLinkedTarget = await fetch(securedBase +
+      "/api/discovery/people/other-archive/person-a", { headers });
+    assert.equal(exactLinkedTarget.status, 200);
+    const handedOffPerson = (await exactLinkedTarget.json()).person as { archiveId: string; id: string };
+    assert.deepEqual([handedOffPerson.archiveId,handedOffPerson.id], ["other-archive", "person-a"],
+    "the handoff resolves the exact published card rather than a namesake search result");
+    await otherPublication.unpublish("person-a");
+    assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+      method: "POST", headers: ownerHeaders, body: proposedPair,
+    })).status, 409, "withdrawing the linked target before submission denies the request");
+    assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_match_requests WHERE left_archive_id='other-archive' AND left_person_id='person-a'
+        AND right_archive_id='runtime-test' AND right_person_id='person-a'`).get())?.count, 0,
+    "the stale handoff creates no match request");
+    await otherPublication.publish("person-a", "owner");
+    console.log("runtime_discovery_handoff_revocation_ok");
+    const requestedMatch = await fetch(securedBase + "/api/discovery/matches", {
+      method: "POST", headers: ownerHeaders,
+      body: proposedPair,
+    });
+    assert.equal(requestedMatch.status, 200);
+    const matchBody = await requestedMatch.json();
+    assert.equal(matchBody.match.status, "pending");
+    assert.equal(matchBody.match.reason, "Совпадают семейные записи");
+    const matchDb = app.archive.db;
+    const requestedAudit = await matchDb.prepare("", `SELECT requested_by,request_review_token,
+      decision_review_token,responded_by FROM discovery_match_requests WHERE id=?`)
+      .get(matchBody.match.id);
+    assert.equal(requestedAudit?.requested_by, "owner");
+    assert.equal(requestedAudit?.request_review_token, matchBody.match.reviewToken);
+    assert.equal(requestedAudit?.decision_review_token, null);
+    assert.equal(requestedAudit?.responded_by, null);
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+        .get("unrelated-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id))?.count, 0,
+      "pending requests stay hidden outside the participating archives");
+    }, true);
+    assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", {
+      headers,
+    })).json()).linkedCards, [], "a pending request must not appear on a published card");
+    assert.equal([matchBody.match.left, matchBody.match.right]
+      .find((person: { archiveId: string }) => person.archiveId === "other-archive")?.name,
+      "Тестов Исправленный сосед");
+    assert.doesNotMatch(JSON.stringify(matchBody), /biography|sources|parents/);
+    const recipientReview = await fetch(otherBase + "/api/discovery/matches", {
+      headers: archiveAdminHeaders,
+    });
+    assert.equal(recipientReview.status, 200);
+    const reviewedPair = (await recipientReview.json()).matches.find((item: { id: string }) =>
       item.id === matchBody.match.id);
-    assert.equal(inFlight.changedSinceConfirmation, false);
-    const edited = await concurrentEdit;
-    const afterDelivery = (await fetch(otherBase + "/api/discovery/matches", {
+    assert.ok(reviewedPair?.reviewToken, "the recipient can review the current published pair");
+    for (const card of [reviewedPair.left, reviewedPair.right]) {
+      const current = await fetch(securedBase + `/api/discovery/people/${card.archiveId}/${card.id}`,
+        { headers: { ...headers, "X-Real-IP": "203.0.113.249" } });
+      assert.equal(current.status, 200);
+      const publishedCard = (await current.json()).person;
+      delete publishedCard.publicationVersion;
+      assert.deepEqual(card, publishedCard,
+        "pair review includes exactly the fields currently consented to on each public card");
+    }
+    assert.doesNotMatch(JSON.stringify(reviewedPair), /biography|sources|parents|media/,
+      "the recipient's comparison cannot include graph or document fields");
+    console.log("runtime_discovery_pair_review_projection_ok");
+    assert.deepEqual((await (await fetch(otherBase + "/api/discovery/matches/own-people?q=Исправленный", {
+      headers: archiveAdminHeaders,
+    })).json()).people.map((person: { id: string }) => person.id), ["person-a"]);
+    const duplicateFromOtherSide = await fetch(otherBase + "/api/discovery/matches", {
+      method: "POST", headers: archiveAdminHeaders,
+      body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "runtime-test", targetPersonId: "person-a" }),
+    });
+    assert.equal(duplicateFromOtherSide.status, 200);
+    assert.equal((await duplicateFromOtherSide.json()).match.id, matchBody.match.id,
+      "reversing the proposal must not create a second match");
+    assert.equal((await matchDb.prepare("", `SELECT request_review_token FROM discovery_match_requests
+      WHERE id=?`).get(matchBody.match.id))?.request_review_token, matchBody.match.reviewToken,
+    "an idempotent reverse proposal preserves the original reviewed revision");
+    const matchPath = `/api/discovery/matches/${matchBody.match.id}`;
+    assert.equal((await fetch(securedBase + matchPath + "/card-share", {
+      headers: ownerHeaders,
+    })).status, 404, "a pending proposal never grants additional card access");
+    const beforeReviewChange = await otherApp.archive.read();
+    const changedBeforeReview = structuredClone(beforeReviewChange.family);
+    changedBeforeReview.people[0].name = "Исправленный кандидат";
+    await otherApp.archive.write(changedBeforeReview, beforeReviewChange.revision);
+    assert.equal((await fetch(otherBase + matchPath, {
+      method: "PATCH", headers: archiveAdminHeaders,
+      body: JSON.stringify({ decision: "accept", reviewToken: matchBody.match.reviewToken,
+        note: "Устаревшее пояснение" }),
+    })).status, 409, "a changed published identity cannot be accepted using a stale review token");
+    const freshReview = (await (await fetch(otherBase + "/api/discovery/matches", {
+      headers: archiveAdminHeaders,
+    })).json()).matches[0];
+    assert.notEqual(freshReview.reviewToken, matchBody.match.reviewToken);
+    assert.equal(freshReview.changedSinceRequest, true,
+      "the responding owner sees that the published cards changed after proposal");
+    assert.equal((await fetch(securedBase + matchPath, {
+      method: "PATCH", headers: ownerHeaders,
+      body: JSON.stringify({ decision: "accept", note: "Пояснение отправителя" }),
+    })).status, 403, "an initiating archive cannot confirm its own request");
+    const acceptedAudit = await acceptWithDecisionNote({ db: matchDb,
+      matchId: matchBody.match.id, matchPath, reviewToken: freshReview.reviewToken,
+      requestReviewToken: matchBody.match.reviewToken, otherBase, securedBase,
+      recipientHeaders: archiveAdminHeaders, senderHeaders: ownerHeaders, publicHeaders: headers });
+    const confirmationAcceptedAudit = acceptedAudit;
+    const confirmationSourceArchive = app.archive;
+    const confirmationOtherArchive = otherApp.archive;
+    async function verifyConfirmationHistory() {
+    const confirmationRow = await matchDb.prepare("", `SELECT review_token,
+      left_publication_version,right_publication_version FROM discovery_match_confirmations
+      WHERE match_id=?`).get(matchBody.match.id);
+    assert.equal(confirmationRow?.review_token, freshReview.reviewToken);
+    assert.ok(confirmationRow?.left_publication_version && confirmationRow?.right_publication_version);
+    const confirmedFields = await matchDb.prepare("", `SELECT side,field_name,field_value
+      FROM discovery_match_confirmation_fields WHERE match_id=? ORDER BY side,field_name`)
+      .all(matchBody.match.id);
+    const expectedConfirmedFields = (["left","right"] as const).flatMap((side) =>
+      Object.keys(freshReview[side]).filter((field) => field !== "archiveId" && field !== "id")
+        .sort().map((field) => [side,field]));
+    assert.deepEqual(confirmedFields.map((field) => [field.side,field.field_name]),
+      expectedConfirmedFields,
+      "confirmation stores only the fields explicitly published at acceptance");
+    assert.equal((await matchDb.prepare("", `UPDATE discovery_match_confirmation_fields
+      SET field_value='overwritten' WHERE match_id=?`).run(matchBody.match.id)).changes, 0,
+    "a participant cannot overwrite the accepted facts through SQL");
+    assert.equal((await matchDb.prepare("", `DELETE FROM discovery_match_confirmation_fields
+      WHERE match_id=?`).run(matchBody.match.id)).changes, 0,
+    "a participant cannot erase the accepted facts through SQL");
+    await assert.rejects(matchDb.prepare("", `INSERT INTO discovery_match_confirmation_fields(
+      match_id,side,field_name,field_value) VALUES(?,'left','deathPlace','late addition')`)
+      .run(matchBody.match.id), (error: unknown) => (error as { code?: string }).code === "42501",
+    "a later transaction cannot append facts to an accepted snapshot");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("unrelated-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS n
+        FROM discovery_match_confirmations WHERE match_id=?`).get(matchBody.match.id))?.n, 0);
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS n
+        FROM discovery_match_confirmation_fields WHERE match_id=?`).get(matchBody.match.id))?.n, 0);
+    }, true);
+    const confirmedList = await fetch(otherBase + "/api/discovery/matches", { headers: archiveAdminHeaders });
+    assert.equal(confirmedList.status, 200);
+    const confirmedMatch = (await confirmedList.json()).matches.find((item: { id: string }) =>
+      item.id === matchBody.match.id);
+    assert.equal(confirmedMatch.confirmationHistoryAvailable, true);
+    assert.equal(confirmedMatch.changedSinceConfirmation, false);
+    assert.equal(confirmedMatch.confirmation.requestedBy, "owner");
+    assert.equal(confirmedMatch.confirmation.confirmedBy, "vk:42");
+    assert.equal(confirmedMatch.confirmation.reviewToken, undefined,
+      "a historical token that includes withdrawn fields is never delivered over HTTP");
+    assert.equal(Date.parse(confirmedMatch.confirmation.confirmedAt),
+      confirmationAcceptedAudit.responded_at instanceof Date ? confirmationAcceptedAudit.responded_at.getTime()
+        : Date.parse(String(confirmationAcceptedAudit.responded_at)),
+    "confirmation metadata identifies the actual accepted decision");
+    assert.deepEqual(Object.keys(confirmedMatch.confirmation.left).sort(),
+      Object.keys(freshReview.left).filter((field) => field !== "archiveId" && field !== "id").sort());
+    assert.deepEqual(Object.keys(confirmedMatch.confirmation.right).sort(),
+      Object.keys(freshReview.right).filter((field) => field !== "archiveId" && field !== "id").sort());
+    const beforeConfirmedEdit = await confirmationOtherArchive.read();
+    const editedConfirmedFamily = structuredClone(beforeConfirmedEdit.family);
+    editedConfirmedFamily.people[0].name = "Исправление после подтверждения";
+    const confirmedEdit = await confirmationOtherArchive.write(editedConfirmedFamily, beforeConfirmedEdit.revision);
+    const afterConfirmedEdit = (await fetch(otherBase + "/api/discovery/matches", {
       headers: archiveAdminHeaders,
     }).then((response) => response.json())).matches.find((item: { id: string }) =>
       item.id === matchBody.match.id);
-    assert.deepEqual(afterDelivery.changedFieldsSinceConfirmation, [{ side: "left", field: "name" }]);
-    await confirmationOtherArchive.write(beforeConcurrentEdit.family,edited.revision);
-  } finally {
-    releaseHistory();
-    await pausedHistory.catch(() => {});
-    await concurrentEdit?.catch(() => {});
-    await new Promise<void>((resolve) => historyServer.close(() => resolve()));
-  }
-  const confirmationOriginalFields = await otherPublication.getFields("person-a");
-  assert.ok(confirmationOriginalFields?.birthYear,
-    "the selected target year can be withdrawn independently for the privacy regression");
-  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
-    method: "PUT", headers: archiveAdminHeaders,
-    body: JSON.stringify({ fields: { ...confirmationOriginalFields, birthYear: false } }),
-  })).status, 200);
-  const hiddenFieldList = await fetch(otherBase + "/api/discovery/matches", {
-    headers: archiveAdminHeaders,
-  });
-  assert.equal(hiddenFieldList.status, 200);
-  const hiddenFieldMatch = (await hiddenFieldList.json()).matches.find((item: { id: string }) =>
-    item.id === matchBody.match.id);
-  assert.equal(hiddenFieldMatch.status, "linked");
-  assert.equal(hiddenFieldMatch.confirmation.left.birthYear, undefined,
-    "HTTP history hides a formerly selected field after permission is withdrawn");
-  assert.equal(Object.hasOwn(hiddenFieldMatch.confirmation.left, "birthYear"), false,
-    "the hidden field is absent rather than replaced with a cached value");
-  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS n
-    FROM discovery_match_confirmation_fields WHERE match_id=? AND side='left'
-      AND field_name='birthYear'`).get(matchBody.match.id))?.n, 0,
-  "field-level RLS also hides the withdrawn historical value from participant SQL");
-  await verifyNoteHiddenAfterPublicationChange(matchDb,matchBody.match.id,
-    otherBase,archiveAdminHeaders);
-  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
-    method: "PUT", headers: archiveAdminHeaders,
-    body: JSON.stringify({ fields: confirmationOriginalFields }),
-  })).status, 200);
-  await verifyNoteHiddenAfterPublicationChange(matchDb,matchBody.match.id,
-    otherBase,archiveAdminHeaders);
-  const assertHistoryAccessRevokedBeforeFinalLock = async (withdraw: (token: string) => Promise<void>) => {
-    const token = newSessionToken();
-    await matchDb.prepare("", `INSERT INTO account_sessions(token_hash,user_id,expires_at)
-      VALUES(?,'owner',?)`).run(sessionTokenHash(token),Date.now() + 60_000);
-    let reached!: () => void, release!: () => void;
-    const ready = new Promise<void>((resolve) => { reached = resolve; });
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const endpoint = discoveryMatchesHttp({ archive: confirmationSourceArchive, auth: detailAuth,
+    assert.equal(afterConfirmedEdit.status, "linked", "an ordinary correction keeps the identity link");
+    assert.equal(afterConfirmedEdit.changedSinceConfirmation, true);
+    assert.deepEqual(afterConfirmedEdit.changedFieldsSinceConfirmation, [{ side: "left", field: "name" }]);
+    assert.equal(afterConfirmedEdit.confirmation.left.name, confirmedMatch.confirmation.left.name,
+      "the accepted fact remains immutable after a published correction");
+    assert.equal(JSON.stringify(afterConfirmedEdit.changedFieldsSinceConfirmation).includes(
+      String(confirmedMatch.confirmation.left.name)), false,
+    "the diff contains field names, never historical values");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS n FROM discovery_linked_pairs
+      WHERE left_archive_id='other-archive' AND left_person_id='person-a'
+        AND right_archive_id='runtime-test' AND right_person_id='person-a'`).get())?.n, 1);
+    await confirmationOtherArchive.write(beforeConfirmedEdit.family, confirmedEdit.revision);
+    let historyReached!: () => void, releaseHistory!: () => void;
+    const historyReady = new Promise<void>((resolve) => { historyReached = resolve; });
+    const historyGate = new Promise<void>((resolve) => { releaseHistory = resolve; });
+    const historyEndpoint = discoveryMatchesHttp({ archive: confirmationSourceArchive, auth: detailAuth,
       publicOrigin: process.env.PUBLIC_ORIGIN,
-      beforeMatchListAccessLock: async () => { reached(); await gate; },
+      beforeMatchListDelivery: async () => { historyReached(); await historyGate; },
     });
-    const server = createServer((req,res) => {
-      void endpoint(req,res,new URL(req.url || "/",`http://${req.headers.host}`))
+    const historyServer = createServer((req,res) => {
+      void historyEndpoint(req,res,new URL(req.url || "/", `http://${req.headers.host}`))
         .catch((error) => res.destroy(error));
     });
-    await new Promise<void>((resolve) => server.listen(0,"127.0.0.1",resolve));
-    const port = (server.address() as { port: number }).port;
-    const request = fetch(`http://127.0.0.1:${port}/api/discovery/matches`, {
-      headers: { ...ownerHeaders, Cookie: `drevo_session=${token}` },
+    await new Promise<void>((resolve) => historyServer.listen(0,"127.0.0.1",resolve));
+    const historyPort = (historyServer.address() as { port: number }).port;
+    const pausedHistory = fetch(`http://127.0.0.1:${historyPort}/api/discovery/matches`, {
+      headers: ownerHeaders,
     });
+    let concurrentEdit: Promise<{ revision: number }> | undefined;
     try {
-      await Promise.race([ready,
-        request.then(() => { throw new Error("history sent before access barrier"); }),
-        new Promise<never>((_,reject) => setTimeout(() => reject(new Error("history access barrier timed out")),30_000))]);
-      await withdraw(token);
-      release();
-      const response = await request;
-      assert.equal(response.status, 403);
-      assert.equal((await response.text()).includes(String(confirmedMatch.confirmation.left.name)), false);
+      await Promise.race([historyReady,
+        pausedHistory.then(() => { throw new Error("history sent before the final delivery barrier"); }),
+        new Promise<never>((_,reject) => setTimeout(() => reject(new Error("history barrier timed out")),30_000))]);
+      const beforeConcurrentEdit = await confirmationOtherArchive.read();
+      const concurrentFamily = structuredClone(beforeConcurrentEdit.family);
+      concurrentFamily.people[0].name = "Правка во время выдачи истории";
+      concurrentEdit = confirmationOtherArchive.write(concurrentFamily,beforeConcurrentEdit.revision);
+      assert.equal(await Promise.race([concurrentEdit.then(() => "completed"),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"),300))]), "pending",
+      "the edit waits while the confirmed facts and live projection are delivered");
+      releaseHistory();
+      const delivered = await pausedHistory;
+      assert.equal(delivered.status, 200);
+      const inFlight = (await delivered.json()).matches.find((item: { id: string }) =>
+        item.id === matchBody.match.id);
+      assert.equal(inFlight.changedSinceConfirmation, false);
+      const edited = await concurrentEdit;
+      const afterDelivery = (await fetch(otherBase + "/api/discovery/matches", {
+        headers: archiveAdminHeaders,
+      }).then((response) => response.json())).matches.find((item: { id: string }) =>
+        item.id === matchBody.match.id);
+      assert.deepEqual(afterDelivery.changedFieldsSinceConfirmation, [{ side: "left", field: "name" }]);
+      await confirmationOtherArchive.write(beforeConcurrentEdit.family,edited.revision);
     } finally {
-      release();
-      await request.catch(() => {});
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      releaseHistory();
+      await pausedHistory.catch(() => {});
+      await concurrentEdit?.catch(() => {});
+      await new Promise<void>((resolve) => historyServer.close(() => resolve()));
+    }
+    const confirmationOriginalFields = await otherPublication.getFields("person-a");
+    assert.ok(confirmationOriginalFields?.birthYear,
+      "the selected target year can be withdrawn independently for the privacy regression");
+    assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+      method: "PUT", headers: archiveAdminHeaders,
+      body: JSON.stringify({ fields: { ...confirmationOriginalFields, birthYear: false } }),
+    })).status, 200);
+    const hiddenFieldList = await fetch(otherBase + "/api/discovery/matches", {
+      headers: archiveAdminHeaders,
+    });
+    assert.equal(hiddenFieldList.status, 200);
+    const hiddenFieldMatch = (await hiddenFieldList.json()).matches.find((item: { id: string }) =>
+      item.id === matchBody.match.id);
+    assert.equal(hiddenFieldMatch.status, "linked");
+    assert.equal(hiddenFieldMatch.confirmation.left.birthYear, undefined,
+      "HTTP history hides a formerly selected field after permission is withdrawn");
+    assert.equal(Object.hasOwn(hiddenFieldMatch.confirmation.left, "birthYear"), false,
+      "the hidden field is absent rather than replaced with a cached value");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS n
+      FROM discovery_match_confirmation_fields WHERE match_id=? AND side='left'
+        AND field_name='birthYear'`).get(matchBody.match.id))?.n, 0,
+    "field-level RLS also hides the withdrawn historical value from participant SQL");
+    await verifyNoteHiddenAfterPublicationChange(matchDb,matchBody.match.id,
+      otherBase,archiveAdminHeaders);
+    assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+      method: "PUT", headers: archiveAdminHeaders,
+      body: JSON.stringify({ fields: confirmationOriginalFields }),
+    })).status, 200);
+    await verifyNoteHiddenAfterPublicationChange(matchDb,matchBody.match.id,
+      otherBase,archiveAdminHeaders);
+    const assertHistoryAccessRevokedBeforeFinalLock = async (withdraw: (token: string) => Promise<void>) => {
+      const token = newSessionToken();
+      await matchDb.prepare("", `INSERT INTO account_sessions(token_hash,user_id,expires_at)
+        VALUES(?,'owner',?)`).run(sessionTokenHash(token),Date.now() + 60_000);
+      let reached!: () => void, release!: () => void;
+      const ready = new Promise<void>((resolve) => { reached = resolve; });
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const endpoint = discoveryMatchesHttp({ archive: confirmationSourceArchive, auth: detailAuth,
+        publicOrigin: process.env.PUBLIC_ORIGIN,
+        beforeMatchListAccessLock: async () => { reached(); await gate; },
+      });
+      const server = createServer((req,res) => {
+        void endpoint(req,res,new URL(req.url || "/",`http://${req.headers.host}`))
+          .catch((error) => res.destroy(error));
+      });
+      await new Promise<void>((resolve) => server.listen(0,"127.0.0.1",resolve));
+      const port = (server.address() as { port: number }).port;
+      const request = fetch(`http://127.0.0.1:${port}/api/discovery/matches`, {
+        headers: { ...ownerHeaders, Cookie: `drevo_session=${token}` },
+      });
+      try {
+        await Promise.race([ready,
+          request.then(() => { throw new Error("history sent before access barrier"); }),
+          new Promise<never>((_,reject) => setTimeout(() => reject(new Error("history access barrier timed out")),30_000))]);
+        await withdraw(token);
+        release();
+        const response = await request;
+        assert.equal(response.status, 403);
+        assert.equal((await response.text()).includes(String(confirmedMatch.confirmation.left.name)), false);
+      } finally {
+        release();
+        await request.catch(() => {});
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        await matchDb.prepare("", "DELETE FROM account_sessions WHERE token_hash=?")
+          .run(sessionTokenHash(token));
+      }
+    };
+    await assertHistoryAccessRevokedBeforeFinalLock(async (token) => {
       await matchDb.prepare("", "DELETE FROM account_sessions WHERE token_hash=?")
         .run(sessionTokenHash(token));
-    }
-  };
-  await assertHistoryAccessRevokedBeforeFinalLock(async (token) => {
-    await matchDb.prepare("", "DELETE FROM account_sessions WHERE token_hash=?")
-      .run(sessionTokenHash(token));
-  });
-  try {
-    await assertHistoryAccessRevokedBeforeFinalLock(async () => {
-      await matchDb.prepare("", `UPDATE archive_memberships SET approved=false
-        WHERE archive_id='runtime-test' AND user_id='owner'`).run();
     });
-  } finally {
-    await matchDb.prepare("", `UPDATE archive_memberships SET approved=true
-      WHERE archive_id='runtime-test' AND user_id='owner'`).run();
-  }
-  console.log("runtime_discovery_confirmation_snapshot_change_ok");
-  }
-  await verifyConfirmationHistory();
-  const branchPath = matchPath + "/branch-share";
-  const branchPersonPath = branchPath + "/people/branch-parent-b";
-  const navigationHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.214" };
-  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
-  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
-    VALUES('other-archive','vk:42','admin',true,'all') ON CONFLICT (archive_id,user_id)
-    DO UPDATE SET role='admin',approved=true,tree_access='all'`);
-  await client.query(`INSERT INTO archive_owners(archive_id,user_id)
-    VALUES('other-archive','vk:42') ON CONFLICT (archive_id) DO UPDATE SET user_id='vk:42'`);
-  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
-  await app.archive.db.prepare("", `UPDATE archive_memberships SET role='admin'
-    WHERE archive_id='runtime-test' AND user_id='vk:42'`).run();
-  const ownerPublication = publishedPeopleStore(app.archive.db);
-  const publicationBeforeAdmin = await ownerPublication.getFields("person-a");
-  assert.ok(publicationBeforeAdmin, "the owner has published the card before an invited admin tries to revoke it");
-  const publicationPath = "/api/admin/published-people/person-a";
-  assert.equal((await fetch(securedBase + publicationPath, {
-    method: "DELETE", headers: archiveAdminHeaders,
-  })).status, 403, "an invited admin cannot revoke the owner's selective publication");
-  assert.equal((await fetch(securedBase + publicationPath, {
-    method: "PUT", headers: archiveAdminHeaders,
-    body: JSON.stringify({ fields: selectedDiscoveryFields }),
-  })).status, 403, "an invited admin cannot change the owner's published fields");
-  assert.equal((await fetch(securedBase + publicationPath, { headers: archiveAdminHeaders })).status,
-    403, "an invited admin cannot inspect unpublished field choices");
-  const publicationBatchPath = "/api/admin/published-people/batch";
-  assert.equal((await fetch(securedBase + publicationBatchPath + "?id=person-a", {
-    headers: archiveAdminHeaders,
-  })).status, 403, "an invited admin cannot inspect the owner's publication batch");
-  for (const action of ["publish", "unpublish"] as const) {
-    assert.equal((await fetch(securedBase + publicationBatchPath + "/preview", {
-      method: "POST", headers: archiveAdminHeaders,
-      body: JSON.stringify({ action, personIds: ["person-a"], fields: selectedDiscoveryFields }),
-    })).status, 403, "an invited admin cannot prepare a publication change");
-    assert.equal((await fetch(securedBase + publicationBatchPath, {
-      method: action === "publish" ? "POST" : "DELETE", headers: archiveAdminHeaders,
-      body: JSON.stringify({ personIds: ["person-a"], fields: selectedDiscoveryFields,
-        revision: (await app.archive.read()).revision, reviewToken: "0".repeat(64) }),
-    })).status, 403, "an invited admin cannot apply a publication change");
-  }
-  assert.deepEqual(await ownerPublication.getFields("person-a"), publicationBeforeAdmin,
-    "the owner's selective publication survives unauthorized admin requests");
-  assert.equal((await fetch(securedBase + publicationPath, { headers: ownerHeaders })).status, 200,
-    "the actual owner can still review the published card");
-  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
-    headers: archiveAdminHeaders,
-  })).status, 403, "an invited archive admin cannot read owners' match reasons");
-  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
-    method: "POST", headers: archiveAdminHeaders, body: proposedPair,
-  })).status, 403, "an invited archive admin cannot propose a link for the owner");
-  assert.equal((await fetch(securedBase + matchPath, {
-    method: "PATCH", headers: archiveAdminHeaders,
-    body: JSON.stringify({ decision: "revoke" }),
-  })).status, 403, "an invited archive admin cannot revoke the owner's link");
-  for (const ignored of [true, false]) {
-    assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
-      method: "POST", headers: archiveAdminHeaders,
-      body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
-        targetPersonId: "person-a", ignored }),
-    })).status, 403, "an invited archive admin cannot alter the owner's candidate filters");
-    assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored-archives", {
-      method: "POST", headers: archiveAdminHeaders,
-      body: JSON.stringify({ targetArchiveId: "other-archive", ignored }),
-    })).status, 403, "an invited archive admin cannot alter the owner's archive filters");
-  }
-  assert.equal((await fetch(securedBase + branchPath, { headers: archiveAdminHeaders })).status,
-    403, "an invited admin cannot grant or inspect the owner's branch");
-  assert.equal((await fetch(securedBase + branchPath, {
-    method: "PUT", headers: archiveAdminHeaders,
-    body: JSON.stringify({ personIds: [], previewToken: "0".repeat(64) }),
-  })).status, 403, "an invited admin cannot consent on the owner's behalf");
-  await app.archive.db.prepare("", `UPDATE archive_memberships SET role='reader'
-    WHERE archive_id='runtime-test' AND user_id='vk:42'`).run();
-  assert.equal((await fetch(securedBase + branchPath, { headers: ownerHeaders })).status, 200);
-  assert.equal((await fetch(otherBase + branchPath, { headers: ownerHeaders })).status, 403,
-    "an invited admin of B cannot inspect its owner's branch");
-  assert.equal((await fetch(securedBase + branchPath, { headers })).status, 403,
-    "a reader cannot inspect branch grants even for a published linked card");
-  assert.equal((await fetch(securedBase + branchPersonPath, { headers })).status, 403,
-    "a reader cannot open a linked branch member by guessing the URL");
-  assert.equal((await fetch(otherBase + branchPath, { headers })).status, 401,
-    "a nonmember cannot inspect another archive's branch grant");
-  for (const [runtime, visibleId, hiddenId, label] of [
-    [app, "branch-parent-a", "branch-hidden-a", "Первый"],
-    [otherApp, "branch-parent-b", "branch-hidden-b", "Второй"],
-  ] as const) {
-    const beforeBranch = await runtime.archive.read();
-    const branchFamily = structuredClone(beforeBranch.family);
-    if (runtime === otherApp) {
-      branchFamily.people[0].occupation = "Местный исследователь";
-      branchFamily.people[0].birthPlace = "Местный город";
+    try {
+      await assertHistoryAccessRevokedBeforeFinalLock(async () => {
+        await matchDb.prepare("", `UPDATE archive_memberships SET approved=false
+          WHERE archive_id='runtime-test' AND user_id='owner'`).run();
+      });
+    } finally {
+      await matchDb.prepare("", `UPDATE archive_memberships SET approved=true
+        WHERE archive_id='runtime-test' AND user_id='owner'`).run();
     }
-    branchFamily.people[0].parents = [visibleId, hiddenId];
-    for (const [id, name] of [[visibleId, `${label} родитель`],
-      [hiddenId, `${label} закрытый`]]) {
-      branchFamily.people.push({ ...structuredClone(branchFamily.people[0]),
-        id, name, birth: "1950", deceased: true, parents: [], spouses: [],
-        biography: "Закрытая биография ветки", generation: 2 });
+    console.log("runtime_discovery_confirmation_snapshot_change_ok");
     }
-    const grandparentId = `branch-grandparent-${runtime === app ? "a" : "b"}`;
-    const hiddenGrandparentId = `branch-hidden-grandparent-${runtime === app ? "a" : "b"}`;
-    branchFamily.people.find((person) => person.id === visibleId)!.parents = [grandparentId];
-    branchFamily.people.find((person) => person.id === hiddenId)!.parents = [hiddenGrandparentId];
-    for (const [id, name] of [[grandparentId, `${label} дедушка`],
-      [hiddenGrandparentId, `${label} закрытый дедушка`]]) {
-      branchFamily.people.push({ ...structuredClone(branchFamily.people[0]),
-        id, name, birth: "1920", deceased: true, parents: [], spouses: [],
-        biography: "Закрытая биография ветки", generation: 3 });
-    }
-    await runtime.archive.write(branchFamily, beforeBranch.revision);
-    await publishedPeopleStore(runtime.archive.db).publish(visibleId, "owner");
-    await publishedPeopleStore(runtime.archive.db).publish(grandparentId, "owner");
-    await publishedPeopleStore(runtime.archive.db).publish(hiddenGrandparentId, "owner");
-  }
-  const beforeFullPreview = await app.archive.read();
-  const fullPreviewFamily = structuredClone(beforeFullPreview.family);
-  for (let index = 0; index < 49; index++) {
-    const id = `branch-extra-child-${index}`;
-    fullPreviewFamily.people.push({ ...structuredClone(fullPreviewFamily.people[0]), id,
-      name: `Дополнительный ребёнок ${index}`, birth: "2010", deceased: true,
-      parents: ["person-a"], spouses: [], generation: 2 });
-  }
-  await app.archive.write(fullPreviewFamily, beforeFullPreview.revision);
-  for (let index = 0; index < 49; index++)
-    await publishedPeopleStore(app.archive.db).publish(`branch-extra-child-${index}`, "owner");
-  const fullPreview = await fetch(securedBase + branchPath, {
-    headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.230" },
-  }).then((response) => response.json());
-  assert.equal(fullPreview.available.length, 50);
-  assert.equal(fullPreview.truncated, true,
-    "a published ancestor beyond fifty direct members is reported as truncated");
-  await app.archive.write(beforeFullPreview.family, (await app.archive.read()).revision);
-  const firstBranch = await fetch(securedBase + branchPath, { headers: ownerHeaders })
-    .then((response) => response.json());
-  const secondBranch = await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
-    .then((response) => response.json());
-  assert.deepEqual(firstBranch.available.map((person: { id: string }) => person.id),
-    ["branch-grandparent-a", "branch-parent-a"]);
-  assert.deepEqual(secondBranch.available.map((person: { id: string }) => person.id),
-    ["branch-grandparent-b", "branch-parent-b"]);
-  assert.deepEqual(firstBranch.available[0].viaIds, ["branch-parent-a"]);
-  assert.equal(firstBranch.recipientArchiveId, "other-archive");
-  assert.equal(secondBranch.recipientArchiveId, "runtime-test");
-  assert.equal(firstBranch.ownExpiresAt, null);
-  assert.doesNotMatch(JSON.stringify(firstBranch), /branch-hidden-a|branch-hidden-grandparent-a|Закрытая биография ветки/);
-  assert.equal((await fetch(securedBase + branchPath, {
-    method: "PUT", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.231" },
-    body: JSON.stringify({ personIds: ["branch-grandparent-a"], previewToken: firstBranch.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 7 }),
-  })).status, 409, "a second-generation person requires the explicitly selected published intermediary");
-  assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
-    404, "a confirmed match without mutual branch grants cannot open a member URL");
-  assert.equal((await fetch(securedBase + branchPath, {
-    method: "PUT", headers: ownerHeaders,
-    body: JSON.stringify({ personIds: ["branch-hidden-a"], previewToken: firstBranch.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 7 }),
-  })).status, 409, "an unpublished relative cannot be selected by guessing an ID");
-  assert.equal((await fetch(securedBase + branchPath, {
-    method: "PUT", headers: ownerHeaders,
-    body: JSON.stringify({ personIds: ["branch-parent-a"], previewToken: "0".repeat(64),
-      recipientArchiveId: "other-archive", durationDays: 7 }),
-  })).status, 409, "a stale preview cannot authorize a branch");
-  assert.equal((await fetch(securedBase + branchPath, {
-    method: "PUT", headers: ownerHeaders,
-    body: JSON.stringify({ personIds: ["branch-parent-a"], previewToken: firstBranch.previewToken,
-      recipientArchiveId: "third-archive", durationDays: 7 }),
-  })).status, 409, "the grant cannot address an archive outside the confirmed pair");
-  assert.equal((await fetch(securedBase + branchPath, {
-    method: "PUT", headers: ownerHeaders,
-    body: JSON.stringify({ personIds: ["branch-parent-a"], previewToken: firstBranch.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 365 }),
-  })).status, 400, "a new grant must have one of the bounded durations");
-  assert.equal((await fetch(securedBase + branchPath, {
-    method: "PUT", headers: ownerHeaders,
-    body: JSON.stringify({ personIds: ["branch-parent-a", "branch-grandparent-a"], previewToken: firstBranch.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 7 }),
-  })).status, 200);
-  assert.deepEqual((await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
-    .then((response) => response.json())).incoming, [],
-  "one archive's grant alone does not expose its branch");
-  assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
-    404, "one unilateral grant cannot open the other archive's member card");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_branch_members WHERE grantor_archive_id='other-archive'`).get())?.count,
-      0, "A's own consent cannot read B's branch before B also consents");
-  }, true);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'`).get())?.count,
-      0, "RLS hides the other side's selected relatives until B also consents");
-  }, true);
-  assert.equal((await fetch(otherBase + branchPath, {
-    method: "PUT", headers: archiveAdminHeaders,
-    body: JSON.stringify({ personIds: ["branch-parent-b"], previewToken: secondBranch.previewToken,
-      recipientArchiveId: "runtime-test", durationDays: 1 }),
-  })).status, 200);
-  const bilateralBranch = await fetch(securedBase + branchPath, { headers: ownerHeaders })
-    .then((response) => response.json());
-  assert.deepEqual(bilateralBranch.incoming.map((person: { id: string }) => person.id), ["branch-parent-b"]);
-  const secondGeneration = await fetch(otherBase + branchPath, {
-    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.232" },
-  })
-    .then((response) => response.json());
-  assert.deepEqual(secondGeneration.incoming.map((person: { id: string }) => person.id),
-    ["branch-grandparent-a", "branch-parent-a"]);
-  assert.equal(secondGeneration.incoming[0].relation, "grandparent");
-  assert.equal(secondGeneration.incoming[0].viaId, "branch-parent-a");
-  await verifyDiscoveryBranchDepth({ archive: app.archive, auth: discoveryAuth,
-    sourceBase: securedBase, recipientBase: otherBase, ownerHeaders,
-    recipientHeaders: archiveAdminHeaders, branchPath,
-    publicOrigin: process.env.PUBLIC_ORIGIN });
-  const branchLogoutToken = newSessionToken();
-  const branchLogoutHash = sessionTokenHash(branchLogoutToken);
-  await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2)",
-    [branchLogoutHash, Date.now() + 60_000]);
-  let branchLogoutReached!: () => void, releaseBranchLogout!: () => void;
-  const branchLogoutReady = new Promise<void>((resolve) => { branchLogoutReached = resolve; });
-  const branchLogoutGate = new Promise<void>((resolve) => { releaseBranchLogout = resolve; });
-  const branchLogoutEndpoint = discoveryBranchShareHttp({ archive: app.archive,
-    auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeReadAccessLock: async () => { branchLogoutReached(); await branchLogoutGate; },
-  });
-  const branchLogoutServer = createServer((req, res) => {
-    void branchLogoutEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => branchLogoutServer.listen(0, "127.0.0.1", resolve));
-  const branchLogoutPort = (branchLogoutServer.address() as { port: number }).port;
-  const branchAfterLogout = fetch(`http://127.0.0.1:${branchLogoutPort}${branchPath}`,
-    { headers: { ...ownerHeaders, Cookie: `drevo_session=${branchLogoutToken}`,
-      "X-Real-IP": "198.51.100.163" } });
-  try {
-    await Promise.race([branchLogoutReady,
-      branchAfterLogout.then(() => { throw new Error("Branch list sent before logout barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Branch list did not reach logout barrier")), 30_000)),
-    ]);
-    await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [branchLogoutHash]);
-    releaseBranchLogout();
-    const response = await branchAfterLogout;
-    const body = await response.text();
-    assert.equal(response.status, 404, "completed logout closes the linked branch list");
-    assert.equal(/branch-parent-b|branch-grandparent-a/.test(body), false);
-  } finally {
-    releaseBranchLogout();
-    await branchAfterLogout.catch(() => {});
-    await new Promise<void>((resolve) => branchLogoutServer.close(() => resolve()));
-  }
-  let branchApprovalReached!: () => void, releaseBranchApproval!: () => void;
-  const branchApprovalReady = new Promise<void>((resolve) => { branchApprovalReached = resolve; });
-  const branchApprovalGate = new Promise<void>((resolve) => { releaseBranchApproval = resolve; });
-  const branchApprovalEndpoint = discoveryBranchShareHttp({ archive: app.archive,
-    auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeReadAccessLock: async () => { branchApprovalReached(); await branchApprovalGate; },
-  });
-  const branchApprovalServer = createServer((req, res) => {
-    void branchApprovalEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => branchApprovalServer.listen(0, "127.0.0.1", resolve));
-  const branchApprovalPort = (branchApprovalServer.address() as { port: number }).port;
-  const branchAfterDowngrade = fetch(`http://127.0.0.1:${branchApprovalPort}${branchPath}`,
-    { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.165" } });
-  try {
-    await Promise.race([branchApprovalReady,
-      branchAfterDowngrade.then(() => { throw new Error("Branch list sent before approval barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Branch list did not reach approval barrier")), 30_000)),
-    ]);
+    await verifyConfirmationHistory();
+    const branchPath = matchPath + "/branch-share";
+    const branchPersonPath = branchPath + "/people/branch-parent-b";
+    const navigationHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.214" };
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+    await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+      VALUES('other-archive','vk:42','admin',true,'all') ON CONFLICT (archive_id,user_id)
+      DO UPDATE SET role='admin',approved=true,tree_access='all'`);
+    await client.query(`INSERT INTO archive_owners(archive_id,user_id)
+      VALUES('other-archive','vk:42') ON CONFLICT (archive_id) DO UPDATE SET user_id='vk:42'`);
     await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
-    assert.equal((await client.query(`UPDATE archive_memberships SET approved=false
-      WHERE archive_id='runtime-test' AND user_id='owner'`)).rowCount, 1);
-    releaseBranchApproval();
-    const response = await branchAfterDowngrade;
-    const body = await response.text();
-    assert.equal(response.status, 404, "completed approval revoke closes the linked branch list");
-    assert.equal(/branch-parent-b|branch-grandparent-a/.test(body), false);
-  } finally {
-    releaseBranchApproval();
-    await branchAfterDowngrade.catch(() => {});
-    await client.query(`UPDATE archive_memberships SET approved=true
-      WHERE archive_id='runtime-test' AND user_id='owner'`);
-    await new Promise<void>((resolve) => branchApprovalServer.close(() => resolve()));
-  }
-  let branchDeliveryReached!: () => void, releaseBranchDelivery!: () => void;
-  const branchDeliveryReady = new Promise<void>((resolve) => { branchDeliveryReached = resolve; });
-  const branchDeliveryGate = new Promise<void>((resolve) => { releaseBranchDelivery = resolve; });
-  const branchDeliveryEndpoint = discoveryBranchShareHttp({ archive: app.archive,
-    auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeListDelivery: async () => { branchDeliveryReached(); await branchDeliveryGate; },
-  });
-  const branchDeliveryServer = createServer((req, res) => {
-    void branchDeliveryEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => branchDeliveryServer.listen(0, "127.0.0.1", resolve));
-  const branchDeliveryPort = (branchDeliveryServer.address() as { port: number }).port;
-  const branchBeforeDowngrade = fetch(`http://127.0.0.1:${branchDeliveryPort}${branchPath}`,
-    { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.166" } });
-  let revokeBranchApproval: Promise<pg.QueryResult> | undefined;
-  try {
-    await Promise.race([branchDeliveryReady,
-      branchBeforeDowngrade.then(() => { throw new Error("Branch list sent before delivery barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Branch list did not reach delivery barrier")), 30_000)),
-    ]);
-    revokeBranchApproval = client.query(`UPDATE archive_memberships SET approved=false
-      WHERE archive_id='runtime-test' AND user_id='owner'`);
-    assert.equal(await Promise.race([
-      revokeBranchApproval.then(() => "completed"),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
-    ]), "pending", "approval revocation waits for linked fields to finish delivery");
-    releaseBranchDelivery();
-    const response = await branchBeforeDowngrade;
-    assert.equal(response.status, 200);
-    assert.ok((await response.json()).incoming.length > 0);
-    assert.equal((await revokeBranchApproval).rowCount, 1);
-    const denied = await fetch(securedBase + branchPath,
-      { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.167" } });
-    assert.equal(denied.status, 403, "the next GET sees completed approval revocation");
-  } finally {
-    releaseBranchDelivery();
-    await branchBeforeDowngrade.catch(() => {});
-    await revokeBranchApproval?.catch(() => {});
-    await client.query(`UPDATE archive_memberships SET approved=true
-      WHERE archive_id='runtime-test' AND user_id='owner'`);
-    await new Promise<void>((resolve) => branchDeliveryServer.close(() => resolve()));
-  }
-  console.log("runtime_discovery_branch_owner_read_revocation_ok");
-  const ancestorCard = await fetch(otherBase + branchPath + "/people/branch-grandparent-a", {
-    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.233" },
-  });
-  assert.equal(ancestorCard.status, 200, "the explicitly selected ancestor can open through its scoped URL");
-  assert.deepEqual((await ancestorCard.json()).person.viaId, "branch-parent-a");
-  assert.ok(bilateralBranch.ownExpiresAt,
-    "new branch consent has a finite owner-visible expiry");
-  const branchLifetimes = await matchDb.prepare("", `SELECT grantor_archive_id,
-    extract(epoch FROM expires_at-now())/86400 AS days_left
-    FROM discovery_branch_grants WHERE left_person_id='person-a'
-      AND right_person_id='person-a'`).all();
-  assert.ok(branchLifetimes.some((row) => row.grantor_archive_id === "runtime-test" &&
-    Number(row.days_left) > 6.99 && Number(row.days_left) <= 7));
-  assert.ok(branchLifetimes.some((row) => row.grantor_archive_id === "other-archive" &&
-    Number(row.days_left) > 0.99 && Number(row.days_left) <= 1));
-  assert.doesNotMatch(JSON.stringify(bilateralBranch), /branch-hidden-b|Закрытая биография ветки|sources|photo/);
-  const selectedBranchResponse = await fetch(securedBase + branchPersonPath, { headers: navigationHeaders });
-  assert.equal(selectedBranchResponse.status, 200);
-  assert.match(selectedBranchResponse.headers.get("cache-control") || "", /no-store/);
-  const selectedBranchPerson = (await selectedBranchResponse.json()).person;
-  assert.deepEqual({ archiveId: selectedBranchPerson.archiveId, id: selectedBranchPerson.id,
-    relation: selectedBranchPerson.relation },
-  { archiveId: "other-archive", id: "branch-parent-b", relation: "parent" });
-  assert.ok(Object.keys(selectedBranchPerson).every((key) =>
-    ["archiveId", "id", "relation", "name", "birthYear", "deathYear", "birthPlace", "deathPlace"]
-      .includes(key)), "member navigation exposes only the selected scalar projection");
-  assert.doesNotMatch(JSON.stringify(selectedBranchPerson), /branch-hidden-b|Закрытая биография ветки|sources|photo/);
-  const branchRevokeWaiting = async () => {
-    for (let attempt = 0; attempt < 60; attempt++) {
-      const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
-        WHERE datname=current_database() AND pid<>pg_backend_pid()
-          AND wait_event_type='Lock' AND query LIKE '%discovery_match_requests m%'
-          AND query LIKE '%FOR UPDATE OF m%'`);
-      if (waiting.rowCount) return true;
-      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    await app.archive.db.prepare("", `UPDATE archive_memberships SET role='admin'
+      WHERE archive_id='runtime-test' AND user_id='vk:42'`).run();
+    const ownerPublication = publishedPeopleStore(app.archive.db);
+    const publicationBeforeAdmin = await ownerPublication.getFields("person-a");
+    assert.ok(publicationBeforeAdmin, "the owner has published the card before an invited admin tries to revoke it");
+    const publicationPath = "/api/admin/published-people/person-a";
+    assert.equal((await fetch(securedBase + publicationPath, {
+      method: "DELETE", headers: archiveAdminHeaders,
+    })).status, 403, "an invited admin cannot revoke the owner's selective publication");
+    assert.equal((await fetch(securedBase + publicationPath, {
+      method: "PUT", headers: archiveAdminHeaders,
+      body: JSON.stringify({ fields: selectedDiscoveryFields }),
+    })).status, 403, "an invited admin cannot change the owner's published fields");
+    assert.equal((await fetch(securedBase + publicationPath, { headers: archiveAdminHeaders })).status,
+      403, "an invited admin cannot inspect unpublished field choices");
+    const publicationBatchPath = "/api/admin/published-people/batch";
+    assert.equal((await fetch(securedBase + publicationBatchPath + "?id=person-a", {
+      headers: archiveAdminHeaders,
+    })).status, 403, "an invited admin cannot inspect the owner's publication batch");
+    for (const action of ["publish", "unpublish"] as const) {
+      assert.equal((await fetch(securedBase + publicationBatchPath + "/preview", {
+        method: "POST", headers: archiveAdminHeaders,
+        body: JSON.stringify({ action, personIds: ["person-a"], fields: selectedDiscoveryFields }),
+      })).status, 403, "an invited admin cannot prepare a publication change");
+      assert.equal((await fetch(securedBase + publicationBatchPath, {
+        method: action === "publish" ? "POST" : "DELETE", headers: archiveAdminHeaders,
+        body: JSON.stringify({ personIds: ["person-a"], fields: selectedDiscoveryFields,
+          revision: (await app.archive.read()).revision, reviewToken: "0".repeat(64) }),
+      })).status, 403, "an invited admin cannot apply a publication change");
     }
-    return false;
-  };
-  let memberReached!: () => void, releaseMember!: () => void;
-  const memberReady = new Promise<void>((resolve) => { memberReached = resolve; });
-  const memberGate = new Promise<void>((resolve) => { releaseMember = resolve; });
-  const memberEndpoint = discoveryBranchShareHttp({ archive: app.archive,
-    auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeMemberDelivery: async () => { memberReached(); await memberGate; },
-  });
-  const memberServer = createServer((req, res) => {
-    void memberEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => memberServer.listen(0, "127.0.0.1", resolve));
-  const memberPort = (memberServer.address() as { port: number }).port;
-  const pausedMember = fetch(`http://127.0.0.1:${memberPort}${branchPersonPath}`,
-    { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.248" } });
-  let revokeSourceBranch: Promise<Response> | undefined;
-  try {
-    await Promise.race([memberReady,
-      pausedMember.then(() => { throw new Error("Branch member sent before delivery barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Branch member did not reach delivery barrier")), 30_000)),
-    ]);
-    revokeSourceBranch = fetch(otherBase + branchPath, { method: "DELETE",
-      headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.249" } });
-    assert.equal(await branchRevokeWaiting(), true,
-      "source branch revocation reaches the pair lock before member delivery");
-    const earlyRevoke = await Promise.race([
-      revokeSourceBranch.then((response) => `completed ${response.status}`),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
-    ]);
-    assert.equal(earlyRevoke, "pending",
-      "revoking source branch consent waits until the selected member finishes delivery");
-    releaseMember();
-    const deliveredMember = await pausedMember;
-    assert.equal(deliveredMember.status, 200);
-    assert.equal((await deliveredMember.json()).person.id, "branch-parent-b");
-    assert.equal((await revokeSourceBranch).status, 200);
-  } finally {
-    releaseMember();
-    await pausedMember.catch(() => {});
-    await revokeSourceBranch?.catch(() => {});
-    await new Promise<void>((resolve) => memberServer.close(() => resolve()));
-  }
-  assert.equal((await fetch(securedBase + branchPersonPath, {
-    headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.250" },
-  })).status, 404, "the direct member URL closes after source consent is revoked");
-  assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
-    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.251" },
-    body: JSON.stringify({ personIds: ["branch-parent-b"],
-      previewToken: secondBranch.previewToken,
-      recipientArchiveId: "runtime-test", durationDays: 1 }),
-  })).status, 200);
-  console.log("runtime_discovery_branch_member_revocation_ok");
-  let listReached!: () => void, releaseList!: () => void;
-  const listReady = new Promise<void>((resolve) => { listReached = resolve; });
-  const listGate = new Promise<void>((resolve) => { releaseList = resolve; });
-  const listEndpoint = discoveryBranchShareHttp({ archive: app.archive,
-    auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeListDelivery: async () => { listReached(); await listGate; },
-  });
-  const listServer = createServer((req, res) => {
-    void listEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => listServer.listen(0, "127.0.0.1", resolve));
-  const listPort = (listServer.address() as { port: number }).port;
-  const pausedList = fetch(`http://127.0.0.1:${listPort}${branchPath}`,
-    { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.252" } });
-  let revokeListedBranch: Promise<Response> | undefined;
-  try {
-    await Promise.race([listReady,
-      pausedList.then(() => { throw new Error("Branch list sent before delivery barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Branch list did not reach delivery barrier")), 30_000)),
-    ]);
-    revokeListedBranch = fetch(otherBase + branchPath, { method: "DELETE",
-      headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.253" } });
-    assert.equal(await branchRevokeWaiting(), true,
-      "source branch revocation reaches the pair lock before list delivery");
-    const earlyRevoke = await Promise.race([
-      revokeListedBranch.then((response) => `completed ${response.status}`),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
-    ]);
-    assert.equal(earlyRevoke, "pending",
-      "revoking source branch consent waits for a list containing its members");
-    releaseList();
-    const deliveredList = await pausedList;
-    assert.equal(deliveredList.status, 200);
-    assert.deepEqual((await deliveredList.json()).incoming.map((item: { id: string }) => item.id),
-      ["branch-parent-b"]);
-    assert.equal((await revokeListedBranch).status, 200);
-  } finally {
-    releaseList();
-    await pausedList.catch(() => {});
-    await revokeListedBranch?.catch(() => {});
-    await new Promise<void>((resolve) => listServer.close(() => resolve()));
-  }
-  assert.deepEqual((await fetch(securedBase + branchPath, {
-    headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.254" },
-  }).then((response) => response.json())).incoming, [],
-  "a fresh branch list excludes members after source revocation");
-  assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
-    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.255" },
-    body: JSON.stringify({ personIds: ["branch-parent-b"],
-      previewToken: secondBranch.previewToken,
-      recipientArchiveId: "runtime-test", durationDays: 1 }),
-  })).status, 200);
-  console.log("runtime_discovery_branch_list_revocation_ok");
-  let abortMemberReached!: () => void, releaseAbortedMember!: () => void;
-  const abortMemberReady = new Promise<void>((resolve) => { abortMemberReached = resolve; });
-  const abortMemberGate = new Promise<void>((resolve) => { releaseAbortedMember = resolve; });
-  const abortMemberEndpoint = discoveryBranchShareHttp({ archive: app.archive,
-    auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeMemberDelivery: async () => { abortMemberReached(); await abortMemberGate; },
-  });
-  const abortMemberServer = createServer((req, res) => {
-    void abortMemberEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => abortMemberServer.listen(0, "127.0.0.1", resolve));
-  const abortMemberPort = (abortMemberServer.address() as { port: number }).port;
-  const branchAbortController = new AbortController();
-  const abandonedMember = fetch(`http://127.0.0.1:${abortMemberPort}${branchPersonPath}`,
-    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.1" },
-      signal: branchAbortController.signal });
-  const branchAbandonedOutcome = abandonedMember.then(() => "sent", () => "aborted");
-  let revokeAfterAbort: Promise<Response> | undefined;
-  try {
-    await Promise.race([abortMemberReady,
-      abandonedMember.then(() => { throw new Error("Branch member sent before abort barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Branch member did not reach abort barrier")), 30_000)),
-    ]);
-    revokeAfterAbort = fetch(otherBase + branchPath, { method: "DELETE",
-      headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.2" } });
-    assert.equal(await branchRevokeWaiting(), true,
-      "source revocation reaches the pair lock while the member client is connected");
-    branchAbortController.abort();
-    releaseAbortedMember();
-    assert.equal(await branchAbandonedOutcome, "aborted");
-    assert.equal((await Promise.race([revokeAfterAbort,
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Disconnect did not release branch locks")), 3_000)),
-    ])).status, 200);
-  } finally {
-    branchAbortController.abort();
-    releaseAbortedMember();
-    await branchAbandonedOutcome;
-    await revokeAfterAbort?.catch(() => {});
-    await new Promise<void>((resolve) => abortMemberServer.close(() => resolve()));
-  }
-  assert.equal((await fetch(securedBase + branchPersonPath, {
-    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.3" },
-  })).status, 404);
-  assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
-    headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.4" },
-    body: JSON.stringify({ personIds: ["branch-parent-b"],
-      previewToken: secondBranch.previewToken,
-      recipientArchiveId: "runtime-test", durationDays: 1 }),
-  })).status, 200);
-  console.log("runtime_discovery_branch_abort_ok");
-  const beforeStaleListExpansion = await fetch(otherBase + branchPath, {
-    headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.5" },
-  });
-  assert.equal(beforeStaleListExpansion.status, 200);
-  const parentOnlyPreview = await beforeStaleListExpansion.json();
-  assert.deepEqual(parentOnlyPreview.outgoingIds, ["branch-parent-b"]);
-  let staleListReached!: () => void, releaseStaleList!: () => void;
-  const staleListReady = new Promise<void>((resolve) => { staleListReached = resolve; });
-  const staleListGate = new Promise<void>((resolve) => { releaseStaleList = resolve; });
-  const staleListEndpoint = discoveryBranchShareHttp({ archive: app.archive,
-    auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeListPublicationLock: async () => { staleListReached(); await staleListGate; },
-  });
-  const staleListServer = createServer((req, res) => {
-    void staleListEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => staleListServer.listen(0, "127.0.0.1", resolve));
-  const staleListPort = (staleListServer.address() as { port: number }).port;
-  const staleList = fetch(`http://127.0.0.1:${staleListPort}${branchPath}`,
-    { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.5" } });
-  try {
-    await Promise.race([staleListReady,
-      staleList.then(() => { throw new Error("Branch list sent before publication barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Branch list did not reach publication barrier")), 30_000)),
-    ]);
-    assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
-      headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.6" },
-      body: JSON.stringify({ personIds: ["branch-parent-b", "branch-grandparent-b"],
-        previewToken: parentOnlyPreview.previewToken,
+    assert.deepEqual(await ownerPublication.getFields("person-a"), publicationBeforeAdmin,
+      "the owner's selective publication survives unauthorized admin requests");
+    assert.equal((await fetch(securedBase + publicationPath, { headers: ownerHeaders })).status, 200,
+      "the actual owner can still review the published card");
+    assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+      headers: archiveAdminHeaders,
+    })).status, 403, "an invited archive admin cannot read owners' match reasons");
+    assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+      method: "POST", headers: archiveAdminHeaders, body: proposedPair,
+    })).status, 403, "an invited archive admin cannot propose a link for the owner");
+    assert.equal((await fetch(securedBase + matchPath, {
+      method: "PATCH", headers: archiveAdminHeaders,
+      body: JSON.stringify({ decision: "revoke" }),
+    })).status, 403, "an invited archive admin cannot revoke the owner's link");
+    for (const ignored of [true, false]) {
+      assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+        method: "POST", headers: archiveAdminHeaders,
+        body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+          targetPersonId: "person-a", ignored }),
+      })).status, 403, "an invited archive admin cannot alter the owner's candidate filters");
+      assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored-archives", {
+        method: "POST", headers: archiveAdminHeaders,
+        body: JSON.stringify({ targetArchiveId: "other-archive", ignored }),
+      })).status, 403, "an invited archive admin cannot alter the owner's archive filters");
+    }
+    assert.equal((await fetch(securedBase + branchPath, { headers: archiveAdminHeaders })).status,
+      403, "an invited admin cannot grant or inspect the owner's branch");
+    assert.equal((await fetch(securedBase + branchPath, {
+      method: "PUT", headers: archiveAdminHeaders,
+      body: JSON.stringify({ personIds: [], previewToken: "0".repeat(64) }),
+    })).status, 403, "an invited admin cannot consent on the owner's behalf");
+    await app.archive.db.prepare("", `UPDATE archive_memberships SET role='reader'
+      WHERE archive_id='runtime-test' AND user_id='vk:42'`).run();
+    assert.equal((await fetch(securedBase + branchPath, { headers: ownerHeaders })).status, 200);
+    assert.equal((await fetch(otherBase + branchPath, { headers: ownerHeaders })).status, 403,
+      "an invited admin of B cannot inspect its owner's branch");
+    assert.equal((await fetch(securedBase + branchPath, { headers })).status, 403,
+      "a reader cannot inspect branch grants even for a published linked card");
+    assert.equal((await fetch(securedBase + branchPersonPath, { headers })).status, 403,
+      "a reader cannot open a linked branch member by guessing the URL");
+    assert.equal((await fetch(otherBase + branchPath, { headers })).status, 401,
+      "a nonmember cannot inspect another archive's branch grant");
+    for (const [runtime, visibleId, hiddenId, label] of [
+      [app, "branch-parent-a", "branch-hidden-a", "Первый"],
+      [otherApp, "branch-parent-b", "branch-hidden-b", "Второй"],
+    ] as const) {
+      const beforeBranch = await runtime.archive.read();
+      const branchFamily = structuredClone(beforeBranch.family);
+      if (runtime === otherApp) {
+        branchFamily.people[0].occupation = "Местный исследователь";
+        branchFamily.people[0].birthPlace = "Местный город";
+      }
+      branchFamily.people[0].parents = [visibleId, hiddenId];
+      for (const [id, name] of [[visibleId, `${label} родитель`],
+        [hiddenId, `${label} закрытый`]]) {
+        branchFamily.people.push({ ...structuredClone(branchFamily.people[0]),
+          id, name, birth: "1950", deceased: true, parents: [], spouses: [],
+          biography: "Закрытая биография ветки", generation: 2 });
+      }
+      const grandparentId = `branch-grandparent-${runtime === app ? "a" : "b"}`;
+      const hiddenGrandparentId = `branch-hidden-grandparent-${runtime === app ? "a" : "b"}`;
+      branchFamily.people.find((person) => person.id === visibleId)!.parents = [grandparentId];
+      branchFamily.people.find((person) => person.id === hiddenId)!.parents = [hiddenGrandparentId];
+      for (const [id, name] of [[grandparentId, `${label} дедушка`],
+        [hiddenGrandparentId, `${label} закрытый дедушка`]]) {
+        branchFamily.people.push({ ...structuredClone(branchFamily.people[0]),
+          id, name, birth: "1920", deceased: true, parents: [], spouses: [],
+          biography: "Закрытая биография ветки", generation: 3 });
+      }
+      await runtime.archive.write(branchFamily, beforeBranch.revision);
+      await publishedPeopleStore(runtime.archive.db).publish(visibleId, "owner");
+      await publishedPeopleStore(runtime.archive.db).publish(grandparentId, "owner");
+      await publishedPeopleStore(runtime.archive.db).publish(hiddenGrandparentId, "owner");
+    }
+    const beforeFullPreview = await app.archive.read();
+    const fullPreviewFamily = structuredClone(beforeFullPreview.family);
+    for (let index = 0; index < 49; index++) {
+      const id = `branch-extra-child-${index}`;
+      fullPreviewFamily.people.push({ ...structuredClone(fullPreviewFamily.people[0]), id,
+        name: `Дополнительный ребёнок ${index}`, birth: "2010", deceased: true,
+        parents: ["person-a"], spouses: [], generation: 2 });
+    }
+    await app.archive.write(fullPreviewFamily, beforeFullPreview.revision);
+    for (let index = 0; index < 49; index++)
+      await publishedPeopleStore(app.archive.db).publish(`branch-extra-child-${index}`, "owner");
+    const fullPreview = await fetch(securedBase + branchPath, {
+      headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.230" },
+    }).then((response) => response.json());
+    assert.equal(fullPreview.available.length, 50);
+    assert.equal(fullPreview.truncated, true,
+      "a published ancestor beyond fifty direct members is reported as truncated");
+    await app.archive.write(beforeFullPreview.family, (await app.archive.read()).revision);
+    const firstBranch = await fetch(securedBase + branchPath, { headers: ownerHeaders })
+      .then((response) => response.json());
+    const secondBranch = await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
+      .then((response) => response.json());
+    assert.deepEqual(firstBranch.available.map((person: { id: string }) => person.id),
+      ["branch-grandparent-a", "branch-parent-a"]);
+    assert.deepEqual(secondBranch.available.map((person: { id: string }) => person.id),
+      ["branch-grandparent-b", "branch-parent-b"]);
+    assert.deepEqual(firstBranch.available[0].viaIds, ["branch-parent-a"]);
+    assert.equal(firstBranch.recipientArchiveId, "other-archive");
+    assert.equal(secondBranch.recipientArchiveId, "runtime-test");
+    assert.equal(firstBranch.ownExpiresAt, null);
+    assert.doesNotMatch(JSON.stringify(firstBranch), /branch-hidden-a|branch-hidden-grandparent-a|Закрытая биография ветки/);
+    assert.equal((await fetch(securedBase + branchPath, {
+      method: "PUT", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.231" },
+      body: JSON.stringify({ personIds: ["branch-grandparent-a"], previewToken: firstBranch.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 7 }),
+    })).status, 409, "a second-generation person requires the explicitly selected published intermediary");
+    assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
+      404, "a confirmed match without mutual branch grants cannot open a member URL");
+    assert.equal((await fetch(securedBase + branchPath, {
+      method: "PUT", headers: ownerHeaders,
+      body: JSON.stringify({ personIds: ["branch-hidden-a"], previewToken: firstBranch.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 7 }),
+    })).status, 409, "an unpublished relative cannot be selected by guessing an ID");
+    assert.equal((await fetch(securedBase + branchPath, {
+      method: "PUT", headers: ownerHeaders,
+      body: JSON.stringify({ personIds: ["branch-parent-a"], previewToken: "0".repeat(64),
+        recipientArchiveId: "other-archive", durationDays: 7 }),
+    })).status, 409, "a stale preview cannot authorize a branch");
+    assert.equal((await fetch(securedBase + branchPath, {
+      method: "PUT", headers: ownerHeaders,
+      body: JSON.stringify({ personIds: ["branch-parent-a"], previewToken: firstBranch.previewToken,
+        recipientArchiveId: "third-archive", durationDays: 7 }),
+    })).status, 409, "the grant cannot address an archive outside the confirmed pair");
+    assert.equal((await fetch(securedBase + branchPath, {
+      method: "PUT", headers: ownerHeaders,
+      body: JSON.stringify({ personIds: ["branch-parent-a"], previewToken: firstBranch.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 365 }),
+    })).status, 400, "a new grant must have one of the bounded durations");
+    assert.equal((await fetch(securedBase + branchPath, {
+      method: "PUT", headers: ownerHeaders,
+      body: JSON.stringify({ personIds: ["branch-parent-a", "branch-grandparent-a"], previewToken: firstBranch.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 7 }),
+    })).status, 200);
+    assert.deepEqual((await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
+      .then((response) => response.json())).incoming, [],
+    "one archive's grant alone does not expose its branch");
+    assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
+      404, "one unilateral grant cannot open the other archive's member card");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_branch_members WHERE grantor_archive_id='other-archive'`).get())?.count,
+        0, "A's own consent cannot read B's branch before B also consents");
+    }, true);
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'`).get())?.count,
+        0, "RLS hides the other side's selected relatives until B also consents");
+    }, true);
+    assert.equal((await fetch(otherBase + branchPath, {
+      method: "PUT", headers: archiveAdminHeaders,
+      body: JSON.stringify({ personIds: ["branch-parent-b"], previewToken: secondBranch.previewToken,
         recipientArchiveId: "runtime-test", durationDays: 1 }),
     })).status, 200);
-    releaseStaleList();
-    const staleResponse = await staleList;
-    assert.equal(staleResponse.status, 409);
-    assert.deepEqual(await staleResponse.json(), { error: "Ветка изменилась. Повторите запрос" },
-      "a newly selected source member cannot appear without a held publication lock");
-  } finally {
-    releaseStaleList();
-    await staleList.catch(() => {});
-    await new Promise<void>((resolve) => staleListServer.close(() => resolve()));
-  }
-  // The staged selection is part of the v2 preview fingerprint. Reverting
-  // from two selected people requires a new preview of that committed state.
-  const afterStaleListSelection = await fetch(otherBase + branchPath, {
-    headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.7" },
-  });
-  assert.equal(afterStaleListSelection.status, 200);
-  const currentBranchPreview = await afterStaleListSelection.json();
-  assert.deepEqual(currentBranchPreview.outgoingIds,
-    ["branch-grandparent-b", "branch-parent-b"]);
-  assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
-    headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.7" },
-    body: JSON.stringify({ personIds: ["branch-parent-b"],
-      previewToken: currentBranchPreview.previewToken,
-      recipientArchiveId: "runtime-test", durationDays: 1 }),
-  })).status, 200);
-  console.log("runtime_discovery_branch_list_stale_ok");
-  assert.equal((await fetch(securedBase + branchPath + "/people/branch-hidden-b", {
-    headers: navigationHeaders,
-  })).status, 404, "a private adjacent person is indistinguishable from an unavailable member");
-  assert.equal((await fetch(securedBase + branchPath + "/people/%ZZ", {
-    headers: navigationHeaders,
-  })).status, 404, "a malformed encoded ID exposes no branch detail");
-  assert.equal((await fetch(securedBase + branchPath + "/people/branch-parent-a", {
-    headers: navigationHeaders,
-  })).status, 404, "the route cannot open the requester's own member as a foreign card");
-  assert.equal((await fetch(securedBase + branchPersonPath, {
-    method: "POST", headers: navigationHeaders,
-  })).status, 405, "the linked member route is read-only");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
-    assert.equal((await matchDb.prepare("", `SELECT granted_by FROM discovery_branch_grants
-      WHERE grantor_archive_id='other-archive' AND left_person_id='person-a'
-        AND right_person_id='person-a'`).get())?.granted_by, "vk:42",
-    "the recipient may inspect a still-active addressed branch grant");
-  }, true);
-  const expiryAHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.216" };
-  const expiryBHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.217" };
-  assert.equal((await otherApp.archive.db.prepare("", `UPDATE discovery_branch_grants
-    SET expires_at=now()-interval '1 second' WHERE grantor_archive_id='other-archive'
-      AND left_person_id='person-a' AND right_person_id='person-a'`).run()).changes, 1);
-  const expiredB = await fetch(securedBase + branchPath, { headers: expiryAHeaders })
-    .then((response) => response.json());
-  assert.equal(expiredB.ownReady, true);
-  assert.equal(expiredB.otherReady, false);
-  assert.deepEqual(expiredB.incoming, [], "B's expired consent closes A's branch view");
-  assert.equal((await fetch(securedBase + branchPersonPath, { headers: expiryAHeaders })).status,
-    404, "an expired source grant closes the direct member URL");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_branch_grants WHERE grantor_archive_id='other-archive'
-        AND left_person_id='person-a' AND right_person_id='person-a'`).get())?.count,
-      0, "RLS hides the expired grant's author and timestamps from its recipient");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_branch_members WHERE grantor_archive_id='other-archive'`).get())?.count,
-      0, "RLS closes source members when their grant expires");
-  }, true);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_branch_grants WHERE grantor_archive_id='other-archive'
-        AND left_person_id='person-a' AND right_person_id='person-a'`).get())?.count,
-      1, "the grantor keeps its expired row to manage or renew consent");
-  }, true);
-  const expiredBPreview = await fetch(otherBase + branchPath, { headers: expiryBHeaders })
-    .then((response) => response.json());
-  assert.equal(expiredBPreview.ownReady, false);
-  assert.equal((await fetch(otherBase + branchPath, {
-    method: "PUT", headers: expiryBHeaders,
-    body: JSON.stringify({ personIds: ["branch-parent-b"],
-      previewToken: expiredBPreview.previewToken,
-      recipientArchiveId: "runtime-test", durationDays: 30 }),
-  })).status, 200, "B can renew only through a fresh explicit PUT");
-  assert.deepEqual((await fetch(securedBase + branchPath, { headers: expiryAHeaders })
-    .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
-    ["branch-parent-b"]);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_branch_grants WHERE grantor_archive_id='other-archive'
-        AND left_person_id='person-a' AND right_person_id='person-a'`).get())?.count,
-      1, "explicit renewal makes only the current grant visible again");
-  }, true);
-  assert.equal((await app.archive.db.prepare("", `UPDATE discovery_branch_grants
-    SET expires_at=now()-interval '1 second' WHERE grantor_archive_id='runtime-test'
-      AND left_person_id='person-a' AND right_person_id='person-a'`).run()).changes, 1);
-  const expiredA = await fetch(otherBase + branchPath, { headers: expiryBHeaders })
-    .then((response) => response.json());
-  assert.equal(expiredA.otherReady, false);
-  assert.deepEqual(expiredA.incoming, [], "A's expired consent also closes B's branch view");
-  assert.equal((await fetch(otherBase + branchPath + "/people/branch-parent-a", {
-    headers: expiryBHeaders,
-  })).status, 404);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_branch_grants WHERE grantor_archive_id='runtime-test'
-        AND left_person_id='person-a' AND right_person_id='person-a'`).get())?.count,
-      0, "the reverse recipient cannot inspect an expired source grant");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'`).get())?.count,
-      0, "RLS closes recipient members when its own grant expires");
-  }, true);
-  const expiredAPreview = await fetch(securedBase + branchPath, { headers: expiryAHeaders })
-    .then((response) => response.json());
-  assert.equal((await fetch(securedBase + branchPath, {
-    method: "PUT", headers: expiryAHeaders,
-    body: JSON.stringify({ personIds: ["branch-parent-a"],
-      previewToken: expiredAPreview.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 7 }),
-  })).status, 200);
-  assert.deepEqual((await fetch(otherBase + branchPath, { headers: expiryBHeaders })
-    .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
-    ["branch-parent-a"], "renewing both consents reopens only the selected member");
-  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
-  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
-    VALUES('other-archive','other-only','admin',true,'all')`);
-  const transferCardPath = matchPath + "/card-share";
-  const grantBirth = async (base: string, grantHeaders: Record<string,string>) => {
-    const previewResponse = await fetch(base + transferCardPath, { headers: grantHeaders });
-    assert.equal(previewResponse.status, 200, "the current owner can preview a scalar grant");
-    const preview = await previewResponse.json();
-    assert.equal((await fetch(base + transferCardPath, {
-      method: "PUT", headers: { ...grantHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({ fields: ["birth"], previewToken: preview.previewToken,
-        recipientArchiveId: preview.recipientArchiveId, durationDays: 7 }),
-    })).status, 200);
-  };
-  await grantBirth(securedBase, ownerHeaders);
-  await grantBirth(otherBase, archiveAdminHeaders);
-  assert.equal((await otherApp.archive.db.prepare("", `UPDATE discovery_linked_card_grants
-    SET expires_at=now()-interval '1 second' WHERE grantor_archive_id='other-archive'
-      AND left_person_id='person-a' AND right_person_id='person-a'`).run()).changes, 1);
-  const recipientAfterReverseExpiry = await fetch(securedBase + transferCardPath, {
-    headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.221" },
-  }).then((response) => response.json());
-  assert.equal(recipientAfterReverseExpiry.incoming, null,
-    "expiry also closes a B-to-A scalar snapshot");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_linked_card_grants WHERE grantor_archive_id='other-archive'
-        AND left_person_id='person-a'`).get())?.count, 0,
-    "RLS denies reverse-direction expired snapshots");
-  }, true);
-  await grantBirth(otherBase, { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.222" });
-  assert.equal((await client.query(`SELECT count(*)::int AS count
-    FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
-  2, "both owners can grant a private scalar snapshot for the confirmed pair");
-  await client.query(`DROP TRIGGER revoke_discovery_card_grants_after_owner_transfer
-    ON archive_owners`);
-  await client.query(readFileSync(new URL("../../ops/postgres/061_discovery_copied_fields.sql", import.meta.url), "utf8"));
-  assert.equal((await client.query(`SELECT count(*)::int AS count
-    FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
-  0, "installing 061 clears old scalar grants whose two-owner consent cannot be proven");
-  await grantBirth(securedBase, ownerHeaders);
-  await grantBirth(otherBase, archiveAdminHeaders);
-  await client.query(readFileSync(new URL("../../ops/postgres/061_discovery_copied_fields.sql", import.meta.url), "utf8"));
-  assert.equal((await client.query(`SELECT count(*)::int AS count
-    FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
-  2, "reapplying 061 cannot clear fresh grants after its transfer trigger exists");
-  assert.equal((await fetch(otherBase + transferCardPath, {
-    headers: otherOnlyHeaders,
-  })).status, 403, "an invited admin cannot inspect the owner's scalar grants");
-  assert.equal((await fetch(otherBase + transferCardPath, {
-    method: "PUT", headers: { ...otherOnlyHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["birth"], previewToken: "0".repeat(64),
-      recipientArchiveId: "runtime-test", durationDays: 7 }),
-  })).status, 403, "an invited admin cannot issue a scalar grant");
-  assert.equal((await fetch(otherBase + transferCardPath, {
-    method: "DELETE", headers: otherOnlyHeaders,
-  })).status, 403, "an invited admin cannot revoke the owner's scalar grant");
-  assert.equal((await client.query(`UPDATE archive_owners SET user_id='other-only'
-    WHERE archive_id='other-archive'`)).rowCount, 1);
-  assert.equal((await client.query(`SELECT count(*)::int AS count
-    FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
-  0, "recipient ownership transfer revokes both its and the source's scalar grants atomically");
-  assert.equal((await client.query("SELECT current_setting('drevo.archive_id') AS id")).rows[0].id,
-    "other-archive", "recipient transfer restores its RLS context after deleting both grants");
-  assert.equal((await fetch(otherBase + transferCardPath, {
-    headers: archiveAdminHeaders,
-  })).status, 403, "the former owner cannot inspect scalar grants after transfer");
-  assert.equal((await fetch(otherBase + `${branchPath}/options/branch-parent-b`, {
-    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.181" },
-  })).status, 403, "the former owner cannot expand the linked branch after transfer");
-  assert.equal((await client.query(`SELECT count(*)::int AS count
-    FROM discovery_linked_pairs WHERE left_person_id='person-a'`)).rows[0].count, 1,
-  "ownership transfer preserves the confirmed public link");
-  await grantBirth(otherBase, otherOnlyHeaders);
-  assert.deepEqual((await fetch(securedBase + transferCardPath, {
-    headers: ownerHeaders,
-  }).then((response) => response.json())).incoming.fields, { birth: "1990" },
-  "the new owner can explicitly issue a fresh scalar grant");
-  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
-    WHERE grantor_archive_id='other-archive' AND left_person_id='person-a'`)).rows[0].count,
-    0, "ownership transfer revokes the previous owner's branch grant in the same transaction");
-  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_members
-    WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`)).rows[0].count,
-    0, "RLS closes A's branch members to B's successor before a new bilateral opt-in");
-  assert.deepEqual((await fetch(securedBase + branchPath, { headers: {
-    ...ownerHeaders, "X-Real-IP": "198.51.100.211",
-  } }).then((response) => response.json())).incoming, [],
-  "A cannot keep reading B's branch after B changes owner");
-  assert.equal((await fetch(securedBase + branchPersonPath, { headers: {
-    ...ownerHeaders, "X-Real-IP": "198.51.100.211",
-  } })).status, 404, "ownership transfer closes direct member navigation");
-  assert.equal((await fetch(otherBase + branchPath, { headers: {
-    ...archiveAdminHeaders, "X-Real-IP": "198.51.100.212",
-  } })).status, 403, "the former owner cannot reauthorize B's branch");
-  assert.equal((await client.query(`UPDATE archive_owners SET user_id='vk:42'
-    WHERE archive_id='other-archive'`)).rowCount, 1);
-  assert.equal((await client.query(`SELECT count(*)::int AS count
-    FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
-  0, "transferring ownership back revokes the successor's grant too");
-  await client.query(`DELETE FROM archive_memberships WHERE archive_id='other-archive'
-    AND user_id='other-only'`);
-  const afterTransfer = await fetch(otherBase + branchPath, { headers: {
-    ...archiveAdminHeaders, "X-Real-IP": "198.51.100.212",
-  } }).then((response) => response.json());
-  assert.equal((await fetch(otherBase + branchPath, {
-    method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.212" },
-    body: JSON.stringify({ personIds: ["branch-parent-b"], previewToken: afterTransfer.previewToken,
-      recipientArchiveId: "runtime-test", durationDays: 7 }),
-  })).status, 200, "the owner must issue a fresh grant after ownership changes back");
-  assert.deepEqual((await fetch(securedBase + branchPath, { headers: {
-    ...ownerHeaders, "X-Real-IP": "198.51.100.213",
-  } }).then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
-  ["branch-parent-b"], "a fresh owner grant reopens only the selected branch member");
-  assert.equal((await fetch(securedBase + branchPersonPath, { headers: {
-    ...ownerHeaders, "X-Real-IP": "198.51.100.213",
-  } })).status, 200, "a fresh mutual grant reopens the direct member URL");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'`).get())?.count,
-      1, "RLS opens exactly the other side's selected member after mutual consent");
-  }, true);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("unrelated-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_branch_grants`).get())?.count,
-      0, "RLS hides branch consent from a third archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_branch_members`).get())?.count,
-      0, "RLS hides branch members from a third archive");
-  }, true);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
-    assert.equal((await matchDb.prepare("", `DELETE FROM discovery_branch_grants
-      WHERE grantor_archive_id='runtime-test'`).run()).changes, 0,
-    "the recipient cannot revoke the other archive's grant through SQL");
-  });
-  assert.equal((await fetch(otherBase + matchPath, {
-    method: "PATCH", headers: archiveAdminHeaders,
-    body: JSON.stringify({ decision: "accept", reviewToken: freshReview.reviewToken }),
-  })).status, 200, "repeating the accepted decision is idempotent");
-  assert.equal((await matchDb.prepare("", `SELECT decision_review_token FROM discovery_match_requests
-    WHERE id=?`).get(matchBody.match.id))?.decision_review_token, freshReview.reviewToken);
-  await client.query(readFileSync(new URL("../../ops/postgres/050_discovery_match_audit.sql", import.meta.url), "utf8"));
-  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
-    WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 1,
-  "reapplying the additive projection migration keeps one linked pair");
-  const runDiscoveryBackfill = async () => {
-    const admin = process.env.PGADMINUSER
-      ? new pg.Client({ user: process.env.PGADMINUSER, password: process.env.PGADMINPASSWORD })
-      : client;
-    if (admin !== client) await admin.connect();
+    const bilateralBranch = await fetch(securedBase + branchPath, { headers: ownerHeaders })
+      .then((response) => response.json());
+    assert.deepEqual(bilateralBranch.incoming.map((person: { id: string }) => person.id), ["branch-parent-b"]);
+    const secondGeneration = await fetch(otherBase + branchPath, {
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.232" },
+    })
+      .then((response) => response.json());
+    assert.deepEqual(secondGeneration.incoming.map((person: { id: string }) => person.id),
+      ["branch-grandparent-a", "branch-parent-a"]);
+    assert.equal(secondGeneration.incoming[0].relation, "grandparent");
+    assert.equal(secondGeneration.incoming[0].viaId, "branch-parent-a");
+    await verifyDiscoveryBranchDepth({ archive: app.archive, auth: discoveryAuth,
+      sourceBase: securedBase, recipientBase: otherBase, ownerHeaders,
+      recipientHeaders: archiveAdminHeaders, branchPath,
+      publicOrigin: process.env.PUBLIC_ORIGIN });
+    const branchLogoutToken = newSessionToken();
+    const branchLogoutHash = sessionTokenHash(branchLogoutToken);
+    await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2)",
+      [branchLogoutHash, Date.now() + 60_000]);
+    let branchLogoutReached!: () => void, releaseBranchLogout!: () => void;
+    const branchLogoutReady = new Promise<void>((resolve) => { branchLogoutReached = resolve; });
+    const branchLogoutGate = new Promise<void>((resolve) => { releaseBranchLogout = resolve; });
+    const branchLogoutEndpoint = discoveryBranchShareHttp({ archive: app.archive,
+      auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeReadAccessLock: async () => { branchLogoutReached(); await branchLogoutGate; },
+    });
+    const branchLogoutServer = createServer((req, res) => {
+      void branchLogoutEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => branchLogoutServer.listen(0, "127.0.0.1", resolve));
+    const branchLogoutPort = (branchLogoutServer.address() as { port: number }).port;
+    const branchAfterLogout = fetch(`http://127.0.0.1:${branchLogoutPort}${branchPath}`,
+      { headers: { ...ownerHeaders, Cookie: `drevo_session=${branchLogoutToken}`,
+        "X-Real-IP": "198.51.100.163" } });
     try {
-      await admin.query(readFileSync(
-        new URL("../../ops/postgres/backfill-discovery.sql", import.meta.url), "utf8"));
+      await Promise.race([branchLogoutReady,
+        branchAfterLogout.then(() => { throw new Error("Branch list sent before logout barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Branch list did not reach logout barrier")), 30_000)),
+      ]);
+      await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [branchLogoutHash]);
+      releaseBranchLogout();
+      const response = await branchAfterLogout;
+      const body = await response.text();
+      assert.equal(response.status, 404, "completed logout closes the linked branch list");
+      assert.equal(/branch-parent-b|branch-grandparent-a/.test(body), false);
     } finally {
-      if (admin !== client) await admin.end();
+      releaseBranchLogout();
+      await branchAfterLogout.catch(() => {});
+      await new Promise<void>((resolve) => branchLogoutServer.close(() => resolve()));
     }
-  };
-  await runDiscoveryBackfill();
-  assert.deepEqual((await fetch(securedBase + branchPath, { headers: ownerHeaders })
-    .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
-    ["branch-parent-b"], "a backfill preserves current bilateral grants");
-  assert.equal((await fetch(otherBase + branchPath, {
-    method: "DELETE", headers: archiveAdminHeaders,
-  })).status, 200);
-  assert.deepEqual((await fetch(securedBase + branchPath, { headers: ownerHeaders })
-    .then((response) => response.json())).incoming, [],
-    "revoking either side closes the branch immediately");
-  assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
-    404, "grant revocation closes an already issued member URL");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'`).get())?.count,
-      0, "RLS closes the other side's members in the same revocation transaction");
-  }, true);
-  const refreshedSecondBranch = await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
-    .then((response) => response.json());
-  assert.equal((await fetch(otherBase + branchPath, {
-    method: "PUT", headers: archiveAdminHeaders,
-    body: JSON.stringify({ personIds: ["branch-parent-b"],
-      previewToken: refreshedSecondBranch.previewToken,
-      recipientArchiveId: "runtime-test", durationDays: 7 }),
-  })).status, 200);
-  // B-C is separately linked and mutually granted. It must never extend A-B.
-  await client.query("SELECT set_config('drevo.archive_id','third-archive',false)");
-  await client.query(`INSERT INTO archives(id,title,description,demo,revision,sqlite_schema_version)
-    VALUES('third-archive','Third','',false,0,18)`);
-  await client.query("INSERT INTO people(id,data) VALUES('person-c',$1)", [JSON.stringify({
-    ...family.people[0], id: "person-c", name: "Третий", deceased: true,
-  })]);
-  await client.query("INSERT INTO people(id,data) VALUES('family:person.1',$1)", [JSON.stringify({
-    ...family.people[0], id: "family:person.1", name: "Третий родитель", deceased: true,
-  })]);
-  const thirdDb = await openPostgresDatabase("third-archive", source);
-  try {
-    await publishedPeopleStore(thirdDb).publish("person-c", "owner");
-    await publishedPeopleStore(thirdDb).publish("family:person.1", "owner");
-  } finally { await thirdDb.close(); }
-  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
-  const secondPairId = "11111111-2222-4333-8444-555555555555";
-  await client.query(`INSERT INTO discovery_match_requests(id,left_archive_id,left_person_id,
-    right_archive_id,right_person_id,initiated_by_archive_id,requested_by,status)
-    VALUES($1,'other-archive','person-a','third-archive','person-c',
-      'other-archive','owner','linked')`, [secondPairId]);
-  await verifyLegacyDecisionCannotReopen(client,secondPairId);
-  await client.query(`INSERT INTO discovery_branch_grants(left_archive_id,left_person_id,
-    right_archive_id,right_person_id,grantor_archive_id,granted_by)
-    VALUES('other-archive','person-a','third-archive','person-c','other-archive','owner')`);
-  await client.query(`INSERT INTO discovery_branch_members(left_archive_id,left_person_id,
-    right_archive_id,right_person_id,grantor_archive_id,person_id,relation)
-    VALUES('other-archive','person-a','third-archive','person-c',
-      'other-archive','branch-parent-b','parent')`);
-  await client.query("SELECT set_config('drevo.archive_id','third-archive',false)");
-  await client.query(`INSERT INTO discovery_branch_grants(left_archive_id,left_person_id,
-    right_archive_id,right_person_id,grantor_archive_id,granted_by)
-    VALUES('other-archive','person-a','third-archive','person-c','third-archive','owner')`);
-  await client.query(`INSERT INTO discovery_branch_members(left_archive_id,left_person_id,
-    right_archive_id,right_person_id,grantor_archive_id,person_id,relation)
-    VALUES('other-archive','person-a','third-archive','person-c',
-      'third-archive','family:person.1','parent')`);
-  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
-    WHERE left_archive_id='other-archive' AND right_archive_id='third-archive'
-      AND expires_at IS NULL`)).rows[0].count, 2,
-    "legacy grants without an expiry remain valid until revoked");
-  await client.query(readFileSync(new URL("../../ops/postgres/062_discovery_branch_expiry.sql", import.meta.url), "utf8"));
-  await client.query(readFileSync(new URL("../../ops/postgres/064_discovery_branch_grant_read_expiry.sql", import.meta.url), "utf8"));
-  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
-    WHERE left_archive_id='other-archive' AND right_archive_id='third-archive'
-      AND expires_at IS NULL`)).rows[0].count, 2,
-    "reapplying 062/064 does not silently shorten existing branch consents");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("third-archive");
-    assert.equal((await matchDb.prepare("", `SELECT granted_by FROM discovery_branch_grants
-      WHERE left_archive_id='other-archive' AND right_archive_id='third-archive'
-        AND grantor_archive_id='other-archive'`).get())?.granted_by, "owner",
-      "recipient C can still read a legacy NULL grant under RLS after reapplying 064");
-  }, true);
-  const encodedMemberPath = `/api/discovery/matches/${secondPairId}/branch-share/people/family%3Aperson.1`;
-  const encodedMember = await fetch(otherBase + encodedMemberPath, { headers: {
-    ...archiveAdminHeaders, "X-Real-IP": "198.51.100.215",
-  } });
-  assert.equal(encodedMember.status, 200, "a selected member with punctuation has a usable direct URL");
-  assert.deepEqual((await encodedMember.json()).person.id, "family:person.1");
-  assert.equal((await fetch(securedBase + branchPath + "/people/family%3Aperson.1", {
-    headers: navigationHeaders,
-  })).status, 404, "A-B member navigation cannot traverse B-C's separately granted branch");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_branch_members WHERE person_id='family:person.1'`).get())?.count,
-      0, "RLS cannot expose C's selected member through A's unrelated confirmed pair");
-  }, true);
-  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
-    WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`)).rows[0].count,
-    0, "C cannot read grants belonging only to A-B even when it shares B-C");
-  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_members
-    WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`)).rows[0].count,
-    0, "C cannot inspect A-B members through its own link to B");
-  const oneHopResponse = await fetch(securedBase + branchPath, { headers: {
-    ...ownerHeaders, "X-Real-IP": "198.51.100.236",
-  } });
-  assert.equal(oneHopResponse.status, 200);
-  const oneHopOnly = await oneHopResponse.json();
-  assert.deepEqual(oneHopOnly.incoming.map((person: { id: string }) => person.id),
-    ["branch-parent-b"], "A-B cannot traverse B-C or reveal C's branch");
-  assert.doesNotMatch(JSON.stringify(oneHopOnly), /third-archive|family:person.1|Третий родитель/);
-  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
-  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
-    WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 1,
-  "administrator backfill rebuilds the confirmed public transition after truncation");
-  await client.query(readFileSync(new URL("../../ops/postgres/051_discovery_linked_request_rls.sql", import.meta.url), "utf8"));
-  await initializePostgresRuntimeSchema(matchDb);
-  assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_policies
-    WHERE schemaname=current_schema() AND tablename='discovery_match_requests'
-      AND policyname='linked_discovery_read'`)).rows[0].count, 0,
-  "a runtime schema check must not recreate the removed global read policy");
-  assert.deepEqual((await client.query(`SELECT column_name FROM information_schema.columns
-    WHERE table_schema=current_schema() AND table_name='discovery_linked_pairs'
-    ORDER BY ordinal_position`)).rows.map((row) => row.column_name),
-  ["left_archive_id","left_person_id","right_archive_id","right_person_id"],
-  "the public projection contains no reason, actor or review digest");
-  const linkedPublicCard = await fetch(securedBase + "/api/discovery/people/other-archive/person-a", {
-    headers,
-  });
-  const linkedPublicBody = await linkedPublicCard.json();
-  assert.equal(linkedPublicCard.status, 200);
-  assert.equal(linkedPublicBody.linkedCards.length, 2,
-    "unchanged confirmed links survive the final discovery snapshot");
-  assert.doesNotMatch(JSON.stringify(linkedPublicBody), /Совпадают семейные записи/,
-    "the proposal note is visible to participant admins, not global discovery readers");
-  assert.deepEqual(linkedPublicBody.linkedCards.map((person: { archiveId: string; id: string }) =>
-    [person.archiveId,person.id]), [["runtime-test","person-a"],["third-archive","person-c"]],
-  "a signed-in reader sees only B's two directly confirmed published transitions");
-  const firstPublicCard = await fetch(securedBase + "/api/discovery/people/runtime-test/person-a", {
-    headers,
-  }).then((response) => response.json());
-  assert.deepEqual(firstPublicCard.linkedCards.map((person: { archiveId: string; id: string }) =>
-    [person.archiveId,person.id]), [["other-archive","person-a"]],
-  "A's public card cannot traverse B-C to C");
-  const cardSharePath = `/api/discovery/matches/${matchBody.match.id}/card-share`;
-  assert.equal((await fetch(securedBase + cardSharePath, { headers })).status, 403,
-    "a reader of the published card cannot inspect private share grants");
-  const shareBeforeEdit = await app.archive.read();
-  const shareFamily = structuredClone(shareBeforeEdit.family);
-  shareFamily.people[0].occupation = "Архивный исследователь";
-  shareFamily.people[0].birthPlace = "Архивный город";
-  shareFamily.people[0].biography = "Закрытая биография и источники";
-  await app.archive.write(shareFamily,shareBeforeEdit.revision);
-  const editedBranch = await fetch(otherBase + branchPath, { headers: {
-    ...archiveAdminHeaders, "X-Real-IP": "198.51.100.237",
-  } });
-  assert.equal(editedBranch.status, 200);
-  assert.deepEqual((await editedBranch.json()).incoming, [],
-    "a family edit revokes the source archive's branch consent before another read");
-  const renewedBranchResponse = await fetch(securedBase + branchPath, { headers: {
-    ...ownerHeaders, "X-Real-IP": "198.51.100.238",
-  } });
-  assert.equal(renewedBranchResponse.status, 200);
-  const renewedBranch = await renewedBranchResponse.json();
-  assert.equal((await fetch(securedBase + branchPath, {
-    method: "PUT", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.238" },
-    body: JSON.stringify({ personIds: ["branch-parent-a", "branch-grandparent-a"],
-      previewToken: renewedBranch.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 7 }),
-  })).status, 200);
-  const postEditBranchHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.218" };
-  assert.deepEqual((await fetch(securedBase + branchPath, { headers: postEditBranchHeaders })
-    .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
-    ["branch-parent-b"]);
-  await publishedPeopleStore(otherApp.archive.db).unpublish("branch-parent-b");
-  const branchAfterUnpublish = await fetch(securedBase + branchPath,
-    { headers: postEditBranchHeaders });
-  assert.equal(branchAfterUnpublish.headers.get("cache-control"), "private, no-store",
-    "a reopened branch panel must revalidate against an uncached projection");
-  assert.deepEqual((await branchAfterUnpublish.json()).incoming, [],
-    "unpublishing a selected relative immediately removes it from the branch");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_branch_members WHERE grantor_archive_id='other-archive'
-        AND person_id='branch-parent-b'`).get())?.count, 0,
-    "RLS cannot read the formerly shared member after publication is revoked");
-  }, true);
-  assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
-    404, "unpublishing immediately closes its direct linked member URL");
-  await publishedPeopleStore(app.archive.db).unpublish("branch-parent-a");
-  const dependentBranch = await fetch(otherBase + branchPath, {
-    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.234" },
-  })
-    .then((response) => response.json());
-  assert.deepEqual(dependentBranch.incoming, [],
-    "unpublishing the intermediary also removes the selected grandparent");
-  assert.equal((await fetch(otherBase + branchPath + "/people/branch-grandparent-a", {
-    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.235" },
-  })).status, 404, "the dependent direct URL closes when its intermediary is unpublished");
-  assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS count
-    FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'
-      AND person_id='branch-grandparent-a'`).get())?.count, 0,
-  "the database cascades the selected grandparent when its intermediary disappears");
-  const sharePreview = await fetch(securedBase + cardSharePath, { headers: ownerHeaders })
-    .then((response) => response.json());
-  const copyPreviewPath = cardSharePath + "/copy-preview";
-  assert.equal((await fetch(securedBase + copyPreviewPath, { headers: ownerHeaders })).status,
-    404, "the first side cannot preview a copy without the other's scalar grant");
-  assert.equal((await fetch(otherBase + copyPreviewPath, { headers: ownerHeaders })).status,
-    403, "an invited admin cannot inspect the owner's copy preview");
-  assert.equal((await fetch(otherBase + copyPreviewPath, { headers: archiveAdminHeaders })).status,
-    404, "the owner cannot preview a copy before the source grants fields");
-  assert.equal(sharePreview.available.occupation, "Архивный исследователь");
-  assert.equal(sharePreview.recipientArchiveId, "other-archive");
-  assert.equal(sharePreview.recipientPersonName, "Тестов Исправленный кандидат",
-    "the addressee is the currently published linked card, not a private archive label");
-  assert.equal(sharePreview.available.biography, undefined);
-  assert.equal(sharePreview.incoming, null);
-  assert.equal(sharePreview.outgoing, null);
-  assert.equal((await fetch(securedBase + cardSharePath, {
-    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["occupation"], previewToken: sharePreview.previewToken,
-      recipientArchiveId: "third-archive", durationDays: 7 }),
-  })).status, 409, "a scalar grant cannot address a third archive");
-  assert.equal((await fetch(securedBase + cardSharePath, {
-    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["occupation"], previewToken: sharePreview.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 365 }),
-  })).status, 400, "new scalar grants require a bounded term");
-  assert.equal((await fetch(securedBase + cardSharePath, {
-    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["biography"], previewToken: sharePreview.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 7 }),
-  })).status, 400, "free-form biography cannot enter a scalar card grant");
-  assert.equal((await fetch(securedBase + cardSharePath, {
-    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["occupation"], previewToken: "0".repeat(64),
-      recipientArchiveId: "other-archive", durationDays: 7 }),
-  })).status, 409, "a stale card preview cannot authorize a new snapshot");
-  assert.equal((await fetch(securedBase + cardSharePath, {
-    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["occupation", "birthPlace"],
-      previewToken: sharePreview.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 7 }),
-  })).status, 200);
-  const incomingShare = await fetch(otherBase + cardSharePath, { headers: archiveAdminHeaders })
-    .then((response) => response.json());
-  assert.deepEqual(incomingShare.incoming.fields, {
-    occupation: "Архивный исследователь", birthPlace: "Архивный город",
-  });
-  assert.equal(incomingShare.recipientArchiveId, "runtime-test");
-  assert.ok(incomingShare.incoming.expiresAt);
-  const parallelCardReads = await Promise.all(Array.from({ length: 12 }, (_, index) =>
-    fetch(otherBase + cardSharePath, { headers: { ...archiveAdminHeaders,
-      "X-Real-IP": `198.51.100.${170 + index}` } })));
-  assert.ok(parallelCardReads.every((response) => response.status === 200),
-    "parallel linked-card reads do not exhaust the PostgreSQL pool");
-  await Promise.all(parallelCardReads.map((response) => response.arrayBuffer()));
-  const cardLogoutToken = newSessionToken();
-  const cardLogoutHash = sessionTokenHash(cardLogoutToken);
-  await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'vk:42',$2)",
-    [cardLogoutHash, Date.now() + 60_000]);
-  let cardLogoutReached!: () => void, releaseCardLogout!: () => void;
-  const cardLogoutReady = new Promise<void>((resolve) => { cardLogoutReached = resolve; });
-  const cardLogoutGate = new Promise<void>((resolve) => { releaseCardLogout = resolve; });
-  const cardLogoutAuth = await createAuth(await userStore(otherApp.archive.db),
-    otherApp.archive.db, process.env.PUBLIC_ORIGIN);
-  const cardLogoutEndpoint = discoveryCardShareHttp({ archive: otherApp.archive,
-    auth: cardLogoutAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeReadAccessLock: async () => { cardLogoutReached(); await cardLogoutGate; },
-  });
-  const cardLogoutServer = createServer((req, res) => {
-    void cardLogoutEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => cardLogoutServer.listen(0, "127.0.0.1", resolve));
-  const cardLogoutPort = (cardLogoutServer.address() as { port: number }).port;
-  const cardAfterLogout = fetch(`http://127.0.0.1:${cardLogoutPort}${cardSharePath}`,
-    { headers: { ...archiveAdminHeaders, Cookie: `drevo_session=${cardLogoutToken}`,
-      "X-Real-IP": "198.51.100.164" } });
-  try {
-    await Promise.race([cardLogoutReady,
-      cardAfterLogout.then(() => { throw new Error("Linked-card share sent before logout barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Linked-card share did not reach logout barrier")), 30_000)),
-    ]);
-    await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [cardLogoutHash]);
-    releaseCardLogout();
-    const response = await cardAfterLogout;
-    const body = await response.text();
-    assert.equal(response.status, 403, "completed logout closes the linked-card share");
-    assert.equal(/Архивный исследователь|Архивный город/.test(body), false);
-  } finally {
-    releaseCardLogout();
-    await cardAfterLogout.catch(() => {});
-    await new Promise<void>((resolve) => cardLogoutServer.close(() => resolve()));
-  }
-  console.log("runtime_discovery_card_owner_read_revocation_ok");
-  let shareReached!: () => void, releaseShare!: () => void;
-  const shareReady = new Promise<void>((resolve) => { shareReached = resolve; });
-  const shareGate = new Promise<void>((resolve) => { releaseShare = resolve; });
-  const shareAuth = await createAuth(await userStore(otherApp.archive.db),
-    otherApp.archive.db, process.env.PUBLIC_ORIGIN);
-  const shareEndpoint = discoveryCardShareHttp({ archive: otherApp.archive,
-    auth: shareAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeCardShareDelivery: async () => { shareReached(); await shareGate; },
-  });
-  const shareServer = createServer((req, res) => {
-    void shareEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => shareServer.listen(0, "127.0.0.1", resolve));
-  const sharePort = (shareServer.address() as { port: number }).port;
-  const pausedShare = fetch(`http://127.0.0.1:${sharePort}${cardSharePath}`,
-    { headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.8" } });
-  let revokeSharedCard: Promise<Response> | undefined;
-  try {
-    await Promise.race([shareReady,
-      pausedShare.then(() => { throw new Error("Scalar card share sent before delivery barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Scalar card share did not reach delivery barrier")), 30_000)),
-    ]);
-    revokeSharedCard = fetch(securedBase + cardSharePath, { method: "DELETE",
-      headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.9" },
+    let branchApprovalReached!: () => void, releaseBranchApproval!: () => void;
+    const branchApprovalReady = new Promise<void>((resolve) => { branchApprovalReached = resolve; });
+    const branchApprovalGate = new Promise<void>((resolve) => { releaseBranchApproval = resolve; });
+    const branchApprovalEndpoint = discoveryBranchShareHttp({ archive: app.archive,
+      auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeReadAccessLock: async () => { branchApprovalReached(); await branchApprovalGate; },
     });
-    let revokeWaiting = false;
-    for (let attempt = 0; attempt < 60; attempt++) {
-      const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
-        WHERE datname=current_database() AND pid<>pg_backend_pid()
-          AND wait_event_type='Lock' AND query LIKE '%discovery_match_requests m%'
-          AND query LIKE '%FOR UPDATE OF m%'`);
-      if (waiting.rowCount) { revokeWaiting = true; break; }
-      await new Promise<void>((resolve) => setTimeout(resolve, 50));
-    }
-    assert.equal(revokeWaiting, true,
-      "scalar revocation reaches the pair lock while recipient fields are held for delivery");
-    const earlyRevoke = await Promise.race([
-      revokeSharedCard.then((response) => `completed ${response.status}`),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
-    ]);
-    assert.equal(earlyRevoke, "pending",
-      "revoking scalar consent waits until the incoming fields finish delivery");
-    releaseShare();
-    const delivered = await pausedShare;
-    assert.equal(delivered.status, 200);
-    assert.deepEqual((await delivered.json()).incoming.fields,
-      { occupation: "Архивный исследователь", birthPlace: "Архивный город" });
-    assert.equal((await revokeSharedCard).status, 200);
-  } finally {
-    releaseShare();
-    await pausedShare.catch(() => {});
-    await revokeSharedCard?.catch(() => {});
-    await new Promise<void>((resolve) => shareServer.close(() => resolve()));
-  }
-  assert.equal((await fetch(otherBase + cardSharePath, { headers: archiveAdminHeaders })
-    .then((response) => response.json())).incoming, null);
-  assert.equal((await fetch(securedBase + cardSharePath, { method: "PUT",
-    headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.10" },
-    body: JSON.stringify({ fields: ["occupation", "birthPlace"],
-      previewToken: sharePreview.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 7 }),
-  })).status, 200);
-  console.log("runtime_discovery_scalar_card_revocation_ok");
-  const initialScalarLife = await matchDb.prepare("", `SELECT
-    extract(epoch FROM expires_at-now())/86400 AS days_left
-    FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
-      AND left_person_id='person-a' AND right_person_id='person-a'`).get();
-  assert.ok(Number(initialScalarLife?.days_left) > 6.99 && Number(initialScalarLife?.days_left) <= 7);
-  let copyPreviewReached!: () => void, releaseCopyPreview!: () => void;
-  const copyPreviewReady = new Promise<void>((resolve) => { copyPreviewReached = resolve; });
-  const copyPreviewGate = new Promise<void>((resolve) => { releaseCopyPreview = resolve; });
-  const copyPreviewAuth = await createAuth(await userStore(otherApp.archive.db),
-    otherApp.archive.db, process.env.PUBLIC_ORIGIN);
-  const copyPreviewEndpoint = discoveryCardShareHttp({ archive: otherApp.archive,
-    auth: copyPreviewAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeCopyPreviewDelivery: async () => { copyPreviewReached(); await copyPreviewGate; },
-  });
-  const copyPreviewServer = createServer((req, res) => {
-    void copyPreviewEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => copyPreviewServer.listen(0, "127.0.0.1", resolve));
-  const copyPreviewPort = (copyPreviewServer.address() as { port: number }).port;
-  const pausedCopyPreview = fetch(`http://127.0.0.1:${copyPreviewPort}${copyPreviewPath}`,
-    { headers: archiveAdminHeaders });
-  let revokeScalarGrant: Promise<Response> | undefined;
-  try {
-    await Promise.race([copyPreviewReady,
-      pausedCopyPreview.then(() => { throw new Error("Copy preview sent before delivery barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Copy preview did not reach delivery barrier")), 30_000)),
-    ]);
-    revokeScalarGrant = fetch(securedBase + cardSharePath, {
-      method: "DELETE", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.244" },
+    const branchApprovalServer = createServer((req, res) => {
+      void branchApprovalEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
     });
-    let revokeWaiting = false;
-    for (let attempt = 0; attempt < 60; attempt++) {
-      const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
-        WHERE datname=current_database() AND pid<>pg_backend_pid()
-          AND wait_event_type='Lock' AND query LIKE '%discovery_match_requests m%'
-          AND query LIKE '%FOR UPDATE OF m%'`);
-      if (waiting.rowCount) { revokeWaiting = true; break; }
-      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    await new Promise<void>((resolve) => branchApprovalServer.listen(0, "127.0.0.1", resolve));
+    const branchApprovalPort = (branchApprovalServer.address() as { port: number }).port;
+    const branchAfterDowngrade = fetch(`http://127.0.0.1:${branchApprovalPort}${branchPath}`,
+      { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.165" } });
+    try {
+      await Promise.race([branchApprovalReady,
+        branchAfterDowngrade.then(() => { throw new Error("Branch list sent before approval barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Branch list did not reach approval barrier")), 30_000)),
+      ]);
+      await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+      assert.equal((await client.query(`UPDATE archive_memberships SET approved=false
+        WHERE archive_id='runtime-test' AND user_id='owner'`)).rowCount, 1);
+      releaseBranchApproval();
+      const response = await branchAfterDowngrade;
+      const body = await response.text();
+      assert.equal(response.status, 404, "completed approval revoke closes the linked branch list");
+      assert.equal(/branch-parent-b|branch-grandparent-a/.test(body), false);
+    } finally {
+      releaseBranchApproval();
+      await branchAfterDowngrade.catch(() => {});
+      await client.query(`UPDATE archive_memberships SET approved=true
+        WHERE archive_id='runtime-test' AND user_id='owner'`);
+      await new Promise<void>((resolve) => branchApprovalServer.close(() => resolve()));
     }
-    assert.equal(revokeWaiting, true,
-      "scalar grant revocation reaches the pair lock before delivery completes");
-    const earlyRevoke = await Promise.race([
-      revokeScalarGrant.then((response) => `completed ${response.status}`),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
-    ]);
-    assert.equal(earlyRevoke, "pending",
-      "scalar grant revocation must wait for an in-flight copy preview to finish delivery");
-    releaseCopyPreview();
-    const delivered = await pausedCopyPreview;
-    assert.equal(delivered.status, 200);
-    assert.ok((await delivered.json()).fields.length > 0);
-    assert.equal((await revokeScalarGrant).status, 200);
-  } finally {
-    releaseCopyPreview();
-    await pausedCopyPreview.catch(() => {});
-    await revokeScalarGrant?.catch(() => {});
-    await new Promise<void>((resolve) => copyPreviewServer.close(() => resolve()));
-  }
-  assert.equal((await fetch(otherBase + copyPreviewPath, {
-    headers: archiveAdminHeaders,
-  })).status, 404, "a fresh copy preview closes after scalar grant revocation");
-  assert.equal((await fetch(securedBase + cardSharePath, {
-    method: "PUT", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.245",
-      "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["occupation", "birthPlace"],
-      previewToken: sharePreview.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 7 }),
-  })).status, 200);
-  let abortPreviewReached!: () => void, releaseAbortedPreview!: () => void;
-  const abortPreviewReady = new Promise<void>((resolve) => { abortPreviewReached = resolve; });
-  const abortPreviewGate = new Promise<void>((resolve) => { releaseAbortedPreview = resolve; });
-  const abortPreviewEndpoint = discoveryCardShareHttp({ archive: otherApp.archive,
-    auth: copyPreviewAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
-    beforeCopyPreviewDelivery: async () => { abortPreviewReached(); await abortPreviewGate; },
-  });
-  const abortPreviewServer = createServer((req, res) => {
-    void abortPreviewEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => abortPreviewServer.listen(0, "127.0.0.1", resolve));
-  const abortController = new AbortController();
-  const abortPreviewPort = (abortPreviewServer.address() as { port: number }).port;
-  const abandonedPreview = fetch(`http://127.0.0.1:${abortPreviewPort}${copyPreviewPath}`,
-    { headers: archiveAdminHeaders, signal: abortController.signal });
-  const abandonedOutcome = abandonedPreview.then(() => "sent", () => "aborted");
-  try {
-    await Promise.race([abortPreviewReady,
-      abandonedPreview.then(() => { throw new Error("Copy preview sent before abort barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Copy preview did not reach abort barrier")), 30_000)),
-    ]);
-    abortController.abort();
-    releaseAbortedPreview();
-    assert.equal(await abandonedOutcome, "aborted",
-      "disconnect before delivery cannot receive the scalar snapshot");
-    const revokedAfterAbort = await Promise.race([
-      fetch(securedBase + cardSharePath, { method: "DELETE",
-        headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.246" } }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Disconnect did not release the grant row lock")), 3_000)),
-    ]);
-    assert.equal(revokedAfterAbort.status, 200);
-  } finally {
-    abortController.abort();
-    releaseAbortedPreview();
-    await abandonedOutcome;
-    await new Promise<void>((resolve) => abortPreviewServer.close(() => resolve()));
-  }
-  assert.equal((await fetch(otherBase + copyPreviewPath, {
-    headers: archiveAdminHeaders,
-  })).status, 404, "revocation committed after disconnect closes the next preview");
-  assert.equal((await fetch(securedBase + cardSharePath, {
-    method: "PUT", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.247",
-      "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["occupation", "birthPlace"],
-      previewToken: sharePreview.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 7 }),
-  })).status, 200);
-  console.log("runtime_discovery_copy_preview_revocation_ok");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("unrelated-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_linked_card_grants WHERE left_person_id='person-a'
-        AND right_person_id='person-a'`).get())?.count, 0,
-    "a third archive cannot read an addressed scalar grant through SQL");
-  }, true);
-  const beforeScalarExpiry = await fetch(otherBase + copyPreviewPath, {
-    headers: archiveAdminHeaders,
-  }).then((response) => response.json());
-  assert.equal((await app.archive.db.prepare("", `UPDATE discovery_linked_card_grants
-    SET expires_at=now()-interval '1 second' WHERE grantor_archive_id='runtime-test'
-      AND left_person_id='person-a' AND right_person_id='person-a'`).run()).changes, 1);
-  const expiredCardHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.219" };
-  const expiredCard = await fetch(otherBase + cardSharePath, { headers: expiredCardHeaders });
-  assert.equal(expiredCard.status, 200);
-  assert.equal(expiredCard.headers.get("cache-control"), "private, no-store");
-  assert.equal((await expiredCard.json()).incoming, null,
-    "an expired scalar grant closes the direct linked-card snapshot");
-  assert.equal((await fetch(otherBase + copyPreviewPath, { headers: expiredCardHeaders })).status,
-    404, "an expired scalar grant closes the copy-preview URL");
-  assert.equal((await fetch(otherBase + copyPreviewPath, {
-    method: "POST", headers: { ...expiredCardHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
-      revision: beforeScalarExpiry.revision, reviewToken: beforeScalarExpiry.reviewToken }),
-  })).status, 404, "an expired grant cannot apply an earlier copy review");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
-        AND left_person_id='person-a'`).get())?.count, 0,
-    "RLS hides an expired scalar snapshot from its recipient");
-  }, true);
-  const renewalHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.220" };
-  const renewalPreview = await fetch(securedBase + cardSharePath, { headers: renewalHeaders })
-    .then((response) => response.json());
-  assert.equal(renewalPreview.outgoing, null,
-    "an expired owner grant is shown as inactive, not as an active snapshot");
-  assert.equal((await fetch(securedBase + cardSharePath, {
-    method: "PUT", headers: { ...renewalHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["occupation", "birthPlace"],
-      previewToken: renewalPreview.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 30 }),
-  })).status, 200, "the owner can renew the same fields with a new explicit term");
-  assert.deepEqual((await fetch(otherBase + cardSharePath, { headers: expiredCardHeaders })
-    .then((response) => response.json())).incoming.fields,
-    { occupation: "Архивный исследователь", birthPlace: "Архивный город" });
-  const renewedScalarLife = await matchDb.prepare("", `SELECT
-    extract(epoch FROM expires_at-now())/86400 AS days_left
-    FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
-      AND left_person_id='person-a' AND right_person_id='person-a'`).get();
-  assert.ok(Number(renewedScalarLife?.days_left) > 29.99 && Number(renewedScalarLife?.days_left) <= 30);
-  assert.doesNotMatch(JSON.stringify(incomingShare), /Закрытая биография|sources|parents/,
-    "the grant response contains only the chosen scalar snapshot");
-  await client.query("BEGIN");
-  try {
-    await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
-    await client.query(`INSERT INTO accounts(id,name,created_at)
-      VALUES('card-transfer-successor','Card successor',now())`);
-    await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
-      VALUES('runtime-test','card-transfer-successor','admin',true,'all')`);
-    await client.query("SAVEPOINT card_transfer_failure");
-    await client.query(`CREATE FUNCTION public.reject_card_grant_revoke()
-      RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
-        RAISE EXCEPTION 'card grant revoke blocked';
-      END $$`);
-    await client.query(`CREATE TRIGGER reject_card_grant_revoke
-      BEFORE DELETE ON discovery_linked_card_grants FOR EACH ROW
-      EXECUTE FUNCTION public.reject_card_grant_revoke()`);
-    await assert.rejects(client.query(`UPDATE archive_owners
-      SET user_id='card-transfer-successor' WHERE archive_id='runtime-test'`),
-    /card grant revoke blocked/, "a failed grant revoke rolls back ownership transfer");
-    await client.query("ROLLBACK TO SAVEPOINT card_transfer_failure");
-    assert.equal((await client.query(`SELECT user_id FROM archive_owners
-      WHERE archive_id='runtime-test'`)).rows[0].user_id, "owner");
-    assert.equal((await client.query(`SELECT count(*)::int AS count
-      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`)).rows[0].count,
-    1, "failed transfer keeps the live source grant");
-    assert.equal((await client.query("SELECT current_setting('drevo.archive_id') AS id")).rows[0].id,
-      "runtime-test", "failed transfer restores the source RLS context");
-    await client.query(`UPDATE archive_owners SET user_id='card-transfer-successor'
-      WHERE archive_id='runtime-test'`);
-    assert.equal((await client.query(`SELECT count(*)::int AS count
-      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`)).rows[0].count,
-    0, "source ownership transfer revokes its scalar grant atomically");
-    assert.equal((await client.query("SELECT current_setting('drevo.archive_id') AS id")).rows[0].id,
-      "runtime-test", "successful transfer restores the source RLS context");
-    assert.equal((await client.query(`SELECT count(*)::int AS count
-      FROM discovery_linked_pairs WHERE left_archive_id='other-archive'
-        AND left_person_id='person-a' AND right_archive_id='runtime-test'
-        AND right_person_id='person-a'`)).rows[0].count,
-    1, "transfer does not revoke a previously confirmed public link");
-  } finally {
-    await client.query("ROLLBACK");
-  }
-  const copyPreviewResponse = await fetch(otherBase + copyPreviewPath, {
-    headers: archiveAdminHeaders,
-  });
-  assert.equal(copyPreviewResponse.status, 200);
-  assert.equal(copyPreviewResponse.headers.get("cache-control"), "private, no-store");
-  const copyPreview = await copyPreviewResponse.json();
-  assert.deepEqual({ source: copyPreview.source, target: copyPreview.target,
-    fields: copyPreview.fields, quotaImpact: copyPreview.quotaImpact }, {
-    source: { archiveId: "runtime-test", personId: "person-a" },
-    target: { archiveId: "other-archive", personId: "person-a" },
-    fields: [{ field: "birthPlace", sourceValue: "Архивный город",
-      targetValue: "Местный город", status: "conflict", copyable: true },
-    { field: "occupation", sourceValue: "Архивный исследователь",
-      targetValue: "Местный исследователь", status: "conflict", copyable: false }],
-    quotaImpact: { additionalPeople: 0, additionalMediaBytes: 0 },
-  }, "the preview compares only permitted scalar values with the local linked card");
-  assert.doesNotMatch(JSON.stringify(copyPreview), /Закрытая биография|sources|parents|photo/);
-  assert.equal((await fetch(otherBase + copyPreviewPath, {
-    method: "POST", headers: archiveAdminHeaders,
-  })).status, 400, "applying a copy requires explicit selected fields and a fresh review");
-  await assert.rejects(matchDb.prepare("", `UPDATE discovery_linked_card_grants
-    SET fields=?::jsonb WHERE grantor_archive_id='runtime-test'`).run(
-    JSON.stringify({ biography: "Закрытая биография" })),
-  (error: unknown) => (error as { code?: string }).code === "23514",
-  "the database rejects unapproved private fields even outside HTTP");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
-      .get("unrelated-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_linked_card_grants WHERE left_person_id='person-a'`).get())?.count, 0,
-    "RLS hides even the presence of a card grant from an unrelated archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM people WHERE archive_id='runtime-test' AND id='person-a'`).get())?.count, 0,
-    "the grant never opens the source people row across archives");
-  }, true);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
-      .get("other-archive");
-    assert.equal((await matchDb.prepare("", `SELECT fields->>'occupation' AS occupation
-      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.occupation,
-    "Архивный исследователь");
-    assert.equal(await matchDb.prepare("", `SELECT grantor_archive_id
-      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
-      FOR SHARE`).get(), undefined,
-    "the recipient can read but cannot directly lock the grantor's row through UPDATE RLS");
-    assert.equal((await matchDb.prepare("", `DELETE FROM discovery_linked_card_grants
-      WHERE grantor_archive_id='runtime-test'`).run()).changes, 0,
-    "the receiving archive cannot revoke the owner's grant through SQL");
-  });
-  await runDiscoveryBackfill();
-  assert.equal((await matchDb.prepare("", `SELECT fields->>'occupation' AS occupation
-    FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.occupation,
-  "Архивный исследователь", "administrator backfill preserves a still-confirmed grant");
-  await client.query("BEGIN");
-  try {
-    await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
-    await client.query("INSERT INTO accounts(id,name,created_at) VALUES('share-grant-deleting','Share grant author',$1)",
-      [new Date().toISOString()]);
-    assert.equal((await client.query(`UPDATE discovery_linked_card_grants
-      SET granted_by='share-grant-deleting' WHERE grantor_archive_id='runtime-test'
-        AND left_person_id='person-a' RETURNING granted_by`)).rows[0]?.granted_by,
-    "share-grant-deleting");
-    await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
-    assert.equal((await client.query(`UPDATE discovery_branch_grants
-      SET granted_by='share-grant-deleting' WHERE grantor_archive_id='other-archive'
-        AND left_person_id='person-a' AND right_person_id='person-a'
-      RETURNING granted_by`)).rows[0]?.granted_by, "share-grant-deleting");
-    await client.query("SELECT set_config('drevo.archive_id','unrelated-archive',true)");
-    await client.query("SELECT set_config('drevo.account_id','share-grant-deleting',true)");
-    await client.query("INSERT INTO deleted_account_tombstones(id) VALUES('share-grant-deleting')");
-    await client.query("SELECT public.runtime_anonymize_deleted_account_history('share-grant-deleting')");
-    await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
-    assert.equal((await client.query(`SELECT granted_by FROM discovery_linked_card_grants
-      WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`)).rows[0]?.granted_by,
-    "deleted-account", "account deletion anonymizes a grant even when the request archive differs");
-    await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
-    assert.equal((await client.query(`SELECT granted_by FROM discovery_branch_grants
-      WHERE grantor_archive_id='other-archive' AND left_person_id='person-a'
-        AND right_person_id='person-a'`)).rows[0]?.granted_by,
-    "deleted-account", "account deletion also anonymizes bilateral branch grants");
-  } finally {
-    await client.query("ROLLBACK");
-  }
-  assert.equal((await matchDb.prepare("", `SELECT granted_by FROM discovery_linked_card_grants
-    WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`).get())?.granted_by,
-  "owner", "the deletion probe leaves the live grant intact");
-  const copyHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.216",
-    "Content-Type": "application/json" };
-  const targetBeforeRevision = await otherApp.archive.read();
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
-      .get("other-archive");
-    await matchDb.prepare("", `UPDATE archives SET revision=revision+1
-      WHERE id='other-archive'`).run();
-  });
-  const staleCopyResponse = await fetch(otherBase + copyPreviewPath, {
-    method: "POST", headers: copyHeaders,
-    body: JSON.stringify({ fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
-      revision: copyPreview.revision, reviewToken: copyPreview.reviewToken }),
-  });
-  assert.equal(staleCopyResponse.status, 409,
-    `a target revision change invalidates an otherwise identical comparison: ${await staleCopyResponse.text()}`);
-  const freshCopyPreviewResponse = await fetch(otherBase + copyPreviewPath, {
-    headers: archiveAdminHeaders,
-  });
-  assert.equal(freshCopyPreviewResponse.status, 200);
-  let freshCopyPreview = await freshCopyPreviewResponse.json();
-  let copyBody = { fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
-    revision: freshCopyPreview.revision, reviewToken: freshCopyPreview.reviewToken };
-  assert.equal((await fetch(otherBase + copyPreviewPath, {
-    method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.217" },
-    body: JSON.stringify(copyBody),
-  })).status, 403, "an invited admin cannot copy into the owner's linked card");
-  assert.equal((await fetch(otherBase + copyPreviewPath, {
-    method: "POST", headers: copyHeaders,
-    body: JSON.stringify({ ...copyBody, fields: ["occupation"] }),
-  })).status, 400, "occupation is visible for comparison but cannot be copied without provenance support");
-  assert.equal((await fetch(otherBase + copyPreviewPath, {
-    method: "POST", headers: copyHeaders,
-    body: JSON.stringify({ ...copyBody, confirmConflicts: [] }),
-  })).status, 409, "a conflicting local value requires separate explicit confirmation");
-  assert.equal((await fetch(otherBase + copyPreviewPath, {
-    method: "POST", headers: copyHeaders,
-    body: JSON.stringify({ ...copyBody, reviewToken: "0".repeat(64) }),
-  })).status, 409, "a stale review cannot replace a local value");
-  let blockedCopy: Promise<Response> | undefined;
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
-      .get("runtime-test");
-    await matchDb.prepare("", `SELECT fields FROM discovery_linked_card_grants
-      WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'
-      FOR UPDATE`).get();
-    blockedCopy = fetch(otherBase + copyPreviewPath, { method: "POST",
-      headers: { ...copyHeaders, "X-Real-IP": "198.51.100.219" },
-      body: JSON.stringify(copyBody) });
-    let waiting = false;
-    for (let attempt = 0; attempt < 60; attempt++) {
-      const result = await client.query(`SELECT 1 FROM pg_stat_activity
-        WHERE pid<>pg_backend_pid() AND wait_event_type='Lock'
-          AND query LIKE '%discovery_linked_card_grants%'
-          AND query LIKE '%FOR SHARE%'`);
-      if (result.rowCount) { waiting = true; break; }
-      await new Promise((resolve) => setTimeout(resolve, 50));
+    let branchDeliveryReached!: () => void, releaseBranchDelivery!: () => void;
+    const branchDeliveryReady = new Promise<void>((resolve) => { branchDeliveryReached = resolve; });
+    const branchDeliveryGate = new Promise<void>((resolve) => { releaseBranchDelivery = resolve; });
+    const branchDeliveryEndpoint = discoveryBranchShareHttp({ archive: app.archive,
+      auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeListDelivery: async () => { branchDeliveryReached(); await branchDeliveryGate; },
+    });
+    const branchDeliveryServer = createServer((req, res) => {
+      void branchDeliveryEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => branchDeliveryServer.listen(0, "127.0.0.1", resolve));
+    const branchDeliveryPort = (branchDeliveryServer.address() as { port: number }).port;
+    const branchBeforeDowngrade = fetch(`http://127.0.0.1:${branchDeliveryPort}${branchPath}`,
+      { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.166" } });
+    let revokeBranchApproval: Promise<pg.QueryResult> | undefined;
+    try {
+      await Promise.race([branchDeliveryReady,
+        branchBeforeDowngrade.then(() => { throw new Error("Branch list sent before delivery barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Branch list did not reach delivery barrier")), 30_000)),
+      ]);
+      revokeBranchApproval = client.query(`UPDATE archive_memberships SET approved=false
+        WHERE archive_id='runtime-test' AND user_id='owner'`);
+      assert.equal(await Promise.race([
+        revokeBranchApproval.then(() => "completed"),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]), "pending", "approval revocation waits for linked fields to finish delivery");
+      releaseBranchDelivery();
+      const response = await branchBeforeDowngrade;
+      assert.equal(response.status, 200);
+      assert.ok((await response.json()).incoming.length > 0);
+      assert.equal((await revokeBranchApproval).rowCount, 1);
+      const denied = await fetch(securedBase + branchPath,
+        { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.167" } });
+      assert.equal(denied.status, 403, "the next GET sees completed approval revocation");
+    } finally {
+      releaseBranchDelivery();
+      await branchBeforeDowngrade.catch(() => {});
+      await revokeBranchApproval?.catch(() => {});
+      await client.query(`UPDATE archive_memberships SET approved=true
+        WHERE archive_id='runtime-test' AND user_id='owner'`);
+      await new Promise<void>((resolve) => branchDeliveryServer.close(() => resolve()));
     }
-    assert.equal(waiting, true, "the copy holds its own archive lock while waiting for the live source grant");
-    assert.equal((await matchDb.prepare("", `DELETE FROM discovery_linked_card_grants
-      WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`).run()).changes,
-    1, "the grantor can revoke a grant during an in-flight copy");
-  });
-  assert.equal((await blockedCopy!).status, 404,
-    "a concurrent grant revoke wins before the blocked copy can read source fields");
-  assert.equal((await otherApp.archive.read()).family.people[0].birthPlace, "Местный город",
-    "a copy blocked by revocation cannot change the receiving card");
-  assert.equal((await fetch(securedBase + cardSharePath, {
-    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["occupation", "birthPlace"],
-      previewToken: sharePreview.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 7 }),
-  })).status, 200, "the source may grant the same scalar snapshot again");
-  freshCopyPreview = await fetch(otherBase + copyPreviewPath, {
-    headers: archiveAdminHeaders,
-  }).then((response) => response.json());
-  copyBody = { fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
-    revision: freshCopyPreview.revision, reviewToken: freshCopyPreview.reviewToken };
-  const copyAttempts = await Promise.all([
-    fetch(otherBase + copyPreviewPath, { method: "POST", headers: copyHeaders,
-      body: JSON.stringify(copyBody) }),
-    fetch(otherBase + copyPreviewPath, { method: "POST", headers: {
-      ...copyHeaders, "X-Real-IP": "198.51.100.218",
-    }, body: JSON.stringify(copyBody) }),
-  ]);
-  assert.deepEqual(copyAttempts.map((response) => response.status).sort(), [200, 409],
-    "concurrent copies of one review commit once after the archive revision lock");
-  const savedCopy = await copyAttempts.find((response) => response.status === 200)!.json();
-  assert.deepEqual(savedCopy.copied, ["birthPlace"]);
-  assert.equal(savedCopy.revision, freshCopyPreview.revision + 1);
-  const copiedFamily = await otherApp.archive.read();
-  assert.equal(copiedFamily.family.people[0].birthPlace, "Архивный город");
-  assert.deepEqual(copiedFamily.family.people[0].sources,
-    targetBeforeRevision.family.people[0].sources,
-  "transfer provenance does not create or change genealogical citations");
-  assert.equal(copiedFamily.family.people[0].occupation, "Местный исследователь",
-    "copying a selected place cannot overwrite an unselected field");
-  assert.equal((await app.archive.read()).family.people[0].birthPlace, "Архивный город",
-    "the source card is never edited by the copy");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
-    const provenance = await matchDb.prepare("", `SELECT field,value,source_archive_id,
-      source_person_id,copied_revision FROM discovery_copied_fields
-      WHERE archive_id='other-archive' AND person_id='person-a'`).get();
-    assert.deepEqual(provenance, { field: "birthPlace", value: "Архивный город",
-      source_archive_id: "runtime-test", source_person_id: "person-a",
-      copied_revision: savedCopy.revision },
-    "the receiving archive retains transfer provenance separate from documentary citations");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM history
-      WHERE archive_id='other-archive' AND revision=?`).get(freshCopyPreview.revision))?.count,
-    1, "the ordinary person patch path records undo history");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM archive_audit_entries
-      WHERE archive_id='other-archive' AND revision=? AND entity_id='person-a'`)
-      .get(savedCopy.revision))?.count, 1, "the copy produces a normal person audit entry");
-  }, true);
-  await client.query("BEGIN");
-  try {
-    await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
-    await client.query("SET LOCAL search_path=pg_catalog");
-    await client.query(`UPDATE public.people SET data=data
-      WHERE archive_id='other-archive' AND id='person-a'`);
-    assert.equal((await client.query(`SELECT value FROM public.discovery_copied_fields
-      WHERE archive_id='other-archive' AND person_id='person-a'
-        AND field='birthPlace'`)).rows[0]?.value, "Архивный город",
-    "a person edit retains copy provenance even when maintenance changes search_path");
-  } finally {
-    await client.query("ROLLBACK");
-  }
-  for (const hiddenArchive of ["runtime-test", "unrelated-archive"])
+    console.log("runtime_discovery_branch_owner_read_revocation_ok");
+    const ancestorCard = await fetch(otherBase + branchPath + "/people/branch-grandparent-a", {
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.233" },
+    });
+    assert.equal(ancestorCard.status, 200, "the explicitly selected ancestor can open through its scoped URL");
+    assert.deepEqual((await ancestorCard.json()).person.viaId, "branch-parent-a");
+    assert.ok(bilateralBranch.ownExpiresAt,
+      "new branch consent has a finite owner-visible expiry");
+    const branchLifetimes = await matchDb.prepare("", `SELECT grantor_archive_id,
+      extract(epoch FROM expires_at-now())/86400 AS days_left
+      FROM discovery_branch_grants WHERE left_person_id='person-a'
+        AND right_person_id='person-a'`).all();
+    assert.ok(branchLifetimes.some((row) => row.grantor_archive_id === "runtime-test" &&
+      Number(row.days_left) > 6.99 && Number(row.days_left) <= 7));
+    assert.ok(branchLifetimes.some((row) => row.grantor_archive_id === "other-archive" &&
+      Number(row.days_left) > 0.99 && Number(row.days_left) <= 1));
+    assert.doesNotMatch(JSON.stringify(bilateralBranch), /branch-hidden-b|Закрытая биография ветки|sources|photo/);
+    const selectedBranchResponse = await fetch(securedBase + branchPersonPath, { headers: navigationHeaders });
+    assert.equal(selectedBranchResponse.status, 200);
+    assert.match(selectedBranchResponse.headers.get("cache-control") || "", /no-store/);
+    const selectedBranchPerson = (await selectedBranchResponse.json()).person;
+    assert.deepEqual({ archiveId: selectedBranchPerson.archiveId, id: selectedBranchPerson.id,
+      relation: selectedBranchPerson.relation },
+    { archiveId: "other-archive", id: "branch-parent-b", relation: "parent" });
+    assert.ok(Object.keys(selectedBranchPerson).every((key) =>
+      ["archiveId", "id", "relation", "name", "birthYear", "deathYear", "birthPlace", "deathPlace"]
+        .includes(key)), "member navigation exposes only the selected scalar projection");
+    assert.doesNotMatch(JSON.stringify(selectedBranchPerson), /branch-hidden-b|Закрытая биография ветки|sources|photo/);
+    const branchRevokeWaiting = async () => {
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
+          WHERE datname=current_database() AND pid<>pg_backend_pid()
+            AND wait_event_type='Lock' AND query LIKE '%discovery_match_requests m%'
+            AND query LIKE '%FOR UPDATE OF m%'`);
+        if (waiting.rowCount) return true;
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      }
+      return false;
+    };
+    let memberReached!: () => void, releaseMember!: () => void;
+    const memberReady = new Promise<void>((resolve) => { memberReached = resolve; });
+    const memberGate = new Promise<void>((resolve) => { releaseMember = resolve; });
+    const memberEndpoint = discoveryBranchShareHttp({ archive: app.archive,
+      auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeMemberDelivery: async () => { memberReached(); await memberGate; },
+    });
+    const memberServer = createServer((req, res) => {
+      void memberEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => memberServer.listen(0, "127.0.0.1", resolve));
+    const memberPort = (memberServer.address() as { port: number }).port;
+    const pausedMember = fetch(`http://127.0.0.1:${memberPort}${branchPersonPath}`,
+      { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.248" } });
+    let revokeSourceBranch: Promise<Response> | undefined;
+    try {
+      await Promise.race([memberReady,
+        pausedMember.then(() => { throw new Error("Branch member sent before delivery barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Branch member did not reach delivery barrier")), 30_000)),
+      ]);
+      revokeSourceBranch = fetch(otherBase + branchPath, { method: "DELETE",
+        headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.249" } });
+      assert.equal(await branchRevokeWaiting(), true,
+        "source branch revocation reaches the pair lock before member delivery");
+      const earlyRevoke = await Promise.race([
+        revokeSourceBranch.then((response) => `completed ${response.status}`),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]);
+      assert.equal(earlyRevoke, "pending",
+        "revoking source branch consent waits until the selected member finishes delivery");
+      releaseMember();
+      const deliveredMember = await pausedMember;
+      assert.equal(deliveredMember.status, 200);
+      assert.equal((await deliveredMember.json()).person.id, "branch-parent-b");
+      assert.equal((await revokeSourceBranch).status, 200);
+    } finally {
+      releaseMember();
+      await pausedMember.catch(() => {});
+      await revokeSourceBranch?.catch(() => {});
+      await new Promise<void>((resolve) => memberServer.close(() => resolve()));
+    }
+    assert.equal((await fetch(securedBase + branchPersonPath, {
+      headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.250" },
+    })).status, 404, "the direct member URL closes after source consent is revoked");
+    assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.251" },
+      body: JSON.stringify({ personIds: ["branch-parent-b"],
+        previewToken: secondBranch.previewToken,
+        recipientArchiveId: "runtime-test", durationDays: 1 }),
+    })).status, 200);
+    console.log("runtime_discovery_branch_member_revocation_ok");
+    let listReached!: () => void, releaseList!: () => void;
+    const listReady = new Promise<void>((resolve) => { listReached = resolve; });
+    const listGate = new Promise<void>((resolve) => { releaseList = resolve; });
+    const listEndpoint = discoveryBranchShareHttp({ archive: app.archive,
+      auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeListDelivery: async () => { listReached(); await listGate; },
+    });
+    const listServer = createServer((req, res) => {
+      void listEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => listServer.listen(0, "127.0.0.1", resolve));
+    const listPort = (listServer.address() as { port: number }).port;
+    const pausedList = fetch(`http://127.0.0.1:${listPort}${branchPath}`,
+      { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.252" } });
+    let revokeListedBranch: Promise<Response> | undefined;
+    try {
+      await Promise.race([listReady,
+        pausedList.then(() => { throw new Error("Branch list sent before delivery barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Branch list did not reach delivery barrier")), 30_000)),
+      ]);
+      revokeListedBranch = fetch(otherBase + branchPath, { method: "DELETE",
+        headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.253" } });
+      assert.equal(await branchRevokeWaiting(), true,
+        "source branch revocation reaches the pair lock before list delivery");
+      const earlyRevoke = await Promise.race([
+        revokeListedBranch.then((response) => `completed ${response.status}`),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]);
+      assert.equal(earlyRevoke, "pending",
+        "revoking source branch consent waits for a list containing its members");
+      releaseList();
+      const deliveredList = await pausedList;
+      assert.equal(deliveredList.status, 200);
+      assert.deepEqual((await deliveredList.json()).incoming.map((item: { id: string }) => item.id),
+        ["branch-parent-b"]);
+      assert.equal((await revokeListedBranch).status, 200);
+    } finally {
+      releaseList();
+      await pausedList.catch(() => {});
+      await revokeListedBranch?.catch(() => {});
+      await new Promise<void>((resolve) => listServer.close(() => resolve()));
+    }
+    assert.deepEqual((await fetch(securedBase + branchPath, {
+      headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.254" },
+    }).then((response) => response.json())).incoming, [],
+    "a fresh branch list excludes members after source revocation");
+    assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.255" },
+      body: JSON.stringify({ personIds: ["branch-parent-b"],
+        previewToken: secondBranch.previewToken,
+        recipientArchiveId: "runtime-test", durationDays: 1 }),
+    })).status, 200);
+    console.log("runtime_discovery_branch_list_revocation_ok");
+    let abortMemberReached!: () => void, releaseAbortedMember!: () => void;
+    const abortMemberReady = new Promise<void>((resolve) => { abortMemberReached = resolve; });
+    const abortMemberGate = new Promise<void>((resolve) => { releaseAbortedMember = resolve; });
+    const abortMemberEndpoint = discoveryBranchShareHttp({ archive: app.archive,
+      auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeMemberDelivery: async () => { abortMemberReached(); await abortMemberGate; },
+    });
+    const abortMemberServer = createServer((req, res) => {
+      void abortMemberEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => abortMemberServer.listen(0, "127.0.0.1", resolve));
+    const abortMemberPort = (abortMemberServer.address() as { port: number }).port;
+    const branchAbortController = new AbortController();
+    const abandonedMember = fetch(`http://127.0.0.1:${abortMemberPort}${branchPersonPath}`,
+      { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.1" },
+        signal: branchAbortController.signal });
+    const branchAbandonedOutcome = abandonedMember.then(() => "sent", () => "aborted");
+    let revokeAfterAbort: Promise<Response> | undefined;
+    try {
+      await Promise.race([abortMemberReady,
+        abandonedMember.then(() => { throw new Error("Branch member sent before abort barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Branch member did not reach abort barrier")), 30_000)),
+      ]);
+      revokeAfterAbort = fetch(otherBase + branchPath, { method: "DELETE",
+        headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.2" } });
+      assert.equal(await branchRevokeWaiting(), true,
+        "source revocation reaches the pair lock while the member client is connected");
+      branchAbortController.abort();
+      releaseAbortedMember();
+      assert.equal(await branchAbandonedOutcome, "aborted");
+      assert.equal((await Promise.race([revokeAfterAbort,
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Disconnect did not release branch locks")), 3_000)),
+      ])).status, 200);
+    } finally {
+      branchAbortController.abort();
+      releaseAbortedMember();
+      await branchAbandonedOutcome;
+      await revokeAfterAbort?.catch(() => {});
+      await new Promise<void>((resolve) => abortMemberServer.close(() => resolve()));
+    }
+    assert.equal((await fetch(securedBase + branchPersonPath, {
+      headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.3" },
+    })).status, 404);
+    assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.4" },
+      body: JSON.stringify({ personIds: ["branch-parent-b"],
+        previewToken: secondBranch.previewToken,
+        recipientArchiveId: "runtime-test", durationDays: 1 }),
+    })).status, 200);
+    console.log("runtime_discovery_branch_abort_ok");
+    const beforeStaleListExpansion = await fetch(otherBase + branchPath, {
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.5" },
+    });
+    assert.equal(beforeStaleListExpansion.status, 200);
+    const parentOnlyPreview = await beforeStaleListExpansion.json();
+    assert.deepEqual(parentOnlyPreview.outgoingIds, ["branch-parent-b"]);
+    let staleListReached!: () => void, releaseStaleList!: () => void;
+    const staleListReady = new Promise<void>((resolve) => { staleListReached = resolve; });
+    const staleListGate = new Promise<void>((resolve) => { releaseStaleList = resolve; });
+    const staleListEndpoint = discoveryBranchShareHttp({ archive: app.archive,
+      auth: discoveryAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeListPublicationLock: async () => { staleListReached(); await staleListGate; },
+    });
+    const staleListServer = createServer((req, res) => {
+      void staleListEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => staleListServer.listen(0, "127.0.0.1", resolve));
+    const staleListPort = (staleListServer.address() as { port: number }).port;
+    const staleList = fetch(`http://127.0.0.1:${staleListPort}${branchPath}`,
+      { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.5" } });
+    try {
+      await Promise.race([staleListReady,
+        staleList.then(() => { throw new Error("Branch list sent before publication barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Branch list did not reach publication barrier")), 30_000)),
+      ]);
+      assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
+        headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.6" },
+        body: JSON.stringify({ personIds: ["branch-parent-b", "branch-grandparent-b"],
+          previewToken: parentOnlyPreview.previewToken,
+          recipientArchiveId: "runtime-test", durationDays: 1 }),
+      })).status, 200);
+      releaseStaleList();
+      const staleResponse = await staleList;
+      assert.equal(staleResponse.status, 409);
+      assert.deepEqual(await staleResponse.json(), { error: "Ветка изменилась. Повторите запрос" },
+        "a newly selected source member cannot appear without a held publication lock");
+    } finally {
+      releaseStaleList();
+      await staleList.catch(() => {});
+      await new Promise<void>((resolve) => staleListServer.close(() => resolve()));
+    }
+    // The staged selection is part of the v2 preview fingerprint. Reverting
+    // from two selected people requires a new preview of that committed state.
+    const afterStaleListSelection = await fetch(otherBase + branchPath, {
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.7" },
+    });
+    assert.equal(afterStaleListSelection.status, 200);
+    const currentBranchPreview = await afterStaleListSelection.json();
+    assert.deepEqual(currentBranchPreview.outgoingIds,
+      ["branch-grandparent-b", "branch-parent-b"]);
+    assert.equal((await fetch(otherBase + branchPath, { method: "PUT",
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.7" },
+      body: JSON.stringify({ personIds: ["branch-parent-b"],
+        previewToken: currentBranchPreview.previewToken,
+        recipientArchiveId: "runtime-test", durationDays: 1 }),
+    })).status, 200);
+    console.log("runtime_discovery_branch_list_stale_ok");
+    assert.equal((await fetch(securedBase + branchPath + "/people/branch-hidden-b", {
+      headers: navigationHeaders,
+    })).status, 404, "a private adjacent person is indistinguishable from an unavailable member");
+    assert.equal((await fetch(securedBase + branchPath + "/people/%ZZ", {
+      headers: navigationHeaders,
+    })).status, 404, "a malformed encoded ID exposes no branch detail");
+    assert.equal((await fetch(securedBase + branchPath + "/people/branch-parent-a", {
+      headers: navigationHeaders,
+    })).status, 404, "the route cannot open the requester's own member as a foreign card");
+    assert.equal((await fetch(securedBase + branchPersonPath, {
+      method: "POST", headers: navigationHeaders,
+    })).status, 405, "the linked member route is read-only");
     await matchDb.transaction(async () => {
-      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
-        .get(hiddenArchive);
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+      assert.equal((await matchDb.prepare("", `SELECT granted_by FROM discovery_branch_grants
+        WHERE grantor_archive_id='other-archive' AND left_person_id='person-a'
+          AND right_person_id='person-a'`).get())?.granted_by, "vk:42",
+      "the recipient may inspect a still-active addressed branch grant");
+    }, true);
+    const expiryAHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.216" };
+    const expiryBHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.217" };
+    assert.equal((await otherApp.archive.db.prepare("", `UPDATE discovery_branch_grants
+      SET expires_at=now()-interval '1 second' WHERE grantor_archive_id='other-archive'
+        AND left_person_id='person-a' AND right_person_id='person-a'`).run()).changes, 1);
+    const expiredB = await fetch(securedBase + branchPath, { headers: expiryAHeaders })
+      .then((response) => response.json());
+    assert.equal(expiredB.ownReady, true);
+    assert.equal(expiredB.otherReady, false);
+    assert.deepEqual(expiredB.incoming, [], "B's expired consent closes A's branch view");
+    assert.equal((await fetch(securedBase + branchPersonPath, { headers: expiryAHeaders })).status,
+      404, "an expired source grant closes the direct member URL");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
       assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-        FROM discovery_copied_fields WHERE archive_id='other-archive'`).get())?.count,
-      0, "copy provenance is visible only to the receiving archive");
+        FROM discovery_branch_grants WHERE grantor_archive_id='other-archive'
+          AND left_person_id='person-a' AND right_person_id='person-a'`).get())?.count,
+        0, "RLS hides the expired grant's author and timestamps from its recipient");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_branch_members WHERE grantor_archive_id='other-archive'`).get())?.count,
+        0, "RLS closes source members when their grant expires");
     }, true);
-  await assert.rejects(matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
-      .get("runtime-test");
-    await matchDb.prepare("", `INSERT INTO discovery_copied_fields(archive_id,person_id,
-      field,value,source_archive_id,source_person_id,copied_revision)
-      VALUES('other-archive','person-a','birthPlace','Подмена','runtime-test','person-a',1)`)
-      .run();
-  }), (error: unknown) => (error as { code?: string }).code === "42501",
-  "the source archive cannot forge provenance in the recipient's tree");
-  assert.equal((await fetch(securedBase + cardSharePath, {
-    method: "DELETE", headers: ownerHeaders,
-  })).status, 200);
-  assert.equal((await fetch(securedBase + cardSharePath, {
-    method: "DELETE", headers: ownerHeaders,
-  })).status, 200, "repeated grant revocation is idempotent");
-  const freshAfterGrantRevoke = await fetch(otherBase + cardSharePath, {
-    headers: archiveAdminHeaders,
-  });
-  assert.equal(freshAfterGrantRevoke.status, 200);
-  assert.equal(freshAfterGrantRevoke.headers.get("cache-control"), "private, no-store",
-    "a re-opened panel must revalidate against an uncached grant response");
-  assert.equal((await freshAfterGrantRevoke.json()).incoming, null,
-    "revocation hides the snapshot from the other side immediately");
-  assert.equal((await fetch(otherBase + copyPreviewPath, {
-    headers: archiveAdminHeaders,
-  })).status, 404, "a fresh copy preview closes immediately after grant revocation");
-  assert.equal((await fetch(otherBase + copyPreviewPath, {
-    method: "POST", headers: copyHeaders, body: JSON.stringify(copyBody),
-  })).status, 404, "a revoked source grant cannot apply an older preview");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
-    assert.equal((await matchDb.prepare("", `SELECT value FROM discovery_copied_fields
-      WHERE archive_id='other-archive' AND person_id='person-a' AND field='birthPlace'`)
-      .get())?.value, "Архивный город",
-    "revoking access does not erase an explicitly saved local copy");
-  }, true);
-  const beforeUnrelatedEdit = await otherApp.archive.read();
-  const unrelatedEdit = structuredClone(beforeUnrelatedEdit.family);
-  unrelatedEdit.people[0].occupation = "Другое занятие";
-  await otherApp.archive.write(unrelatedEdit, beforeUnrelatedEdit.revision);
-  const copiedValue = () => matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
-    return await matchDb.prepare("", `SELECT value FROM discovery_copied_fields
-      WHERE archive_id='other-archive' AND person_id='person-a' AND field='birthPlace'`).get();
-  }, true);
-  assert.equal((await copiedValue())?.value, "Архивный город",
-    "editing another field keeps copy provenance");
-  const beforeCopiedValueEdit = await otherApp.archive.read();
-  const copiedValueEdit = structuredClone(beforeCopiedValueEdit.family);
-  copiedValueEdit.people[0].birthPlace = "Новое местное значение";
-  await otherApp.archive.write(copiedValueEdit, beforeCopiedValueEdit.revision);
-  assert.equal(await copiedValue(), undefined,
-  "editing the copied value removes stale provenance without changing other facts");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
-      .get("other-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
-        AND left_person_id='person-a'`).get())?.count, 0,
-    "the recipient cannot read a formerly granted snapshot after revocation");
-  }, true);
-  assert.equal((await fetch(securedBase + cardSharePath, {
-    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["occupation"], previewToken: sharePreview.previewToken,
-      recipientArchiveId: "other-archive", durationDays: 7 }),
-  })).status, 200);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
-      .get("unrelated-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id))?.count, 0,
-    "a linked request still hides its reason and actors from unrelated archives");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_linked_pairs WHERE left_archive_id='other-archive'
-        AND right_archive_id='runtime-test'`).get())?.count, 1,
-    "an unrelated archive sees only the published transition keys");
-  }, true);
-  for (const participantArchive of ["runtime-test", "other-archive"]) {
     await matchDb.transaction(async () => {
-      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
-        .get(participantArchive);
-      const participantView = await matchDb.prepare("", `SELECT reason,requested_by,responded_by
-        FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id);
-      assert.deepEqual(participantView, {
-        reason: "Совпадают семейные записи", requested_by: "owner", responded_by: "vk:42",
-      }, "both participating archives retain their private review details");
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_branch_grants WHERE grantor_archive_id='other-archive'
+          AND left_person_id='person-a' AND right_person_id='person-a'`).get())?.count,
+        1, "the grantor keeps its expired row to manage or renew consent");
     }, true);
-  }
-  assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
-    .then((response) => response.json())).matches[0].status, "linked");
-  // Keep later migration smoke checks on the original two-archive fixture.
-  for (const runtime of [app, otherApp]) {
-    const current = await runtime.archive.read();
-    const restored = structuredClone(current.family);
-    restored.people = restored.people.filter((person) => !person.id.startsWith("branch-"));
-    restored.people[0].parents = restored.people[0].parents.filter((id) => !id.startsWith("branch-"));
-    await runtime.archive.write(restored, current.revision);
-  }
-  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
-  assert.equal((await client.query("DELETE FROM discovery_match_requests WHERE id=$1", [secondPairId])).rowCount,
-    1, "B removes its direct B-C test request before deleting C");
-  await client.query("SELECT set_config('drevo.archive_id','third-archive',false)");
-  assert.equal((await client.query("DELETE FROM archives WHERE id='third-archive'")).rowCount,
-    1, "C's FORCE RLS requires selecting C before fixture deletion");
-  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_people
-    WHERE archive_id='third-archive'`)).rows[0].count, 0,
-    "deleting the test archive also clears its public discovery projection");
-  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
-  assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers })).status, 403);
-  const beforeCandidates = await otherApp.archive.read();
-  const similarCandidate = structuredClone(beforeCandidates.family);
-  similarCandidate.people[0].name = "Иван";
-  similarCandidate.people.push({ ...structuredClone(similarCandidate.people[0]),
-    id: "person-b", name: "Иван", column: 1 });
-  await otherApp.archive.write(similarCandidate, beforeCandidates.revision);
-  await otherPublication.publish("person-b", "owner", selectedDiscoveryFields);
-  const suggested = await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=person-a", {
-    headers: ownerHeaders,
-  });
-  assert.equal(suggested.status, 200);
-  const suggestedBody = await suggested.json();
-  assert.deepEqual(suggestedBody.candidates.map((person: { archiveId: string; id: string }) =>
-    [person.archiveId,person.id]), [["other-archive","person-b"]],
-  "a confirmed link must not be suggested again");
-  assert.equal(suggestedBody.candidates[0].birthYear, undefined,
-    "candidate evidence must not disclose a birth year hidden by publication consent");
-  const manualHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.101" };
-  const recipientHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.102" };
-  const recipientCandidates = "/api/discovery/matches/candidates?sourcePersonId=person-b";
-  assert.ok((await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
-    .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
-  "the receiving archive sees the suggested pair before rejecting a manual request");
-  const rejectedRequest = await fetch(securedBase + "/api/discovery/matches", {
-    method: "POST", headers: manualHeaders,
-    body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
-      targetPersonId: "person-b", reason: "Проверить запись" }),
-  });
-  assert.equal(rejectedRequest.status, 200);
-  const rejectedId = (await rejectedRequest.json()).match.id as string;
-  const rejectedPath = `/api/discovery/matches/${rejectedId}`;
-  assert.ok(!(await fetch(securedBase +
-    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: manualHeaders })
-    .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-b"),
-  "the initiator must not see an already pending request as a new suggestion");
-  assert.ok(!(await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
-    .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
-  "the recipient must not see an already pending request as a new suggestion");
-  await rejectWithStableDecisionNote({ archive: otherApp.archive, client,
-    matchId: rejectedId, recipientHeaders });
-  await verifyRejectedDecisionNote(matchDb,rejectedId,otherBase,recipientHeaders);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
-    const ignored = await matchDb.prepare("", `SELECT source_person_id,target_archive_id,
-      target_person_id,ignored_by FROM discovery_ignored_candidates
-      WHERE archive_id='other-archive' AND source_person_id='person-b'`).get();
-    assert.deepEqual(ignored, { source_person_id: "person-b", target_archive_id: "runtime-test",
-      target_person_id: "person-a", ignored_by: "vk:42" },
-    "rejection stores the pair in the recipient's direction only");
-  }, true);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_ignored_candidates WHERE archive_id='other-archive'`).get())?.count,
-      0, "RLS hides the recipient's dismissal from the proposing archive");
-  }, true);
-  assert.ok(!(await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
-    .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
-  "rejection removes this pair from future automatic suggestions to the recipient");
-  assert.ok((await fetch(otherBase + recipientCandidates + "&ignored=1", {
-    headers: recipientHeaders,
-  }).then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
-  "the dismissed pair remains recoverable in the recipient's hidden list");
-  const rejectedAudit = await matchDb.prepare("", `SELECT status,requested_by,responded_by,
-    request_review_token,decision_review_token FROM discovery_match_requests WHERE id=?`)
-    .get(rejectedId);
-  assert.equal(rejectedAudit?.status, "rejected");
-  assert.equal(rejectedAudit?.requested_by, "owner");
-  assert.equal(rejectedAudit?.responded_by, "vk:42");
-  assert.match(String(rejectedAudit?.request_review_token), /^[0-9a-f]{64}$/);
-  assert.match(String(rejectedAudit?.decision_review_token), /^[0-9a-f]{64}$/);
-  assert.equal((await fetch(otherBase + rejectedPath, {
-    method: "PATCH", headers: recipientHeaders,
-    body: JSON.stringify({ decision: "reject", note: "Попытка заменить основание" }),
-  })).status, 200, "repeating a rejection is idempotent");
-  await verifyRejectedNoteUnchanged(matchDb,rejectedId);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_ignored_candidates WHERE archive_id='other-archive'
-        AND source_person_id='person-b' AND target_archive_id='runtime-test'
-        AND target_person_id='person-a'`).get())?.count,
-      1, "repeating a rejection keeps exactly one recipient-owned dismissal");
-  }, true);
-  assert.equal((await matchDb.prepare("", `SELECT decision_review_token FROM discovery_match_requests
-    WHERE id=?`).get(rejectedId))?.decision_review_token, rejectedAudit?.decision_review_token);
-  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
-    method: "POST", headers: manualHeaders,
-    body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
-      targetPersonId: "person-b", ignored: false }),
-  })).status, 200, "the proposer may clear only its own directed ignore, not the recipient's");
-  assert.ok(!(await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
-    .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"));
-  assert.equal((await fetch(otherBase + "/api/discovery/matches/ignored", {
-    method: "POST", headers: recipientHeaders,
-    body: JSON.stringify({ sourcePersonId: "person-b", targetArchiveId: "runtime-test",
-      targetPersonId: "person-a", ignored: false }),
-  })).status, 200);
-  assert.ok((await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
-    .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
-  "restoring the hint resumes suggestions without changing the match decision");
-  assert.equal((await fetch(otherBase + rejectedPath, {
-    method: "PATCH", headers: recipientHeaders, body: JSON.stringify({ decision: "reject" }),
-  })).status, 200);
-  assert.ok((await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
-    .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
-  "an idempotent retry cannot undo an explicit later restoration");
-  const repeatedRequest = await fetch(otherBase + "/api/discovery/matches", {
-    method: "POST", headers: recipientHeaders,
-    body: JSON.stringify({ sourcePersonId: "person-b", targetArchiveId: "runtime-test",
-      targetPersonId: "person-a" }),
-  });
-  assert.equal(repeatedRequest.status, 200);
-  assert.deepEqual({ id: (await repeatedRequest.json()).match.id,
-    status: (await matchDb.prepare("", "SELECT status FROM discovery_match_requests WHERE id=?")
-      .get(rejectedId))?.status }, { id: rejectedId, status: "rejected" },
-  "restoring a hint does not reopen the rejected manual request");
-  const beforeReverseRejection = await app.archive.read();
-  const reverseFamily = structuredClone(beforeReverseRejection.family);
-  reverseFamily.people.push({ ...structuredClone(reverseFamily.people[0]),
-    id: "reverse-rejected-a", name: "Другой Иван", column: 75 });
-  const reverseWrite = await app.archive.write(reverseFamily, beforeReverseRejection.revision);
-  await publishedPeopleStore(app.archive.db).publish("reverse-rejected-a", "owner");
-  const reverseRequest = await fetch(otherBase + "/api/discovery/matches", {
-    method: "POST", headers: recipientHeaders,
-    body: JSON.stringify({ sourcePersonId: "person-b", targetArchiveId: "runtime-test",
-      targetPersonId: "reverse-rejected-a" }),
-  });
-  assert.equal(reverseRequest.status, 200);
-  const reverseId = (await reverseRequest.json()).match.id as string;
-  assert.equal((await fetch(securedBase + `/api/discovery/matches/${reverseId}`, {
-    method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "reject" }),
-  })).status, 200);
-  await verifyLateNoteDenied(client,reverseId);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_ignored_candidates WHERE archive_id='runtime-test'
-        AND source_person_id='reverse-rejected-a' AND target_archive_id='other-archive'
-        AND target_person_id='person-b'`).get())?.count, 1,
-    "when the recipient is the right pair side, the ignore still points from its own person");
-  }, true);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_ignored_candidates WHERE archive_id='runtime-test'
-        AND source_person_id='reverse-rejected-a'`).get())?.count, 0,
-    "the initiator cannot read the reverse-direction dismissal");
-  }, true);
-  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
-    method: "POST", headers: manualHeaders,
-    body: JSON.stringify({ sourcePersonId: "reverse-rejected-a",
-      targetArchiveId: "other-archive", targetPersonId: "person-b", ignored: false }),
-  })).status, 200);
-  assert.equal((await matchDb.prepare("", "SELECT status FROM discovery_match_requests WHERE id=?")
-    .get(reverseId))?.status, "rejected", "restoration does not reopen the reverse manual request");
-  await app.archive.write(beforeReverseRejection.family, reverseWrite.revision);
-  assert.equal((await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=person-a", {
-    headers,
-  })).status, 403);
-  const ignoredBody = JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
-    targetPersonId: "person-b", ignored: true });
-  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
-    method: "POST", headers, body: ignoredBody,
-  })).status, 403);
-  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
-    method: "POST", headers: ownerHeaders, body: ignoredBody,
-  })).status, 200);
-  assert.deepEqual((await (await fetch(securedBase +
-    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
-    .json()).candidates, []);
-  assert.deepEqual((await (await fetch(securedBase +
-    "/api/discovery/matches/candidates?sourcePersonId=person-a&ignored=1", { headers: ownerHeaders }))
-    .json()).candidates.map((person: { id: string }) => person.id), ["person-b"]);
-  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
-    method: "POST", headers: ownerHeaders,
-    body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
-      targetPersonId: "person-b", ignored: false }),
-  })).status, 200);
-  assert.deepEqual((await (await fetch(securedBase +
-    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
-    .json()).candidates.map((person: { id: string }) => person.id), ["person-b"]);
-  const ignoredArchivePath = "/api/discovery/matches/ignored-archives";
-  const archiveIgnoreBody = JSON.stringify({ targetArchiveId: "other-archive", ignored: true });
-  assert.equal((await fetch(securedBase + ignoredArchivePath, {
-    method: "POST", headers, body: archiveIgnoreBody,
-  })).status, 403, "a reader cannot hide another archive");
-  assert.equal((await fetch(securedBase + ignoredArchivePath, {
-    method: "POST", headers: ownerHeaders,
-    body: JSON.stringify({ targetArchiveId: "unrelated-archive", ignored: true }),
-  })).status, 409, "a tree without published cards cannot be probed by hiding it");
-  assert.equal((await fetch(securedBase + ignoredArchivePath, {
-    method: "POST", headers: ownerHeaders, body: archiveIgnoreBody,
-  })).status, 200);
-  assert.deepEqual((await (await fetch(securedBase +
-    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
-    .json()).candidates, [], "hiding an archive removes all its automatic suggestions");
-  assert.equal((await (await fetch(securedBase +
-    "/api/discovery/people?q=Иван", { headers: ownerHeaders }))
-    .json()).results.some((person: { archiveId: string }) =>
-    person.archiveId === "other-archive"), true,
-  "manual discovery remains available after hiding automatic suggestions");
-  assert.deepEqual((await (await fetch(securedBase + ignoredArchivePath, {
-    headers: ownerHeaders,
-  })).json()).archives.map((item: { archiveId: string }) => item.archiveId),
-  ["other-archive"]);
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
-      .get("unrelated-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_ignored_archives WHERE archive_id='runtime-test'`).get())?.count, 0,
-    "another archive cannot inspect the private dismissal list");
-  }, true);
-  assert.equal((await fetch(securedBase + ignoredArchivePath, {
-    method: "POST", headers: ownerHeaders,
-    body: JSON.stringify({ targetArchiveId: "other-archive", ignored: false }),
-  })).status, 200);
-  assert.deepEqual((await (await fetch(securedBase +
-    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
-    .json()).candidates.map((person: { id: string }) => person.id), ["person-b"],
-  "restoring the archive returns its published candidates");
-  const beforeCandidatePages = await otherApp.archive.read();
-  const pagedFamily = structuredClone(beforeCandidatePages.family);
-  const template = pagedFamily.people.find((person) => person.id === "person-b")!;
-  const pageIds = Array.from({ length: 25 }, (_, index) => `similar-${String(index).padStart(2, "0")}`);
-  pagedFamily.people.push(...pageIds.map((id, index) => ({
-    ...structuredClone(template), id, birth: index === 24 ? "1990" : "1980",
-    column: index + 2,
-  })));
-  const paged = await otherApp.archive.write(pagedFamily, beforeCandidatePages.revision);
-  for (const id of pageIds)
-    await otherPublication.publish(id, "owner", selectedDiscoveryFields);
-  const candidatePath = "/api/discovery/matches/candidates?sourcePersonId=person-a";
-  const firstCandidatePage = await fetch(securedBase + candidatePath, { headers: ownerHeaders }).then((response) => response.json());
-  assert.equal(firstCandidatePage.candidates.length, 24);
-  assert.equal(typeof firstCandidatePage.nextCursor, "string");
-  const secondCandidatePage = await fetch(securedBase + candidatePath +
-    `&cursor=${encodeURIComponent(firstCandidatePage.nextCursor)}`, { headers: ownerHeaders }).then((response) => response.json());
-  assert.equal(secondCandidatePage.nextCursor, null);
-  assert.equal(new Set([...firstCandidatePage.candidates, ...secondCandidatePage.candidates]
-    .map((person: { id: string }) => person.id)).size, 26,
-  "all published names remain reachable beyond the first indexed page");
-  assert.equal((await fetch(securedBase + candidatePath + "&cursor=invalid", {
-    headers: ownerHeaders,
-  })).status, 400);
-  const beforeTierFields = await ownerPublication.getFields("person-a");
-  assert.ok(beforeTierFields);
-  const datedFields = { ...selectedDiscoveryFields, birthYear: true };
-  await ownerPublication.publish("person-a", "owner", datedFields);
-  for (const id of pageIds) await otherPublication.publish(id, "owner", datedFields);
-  // Candidate lookup has an intentional per-client rate limit. Keep this new
-  // regression independent of earlier pagination requests in the same suite.
-  const tierHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.126" };
-  const strongResponse = await fetch(securedBase + candidatePath,
-    { headers: tierHeaders });
-  assert.equal(strongResponse.status, 200);
-  const strongPage = await strongResponse.json();
-  assert.ok(strongPage.candidates.some((candidate: { id: string }) => candidate.id === "similar-24"),
-    "a strong candidate beyond the raw first page reaches the first ranked page");
-  assert.ok(strongPage.candidates.findIndex((candidate: { id: string }) => candidate.id === "similar-24") <
-    strongPage.candidates.findIndex((candidate: { id: string }) => candidate.id === "similar-00"),
-  "published exact name and birth year outrank weak names");
-  await client.query("BEGIN");
-  try {
-    await client.query("SET LOCAL enable_seqscan=off");
-    const tierPlan = await client.query(`EXPLAIN (FORMAT JSON)
-      SELECT person_id FROM discovery_people d
-      WHERE replace(lower(coalesce(nullif(d.given_part,''),split_part(d.name,' ',2))),
-        'ё','е')='иван'
-        AND replace(lower(coalesce(nullif(d.surname_part,''),split_part(d.name,' ',1))),
-          'ё','е')='тестов'
-        AND coalesce(d.birth_year,'9999')='1990'
-      ORDER BY coalesce(d.birth_year,'9999'),d.name COLLATE "C",
-        d.archive_id COLLATE "C",d.person_id COLLATE "C" LIMIT 24`);
-    assert.match(JSON.stringify(tierPlan.rows), /discovery_people_tier_current/,
-      "the exact-name and published-year stream uses its actual B-tree index");
-  } finally { await client.query("ROLLBACK"); }
-  await ownerPublication.publish("person-a", "owner", beforeTierFields);
-  assert.equal((await fetch(securedBase + candidatePath +
-    `&cursor=${encodeURIComponent(strongPage.nextCursor)}`, { headers: tierHeaders })).status,
-  409, "changing the source publication invalidates its tiered cursor");
-  console.log("runtime_discovery_candidate_tiers_ok");
-  await client.query("BEGIN");
-  try {
-    await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
-    await client.query(`INSERT INTO people(archive_id,id,ordinal,data)
-      SELECT 'other-archive','load-'||g,
-        (SELECT max(ordinal) FROM people WHERE archive_id='other-archive')+g,
-        jsonb_build_object('id','load-'||g,'surname','Нагрузов','name','Даниил',
-          'deceased',true,'birth','1900')
-      FROM generate_series(1,600) AS g`);
-    await client.query(`INSERT INTO published_people(archive_id,person_id,published_at,published_by)
-      SELECT 'other-archive','load-'||g,'2026-01-01','owner'
-      FROM generate_series(1,600) AS g`);
-    assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_people
-      WHERE person_id LIKE 'load-%'`)).rows[0].count, 600);
-    await client.query("SET LOCAL enable_seqscan=off");
-    const fuzzyPlan = await client.query(`EXPLAIN (FORMAT JSON)
-      SELECT person_id FROM discovery_people
-      WHERE given_normalized % 'даниил' AND surname_normalized % 'нагрузов'`);
-    assert.match(JSON.stringify(fuzzyPlan.rows), /discovery_people_(given|surname)_trgm/,
-      "the typo branch has an executable trigram index plan with 600 published rows");
-    const exactPlan = await client.query(`EXPLAIN (FORMAT JSON)
-      SELECT person_id FROM discovery_people
-      WHERE name_vector @@ to_tsquery('simple','нагрузов & даниил')`);
-    assert.match(JSON.stringify(exactPlan.rows), /discovery_people_names/,
-      "exact candidate names keep their GIN index path");
-    await client.query(`UPDATE discovery_people SET surname_part=NULL,given_part=NULL
-      WHERE archive_id='other-archive' AND person_id LIKE 'load-%'`);
-    const backfillPlan = await client.query(`EXPLAIN (FORMAT JSON) ${discoveryNamePartsBatch}`,
-      ["other-archive","load-200"]);
-    assert.match(JSON.stringify(backfillPlan.rows), /discovery_people_pkey/,
-      "keyset backfill uses the projection primary key after its cursor");
-  } finally {
-    await client.query("ROLLBACK");
-  }
-  await otherApp.archive.write(beforeCandidatePages.family, paged.revision);
-  const beforeCrossSource = await app.archive.read();
-  const beforeCrossOther = await otherApp.archive.read();
-  const beforeCrossFields = await ownerPublication.getFields("person-a");
-  assert.ok(beforeCrossFields);
-  const crossSource = structuredClone(beforeCrossSource.family);
-  crossSource.people.find((person) => person.id === "person-a")!.maidenName = "Старов";
-  const crossSourceWrite = await app.archive.write(crossSource, beforeCrossSource.revision);
-  const crossOther = structuredClone(beforeCrossOther.family);
-  const crossTemplate = crossOther.people.find((person) => person.id === "person-b")!;
-  crossOther.people.push({ ...structuredClone(crossTemplate), id: "birth-to-current",
-    surname: "Старов", maidenName: "", name: "Иван", birth: "1990", column: 72 });
-  crossOther.people.push({ ...structuredClone(crossTemplate), id: "current-to-birth",
-    surname: "Другов", maidenName: "Тестов", name: "Иван", birth: "1990", column: 73 });
-  const crossOtherWrite = await otherApp.archive.write(crossOther, beforeCrossOther.revision);
-  await ownerPublication.publish("person-a", "owner", datedFields);
-  for (const id of ["birth-to-current","current-to-birth"])
-    await otherPublication.publish(id, "owner", datedFields);
-  const crossResponse = await fetch(securedBase + candidatePath,
-    { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.127" } });
-  assert.equal(crossResponse.status, 200);
-  const crossIds = (await crossResponse.json()).candidates.map((item: { id: string }) => item.id);
-  assert.ok(crossIds.includes("birth-to-current") && crossIds.includes("current-to-birth"),
-    "both published current/birth surname crossings enter exact-name tiers");
-  assert.equal(new Set(crossIds).size, crossIds.length,
-    "overlapping published surname roles do not duplicate a first-page candidate");
-  await app.archive.write(beforeCrossSource.family, crossSourceWrite.revision);
-  await otherApp.archive.write(beforeCrossOther.family, crossOtherWrite.revision);
-  await ownerPublication.publish("person-a", "owner", beforeCrossFields);
-  console.log("runtime_discovery_candidate_surname_crossing_ok");
-  const ownBeforeSignals = await app.archive.read();
-  const otherBeforeSignals = await otherApp.archive.read();
-  const ownWithRelative = structuredClone(ownBeforeSignals.family);
-  const otherWithRelative = structuredClone(otherBeforeSignals.family);
-  const ownPerson = ownWithRelative.people.find((person) => person.id === "person-a")!;
-  const otherPerson = otherWithRelative.people.find((person) => person.id === "person-a")!;
-  ownPerson.birthPlace = "Россия, Свердловская область, Нижний Тагил";
-  ownPerson.deathPlace = "Казань";
-  const parent = { ...structuredClone(ownPerson), id: "published-parent",
-    surname: "Орлов", name: "Пётр", birth: "1960", deceased: true,
-    parents: [], column: 50 };
-  ownWithRelative.people.push(structuredClone(parent));
-  otherWithRelative.people.push(structuredClone(parent));
-  ownPerson.parents = [parent.id];
-  otherWithRelative.people.push({ ...structuredClone(otherPerson),
-    id: "relative-only", surname: "Сидоров", name: "Иван", birth: "1991",
-    deceased: true, parents: [parent.id], spouses: ["closed-relative"], column: 51 });
-  otherWithRelative.people.push({ ...structuredClone(otherPerson),
-    id: "name-typo", surname: "Тестав", name: "Иван", deceased: true,
-    parents: [parent.id], column: 52 });
-  otherWithRelative.people.push({ ...structuredClone(otherPerson),
-    id: "relative-undated-exact", surname: "Тестов", name: "Иван", birth: "",
-    deceased: true, parents: [parent.id], column: 57 });
-  otherWithRelative.people.push({ ...structuredClone(otherPerson),
-    id: "place-match", surname: "Петров", name: "Иван", birth: "1991",
-    birthPlace: "Россия, Свердловская область, Нижний Тагил", deceased: true,
-    parents: [], column: 54 });
-  otherWithRelative.people.push({ ...structuredClone(otherPerson),
-    id: "region-only", surname: "Романов", name: "Иван", birth: "1991",
-    birthPlace: "Россия, Свердловская область, Екатеринбург", deceased: true,
-    parents: [], column: 55 });
-  otherWithRelative.people.push({ ...structuredClone(otherPerson),
-    id: "death-place-match", surname: "Кузнецов", name: "Иван", birth: "1991",
-    deathPlace: "Казань", birthPlace: "", deceased: true,
-    parents: [], column: 56 });
-  otherWithRelative.people.push({ ...structuredClone(otherPerson),
-    id: "closed-relative", surname: "Орлов", name: "Пётр", sex: "f", deceased: true,
-    parents: [], spouses: ["relative-only"], column: 53 });
-  const ownSignalWrite = await app.archive.write(ownWithRelative, ownBeforeSignals.revision);
-  await otherApp.archive.write(otherWithRelative, otherBeforeSignals.revision);
-  const relativePath = "/api/discovery/matches/relative-consents";
-  const unpublishedRelative = await fetch(securedBase + relativePath + "?personId=person-a",
-    { headers: ownerHeaders });
-  assert.equal(unpublishedRelative.status, 200);
-  assert.deepEqual((await unpublishedRelative.json()).relatives, [],
-    "the opt-in control does not reveal an unpublished relative's name");
-  await otherPublication.publish("relative-only", "owner");
-  await otherPublication.publish("name-typo", "owner");
-  await otherPublication.publish("relative-undated-exact", "owner");
-  await otherPublication.publish("place-match", "owner");
-  await otherPublication.publish("region-only", "owner");
-  let sourceRevisionAfterGrandparentFixture = ownSignalWrite.revision;
-  await (async () => {
-    const beforeGrandSource = await app.archive.read();
-    const beforeGrandTarget = await otherApp.archive.read();
-    const grandSourceFamily = structuredClone(beforeGrandSource.family);
-    const grandTargetFamily = structuredClone(beforeGrandTarget.family);
-    const grandSource = grandSourceFamily.people.find((person) => person.id === "person-a")!;
-    const grandTemplate = structuredClone(grandSource);
-    const grandName = { surname: "Родников", name: "Пётр", birth: "1930",
-      deceased: true, parents: [], spouses: [], birthPlace: "", deathPlace: "" };
-    grandSource.parents = [...(grandSource.parents || []), "grand-own-parent-a", "grand-own-parent-b"];
-    grandSourceFamily.people.push({ ...structuredClone(grandTemplate), ...grandName,
-      id: "grand-own-person", column: 300 });
-    grandSourceFamily.people.push({ ...structuredClone(grandTemplate),
-      id: "grand-own-living", surname: "Скрытый", name: "Предок", deceased: false,
-      birth: "1930", death: undefined, parents: [], spouses: [], column: 304 });
-    for (const [index,id] of ["grand-own-parent-a","grand-own-parent-b"].entries())
-      grandSourceFamily.people.push({ ...structuredClone(grandTemplate),
-        id, surname: "Родников", name: `Родитель ${index + 1}`, birth: "1960",
-        deceased: true, parents: index === 0 ? ["grand-own-person","grand-own-living"]
-          : ["grand-own-person"], spouses: [], column: 301 + index });
-    grandTargetFamily.people.push({ ...structuredClone(otherPerson), id: "grand-target",
-      surname: "Петров", name: "Иван", birth: "1991", deceased: true,
-      birthPlace: "", deathPlace: "", parents: ["grand-other-parent-a","grand-other-parent-b"],
-      spouses: [], column: 300 });
-    grandTargetFamily.people.push({ ...structuredClone(otherPerson), ...grandName,
-      id: "grand-other-person", column: 301 });
-    for (const [index,id] of ["grand-other-unique-a","grand-other-unique-b"].entries())
-      grandTargetFamily.people.push({ ...structuredClone(otherPerson),
-        id, surname: "Другой", name: `Предок ${index + 1}`, birth: "1930",
-        deceased: true, parents: [], spouses: [], column: 306 + index });
-    for (const [index,id] of ["grand-other-parent-a","grand-other-parent-b"].entries())
-      grandTargetFamily.people.push({ ...structuredClone(otherPerson),
-        id, surname: "Родников", name: `Родитель ${index + 1}`, birth: "1960",
-        deceased: true, parents: ["grand-other-person",`grand-other-unique-${index === 0 ? "a" : "b"}`],
-        spouses: [], column: 302 + index });
-    await app.archive.write(grandSourceFamily,beforeGrandSource.revision);
-    await otherApp.archive.write(grandTargetFamily,beforeGrandTarget.revision);
-    const grandOwnPublication = publishedPeopleStore(app.archive.db);
-    for (const id of ["grand-own-person","grand-own-parent-a"])
-      await grandOwnPublication.publish(id,"owner");
-    const hiddenPathPreview = await fetch(securedBase + relativePath + "?personId=person-a",
-      { headers: ownerHeaders }).then((response) => response.json());
-    assert.equal(hiddenPathPreview.relatives.filter((item: { kind: string }) =>
-      item.kind === "grandparent").length,1,
-    "an unpublished intermediary and a living ancestor are absent from the preview");
-    assert.doesNotMatch(JSON.stringify(hiddenPathPreview),/grand-own-living|Скрытый Предок/);
-    await grandOwnPublication.publish("grand-own-parent-b","owner");
-    for (const id of ["grand-target","grand-other-person","grand-other-unique-a",
-      "grand-other-unique-b","grand-other-parent-a","grand-other-parent-b"])
-      await otherPublication.publish(id,"owner");
-    const grandSourcePreview = await fetch(securedBase + relativePath + "?personId=person-a",
-      { headers: ownerHeaders }).then((response) => response.json());
-    const grandTargetPreview = await fetch(otherBase + relativePath + "?personId=grand-target",
-      { headers: recipientHeaders }).then((response) => response.json());
-    const grandPaths = (preview: { relatives: { kind: string; personId: string;
-      relationPath?: [string,string]; enabled: boolean }[] }, relativeId: string) =>
-      preview.relatives.filter((item) => item.kind === "grandparent" &&
-        item.personId === relativeId);
-    const ownGrandPaths = grandPaths(grandSourcePreview,"grand-own-person");
-    const otherGrandPaths = grandPaths(grandTargetPreview,"grand-other-person");
-    assert.equal(ownGrandPaths.length,2);
-    assert.equal(otherGrandPaths.length,2);
-    assert.equal(grandTargetPreview.relatives.filter((item: { kind: string }) =>
-      item.kind === "grandparent").length,4,
-    "two published parents expose all four separately selectable grandparent slots");
-    assert.ok([...ownGrandPaths,...otherGrandPaths].every((path) => path.enabled === false),
-      "each published two-edge path starts without consent");
-    const setGrandConsent = (base: string, requestHeaders: Record<string,string>,
-      personId: string, relationPath: [string,string], enabled: boolean) => fetch(base + relativePath, {
-        method: "POST", headers: { ...requestHeaders, "Content-Type": "application/json" },
-        body: JSON.stringify({ personId,relationPath,enabled }),
+    const expiredBPreview = await fetch(otherBase + branchPath, { headers: expiryBHeaders })
+      .then((response) => response.json());
+    assert.equal(expiredBPreview.ownReady, false);
+    assert.equal((await fetch(otherBase + branchPath, {
+      method: "PUT", headers: expiryBHeaders,
+      body: JSON.stringify({ personIds: ["branch-parent-b"],
+        previewToken: expiredBPreview.previewToken,
+        recipientArchiveId: "runtime-test", durationDays: 30 }),
+    })).status, 200, "B can renew only through a fresh explicit PUT");
+    assert.deepEqual((await fetch(securedBase + branchPath, { headers: expiryAHeaders })
+      .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
+      ["branch-parent-b"]);
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_branch_grants WHERE grantor_archive_id='other-archive'
+          AND left_person_id='person-a' AND right_person_id='person-a'`).get())?.count,
+        1, "explicit renewal makes only the current grant visible again");
+    }, true);
+    assert.equal((await app.archive.db.prepare("", `UPDATE discovery_branch_grants
+      SET expires_at=now()-interval '1 second' WHERE grantor_archive_id='runtime-test'
+        AND left_person_id='person-a' AND right_person_id='person-a'`).run()).changes, 1);
+    const expiredA = await fetch(otherBase + branchPath, { headers: expiryBHeaders })
+      .then((response) => response.json());
+    assert.equal(expiredA.otherReady, false);
+    assert.deepEqual(expiredA.incoming, [], "A's expired consent also closes B's branch view");
+    assert.equal((await fetch(otherBase + branchPath + "/people/branch-parent-a", {
+      headers: expiryBHeaders,
+    })).status, 404);
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_branch_grants WHERE grantor_archive_id='runtime-test'
+          AND left_person_id='person-a' AND right_person_id='person-a'`).get())?.count,
+        0, "the reverse recipient cannot inspect an expired source grant");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'`).get())?.count,
+        0, "RLS closes recipient members when its own grant expires");
+    }, true);
+    const expiredAPreview = await fetch(securedBase + branchPath, { headers: expiryAHeaders })
+      .then((response) => response.json());
+    assert.equal((await fetch(securedBase + branchPath, {
+      method: "PUT", headers: expiryAHeaders,
+      body: JSON.stringify({ personIds: ["branch-parent-a"],
+        previewToken: expiredAPreview.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 7 }),
+    })).status, 200);
+    assert.deepEqual((await fetch(otherBase + branchPath, { headers: expiryBHeaders })
+      .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
+      ["branch-parent-a"], "renewing both consents reopens only the selected member");
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+    await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+      VALUES('other-archive','other-only','admin',true,'all')`);
+    const transferCardPath = matchPath + "/card-share";
+    const grantBirth = async (base: string, grantHeaders: Record<string,string>) => {
+      const previewResponse = await fetch(base + transferCardPath, { headers: grantHeaders });
+      assert.equal(previewResponse.status, 200, "the current owner can preview a scalar grant");
+      const preview = await previewResponse.json();
+      assert.equal((await fetch(base + transferCardPath, {
+        method: "PUT", headers: { ...grantHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ fields: ["birth"], previewToken: preview.previewToken,
+          recipientArchiveId: preview.recipientArchiveId, durationDays: 7 }),
+      })).status, 200);
+    };
+    await grantBirth(securedBase, ownerHeaders);
+    await grantBirth(otherBase, archiveAdminHeaders);
+    assert.equal((await otherApp.archive.db.prepare("", `UPDATE discovery_linked_card_grants
+      SET expires_at=now()-interval '1 second' WHERE grantor_archive_id='other-archive'
+        AND left_person_id='person-a' AND right_person_id='person-a'`).run()).changes, 1);
+    const recipientAfterReverseExpiry = await fetch(securedBase + transferCardPath, {
+      headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.221" },
+    }).then((response) => response.json());
+    assert.equal(recipientAfterReverseExpiry.incoming, null,
+      "expiry also closes a B-to-A scalar snapshot");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_linked_card_grants WHERE grantor_archive_id='other-archive'
+          AND left_person_id='person-a'`).get())?.count, 0,
+      "RLS denies reverse-direction expired snapshots");
+    }, true);
+    await grantBirth(otherBase, { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.222" });
+    assert.equal((await client.query(`SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
+    2, "both owners can grant a private scalar snapshot for the confirmed pair");
+    await client.query(`DROP TRIGGER revoke_discovery_card_grants_after_owner_transfer
+      ON archive_owners`);
+    await client.query(readFileSync(new URL("../../ops/postgres/061_discovery_copied_fields.sql", import.meta.url), "utf8"));
+    assert.equal((await client.query(`SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
+    0, "installing 061 clears old scalar grants whose two-owner consent cannot be proven");
+    await grantBirth(securedBase, ownerHeaders);
+    await grantBirth(otherBase, archiveAdminHeaders);
+    await client.query(readFileSync(new URL("../../ops/postgres/061_discovery_copied_fields.sql", import.meta.url), "utf8"));
+    assert.equal((await client.query(`SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
+    2, "reapplying 061 cannot clear fresh grants after its transfer trigger exists");
+    assert.equal((await fetch(otherBase + transferCardPath, {
+      headers: otherOnlyHeaders,
+    })).status, 403, "an invited admin cannot inspect the owner's scalar grants");
+    assert.equal((await fetch(otherBase + transferCardPath, {
+      method: "PUT", headers: { ...otherOnlyHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: ["birth"], previewToken: "0".repeat(64),
+        recipientArchiveId: "runtime-test", durationDays: 7 }),
+    })).status, 403, "an invited admin cannot issue a scalar grant");
+    assert.equal((await fetch(otherBase + transferCardPath, {
+      method: "DELETE", headers: otherOnlyHeaders,
+    })).status, 403, "an invited admin cannot revoke the owner's scalar grant");
+    assert.equal((await client.query(`UPDATE archive_owners SET user_id='other-only'
+      WHERE archive_id='other-archive'`)).rowCount, 1);
+    assert.equal((await client.query(`SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
+    0, "recipient ownership transfer revokes both its and the source's scalar grants atomically");
+    assert.equal((await client.query("SELECT current_setting('drevo.archive_id') AS id")).rows[0].id,
+      "other-archive", "recipient transfer restores its RLS context after deleting both grants");
+    assert.equal((await fetch(otherBase + transferCardPath, {
+      headers: archiveAdminHeaders,
+    })).status, 403, "the former owner cannot inspect scalar grants after transfer");
+    assert.equal((await fetch(otherBase + `${branchPath}/options/branch-parent-b`, {
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.181" },
+    })).status, 403, "the former owner cannot expand the linked branch after transfer");
+    assert.equal((await client.query(`SELECT count(*)::int AS count
+      FROM discovery_linked_pairs WHERE left_person_id='person-a'`)).rows[0].count, 1,
+    "ownership transfer preserves the confirmed public link");
+    await grantBirth(otherBase, otherOnlyHeaders);
+    assert.deepEqual((await fetch(securedBase + transferCardPath, {
+      headers: ownerHeaders,
+    }).then((response) => response.json())).incoming.fields, { birth: "1990" },
+    "the new owner can explicitly issue a fresh scalar grant");
+    assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
+      WHERE grantor_archive_id='other-archive' AND left_person_id='person-a'`)).rows[0].count,
+      0, "ownership transfer revokes the previous owner's branch grant in the same transaction");
+    assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_members
+      WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`)).rows[0].count,
+      0, "RLS closes A's branch members to B's successor before a new bilateral opt-in");
+    assert.deepEqual((await fetch(securedBase + branchPath, { headers: {
+      ...ownerHeaders, "X-Real-IP": "198.51.100.211",
+    } }).then((response) => response.json())).incoming, [],
+    "A cannot keep reading B's branch after B changes owner");
+    assert.equal((await fetch(securedBase + branchPersonPath, { headers: {
+      ...ownerHeaders, "X-Real-IP": "198.51.100.211",
+    } })).status, 404, "ownership transfer closes direct member navigation");
+    assert.equal((await fetch(otherBase + branchPath, { headers: {
+      ...archiveAdminHeaders, "X-Real-IP": "198.51.100.212",
+    } })).status, 403, "the former owner cannot reauthorize B's branch");
+    assert.equal((await client.query(`UPDATE archive_owners SET user_id='vk:42'
+      WHERE archive_id='other-archive'`)).rowCount, 1);
+    assert.equal((await client.query(`SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
+    0, "transferring ownership back revokes the successor's grant too");
+    await client.query(`DELETE FROM archive_memberships WHERE archive_id='other-archive'
+      AND user_id='other-only'`);
+    const afterTransfer = await fetch(otherBase + branchPath, { headers: {
+      ...archiveAdminHeaders, "X-Real-IP": "198.51.100.212",
+    } }).then((response) => response.json());
+    assert.equal((await fetch(otherBase + branchPath, {
+      method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.212" },
+      body: JSON.stringify({ personIds: ["branch-parent-b"], previewToken: afterTransfer.previewToken,
+        recipientArchiveId: "runtime-test", durationDays: 7 }),
+    })).status, 200, "the owner must issue a fresh grant after ownership changes back");
+    assert.deepEqual((await fetch(securedBase + branchPath, { headers: {
+      ...ownerHeaders, "X-Real-IP": "198.51.100.213",
+    } }).then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
+    ["branch-parent-b"], "a fresh owner grant reopens only the selected branch member");
+    assert.equal((await fetch(securedBase + branchPersonPath, { headers: {
+      ...ownerHeaders, "X-Real-IP": "198.51.100.213",
+    } })).status, 200, "a fresh mutual grant reopens the direct member URL");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'`).get())?.count,
+        1, "RLS opens exactly the other side's selected member after mutual consent");
+    }, true);
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("unrelated-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_branch_grants`).get())?.count,
+        0, "RLS hides branch consent from a third archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_branch_members`).get())?.count,
+        0, "RLS hides branch members from a third archive");
+    }, true);
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+      assert.equal((await matchDb.prepare("", `DELETE FROM discovery_branch_grants
+        WHERE grantor_archive_id='runtime-test'`).run()).changes, 0,
+      "the recipient cannot revoke the other archive's grant through SQL");
+    });
+    assert.equal((await fetch(otherBase + matchPath, {
+      method: "PATCH", headers: archiveAdminHeaders,
+      body: JSON.stringify({ decision: "accept", reviewToken: freshReview.reviewToken }),
+    })).status, 200, "repeating the accepted decision is idempotent");
+    assert.equal((await matchDb.prepare("", `SELECT decision_review_token FROM discovery_match_requests
+      WHERE id=?`).get(matchBody.match.id))?.decision_review_token, freshReview.reviewToken);
+    await client.query(readFileSync(new URL("../../ops/postgres/050_discovery_match_audit.sql", import.meta.url), "utf8"));
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
+      WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 1,
+    "reapplying the additive projection migration keeps one linked pair");
+    const runDiscoveryBackfill = async () => {
+      const admin = process.env.PGADMINUSER
+        ? new pg.Client({ user: process.env.PGADMINUSER, password: process.env.PGADMINPASSWORD })
+        : client;
+      if (admin !== client) await admin.connect();
+      try {
+        await admin.query(readFileSync(
+          new URL("../../ops/postgres/backfill-discovery.sql", import.meta.url), "utf8"));
+      } finally {
+        if (admin !== client) await admin.end();
+      }
+    };
+    await runDiscoveryBackfill();
+    assert.deepEqual((await fetch(securedBase + branchPath, { headers: ownerHeaders })
+      .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
+      ["branch-parent-b"], "a backfill preserves current bilateral grants");
+    assert.equal((await fetch(otherBase + branchPath, {
+      method: "DELETE", headers: archiveAdminHeaders,
+    })).status, 200);
+    assert.deepEqual((await fetch(securedBase + branchPath, { headers: ownerHeaders })
+      .then((response) => response.json())).incoming, [],
+      "revoking either side closes the branch immediately");
+    assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
+      404, "grant revocation closes an already issued member URL");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'`).get())?.count,
+        0, "RLS closes the other side's members in the same revocation transaction");
+    }, true);
+    const refreshedSecondBranch = await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
+      .then((response) => response.json());
+    assert.equal((await fetch(otherBase + branchPath, {
+      method: "PUT", headers: archiveAdminHeaders,
+      body: JSON.stringify({ personIds: ["branch-parent-b"],
+        previewToken: refreshedSecondBranch.previewToken,
+        recipientArchiveId: "runtime-test", durationDays: 7 }),
+    })).status, 200);
+    // B-C is separately linked and mutually granted. It must never extend A-B.
+    await client.query("SELECT set_config('drevo.archive_id','third-archive',false)");
+    await client.query(`INSERT INTO archives(id,title,description,demo,revision,sqlite_schema_version)
+      VALUES('third-archive','Third','',false,0,18)`);
+    await client.query("INSERT INTO people(id,data) VALUES('person-c',$1)", [JSON.stringify({
+      ...family.people[0], id: "person-c", name: "Третий", deceased: true,
+    })]);
+    await client.query("INSERT INTO people(id,data) VALUES('family:person.1',$1)", [JSON.stringify({
+      ...family.people[0], id: "family:person.1", name: "Третий родитель", deceased: true,
+    })]);
+    const thirdDb = await openPostgresDatabase("third-archive", source);
+    try {
+      await publishedPeopleStore(thirdDb).publish("person-c", "owner");
+      await publishedPeopleStore(thirdDb).publish("family:person.1", "owner");
+    } finally { await thirdDb.close(); }
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+    const secondPairId = "11111111-2222-4333-8444-555555555555";
+    await client.query(`INSERT INTO discovery_match_requests(id,left_archive_id,left_person_id,
+      right_archive_id,right_person_id,initiated_by_archive_id,requested_by,status)
+      VALUES($1,'other-archive','person-a','third-archive','person-c',
+        'other-archive','owner','linked')`, [secondPairId]);
+    await verifyLegacyDecisionCannotReopen(client,secondPairId);
+    await client.query(`INSERT INTO discovery_branch_grants(left_archive_id,left_person_id,
+      right_archive_id,right_person_id,grantor_archive_id,granted_by)
+      VALUES('other-archive','person-a','third-archive','person-c','other-archive','owner')`);
+    await client.query(`INSERT INTO discovery_branch_members(left_archive_id,left_person_id,
+      right_archive_id,right_person_id,grantor_archive_id,person_id,relation)
+      VALUES('other-archive','person-a','third-archive','person-c',
+        'other-archive','branch-parent-b','parent')`);
+    await client.query("SELECT set_config('drevo.archive_id','third-archive',false)");
+    await client.query(`INSERT INTO discovery_branch_grants(left_archive_id,left_person_id,
+      right_archive_id,right_person_id,grantor_archive_id,granted_by)
+      VALUES('other-archive','person-a','third-archive','person-c','third-archive','owner')`);
+    await client.query(`INSERT INTO discovery_branch_members(left_archive_id,left_person_id,
+      right_archive_id,right_person_id,grantor_archive_id,person_id,relation)
+      VALUES('other-archive','person-a','third-archive','person-c',
+        'third-archive','family:person.1','parent')`);
+    assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
+      WHERE left_archive_id='other-archive' AND right_archive_id='third-archive'
+        AND expires_at IS NULL`)).rows[0].count, 2,
+      "legacy grants without an expiry remain valid until revoked");
+    await client.query(readFileSync(new URL("../../ops/postgres/062_discovery_branch_expiry.sql", import.meta.url), "utf8"));
+    await client.query(readFileSync(new URL("../../ops/postgres/064_discovery_branch_grant_read_expiry.sql", import.meta.url), "utf8"));
+    assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
+      WHERE left_archive_id='other-archive' AND right_archive_id='third-archive'
+        AND expires_at IS NULL`)).rows[0].count, 2,
+      "reapplying 062/064 does not silently shorten existing branch consents");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("third-archive");
+      assert.equal((await matchDb.prepare("", `SELECT granted_by FROM discovery_branch_grants
+        WHERE left_archive_id='other-archive' AND right_archive_id='third-archive'
+          AND grantor_archive_id='other-archive'`).get())?.granted_by, "owner",
+        "recipient C can still read a legacy NULL grant under RLS after reapplying 064");
+    }, true);
+    const encodedMemberPath = `/api/discovery/matches/${secondPairId}/branch-share/people/family%3Aperson.1`;
+    const encodedMember = await fetch(otherBase + encodedMemberPath, { headers: {
+      ...archiveAdminHeaders, "X-Real-IP": "198.51.100.215",
+    } });
+    assert.equal(encodedMember.status, 200, "a selected member with punctuation has a usable direct URL");
+    assert.deepEqual((await encodedMember.json()).person.id, "family:person.1");
+    assert.equal((await fetch(securedBase + branchPath + "/people/family%3Aperson.1", {
+      headers: navigationHeaders,
+    })).status, 404, "A-B member navigation cannot traverse B-C's separately granted branch");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_branch_members WHERE person_id='family:person.1'`).get())?.count,
+        0, "RLS cannot expose C's selected member through A's unrelated confirmed pair");
+    }, true);
+    assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
+      WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`)).rows[0].count,
+      0, "C cannot read grants belonging only to A-B even when it shares B-C");
+    assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_members
+      WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`)).rows[0].count,
+      0, "C cannot inspect A-B members through its own link to B");
+    const oneHopResponse = await fetch(securedBase + branchPath, { headers: {
+      ...ownerHeaders, "X-Real-IP": "198.51.100.236",
+    } });
+    assert.equal(oneHopResponse.status, 200);
+    const oneHopOnly = await oneHopResponse.json();
+    assert.deepEqual(oneHopOnly.incoming.map((person: { id: string }) => person.id),
+      ["branch-parent-b"], "A-B cannot traverse B-C or reveal C's branch");
+    assert.doesNotMatch(JSON.stringify(oneHopOnly), /third-archive|family:person.1|Третий родитель/);
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
+      WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 1,
+    "administrator backfill rebuilds the confirmed public transition after truncation");
+    await client.query(readFileSync(new URL("../../ops/postgres/051_discovery_linked_request_rls.sql", import.meta.url), "utf8"));
+    await initializePostgresRuntimeSchema(matchDb);
+    assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_policies
+      WHERE schemaname=current_schema() AND tablename='discovery_match_requests'
+        AND policyname='linked_discovery_read'`)).rows[0].count, 0,
+    "a runtime schema check must not recreate the removed global read policy");
+    assert.deepEqual((await client.query(`SELECT column_name FROM information_schema.columns
+      WHERE table_schema=current_schema() AND table_name='discovery_linked_pairs'
+      ORDER BY ordinal_position`)).rows.map((row) => row.column_name),
+    ["left_archive_id","left_person_id","right_archive_id","right_person_id"],
+    "the public projection contains no reason, actor or review digest");
+    const linkedPublicCard = await fetch(securedBase + "/api/discovery/people/other-archive/person-a", {
+      headers,
+    });
+    const linkedPublicBody = await linkedPublicCard.json();
+    assert.equal(linkedPublicCard.status, 200);
+    assert.equal(linkedPublicBody.linkedCards.length, 2,
+      "unchanged confirmed links survive the final discovery snapshot");
+    assert.doesNotMatch(JSON.stringify(linkedPublicBody), /Совпадают семейные записи/,
+      "the proposal note is visible to participant admins, not global discovery readers");
+    assert.deepEqual(linkedPublicBody.linkedCards.map((person: { archiveId: string; id: string }) =>
+      [person.archiveId,person.id]), [["runtime-test","person-a"],["third-archive","person-c"]],
+    "a signed-in reader sees only B's two directly confirmed published transitions");
+    const firstPublicCard = await fetch(securedBase + "/api/discovery/people/runtime-test/person-a", {
+      headers,
+    }).then((response) => response.json());
+    assert.deepEqual(firstPublicCard.linkedCards.map((person: { archiveId: string; id: string }) =>
+      [person.archiveId,person.id]), [["other-archive","person-a"]],
+    "A's public card cannot traverse B-C to C");
+    const cardSharePath = `/api/discovery/matches/${matchBody.match.id}/card-share`;
+    assert.equal((await fetch(securedBase + cardSharePath, { headers })).status, 403,
+      "a reader of the published card cannot inspect private share grants");
+    const shareBeforeEdit = await app.archive.read();
+    const shareFamily = structuredClone(shareBeforeEdit.family);
+    shareFamily.people[0].occupation = "Архивный исследователь";
+    shareFamily.people[0].birthPlace = "Архивный город";
+    shareFamily.people[0].biography = "Закрытая биография и источники";
+    await app.archive.write(shareFamily,shareBeforeEdit.revision);
+    const editedBranch = await fetch(otherBase + branchPath, { headers: {
+      ...archiveAdminHeaders, "X-Real-IP": "198.51.100.237",
+    } });
+    assert.equal(editedBranch.status, 200);
+    assert.deepEqual((await editedBranch.json()).incoming, [],
+      "a family edit revokes the source archive's branch consent before another read");
+    const renewedBranchResponse = await fetch(securedBase + branchPath, { headers: {
+      ...ownerHeaders, "X-Real-IP": "198.51.100.238",
+    } });
+    assert.equal(renewedBranchResponse.status, 200);
+    const renewedBranch = await renewedBranchResponse.json();
+    assert.equal((await fetch(securedBase + branchPath, {
+      method: "PUT", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.238" },
+      body: JSON.stringify({ personIds: ["branch-parent-a", "branch-grandparent-a"],
+        previewToken: renewedBranch.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 7 }),
+    })).status, 200);
+    const postEditBranchHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.218" };
+    assert.deepEqual((await fetch(securedBase + branchPath, { headers: postEditBranchHeaders })
+      .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
+      ["branch-parent-b"]);
+    await publishedPeopleStore(otherApp.archive.db).unpublish("branch-parent-b");
+    const branchAfterUnpublish = await fetch(securedBase + branchPath,
+      { headers: postEditBranchHeaders });
+    assert.equal(branchAfterUnpublish.headers.get("cache-control"), "private, no-store",
+      "a reopened branch panel must revalidate against an uncached projection");
+    assert.deepEqual((await branchAfterUnpublish.json()).incoming, [],
+      "unpublishing a selected relative immediately removes it from the branch");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_branch_members WHERE grantor_archive_id='other-archive'
+          AND person_id='branch-parent-b'`).get())?.count, 0,
+      "RLS cannot read the formerly shared member after publication is revoked");
+    }, true);
+    assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
+      404, "unpublishing immediately closes its direct linked member URL");
+    await publishedPeopleStore(app.archive.db).unpublish("branch-parent-a");
+    const dependentBranch = await fetch(otherBase + branchPath, {
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.234" },
+    })
+      .then((response) => response.json());
+    assert.deepEqual(dependentBranch.incoming, [],
+      "unpublishing the intermediary also removes the selected grandparent");
+    assert.equal((await fetch(otherBase + branchPath + "/people/branch-grandparent-a", {
+      headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.235" },
+    })).status, 404, "the dependent direct URL closes when its intermediary is unpublished");
+    assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'
+        AND person_id='branch-grandparent-a'`).get())?.count, 0,
+    "the database cascades the selected grandparent when its intermediary disappears");
+    const sharePreview = await fetch(securedBase + cardSharePath, { headers: ownerHeaders })
+      .then((response) => response.json());
+    const copyPreviewPath = cardSharePath + "/copy-preview";
+    assert.equal((await fetch(securedBase + copyPreviewPath, { headers: ownerHeaders })).status,
+      404, "the first side cannot preview a copy without the other's scalar grant");
+    assert.equal((await fetch(otherBase + copyPreviewPath, { headers: ownerHeaders })).status,
+      403, "an invited admin cannot inspect the owner's copy preview");
+    assert.equal((await fetch(otherBase + copyPreviewPath, { headers: archiveAdminHeaders })).status,
+      404, "the owner cannot preview a copy before the source grants fields");
+    assert.equal(sharePreview.available.occupation, "Архивный исследователь");
+    assert.equal(sharePreview.recipientArchiveId, "other-archive");
+    assert.equal(sharePreview.recipientPersonName, "Тестов Исправленный кандидат",
+      "the addressee is the currently published linked card, not a private archive label");
+    assert.equal(sharePreview.available.biography, undefined);
+    assert.equal(sharePreview.incoming, null);
+    assert.equal(sharePreview.outgoing, null);
+    assert.equal((await fetch(securedBase + cardSharePath, {
+      method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: ["occupation"], previewToken: sharePreview.previewToken,
+        recipientArchiveId: "third-archive", durationDays: 7 }),
+    })).status, 409, "a scalar grant cannot address a third archive");
+    assert.equal((await fetch(securedBase + cardSharePath, {
+      method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: ["occupation"], previewToken: sharePreview.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 365 }),
+    })).status, 400, "new scalar grants require a bounded term");
+    assert.equal((await fetch(securedBase + cardSharePath, {
+      method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: ["biography"], previewToken: sharePreview.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 7 }),
+    })).status, 400, "free-form biography cannot enter a scalar card grant");
+    assert.equal((await fetch(securedBase + cardSharePath, {
+      method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: ["occupation"], previewToken: "0".repeat(64),
+        recipientArchiveId: "other-archive", durationDays: 7 }),
+    })).status, 409, "a stale card preview cannot authorize a new snapshot");
+    assert.equal((await fetch(securedBase + cardSharePath, {
+      method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: ["occupation", "birthPlace"],
+        previewToken: sharePreview.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 7 }),
+    })).status, 200);
+    const incomingShare = await fetch(otherBase + cardSharePath, { headers: archiveAdminHeaders })
+      .then((response) => response.json());
+    assert.deepEqual(incomingShare.incoming.fields, {
+      occupation: "Архивный исследователь", birthPlace: "Архивный город",
+    });
+    assert.equal(incomingShare.recipientArchiveId, "runtime-test");
+    assert.ok(incomingShare.incoming.expiresAt);
+    const parallelCardReads = await Promise.all(Array.from({ length: 12 }, (_, index) =>
+      fetch(otherBase + cardSharePath, { headers: { ...archiveAdminHeaders,
+        "X-Real-IP": `198.51.100.${170 + index}` } })));
+    assert.ok(parallelCardReads.every((response) => response.status === 200),
+      "parallel linked-card reads do not exhaust the PostgreSQL pool");
+    await Promise.all(parallelCardReads.map((response) => response.arrayBuffer()));
+    const cardLogoutToken = newSessionToken();
+    const cardLogoutHash = sessionTokenHash(cardLogoutToken);
+    await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'vk:42',$2)",
+      [cardLogoutHash, Date.now() + 60_000]);
+    let cardLogoutReached!: () => void, releaseCardLogout!: () => void;
+    const cardLogoutReady = new Promise<void>((resolve) => { cardLogoutReached = resolve; });
+    const cardLogoutGate = new Promise<void>((resolve) => { releaseCardLogout = resolve; });
+    const cardLogoutAuth = await createAuth(await userStore(otherApp.archive.db),
+      otherApp.archive.db, process.env.PUBLIC_ORIGIN);
+    const cardLogoutEndpoint = discoveryCardShareHttp({ archive: otherApp.archive,
+      auth: cardLogoutAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeReadAccessLock: async () => { cardLogoutReached(); await cardLogoutGate; },
+    });
+    const cardLogoutServer = createServer((req, res) => {
+      void cardLogoutEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => cardLogoutServer.listen(0, "127.0.0.1", resolve));
+    const cardLogoutPort = (cardLogoutServer.address() as { port: number }).port;
+    const cardAfterLogout = fetch(`http://127.0.0.1:${cardLogoutPort}${cardSharePath}`,
+      { headers: { ...archiveAdminHeaders, Cookie: `drevo_session=${cardLogoutToken}`,
+        "X-Real-IP": "198.51.100.164" } });
+    try {
+      await Promise.race([cardLogoutReady,
+        cardAfterLogout.then(() => { throw new Error("Linked-card share sent before logout barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Linked-card share did not reach logout barrier")), 30_000)),
+      ]);
+      await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [cardLogoutHash]);
+      releaseCardLogout();
+      const response = await cardAfterLogout;
+      const body = await response.text();
+      assert.equal(response.status, 403, "completed logout closes the linked-card share");
+      assert.equal(/Архивный исследователь|Архивный город/.test(body), false);
+    } finally {
+      releaseCardLogout();
+      await cardAfterLogout.catch(() => {});
+      await new Promise<void>((resolve) => cardLogoutServer.close(() => resolve()));
+    }
+    console.log("runtime_discovery_card_owner_read_revocation_ok");
+    let shareReached!: () => void, releaseShare!: () => void;
+    const shareReady = new Promise<void>((resolve) => { shareReached = resolve; });
+    const shareGate = new Promise<void>((resolve) => { releaseShare = resolve; });
+    const shareAuth = await createAuth(await userStore(otherApp.archive.db),
+      otherApp.archive.db, process.env.PUBLIC_ORIGIN);
+    const shareEndpoint = discoveryCardShareHttp({ archive: otherApp.archive,
+      auth: shareAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeCardShareDelivery: async () => { shareReached(); await shareGate; },
+    });
+    const shareServer = createServer((req, res) => {
+      void shareEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => shareServer.listen(0, "127.0.0.1", resolve));
+    const sharePort = (shareServer.address() as { port: number }).port;
+    const pausedShare = fetch(`http://127.0.0.1:${sharePort}${cardSharePath}`,
+      { headers: { ...archiveAdminHeaders, "X-Real-IP": "203.0.113.8" } });
+    let revokeSharedCard: Promise<Response> | undefined;
+    try {
+      await Promise.race([shareReady,
+        pausedShare.then(() => { throw new Error("Scalar card share sent before delivery barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Scalar card share did not reach delivery barrier")), 30_000)),
+      ]);
+      revokeSharedCard = fetch(securedBase + cardSharePath, { method: "DELETE",
+        headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.9" },
       });
-    const ownGrandPath = ownGrandPaths.map((path) => path.relationPath!);
-    const otherGrandPath = otherGrandPaths.map((path) => path.relationPath!);
-    assert.equal((await fetch(securedBase + relativePath + "?personId=person-a",
-      { headers })).status,403,"a non-owner cannot inspect an unpublished relation path");
-    assert.equal((await fetch(securedBase + relativePath, {
-      method: "POST", headers: { ...ownerHeaders,"Content-Type": "application/json" },
-      body: JSON.stringify({ personId: "person-a", relationId: ownGrandPath[0][0],
-        relationPath: ownGrandPath[0], enabled: true }),
-    })).status,400,"direct and two-edge consent identities cannot be mixed");
-    let grandCall = 0;
-    const grandHeaders = () => ({ ...ownerHeaders,
-      "X-Real-IP": `198.51.100.${130 + Math.floor(grandCall++ / 10)}` });
-    const grandSuggestion = async () => {
-      const response = await fetch(securedBase + candidatePath,{ headers: grandHeaders() });
-      assert.equal(response.status,200);
-      return (await response.json()).candidates.find((item: { id: string }) =>
-        item.id === "grand-target") as { reasons: string[] } | undefined;
-    };
-    assert.equal(await grandSuggestion(),undefined,
-      "three public cards on either side do not imply relationship consent");
-    assert.equal((await setGrandConsent(securedBase,ownerHeaders,"person-a",ownGrandPath[0],true)).status,200);
-    assert.equal(await grandSuggestion(),undefined,"one-sided grandparent consent is not evidence");
-    assert.equal((await setGrandConsent(otherBase,recipientHeaders,"grand-target",otherGrandPath[0],true)).status,200);
-    assert.ok((await grandSuggestion())?.reasons.some((reason) => reason.includes("деда или бабушки")),
-      "bilateral published grandparent and close birth years find a changed surname");
-    assert.equal((await setGrandConsent(securedBase,ownerHeaders,"person-a",ownGrandPath[1],true)).status,200);
-    assert.equal((await setGrandConsent(otherBase,recipientHeaders,"grand-target",otherGrandPath[1],true)).status,200);
-    assert.equal((await setGrandConsent(securedBase,ownerHeaders,"person-a",ownGrandPath[0],false)).status,200);
-    assert.ok(await grandSuggestion(),"revoking one of two consented paths preserves the other");
-    assert.equal((await setGrandConsent(otherBase,recipientHeaders,"grand-target",otherGrandPath[0],false)).status,200);
-    assert.ok(await grandSuggestion(),"two paths to the same ancestor deduplicate without losing evidence");
-    assert.equal((await setGrandConsent(otherBase,recipientHeaders,"grand-target",otherGrandPath[1],false)).status,200);
-    assert.equal(await grandSuggestion(),undefined,"removing the last bilateral path removes evidence");
-    const enableLastPath = async () => {
-      assert.equal((await setGrandConsent(securedBase,ownerHeaders,
-        "person-a",ownGrandPath[1],true)).status,200);
-      assert.equal((await setGrandConsent(otherBase,recipientHeaders,
-        "grand-target",otherGrandPath[1],true)).status,200);
-    };
-    await enableLastPath();
-    const grandNameKey = String((await matchDb.prepare("", `SELECT relative_name_key
-      FROM discovery_grandparent_consents WHERE archive_id=? AND person_id=?
-        AND first_relation_id=? AND second_relation_id=?`)
-      .get("runtime-test","person-a",...ownGrandPath[1]))?.relative_name_key);
+      let revokeWaiting = false;
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
+          WHERE datname=current_database() AND pid<>pg_backend_pid()
+            AND wait_event_type='Lock' AND query LIKE '%discovery_match_requests m%'
+            AND query LIKE '%FOR UPDATE OF m%'`);
+        if (waiting.rowCount) { revokeWaiting = true; break; }
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      }
+      assert.equal(revokeWaiting, true,
+        "scalar revocation reaches the pair lock while recipient fields are held for delivery");
+      const earlyRevoke = await Promise.race([
+        revokeSharedCard.then((response) => `completed ${response.status}`),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]);
+      assert.equal(earlyRevoke, "pending",
+        "revoking scalar consent waits until the incoming fields finish delivery");
+      releaseShare();
+      const delivered = await pausedShare;
+      assert.equal(delivered.status, 200);
+      assert.deepEqual((await delivered.json()).incoming.fields,
+        { occupation: "Архивный исследователь", birthPlace: "Архивный город" });
+      assert.equal((await revokeSharedCard).status, 200);
+    } finally {
+      releaseShare();
+      await pausedShare.catch(() => {});
+      await revokeSharedCard?.catch(() => {});
+      await new Promise<void>((resolve) => shareServer.close(() => resolve()));
+    }
+    assert.equal((await fetch(otherBase + cardSharePath, { headers: archiveAdminHeaders })
+      .then((response) => response.json())).incoming, null);
+    assert.equal((await fetch(securedBase + cardSharePath, { method: "PUT",
+      headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.10" },
+      body: JSON.stringify({ fields: ["occupation", "birthPlace"],
+        previewToken: sharePreview.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 7 }),
+    })).status, 200);
+    console.log("runtime_discovery_scalar_card_revocation_ok");
+    const initialScalarLife = await matchDb.prepare("", `SELECT
+      extract(epoch FROM expires_at-now())/86400 AS days_left
+      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
+        AND left_person_id='person-a' AND right_person_id='person-a'`).get();
+    assert.ok(Number(initialScalarLife?.days_left) > 6.99 && Number(initialScalarLife?.days_left) <= 7);
+    let copyPreviewReached!: () => void, releaseCopyPreview!: () => void;
+    const copyPreviewReady = new Promise<void>((resolve) => { copyPreviewReached = resolve; });
+    const copyPreviewGate = new Promise<void>((resolve) => { releaseCopyPreview = resolve; });
+    const copyPreviewAuth = await createAuth(await userStore(otherApp.archive.db),
+      otherApp.archive.db, process.env.PUBLIC_ORIGIN);
+    const copyPreviewEndpoint = discoveryCardShareHttp({ archive: otherApp.archive,
+      auth: copyPreviewAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeCopyPreviewDelivery: async () => { copyPreviewReached(); await copyPreviewGate; },
+    });
+    const copyPreviewServer = createServer((req, res) => {
+      void copyPreviewEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => copyPreviewServer.listen(0, "127.0.0.1", resolve));
+    const copyPreviewPort = (copyPreviewServer.address() as { port: number }).port;
+    const pausedCopyPreview = fetch(`http://127.0.0.1:${copyPreviewPort}${copyPreviewPath}`,
+      { headers: archiveAdminHeaders });
+    let revokeScalarGrant: Promise<Response> | undefined;
+    try {
+      await Promise.race([copyPreviewReady,
+        pausedCopyPreview.then(() => { throw new Error("Copy preview sent before delivery barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Copy preview did not reach delivery barrier")), 30_000)),
+      ]);
+      revokeScalarGrant = fetch(securedBase + cardSharePath, {
+        method: "DELETE", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.244" },
+      });
+      let revokeWaiting = false;
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const waiting = await client.query(`SELECT 1 FROM pg_stat_activity
+          WHERE datname=current_database() AND pid<>pg_backend_pid()
+            AND wait_event_type='Lock' AND query LIKE '%discovery_match_requests m%'
+            AND query LIKE '%FOR UPDATE OF m%'`);
+        if (waiting.rowCount) { revokeWaiting = true; break; }
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      }
+      assert.equal(revokeWaiting, true,
+        "scalar grant revocation reaches the pair lock before delivery completes");
+      const earlyRevoke = await Promise.race([
+        revokeScalarGrant.then((response) => `completed ${response.status}`),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]);
+      assert.equal(earlyRevoke, "pending",
+        "scalar grant revocation must wait for an in-flight copy preview to finish delivery");
+      releaseCopyPreview();
+      const delivered = await pausedCopyPreview;
+      assert.equal(delivered.status, 200);
+      assert.ok((await delivered.json()).fields.length > 0);
+      assert.equal((await revokeScalarGrant).status, 200);
+    } finally {
+      releaseCopyPreview();
+      await pausedCopyPreview.catch(() => {});
+      await revokeScalarGrant?.catch(() => {});
+      await new Promise<void>((resolve) => copyPreviewServer.close(() => resolve()));
+    }
+    assert.equal((await fetch(otherBase + copyPreviewPath, {
+      headers: archiveAdminHeaders,
+    })).status, 404, "a fresh copy preview closes after scalar grant revocation");
+    assert.equal((await fetch(securedBase + cardSharePath, {
+      method: "PUT", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.245",
+        "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: ["occupation", "birthPlace"],
+        previewToken: sharePreview.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 7 }),
+    })).status, 200);
+    let abortPreviewReached!: () => void, releaseAbortedPreview!: () => void;
+    const abortPreviewReady = new Promise<void>((resolve) => { abortPreviewReached = resolve; });
+    const abortPreviewGate = new Promise<void>((resolve) => { releaseAbortedPreview = resolve; });
+    const abortPreviewEndpoint = discoveryCardShareHttp({ archive: otherApp.archive,
+      auth: copyPreviewAuth, publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeCopyPreviewDelivery: async () => { abortPreviewReached(); await abortPreviewGate; },
+    });
+    const abortPreviewServer = createServer((req, res) => {
+      void abortPreviewEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => abortPreviewServer.listen(0, "127.0.0.1", resolve));
+    const abortController = new AbortController();
+    const abortPreviewPort = (abortPreviewServer.address() as { port: number }).port;
+    const abandonedPreview = fetch(`http://127.0.0.1:${abortPreviewPort}${copyPreviewPath}`,
+      { headers: archiveAdminHeaders, signal: abortController.signal });
+    const abandonedOutcome = abandonedPreview.then(() => "sent", () => "aborted");
+    try {
+      await Promise.race([abortPreviewReady,
+        abandonedPreview.then(() => { throw new Error("Copy preview sent before abort barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Copy preview did not reach abort barrier")), 30_000)),
+      ]);
+      abortController.abort();
+      releaseAbortedPreview();
+      assert.equal(await abandonedOutcome, "aborted",
+        "disconnect before delivery cannot receive the scalar snapshot");
+      const revokedAfterAbort = await Promise.race([
+        fetch(securedBase + cardSharePath, { method: "DELETE",
+          headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.246" } }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Disconnect did not release the grant row lock")), 3_000)),
+      ]);
+      assert.equal(revokedAfterAbort.status, 200);
+    } finally {
+      abortController.abort();
+      releaseAbortedPreview();
+      await abandonedOutcome;
+      await new Promise<void>((resolve) => abortPreviewServer.close(() => resolve()));
+    }
+    assert.equal((await fetch(otherBase + copyPreviewPath, {
+      headers: archiveAdminHeaders,
+    })).status, 404, "revocation committed after disconnect closes the next preview");
+    assert.equal((await fetch(securedBase + cardSharePath, {
+      method: "PUT", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.247",
+        "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: ["occupation", "birthPlace"],
+        previewToken: sharePreview.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 7 }),
+    })).status, 200);
+    console.log("runtime_discovery_copy_preview_revocation_ok");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("unrelated-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_linked_card_grants WHERE left_person_id='person-a'
+          AND right_person_id='person-a'`).get())?.count, 0,
+      "a third archive cannot read an addressed scalar grant through SQL");
+    }, true);
+    const beforeScalarExpiry = await fetch(otherBase + copyPreviewPath, {
+      headers: archiveAdminHeaders,
+    }).then((response) => response.json());
+    assert.equal((await app.archive.db.prepare("", `UPDATE discovery_linked_card_grants
+      SET expires_at=now()-interval '1 second' WHERE grantor_archive_id='runtime-test'
+        AND left_person_id='person-a' AND right_person_id='person-a'`).run()).changes, 1);
+    const expiredCardHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.219" };
+    const expiredCard = await fetch(otherBase + cardSharePath, { headers: expiredCardHeaders });
+    assert.equal(expiredCard.status, 200);
+    assert.equal(expiredCard.headers.get("cache-control"), "private, no-store");
+    assert.equal((await expiredCard.json()).incoming, null,
+      "an expired scalar grant closes the direct linked-card snapshot");
+    assert.equal((await fetch(otherBase + copyPreviewPath, { headers: expiredCardHeaders })).status,
+      404, "an expired scalar grant closes the copy-preview URL");
+    assert.equal((await fetch(otherBase + copyPreviewPath, {
+      method: "POST", headers: { ...expiredCardHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
+        revision: beforeScalarExpiry.revision, reviewToken: beforeScalarExpiry.reviewToken }),
+    })).status, 404, "an expired grant cannot apply an earlier copy review");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
+          AND left_person_id='person-a'`).get())?.count, 0,
+      "RLS hides an expired scalar snapshot from its recipient");
+    }, true);
+    const renewalHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.220" };
+    const renewalPreview = await fetch(securedBase + cardSharePath, { headers: renewalHeaders })
+      .then((response) => response.json());
+    assert.equal(renewalPreview.outgoing, null,
+      "an expired owner grant is shown as inactive, not as an active snapshot");
+    assert.equal((await fetch(securedBase + cardSharePath, {
+      method: "PUT", headers: { ...renewalHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: ["occupation", "birthPlace"],
+        previewToken: renewalPreview.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 30 }),
+    })).status, 200, "the owner can renew the same fields with a new explicit term");
+    assert.deepEqual((await fetch(otherBase + cardSharePath, { headers: expiredCardHeaders })
+      .then((response) => response.json())).incoming.fields,
+      { occupation: "Архивный исследователь", birthPlace: "Архивный город" });
+    const renewedScalarLife = await matchDb.prepare("", `SELECT
+      extract(epoch FROM expires_at-now())/86400 AS days_left
+      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
+        AND left_person_id='person-a' AND right_person_id='person-a'`).get();
+    assert.ok(Number(renewedScalarLife?.days_left) > 29.99 && Number(renewedScalarLife?.days_left) <= 30);
+    assert.doesNotMatch(JSON.stringify(incomingShare), /Закрытая биография|sources|parents/,
+      "the grant response contains only the chosen scalar snapshot");
     await client.query("BEGIN");
     try {
-      await client.query("SET LOCAL enable_seqscan=off");
-      const plan = await client.query(`EXPLAIN (FORMAT JSON)
-        SELECT c.archive_id,c.person_id FROM discovery_candidate_relative_consents c
-        JOIN discovery_people d ON d.archive_id=c.archive_id AND d.person_id=c.person_id
-        WHERE c.kind='grandparent' AND c.relative_name_key=$1
-          AND d.given_part IS NOT NULL LIMIT 24`,[grandNameKey]);
-      assert.match(JSON.stringify(plan.rows),/discovery_grandparent_consents_lookup/,
-        "the consented two-edge clue uses its indexed name lookup");
-    } finally { await client.query("ROLLBACK"); }
+      await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+      await client.query(`INSERT INTO accounts(id,name,created_at)
+        VALUES('card-transfer-successor','Card successor',now())`);
+      await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+        VALUES('runtime-test','card-transfer-successor','admin',true,'all')`);
+      await client.query("SAVEPOINT card_transfer_failure");
+      await client.query(`CREATE FUNCTION public.reject_card_grant_revoke()
+        RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+          RAISE EXCEPTION 'card grant revoke blocked';
+        END $$`);
+      await client.query(`CREATE TRIGGER reject_card_grant_revoke
+        BEFORE DELETE ON discovery_linked_card_grants FOR EACH ROW
+        EXECUTE FUNCTION public.reject_card_grant_revoke()`);
+      await assert.rejects(client.query(`UPDATE archive_owners
+        SET user_id='card-transfer-successor' WHERE archive_id='runtime-test'`),
+      /card grant revoke blocked/, "a failed grant revoke rolls back ownership transfer");
+      await client.query("ROLLBACK TO SAVEPOINT card_transfer_failure");
+      assert.equal((await client.query(`SELECT user_id FROM archive_owners
+        WHERE archive_id='runtime-test'`)).rows[0].user_id, "owner");
+      assert.equal((await client.query(`SELECT count(*)::int AS count
+        FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`)).rows[0].count,
+      1, "failed transfer keeps the live source grant");
+      assert.equal((await client.query("SELECT current_setting('drevo.archive_id') AS id")).rows[0].id,
+        "runtime-test", "failed transfer restores the source RLS context");
+      await client.query(`UPDATE archive_owners SET user_id='card-transfer-successor'
+        WHERE archive_id='runtime-test'`);
+      assert.equal((await client.query(`SELECT count(*)::int AS count
+        FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`)).rows[0].count,
+      0, "source ownership transfer revokes its scalar grant atomically");
+      assert.equal((await client.query("SELECT current_setting('drevo.archive_id') AS id")).rows[0].id,
+        "runtime-test", "successful transfer restores the source RLS context");
+      assert.equal((await client.query(`SELECT count(*)::int AS count
+        FROM discovery_linked_pairs WHERE left_archive_id='other-archive'
+          AND left_person_id='person-a' AND right_archive_id='runtime-test'
+          AND right_person_id='person-a'`)).rows[0].count,
+      1, "transfer does not revoke a previously confirmed public link");
+    } finally {
+      await client.query("ROLLBACK");
+    }
+    const copyPreviewResponse = await fetch(otherBase + copyPreviewPath, {
+      headers: archiveAdminHeaders,
+    });
+    assert.equal(copyPreviewResponse.status, 200);
+    assert.equal(copyPreviewResponse.headers.get("cache-control"), "private, no-store");
+    const copyPreview = await copyPreviewResponse.json();
+    assert.deepEqual({ source: copyPreview.source, target: copyPreview.target,
+      fields: copyPreview.fields, quotaImpact: copyPreview.quotaImpact }, {
+      source: { archiveId: "runtime-test", personId: "person-a" },
+      target: { archiveId: "other-archive", personId: "person-a" },
+      fields: [{ field: "birthPlace", sourceValue: "Архивный город",
+        targetValue: "Местный город", status: "conflict", copyable: true },
+      { field: "occupation", sourceValue: "Архивный исследователь",
+        targetValue: "Местный исследователь", status: "conflict", copyable: false }],
+      quotaImpact: { additionalPeople: 0, additionalMediaBytes: 0 },
+    }, "the preview compares only permitted scalar values with the local linked card");
+    assert.doesNotMatch(JSON.stringify(copyPreview), /Закрытая биография|sources|parents|photo/);
+    assert.equal((await fetch(otherBase + copyPreviewPath, {
+      method: "POST", headers: archiveAdminHeaders,
+    })).status, 400, "applying a copy requires explicit selected fields and a fresh review");
+    await assert.rejects(matchDb.prepare("", `UPDATE discovery_linked_card_grants
+      SET fields=?::jsonb WHERE grantor_archive_id='runtime-test'`).run(
+      JSON.stringify({ biography: "Закрытая биография" })),
+    (error: unknown) => (error as { code?: string }).code === "23514",
+    "the database rejects unapproved private fields even outside HTTP");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+        .get("unrelated-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_linked_card_grants WHERE left_person_id='person-a'`).get())?.count, 0,
+      "RLS hides even the presence of a card grant from an unrelated archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM people WHERE archive_id='runtime-test' AND id='person-a'`).get())?.count, 0,
+      "the grant never opens the source people row across archives");
+    }, true);
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+        .get("other-archive");
+      assert.equal((await matchDb.prepare("", `SELECT fields->>'occupation' AS occupation
+        FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.occupation,
+      "Архивный исследователь");
+      assert.equal(await matchDb.prepare("", `SELECT grantor_archive_id
+        FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
+        FOR SHARE`).get(), undefined,
+      "the recipient can read but cannot directly lock the grantor's row through UPDATE RLS");
+      assert.equal((await matchDb.prepare("", `DELETE FROM discovery_linked_card_grants
+        WHERE grantor_archive_id='runtime-test'`).run()).changes, 0,
+      "the receiving archive cannot revoke the owner's grant through SQL");
+    });
     await runDiscoveryBackfill();
-    assert.ok(await grandSuggestion(),
-      "an administrative rebuild preserves only the already explicit two-edge consent");
+    assert.equal((await matchDb.prepare("", `SELECT fields->>'occupation' AS occupation
+      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.occupation,
+    "Архивный исследователь", "administrator backfill preserves a still-confirmed grant");
+    await client.query("BEGIN");
+    try {
+      await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+      await client.query("INSERT INTO accounts(id,name,created_at) VALUES('share-grant-deleting','Share grant author',$1)",
+        [new Date().toISOString()]);
+      assert.equal((await client.query(`UPDATE discovery_linked_card_grants
+        SET granted_by='share-grant-deleting' WHERE grantor_archive_id='runtime-test'
+          AND left_person_id='person-a' RETURNING granted_by`)).rows[0]?.granted_by,
+      "share-grant-deleting");
+      await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
+      assert.equal((await client.query(`UPDATE discovery_branch_grants
+        SET granted_by='share-grant-deleting' WHERE grantor_archive_id='other-archive'
+          AND left_person_id='person-a' AND right_person_id='person-a'
+        RETURNING granted_by`)).rows[0]?.granted_by, "share-grant-deleting");
+      await client.query("SELECT set_config('drevo.archive_id','unrelated-archive',true)");
+      await client.query("SELECT set_config('drevo.account_id','share-grant-deleting',true)");
+      await client.query("INSERT INTO deleted_account_tombstones(id) VALUES('share-grant-deleting')");
+      await client.query("SELECT public.runtime_anonymize_deleted_account_history('share-grant-deleting')");
+      await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+      assert.equal((await client.query(`SELECT granted_by FROM discovery_linked_card_grants
+        WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`)).rows[0]?.granted_by,
+      "deleted-account", "account deletion anonymizes a grant even when the request archive differs");
+      await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
+      assert.equal((await client.query(`SELECT granted_by FROM discovery_branch_grants
+        WHERE grantor_archive_id='other-archive' AND left_person_id='person-a'
+          AND right_person_id='person-a'`)).rows[0]?.granted_by,
+      "deleted-account", "account deletion also anonymizes bilateral branch grants");
+    } finally {
+      await client.query("ROLLBACK");
+    }
+    assert.equal((await matchDb.prepare("", `SELECT granted_by FROM discovery_linked_card_grants
+      WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`).get())?.granted_by,
+    "owner", "the deletion probe leaves the live grant intact");
+    const copyHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.216",
+      "Content-Type": "application/json" };
+    const targetBeforeRevision = await otherApp.archive.read();
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+        .get("other-archive");
+      await matchDb.prepare("", `UPDATE archives SET revision=revision+1
+        WHERE id='other-archive'`).run();
+    });
+    const staleCopyResponse = await fetch(otherBase + copyPreviewPath, {
+      method: "POST", headers: copyHeaders,
+      body: JSON.stringify({ fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
+        revision: copyPreview.revision, reviewToken: copyPreview.reviewToken }),
+    });
+    assert.equal(staleCopyResponse.status, 409,
+      `a target revision change invalidates an otherwise identical comparison: ${await staleCopyResponse.text()}`);
+    const freshCopyPreviewResponse = await fetch(otherBase + copyPreviewPath, {
+      headers: archiveAdminHeaders,
+    });
+    assert.equal(freshCopyPreviewResponse.status, 200);
+    let freshCopyPreview = await freshCopyPreviewResponse.json();
+    let copyBody = { fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
+      revision: freshCopyPreview.revision, reviewToken: freshCopyPreview.reviewToken };
+    assert.equal((await fetch(otherBase + copyPreviewPath, {
+      method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.217" },
+      body: JSON.stringify(copyBody),
+    })).status, 403, "an invited admin cannot copy into the owner's linked card");
+    assert.equal((await fetch(otherBase + copyPreviewPath, {
+      method: "POST", headers: copyHeaders,
+      body: JSON.stringify({ ...copyBody, fields: ["occupation"] }),
+    })).status, 400, "occupation is visible for comparison but cannot be copied without provenance support");
+    assert.equal((await fetch(otherBase + copyPreviewPath, {
+      method: "POST", headers: copyHeaders,
+      body: JSON.stringify({ ...copyBody, confirmConflicts: [] }),
+    })).status, 409, "a conflicting local value requires separate explicit confirmation");
+    assert.equal((await fetch(otherBase + copyPreviewPath, {
+      method: "POST", headers: copyHeaders,
+      body: JSON.stringify({ ...copyBody, reviewToken: "0".repeat(64) }),
+    })).status, 409, "a stale review cannot replace a local value");
+    let blockedCopy: Promise<Response> | undefined;
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+        .get("runtime-test");
+      await matchDb.prepare("", `SELECT fields FROM discovery_linked_card_grants
+        WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'
+        FOR UPDATE`).get();
+      blockedCopy = fetch(otherBase + copyPreviewPath, { method: "POST",
+        headers: { ...copyHeaders, "X-Real-IP": "198.51.100.219" },
+        body: JSON.stringify(copyBody) });
+      let waiting = false;
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const result = await client.query(`SELECT 1 FROM pg_stat_activity
+          WHERE pid<>pg_backend_pid() AND wait_event_type='Lock'
+            AND query LIKE '%discovery_linked_card_grants%'
+            AND query LIKE '%FOR SHARE%'`);
+        if (result.rowCount) { waiting = true; break; }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.equal(waiting, true, "the copy holds its own archive lock while waiting for the live source grant");
+      assert.equal((await matchDb.prepare("", `DELETE FROM discovery_linked_card_grants
+        WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`).run()).changes,
+      1, "the grantor can revoke a grant during an in-flight copy");
+    });
+    assert.equal((await blockedCopy!).status, 404,
+      "a concurrent grant revoke wins before the blocked copy can read source fields");
+    assert.equal((await otherApp.archive.read()).family.people[0].birthPlace, "Местный город",
+      "a copy blocked by revocation cannot change the receiving card");
+    assert.equal((await fetch(securedBase + cardSharePath, {
+      method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: ["occupation", "birthPlace"],
+        previewToken: sharePreview.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 7 }),
+    })).status, 200, "the source may grant the same scalar snapshot again");
+    freshCopyPreview = await fetch(otherBase + copyPreviewPath, {
+      headers: archiveAdminHeaders,
+    }).then((response) => response.json());
+    copyBody = { fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
+      revision: freshCopyPreview.revision, reviewToken: freshCopyPreview.reviewToken };
+    const copyAttempts = await Promise.all([
+      fetch(otherBase + copyPreviewPath, { method: "POST", headers: copyHeaders,
+        body: JSON.stringify(copyBody) }),
+      fetch(otherBase + copyPreviewPath, { method: "POST", headers: {
+        ...copyHeaders, "X-Real-IP": "198.51.100.218",
+      }, body: JSON.stringify(copyBody) }),
+    ]);
+    assert.deepEqual(copyAttempts.map((response) => response.status).sort(), [200, 409],
+      "concurrent copies of one review commit once after the archive revision lock");
+    const savedCopy = await copyAttempts.find((response) => response.status === 200)!.json();
+    assert.deepEqual(savedCopy.copied, ["birthPlace"]);
+    assert.equal(savedCopy.revision, freshCopyPreview.revision + 1);
+    const copiedFamily = await otherApp.archive.read();
+    assert.equal(copiedFamily.family.people[0].birthPlace, "Архивный город");
+    assert.deepEqual(copiedFamily.family.people[0].sources,
+      targetBeforeRevision.family.people[0].sources,
+    "transfer provenance does not create or change genealogical citations");
+    assert.equal(copiedFamily.family.people[0].occupation, "Местный исследователь",
+      "copying a selected place cannot overwrite an unselected field");
+    assert.equal((await app.archive.read()).family.people[0].birthPlace, "Архивный город",
+      "the source card is never edited by the copy");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+      const provenance = await matchDb.prepare("", `SELECT field,value,source_archive_id,
+        source_person_id,copied_revision FROM discovery_copied_fields
+        WHERE archive_id='other-archive' AND person_id='person-a'`).get();
+      assert.deepEqual(provenance, { field: "birthPlace", value: "Архивный город",
+        source_archive_id: "runtime-test", source_person_id: "person-a",
+        copied_revision: savedCopy.revision },
+      "the receiving archive retains transfer provenance separate from documentary citations");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM history
+        WHERE archive_id='other-archive' AND revision=?`).get(freshCopyPreview.revision))?.count,
+      1, "the ordinary person patch path records undo history");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM archive_audit_entries
+        WHERE archive_id='other-archive' AND revision=? AND entity_id='person-a'`)
+        .get(savedCopy.revision))?.count, 1, "the copy produces a normal person audit entry");
+    }, true);
     await client.query("BEGIN");
     try {
       await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
-      assert.equal((await client.query(`SELECT 1 FROM relations
-        WHERE archive_id='other-archive' AND id=$1 FOR UPDATE`,
-      [otherGrandPath[1][0]])).rowCount,1);
-      const busyPath = await fetch(securedBase + candidatePath,{ headers: grandHeaders() });
-      assert.equal(busyPath.status,409,"contended cross-archive path fails closed before delivery");
-      assert.equal(JSON.stringify(await busyPath.json()).includes("grand-target"),false);
-    } finally { await client.query("ROLLBACK"); }
+      await client.query("SET LOCAL search_path=pg_catalog");
+      await client.query(`UPDATE public.people SET data=data
+        WHERE archive_id='other-archive' AND id='person-a'`);
+      assert.equal((await client.query(`SELECT value FROM public.discovery_copied_fields
+        WHERE archive_id='other-archive' AND person_id='person-a'
+          AND field='birthPlace'`)).rows[0]?.value, "Архивный город",
+      "a person edit retains copy provenance even when maintenance changes search_path");
+    } finally {
+      await client.query("ROLLBACK");
+    }
+    for (const hiddenArchive of ["runtime-test", "unrelated-archive"])
+      await matchDb.transaction(async () => {
+        await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+          .get(hiddenArchive);
+        assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+          FROM discovery_copied_fields WHERE archive_id='other-archive'`).get())?.count,
+        0, "copy provenance is visible only to the receiving archive");
+      }, true);
+    await assert.rejects(matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+        .get("runtime-test");
+      await matchDb.prepare("", `INSERT INTO discovery_copied_fields(archive_id,person_id,
+        field,value,source_archive_id,source_person_id,copied_revision)
+        VALUES('other-archive','person-a','birthPlace','Подмена','runtime-test','person-a',1)`)
+        .run();
+    }), (error: unknown) => (error as { code?: string }).code === "42501",
+    "the source archive cannot forge provenance in the recipient's tree");
+    assert.equal((await fetch(securedBase + cardSharePath, {
+      method: "DELETE", headers: ownerHeaders,
+    })).status, 200);
+    assert.equal((await fetch(securedBase + cardSharePath, {
+      method: "DELETE", headers: ownerHeaders,
+    })).status, 200, "repeated grant revocation is idempotent");
+    const freshAfterGrantRevoke = await fetch(otherBase + cardSharePath, {
+      headers: archiveAdminHeaders,
+    });
+    assert.equal(freshAfterGrantRevoke.status, 200);
+    assert.equal(freshAfterGrantRevoke.headers.get("cache-control"), "private, no-store",
+      "a re-opened panel must revalidate against an uncached grant response");
+    assert.equal((await freshAfterGrantRevoke.json()).incoming, null,
+      "revocation hides the snapshot from the other side immediately");
+    assert.equal((await fetch(otherBase + copyPreviewPath, {
+      headers: archiveAdminHeaders,
+    })).status, 404, "a fresh copy preview closes immediately after grant revocation");
+    assert.equal((await fetch(otherBase + copyPreviewPath, {
+      method: "POST", headers: copyHeaders, body: JSON.stringify(copyBody),
+    })).status, 404, "a revoked source grant cannot apply an older preview");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+      assert.equal((await matchDb.prepare("", `SELECT value FROM discovery_copied_fields
+        WHERE archive_id='other-archive' AND person_id='person-a' AND field='birthPlace'`)
+        .get())?.value, "Архивный город",
+      "revoking access does not erase an explicitly saved local copy");
+    }, true);
+    const beforeUnrelatedEdit = await otherApp.archive.read();
+    const unrelatedEdit = structuredClone(beforeUnrelatedEdit.family);
+    unrelatedEdit.people[0].occupation = "Другое занятие";
+    await otherApp.archive.write(unrelatedEdit, beforeUnrelatedEdit.revision);
+    const copiedValue = () => matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+      return await matchDb.prepare("", `SELECT value FROM discovery_copied_fields
+        WHERE archive_id='other-archive' AND person_id='person-a' AND field='birthPlace'`).get();
+    }, true);
+    assert.equal((await copiedValue())?.value, "Архивный город",
+      "editing another field keeps copy provenance");
+    const beforeCopiedValueEdit = await otherApp.archive.read();
+    const copiedValueEdit = structuredClone(beforeCopiedValueEdit.family);
+    copiedValueEdit.people[0].birthPlace = "Новое местное значение";
+    await otherApp.archive.write(copiedValueEdit, beforeCopiedValueEdit.revision);
+    assert.equal(await copiedValue(), undefined,
+    "editing the copied value removes stale provenance without changing other facts");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+        .get("other-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
+          AND left_person_id='person-a'`).get())?.count, 0,
+      "the recipient cannot read a formerly granted snapshot after revocation");
+    }, true);
+    assert.equal((await fetch(securedBase + cardSharePath, {
+      method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: ["occupation"], previewToken: sharePreview.previewToken,
+        recipientArchiveId: "other-archive", durationDays: 7 }),
+    })).status, 200);
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+        .get("unrelated-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id))?.count, 0,
+      "a linked request still hides its reason and actors from unrelated archives");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_linked_pairs WHERE left_archive_id='other-archive'
+          AND right_archive_id='runtime-test'`).get())?.count, 1,
+      "an unrelated archive sees only the published transition keys");
+    }, true);
+    for (const participantArchive of ["runtime-test", "other-archive"]) {
+      await matchDb.transaction(async () => {
+        await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+          .get(participantArchive);
+        const participantView = await matchDb.prepare("", `SELECT reason,requested_by,responded_by
+          FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id);
+        assert.deepEqual(participantView, {
+          reason: "Совпадают семейные записи", requested_by: "owner", responded_by: "vk:42",
+        }, "both participating archives retain their private review details");
+      }, true);
+    }
+    assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
+      .then((response) => response.json())).matches[0].status, "linked");
+    // Keep later migration smoke checks on the original two-archive fixture.
+    for (const runtime of [app, otherApp]) {
+      const current = await runtime.archive.read();
+      const restored = structuredClone(current.family);
+      restored.people = restored.people.filter((person) => !person.id.startsWith("branch-"));
+      restored.people[0].parents = restored.people[0].parents.filter((id) => !id.startsWith("branch-"));
+      await runtime.archive.write(restored, current.revision);
+    }
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+    assert.equal((await client.query("DELETE FROM discovery_match_requests WHERE id=$1", [secondPairId])).rowCount,
+      1, "B removes its direct B-C test request before deleting C");
+    await client.query("SELECT set_config('drevo.archive_id','third-archive',false)");
+    assert.equal((await client.query("DELETE FROM archives WHERE id='third-archive'")).rowCount,
+      1, "C's FORCE RLS requires selecting C before fixture deletion");
+    assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_people
+      WHERE archive_id='third-archive'`)).rows[0].count, 0,
+      "deleting the test archive also clears its public discovery projection");
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers })).status, 403);
+    const beforeCandidates = await otherApp.archive.read();
+    const similarCandidate = structuredClone(beforeCandidates.family);
+    similarCandidate.people[0].name = "Иван";
+    similarCandidate.people.push({ ...structuredClone(similarCandidate.people[0]),
+      id: "person-b", name: "Иван", column: 1 });
+    await otherApp.archive.write(similarCandidate, beforeCandidates.revision);
+    await otherPublication.publish("person-b", "owner", selectedDiscoveryFields);
+    const suggested = await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=person-a", {
+      headers: ownerHeaders,
+    });
+    assert.equal(suggested.status, 200);
+    const suggestedBody = await suggested.json();
+    assert.deepEqual(suggestedBody.candidates.map((person: { archiveId: string; id: string }) =>
+      [person.archiveId,person.id]), [["other-archive","person-b"]],
+    "a confirmed link must not be suggested again");
+    assert.equal(suggestedBody.candidates[0].birthYear, undefined,
+      "candidate evidence must not disclose a birth year hidden by publication consent");
+    const manualHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.101" };
+    const recipientHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.102" };
+    const recipientCandidates = "/api/discovery/matches/candidates?sourcePersonId=person-b";
+    assert.ok((await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
+      .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
+    "the receiving archive sees the suggested pair before rejecting a manual request");
+    const rejectedRequest = await fetch(securedBase + "/api/discovery/matches", {
+      method: "POST", headers: manualHeaders,
+      body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+        targetPersonId: "person-b", reason: "Проверить запись" }),
+    });
+    assert.equal(rejectedRequest.status, 200);
+    const rejectedId = (await rejectedRequest.json()).match.id as string;
+    const rejectedPath = `/api/discovery/matches/${rejectedId}`;
+    assert.ok(!(await fetch(securedBase +
+      "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: manualHeaders })
+      .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-b"),
+    "the initiator must not see an already pending request as a new suggestion");
+    assert.ok(!(await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
+      .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
+    "the recipient must not see an already pending request as a new suggestion");
+    await rejectWithStableDecisionNote({ archive: otherApp.archive, client,
+      matchId: rejectedId, recipientHeaders });
+    await verifyRejectedDecisionNote(matchDb,rejectedId,otherBase,recipientHeaders);
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+      const ignored = await matchDb.prepare("", `SELECT source_person_id,target_archive_id,
+        target_person_id,ignored_by FROM discovery_ignored_candidates
+        WHERE archive_id='other-archive' AND source_person_id='person-b'`).get();
+      assert.deepEqual(ignored, { source_person_id: "person-b", target_archive_id: "runtime-test",
+        target_person_id: "person-a", ignored_by: "vk:42" },
+      "rejection stores the pair in the recipient's direction only");
+    }, true);
     await matchDb.transaction(async () => {
       await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
-      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM relations
-        WHERE archive_id='other-archive'`).get())?.count,0,
-      "a failed target-path lock never leaves another archive visible to the source tenant");
-    },true);
-    assert.equal((await setGrandConsent(securedBase,ownerHeaders,"person-a",
-      otherGrandPath[1],true)).status,404,
-    "the source owner cannot opt into a relation ID from the target archive");
-    assert.ok(await grandSuggestion(),"a new request after NOWAIT rollback uses source scope");
-    const sourceFields = await grandOwnPublication.getFields("person-a");
-    assert.ok(sourceFields);
-    for (const { store,id } of [
-      { store: grandOwnPublication,id: "person-a" },
-      { store: grandOwnPublication,id: "grand-own-parent-b" },
-      { store: grandOwnPublication,id: "grand-own-person" },
-      { store: otherPublication,id: "grand-target" },
-      { store: otherPublication,id: "grand-other-parent-b" },
-      { store: otherPublication,id: "grand-other-person" },
-    ]) {
-      await store.unpublish(id);
-      if (id === "person-a")
-        assert.equal((await fetch(securedBase + candidatePath,
-          { headers: grandHeaders() })).status,404);
-      else assert.equal(await grandSuggestion(),undefined);
-      await store.publish(id,"owner",id === "person-a" ? sourceFields : undefined);
-      assert.equal(await grandSuggestion(),undefined,
-        "republishing any one of the three cards on either side does not restore consent");
-      await enableLastPath();
-      assert.ok(await grandSuggestion(),"fresh bilateral consent restores only the selected clue");
-    }
-    const sourceEdgeBefore = await app.archive.read();
-    const sourceWithoutSecondEdge = structuredClone(sourceEdgeBefore.family);
-    sourceWithoutSecondEdge.people.find((person) => person.id === "grand-own-parent-b")!
-      .parents = [];
-    const sourceEdgeWrite = await app.archive.write(sourceWithoutSecondEdge,
-      sourceEdgeBefore.revision);
-    assert.equal(await grandSuggestion(),undefined,
-      "removing the parent-to-grandparent edge revokes that exact path");
-    const sourceEdgeRestored = await app.archive.write(sourceEdgeBefore.family,
-      sourceEdgeWrite.revision);
-    assert.equal(await grandSuggestion(),undefined,"restoring an edge does not restore consent");
-    await enableLastPath();
-    const targetEdgeBefore = await otherApp.archive.read();
-    const targetWithoutFirstEdge = structuredClone(targetEdgeBefore.family);
-    targetWithoutFirstEdge.people.find((person) => person.id === "grand-target")!
-      .parents = ["grand-other-parent-a"];
-    const targetEdgeWrite = await otherApp.archive.write(targetWithoutFirstEdge,
-      targetEdgeBefore.revision);
-    assert.equal(await grandSuggestion(),undefined,
-      "removing the focal-to-parent edge revokes that exact path");
-    const targetEdgeRestored = await otherApp.archive.write(targetEdgeBefore.family,
-      targetEdgeWrite.revision);
-    assert.equal(await grandSuggestion(),undefined,"restoring a second edge does not restore consent");
-    await enableLastPath();
-    let latestSourceRevision = sourceEdgeRestored.revision;
-    let latestTargetRevision = targetEdgeRestored.revision;
-    for (const { archive,id } of [
-      { archive: app.archive,id: "person-a" },
-      { archive: app.archive,id: "grand-own-parent-b" },
-      { archive: otherApp.archive,id: "grand-other-person" },
-    ]) {
-      const beforeRename = await archive.read();
-      const renamed = structuredClone(beforeRename.family);
-      renamed.people.find((person) => person.id === id)!.name = "Новое имя";
-      const renameWrite = await archive.write(renamed,beforeRename.revision);
       assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-        FROM discovery_grandparent_consents WHERE archive_id=? AND person_id=?`)
-        .get(id === "grand-other-person" ? "other-archive" : "runtime-test",
-          id === "grand-other-person" ? "grand-target" : "person-a"))?.count,0,
-      "editing any published name in the selected path deletes its old opt-in");
-      const restored = await archive.write(beforeRename.family,renameWrite.revision);
-      if (archive === app.archive) latestSourceRevision = restored.revision;
-      else latestTargetRevision = restored.revision;
-      assert.equal(await grandSuggestion(),undefined,
-        "returning to the old spelling still requires explicit consent");
-      await enableLastPath();
-    }
-    assert.ok(await grandSuggestion());
-    sourceRevisionAfterGrandparentFixture =
-      (await app.archive.write(beforeGrandSource.family,latestSourceRevision)).revision;
-    await otherApp.archive.write(beforeGrandTarget.family,latestTargetRevision);
-    console.log("runtime_discovery_grandparent_consent_paths_ok");
-  })();
-  // Earlier scenarios deliberately spend the normal per-client search budget.
-  const signalHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.88" };
-  const signalIds = async () => {
-    const response = await fetch(securedBase + candidatePath, { headers: signalHeaders });
-    assert.equal(response.status, 200, "the candidate page must be available to the owner");
-    return (await response.json()).candidates as {
-      id: string; reasons: string[]; conflicts: string[];
-    }[];
-  };
-  assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
-    "a private relative cannot create a cross-archive hint");
-  assert.ok((await signalIds()).some((item) => item.id === "name-typo" &&
-    item.reasons.some((reason) => reason.includes("опечатка"))),
-  "a typo in a published surname is found through the trigram index");
-  assert.ok((await signalIds()).some((item) => item.id === "place-match" &&
-    item.reasons.some((reason) => reason.includes("Место рождения"))),
-  "the indexed place and year branch can suggest a changed surname");
-  assert.equal((await signalIds()).some((item) => item.id === "region-only"), false,
-    "a shared region without a shared settlement is not a candidate clue");
-  const deathHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.89" };
-  const deathCandidates = async () => {
-    const response = await fetch(securedBase + candidatePath, { headers: deathHeaders });
-    assert.equal(response.status, 200);
-    return (await response.json()).candidates as { id: string; reasons: string[] }[];
-  };
-  assert.equal((await deathCandidates()).some((item) => item.id === "death-place-match"), false,
-    "an unpublished death settlement is not searchable");
-  await otherPublication.publish("death-place-match", "owner", {
-    birthSurname: false, birthYear: true, deathYear: true,
-    birthPlace: true, deathPlace: false,
-  });
-  assert.equal((await deathCandidates()).some((item) => item.id === "death-place-match"), false,
-    "a death settlement withheld from publication cannot create a suggestion");
-  await otherPublication.publish("death-place-match", "owner");
-  assert.ok((await deathCandidates()).some((item) => item.id === "death-place-match" &&
-    item.reasons.includes("Место смерти совпадает")),
-  "the second indexed place branch finds a changed surname by opt-in death settlement and birth year");
-  await otherPublication.unpublish("death-place-match");
-  assert.equal((await deathCandidates()).some((item) => item.id === "death-place-match"), false,
-    "unpublishing removes the death-settlement suggestion immediately");
-  const beforeBothPlaces = await otherApp.archive.read();
-  const bothPlaces = structuredClone(beforeBothPlaces.family);
-  const bothPlaceIds = Array.from({ length: 25 }, (_, index) =>
-    `both-places-${String(index).padStart(2, "0")}`);
-  bothPlaces.people.push(...bothPlaceIds.map((id, index) => ({
-    ...structuredClone(otherPerson), id, surname: "Кузнецов", name: "Иван",
-    birth: "1991", birthPlace: "Нижний Тагил", deathPlace: "Казань",
-    deceased: true, parents: [], column: 60 + index,
-  })));
-  const bothPlaceWrite = await otherApp.archive.write(bothPlaces, beforeBothPlaces.revision);
-  for (const id of bothPlaceIds) await otherPublication.publish(id, "owner");
-  const pages: { id: string }[] = [];
-  let placeCursor: string | null = null;
-  for (let pageNumber = 0; pageNumber < 4; pageNumber++) {
-    const pageUrl: string = securedBase + candidatePath + (placeCursor
-      ? `&cursor=${encodeURIComponent(placeCursor)}` : "");
-    const response: Response = await fetch(pageUrl, { headers: deathHeaders });
-    assert.equal(response.status, 200);
-    const body = await response.json() as { candidates: { id: string }[]; nextCursor: string | null };
-    pages.push(...body.candidates);
-    if (pageNumber === 0) {
-      assert.equal(body.candidates.length, 24);
-      assert.equal(typeof body.nextCursor, "string");
-    }
-    placeCursor = body.nextCursor;
-    if (!placeCursor) break;
-  }
-  assert.equal(placeCursor, null, "two indexed place branches finish within bounded pages");
-  assert.equal(new Set(pages.map((person) => person.id)).size, pages.length,
-    "UNION deduplicates cards matching both birth and death places before pagination");
-  assert.equal(pages.filter((person) => bothPlaceIds.includes(person.id)).length, 25,
-    "a double-matched card beyond the first page remains reachable exactly once");
-  await otherApp.archive.write(beforeBothPlaces.family,
-    bothPlaceWrite.revision);
-  await publishedPeopleStore(app.archive.db).publish(parent.id, "owner");
-  await otherPublication.publish(parent.id, "owner");
-  const ownRelative = await fetch(securedBase + relativePath + "?personId=person-a",
-    { headers: ownerHeaders }).then((response) => response.json());
-  const otherRelative = await fetch(otherBase + relativePath + "?personId=name-typo",
-    { headers: recipientHeaders }).then((response) => response.json());
-  const ownRelationId = ownRelative.relatives.find((item: { personId: string }) =>
-    item.personId === parent.id)?.relationId;
-  const otherRelationId = otherRelative.relatives.find((item: { personId: string }) =>
-    item.personId === parent.id)?.relationId;
-  assert.ok(ownRelationId && otherRelationId, "only already published relatives are selectable");
-  const setRelativeConsent = async (base: string, headers: Record<string,string>,
-    personId: string, relationId: string, enabled: boolean) => fetch(base + relativePath, {
-      method: "POST", headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify({ personId, relationId, enabled }),
+        FROM discovery_ignored_candidates WHERE archive_id='other-archive'`).get())?.count,
+        0, "RLS hides the recipient's dismissal from the proposing archive");
+    }, true);
+    assert.ok(!(await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
+      .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
+    "rejection removes this pair from future automatic suggestions to the recipient");
+    assert.ok((await fetch(otherBase + recipientCandidates + "&ignored=1", {
+      headers: recipientHeaders,
+    }).then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
+    "the dismissed pair remains recoverable in the recipient's hidden list");
+    const rejectedAudit = await matchDb.prepare("", `SELECT status,requested_by,responded_by,
+      request_review_token,decision_review_token FROM discovery_match_requests WHERE id=?`)
+      .get(rejectedId);
+    assert.equal(rejectedAudit?.status, "rejected");
+    assert.equal(rejectedAudit?.requested_by, "owner");
+    assert.equal(rejectedAudit?.responded_by, "vk:42");
+    assert.match(String(rejectedAudit?.request_review_token), /^[0-9a-f]{64}$/);
+    assert.match(String(rejectedAudit?.decision_review_token), /^[0-9a-f]{64}$/);
+    assert.equal((await fetch(otherBase + rejectedPath, {
+      method: "PATCH", headers: recipientHeaders,
+      body: JSON.stringify({ decision: "reject", note: "Попытка заменить основание" }),
+    })).status, 200, "repeating a rejection is idempotent");
+    await verifyRejectedNoteUnchanged(matchDb,rejectedId);
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_ignored_candidates WHERE archive_id='other-archive'
+          AND source_person_id='person-b' AND target_archive_id='runtime-test'
+          AND target_person_id='person-a'`).get())?.count,
+        1, "repeating a rejection keeps exactly one recipient-owned dismissal");
+    }, true);
+    assert.equal((await matchDb.prepare("", `SELECT decision_review_token FROM discovery_match_requests
+      WHERE id=?`).get(rejectedId))?.decision_review_token, rejectedAudit?.decision_review_token);
+    assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+      method: "POST", headers: manualHeaders,
+      body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+        targetPersonId: "person-b", ignored: false }),
+    })).status, 200, "the proposer may clear only its own directed ignore, not the recipient's");
+    assert.ok(!(await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
+      .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"));
+    assert.equal((await fetch(otherBase + "/api/discovery/matches/ignored", {
+      method: "POST", headers: recipientHeaders,
+      body: JSON.stringify({ sourcePersonId: "person-b", targetArchiveId: "runtime-test",
+        targetPersonId: "person-a", ignored: false }),
+    })).status, 200);
+    assert.ok((await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
+      .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
+    "restoring the hint resumes suggestions without changing the match decision");
+    assert.equal((await fetch(otherBase + rejectedPath, {
+      method: "PATCH", headers: recipientHeaders, body: JSON.stringify({ decision: "reject" }),
+    })).status, 200);
+    assert.ok((await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
+      .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
+    "an idempotent retry cannot undo an explicit later restoration");
+    const repeatedRequest = await fetch(otherBase + "/api/discovery/matches", {
+      method: "POST", headers: recipientHeaders,
+      body: JSON.stringify({ sourcePersonId: "person-b", targetArchiveId: "runtime-test",
+        targetPersonId: "person-a" }),
     });
-  assert.equal((await setRelativeConsent(securedBase,ownerHeaders,
-    "person-a",ownRelationId,true)).status, 200);
-  assert.equal((await app.archive.db.prepare("", `SELECT birth_year FROM discovery_people
-    WHERE archive_id=? AND person_id=?`).get("runtime-test","person-a"))?.birth_year,
-  "1990", "the source has a published year for the relative exclusion boundary");
-  const undatedRelative = await fetch(otherBase + relativePath +
-    "?personId=relative-undated-exact", { headers: recipientHeaders })
-    .then((response) => response.json());
-  const undatedRelationId = undatedRelative.relatives.find((item: { personId: string }) =>
-    item.personId === parent.id)?.relationId;
-  assert.ok(undatedRelationId);
-  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
-    "relative-undated-exact",undatedRelationId,true)).status, 200);
-  assert.equal((await otherApp.archive.db.prepare("", `SELECT birth_year FROM discovery_people
-    WHERE archive_id=? AND person_id=?`).get("other-archive","relative-undated-exact"))?.birth_year,
-  null, "the target has no published birth year");
-  const undatedResponse = await fetch(securedBase + candidatePath,
-    { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.128" } });
-  assert.equal(undatedResponse.status, 200);
-  assert.ok((await undatedResponse.json()).candidates.some(
-    (item: { id: string }) => item.id === "relative-undated-exact"),
-  "a matched relative clue cannot hide an exact-role candidate with unknown birth year");
-  console.log("runtime_discovery_candidate_unknown_year_ok");
-  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
-    .some((reason) => reason.includes("родителя")), false,
-  "one-sided relation consent does not reveal a shared relative");
-  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
-    "name-typo",otherRelationId,true)).status, 200);
-  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
-    .some((reason) => reason.includes("родителя")), true,
-  "bilateral explicit relation consent adds explainable evidence");
-  const changedSurnameRelation = await fetch(otherBase + relativePath +
-    "?personId=relative-only", { headers: recipientHeaders }).then((response) => response.json());
-  const changedSurnameRelationId = changedSurnameRelation.relatives.find(
-    (item: { personId: string }) => item.personId === parent.id)?.relationId;
-  assert.ok(changedSurnameRelationId);
-  assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
-    "one-sided consent cannot retrieve a changed-surname candidate");
-  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
-    "relative-only",changedSurnameRelationId,true)).status, 200);
-  const changedSurnameHint = (await signalIds()).find((item) => item.id === "relative-only");
-  assert.ok(changedSurnameHint?.reasons.some((reason) => reason.includes("родителя")),
-    "an indexed bilateral relative plus published given name and close year finds a changed surname");
-  assert.ok(changedSurnameHint?.conflicts.includes("Указанные фамилии различаются"));
-  const rankedSignalIds = (await signalIds()).map((item) => item.id);
-  assert.ok(rankedSignalIds.indexOf("relative-only") >= 0 &&
-    rankedSignalIds.indexOf("relative-only") < rankedSignalIds.indexOf("person-b"),
-  "bilateral close-relative evidence precedes exact-name evidence in the tier contract");
-  await client.query("BEGIN");
-  try {
-    await client.query("SET LOCAL enable_seqscan=off");
-    const relativePlan = await client.query(`EXPLAIN (FORMAT JSON)
-      SELECT target.person_id FROM discovery_relative_consents own
-      JOIN discovery_relative_consents target ON target.kind=own.kind
-        AND target.relative_name_key=own.relative_name_key
-      WHERE own.archive_id='runtime-test' AND own.person_id='person-a'
-        AND target.archive_id='other-archive'`);
-    assert.match(JSON.stringify(relativePlan.rows), /discovery_relative_consents_lookup/,
-      "the consented-relative shortlist has an executable B-tree lookup");
-  } finally { await client.query("ROLLBACK"); }
-  const beforeRelativePages = await otherApp.archive.read();
-  const relativePageFamily = structuredClone(beforeRelativePages.family);
-  const relativePageIds = Array.from({ length: 26 }, (_, index) =>
-    `relative-sort-${String(index).padStart(2,"0")}`);
-  relativePageIds.splice(0,4,"relative-sort-A","relative-sort-a",
-    "relative-sort-Ё","relative-sort-я");
-  relativePageFamily.people.push(...relativePageIds.map((id, index) => ({
-    ...structuredClone(otherPerson), id, surname: "Сидоров", name: "Иван",
-    birth: "1991", deceased: true, parents: [parent.id], column: 100 + index,
-  })));
-  const relativePageWrite = await otherApp.archive.write(relativePageFamily,
-    beforeRelativePages.revision);
-  for (const id of relativePageIds) {
-    await otherPublication.publish(id,"owner");
-    const selectable = await fetch(otherBase + relativePath +
-      `?personId=${encodeURIComponent(id)}`, { headers: recipientHeaders })
-      .then((response) => response.json());
-    const relationId = selectable.relatives.find((item: { personId: string }) =>
-      item.personId === parent.id)?.relationId;
-    assert.ok(relationId);
-    assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
-      id,relationId,true)).status,200);
-  }
-  const relativePageHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.129" };
-  const allRelativePageIds: string[] = [];
-  let relativePageCursor: string | null = null;
-  for (let pageNumber = 0; pageNumber < 5; pageNumber++) {
-    const response: Response = await fetch(securedBase + candidatePath +
-      (relativePageCursor ? `&cursor=${encodeURIComponent(relativePageCursor)}` : ""),
-    { headers: relativePageHeaders });
-    assert.equal(response.status,200);
-    const body = await response.json() as { candidates: { id: string }[];
-      nextCursor: string | null };
-    allRelativePageIds.push(...body.candidates.map((item) => item.id));
-    if (pageNumber === 0) assert.equal(body.candidates.length,24);
-    relativePageCursor = body.nextCursor;
-    if (!relativePageCursor || relativePageIds.every((id) =>
-      allRelativePageIds.includes(id))) break;
-  }
-  const foundRelativePageIds = allRelativePageIds.filter((id) =>
-    relativePageIds.includes(id));
-  assert.equal(new Set(foundRelativePageIds).size,relativePageIds.length,
-    "relative keyset reaches each consented Unicode and mixed-case ID once");
-  assert.deepEqual(foundRelativePageIds,
-    [...relativePageIds].sort((left,right) =>
-      Buffer.compare(Buffer.from(left,"utf8"),Buffer.from(right,"utf8"))),
-  "the relative cursor uses the same C byte order as its SQL ORDER BY");
-  const afterRelativePages = await otherApp.archive.write(beforeRelativePages.family,
-    relativePageWrite.revision);
-  console.log("runtime_discovery_candidate_relative_keyset_ok");
-
-  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
-    "relative-only",changedSurnameRelationId,false)).status, 200);
-  assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
-    "revoking that relation removes its sole shortlist path");
-  const originalRelativeName = String((await otherApp.archive.db.prepare("",
-    `SELECT name FROM discovery_people WHERE archive_id=? AND person_id=?`)
-    .get("other-archive",parent.id))?.name);
-  await otherApp.archive.db.prepare("", `UPDATE discovery_people SET name=?
-    WHERE archive_id=? AND person_id=?`).run("Иное имя", "other-archive", parent.id);
-  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
-    .some((reason) => reason.includes("родителя")), false,
-  "a published relative's name change incrementally refreshes only its consented clue");
-  await otherApp.archive.db.prepare("", `UPDATE discovery_people SET name=?
-    WHERE archive_id=? AND person_id=?`).run(originalRelativeName, "other-archive", parent.id);
-  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
-    .some((reason) => reason.includes("родителя")), true);
-  await runDiscoveryBackfill();
-  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
-    .some((reason) => reason.includes("родителя")), true,
-  "the administrative index rebuild preserves only pre-existing relation consent");
-  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
-    "name-typo",otherRelationId,false)).status, 200);
-  assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
-    .some((reason) => reason.includes("родителя")), false,
-  "completed relation revocation removes the evidence immediately");
-  console.log("runtime_discovery_relative_consent_ok");
-  const revocableRequest = await fetch(securedBase + "/api/discovery/matches", {
-    method: "POST", headers: manualHeaders,
-    body: JSON.stringify({ sourcePersonId: parent.id, targetArchiveId: "other-archive",
-      targetPersonId: parent.id }),
-  });
-  assert.equal(revocableRequest.status, 200);
-  const revocableId = (await revocableRequest.json()).match.id as string;
-  const revocablePath = `/api/discovery/matches/${revocableId}`;
-  const revocableReview = (await (await fetch(otherBase + "/api/discovery/matches", {
-    headers: recipientHeaders,
-  })).json()).matches.find((item: { id: string }) => item.id === revocableId);
-  assert.ok(revocableReview?.reviewToken);
-  assert.equal((await fetch(otherBase + revocablePath, {
-    method: "PATCH", headers: recipientHeaders,
-    body: JSON.stringify({ decision: "accept", reviewToken: revocableReview.reviewToken,
-      note: "Сравнены открытые карточки" }),
-  })).status, 200);
-  await verifyRevocableDecisionNote(matchDb,revocableId,securedBase,revocablePath,manualHeaders);
-  const revocableSharePath = revocablePath + "/card-share";
-  const revocablePreview = await fetch(securedBase + revocableSharePath, { headers: manualHeaders })
-    .then((response) => response.json());
-  assert.equal(revocablePreview.available.birth, "1960");
-  assert.equal((await fetch(securedBase + revocableSharePath, {
-    method: "PUT", headers: { ...manualHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["birth"], previewToken: revocablePreview.previewToken,
-      recipientArchiveId: revocablePreview.recipientArchiveId, durationDays: 7 }),
-  })).status, 200);
-  assert.equal((await app.archive.db.prepare("", `UPDATE discovery_linked_card_grants
-    SET expires_at=NULL WHERE grantor_archive_id='runtime-test'
-      AND left_person_id=? AND right_person_id=?`).run(parent.id,parent.id)).changes, 1);
-  await client.query(readFileSync(new URL("../../ops/postgres/063_discovery_card_expiry.sql", import.meta.url), "utf8"));
-  assert.equal((await client.query(`SELECT count(*)::int AS count
-    FROM discovery_linked_card_grants WHERE left_person_id=$1 AND right_person_id=$2
-      AND expires_at IS NULL`, [parent.id,parent.id])).rows[0].count, 1,
-  "reapplying 063 never shortens a legacy until-revoked scalar consent");
-  const legacyCardResponse = await fetch(securedBase + revocableSharePath, {
-    headers: manualHeaders,
-  });
-  assert.equal(legacyCardResponse.status, 200,
-    "the grantor can still manage a legacy scalar consent");
-  assert.equal((await legacyCardResponse.json()).outgoing.expiresAt, null,
-    "the API labels a legacy scalar grant as valid until revoked");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
-    assert.equal((await matchDb.prepare("", `SELECT fields->>'birth' AS birth
-      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
-        AND left_person_id=? AND right_person_id=?`).get(parent.id,parent.id))?.birth,
-      "1960", "the recipient's SQL RLS keeps a legacy NULL grant readable until revoke");
-  }, true);
-  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-    FROM discovery_linked_card_grants WHERE left_person_id=? AND right_person_id=?`)
-    .get(parent.id,parent.id))?.count, 1);
-  const publicParentPath = `/api/discovery/people/runtime-test/${parent.id}`;
-  const linkedPublicParent = await fetch(securedBase + publicParentPath, { headers });
-  assert.equal(linkedPublicParent.status, 200);
-  assert.equal(linkedPublicParent.headers.get("cache-control"), "private, no-store");
-  assert.equal((await linkedPublicParent.json()).linkedCards.length, 1);
-  let linkedReached!: () => void, releaseLinked!: () => void;
-  const linkedReady = new Promise<void>((resolve) => { linkedReached = resolve; });
-  const linkedGate = new Promise<void>((resolve) => { releaseLinked = resolve; });
-  const linkedEndpoint = discoveryPeopleHttp(app.archive.db, discoveryAuth, undefined, undefined,
-    async () => { linkedReached(); await linkedGate; });
-  const linkedServer = createServer((req, res) => {
-    void linkedEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => linkedServer.listen(0, "127.0.0.1", resolve));
-  const linkedPort = (linkedServer.address() as { port: number }).port;
-  const pausedLinked = fetch(`http://127.0.0.1:${linkedPort}${publicParentPath}`,
-    { headers: { ...headers, "X-Real-IP": "203.0.113.14" } });
-  let revokeLinked: Promise<Response> | undefined;
-  try {
-    await Promise.race([linkedReady,
-      pausedLinked.then(() => { throw new Error("Linked discovery detail sent before delivery barrier"); }),
-      new Promise<never>((_, reject) => setTimeout(() =>
-        reject(new Error("Linked discovery detail did not reach delivery barrier")), 30_000)),
-    ]);
-    revokeLinked = fetch(securedBase + revocablePath, {
-      method: "PATCH", headers: { ...manualHeaders, "X-Real-IP": "203.0.113.15" },
-      body: JSON.stringify({ decision: "revoke" }),
+    assert.equal(repeatedRequest.status, 200);
+    assert.deepEqual({ id: (await repeatedRequest.json()).match.id,
+      status: (await matchDb.prepare("", "SELECT status FROM discovery_match_requests WHERE id=?")
+        .get(rejectedId))?.status }, { id: rejectedId, status: "rejected" },
+    "restoring a hint does not reopen the rejected manual request");
+    const beforeReverseRejection = await app.archive.read();
+    const reverseFamily = structuredClone(beforeReverseRejection.family);
+    reverseFamily.people.push({ ...structuredClone(reverseFamily.people[0]),
+      id: "reverse-rejected-a", name: "Другой Иван", column: 75 });
+    const reverseWrite = await app.archive.write(reverseFamily, beforeReverseRejection.revision);
+    await publishedPeopleStore(app.archive.db).publish("reverse-rejected-a", "owner");
+    const reverseRequest = await fetch(otherBase + "/api/discovery/matches", {
+      method: "POST", headers: recipientHeaders,
+      body: JSON.stringify({ sourcePersonId: "person-b", targetArchiveId: "runtime-test",
+        targetPersonId: "reverse-rejected-a" }),
     });
-    const earlyRevoke = await Promise.race([
-      revokeLinked.then((response) => `completed ${response.status}`),
-      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
-    ]);
-    assert.equal(earlyRevoke, "pending",
-      "unlinking waits until a linked public card finishes delivery");
-    releaseLinked();
-    const deliveredLinked = await pausedLinked;
-    assert.equal(deliveredLinked.status, 200);
-    assert.equal((await deliveredLinked.json()).linkedCards.length, 1);
-    assert.equal((await revokeLinked).status, 200);
-  } finally {
-    releaseLinked();
-    await pausedLinked.catch(() => {});
-    await revokeLinked?.catch(() => {});
-    await new Promise<void>((resolve) => linkedServer.close(() => resolve()));
-  }
-  assert.deepEqual((await fetch(securedBase + publicParentPath, { headers })
-    .then((response) => response.json())).linkedCards, []);
-  console.log("runtime_discovery_linked_detail_revocation_ok");
-  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-    FROM discovery_linked_card_grants WHERE left_person_id=? AND right_person_id=?`)
-    .get(parent.id,parent.id))?.count, 0,
-  "manually revoking the match removes its extra-field grant atomically");
-  assert.equal((await fetch(securedBase + revocableSharePath, {
-    headers: manualHeaders,
-  })).status, 404, "the former grantor cannot reopen a revoked linked card");
-  assert.equal((await fetch(securedBase + revocablePath, {
-    method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "revoke" }),
-  })).status, 200, "repeating a revocation is idempotent");
-  const revokedAudit = await matchDb.prepare("", `SELECT status,revoked_by,decision_review_token
-    FROM discovery_match_requests WHERE id=?`).get(revocableId);
-  assert.equal(revokedAudit?.status, "revoked");
-  assert.equal(revokedAudit?.revoked_by, "owner");
-  assert.equal(revokedAudit?.decision_review_token, revocableReview.reviewToken);
-  await verifyRevokedDecisionNote(matchDb,revocableId,securedBase,manualHeaders);
-  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
-    WHERE left_person_id=? AND right_person_id=?`).get(parent.id,parent.id))?.count, 0,
-  "manual revocation removes the public transition immediately");
-  const revokedPublicParent = await fetch(securedBase + publicParentPath, { headers });
-  assert.equal(revokedPublicParent.status, 200, "the still-published card remains public");
-  assert.equal(revokedPublicParent.headers.get("cache-control"), "private, no-store");
-  assert.deepEqual((await revokedPublicParent.json()).linkedCards, [],
-    "a fresh public GET cannot return a revoked linked-card transition");
-  const relativeHint = (await signalIds()).find((item) => item.id === "relative-only");
-  assert.equal(relativeHint, undefined,
-    "publishing both people does not opt their relationship into candidate hints");
-  const candidateDelivery = async (change: () => Promise<void>) => {
-    let reached!: () => void, resume!: () => void;
-    const ready = new Promise<void>((resolve) => { reached = resolve; });
-    const gate = new Promise<void>((resolve) => { resume = resolve; });
-    const pause = async () => { reached(); await gate; };
-    const endpoint = discoveryMatchesHttp({ archive: app!.archive, auth: discoveryAuth,
-      publicOrigin: process.env.PUBLIC_ORIGIN,
-      beforeCandidateDelivery: pause });
-    const server = createServer((req, res) => {
-      void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-        .catch((error) => { res.destroy(error); });
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const port = (server.address() as { port: number }).port;
-    const request = fetch(`http://127.0.0.1:${port}${candidatePath}`, {
-      headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.227" },
-    });
+    assert.equal(reverseRequest.status, 200);
+    const reverseId = (await reverseRequest.json()).match.id as string;
+    assert.equal((await fetch(securedBase + `/api/discovery/matches/${reverseId}`, {
+      method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "reject" }),
+    })).status, 200);
+    await verifyLateNoteDenied(client,reverseId);
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_ignored_candidates WHERE archive_id='runtime-test'
+          AND source_person_id='reverse-rejected-a' AND target_archive_id='other-archive'
+          AND target_person_id='person-b'`).get())?.count, 1,
+      "when the recipient is the right pair side, the ignore still points from its own person");
+    }, true);
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_ignored_candidates WHERE archive_id='runtime-test'
+          AND source_person_id='reverse-rejected-a'`).get())?.count, 0,
+      "the initiator cannot read the reverse-direction dismissal");
+    }, true);
+    assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+      method: "POST", headers: manualHeaders,
+      body: JSON.stringify({ sourcePersonId: "reverse-rejected-a",
+        targetArchiveId: "other-archive", targetPersonId: "person-b", ignored: false }),
+    })).status, 200);
+    assert.equal((await matchDb.prepare("", "SELECT status FROM discovery_match_requests WHERE id=?")
+      .get(reverseId))?.status, "rejected", "restoration does not reopen the reverse manual request");
+    await app.archive.write(beforeReverseRejection.family, reverseWrite.revision);
+    assert.equal((await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=person-a", {
+      headers,
+    })).status, 403);
+    const ignoredBody = JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+      targetPersonId: "person-b", ignored: true });
+    assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+      method: "POST", headers, body: ignoredBody,
+    })).status, 403);
+    assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+      method: "POST", headers: ownerHeaders, body: ignoredBody,
+    })).status, 200);
+    assert.deepEqual((await (await fetch(securedBase +
+      "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
+      .json()).candidates, []);
+    assert.deepEqual((await (await fetch(securedBase +
+      "/api/discovery/matches/candidates?sourcePersonId=person-a&ignored=1", { headers: ownerHeaders }))
+      .json()).candidates.map((person: { id: string }) => person.id), ["person-b"]);
+    assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+      method: "POST", headers: ownerHeaders,
+      body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+        targetPersonId: "person-b", ignored: false }),
+    })).status, 200);
+    assert.deepEqual((await (await fetch(securedBase +
+      "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
+      .json()).candidates.map((person: { id: string }) => person.id), ["person-b"]);
+    const ignoredArchivePath = "/api/discovery/matches/ignored-archives";
+    const archiveIgnoreBody = JSON.stringify({ targetArchiveId: "other-archive", ignored: true });
+    assert.equal((await fetch(securedBase + ignoredArchivePath, {
+      method: "POST", headers, body: archiveIgnoreBody,
+    })).status, 403, "a reader cannot hide another archive");
+    assert.equal((await fetch(securedBase + ignoredArchivePath, {
+      method: "POST", headers: ownerHeaders,
+      body: JSON.stringify({ targetArchiveId: "unrelated-archive", ignored: true }),
+    })).status, 409, "a tree without published cards cannot be probed by hiding it");
+    assert.equal((await fetch(securedBase + ignoredArchivePath, {
+      method: "POST", headers: ownerHeaders, body: archiveIgnoreBody,
+    })).status, 200);
+    assert.deepEqual((await (await fetch(securedBase +
+      "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
+      .json()).candidates, [], "hiding an archive removes all its automatic suggestions");
+    assert.equal((await (await fetch(securedBase +
+      "/api/discovery/people?q=Иван", { headers: ownerHeaders }))
+      .json()).results.some((person: { archiveId: string }) =>
+      person.archiveId === "other-archive"), true,
+    "manual discovery remains available after hiding automatic suggestions");
+    assert.deepEqual((await (await fetch(securedBase + ignoredArchivePath, {
+      headers: ownerHeaders,
+    })).json()).archives.map((item: { archiveId: string }) => item.archiveId),
+    ["other-archive"]);
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+        .get("unrelated-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_ignored_archives WHERE archive_id='runtime-test'`).get())?.count, 0,
+      "another archive cannot inspect the private dismissal list");
+    }, true);
+    assert.equal((await fetch(securedBase + ignoredArchivePath, {
+      method: "POST", headers: ownerHeaders,
+      body: JSON.stringify({ targetArchiveId: "other-archive", ignored: false }),
+    })).status, 200);
+    assert.deepEqual((await (await fetch(securedBase +
+      "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
+      .json()).candidates.map((person: { id: string }) => person.id), ["person-b"],
+    "restoring the archive returns its published candidates");
+    const beforeCandidatePages = await otherApp.archive.read();
+    const pagedFamily = structuredClone(beforeCandidatePages.family);
+    const template = pagedFamily.people.find((person) => person.id === "person-b")!;
+    const pageIds = Array.from({ length: 25 }, (_, index) => `similar-${String(index).padStart(2, "0")}`);
+    pagedFamily.people.push(...pageIds.map((id, index) => ({
+      ...structuredClone(template), id, birth: index === 24 ? "1990" : "1980",
+      column: index + 2,
+    })));
+    const paged = await otherApp.archive.write(pagedFamily, beforeCandidatePages.revision);
+    for (const id of pageIds)
+      await otherPublication.publish(id, "owner", selectedDiscoveryFields);
+    const candidatePath = "/api/discovery/matches/candidates?sourcePersonId=person-a";
+    const firstCandidatePage = await fetch(securedBase + candidatePath, { headers: ownerHeaders }).then((response) => response.json());
+    assert.equal(firstCandidatePage.candidates.length, 24);
+    assert.equal(typeof firstCandidatePage.nextCursor, "string");
+    const secondCandidatePage = await fetch(securedBase + candidatePath +
+      `&cursor=${encodeURIComponent(firstCandidatePage.nextCursor)}`, { headers: ownerHeaders }).then((response) => response.json());
+    assert.equal(secondCandidatePage.nextCursor, null);
+    assert.equal(new Set([...firstCandidatePage.candidates, ...secondCandidatePage.candidates]
+      .map((person: { id: string }) => person.id)).size, 26,
+    "all published names remain reachable beyond the first indexed page");
+    assert.equal((await fetch(securedBase + candidatePath + "&cursor=invalid", {
+      headers: ownerHeaders,
+    })).status, 400);
+    const beforeTierFields = await ownerPublication.getFields("person-a");
+    assert.ok(beforeTierFields);
+    const datedFields = { ...selectedDiscoveryFields, birthYear: true };
+    await ownerPublication.publish("person-a", "owner", datedFields);
+    for (const id of pageIds) await otherPublication.publish(id, "owner", datedFields);
+    // Candidate lookup has an intentional per-client rate limit. Keep this new
+    // regression independent of earlier pagination requests in the same suite.
+    const tierHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.126" };
+    const strongResponse = await fetch(securedBase + candidatePath,
+      { headers: tierHeaders });
+    assert.equal(strongResponse.status, 200);
+    const strongPage = await strongResponse.json();
+    assert.ok(strongPage.candidates.some((candidate: { id: string }) => candidate.id === "similar-24"),
+      "a strong candidate beyond the raw first page reaches the first ranked page");
+    assert.ok(strongPage.candidates.findIndex((candidate: { id: string }) => candidate.id === "similar-24") <
+      strongPage.candidates.findIndex((candidate: { id: string }) => candidate.id === "similar-00"),
+    "published exact name and birth year outrank weak names");
+    await client.query("BEGIN");
     try {
-      await Promise.race([
-        ready,
-        request.then(() => { throw new Error("Candidates sent before the delivery barrier"); }),
-        new Promise<never>((_, reject) => {
-          const timer = setTimeout(() => reject(new Error("Candidates did not reach delivery barrier")), 30_000);
-          timer.unref();
-        }),
-      ]);
-      await change();
-      resume();
-      return await request;
+      await client.query("SET LOCAL enable_seqscan=off");
+      const tierPlan = await client.query(`EXPLAIN (FORMAT JSON)
+        SELECT person_id FROM discovery_people d
+        WHERE replace(lower(coalesce(nullif(d.given_part,''),split_part(d.name,' ',2))),
+          'ё','е')='иван'
+          AND replace(lower(coalesce(nullif(d.surname_part,''),split_part(d.name,' ',1))),
+            'ё','е')='тестов'
+          AND coalesce(d.birth_year,'9999')='1990'
+        ORDER BY coalesce(d.birth_year,'9999'),d.name COLLATE "C",
+          d.archive_id COLLATE "C",d.person_id COLLATE "C" LIMIT 24`);
+      assert.match(JSON.stringify(tierPlan.rows), /discovery_people_tier_current/,
+        "the exact-name and published-year stream uses its actual B-tree index");
+    } finally { await client.query("ROLLBACK"); }
+    await ownerPublication.publish("person-a", "owner", beforeTierFields);
+    assert.equal((await fetch(securedBase + candidatePath +
+      `&cursor=${encodeURIComponent(strongPage.nextCursor)}`, { headers: tierHeaders })).status,
+    409, "changing the source publication invalidates its tiered cursor");
+    console.log("runtime_discovery_candidate_tiers_ok");
+    await client.query("BEGIN");
+    try {
+      await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
+      await client.query(`INSERT INTO people(archive_id,id,ordinal,data)
+        SELECT 'other-archive','load-'||g,
+          (SELECT max(ordinal) FROM people WHERE archive_id='other-archive')+g,
+          jsonb_build_object('id','load-'||g,'surname','Нагрузов','name','Даниил',
+            'deceased',true,'birth','1900')
+        FROM generate_series(1,600) AS g`);
+      await client.query(`INSERT INTO published_people(archive_id,person_id,published_at,published_by)
+        SELECT 'other-archive','load-'||g,'2026-01-01','owner'
+        FROM generate_series(1,600) AS g`);
+      assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_people
+        WHERE person_id LIKE 'load-%'`)).rows[0].count, 600);
+      await client.query("SET LOCAL enable_seqscan=off");
+      const fuzzyPlan = await client.query(`EXPLAIN (FORMAT JSON)
+        SELECT person_id FROM discovery_people
+        WHERE given_normalized % 'даниил' AND surname_normalized % 'нагрузов'`);
+      assert.match(JSON.stringify(fuzzyPlan.rows), /discovery_people_(given|surname)_trgm/,
+        "the typo branch has an executable trigram index plan with 600 published rows");
+      const exactPlan = await client.query(`EXPLAIN (FORMAT JSON)
+        SELECT person_id FROM discovery_people
+        WHERE name_vector @@ to_tsquery('simple','нагрузов & даниил')`);
+      assert.match(JSON.stringify(exactPlan.rows), /discovery_people_names/,
+        "exact candidate names keep their GIN index path");
+      await client.query(`UPDATE discovery_people SET surname_part=NULL,given_part=NULL
+        WHERE archive_id='other-archive' AND person_id LIKE 'load-%'`);
+      const backfillPlan = await client.query(`EXPLAIN (FORMAT JSON) ${discoveryNamePartsBatch}`,
+        ["other-archive","load-200"]);
+      assert.match(JSON.stringify(backfillPlan.rows), /discovery_people_pkey/,
+        "keyset backfill uses the projection primary key after its cursor");
     } finally {
-      resume();
-      await request.catch(() => {});
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await client.query("ROLLBACK");
     }
-  };
-  const unchangedCandidates = await candidateDelivery(async () => {});
-  assert.equal(unchangedCandidates.status, 200);
-  const unchangedPage = await unchangedCandidates.json();
-  assert.equal(unchangedPage.truncated, false);
-  assert.equal(unchangedPage.nextCursor, null);
-  assert.ok(unchangedPage.candidates.some((item: { id: string }) =>
-    item.id === "name-typo"), "unchanged published candidates remain available");
-  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
-    "name-typo",otherRelationId,true)).status, 200);
-  const revokedRelativeDelivery = await candidateDelivery(async () => {
+    await otherApp.archive.write(beforeCandidatePages.family, paged.revision);
+    const beforeCrossSource = await app.archive.read();
+    const beforeCrossOther = await otherApp.archive.read();
+    const beforeCrossFields = await ownerPublication.getFields("person-a");
+    assert.ok(beforeCrossFields);
+    const crossSource = structuredClone(beforeCrossSource.family);
+    crossSource.people.find((person) => person.id === "person-a")!.maidenName = "Старов";
+    const crossSourceWrite = await app.archive.write(crossSource, beforeCrossSource.revision);
+    const crossOther = structuredClone(beforeCrossOther.family);
+    const crossTemplate = crossOther.people.find((person) => person.id === "person-b")!;
+    crossOther.people.push({ ...structuredClone(crossTemplate), id: "birth-to-current",
+      surname: "Старов", maidenName: "", name: "Иван", birth: "1990", column: 72 });
+    crossOther.people.push({ ...structuredClone(crossTemplate), id: "current-to-birth",
+      surname: "Другов", maidenName: "Тестов", name: "Иван", birth: "1990", column: 73 });
+    const crossOtherWrite = await otherApp.archive.write(crossOther, beforeCrossOther.revision);
+    await ownerPublication.publish("person-a", "owner", datedFields);
+    for (const id of ["birth-to-current","current-to-birth"])
+      await otherPublication.publish(id, "owner", datedFields);
+    const crossResponse = await fetch(securedBase + candidatePath,
+      { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.127" } });
+    assert.equal(crossResponse.status, 200);
+    const crossIds = (await crossResponse.json()).candidates.map((item: { id: string }) => item.id);
+    assert.ok(crossIds.includes("birth-to-current") && crossIds.includes("current-to-birth"),
+      "both published current/birth surname crossings enter exact-name tiers");
+    assert.equal(new Set(crossIds).size, crossIds.length,
+      "overlapping published surname roles do not duplicate a first-page candidate");
+    await app.archive.write(beforeCrossSource.family, crossSourceWrite.revision);
+    await otherApp.archive.write(beforeCrossOther.family, crossOtherWrite.revision);
+    await ownerPublication.publish("person-a", "owner", beforeCrossFields);
+    console.log("runtime_discovery_candidate_surname_crossing_ok");
+    const ownBeforeSignals = await app.archive.read();
+    const otherBeforeSignals = await otherApp.archive.read();
+    const ownWithRelative = structuredClone(ownBeforeSignals.family);
+    const otherWithRelative = structuredClone(otherBeforeSignals.family);
+    const ownPerson = ownWithRelative.people.find((person) => person.id === "person-a")!;
+    const otherPerson = otherWithRelative.people.find((person) => person.id === "person-a")!;
+    ownPerson.birthPlace = "Россия, Свердловская область, Нижний Тагил";
+    ownPerson.deathPlace = "Казань";
+    const parent = { ...structuredClone(ownPerson), id: "published-parent",
+      surname: "Орлов", name: "Пётр", birth: "1960", deceased: true,
+      parents: [], column: 50 };
+    ownWithRelative.people.push(structuredClone(parent));
+    otherWithRelative.people.push(structuredClone(parent));
+    ownPerson.parents = [parent.id];
+    otherWithRelative.people.push({ ...structuredClone(otherPerson),
+      id: "relative-only", surname: "Сидоров", name: "Иван", birth: "1991",
+      deceased: true, parents: [parent.id], spouses: ["closed-relative"], column: 51 });
+    otherWithRelative.people.push({ ...structuredClone(otherPerson),
+      id: "name-typo", surname: "Тестав", name: "Иван", deceased: true,
+      parents: [parent.id], column: 52 });
+    otherWithRelative.people.push({ ...structuredClone(otherPerson),
+      id: "relative-undated-exact", surname: "Тестов", name: "Иван", birth: "",
+      deceased: true, parents: [parent.id], column: 57 });
+    otherWithRelative.people.push({ ...structuredClone(otherPerson),
+      id: "place-match", surname: "Петров", name: "Иван", birth: "1991",
+      birthPlace: "Россия, Свердловская область, Нижний Тагил", deceased: true,
+      parents: [], column: 54 });
+    otherWithRelative.people.push({ ...structuredClone(otherPerson),
+      id: "region-only", surname: "Романов", name: "Иван", birth: "1991",
+      birthPlace: "Россия, Свердловская область, Екатеринбург", deceased: true,
+      parents: [], column: 55 });
+    otherWithRelative.people.push({ ...structuredClone(otherPerson),
+      id: "death-place-match", surname: "Кузнецов", name: "Иван", birth: "1991",
+      deathPlace: "Казань", birthPlace: "", deceased: true,
+      parents: [], column: 56 });
+    otherWithRelative.people.push({ ...structuredClone(otherPerson),
+      id: "closed-relative", surname: "Орлов", name: "Пётр", sex: "f", deceased: true,
+      parents: [], spouses: ["relative-only"], column: 53 });
+    const ownSignalWrite = await app.archive.write(ownWithRelative, ownBeforeSignals.revision);
+    await otherApp.archive.write(otherWithRelative, otherBeforeSignals.revision);
+    const relativePath = "/api/discovery/matches/relative-consents";
+    const unpublishedRelative = await fetch(securedBase + relativePath + "?personId=person-a",
+      { headers: ownerHeaders });
+    assert.equal(unpublishedRelative.status, 200);
+    assert.deepEqual((await unpublishedRelative.json()).relatives, [],
+      "the opt-in control does not reveal an unpublished relative's name");
+    await otherPublication.publish("relative-only", "owner");
+    await otherPublication.publish("name-typo", "owner");
+    await otherPublication.publish("relative-undated-exact", "owner");
+    await otherPublication.publish("place-match", "owner");
+    await otherPublication.publish("region-only", "owner");
+    let sourceRevisionAfterGrandparentFixture = ownSignalWrite.revision;
+    await (async () => {
+      const beforeGrandSource = await app.archive.read();
+      const beforeGrandTarget = await otherApp.archive.read();
+      const grandSourceFamily = structuredClone(beforeGrandSource.family);
+      const grandTargetFamily = structuredClone(beforeGrandTarget.family);
+      const grandSource = grandSourceFamily.people.find((person) => person.id === "person-a")!;
+      const grandTemplate = structuredClone(grandSource);
+      const grandName = { surname: "Родников", name: "Пётр", birth: "1930",
+        deceased: true, parents: [], spouses: [], birthPlace: "", deathPlace: "" };
+      grandSource.parents = [...(grandSource.parents || []), "grand-own-parent-a", "grand-own-parent-b"];
+      grandSourceFamily.people.push({ ...structuredClone(grandTemplate), ...grandName,
+        id: "grand-own-person", column: 300 });
+      grandSourceFamily.people.push({ ...structuredClone(grandTemplate),
+        id: "grand-own-living", surname: "Скрытый", name: "Предок", deceased: false,
+        birth: "1930", death: undefined, parents: [], spouses: [], column: 304 });
+      for (const [index,id] of ["grand-own-parent-a","grand-own-parent-b"].entries())
+        grandSourceFamily.people.push({ ...structuredClone(grandTemplate),
+          id, surname: "Родников", name: `Родитель ${index + 1}`, birth: "1960",
+          deceased: true, parents: index === 0 ? ["grand-own-person","grand-own-living"]
+            : ["grand-own-person"], spouses: [], column: 301 + index });
+      grandTargetFamily.people.push({ ...structuredClone(otherPerson), id: "grand-target",
+        surname: "Петров", name: "Иван", birth: "1991", deceased: true,
+        birthPlace: "", deathPlace: "", parents: ["grand-other-parent-a","grand-other-parent-b"],
+        spouses: [], column: 300 });
+      grandTargetFamily.people.push({ ...structuredClone(otherPerson), ...grandName,
+        id: "grand-other-person", column: 301 });
+      for (const [index,id] of ["grand-other-unique-a","grand-other-unique-b"].entries())
+        grandTargetFamily.people.push({ ...structuredClone(otherPerson),
+          id, surname: "Другой", name: `Предок ${index + 1}`, birth: "1930",
+          deceased: true, parents: [], spouses: [], column: 306 + index });
+      for (const [index,id] of ["grand-other-parent-a","grand-other-parent-b"].entries())
+        grandTargetFamily.people.push({ ...structuredClone(otherPerson),
+          id, surname: "Родников", name: `Родитель ${index + 1}`, birth: "1960",
+          deceased: true, parents: ["grand-other-person",`grand-other-unique-${index === 0 ? "a" : "b"}`],
+          spouses: [], column: 302 + index });
+      await app.archive.write(grandSourceFamily,beforeGrandSource.revision);
+      await otherApp.archive.write(grandTargetFamily,beforeGrandTarget.revision);
+      const grandOwnPublication = publishedPeopleStore(app.archive.db);
+      for (const id of ["grand-own-person","grand-own-parent-a"])
+        await grandOwnPublication.publish(id,"owner");
+      const hiddenPathPreview = await fetch(securedBase + relativePath + "?personId=person-a",
+        { headers: ownerHeaders }).then((response) => response.json());
+      assert.equal(hiddenPathPreview.relatives.filter((item: { kind: string }) =>
+        item.kind === "grandparent").length,1,
+      "an unpublished intermediary and a living ancestor are absent from the preview");
+      assert.doesNotMatch(JSON.stringify(hiddenPathPreview),/grand-own-living|Скрытый Предок/);
+      await grandOwnPublication.publish("grand-own-parent-b","owner");
+      for (const id of ["grand-target","grand-other-person","grand-other-unique-a",
+        "grand-other-unique-b","grand-other-parent-a","grand-other-parent-b"])
+        await otherPublication.publish(id,"owner");
+      const grandSourcePreview = await fetch(securedBase + relativePath + "?personId=person-a",
+        { headers: ownerHeaders }).then((response) => response.json());
+      const grandTargetPreview = await fetch(otherBase + relativePath + "?personId=grand-target",
+        { headers: recipientHeaders }).then((response) => response.json());
+      const grandPaths = (preview: { relatives: { kind: string; personId: string;
+        relationPath?: [string,string]; enabled: boolean }[] }, relativeId: string) =>
+        preview.relatives.filter((item) => item.kind === "grandparent" &&
+          item.personId === relativeId);
+      const ownGrandPaths = grandPaths(grandSourcePreview,"grand-own-person");
+      const otherGrandPaths = grandPaths(grandTargetPreview,"grand-other-person");
+      assert.equal(ownGrandPaths.length,2);
+      assert.equal(otherGrandPaths.length,2);
+      assert.equal(grandTargetPreview.relatives.filter((item: { kind: string }) =>
+        item.kind === "grandparent").length,4,
+      "two published parents expose all four separately selectable grandparent slots");
+      assert.ok([...ownGrandPaths,...otherGrandPaths].every((path) => path.enabled === false),
+        "each published two-edge path starts without consent");
+      const setGrandConsent = (base: string, requestHeaders: Record<string,string>,
+        personId: string, relationPath: [string,string], enabled: boolean) => fetch(base + relativePath, {
+          method: "POST", headers: { ...requestHeaders, "Content-Type": "application/json" },
+          body: JSON.stringify({ personId,relationPath,enabled }),
+        });
+      const ownGrandPath = ownGrandPaths.map((path) => path.relationPath!);
+      const otherGrandPath = otherGrandPaths.map((path) => path.relationPath!);
+      assert.equal((await fetch(securedBase + relativePath + "?personId=person-a",
+        { headers })).status,403,"a non-owner cannot inspect an unpublished relation path");
+      assert.equal((await fetch(securedBase + relativePath, {
+        method: "POST", headers: { ...ownerHeaders,"Content-Type": "application/json" },
+        body: JSON.stringify({ personId: "person-a", relationId: ownGrandPath[0][0],
+          relationPath: ownGrandPath[0], enabled: true }),
+      })).status,400,"direct and two-edge consent identities cannot be mixed");
+      let grandCall = 0;
+      const grandHeaders = () => ({ ...ownerHeaders,
+        "X-Real-IP": `198.51.100.${130 + Math.floor(grandCall++ / 10)}` });
+      const grandSuggestion = async () => {
+        const response = await fetch(securedBase + candidatePath,{ headers: grandHeaders() });
+        assert.equal(response.status,200);
+        return (await response.json()).candidates.find((item: { id: string }) =>
+          item.id === "grand-target") as { reasons: string[] } | undefined;
+      };
+      assert.equal(await grandSuggestion(),undefined,
+        "three public cards on either side do not imply relationship consent");
+      assert.equal((await setGrandConsent(securedBase,ownerHeaders,"person-a",ownGrandPath[0],true)).status,200);
+      assert.equal(await grandSuggestion(),undefined,"one-sided grandparent consent is not evidence");
+      assert.equal((await setGrandConsent(otherBase,recipientHeaders,"grand-target",otherGrandPath[0],true)).status,200);
+      assert.ok((await grandSuggestion())?.reasons.some((reason) => reason.includes("деда или бабушки")),
+        "bilateral published grandparent and close birth years find a changed surname");
+      assert.equal((await setGrandConsent(securedBase,ownerHeaders,"person-a",ownGrandPath[1],true)).status,200);
+      assert.equal((await setGrandConsent(otherBase,recipientHeaders,"grand-target",otherGrandPath[1],true)).status,200);
+      assert.equal((await setGrandConsent(securedBase,ownerHeaders,"person-a",ownGrandPath[0],false)).status,200);
+      assert.ok(await grandSuggestion(),"revoking one of two consented paths preserves the other");
+      assert.equal((await setGrandConsent(otherBase,recipientHeaders,"grand-target",otherGrandPath[0],false)).status,200);
+      assert.ok(await grandSuggestion(),"two paths to the same ancestor deduplicate without losing evidence");
+      assert.equal((await setGrandConsent(otherBase,recipientHeaders,"grand-target",otherGrandPath[1],false)).status,200);
+      assert.equal(await grandSuggestion(),undefined,"removing the last bilateral path removes evidence");
+      const enableLastPath = async () => {
+        assert.equal((await setGrandConsent(securedBase,ownerHeaders,
+          "person-a",ownGrandPath[1],true)).status,200);
+        assert.equal((await setGrandConsent(otherBase,recipientHeaders,
+          "grand-target",otherGrandPath[1],true)).status,200);
+      };
+      await enableLastPath();
+      const grandNameKey = String((await matchDb.prepare("", `SELECT relative_name_key
+        FROM discovery_grandparent_consents WHERE archive_id=? AND person_id=?
+          AND first_relation_id=? AND second_relation_id=?`)
+        .get("runtime-test","person-a",...ownGrandPath[1]))?.relative_name_key);
+      await client.query("BEGIN");
+      try {
+        await client.query("SET LOCAL enable_seqscan=off");
+        const plan = await client.query(`EXPLAIN (FORMAT JSON)
+          SELECT c.archive_id,c.person_id FROM discovery_candidate_relative_consents c
+          JOIN discovery_people d ON d.archive_id=c.archive_id AND d.person_id=c.person_id
+          WHERE c.kind='grandparent' AND c.relative_name_key=$1
+            AND d.given_part IS NOT NULL LIMIT 24`,[grandNameKey]);
+        assert.match(JSON.stringify(plan.rows),/discovery_grandparent_consents_lookup/,
+          "the consented two-edge clue uses its indexed name lookup");
+      } finally { await client.query("ROLLBACK"); }
+      await runDiscoveryBackfill();
+      assert.ok(await grandSuggestion(),
+        "an administrative rebuild preserves only the already explicit two-edge consent");
+      await client.query("BEGIN");
+      try {
+        await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
+        assert.equal((await client.query(`SELECT 1 FROM relations
+          WHERE archive_id='other-archive' AND id=$1 FOR UPDATE`,
+        [otherGrandPath[1][0]])).rowCount,1);
+        const busyPath = await fetch(securedBase + candidatePath,{ headers: grandHeaders() });
+        assert.equal(busyPath.status,409,"contended cross-archive path fails closed before delivery");
+        assert.equal(JSON.stringify(await busyPath.json()).includes("grand-target"),false);
+      } finally { await client.query("ROLLBACK"); }
+      await matchDb.transaction(async () => {
+        await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+        assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM relations
+          WHERE archive_id='other-archive'`).get())?.count,0,
+        "a failed target-path lock never leaves another archive visible to the source tenant");
+      },true);
+      assert.equal((await setGrandConsent(securedBase,ownerHeaders,"person-a",
+        otherGrandPath[1],true)).status,404,
+      "the source owner cannot opt into a relation ID from the target archive");
+      assert.ok(await grandSuggestion(),"a new request after NOWAIT rollback uses source scope");
+      const sourceFields = await grandOwnPublication.getFields("person-a");
+      assert.ok(sourceFields);
+      for (const { store,id } of [
+        { store: grandOwnPublication,id: "person-a" },
+        { store: grandOwnPublication,id: "grand-own-parent-b" },
+        { store: grandOwnPublication,id: "grand-own-person" },
+        { store: otherPublication,id: "grand-target" },
+        { store: otherPublication,id: "grand-other-parent-b" },
+        { store: otherPublication,id: "grand-other-person" },
+      ]) {
+        await store.unpublish(id);
+        if (id === "person-a")
+          assert.equal((await fetch(securedBase + candidatePath,
+            { headers: grandHeaders() })).status,404);
+        else assert.equal(await grandSuggestion(),undefined);
+        await store.publish(id,"owner",id === "person-a" ? sourceFields : undefined);
+        assert.equal(await grandSuggestion(),undefined,
+          "republishing any one of the three cards on either side does not restore consent");
+        await enableLastPath();
+        assert.ok(await grandSuggestion(),"fresh bilateral consent restores only the selected clue");
+      }
+      const sourceEdgeBefore = await app.archive.read();
+      const sourceWithoutSecondEdge = structuredClone(sourceEdgeBefore.family);
+      sourceWithoutSecondEdge.people.find((person) => person.id === "grand-own-parent-b")!
+        .parents = [];
+      const sourceEdgeWrite = await app.archive.write(sourceWithoutSecondEdge,
+        sourceEdgeBefore.revision);
+      assert.equal(await grandSuggestion(),undefined,
+        "removing the parent-to-grandparent edge revokes that exact path");
+      const sourceEdgeRestored = await app.archive.write(sourceEdgeBefore.family,
+        sourceEdgeWrite.revision);
+      assert.equal(await grandSuggestion(),undefined,"restoring an edge does not restore consent");
+      await enableLastPath();
+      const targetEdgeBefore = await otherApp.archive.read();
+      const targetWithoutFirstEdge = structuredClone(targetEdgeBefore.family);
+      targetWithoutFirstEdge.people.find((person) => person.id === "grand-target")!
+        .parents = ["grand-other-parent-a"];
+      const targetEdgeWrite = await otherApp.archive.write(targetWithoutFirstEdge,
+        targetEdgeBefore.revision);
+      assert.equal(await grandSuggestion(),undefined,
+        "removing the focal-to-parent edge revokes that exact path");
+      const targetEdgeRestored = await otherApp.archive.write(targetEdgeBefore.family,
+        targetEdgeWrite.revision);
+      assert.equal(await grandSuggestion(),undefined,"restoring a second edge does not restore consent");
+      await enableLastPath();
+      let latestSourceRevision = sourceEdgeRestored.revision;
+      let latestTargetRevision = targetEdgeRestored.revision;
+      for (const { archive,id } of [
+        { archive: app.archive,id: "person-a" },
+        { archive: app.archive,id: "grand-own-parent-b" },
+        { archive: otherApp.archive,id: "grand-other-person" },
+      ]) {
+        const beforeRename = await archive.read();
+        const renamed = structuredClone(beforeRename.family);
+        renamed.people.find((person) => person.id === id)!.name = "Новое имя";
+        const renameWrite = await archive.write(renamed,beforeRename.revision);
+        assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+          FROM discovery_grandparent_consents WHERE archive_id=? AND person_id=?`)
+          .get(id === "grand-other-person" ? "other-archive" : "runtime-test",
+            id === "grand-other-person" ? "grand-target" : "person-a"))?.count,0,
+        "editing any published name in the selected path deletes its old opt-in");
+        const restored = await archive.write(beforeRename.family,renameWrite.revision);
+        if (archive === app.archive) latestSourceRevision = restored.revision;
+        else latestTargetRevision = restored.revision;
+        assert.equal(await grandSuggestion(),undefined,
+          "returning to the old spelling still requires explicit consent");
+        await enableLastPath();
+      }
+      assert.ok(await grandSuggestion());
+      sourceRevisionAfterGrandparentFixture =
+        (await app.archive.write(beforeGrandSource.family,latestSourceRevision)).revision;
+      await otherApp.archive.write(beforeGrandTarget.family,latestTargetRevision);
+      console.log("runtime_discovery_grandparent_consent_paths_ok");
+    })();
+    // Earlier scenarios deliberately spend the normal per-client search budget.
+    const signalHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.88" };
+    const signalIds = async () => {
+      const response = await fetch(securedBase + candidatePath, { headers: signalHeaders });
+      assert.equal(response.status, 200, "the candidate page must be available to the owner");
+      return (await response.json()).candidates as {
+        id: string; reasons: string[]; conflicts: string[];
+      }[];
+    };
+    assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
+      "a private relative cannot create a cross-archive hint");
+    assert.ok((await signalIds()).some((item) => item.id === "name-typo" &&
+      item.reasons.some((reason) => reason.includes("опечатка"))),
+    "a typo in a published surname is found through the trigram index");
+    assert.ok((await signalIds()).some((item) => item.id === "place-match" &&
+      item.reasons.some((reason) => reason.includes("Место рождения"))),
+    "the indexed place and year branch can suggest a changed surname");
+    assert.equal((await signalIds()).some((item) => item.id === "region-only"), false,
+      "a shared region without a shared settlement is not a candidate clue");
+    const deathHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.89" };
+    const deathCandidates = async () => {
+      const response = await fetch(securedBase + candidatePath, { headers: deathHeaders });
+      assert.equal(response.status, 200);
+      return (await response.json()).candidates as { id: string; reasons: string[] }[];
+    };
+    assert.equal((await deathCandidates()).some((item) => item.id === "death-place-match"), false,
+      "an unpublished death settlement is not searchable");
+    await otherPublication.publish("death-place-match", "owner", {
+      birthSurname: false, birthYear: true, deathYear: true,
+      birthPlace: true, deathPlace: false,
+    });
+    assert.equal((await deathCandidates()).some((item) => item.id === "death-place-match"), false,
+      "a death settlement withheld from publication cannot create a suggestion");
+    await otherPublication.publish("death-place-match", "owner");
+    assert.ok((await deathCandidates()).some((item) => item.id === "death-place-match" &&
+      item.reasons.includes("Место смерти совпадает")),
+    "the second indexed place branch finds a changed surname by opt-in death settlement and birth year");
+    await otherPublication.unpublish("death-place-match");
+    assert.equal((await deathCandidates()).some((item) => item.id === "death-place-match"), false,
+      "unpublishing removes the death-settlement suggestion immediately");
+    const beforeBothPlaces = await otherApp.archive.read();
+    const bothPlaces = structuredClone(beforeBothPlaces.family);
+    const bothPlaceIds = Array.from({ length: 25 }, (_, index) =>
+      `both-places-${String(index).padStart(2, "0")}`);
+    bothPlaces.people.push(...bothPlaceIds.map((id, index) => ({
+      ...structuredClone(otherPerson), id, surname: "Кузнецов", name: "Иван",
+      birth: "1991", birthPlace: "Нижний Тагил", deathPlace: "Казань",
+      deceased: true, parents: [], column: 60 + index,
+    })));
+    const bothPlaceWrite = await otherApp.archive.write(bothPlaces, beforeBothPlaces.revision);
+    for (const id of bothPlaceIds) await otherPublication.publish(id, "owner");
+    const pages: { id: string }[] = [];
+    let placeCursor: string | null = null;
+    for (let pageNumber = 0; pageNumber < 4; pageNumber++) {
+      const pageUrl: string = securedBase + candidatePath + (placeCursor
+        ? `&cursor=${encodeURIComponent(placeCursor)}` : "");
+      const response: Response = await fetch(pageUrl, { headers: deathHeaders });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { candidates: { id: string }[]; nextCursor: string | null };
+      pages.push(...body.candidates);
+      if (pageNumber === 0) {
+        assert.equal(body.candidates.length, 24);
+        assert.equal(typeof body.nextCursor, "string");
+      }
+      placeCursor = body.nextCursor;
+      if (!placeCursor) break;
+    }
+    assert.equal(placeCursor, null, "two indexed place branches finish within bounded pages");
+    assert.equal(new Set(pages.map((person) => person.id)).size, pages.length,
+      "UNION deduplicates cards matching both birth and death places before pagination");
+    assert.equal(pages.filter((person) => bothPlaceIds.includes(person.id)).length, 25,
+      "a double-matched card beyond the first page remains reachable exactly once");
+    await otherApp.archive.write(beforeBothPlaces.family,
+      bothPlaceWrite.revision);
+    await publishedPeopleStore(app.archive.db).publish(parent.id, "owner");
+    await otherPublication.publish(parent.id, "owner");
+    const ownRelative = await fetch(securedBase + relativePath + "?personId=person-a",
+      { headers: ownerHeaders }).then((response) => response.json());
+    const otherRelative = await fetch(otherBase + relativePath + "?personId=name-typo",
+      { headers: recipientHeaders }).then((response) => response.json());
+    const ownRelationId = ownRelative.relatives.find((item: { personId: string }) =>
+      item.personId === parent.id)?.relationId;
+    const otherRelationId = otherRelative.relatives.find((item: { personId: string }) =>
+      item.personId === parent.id)?.relationId;
+    assert.ok(ownRelationId && otherRelationId, "only already published relatives are selectable");
+    const setRelativeConsent = async (base: string, headers: Record<string,string>,
+      personId: string, relationId: string, enabled: boolean) => fetch(base + relativePath, {
+        method: "POST", headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ personId, relationId, enabled }),
+      });
+    assert.equal((await setRelativeConsent(securedBase,ownerHeaders,
+      "person-a",ownRelationId,true)).status, 200);
+    assert.equal((await app.archive.db.prepare("", `SELECT birth_year FROM discovery_people
+      WHERE archive_id=? AND person_id=?`).get("runtime-test","person-a"))?.birth_year,
+    "1990", "the source has a published year for the relative exclusion boundary");
+    const undatedRelative = await fetch(otherBase + relativePath +
+      "?personId=relative-undated-exact", { headers: recipientHeaders })
+      .then((response) => response.json());
+    const undatedRelationId = undatedRelative.relatives.find((item: { personId: string }) =>
+      item.personId === parent.id)?.relationId;
+    assert.ok(undatedRelationId);
+    assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+      "relative-undated-exact",undatedRelationId,true)).status, 200);
+    assert.equal((await otherApp.archive.db.prepare("", `SELECT birth_year FROM discovery_people
+      WHERE archive_id=? AND person_id=?`).get("other-archive","relative-undated-exact"))?.birth_year,
+    null, "the target has no published birth year");
+    const undatedResponse = await fetch(securedBase + candidatePath,
+      { headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.128" } });
+    assert.equal(undatedResponse.status, 200);
+    assert.ok((await undatedResponse.json()).candidates.some(
+      (item: { id: string }) => item.id === "relative-undated-exact"),
+    "a matched relative clue cannot hide an exact-role candidate with unknown birth year");
+    console.log("runtime_discovery_candidate_unknown_year_ok");
+    assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+      .some((reason) => reason.includes("родителя")), false,
+    "one-sided relation consent does not reveal a shared relative");
+    assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+      "name-typo",otherRelationId,true)).status, 200);
+    assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+      .some((reason) => reason.includes("родителя")), true,
+    "bilateral explicit relation consent adds explainable evidence");
+    const changedSurnameRelation = await fetch(otherBase + relativePath +
+      "?personId=relative-only", { headers: recipientHeaders }).then((response) => response.json());
+    const changedSurnameRelationId = changedSurnameRelation.relatives.find(
+      (item: { personId: string }) => item.personId === parent.id)?.relationId;
+    assert.ok(changedSurnameRelationId);
+    assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
+      "one-sided consent cannot retrieve a changed-surname candidate");
+    assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+      "relative-only",changedSurnameRelationId,true)).status, 200);
+    const changedSurnameHint = (await signalIds()).find((item) => item.id === "relative-only");
+    assert.ok(changedSurnameHint?.reasons.some((reason) => reason.includes("родителя")),
+      "an indexed bilateral relative plus published given name and close year finds a changed surname");
+    assert.ok(changedSurnameHint?.conflicts.includes("Указанные фамилии различаются"));
+    const rankedSignalIds = (await signalIds()).map((item) => item.id);
+    assert.ok(rankedSignalIds.indexOf("relative-only") >= 0 &&
+      rankedSignalIds.indexOf("relative-only") < rankedSignalIds.indexOf("person-b"),
+    "bilateral close-relative evidence precedes exact-name evidence in the tier contract");
+    await client.query("BEGIN");
+    try {
+      await client.query("SET LOCAL enable_seqscan=off");
+      const relativePlan = await client.query(`EXPLAIN (FORMAT JSON)
+        SELECT target.person_id FROM discovery_relative_consents own
+        JOIN discovery_relative_consents target ON target.kind=own.kind
+          AND target.relative_name_key=own.relative_name_key
+        WHERE own.archive_id='runtime-test' AND own.person_id='person-a'
+          AND target.archive_id='other-archive'`);
+      assert.match(JSON.stringify(relativePlan.rows), /discovery_relative_consents_lookup/,
+        "the consented-relative shortlist has an executable B-tree lookup");
+    } finally { await client.query("ROLLBACK"); }
+    const beforeRelativePages = await otherApp.archive.read();
+    const relativePageFamily = structuredClone(beforeRelativePages.family);
+    const relativePageIds = Array.from({ length: 26 }, (_, index) =>
+      `relative-sort-${String(index).padStart(2,"0")}`);
+    relativePageIds.splice(0,4,"relative-sort-A","relative-sort-a",
+      "relative-sort-Ё","relative-sort-я");
+    relativePageFamily.people.push(...relativePageIds.map((id, index) => ({
+      ...structuredClone(otherPerson), id, surname: "Сидоров", name: "Иван",
+      birth: "1991", deceased: true, parents: [parent.id], column: 100 + index,
+    })));
+    const relativePageWrite = await otherApp.archive.write(relativePageFamily,
+      beforeRelativePages.revision);
+    for (const id of relativePageIds) {
+      await otherPublication.publish(id,"owner");
+      const selectable = await fetch(otherBase + relativePath +
+        `?personId=${encodeURIComponent(id)}`, { headers: recipientHeaders })
+        .then((response) => response.json());
+      const relationId = selectable.relatives.find((item: { personId: string }) =>
+        item.personId === parent.id)?.relationId;
+      assert.ok(relationId);
+      assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+        id,relationId,true)).status,200);
+    }
+    const relativePageHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.129" };
+    const allRelativePageIds: string[] = [];
+    let relativePageCursor: string | null = null;
+    for (let pageNumber = 0; pageNumber < 5; pageNumber++) {
+      const response: Response = await fetch(securedBase + candidatePath +
+        (relativePageCursor ? `&cursor=${encodeURIComponent(relativePageCursor)}` : ""),
+      { headers: relativePageHeaders });
+      assert.equal(response.status,200);
+      const body = await response.json() as { candidates: { id: string }[];
+        nextCursor: string | null };
+      allRelativePageIds.push(...body.candidates.map((item) => item.id));
+      if (pageNumber === 0) assert.equal(body.candidates.length,24);
+      relativePageCursor = body.nextCursor;
+      if (!relativePageCursor || relativePageIds.every((id) =>
+        allRelativePageIds.includes(id))) break;
+    }
+    const foundRelativePageIds = allRelativePageIds.filter((id) =>
+      relativePageIds.includes(id));
+    assert.equal(new Set(foundRelativePageIds).size,relativePageIds.length,
+      "relative keyset reaches each consented Unicode and mixed-case ID once");
+    assert.deepEqual(foundRelativePageIds,
+      [...relativePageIds].sort((left,right) =>
+        Buffer.compare(Buffer.from(left,"utf8"),Buffer.from(right,"utf8"))),
+    "the relative cursor uses the same C byte order as its SQL ORDER BY");
+    const afterRelativePages = await otherApp.archive.write(beforeRelativePages.family,
+      relativePageWrite.revision);
+    console.log("runtime_discovery_candidate_relative_keyset_ok");
+
+    assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+      "relative-only",changedSurnameRelationId,false)).status, 200);
+    assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
+      "revoking that relation removes its sole shortlist path");
+    const originalRelativeName = String((await otherApp.archive.db.prepare("",
+      `SELECT name FROM discovery_people WHERE archive_id=? AND person_id=?`)
+      .get("other-archive",parent.id))?.name);
+    await otherApp.archive.db.prepare("", `UPDATE discovery_people SET name=?
+      WHERE archive_id=? AND person_id=?`).run("Иное имя", "other-archive", parent.id);
+    assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+      .some((reason) => reason.includes("родителя")), false,
+    "a published relative's name change incrementally refreshes only its consented clue");
+    await otherApp.archive.db.prepare("", `UPDATE discovery_people SET name=?
+      WHERE archive_id=? AND person_id=?`).run(originalRelativeName, "other-archive", parent.id);
+    assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+      .some((reason) => reason.includes("родителя")), true);
+    await runDiscoveryBackfill();
+    assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+      .some((reason) => reason.includes("родителя")), true,
+    "the administrative index rebuild preserves only pre-existing relation consent");
     assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
       "name-typo",otherRelationId,false)).status, 200);
-  });
-  assert.equal(revokedRelativeDelivery.status, 409,
-    "a completed relation-consent withdrawal before delivery cannot leak its evidence");
-  assert.equal((await revokedRelativeDelivery.json()).candidates, undefined);
-  const revokedCandidateDelivery = await candidateDelivery(async () => {
-    await otherPublication.unpublish("name-typo");
-  });
-  assert.equal(revokedCandidateDelivery.status, 409,
-    "withdrawing a candidate after ranking prevents delivery of its old card");
-  assert.equal((await revokedCandidateDelivery.json()).candidates, undefined);
-  await otherPublication.publish("name-typo", "owner");
-  const publicSearchHeaders = { ...headers, "X-Real-IP": "198.51.100.211" };
-  const publicParentResults = async () => {
-    const response = await fetch(securedBase +
-      `/api/discovery/people?q=${encodeURIComponent("Орлов")}`, { headers: publicSearchHeaders });
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("cache-control"), "private, no-store");
-    return (await response.json()).results as { archiveId: string; id: string }[];
-  };
-  assert.equal((await publicParentResults()).some((item) =>
-    item.archiveId === "other-archive" && item.id === parent.id), true);
-  assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
-    "name-typo",otherRelationId,true)).status, 200);
-  await otherPublication.unpublish(parent.id);
-  assert.equal((await otherApp.archive.db.prepare("", `SELECT count(*)::int AS count
-    FROM discovery_relative_consents WHERE archive_id=? AND person_id=?`)
-    .get("other-archive","name-typo"))?.count, 0,
-  "unpublishing the named relative cascades its separately consented clue");
-  assert.equal((await publicParentResults()).some((item) =>
-    item.archiveId === "other-archive" && item.id === parent.id), false,
-  "a fresh indexed search cannot return a withdrawn publication");
-  assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
-    "withdrawing a published parent never reveals a relationship hint");
-  await app.archive.write(ownBeforeSignals.family, sourceRevisionAfterGrandparentFixture);
-  await otherApp.archive.write(otherBeforeSignals.family, afterRelativePages.revision);
-  await otherPublication.unpublish("person-a");
-  await otherPublication.unpublish("person-b");
-  await verifyWithdrawnDecisionNotes(matchDb,matchBody.match.id,rejectedId,
-    otherBase,archiveAdminHeaders);
-  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-    FROM discovery_branch_grants WHERE left_person_id='person-a'
-      AND right_person_id='person-a'`).get())?.count, 0,
-    "unpublishing a linked root atomically removes both branch grants");
-  assert.equal((await fetch(securedBase + branchPath, { headers: {
-    ...ownerHeaders, "X-Real-IP": "198.51.100.210",
-  } })).status, 404,
-    "a revoked link cannot reopen the previously granted branch");
-  assert.equal((await fetch(securedBase + `${branchPath}/options/branch-parent-a`, {
-    headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.183" },
-  })).status, 404,
-  "a revoked link cannot resume a previously chosen branch path");
-  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-    FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.count, 0,
-  "removing either publication revokes the extra-field grant in the same transaction");
-  assert.equal((await fetch(securedBase + cardSharePath, { headers: ownerHeaders })).status, 404,
-    "a revoked match cannot be used to read the old card snapshot");
-  await runDiscoveryBackfill();
-  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-    FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.count, 0,
-  "backfill does not resurrect grants after publication revocation");
-  assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/runtime-test/person-a", {
-    headers,
-  })).json()).linkedCards, [], "revoking either publication removes the transition");
-  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
-    WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 0,
-  "revocation removes the minimal public transition in the same transaction");
-  assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
-    .then((response) => response.json())).matches[0].status, "revoked",
-    "revoking either publication closes a confirmed cross-archive match");
-  assert.equal(
-    (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
-    404,
-    "revocation removes the global detail in the same transaction",
-  );
-  assert.deepEqual((await (await fetch(securedBase +
-    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
-    .json()).candidates, [], "revocation must remove the candidate immediately");
-  await publishedPeopleStore(app.archive.db).unpublish("person-a");
-  const rootAfterMatch = await app.archive.read();
-  const restoredRoot = structuredClone(rootAfterMatch.family);
-  restoredRoot.people[0].deceased = false;
-  await app.archive.write(restoredRoot, rootAfterMatch.revision);
-  const afterDiscovery = await otherApp.archive.read();
-  const restoredFamily = structuredClone(afterDiscovery.family);
-  restoredFamily.people[0].deceased = false;
-  await otherApp.archive.write(restoredFamily, afterDiscovery.revision);
-  const specialSourceId = "family:человек.1";
-  const specialTargetId = "ветка:person.2";
-  const ownSpecialBefore = await app.archive.read();
-  const ownSpecialFamily = structuredClone(ownSpecialBefore.family);
-  ownSpecialFamily.people.push({ ...structuredClone(ownSpecialFamily.people[0]),
-    id: specialSourceId, name: "Софья", surname: "Редкая", patronymic: "",
-    birth: "1900", death: "1980", deceased: true, parents: [], spouses: [], column: 54 });
-  await app.archive.write(ownSpecialFamily, ownSpecialBefore.revision);
-  const otherSpecialBefore = await otherApp.archive.read();
-  const otherSpecialFamily = structuredClone(otherSpecialBefore.family);
-  otherSpecialFamily.people.push({ ...structuredClone(otherSpecialFamily.people[0]),
-    id: specialTargetId, name: "Софья", surname: "Редкая", patronymic: "",
-    birth: "1900", death: "1980", deceased: true, parents: [], spouses: [], column: 54 });
-  await otherApp.archive.write(otherSpecialFamily, otherSpecialBefore.revision);
-  await publishedPeopleStore(app.archive.db).publish(specialSourceId, "owner");
-  await otherPublication.publish(specialTargetId, "owner");
-  const compoundSourceId = "compound-source";
-  const spacedSourceId = "spaced-source";
-  const compoundTargetId = "compound-target";
-  const spacedTargetId = "spaced-target";
-  const closedTargetId = "closed-compound-target";
-  const compoundSourceBefore = await app.archive.read();
-  const compoundSourceFamily = structuredClone(compoundSourceBefore.family);
-  for (const [id, surname, name] of [
-    [compoundSourceId, "Иванова-Петрова", "Анна"],
-    [spacedSourceId, "Де ла Крус", "Мария"],
-  ]) compoundSourceFamily.people.push({ ...structuredClone(compoundSourceFamily.people[0]),
-    id, surname, name, patronymic: "", birth: "1900", death: "1980",
-    deceased: true, parents: [], spouses: [], column: 55 });
-  await app.archive.write(compoundSourceFamily, compoundSourceBefore.revision);
-  const compoundTargetBefore = await otherApp.archive.read();
-  const compoundTargetFamily = structuredClone(compoundTargetBefore.family);
-  for (const [id, surname, name] of [
-    [compoundTargetId, "Петрова", "Анна"],
-    [spacedTargetId, "Крус", "Мария"],
-    [closedTargetId, "Петрова", "Анна"],
-  ]) compoundTargetFamily.people.push({ ...structuredClone(compoundTargetFamily.people[0]),
-    id, surname, name, patronymic: "", birth: "1900", death: "1980",
-    deceased: true, parents: [], spouses: [], column: 55 });
-  await otherApp.archive.write(compoundTargetFamily, compoundTargetBefore.revision);
-  for (const id of [compoundSourceId,spacedSourceId])
-    await publishedPeopleStore(app.archive.db).publish(id, "owner");
-  for (const id of [compoundTargetId,spacedTargetId]) await otherPublication.publish(id, "owner");
-  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_people
-    WHERE archive_id='other-archive' AND person_id=$1`, [closedTargetId])).rows[0].count, 0,
-  "the unpublished lookalike never enters the searchable projection");
-  await client.query(`UPDATE discovery_people SET surname_part=NULL,given_part=NULL
-    WHERE archive_id='runtime-test' AND person_id=$1`, [spacedSourceId]);
-  await client.query(`UPDATE discovery_people SET name='Старая видимая запись'
-    WHERE archive_id='runtime-test' AND person_id=$1`, [spacedSourceId]);
-  assert.equal((await client.query(discoveryNamePartsBatch, ["",""])).rows[0].changed, 0,
-    "backfill never exposes components from a card whose projection is stale");
-  await client.query(`UPDATE discovery_people SET name='Де ла Крус Мария'
-    WHERE archive_id='runtime-test' AND person_id=$1`, [spacedSourceId]);
-  assert.ok((await client.query(discoveryNamePartsBatch, ["",""])).rows[0].changed,
-    "a short backfill batch updates an existing consented projection");
-  assert.deepEqual((await client.query(`SELECT surname_part,given_part FROM discovery_people
-    WHERE archive_id='runtime-test' AND person_id=$1`, [spacedSourceId])).rows[0],
-    { surname_part: "Де ла Крус", given_part: "Мария" });
-  const compoundHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.243" };
-  const compoundCandidates = async (sourceId: string) => {
-    const response = await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=" +
-      sourceId, { headers: compoundHeaders });
-    assert.equal(response.status, 200);
-    return (await response.json()).candidates as { id: string; reasons: string[] }[];
-  };
-  assert.ok((await compoundCandidates(compoundSourceId)).some((person) =>
-    person.id === compoundTargetId && person.reasons.includes("Совпадает имя и часть составной фамилии")),
-  "a hyphenated surname finds its published second component");
-  assert.ok((await compoundCandidates(spacedSourceId)).some((person) =>
-    person.id === spacedTargetId && person.reasons.includes("Совпадает имя и часть составной фамилии")),
-  "the backfilled boundary finds a published multiword surname");
-  assert.ok(!(await compoundCandidates(compoundSourceId)).some((person) =>
-    person.id === closedTargetId), "a private lookalike is never suggested");
-  await matchDb.transaction(async () => {
-    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("unrelated-archive");
-    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM people
-      WHERE id IN (?,?)`).get(compoundSourceId,closedTargetId))?.count, 0,
-    "the added projection fields do not bypass archive RLS on original cards");
-  }, true);
-  await otherPublication.unpublish(compoundTargetId);
-  assert.ok(!(await compoundCandidates(compoundSourceId)).some((person) =>
-    person.id === compoundTargetId), "revocation removes the compound-name suggestion");
-  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_people
-    WHERE archive_id='other-archive' AND person_id=$1`, [compoundTargetId])).rows[0].count, 0);
-  for (const id of [compoundSourceId,spacedSourceId])
-    await publishedPeopleStore(app.archive.db).unpublish(id);
-  await otherPublication.unpublish(spacedTargetId);
-  await app.archive.write(compoundSourceBefore.family, (await app.archive.read()).revision);
-  await otherApp.archive.write(compoundTargetBefore.family, (await otherApp.archive.read()).revision);
-  console.log("runtime_discovery_candidate_name_parts_ok");
-  const specialMatchHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.241" };
-  const specialRecipientHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.242" };
-  const specialCandidateUrl = securedBase + "/api/discovery/matches/candidates?sourcePersonId=" +
-    encodeURIComponent(specialSourceId);
-  assert.equal((await fetch(specialCandidateUrl, { headers })).status, 403,
-    "a reader cannot inspect candidates for a Unicode source ID");
-  assert.equal((await fetch(otherBase + "/api/discovery/matches/candidates?sourcePersonId=" +
-    encodeURIComponent(specialSourceId), { headers: specialRecipientHeaders })).status, 404,
-  "another archive cannot use a published source ID as its own");
-  const specialCandidates = await fetch(specialCandidateUrl, { headers: specialMatchHeaders });
-  assert.equal(specialCandidates.status, 200);
-  assert.ok((await specialCandidates.json()).candidates.some((candidate: { id: string }) =>
-    candidate.id === specialTargetId), "indexed candidates include an explicitly published Unicode target ID");
-  const specialIgnoreBody = (ignored: boolean) => JSON.stringify({
-    sourcePersonId: specialSourceId, targetArchiveId: "other-archive",
-    targetPersonId: specialTargetId, ignored,
-  });
-  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
-    method: "POST", headers, body: specialIgnoreBody(true),
-  })).status, 403, "a reader cannot ignore a candidate through a Unicode ID");
-  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
-    method: "POST", headers: specialMatchHeaders, body: specialIgnoreBody(true),
-  })).status, 200);
-  assert.equal((await fetch(specialCandidateUrl, { headers: specialMatchHeaders })
-    .then((response) => response.json())).candidates.some((candidate: { id: string }) =>
-    candidate.id === specialTargetId), false, "ignoring hides only this suggested pair");
-  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
-    method: "POST", headers: specialMatchHeaders, body: specialIgnoreBody(false),
-  })).status, 200);
-  assert.ok((await fetch(specialCandidateUrl, { headers: specialMatchHeaders })
-    .then((response) => response.json())).candidates.some((candidate: { id: string }) =>
-    candidate.id === specialTargetId), "restoring shows the same suggested pair");
-  const specialRequestBody = JSON.stringify({ sourcePersonId: specialSourceId,
-    targetArchiveId: "other-archive", targetPersonId: specialTargetId });
-  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
-    method: "POST", headers, body: specialRequestBody,
-  })).status, 403, "a reader cannot submit a Unicode-ID match request");
-  const specialRequest = await fetch(securedBase + "/api/discovery/matches", {
-    method: "POST", headers: specialMatchHeaders, body: specialRequestBody,
-  });
-  assert.equal(specialRequest.status, 200);
-  const specialMatchId = (await specialRequest.json()).match.id as string;
-  const specialReverseRequest = await fetch(otherBase + "/api/discovery/matches", {
-    method: "POST", headers: specialRecipientHeaders,
-    body: JSON.stringify({ sourcePersonId: specialTargetId,
-      targetArchiveId: "runtime-test", targetPersonId: specialSourceId }),
-  });
-  assert.equal(specialReverseRequest.status, 200);
-  assert.equal((await specialReverseRequest.json()).match.id, specialMatchId,
-    "a reverse request with both Unicode IDs reuses the same pair");
-  assert.equal((await fetch(securedBase + `/api/discovery/matches/${specialMatchId}`, {
-    method: "PATCH", headers: specialMatchHeaders, body: JSON.stringify({ decision: "revoke" }),
-  })).status, 200);
-  await otherPublication.unpublish(specialTargetId);
-  assert.equal((await fetch(specialCandidateUrl, { headers: specialMatchHeaders })
-    .then((response) => response.json())).candidates.some((candidate: { id: string }) =>
-    candidate.id === specialTargetId), false,
-  "revoking the target publication removes its suggestion immediately");
-  await publishedPeopleStore(app.archive.db).unpublish(specialSourceId);
-  assert.equal((await fetch(specialCandidateUrl, { headers: specialMatchHeaders })).status, 404,
-    "revoking the source publication closes its candidate endpoint");
-  const ownSpecialAfter = await app.archive.read();
-  const ownWithoutSpecial = structuredClone(ownSpecialAfter.family);
-  ownWithoutSpecial.people = ownWithoutSpecial.people.filter((person) => person.id !== specialSourceId);
-  await app.archive.write(ownWithoutSpecial, ownSpecialAfter.revision);
-  const otherSpecialAfter = await otherApp.archive.read();
-  const otherWithoutSpecial = structuredClone(otherSpecialAfter.family);
-  otherWithoutSpecial.people = otherWithoutSpecial.people.filter((person) => person.id !== specialTargetId);
-  await otherApp.archive.write(otherWithoutSpecial, otherSpecialAfter.revision);
-  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
-  await client.query("DELETE FROM archive_owners WHERE archive_id='other-archive' AND user_id='vk:42'");
-  await client.query("DELETE FROM archive_memberships WHERE archive_id='other-archive' AND user_id='vk:42'");
-  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    assert.equal((await signalIds()).find((item) => item.id === "name-typo")?.reasons
+      .some((reason) => reason.includes("родителя")), false,
+    "completed relation revocation removes the evidence immediately");
+    console.log("runtime_discovery_relative_consent_ok");
+    const revocableRequest = await fetch(securedBase + "/api/discovery/matches", {
+      method: "POST", headers: manualHeaders,
+      body: JSON.stringify({ sourcePersonId: parent.id, targetArchiveId: "other-archive",
+        targetPersonId: parent.id }),
+    });
+    assert.equal(revocableRequest.status, 200);
+    const revocableId = (await revocableRequest.json()).match.id as string;
+    const revocablePath = `/api/discovery/matches/${revocableId}`;
+    const revocableReview = (await (await fetch(otherBase + "/api/discovery/matches", {
+      headers: recipientHeaders,
+    })).json()).matches.find((item: { id: string }) => item.id === revocableId);
+    assert.ok(revocableReview?.reviewToken);
+    assert.equal((await fetch(otherBase + revocablePath, {
+      method: "PATCH", headers: recipientHeaders,
+      body: JSON.stringify({ decision: "accept", reviewToken: revocableReview.reviewToken,
+        note: "Сравнены открытые карточки" }),
+    })).status, 200);
+    await verifyRevocableDecisionNote(matchDb,revocableId,securedBase,revocablePath,manualHeaders);
+    const revocableSharePath = revocablePath + "/card-share";
+    const revocablePreview = await fetch(securedBase + revocableSharePath, { headers: manualHeaders })
+      .then((response) => response.json());
+    assert.equal(revocablePreview.available.birth, "1960");
+    assert.equal((await fetch(securedBase + revocableSharePath, {
+      method: "PUT", headers: { ...manualHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: ["birth"], previewToken: revocablePreview.previewToken,
+        recipientArchiveId: revocablePreview.recipientArchiveId, durationDays: 7 }),
+    })).status, 200);
+    assert.equal((await app.archive.db.prepare("", `UPDATE discovery_linked_card_grants
+      SET expires_at=NULL WHERE grantor_archive_id='runtime-test'
+        AND left_person_id=? AND right_person_id=?`).run(parent.id,parent.id)).changes, 1);
+    await client.query(readFileSync(new URL("../../ops/postgres/063_discovery_card_expiry.sql", import.meta.url), "utf8"));
+    assert.equal((await client.query(`SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE left_person_id=$1 AND right_person_id=$2
+        AND expires_at IS NULL`, [parent.id,parent.id])).rows[0].count, 1,
+    "reapplying 063 never shortens a legacy until-revoked scalar consent");
+    const legacyCardResponse = await fetch(securedBase + revocableSharePath, {
+      headers: manualHeaders,
+    });
+    assert.equal(legacyCardResponse.status, 200,
+      "the grantor can still manage a legacy scalar consent");
+    assert.equal((await legacyCardResponse.json()).outgoing.expiresAt, null,
+      "the API labels a legacy scalar grant as valid until revoked");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+      assert.equal((await matchDb.prepare("", `SELECT fields->>'birth' AS birth
+        FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
+          AND left_person_id=? AND right_person_id=?`).get(parent.id,parent.id))?.birth,
+        "1960", "the recipient's SQL RLS keeps a legacy NULL grant readable until revoke");
+    }, true);
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE left_person_id=? AND right_person_id=?`)
+      .get(parent.id,parent.id))?.count, 1);
+    const publicParentPath = `/api/discovery/people/runtime-test/${parent.id}`;
+    const linkedPublicParent = await fetch(securedBase + publicParentPath, { headers });
+    assert.equal(linkedPublicParent.status, 200);
+    assert.equal(linkedPublicParent.headers.get("cache-control"), "private, no-store");
+    assert.equal((await linkedPublicParent.json()).linkedCards.length, 1);
+    let linkedReached!: () => void, releaseLinked!: () => void;
+    const linkedReady = new Promise<void>((resolve) => { linkedReached = resolve; });
+    const linkedGate = new Promise<void>((resolve) => { releaseLinked = resolve; });
+    const linkedEndpoint = discoveryPeopleHttp(app.archive.db, discoveryAuth, undefined, undefined,
+      async () => { linkedReached(); await linkedGate; });
+    const linkedServer = createServer((req, res) => {
+      void linkedEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => linkedServer.listen(0, "127.0.0.1", resolve));
+    const linkedPort = (linkedServer.address() as { port: number }).port;
+    const pausedLinked = fetch(`http://127.0.0.1:${linkedPort}${publicParentPath}`,
+      { headers: { ...headers, "X-Real-IP": "203.0.113.14" } });
+    let revokeLinked: Promise<Response> | undefined;
+    try {
+      await Promise.race([linkedReady,
+        pausedLinked.then(() => { throw new Error("Linked discovery detail sent before delivery barrier"); }),
+        new Promise<never>((_, reject) => setTimeout(() =>
+          reject(new Error("Linked discovery detail did not reach delivery barrier")), 30_000)),
+      ]);
+      revokeLinked = fetch(securedBase + revocablePath, {
+        method: "PATCH", headers: { ...manualHeaders, "X-Real-IP": "203.0.113.15" },
+        body: JSON.stringify({ decision: "revoke" }),
+      });
+      const earlyRevoke = await Promise.race([
+        revokeLinked.then((response) => `completed ${response.status}`),
+        new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]);
+      assert.equal(earlyRevoke, "pending",
+        "unlinking waits until a linked public card finishes delivery");
+      releaseLinked();
+      const deliveredLinked = await pausedLinked;
+      assert.equal(deliveredLinked.status, 200);
+      assert.equal((await deliveredLinked.json()).linkedCards.length, 1);
+      assert.equal((await revokeLinked).status, 200);
+    } finally {
+      releaseLinked();
+      await pausedLinked.catch(() => {});
+      await revokeLinked?.catch(() => {});
+      await new Promise<void>((resolve) => linkedServer.close(() => resolve()));
+    }
+    assert.deepEqual((await fetch(securedBase + publicParentPath, { headers })
+      .then((response) => response.json())).linkedCards, []);
+    console.log("runtime_discovery_linked_detail_revocation_ok");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE left_person_id=? AND right_person_id=?`)
+      .get(parent.id,parent.id))?.count, 0,
+    "manually revoking the match removes its extra-field grant atomically");
+    assert.equal((await fetch(securedBase + revocableSharePath, {
+      headers: manualHeaders,
+    })).status, 404, "the former grantor cannot reopen a revoked linked card");
+    assert.equal((await fetch(securedBase + revocablePath, {
+      method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "revoke" }),
+    })).status, 200, "repeating a revocation is idempotent");
+    const revokedAudit = await matchDb.prepare("", `SELECT status,revoked_by,decision_review_token
+      FROM discovery_match_requests WHERE id=?`).get(revocableId);
+    assert.equal(revokedAudit?.status, "revoked");
+    assert.equal(revokedAudit?.revoked_by, "owner");
+    assert.equal(revokedAudit?.decision_review_token, revocableReview.reviewToken);
+    await verifyRevokedDecisionNote(matchDb,revocableId,securedBase,manualHeaders);
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
+      WHERE left_person_id=? AND right_person_id=?`).get(parent.id,parent.id))?.count, 0,
+    "manual revocation removes the public transition immediately");
+    const revokedPublicParent = await fetch(securedBase + publicParentPath, { headers });
+    assert.equal(revokedPublicParent.status, 200, "the still-published card remains public");
+    assert.equal(revokedPublicParent.headers.get("cache-control"), "private, no-store");
+    assert.deepEqual((await revokedPublicParent.json()).linkedCards, [],
+      "a fresh public GET cannot return a revoked linked-card transition");
+    const relativeHint = (await signalIds()).find((item) => item.id === "relative-only");
+    assert.equal(relativeHint, undefined,
+      "publishing both people does not opt their relationship into candidate hints");
+    const candidateDelivery = async (change: () => Promise<void>) => {
+      let reached!: () => void, resume!: () => void;
+      const ready = new Promise<void>((resolve) => { reached = resolve; });
+      const gate = new Promise<void>((resolve) => { resume = resolve; });
+      const pause = async () => { reached(); await gate; };
+      const endpoint = discoveryMatchesHttp({ archive: app!.archive, auth: discoveryAuth,
+        publicOrigin: process.env.PUBLIC_ORIGIN,
+        beforeCandidateDelivery: pause });
+      const server = createServer((req, res) => {
+        void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+          .catch((error) => { res.destroy(error); });
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const port = (server.address() as { port: number }).port;
+      const request = fetch(`http://127.0.0.1:${port}${candidatePath}`, {
+        headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.227" },
+      });
+      try {
+        await Promise.race([
+          ready,
+          request.then(() => { throw new Error("Candidates sent before the delivery barrier"); }),
+          new Promise<never>((_, reject) => {
+            const timer = setTimeout(() => reject(new Error("Candidates did not reach delivery barrier")), 30_000);
+            timer.unref();
+          }),
+        ]);
+        await change();
+        resume();
+        return await request;
+      } finally {
+        resume();
+        await request.catch(() => {});
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    };
+    const unchangedCandidates = await candidateDelivery(async () => {});
+    assert.equal(unchangedCandidates.status, 200);
+    const unchangedPage = await unchangedCandidates.json();
+    assert.equal(unchangedPage.truncated, false);
+    assert.equal(unchangedPage.nextCursor, null);
+    assert.ok(unchangedPage.candidates.some((item: { id: string }) =>
+      item.id === "name-typo"), "unchanged published candidates remain available");
+    assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+      "name-typo",otherRelationId,true)).status, 200);
+    const revokedRelativeDelivery = await candidateDelivery(async () => {
+      assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+        "name-typo",otherRelationId,false)).status, 200);
+    });
+    assert.equal(revokedRelativeDelivery.status, 409,
+      "a completed relation-consent withdrawal before delivery cannot leak its evidence");
+    assert.equal((await revokedRelativeDelivery.json()).candidates, undefined);
+    const revokedCandidateDelivery = await candidateDelivery(async () => {
+      await otherPublication.unpublish("name-typo");
+    });
+    assert.equal(revokedCandidateDelivery.status, 409,
+      "withdrawing a candidate after ranking prevents delivery of its old card");
+    assert.equal((await revokedCandidateDelivery.json()).candidates, undefined);
+    await otherPublication.publish("name-typo", "owner");
+    const publicSearchHeaders = { ...headers, "X-Real-IP": "198.51.100.211" };
+    const publicParentResults = async () => {
+      const response = await fetch(securedBase +
+        `/api/discovery/people?q=${encodeURIComponent("Орлов")}`, { headers: publicSearchHeaders });
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("cache-control"), "private, no-store");
+      return (await response.json()).results as { archiveId: string; id: string }[];
+    };
+    assert.equal((await publicParentResults()).some((item) =>
+      item.archiveId === "other-archive" && item.id === parent.id), true);
+    assert.equal((await setRelativeConsent(otherBase,recipientHeaders,
+      "name-typo",otherRelationId,true)).status, 200);
+    await otherPublication.unpublish(parent.id);
+    assert.equal((await otherApp.archive.db.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_relative_consents WHERE archive_id=? AND person_id=?`)
+      .get("other-archive","name-typo"))?.count, 0,
+    "unpublishing the named relative cascades its separately consented clue");
+    assert.equal((await publicParentResults()).some((item) =>
+      item.archiveId === "other-archive" && item.id === parent.id), false,
+    "a fresh indexed search cannot return a withdrawn publication");
+    assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
+      "withdrawing a published parent never reveals a relationship hint");
+    await app.archive.write(ownBeforeSignals.family, sourceRevisionAfterGrandparentFixture);
+    await otherApp.archive.write(otherBeforeSignals.family, afterRelativePages.revision);
+    await otherPublication.unpublish("person-a");
+    await otherPublication.unpublish("person-b");
+    await verifyWithdrawnDecisionNotes(matchDb,matchBody.match.id,rejectedId,
+      otherBase,archiveAdminHeaders);
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_grants WHERE left_person_id='person-a'
+        AND right_person_id='person-a'`).get())?.count, 0,
+      "unpublishing a linked root atomically removes both branch grants");
+    assert.equal((await fetch(securedBase + branchPath, { headers: {
+      ...ownerHeaders, "X-Real-IP": "198.51.100.210",
+    } })).status, 404,
+      "a revoked link cannot reopen the previously granted branch");
+    assert.equal((await fetch(securedBase + `${branchPath}/options/branch-parent-a`, {
+      headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.183" },
+    })).status, 404,
+    "a revoked link cannot resume a previously chosen branch path");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.count, 0,
+    "removing either publication revokes the extra-field grant in the same transaction");
+    assert.equal((await fetch(securedBase + cardSharePath, { headers: ownerHeaders })).status, 404,
+      "a revoked match cannot be used to read the old card snapshot");
+    await runDiscoveryBackfill();
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.count, 0,
+    "backfill does not resurrect grants after publication revocation");
+    assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/runtime-test/person-a", {
+      headers,
+    })).json()).linkedCards, [], "revoking either publication removes the transition");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
+      WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 0,
+    "revocation removes the minimal public transition in the same transaction");
+    assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
+      .then((response) => response.json())).matches[0].status, "revoked",
+      "revoking either publication closes a confirmed cross-archive match");
+    assert.equal(
+      (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
+      404,
+      "revocation removes the global detail in the same transaction",
+    );
+    assert.deepEqual((await (await fetch(securedBase +
+      "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
+      .json()).candidates, [], "revocation must remove the candidate immediately");
+    await publishedPeopleStore(app.archive.db).unpublish("person-a");
+    const rootAfterMatch = await app.archive.read();
+    const restoredRoot = structuredClone(rootAfterMatch.family);
+    restoredRoot.people[0].deceased = false;
+    await app.archive.write(restoredRoot, rootAfterMatch.revision);
+    const afterDiscovery = await otherApp.archive.read();
+    const restoredFamily = structuredClone(afterDiscovery.family);
+    restoredFamily.people[0].deceased = false;
+    await otherApp.archive.write(restoredFamily, afterDiscovery.revision);
+    const specialSourceId = "family:человек.1";
+    const specialTargetId = "ветка:person.2";
+    const ownSpecialBefore = await app.archive.read();
+    const ownSpecialFamily = structuredClone(ownSpecialBefore.family);
+    ownSpecialFamily.people.push({ ...structuredClone(ownSpecialFamily.people[0]),
+      id: specialSourceId, name: "Софья", surname: "Редкая", patronymic: "",
+      birth: "1900", death: "1980", deceased: true, parents: [], spouses: [], column: 54 });
+    await app.archive.write(ownSpecialFamily, ownSpecialBefore.revision);
+    const otherSpecialBefore = await otherApp.archive.read();
+    const otherSpecialFamily = structuredClone(otherSpecialBefore.family);
+    otherSpecialFamily.people.push({ ...structuredClone(otherSpecialFamily.people[0]),
+      id: specialTargetId, name: "Софья", surname: "Редкая", patronymic: "",
+      birth: "1900", death: "1980", deceased: true, parents: [], spouses: [], column: 54 });
+    await otherApp.archive.write(otherSpecialFamily, otherSpecialBefore.revision);
+    await publishedPeopleStore(app.archive.db).publish(specialSourceId, "owner");
+    await otherPublication.publish(specialTargetId, "owner");
+    const compoundSourceId = "compound-source";
+    const spacedSourceId = "spaced-source";
+    const compoundTargetId = "compound-target";
+    const spacedTargetId = "spaced-target";
+    const closedTargetId = "closed-compound-target";
+    const compoundSourceBefore = await app.archive.read();
+    const compoundSourceFamily = structuredClone(compoundSourceBefore.family);
+    for (const [id, surname, name] of [
+      [compoundSourceId, "Иванова-Петрова", "Анна"],
+      [spacedSourceId, "Де ла Крус", "Мария"],
+    ]) compoundSourceFamily.people.push({ ...structuredClone(compoundSourceFamily.people[0]),
+      id, surname, name, patronymic: "", birth: "1900", death: "1980",
+      deceased: true, parents: [], spouses: [], column: 55 });
+    await app.archive.write(compoundSourceFamily, compoundSourceBefore.revision);
+    const compoundTargetBefore = await otherApp.archive.read();
+    const compoundTargetFamily = structuredClone(compoundTargetBefore.family);
+    for (const [id, surname, name] of [
+      [compoundTargetId, "Петрова", "Анна"],
+      [spacedTargetId, "Крус", "Мария"],
+      [closedTargetId, "Петрова", "Анна"],
+    ]) compoundTargetFamily.people.push({ ...structuredClone(compoundTargetFamily.people[0]),
+      id, surname, name, patronymic: "", birth: "1900", death: "1980",
+      deceased: true, parents: [], spouses: [], column: 55 });
+    await otherApp.archive.write(compoundTargetFamily, compoundTargetBefore.revision);
+    for (const id of [compoundSourceId,spacedSourceId])
+      await publishedPeopleStore(app.archive.db).publish(id, "owner");
+    for (const id of [compoundTargetId,spacedTargetId]) await otherPublication.publish(id, "owner");
+    assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_people
+      WHERE archive_id='other-archive' AND person_id=$1`, [closedTargetId])).rows[0].count, 0,
+    "the unpublished lookalike never enters the searchable projection");
+    await client.query(`UPDATE discovery_people SET surname_part=NULL,given_part=NULL
+      WHERE archive_id='runtime-test' AND person_id=$1`, [spacedSourceId]);
+    await client.query(`UPDATE discovery_people SET name='Старая видимая запись'
+      WHERE archive_id='runtime-test' AND person_id=$1`, [spacedSourceId]);
+    assert.equal((await client.query(discoveryNamePartsBatch, ["",""])).rows[0].changed, 0,
+      "backfill never exposes components from a card whose projection is stale");
+    await client.query(`UPDATE discovery_people SET name='Де ла Крус Мария'
+      WHERE archive_id='runtime-test' AND person_id=$1`, [spacedSourceId]);
+    assert.ok((await client.query(discoveryNamePartsBatch, ["",""])).rows[0].changed,
+      "a short backfill batch updates an existing consented projection");
+    assert.deepEqual((await client.query(`SELECT surname_part,given_part FROM discovery_people
+      WHERE archive_id='runtime-test' AND person_id=$1`, [spacedSourceId])).rows[0],
+      { surname_part: "Де ла Крус", given_part: "Мария" });
+    const compoundHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.243" };
+    const compoundCandidates = async (sourceId: string) => {
+      const response = await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=" +
+        sourceId, { headers: compoundHeaders });
+      assert.equal(response.status, 200);
+      return (await response.json()).candidates as { id: string; reasons: string[] }[];
+    };
+    assert.ok((await compoundCandidates(compoundSourceId)).some((person) =>
+      person.id === compoundTargetId && person.reasons.includes("Совпадает имя и часть составной фамилии")),
+    "a hyphenated surname finds its published second component");
+    assert.ok((await compoundCandidates(spacedSourceId)).some((person) =>
+      person.id === spacedTargetId && person.reasons.includes("Совпадает имя и часть составной фамилии")),
+    "the backfilled boundary finds a published multiword surname");
+    assert.ok(!(await compoundCandidates(compoundSourceId)).some((person) =>
+      person.id === closedTargetId), "a private lookalike is never suggested");
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("unrelated-archive");
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM people
+        WHERE id IN (?,?)`).get(compoundSourceId,closedTargetId))?.count, 0,
+      "the added projection fields do not bypass archive RLS on original cards");
+    }, true);
+    await otherPublication.unpublish(compoundTargetId);
+    assert.ok(!(await compoundCandidates(compoundSourceId)).some((person) =>
+      person.id === compoundTargetId), "revocation removes the compound-name suggestion");
+    assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_people
+      WHERE archive_id='other-archive' AND person_id=$1`, [compoundTargetId])).rows[0].count, 0);
+    for (const id of [compoundSourceId,spacedSourceId])
+      await publishedPeopleStore(app.archive.db).unpublish(id);
+    await otherPublication.unpublish(spacedTargetId);
+    await app.archive.write(compoundSourceBefore.family, (await app.archive.read()).revision);
+    await otherApp.archive.write(compoundTargetBefore.family, (await otherApp.archive.read()).revision);
+    console.log("runtime_discovery_candidate_name_parts_ok");
+    const specialMatchHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.241" };
+    const specialRecipientHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.242" };
+    const specialCandidateUrl = securedBase + "/api/discovery/matches/candidates?sourcePersonId=" +
+      encodeURIComponent(specialSourceId);
+    assert.equal((await fetch(specialCandidateUrl, { headers })).status, 403,
+      "a reader cannot inspect candidates for a Unicode source ID");
+    assert.equal((await fetch(otherBase + "/api/discovery/matches/candidates?sourcePersonId=" +
+      encodeURIComponent(specialSourceId), { headers: specialRecipientHeaders })).status, 404,
+    "another archive cannot use a published source ID as its own");
+    const specialCandidates = await fetch(specialCandidateUrl, { headers: specialMatchHeaders });
+    assert.equal(specialCandidates.status, 200);
+    assert.ok((await specialCandidates.json()).candidates.some((candidate: { id: string }) =>
+      candidate.id === specialTargetId), "indexed candidates include an explicitly published Unicode target ID");
+    const specialIgnoreBody = (ignored: boolean) => JSON.stringify({
+      sourcePersonId: specialSourceId, targetArchiveId: "other-archive",
+      targetPersonId: specialTargetId, ignored,
+    });
+    assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+      method: "POST", headers, body: specialIgnoreBody(true),
+    })).status, 403, "a reader cannot ignore a candidate through a Unicode ID");
+    assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+      method: "POST", headers: specialMatchHeaders, body: specialIgnoreBody(true),
+    })).status, 200);
+    assert.equal((await fetch(specialCandidateUrl, { headers: specialMatchHeaders })
+      .then((response) => response.json())).candidates.some((candidate: { id: string }) =>
+      candidate.id === specialTargetId), false, "ignoring hides only this suggested pair");
+    assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+      method: "POST", headers: specialMatchHeaders, body: specialIgnoreBody(false),
+    })).status, 200);
+    assert.ok((await fetch(specialCandidateUrl, { headers: specialMatchHeaders })
+      .then((response) => response.json())).candidates.some((candidate: { id: string }) =>
+      candidate.id === specialTargetId), "restoring shows the same suggested pair");
+    const specialRequestBody = JSON.stringify({ sourcePersonId: specialSourceId,
+      targetArchiveId: "other-archive", targetPersonId: specialTargetId });
+    assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+      method: "POST", headers, body: specialRequestBody,
+    })).status, 403, "a reader cannot submit a Unicode-ID match request");
+    const specialRequest = await fetch(securedBase + "/api/discovery/matches", {
+      method: "POST", headers: specialMatchHeaders, body: specialRequestBody,
+    });
+    assert.equal(specialRequest.status, 200);
+    const specialMatchId = (await specialRequest.json()).match.id as string;
+    const specialReverseRequest = await fetch(otherBase + "/api/discovery/matches", {
+      method: "POST", headers: specialRecipientHeaders,
+      body: JSON.stringify({ sourcePersonId: specialTargetId,
+        targetArchiveId: "runtime-test", targetPersonId: specialSourceId }),
+    });
+    assert.equal(specialReverseRequest.status, 200);
+    assert.equal((await specialReverseRequest.json()).match.id, specialMatchId,
+      "a reverse request with both Unicode IDs reuses the same pair");
+    assert.equal((await fetch(securedBase + `/api/discovery/matches/${specialMatchId}`, {
+      method: "PATCH", headers: specialMatchHeaders, body: JSON.stringify({ decision: "revoke" }),
+    })).status, 200);
+    await otherPublication.unpublish(specialTargetId);
+    assert.equal((await fetch(specialCandidateUrl, { headers: specialMatchHeaders })
+      .then((response) => response.json())).candidates.some((candidate: { id: string }) =>
+      candidate.id === specialTargetId), false,
+    "revoking the target publication removes its suggestion immediately");
+    await publishedPeopleStore(app.archive.db).unpublish(specialSourceId);
+    assert.equal((await fetch(specialCandidateUrl, { headers: specialMatchHeaders })).status, 404,
+      "revoking the source publication closes its candidate endpoint");
+    const ownSpecialAfter = await app.archive.read();
+    const ownWithoutSpecial = structuredClone(ownSpecialAfter.family);
+    ownWithoutSpecial.people = ownWithoutSpecial.people.filter((person) => person.id !== specialSourceId);
+    await app.archive.write(ownWithoutSpecial, ownSpecialAfter.revision);
+    const otherSpecialAfter = await otherApp.archive.read();
+    const otherWithoutSpecial = structuredClone(otherSpecialAfter.family);
+    otherWithoutSpecial.people = otherWithoutSpecial.people.filter((person) => person.id !== specialTargetId);
+    await otherApp.archive.write(otherWithoutSpecial, otherSpecialAfter.revision);
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+    await client.query("DELETE FROM archive_owners WHERE archive_id='other-archive' AND user_id='vk:42'");
+    await client.query("DELETE FROM archive_memberships WHERE archive_id='other-archive' AND user_id='vk:42'");
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  }
+
   const originalClientId = process.env.YANDEX_CLIENT_ID;
   const originalClientSecret = process.env.YANDEX_CLIENT_SECRET;
   process.env.YANDEX_CLIENT_ID = "runtime-test-client";
