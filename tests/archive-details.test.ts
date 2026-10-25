@@ -427,7 +427,7 @@ test("leaving a collection view aborts its reads without completing the collecti
   const reader = archiveDetails(setup.initial, async (url, init) => {
     calls.push(url);
     entered();
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((_resolve, reject) => {
       if (init?.signal?.aborted) reject(new DOMException("Aborted", "AbortError"));
       else init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
     });

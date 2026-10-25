@@ -100,7 +100,6 @@ export class SpatialRenderer {
   private height = 1;
   private projected: ProjectedPerson[] = [];
   private anchor = "";
-  private active: ReadonlySet<string> = new Set();
   private details = new Set<string>();
   private fly: {
     start: number;
@@ -308,7 +307,6 @@ export class SpatialRenderer {
     callbacks: Callbacks,
   ) {
     this.people = people;
-    this.active = active;
     this.callbacks = callbacks;
     const lines = this.edges.geometry.getAttribute("color");
     const green = new THREE.Color(this.palette.green),

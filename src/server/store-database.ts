@@ -452,7 +452,7 @@ export async function openPostgresDatabase(
         throw new Error("Expired database transaction context");
       return !owner || owner.graphReadOnly;
     },
-    prepare(sqlite, postgres) {
+    prepare(_sqlite, postgres) {
       if (!postgres)
         throw new Error("Для PostgreSQL не задан явный SQL-запрос");
       const sql = postgresBindings(postgres);

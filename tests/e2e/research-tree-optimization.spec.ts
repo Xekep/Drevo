@@ -1,10 +1,33 @@
-import { expect, test } from "@playwright/test";
+import { expect, test as base } from "@playwright/test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { startServer } from "../../src/server/index.ts";
+import { e2eFamily } from "./base-family.ts";
 
-for (const goal of ["routing", "compact"] as const) test(`AI ${goal} uses a real Worker without changing people or the camera`, async ({ page, request }, testInfo) => {
+// Other browser suites edit the shared fixture concurrently. This test checks
+// database immutability, so both the page and the assertion need their own DB.
+const test = base.extend<{ archiveUrl: string }>({
+  archiveUrl: async ({ browserName }, provideArchive) => {
+    const directory = await mkdtemp(join(tmpdir(), `drevo-layout-e2e-${browserName}-`));
+    const app = await startServer(0, join(directory, "drevo.sqlite"), true);
+    try {
+      const current = await app.archive.read();
+      await app.archive.write(e2eFamily(current.family), current.revision);
+      const port = (app.server.address() as { port: number }).port;
+      await provideArchive(`http://127.0.0.1:${port}`);
+    } finally {
+      await app.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+});
+
+for (const goal of ["routing", "compact"] as const) test(`AI ${goal} uses a real Worker without changing people or the camera`, async ({ page, request, archiveUrl }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
-  const before = await (await request.get("/api/family")).json();
+  const before = await (await request.get(`${archiveUrl}/api/family`)).json();
   await page.route("**/api/ai/status", route => route.fulfill({ json: { enabled: true, streaming: true } }));
   await page.route("**/api/ai/chats", route => route.fulfill({ json: { chats: [] } }));
   await page.route("**/api/ai/chat/stream", route => route.fulfill({
@@ -29,7 +52,7 @@ for (const goal of ["routing", "compact"] as const) test(`AI ${goal} uses a real
       }
     };
   });
-  await page.goto("/tree");
+  await page.goto(`${archiveUrl}/tree`);
   const canvas = page.locator(".tree-canvas");
   await expect(canvas, JSON.stringify(errors)).toHaveAttribute("data-layout-ready", "true");
   await expect(canvas).not.toHaveClass(/is-grow|is-layout-settling/);
@@ -71,6 +94,6 @@ for (const goal of ["routing", "compact"] as const) test(`AI ${goal} uses a real
     await expect(assistant).toBeHidden();
     await page.screenshot({ path: testInfo.outputPath("compact-tree-unobstructed.png") });
   }
-  expect(await (await request.get("/api/family")).json()).toEqual(before);
+  expect(await (await request.get(`${archiveUrl}/api/family`)).json()).toEqual(before);
   expect(errors).toEqual([]);
 });
