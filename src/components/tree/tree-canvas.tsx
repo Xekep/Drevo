@@ -1991,6 +1991,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               }}
             />
           )}
+          {narrow && depthEnabled && <div className="tree-spatial-toolbar-slot is-mobile" ref={setDepthToolbarHost} />}
           {narrow && preferencesAction}
         </div>
         {!narrow && (props.comparisonAction || preferencesAction || depthEnabled) && (
@@ -2208,7 +2209,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         )}
         </div>
         {depthEnabled && <TreeDepthLayers people={currentPeople} layoutPeople={depthPeople} unions={renderFamily.unions}
-          toolbarHost={narrow ? null : depthToolbarHost}
+          toolbarHost={depthToolbarHost}
           active={depth.front} selected={selected} ready={ready && initialCameraReady} onProfile={actions.choose} onSelect={actions.selectOnly}
           cameraRef={depthCameraRef} collapsed={collapsed} onCollapse={actions.collapse} onFallback={() => setDepthUnavailable(true)}
           fullscreen={screen.fullscreen} onFullscreen={screen.fullscreen ? screen.exit : screen.enter}

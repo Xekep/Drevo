@@ -163,6 +163,7 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+.tree-spatial-picker-icon { display: none; }
 .tree-spatial-person .tree-spatial-person-name {
   width: 100%;
   min-width: 0;
@@ -245,9 +246,37 @@
 }
 
 @media (max-width: 899px) {
+  .tree-canvas[data-depth-anchor] .tree-mode-bar { background: var(--paper); }
   .tree-spatial-tools {
     display: none;
   }
+  .tree-mode-bar .tree-spatial-toolbar-slot { flex: 0 0 44px; }
+  .tree-mode-bar .tree-spatial-person {
+    position: static;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    max-width: none;
+  }
+  .tree-mode-bar .tree-spatial-person > button { display: none; }
+  .tree-mode-bar .tree-spatial-person-name {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid var(--line);
+    background: var(--paper);
+  }
+  .tree-mode-bar .tree-spatial-person-name > span,
+  .tree-mode-bar .tree-spatial-picker-chevron { display: none; }
+  .tree-mode-bar .tree-spatial-picker-icon { display: block; }
+  .tree-mode-bar .tree-spatial-people {
+    top: calc(100% + 6px);
+    right: 0;
+    width: min(360px, calc(100vw - 16px));
+    z-index: 10;
+  }
+  .tree-mode-bar .tree-spatial-people input { font-size: 16px; }
+  .tree-mode-bar .tree-spatial-people li button { font-size: 16px; }
 }
 @media (min-width: 900px) and (max-width: 1199px) {
   .archive-workspace:has(.inspector-dock)
