@@ -10,6 +10,8 @@ import type { TreeFitOptions } from "./tree-camera-fit";
 import { SpatialCardAtlas, type SpatialPalette } from "./spatial-card-atlas";
 import { SpatialNameAtlas } from "./spatial-name-atlas";
 import { SpatialLabelMask } from "./spatial-label-mask";
+import { placeSpatialCards, type CardOffset } from "../../domain/spatial-card-layout.ts";
+import { SpatialCardProjection, spatialLayoutDeclarations } from "./spatial-card-projection.ts";
 import { SpatialArrowMotion } from "./spatial-arrow-motion";
 import { SpatialSpinGesture, type SpinDirection } from "./spatial-spin-gesture";
 import {
@@ -40,15 +42,16 @@ const labelClip =
 float labelDepth=dot(floor(label.rgb*255.+.5),vec3(65536.,256.,1.))/16777215.;
 if(label.a>.95&&gl_FragCoord.z>=labelDepth-0.0000001)discard;`;
 const cardVertex = `attribute vec3 center; attribute vec4 tile; attribute vec4 offset; attribute float date;
-uniform float focal; uniform float maxPixels; uniform float minPixels;
+attribute float layoutIndex; uniform float focal;
+${spatialLayoutDeclarations}
 uniform vec3 hoverCenter; uniform float hoverEnabled;
 varying vec2 vUv; varying vec2 vLocal; varying float vAlpha; varying float vHover;
 void main(){vUv=tile.xy+uv*tile.zw;vLocal=uv;
 vHover=hoverEnabled*(1.-step(.1,distance(center,hoverCenter)));
 vec4 p=viewMatrix*vec4(center,1.);
-float pixels=clamp(220.*focal/max(1.,-p.z),minPixels,maxPixels);
+vec3 cardData=readCardLayout(layoutIndex);float pixels=cardData.z;
 vAlpha=mix(1.,smoothstep(110.,140.,pixels),date);
-p.xy+=(offset.xy+position.xy*offset.zw)*pixels*max(1.,-p.z)/focal;
+p.xy+=(vec2(cardData.x,-cardData.y)+(offset.xy+position.xy*offset.zw)*pixels)*max(1.,-p.z)/focal;
 gl_Position=p.z>=-1.?vec4(2.,2.,2.,1.):projectionMatrix*p;}`;
 const cardFragment = `uniform sampler2D atlas; uniform vec3 hoverColor; uniform float portrait;
 varying vec2 vUv; varying vec2 vLocal; varying float vAlpha; varying float vHover;
@@ -81,7 +84,9 @@ export class SpatialRenderer {
   private labelMask = new SpatialLabelMask();
   private viewport = { value: new THREE.Vector2(1, 1) };
   private labelViewport = { value: new THREE.Vector2(1, 1) };
-  private minPixels = { value: 96 };
+  private cardProjection: SpatialCardProjection;
+  private cardOffsets = new Map<string, CardOffset>();
+  private leaders: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
   private hoverCenter = { value: new THREE.Vector3() };
   private hoverEnabled = { value: 0 };
   private hovered: string | null = null;
@@ -179,6 +184,7 @@ export class SpatialRenderer {
     this.controls.addEventListener("end", this.controlsEnded);
     host.dataset.depthSpinning = "false";
     this.ids = [...world.points.keys()];
+    this.cardProjection = new SpatialCardProjection(this.ids);
     const linePositions: number[] = [];
     for (const edge of world.connections) {
       const a = world.points.get(edge.from)!,
@@ -211,6 +217,17 @@ export class SpatialRenderer {
     // the real distant surface, rather than the clear canvas colour.
     this.edges.renderOrder = 3;
     this.scene.add(this.edges);
+    const leaderGeometry = new THREE.BufferGeometry();
+    leaderGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(this.ids.length * 6), 3)
+      .setUsage(THREE.DynamicDrawUsage));
+    leaderGeometry.setDrawRange(0, 0);
+    this.leaders = new THREE.LineSegments(leaderGeometry, new THREE.LineBasicMaterial({
+      color: palette.muted, transparent: true, opacity: .35,
+    }));
+    this.leaders.frustumCulled = false;
+    this.leaders.renderOrder = 3;
+    this.maskUnderLabels(this.leaders.material, false);
+    this.scene.add(this.leaders);
     this.arrows = new SpatialArrowMotion(world, palette.green, this.drawArrowFrame,
       () => !this.stopped && !this.hidden && !this.contextLost && !this.host.closest("[inert]"));
     this.maskUnderLabels(this.arrows.mesh.material);
@@ -254,14 +271,15 @@ export class SpatialRenderer {
         1,
       ),
     );
+    cardGeometry.setAttribute("layoutIndex", new THREE.InstancedBufferAttribute(new Float32Array(this.atlas.capacity), 1));
     cardGeometry.instanceCount = 0;
     const material = (texture: THREE.Texture, portrait = 0) =>
       new THREE.ShaderMaterial({
         uniforms: {
           atlas: { value: texture },
           focal: { value: 1 },
-          maxPixels: { value: 190 },
-          minPixels: this.minPixels,
+          cardLayout: { value: this.cardProjection.texture },
+          cardLayoutSize: { value: this.cardProjection.dimensions },
           hoverCenter: this.hoverCenter,
           hoverEnabled: this.hoverEnabled,
           hoverColor: { value: new THREE.Color(palette.green) },
@@ -345,7 +363,7 @@ export class SpatialRenderer {
       const centers: number[] = [],
         tiles: number[] = [],
         layouts: number[] = [],
-        dates: number[] = [];
+        dates: number[] = [], indices: number[] = [];
       for (const person of visiblePeople) {
         const point = this.world.points.get(person.id)!;
         for (const glyph of this.nameAtlas.layout(person)) {
@@ -353,6 +371,7 @@ export class SpatialRenderer {
           tiles.push(...glyph.tile);
           layouts.push(...glyph.layout);
           dates.push(glyph.date);
+          indices.push(this.cardProjection.indices.get(person.id)!);
         }
       }
       const geometry = this.names.geometry;
@@ -375,6 +394,7 @@ export class SpatialRenderer {
         "date",
         new THREE.InstancedBufferAttribute(new Float32Array(dates), 1),
       );
+      geometry.setAttribute("layoutIndex", new THREE.InstancedBufferAttribute(new Float32Array(indices), 1));
       geometry.instanceCount = dates.length;
       this.host.dataset.depthNamePeople = String(visiblePeople.length);
     }
@@ -396,10 +416,6 @@ export class SpatialRenderer {
       this.names.material.uniforms.focal.value =
         this.height /
         (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2));
-    this.cards.material.uniforms.maxPixels.value =
-      this.names.material.uniforms.maxPixels.value = spatialCardLimit(
-        this.width,
-      );
     this.viewport.value.set(
       this.width * this.renderer.getPixelRatio(),
       this.height * this.renderer.getPixelRatio(),
@@ -407,22 +423,23 @@ export class SpatialRenderer {
     this.labelViewport.value.set(this.width, this.height);
     this.invalidate();
   };
-  private maskUnderLabels(material: THREE.Material) {
+  private maskUnderLabels(material: THREE.Material, endpoints = true) {
     const previous = material.onBeforeCompile;
+    const programKey = material.customProgramCacheKey.bind(material);
+    material.customProgramCacheKey = () => `${programKey()}:spatial-endpoints-${Number(endpoints)}`;
     material.onBeforeCompile = (shader, renderer) => {
       previous.call(material, shader, renderer);
       shader.uniforms.labelMask = { value: this.labelMask.texture };
       shader.uniforms.viewport = this.viewport;
       shader.uniforms.labelViewport = this.labelViewport;
-      shader.uniforms.labelFocal = this.cards.material.uniforms.focal;
-      shader.uniforms.labelMinPixels = this.minPixels;
-      shader.uniforms.labelMaxPixels = this.cards.material.uniforms.maxPixels;
-      shader.vertexShader = `${edgeEndpointVertexDeclarations}\n${shader.vertexShader}`
+      shader.uniforms.cardLayout = { value: this.cardProjection.texture };
+      shader.uniforms.cardLayoutSize = { value: this.cardProjection.dimensions };
+      if (endpoints) shader.vertexShader = `${edgeEndpointVertexDeclarations}\n${shader.vertexShader}`
         .replace("#include <begin_vertex>", `#include <begin_vertex>\n${edgeEndpointVertex}`);
       shader.fragmentShader =
-        `${labelDeclarations}\n${edgeEndpointFragmentDeclarations}\n${shader.fragmentShader}`.replace(
+        `${labelDeclarations}\n${endpoints ? edgeEndpointFragmentDeclarations : ""}\n${shader.fragmentShader}`.replace(
           "#include <clipping_planes_fragment>",
-          `#include <clipping_planes_fragment>\n${edgeEndpointClip}\n${labelClip}`,
+          `#include <clipping_planes_fragment>\n${endpoints ? edgeEndpointClip : ""}\n${labelClip}`,
         );
     };
   }
@@ -801,8 +818,8 @@ export class SpatialRenderer {
       }
     }
     this.camera.updateMatrixWorld();
-    const projected: ProjectedPerson[] = [],
-      vector = new THREE.Vector3();
+    let projected: ProjectedPerson[] = [];
+    const vector = new THREE.Vector3();
     const focal =
       this.height /
       (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2));
@@ -846,12 +863,34 @@ export class SpatialRenderer {
         ? Infinity
         : Math.max(1, maxX - minX) * Math.max(1, maxY - minY),
     );
-    this.minPixels.value = minimum;
     for (const p of projected)
       p.size = Math.max(
         minimum,
         Math.min(p.size, spatialCardLimit(this.width)),
       );
+    const placement = placeSpatialCards(projected, this.width, this.height, this.cardOffsets, this.anchor);
+    this.cardOffsets = new Map(placement.cards.map((p, i) => [p.id, { dx: p.x - p.anchorX, dy: p.y - p.anchorY, scale: p.size / projected[i].size }]));
+    projected = placement.cards;
+    this.cardProjection.update(placement.cards);
+    const leaderPositions = this.leaders.geometry.getAttribute("position");
+    let leaderCount = 0;
+    for (const card of placement.cards) {
+      const dx = card.x - card.anchorX, dy = card.y - card.anchorY;
+      if (Math.hypot(dx, dy) < 3) continue;
+      const point = this.world.points.get(card.id)!;
+      vector.set(point.x, point.y, point.z).applyMatrix4(this.camera.matrixWorldInverse);
+      vector.x += dx * card.distance / focal;
+      vector.y -= dy * card.distance / focal;
+      vector.applyMatrix4(this.camera.matrixWorld);
+      leaderPositions.setXYZ(leaderCount * 2, point.x, point.y, point.z);
+      leaderPositions.setXYZ(leaderCount * 2 + 1, vector.x, vector.y, vector.z);
+      leaderCount++;
+    }
+    leaderPositions.needsUpdate = true;
+    this.leaders.geometry.setDrawRange(0, leaderCount * 2);
+    this.leaders.visible = leaderCount > 0;
+    this.host.dataset.depthDisplacedCards = String(leaderCount);
+    this.host.dataset.depthUnresolvedCards = String(placement.unresolved);
     this.projected = projected;
     const ids = projected.map((p) => p.id);
     this.details = new Set(ids);
@@ -864,17 +903,19 @@ export class SpatialRenderer {
     const portraitIds = ids.slice(0, this.atlas.capacity);
     const centers = this.cards.geometry.getAttribute("center"),
       tiles = this.cards.geometry.getAttribute("tile"),
-      layouts = this.cards.geometry.getAttribute("offset");
+      layouts = this.cards.geometry.getAttribute("offset"),
+      indices = this.cards.geometry.getAttribute("layoutIndex");
     portraitIds.forEach((id, i) => {
       const p = this.world.points.get(id)!;
       centers.setXYZ(i, p.x, p.y, p.z);
       layouts.setXYZW(i, 0, 0.24, 0.4, 0.4);
+      indices.setX(i, this.cardProjection.indices.get(id)!);
       tiles.setXYZW(
         i,
         ...(this.atlas.uv(id) as [number, number, number, number]),
       );
     });
-    centers.needsUpdate = tiles.needsUpdate = layouts.needsUpdate = true;
+    centers.needsUpdate = tiles.needsUpdate = layouts.needsUpdate = indices.needsUpdate = true;
     this.cards.geometry.instanceCount = portraitIds.length;
     const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
     this.arrows.refresh(this.camera, !this.reduced.matches && navigator.hardwareConcurrency > 2 &&
@@ -891,7 +932,7 @@ export class SpatialRenderer {
     this.host.dataset.depthVisiblePeople = String(projected.length);
     this.host.dataset.depthPortraitTile = String(this.atlas.tile);
     this.host.dataset.depthTextureBytes = String(
-      [this.atlas.canvas, this.nameAtlas.canvas, this.labelMask.canvas].reduce(
+      this.cardProjection.data.byteLength + [this.atlas.canvas, this.nameAtlas.canvas, this.labelMask.canvas].reduce(
         (bytes, canvas) => bytes + canvas.width * canvas.height * 4,
         0,
       ),
@@ -1077,7 +1118,8 @@ export class SpatialRenderer {
     this.atlas.dispose();
     this.nameAtlas.dispose();
     this.labelMask.dispose();
-    for (const object of [this.cards, this.names, this.edges]) {
+    this.cardProjection.dispose();
+    for (const object of [this.cards, this.names, this.edges, this.leaders]) {
       object.geometry.dispose();
       const materials = Array.isArray(object.material)
         ? object.material

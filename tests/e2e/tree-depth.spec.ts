@@ -411,7 +411,7 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   ).toBeLessThanOrEqual(family.people.length);
   expect(
     Number(await world(page).getAttribute("data-depth-draw-calls")),
-  ).toBeLessThanOrEqual(4);
+  ).toBeLessThanOrEqual(5);
   await page.screenshot({ path: info.outputPath("3d-initial.png") });
   const requests = await workerRequests(page),
     camera = await world(page).getAttribute("data-depth-camera");
@@ -436,9 +436,9 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   await page.screenshot({ path: info.outputPath("3d-overview.png") });
   await expect(page.getByText("Люди в 3D", { exact: true })).toHaveCount(0);
   await page.locator(".tree-spatial-person-name").click();
-  await expect(
-    page.getByRole("searchbox", { name: "Поиск в 3D-древе" }),
-  ).toBeFocused();
+  const personSearch = page.getByRole("searchbox", { name: "Поиск в 3D-древе" });
+  if (info.project.name === "mobile") await expect(personSearch).not.toBeFocused();
+  else await expect(personSearch).toBeFocused();
   await page
     .getByRole("searchbox", { name: "Поиск в 3D-древе" })
     .fill("Алексей");
@@ -548,6 +548,35 @@ test("3D assistant follows the visible camera controls and the mobile canvas bou
   await page.screenshot({ path: info.outputPath("3d-assistant-controls.png") });
 });
 
+test("mobile 3D picker stays in the top toolbar and waits for an explicit search tap", async ({ page, isMobile }, info) => {
+  test.skip(!isMobile);
+  await setup(page);
+  await settle(page);
+  for (const width of [320, 390, 768]) {
+    await page.setViewportSize({ width, height: 844 });
+    const bar = page.locator(".tree-mode-bar"), trigger = bar.locator(".tree-spatial-person-name");
+    await expect(trigger).toBeVisible();
+    const [button, gear] = await Promise.all([trigger.boundingBox(), bar.locator(".tree-preferences-trigger").boundingBox()]);
+    expect(button!.width).toBe(44);
+    expect(Math.abs(button!.y - gear!.y)).toBeLessThan(1);
+    expect(button!.x + button!.width).toBeLessThanOrEqual(width);
+    await trigger.tap();
+    const search = page.getByRole("searchbox", { name: "Поиск в 3D-древе" });
+    await expect(search).toBeVisible();
+    await expect(search).not.toBeFocused();
+    const popup = (await page.getByRole("dialog", { name: "Выбрать человека в 3D" }).boundingBox())!;
+    expect(popup.x).toBeGreaterThanOrEqual(0);
+    expect(popup.x + popup.width).toBeLessThanOrEqual(width);
+    if (width === 390) await page.screenshot({ path: info.outputPath("3d-mobile-search.png") });
+    await search.tap();
+    await expect(search).toBeFocused();
+    await search.fill("Варвара");
+    await page.getByRole("dialog", { name: "Выбрать человека в 3D" }).getByRole("button", { name: /Варвара/ }).tap();
+    await expect(search).toHaveCount(0);
+    await settle(page);
+  }
+});
+
 test("desktop 3D person picker shares the relationship and preferences row", async ({
   page,
   isMobile,
@@ -649,13 +678,13 @@ test("a thousand-person 3D archive keeps GPU batches, textures and detail bounde
     names: Number(node.getAttribute("data-depth-name-people")),
   }));
   expect(stats.cards).toBe(1000);
-  expect(stats.calls).toBeLessThanOrEqual(4);
-  expect(stats.bytes).toBe(21 * 1024 * 1024);
+  expect(stats.calls).toBeLessThanOrEqual(5);
+  expect(stats.bytes).toBe(21 * 1024 * 1024 + 256 * 4 * 4 * 4);
   expect(stats.tile).toBe(64);
   expect(stats.names).toBe(1000);
   if (!process.env.DREVO_E2E_NO_SCREENSHOTS)
     await page.screenshot({ path: info.outputPath("3d-1000-overview.png") });
-  expect(stats.textures).toBeLessThanOrEqual(3);
+  expect(stats.textures).toBeLessThanOrEqual(4);
   expect(await workerRequests(page)).toBe(requests);
   await info.attach("webgl-1000-bounds", {
     body: JSON.stringify(stats),

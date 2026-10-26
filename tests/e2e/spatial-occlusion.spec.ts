@@ -4,6 +4,59 @@ import sharp from "sharp";
 import type { SpatialRenderer } from "../../src/components/tree/spatial-renderer";
 import type { Person } from "../../src/domain";
 
+test("overlapping 3D anchors keep both portraits, separate their cards and retain correct picking", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 600, height: 600 });
+  const chunk = (await readdir("dist/assets")).find(name => /^spatial-renderer-.*\.js$/.test(name));
+  expect(chunk).toBeTruthy();
+  for (const [id, color] of [["near", "#ff0000"], ["far", "#0000ff"]]) {
+    const png = await sharp({ create: { width: 64, height: 64, channels: 4, background: color } }).png().toBuffer();
+    await page.route(`**/media/overlap-${id}.png*`, route => route.fulfill({ contentType: "image/png", body: png }));
+  }
+  await page.goto("/people");
+  await page.evaluate(async chunk => {
+    const module = await import(`/assets/${chunk}`);
+    const Renderer = Object.values(module).find(value => typeof value === "function" && value.prototype?.personAt) as typeof SpatialRenderer;
+    const host = document.createElement("div");
+    host.id = "overlap-scene";
+    host.style.cssText = "position:fixed;inset:0;width:400px;height:400px;background:#fff;z-index:100";
+    document.body.append(host);
+    const points = new Map([["near", { x: 0, y: 0, z: 0, angle: 0 }], ["far", { x: 0, y: 0, z: -300, angle: 0 }]]);
+    const people = new Map([...points.keys()].map(id => [id, { id, name: id, surname: "Персона", patronymic: "",
+      sex: "u", birth: "", birthPlace: "", photo: `/media/overlap-${id}.png`, parents: [], spouses: [],
+      sources: [], generation: 1, column: 0 } as Person]));
+    const scene = new Renderer(host, { points, connections: [] }, people,
+      { paper: "#fff", ink: "#000", muted: "#888", green: "#050", red: "#900" },
+      { choose() {}, select() {}, profile() {}, failure() { throw Error("WebGL failed"); } });
+    scene.camera.position.set(0, 0, 1000);
+    scene.controls.target.set(0, 0, 0);
+    scene.controls.update();
+    scene.invalidate();
+    Object.assign(window, { overlapScene: scene });
+  }, chunk!);
+  const host = page.locator("#overlap-scene");
+  await expect(host).toHaveAttribute("data-depth-cards", "2");
+  await expect(host).toHaveAttribute("data-depth-unresolved-cards", "0");
+  await expect(host).toHaveAttribute("data-depth-displaced-cards", "1");
+  const cards = await page.evaluate(() => {
+    const scene = (window as unknown as { overlapScene: SpatialRenderer }).overlapScene;
+    const projected = (scene as unknown as { projected: { id: string; x: number; y: number; size: number }[] }).projected;
+    return projected.map(p => ({ ...p, hit: scene.personAt(p.x, p.y - p.size * .24) }));
+  });
+  for (const card of cards) expect(card.hit).toBe(card.id);
+  const [a, b] = cards;
+  expect(Math.abs(a.x - b.x) >= (a.size + b.size) * .46 || Math.abs(a.y - b.y) >= (a.size + b.size) * .5).toBe(true);
+  await expect.poll(async () => {
+    const { data } = await sharp(await host.screenshot()).resize(400, 400).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    return cards.every(card => {
+      const offset = (Math.round(card.y - card.size * .24) * 400 + Math.round(card.x)) * 3;
+      return card.id === "near" ? data[offset] > 220 && data[offset + 2] < 40
+        : data[offset + 2] > 220 && data[offset] < 40;
+    });
+  }).toBe(true);
+  await page.evaluate(() => (window as unknown as { overlapScene: SpatialRenderer }).overlapScene.dispose());
+});
+
 for (const arrowsOnly of [false, true]) {
   test(`incident edges never paint over their endpoint portrait, arrows only=${arrowsOnly}`, async ({ page }, info) => {
     await page.addInitScript(() => {

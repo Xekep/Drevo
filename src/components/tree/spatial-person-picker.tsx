@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { ChevronDown, Search } from "lucide-react";
+import { ChevronDown, Search, UserSearch } from "lucide-react";
 import { fullName, years, type Person } from "../../domain";
 
 /** Local navigation only: search is restricted to people in this 3D scene. */
@@ -20,7 +20,9 @@ export function SpatialPersonPicker({ people, focused, disabled, onChoose }: {
     .toLocaleLowerCase("ru").includes(query.trim().toLocaleLowerCase("ru")));
   useEffect(() => {
     if (!open) return;
-    input.current?.focus({ preventScroll: true });
+    if (!window.matchMedia("(max-width: 899px)").matches)
+      input.current?.focus({ preventScroll: true });
+    else trigger.current?.focus({ preventScroll: true });
     const outside = (event: PointerEvent) => {
       if (event.target instanceof Node && !root.current?.contains(event.target))
         setOpen(false);
@@ -50,7 +52,8 @@ export function SpatialPersonPicker({ people, focused, disabled, onChoose }: {
         aria-expanded={open} aria-controls={open ? id : undefined}
         aria-haspopup="dialog" disabled={disabled}
         onClick={() => { setQuery(""); setOpen(!open); }}>
-        <span>{name}</span><ChevronDown size={16} aria-hidden="true" />
+        <UserSearch className="tree-spatial-picker-icon" size={19} aria-hidden="true" />
+        <span>{name}</span><ChevronDown className="tree-spatial-picker-chevron" size={16} aria-hidden="true" />
       </button>
       {open && <div id={id} role="dialog" aria-label="Выбрать человека в 3D"
         className="tree-spatial-people">
