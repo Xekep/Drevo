@@ -73,15 +73,6 @@ jobs:
           bash ops/fetch-award-images.sh
       # HTTP-проверка публичной ссылки использует собранную HTML-оболочку.
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: failure()
-        with:
-          name: deploy-e2e-failures
-          path: test-results
-          if-no-files-found: ignore
-          retention-days: 3
       - name: Test all suites on Node 22
         # Node 22: ошибка IPC в node --test (nodejs/node#64061, #64706).
         # Ограниченная очередь сохраняет прямой запуск каждого файла без IPC runner.
@@ -113,9 +104,55 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 2
+      - name: Share the exact production build with browser tests
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: deploy-e2e-build
+          path: |
+            dist
+            public/awards
+          if-no-files-found: error
+          retention-days: 2
+
+  e2e:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    concurrency:
+      group: drevo-e2e-${{ github.ref }}-${{ matrix.shard }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22.23.2"
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: deploy-e2e-build
+          path: .
+      - run: npx playwright install --with-deps chromium
+        timeout-minutes: 12
+      - run: npm run prepare:models
+      # Отдельный сервер и SQLite на VM; все shards проверяют один dist из prepare.
+      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: deploy-e2e-failures-${{ matrix.shard }}
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 3
 
   deploy:
-    needs: [prepare, postgres]
+    needs: [prepare, postgres, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
