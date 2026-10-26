@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useStore, type Viewport } from "@xyflow/react";
-import type { FitTree } from "./tree-camera-fit.ts";
+import { MIN_TREE_ZOOM, type FitTree } from "./tree-camera-fit.ts";
 import type { Person } from "../../domain/types.ts";
 import {
   TREE_NODE_HEIGHT,
@@ -272,7 +272,7 @@ export function useTreeCameraState({
                 ids: focus.ids,
                 maxZoom: focus.purpose === "family" ? 0.95 : 1,
                 minZoom:
-                  focus.purpose === "family" ? 0.05 : narrow ? 0.55 : 0.15,
+                  focus.purpose === "family" ? MIN_TREE_ZOOM : narrow ? 0.55 : 0.15,
                 padding: focus.purpose === "family" ? 0.34 : 0.5,
                 duration: motionEnabled ? 650 : 0,
                 ease: (progress) => 1 - (1 - progress) ** 3,
@@ -292,7 +292,7 @@ export function useTreeCameraState({
           if (initialPosition)
             viewportUpdate = fitTree({
               ids: [...positions.keys()],
-              minZoom: 0.05,
+              minZoom: MIN_TREE_ZOOM,
               maxZoom: narrow ? 0.32 : 0.38,
               padding: initialTreePadding(canvasWidth, canvasHeight, narrow),
               duration: 0,
@@ -300,7 +300,7 @@ export function useTreeCameraState({
           else if (changedContext && context.includes(":research:"))
             viewportUpdate = fitTree({
               ids: [...positions.keys()],
-              minZoom: 0.05,
+              minZoom: MIN_TREE_ZOOM,
               maxZoom: narrow ? 0.9 : 1,
               padding: 0.2,
               duration: contextDuration,
@@ -342,7 +342,7 @@ export function useTreeCameraState({
             viewportUpdate = fitTree({
               ids: [...positions.keys()],
               maxZoom: narrow ? 0.9 : 1,
-              minZoom: 0.05,
+              minZoom: MIN_TREE_ZOOM,
               padding,
               duration: contextDuration,
               ease: contextEase,

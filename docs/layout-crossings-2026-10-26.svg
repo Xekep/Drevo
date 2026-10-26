@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="190" viewBox="0 0 660 190" role="img" aria-labelledby="title desc">
+  <title id="title">Чужое пересечение и настоящее соединение</title>
+  <desc id="desc">Слева существующий разрыв линии, в центре небольшой мостик дугой, справа настоящая развилка с точкой.</desc>
+  <rect width="660" height="190" fill="#fafbf6"/>
+  <g fill="#263b2c" font-family="system-ui, sans-serif" font-size="15" text-anchor="middle">
+    <text x="110" y="35">Разрыв</text><text x="330" y="35">Мостик</text><text x="550" y="35">Соединение</text>
+  </g>
+  <g fill="none" stroke="#58775a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M110 65V145 M45 105H104 M116 105H175"/>
+    <path d="M330 65V145 M265 105H322 Q330 90 338 105 H395"/>
+    <path d="M550 65V105 M485 105H615"/>
+  </g>
+  <circle cx="550" cy="105" r="4" fill="#58775a"/>
+  <g fill="#526653" font-family="system-ui, sans-serif" font-size="12" text-anchor="middle">
+    <text x="110" y="172">Линии не соединены</text><text x="330" y="172">Линии не соединены</text><text x="550" y="172">Реальная развилка</text>
+  </g>
+</svg>

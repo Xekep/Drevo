@@ -182,7 +182,6 @@ export function optimizeFamilyRows(
     if (!selected) break;
     best = selected;
   }
-  const rowUnchanged = best === primary;
   let reorderBudget = budget;
   budget = small ? 8 : 4;
   for (let pass = 0; !previous && pass < 3 && budget > 0; pass++) {
@@ -222,9 +221,9 @@ export function optimizeFamilyRows(
     if (!selected) break;
     best = selected;
   }
-  // A failed one-generation move may merely carry its crossing downstream.
-  // Try rigid descendant moves using the existing unspent search allowance.
-  if (!previous && rowUnchanged && score(best).crossings) {
+  // A successful row move can still leave a conflict spanning generations.
+  // Continue with rigid descendant moves within the same unspent allowance.
+  if (!previous && score(best).crossings) {
     const { contacts, crossed } = familyBlockConflicts(best);
     const branchRoots = [...contacts].filter(([id]) => crossed.has(id))
       .sort((a, b) => b[1] - a[1]).map(([id]) => id);

@@ -77,7 +77,7 @@ import { useFamilyView } from "./use-family-view";
 import { useTreeFragment } from "./use-tree-fragment";
 import "../../styles/tree-fragments.css";
 import { generationScope } from "../../domain/tree-generation-scope";
-import { createCrossingPathCache } from "../../domain/route-crossings";
+import { createCrossingPathCache, crossingZoomBucket } from "../../domain/route-crossings";
 import type { TreeGenerationLimits } from "../../domain/tree-preferences";
 import { useTreeLayout } from "./use-tree-layout";
 import { useTreeOptimization } from "./use-tree-optimization";
@@ -94,7 +94,7 @@ import { applyTreeEdgePermissions, prepareTreeEdges } from "./tree-edge-adapter"
 import { buildTreeNodeModel } from "./tree-node-model";
 import { treeRenderFamilyKey } from "./tree-render-family";
 import { TreeCameraTools } from "./tree-camera-tools";
-import { fitTreeNodes, type TreeFitOptions } from "./tree-camera-fit";
+import { fitTreeNodes, MIN_TREE_ZOOM, type TreeFitOptions } from "./tree-camera-fit";
 import { TreeEdgeChoices } from "./tree-edge-choices";
 import {
   TREE_LAYOUT_TRANSITION_MS,
@@ -370,6 +370,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const canvasWidth = useStore((state) => state.width);
   const canvasHeight = useStore((state) => state.height);
   const distantZoom = useStore((state) => state.transform[2] < 0.18);
+  const crossingZoom = useStore((state) => crossingZoomBucket(state.transform[2]));
   const [growthStarted, setGrowthStarted] = useState(false);
   const [growthRevealed, setGrowthRevealed] = useState(false);
   const markInitialCameraReady = useCallback(
@@ -1063,24 +1064,31 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const connections = useMemo(() => archiveConnections(renderFamily), [renderFamily]);
   const readPreparedEdges = useMemo(
     () => {
-      let prepared: ReturnType<typeof prepareTreeEdges> | undefined;
-      return () => prepared ??= prepareTreeEdges({
-        mode: layoutMode,
-        geometry,
-        connections,
-        visible: renderVisible,
-        positions,
-        occurrencePeople,
-        peopleMap,
-        highlighted,
-        selectedEdge: props.selectedEdge,
-        extraVisible,
-        preview: props.preview,
-        onEdge,
-        onChoices: setEdgeChoices,
-        growthDelays,
-        crossingPaths: cachedCrossingPaths,
-      });
+      const prepared = new Map<boolean, ReturnType<typeof prepareTreeEdges>>();
+      return (print = false) => {
+        const retained = prepared.get(print);
+        if (retained) return retained;
+        const next = prepareTreeEdges({
+          mode: layoutMode,
+          geometry,
+          connections,
+          visible: renderVisible,
+          positions,
+          occurrencePeople,
+          peopleMap,
+          highlighted,
+          selectedEdge: props.selectedEdge,
+          extraVisible,
+          preview: props.preview,
+          onEdge,
+          onChoices: setEdgeChoices,
+          growthDelays,
+          crossingPaths: cachedCrossingPaths,
+          crossingZoom: print ? 1 : crossingZoom,
+        });
+        prepared.set(print, next);
+        return next;
+      };
     },
     [
       layoutMode,
@@ -1097,18 +1105,25 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       onEdge,
       growthDelays,
       cachedCrossingPaths,
+      crossingZoom,
     ],
   );
   const readDisplayEdges = useMemo(
     () => {
-      let edges: RelationshipEdgeType[] | undefined;
-      return () => edges ??= applyTreeEdgePermissions(readPreparedEdges(), {
-        family: renderFamily,
-        user,
-        peopleMap,
-        canEdit: props.canEdit,
-        busy: props.busy,
-      });
+      const edges = new Map<boolean, RelationshipEdgeType[]>();
+      return (print = false) => {
+        const retained = edges.get(print);
+        if (retained) return retained;
+        const next = applyTreeEdgePermissions(readPreparedEdges(print), {
+          family: renderFamily,
+          user,
+          peopleMap,
+          canEdit: props.canEdit,
+          busy: props.busy,
+        });
+        edges.set(print, next);
+        return next;
+      };
     },
     [readPreparedEdges, renderFamily, user, peopleMap, props.canEdit, props.busy],
   );
@@ -1452,7 +1467,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     depthScope: depthEnabled ? depth.front : null,
     tree: {
       nodes: displayNodes,
-      get edges() { return readDisplayEdges(); },
+      get edges() { return readDisplayEdges(true); },
       actions,
       title: family.title,
       white: props.colorScheme === "white",
@@ -1468,7 +1483,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       depthScope: depthEnabled ? depth.front : null,
       tree: {
         nodes: displayNodes,
-        get edges() { return readDisplayEdges(); },
+        get edges() { return readDisplayEdges(true); },
         actions,
         title: family.title,
         white: props.colorScheme === "white",
@@ -2106,7 +2121,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           selectionKeyCode={null}
           selectionOnDrag={false}
           panOnDrag={cameraLocked ? false : [0, 1]}
-          minZoom={0.05}
+          minZoom={MIN_TREE_ZOOM}
           maxZoom={1.8}
           // Culling uses final coordinates, not the CSS-interpolated position.
           // Small views keep moving nodes mounted across the viewport edge.

@@ -744,10 +744,10 @@ test("gaps distinguish crossings of separate branches, preserving shared family 
       ]),
     },
   ];
-  assert.equal(
-    crossingPaths(edges).get("a"),
-    "M 0 50 L 45 50 M 55 50 L 100 50",
-  );
+  const paths = crossingPaths(edges);
+  assert.match(paths.get("a")!, /Q/, "the upper line has a continuous arch");
+  assert.equal((paths.get("b")!.match(/M/g) || []).length, 2,
+    "the lower line is cut at the arch so no false junction remains");
   assert.equal(
     crossingPaths(edges.map((e) => ({ ...e, group: "same" }))).size,
     0,
