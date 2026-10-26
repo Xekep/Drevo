@@ -259,6 +259,27 @@ test("earlier T-only households cannot hide a later clade from the bounded root 
   assert.equal(score(after).overlaps, 0);
 });
 
+for (const reverse of [false, true]) test(`a successful row exchange still allows a remaining multi-generation move (reverse=${reverse})`, () => {
+  const late = anchoredFixture(false);
+  const earlyPositions: TreeGeometry["positions"] = [
+    ["early-P", { x: 0, y: -3000 }], ["early-Q", { x: 600, y: -3000 }],
+    ["early-A", { x: 1200, y: -2500 }], ["early-B", { x: 600, y: -2500 }],
+  ];
+  const original = geometry([...earlyPositions, ...late.positions], [
+    child("early-P", "early-A", earlyPositions, -2650),
+    child("early-Q", "early-B", earlyPositions, -2630), ...late.branches!,
+  ]);
+  const before = reverse ? mirror(original) : original, score = scorer();
+  assert.equal(score(before).crossings, 2);
+  const people = before.positions.map(([id]) => ({ id, birth: "", parents: [], spouses: [] }));
+  const after = optimizeFamilyRows(before, people, [], size, score);
+  assert.equal(score(after).crossings, 0);
+  assert.equal(score(after).cardHits, 0);
+  assert.equal(score(after).overlaps, 0);
+  assert.deepEqual(after.positions.map(([id, p]) => [id, p.y]), before.positions.map(([id, p]) => [id, p.y]));
+  assert.deepEqual(after.occurrences, before.occurrences);
+});
+
 test("two distinct union joints translate with a three-person household and keep their own children", () => {
   const positions: TreeGeometry["positions"] = [
     ["P", { x: 0, y: 0 }], ["Q", { x: 1000, y: 0 }],

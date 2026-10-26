@@ -1,5 +1,8 @@
 import { getViewportForBounds, type Rect, type Viewport } from "@xyflow/system";
 
+/** Overview can fit a wide archive; focusing a person retains its own readable zoom. */
+export const MIN_TREE_ZOOM = 0.00001;
+
 type LayoutNode = {
   id: string;
   position: { x: number; y: number };
@@ -92,7 +95,7 @@ export async function fitTreeNodes(
     bounds,
     canvas.width,
     canvas.height,
-    options.minZoom ?? 0.05,
+    options.minZoom ?? MIN_TREE_ZOOM,
     options.maxZoom ?? 1.8,
     options.padding ?? 0.1,
   );

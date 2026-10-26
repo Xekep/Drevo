@@ -77,11 +77,13 @@ type EdgeAdapterInput = {
 type EdgePreparationInput = Omit<
   EdgeAdapterInput,
   "family" | "user" | "canEdit" | "busy"
-> & { crossingPaths?: CrossingPathFinder };
+> & { crossingPaths?: CrossingPathFinder; crossingZoom?: number };
 export type PreparedTreeEdges = {
   edges: RelationshipEdgeType[];
   /** Only standalone connections can reconnect; family branches and drafts cannot. */
   directIndices: readonly number[];
+  /** Keeps an oversized weak cache entry alive only for this prepared scene. */
+  crossings?: ReadonlyMap<string, string>;
 };
 type EdgePermissionInput = Pick<
   EdgeAdapterInput,
@@ -151,6 +153,7 @@ export function prepareTreeEdges({
   onChoices,
   growthDelays,
   crossingPaths: findCrossingPaths = crossingPaths,
+  crossingZoom,
 }: EdgePreparationInput): PreparedTreeEdges {
   const routes = new Map(geometry?.routes || []);
   const coveredRelations = geometry?.coveredRelations
@@ -158,16 +161,14 @@ export function prepareTreeEdges({
     : null;
   const nodeWidth = geometry?.nodeSize?.width ?? TREE_NODE_WIDTH,
     nodeHeight = geometry?.nodeSize?.height ?? TREE_NODE_HEIGHT;
-  const cards = extraVisible
-    ? [...positions]
+  const cards = [...positions]
         .filter(([id]) => occurrencePeople.has(id))
         .map(([, point]) => ({
           left: point.x,
           right: point.x + nodeWidth,
           top: point.y,
           bottom: point.y + nodeHeight,
-        }))
-    : [];
+        }));
   const familyRoutes = extraVisible
     ? [
         ...connections
@@ -352,8 +353,11 @@ export function prepareTreeEdges({
     combined.map((edge) => ({
       id: edge.id,
       group: groups.get(edge.id) || edge.id,
+      source: edge.source,
+      target: edge.target,
       route: edge.data?.route,
     })),
+    { zoom: crossingZoom, obstacles: cards },
   );
   const withCrossings = combined.map((edge) =>
     paths.has(edge.id)
@@ -362,9 +366,10 @@ export function prepareTreeEdges({
   );
 
   if (!preview?.from || !preview.to || preview.from === preview.to)
-    return { edges: withCrossings, directIndices };
+    return { edges: withCrossings, directIndices, crossings: paths };
   return {
     directIndices,
+    crossings: paths,
     edges: [
       ...withCrossings,
       {

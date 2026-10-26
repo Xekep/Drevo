@@ -131,9 +131,15 @@ test("3000 person canvas intro survives GPU handoff or canvas fallback", async (
   const phases: string[] = [];
   let nodes = 0, edges = 0;
   for (const sample of visible) {
+    // The complete overview now includes all 250 chains. A browser frame
+    // can span the last card's reveal and the next line's start. Require
+    // the entire parent generation before any of its outgoing lines, rather
+    // than treating that sampling boundary as simultaneous animation.
+    expect(sample.edges).toBeLessThanOrEqual(Math.floor(sample.nodes / 250) * 250);
     const cardAdvanced = sample.nodes > nodes;
     const lineAdvanced = sample.edges > edges;
-    const phase = cardAdvanced && lineAdvanced ? "both" :
+    const phase = cardAdvanced && lineAdvanced
+      ? sample.nodes % 250 === 0 ? "line" : "both" :
       cardAdvanced ? "card" : lineAdvanced ? "line" : "";
     if (phase && phase !== phases.at(-1)) phases.push(phase);
     nodes = Math.max(nodes, sample.nodes);

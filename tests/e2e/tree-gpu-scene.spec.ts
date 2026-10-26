@@ -243,7 +243,9 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
       await page
         .getByRole("button", { name: "Уменьшить", exact: true })
         .click();
-    for (let i = 0; i < 16 && (await zoom()) < 0.3; i++)
+    // A true full overview can start below the former 5% floor. Allow the
+    // same controls to reach LOD 1 from that scale; keep the LOD assertions.
+    for (let i = 0; i < 64 && (await zoom()) < 0.3; i++)
       await page
         .getByRole("button", { name: "Увеличить", exact: true })
         .click();

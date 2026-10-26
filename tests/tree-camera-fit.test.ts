@@ -9,6 +9,7 @@ import {
 import {
   fitTreeNodes,
   treeFitBounds,
+  MIN_TREE_ZOOM,
 } from "../src/components/tree/tree-camera-fit.ts";
 
 const node = (id: string, x: number, y: number, width = 220, height = 264) => ({
@@ -20,6 +21,25 @@ const node = (id: string, x: number, y: number, width = 220, height = 264) => ({
   data: {},
 });
 const canvas = { width: 900, height: 600 };
+
+test("a full overview contains a wide archive on a narrow screen; person focus stays readable", async () => {
+  const nodes = [node("left", -5000, 20), node("right", 14000, 200)];
+  const screen = { width: 390, height: 744 };
+  let actual = { x: 0, y: 0, zoom: 1 };
+  const flow = { viewportInitialized: true, setViewport: async (viewport: typeof actual) => {
+    actual = viewport; return true;
+  } };
+  await fitTreeNodes(flow, nodes, screen, { padding: 0.2, maxZoom: 1 });
+  assert.ok(actual.zoom >= MIN_TREE_ZOOM && actual.zoom < 0.05);
+  for (const entry of nodes) {
+    assert.ok(entry.position.x * actual.zoom + actual.x >= 0);
+    assert.ok((entry.position.x + entry.width) * actual.zoom + actual.x <= screen.width);
+    assert.ok(entry.position.y * actual.zoom + actual.y >= 0);
+    assert.ok((entry.position.y + entry.height) * actual.zoom + actual.y <= screen.height);
+  }
+  await fitTreeNodes(flow, nodes, screen, { ids: ["right"], minZoom: 0.55, maxZoom: 0.55 });
+  assert.equal(actual.zoom, 0.55);
+});
 
 test("fresh offscreen public-port nodes fit without DOM measurements, including after data/selection changes", async () => {
   const first = [node("a", 5000, -400), node("b", 5500, 300)];
