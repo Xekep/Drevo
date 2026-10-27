@@ -2,6 +2,15 @@ import { defineConfig } from "vite";
 import { transformAsync } from "@babel/core";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+
+const pdfjsDirectory = resolve(import.meta.dirname, "node_modules/pdfjs-dist");
+const pdfjsVersion = JSON.parse(
+  readFileSync(resolve(pdfjsDirectory, "package.json"), "utf8"),
+).version as string;
+const pdfjsWasmFiles = readdirSync(resolve(pdfjsDirectory, "wasm"));
+const pdfjsWasmPrefix = `/assets/pdfjs/${pdfjsVersion}/wasm/`;
 
 export default defineConfig({
   resolve: {
@@ -16,6 +25,38 @@ export default defineConfig({
     ],
   },
   plugins: [
+    {
+      name: "pdfjs-local-decoders",
+      async generateBundle() {
+        for (const name of pdfjsWasmFiles)
+          this.emitFile({
+            type: "asset",
+            fileName: `${pdfjsWasmPrefix.slice(1)}${name}`,
+            source: await readFile(resolve(pdfjsDirectory, "wasm", name)),
+          });
+      },
+      configureServer(server) {
+        server.middlewares.use((request, response, next) => {
+          const path = new URL(request.url || "/", "http://localhost").pathname;
+          if (!path.startsWith(pdfjsWasmPrefix)) return next();
+          const name = path.slice(pdfjsWasmPrefix.length);
+          if (!pdfjsWasmFiles.includes(name)) return next();
+          void readFile(resolve(pdfjsDirectory, "wasm", name))
+            .then((data) => {
+              response.setHeader(
+                "Content-Type",
+                name.endsWith(".wasm")
+                  ? "application/wasm"
+                  : name.endsWith(".js")
+                    ? "text/javascript"
+                    : "text/plain",
+              );
+              response.end(data);
+            })
+            .catch(next);
+        });
+      },
+    },
     {
       name: "chunk-size-budgets",
       generateBundle(_, bundle) {

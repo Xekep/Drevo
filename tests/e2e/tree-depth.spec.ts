@@ -411,7 +411,7 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   ).toBeLessThanOrEqual(family.people.length);
   expect(
     Number(await world(page).getAttribute("data-depth-draw-calls")),
-  ).toBeLessThanOrEqual(5);
+  ).toBeLessThanOrEqual(4);
   await page.screenshot({ path: info.outputPath("3d-initial.png") });
   const requests = await workerRequests(page),
     camera = await world(page).getAttribute("data-depth-camera");
@@ -678,13 +678,13 @@ test("a thousand-person 3D archive keeps GPU batches, textures and detail bounde
     names: Number(node.getAttribute("data-depth-name-people")),
   }));
   expect(stats.cards).toBe(1000);
-  expect(stats.calls).toBeLessThanOrEqual(5);
-  expect(stats.bytes).toBe(21 * 1024 * 1024 + 256 * 4 * 4 * 4);
+  expect(stats.calls).toBeLessThanOrEqual(4);
+  expect(stats.bytes).toBe(21 * 1024 * 1024);
   expect(stats.tile).toBe(64);
   expect(stats.names).toBe(1000);
   if (!process.env.DREVO_E2E_NO_SCREENSHOTS)
     await page.screenshot({ path: info.outputPath("3d-1000-overview.png") });
-  expect(stats.textures).toBeLessThanOrEqual(4);
+  expect(stats.textures).toBeLessThanOrEqual(3);
   expect(await workerRequests(page)).toBe(requests);
   await info.attach("webgl-1000-bounds", {
     body: JSON.stringify(stats),

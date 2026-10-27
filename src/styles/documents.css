@@ -129,6 +129,25 @@
 .documents-extra-description { grid-column: 1 / -1; }
 .documents-extra textarea { min-width: 0; width: 100%; resize: vertical; padding: 8px 10px; border: 1px solid #d7e1d3; border-radius: 8px; font: inherit; font-size: 14px; }
 .documents-edit-title { grid-column: 1 / -1; }
+.document-edit-dialog .documents-edit {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.document-edit-dialog[open] { display: flex; flex-direction: column; }
+.document-edit-dialog > header { flex-shrink: 0; }
+.documents-edit-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 20px; overflow: auto; min-height: 0; }
+.document-edit-dialog .documents-edit-actions { flex-shrink: 0; padding: 12px 20px; border-top: 1px solid var(--line); }
+@media (max-width: 600px) { .documents-edit-fields { grid-template-columns: 1fr; padding: 16px; } }
 .documents-edit-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; }
 .documents-edit-actions > button:last-child { min-height: 40px; padding: 0 12px; border: 1px solid #d7e1d3; border-radius: 9px; background: #fff; color: #49644d; font: inherit; cursor: pointer; }
 .documents-person-results { grid-column: 1 / -1; display: grid; max-height: 180px; overflow: auto; border: 1px solid #d7e1d3; border-radius: 8px; background: #fff; }

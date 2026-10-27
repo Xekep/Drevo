@@ -1,4 +1,4 @@
-import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
+import { getDocument, GlobalWorkerOptions, version as pdfjsVersion } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { documentFileTypeFromMime } from "../shared/document-file.ts";
@@ -114,6 +114,7 @@ async function prepareDocument(
       withCredentials: command.url.startsWith("/"),
       disableStream: true,
       disableAutoFetch: true,
+      wasmUrl: new URL(`/assets/pdfjs/${pdfjsVersion}/wasm/`, location.origin).href,
     });
     cleanupDocument = () => {
       void loadingTask.destroy();
