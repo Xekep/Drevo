@@ -205,14 +205,37 @@ test("ordinary 3D drags coast briefly, settle and respect reduced motion", async
   await settle(page);
   const mobile = info.project.name === "mobile";
   const requests = await workerRequests(page);
+  // Capture the short coast on the page clock. A traced CI round trip to
+  // locator.evaluate can otherwise start the first sample after the 800ms
+  // coast has already ended, even though native input and motion were valid.
+  await page.evaluate(() => {
+    type Sample = { yaw: number; radius: number; time: number; moving: string | undefined; spinning: string | undefined };
+    const state = window as unknown as { depthCoastSamples: Sample[]; depthCoastComplete: boolean };
+    state.depthCoastSamples = [];
+    state.depthCoastComplete = false;
+    document.querySelector(".tree-spatial-canvas")!.addEventListener("pointerup", () => {
+      const sample = () => {
+        const node = document.querySelector<HTMLElement>(".tree-spatial")!;
+        const [x, y, z, tx, ty, tz] = node.dataset.depthCamera!.split(",").map(Number);
+        state.depthCoastSamples.push({ yaw: Math.atan2(x - tx, z - tz), radius: Math.hypot(x - tx, y - ty, z - tz),
+          time: performance.now(), moving: node.dataset.depthMoving, spinning: node.dataset.depthSpinning });
+        if (performance.now() - state.depthCoastSamples[0].time < 240) requestAnimationFrame(sample);
+        else state.depthCoastComplete = true;
+      };
+      // Let OrbitControls' release and the next scene draw finish first.
+      requestAnimationFrame(() => requestAnimationFrame(sample));
+    }, { once: true });
+  });
   await spinGesture(page, mobile, 1, 0, 50);
-  await expect(world(page)).toHaveAttribute("data-depth-spinning", "false");
-  await expect(world(page)).toHaveAttribute("data-depth-moving", "true");
-  const a = await orbitSample(page);
-  await page.waitForTimeout(100);
-  const b = await orbitSample(page);
-  await page.waitForTimeout(100);
-  const c = await orbitSample(page);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { depthCoastComplete: boolean }).depthCoastComplete)).toBe(true);
+  const samples = await page.evaluate(() => (window as unknown as { depthCoastSamples: { yaw: number; radius: number; time: number; moving: string; spinning: string }[] }).depthCoastSamples);
+  const a = samples[0];
+  const b = samples.find(sample => sample.time - a.time >= 100)!;
+  const c = samples.find(sample => sample.time - a.time >= 200)!;
+  expect(b).toBeDefined();
+  expect(c).toBeDefined();
+  expect(a.spinning).toBe("false");
+  expect(a.moving).toBe("true");
   const speed = (from: typeof a, to: typeof a) => Math.abs(Math.atan2(Math.sin(to.yaw - from.yaw), Math.cos(to.yaw - from.yaw)) / ((to.time - from.time) / 1000));
   expect(speed(a, b)).toBeGreaterThan(.001);
   expect(speed(b, c)).toBeLessThan(speed(a, b) * .9);
