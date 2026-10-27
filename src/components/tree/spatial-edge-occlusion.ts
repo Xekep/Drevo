@@ -4,7 +4,6 @@ import {
   type BufferGeometry,
 } from "three";
 import type { SpatialWorld } from "../../domain/tree-spatial";
-import { spatialLayoutDeclarations } from "./spatial-card-projection.ts";
 
 /** Endpoint positions are uploaded with topology, never rebuilt on animation ticks. */
 export function setSpatialEdgeEndpoints(
@@ -14,7 +13,6 @@ export function setSpatialEdgeEndpoints(
   instanced = false,
 ) {
   const copies = instanced ? 1 : 2;
-  const indices = new Map([...world.points.keys()].map((id, index) => [id, index]));
   for (const [attribute, endpoint] of [
     ["edgeFrom", "from"],
     ["edgeTo", "to"],
@@ -31,13 +29,6 @@ export function setSpatialEdgeEndpoints(
         ? new InstancedBufferAttribute(values, 3)
         : new BufferAttribute(values, 3),
     );
-    const indexValues = new Float32Array(connections.length * copies);
-    connections.forEach((edge, i) => {
-      for (let copy = 0; copy < copies; copy++)
-        indexValues[i * copies + copy] = indices.get(edge[endpoint])!;
-    });
-    geometry.setAttribute(`${attribute}Index`, instanced
-      ? new InstancedBufferAttribute(indexValues, 1) : new BufferAttribute(indexValues, 1));
   }
 }
 
@@ -48,22 +39,20 @@ export function setSpatialEdgeEndpoints(
 // even when perspective puts part of the edge in front of that billboard.
 export const edgeEndpointVertexDeclarations = `
 attribute vec3 edgeFrom; attribute vec3 edgeTo;
-attribute float edgeFromIndex; attribute float edgeToIndex;
-${spatialLayoutDeclarations}
 uniform vec2 labelViewport;
+uniform float labelFocal; uniform float labelMinPixels; uniform float labelMaxPixels;
 varying vec4 edgeFromLabel; varying vec4 edgeToLabel;
-vec4 projectEdgeLabel(vec3 point,float index) {
+vec4 projectEdgeLabel(vec3 point) {
   vec4 p=viewMatrix*vec4(point,1.);
   if(p.z>=-1.)return vec4(0.);
-  vec3 cardData=readCardLayout(index);
-  float pixels=cardData.z;
+  float pixels=clamp(220.*labelFocal/(-p.z),labelMinPixels,labelMaxPixels);
   vec4 clip=projectionMatrix*p;
-  return vec4(clip.xy/clip.w*.5+.5+vec2(cardData.x,-cardData.y)/labelViewport,pixels/labelViewport);
+  return vec4(clip.xy/clip.w*.5+.5,pixels/labelViewport);
 }`;
 
 export const edgeEndpointVertex = `
-edgeFromLabel=projectEdgeLabel(edgeFrom,edgeFromIndex);
-edgeToLabel=projectEdgeLabel(edgeTo,edgeToIndex);`;
+edgeFromLabel=projectEdgeLabel(edgeFrom);
+edgeToLabel=projectEdgeLabel(edgeTo);`;
 
 export const edgeEndpointFragmentDeclarations = `
 uniform vec2 labelViewport;

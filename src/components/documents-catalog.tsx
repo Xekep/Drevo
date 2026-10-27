@@ -29,6 +29,7 @@ import {
   type DocumentPerson,
 } from "./document-people-picker";
 import { PdfBookReader } from "./pdf-book-reader";
+import { EditorDialog } from "./editor-dialog";
 import { ConfirmDeleteButton } from "./confirm-delete-button";
 import { DocumentDetailsFields } from "./document-details-fields";
 import { DocumentRelationsFields } from "./document-relations-fields";
@@ -471,7 +472,6 @@ export function DocumentsCatalog({
         entry.pages,
       ]),
     );
-    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const saveEdit = async (event: FormEvent<HTMLFormElement>) => {
@@ -744,76 +744,74 @@ export function DocumentsCatalog({
         </form>
       )}
       {editing && (
-        <form
-          className="documents-upload documents-edit"
-          aria-label="Редактировать документ"
-          onSubmit={(event) => void saveEdit(event)}
+        <EditorDialog
+          title="Редактировать документ"
+          onClose={closeEdit}
+          className="document-edit-dialog"
         >
-          <div className="documents-upload-heading">
-            <h2>Сведения о документе</h2>
-            <button
-              type="button"
-              onClick={closeEdit}
-              aria-label="Закрыть редактирование"
-            >
-              <X size={18} />
-            </button>
-          </div>
-          <label className="documents-edit-title">
-            Название
-            <input
-              value={editTitle}
-              maxLength={160}
-              required
-              onChange={(event) => setEditTitle(event.target.value)}
-            />
-          </label>
-          <DocumentPeoplePicker
-            value={editPeople}
-            onChange={(next) => {
-              setEditPeople(next);
-              setEditEvents((current) =>
-                current.filter((link) =>
-                  next.some((person) => person.id === link.personId),
-                ),
-              );
-            }}
-            disabled={savingEdit}
-          />
-          <DocumentDetailsFields
-            value={editDetails}
-            expanded
-            onChange={(key, value) =>
-              setEditDetails((current) => ({ ...current, [key]: value }))
-            }
-          />
-          <DocumentRelationsFields
-            people={people}
-            personIds={editPeople.map((person) => person.id)}
-            eventLinks={editEvents}
-            pages={editPages}
-            onEventsChange={setEditEvents}
-            onPagesChange={setEditPages}
-            disabled={savingEdit}
-          />
-          {editError && (
-            <p role="alert" className="documents-upload-error">
-              {editError}
-            </p>
-          )}
-          <div className="documents-edit-actions">
-            <button
-              type="submit"
-              className="documents-upload-submit"
-              disabled={savingEdit || !editTitle.trim()}
-            >
-              {savingEdit ? "Сохраняем…" : "Сохранить"}
-            </button>
-            <button type="button" onClick={closeEdit} disabled={savingEdit}>
-              Отмена
-            </button>
-          </div>
-        </form>
+          <form
+            className="documents-upload documents-edit"
+            aria-label="Редактировать документ"
+            onSubmit={(event) => void saveEdit(event)}
+          >
+            <div className="documents-edit-fields">
+              <label className="documents-edit-title">
+                Название
+                <input
+                  value={editTitle}
+                  maxLength={160}
+                  required
+                  onChange={(event) => setEditTitle(event.target.value)}
+                />
+              </label>
+              <DocumentPeoplePicker
+                value={editPeople}
+                onChange={(next) => {
+                  setEditPeople(next);
+                  setEditEvents((current) =>
+                    current.filter((link) =>
+                      next.some((person) => person.id === link.personId),
+                    ),
+                  );
+                }}
+                disabled={savingEdit}
+              />
+              <DocumentDetailsFields
+                value={editDetails}
+                expanded
+                onChange={(key, value) =>
+                  setEditDetails((current) => ({ ...current, [key]: value }))
+                }
+              />
+              <DocumentRelationsFields
+                people={people}
+                personIds={editPeople.map((person) => person.id)}
+                eventLinks={editEvents}
+                pages={editPages}
+                onEventsChange={setEditEvents}
+                onPagesChange={setEditPages}
+                disabled={savingEdit}
+              />
+              {editError && (
+                <p role="alert" className="documents-upload-error">
+                  {editError}
+                </p>
+              )}
+            </div>
+            <div className="documents-edit-actions">
+              <button
+                type="submit"
+                className="documents-upload-submit"
+                disabled={savingEdit || !editTitle.trim()}
+              >
+                {savingEdit ? "Сохраняем…" : "Сохранить"}
+              </button>
+              <button type="button" onClick={closeEdit} disabled={savingEdit}>
+                Отмена
+              </button>
+            </div>
+          </form>
+        </EditorDialog>
       )}
       {(total > 0 || !!query) && (
         <label className="documents-search">
@@ -916,7 +914,9 @@ export function DocumentsCatalog({
                       </small>
                     </span>
                   </button>
-                  <BookmarkButton target={{ kind: "document", id: document.id }} />
+                  <BookmarkButton
+                    target={{ kind: "document", id: document.id }}
+                  />
                   {mayEdit && document.canDelete && (
                     <button
                       type="button"

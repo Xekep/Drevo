@@ -205,14 +205,37 @@ test("ordinary 3D drags coast briefly, settle and respect reduced motion", async
   await settle(page);
   const mobile = info.project.name === "mobile";
   const requests = await workerRequests(page);
+  // Capture the short coast on the page clock. A traced CI round trip to
+  // locator.evaluate can otherwise start the first sample after the 800ms
+  // coast has already ended, even though native input and motion were valid.
+  await page.evaluate(() => {
+    type Sample = { yaw: number; radius: number; time: number; moving: string | undefined; spinning: string | undefined };
+    const state = window as unknown as { depthCoastSamples: Sample[]; depthCoastComplete: boolean };
+    state.depthCoastSamples = [];
+    state.depthCoastComplete = false;
+    document.querySelector(".tree-spatial-canvas")!.addEventListener("pointerup", () => {
+      const sample = () => {
+        const node = document.querySelector<HTMLElement>(".tree-spatial")!;
+        const [x, y, z, tx, ty, tz] = node.dataset.depthCamera!.split(",").map(Number);
+        state.depthCoastSamples.push({ yaw: Math.atan2(x - tx, z - tz), radius: Math.hypot(x - tx, y - ty, z - tz),
+          time: performance.now(), moving: node.dataset.depthMoving, spinning: node.dataset.depthSpinning });
+        if (performance.now() - state.depthCoastSamples[0].time < 240) requestAnimationFrame(sample);
+        else state.depthCoastComplete = true;
+      };
+      // Let OrbitControls' release and the next scene draw finish first.
+      requestAnimationFrame(() => requestAnimationFrame(sample));
+    }, { once: true });
+  });
   await spinGesture(page, mobile, 1, 0, 50);
-  await expect(world(page)).toHaveAttribute("data-depth-spinning", "false");
-  await expect(world(page)).toHaveAttribute("data-depth-moving", "true");
-  const a = await orbitSample(page);
-  await page.waitForTimeout(100);
-  const b = await orbitSample(page);
-  await page.waitForTimeout(100);
-  const c = await orbitSample(page);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { depthCoastComplete: boolean }).depthCoastComplete)).toBe(true);
+  const samples = await page.evaluate(() => (window as unknown as { depthCoastSamples: { yaw: number; radius: number; time: number; moving: string; spinning: string }[] }).depthCoastSamples);
+  const a = samples[0];
+  const b = samples.find(sample => sample.time - a.time >= 100)!;
+  const c = samples.find(sample => sample.time - a.time >= 200)!;
+  expect(b).toBeDefined();
+  expect(c).toBeDefined();
+  expect(a.spinning).toBe("false");
+  expect(a.moving).toBe("true");
   const speed = (from: typeof a, to: typeof a) => Math.abs(Math.atan2(Math.sin(to.yaw - from.yaw), Math.cos(to.yaw - from.yaw)) / ((to.time - from.time) / 1000));
   expect(speed(a, b)).toBeGreaterThan(.001);
   expect(speed(b, c)).toBeLessThan(speed(a, b) * .9);
@@ -411,7 +434,7 @@ test("3D uses a bounded WebGL scene, free camera and native people navigation wi
   ).toBeLessThanOrEqual(family.people.length);
   expect(
     Number(await world(page).getAttribute("data-depth-draw-calls")),
-  ).toBeLessThanOrEqual(5);
+  ).toBeLessThanOrEqual(4);
   await page.screenshot({ path: info.outputPath("3d-initial.png") });
   const requests = await workerRequests(page),
     camera = await world(page).getAttribute("data-depth-camera");
@@ -678,13 +701,13 @@ test("a thousand-person 3D archive keeps GPU batches, textures and detail bounde
     names: Number(node.getAttribute("data-depth-name-people")),
   }));
   expect(stats.cards).toBe(1000);
-  expect(stats.calls).toBeLessThanOrEqual(5);
-  expect(stats.bytes).toBe(21 * 1024 * 1024 + 256 * 4 * 4 * 4);
+  expect(stats.calls).toBeLessThanOrEqual(4);
+  expect(stats.bytes).toBe(21 * 1024 * 1024);
   expect(stats.tile).toBe(64);
   expect(stats.names).toBe(1000);
   if (!process.env.DREVO_E2E_NO_SCREENSHOTS)
     await page.screenshot({ path: info.outputPath("3d-1000-overview.png") });
-  expect(stats.textures).toBeLessThanOrEqual(4);
+  expect(stats.textures).toBeLessThanOrEqual(3);
   expect(await workerRequests(page)).toBe(requests);
   await info.attach("webgl-1000-bounds", {
     body: JSON.stringify(stats),

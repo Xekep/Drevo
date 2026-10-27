@@ -4,7 +4,7 @@ import sharp from "sharp";
 import type { SpatialRenderer } from "../../src/components/tree/spatial-renderer";
 import type { Person } from "../../src/domain";
 
-test("overlapping 3D anchors keep both portraits, separate their cards and retain correct picking", async ({ page }) => {
+test("3D cards remain on their world anchors throughout rotation and zoom", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 600, height: 600 });
   const chunk = (await readdir("dist/assets")).find(name => /^spatial-renderer-.*\.js$/.test(name));
@@ -36,24 +36,23 @@ test("overlapping 3D anchors keep both portraits, separate their cards and retai
   }, chunk!);
   const host = page.locator("#overlap-scene");
   await expect(host).toHaveAttribute("data-depth-cards", "2");
-  await expect(host).toHaveAttribute("data-depth-unresolved-cards", "0");
-  await expect(host).toHaveAttribute("data-depth-displaced-cards", "1");
-  const cards = await page.evaluate(() => {
-    const scene = (window as unknown as { overlapScene: SpatialRenderer }).overlapScene;
-    const projected = (scene as unknown as { projected: { id: string; x: number; y: number; size: number }[] }).projected;
-    return projected.map(p => ({ ...p, hit: scene.personAt(p.x, p.y - p.size * .24) }));
-  });
-  for (const card of cards) expect(card.hit).toBe(card.id);
-  const [a, b] = cards;
-  expect(Math.abs(a.x - b.x) >= (a.size + b.size) * .46 || Math.abs(a.y - b.y) >= (a.size + b.size) * .5).toBe(true);
-  await expect.poll(async () => {
-    const { data } = await sharp(await host.screenshot()).resize(400, 400).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-    return cards.every(card => {
-      const offset = (Math.round(card.y - card.size * .24) * 400 + Math.round(card.x)) * 3;
-      return card.id === "near" ? data[offset] > 220 && data[offset + 2] < 40
-        : data[offset + 2] > 220 && data[offset] < 40;
-    });
-  }).toBe(true);
+  for (const angle of [0, .1, -.1, .45]) {
+    await page.evaluate(angle => {
+      const scene = (window as unknown as { overlapScene: SpatialRenderer }).overlapScene;
+      const radius = angle === .45 ? 800 : 1000;
+      scene.camera.position.set(Math.sin(angle) * radius, 0, Math.cos(angle) * radius);
+      scene.controls.update();
+      scene.invalidate();
+    }, angle);
+    await expect.poll(() => page.evaluate(() => {
+      const scene = (window as unknown as { overlapScene: SpatialRenderer }).overlapScene;
+      const projected = (scene as unknown as { projected: { id: string; x: number; y: number }[] }).projected;
+      return Math.max(...projected.map(p => {
+        const point = scene.camera.position.clone().set(0, 0, p.id === "far" ? -300 : 0).project(scene.camera);
+        return Math.hypot(p.x - (point.x + 1) * 200, p.y - (1 - point.y) * 200);
+      }));
+    })).toBeLessThan(.01);
+  }
   await page.evaluate(() => (window as unknown as { overlapScene: SpatialRenderer }).overlapScene.dispose());
 });
 

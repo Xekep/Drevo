@@ -15,6 +15,8 @@ test("static assets stream GET and support HEAD with immutable cache", async () 
   const directory = mkdtempSync(join(tmpdir(), "drevo-assets-"));
   const bytes = Buffer.alloc(256 * 1024, 0x61);
   writeFileSync(join(directory, "app-123.js"), bytes);
+  const wasm = Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]);
+  writeFileSync(join(directory, "decoder.wasm"), wasm);
   const serveAsset = staticAssetsHttp(directory);
   const server = createServer((req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
@@ -41,6 +43,11 @@ test("static assets stream GET and support HEAD with immutable cache", async () 
       "public, max-age=31536000, immutable",
     );
     assert.deepEqual(Buffer.from(await get.arrayBuffer()), bytes);
+
+    const decoder = await fetch(base + "/assets/decoder.wasm");
+    assert.equal(decoder.headers.get("content-type"), "application/wasm");
+    assert.match(decoder.headers.get("cache-control") || "", /immutable/);
+    assert.deepEqual(Buffer.from(await decoder.arrayBuffer()), wasm);
 
     const head = await fetch(base + "/assets/app-123.js", { method: "HEAD" });
     assert.equal(head.status, 200);
