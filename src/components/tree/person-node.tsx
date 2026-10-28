@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useMemo, type CSSProperties } from "react";
+import { createContext, memo, useContext, useMemo, useRef, type CSSProperties } from "react";
 import {
   Handle,
   Position,
@@ -96,6 +96,7 @@ export const PersonNode = memo(function PersonNode({
   const person = currentPeople?.get(nodeData.person.id) || nodeData.person;
   const data = person === nodeData.person ? nodeData : { ...nodeData, person };
   const longPress = useLongPress(() => selectOnly(data.person.id));
+  const privacyPress = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   // Expand only the transparent hit area; the pill scales with its portrait.
   const controlTarget = useStore((state) =>
     24 * Math.min(6, Math.max(1, Math.ceil((1 / state.transform[2]) * 4) / 4)),
@@ -239,14 +240,29 @@ export const PersonNode = memo(function PersonNode({
       {publishPerson && detail !== "distant" && (
         <button
           type="button"
-          className="flow-privacy nodrag nopan"
+          className="flow-privacy nodrag"
           style={{ "--privacy-target": `${controlTarget}px` } as CSSProperties}
           data-publication-state={publicationStatus}
           aria-label={`${privacyLabel}: ${fullName(data.person)}. Изменить приватность`}
           title={`${privacyLabel} · изменить приватность`}
           aria-haspopup="dialog"
+          onPointerDown={(event) => {
+            privacyPress.current = { x: event.clientX, y: event.clientY, moved: !event.isPrimary };
+          }}
+          onPointerMove={(event) => {
+            const press = privacyPress.current;
+            if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 8)
+              press.moved = true;
+          }}
+          onPointerCancel={() => { if (privacyPress.current) privacyPress.current.moved = true; }}
           onClick={(event) => {
             event.stopPropagation();
+            // A swipe belongs to the canvas, even when it started on the eye.
+            // Keyboard activation is independent of the last pointer gesture.
+            if (event.detail && privacyPress.current?.moved) {
+              event.preventDefault();
+              return;
+            }
             publishPerson(data.person.id);
           }}
         >

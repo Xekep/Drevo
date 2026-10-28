@@ -66,7 +66,7 @@ test("document reads recheck revoked and narrowed access before responding", asy
       `/api/documents/${documentId}/file`,
     ]) {
       const requests: Record<string, string>[] = path.endsWith("/file")
-        ? [{}, { Range: "bytes=0-3" }, { Range: "bytes=1000-" }]
+        ? [{}, { Range: "bytes=0-3" }, { Range: "bytes=1000-" }, { "If-None-Match": "*" }]
         : [{}];
       for (const headers of requests) {
         users = path.endsWith("/file") ? [admin, scoped] : [admin, admin, scoped];

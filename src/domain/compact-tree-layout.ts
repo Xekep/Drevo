@@ -7,10 +7,134 @@ import {
   routeFamilyMove,
   translateFamilyBlocks,
   type FamilyRowScore,
+  type FamilyRowMove,
 } from "./family-row-moves.ts";
-import { routeRelationships } from "./edge-routing.ts";
+import { routeRelationships, simplifyRoute } from "./edge-routing.ts";
 
 const COMPACT_GAP = 32;
+
+function compactMove(
+  geometry: TreeGeometry,
+  deltas: Map<string, number>,
+  owners: ReadonlyMap<string, string>,
+): FamilyRowMove {
+  const moved = translateFamilyBlocks(geometry, deltas);
+  return {
+    ...moved,
+    geometry: {
+      ...moved.geometry,
+      branches: geometry.branches!.map((branch, index) => {
+        const points = branch.route.points,
+          a = points[0],
+          b = points.at(-1)!;
+        const from = deltas.get(owners.get(branch.source)!) || 0;
+        const to = deltas.get(owners.get(branch.target)!) || 0;
+        if (from !== to && a.x === b.x) return moved.geometry.branches![index];
+        return {
+          ...branch,
+          route: {
+            ...branch.route,
+            points: simplifyRoute(
+              points.map((p) => ({
+                ...p,
+                x:
+                  p.x +
+                  from +
+                  (from === to ? 0 : ((p.x - a.x) / (b.x - a.x)) * (to - from)),
+              })),
+            ),
+          },
+        };
+      }),
+    },
+  };
+}
+
+/** Move aligned generations together instead of independently folding every
+ * child route into a new elbow. Preserve existing obstacle-avoidance lanes.
+ */
+function coordinatedCompaction(
+  original: TreeGeometry,
+  size: TreeNodeSize,
+  score: FamilyRowScore,
+) {
+  const rows = placedFamilyRows(original, size);
+  const blocks = rows.flat();
+  if (blocks.length < 2) return original;
+  const owners = new Map(original.occurrences!.map((o) => [o.id, o.block]));
+  const roots = new Map(blocks.map((b) => [b.id, b.id]));
+  const root = (id: string) => {
+    while (roots.get(id) !== id) id = roots.get(id)!;
+    return id;
+  };
+  // Straight ancestor columns and partners form rigid horizontal groups.
+  for (const branch of original.branches!) {
+    const points = branch.route.points;
+    if (
+      !branch.id.startsWith("pair:") &&
+      !points.every((p) => p.x === points[0].x)
+    )
+      continue;
+    const a = owners.get(branch.source),
+      b = owners.get(branch.target);
+    if (a && b && roots.has(a) && roots.has(b)) roots.set(root(b), root(a));
+  }
+  const groups = new Map<string, { left: number; right: number }>();
+  for (const b of blocks) {
+    const id = root(b.id),
+      group = groups.get(id) || { left: Infinity, right: -Infinity };
+    group.left = Math.min(group.left, b.x);
+    group.right = Math.max(group.right, b.x + b.width);
+    groups.set(id, group);
+  }
+  const center =
+    (Math.min(...blocks.map((b) => b.x)) +
+      Math.max(...blocks.map((b) => b.x + b.width))) /
+    2;
+  const before = score(original);
+  let best = original,
+    span = treeRowSpan(original, size);
+  for (const factor of [0.5, 0.65, 0.8, 0.9, 0.95, 0.98]) {
+    const deltas = new Map(
+      blocks.map((b) => {
+        const group = groups.get(root(b.id))!;
+        return [b.id, ((group.left + group.right) / 2 - center) * (factor - 1)];
+      }),
+    );
+    if (
+      original.branches!.some(
+        (branch) =>
+          branch.id.startsWith("pair:") &&
+          (deltas.get(owners.get(branch.source)!) || 0) !==
+            (deltas.get(owners.get(branch.target)!) || 0),
+      )
+    )
+      continue;
+    if (
+      rows.some((row) =>
+        row.slice(1).some((b, i) => {
+          const a = row[i],
+            gap = b.x - a.x - a.width;
+          return (
+            gap + deltas.get(b.id)! - deltas.get(a.id)! <
+            Math.min(COMPACT_GAP, gap) - 0.01
+          );
+        }),
+      )
+    )
+      continue;
+    const candidate = compactMove(original, deltas, owners).geometry;
+    const candidateSpan = treeRowSpan(candidate, size);
+    if (
+      candidateSpan < span - 1 &&
+      familyRowNoWorse(score(candidate), before)
+    ) {
+      best = candidate;
+      span = candidateSpan;
+    }
+  }
+  return best;
+}
 
 export function treeRowSpan(geometry: TreeGeometry, size: TreeNodeSize) {
   return placedFamilyRows(geometry, size).reduce(
@@ -38,7 +162,7 @@ export function compactTreeLayout(
     (original.routes?.length && !links.length)
   )
     return original;
-  let best = original,
+  let best = coordinatedCompaction(original, size, score),
     budget = 32,
     reroutes = 6;
   const initial = score(original);
@@ -90,7 +214,7 @@ export function compactTreeLayout(
           )
         )
           continue;
-        const move = translateFamilyBlocks(best, shifts);
+        const move = compactMove(best, shifts, owners);
         let candidate = move.geometry,
           quality = score(candidate);
         if (

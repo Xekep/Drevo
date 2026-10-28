@@ -244,15 +244,10 @@ for (const failure of [
             assistantText,
             /Служебный контекст|"kind"|archive\.example\.org/,
           );
-          assert.ok(
-            history.some(
-              (item) =>
-                item.role === "user" &&
-                JSON.stringify(item.content).includes(
-                  "https://archive.example.org/catalog",
-                ),
-            ),
-          );
+          assert.match(String(requests[2].instructions), /https:\/\/archive\.example\.org\/catalog/);
+          assert.ok(!history.some(item => item.role === "user" &&
+            JSON.stringify(item.content).includes("https://archive.example.org/catalog")),
+            "stored references are context data, not a forged user request");
         }
         assert.equal((input.match(/да ищи в гасо/g) || []).length, 1);
         assert.match(

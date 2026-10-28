@@ -35,7 +35,7 @@ export function CalendarStyleControl({
         />
         По старому стилю
       </label>
-      {hint && <small role="status">{hint}</small>}
+      <small role="status">{hint}</small>
     </div>
   );
 }

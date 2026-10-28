@@ -132,13 +132,21 @@ test("photo previews keep expected dimensions and cache variant", async () => {
     assert.equal(aiMeta.width, 1600);
     assert.equal(aiMeta.height, 1200);
 
+    const print = await preview(original, "print");
+    const printMeta = await sharp(print).metadata();
+    assert.equal(printMeta.format, "webp");
+    assert.equal(printMeta.width, 1024);
+    assert.equal(printMeta.height, 1024);
+    assert.deepEqual(await preview(original, "print"), print);
+
     const files = await readdir(directory);
-    assert.equal(files.length, 5);
+    assert.equal(files.length, 6);
     assert.ok(files.some((file) => file.endsWith("-tiny-v3.webp")));
     assert.ok(files.some((file) => file.endsWith("-avatar-v3.webp")));
     assert.ok(files.some((file) => file.endsWith("-display-v3.webp")));
     assert.ok(files.some((file) => file.endsWith("-thumb-v3.webp")));
     assert.ok(files.some((file) => file.endsWith("-ai-v3.jpg")));
+    assert.ok(files.some((file) => file.endsWith("-print-v3.webp")));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

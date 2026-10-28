@@ -99,15 +99,15 @@ test("a two-word first-name-first entry offers an explicit swap before saving se
   await page.getByRole("button", { name: "Добавить себя" }).click();
   const name = page.getByRole("textbox", { name: /ФИО/ });
   await name.fill("Щекалёв Степан");
-  await expect(page.getByText("Возможно, имя и фамилия переставлены")).toBeHidden();
+  await expect(page.getByText("Имя и фамилия перепутаны?")).toBeHidden();
   await expect(page.getByLabel("Пол").locator("option:checked")).toContainText("Мужской");
 
   await name.fill("Степан Щекалёв");
-  await expect(page.getByText("Возможно, имя и фамилия переставлены")).toBeVisible();
+  await expect(page.getByText("Имя и фамилия перепутаны?")).toBeVisible();
   await expect(page.getByLabel("Пол").locator("option:checked")).toContainText("Определить по ФИО");
   await page.getByRole("button", { name: "Поменять местами" }).click();
   await expect(name).toHaveValue("Щекалёв Степан");
-  await expect(page.getByText("Возможно, имя и фамилия переставлены")).toBeHidden();
+  await expect(page.getByText("Имя и фамилия перепутаны?")).toBeHidden();
   await expect(page.getByLabel("Пол").locator("option:checked")).toContainText("Мужской");
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect.poll(() => family?.people[0]).toMatchObject({

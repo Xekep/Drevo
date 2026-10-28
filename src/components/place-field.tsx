@@ -62,7 +62,7 @@ export function PlaceField({
         }}
         onBlur={() => void locate()}
       />
-      <small className="place-input-notice" role="status" hidden={!notice}>
+      <small className="place-input-notice" role="status">
         {notice}
       </small>
     </label>

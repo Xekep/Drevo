@@ -613,9 +613,10 @@ export function PersonEditor({
             </>
           )}
           <div className="person-editor-basics">
-            <label className="name-entry">
-              ФИО
+            <div className="name-entry">
+              <label htmlFor={`${fieldId}-name`}>ФИО</label>
               <input
+                id={`${fieldId}-name`}
                 required
                 data-field="name"
                 aria-invalid={!!fieldErrors.name}
@@ -626,29 +627,18 @@ export function PersonEditor({
                 onBlur={() => validateField("name", nameText)}
                 onChange={(e) => updateFullName(e.target.value)}
               />
-              <small id={`${fieldId}-name-hint`}>
-                Фамилия, имя, отчество. Отчество необязательно.
-              </small>
-              <small
-                id={`${fieldId}-name-error`}
-                className="field-error"
-                role="alert"
-              >
-                {fieldErrors.name}
-              </small>
-            </label>
-            {possibleReversedName && (
-              <div className="name-order-hint" role="note">
-                <span>
-                  Возможно, имя и фамилия переставлены. Сейчас фамилия —
-                  «{nameParts[0]}», имя — «{nameParts[1]}».
-                </span>
-                <button type="button" onClick={() =>
-                  updateFullName(`${nameParts[1]} ${nameParts[0]}`)}>
-                  Поменять местами
-                </button>
-              </div>
-            )}
+              <span className="person-field-feedback">
+                <small id={`${fieldId}-name-hint`} hidden={!!fieldErrors.name}>
+                  {possibleReversedName ? <>Имя и фамилия перепутаны?{" "}
+                    <button type="button" className="name-swap-action" onClick={() =>
+                      updateFullName(`${nameParts[1]} ${nameParts[0]}`)}>Поменять местами</button>
+                  </> : "Фамилия, имя, отчество. Отчество необязательно."}
+                </small>
+                <small id={`${fieldId}-name-error`} className="field-error" role="alert">
+                  {fieldErrors.name}
+                </small>
+              </span>
+            </div>
             <label className="name-sex-hint">
               Пол
               <select

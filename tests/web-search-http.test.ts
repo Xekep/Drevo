@@ -133,7 +133,7 @@ for (const streaming of [false, true])
         }
         if (agentCalls === 3)
           assert.match(
-            JSON.stringify(body.input),
+            String(body.instructions),
             /полным названием архива, регионом и шифром/,
           );
         const response = {

@@ -235,7 +235,7 @@ test("HTTP agent refreshes its clock per model round and per chat turn; client d
     assert.equal(time.localDateTime, "2026-09-26T00:31:00");
     assert.equal(time.clockSource, "server");
     assert.match(
-      JSON.stringify(requests[2].input),
+      String(requests[2].instructions),
       /Предыдущий ответ не был проверен по архиву/,
     );
     const personOutput = (
