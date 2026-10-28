@@ -16,6 +16,8 @@ import {
 } from "./request-rate-limit.ts";
 import { postgresEmailRateLimit } from "./postgres-email-rate-limit.ts";
 import { archivePagePath } from "../domain/archive-context.ts";
+import { emailLoginNeedsCaptcha, EmailCaptchaUnavailable, verifyEmailCaptcha, type EmailCaptchaConfiguration } from "./email-captcha.ts";
+import type { EmailCaptchaChallenge } from "../shared/email-auth-settings.ts";
 
 function configuredSender(): EmailSender | null {
   const { SMTP_HOST, SMTP_PORT, SMTP_FROM, SMTP_USER, SMTP_PASSWORD } =
@@ -32,7 +34,7 @@ export function emailAuthHttp(
   sender: EmailSender | null = process.env.EMAIL_AUTH_ENABLED === "1"
     ? configuredSender()
     : null,
-  configuration?: () => Promise<{ enabled: boolean; sender: EmailSender | null }>,
+  configuration?: () => Promise<{ enabled: boolean; sender: EmailSender | null; captcha?: EmailCaptchaConfiguration }>,
   primaryArchiveId?: string,
 ) {
   const enabled =
@@ -71,7 +73,7 @@ export function emailAuthHttp(
     let bytes = 0;
     for await (const chunk of req) {
       bytes += chunk.length;
-      if (bytes > 4096)
+      if (bytes > 8192)
         throw new InvalidEmailCredential("Запрос слишком большой.");
       chunks.push(Buffer.from(chunk));
     }
@@ -112,6 +114,7 @@ export function emailAuthHttp(
         proxied ? req.headers["x-real-ip"] : undefined,
         peer,
       );
+      const captcha = current?.captcha;
       if (!ipLimit.allow(client))
         return json(res, 429, {
           error: "Слишком много попыток. Повторите позже.",
@@ -128,6 +131,13 @@ export function emailAuthHttp(
           return json(res, 429, {
             error: "Слишком много попыток. Повторите позже.",
           });
+        if (captcha?.enabled) {
+          const protectedRequest = url.pathname === "/api/auth/email/register" ||
+            url.pathname === "/api/auth/email/reset/request" ||
+            (url.pathname === "/api/auth/email/login" && await emailLoginNeedsCaptcha(db, client));
+          if (protectedRequest && !(await verifyEmailCaptcha(captcha, body.captchaToken, client, origin!)))
+            return json(res, 403, { error: "Подтвердите, что вы не робот.", captchaRequired: true, siteKey: captcha.siteKey } satisfies EmailCaptchaChallenge & { error: string });
+        }
         if (url.pathname === "/api/auth/email/register") {
           await requestCredentials.requestRegistration({
             email: body.email,
@@ -138,7 +148,7 @@ export function emailAuthHttp(
         }
         if (url.pathname === "/api/auth/email/verify") {
           const account = await requestCredentials.verifyRegistration(body.token);
-          await auth.issueAccountSession(req, res, account.accountId);
+          await auth.issueAccountSession(req, res, account.accountId, account.passwordHash);
           return json(res, 200, { archiveId: account.archiveId,
             path: archivePagePath(account.archiveId, "/tree", primaryArchiveId) });
         }
@@ -224,6 +234,8 @@ export function emailAuthHttp(
         }
         return json(res, 404, { error: "Неизвестный запрос." });
       } catch (error) {
+        if (error instanceof EmailCaptchaUnavailable)
+          return json(res, 503, { error: error.message });
         if (error instanceof EmailDeliveryFailure) {
           // Both anonymous routes promise the same answer regardless of
           // whether the address exists. Delivery failure must not turn that

@@ -36,9 +36,12 @@
   color: #315e41;
   border-color: #cbdccb;
 }
-.login-provider-email svg {
+.login-provider.login-provider-email svg {
   width: 26px;
   height: 26px;
+}
+.login-email-captcha:empty {
+  display: none;
 }
 .login-email-form {
   display: grid;

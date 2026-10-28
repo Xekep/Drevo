@@ -12,6 +12,8 @@ export function EmailAuthAdmin({
   const [settings, setSettings] = useState<EmailAuthStatus | null>(null);
   const [password, setPassword] = useState("");
   const [removePassword, setRemovePassword] = useState(false);
+  const [captchaSecret, setCaptchaSecret] = useState("");
+  const [removeCaptchaSecret, setRemoveCaptchaSecret] = useState(false);
   const [recipient, setRecipient] = useState("");
   const [savedSettings, setSavedSettings] = useState<EmailAuthStatus | null>(
     null,
@@ -23,7 +25,9 @@ export function EmailAuthAdmin({
       (key) => settings[key] !== savedSettings[key],
     ) ||
       !!password ||
-      removePassword);
+      removePassword || !!captchaSecret || removeCaptchaSecret ||
+      settings.captcha?.enabled !== savedSettings.captcha?.enabled ||
+      settings.captcha?.siteKey !== savedSettings.captcha?.siteKey);
   const [busy, setBusy] = useState<"save" | "test" | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -76,6 +80,11 @@ export function EmailAuthAdmin({
                   port: settings.port,
                   user: settings.user,
                   from: settings.from,
+                  ...(settings.captcha ? { captcha: {
+                    enabled: settings.captcha.enabled,
+                    siteKey: settings.captcha.siteKey,
+                    ...(removeCaptchaSecret ? { secret: null } : captchaSecret ? { secret: captchaSecret } : {}),
+                  } } : {}),
                   ...(removePassword
                     ? { password: null }
                     : password
@@ -93,6 +102,8 @@ export function EmailAuthAdmin({
         setSavedSettings(data);
         setPassword("");
         setRemovePassword(false);
+        setCaptchaSecret("");
+        setRemoveCaptchaSecret(false);
         setMessage(
           data.available
             ? "Сохранено. Вход по email включён."
@@ -235,6 +246,35 @@ export function EmailAuthAdmin({
                   Для включения входа нужно настроить PUBLIC_ORIGIN на сервере.
                 </p>
               )}
+              <details className="email-auth-captcha">
+                <summary>Защита от ботов · Яндекс SmartCaptcha</summary>
+                <p className="field-help">Проверка при регистрации, восстановлении пароля и после пяти попыток входа с одного IP за 10 минут. Обычно проходит незаметно.</p>
+                <label className="check-row">
+                  <input type="checkbox" checked={settings.captcha?.enabled || false}
+                    onChange={(event) => change({ captcha: { siteKey: "", hasSecret: false, ...settings.captcha, enabled: event.target.checked } })} />
+                  Включить SmartCaptcha
+                </label>
+                <label>Ключ клиента SmartCaptcha
+                  <input autoComplete="off" maxLength={256} value={settings.captcha?.siteKey || ""}
+                    required={settings.captcha?.enabled}
+                    onChange={(event) => change({ captcha: { enabled: false, hasSecret: false, ...settings.captcha, siteKey: event.target.value } })} />
+                </label>
+                <label>Секретный ключ SmartCaptcha
+                  <input type="password" autoComplete="new-password" maxLength={2048}
+                    value={captchaSecret} disabled={removeCaptchaSecret}
+                    required={settings.captcha?.enabled && !settings.captcha.hasSecret}
+                    placeholder={settings.captcha?.hasSecret ? "Ключ сохранён" : "Введите серверный ключ"}
+                    onChange={(event) => { setCaptchaSecret(event.target.value); change({}); }} />
+                </label>
+                {settings.captcha?.hasSecret && <label className="check-row">
+                  <input type="checkbox" checked={removeCaptchaSecret}
+                    onChange={(event) => {
+                      setRemoveCaptchaSecret(event.target.checked); setCaptchaSecret("");
+                      change(event.target.checked ? { captcha: { ...settings.captcha!, enabled: false } } : {});
+                    }} />Удалить сохранённый ключ SmartCaptcha
+                </label>}
+                <p className="field-help">Создайте капчу в Yandex Cloud и разрешите домен {settings.origin || "сайта"}. Пустое поле сохраняет секретный ключ.</p>
+              </details>
               <div className="vk-auth-actions">
                 <button
                   type="submit"

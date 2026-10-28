@@ -26,6 +26,7 @@
 }
 .email-auth-test button:disabled { opacity: 0.6; cursor: default; }
 .email-auth-status:empty { display: none; }
+.email-auth-captcha > label { margin-block: 10px; }
 .email-auth-status { font-size: 13px; color: #527260; }
 @media (max-width: 600px) {
   .email-auth-settings .email-auth-fields { grid-template-columns: minmax(0, 1fr) 86px; gap: 8px; }

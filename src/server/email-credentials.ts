@@ -289,7 +289,9 @@ export function emailCredentials(
           "DELETE FROM pending_email_registrations WHERE email=$1",
           [row.email],
         );
-        return { accountId, archiveId };
+        // A reset can commit after provisioning and before HTTP issues the
+        // session. Carry the verified hash for the same locked recheck as login.
+        return { accountId, archiveId, passwordHash: row.password_hash };
       });
     },
 

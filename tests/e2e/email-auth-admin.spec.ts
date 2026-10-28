@@ -12,13 +12,15 @@ test("platform email settings keep the secret out of the form and fit mobile", a
   } }));
   let settings = { enabled: false, host: "smtp.example.org", port: 587, user: "smtp-user",
     from: "mail@example.org", hasPassword: true, available: false, supported: true,
-    origin: "https://mydrevo.org" };
+    origin: "https://mydrevo.org", captcha: { enabled: false, siteKey: "", hasSecret: false } };
   const writes: Record<string, unknown>[] = [];
   await page.route("**/api/admin/auth/email", async (route) => {
     if (route.request().method() === "PUT") {
       const body = route.request().postDataJSON(); writes.push(body);
       settings = { ...settings, enabled: body.enabled, host: body.host, port: body.port,
-        user: body.user, from: body.from, available: body.enabled };
+        user: body.user, from: body.from, available: body.enabled,
+        captcha: body.captcha ? { enabled: body.captcha.enabled, siteKey: body.captcha.siteKey,
+          hasSecret: body.captcha.secret ? true : settings.captcha.hasSecret } : settings.captcha };
     }
     await route.fulfill({ json: settings });
   });
@@ -64,4 +66,15 @@ test("platform email settings keep the secret out of the form and fit mobile", a
   await form.getByLabel("Тестовое письмо", { exact: true }).fill("test@example.org");
   await form.getByRole("button", { name: "Отправить тест" }).click();
   await expect(form.getByRole("status")).toContainText("SMTP принял письмо");
+  await form.getByText("Защита от ботов · Яндекс SmartCaptcha", { exact: true }).click();
+  await form.getByLabel("Включить SmartCaptcha", { exact: true }).check();
+  await form.getByLabel("Ключ клиента SmartCaptcha", { exact: true }).fill("public-fixture-key");
+  await form.getByLabel("Секретный ключ SmartCaptcha", { exact: true }).fill("secret-fixture-key");
+  await form.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect(form.getByLabel("Секретный ключ SmartCaptcha", { exact: true })).toHaveValue("");
+  expect(writes[2].captcha).toEqual({ enabled: true, siteKey: "public-fixture-key", secret: "secret-fixture-key" });
+  await form.getByLabel("Ключ клиента SmartCaptcha", { exact: true }).fill("changed-public-key");
+  await form.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect(form.getByRole("button", { name: "Сохранить", exact: true })).toBeDisabled();
+  expect(writes[3].captcha).not.toHaveProperty("secret");
 });

@@ -37,6 +37,9 @@ export async function initializePlatformConfiguration(
       ),
     );
     await client.query(
+      readFileSync(new URL("../../ops/postgres/109_email_smartcaptcha.sql", import.meta.url), "utf8"),
+    );
+    await client.query(
       readFileSync(
         new URL(
           "../../ops/postgres/096_platform_accounts_directory.sql",

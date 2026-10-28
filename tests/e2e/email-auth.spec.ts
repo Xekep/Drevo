@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/session", async (route) => {
@@ -78,6 +79,101 @@ test("an email-link token opens explicit confirmation", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "Подключить почту" }),
   ).toBeVisible();
+});
+
+test("email icon has a compact outline and the submitted form cannot switch modes", async ({ page }, info) => {
+  await page.route("**/api/session", route => route.fulfill({ json: {
+    user: null, account: null, local: false, email: true, vk: false, yandex: false,
+  } }));
+  let release!: () => void;
+  const barrier = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/auth/email/register", async route => {
+    await barrier;
+    await route.fulfill({ status: 202, json: { message: "Проверьте почту." } });
+  });
+  await page.goto("/account");
+  const icon = page.getByRole("button", { name: "Войти по почте", exact: true });
+  await expect(icon.locator("svg")).toHaveCSS("width", "26px");
+  await expect(icon.locator("svg")).toHaveAttribute("fill", "none");
+  await icon.click();
+  await page.getByRole("button", { name: "Создать аккаунт", exact: true }).click();
+  await page.getByLabel("Имя", { exact: true }).fill("Участник");
+  await page.getByLabel("Почта", { exact: true }).fill("person@example.org");
+  await page.getByLabel("Пароль").fill("a secure registration password");
+  const form = page.locator(".login-email-form");
+  await form.getByRole("button", { name: "Зарегистрироваться" }).click();
+  await expect(form.getByRole("button", { name: "Войти", exact: true })).toBeDisabled();
+  await expect(icon).toBeDisabled();
+  release();
+  await expect(form.getByRole("status")).toHaveText("Проверьте почту.");
+  await expect(form.getByLabel("Пароль")).toHaveValue("");
+  await page.screenshot({ path: info.outputPath("email-register.png") });
+});
+
+test("invisible captcha automatically resubmits once and disposes the widget", async ({ page }) => {
+  const csp = readFileSync("ops/nginx.conf", "utf8").match(/add_header Content-Security-Policy "([^"]+)"/)?.[1];
+  expect(csp).toBeTruthy();
+  await page.route("**/account", async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, headers: { ...response.headers(), "Content-Security-Policy": csp! } });
+  });
+  await page.route("**/api/session", route => route.fulfill({ json: {
+    user: null, account: null, local: false, email: true, vk: false, yandex: false,
+  } }));
+  await page.route("https://smartcaptcha.yandexcloud.net/captcha.js?**", route => route.fulfill({
+    contentType: "text/javascript", body: `
+      window.captchaDestroyed = 0;
+      let callback;
+      window.smartCaptcha = {
+        render(container, options) { callback = options.callback; return 7; },
+        subscribe() { return () => {}; },
+        execute(id) { if (id !== 7) throw Error('wrong widget'); callback('one-use-token'); },
+        destroy() { window.captchaDestroyed++; }
+      };
+      window.drevoEmailCaptchaReady();`,
+  }));
+  const submissions: Record<string, string>[] = [];
+  await page.route("**/api/auth/email/register", route => {
+    const body = route.request().postDataJSON(); submissions.push(body);
+    return route.fulfill(body.captchaToken
+      ? { status: 202, json: { message: "Проверьте почту." } }
+      : { status: 403, json: { captchaRequired: true, siteKey: "public-key" } });
+  });
+  await page.goto("/account");
+  await page.getByRole("button", { name: "Войти по почте", exact: true }).click();
+  await page.getByRole("button", { name: "Создать аккаунт", exact: true }).click();
+  await page.getByLabel("Имя", { exact: true }).fill("Участник");
+  await page.getByLabel("Почта", { exact: true }).fill("person@example.org");
+  await page.getByLabel("Пароль").fill("a secure registration password");
+  await page.getByRole("button", { name: "Зарегистрироваться" }).click();
+  await expect(page.locator(".login-email-form").getByRole("status")).toHaveText("Проверьте почту.");
+  expect(submissions).toHaveLength(2);
+  expect(submissions[0]).not.toHaveProperty("captchaToken");
+  expect(submissions[1].captchaToken).toBe("one-use-token");
+  expect(submissions[1].password).toBe(submissions[0].password);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { captchaDestroyed: number }).captchaDestroyed)).toBe(1);
+});
+
+test("captcha load failure leaves a retryable form without a stale busy message", async ({ page }) => {
+  await page.route("**/api/session", route => route.fulfill({ json: {
+    user: null, account: null, local: false, email: true, vk: false, yandex: false,
+  } }));
+  await page.route("https://smartcaptcha.yandexcloud.net/captcha.js?**", route => route.abort());
+  let submissions = 0;
+  await page.route("**/api/auth/email/reset/request", route => {
+    submissions++;
+    return route.fulfill({ status: 403, json: { captchaRequired: true, siteKey: "public-key" } });
+  });
+  await page.goto("/account");
+  await page.getByRole("button", { name: "Войти по почте", exact: true }).click();
+  await page.getByRole("button", { name: "Забыли пароль?" }).click();
+  await page.getByLabel("Почта", { exact: true }).fill("person@example.org");
+  const form = page.locator(".login-email-form");
+  await form.getByRole("button", { name: "Отправить ссылку" }).click();
+  await expect(form.getByRole("alert")).toContainText("Не удалось загрузить защиту");
+  await expect(form.getByRole("status")).toHaveCount(0);
+  await expect(form.getByRole("button", { name: "Отправить ссылку" })).toBeEnabled();
+  expect(submissions).toBe(1);
 });
 
 test("email login without a tree opens the account to create one", async ({
