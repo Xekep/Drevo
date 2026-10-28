@@ -148,7 +148,7 @@ export function emailAuthHttp(
         }
         if (url.pathname === "/api/auth/email/verify") {
           const account = await requestCredentials.verifyRegistration(body.token);
-          await auth.issueAccountSession(req, res, account.accountId);
+          await auth.issueAccountSession(req, res, account.accountId, account.passwordHash);
           return json(res, 200, { archiveId: account.archiveId,
             path: archivePagePath(account.archiveId, "/tree", primaryArchiveId) });
         }

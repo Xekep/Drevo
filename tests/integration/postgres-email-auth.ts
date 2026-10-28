@@ -1,13 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { Readable } from "node:stream";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { fixture } from "./postgres-fixture.ts";
 import { emailLoginNeedsCaptcha } from "../../src/server/email-captcha.ts";
+import { emailAuthHttp } from "../../src/server/email-auth-http.ts";
 import {
   emailCredentials,
   InvalidEmailCredential,
 } from "../../src/server/email-credentials.ts";
-import { issuePostgresSessionInTransaction } from "../../src/server/postgres-sessions.ts";
+import {
+  issuePostgresSessionInTransaction,
+  issuePostgresEmailSessionInTransaction,
+} from "../../src/server/postgres-sessions.ts";
 import type { StoreDatabase } from "../../src/server/store-database.ts";
 
 test("email registration, expiry, reset revocation and shared captcha counter use real PostgreSQL", async (t) => {
@@ -15,6 +21,7 @@ test("email registration, expiry, reset revocation and shared captcha counter us
   for (const file of [
     "007_account_identities.sql",
     "033_email_accounts.sql",
+    "034_email_auth_rate_limits.sql",
     "035_pending_email_links.sql",
     "095_platform_email_auth.sql",
     "109_email_smartcaptcha.sql",
@@ -73,6 +80,88 @@ test("email registration, expiry, reset revocation and shared captcha counter us
     ).rows[0].n,
     0,
   );
+  // Exercise the HTTP confirmation gap: the reset commits after provisioning,
+  // just before the session issuer gets a database connection.
+  await credentials.requestRegistration({
+    email: "late@example.org",
+    name: "Участник",
+    password: "an original late password",
+  });
+  const lateConfirmation = token("verify");
+  let lateAccountId = "";
+  const endpoint = emailAuthHttp(
+    db,
+    {
+      async issueAccountSession(
+        _req: IncomingMessage,
+        _res: ServerResponse,
+        accountId: string,
+        expectedHash?: string,
+      ) {
+        lateAccountId = accountId;
+        assert.ok(
+          expectedHash,
+          "confirmation must pass the verified password hash to the session issuer",
+        );
+        await credentials.requestReset("late@example.org");
+        await credentials.resetPassword(
+          token("reset"),
+          "a reset late password",
+        );
+        await db.postgresTransaction!((client) =>
+          issuePostgresEmailSessionInTransaction(
+            client,
+            accountId,
+            expectedHash,
+          ),
+        );
+      },
+    } as unknown as Parameters<typeof emailAuthHttp>[1],
+    "https://drevo.example.org",
+    null,
+    async () => ({ enabled: true, sender: async () => {} }),
+  );
+  const req = Object.assign(
+    Readable.from([Buffer.from(JSON.stringify({ token: lateConfirmation }))]),
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://drevo.example.org",
+      },
+      socket: { remoteAddress: "203.0.113.20" },
+    },
+  ) as unknown as IncomingMessage;
+  let responseStatus = 0,
+    responseBody = "";
+  const res = {
+    writeHead(code: number) {
+      responseStatus = code;
+    },
+    end(body: string) {
+      responseBody = body;
+    },
+  } as unknown as ServerResponse;
+  await endpoint.handle(
+    req,
+    res,
+    new URL("https://drevo.example.org/api/auth/email/verify"),
+  );
+  assert.equal(
+    responseStatus,
+    400,
+    "late confirmation cannot issue a session after reset",
+  );
+  assert.ok(!responseBody.includes("scrypt$"));
+  assert.equal(
+    (
+      await first.query(
+        "SELECT count(*)::int AS n FROM account_sessions WHERE user_id=$1",
+        [lateAccountId],
+      )
+    ).rows[0].n,
+    0,
+  );
   clock += 24 * 60 * 60_000;
   await assert.rejects(
     credentials.verifyRegistration(expired),
@@ -112,6 +201,17 @@ test("email registration, expiry, reset revocation and shared captcha counter us
   await credentials.requestReset("new@example.org");
   const reset = token("reset");
   await credentials.resetPassword(reset, "a secure replacement password");
+  await assert.rejects(
+    db.postgresTransaction!((client) =>
+      issuePostgresEmailSessionInTransaction(
+        client,
+        account.accountId,
+        account.passwordHash,
+      ),
+    ),
+    InvalidEmailCredential,
+    "a registration confirmed before reset cannot issue a late session after reset",
+  );
   await assert.rejects(
     credentials.resetPassword(reset, "another secure replacement"),
     InvalidEmailCredential,
