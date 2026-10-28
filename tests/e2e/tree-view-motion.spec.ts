@@ -391,6 +391,7 @@ test("branches collapse and expand inside an AI-filtered tree", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
+  const total = (await (await page.request.get("/api/family?projection=overview")).json()).family.people.length;
   await page.route("**/api/ai/status", (route) =>
     route.fulfill({ json: { enabled: true, streaming: true } }),
   );
@@ -411,9 +412,10 @@ test("branches collapse and expand inside an AI-filtered tree", async ({
   const panel = page.locator(".research-assistant");
   await panel.getByRole("textbox").fill("Убери из древа лишних");
   await panel.getByRole("button", { name: "Отправить запрос" }).click();
-  await expect(page.locator(".tree-family-tools")).toContainText(
-    "Выбранная ветвь: 3",
-  );
+  const summary = page.getByRole("group", { name: "Сводка выборки древа" });
+  await expect(summary).toContainText(`Выборка: 3 из ${total}`);
+  await expect(page.locator(".tree-filter-status")).toContainText("Выбранная ветвь");
+  await expect(page.locator(".tree-filter-status")).not.toContainText(/\d+ из \d+/);
   await panel.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
 
   const parent = page.getByTestId("rf__node-e2e-child");
@@ -423,16 +425,12 @@ test("branches collapse and expand inside an AI-filtered tree", async ({
     .getByRole("button", { name: /Свернуть (потомков|ветвь)/ })
     .click();
   await expect(descendant).toHaveCount(0);
-  await expect(page.locator(".tree-family-tools")).toContainText(
-    "Выбранная ветвь: 2",
-  );
+  await expect(summary).toContainText(`Выборка: 2 из ${total}`);
   await parent
     .getByRole("button", { name: /Развернуть (потомков|ветвь)/ })
     .click();
   await expect(descendant).toBeVisible();
-  await expect(page.locator(".tree-family-tools")).toContainText(
-    "Выбранная ветвь: 3",
-  );
+  await expect(summary).toContainText(`Выборка: 3 из ${total}`);
 });
 
 test("manual card selection does not break a later AI navigation", async ({
