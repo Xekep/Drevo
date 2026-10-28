@@ -1,4 +1,3 @@
-import { fetchAiStudioModels } from "./ai-models.ts";
 import type { aiRuntimeConfig } from "./ai-settings.ts";
 import {
   estimateTokens,
@@ -7,8 +6,6 @@ import {
 } from "./ai-research-support.ts";
 
 export function aiVision(fetcher: typeof fetch) {
-  let visionModelCache:
-    { key: string; modelUri: string; expiresAt: number } | undefined;
   function providerHeaders(
     runtime: Awaited<ReturnType<typeof aiRuntimeConfig>>,
   ) {
@@ -23,39 +20,16 @@ export function aiVision(fetcher: typeof fetch) {
     runtime: Awaited<ReturnType<typeof aiRuntimeConfig>>,
   ) {
     const folderId =
-        runtime.folderId ||
-        /^gpt:\/\/([^/]+)/.exec(runtime.modelUri)?.[1] ||
-        "",
-      key = `${runtime.baseUrl}\0${folderId}`;
+      runtime.folderId ||
+      /^gpt:\/\/([^/]+)/.exec(runtime.modelUri)?.[1] ||
+      "";
     if (runtime.visionModel)
       return runtime.visionModel.startsWith("gpt://")
         ? runtime.visionModel
         : `gpt://${folderId}/${runtime.visionModel}`;
-    if (
-      visionModelCache?.key === key &&
-      visionModelCache.expiresAt > Date.now()
-    )
-      return visionModelCache.modelUri;
-    const current = runtime.modelUri.replace(/^gpt:\/\/[^/]+\//, "");
-    if (/^qwen3\.6-35b-a3b(?:\/latest)?$/.test(current))
-      return runtime.modelUri;
-    const models = await fetchAiStudioModels({
-        baseUrl: runtime.baseUrl,
-        apiKey: runtime.apiKey,
-        folderId,
-        fetcher,
-      }),
-      selected = models.find((model) => model.label === "qwen3.6-35b-a3b");
-    if (!selected)
-      throw new Error(
-        "В этом Folder ID нет модели Qwen3.6-35B для анализа фотографий",
-      );
-    visionModelCache = {
-      key,
-      modelUri: selected.id,
-      expiresAt: Date.now() + 5 * 60_000,
-    };
-    return selected.id;
+    // The catalog exposes IDs, not image capabilities. Inherit the role's
+    // configured model rather than guessing a different model by its name.
+    return runtime.modelUri;
   }
 
   async function analyzeImage(
@@ -85,6 +59,10 @@ export function aiVision(fetcher: typeof fetch) {
         signal: AbortSignal.any([signal, AbortSignal.timeout(90_000)]),
       }),
       data = (await response.json()) as ModelResponse;
+    if (!response.ok && [400, 415, 422].includes(response.status))
+      throw new Error(
+        `Выбранная модель не приняла изображение (HTTP ${response.status}). Проверьте поддержку изображений или выберите другую модель анализа фотографий в настройках роли.`,
+      );
     if (!response.ok)
       throw new Error(
         data.error?.message ||

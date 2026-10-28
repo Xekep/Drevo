@@ -80,6 +80,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.tree-family-reset svg {
+  flex: none;
 }
 .flow-person[data-anchor="true"]::before {
   content: "";
@@ -206,6 +211,9 @@
   .tree-family-menu .tree-family-tools button {
     text-align: left;
     font-size: 13px;
+  }
+  .tree-family-menu .tree-family-reset {
+    justify-content: flex-start;
   }
   .tree-family-name {
     max-width: 150px;

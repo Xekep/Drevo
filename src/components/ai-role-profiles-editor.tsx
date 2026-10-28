@@ -238,11 +238,12 @@ export function AiRoleProfilesEditor({
               disabled={!profile.photoAnalysisEnabled}
               onChange={(event) => update({ visionModel: event.target.value })}
             >
-              {modelOptions(profile.visionModel, "Автоматический выбор")}
+              {modelOptions(profile.visionModel, "Модель этой роли")}
             </select>
             <small>
-              При ручном выборе нужна модель с поддержкой изображений. Список
-              Yandex не сообщает все возможности моделей.
+              По умолчанию используется модель роли. Для анализа она должна
+              поддерживать изображения; здесь можно выбрать отдельную модель.
+              Каталог Yandex не сообщает возможности моделей.
             </small>
           </label>
           <details className="ai-context-settings">

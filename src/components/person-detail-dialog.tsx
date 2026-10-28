@@ -10,6 +10,7 @@ export function PersonDetailDialog({
   onClose,
   dirty = false,
   onDirtyChange,
+  className = "",
 }: {
   title: string;
   children: ReactNode;
@@ -17,6 +18,7 @@ export function PersonDetailDialog({
   onClose: () => void;
   dirty?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  className?: string;
 }) {
   useUnsavedChanges(dirty, onDirtyChange);
   const body = useRef<HTMLDivElement>(null);
@@ -51,7 +53,7 @@ export function PersonDetailDialog({
     <EditorDialog
       title={title}
       onClose={onClose}
-      className="person-detail-dialog"
+      className={`person-detail-dialog ${className}`}
       onDialogKeyDown={(event) => {
         if ((event.target as Element).closest("dialog") !== event.currentTarget) return;
         if (

@@ -34,7 +34,7 @@ test("прежний источник фамилии при рождении с�
   await page.goto("/tree");
   await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").click();
   await page.locator(".inspector-person-actions .person-edit-button").click();
-  await page.getByText("ФИО и фамилия при рождении", { exact: true }).click();
+  await page.getByText("Записи о фамилии при рождении", { exact: true }).click();
   await page.getByLabel("Фамилия при рождении", { exact: true }).fill("Иванова");
   const claim = page.locator(".birth-surname-claim");
   await claim.locator("summary").click();
@@ -49,7 +49,7 @@ test("прежний источник фамилии при рождении с�
   await expect(page.getByText(`Источники фамилии при рождении: ${title}`)).toBeVisible();
 
   await page.locator(".inspector-person-actions .person-edit-button").click();
-  await page.getByText("ФИО и фамилия при рождении", { exact: true }).click();
+  await page.getByText("Записи о фамилии при рождении", { exact: true }).click();
   await page.locator(".birth-surname-claim > summary").click();
   await page.getByLabel("Фамилия при рождении", { exact: true }).fill("Сидорова");
   await expect(page.getByRole("alert").filter({ hasText: "Источники относятся к прежней фамилии" })).toBeVisible();

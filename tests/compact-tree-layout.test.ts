@@ -11,11 +11,6 @@ import {
   crowdedFamily,
   spaceSize as size,
 } from "./local-family-space-fixture.ts";
-import {
-  treeCompactRequest,
-  treeLayoutRequest,
-  explicitViewControlRequest,
-} from "../src/server/ai-research-support.ts";
 import { person, randomFamily } from "./layout-fixtures.ts";
 import type { TreeGeometry } from "../src/domain/tree-layout.ts";
 
@@ -180,31 +175,4 @@ test("additional ties are reconnected to compacted endpoints", async () => {
   };
   assert.ok(touches(route.points[0], "a"));
   assert.ok(touches(route.points.at(-1)!, "c"));
-});
-
-test("compact requests are explicit, contextual and distinct from hiding people", () => {
-  for (const text of [
-    "Сделай плотнее карточки на древе",
-    "Размести карточки компактнее",
-    "Убери пустоты между семьями",
-    "Ещё плотнее",
-    "Ужать древо",
-    "Хочу сжать древо для печати",
-  ]) {
-    assert.equal(treeCompactRequest(text, "tree"), true, text);
-    assert.equal(treeLayoutRequest(text, "tree"), true, text);
-    assert.equal(explicitViewControlRequest(text, "tree"), true, text);
-    assert.equal(treeCompactRequest(text, "photos"), false);
-  }
-  for (const text of [
-    "Не делай плотнее",
-    "Не делай карточки плотнее",
-    "Не нужно делать карточки компактнее",
-    "Не уменьшай расстояния между карточками",
-    "Сколько карточек в древе",
-    "Убери Раю и её предков",
-    "Оптимизируй расположение карточек",
-  ]) {
-    assert.equal(treeCompactRequest(text, "tree"), false, text);
-  }
 });

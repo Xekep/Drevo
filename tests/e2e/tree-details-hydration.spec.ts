@@ -9,6 +9,7 @@ import {
   personDetails,
 } from "../../src/domain/archive-projection.ts";
 import type { Family } from "../../src/domain/types.ts";
+import { fullName } from "../../src/domain/dates.ts";
 
 const biography = "Работал в семейной мастерской, сохранил историю посёлка.";
 const occupation = "Мастер архивной реставрации";
@@ -476,10 +477,9 @@ test("редактирование обновляет имя, отметку п�
   );
   await card.locator(".flow-person-content").click();
   await page.locator(".inspector-person-actions .person-edit-button").click();
-  await page.getByText("ФИО и фамилия при рождении", { exact: true }).click();
   await page
-    .getByRole("textbox", { name: "Имя", exact: true })
-    .fill("Александр");
+    .getByRole("textbox", { name: "ФИО", exact: true })
+    .fill(fullName({ ...archive.current().people.find(person => person.id === "e2e-child")!, name: "Александр" }));
   await page.getByRole("checkbox", { name: "Требует проверки" }).check();
   await page
     .getByRole("button", { name: "Выбрать портрет из фотографий человека" })
