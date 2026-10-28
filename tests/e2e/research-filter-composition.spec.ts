@@ -44,6 +44,11 @@ async function fixture(page: Page, threshold: number) {
       await expect(page.locator(".tree-filter-status")).toBeVisible();
       await assistant.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
       await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+      const count = await canvas.getAttribute("data-layout-people");
+      const summary = page.getByRole("group", { name: "Сводка выборки древа" });
+      await expect(summary).toBeVisible();
+      await expect(summary).toContainText(`Выборка: ${count} из 100`);
+      await expect(page.locator(".tree-filter-status, .tree-generation-status, .tree-fragment-status").filter({ hasText: /\d+ из \d+/ })).toHaveCount(0);
     },
   };
 }

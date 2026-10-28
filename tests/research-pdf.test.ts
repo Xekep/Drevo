@@ -227,6 +227,7 @@ test("a requested relationship graph is embedded in the downloaded PDF", async (
                   arguments: JSON.stringify({
                     title: "Родство",
                     content: "Анализ семьи.",
+                    includeArchiveGraph: true,
                   }),
                 },
               },
@@ -347,9 +348,9 @@ test("a model claim without a generated file never becomes a download link", asy
     assert.ok(done);
     const result = JSON.parse(done[1]) as { answer: string; files: unknown[] };
     assert.deepEqual(result.files, []);
-    assert.match(result.answer, /Не удалось создать PDF/);
+    assert.match(result.answer, /Не удалось создать файл/);
     assert.doesNotMatch(stream, /event: delta\ndata: .*api\/ai\/files/);
-    assert.ok(calls >= 2);
+    assert.equal(calls, 1, "a file request does not force another model call by its wording");
   } finally {
     await app.close();
     for (const key of [

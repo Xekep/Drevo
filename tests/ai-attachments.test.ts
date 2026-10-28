@@ -254,9 +254,11 @@ test("chat attachments reach AI, survive restart, enforce ownership/scope and de
       (requests[0].tools as Array<{ name: string }>).some(
         (tool) => tool.name === "create_pdf",
       ),
-      false,
-      "reading an uploaded PDF must not trigger PDF generation",
+      true,
+      "PDF creation remains available according to the role, independently of reading a PDF",
     );
+    assert.deepEqual(result.files, [], "reading a PDF never creates a file without a selected creation tool");
+    assert.equal(requests.length, 1, "an uploaded PDF does not force a generation retry");
     assert.match(rawInput, /input_file/);
     assert.match(rawInput, /data:application\/pdf;base64/);
     assert.match(rawInput, /Иван,1910/);

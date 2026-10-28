@@ -30,7 +30,7 @@ export function PersonLifeEditor({ occupation, biography, onChange, onEditingCha
             const value = { occupation, biography };
             setEditing({ baseline: value, value });
           }}>
-          <Maximize2 size={16} aria-hidden="true" />
+          <Maximize2 size={14} aria-hidden="true" />
         </button>
       </summary>
       {children}

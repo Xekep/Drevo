@@ -33,13 +33,19 @@ test("a filter preserves all other cards, supports an empty result and resets to
     .getByRole("textbox")
     .fill("Оставь всё древо, исключи людей по условию");
   await assistant.getByRole("button", { name: "Отправить запрос" }).click();
-  await expect(page.locator(".tree-filter-status")).toContainText(
-    `${kept.length} из ${family.people.length}`,
+  const selection = page.getByRole("group", { name: "Сводка выборки древа" });
+  await expect(selection).toBeVisible();
+  await expect(selection).toContainText(
+    `Выборка: ${kept.length} из ${family.people.length}`,
   );
+  await expect(page.locator(".tree-mode-bar .archive-summary")).toHaveCount(1);
+  await expect(page.locator(".tree-filter-status")).not.toContainText(/\d+ из \d+/);
+  await expect(page.getByRole("group", { name: "Сводка всего семейного архива" })).toHaveCount(0);
   await expect(child).toHaveCount(0);
   await expect(parent).toBeAttached();
   // Cancelling the independent generation window must keep the AI projection.
   await assistant.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
+  await page.screenshot({ path: info.outputPath("filtered-toolbar.png") });
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const preferences = page.getByRole("dialog", { name: "Вид древа" });
   await preferences.getByRole("switch", { name: "Ограничить видимое древо" }).check();
@@ -47,15 +53,15 @@ test("a filter preserves all other cards, supports an empty result and resets to
   const anchor = page.getByRole("status", { name: "Опорный человек" });
   await anchor.getByRole("button", { name: "Снять ограничения поколений" }).click();
   await expect(anchor).toHaveCount(0);
-  await expect(page.locator(".tree-filter-status")).toContainText(
-    `${kept.length} из ${family.people.length}`,
+  await expect(selection).toContainText(
+    `Выборка: ${kept.length} из ${family.people.length}`,
   );
   await expect(child).toHaveCount(0);
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
   await assistant.getByRole("textbox").fill("Оставь только совпавших");
   await assistant.getByRole("button", { name: "Отправить запрос" }).click();
-  await expect(page.locator(".tree-filter-status")).toContainText(
-    `0 из ${family.people.length}`,
+  await expect(selection).toContainText(
+    `Выборка: 0 из ${family.people.length}`,
   );
   await expect(parent).toHaveCount(0);
   await assistant
@@ -66,5 +72,6 @@ test("a filter preserves all other cards, supports an empty result and resets to
   await expect(child).toBeAttached();
   await expect(parent).toBeAttached();
   await expect(page.locator(".tree-filter-status")).toHaveCount(0);
+  await expect(selection).toHaveCount(0);
   expect(await (await request.get("/api/family")).json()).toEqual(before);
 });

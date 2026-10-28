@@ -21,6 +21,7 @@ import {
 } from "./tree-pdf-vector";
 import { treeGraphicBounds } from "./tree-print-plan";
 import { prepareTreePdfPortraits } from "./tree-pdf-portraits";
+import { treeExportDeadline } from "./tree-export-deadline";
 
 export type ExportTree = {
   nodes: Array<PersonNodeType | HouseholdNodeType>;
@@ -116,6 +117,7 @@ async function exportTreeGraphic(
   source: ExportTree,
   format: "pdf" | "png",
   signal?: AbortSignal,
+  onProgress?: (message: string) => void,
 ) {
   signal?.throwIfAborted();
   const tree: ExportTree = {
@@ -177,12 +179,11 @@ async function exportTreeGraphic(
   target.head.append(base);
   const root = createRoot(target.body);
   let disposed = false;
-  let expiry: ReturnType<typeof setTimeout> | undefined;
   const dispose = () => {
     if (disposed) return;
     disposed = true;
     work.abort();
-    clearTimeout(expiry);
+    deadline.dispose();
     signal?.removeEventListener("abort", abort);
     root.unmount();
     iframe.remove();
@@ -191,6 +192,14 @@ async function exportTreeGraphic(
   const cancelled = new Promise<never>((_, reject) => {
     rejectAbort = reject;
   });
+  const deadline = treeExportDeadline(reason => rejectAbort(new Error(reason === "idle"
+    ? "Подготовка файла остановилась. Проверьте соединение и повторите экспорт."
+    : "Подготовка файла заняла слишком долго. Попробуйте экспортировать меньшую ветвь.")));
+  const progress = (message?: string) => {
+    work.signal.throwIfAborted();
+    deadline.progress();
+    if (message) onProgress?.(message);
+  };
   const abort = () => {
     rejectAbort(signal?.reason);
     dispose();
@@ -198,7 +207,9 @@ async function exportTreeGraphic(
   signal?.addEventListener("abort", abort, { once: true });
   try {
     const prepared = (async () => {
+      progress("Подготавливаем оформление…");
       const font = await preparePdfFont(target, work.signal);
+      progress();
       // Use the actual app styles and fonts instead of maintaining PDF card layouts.
       await Promise.all(
         Array.from(
@@ -222,6 +233,7 @@ async function exportTreeGraphic(
         ),
       );
       if (disposed) return;
+      progress("Подготавливаем карточки…");
       const styles = target.createElement("style");
       styles.textContent = `
       @page { size: ${width}px ${height}px; margin: 0; }
@@ -248,6 +260,7 @@ async function exportTreeGraphic(
               deferPortraits: false,
               currentPeople: undefined,
               publishPerson: undefined,
+              relationLabel: () => "",
             }}
           >
             <PrintTree
@@ -263,6 +276,7 @@ async function exportTreeGraphic(
       });
       // Timeout cleans up failed exports and aborts any later download.
       await ready;
+      progress();
       const photos = new Map(
         tree.nodes.flatMap((node) => {
           if (node.type !== "person") return [];
@@ -276,6 +290,7 @@ async function exportTreeGraphic(
         target,
         photos,
         work.signal,
+        (completed, total) => progress(`Портреты: ${completed} из ${total}`),
       );
       await target.fonts.ready;
       if (disposed) return;
@@ -284,6 +299,7 @@ async function exportTreeGraphic(
       const snapshot = target.body.firstElementChild!.cloneNode(true);
       root.unmount();
       target.body.replaceChildren(snapshot);
+      progress(format === "pdf" ? "Формируем PDF…" : "Формируем PNG…");
       if (!disposed) {
         if (format === "pdf")
           await downloadTreeVectorPdf(
@@ -294,6 +310,8 @@ async function exportTreeGraphic(
             font,
             work.signal,
             portraits,
+            undefined,
+            () => progress(),
           );
         else
           await downloadTreePng(
@@ -307,17 +325,7 @@ async function exportTreeGraphic(
           );
       }
     })();
-    await Promise.race([
-      prepared,
-      cancelled,
-      new Promise<never>((_, reject) => {
-        expiry = setTimeout(
-          () => reject(new Error("Подготовка файла заняла слишком долго.")),
-          30_000,
-        );
-      }),
-    ]);
-    clearTimeout(expiry);
+    await Promise.race([prepared, cancelled]);
     dispose();
   } catch (error) {
     dispose();
@@ -325,8 +333,8 @@ async function exportTreeGraphic(
   }
 }
 
-export const exportTreePdf = (tree: ExportTree, signal?: AbortSignal) =>
-  exportTreeGraphic(tree, "pdf", signal);
+export const exportTreePdf = (tree: ExportTree, signal?: AbortSignal, onProgress?: (message: string) => void) =>
+  exportTreeGraphic(tree, "pdf", signal, onProgress);
 
 export const exportTreePng = (tree: ExportTree, signal?: AbortSignal) =>
   exportTreeGraphic(tree, "png", signal);

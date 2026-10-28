@@ -95,5 +95,6 @@ for (const goal of ["routing", "compact"] as const) test(`AI ${goal} uses a real
     await page.screenshot({ path: testInfo.outputPath("compact-tree-unobstructed.png") });
   }
   expect(await (await request.get(`${archiveUrl}/api/family`)).json()).toEqual(before);
+  await expect(page.locator(".archive-toast")).toHaveCount(0, { timeout: 7000 });
   expect(errors).toEqual([]);
 });

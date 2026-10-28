@@ -6,13 +6,112 @@ import {
   unionGeometry,
   createGeometryContactScorer,
 } from "../src/domain/union-layout.ts";
-import { treeRowSpan } from "../src/domain/compact-tree-layout.ts";
+import { compactTreeLayout, treeRowSpan } from "../src/domain/compact-tree-layout.ts";
+import { placedFamilyRows } from "../src/domain/local-family-order.ts";
 import {
   crowdedFamily,
   spaceSize as size,
 } from "./local-family-space-fixture.ts";
 import { person, randomFamily } from "./layout-fixtures.ts";
 import type { TreeGeometry } from "../src/domain/tree-layout.ts";
+
+/** Connected, unequal generations: one already-tight pair of columns must not
+ * prevent removing large gaps farther along the same family's descendants.
+ */
+function unequalColumns(reverse = false) {
+  const people: ReturnType<typeof person>[] = [];
+  const positions: TreeGeometry["positions"] = [];
+  for (const [column, first, x] of [
+    ["a", 0, 0], ["b", 1, 252], ["c", 2, 5000], ["d", 5, 9000],
+  ] as const) {
+    for (let level = first; level < 8; level++) {
+      const id = `${column}-${level}`;
+      const parent = level > first ? `${column}-${level - 1}`
+        : column === "a" ? undefined : column === "b" ? "a-0"
+          : column === "c" ? "b-1" : "c-4";
+      people.push(person(id, parent ? [parent] : []));
+      positions.push([id, { x, y: level * 600 * (reverse ? -1 : 1) }]);
+    }
+  }
+  const points = new Map(positions);
+  const geometry: TreeGeometry = {
+    mode: "generations", reverse, nodeSize: size, start: 1830, offset: 0,
+    positions, blocks: [], routes: [], siblingGroups: [],
+    occurrences: people.map(p => ({ id: p.id, personId: p.id, block: p.id })),
+    generationBands: Array.from({ length: 8 }, (_, level) => {
+      const y = level * 600 * (reverse ? -1 : 1);
+      return { level, targetY: y, minY: y, maxY: y,
+        members: people.filter(p => points.get(p.id)!.y === y).map(p => p.id) };
+    }),
+    branches: people.filter(p => p.parents.length).map(p => {
+      const from = p.parents[0], a = points.get(from)!, b = points.get(p.id)!;
+      const start = { x: a.x + size.width / 2, y: a.y + (reverse ? 0 : size.height) };
+      const end = { x: b.x + size.width / 2, y: b.y + (reverse ? size.height : 0) };
+      const y = reverse ? end.y + 170 : end.y - 170;
+      return { id: `child:${p.id}`, source: from, target: p.id, union: `union:${from}`,
+        relations: [{ from, to: p.id, type: "parent" as const }],
+        route: { sourceHandle: reverse ? "top" : "bottom", targetHandle: reverse ? "bottom" : "top",
+          points: a.x === b.x ? [start, end]
+            : [start, { x: start.x, y }, { x: end.x, y }, end] } };
+    }),
+  };
+  return { geometry, people };
+}
+
+for (const reverse of [false, true])
+  test(`tight columns do not block nonuniform packing of connected generations (reverse=${reverse})`, () => {
+    const { geometry, people } = unequalColumns(reverse);
+    const snapshot = structuredClone({ geometry, people });
+    const result = optimizeDisplayedTree(geometry, people, [], "compact").geometry;
+    assert.ok(treeRowSpan(result, size) < treeRowSpan(geometry, size) * 0.3);
+    assert.deepEqual(result.nodeSize, geometry.nodeSize);
+    assert.deepEqual(result.occurrences, geometry.occurrences);
+    assert.deepEqual(result.generationBands, geometry.generationBands);
+    const positions = new Map(result.positions);
+    for (const [id, point] of geometry.positions) assert.equal(positions.get(id)!.y, point.y);
+    for (const branch of result.branches!) {
+      if (geometry.branches!.find(b => b.id === branch.id)!.route.points.length === 2) {
+        assert.equal(branch.route.points.length, 2);
+        assert.equal(branch.route.points[0].x, branch.route.points[1].x);
+      }
+    }
+    const originalRows = placedFamilyRows(geometry, size);
+    for (const [level, row] of placedFamilyRows(result, size).entries()) {
+      assert.deepEqual(row.map(b => b.id), originalRows[level].map(b => b.id));
+      for (let i = 1; i < row.length; i++) {
+        const old = originalRows[level];
+        assert.ok(row[i].x - row[i - 1].x - row[i - 1].width >=
+          Math.min(32, old[i].x - old[i - 1].x - old[i - 1].width) - 0.01);
+      }
+    }
+    const scorer = createGeometryContactScorer(size.width, size.height);
+    const before = scorer.quality(geometry), after = scorer.quality(result);
+    assert.equal(after.crossings, 0);
+    assert.equal(after.contacts, 0);
+    assert.equal(scorer.cardContacts(result), 0);
+    assert.equal(scorer.cardOverlaps(result), 0);
+    assert.equal(after.bends, before.bends);
+    assert.ok(after.length < before.length);
+    assert.deepEqual({ geometry, people }, snapshot);
+  });
+
+test("unsafe compression is rejected within the shared candidate budget", () => {
+  const { geometry, people } = unequalColumns();
+  const scorer = createGeometryContactScorer(size.width, size.height);
+  let calls = 0;
+  const score = (candidate: TreeGeometry) => {
+    calls++;
+    return {
+      ...scorer.quality(candidate),
+      // A stricter caller may protect an additional obstacle not in the rows.
+      // Space savings must never bypass that caller's safety decision.
+      cardHits: candidate === geometry ? 0 : 1,
+      overlaps: scorer.cardOverlaps(candidate),
+    };
+  };
+  assert.equal(compactTreeLayout(geometry, people, [], size, score), geometry);
+  assert.ok(calls <= 42, `score budget exceeded: ${calls}`);
+});
 
 test("compaction coordinates unequal generation rows without breaking straight ancestor columns", () => {
   const people = [person("a"), person("b"), person("c"),

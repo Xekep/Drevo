@@ -42,7 +42,32 @@ test("expanded life section drafts occupation and history together and applies t
   await expect(inline).toHaveValue("Исходная история");
   const initialOccupation = read().occupation || "";
   const open = form.getByRole("button", { name: "Открыть жизнь и занятия в отдельном окне" });
-  await open.click();
+  const lifeHeader = section.locator(":scope > summary");
+  const neighboringHeader = form.locator(".education-editor > summary");
+  const appearance = (element: Element) => {
+    const style = getComputedStyle(element);
+    return { height: element.getBoundingClientRect().height, size: style.fontSize,
+      weight: style.fontWeight, line: style.lineHeight };
+  };
+  const lifeStyle = await lifeHeader.evaluate(appearance), neighborStyle = await neighboringHeader.evaluate(appearance);
+  expect(lifeStyle.height).toBeCloseTo(neighborStyle.height, 1);
+  expect({ ...lifeStyle, height: 0 }).toEqual({ ...neighborStyle, height: 0 });
+  await open.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath("person-editor-sections.png") });
+  const buttonBox = (await open.boundingBox())!;
+  expect(buttonBox.width).toBe(24);
+  expect(buttonBox.height).toBe(24);
+  await expect(open.locator("svg")).toHaveAttribute("width", "14");
+  if (isMobile) {
+    // A 44px transparent touch target does not increase the summary's row height.
+    const touchTarget = await open.evaluate(button => {
+      const style = getComputedStyle(button, "::before");
+      return { width: parseFloat(style.width), height: parseFloat(style.height) };
+    });
+    expect(touchTarget.width).toBeGreaterThanOrEqual(44);
+    expect(touchTarget.height).toBeGreaterThanOrEqual(44);
+    await page.touchscreen.tap(buttonBox.x - 8, buttonBox.y + buttonBox.height / 2);
+  } else await open.click();
   const dialog = page.getByRole("dialog", { name: "Жизнь и занятия", exact: true });
   const expanded = dialog.getByRole("textbox", { name: "История человека", exact: true });
   await expect(expanded).toHaveValue("Исходная история");

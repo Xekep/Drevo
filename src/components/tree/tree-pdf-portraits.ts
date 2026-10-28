@@ -9,10 +9,13 @@ export async function prepareTreePdfPortraits(
   target: Document,
   sources: ReadonlyMap<string, string>,
   signal: AbortSignal,
+  onProgress?: (completed: number, total: number) => void,
 ): Promise<ReadonlyMap<string, string>> {
   const urls = [...new Set([...sources.values()].filter(Boolean))];
   const portraits = new Map<string, string>();
   let next = 0;
+  let completed = 0;
+  onProgress?.(completed, urls.length);
   await Promise.all(
     Array.from({ length: Math.min(4, urls.length) }, async () => {
       while (next < urls.length) {
@@ -59,6 +62,7 @@ export async function prepareTreePdfPortraits(
             canvas.height,
           );
           portraits.set(url, canvas.toDataURL("image/png"));
+          onProgress?.(++completed, urls.length);
         } finally {
           signal.removeEventListener("abort", abort);
           image.src = "";

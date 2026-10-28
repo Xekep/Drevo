@@ -6,27 +6,31 @@ export function ArchiveSummary({
   people,
   detailed = false,
   busy = false,
+  selectedCount,
 }: {
   people: Person[];
   detailed?: boolean;
   busy?: boolean;
+  selectedCount?: number;
 }) {
   const data = useMemo(() => archiveSummary(people), [people]);
   return (
     <div
-      className={`archive-summary${detailed ? " archive-summary-detailed" : ""}`}
+      className={`archive-summary${detailed ? " archive-summary-detailed" : ""}${selectedCount !== undefined ? " archive-summary-selection" : ""}`}
       role="group"
-      aria-label="Сводка всего семейного архива"
+      aria-label={selectedCount !== undefined ? "Сводка выборки древа" : "Сводка всего семейного архива"}
+      aria-live={selectedCount !== undefined ? "polite" : undefined}
+      aria-atomic={selectedCount !== undefined ? true : undefined}
     >
       <div>
-        <span>{counted(data.people, ["человек", "человека", "человек"])}</span>
-        {!!data.generations && (
+        <span>{selectedCount !== undefined ? `Выборка: ${selectedCount} из ${data.people}` : counted(data.people, ["человек", "человека", "человек"])}</span>
+        {selectedCount === undefined && !!data.generations && (
           <span title="Самая длинная известная цепочка родителей и детей">
             {counted(data.generations, ["поколение", "поколения", "поколений"])}
           </span>
         )}
       </div>
-      {detailed &&
+      {detailed && selectedCount === undefined &&
         (data.first !== undefined && data.last !== undefined ? (
           <div title="По известным датам рождения и смерти. Неизвестные даты не подставляются.">
             <span>

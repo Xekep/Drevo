@@ -463,6 +463,24 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
       let compactionAvailable =
         options.compactThreshold !== null &&
         !compactionUnavailable.has(compactionKey);
+      const noteCompactionFailure = (failed: RawResponse | undefined, providerStatus: number) => {
+        if (!compactionAvailable || failed?.status !== "failed" ||
+            failed.error?.code !== "invalid_prompt" ||
+            !failed.output?.some(item => item.type === "compaction")) return;
+        // Provider compatibility workaround: recheck and remove next release
+        // once native compaction no longer breaks the model's prompt template.
+        // Never retry a possibly compacted conversation here. The runner owns
+        // recovery on a new conversation and preserves completed tool results.
+        compactionUnavailable.add(compactionKey);
+        objectCompactionModels.delete(compactionKey);
+        compactionAvailable = false;
+        console.warn(JSON.stringify({
+          event: "ai.compaction_unavailable",
+          providerStatus,
+          reason: "invalid_prompt_after_compaction",
+          fallback: options.automaticTruncation ? "truncation_auto" : "none",
+        }));
+      };
       const compaction = {
         type: "compaction",
         compact_threshold: options.compactThreshold,
@@ -574,11 +592,15 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
       }
       if (!response)
         throw rejection || new Error("Yandex AI Studio не ответила");
-      if (!options.stream)
+      const providerStatus = response.status;
+      if (!options.stream) {
+        const data = (await response.json()) as RawResponse;
+        noteCompactionFailure(data, providerStatus);
         return {
-          ...parseYandexResponse((await response.json()) as RawResponse),
+          ...parseYandexResponse(data),
           compactionAvailable,
         };
+      }
       if (!response.body)
         throw new Error("Yandex AI Studio не вернула поток ответа");
       const reader = response.body.getReader();
@@ -606,7 +628,8 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
           throw new Error("Yandex AI Studio вернула некорректный поток SSE");
         }
         if (event.response?.id) responseId = event.response.id;
-        if (event.type === "error" || event.type === "response.failed")
+        if (event.type === "error" || event.type === "response.failed") {
+          noteCompactionFailure(event.response, providerStatus);
           throw new YandexResponseError(
             event.error?.message ||
               event.response?.error?.message ||
@@ -619,6 +642,7 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
               "stream_failed",
             responseId,
           );
+        }
         if (event.type === "response.incomplete" && event.response)
           parseYandexResponse(event.response);
         if (event.type === "response.completed" && event.response)
@@ -663,6 +687,7 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
           "stream_incomplete",
           responseId,
         );
+      noteCompactionFailure(completed, providerStatus);
       return { ...parseYandexResponse(completed), compactionAvailable };
     },
   };

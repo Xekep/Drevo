@@ -68,6 +68,31 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("PDF omits viewer-relative kinship while the interactive cards retain it", async ({ page, isMobile }, info) => {
+  test.skip(isMobile, "Экспорт с полотна доступен на десктопе");
+  await page.route(/\/api\/(?:session|family)(?:\?|$)/, async route => {
+    const response = await route.fetch();
+    const data = await response.json();
+    if (data.user) data.user.personId = "e2e-memorial-person";
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto("/tree");
+  const self = page.getByTestId("rf__node-e2e-memorial-person");
+  await expect(self.locator(".portrait-card-info small")).toHaveText("Это вы");
+  const pdf = await downloadPdf(page, info);
+  try {
+    const text = (await (await pdf.getPage(1)).getTextContent()).items
+      .flatMap(item => "str" in item ? [item.str] : []).join(" ");
+    expect(text).toContain("Иван");
+    expect(text).toContain("Пётр");
+    expect(text).not.toContain("Это вы");
+    expect(text).not.toMatch(/(?:^|\s)(?:сын|дочь|внук|внучка)(?:\s|$)/iu);
+  } finally {
+    await pdf.loadingTask.destroy();
+  }
+  await expect(self.locator(".portrait-card-info small")).toHaveText("Это вы");
+});
+
 test("settings have no export; canvas dialog offers one visible tree format selector", async ({
   page,
   isMobile,

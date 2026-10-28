@@ -63,6 +63,7 @@ import { ConflictDialog } from "./components/conflict-dialog";
 import { ShareDialog } from "./components/share-dialog";
 import { PublishPersonDialog } from "./components/publish-person-dialog";
 import { ArchiveLoading } from "./components/archive-loading";
+import { ArchiveToast } from "./components/archive-toast";
 import { ResearchAssistant } from "./components/research-assistant";
 import { excludeAssistantPeople, hideReviewAssistantPeople } from "./domain/research-tree-view.ts";
 import { AccountPage } from "./components/account-page";
@@ -1325,18 +1326,11 @@ export default function App() {
         )}
       </div>
       {(archive.committedUploadNotice || notice) && (
-        <div className="archive-toast" role="status">
-          {archive.committedUploadNotice || notice}
-          <button
-            onClick={() => {
-              archive.dismissCommittedUploadNotice();
-              setNotice("");
-            }}
-            aria-label="Закрыть уведомление"
-          >
-            <X size={17} />
-          </button>
-        </div>
+        <ArchiveToast message={archive.committedUploadNotice || notice}
+          onClose={() => {
+            archive.dismissCommittedUploadNotice();
+            setNotice("");
+          }} />
       )}
       {archive.loadingDetails && (
         <div className="archive-loading-details" role="status">
@@ -1477,7 +1471,7 @@ export default function App() {
       {treeExportOpen && !participantPreview && family && readTree && (
         <TreeExportDialog
           onCheckExportWarnings={checkExportWarnings}
-          onExportPdf={(signal) => treeCanvas.current!.exportPdf(signal, "current")}
+          onExportPdf={(signal, onProgress) => treeCanvas.current!.exportPdf(signal, "current", undefined, undefined, onProgress)}
           onExportText={async (signal) => {
             const ids = await treeCanvas.current!.visiblePersonIds(signal);
             const { downloadGenerationReport } = await import("./components/tree/download-generation-report");
