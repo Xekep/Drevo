@@ -1,7 +1,8 @@
 import { archiveFetch } from "../../data/archive-fetch.ts";
+import { mediaPreview } from "../../domain/media-preview.ts";
 
-/** Only small, cropped portraits survive preparation. Originals are decoded by
- * at most four jobs; repeated people/photos share one encoded portrait per export.
+/** Cached 1024px centre crops avoid downloading/decoding full-size local photos.
+ * At most four jobs; repeated people/photos share one encoded portrait per export.
  * Nothing is cached between archives, access scopes or subsequent downloads.
  */
 export async function prepareTreePdfPortraits(
@@ -17,7 +18,7 @@ export async function prepareTreePdfPortraits(
       while (next < urls.length) {
         signal.throwIfAborted();
         const url = urls[next++];
-        const response = await archiveFetch(url, { signal });
+        const response = await archiveFetch(mediaPreview(url, "print")!, { signal });
         if (!response.ok)
           throw new Error("Не удалось загрузить портрет для экспорта.");
         const blob = await response.blob();

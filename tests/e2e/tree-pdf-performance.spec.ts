@@ -70,7 +70,10 @@ test("PDF reuses portraits without dropping people or rasterizing text", async (
     .toBuffer();
   let originals = 0;
   await context.route("**/media/pdf-benchmark.png**", (route) => {
-    if (route.request().resourceType() === "fetch") originals++;
+    if (route.request().resourceType() === "fetch") {
+      expect(new URL(route.request().url()).searchParams.get("variant")).toBe("print");
+      originals++;
+    }
     return route.fulfill({ contentType: "image/png", body: portrait });
   });
   await sharedFixture(page, count, () => "/media/pdf-benchmark.png");

@@ -209,6 +209,31 @@ test("privacy eye opens with one tap on mobile", async ({ page, isMobile }) => {
   await expect(privacy).toHaveAttribute("data-publication-state", /hidden|published/);
 });
 
+test("a mobile swipe starting on the privacy eye pans, and the next tap still opens privacy", async ({ page, isMobile }) => {
+  test.skip(!isMobile);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).not.toHaveClass(/is-grow|is-layout-settling/);
+  const privacy = page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-privacy");
+  await expect(privacy).toBeVisible();
+  const box = (await privacy.boundingBox())!;
+  const viewport = page.locator(".react-flow__viewport");
+  const before = await viewport.getAttribute("style");
+  const session = await page.context().newCDPSession(page);
+  const point = (dy: number) => [{ x: box.x + box.width / 2, y: box.y + box.height / 2 + dy }];
+  await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: point(0) });
+  for (const dy of [10, 25, 45, 70])
+    await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: point(dy) });
+  await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await session.detach();
+  await expect(viewport).not.toHaveAttribute("style", before!);
+  await expect(page.getByRole("dialog", { name: "Публикация человека в поиске" })).toHaveCount(0);
+  await expect(page.locator(".inspector-dock")).toHaveCount(0);
+  await privacy.tap();
+  await expect(page.getByRole("dialog", { name: "Публикация человека в поиске" })).toBeVisible();
+});
+
 test("visible tree privacy icons resolve in batches without hovering or tapping", async ({ page }) => {
   let release!: () => void;
   const delayed = new Promise<void>((resolve) => { release = resolve; });

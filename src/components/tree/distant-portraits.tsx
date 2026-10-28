@@ -457,7 +457,7 @@ export function DistantPortraits({
           }
           context.strokeStyle = person.needsReview ? "#d77b18"
             : node.selected || node.data.spotlit ? "#5c8650" : "#fffefa";
-          context.lineWidth = person.needsReview || node.selected || node.data.spotlit ? 6 : 3;
+          context.lineWidth = person.needsReview ? 3 : node.selected || node.data.spotlit ? 6 : 3;
           context.beginPath();
           context.arc(centerX, centerY, PORTRAIT_SIZE / 2 - 2, 0, Math.PI * 2);
           context.stroke();
@@ -499,9 +499,11 @@ export function DistantPortraits({
           if (node.data.person.needsReview) {
             context.beginPath();
             context.arc(x + OVERSCAN + size / 2, y + OVERSCAN + size / 2,
-              Math.max(0, size / 2 - 1), 0, Math.PI * 2);
+              Math.max(0, size / 2 - 1.5 * zoom), 0, Math.PI * 2);
             context.strokeStyle = "#d77b18";
-            context.lineWidth = Math.max(2, size * 0.05);
+            // Match the DOM/GPU 3 world-pixel border. A screen-space minimum
+            // turns it into a thick orange disc at distant zoom levels.
+            context.lineWidth = 3 * zoom;
             context.stroke();
           }
           painted++;

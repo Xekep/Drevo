@@ -10,7 +10,7 @@ import {
 } from "./preparation-admission.ts";
 
 export type ImagePreviewVariant =
-  "tiny" | "avatar" | "thumb" | "display" | "ai";
+  "tiny" | "avatar" | "thumb" | "display" | "ai" | "print";
 export type ImagePreviewSource = Buffer | { path: string; cacheKey: string };
 /** Consumers invoke previews; only the composition root owns their lifecycle. */
 export type ImagePreview = (original: ImagePreviewSource, variant: ImagePreviewVariant) => Promise<Buffer>;
@@ -21,6 +21,7 @@ export const IMAGE_PREVIEW_SETTINGS = {
   thumb: { maxSize: 400, quality: 76 },
   display: { maxSize: 1600, quality: 82 },
   ai: { maxSize: 1600, quality: 86 },
+  print: { maxSize: 1024, quality: 92 },
 } as const satisfies Record<
   ImagePreviewVariant,
   { maxSize: number; quality: number }
@@ -111,7 +112,7 @@ export function imagePreviews(
         const resized = input.rotate().resize({
           width: settings.maxSize,
           height: settings.maxSize,
-          fit: "inside",
+          fit: variant === "print" ? "cover" : "inside",
           withoutEnlargement: true,
         });
         const output =

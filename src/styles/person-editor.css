@@ -66,6 +66,10 @@
   color: #263f30;
   background: #fff;
 }
+.person-editor-form .name-entry {
+  display: grid;
+  gap: 5px;
+}
 .person-editor-form .name-entry small {
   font-size: 12px;
   line-height: 1.5;
@@ -343,7 +347,44 @@
   font-size: 12px;
 }
 .person-editor-form .field-error:empty {
+  display: block;
+}
+.person-editor-form .person-field-feedback,
+.person-editor-form .calendar-date-field > .field-error,
+.person-editor-form .calendar-style-control > small,
+.person-editor-form .place-input-notice {
+  display: block;
+  block-size: 36px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.person-editor-form .person-field-feedback [hidden] {
   display: none;
+}
+.person-editor-form .name-swap-action {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #315b4b;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.person-editor-form .calendar-date-field {
+  position: relative;
+}
+.person-editor-form .form-grid > label {
+  align-content: start;
+}
+.person-editor-form .calendar-date-field > .field-error {
+  position: absolute;
+  inset: auto 0 0;
+  background: #fff;
+}
+.person-editor-form .calendar-date-field > .field-error:empty {
+  visibility: hidden;
 }
 .person-editor-form :is(input, select):not([type="checkbox"], [type="file"]) {
   min-width: 0;

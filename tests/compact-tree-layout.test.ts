@@ -17,6 +17,39 @@ import {
   explicitViewControlRequest,
 } from "../src/server/ai-research-support.ts";
 import { person, randomFamily } from "./layout-fixtures.ts";
+import type { TreeGeometry } from "../src/domain/tree-layout.ts";
+
+test("compaction coordinates unequal generation rows without breaking straight ancestor columns", () => {
+  const people = [person("a"), person("b"), person("c"),
+    person("aa", ["a"]), person("bb", ["b"]), person("cc", ["c"]), person("cd", ["c"])];
+  const points = new Map(people.map((p, i) => [p.id, { x: i < 3 ? i * 2000 : (i - 3) * 2000, y: i < 3 ? 0 : 600 }]));
+  const geometry: TreeGeometry = {
+    mode: "generations", reverse: false, nodeSize: size, start: 1830, offset: 0,
+    positions: [...points], occurrences: people.map(p => ({ id: p.id, personId: p.id, block: p.id })),
+    blocks: [], routes: [], siblingGroups: [],
+    generationBands: [0, 600].map((y, i) => ({ level: i, targetY: y, minY: y, maxY: y,
+      members: people.filter(p => points.get(p.id)!.y === y).map(p => p.id) })),
+    branches: people.filter(p => p.parents.length).map(p => {
+      const from = p.parents[0], a = points.get(from)!, b = points.get(p.id)!;
+      const start = { x: a.x + size.width / 2, y: a.y + size.height };
+      const end = { x: b.x + size.width / 2, y: b.y };
+      return { id: `child:${p.id}`, source: from, target: p.id, union: `union:${from}`,
+        relations: [{ from, to: p.id, type: "parent" as const }],
+        route: { sourceHandle: "bottom", targetHandle: "top", points: a.x === b.x ? [start, end]
+          : [start, { x: start.x, y: 430 }, { x: end.x, y: 430 }, end] } };
+    }),
+  };
+  const original = structuredClone(geometry);
+  const result = optimizeDisplayedTree(geometry, people, [], "compact");
+  assert.equal(result.optimization.changed, true);
+  assert.ok(treeRowSpan(result.geometry, size) < treeRowSpan(geometry, size));
+  for (const id of ["aa", "bb", "cc"]) {
+    const route = result.geometry.branches!.find(b => b.target === id)!.route.points;
+    assert.equal(route.length, 2, "packing must preserve a straight ancestor column");
+    assert.equal(route[0].x, route[1].x);
+  }
+  assert.deepEqual(geometry, original);
+});
 
 for (const reverse of [false, true])
   test(`explicit compact goal closes gaps, retaining partners, sizes and generations (reverse=${reverse})`, () => {
@@ -155,6 +188,8 @@ test("compact requests are explicit, contextual and distinct from hiding people"
     "Размести карточки компактнее",
     "Убери пустоты между семьями",
     "Ещё плотнее",
+    "Ужать древо",
+    "Хочу сжать древо для печати",
   ]) {
     assert.equal(treeCompactRequest(text, "tree"), true, text);
     assert.equal(treeLayoutRequest(text, "tree"), true, text);

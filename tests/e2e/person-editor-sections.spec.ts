@@ -86,6 +86,30 @@ test("старый стиль сохраняет исходную дату и п
   await expect(form.locator('[data-field="death"]')).toHaveValue("29.02.2000");
 });
 
+test("input positions stay stable while name, calendar, validation and place hints change", async ({ page }, info) => {
+  await page.route("**/api/places/locate**", route => route.fulfill({ json: { candidates: [] } }));
+  await editor(page);
+  const form = page.locator(".person-editor-form");
+  await expect(form.locator('[data-field="name"]')).toBeVisible();
+  const coordinates = () => form.locator('input:not([type="checkbox"]), select').evaluateAll(elements =>
+    elements.filter(element => element.getClientRects().length).map(element =>
+      Math.round(element.getBoundingClientRect().top - element.closest("form")!.getBoundingClientRect().top)));
+  const before = await coordinates();
+  await form.locator('[data-field="name"]').fill("Александр Иванов");
+  await form.locator('[data-field="birth"]').fill("1880");
+  await form.getByRole("checkbox", { name: "Дата рождения по старому стилю" }).check();
+  expect(await coordinates()).toEqual(before);
+  await form.locator('[data-field="birth"]').fill("не дата");
+  await form.locator('[data-field="death"]').focus();
+  await expect(form.locator('[data-field="birth"]')).toHaveAttribute("aria-invalid", "true");
+  expect(await coordinates()).toEqual(before);
+  await form.locator('.person-date-group').first().getByLabel("Место", { exact: true }).fill("Неизвестное место");
+  await form.locator('[data-field="death"]').focus();
+  await expect(form.locator(".place-input-notice").first()).toContainText("Название сохранится");
+  expect(await coordinates()).toEqual(before);
+  await page.screenshot({ path: info.outputPath("stable-editor-hints.png") });
+});
+
 test("событие, образование и источник открываются по центру и применяются только через Готово", async ({ page }, info) => {
   const read = await editor(page);
   const form = page.locator(".person-editor-form");

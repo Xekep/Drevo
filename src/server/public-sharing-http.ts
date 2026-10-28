@@ -77,7 +77,7 @@ export function publicSharingHttp({
           const requested = url.searchParams.get("variant");
           const bytes = await previewImage(
             { path: file.path, cacheKey: file.name },
-            requested === "tiny" || requested === "avatar" ? requested : "thumb",
+            requested === "tiny" || requested === "avatar" || requested === "print" ? requested : "thumb",
           );
           const access = await portraitAccess();
           if (access !== 200)

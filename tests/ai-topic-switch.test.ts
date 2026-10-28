@@ -19,13 +19,17 @@ test("switching from archive research to a standalone greeting does not force a 
   let phase = "archive",
     greetingCalls = 0,
     namedId = "";
-  const providerRequests: Array<{ phase: string; input: unknown }> = [];
+  const providerRequests: Array<{ phase: string; input: unknown; instructions: string; conversation: string }> = [];
   const fake: typeof fetch = async (url, init) => {
     if (String(url).endsWith("/conversations"))
       return Response.json({ id: "conv-topic" });
     const body = JSON.parse(String(init?.body));
-    providerRequests.push({ phase, input: body.input });
+    providerRequests.push({ phase, input: body.input, instructions: body.instructions, conversation: body.conversation });
     if (phase === "archive") {
+      phase = "archive-lookup";
+      return Response.json({ id: "unverified-answer", status: "completed", output_text: "В архиве нет данных." });
+    }
+    if (phase === "archive-lookup") {
       phase = "archive-result";
       return Response.json({
         id: "lookup",
@@ -104,6 +108,9 @@ test("switching from archive research to a standalone greeting does not force a 
       return payload;
     };
     const first = await ask("Сколько людей с датой рождения в архиве?");
+    assert.match(providerRequests[1].instructions, /Предыдущий ответ не был проверен по архиву/);
+    assert.doesNotMatch(JSON.stringify(providerRequests[1].input), /Предыдущий ответ не был проверен по архиву/,
+      "a validation retry is transient instructions, never an additional user message");
     phase = "greeting";
     const continued = await ask(
       "Теперь другая тема: напиши короткое приветствие гостям сайта, без поиска данных.",
@@ -131,6 +138,12 @@ test("switching from archive research to a standalone greeting does not force a 
         ),
       false,
     );
+    const greetingRequest = providerRequests.find(request => request.phase === "greeting")!;
+    assert.match(greetingRequest.instructions, /Текущая задача пользователя/);
+    assert.doesNotMatch(greetingRequest.instructions, /Предыдущий ответ не был проверен по архиву/,
+      "a new turn must not inherit the previous turn's retry instruction");
+    assert.equal(greetingRequest.conversation, providerRequests[0].conversation,
+      "topic changes retain native conversation state instead of guessing what history to delete");
     phase = "archive";
     const returned = await ask(
       "Вернёмся к архиву: сколько людей с датой рождения?",

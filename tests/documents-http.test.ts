@@ -338,7 +338,8 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       assert.equal(part.status, 206);
       assert.equal(part.headers.get("content-range"), `bytes ${start}-${end}/${pdf.length}`);
       assert.equal(part.headers.get("content-length"), String(end - start + 1));
-      assert.equal(part.headers.get("cache-control"), "private, no-store");
+      assert.equal(part.headers.get("cache-control"), "private, no-cache, must-revalidate");
+      assert.equal(part.headers.get("etag"), file.headers.get("etag"));
       assert.deepEqual(Buffer.from(await part.arrayBuffer()), pdf.subarray(start, end + 1));
     }
     const outside = await fetch(`${base}/api/documents/${id}/file`, {
@@ -352,6 +353,18 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     });
     assert.equal(conditional.status, 200);
     assert.deepEqual(Buffer.from(await conditional.arrayBuffer()), pdf);
+    const etag = file.headers.get("etag")!;
+    assert.match(etag, /^"[a-f0-9]{64}"$/);
+    const reused = await fetch(`${base}/api/documents/${id}/file`, {
+      headers: { "If-None-Match": etag },
+    });
+    assert.equal(reused.status, 304);
+    assert.equal((await reused.arrayBuffer()).byteLength, 0);
+    const sameRange = await fetch(`${base}/api/documents/${id}/file`, {
+      headers: { Range: "bytes=0-63", "If-Range": etag },
+    });
+    assert.equal(sameRange.status, 206);
+    assert.deepEqual(Buffer.from(await sameRange.arrayBuffer()), pdf.subarray(0, 64));
 
     const annotationUrl = `${base}/api/documents/${id}/annotations`;
     const selection = {

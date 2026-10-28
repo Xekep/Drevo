@@ -25,7 +25,7 @@ import {
   type PreparationAdmission,
 } from "./preparation-admission.ts";
 import { documentReferenceStore } from "./document-reference-store.ts";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream, mkdirSync } from "node:fs";
 import { open, rename, stat, statfs, unlink } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -1895,16 +1895,25 @@ export function documentsHttp({
             res.end(bytes);
           });
         }
-        const range = req.headers["if-range"]
+        // Originals are immutable. Revalidate every reuse through deliverFile:
+        // logout, narrowed membership and document removal still revoke access.
+        const etag = `"${createHash("sha256").update(`${row.file_name}:${info.size}:${info.mtimeMs}`).digest("hex")}"`;
+        const range = req.headers["if-range"] && req.headers["if-range"] !== etag
           ? undefined
           : httpByteRange(req.headers.range, info.size);
         const headers = {
           "Content-Type": fileType.mime,
           "Content-Disposition": `inline; filename="document.${fileType.extension}"`,
           "X-Content-Type-Options": "nosniff",
-          "Cache-Control": "private, no-store",
+          "Cache-Control": "private, no-cache, must-revalidate",
+          ETag: etag,
+          Vary: "Cookie",
           "Accept-Ranges": "bytes",
         };
+        if (!req.headers.range && req.headers["if-none-match"]?.split(",").some(value =>
+          value.trim().replace(/^W\//, "") === etag || value.trim() === "*")) {
+          return await deliver(() => { res.writeHead(304, headers).end(); });
+        }
         if (range === "unsatisfiable") {
           return await deliver(() => {
             res

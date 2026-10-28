@@ -318,7 +318,8 @@ export function mediaHttp({
       requested === "tiny" ||
       requested === "avatar" ||
       requested === "thumb" ||
-      requested === "display"
+      requested === "display" ||
+      requested === "print"
         ? requested
         : null;
 

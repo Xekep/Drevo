@@ -4,7 +4,7 @@ import { join } from "node:path";
 const DAY = 86_400_000;
 const uuid = "[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}";
 const generatedPreview = new RegExp(
-  `^(?:[a-f0-9]{64}|file-(?:${uuid}|[a-f0-9]{64})\\.(?:jpe?g|png|gif|webp))-(?:tiny|avatar|thumb|display|ai)-v[0-9]+\\.(?:webp|jpg)$`,
+  `^(?:[a-f0-9]{64}|file-(?:${uuid}|[a-f0-9]{64})\\.(?:jpe?g|png|gif|webp))-(?:tiny|avatar|thumb|display|ai|print)-v[0-9]+\\.(?:webp|jpg)$`,
 );
 const generatedManifest = /^[a-f0-9]{64}-v[0-9]+\.json$/;
 
