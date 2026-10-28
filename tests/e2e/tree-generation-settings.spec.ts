@@ -213,10 +213,15 @@ test("generation settings trim the visible tree and survive reload without chang
     .getByRole("switch", { name: "Ограничить видимое древо" })
     .uncheck();
   await expect(anchorStatus).toHaveCount(0);
-  await expect(card("e2e-sibling-child")).toBeVisible();
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("data-layout-people", "6");
   await expect(
     dialog.getByRole("combobox", { name: "Относительно человека" }),
   ).toHaveCount(0);
+  // Removing a scope restores all six layout nodes, while preserving the
+  // camera. Mobile viewport culling can keep a restored branch out of DOM.
+  await dialog.getByRole("button", { name: "Закрыть" }).click();
+  await page.getByRole("button", { name: "Вписать видимую часть древа" }).click();
+  await expect(card("e2e-sibling-child")).toBeVisible();
   const family = await (await page.request.get("/api/family")).json();
   expect(family.family.people).toHaveLength(6);
   expect(
