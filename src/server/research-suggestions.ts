@@ -13,6 +13,28 @@ import { authorizeArchive } from "./permissions.ts";
 import { isArchiveOwner } from "../domain/access.ts";
 import { ConflictError } from "./archive-errors.ts";
 
+export const SHOW_PENDING_SUGGESTIONS_TOOL = {
+  name: "show_pending_suggestions",
+  description: "Показать кнопки принятия/отклонения существующих ожидающих предложений. Без suggestionIds ищет только предложения текущего диалога; явные suggestionIds выбирают до восьми доступных предложений. Ничего не применяет: текстовое согласие пользователя не заменяет нажатие кнопки. Не вызывай для согласия на другие действия, например показ фото.",
+  inputSchema: {
+    type: "object",
+    properties: { suggestionIds: { type: "array", items: { type: "string", minLength: 1, maxLength: 200 }, minItems: 1, maxItems: 8 } },
+    additionalProperties: false,
+  },
+} as const;
+
+export function pendingSuggestionSelection(value: unknown, currentChatIds: readonly string[]) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+    Object.keys(value).some(key => key !== "suggestionIds"))
+    throw new Error("Укажите предложения текущего диалога или их идентификаторы");
+  const ids = (value as { suggestionIds?: unknown }).suggestionIds;
+  if (ids === undefined) return { explicit: false, ids: [...new Set(currentChatIds)].slice(-8) };
+  if (!Array.isArray(ids) || ids.length < 1 || ids.length > 8 ||
+    ids.some(id => typeof id !== "string" || !id.trim() || id.length > 200 || /[\p{Cc}]/u.test(id)))
+    throw new Error("Укажите от одного до восьми идентификаторов предложений");
+  return { explicit: true, ids: [...new Set((ids as string[]).map(id => id.trim()))] };
+}
+
 const PERSON_UPDATE_FIELDS = [
   "surname",
   "name",
@@ -95,7 +117,7 @@ export type ResearchSuggestion =
       payload: RelationSuggestionPayload;
     });
 
-export const PERSON_UPDATE_PROPOSAL_TOOL = {
+const PERSON_UPDATE_PROPOSAL_TOOL = {
   name: "propose_person_update",
   description:
     "Создать предложение изменения карточки человека для ручного подтверждения. Архив не меняется до нажатия человеком «Принять».",
@@ -134,7 +156,7 @@ export const PERSON_UPDATE_PROPOSAL_TOOL = {
   },
 } as const;
 
-export const PERSON_CREATE_PROPOSAL_TOOL = {
+const PERSON_CREATE_PROPOSAL_TOOL = {
   name: "propose_person_create",
   description:
     "Создать предложение новой карточки человека для ручного подтверждения. Карточка появится в архиве только после нажатия человеком «Принять».",
@@ -168,7 +190,7 @@ export const PERSON_CREATE_PROPOSAL_TOOL = {
   },
 } as const;
 
-export const SOURCE_PROPOSAL_TOOL = {
+const SOURCE_PROPOSAL_TOOL = {
   name: "propose_source",
   description:
     "Предложить добавить источник к карточке человека. Источник сохраняется только после ручного подтверждения.",
@@ -200,7 +222,7 @@ export const SOURCE_PROPOSAL_TOOL = {
   },
 } as const;
 
-export const RELATION_PROPOSAL_TOOL = {
+const RELATION_PROPOSAL_TOOL = {
   name: "propose_relation",
   description:
     "Предложить родственную или дополнительную связь между двумя существующими людьми. Связь создаётся только после ручного подтверждения.",

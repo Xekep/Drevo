@@ -229,9 +229,19 @@ export function generatedResearchFileStore(
       if (!(await regularDirectory(root)) || !(await regularDirectory(path))) return null;
       let handle;
       try {
-        handle = await open(join(path, id), constants.O_RDONLY | constants.O_NOFOLLOW);
-        const stat = await handle.stat();
-        if (!stat.isFile() || stat.size !== meta.size) return null;
+        const filePath = join(path, id);
+        // O_NOFOLLOW is ignored by Windows. Check the path independently and
+        // bind its identity to the opened descriptor before reading any bytes.
+        // BigInt preserves NTFS file indices which can exceed Number precision.
+        const before = await lstat(filePath, { bigint: true });
+        if (!before.isFile() || before.isSymbolicLink() || before.size !== BigInt(meta.size)) return null;
+        handle = await open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+        const opened = await handle.stat({ bigint: true });
+        const current = await lstat(filePath, { bigint: true });
+        if (!opened.isFile() || !current.isFile() || current.isSymbolicLink() ||
+          opened.size !== BigInt(meta.size) || current.size !== opened.size ||
+          before.dev !== opened.dev || before.ino !== opened.ino ||
+          current.dev !== opened.dev || current.ino !== opened.ino) return null;
         const bytes = await handle.readFile();
         return bytes.length === meta.size ? bytes : null;
       } catch (error) {

@@ -9,7 +9,6 @@ function keyFile(db: SecretDatabase) {
   const file = db.file;
   return file ? file + ".secrets.key" : "";
 }
-
 function readKeyFile(path: string) {
   if (!existsSync(path)) return null;
   const key = readFileSync(path);
@@ -86,8 +85,4 @@ export function decryptAiSecret(db: SecretDatabase, value: string) {
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString(
     "utf8",
   );
-}
-
-export function aiSecretKeyPath(db: SecretDatabase) {
-  return keyFile(db) || null;
 }

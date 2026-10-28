@@ -192,25 +192,6 @@ export const RESEARCH_RESOURCES_TOOL = {
   },
 } as const;
 
-export function specificResourceRequest(message: string) {
-  return (
-    /(?:дай|покажи|найди|пришли|скинь|где)/iu.test(message) &&
-    /(?:ссылк|сайт|ресурс|цифров.{0,30}кладбищ|онлайн.{0,30}кладбищ|каталог)/iu.test(
-      message,
-    )
-  );
-}
-
-export function resourceMarkdown(resource: {
-  name: string;
-  url: string;
-  description: string;
-}) {
-  const name = resource.name.replaceAll("[", "\\[").replaceAll("]", "\\]");
-  const url = resource.url.replaceAll("(", "%28").replaceAll(")", "%29");
-  return `- [${name}](${url}) — ${resource.description.replace(/\s*\n\s*/g, " ")}`;
-}
-
 export const CONTROL_VIEW_TOOL = {
   name: "control_archive_view",
   description:
@@ -541,7 +522,7 @@ export function collectPersonReferences(
     collectPersonReferences(item, people, ids);
 }
 
-export function commonPrefixLength(left: string, right: string) {
+function commonPrefixLength(left: string, right: string) {
   let index = 0;
   while (
     index < left.length &&

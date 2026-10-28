@@ -1,10 +1,12 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
+import { archiveTargetAt } from "../domain/archive-links.ts";
+import type { ArchiveTreeFragment, TreeFragmentRequest } from "../shared/tree-fragment.ts";
 import { isFragmentThreshold } from "../domain/tree-fragment.ts";
 import {
   archiveContextAt,
   memberPreviewAt,
 } from "../domain/archive-context.ts";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   validateFamily,
   archiveChanges,
@@ -77,7 +79,10 @@ function treePreferencesFromResponse(data: {
     : readGuestTreePreferences(preferences);
 }
 
-export function useArchive(enabled = true) {
+export function useArchive(enabled = true, initialFragments = true) {
+  const initialFragmentRequest = useRef(initialFragments);
+  initialFragmentRequest.current = initialFragments;
+  const reloadAnchor = useRef<string | undefined>(undefined);
   const [treePreferences, setTreePreferences] = useState<TreePreferences>(() =>
     memberPreviewAt(window.location.pathname)
       ? { ...DEFAULT_TREE_PREFERENCES }
@@ -89,6 +94,8 @@ export function useArchive(enabled = true) {
     [canEdit, setCanEdit] = useState(false),
     [busy, setBusy] = useState(false),
     [attempt, setAttempt] = useState(0);
+  const initialTreePreferencesRequest = useRef(treePreferences);
+  initialTreePreferencesRequest.current = treePreferences;
   const [user, setUser] = useState<ArchiveUser | null>(null);
   const [readTree, setReadTree] = useState(true),
     [readPhotos, setReadPhotos] = useState(true);
@@ -115,6 +122,8 @@ export function useArchive(enabled = true) {
     peopleComplete: boolean;
     photosComplete: boolean;
     projectionGeneration: number;
+    fragment: ArchiveTreeFragment | null;
+    graphComplete: boolean;
   } | null>(null);
   const publishDetailsView = useCallback(
     (reader: DetailsReader, refreshed = false) => {
@@ -128,12 +137,36 @@ export function useArchive(enabled = true) {
         peopleComplete: reader.isComplete("people"),
         photosComplete: reader.isComplete("photos"),
         projectionGeneration: reader.projectionGeneration(),
+        fragment: reader.fragment(),
+        graphComplete: reader.hasOverview(),
       }));
     },
     [],
   );
   const snapshot = useRef<Family | null>(null),
     history = useRef<Change[][]>([]);
+  const committedFamily = useRef<Family | null>(null);
+  const overviewCommits = useRef<Array<{ reader: DetailsReader; epoch: number; resolve: () => void; reject: (reason: Error) => void }>>([]);
+  const waitForOverviewCommit = useCallback((reader: DetailsReader, epoch: number) => {
+    if (details.current !== reader || accessEpoch.current !== epoch || accessClosed.current)
+      return Promise.reject(new ArchiveDetailsAccessError("Доступ к архиву изменился"));
+    if (reader.hasOverview() && snapshot.current === committedFamily.current) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => overviewCommits.current.push({ reader, epoch, resolve, reject }));
+  }, []);
+  useLayoutEffect(() => {
+    committedFamily.current = family;
+    overviewCommits.current = overviewCommits.current.filter(waiter => {
+      if (details.current !== waiter.reader || accessEpoch.current !== waiter.epoch || accessClosed.current) {
+        waiter.reject(new ArchiveDetailsAccessError("Доступ к архиву изменился")); return false;
+      }
+      if (waiter.reader.hasOverview() && family === snapshot.current) { waiter.resolve(); return false; }
+      return true;
+    });
+  }, [family]);
+  useEffect(() => () => {
+    for (const waiter of overviewCommits.current) waiter.reject(new DOMException("Загрузка отменена", "AbortError"));
+    overviewCommits.current = [];
+  }, []);
   const [undoCount, setUndoCount] = useState(0);
   const [undoRemovesPerson, setUndoRemovesPerson] = useState(false);
   const publishHistory = useCallback(() => {
@@ -161,7 +194,12 @@ export function useArchive(enabled = true) {
     const timeout = setTimeout(() => controller.abort(), 60000);
     async function load() {
       try {
+        const target = reloadAnchor.current ? { kind: "person", id: reloadAnchor.current }
+          : archiveTargetAt(window.location.pathname, window.location.search);
         const response = await archiveFetch("/api/family?projection=overview", {
+          headers: initialFragmentRequest.current && initialTreePreferencesRequest.current.presentation !== "depth" ? { "X-Drevo-Fragment": "auto",
+            "X-Drevo-Fragment-Threshold": String(initialTreePreferencesRequest.current.fragmentThreshold ?? 500),
+            ...(target?.kind === "person" ? { "X-Drevo-Fragment-Anchor": encodeURIComponent(target.id) } : {}) } : undefined,
           signal: controller.signal,
           cache: "no-store",
         });
@@ -197,6 +235,7 @@ export function useArchive(enabled = true) {
           throw new Error("Архив недоступен");
         if (response.ok && json) {
           const initial = await response.json();
+          if (reloadAnchor.current === target?.id) reloadAnchor.current = undefined;
           const result = initial as ArchiveHeader;
           const data = validateFamily(result.family);
           if (current()) {
@@ -537,6 +576,8 @@ export function useArchive(enabled = true) {
   );
   const save = useCallback(
     (data: Family) => {
+      if (details.current && !details.current.hasOverview())
+        return Promise.reject(new Error("Дождитесь загрузки связей архива перед редактированием."));
       const next = validateFamily(data),
         base = snapshot.current;
       if (!base)
@@ -556,7 +597,8 @@ export function useArchive(enabled = true) {
     [write],
   );
   const upload = useCallback(
-    (file: File, metadata?: PhotoMetadata) => {
+    async (file: File, metadata?: PhotoMetadata) => {
+      await details.current?.ensureOverview();
       setCommittedUploadNotice("");
       return write("/api/photos", file, {
         "Content-Type": file.type,
@@ -645,17 +687,20 @@ export function useArchive(enabled = true) {
   }, [write, publishHistory]);
   const saveTreePreferences = useCallback(
     async (value: TreePreferences) => {
+      if (value.presentation === "depth") await details.current?.ensureOverview();
       if (memberPreviewAt(window.location.pathname)) {
         // Inspect the same controls without changing either participant's
         // saved preferences or the owner's guest browser preferences.
         const preview = { ...value };
         if (preview.generationLimits === null) delete preview.generationLimits;
         setTreePreferences(preview);
+        details.current?.setFragmentThreshold(preview.fragmentThreshold ?? 500);
         return preview;
       }
       if (!user?.approved) {
         writeGuestTreePreferences(value);
         setTreePreferences(value);
+        details.current?.setFragmentThreshold(value.fragmentThreshold ?? 500);
         return value;
       }
       const response = await archiveFetch("/api/tree-preferences", {
@@ -671,6 +716,7 @@ export function useArchive(enabled = true) {
         user,
       });
       setTreePreferences(saved);
+      details.current?.setFragmentThreshold(saved.fragmentThreshold ?? 500);
       return saved;
     },
     [user],
@@ -753,6 +799,15 @@ export function useArchive(enabled = true) {
     if (!result) throw new Error("Архив недоступен");
     return result;
   }, [withDetailsRead]);
+  const ensureOverview = useCallback(async () => {
+    const reader = details.current, epoch = accessEpoch.current;
+    await withDetailsRead(reader => reader.ensureOverview(), true);
+    if (reader) await waitForOverviewCommit(reader, epoch);
+  }, [withDetailsRead, waitForOverviewCommit]);
+  const loadTreeFragment = useCallback(async (request: TreeFragmentRequest) => {
+    await withDetailsRead(reader => reader.loadFragment(request), true);
+  }, [withDetailsRead]);
+  const hasOverview = useCallback(() => details.current?.hasOverview() ?? true, []);
   const exportWarnings = useCallback(async (ids: string[], signal?: AbortSignal) => {
     const result = await withDetailsRead(reader => reader.exportWarnings(ids, signal));
     if (!result) throw new Error("Архив недоступен");
@@ -775,6 +830,11 @@ export function useArchive(enabled = true) {
   );
   const currentFamily = useCallback(() => snapshot.current, []);
   return {
+    treeFragment: detailsView?.fragment || null,
+    graphComplete: detailsView?.graphComplete ?? true,
+    hasOverview,
+    ensureOverview,
+    loadTreeFragment,
     loadDetails,
     loadGallery,
     exportWarnings,
@@ -845,7 +905,8 @@ export function useArchive(enabled = true) {
           : "Права просмотра архива изменились. Откройте архив заново.",
       );
     },
-    reload: () => {
+    reload: (anchorId?: string) => {
+      reloadAnchor.current = anchorId;
       setCommittedUploadNotice("");
       setAttempt((n) => n + 1);
     },

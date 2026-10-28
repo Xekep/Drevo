@@ -127,7 +127,7 @@ test("research catalog migrates the supplied list once and limits contextual sug
   }
 });
 
-test("specific resource request returns catalog URLs and links from descriptions as Markdown", async () => {
+test("model-selected catalog lookup retains links and the other part of a mixed answer", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-research-direct-"));
   process.env.YANDEX_AI_API_KEY = "test-key";
   process.env.YANDEX_AI_FOLDER_ID = "folder-1";
@@ -138,11 +138,16 @@ test("specific resource request returns catalog URLs and links from descriptions
     join(dir, "archive.sqlite"),
     true,
     undefined,
-    adaptLegacyAiFake(async () => {
+    adaptLegacyAiFake(async (_url, init) => {
       providerCalls++;
-      throw new Error(
-        "A specific catalog link should not require a model call",
-      );
+      if (providerCalls === 1) return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [
+        { id: "catalog-link", type: "function", function: { name: "find_research_resources", arguments: '{"query":"цифровое кладбище режевское"}' } },
+        { id: "archive-count", type: "function", function: { name: "get_archive_insights", arguments: '{}' } },
+      ] } }] });
+      const body = JSON.parse(String(init?.body));
+      const resource = JSON.parse(body.messages.find((item: { tool_call_id: string }) => item.tool_call_id === "catalog-link").content).resources.find((item: { name: string }) => item.name === "Цифровое кладбище Режа");
+      const archive = JSON.parse(body.messages.find((item: { tool_call_id: string }) => item.tool_call_id === "archive-count").content);
+      return Response.json({ choices: [{ message: { role: "assistant", content: `[${resource.name}](${resource.url}) — ${resource.description}\n\nЛюдей в архиве: ${archive.totals.people}.` } }] });
     }),
   );
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
@@ -164,11 +169,12 @@ test("specific resource request returns catalog URLs and links from descriptions
     const response = await fetch(`${base}/api/ai/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "дай мне цифровое кладбище режевское" }),
+      body: JSON.stringify({ message: "дай мне цифровое кладбище режевское и скажи, сколько людей в архиве" }),
     });
     assert.equal(response.status, 200);
     const data = await response.json();
-    assert.equal(providerCalls, 0);
+    assert.equal(providerCalls, 2);
+    assert.match(data.answer, /Людей в архиве: 0/);
     assert.match(
       data.answer,
       /\[Цифровое кладбище Режа\]\(https:\/\/example\.org\/rezh\)/,

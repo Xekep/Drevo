@@ -26,7 +26,7 @@ export function newestPhotos(photos: ArchivePhoto[]) {
 }
 export function photoAlbums(
   photos: ArchivePhoto[],
-  people: Person[],
+  people: Pick<Person, "id" | "surname" | "name" | "patronymic">[],
   mode: "people" | "years",
 ): PhotoAlbum[] {
   const names = new Map(people.map((p) => [p.id, fullName(p)])),

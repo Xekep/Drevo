@@ -65,25 +65,17 @@ export async function applyPortablePackage(
     // Retain the issuing session through the whole import. Files have already
     // been copied outside this transaction and will be undone on denial.
     await assertSession(archive.db);
-    const result = await archive.write(
-      installed.snapshot.family,
-      revision,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      async (transaction) => {
+    const result = await archive.write(installed.snapshot.family, revision, undefined, {
+      afterWrite: async (transaction) => {
         // This guard retains the membership and owner using NOWAIT, so a
         // concurrent account/access revocation cannot form a lock-order cycle.
         await assertCurrentArchiveActor(transaction, actor);
-        if (!isArchiveOwner(actor))
-          throw new ForbiddenError("Недостаточно прав для импорта");
+        if (!isArchiveOwner(actor)) throw new ForbiddenError("Недостаточно прав для импорта");
         if (transaction.kind === "postgres") {
           const owner = await transaction
             .prepare("", "SELECT 1 FROM archive_owners WHERE user_id=?")
             .get(actor.id);
-          if (!owner)
-            throw new ForbiddenError("Импорт доступен владельцу древа");
+          if (!owner) throw new ForbiddenError("Импорт доступен владельцу древа");
         }
         if (await portableStoreOccupied(transaction))
           throw new ConflictError("Импорт возможен только в пустое древо");
@@ -105,12 +97,7 @@ export async function applyPortablePackage(
           throw new ForbiddenError("Базовый доступ ограничен 150 людьми");
         for (const file of installed.copies) {
           if (!documentFiles.has(file.name))
-            await recordMediaOriginal(
-              transaction,
-              file.url,
-              file.size,
-              actor.id,
-            );
+            await recordMediaOriginal(transaction, file.url, file.size, actor.id);
         }
         for (const document of installed.snapshot.documents) {
           const size = sizes.get(document.fileName);
@@ -177,14 +164,14 @@ export async function applyPortablePackage(
           revision + 1,
         );
       },
-      async (transaction) => {
+      beforeWrite: async (transaction) => {
         // archive.write holds the archive row here. Compare the final quota
         // with the same locked snapshot after replacing imported records.
         measuredAt = Date.now();
         previousMediaBytes = await postgresMediaBytes(transaction, measuredAt);
       },
-      { withinTransaction: true },
-    );
+      withinTransaction: true,
+    });
     // Expiration can pass while importing many records even though the row is
     // locked. Recheck immediately before the enclosing transaction commits.
     await assertSession(archive.db);

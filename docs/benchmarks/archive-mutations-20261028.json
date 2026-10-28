@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-28",
+  "environment": "Windows, local disposable PostgreSQL 16.2, ordinary NOSUPERUSER/NOBYPASSRLS role, production HTTP runtime",
+  "fixture": {
+    "people": 1001,
+    "fullSnapshotUtf8Bytes": 16837616,
+    "contains": "Synthetic biographies and events; no production data"
+  },
+  "mutation": "One atomic batch: parent addition, new ancestor, event, source, union and additional relationship",
+  "measurements": [
+    {
+      "httpMilliseconds": 317,
+      "resultSetJsonBytes": 283641,
+      "resultRows": 2006,
+      "resultSetQueries": 7,
+      "responseJsonCharacters": 941
+    },
+    {
+      "httpMilliseconds": 226,
+      "resultSetJsonBytes": 283641,
+      "resultRows": 2006,
+      "resultSetQueries": 7,
+      "responseJsonCharacters": 941
+    }
+  ],
+  "method": "tests/integration/postgres-live-changes.ts. archive.read and archive.write throw during HTTP delta/undo. Counts JSON serialization of .all() result sets only, excluding .get(), wire protocol overhead and INSERT/UPDATE commands. Each measurement uses a new disposable database. These are individual local measurements, not throughput/load benchmarks or a measured speedup against the previous implementation.",
+  "fragmentProtocol": {
+    "test": "tests/integration/postgres-fragment-http.ts, called by postgres-live-changes.ts",
+    "archivePeople": 1001,
+    "authorizedPeople": 1000,
+    "initialPeople": 500,
+    "threeWindowDistinctPeople": 1000,
+    "initialResponseUtf8Bytes": 123445,
+    "initialServerMilliseconds": 75,
+    "navigationServerMilliseconds": [48, 43],
+    "referenceOutsideWindow": true,
+    "privateAnchorAndMissingAnchor": "identical 404",
+    "smallScope": "1 authorized person does not activate a fragment despite 1001 global people",
+    "limitations": "One local synthetic PostgreSQL 16.2 run, not a concurrent throughput benchmark. Full snapshots/overviews are forbidden by throwing spies during active-fragment requests."
+  },
+  "verified": [
+    "Full archive hydration and replacement cannot run during current-revision minimal delta writes",
+    "Untouched person JSON and photo records are preserved",
+    "Inverse history reconstructs all records and fields",
+    "Stale conflicting fields return 409; cycles and foreign catalog IDs roll back",
+    "Scoped HTTP writes cannot expose hidden media or modify another author's card",
+    "Scoped source undo works after the upload grant is released",
+    "Independent concurrent writes both commit; conflicting values are rejected",
+    "People growth obeys the archive owner's tier and rolls back over-quota writes"
+  ]
+}

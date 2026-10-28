@@ -1,12 +1,14 @@
 import { enforceUserStorageLimit } from "./storage-limits.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser } from "../domain/access.ts";
-import type { Family, Person } from "../domain/types.ts";
+import type { Family, Person, Source } from "../domain/types.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { allCitations, personCitations, unionCitations } from "./source-catalog-store.ts";
 import { ForbiddenError } from "./users.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
+import { postgresVisibleCitationMediaSql, sqliteVisibleCitationMediaSql } from "./media-reference-sql.ts";
+import { parseCatalogSource } from "../shared/source-catalog.ts";
 
 /** Provenance for a newly uploaded file before it is attached to a card. */
 export async function registerMediaUpload(
@@ -73,6 +75,7 @@ export async function authorizeMediaReferences(
   before: Family,
   after: Family,
   user: ArchiveUser,
+  options: { persistedVisibleIds?: ReadonlySet<string> } = {},
 ) {
   if (!isScopedUser(user)) return;
   const visible = projectFamilyForUser(before, user);
@@ -86,8 +89,49 @@ export async function authorizeMediaReferences(
     ...allCitations(visible).map((source) => citationUrl(source.url))
       .filter((url): url is string => !!url),
   ]);
+  // Delta writes carry full citation/album records only for their targets.
+  // Resolve a newly attached URL against the current persisted visibility,
+  // without hydrating every album or every visible person's biography/sources.
+  const persistedAllowed = async (url: string) => {
+    if (!options.persistedVisibleIds) return false;
+    const ids = JSON.stringify([...options.persistedVisibleIds]);
+    if (await db.prepare(
+      `SELECT 1 FROM photos p WHERE json_extract(p.data,'$.url')=?
+        AND (json_extract(p.data,'$.createdBy')=? OR EXISTS (SELECT 1 FROM photo_tags t
+          WHERE t.photo_id=p.id AND t.person_id IN (SELECT value FROM json_each(?)))) LIMIT 1`,
+      `SELECT 1 FROM photos p WHERE p.media_url=?
+        AND (p.data->>'createdBy'=? OR EXISTS (SELECT 1 FROM photo_tags t
+          WHERE t.photo_id=p.id AND t.person_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb)))) LIMIT 1`,
+    ).get(url, user.id, ids)) return true;
+    const match = await db.prepare(sqliteVisibleCitationMediaSql, postgresVisibleCitationMediaSql).get(ids, url);
+    if (match?.catalog_data) {
+      const catalog = parseCatalogSource(JSON.parse(String(match.catalog_data)));
+      if (!catalog) throw new Error("Повреждён источник в каталоге");
+      const citation = JSON.parse(String(match.citation)) as Source;
+      if (citation.documentId && !catalog.documentIds.includes(citation.documentId))
+        throw new Error("Документ цитаты отсутствует у источника");
+    }
+    return !!match;
+  };
+  const ownInverseValues = async (personId: string, field: "photo" | "sources") =>
+    await db.prepare(
+      `SELECT json_extract(c.value,'$.after') AS value FROM history h,
+        json_each(h.data,'$.changes') c WHERE json_extract(h.data,'$.format')='drevo-archive-changes-v1'
+        AND EXISTS (SELECT 1 FROM json_each(h.data,'$.owners') o WHERE o.key=? AND o.value=?)
+        AND json_extract(c.value,'$.collection')='people' AND json_extract(c.value,'$.id')=?
+        AND json_extract(c.value,'$.field')=?`,
+      `SELECT c.value->>'after' AS value FROM history h
+        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(h.data->'changes','[]'::jsonb)) c(value)
+        WHERE h.data->>'format'='drevo-archive-changes-v1' AND h.data->'owners'->>?=?
+          AND c.value->>'collection'='people' AND c.value->>'id'=? AND c.value->>'field'=?`,
+    ).all(personId, user.id, personId, field);
+  const inverseSource = async (personId: string, url: string) =>
+    (await ownInverseValues(personId, "sources")).some(row => {
+      const sources: Source[] | null = row.value ? JSON.parse(String(row.value)) : null;
+      return Array.isArray(sources) && sources.some(source => citationUrl(source.url) === url);
+    });
   const ownHistoricalPersonSource = async (personId: string, url: string) =>
-    !!(await db.prepare(
+    await inverseSource(personId, url) || !!(await db.prepare(
       `SELECT 1 FROM media_originals m WHERE m.url=? AND m.uploaded_by=?
        AND EXISTS (
          SELECT 1 FROM history h,json_each(h.data,'$.people') p,
@@ -119,13 +163,14 @@ export async function authorizeMediaReferences(
     if (
       url?.startsWith("/media/") &&
       !allowed.has(url) &&
+      !(await persistedAllowed(url)) &&
       !(await ownsPendingMedia(db, url, user.id))
     ) {
-      // Scoped writes keep full snapshots: undo may restore the owner's prior
-      // portrait after a temporary upload grant expires.
+      // Inverse journals prove the card owner as well as its previous field.
+      // Full snapshots are read only for restoration from older releases.
       if (
         previousPerson?.createdBy === user.id &&
-        (await db
+        ((await ownInverseValues(previousPerson.id, "photo")).some(row => row.value === url) || await db
           .prepare(
             `
         SELECT 1 FROM history h,json_each(h.data,'$.people') p

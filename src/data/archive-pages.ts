@@ -1,6 +1,7 @@
 import type { Family } from "../domain/types.ts";
 import { personDetails } from "../domain/archive-projection.ts";
 import type { FamilyInsights } from "../domain/family-insights.ts";
+import type { ArchiveTreeFragment } from "../shared/tree-fragment.ts";
 export type ArchivePageHeader = {
   family: Family;
   revision: number;
@@ -8,6 +9,9 @@ export type ArchivePageHeader = {
   pageToken?: string;
   totals?: { people: number; photos: number };
   insights?: FamilyInsights;
+  fragment?: ArchiveTreeFragment;
+  /** A fragment can retain its view after another section demands all IDs. */
+  graphComplete?: boolean;
 };
 
 /** Не заставляем React пересобирать весь архив после каждой сетевой страницы. */

@@ -707,15 +707,6 @@ export function createKinshipBaseAnalyzer(
   return (a: Person, b: Person) => analyzePreparedKinship(a, b, graph);
 }
 
-export function analyzeKinship(
-  a: Person,
-  b: Person,
-  people: Person[],
-  links: FamilyLink[] = [],
-): Relation {
-  return createKinshipBaseAnalyzer(people, links)(a, b);
-}
-
 function analyzePreparedKinship(
   a: Person,
   b: Person,

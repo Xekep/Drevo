@@ -36,6 +36,9 @@ import { researchRequestBody } from "./research-request-body.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
 import { WorkQueueBusyError } from "./work-queue.ts";
+import { archiveFragmentReader, parseTreeFragmentRequest } from "./archive-fragment.ts";
+import { DEFAULT_FRAGMENT_THRESHOLD, isFragmentThreshold } from "../domain/tree-fragment.ts";
+import type { ArchiveTreeFragment } from "../shared/tree-fragment.ts";
 
 export function archiveQueryHttp({
   archive,
@@ -60,6 +63,7 @@ export function archiveQueryHttp({
 }) {
   const searchPeople = peopleSearchStore(archive.db, archive.cacheBudget);
   const scopedIds = scopedArchiveReader(archive);
+  const fragments = archiveFragmentReader(archive);
   const publicSearchLimiter = createSharedRequestLimiter(
     archive.db,
     "public-people-search",
@@ -196,10 +200,10 @@ export function archiveQueryHttp({
       );
     };
     const canDeliver = async (expectedRevision: number | null) => {
+      await beforeDelivery?.();
       const valid = await archive.db.transaction(async () => {
         return await accessStillCurrent(expectedRevision);
       }, true);
-      await beforeDelivery?.();
       return valid;
     };
     const changed = () =>
@@ -368,9 +372,24 @@ export function archiveQueryHttp({
 
     if (path === "/api/family") {
       const projection = url.searchParams.get("projection");
-      if (req.method !== "GET" && !(req.method === "POST" && projection === "export-warnings")) return false;
+      if (req.method !== "GET" && !(req.method === "POST" && (projection === "export-warnings" || projection === "fragment"))) return false;
       if (!memberCanRead && !access.publicTree && !access.publicAlbums)
         return json(res, 401, { error: "Sign in to view this archive" });
+      if (projection === "fragment") {
+        if (!memberCanRead && !access.publicTree) return json(res, 401, { error: "Войдите для просмотра людей" });
+        if (req.method !== "POST") { res.setHeader("Allow", "POST"); return json(res, 405, { error: "Ожидается POST" }); }
+        let request;
+        try { request = parseTreeFragmentRequest(await researchRequestBody(req, 128 * 1024)); }
+        catch { return json(res, 400, { error: "Некорректный фрагмент древа" }); }
+        const meta = await archive.meta();
+        const readPhotos = memberCanRead || access.publicAlbums;
+        const pageToken = `${meta.revision}:1:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
+        if (url.searchParams.get("token") !== pageToken) return changed();
+        const data = await fragments.read(request, visitor);
+        if (!data) return json(res, 404, { error: "Человек не найден или недоступен" });
+        if (data.revision !== meta.revision) return changed();
+        return deliverArchiveJson({ ...data, totals: { people: data.totals.people, photos: readPhotos ? data.totals.photos : 0 }, pageToken }, undefined, data.revision);
+      }
       if (projection === "timeline" || projection === "export-warnings") {
         const readTree = memberCanRead || access.publicTree, readPhotos = memberCanRead || access.publicAlbums;
         if (!readTree) return json(res, 401, { error: "Войдите для просмотра людей" });
@@ -657,8 +676,48 @@ export function archiveQueryHttp({
       if (projection === "overview") {
         const readTree = memberCanRead || access.publicTree,
           readPhotos = memberCanRead || access.publicAlbums;
-        let data: Awaited<ReturnType<typeof archive.overview>>;
-        if (readTree) {
+        const personalPreferences = visitor ? await treePreferences.read(visitor.id) : null;
+        let data: Awaited<ReturnType<typeof archive.overview>> & { fragment?: ArchiveTreeFragment };
+        const fragmentParameter = url.searchParams.get("fragment"), fragmentHeader = req.headers["x-drevo-fragment"];
+        const thresholdParameter = url.searchParams.get("threshold");
+        const thresholdHeader = req.headers["x-drevo-fragment-threshold"];
+        if ((fragmentParameter !== null && fragmentParameter !== "auto") ||
+            (fragmentHeader !== undefined && fragmentHeader !== "auto") ||
+            (thresholdParameter !== null && (!/^\d{1,5}$/.test(thresholdParameter) || !isFragmentThreshold(Number(thresholdParameter)))) ||
+            (thresholdHeader !== undefined && (typeof thresholdHeader !== "string" || !/^\d{1,5}$/.test(thresholdHeader) ||
+              !isFragmentThreshold(Number(thresholdHeader)) ||
+              (thresholdParameter !== null && thresholdParameter !== thresholdHeader))) ||
+            ["fragment", "threshold", "anchor"].some(key => url.searchParams.getAll(key).length > 1))
+          return json(res, 400, { error: "Некорректные параметры фрагмента" });
+        const activation = Number(personalPreferences?.fragmentThreshold ?? thresholdParameter ??
+          (!visitor?.approved ? thresholdHeader : undefined) ?? DEFAULT_FRAGMENT_THRESHOLD);
+        if (!isFragmentThreshold(activation)) return json(res, 400, { error: "Некорректный порог фрагмента" });
+        let requestedAnchor = url.searchParams.get("anchor") || undefined;
+        if (req.headers["x-drevo-fragment-anchor"] !== undefined) {
+          if (typeof req.headers["x-drevo-fragment-anchor"] !== "string") return json(res, 400, { error: "Некорректный человек" });
+          try {
+            const headerAnchor = decodeURIComponent(req.headers["x-drevo-fragment-anchor"]);
+            if (requestedAnchor && requestedAnchor !== headerAnchor) return json(res, 400, { error: "Неоднозначный человек" });
+            requestedAnchor = headerAnchor;
+          }
+          catch { return json(res, 400, { error: "Некорректный человек" }); }
+        }
+        if (requestedAnchor && !publicPersonId(requestedAnchor)) return json(res, 400, { error: "Некорректный человек" });
+        const automatic = fragmentParameter === "auto" || fragmentHeader === "auto";
+        const meta = readTree && automatic && activation > 0 && personalPreferences?.presentation !== "depth" ? await archive.meta() : null;
+        const authorizedCount = meta ? isScopedUser(visitor) ? (await scopedIds(visitor)).size : meta.people : 0;
+        let anchor = meta && authorizedCount >= activation
+          ? requestedAnchor || await fragments.anchor(visitor, personalPreferences?.generationLimits?.anchorId)
+          : undefined;
+        let fragmentData = anchor ? await fragments.read({ ancestors: 3, descendants: 3, collateral: 1,
+          ...personalPreferences?.generationLimits, anchorId: anchor }, visitor) : null;
+        if (anchor && !fragmentData && requestedAnchor) {
+          anchor = await fragments.anchor(visitor, personalPreferences?.generationLimits?.anchorId);
+          fragmentData = anchor ? await fragments.read({ ancestors: 3, descendants: 3, collateral: 1,
+            ...personalPreferences?.generationLimits, anchorId: anchor }, visitor) : null;
+        }
+        if (fragmentData && fragmentData.totals.people >= activation) data = fragmentData;
+        else if (readTree) {
           if (isScopedUser(visitor)) {
             data = await archive.scopedOverview(visitor);
           } else data = await archive.overview(readTree);
@@ -677,14 +736,12 @@ export function archiveQueryHttp({
             totals: { people: meta.people, photos: meta.photos },
           };
         }
-        const personalPreferences = visitor
-          ? await treePreferences.read(visitor.id)
-          : null;
         const pageToken = `${data.revision}:${Number(readTree)}:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
         const canEdit = await auth.canEdit(req);
         return deliverArchiveJson(
           {
             family: data.family,
+            ...(data.fragment ? { fragment: { ...data.fragment, threshold: activation } } : {}),
             revision: data.revision,
             canEdit,
             local: auth.local && !memberPreviewTarget(req),
@@ -706,7 +763,7 @@ export function archiveQueryHttp({
             },
           },
           undefined,
-          memberCanRead ? startRevision : data.revision,
+          data.fragment ? data.revision : memberCanRead ? startRevision : data.revision,
         );
       }
       const prepared = await snapshot(req, visitor, access);
@@ -773,5 +830,5 @@ export function archiveQueryHttp({
       );
     });
   };
-  return Object.assign(handler, { close: () => searchPeople.close() });
+  return Object.assign(handler, { close: () => { searchPeople.close(); fragments.close(); } });
 }

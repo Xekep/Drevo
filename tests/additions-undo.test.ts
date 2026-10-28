@@ -90,12 +90,9 @@ test("undo identifies all 382 imported IDs even after snapshot history expires a
   try {
     const initial = await archive.read();
     const plan = planAdditions(initial.family, packet(382), "admin");
-    const imported = await archive.write(
-      plan.family,
-      initial.revision,
-      undefined,
-      "import_additions",
-    );
+    const imported = await archive.write(plan.family, initial.revision, undefined, {
+      operation: "import_additions",
+    });
     let current = imported;
     for (let i = 0; i < 51; i++) {
       const next = structuredClone(current.family);
@@ -153,7 +150,9 @@ test("undo blocks ID reuse and cannot select arbitrary revisions or IDs from ano
       planAdditions(current.family, packet(1), "admin").family,
       current.revision,
       undefined,
-      "import_additions",
+      {
+        operation: "import_additions",
+      },
     );
     await assert.rejects(
       planUndoAdditions(other.db, family, imported.revision),

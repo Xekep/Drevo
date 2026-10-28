@@ -538,83 +538,68 @@ export function gedcomHttp(
             {
               ...current.family,
               people: [...current.family.people, ...stage.family.people],
-              links: [
-                ...(current.family.links || []),
-                ...(stage.family.links || []),
-              ],
-              unions: [
-                ...(current.family.unions || []),
-                ...(stage.family.unions || []),
-              ],
-              photos: [
-                ...(current.family.photos || []),
-                ...(stage.family.photos || []),
-              ],
+              links: [...(current.family.links || []), ...(stage.family.links || [])],
+              unions: [...(current.family.unions || []), ...(stage.family.unions || [])],
+              photos: [...(current.family.photos || []), ...(stage.family.photos || [])],
             },
             stage.revision,
             currentActor,
-            "Импорт GEDCOM / XML",
-            undefined,
-            undefined,
-            async (db) => {
-              const consumed = await db
-                .prepare(
-                  "DELETE FROM workflow_stages WHERE kind='gedcom' AND token=? AND actor_id=? AND expires_at>?",
-                  "DELETE FROM workflow_stages WHERE kind='gedcom' AND token=? AND actor_id=? AND expires_at>?",
-                )
-                .run(body.token, actor.id, Date.now());
-              if (!consumed.changes)
-                throw new Error("Предпросмотр уже использован или истёк");
-              for (const file of stage.files) {
-                if (!file.documentId)
-                  await recordMediaOriginal(
-                    db,
-                    `/media/${file.name}`,
-                    file.size,
-                    actor.id,
-                  );
-              }
-              for (const file of stage.files.filter((f) => f.documentId)) {
-                const details = file.document || {
-                  documentType: "",
-                  documentDate: "",
-                  place: "",
-                  description: "",
-                  provenance: "",
-                };
-                await db
+            {
+              operation: "Импорт GEDCOM / XML",
+              afterWrite: async (db) => {
+                const consumed = await db
                   .prepare(
-                    "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "DELETE FROM workflow_stages WHERE kind='gedcom' AND token=? AND actor_id=? AND expires_at>?",
+                    "DELETE FROM workflow_stages WHERE kind='gedcom' AND token=? AND actor_id=? AND expires_at>?",
                   )
-                  .run(
-                    file.documentId!,
-                    file.title,
-                    documentSearchText(file.title, details),
-                    file.name,
-                    file.size,
-                    actor.id,
-                    new Date().toISOString(),
-                    details.documentType,
-                    details.documentDate,
-                    details.place,
-                    details.description,
-                    details.provenance,
-                    JSON.stringify(details.eventLinks || []),
-                    JSON.stringify(details.pages || []),
-                  );
-                for (const id of file.personIds)
+                  .run(body.token, actor.id, Date.now());
+                if (!consumed.changes) throw new Error("Предпросмотр уже использован или истёк");
+                for (const file of stage.files) {
+                  if (!file.documentId)
+                    await recordMediaOriginal(db, `/media/${file.name}`, file.size, actor.id);
+                }
+                for (const file of stage.files.filter((f) => f.documentId)) {
+                  const details = file.document || {
+                    documentType: "",
+                    documentDate: "",
+                    place: "",
+                    description: "",
+                    provenance: "",
+                  };
                   await db
                     .prepare(
-                      "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
-                      "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
+                      "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     )
-                    .run(file.documentId!, id);
-              }
-              if (stage.files.length) {
-                await enforcePostgresMediaQuota(db);
-                await enforceUserStorageLimit(db, actor.id);
-              }
+                    .run(
+                      file.documentId!,
+                      file.title,
+                      documentSearchText(file.title, details),
+                      file.name,
+                      file.size,
+                      actor.id,
+                      new Date().toISOString(),
+                      details.documentType,
+                      details.documentDate,
+                      details.place,
+                      details.description,
+                      details.provenance,
+                      JSON.stringify(details.eventLinks || []),
+                      JSON.stringify(details.pages || []),
+                    );
+                  for (const id of file.personIds)
+                    await db
+                      .prepare(
+                        "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
+                        "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
+                      )
+                      .run(file.documentId!, id);
+                }
+                if (stage.files.length) {
+                  await enforcePostgresMediaQuota(db);
+                  await enforceUserStorageLimit(db, actor.id);
+                }
+              },
             },
           );
           undo = undefined;

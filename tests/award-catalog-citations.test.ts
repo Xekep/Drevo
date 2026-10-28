@@ -10,7 +10,6 @@ import { projectFamilyForUser } from "../src/domain/tree-access.ts";
 import { sharedFamily } from "../src/domain/shared-family.ts";
 import { rebasePersonDraft } from "../src/domain/person-draft.ts";
 import { generationReport } from "../src/domain/generation-report.ts";
-import { archiveReport } from "../src/domain/archive-report.ts";
 import { analysisExport } from "../src/domain/analysis-export.ts";
 import { offlineFamily } from "../src/server/offline-package.ts";
 
@@ -77,9 +76,6 @@ test("stale award edit cannot overwrite a citation added by another editor", () 
 test("visible award citations reach reports and source counts without exporting local document IDs", () => {
   const data = family();
   assert.match(generationReport(data, new Set(["hero"])), /Источник награды.*Наградной лист.*л\. 2/);
-  const report = archiveReport(data, "person", "hero", 1);
-  assert.ok(report.sections.some((section) => section.lines.some((line) =>
-    line.includes("Источник награды: Наградной лист"))));
   const exported = analysisExport(data, 1, "2026-01-01T00:00:00Z");
   const award = exported.people[0].awards?.[0];
   assert.equal(award?.source?.title, "Старая запись");

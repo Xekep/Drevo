@@ -6,10 +6,10 @@ import { candidateEvidence, candidateFuzzyTerms, candidateNameRoleQuery,
 type Row = Record<string, unknown>;
 type Tier = 0 | 1 | 2 | 3 | 4;
 type PageCursor = { v: 2; source: string; ignored: boolean; tier: Tier; key: string[] };
-export const candidatePageSize = 24;
+const candidatePageSize = 24;
 // The approximate tier remains intentionally partial rather than sorting an
 // unbounded public projection; the cursor resumes after the last raw row.
-export const candidateFuzzyScanLimit = 96;
+const candidateFuzzyScanLimit = 96;
 // Every selected consent participates in the query or the caller must refine.
 export const candidateRelativeClueLimit = 32;
 export const candidateRelativeRowLimit = 128;

@@ -7,7 +7,7 @@ import {
 } from "../src/domain/archive-view-projection.ts";
 import { randomFamily } from "./layout-fixtures.ts";
 import type { Family } from "../src/domain/types.ts";
-import { archiveOverview } from "../src/domain/archive-projection.ts";
+import { archiveOverview, PERSON_DETAIL_FIELDS } from "../src/domain/archive-projection.ts";
 import { archiveDetails } from "../src/data/archive-details.ts";
 import { archiveChanges } from "../src/domain/changes.ts";
 import { analyzeFamilyInsights } from "../src/domain/family-insights.ts";
@@ -58,6 +58,31 @@ const family: Family = {
           ],
   })),
 };
+
+test("SQL and in-memory overview share the omission contract without losing card evidence", async () => {
+  const seed = structuredClone(family);
+  seed.photos = [];
+  const person = seed.people[0];
+  person.occupation = "Учитель";
+  person.maidenName = "Иванова";
+  person.occupationClaim = { value: person.occupation, sources: [{ title: "Дело", type: "архив", reference: "12" }] };
+  person.maidenNameClaim = { value: person.maidenName, sources: [{ title: "Метрика", type: "архив", reference: "13" }] };
+  const archive = await openArchive(":memory:", seed);
+  try {
+    const stored = (await archive.read()).family;
+    const overview = (await archive.overview()).family;
+    assert.deepEqual(overview, archiveOverview(stored));
+    for (const card of overview.people) for (const field of PERSON_DETAIL_FIELDS)
+      assert.ok(field === "sources" ? card.sources.length === 0 : !Object.hasOwn(card, field));
+    assert.deepEqual((await archive.read()).family, stored, "overview must never strip the stored card or its citations");
+    const places = await archive.viewPeople("places");
+    const timeline = await archive.viewPeople("timeline");
+    const gallery = await archive.viewPeople("gallery");
+    assert.ok(places.every(card => Object.keys(card).every(key => ["id", "events"].includes(key))));
+    assert.ok(timeline.every(card => Object.keys(card).every(key => ["id", "events", "awards"].includes(key))));
+    assert.ok(gallery.every(card => Object.keys(card).every(key => ["id", "surname", "name", "patronymic"].includes(key))));
+  } finally { await archive.close(); }
+});
 test("SQL gallery index matches complete snapshot albums without full hydration", async () => {
   const archive = await openArchive(":memory:", family);
   try {
@@ -85,7 +110,7 @@ test("SQL gallery index matches complete snapshot albums without full hydration"
     assert.ok(
       events.every(
         (person) =>
-          !person.biography && !person.awards && !person.sources.length,
+          !Object.hasOwn(person, "biography") && !Object.hasOwn(person, "awards") && !Object.hasOwn(person, "sources"),
       ),
     );
   } finally {
@@ -281,7 +306,7 @@ test("timeline projection preserves complete events/awards but does not hydrate 
     archive.read = async () => { throw new Error("full archive forbidden"); };
     const people = await archive.viewPeople("timeline");
     assert.deepEqual(people.map(person => person.events), stored.people.map(person => person.events));
-    assert.ok(people.every(person => !person.biography && person.sources.length === 0));
+    assert.ok(people.every(person => !Object.hasOwn(person, "biography") && !Object.hasOwn(person, "sources")));
     const initial = { family: archiveOverview(stored), revision: 1, pageToken: "1:timeline", partial: true };
     let latest = initial;
     const reader = archiveDetails(initial, async () => Response.json({ people: people.map(({ id, events, awards }) => ({ id, ...(events ? { events } : {}), ...(awards ? { awards } : {}) })), pageToken: initial.pageToken }), header => { latest = header; });

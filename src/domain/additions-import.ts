@@ -4,7 +4,7 @@ import { dateBound, fullName } from "./dates.ts";
 import type { Family, FamilyLink, Person } from "./types.ts";
 
 export const ADDITIONS_MAX_BYTES = 8 * 1024 * 1024;
-export const ADDITIONS_MAX_PEOPLE = 1000;
+const ADDITIONS_MAX_PEOPLE = 1000;
 export type AdditionsPreview = {
   revision: number;
   fingerprint: string;

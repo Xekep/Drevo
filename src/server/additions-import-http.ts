@@ -143,14 +143,10 @@ export function additionsImportHttp({
           error: "Права изменились. Добавление отменено",
         });
       // Existing transaction rechecks revision and actor, records history and audit.
-      const saved = await archive.write(
-        plan.family,
-        current.revision,
-        activeActor,
-        undo ? undefined : "import_additions",
-        current.family,
-        undefined,
-        undo
+      const saved = await archive.write(plan.family, current.revision, activeActor, {
+        operation: undo ? undefined : "import_additions",
+        knownPrevious: current.family,
+        afterWrite: undo
           ? (db) =>
               auditStore(db).record(
                 {
@@ -171,7 +167,7 @@ export function additionsImportHttp({
                 current.revision + 1,
               )
           : undefined,
-      );
+      });
       return json(200, {
         ...(undo
           ? { removed: plan.preview.people.length }

@@ -77,9 +77,15 @@ export function sourceCatalogStore(db: StoreDatabase) {
   return { list, page, get, getMany, insert, update, remove, documentIdsExist, usesDocument };
 }
 
-export function personCitations(person: Person): Source[] {
+/** Citation hydration also serves explicitly partial event/award projections. */
+type CitationPerson = Partial<Pick<Person, "id" | "sources" | "parentClaims" | "birthDateClaim" |
+  "deathDateClaim" | "birthPlaceClaim" | "deathPlaceClaim" | "factAlternatives" |
+  "occupationClaim" | "maidenNameClaim" | "awards" | "events">>;
+type CitationFamily = { people: CitationPerson[]; unions?: FamilyUnion[]; links?: Family["links"] };
+
+export function personCitations(person: CitationPerson): Source[] {
   return [
-    ...person.sources,
+    ...(person.sources || []),
     ...(person.parentClaims || []).flatMap((claim) => claim.sources || []),
     ...(person.birthDateClaim?.sources || []),
     ...(person.deathDateClaim?.sources || []),
@@ -107,7 +113,7 @@ export function unionCitations(union: FamilyUnion): Source[] {
   ];
 }
 
-export function allCitations(family: Family): Source[] {
+export function allCitations(family: CitationFamily): Source[] {
   return [
     ...family.people.flatMap(personCitations),
     ...(family.unions || []).flatMap(unionCitations),
@@ -130,7 +136,7 @@ export async function assertCatalogLinks(db: StoreDatabase, family: Family) {
   }
 }
 
-export async function hydrateCatalogCitations(db: StoreDatabase, family: Family) {
+export async function hydrateCatalogCitations<T extends CitationFamily>(db: StoreDatabase, family: T): Promise<T> {
   const ids = allCitations(family).flatMap(source => source.catalogId ? [source.catalogId] : []);
   if (!ids.length) return family;
   const entries = new Map((await sourceCatalogStore(db).getMany(ids)).map((source) => [source.id, source]));
@@ -146,7 +152,7 @@ export async function hydrateCatalogCitations(db: StoreDatabase, family: Family)
     };
   };
   for (const person of family.people) {
-    person.sources = person.sources.map(resolve);
+    if (person.sources) person.sources = person.sources.map(resolve);
     for (const claim of person.parentClaims || [])
       if (claim.sources) claim.sources = claim.sources.map(resolve);
     if (person.birthDateClaim)

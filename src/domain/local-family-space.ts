@@ -5,8 +5,8 @@ import { placedFamilyRows } from "./local-family-order.ts";
 import { translateFamilyBlocks, familyRowNoWorse } from "./family-row-moves.ts";
 import { createGeometryContactScorer } from "./union-layout.ts";
 
-export const MAX_LOCAL_SPACE_BLOCKS = 8;
-export const MAX_LOCAL_SPACE_CARDS = 32;
+const MAX_LOCAL_SPACE_BLOCKS = 8;
+const MAX_LOCAL_SPACE_CARDS = 32;
 const MAX_SEGMENTS = 12000;
 const MAX_INDEX_CELLS = 500000;
 

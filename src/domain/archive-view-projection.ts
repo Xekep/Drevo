@@ -1,6 +1,13 @@
 import type { Family, Person, ArchivePhoto } from "./types.ts";
 import { newestPhotos, photoAlbums } from "./photo-albums.ts";
 
+export type ArchiveViewPerson = {
+  gallery: Pick<Person, "id" | "surname" | "name" | "patronymic">;
+  places: Pick<Person, "id" | "events">;
+  timeline: Pick<Person, "id" | "events" | "awards">;
+};
+export type GalleryFamily = Omit<Family, "people"> & { people: ArchiveViewPerson["gallery"][] };
+
 /** Complete event arrays preserve citations when map coordinates are edited. */
 export function placesProjection(family: Family) {
   return {
@@ -33,7 +40,7 @@ export type GalleryPage = {
   album?: { label: string; count: number };
 };
 export type GalleryWirePage = Omit<GalleryPage, "photoIds"> & { photoIds?: string[] };
-export const galleryPageSize = 30;
+const galleryPageSize = 30;
 /** Call only on an already authorized, revision-bound snapshot. */
 export type GalleryProjectionIndex = {
   albums: ReturnType<typeof photoAlbums>;
@@ -42,7 +49,7 @@ export type GalleryProjectionIndex = {
   album?: { label: string; count: number };
 };
 export function galleryProjectionIndex(
-  family: Family,
+  family: GalleryFamily,
   query: GalleryQuery,
 ): GalleryProjectionIndex {
   const names = new Set(family.people.map((p) => p.id));
@@ -93,6 +100,6 @@ export function galleryIndexPage(index: GalleryProjectionIndex, query: GalleryQu
     ...(index.album ? { album: index.album } : {}),
   };
 }
-export function galleryProjection(family: Family, query: GalleryQuery): GalleryWirePage {
+export function galleryProjection(family: GalleryFamily, query: GalleryQuery): GalleryWirePage {
   return galleryIndexPage(galleryProjectionIndex(family, query), query);
 }

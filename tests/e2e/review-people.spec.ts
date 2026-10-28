@@ -18,9 +18,9 @@ test("shared tree keeps the orange review border", async ({ page, request }, inf
   const card = page.getByTestId("rf__node-e2e-child");
   await expect(card.locator(".flow-person")).toHaveClass(/is-needs-review/);
   await expect(card.locator(".flow-person-content")).toHaveAttribute("aria-label", /требует проверки/);
-  expect(await card.locator(".person-avatar").evaluate((avatar) =>
-    getComputedStyle(avatar).borderTopColor,
-  )).toBe("rgb(215, 123, 24)");
+  // Portrait hydration replaces the placeholder span with Avatar. Resolve the
+  // current node on retries instead of reading the detached former placeholder.
+  await expect(card.locator(".person-avatar")).toHaveCSS("border-top-color", "rgb(215, 123, 24)");
 });
 
 test("a review marker survives editing and the assistant temporarily hides its card", async ({

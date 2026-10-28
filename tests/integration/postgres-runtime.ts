@@ -13990,15 +13990,31 @@ try {
     format: "drevo.reviewed-add-only", version: 1,
     newPeople: [{ id: "pg-import-only", name: "Импорт", surname: "Проверка" }],
   }, "owner");
-  const addedBatch = await app.archive.write(batchPlan.family, beforeBatch.revision, undefined, "import_additions");
+  const addedBatch = await app.archive.write(batchPlan.family, beforeBatch.revision, undefined, {
+    operation: "import_additions",
+  });
   assert.equal((await listAdditionBatches(app.archive.db))[0].count, 1);
   assert.equal((await listAdditionBatches(otherApp.archive.db)).length, 0);
   await assert.rejects(planUndoAdditions(otherApp.archive.db, (await otherApp.archive.read()).family, addedBatch.revision), /не найден/);
   const undoBatch = await planUndoAdditions(app.archive.db, addedBatch.family, addedBatch.revision);
   assert.equal(undoBatch.preview.errorCount, 0);
   assert.deepEqual(undoBatch.family, beforeBatch.family);
-  await app.archive.write(undoBatch.family, addedBatch.revision, undefined, undefined, addedBatch.family, undefined,
-    (db) => auditStore(db).record({ action: "undo_import_additions", entity: "archive", entityId: `import:${addedBatch.revision}`, label: "Отмена импорта", personIds: [], details: [] }, undefined, addedBatch.revision + 1));
+  await app.archive.write(undoBatch.family, addedBatch.revision, undefined, {
+    knownPrevious: addedBatch.family,
+    afterWrite: (db) =>
+      auditStore(db).record(
+        {
+          action: "undo_import_additions",
+          entity: "archive",
+          entityId: `import:${addedBatch.revision}`,
+          label: "Отмена импорта",
+          personIds: [],
+          details: [],
+        },
+        undefined,
+        addedBatch.revision + 1,
+      ),
+  });
   assert.equal((await listAdditionBatches(app.archive.db))[0].undone, true);
   await assert.rejects(planUndoAdditions(app.archive.db, beforeBatch.family, addedBatch.revision), /уже отменён/);
   const beforeBackfill = await otherApp.archive.read();
