@@ -124,12 +124,13 @@ export function modelUsage(metrics: ResearchMetrics) {
 export const CREATE_PDF_TOOL = {
   name: "create_pdf",
   description:
-    "Создать PDF из подготовленного Markdown по явной просьбе пользователя. Передай заголовок и проверенное содержимое с таблицами и графиками при необходимости. Поддерживаются блоки Mermaid graph/flowchart, pie и xychart; они будут нарисованы в PDF, а большая схема архива получит обзор и листы с деталями. Для анализа архива и при просьбе о графе сервер добавит схему из реальных данных. Не помещай в документ данные, которые не доступны пользователю.",
+    "Создать PDF из подготовленного Markdown только по просьбе пользователя. Передай заголовок и проверенное содержимое с таблицами и графиками при необходимости. Поддерживаются блоки Mermaid graph/flowchart, pie и xychart. includeArchiveGraph=true добавляет схему всего доступного архива из реальных данных; включай только если нужна именно такая схема. Для экспорта текущего вида древа используй prepare_archive_export. Не помещай в документ данные, которые не доступны пользователю.",
   inputSchema: {
     type: "object",
     properties: {
       title: { type: "string", minLength: 1, maxLength: 160 },
       content: { type: "string", minLength: 1, maxLength: 30000 },
+      includeArchiveGraph: { type: "boolean", description: "Добавить схему всего доступного архива, не только видимых карточек. По умолчанию false. Не включать для обычного текстового отчёта или графика статистики." },
     },
     required: ["title", "content"],
     additionalProperties: false,
@@ -139,7 +140,7 @@ export const CREATE_PDF_TOOL = {
 export const ANALYZE_PHOTO_TOOL = {
   name: "analyze_photo",
   description:
-    "Передать доступную фотографию модели для визуального анализа. Сначала найди photoId через search_photos или get_photo. Описывай только видимое, не устанавливай личности неизвестных людей по лицу и отделяй наблюдения от гипотез.",
+    "Передать доступную фотографию модели для визуального анализа по просьбе пользователя. Сначала найди photoId через search_photos или get_photo. Описывай только видимое, не устанавливай личности неизвестных людей по лицу и отделяй наблюдения от гипотез.",
   inputSchema: {
     type: "object",
     properties: {
@@ -150,6 +151,31 @@ export const ANALYZE_PHOTO_TOOL = {
     additionalProperties: false,
   },
 } as const;
+
+function toolObject(value: unknown, keys: readonly string[]) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).some(key => !keys.includes(key)))
+    throw new Error("Некорректные параметры инструмента");
+  return value as Record<string, unknown>;
+}
+
+export function pdfToolArguments(value: unknown) {
+  const raw = toolObject(value, ["title", "content", "includeArchiveGraph"]);
+  if (typeof raw.title !== "string" || !raw.title.trim() || raw.title.length > 160 ||
+      typeof raw.content !== "string" || !raw.content.trim() || raw.content.length > 30000 ||
+      (raw.includeArchiveGraph !== undefined && typeof raw.includeArchiveGraph !== "boolean"))
+    throw new Error("Укажите заголовок до 160 символов, содержимое до 30000 символов и корректный признак схемы");
+  return { title: raw.title.trim(), content: raw.content.trim(), includeArchiveGraph: raw.includeArchiveGraph === true };
+}
+
+export function photoAnalysisArguments(value: unknown) {
+  const raw = toolObject(value, ["photoId", "question"]);
+  if (typeof raw.photoId !== "string" || !raw.photoId.trim() || raw.photoId.length > 200 ||
+      /[\p{Cc}]/u.test(raw.photoId) ||
+      (raw.question !== undefined && (typeof raw.question !== "string" || raw.question.length > 2000)))
+    throw new Error("Укажите идентификатор фотографии и вопрос до 2000 символов");
+  return { photoId: raw.photoId.trim(), question: raw.question as string | undefined };
+}
 
 export const RESEARCH_RESOURCES_TOOL = {
   name: "find_research_resources",

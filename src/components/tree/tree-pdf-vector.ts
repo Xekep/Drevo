@@ -2,6 +2,7 @@ import { archiveFetch } from "../../data/archive-fetch.ts";
 import { jsPDF } from "jspdf";
 import "svg2pdf.js";
 import fontUrl from "../../../assets/DejaVuSans.ttf?url";
+import { drawPdfPortraits, yieldPdfExport, type PdfPortraitPlacement } from "./tree-pdf-images";
 import {
   DEFAULT_TREE_PRINT,
   treePrintPlan,
@@ -42,7 +43,7 @@ export async function downloadTreePng(
   portraits: ReadonlyMap<string, string> = new Map(),
 ) {
   signal?.throwIfAborted();
-  const svg = treePdfSvg(target, width, height, portraits);
+  const svg = await treePdfSvg(target, width, height, portraits, undefined, signal);
   const style = svgElement(target, "style");
   style.textContent = `@font-face{font-family:${fontName};src:url(data:font/ttf;base64,${base64(font)}) format('truetype')}`;
   svg.prepend(style);
@@ -107,19 +108,31 @@ function svgElement<K extends keyof SVGElementTagNameMap>(
 /** A vector scene from the already measured, full-detail tree. No foreignObject,
  * HTML screenshot, remote converter, or archive-sized bitmap is involved.
  */
-function treePdfSvg(
+async function treePdfSvg(
   target: Document,
   width: number,
   height: number,
   portraits: ReadonlyMap<string, string>,
+  layers?: { portraits: PdfPortraitPlacement[]; foreground: SVGSVGElement },
+  signal?: AbortSignal,
+  onProgress?: () => void,
 ) {
+  signal?.throwIfAborted();
   const view = target.defaultView!;
   const svg = svgElement(target, "svg", {
     width,
     height,
     viewBox: `0 0 ${width} ${height}`,
   });
-  const styles = (element: Element) => view.getComputedStyle(element);
+  const computedStyles = new WeakMap<Element, CSSStyleDeclaration>();
+  const styles = (element: Element) => {
+    let style = computedStyles.get(element);
+    if (!style) {
+      style = view.getComputedStyle(element);
+      computedStyles.set(element, style);
+    }
+    return style;
+  };
   const visible = (element: Element) => {
     const style = styles(element);
     return (
@@ -256,9 +269,11 @@ function treePdfSvg(
       }
     }
   }
+  let completed = 0;
   for (const household of target.querySelectorAll(".flow-household")) {
     box(household, svg);
     text(household, svg);
+    if (++completed % 64 === 0) { onProgress?.(); await yieldPdfExport(signal); }
   }
   for (const edges of target.querySelectorAll<SVGSVGElement>(
     ".react-flow__edges > svg",
@@ -267,6 +282,7 @@ function treePdfSvg(
       const defs = edges.querySelector("defs");
       if (defs) svg.append(defs.cloneNode(true));
     } else nativeSvg(edges, svg);
+    if (++completed % 64 === 0) { onProgress?.(); await yieldPdfExport(signal); }
   }
   for (const person of target.querySelectorAll(".flow-person")) {
     box(person, svg);
@@ -286,15 +302,11 @@ function treePdfSvg(
           parseFloat(style.borderRightWidth) + parseFloat(style.paddingRight);
         const bottom =
           parseFloat(style.borderBottomWidth) + parseFloat(style.paddingBottom);
-        svg.append(
-          svgElement(target, "image", {
-            x: bounds.x + left,
-            y: bounds.y + top,
-            width: bounds.width - left - right,
-            height: bounds.height - top - bottom,
-            href: portrait,
-          }),
-        );
+        const placement = { data: portrait, x: bounds.x + left, y: bounds.y + top,
+          width: bounds.width - left - right, height: bounds.height - top - bottom };
+        if (layers) layers.portraits.push(placement);
+        else svg.append(svgElement(target, "image", { x: placement.x, y: placement.y,
+          width: placement.width, height: placement.height, href: portrait }));
       } else {
         box(avatar, svg);
         for (const placeholder of avatar.querySelectorAll<SVGSVGElement>("svg"))
@@ -302,7 +314,8 @@ function treePdfSvg(
       }
     }
     const content = person.querySelector(".flow-person-content");
-    if (content) text(content, svg);
+    if (content) text(content, layers?.foreground || svg);
+    if (++completed % 64 === 0) { onProgress?.(); await yieldPdfExport(signal); }
   }
   for (const anchor of target.querySelectorAll<HTMLElement>(
     ".tree-edge-label-anchor",
@@ -320,10 +333,29 @@ function treePdfSvg(
     });
     box(label, group);
     text(label, group);
-    svg.append(group);
+    (layers?.foreground || svg).append(group);
     anchor.style.transform = transform;
+    if (++completed % 64 === 0) { onProgress?.(); await yieldPdfExport(signal); }
   }
+  if (completed % 64) onProgress?.();
   return svg;
+}
+
+/** Bound svg2pdf's uninterrupted work while retaining a single vector page. */
+async function renderVectorLayer(pdf: jsPDF, svg: SVGSVGElement,
+  width: number, height: number, signal?: AbortSignal, onProgress?: () => void) {
+  const children = Array.from(svg.children);
+  const definitions = children.filter(child => child.localName === "defs");
+  const drawing = children.filter(child => child.localName !== "defs");
+  for (let offset = 0; offset < drawing.length; offset += 256) {
+    signal?.throwIfAborted();
+    const chunk = svg.cloneNode(false) as SVGSVGElement;
+    for (const definition of definitions) chunk.append(definition.cloneNode(true));
+    chunk.append(...drawing.slice(offset, offset + 256));
+    await pdf.svg(chunk, { width, height });
+    onProgress?.();
+    await yieldPdfExport(signal);
+  }
 }
 
 export async function downloadTreeVectorPdf(
@@ -335,6 +367,7 @@ export async function downloadTreeVectorPdf(
   signal?: AbortSignal,
   portraits: ReadonlyMap<string, string> = new Map(),
   options: TreePrintOptions = DEFAULT_TREE_PRINT,
+  onProgress?: () => void,
 ) {
   signal?.throwIfAborted();
   const plan = treePrintPlan(width, height, options);
@@ -350,7 +383,7 @@ export async function downloadTreeVectorPdf(
     pdf.addFont("Drevo.ttf", fontName, "normal");
     pdf.setFont(fontName);
     pdf.setProperties({ title, creator: "Drevo" });
-    const svg = treePdfSvg(target, width, height, portraits);
+    const svg = await treePdfSvg(target, width, height, portraits, undefined, signal, onProgress);
     const usableWidth = plan.widthPt - 2 * plan.marginPt;
     const usableHeight = plan.heightPt - 2 * plan.marginPt;
     const tileWidth = usableWidth / (0.75 * plan.scale);
@@ -373,9 +406,14 @@ export async function downloadTreeVectorPdf(
           width: usableWidth,
           height: usableHeight,
         });
+        onProgress?.();
       }
     signal?.throwIfAborted();
-    downloadBlob(pdf.output("blob"), title, "pdf");
+    await yieldPdfExport(signal);
+    const blob = pdf.output("blob");
+    onProgress?.();
+    await yieldPdfExport(signal);
+    downloadBlob(blob, title, "pdf");
     return;
   }
   // PDF page coordinates are limited to 14,400 points. UserUnit preserves the
@@ -403,11 +441,19 @@ export async function downloadTreeVectorPdf(
   pdf.addFont("Drevo.ttf", fontName, "normal");
   pdf.setFont(fontName);
   pdf.setProperties({ title, creator: "Drevo" });
-  const svg = treePdfSvg(target, width, height, portraits);
-  await pdf.svg(svg, {
-    width: (width * 0.75) / userUnit,
-    height: (height * 0.75) / userUnit,
-  });
-  signal?.throwIfAborted();
-  downloadBlob(pdf.output("blob"), title, "pdf");
+  const scale = 0.75 / userUnit;
+  const layers = { portraits: [] as PdfPortraitPlacement[], foreground: svgElement(target, "svg", {
+    width, height, viewBox: `0 0 ${width} ${height}`,
+  }) };
+  const svg = await treePdfSvg(target, width, height, portraits, layers, signal, onProgress);
+  await renderVectorLayer(pdf, svg, width * scale, height * scale, signal, onProgress);
+  await drawPdfPortraits(pdf, layers.portraits, scale, signal, onProgress);
+  await renderVectorLayer(pdf, layers.foreground, width * scale, height * scale, signal, onProgress);
+  await yieldPdfExport(signal);
+  const blob = pdf.output("blob");
+  onProgress?.();
+  // output() is synchronous; let an elapsed cancellation/deadline run before
+  // creating the download link, so a timed-out export cannot arrive late.
+  await yieldPdfExport(signal);
+  downloadBlob(blob, title, "pdf");
 }

@@ -316,7 +316,7 @@ export default function SharedTree({ token }: { token: string }) {
       )}
       {data && exportOpen && (
         <TreeExportDialog
-          onExportPdf={(signal) => treeCanvas.current!.exportPdf(signal, "current")}
+          onExportPdf={(signal, onProgress) => treeCanvas.current!.exportPdf(signal, "current", undefined, undefined, onProgress)}
           onExportText={async (signal) => {
             const ids = await treeCanvas.current!.visiblePersonIds(signal);
             const { downloadGenerationReport } = await import("./tree/download-generation-report");

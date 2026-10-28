@@ -182,7 +182,7 @@ test("locating a person excluded by the research filter leaves the camera and an
   const assistant = page.locator(".research-assistant");
   await assistant.getByRole("textbox").fill("Оставь только одного человека");
   await assistant.getByRole("button", { name: "Отправить запрос" }).click();
-  await expect(page.locator(".tree-filter-status")).toContainText("Выборка: 1 из");
+  await expect(page.getByRole("group", { name: "Сводка выборки древа" })).toContainText("Выборка: 1 из");
   await assistant.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
   await searchPerson(page, "Мария", /Тестова Мария/);
   await expect(page.locator('.flow-person[data-person-id="e2e-sibling"]')).toHaveCount(0);

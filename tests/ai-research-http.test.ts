@@ -54,7 +54,7 @@ test("internal kinship classification is explained without exposing its code", (
   assert.match(text, /один общий известный родитель/);
 });
 
-test("a reader's edit request returns permissions without a model call or data changes", async () => {
+test("a reader gets no mutation tools or data changes and exports through a checked tool", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-reader-ai-"));
   const keys = [
     "PUBLIC_ORIGIN",
@@ -75,9 +75,13 @@ test("a reader's edit request returns permissions without a model call or data c
     join(dir, "archive.sqlite"),
     true,
     undefined,
-    async () => {
+    async (url, init) => {
+      if (String(url).endsWith("/conversations")) return Response.json({ id: "reader-conversation" });
       calls++;
-      throw new Error("Reader mutation should not invoke the model");
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.tools.some((tool: { name: string }) => tool.name.startsWith("propose_")), false);
+      if (calls === 2) return Response.json({ id: "export-options", status: "completed", output: [{ type: "function_call", call_id: "export", name: "prepare_archive_export", arguments: '{"format":"options"}' }] });
+      return Response.json({ id: `reader-${calls}`, status: "completed", output_text: calls === 1 ? "У вас доступ только для чтения." : "Выберите доступный формат экспорта." });
     },
   );
   try {
@@ -113,7 +117,7 @@ test("a reader's edit request returns permissions without a model call or data c
     const result = await response.json();
     assert.match(result.answer, /доступ только для чтения/);
     assert.deepEqual(result.suggestionIds, []);
-    assert.equal(calls, 0);
+    assert.equal(calls, 1);
     assert.deepEqual(await app.archive.read(), before);
     const privateExport = await fetch(
       `${base}/api/ai/export/gedcom?format=gedcom7`,
@@ -152,7 +156,7 @@ test("a reader's edit request returns permissions without a model call or data c
           file.url === "/api/ai/export/gedcom?format=gedcom7",
       ),
     );
-    assert.equal(calls, 0);
+    assert.equal(calls, 3);
   } finally {
     await app.close();
     keys.forEach((key, index) => {
@@ -576,7 +580,7 @@ test("an incomplete provider stream retries once with a non-stream response", as
   }
 });
 
-test("a read-only photo question does not offer archive mutation tools", async () => {
+test("available role tools do not change data or create files unless the model calls them", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-ai-readonly-question-"));
   process.env.YANDEX_AI_API_KEY = "test-key";
   process.env.YANDEX_AI_FOLDER_ID = "folder-1";
@@ -616,11 +620,14 @@ test("a read-only photo question does not offer archive mutation tools", async (
     assert.ok(offered.includes("search_photos"));
     assert.equal(
       offered.some((name) => name.startsWith("propose_")),
-      false,
+      true,
     );
-    assert.equal(offered.includes("create_pdf"), false);
+    assert.equal(offered.includes("create_pdf"), true);
     assert.equal(offered.includes("control_archive_view"), false);
-    assert.equal(offered.includes("analyze_photo"), false);
+    assert.equal(offered.includes("analyze_photo"), true);
+    const result = await response.json();
+    assert.deepEqual(result.suggestionIds, []);
+    assert.deepEqual(result.files, []);
   } finally {
     await app.close();
     for (const key of [

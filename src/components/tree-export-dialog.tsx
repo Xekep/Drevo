@@ -16,7 +16,7 @@ export function TreeExportDialog({
   onCheckExportWarnings = noExportWarnings,
 }: {
   onClose: () => void;
-  onExportPdf: (signal: AbortSignal) => Promise<void>;
+  onExportPdf: (signal: AbortSignal, onProgress: (message: string) => void) => Promise<void>;
   onExportText: (signal: AbortSignal) => Promise<void>;
   onExportGenealogy?: (format: GenealogyExportFormat, signal: AbortSignal, onError: (message: string) => void) => Promise<void>;
   onCheckExportWarnings?: (signal: AbortSignal) => Promise<ExportWarnings>;
@@ -52,7 +52,9 @@ export function TreeExportDialog({
     setStatus("");
     setError("");
     try {
-      if (format === "pdf") await onExportPdf(next.signal);
+      if (format === "pdf") await onExportPdf(next.signal, message => {
+        if (!next.signal.aborted) setStatus(message);
+      });
       else if (format === "generation-text") await onExportText(next.signal);
       else await onExportGenealogy?.(format, next.signal, (message) => {
         if (next.signal.aborted) return;
@@ -62,8 +64,10 @@ export function TreeExportDialog({
       if (!next.signal.aborted)
         setStatus(format === "pdf" ? "PDF готов." : "Скачивание началось.");
     } catch (reason) {
-      if (!next.signal.aborted)
+      if (!next.signal.aborted) {
+        setStatus("");
         setError(reason instanceof Error ? reason.message : "Не удалось экспортировать древо.");
+      }
     } finally {
       if (!next.signal.aborted) setBusy(false);
     }
@@ -103,7 +107,7 @@ export function TreeExportDialog({
             <p role="note">Текст цитат и указанные URL сохранятся, но связь с записью каталога источников Drevo не перенесётся в GEDCOM или GEDZIP. Для полного переноса между древами Drevo используйте .drevo.</p>}
         </div>
         <p className="tree-preferences-status" role="status">
-          {busy ? "Подготавливаем древо…" : status}
+          {busy ? status || "Подготавливаем древо…" : status}
         </p>
         {error && <p className="form-error" role="alert">{error}</p>}
       </div>

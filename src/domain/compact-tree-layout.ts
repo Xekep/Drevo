@@ -12,6 +12,58 @@ import {
 import { routeRelationships, simplifyRoute } from "./edge-routing.ts";
 
 const COMPACT_GAP = 32;
+type CompactionBudget = { remaining: number };
+
+/** Longest-path separation constraints for rigid columns. Their row order may
+ * form a cycle; relax at most |columns| times and reject an infeasible result.
+ * The mirrored solve packs from the right without changing household order.
+ */
+function packedColumns(
+  rows: ReturnType<typeof placedFamilyRows>,
+  groups: ReadonlyMap<string, { left: number; right: number }>,
+  root: (id: string) => string,
+  reverse: boolean,
+) {
+  const ids = [...groups.keys()],
+    index = new Map(ids.map((id, i) => [id, i]));
+  const widths = ids.map((id) => {
+    const group = groups.get(id)!;
+    return group.right - group.left;
+  });
+  const edges = rows.flatMap((row) =>
+    row.slice(1).flatMap((b, i) => {
+      const a = row[i],
+        from = root(a.id),
+        to = root(b.id);
+      if (from === to) return [];
+      const ai = index.get(from)!, bi = index.get(to)!;
+      const distance =
+        a.x - groups.get(from)!.left + a.width +
+        Math.min(COMPACT_GAP, b.x - a.x - a.width) -
+        (b.x - groups.get(to)!.left);
+      return [{
+        from: reverse ? bi : ai,
+        to: reverse ? ai : bi,
+        distance: distance + (reverse ? widths[bi] - widths[ai] : 0),
+      }];
+    }),
+  );
+  const positions = ids.map(() => 0);
+  for (let iteration = 0; iteration < ids.length; iteration++) {
+    let changed = false;
+    for (const edge of edges) {
+      const next = positions[edge.from] + edge.distance;
+      if (next > positions[edge.to] + 1e-7) {
+        positions[edge.to] = next;
+        changed = true;
+      }
+    }
+    if (!changed)
+      return new Map(ids.map((id, i) => [
+        id, reverse ? -positions[i] - widths[i] : positions[i],
+      ]));
+  }
+}
 
 function compactMove(
   geometry: TreeGeometry,
@@ -57,6 +109,7 @@ function coordinatedCompaction(
   original: TreeGeometry,
   size: TreeNodeSize,
   score: FamilyRowScore,
+  budget: CompactionBudget,
 ) {
   const rows = placedFamilyRows(original, size);
   const blocks = rows.flat();
@@ -94,13 +147,7 @@ function coordinatedCompaction(
   const before = score(original);
   let best = original,
     span = treeRowSpan(original, size);
-  for (const factor of [0.5, 0.65, 0.8, 0.9, 0.95, 0.98]) {
-    const deltas = new Map(
-      blocks.map((b) => {
-        const group = groups.get(root(b.id))!;
-        return [b.id, ((group.left + group.right) / 2 - center) * (factor - 1)];
-      }),
-    );
+  const consider = (deltas: Map<string, number>) => {
     if (
       original.branches!.some(
         (branch) =>
@@ -109,7 +156,7 @@ function coordinatedCompaction(
             (deltas.get(owners.get(branch.target)!) || 0),
       )
     )
-      continue;
+      return false;
     if (
       rows.some((row) =>
         row.slice(1).some((b, i) => {
@@ -122,16 +169,54 @@ function coordinatedCompaction(
         }),
       )
     )
-      continue;
+      return false;
+    if (budget.remaining-- <= 0) return false;
     const candidate = compactMove(original, deltas, owners).geometry;
     const candidateSpan = treeRowSpan(candidate, size);
-    if (
-      candidateSpan < span - 1 &&
-      familyRowNoWorse(score(candidate), before)
-    ) {
+    const safe = familyRowNoWorse(score(candidate), before);
+    if (candidateSpan < span - 1 && safe) {
       best = candidate;
       span = candidateSpan;
     }
+    return safe;
+  };
+  // A single affine scale is held back by the tightest row gap. Instead solve
+  // each column's displacement with all rows' separations enforced together.
+  const left = packedColumns(rows, groups, root, false),
+    right = packedColumns(rows, groups, root, true);
+  if (left && right) {
+    for (const blend of [0, 0.5, 1]) {
+      const target = new Map([...groups.keys()].map((id) => [
+        id, left.get(id)! * (1 - blend) + right.get(id)! * blend,
+      ]));
+      const offset = center - (
+        Math.min(...target.values()) +
+        Math.max(...[...groups].map(([id, group]) =>
+          target.get(id)! + group.right - group.left))
+      ) / 2;
+      let safe = 0, unsafe = 1, fraction = 1;
+      // At most six scored candidates per placement, including refinements.
+      // Unsafe packing is never accepted, even if it saves substantial width.
+      for (let attempt = 0; attempt < 6 && budget.remaining > 0; attempt++) {
+        const deltas = new Map(blocks.map((b) => {
+          const id = root(b.id);
+          return [b.id, (target.get(id)! + offset - groups.get(id)!.left) * fraction];
+        }));
+        if (consider(deltas)) safe = fraction;
+        else unsafe = fraction;
+        if (safe === 1 || (!safe && fraction <= 0.0625)) break;
+        fraction = safe ? (safe + unsafe) / 2 : fraction / 2;
+      }
+    }
+  }
+  // Preserve the older safe affine candidates when local route topology leaves
+  // no useful separation-constraint move (for example, interleaved columns).
+  for (const factor of [0.5, 0.65, 0.8, 0.9, 0.95, 0.98]) {
+    if (budget.remaining <= 0) break;
+    consider(new Map(blocks.map((b) => {
+      const group = groups.get(root(b.id))!;
+      return [b.id, ((group.left + group.right) / 2 - center) * (factor - 1)];
+    })));
   }
   return best;
 }
@@ -162,12 +247,12 @@ export function compactTreeLayout(
     (original.routes?.length && !links.length)
   )
     return original;
-  let best = coordinatedCompaction(original, size, score),
-    budget = 32,
+  const budget = { remaining: 32 };
+  let best = coordinatedCompaction(original, size, score, budget),
     reroutes = 6;
   const initial = score(original);
   const owners = new Map(original.occurrences.map((o) => [o.id, o.block]));
-  for (let pass = 0; pass < 2 && budget > 0; pass++) {
+  for (let pass = 0; pass < 2 && budget.remaining > 0; pass++) {
     const rows = placedFamilyRows(best, size).filter(
       (row) =>
         row.length > 1 &&
@@ -201,7 +286,7 @@ export function compactTreeLayout(
     let chosen: TreeGeometry | undefined;
     for (const deltas of [all, ...plans.slice(0, 12).map((p) => p.deltas)]) {
       for (const fraction of [1, 0.5]) {
-        if (budget-- <= 0) break;
+        if (budget.remaining-- <= 0) break;
         const shifts = new Map(
           [...deltas].map(([id, dx]) => [id, dx * fraction]),
         );
@@ -238,7 +323,7 @@ export function compactTreeLayout(
         if (!chosen || treeRowSpan(candidate, size) < treeRowSpan(chosen, size))
           chosen = candidate;
       }
-      if (budget <= 0) break;
+      if (budget.remaining <= 0) break;
     }
     if (!chosen) break;
     best = chosen;

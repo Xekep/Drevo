@@ -80,8 +80,9 @@ test("a review marker survives editing and the assistant temporarily hides its c
     await assistant.getByRole("textbox").fill("Скрой требующих проверки из древа");
     await assistant.getByRole("button", { name: "Отправить запрос" }).click();
     await expect(page.locator(".tree-filter-status")).toContainText(
-      "Без карточек на проверке: 5 из 6",
+      "Без карточек на проверке",
     );
+    await expect(page.getByRole("group", { name: "Сводка выборки древа" })).toContainText("Выборка: 5 из 6");
     await expect(card).toHaveCount(0);
     await assistant.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
     await page.getByRole("button", { name: "Всё древо" }).click();

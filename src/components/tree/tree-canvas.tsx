@@ -141,7 +141,8 @@ export type TreeCanvasHandle = {
   getViewContext: () => ResearchTreeViewContext;
   optimizeLayout: (goal?: TreeOptimizationGoal) => Promise<string>;
   visiblePersonIds: (signal?: AbortSignal) => Promise<string[]>;
-  exportPdf: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number) => Promise<void>;
+  exportPdf: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number,
+    onProgress?: (message: string) => void) => Promise<void>;
   exportPng: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number) => Promise<void>;
 };
 type Props = {
@@ -1542,10 +1543,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             node.type === "person" ? [node.data.person.id] : [],
           ))];
         },
-        async exportPdf(signal, scope, anchorId, generations) {
+        async exportPdf(signal, scope, anchorId, generations, onProgress) {
           const tree = await selectedTree(signal, scope, anchorId, generations);
           const { exportTreePdf } = await import("./tree-pdf");
-          await exportTreePdf(tree, signal);
+          await exportTreePdf(tree, signal, onProgress);
         },
         async exportPng(signal, scope, anchorId, generations) {
           const tree = await selectedTree(signal, scope, anchorId, generations);
@@ -1769,7 +1770,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
       >
         {screen.fullscreen && <MemberPreviewExit />}
-        <div className="tree-mode-bar">
+        <div className={`tree-mode-bar${props.assistantFilter ? " has-assistant-filter" : ""}`}>
           {narrow ? (
             <button
               type="button"
@@ -1807,13 +1808,21 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               </button>
             </div>
           )}
-          {!narrow && (
+          {props.assistantFilter ? (
+            <ArchiveSummary people={family.people} selectedCount={visible.size} busy={layoutBusy} />
+          ) : !narrow && (
             (savingGenerationPreferences || anchorNotice) && !problem ? (
               <div className="tree-notice tree-anchor-notice" role="status" aria-label="Уведомление древа"
                 title={savingGenerationPreferences ? "Сохраняем вид древа…" : anchorNotice}>
                 {savingGenerationPreferences ? "Сохраняем вид древа…" : anchorNotice}
               </div>
             ) : <ArchiveSummary people={family.people} busy={layoutBusy} />
+          )}
+          {props.assistantFilter && !narrow && (savingGenerationPreferences || anchorNotice) && !problem && (
+            <div className="tree-notice tree-anchor-notice" role="status" aria-label="Уведомление древа"
+              title={savingGenerationPreferences ? "Сохраняем вид древа…" : anchorNotice}>
+              {savingGenerationPreferences ? "Сохраняем вид древа…" : anchorNotice}
+            </div>
           )}
           {!!family.links?.length && (
             <button
@@ -1830,7 +1839,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           )}
           {narrow && props.comparisonAction}
           {fragment.active && <div className="tree-fragment-status" role="region" aria-label="Фрагмент большого древа">
-            <span>Фрагмент: {visible.size} из {family.people.length}</span>
+            <span>{props.assistantFilter ? "Фрагмент древа" : `Фрагмент: ${visible.size} из ${family.people.length}`}</span>
             <button type="button" onClick={fragment.showAll}>Полный обзор</button>
           </div>}
           {generationAnchor && !activeFanAnchor && (
@@ -1848,9 +1857,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                   <GitBranch size={15} aria-hidden="true" />
                   <span>{narrow && anchorNotice ? anchorNotice : `Опорный: ${fullName(generationAnchor)}`}</span>
                 </span>
-                <span className="tree-family-count">
+                {!props.assistantFilter && <span className="tree-family-count">
                   {visible.size} из {family.people.length}
-                </span>
+                </span>}
                 {shareAnchorId && props.onShare && <button
                   type="button" className="tree-family-share"
                   aria-label="Поделиться" title="Поделиться"
@@ -1873,12 +1882,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             <div
               className="tree-family-tools tree-filter-status"
               role="status"
-              title={`${props.assistantFilter.label}: ${visible.size} из ${family.people.length}`}
+              aria-label={props.assistantFilter.label}
+              title={props.assistantFilter.label}
             >
-              <span className="tree-family-count">
-                {props.assistantFilter.label}: {visible.size} из{" "}
-                {family.people.length}
-              </span>
+              {props.assistantFilter.label !== "Выборка" && <span className="tree-filter-label">
+                {props.assistantFilter.label}
+              </span>}
               <button
                 type="button"
                 aria-label="Всё древо"

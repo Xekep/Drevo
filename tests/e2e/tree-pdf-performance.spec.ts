@@ -174,6 +174,7 @@ test("PDF bounds original photo requests and cancels them without a late downloa
   await dialog.getByRole("button", { name: "Скачать", exact: true }).click();
   try {
     await expect.poll(() => started).toBe(4);
+    await expect(dialog.getByRole("status")).toHaveText("Портреты: 0 из 12");
     await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
     await expect(page.locator("iframe[data-tree-print]")).toHaveCount(0);
   } finally {
@@ -195,6 +196,46 @@ test("PDF bounds original photo requests and cancels them without a late downloa
   await pending;
   expect(started).toBe(4 + count);
   expect(peak).toBeLessThanOrEqual(4);
+  await expect(page.locator("iframe[data-tree-print]")).toHaveCount(0);
+});
+
+test("PDF requests print crops for already archive- and participant-scoped portraits", async ({
+  page, context, isMobile,
+}, info) => {
+  test.skip(isMobile, "Canvas export is available on desktop");
+  const portrait = await sharp({ create: {
+    width: 1200, height: 1600, channels: 3, background: "#31779a",
+  } }).png().toBuffer();
+  const paths = [
+    "/a/family-pdf/media/pdf-scoped-0.png",
+    "/preview/vk%3A42/media/pdf-scoped-1.png",
+    "/a/family-pdf/preview/vk%3A42/media/pdf-scoped-2.png",
+  ];
+  const requested: string[] = [];
+  await context.route("**/media/pdf-scoped-*.png**", route => {
+    if (route.request().resourceType() === "fetch") {
+      const url = new URL(route.request().url());
+      expect(url.searchParams.get("variant")).toBe("print");
+      requested.push(url.pathname);
+    }
+    return route.fulfill({ contentType: "image/png", body: portrait });
+  });
+  await sharedFixture(page, paths.length, index => paths[index]);
+  await page.locator(".react-flow__pane").click({ button: "right", position: { x: 40, y: 350 } });
+  await page.getByRole("menuitem", { name: "Экспорт древа" }).click();
+  const download = page.waitForEvent("download");
+  await page.getByRole("dialog").getByRole("button", { name: "Скачать", exact: true }).click();
+  const output = info.outputPath("scoped-portraits.pdf");
+  await (await download).saveAs(output);
+  expect(requested.sort()).toEqual([...paths].sort());
+  const pdf = await getDocument({ data: new Uint8Array(await readFile(output)) }).promise;
+  try {
+    const page = await pdf.getPage(1);
+    const operators = await page.getOperatorList();
+    expect(operators.fnArray.filter(operation => operation === OPS.paintImageXObject)).toHaveLength(paths.length);
+  } finally {
+    await pdf.loadingTask.destroy();
+  }
   await expect(page.locator("iframe[data-tree-print]")).toHaveCount(0);
 });
 
