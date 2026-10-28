@@ -634,7 +634,7 @@ export function PersonEditor({
                       updateFullName(`${nameParts[1]} ${nameParts[0]}`)}>Поменять местами</button>
                   </> : "Фамилия, имя, отчество. Отчество необязательно."}
                 </small>
-                <small id={`${fieldId}-name-error`} className="field-error" role="alert">
+                <small id={`${fieldId}-name-error`} className="field-error" role="alert" hidden={!fieldErrors.name}>
                   {fieldErrors.name}
                 </small>
               </span>
