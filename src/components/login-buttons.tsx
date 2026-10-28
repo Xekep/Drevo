@@ -1,4 +1,6 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Mail } from "lucide-react";
+import { solveEmailCaptcha } from "./email-captcha";
 import { markEntrySequence } from "./entry-sequence";
 import "../styles/login-buttons.css";
 
@@ -31,6 +33,9 @@ export function LoginButtons({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const captchaContainer = useRef<HTMLDivElement>(null);
+  const submission = useRef<AbortController | null>(null);
+  useEffect(() => () => submission.current?.abort(), []);
   useEffect(() => {
     const controller = new AbortController();
     if (initialEmailLink()) {
@@ -62,7 +67,9 @@ export function LoginButtons({
 
   async function submitEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!mode || busy) return;
+    if (!mode || submission.current) return;
+    const controller = new AbortController();
+    submission.current = controller;
     setBusy(true);
     setError("");
     setMessage("");
@@ -77,18 +84,30 @@ export function LoginButtons({
             ? "reset/complete"
             : mode;
     try {
-      const response = await fetch(`/api/auth/email/${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, name, password, token }),
-      }).catch(() => {
-        throw new Error("Не удалось связаться с сервером. Проверьте интернет и попробуйте ещё раз.");
-      });
-      const result = await response.json().catch(() => {
-        throw new Error("Не удалось получить ответ сервера. Попробуйте ещё раз через несколько минут.");
-      });
-      if (!result || typeof result !== "object" || Array.isArray(result))
-        throw new Error("Не удалось получить ответ сервера. Попробуйте ещё раз через несколько минут.");
+      const send = async (captchaToken?: string) => {
+        const response = await fetch(`/api/auth/email/${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, name, password, token, captchaToken }),
+          signal: controller.signal,
+        }).catch(() => {
+          throw new Error("Не удалось связаться с сервером. Проверьте интернет и попробуйте ещё раз.");
+        });
+        const result = await response.json().catch(() => {
+          throw new Error("Не удалось получить ответ сервера. Попробуйте ещё раз через несколько минут.");
+        });
+        if (!result || typeof result !== "object" || Array.isArray(result))
+          throw new Error("Не удалось получить ответ сервера. Попробуйте ещё раз через несколько минут.");
+        return { response, result };
+      };
+      let { response, result } = await send();
+      if (response.status === 403 && result.captchaRequired === true &&
+          typeof result.siteKey === "string" && captchaContainer.current) {
+        setMessage("Проверяем защиту от ботов…");
+        const captchaToken = await solveEmailCaptcha(result.siteKey, captchaContainer.current, controller.signal);
+        ({ response, result } = await send(captchaToken));
+        setMessage("");
+      }
       if (!response.ok)
         throw new Error(response.status >= 500
           ? "Сервис входа временно недоступен. Попробуйте ещё раз через несколько минут."
@@ -114,11 +133,16 @@ export function LoginButtons({
       setPassword("");
       if (mode === "reset") setMode("login");
     } catch (cause) {
+      if (controller.signal.aborted) return;
+      setMessage("");
       setError(
         cause instanceof Error ? cause.message : "Не удалось выполнить запрос.",
       );
     } finally {
-      setBusy(false);
+      if (submission.current === controller) {
+        submission.current = null;
+        setBusy(false);
+      }
     }
   }
   return (
@@ -138,6 +162,7 @@ export function LoginButtons({
               className={`login-provider login-provider-${provider}`}
               aria-label={`Войти через ${label}`}
               title={`Войти через ${label}`}
+              disabled={busy}
               onClick={() => {
                 onBeforeNavigate?.();
                 markEntrySequence();
@@ -168,24 +193,22 @@ export function LoginButtons({
             className="login-provider login-provider-email"
             title="Войти по почте"
             aria-label="Войти по почте"
+            aria-expanded={!!mode}
+            disabled={busy}
             onClick={() => {
               setMode(mode ? null : "login");
               setError("");
               setMessage("");
             }}
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M3 5h18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm0 3v.4l9 6 9-6V8l-9 6-9-6zm0 2.8V17h18v-6.2l-9 6-9-6z"
-              />
-            </svg>
+            <Mail aria-hidden="true" strokeWidth={1.8} />
           </button>
         )}
       </div>
       {providers?.email && mode && (
         <form
           className="login-email-form"
+          aria-busy={busy}
           onSubmit={(event) => void submitEmail(event)}
         >
           <h3>
@@ -211,6 +234,7 @@ export function LoginButtons({
                 onChange={(event) => setName(event.target.value)}
                 required
                 maxLength={160}
+                disabled={busy}
               />
             </label>
           )}
@@ -226,6 +250,7 @@ export function LoginButtons({
                 onChange={(event) => setEmail(event.target.value)}
                 required
                 maxLength={254}
+                disabled={busy}
               />
             </label>
           )}
@@ -240,6 +265,7 @@ export function LoginButtons({
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 required
+                disabled={busy}
                 minLength={mode === "login" ? undefined : 12}
                 aria-describedby={mode === "login" ? undefined : "new-password-help"}
               />
@@ -248,6 +274,7 @@ export function LoginButtons({
           )}
           {message && <p role="status">{message}</p>}
           {error && <p role="alert">{error}</p>}
+          <div ref={captchaContainer} className="login-email-captcha" />
           <button type="submit" disabled={busy}>
             {busy
               ? "Подождите…"
@@ -267,6 +294,7 @@ export function LoginButtons({
             {mode !== "login" && (
               <button
                 type="button"
+                disabled={busy}
                 onClick={() => {
                   setMode("login");
                   setError("");
@@ -279,6 +307,7 @@ export function LoginButtons({
             {mode !== "register" && (
               <button
                 type="button"
+                disabled={busy}
                 onClick={() => {
                   setMode("register");
                   setError("");
@@ -291,6 +320,7 @@ export function LoginButtons({
             {mode !== "request-reset" && (
               <button
                 type="button"
+                disabled={busy}
                 onClick={() => {
                   setMode("request-reset");
                   setError("");

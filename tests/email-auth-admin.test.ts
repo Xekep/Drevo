@@ -7,6 +7,7 @@ import { emailAuthHttp } from "../src/server/email-auth-http.ts";
 import { emailAuthSettingsStore } from "../src/server/email-auth-settings.ts";
 import { validSmtpConfiguration } from "../src/server/email-sender.ts";
 import { PlatformAccessDenied } from "../src/server/platform-access.ts";
+import { encryptAiSecret } from "../src/server/ai-secret.ts";
 
 const origin = "https://drevo.example.org";
 const session = { accountId: "platform-owner", tokenHash: "fixture" };
@@ -101,4 +102,47 @@ test("email settings redact persisted credentials and fail closed if encryption 
   assert.equal(status.available, false);
   assert.ok(!JSON.stringify(status).includes("password_cipher"));
   assert.deepEqual(await settings.runtime(), { enabled: false, sender: null });
+});
+
+test("SmartCaptcha settings preserve and redact secrets, validate enabling and honor removal", async () => {
+  let row: Record<string, unknown>;
+  const db = { kind: "postgres", file: "",
+    prepare: () => ({ get: async () => row }),
+    postgresTransaction: async (work: (client: unknown) => Promise<unknown>) => work({
+      async query(sql: string, values: unknown[] = []) {
+        if (sql.startsWith("SELECT id FROM accounts")) return { rowCount: 1, rows: [{ id: session.accountId }] };
+        if (sql.includes("SELECT expires_at FROM account_sessions")) return { rowCount: 1, rows: [{ expires_at: Date.now() + 60_000 }] };
+        if (sql.startsWith("SELECT account_id FROM platform_admins")) return { rowCount: 1, rows: [{ account_id: session.accountId }] };
+        if (sql.startsWith("SELECT * FROM platform_email_auth_settings")) return { rows: [row] };
+        if (sql.startsWith("INSERT INTO platform_email_auth_settings")) {
+          const [enabled, host, port, smtp_user, sender, password_cipher, captcha_enabled, captcha_site_key, captcha_secret_cipher] = values;
+          row = { enabled, host, port, smtp_user, sender, password_cipher, captcha_enabled, captcha_site_key, captcha_secret_cipher };
+        }
+        return { rows: [], rowCount: 0 };
+      },
+    }),
+  } as unknown as Parameters<typeof emailAuthSettingsStore>[0];
+  row = { enabled: true, host: configuration.host, port: 587, smtp_user: configuration.user,
+    sender: configuration.from, password_cipher: encryptAiSecret(db, "smtp-secret"), captcha_enabled: false,
+    captcha_site_key: "", captcha_secret_cipher: "" };
+  const settings = emailAuthSettingsStore(db, origin);
+  const update = { enabled: true, host: configuration.host, port: 587, user: configuration.user, from: configuration.from };
+  await assert.rejects(settings.write({ ...update, captcha: { enabled: true, siteKey: "public" } }, session), /оба ключа/);
+  const enabled = await settings.write({ ...update, captcha: { enabled: true, siteKey: "public", secret: "captcha-secret" } }, session);
+  assert.deepEqual(enabled.captcha, { enabled: true, siteKey: "public", hasSecret: true });
+  assert.ok(!JSON.stringify(enabled).includes("captcha-secret"));
+  assert.notEqual(row.captcha_secret_cipher, "captcha-secret");
+  const cipher = row.captcha_secret_cipher;
+  await settings.write({ ...update, captcha: { enabled: true, siteKey: "public" } }, session);
+  assert.equal(row.captcha_secret_cipher, cipher);
+  const runtime = await settings.runtime();
+  assert.equal(runtime.enabled, true);
+  assert.ok("captcha" in runtime);
+  assert.equal(runtime.captcha?.secret, "captcha-secret");
+  row.captcha_secret_cipher = "v1.unreadable.captcha.secret";
+  assert.equal((await settings.read()).available, false);
+  assert.deepEqual(await settings.runtime(), { enabled: false, sender: null });
+  const removed = await settings.write({ ...update, captcha: { enabled: false, siteKey: "public", secret: null } }, session);
+  assert.equal(removed.captcha?.hasSecret, false);
+  assert.equal((await settings.runtime()).enabled, true);
 });
