@@ -40,9 +40,9 @@ test(`followup during ${phase} steers the same turn without aborting provider wo
       return Response.json({ id: "proposal-created", status: "completed", output: [{ type: "function_call", call_id: "proposal-create", name: "propose_person_create",
         arguments: JSON.stringify({ person: { surname: "Пупкин", name: "Вася" }, reason: "Просьба пользователя" }) }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (phase === "recovery" && requests.length === 2) return Response.json({ error: { message: "Upstream unavailable" } }, { status: 502 });
-    if ((phase === "modifier" || phase === "cancel") && requests.length === 2)
+    if (phase === "modifier" && requests.length === 2)
       return Response.json({ id: "refined-view", status: "completed", output: [{ type: "function_call", call_id: "refined-view", name: "control_archive_view",
-        arguments: JSON.stringify({ action: "exclude_branch", personId: "raya", direction: phase === "modifier" ? "self" : "ancestors" }) }], usage: { input_tokens: 10, output_tokens: 10 } });
+        arguments: JSON.stringify({ action: "exclude_branch", personId: "raya", direction: "self" }) }], usage: { input_tokens: 10, output_tokens: 10 } });
     return Response.json({ id: `response-${requests.length}`, status: "completed", output: phase !== "conversation" && phase !== "proposal" && requests.length === 1
       ? [{ type: "function_call", call_id: "obsolete-search", name: "search_people", arguments: '{"query":"Иван"}' }]
       : [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "Привет! Уточнение учтено." }] }],
@@ -101,7 +101,7 @@ test(`followup during ${phase} steers the same turn without aborting provider wo
       : Array.isArray(item.content) ? item.content.map(part => (part as { text?: string }).text || "").join("") : "";
     for (const update of updates) assert.ok(requests.some(request => request.input.some(item => item.role === "user" && textOf(item) === update)), "all accepted text reaches provider without truncating earlier updates");
     if (phase !== "conversation" && phase !== "proposal") {
-      assert.equal(requests.length, phase === "recovery" || phase === "cancel" ? 3 : 2);
+      assert.equal(requests.length, phase === "recovery" ? 3 : 2);
       const secondInput = requests[1].input;
       const cancellation = secondInput.findIndex(item => item.type === "function_call_output" && item.call_id === "obsolete-search");
       const clarification = secondInput.findIndex(item => item.role === "user" && textOf(item) === updates[0]);

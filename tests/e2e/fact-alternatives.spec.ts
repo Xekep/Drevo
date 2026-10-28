@@ -68,7 +68,7 @@ test("источник прежней фамилии при рождении о�
   await page.goto("/tree");
   await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").click();
   await page.locator(".inspector-person-actions .person-edit-button").click();
-  await page.getByText("ФИО и фамилия при рождении", { exact: true }).click();
+  await page.getByText("Записи о фамилии при рождении", { exact: true }).click();
   await page.getByLabel("Фамилия при рождении", { exact: true }).fill("Иванова");
   const claim = page.locator(".birth-surname-claim");
   await claim.locator("summary").click();
@@ -78,7 +78,7 @@ test("источник прежней фамилии при рождении о�
     ?.maidenNameClaim?.value).toBe("Иванова");
 
   await page.locator(".inspector-person-actions .person-edit-button").click();
-  await page.getByText("ФИО и фамилия при рождении", { exact: true }).click();
+  await page.getByText("Записи о фамилии при рождении", { exact: true }).click();
   await page.getByLabel("Фамилия при рождении", { exact: true }).fill("Петрова");
   await page.locator(".birth-surname-claim > summary").click();
   await page.getByRole("button", { name: "Сохранить прежнюю фамилию с источниками как вариант" }).click();

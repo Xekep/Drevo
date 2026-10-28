@@ -67,4 +67,15 @@ test("branch pills follow portrait scale with a usable transparent target", asyn
   }
   await page.getByTestId("rf__node-e2e-child").locator(".flow-collapse").click();
   await expect(page.getByTestId("rf__node-e2e-grandchild")).toHaveCount(0);
+  if (testInfo.project.name === "mobile")
+    await page.locator(".tree-family-menu > summary").click();
+  const expand = page.getByRole("button", { name: "Развернуть ветви", exact: true });
+  await expect(expand).toBeVisible();
+  await expect(expand).toHaveText("Развернуть ветви");
+  await expect(expand.locator("svg")).toHaveCount(1);
+  const bounds = (await expand.boundingBox())!;
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  await expand.click();
+  await expect(page.getByTestId("rf__node-e2e-grandchild")).toHaveCount(1);
 });

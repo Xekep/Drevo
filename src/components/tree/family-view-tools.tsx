@@ -127,11 +127,12 @@ export function FamilyViewTools({
           aria-label={
             mode === "family"
               ? "Вернуться к ближайшей семье"
-              : "Развернуть все ветви"
+              : "Развернуть ветви"
           }
           title={mode === "family" ? "Ближайшая семья" : "Развернуть все ветви"}
         >
-          <RotateCcw size={16} />
+          <RotateCcw size={16} aria-hidden="true" />
+          {mode !== "family" && <span>Развернуть ветви</span>}
         </button>
       )}
     </div>

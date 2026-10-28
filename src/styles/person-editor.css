@@ -448,6 +448,41 @@
 .person-detail-dialog .person-source-fields { padding: 0; }
 .person-detail-dialog .life-event-fields { padding: 0; }
 .person-detail-dialog > .form-error { margin: 0 18px 12px; }
+.person-life-expand {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #3e5846;
+  background: #fff;
+  margin-inline-start: auto;
+}
+.person-editor-form > .person-life-editor > summary::after {
+  margin-inline-start: 0;
+}
+.editor-dialog.person-life-dialog {
+  width: min(800px, calc(100vw - 24px));
+}
+.person-life-dialog .person-detail-body {
+  display: grid;
+  gap: 12px;
+}
+.person-life-dialog .person-life-expanded-history {
+  width: 100%;
+  min-height: min(48dvh, 420px);
+  line-height: 1.6;
+}
+@media (pointer: coarse) {
+  .person-life-expand {
+    flex-basis: 44px;
+    width: 44px;
+    min-height: 44px;
+  }
+}
 .education-editor .person-detail-dialog .life-event-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
 .education-editor .person-detail-dialog .life-event-fields > * { grid-column: 1 / -1; }
 .education-editor .person-detail-dialog .life-event-fields > :is(.event-date-field, .event-end-date-field) { grid-column: auto; }

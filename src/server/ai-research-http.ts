@@ -55,12 +55,10 @@ import {
   type ResearchMetrics,
 } from "./ai-research-support.ts";
 export {
-  explicitViewControlRequest,
   humanizeResearchAnswer,
   recoverTextToolCalls,
   requesterAccessContext,
   requesterPromptContext,
-  shortTreeZoomRequest,
 } from "./ai-research-support.ts";
 function sse(res: ServerResponse, event: string, value: unknown) {
   if (res.writableEnded || res.destroyed) return;

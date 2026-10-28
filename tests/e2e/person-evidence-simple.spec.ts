@@ -36,7 +36,7 @@ test("сведения и события не создают привязок к
   await form.getByLabel("Фамилия при рождении", { exact: true }).fill("Иванова");
   await form.getByLabel("Занятие", { exact: true }).fill("Учитель");
   await form.locator("[data-field=birth]").fill("1966");
-  await form.getByText("ФИО и фамилия при рождении", { exact: true }).click();
+  await expect(form.getByText("Записи о фамилии при рождении", { exact: true })).toHaveCount(0);
   await expect(form.locator(".birth-surname-claim, .fact-alternatives")).toHaveCount(0);
   await form.getByText("Жизнь и занятия", { exact: true }).click();
   await expect(form.locator(".occupation-claim")).toHaveCount(0);

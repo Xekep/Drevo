@@ -1,4 +1,5 @@
 import { PersonSourcesEditor } from "./person-sources-editor";
+import { PersonLifeEditor } from "./person-life-editor";
 import { useEffect, useRef, useState, useId, type FormEvent } from "react";
 import type { EditorFocusRequest } from "../hooks/useWorkspaceFocus";
 import { CitationSourcesEditor } from "./union-sources-editor.tsx";
@@ -9,7 +10,6 @@ import {
   Trash2,
   Undo2,
   CalendarDays,
-  BookOpen,
   UsersRound,
   ContactRound,
 } from "lucide-react";
@@ -347,10 +347,7 @@ export function PersonEditor({
     [portraitPreview],
   );
   function field(key: keyof Person, value: unknown) {
-    const next = { ...draft, [key]: value };
-    setDraft(next);
-    if (["name", "surname", "patronymic"].includes(key))
-      setNameText(fullName(next));
+    setDraft((current) => ({ ...current, [key]: value }));
   }
   function updateFullName(value: string) {
     setNameText(value);
@@ -905,28 +902,12 @@ export function PersonEditor({
             </button>
           </p>
         )}
-        <details className="form-details">
+        {(draft.maidenNameClaim || draft.factAlternatives?.some((item) => item.field === "maidenName")) &&
+        <details className="form-details person-birth-surname-records">
           <summary>
             <ContactRound size={17} aria-hidden="true" />
-            ФИО и фамилия при рождении
+            Записи о фамилии при рождении
           </summary>
-          <div className="form-grid">
-            {(
-              [
-                ["surname", "Фамилия"],
-                ["name", "Имя"],
-                ["patronymic", "Отчество"],
-              ] as const
-            ).map(([key, label]) => (
-              <label key={key}>
-                {label}
-                <input
-                  value={draft[key] || ""}
-                  onChange={(e) => field(key, e.target.value)}
-                />
-              </label>
-            ))}
-          </div>
           <ValueClaimSourcesEditor
             kind="birth"
             subject="surname"
@@ -944,12 +925,13 @@ export function PersonEditor({
             onChange={(alternatives) => field("factAlternatives", alternatives)}
             isAdmin={isAdmin}
             canAssess={canAssessArchiveEvidence(user)} />
-        </details>
-        <details className="form-details">
-          <summary>
-            <BookOpen size={17} aria-hidden="true" />
-            Жизнь и занятия
-          </summary>
+        </details>}
+        <PersonLifeEditor
+          occupation={draft.occupation || ""}
+          biography={draft.biography || ""}
+          onChange={(value) => setDraft((current) => ({ ...current, ...value }))}
+          onEditingChange={setDetailDirty}
+        >
           <ValueClaimSourcesEditor
             kind="occupation"
             subject="occupation"
@@ -967,15 +949,7 @@ export function PersonEditor({
             onChange={(alternatives) => field("factAlternatives", alternatives)}
             isAdmin={isAdmin}
             canAssess={canAssessArchiveEvidence(user)} />
-          <label>
-            История человека
-            <textarea
-              rows={4}
-              value={draft.biography || ""}
-              onChange={(e) => field("biography", e.target.value)}
-            />
-          </label>
-        </details>
+        </PersonLifeEditor>
         <EventsEditor
           section="education"
           onEditingChange={setDetailDirty}

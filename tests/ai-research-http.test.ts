@@ -9,12 +9,10 @@ import { adaptLegacyAiFake } from "./legacy-ai-fake.ts";
 import type { Family } from "../src/domain/types.ts";
 import { linkResearchReferences } from "../src/domain/research-answer.ts";
 import {
-  explicitViewControlRequest,
   humanizeResearchAnswer,
   recoverTextToolCalls,
   requesterAccessContext,
   requesterPromptContext,
-  shortTreeZoomRequest,
 } from "../src/server/ai-research-http.ts";
 
 test("research answer keeps clickable markers but replaces raw archive ids", () => {
@@ -165,51 +163,7 @@ test("a reader's edit request returns permissions without a model call or data c
   }
 });
 
-test("явные команды перемещают пользователя по древу, обычный вопрос экран не меняет", () => {
-  assert.equal(
-    explicitViewControlRequest("Покажи Анну на древе", "gallery"),
-    true,
-  );
-  assert.equal(
-    explicitViewControlRequest("Перемести меня к Анне", "tree"),
-    true,
-  );
-  assert.equal(
-    explicitViewControlRequest("Найди Василия в дереве", "tree"),
-    true,
-  );
-  assert.equal(explicitViewControlRequest("Расскажи об Анне", "tree"), false);
-  assert.equal(
-    explicitViewControlRequest(
-      "Покажи диаграмму количества людей по годам",
-      "tree",
-    ),
-    false,
-  );
-  assert.equal(
-    explicitViewControlRequest(
-      "Покажи граф родства между мной и Варварой",
-      "tree",
-    ),
-    false,
-  );
-  assert.equal(
-    explicitViewControlRequest(
-      "отобрази на древе чепчуговых только и их предков ближайших",
-      "tree",
-    ),
-    true,
-  );
-});
-
-test("короткая команда приближения действует только в древе", () => {
-  assert.equal(shortTreeZoomRequest("так ты приблизь", "tree"), "zoom_in");
-  assert.equal(shortTreeZoomRequest("отдали ещё", "tree"), "zoom_out");
-  assert.equal(shortTreeZoomRequest("так ты приблизь", "gallery"), null);
-  assert.equal(shortTreeZoomRequest("приблизь Анну", "tree"), null);
-});
-
-test("surname-only tree request builds a verified temporary subset without a model call", async () => {
+test("surname-only tree request builds a verified temporary subset from the model-selected action", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-ai-subtree-"));
   process.env.YANDEX_AI_API_KEY = "test-key";
   process.env.YANDEX_AI_FOLDER_ID = "folder-1";
@@ -222,9 +176,7 @@ test("surname-only tree request builds a verified temporary subset without a mod
     undefined,
     adaptLegacyAiFake(async () => {
       providerCalls++;
-      throw new Error(
-        "Explicit surname filtering should not require a model call",
-      );
+      return Response.json({ choices: [{ message: providerCalls === 1 ? { role: "assistant", content: null, tool_calls: [{ id: "surname-view", type: "function", function: { name: "control_archive_view", arguments: JSON.stringify({ action: "filter_surname", surname: "Чепчугов" }) } }] } : { role: "assistant", content: "Показываю выбранную фамильную группу." } }] });
     }),
   );
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
@@ -278,7 +230,7 @@ test("surname-only tree request builds a verified temporary subset without a mod
     });
     assert.equal(response.status, 200);
     const data = await response.json();
-    assert.equal(providerCalls, 0);
+    assert.equal(providerCalls, 2);
     assert.equal(data.uiActions[0].type, "filter_people");
     assert.deepEqual(
       new Set(data.uiActions[0].personIds),
@@ -296,7 +248,7 @@ test("surname-only tree request builds a verified temporary subset without a mod
   }
 });
 
-test("explicit review hide request returns a scoped tree action without a model call", async () => {
+test("explicit review hide request returns a scoped tree action from a model-selected action", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-ai-review-"));
   process.env.YANDEX_AI_API_KEY = "test-key";
   process.env.YANDEX_AI_FOLDER_ID = "folder-1";
@@ -309,7 +261,7 @@ test("explicit review hide request returns a scoped tree action without a model 
     undefined,
     adaptLegacyAiFake(async () => {
       providerCalls++;
-      throw new Error("Review filtering should not require a model call");
+      return Response.json({ choices: [{ message: providerCalls === 1 ? { role: "assistant", content: null, tool_calls: [{ id: "hide-review", type: "function", function: { name: "control_archive_view", arguments: JSON.stringify({ action: "hide_review_people" }) } }] } : { role: "assistant", content: "Скрыл на древе 1 карточку." } }] });
     }),
   );
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
@@ -349,7 +301,7 @@ test("explicit review hide request returns a scoped tree action without a model 
     });
     assert.equal(response.status, 200);
     const data = await response.json();
-    assert.equal(providerCalls, 0);
+    assert.equal(providerCalls, 2);
     assert.deepEqual(data.uiActions, [{ type: "hide_review_people" }]);
     assert.match(data.answer, /Скрыл на древе 1 карточку/);
   } finally {
@@ -681,7 +633,7 @@ test("a read-only photo question does not offer archive mutation tools", async (
   }
 });
 
-test("showing a found photo finishes from the verified search without another model round", async () => {
+test("showing a found photo opens only after an explicit model-selected UI action", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-ai-show-photo-"));
   process.env.YANDEX_AI_API_KEY = "test-key";
   process.env.YANDEX_AI_FOLDER_ID = "folder-1";
@@ -690,10 +642,12 @@ test("showing a found photo finishes from the verified search without another mo
   const provider: typeof fetch = async (url) => {
     if (String(url).endsWith("/conversations"))
       return Response.json({ id: "conversation-1" });
-    const call =
-      ++calls === 1
-        ? { name: "search_people", arguments: '{"query":"Анна"}' }
-        : { name: "search_photos", arguments: '{"personId":"anna"}' };
+    calls++;
+    if (calls === 4) return Response.json({ id: "shown", status: "completed", output_text: "Открыл [[photo:photo-anna|Анна у дома]]." });
+    const call = calls === 1
+      ? { name: "search_people", arguments: '{"query":"Анна"}' }
+      : calls === 2 ? { name: "search_photos", arguments: '{"personId":"anna"}' }
+      : { name: "control_archive_view", arguments: JSON.stringify({ action: "open_photo", photoId: "photo-anna" }) };
     return Response.json({
       id: `response-${calls}`,
       status: "completed",
@@ -752,11 +706,11 @@ test("showing a found photo finishes from the verified search without another mo
     const response = await fetch(base + "/api/ai/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "Покажи фото Анны" }),
+      body: JSON.stringify({ message: "Покажи фото Анны", context: { view: "gallery" } }),
     });
     const result = await response.json();
     assert.equal(response.status, 200);
-    assert.equal(calls, 2);
+    assert.equal(calls, 4);
     assert.match(result.answer, /\[\[photo:photo-anna\|Анна у дома\]\]/);
     assert.deepEqual(result.uiActions, [
       { type: "open_photo", photoId: "photo-anna" },
@@ -1199,6 +1153,7 @@ test("web researcher uses Yandex AI Studio function calling through server only"
       body: JSON.parse(String(init?.body)),
     });
     call++;
+    if (call === 3 || call === 5) return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `view-${call}`, type: "function", function: { name: "control_archive_view", arguments: JSON.stringify(call === 3 ? { action: "zoom_in" } : { action: "filter_surname", surname: "Лебедь" }) } }] } }] });
     if (call === 1)
       return Response.json({
         choices: [
@@ -1214,6 +1169,11 @@ test("web researcher uses Yandex AI Studio function calling through server only"
                     name: "search_people",
                     arguments: JSON.stringify({ query: "Анна" }),
                   },
+                },
+                {
+                  id: "call-view",
+                  type: "function",
+                  function: { name: "control_archive_view", arguments: JSON.stringify({ action: "focus_people", personIds: ["anna-ai-test"] }) },
                 },
                 {
                   id: "call-2",
@@ -1233,7 +1193,7 @@ test("web researcher uses Yandex AI Studio function calling through server only"
         {
           message: {
             role: "assistant",
-            content: "В архиве найдена Анна Лебедь.",
+            content: call === 4 ? "Приблизил древо." : "В архиве найдена Анна Лебедь.",
           },
         },
       ],
@@ -1361,8 +1321,8 @@ test("web researcher uses Yandex AI Studio function calling through server only"
     assert.deepEqual(zoom.uiActions, [{ type: "zoom_in" }]);
     assert.equal(
       requests.length,
-      2,
-      "короткое действие не требует вызова модели",
+      4,
+      "the model selects zoom through the same checked tool contract",
     );
     assert.deepEqual(
       payload.references.find(
@@ -1376,7 +1336,7 @@ test("web researcher uses Yandex AI Studio function calling through server only"
         url: "https://archive.example/item/3",
       },
     );
-    assert.equal(requests.length, 2);
+    assert.equal(requests.length, 4);
     assert.equal(requests[0].headers.get("authorization"), "Api-Key test-key");
     assert.equal(requests[0].headers.get("openai-project"), "folder-1");
     assert.equal(requests[0].body.model, "gpt://folder-1/yandexgpt/rc");
@@ -1461,6 +1421,11 @@ test("web researcher can inspect an authorized archive photo through a bounded p
               role: "assistant",
               content: null,
               tool_calls: [
+                {
+                  id: "photo-open",
+                  type: "function",
+                  function: { name: "control_archive_view", arguments: JSON.stringify({ action: "open_photo", photoId: "photo-ai" }) },
+                },
                 {
                   id: "photo-call",
                   type: "function",
@@ -1561,7 +1526,7 @@ test("web researcher can inspect an authorized archive photo through a bounded p
         label: "Семейный снимок",
       },
     );
-    assert.equal(requests[1].model, "gpt://folder-1/qwen3.6-35b-a3b/latest");
+    assert.equal(requests[1].model, "gpt://folder-1/aliceai-llm-flash/latest");
     assert.equal(requests[1].tools, undefined);
     const secondMessages = requests[1].messages as Array<{
       role: string;
@@ -1583,7 +1548,7 @@ test("web researcher can inspect an authorized archive photo through a bounded p
       content?: string;
     }>;
     assert.match(
-      finalMessages.find((message) => message.role === "tool")?.content || "",
+      finalMessages.filter((message) => message.role === "tool").map((message) => message.content).join("\n"),
       /На изображении виден светлый пиксель/,
     );
   } finally {

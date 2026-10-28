@@ -221,7 +221,7 @@ export const CONTROL_VIEW_TOOL = {
       photoId: { type: "string", minLength: 1, maxLength: 200 },
       surname: { type: "string", minLength: 2, maxLength: 100 },
       label: { type: "string", minLength: 1, maxLength: 100 },
-      mode: { type: "string", enum: ["include", "exclude"], description: "Для filter_by_criteria: оставить совпавших или исключить совпавших из всего доступного древа." },
+      mode: { type: "string", enum: ["include", "exclude"], description: "Для filter_by_criteria: сузить текущий показ до совпавших или исключить совпавших из текущего показа. Прежние фильтры, свёрнутые ветви и опорный человек сохраняются." },
       criteria: PEOPLE_FILTER_SCHEMA,
     },
     required: ["action"],
@@ -229,68 +229,31 @@ export const CONTROL_VIEW_TOOL = {
   },
 } as const;
 
-export function treeSubsetRequest(message: string) {
-  return /(?:древ|дерев).{0,120}(?:только|остав|сформир|постро|из\s+(?:людей|родственник))|(?:только|остав|сформир|постро).{0,120}(?:древ|дерев)/iu.test(
-    message,
-  );
-}
-
-export function hideReviewPeopleRequest(message: string) {
-  return /(?:скро[йиь]?|скрыть|убер[ииь]?|исключ|не\s+показывай|отфильтруй).{0,100}(?:требу.{0,20}проверк|на\s+проверк|непроверенн)|(?:требу.{0,20}проверк|на\s+проверк|непроверенн).{0,100}(?:скро[йиь]?|скрыть|убер[ииь]?|исключ|не\s+показывай|отфильтруй)/iu.test(message);
-}
-
-export function surnameInTreeRequest(message: string) {
-  return (
-    /(?:древ[ео]|дерев[ео]|род[ауе]|ветк[еиу]|по)\s+(?:только\s+)?([а-яё-]{4,})/iu.exec(
-      message,
-    )?.[1] ||
-    /только\s+([а-яё-]{4,}).{0,40}(?:древ|дерев)/iu.exec(message)?.[1] ||
-    ""
-  );
-}
-
-export function explicitViewControlRequest(message: string, view = "") {
-  const directInterfaceRequest =
-      /(?:покаж(?:и|ь)?|отобраз|остав|убер|скрой|сформир|постро|собер|перейди|открой|приблиз|сфокус|выдел|подсвет|проведи|перемест|перенес|центрир|навед|найди).{0,90}(?:древ|дерев|карточ|фото|сним|ветк)|(?:на древе|в дереве|на карте).{0,90}(?:покаж(?:и|ь)?|отобраз|остав|сформир|постро|найди|выдел|подсвет|перемест|центрир)/iu.test(
-        message,
-      ),
-    treeMovementRequest =
-      view === "tree" &&
-      /(?:перемест|перенес|проведи|перейди|навед|центрир).{0,40}(?:меня|к|на|до)/iu.test(
-        message,
-      );
-  const treeFilterRequest = view === "tree" && /(?:^|[\s,.!?])(?:скрой|скрыть|убери|убрать|исключи|исключить|оставь|оставить|отфильтруй)(?:\s|[,.!?]|$)/iu.test(message);
-  return directInterfaceRequest || treeMovementRequest || treeFilterRequest || treeLayoutRequest(message, view);
-}
-
-export function treeLayoutRequest(message: string, view: string) {
-  return treeCompactRequest(message, view) || (view === "tree" && /(?:оптимизир|упорядоч|перестав|разлож|размест|располож|распут|улучш).{0,90}(?:карточ|расклад|древ|дерев|печат|красив)|(?:древ|дерев|карточ|расклад).{0,90}(?:оптимизир|упорядоч|перестав|разлож|размест|располож|распут|улучш)/iu.test(message));
-}
-
-export function treeCompactRequest(message: string, view: string) {
-  if (view !== "tree" || /не\s+(?:(?:надо|нужно|делай|делать|хочу|стоит)\s+){0,3}(?:карточки\s+)?(?:уплотн|плотне|компактне|сжим|уменьш|сократ)/iu.test(message)) return false;
-  return /(?:уплотни|уплотнить|сожми|сжать|ужми|ужать|плотнее|компактнее).{0,90}(?:карточ|древ|дерев|расклад|семь|вет[вк])|(?:карточ|древ|дерев|расклад).{0,90}(?:уплотни|уплотнить|сожми|сжать|ужми|ужать|плотнее|компактнее)|(?:уменьш|сократ|убери|убрать).{0,60}(?:пустот|промежут|отступ|расстояни).{0,60}(?:карточ|семь|древ|дерев)|^(?:(?:сделай|давай|ещ[её]|чуть|немного|пожалуйста)[\s,!]*)*(?:плотнее|компактнее)[\s.!?]*$/iu.test(message);
-}
-
-export function shortTreeZoomRequest(message: string, view: string) {
-  if (view !== "tree") return null;
-  const command = message
-    .trim()
-    .replace(/[.!?]+$/, "")
-    .trim();
-  if (
-    /^(?:(?:так|ну|давай|ты|ещ[её]|пожалуйста)\s+)*(?:приблизь|приблизи|увеличь)(?:\s+(?:ещ[её]|древо|дерево|пожалуйста))*$/iu.test(
-      command,
-    )
-  )
-    return "zoom_in" as const;
-  if (
-    /^(?:(?:так|ну|давай|ты|ещ[её]|пожалуйста)\s+)*(?:отдали|уменьши)(?:\s+(?:ещ[её]|древо|дерево|пожалуйста))*$/iu.test(
-      command,
-    )
-  )
-    return "zoom_out" as const;
-  return null;
+/** The model chooses a reversible action; code validates its contract and context,
+ * not the wording of the user's request. Data mutation remains proposal-only. */
+export function viewControlArguments(value: unknown, view: string) {
+  if (!view) throw new Error("Контекст интерфейса недоступен");
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Некорректные параметры управления видом");
+  const args = value as Record<string, unknown>;
+  const schema = CONTROL_VIEW_TOOL.inputSchema;
+  if (Object.keys(args).some(key => !Object.hasOwn(schema.properties, key)) ||
+      typeof args.action !== "string" || !(schema.properties.action.enum as readonly string[]).includes(args.action))
+    throw new Error("Неизвестное действие или параметр управления видом");
+  if (["optimize_layout", "exclude_branch", "zoom_in", "zoom_out"].includes(args.action) && view !== "tree")
+    throw new Error("Откройте раздел «Древо» для этого действия");
+  for (const [key, minimum, maximum] of [["personId", 1, 200], ["photoId", 1, 200], ["surname", 2, 100], ["label", 1, 100]] as const) {
+    const text = args[key];
+    if (text !== undefined && (typeof text !== "string" || text.trim().length < minimum || text.length > maximum || /[\p{Cc}]/u.test(text)))
+      throw new Error("Некорректный идентификатор или подпись действия");
+  }
+  if (args.personIds !== undefined && (!Array.isArray(args.personIds) || !args.personIds.length || args.personIds.length > 300 ||
+      args.personIds.some(id => typeof id !== "string" || !id || id.length > 200 || /[\p{Cc}]/u.test(id))))
+    throw new Error("Укажите от 1 до 300 идентификаторов людей");
+  for (const key of ["goal", "direction", "mode"] as const)
+    if (args[key] !== undefined && !(schema.properties[key].enum as readonly unknown[]).includes(args[key]))
+      throw new Error("Неизвестная цель или область действия");
+  return args;
 }
 
 export function recoverTextToolCalls(
