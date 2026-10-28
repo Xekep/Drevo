@@ -7,16 +7,17 @@ import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
 import { researchFollowupMessage } from "../src/server/ai-research-followup-intent.ts";
 
-test("steering keeps only the current task plus modifiers and drops superseded operations", () => {
+test("steering preserves all updates without classifying cancellation or topic from words", () => {
   const original = "Убери Раю вместе с предками";
   assert.match(researchFollowupMessage(original, ["только её, без предков"]), /^Убери Раю/);
-  assert.equal(researchFollowupMessage(original, ["нет, не скрывай, просто ответь привет"]), "нет, не скрывай, просто ответь привет");
-  assert.equal(researchFollowupMessage(original, ["Покажи фотографии"]), "Покажи фотографии");
+  assert.equal(researchFollowupMessage(original, ["нет, не скрывай, просто ответь привет"]), `${original}\n\nнет, не скрывай, просто ответь привет`);
+  assert.equal(researchFollowupMessage(original, ["Покажи фотографии"]), `${original}\n\nПокажи фотографии`);
   assert.match(researchFollowupMessage(original, ["и ещё покажи фотографии"]), /^Убери Раю/);
 });
 
-for (const phase of ["response", "conversation", "recovery", "modifier", "cancel", "proposal"] as const)
+for (const phase of ["response", "conversation", "recovery", "modifier", "cancel", "proposal", "proposal-neutral"] as const)
 test(`followup during ${phase} steers the same turn without aborting provider work`, { timeout: 20000 }, async () => {
+  const proposalPhase = phase === "proposal" || phase === "proposal-neutral";
   const directory = await mkdtemp(join(tmpdir(), "drevo-ai-steering-"));
   const env = { YANDEX_AI_API_KEY: "test-key", YANDEX_AI_FOLDER_ID: "folder", YANDEX_AI_MODEL: "model" };
   const prior = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
@@ -29,21 +30,21 @@ test(`followup during ${phase} steers the same turn without aborting provider wo
   const provider: typeof fetch = async (url, init) => {
     if (init?.method === "DELETE") return Response.json({ deleted: true });
     const conversation = String(url).endsWith("/conversations");
-    if ((phase === "conversation" && conversation) || (phase === "proposal" && !conversation && requests.length === 1) || (phase !== "conversation" && phase !== "proposal" && !conversation && !requests.length)) {
+    if ((phase === "conversation" && conversation) || (proposalPhase && !conversation && requests.length === 1) || (phase !== "conversation" && !proposalPhase && !conversation && !requests.length)) {
       init?.signal?.addEventListener("abort", () => { aborted = true; }, { once: true });
       enter();
       await gate;
     }
     if (conversation) return Response.json({ id: "steering-conversation" });
     requests.push(JSON.parse(String(init?.body)));
-    if (phase === "proposal" && requests.length === 1)
+    if (proposalPhase && requests.length === 1)
       return Response.json({ id: "proposal-created", status: "completed", output: [{ type: "function_call", call_id: "proposal-create", name: "propose_person_create",
         arguments: JSON.stringify({ person: { surname: "Пупкин", name: "Вася" }, reason: "Просьба пользователя" }) }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (phase === "recovery" && requests.length === 2) return Response.json({ error: { message: "Upstream unavailable" } }, { status: 502 });
     if (phase === "modifier" && requests.length === 2)
       return Response.json({ id: "refined-view", status: "completed", output: [{ type: "function_call", call_id: "refined-view", name: "control_archive_view",
         arguments: JSON.stringify({ action: "exclude_branch", personId: "raya", direction: "self" }) }], usage: { input_tokens: 10, output_tokens: 10 } });
-    return Response.json({ id: `response-${requests.length}`, status: "completed", output: phase !== "conversation" && phase !== "proposal" && requests.length === 1
+    return Response.json({ id: `response-${requests.length}`, status: "completed", output: phase !== "conversation" && !proposalPhase && requests.length === 1
       ? [{ type: "function_call", call_id: "obsolete-search", name: "search_people", arguments: '{"query":"Иван"}' }]
       : [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "Привет! Уточнение учтено." }] }],
       usage: { input_tokens: 10, output_tokens: 10 } });
@@ -64,7 +65,7 @@ test(`followup during ${phase} steers the same turn without aborting provider wo
       ] }, initial.revision);
     }
     const originalMessage = phase === "modifier" || phase === "cancel" ? "Убери Раю вместе с предками"
-      : phase === "proposal" ? "Добавь Васю Пупкина в древо" : "Привет";
+      : proposalPhase ? "Добавь Васю Пупкина в древо" : "Привет";
     const response = fetch(base + "/api/ai/chat", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: originalMessage, context: { view: "tree" } }) });
     final = response.then(async value => {
@@ -79,7 +80,8 @@ test(`followup during ${phase} steers the same turn without aborting provider wo
       ? ["Первое уточнение: " + "а".repeat(5900), "Второе уточнение: " + "б".repeat(5900)]
       : phase === "modifier" ? ["только её, без предков"]
       : phase === "cancel" ? ["нет, не скрывай, просто ответь привет"]
-      : phase === "proposal" ? ["нет, не изменяй архив, просто ответь привет"]
+      : phase === "proposal-neutral" ? ["Отложим это предложение. Я сейчас хочу короткое приветствие."]
+      : proposalPhase ? ["нет, не изменяй архив, просто ответь привет"]
       : ["Не ищи людей, просто ответь коротким приветствием."];
     for (const message of updates) {
       const requestId = randomUUID();
@@ -100,7 +102,7 @@ test(`followup during ${phase} steers the same turn without aborting provider wo
     const textOf = (item: typeof requests[number]["input"][number]) => typeof item.content === "string" ? item.content
       : Array.isArray(item.content) ? item.content.map(part => (part as { text?: string }).text || "").join("") : "";
     for (const update of updates) assert.ok(requests.some(request => request.input.some(item => item.role === "user" && textOf(item) === update)), "all accepted text reaches provider without truncating earlier updates");
-    if (phase !== "conversation" && phase !== "proposal") {
+    if (phase !== "conversation" && !proposalPhase) {
       assert.equal(requests.length, phase === "recovery" ? 3 : 2);
       const secondInput = requests[1].input;
       const cancellation = secondInput.findIndex(item => item.type === "function_call_output" && item.call_id === "obsolete-search");
@@ -114,7 +116,7 @@ test(`followup during ${phase} steers the same turn without aborting provider wo
     const usage = await app.archive.db.prepare("SELECT COUNT(*) AS total,SUM(provider_calls) AS calls FROM ai_usage").get();
     assert.equal(Number(usage!.total), 1, "followups use the original admitted turn and budget");
     assert.equal(Number(usage!.calls), requests.length);
-    if (phase === "proposal") {
+    if (proposalPhase) {
       assert.equal(requests.length, 3);
       assert.deepEqual(result.suggestionIds, [], "superseded proposal buttons do not appear in the new answer");
       assert.deepEqual(result.files, []);

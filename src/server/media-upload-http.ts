@@ -177,12 +177,9 @@ export function mediaUploadHttp({
               },
               revision,
               actor,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              { withinTransaction },
+              {
+                withinTransaction,
+              },
             );
           };
           let value: unknown;

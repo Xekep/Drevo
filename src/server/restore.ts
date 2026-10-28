@@ -1049,14 +1049,10 @@ export function restoreStore(
         // a downgraded owner may replace already-counted bytes without growth.
         let measuredAt: number | undefined;
         let previousMediaBytes: number | undefined;
-        result = await archive.write(
-          family,
-          stage.revision,
-          actor,
-          "Восстановление из бэкапа",
-          undefined,
-          stage.faceDescriptors,
-          async (db) => {
+        result = await archive.write(family, stage.revision, actor, {
+          operation: "Восстановление из бэкапа",
+          faceDescriptors: stage.faceDescriptors,
+          afterWrite: async (db) => {
             // This runs in archive.write's transaction. A platform-admin row
             // lock obtained here remains held through the archive commit.
             await assertAccess(db);
@@ -1075,10 +1071,7 @@ export function restoreStore(
               await insert.run(
                 document.id,
                 document.title,
-                documentSearchText(
-                  document.title,
-                  parseDocumentDetails(document)!,
-                ),
+                documentSearchText(document.title, parseDocumentDetails(document)!),
                 document.fileName,
                 document.fileSize,
                 document.uploadedBy,
@@ -1092,26 +1085,18 @@ export function restoreStore(
                 document.eventLinks || "[]",
                 document.pages || "[]",
               );
-              for (const personId of document.personIds)
-                await link.run(document.id, personId);
+              for (const personId of document.personIds) await link.run(document.id, personId);
             }
             const currentVersions = new Map(
               (
                 await db
-                  .prepare(
-                    "SELECT id,version FROM source_catalog",
-                    "SELECT id,version FROM source_catalog",
-                  )
+                  .prepare("SELECT id,version FROM source_catalog", "SELECT id,version FROM source_catalog")
                   .all()
               ).map((row) => [String(row.id), Number(row.version)]),
             );
-            await db.exec(
-              "DELETE FROM source_catalog",
-              "DELETE FROM source_catalog",
-            );
+            await db.exec("DELETE FROM source_catalog", "DELETE FROM source_catalog");
             for (const { version, ...source } of restoredCatalog) {
-              const nextVersion =
-                Math.max(version, currentVersions.get(source.id) || 0) + 1;
+              const nextVersion = Math.max(version, currentVersions.get(source.id) || 0) + 1;
               if (nextVersion > 2_147_483_646)
                 throw new Error("Версия источника превышает допустимый предел");
               await sourceCatalogStore(db).insert(source, nextVersion);
@@ -1125,27 +1110,36 @@ export function restoreStore(
               for (const comment of restoredComments) {
                 if (!authors.has(comment.authorId))
                   authors.set(comment.authorId, `restored:${randomUUID()}`);
-                await insertComment.run(comment.personId, authors.get(comment.authorId)!,
-                  comment.authorName, comment.createdMs, comment.text,
-                  comment.updatedMs, JSON.stringify(comment.attachments.map((file) =>
-                    installedDiscussionFiles.get(file.id)!)));
+                await insertComment.run(
+                  comment.personId,
+                  authors.get(comment.authorId)!,
+                  comment.authorName,
+                  comment.createdMs,
+                  comment.text,
+                  comment.updatedMs,
+                  JSON.stringify(comment.attachments.map((file) => installedDiscussionFiles.get(file.id)!)),
+                );
               }
             }
             await enforcePostgresMediaQuota(db, previousMediaBytes, measuredAt);
           },
-          async (db) => {
+          beforeWrite: async (db) => {
             measuredAt = Date.now();
             previousMediaBytes = await postgresMediaBytes(db, measuredAt);
             if (restoreComments) {
-              const current = await db.prepare(
-                "SELECT count(*) AS count FROM person_comments",
-                "SELECT count(*) AS count FROM person_comments",
-              ).get();
+              const current = await db
+                .prepare(
+                  "SELECT count(*) AS count FROM person_comments",
+                  "SELECT count(*) AS count FROM person_comments",
+                )
+                .get();
               if (Number(current?.count) !== 0)
-                throw new ConflictError("В архиве уже есть комментарии; импорт из копии может создать дубликаты.");
+                throw new ConflictError(
+                  "В архиве уже есть комментарии; импорт из копии может создать дубликаты.",
+                );
             }
           },
-        );
+        });
       } catch (error) {
         await Promise.allSettled(
           created.map((path) => rm(path, { force: true })),

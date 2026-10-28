@@ -9,6 +9,8 @@ import type {
   GalleryQuery,
   PlacesProjection,
 } from "../domain/archive-view-projection.ts";
+import type { TreeFragmentRequest } from "../shared/tree-fragment.ts";
+import { validateFamily } from "../domain/validation.ts";
 
 class DetailsChanged extends Error {}
 export class ArchiveDetailsAccessError extends Error {}
@@ -40,6 +42,7 @@ export function archiveDetails<T extends ArchivePageHeader>(
   const galleryIndices = new Map<string, string[]>();
   const views = new Set<"places" | "insights" | "timeline">();
   let projectionGeneration = 0;
+  let graphComplete = initial.graphComplete ?? !initial.fragment;
   const emit = (refreshed = false) => {
     header = { ...header, partial: !(peopleComplete && photosComplete) };
     publish(header, refreshed);
@@ -86,7 +89,9 @@ export function archiveDetails<T extends ArchivePageHeader>(
   }
   async function refresh() {
     const expectedVersion = version;
-    const response = await request("/api/family?projection=overview");
+    const fragment = header.fragment;
+    const response = await request(`/api/family?projection=overview${fragment
+      ? `&fragment=auto&threshold=${fragment.threshold ?? 500}&anchor=${encodeURIComponent(fragment.anchorId)}` : ""}`);
     const data = await response.json();
     if (response.status === 401 || response.status === 403)
       throw new ArchiveDetailsAccessError(
@@ -101,6 +106,7 @@ export function archiveDetails<T extends ArchivePageHeader>(
     if (!data.family || !Number.isSafeInteger(data.revision))
       throw new Error("Некорректный ответ архива");
     header = data;
+    graphComplete = data.graphComplete ?? !data.fragment;
     views.clear();
     projectionGeneration++;
     version++;
@@ -113,6 +119,22 @@ export function archiveDetails<T extends ArchivePageHeader>(
     peopleComplete = !data.partial || data.totals?.people === 0;
     photosComplete = !data.partial || data.totals?.photos === 0;
     emit(true);
+  }
+  async function ensureOverview(signal?: AbortSignal) {
+    if (graphComplete) return;
+    const data = await read("/api/family?projection=overview", version, signal ? { signal } : undefined);
+    const family = validateFamily(data.family);
+    if (data.fragment || family.people.length !== header.totals?.people)
+      throw new Error("Неполный граф архива");
+    const previous = new Map(header.family.people.map(person => [person.id, person]));
+    header = { ...header, graphComplete: true, family: { ...family,
+      people: family.people.map(person => loaded.has(person.id)
+        ? { ...person, ...personDetails(previous.get(person.id)!) } : person),
+      photos: header.family.photos || [],
+    } };
+    graphComplete = true;
+    projectionGeneration++;
+    emit();
   }
   function enqueue(work: () => Promise<void>, urgent = false) {
     const run = async () => {
@@ -156,6 +178,38 @@ export function archiveDetails<T extends ArchivePageHeader>(
     }
   }
   return {
+    hasOverview: () => graphComplete,
+    fragment: () => header.fragment || null,
+    setFragmentThreshold(threshold: number) {
+      if (header.fragment && header.fragment.threshold !== threshold) {
+        header = { ...header, fragment: { ...header.fragment, threshold } };
+        emit();
+      }
+    },
+    ensureOverview(signal?: AbortSignal) { return enqueue(() => ensureOverview(signal), true); },
+    loadFragment(demand: TreeFragmentRequest, signal?: AbortSignal) {
+      return enqueue(async () => {
+        const data = await read(`/api/family?projection=fragment&token=${encodeURIComponent(header.pageToken || "")}`, version,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(demand), signal });
+        const family = validateFamily(data.family);
+        if (!data.fragment || family.people.length > 500 || data.fragment.peopleIds?.length !== family.people.length ||
+            new Set(data.fragment.peopleIds).size !== family.people.length ||
+            family.people.some(person => !data.fragment.peopleIds.includes(person.id)) ||
+            !data.fragment.peopleIds.includes(demand.anchorId) ||
+            data.fragment.anchorId !== demand.anchorId || !Number.isSafeInteger(data.fragment.total) ||
+            data.fragment.total !== header.totals?.people ||
+            !Array.isArray(data.fragment.hidden) || data.fragment.hidden.some((entry: unknown) => !Array.isArray(entry) ||
+              entry.length !== 2 || !data.fragment.peopleIds.includes(entry[0]) || !Number.isSafeInteger(entry[1]) || entry[1] < 1))
+          throw new Error("Некорректный фрагмент древа");
+        const previous = new Map(header.family.people.map(person => [person.id, person]));
+        header = { ...header, fragment: { ...data.fragment, threshold: header.fragment?.threshold },
+          family: graphComplete ? header.family : { ...family, people: family.people.map(person => loaded.has(person.id) && previous.has(person.id)
+            ? { ...person, ...personDetails(previous.get(person.id)!) } : person) } };
+        if (!graphComplete) loaded = new Set([...loaded].filter(id => previous.has(id) && family.people.some(person => person.id === id)));
+        projectionGeneration++;
+        emit();
+      }, true);
+    },
     hasPerson: (id: string) => loaded.has(id),
     personPhotoTotal: (id: string) => photosComplete ? (header.family.photos || []).filter(photo => photo.tags.some(tag => tag.personId === id)).length : personPhotoTotals.get(id),
     loadedPeople: () => new Set(loaded),
@@ -170,6 +224,7 @@ export function archiveDetails<T extends ArchivePageHeader>(
         ...header,
         family,
         revision,
+        ...(header.fragment ? { fragment: { ...header.fragment, stale: true } } : {}),
         pageToken: header.pageToken?.replace(/^\d+:/, `${revision}:`),
         ...(header.totals
           ? {
@@ -191,6 +246,7 @@ export function archiveDetails<T extends ArchivePageHeader>(
       delete header.insights;
       projectionGeneration++;
       if (full) {
+        graphComplete = true;
         peopleComplete = photosComplete = true;
         loaded = new Set(family.people.map((p) => p.id));
       }
@@ -199,6 +255,7 @@ export function archiveDetails<T extends ArchivePageHeader>(
     loadView(view: "places" | "insights" | "timeline", signal?: AbortSignal) {
       return enqueue(async () => {
         if (signal?.aborted) return;
+        await ensureOverview(signal);
         if (views.has(view)) return;
         const data = await read(
           `/api/family?projection=${view}&token=${encodeURIComponent(header.pageToken || "")}`,
@@ -250,6 +307,7 @@ export function archiveDetails<T extends ArchivePageHeader>(
     async gallery(query: GalleryQuery): Promise<GalleryPage> {
       let page: GalleryPage | undefined;
       await enqueue(async () => {
+        await ensureOverview();
         const key = JSON.stringify([query.mode, query.personId || null, query.year || null]);
         const cachedIndex = galleryIndices.get(key);
         const params = new URLSearchParams({
@@ -316,6 +374,7 @@ export function archiveDetails<T extends ArchivePageHeader>(
     },
     loadPhotos(ids: string[]) {
       return enqueue(async () => {
+        await ensureOverview();
         const known = new Set(
           (header.family.photos || []).map((photo) => photo.id),
         );
@@ -344,7 +403,14 @@ export function archiveDetails<T extends ArchivePageHeader>(
     },
     loadPeople(ids: string[]) {
       return enqueue(async () => {
+        // A profile includes its recorded relationships. Demand the complete
+        // authorized skeleton before combining those details with the family.
+        await ensureOverview();
         const known = new Set(header.family.people.map((p) => p.id));
+        if (ids.some(id => !known.has(id))) {
+          await ensureOverview();
+          header.family.people.forEach(person => known.add(person.id));
+        }
         const needed = [...new Set(ids)].filter(
           (id) =>
             known.has(id) &&
@@ -403,6 +469,7 @@ export function archiveDetails<T extends ArchivePageHeader>(
     loadCollections(collections: Array<"people" | "photos">, signal?: AbortSignal) {
       return enqueue(async () => {
         if (signal?.aborted) return;
+        await ensureOverview(signal);
         for (const collection of [...new Set(collections)]) {
           if (collection === "people" ? peopleComplete : photosComplete)
             continue;

@@ -1,4 +1,9 @@
 import type { Family, Person } from "./types.ts";
+/** One omission contract for in-memory and SQL overview readers. Adding a card
+ * detail here must never make the initial graph silently load that detail. */
+export const PERSON_DETAIL_FIELDS = [
+  "sources", "biography", "occupation", "occupationClaim", "maidenNameClaim", "awards", "events",
+] as const satisfies readonly (keyof Person)[];
 export type PersonDetails = Pick<
   Person,
   "id" | "sources" | "biography" | "occupation" | "occupationClaim" | "maidenNameClaim" | "awards" | "events" |
@@ -22,13 +27,11 @@ export function archiveOverview(family: Family): Family {
     ...family,
     photos: [],
     people: family.people.map((original) => {
-      const person = { ...original, sources: [] };
-      delete person.biography;
-      delete person.awards;
-      delete person.occupation;
-      delete person.occupationClaim;
-      delete person.maidenNameClaim;
-      delete person.events;
+      const person = { ...original };
+      for (const field of PERSON_DETAIL_FIELDS) {
+        if (field !== "sources") delete person[field];
+      }
+      person.sources = [];
       return person;
     }),
   };

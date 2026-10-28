@@ -17,7 +17,6 @@ import {
 import {
   preparePdfFont,
   downloadTreeVectorPdf,
-  downloadTreePng,
 } from "./tree-pdf-vector";
 import { treeGraphicBounds } from "./tree-print-plan";
 import { prepareTreePdfPortraits } from "./tree-pdf-portraits";
@@ -113,9 +112,8 @@ function PrintTree({
 /** Download the active tree projection, including nodes outside the camera.
  * Explicit vector PDF geometry is independent of browser printer preferences.
  */
-async function exportTreeGraphic(
+export async function exportTreePdf(
   source: ExportTree,
-  format: "pdf" | "png",
   signal?: AbortSignal,
   onProgress?: (message: string) => void,
 ) {
@@ -138,18 +136,9 @@ async function exportTreeGraphic(
   };
   const work = new AbortController();
   const { width, height, x, y } = treeGraphicBounds(tree);
-  // Browsers cannot allocate a bitmap for a full large archive. Vector PDF
-  // remains available; PNG is intended for a selected, publication-sized area.
-  if (
-    format === "png" &&
-    (width > 8192 || height > 8192 || width * height > 18_000_000)
-  )
-    throw new Error(
-      "Для PNG область слишком велика. Выберите ветку или сохраните всё древо в PDF.",
-    );
   const iframe = document.createElement("iframe");
-  iframe.title = format === "pdf" ? "PDF древа" : "PNG древа";
-  iframe.name = `drevo-${format}`;
+  iframe.title = "PDF древа";
+  iframe.name = "drevo-pdf";
   iframe.dataset.treePrint = "";
   iframe.setAttribute("aria-hidden", "true");
   // Keep the print viewport underneath the app so its layout can be measured.
@@ -299,30 +288,19 @@ async function exportTreeGraphic(
       const snapshot = target.body.firstElementChild!.cloneNode(true);
       root.unmount();
       target.body.replaceChildren(snapshot);
-      progress(format === "pdf" ? "Формируем PDF…" : "Формируем PNG…");
+      progress("Формируем PDF…");
       if (!disposed) {
-        if (format === "pdf")
-          await downloadTreeVectorPdf(
-            target,
-            width,
-            height,
-            tree.title,
-            font,
-            work.signal,
-            portraits,
-            undefined,
-            () => progress(),
-          );
-        else
-          await downloadTreePng(
-            target,
-            width,
-            height,
-            tree.title,
-            font,
-            work.signal,
-            portraits,
-          );
+        await downloadTreeVectorPdf(
+          target,
+          width,
+          height,
+          tree.title,
+          font,
+          work.signal,
+          portraits,
+          undefined,
+          () => progress(),
+        );
       }
     })();
     await Promise.race([prepared, cancelled]);
@@ -332,9 +310,3 @@ async function exportTreeGraphic(
     throw error;
   }
 }
-
-export const exportTreePdf = (tree: ExportTree, signal?: AbortSignal, onProgress?: (message: string) => void) =>
-  exportTreeGraphic(tree, "pdf", signal, onProgress);
-
-export const exportTreePng = (tree: ExportTree, signal?: AbortSignal) =>
-  exportTreeGraphic(tree, "png", signal);

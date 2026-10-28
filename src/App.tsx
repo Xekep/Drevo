@@ -115,7 +115,7 @@ export default function App() {
     reportDirty("photo", dirty);
   }, [reportDirty]);
   const [requestedView, setView, currentPath] = useArchiveView(canLeave);
-  const archive = useArchive(requestedView !== "admin"),
+  const archive = useArchive(requestedView !== "admin", requestedView === "tree"),
     {
       family,
       user,
@@ -132,6 +132,9 @@ export default function App() {
       detailsGeneration,
       hasPersonDetails,
     } = archive;
+  const ensureOverview = archive.ensureOverview;
+  const hasOverview = archive.hasOverview;
+  const loadTreeFragment = archive.loadTreeFragment;
   const { loadGallery, projectionGeneration } = archive;
   const desktop = useDesktopEditing(),
     canEdit = !participantPreview && allowedEdit;
@@ -209,6 +212,21 @@ export default function App() {
     [pendingResearchPersonId, setPendingResearchPersonId] = useState<
       string | null
     >(null);
+  const remoteFragment = useMemo(() => ({
+    state: archive.treeFragment,
+    graphComplete: archive.graphComplete,
+    ensureOverview,
+    load: async (request: import("./shared/tree-fragment").TreeFragmentRequest) => {
+      try { await loadTreeFragment(request); }
+      catch (reason) {
+        setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить ветвь");
+        throw reason;
+      }
+    },
+  }), [archive.treeFragment, archive.graphComplete, loadTreeFragment, ensureOverview]);
+  const withOverview = useCallback((action: () => void) => {
+    void ensureOverview().then(action).catch(reason => setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить связи архива"));
+  }, [ensureOverview]);
   const { accountSession, accountLoading, accountError,
     restoredSessionState, restoredSessionDialog, validateRestoredSession,
     updateOwnRole, updateOwnTier } = useAccountSession({ archive, view, requestedView, previewActive });
@@ -297,7 +315,18 @@ export default function App() {
     personDirty.current = dirty;
     reportDirty("person", dirty);
   }, [reportDirty]);
-  const setPersonDraft = useCallback((next: PersonDraft | null) => {
+  const setPersonDraft = useCallback(function updateDraft(next: PersonDraft | null): boolean {
+    if (next && !hasOverview()) {
+      void ensureOverview().then(() => {
+        const people = new Map(currentFamily()?.people.map(person => [person.id, person]));
+        if ((next.person && !people.has(next.person.id)) || (next.relative && !people.has(next.relative.id))) {
+          setNotice("Человек не найден или недоступен"); return;
+        }
+        updateDraft({ ...next, ...(next.person ? { person: people.get(next.person.id) } : {}),
+          ...(next.relative ? { relative: people.get(next.relative.id) } : {}) });
+      }).catch(reason => setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить связи"));
+      return false;
+    }
     if (!confirmDiscardChanges(personDirty.current)) return false;
     personDirty.current = false;
     reportDirty("person", false);
@@ -309,10 +338,11 @@ export default function App() {
     }
     setPersonDraftState(next ? { ...next, focusRequest: personEditorFocus.current } : null);
     return true;
-  }, [reportDirty]);
+  }, [reportDirty, ensureOverview, hasOverview, currentFamily]);
   const photoWorkspace = usePhotoWorkspace(family),
     { clearFilter } = photoWorkspace;
   const [urlVersion, setUrlVersion] = useState(0);
+  const [missingPersonTarget, setMissingPersonTarget] = useState("");
   const lastUrlTarget = useRef("");
   const photoReturnPath = useRef("/photos");
   const people = useMemo(() => family?.people || [], [family]);
@@ -330,12 +360,19 @@ export default function App() {
   const needsPhotoDetails = view === "quality";
   const projectionView = view === "tree" && timelineDetails ? "timeline" : view === "places" || view === "insights" ? view : undefined;
   const loadViewDetails = useCallback((signal?: AbortSignal) => {
+    if (view !== "tree") return ensureOverview().then(() => {
+      if (projectionView) return loadDetails({ view: projectionView, signal });
+      const collections: Array<"people" | "photos"> = [];
+      if (needsPeopleDetails) collections.push("people");
+      if (needsPhotoDetails) collections.push("photos");
+      return collections.length ? loadDetails({ collections, signal }) : Promise.resolve();
+    });
     if (projectionView) return loadDetails({ view: projectionView, signal });
     const collections: Array<"people" | "photos"> = [];
     if (needsPeopleDetails) collections.push("people");
     if (needsPhotoDetails) collections.push("photos");
     return collections.length ? loadDetails({ collections, signal }) : Promise.resolve();
-  }, [needsPeopleDetails, needsPhotoDetails, loadDetails, projectionView]);
+  }, [needsPeopleDetails, needsPhotoDetails, loadDetails, projectionView, view, ensureOverview]);
   const retryViewDetails = () => {
     void loadViewDetails().catch((reason) =>
       setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить сведения"));
@@ -435,6 +472,13 @@ export default function App() {
       );
       if (
         target?.kind === "photo" && readPhotos && !family.photos?.some((photo) => photo.id === target.id) && missingPhotoTarget !== target.id) return;
+      if (target?.kind === "person" && readTree && !map.has(target.id) && !hasOverview() && missingPersonTarget !== target.id) {
+        const state = remoteFragment.state;
+        const pending = state ? remoteFragment.load({ anchorId: target.id, ancestors: state.ancestors,
+          descendants: state.descendants, collateral: state.collateral }) : ensureOverview();
+        void pending.catch(() => { if (active) setMissingPersonTarget(target.id); });
+        return;
+      }
       if (
         target &&
         window.location.pathname + window.location.search !==
@@ -484,6 +528,7 @@ export default function App() {
     openPhoto,
     closePhoto,
     urlVersion,
+    ensureOverview, hasOverview, missingPersonTarget, remoteFragment,
   ]);
   const openPhotoUrl = useCallback(
     (id: string, ids?: string[]) => {
@@ -645,8 +690,12 @@ export default function App() {
     return () => window.removeEventListener("popstate", sync);
   }, [clearFilter]);
   const openConnection = useCallback(
-    (draft: ConnectionDraft) => {
+    function editConnection(draft: ConnectionDraft) {
       if (!canEdit) return;
+      if (!hasOverview()) {
+        void ensureOverview().then(() => editConnection(draft)).catch(reason => setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить связи"));
+        return;
+      }
       if (!draft.original)
         draft = suggestConnectionOrder(draft, people, family?.links);
       if (!setPersonDraft(null)) return;
@@ -666,10 +715,15 @@ export default function App() {
       setPersonDraft,
       closeConnection,
       setView,
+      hasOverview, ensureOverview,
     ],
   );
   const selectEdge = useCallback(
-    (edge: GraphConnection) => {
+    function editEdge(edge: GraphConnection) {
+      if (!hasOverview()) {
+        void ensureOverview().then(() => editEdge(edge)).catch(reason => setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить связи"));
+        return;
+      }
       if (!setPersonDraft(null)) return;
       if (!closeConnection()) return;
       setConnectionDraft({ ...edge, original: edge });
@@ -678,10 +732,15 @@ export default function App() {
       setView("tree", undefined, true);
       dispatch({ type: "finishLink" });
     },
-    [dispatch, setPersonDraft, closeConnection, setView],
+    [dispatch, setPersonDraft, closeConnection, setView, hasOverview, ensureOverview],
   );
   const choosePerson = useCallback(
-    (id: string, additive = false) => {
+    function selectPerson(id: string, additive = false) {
+      if (!currentFamily()?.people.some(person => person.id === id)) {
+        if (!hasOverview()) void ensureOverview().then(() => selectPerson(id, additive)).catch(reason => setNotice(reason instanceof Error ? reason.message : "Не удалось открыть карточку"));
+        else setNotice("Человек не найден или недоступен");
+        return;
+      }
       if (canEdit && linkFrom && linkFrom !== id) {
         openConnection({ from: linkFrom, to: id, type: "parent" });
         return;
@@ -705,6 +764,7 @@ export default function App() {
       choose,
       compare,
       setView,
+      currentFamily, hasOverview, ensureOverview,
     ],
   );
   const selectPersonOnly = useCallback(
@@ -719,12 +779,22 @@ export default function App() {
   const showPerson = useCallback(
     (id: string, reanchor = false) => {
       if (!closeConnection()) return;
-      const target: ArchiveTarget = { kind: "person", id };
-      lastUrlTarget.current = targetKey(target);
-      setView("tree", target);
-      reveal([id], reanchor);
+      const show = () => {
+        if (!currentFamily()?.people.some(person => person.id === id)) { setNotice("Человек не найден или недоступен"); return; }
+        const target: ArchiveTarget = { kind: "person", id };
+        lastUrlTarget.current = targetKey(target);
+        setView("tree", target);
+        reveal([id], reanchor);
+      };
+      const fragment = remoteFragment.state;
+      if (fragment && !fragment.peopleIds.includes(id))
+        void remoteFragment.load({ anchorId: id, ancestors: fragment.ancestors, descendants: fragment.descendants,
+          collateral: fragment.collateral }).then(show).catch(() => {});
+      else if (!currentFamily()?.people.some(person => person.id === id))
+        void ensureOverview().then(show).catch(reason => setNotice(reason instanceof Error ? reason.message : "Не удалось открыть человека"));
+      else show();
     },
-    [reveal, closeConnection, setView],
+    [reveal, closeConnection, setView, currentFamily, remoteFragment, ensureOverview],
   );
   useEffect(() => {
     if (!pendingResearchPersonId || archive.loadingDetails) return;
@@ -880,13 +950,16 @@ export default function App() {
               readPhotos={readPhotos}
               onHelp={() => setHelp(true)}
               participantPreview={Boolean(participantPreview)}
-              onTreePreferences={readTree ? () => setTreePreferencesOpen(true) : undefined}
+              onTreePreferences={readTree ? () => withOverview(() => setTreePreferencesOpen(true)) : undefined}
               onPlatformLeave={canLeave}
             />
           }
           people={people}
           query={query}
-          onQuery={setQuery}
+          onQuery={(value) => {
+            setQuery(value);
+            if (value.trim()) void ensureOverview().catch(reason => setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить поиск"));
+          }}
           onSelect={showPerson}
           onSelectDocument={user?.approved || archive.local
             ? (id) => setView("documents", archiveDocumentPath(null, id))
@@ -1004,14 +1077,15 @@ export default function App() {
                       ref={treeCanvas}
                       covered={treeSceneCovered}
                       restricted={Boolean(participantPreview)}
-                      onPreferences={() => setTreePreferencesOpen(true)}
+                      onPreferences={() => withOverview(() => setTreePreferencesOpen(true))}
                       onExport={participantPreview ? undefined : () => setTreeExportOpen(true)}
-                      onImport={canEdit && isArchiveOwner(user) ? () => setTreeImportOpen(true) : undefined}
-                      onRename={canEdit && isArchiveOwner(user) ? () => setSettings(true) : undefined}
+                      onImport={canEdit && isArchiveOwner(user) ? () => withOverview(() => setTreeImportOpen(true)) : undefined}
+                      onRename={canEdit && isArchiveOwner(user) ? () => withOverview(() => setSettings(true)) : undefined}
                       onAddSelf={canEdit && user && isArchiveOwner(user) && !user.personId ? newSelf : undefined}
                       skipInitialGrowth={initialPersonLink}
                       animateOnLoad={archive.treePreferences.animateOnLoad}
                       fragmentThreshold={archive.treePreferences.fragmentThreshold}
+                      remoteFragment={remoteFragment}
                       onGrowthChange={setTreeGrowing}
                       comparisonAction={
                         <div className="workspace-actions">
@@ -1020,6 +1094,10 @@ export default function App() {
                             title="Родство"
                             aria-pressed={compare}
                             onClick={() => {
+                              if (!hasOverview()) {
+                                void ensureOverview().then(() => dispatch({ type: "compare" })).catch(reason => setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить родство"));
+                                return;
+                              }
                               if (!setPersonDraft(null)) return;
                               if (!closeConnection()) return;
                               clearPersonUrl();
@@ -1255,7 +1333,7 @@ export default function App() {
                   mayEdit={!participantPreview && allowedEdit}
                   busy={busy}
                   onDirtyChange={onPlatformSettingsDirtyChange}
-                  loadingDetails={(view !== "gallery" && archive.loadingDetails) ||
+                  loadingDetails={!archive.graphComplete || (view !== "gallery" && archive.loadingDetails) ||
                     (!!detailsSource && !!projectionView && !archive.hasViewDetails(projectionView)) ||
                     (needsPeopleDetails && !hasCollectionDetails("people")) ||
                     (needsPhotoDetails && !hasCollectionDetails("photos"))}
@@ -1319,7 +1397,7 @@ export default function App() {
           <main className="archive-status" role="alert">
             <h1>Не удалось открыть архив</h1>
             <p>{archive.error}</p>
-            <button onClick={archive.reload}>Повторить загрузку</button>
+            <button onClick={() => archive.reload()}>Повторить загрузку</button>
           </main>
         ) : (
           <ArchiveLoading canvas={view === "tree"} />
@@ -1391,28 +1469,37 @@ export default function App() {
           canEdit={allowedEdit}
           onChanged={(personId) => {
             if (personId) setPendingResearchPersonId(personId);
-            archive.reload();
+            archive.reload(personId);
           }}
           onPerson={showPerson}
           onPhoto={openPhotoUrl}
           onReveal={(ids) => {
+            if (ids.length === 1) { showPerson(ids[0]); return; }
+            withOverview(() => {
             const target: ArchiveTarget | undefined =
               ids.length === 1 ? { kind: "person", id: ids[0] } : undefined;
             lastUrlTarget.current = targetKey(target || null);
             setView("tree", target);
             reveal(ids);
+            });
           }}
           onFilter={(ids, label) => {
+            withOverview(() => {
             setView("tree");
             setAssistantFilter({ ids, label, token: Date.now() });
+            });
           }}
           onHideReview={() => {
+            withOverview(() => {
             setView("tree");
             setAssistantFilter(current => hideReviewAssistantPeople(current, Date.now()));
+            });
           }}
           onExclude={(ids, label) => {
+            withOverview(() => {
             setView("tree");
             setAssistantFilter(current => excludeAssistantPeople(current, ids, label, Date.now()));
+            });
           }}
           onOptimizeLayout={async (goal) => {
             if (!treeCanvas.current) throw new Error("Откройте древо для оптимизации расположения.");
@@ -1460,7 +1547,11 @@ export default function App() {
           preferences={archive.treePreferences}
           people={family.people}
           anchorId={selected[0] || user?.personId}
-          onChange={archive.saveTreePreferences}
+          onChange={async (value) => {
+            if (value.presentation === "depth" || value.fragmentThreshold === 0 ||
+                (value.fragmentThreshold ?? 500) > (archive.treeFragment?.total ?? family.people.length)) await ensureOverview();
+            return archive.saveTreePreferences(value);
+          }}
           onClose={() => setTreePreferencesOpen(false)}
           onAdmin={!participantPreview && isArchiveOwner(user) && user?.approved === true ? () => {
             setTreePreferencesOpen(false);

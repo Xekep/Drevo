@@ -8,8 +8,8 @@ export const TREE_GROWTH_EDGE_MS = 240;
 export const TREE_GROWTH_NODE_MS = 280;
 export const TREE_GROWTH_REVEAL_MS = 100;
 const TREE_GROWTH_LABEL_MS = 160;
-export const TREE_GROWTH_ORDER_MS = 30;
-export const TREE_GROWTH_MAX_ORDER_MS = 200;
+const TREE_GROWTH_ORDER_MS = 30;
+const TREE_GROWTH_MAX_ORDER_MS = 200;
 export const TREE_LAYOUT_TRANSITION_MS = 440;
 
 /** Large archives finish their introduction sooner, including cards and labels. */
@@ -215,7 +215,7 @@ export function treeGrowthCanvasStyle(
   };
 }
 
-export function treeEdgeGrowthStyle(
+function treeEdgeGrowthStyle(
   delay: number,
   labelDelay: number,
   duration?: number,

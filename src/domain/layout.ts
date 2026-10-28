@@ -3,30 +3,6 @@ import { dateYear } from "./dates.ts";
 export const START_YEAR = 1830;
 export const END_YEAR = 2035;
 const YEAR_HEIGHT = 8;
-export function centuryLabel(value: number) {
-  const values = [
-    [1000, "M"],
-    [900, "CM"],
-    [500, "D"],
-    [400, "CD"],
-    [100, "C"],
-    [90, "XC"],
-    [50, "L"],
-    [40, "XL"],
-    [10, "X"],
-    [9, "IX"],
-    [5, "V"],
-    [4, "IV"],
-    [1, "I"],
-  ] as const;
-  let result = "";
-  for (const [number, letter] of values)
-    while (value >= number) {
-      result += letter;
-      value -= number;
-    }
-  return result;
-}
 export const yearY = (year: number, start = START_YEAR, reverse = false) =>
   60 + (reverse ? END_YEAR - year : year - start) * YEAR_HEIGHT;
 export const yearAtY = (y: number, start = START_YEAR, reverse = false) =>

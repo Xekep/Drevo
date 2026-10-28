@@ -17,7 +17,6 @@ function nameParts(person: PublishedCandidate) {
   return { given: words(person.givenName ?? given)[0] || "", currentSurnames,
     birthSurnames, surnames: [...currentSurnames, ...birthSurnames] };
 }
-export const candidateGivenName = (person: PublishedCandidate) => nameParts(person).given;
 export function candidateNameRoleQuery(person: PublishedCandidate) {
   const { given, surnames } = nameParts(person);
   const terms = [...new Set(surnames.filter((value) => value.length >= 2))].slice(0, 4);

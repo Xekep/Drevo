@@ -12,7 +12,7 @@ import { commentFilesFromJson } from "./discussion-attachments.ts";
 
 // Keep a single account download bounded while it holds database locks.
 export const MAX_ACCOUNT_ATTACHMENT_FILES = 1_000;
-export const MAX_ACCOUNT_ATTACHMENT_BYTES = 256 * 1024 * 1024;
+const MAX_ACCOUNT_ATTACHMENT_BYTES = 256 * 1024 * 1024;
 const archiveIdPattern = /^[A-Za-z0-9][A-Za-z0-9-]{2,63}$/;
 const aiFileUrl = /^\/api\/ai\/attachments\/([a-f0-9-]{36})\/([a-f0-9-]{36})$/i;
 const readFlags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);

@@ -9,7 +9,7 @@ import {
   releaseAttachedMediaGrants,
 } from "./postgres-media-quota.ts";
 import type { ArchiveUser } from "../domain/access.ts";
-import { archiveOverview } from "../domain/archive-projection.ts";
+import { archiveOverview, PERSON_DETAIL_FIELDS } from "../domain/archive-projection.ts";
 import { projectFamilyToVisibleIds } from "../domain/tree-access.ts";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -27,20 +27,20 @@ import {
   galleryIndexPage,
   type GalleryProjectionIndex,
   type GalleryQuery,
+  type ArchiveViewPerson,
+  type GalleryFamily,
 } from "../domain/archive-view-projection.ts";
 import type { PostgresConnections } from "./postgres-connections.ts";
 import {
   archiveRows,
   type ArchiveRows,
-  type JsonRow,
-  type RelationRow,
-  type TagRow,
-  type UnionRow,
 } from "./archive-rows.ts";
 import { initializeArchiveSchema } from "./schema.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { prepareAwardCitationWrite } from "./award-citation-write.ts";
 import { patchPeople } from "./person-patches.ts";
+import { patchArchiveChanges } from "./archive-changes-store.ts";
+import { syncArchiveRows } from "./archive-row-mutations.ts";
 import { archiveSnapshotReader, archiveSnapshotBudget, archiveCacheView } from "./archive-read-cache.ts";
 import { archiveVisibilityReader } from "./archive-visibility-cache.ts";
 import { createHash } from "node:crypto";
@@ -67,6 +67,14 @@ export type StoredFaceDescriptor = {
   sourcePhotoId?: string;
   sourceTagId?: string;
   model: string;
+};
+export type ArchiveWriteOptions = {
+  operation?: string;
+  knownPrevious?: Family;
+  faceDescriptors?: StoredFaceDescriptor[];
+  afterWrite?: (db: StoreDatabase) => void | Promise<void>;
+  beforeWrite?: (db: StoreDatabase) => void | Promise<void>;
+  withinTransaction?: boolean;
 };
 
 function addsMediaReference(before: Family, after: Family) {
@@ -133,221 +141,6 @@ async function replaceArchiveRows(db: StoreDatabase, rows: ArchiveRows) {
   for (const row of rows.photos) await photoQuery.run(row.id, row.data);
   for (const row of rows.tags)
     await tagQuery.run(row.id, row.photoId, row.personId, row.data);
-}
-
-async function syncJsonRows(
-  db: StoreDatabase,
-  table: "people" | "photos",
-  before: JsonRow[],
-  after: JsonRow[],
-  deleteRemoved = true,
-) {
-  const previous = new Map(before.map((row) => [row.id, row.data]));
-  const nextIds = new Set(after.map((row) => row.id));
-  const insert = db.prepare(
-      `INSERT INTO ${table}(id,data) VALUES(?,?)`,
-      `INSERT INTO ${table}(id,data) VALUES(?,?)`,
-    ),
-    update = db.prepare(
-      `UPDATE ${table} SET data=? WHERE id=?`,
-      `UPDATE ${table} SET data=? WHERE id=?`,
-    ),
-    remove = db.prepare(
-      `DELETE FROM ${table} WHERE id=?`,
-      `DELETE FROM ${table} WHERE id=?`,
-    );
-  for (const row of after) {
-    if (!previous.has(row.id)) await insert.run(row.id, row.data);
-    else if (previous.get(row.id) !== row.data)
-      await update.run(row.data, row.id);
-  }
-  if (deleteRemoved)
-    for (const row of before)
-      if (!nextIds.has(row.id)) await remove.run(row.id);
-}
-
-async function syncRelations(
-  db: StoreDatabase,
-  before: RelationRow[],
-  after: RelationRow[],
-) {
-  const previous = new Map(before.map((row) => [row.id, row])),
-    following = new Map(after.map((row) => [row.id, row])),
-    remove = db.prepare(
-      "DELETE FROM relations WHERE id=?",
-      "DELETE FROM relations WHERE id=?",
-    ),
-    insert = db.prepare(
-      "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by,sources,confidence) VALUES(?,?,?,?,?,?,?,?,?)",
-      "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by,sources,confidence) VALUES(?,?,?,?,?,?,?,?,?)",
-    ),
-    update = db.prepare(
-      "UPDATE relations SET note=?,twin_kind=?,created_by=?,sources=?,confidence=? WHERE id=?",
-      "UPDATE relations SET note=?,twin_kind=?,created_by=?,sources=?,confidence=? WHERE id=?",
-    );
-  for (const row of before) {
-    const next = following.get(row.id);
-    if (
-      !next ||
-      next.source !== row.source ||
-      next.target !== row.target ||
-      next.type !== row.type
-    )
-      await remove.run(row.id);
-  }
-  for (const row of after) {
-    const old = previous.get(row.id);
-    if (
-      !old ||
-      old.source !== row.source ||
-      old.target !== row.target ||
-      old.type !== row.type
-    )
-      await insert.run(
-        row.id,
-        row.source,
-        row.target,
-        row.type,
-        row.note,
-        row.twinKind,
-        row.createdBy,
-        row.sources,
-        row.confidence,
-      );
-    else if (
-      old.note !== row.note ||
-      old.twinKind !== row.twinKind ||
-      old.createdBy !== row.createdBy ||
-      old.sources !== row.sources ||
-      old.confidence !== row.confidence
-    )
-      await update.run(
-        row.note,
-        row.twinKind,
-        row.createdBy,
-        row.sources,
-        row.confidence,
-        row.id,
-      );
-  }
-}
-
-async function syncTags(db: StoreDatabase, before: TagRow[], after: TagRow[]) {
-  const previous = new Map(before.map((row) => [row.id, row])),
-    nextIds = new Set(after.map((row) => row.id)),
-    remove = db.prepare(
-      "DELETE FROM photo_tags WHERE id=?",
-      "DELETE FROM photo_tags WHERE id=?",
-    ),
-    insert = db.prepare(
-      "INSERT INTO photo_tags(id,photo_id,person_id,data) VALUES(?,?,?,?)",
-      "INSERT INTO photo_tags(id,photo_id,person_id,data) VALUES(?,?,?,?)",
-    ),
-    update = db.prepare(
-      "UPDATE photo_tags SET photo_id=?,person_id=?,data=? WHERE id=?",
-      "UPDATE photo_tags SET photo_id=?,person_id=?,data=? WHERE id=?",
-    );
-  for (const row of before) if (!nextIds.has(row.id)) await remove.run(row.id);
-  for (const row of after) {
-    const old = previous.get(row.id);
-    if (!old) await insert.run(row.id, row.photoId, row.personId, row.data);
-    else if (
-      old.photoId !== row.photoId ||
-      old.personId !== row.personId ||
-      old.data !== row.data
-    )
-      await update.run(row.photoId, row.personId, row.data, row.id);
-  }
-}
-
-async function syncUnions(
-  db: StoreDatabase,
-  before: UnionRow[],
-  after: UnionRow[],
-) {
-  const old = new Map(before.map((row) => [row.id, row]));
-  const next = new Set(after.map((row) => row.id));
-  const remove = db.prepare(
-    "DELETE FROM family_unions WHERE id=?",
-    "DELETE FROM family_unions WHERE id=?",
-  );
-  const insert = db.prepare(
-    "INSERT INTO family_unions(id,participant_a,participant_b,data) VALUES(?,?,?,?)",
-    "INSERT INTO family_unions(id,participant_a,participant_b,data) VALUES(?,?,?,?)",
-  );
-  const update = db.prepare(
-    "UPDATE family_unions SET participant_a=?,participant_b=?,data=? WHERE id=?",
-    "UPDATE family_unions SET participant_a=?,participant_b=?,data=? WHERE id=?",
-  );
-  for (const row of before) if (!next.has(row.id)) await remove.run(row.id);
-  for (const row of after) {
-    const prior = old.get(row.id);
-    if (!prior)
-      await insert.run(row.id, row.participantA, row.participantB, row.data);
-    else if (
-      prior.participantA !== row.participantA ||
-      prior.participantB !== row.participantB ||
-      prior.data !== row.data
-    )
-      await update.run(row.participantA, row.participantB, row.data, row.id);
-  }
-}
-
-async function syncArchiveRows(
-  db: StoreDatabase,
-  before: ArchiveRows,
-  after: ArchiveRows,
-) {
-  // Сначала создаём новые основные сущности, чтобы связи могли ссылаться на них.
-  // Удаление старых people/photos откладываем до обновления зависимых строк.
-  await syncJsonRows(db, "people", before.people, after.people, false);
-  await syncJsonRows(db, "photos", before.photos, after.photos, false);
-  await syncRelations(db, before.relations, after.relations);
-  await syncUnions(db, before.unions, after.unions);
-  await syncTags(db, before.tags, after.tags);
-
-  const nextPhotoIds = new Set(after.photos.map((row) => row.id)),
-    nextPeopleIds = new Set(after.people.map((row) => row.id)),
-    removePhoto = db.prepare(
-      "DELETE FROM photos WHERE id=?",
-      "DELETE FROM photos WHERE id=?",
-    ),
-    removePerson = db.prepare(
-      "DELETE FROM people WHERE id=?",
-      "DELETE FROM people WHERE id=?",
-    );
-  for (const row of before.photos)
-    if (!nextPhotoIds.has(row.id)) await removePhoto.run(row.id);
-  await db.exec(
-    "DELETE FROM face_descriptors WHERE source_photo_id IS NOT NULL AND source_photo_id NOT IN (SELECT id FROM photos)",
-    "DELETE FROM face_descriptors WHERE source_photo_id IS NOT NULL AND source_photo_id NOT IN (SELECT id FROM photos)",
-  );
-  for (const row of before.people)
-    if (!nextPeopleIds.has(row.id)) await removePerson.run(row.id);
-  const restoreOrder = async (
-    table: "people" | "relations" | "family_unions" | "photos" | "photo_tags",
-    beforeRows: Array<{ id: string }>,
-    rows: Array<{ id: string }>,
-  ) => {
-    if (
-      beforeRows.length === rows.length &&
-      beforeRows.every((row, index) => row.id === rows[index]?.id)
-    )
-      return;
-    const move = db.prepare(
-      `UPDATE ${table} SET rowid=? WHERE id=?`,
-      `UPDATE ${table} SET ordinal=? WHERE id=?`,
-    );
-    for (const [index, row] of rows.entries())
-      await move.run(-(index + 1), row.id);
-    for (const [index, row] of rows.entries())
-      await move.run(index + 1, row.id);
-  };
-  await restoreOrder("people", before.people, after.people);
-  await restoreOrder("relations", before.relations, after.relations);
-  await restoreOrder("family_unions", before.unions, after.unions);
-  await restoreOrder("photos", before.photos, after.photos);
-  await restoreOrder("photo_tags", before.tags, after.tags);
 }
 
 export async function openArchive(
@@ -488,10 +281,10 @@ export async function openArchive(
     ).all(...where.args, JSON.stringify([...ids]));
     return Object.fromEntries([...ids].map(id => [id, Number(rows.find(row => row.person_id === id)?.total || 0)]));
   };
-  const viewPeople = async (
-    view: "places" | "gallery" | "timeline",
+  const viewPeople = async <V extends keyof ArchiveViewPerson>(
+    view: V,
     visible?: ReadonlySet<string>,
-  ) => {
+  ): Promise<ArchiveViewPerson[V][]> => {
     const fields =
       view === "places"
         ? ["id", "events"]
@@ -503,15 +296,7 @@ export async function openArchive(
           `SELECT jsonb_build_object(${fields.map((field) => `'${field}',data->'${field}'`).join(",")}) AS data FROM people${visible ? " WHERE id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))" : ""} ORDER BY ordinal`,
         )
         .all(...(visible ? [JSON.stringify([...visible])] : []))
-    ).map(
-      (row) =>
-        ({
-          ...JSON.parse(String(row.data)),
-          sources: [],
-          parents: [],
-          spouses: [],
-        }) as Person,
-    );
+    ).map((row) => JSON.parse(String(row.data)) as ArchiveViewPerson[V]);
     if (view === "places" || view === "timeline")
       await hydrateCatalogCitations(db, {
         title: "",
@@ -522,7 +307,7 @@ export async function openArchive(
     return people;
   };
   const galleryKeys = new Map<string, symbol>();
-  const galleryPending = new Map<string, Promise<Family>>();
+  const galleryPending = new Map<string, Promise<GalleryFamily>>();
   const gallery = async (
     query: GalleryQuery,
     scope?: PhotoReadScope,
@@ -533,10 +318,10 @@ export async function openArchive(
     const reusable = db.canReuseGraphCache();
     const scopeKey = createHash("sha256").update(JSON.stringify([revision, readTree, readPhotos, scope?.userId || "", scope ? [...scope.visible].sort() : null])).digest("hex");
     const cacheKey = galleryKeys.get(scopeKey);
-    let index = reusable && cacheKey ? derivedBudget.getDerived<Family>(cacheKey) : undefined;
+    let index = reusable && cacheKey ? derivedBudget.getDerived<GalleryFamily>(cacheKey) : undefined;
     if (!readPhotos) return galleryProjection({ title: "", description: "", demo: false, people: readTree ? await viewPeople("gallery", scope?.visible) : [], photos: [] }, query);
     if (!index) {
-      const loadIndex = async (): Promise<Family> => {
+      const loadIndex = async (): Promise<GalleryFamily> => {
         const people = readTree ? await viewPeople("gallery", scope?.visible) : [];
         const where = photoReadWhere(scope);
         const fields = ["id", "url", "title", "year", "takenAt", "createdAt"];
@@ -658,13 +443,9 @@ export async function openArchive(
     value: unknown,
     expected: number,
     actor?: ArchiveUser,
-    operation?: string,
-    knownPrevious?: Family,
-    faceDescriptors?: StoredFaceDescriptor[],
-    afterWrite?: (db: StoreDatabase) => void | Promise<void>,
-    beforeWrite?: (db: StoreDatabase) => void | Promise<void>,
-    options: { withinTransaction?: boolean } = {},
+    options: ArchiveWriteOptions = {},
   ) {
+    const { operation, knownPrevious, faceDescriptors, afterWrite, beforeWrite } = options;
     const apply = async () => {
       const oldRevision = await checkRevision(expected);
       if (actor) await assertCurrentArchiveActor(db, actor);
@@ -848,6 +629,12 @@ export async function openArchive(
       actor: ArchiveUser,
       options: Parameters<typeof patchPeople>[4] = {},
     ) => await patchPeople(db, changes, expected, actor, options),
+    patchChanges: async (
+      changes: Parameters<typeof patchArchiveChanges>[1],
+      expected: number,
+      actor: ArchiveUser,
+      options: Parameters<typeof patchArchiveChanges>[4] = {},
+    ) => await patchArchiveChanges(db, changes, expected, actor, options),
     async readRevision(revision: number) {
       const current = await read();
       if (revision === current.revision) return current.family;
@@ -915,7 +702,7 @@ async function readArchiveMeta(db: StoreDatabase) {
  * источников, биографий, наград и событий. Тяжёлые JSON-поля отбрасывает сам
  * SQLite до передачи строки в Node.
  */
-export async function readArchiveVisibilityGraph(db: StoreDatabase) {
+async function readArchiveVisibilityGraph(db: StoreDatabase) {
   const revision = Number((await db.prepare("SELECT revision FROM archive WHERE id=1", "SELECT revision FROM archives WHERE id=current_setting('drevo.archive_id',true)").get())?.revision);
   const people = (await db.prepare(
     "SELECT id,json_extract(data,'$.createdBy') AS created_by FROM people ORDER BY rowid",
@@ -948,11 +735,7 @@ export async function readArchiveOverview(db: StoreDatabase, includePortraits = 
   const ids = visible ? JSON.stringify([...visible]) : undefined;
   const sqliteIds = "SELECT value FROM json_each(?)", postgresIds = "SELECT value FROM jsonb_array_elements_text(?::jsonb)";
   const remove = [
-    "$.sources",
-    "$.biography",
-    "$.occupation",
-    "$.awards",
-    "$.events",
+    ...PERSON_DETAIL_FIELDS.map((field) => `$.${field}`),
     ...(includePortraits ? [] : ["$.photo"]),
   ];
   const placeholders = remove.map(() => "?").join(", ");

@@ -6,15 +6,8 @@ import type {
   FamilyLink,
   FamilyUnion,
   Person,
-  Relation,
 } from "../../domain/types.ts";
-
-function relationLabel(relation: Relation) {
-  const label =
-    relation.roles?.[0]?.term ||
-    (relation.kind === "unknown" ? "Родство не установлено" : "Семейная связь");
-  return label[0].toLocaleUpperCase("ru") + label.slice(1);
-}
+import { kinshipRelationLabel } from "../../domain/kinship-label.ts";
 
 /** Только поля, влияющие на родство/объяснение. Фото и страницы подробностей не сбрасывают кеш. */
 export function kinshipLabelKey(
@@ -118,7 +111,7 @@ export function createPersonRelationLabels(
     // Исчезающая карточка прошлого графа не подтверждает родство в текущем снимке.
     const recorded = byId.get(person.id);
     if (!recorded) return "Родство не установлено";
-    const label = relationLabel(analyze(recorded, reference));
+    const label = kinshipRelationLabel(analyze(recorded, reference));
     labels.set(person.id, label);
     return label;
   };
@@ -134,5 +127,5 @@ export function personRelationLabel(
   if (!reference) return "";
   if (person.id === reference.id) return "Это вы";
   const relation = analyzeKinship(person, reference, people, links, unions);
-  return relationLabel(relation);
+  return kinshipRelationLabel(relation);
 }

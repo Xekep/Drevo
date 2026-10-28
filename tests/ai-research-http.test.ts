@@ -734,7 +734,7 @@ test("showing a found photo opens only after an explicit model-selected UI actio
   }
 });
 
-test("listing cousins finishes from the kinship tool without a final model call", async () => {
+test("listing cousins uses checked tool results and preserves the native conversation", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-ai-cousins-"));
   process.env.YANDEX_AI_API_KEY = "test-key";
   process.env.YANDEX_AI_FOLDER_ID = "folder-1";
@@ -747,11 +747,12 @@ test("listing cousins finishes from the kinship tool without a final model call"
       return Response.json({ id: `conversation-${++conversations}` });
     calls++;
     if (calls > 1) {
-      if (calls === 2) followupInput = JSON.parse(String(init?.body)).input;
+      if (calls === 3) followupInput = JSON.parse(String(init?.body)).input;
+      const checked = calls === 2 ? JSON.parse(JSON.parse(String(init?.body)).input[0].output) : null;
       return Response.json({
         id: "response-2",
         status: "completed",
-        output_text: "Продолжение диалога доступно.",
+        output_text: checked ? checked.relatives.map((relative: { person: { id: string; name: string }; term: string }) => `[[person:${relative.person.id}|${relative.person.name}]] — ${relative.term}`).join("\n") : "Продолжение диалога доступно.",
         output: [],
       });
     }
@@ -817,7 +818,7 @@ test("listing cousins finishes from the kinship tool without a final model call"
     });
     const result = await response.json();
     assert.equal(response.status, 200);
-    assert.equal(calls, 1);
+    assert.equal(calls, 2);
     assert.match(result.answer, /\[\[person:boris\|Лебедь Борис\]\]/);
     assert.match(result.answer, /двоюродный брат/);
     const continued = await fetch(base + "/api/ai/chat", {
@@ -826,9 +827,9 @@ test("listing cousins finishes from the kinship tool without a final model call"
       body: JSON.stringify({ chatId: result.chatId, message: "Спасибо" }),
     });
     assert.equal(continued.status, 200);
-    assert.equal(calls, 2);
-    assert.equal(conversations, 2);
-    assert.match(JSON.stringify(followupInput), /Лебедь Борис/);
+    assert.equal(calls, 3);
+    assert.equal(conversations, 1);
+    assert.match(JSON.stringify(followupInput), /Спасибо/);
   } finally {
     await app.close();
     for (const key of [
@@ -1128,7 +1129,7 @@ test("researcher resolves a short cousin follow-up from conversation history", a
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.match(payload.answer, /Василий/);
-    assert.equal(requests.length, 3);
+    assert.equal(requests.length, 4);
     assert.match(JSON.stringify(requests[2].messages), /а двоюродные/);
     assert.match(JSON.stringify(requests[2].messages), /tatyana-cousins/);
     assert.match(JSON.stringify(requests[2].tools), /get_cousins/);

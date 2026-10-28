@@ -159,14 +159,10 @@ export function researchSuggestionsHttp({
       let accepted = suggestion;
       const current = await archive.read(),
         next = applyResearchSuggestion(current.family, suggestion),
-        saved = await archive.write(
-          next,
-          current.revision,
-          actor,
-          "research_suggestion_accept",
-          current.family,
-          undefined,
-          async (db) => {
+        saved = await archive.write(next, current.revision, actor, {
+          operation: "research_suggestion_accept",
+          knownPrevious: current.family,
+          afterWrite: async (db) => {
             // The initial HTTP check may predate an administrator's downgrade.
             // Hold both tier rows through the same transaction that applies
             // the suggestion, so it cannot commit after access was revoked.
@@ -174,7 +170,7 @@ export function researchSuggestionsHttp({
               throw new ForbiddenError("ИИ-функции больше недоступны этому аккаунту");
             accepted = await researchSuggestionStore(db).mark(actor, id, "accepted");
           },
-        );
+        });
       return json(res, 200, {
         suggestion: accepted,
         revision: saved.revision,

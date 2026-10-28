@@ -4,7 +4,7 @@ import type { Person } from "../../domain/types.ts";
 import { mediaPreview } from "../../domain/media-preview.ts";
 import { portraitLoadTimeoutMs } from "../portrait-retry.ts";
 
-export const SPATIAL_ATLAS_SIDE = 2048;
+const SPATIAL_ATLAS_SIDE = 2048;
 export function spatialPortraitTile(people: number) {
   return people <= 256 ? 128 : people <= 1024 ? 64 : people <= 4096 ? 32 : 16;
 }

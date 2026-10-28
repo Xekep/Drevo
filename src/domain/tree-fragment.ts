@@ -16,6 +16,20 @@ export function isFragmentThreshold(value: unknown): value is number {
 }
 
 type Index = ReturnType<typeof familyNeighbors>;
+/** Counts can be refreshed against an already demanded complete graph without
+ * rebuilding the current window or changing its anchor after a UI exclusion.
+ */
+export function fragmentHiddenCounts(index: Index, visible: ReadonlySet<string>, allowed: ReadonlySet<string>) {
+  const hidden = new Map<string, number>();
+  for (const id of visible) {
+    if (!allowed.has(id)) continue;
+    let count = 0;
+    for (const neighbor of index.neighbors.get(id) || [])
+      if (allowed.has(neighbor) && !visible.has(neighbor)) count++;
+    if (count) hidden.set(id, count);
+  }
+  return hidden;
+}
 export type FragmentContinuation = {
   id: string;
   parents: string[];

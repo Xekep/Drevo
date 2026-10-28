@@ -12,14 +12,14 @@ import {
 const namespace = "http://www.w3.org/2000/svg";
 const fontName = "Drevo";
 
-function downloadBlob(blob: Blob, title: string, extension: "pdf" | "png") {
+function downloadBlob(blob: Blob, title: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   const filename = Array.from(title, (char) =>
     char.charCodeAt(0) < 32 ? "_" : char,
   ).join("");
-  link.download = `${filename.replace(/[<>:"/\\|?*]/g, "_").slice(0, 120) || "Древо"}.${extension}`;
+  link.download = `${filename.replace(/[<>:"/\\|?*]/g, "_").slice(0, 120) || "Древо"}.pdf`;
   document.body.append(link);
   link.click();
   link.remove();
@@ -31,53 +31,6 @@ function base64(bytes: Uint8Array) {
   for (let offset = 0; offset < bytes.length; offset += 8192)
     binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
   return btoa(binary);
-}
-
-export async function downloadTreePng(
-  target: Document,
-  width: number,
-  height: number,
-  title: string,
-  font: Uint8Array,
-  signal?: AbortSignal,
-  portraits: ReadonlyMap<string, string> = new Map(),
-) {
-  signal?.throwIfAborted();
-  const svg = await treePdfSvg(target, width, height, portraits, undefined, signal);
-  const style = svgElement(target, "style");
-  style.textContent = `@font-face{font-family:${fontName};src:url(data:font/ttf;base64,${base64(font)}) format('truetype')}`;
-  svg.prepend(style);
-  const imageUrl = URL.createObjectURL(
-    new Blob([new XMLSerializer().serializeToString(svg)], {
-      type: "image/svg+xml;charset=utf-8",
-    }),
-  );
-  const image = new Image();
-  try {
-    image.src = imageUrl;
-    await image.decode();
-    signal?.throwIfAborted();
-    const canvas = target.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Браузер не смог подготовить PNG.");
-    context.fillStyle = "#fff";
-    context.fillRect(0, 0, width, height);
-    context.drawImage(image, 0, 0);
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob(
-        (value) =>
-          value ? resolve(value) : reject(new Error("Не удалось создать PNG.")),
-        "image/png",
-      ),
-    );
-    canvas.width = canvas.height = 0;
-    signal?.throwIfAborted();
-    downloadBlob(blob, title, "png");
-  } finally {
-    URL.revokeObjectURL(imageUrl);
-  }
 }
 
 async function loadPdfFontBytes(signal?: AbortSignal) {
@@ -413,7 +366,7 @@ export async function downloadTreeVectorPdf(
     const blob = pdf.output("blob");
     onProgress?.();
     await yieldPdfExport(signal);
-    downloadBlob(blob, title, "pdf");
+    downloadBlob(blob, title);
     return;
   }
   // PDF page coordinates are limited to 14,400 points. UserUnit preserves the
@@ -455,5 +408,5 @@ export async function downloadTreeVectorPdf(
   // output() is synchronous; let an elapsed cancellation/deadline run before
   // creating the download link, so a timed-out export cannot arrive late.
   await yieldPdfExport(signal);
-  downloadBlob(blob, title, "pdf");
+  downloadBlob(blob, title);
 }

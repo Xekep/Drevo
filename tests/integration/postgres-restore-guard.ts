@@ -242,12 +242,12 @@ export async function verifyRestoreGuard({
     const platformLockReady = new Promise<void>((resolve) => { platformLockHeld = resolve; });
     const platformLockGate = new Promise<void>((resolve) => { releasePlatformLock = resolve; });
     guardedApp.archive.write = async (...args) => {
-      const afterWrite = args[6];
-      args[6] = async (db) => {
+      const afterWrite = args[3]?.afterWrite;
+      args[3] = { ...args[3], afterWrite: async (db) => {
         await afterWrite?.(db);
         platformLockHeld();
         await platformLockGate;
-      };
+      } };
       return originalRestoreWrite(...args);
     };
     try {

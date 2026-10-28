@@ -97,12 +97,12 @@ export async function verifyAtomicSuggestionAcceptance(
     releaseMarked = resolve;
   });
   archive.write = async (...args) => {
-    const afterWrite = args[6];
-    args[6] = async (db) => {
+    const afterWrite = args[3]?.afterWrite;
+    args[3] = { ...args[3], afterWrite: async (db) => {
       await afterWrite?.(db);
       notifyMarked();
       await gate;
-    };
+    } };
     return originalWrite(...args);
   };
   try {
@@ -230,6 +230,6 @@ export async function verifyAtomicSuggestionAcceptance(
     { ...after.family, people: restoredPeople },
     after.revision,
     actor,
-    "test_restore_suggestion_person",
+    { operation: "test_restore_suggestion_person" },
   );
 }

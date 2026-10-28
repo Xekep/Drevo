@@ -158,14 +158,10 @@ export function auditUndoHttp({
                     throw new ConflictError(
                       "Архив изменился после предпросмотра. Проверьте отмену ещё раз",
                     );
-                  const saved = await archive.write(
-                    prepared.family,
-                    current.revision,
-                    actor,
-                    `Отменена операция версии ${revision}`,
-                    current.family,
-                    undefined,
-                    async (db) => {
+                  const saved = await archive.write(prepared.family, current.revision, actor, {
+                    operation: `Отменена операция версии ${revision}`,
+                    knownPrevious: current.family,
+                    afterWrite: async (db) => {
                       await db
                         .prepare(
                           "INSERT INTO audit_reverts(revision,reverted_revision) VALUES(?,?)",
@@ -173,9 +169,8 @@ export function auditUndoHttp({
                         )
                         .run(revision, current.revision + 1);
                     },
-                    undefined,
-                    { withinTransaction: true },
-                  );
+                    withinTransaction: true,
+                  });
                   return { applied: true, revision: saved.revision };
                 }
               } catch (error) {

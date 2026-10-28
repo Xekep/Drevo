@@ -74,6 +74,9 @@ import {
 import { HorizontalTimeline } from "./horizontal-timeline";
 import { useNarrowScreen } from "../../hooks/useNarrowScreen";
 import { useFamilyView } from "./use-family-view";
+import { useTreeViewState } from "./use-tree-view-state";
+import { treeViewPolicy, treeViewPresentation } from "../../domain/tree-view-policy.ts";
+import type { RemoteTreeFragment } from "../../shared/tree-fragment.ts";
 import { useTreeFragment } from "./use-tree-fragment";
 import "../../styles/tree-fragments.css";
 import { generationScope } from "../../domain/tree-generation-scope";
@@ -143,7 +146,6 @@ export type TreeCanvasHandle = {
   visiblePersonIds: (signal?: AbortSignal) => Promise<string[]>;
   exportPdf: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number,
     onProgress?: (message: string) => void) => Promise<void>;
-  exportPng: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number) => Promise<void>;
 };
 type Props = {
   onPreferences?: () => void;
@@ -168,6 +170,7 @@ type Props = {
   kinshipReferenceId?: string;
   generationLimits?: TreeGenerationLimits | null;
   fragmentThreshold?: number;
+  remoteFragment?: RemoteTreeFragment;
   onGenerationAnchor?: (id: string) => Promise<void>;
   onResetGenerations?: () => Promise<void>;
   selected: string[];
@@ -276,9 +279,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const highlighted = useMemo(() => JSON.parse(highlightedKey) as string[], [highlightedKey]);
   const spotlightKey = JSON.stringify(props.spotlight || []);
   const spotlight = useMemo(() => JSON.parse(spotlightKey) as string[], [spotlightKey]);
-  const [mode, setMode] = useState<TreeMode>("generations");
+  const { mode, setMode, fanAnchor, setFanAnchor, reanchorFan, depthUnavailable, onDepthUnavailable,
+    preparing: preparingView, prepare: prepareViewTransition } = useTreeViewState(props.presentation);
+  type ViewIntent = { kind: "mode"; mode: TreeMode } |
+    { kind: "family" | "common" | "fan"; anchorId: string | null };
+  const [preparedView, setPreparedView] = useState<{
+    intent: ViewIntent; isCurrent: () => boolean;
+  } | null>(null);
   const layoutMode: TreeMode = mode === "timeline" ? "generations" : mode;
-  const [fanAnchor, setFanAnchor] = useState<string | null>(null);
   const fanEntry = useRef<{
     anchorId: string;
     mode: TreeMode;
@@ -332,12 +340,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     queueMicrotask(() => {
       if (!active) return;
       setFanRevealing(false);
-      setFanAnchor(next);
+      reanchorFan(next, activeFanAnchor);
     });
     return () => {
       active = false;
     };
-  }, [activeFanAnchor, family.people, focus]);
+  }, [activeFanAnchor, family.people, focus, reanchorFan]);
   const [growing, setGrowing] = useState(() => !props.skipInitialGrowth && props.animateOnLoad !== false && props.presentation !== "depth");
   useEffect(() => {
     if (!activeFanAnchor || !fanRevealing) return;
@@ -359,9 +367,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     };
   }, [activeFanAnchor, fanRevealing]);
   const [initialCameraReady, setInitialCameraReady] = useState(false);
-  const [depthUnavailable, setDepthUnavailable] = useState(false);
-  useEffect(() => { if (props.presentation !== "depth") setDepthUnavailable(false); }, [props.presentation]);
-  const depthEnabled = props.presentation === "depth" && !depthUnavailable && mode === "generations" && !activeFanAnchor;
+  const presentationPolicy = treeViewPresentation({ mode, fanAnchor: activeFanAnchor,
+    presentation: props.presentation, depthUnavailable });
+  const { depthEnabled, timelineActive, flatTree } = presentationPolicy;
   const [manualCameraOverride, setManualCameraOverride] = useState(false);
   const [introCameraFinished, setIntroCameraFinished] = useState(false);
   const introMoving =
@@ -398,7 +406,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   }, [growthLocked, onGrowthChange]);
   // Timeline has its own scroll controls and does not wait for the hidden
   // React Flow camera to finish its initial positioning.
-  useTreeGrowthInputLock(container, !depthEnabled && mode !== "timeline" && cameraLocked, !growthLocked);
+  useTreeGrowthInputLock(container, flatTree && cameraLocked, !growthLocked);
   useEffect(() => {
     if (!growthActive || growthRevealed) return;
     // Let the browser apply the first animation frame while the viewport is
@@ -452,6 +460,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const filterToken = props.assistantFilter?.token;
   const preservingFilter = !!props.assistantFilter?.preserveView;
   const replacingFilter = !!props.assistantFilter && "ids" in props.assistantFilter;
+  const viewPolicy = treeViewPolicy({ ...presentationPolicy, familyMode: familyView.mode,
+    replacingFilter, preview: !!props.preview });
   useEffect(() => {
     if (filterToken) {
       // An explicit projection replaces the intro, including a zero-card
@@ -463,7 +473,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         setFanAnchor(null);
       }
     }
-  }, [filterToken, showAllBranches, preservingFilter]);
+  }, [filterToken, showAllBranches, preservingFilter, setFanAnchor]);
   const { anchor: familyRoot, collapsed, toggle: toggleView } = familyView;
   const generationLimitsKey = JSON.stringify(
     props.generationLimits ? [
@@ -512,7 +522,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     family: renderFamily, allowed: policyVisible, threshold: props.fragmentThreshold,
     preferredAnchor: props.generationLimits?.anchorId || familyRoot || user?.personId || familyView.defaultAnchor || undefined,
     limits: props.generationLimits,
-    enabled: mode === "generations" && !activeFanAnchor && !replacingFilter && !props.preview && familyView.mode === "all",
+    enabled: viewPolicy.fragmentEnabled,
+    remoteFragment: props.remoteFragment,
+    filter: props.assistantFilter,
     scopeKey: JSON.stringify([typeof window === "undefined" ? null : archiveContextAt(window.location.pathname)?.id, user?.id, user?.role, user?.treeAccess, user?.personId]),
     focus: effectivePersonFocus,
   });
@@ -563,7 +575,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   >();
   const edgePan = useEdgePan(
     flow,
-    !cameraLocked && !activeFanAnchor && mode !== "timeline",
+    flatTree && !cameraLocked,
   );
   const lastAssistantZoom = useRef(0);
   const researchViewToken = props.assistantFilter?.preserveView
@@ -571,8 +583,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const context = researchViewToken
     ? `${mode}:research:${researchViewToken}:portrait`
     : `${mode}:${depthEnabled ? "depth" : "flat"}:${familyView.mode}:${root || "all"}:portrait`;
-  useTouchZoom(container, flow, !depthEnabled && !cameraLocked && !screen.fullscreen && !activeFanAnchor && mode !== "timeline");
-  useCtrlWheelZoom(container, flow, !depthEnabled && !cameraLocked && !activeFanAnchor && mode !== "timeline");
+  useTouchZoom(container, flow, flatTree && !cameraLocked && !screen.fullscreen);
+  useCtrlWheelZoom(container, flow, flatTree && !cameraLocked);
   const { geometry: originalGeometry, renderVisible, ready, problem, layoutBusy: calculatingLayout, layoutKey: originalLayoutKey, updateKind } =
     useTreeLayout(
       renderFamily,
@@ -592,7 +604,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const { geometry, optimize, busy: optimizingLayout, layoutKey } = useTreeOptimization(
     originalGeometry, originalLayoutKey, renderFamily, renderVisible, ready,
   );
-  const layoutBusy = calculatingLayout || optimizingLayout;
+  const layoutBusy = calculatingLayout || optimizingLayout || preparingView;
   const nodeWidth = geometry?.nodeSize?.width ?? treeNodeSize().width;
   const nodeHeight = geometry?.nodeSize?.height ?? treeNodeSize().height;
   useEffect(() => {
@@ -1004,15 +1016,27 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   }, [gpuScope]);
   const kinshipDay = new Date().toISOString().slice(0, 10);
   const kinshipReference = props.kinshipReferenceId || (user?.id ? user.personId : undefined);
-  const labelKey = useMemo(() => kinshipReference ? kinshipLabelKey(
+  const partialGraph = props.remoteFragment?.graphComplete === false;
+  const remoteRelations = props.remoteFragment?.state;
+  const labelKey = useMemo(() => kinshipReference && !partialGraph ? kinshipLabelKey(
     renderFamily.people, renderFamily.links || [], renderFamily.unions || [], kinshipDay, gpuScope,
-  ) : "", [renderFamily.people, renderFamily.links, renderFamily.unions, kinshipDay, gpuScope, kinshipReference]);
+  ) : "", [renderFamily.people, renderFamily.links, renderFamily.unions, kinshipDay, gpuScope, kinshipReference, partialGraph]);
   const relationLabel = useMemo(() => {
     if (!kinshipReference) return () => "";
+    if (partialGraph) {
+      // Paths outside the window must participate in kinship. Only the server's
+      // revision-bound labels can describe this incomplete browser graph.
+      if (remoteRelations?.stale || remoteRelations?.referenceId !== kinshipReference) return () => "";
+      return (person: Family["people"][number]) => {
+        if (person.id === kinshipReference) return props.kinshipReferenceId ? "Опорный человек" : "Это вы";
+        const label = remoteRelations.relationLabels?.[person.id];
+        return typeof label === "string" ? label : "";
+      };
+    }
     return createPersonRelationLabels(labelKey, kinshipReference,
       props.kinshipReferenceId ? "Опорный человек" : "Это вы");
     // Archive, share grant and read policy isolate the retained snapshot/cache.
-  }, [labelKey, kinshipReference, props.kinshipReferenceId]);
+  }, [labelKey, kinshipReference, props.kinshipReferenceId, partialGraph, remoteRelations]);
   const actions = useMemo(
     () => ({
       relationLabel,
@@ -1250,7 +1274,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   // A pending layout must not create a new GPU scene or mount the old archive
   // as native cards just because its busy indicator appeared.
   const gpuEligible = nodes.length >= 500 && !growing && !layoutSettling && (gpuSceneMatches || (ready && !layoutBusy)) &&
-    !depthEnabled && !activeFanAnchor && mode !== "timeline" && !connecting && gpuFailedScope !== gpuScope &&
+    flatTree && !connecting && gpuFailedScope !== gpuScope &&
     gpuOverlayEdges.length <= 64 && nodes.every((node) => GpuPortraitCache.supported(node.data.person.photo));
   // A remounted canvas needs its own first frame and portrait handoff, even
   // when cancelling a connection leaves the layout geometry unchanged.
@@ -1491,6 +1515,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       },
     };
   }, [ready, layoutBusy, displayNodes, readDisplayEdges, actions, family, reverse, extraVisible, props.colorScheme, depthEnabled, depth.front]);
+  const ensureExportOverview = props.remoteFragment?.ensureOverview;
   useImperativeHandle(
     exportRef,
     () => {
@@ -1515,6 +1540,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         generations = 5,
       ) => {
         if (scope === "current") return preparedTree(signal);
+        signal?.throwIfAborted();
+        // This resolves after React commits the full graph, so the snapshot
+        // below cannot accidentally export only the former server window.
+        await ensureExportOverview?.();
+        signal?.throwIfAborted();
         const current = exportSnapshot.current;
         const { prepareTreeExport } = await import("./tree-export-model");
         return prepareTreeExport(
@@ -1548,14 +1578,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           const { exportTreePdf } = await import("./tree-pdf");
           await exportTreePdf(tree, signal, onProgress);
         },
-        async exportPng(signal, scope, anchorId, generations) {
-          const tree = await selectedTree(signal, scope, anchorId, generations);
-          const { exportTreePng } = await import("./tree-pdf");
-          await exportTreePng(tree, signal);
-        },
       };
     },
-    [mode, activeFanAnchor, depthEnabled, cameraLocked, calculatingLayout, optimize],
+    [mode, activeFanAnchor, depthEnabled, cameraLocked, calculatingLayout, optimize, ensureExportOverview],
   );
   useEffect(() => {
     if (!growing || !ready || !initialCameraReady || growthStarted)
@@ -1614,7 +1639,56 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     },
     [onConnect, occurrencePeople],
   );
+  function prepareView(intent: ViewIntent) {
+    void prepareViewTransition(props.remoteFragment &&
+      (props.remoteFragment.state || props.remoteFragment.graphComplete === false)
+      ? props.remoteFragment.ensureOverview : undefined,
+      isCurrent => setPreparedView({ intent, isCurrent }),
+      error => setAnchorNotice(error instanceof Error ? error.message : "Не удалось загрузить древо"));
+  }
   function switchMode(next: TreeMode) {
+    prepareView({ kind: "mode", mode: next });
+  }
+  // Loading an overview can publish state before React commits it. Consume the
+  // intent only after that commit, using this render's family/index/handlers.
+  // Direct view changes invalidate its token, including while it waits here.
+  useLayoutEffect(() => {
+    if (!preparedView) return;
+    if (!preparedView.isCurrent()) {
+      setPreparedView(null);
+      return;
+    }
+    if (props.remoteFragment?.graphComplete === false) return;
+    setPreparedView(null);
+    const intent = preparedView.intent;
+    if (intent.kind !== "mode") {
+      const next = intent.anchorId;
+      if (!next || !currentPeople.has(next)) return;
+      if (intent.kind === "fan") {
+        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        fanMorphSources.current = !reduced && container.current
+          ? captureFanMorphSources(container.current, family, next) : [];
+        rememberContext();
+        clearReturnTarget();
+        fanEntry.current = { anchorId: next, mode, familyMode: familyView.mode, viewport: flow.getViewport() };
+        setGrowing(false);
+        setEdgeChoices([]);
+        setCreateAt(null);
+        setFanRevealing(!reduced);
+        setFanAnchor(next);
+      } else {
+        setFanRevealing(false);
+        props.onClearAssistantFilter?.();
+        rememberContext();
+        clearReturnTarget();
+        fanEntry.current = null;
+        setFanAnchor(null);
+        if (intent.kind === "family") familyView.enter(next);
+        else familyView.enterCommon(next);
+      }
+      return;
+    }
+    const next = intent.mode;
     props.onModeChange?.(next);
     setScopeFocus(null);
     setManualCameraOverride(true);
@@ -1641,11 +1715,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       } else returnToPerson(target);
       fanEntry.current = null;
     }
-    setFanAnchor(null);
     setMode(next);
     setEdgeChoices([]);
-  }
-  const timelineActive = !activeFanAnchor && mode === "timeline";
+  }, [preparedView, props, flow, introCameraFinished, rememberContext, activeFanAnchor,
+    setMode, currentPeople, family, clearReturnTarget, mode, familyView, setFanAnchor,
+    selected, returnToPerson]);
   const preferencesAction = props.onPreferences && (
     <button
       type="button"
@@ -1927,47 +2001,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                   : collapsed.size > 0
               }
               mode={familyView.mode}
-              onFamily={() => {
-                setFanRevealing(false);
-                props.onClearAssistantFilter?.();
-                rememberContext();
-                clearReturnTarget();
-                fanEntry.current = null;
-                setFanAnchor(null);
-                familyView.enter();
-              }}
-              onCommon={() => {
-                setFanRevealing(false);
-                props.onClearAssistantFilter?.();
-                rememberContext();
-                clearReturnTarget();
-                fanEntry.current = null;
-                setFanAnchor(null);
-                familyView.enterCommon();
-              }}
-              onFan={() => {
-                const next = selected[0] || root || familyView.defaultAnchor;
-                if (!next) return;
-                const reduced = window.matchMedia(
-                  "(prefers-reduced-motion: reduce)",
-                ).matches;
-                fanMorphSources.current = !reduced && container.current
-                  ? captureFanMorphSources(container.current, family, next)
-                  : [];
-                rememberContext();
-                clearReturnTarget();
-                fanEntry.current = {
-                  anchorId: next,
-                  mode,
-                  familyMode: familyView.mode,
-                  viewport: flow.getViewport(),
-                };
-                setGrowing(false);
-                setEdgeChoices([]);
-                setCreateAt(null);
-                setFanRevealing(!reduced);
-                setFanAnchor(next);
-              }}
+              onFamily={() => prepareView({ kind: "family", anchorId: selected[0] || familyView.anchor || familyView.defaultAnchor })}
+              onCommon={() => prepareView({ kind: "common", anchorId: selected[0] || familyView.anchor || familyView.defaultAnchor })}
+              onFan={() => prepareView({ kind: "fan", anchorId: selected[0] || root || familyView.defaultAnchor })}
               fanActive={!!activeFanAnchor}
               onAll={() => {
                 setFanRevealing(false);
@@ -2202,7 +2238,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             hovered={gpuHovered} focused={gpuFocused} relationLabel={actions.relationLabel}
             onReady={gpuReady} onFailure={gpuFailure} />
         )}
-        {!depthEnabled && !activeFanAnchor && mode !== "timeline" && !gpuActive && (
+        {flatTree && !gpuActive && (
           <DistantPortraits
             nodes={nodes}
             households={overviewHouseholds}
@@ -2220,7 +2256,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         {depthEnabled && <TreeDepthLayers people={currentPeople} layoutPeople={depthPeople} unions={renderFamily.unions}
           toolbarHost={depthToolbarHost}
           active={depth.front} selected={selected} ready={ready && initialCameraReady} onProfile={actions.choose} onSelect={actions.selectOnly}
-          cameraRef={depthCameraRef} collapsed={collapsed} onCollapse={actions.collapse} onFallback={() => setDepthUnavailable(true)}
+          cameraRef={depthCameraRef} collapsed={collapsed} onCollapse={actions.collapse} onFallback={onDepthUnavailable}
           fullscreen={screen.fullscreen} onFullscreen={screen.fullscreen ? screen.exit : screen.enter}
           focusToken={fragment.focus?.token || (effectivePersonFocus?.ids.length === 1 ? effectivePersonFocus.token : undefined)}
           anchorId={depth.anchorId} geometry={geometry} disabled={growthLocked}

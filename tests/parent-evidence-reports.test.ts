@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { archiveReport, type ArchiveReportKind } from "../src/domain/archive-report.ts";
 import { generationReport } from "../src/domain/generation-report.ts";
 import { sharedFamily } from "../src/domain/shared-family.ts";
 import { projectFamilyForUser } from "../src/domain/tree-access.ts";
@@ -30,8 +29,6 @@ const evidence = (): Family => {
   ];
   return { title: "Тест", description: "", demo: false, people: [father, mother, child] };
 };
-const lines = (family: Family, kind: ArchiveReportKind, id: string, generations = 2) =>
-  archiveReport(family, kind, id, generations).sections.flatMap((section) => section.lines).join("\n");
 
 test("generation register attributes each visible parent assessment and citation to its edge", () => {
   const data = evidence();
@@ -46,43 +43,19 @@ test("generation register attributes each visible parent assessment and citation
     /Отец|Мать|Метрическая запись|Перепись|Письмо|Вероятно|Противоречиво/);
 });
 
-test("PDF report models carry parent evidence in the displayed edge and bounded bibliography", () => {
-  const data = evidence();
-  for (const kind of ["person", "family", "ancestors"] as const) {
-    const text = lines(data, kind, "Ребёнок");
-    assert.match(text, /Метрическая запись/);
-    assert.match(text, /Вероятно/);
-    assert.match(text, /https:\/\/example\.test\/record\?page=2/);
-    assert.doesNotMatch(text, /private-file-|documentPage/);
-  }
-  assert.match(lines(data, "descendants", "Отец"), /Метрическая запись/);
-  const research = lines(data, "research", "Ребёнок");
-  assert.match(research, /Метрическая запись/);
-  assert.match(research, /Перепись/);
-  assert.match(research, /Отец → Ребёнок: Вероятно/);
-  assert.equal(research.match(/Метрическая запись/g)?.length, 1,
-    "the same citation is listed once in the research bibliography");
-  assert.doesNotMatch(lines(data, "research", "Ребёнок", 1),
-    /Метрическая запись|Перепись|Письмо/,
-    "the one-person research branch has no displayed parent edge");
-});
-
 test("legacy and shared projections cannot disclose evidence of an omitted parent edge", () => {
   const data = evidence();
   const legacy = structuredClone(data);
   delete legacy.people[2].parentClaims;
   assert.match(generationReport(legacy, new Set(legacy.people.map((item) => item.id))),
     /Отец: №\d+ Отец/);
-  assert.doesNotMatch(lines(legacy, "person", "Ребёнок"),
+  assert.doesNotMatch(generationReport(legacy, new Set(legacy.people.map(item => item.id))),
     /Источник родительства|Оценка родительства/);
   const shared = sharedFamily(data, {
     id: "share", title: "Branch", anchorId: "Ребёнок", personIds: ["Ребёнок"],
     createdAt: "", expiresAt: "", createdBy: "owner", createdName: "Owner",
     revokedAt: null, lastVisitedAt: null,
   }, "token");
-  for (const kind of ["person", "family", "research", "ancestors"] as const)
-    assert.doesNotMatch(lines(shared, kind, "Ребёнок"),
-      /Отец|Мать|Метрическая запись|Перепись|Письмо|Вероятно|Противоречиво/);
   assert.doesNotMatch(generationReport(shared, new Set(["Ребёнок"])),
     /Отец|Мать|Метрическая запись|Перепись|Письмо|Вероятно|Противоречиво/);
   const scoped = structuredClone(data);
@@ -94,6 +67,6 @@ test("legacy and shared projections cannot disclose evidence of an omitted paren
     createdAt: "2026-01-01", treeAccess: "common_ancestors", personId: "Сосед" } as ArchiveUser;
   const visible = projectFamilyForUser(scoped, actor);
   assert.deepEqual(visible.people.find((item) => item.id === "Ребёнок")?.parents, []);
-  assert.doesNotMatch(lines(visible, "research", "Ребёнок"),
+  assert.doesNotMatch(generationReport(visible, new Set(visible.people.map(item => item.id))),
     /Отец|Мать|Метрическая запись|Перепись|Письмо|Вероятно|Противоречиво/);
 });

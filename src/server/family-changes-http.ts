@@ -1,10 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { finished } from "node:stream/promises";
-import {
-  validatedChanges,
-  archiveChanges,
-  type Change,
-} from "../domain/changes.ts";
+import { type Change } from "../domain/changes.ts";
 import type { createAuth } from "./auth.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
@@ -175,60 +171,23 @@ export function familyChangesHttp({
       const value = await archive.db.transaction(async () => {
         await checkActor();
         if (full)
-          return await archive.write(
-            body,
-            revision,
-            actor,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            { withinTransaction: true },
-          );
+          return await archive.write(body, revision, actor, {
+            withinTransaction: true,
+          });
         const changes = parseChanges(body);
-        const patched = await archive.patchPeople(changes, revision, actor, {
-          withinTransaction: true,
-        });
-        if (patched) {
-          minimal =
-            req.headers.prefer === "return=minimal" &&
-            patched.baseRevision === revision;
-          if (minimal) return patched;
-          return {
-            ...patched,
-            family: projectFamilyForUser((await archive.read()).family, actor),
-          };
-        }
-        const current = await archive.read();
-        if (revision > current.revision)
-          throw new ConflictError("Некорректная версия архива");
-        if (!changes.length)
-          return {
-            ...current,
-            appliedChanges: [],
-            family: projectFamilyForUser(current.family, actor),
-          };
-        const merged = validatedChanges(current.family, changes);
-        if (merged.conflicts.length)
-          throw new ConflictError(
-            "Архив изменён в другой вкладке. Обновите данные перед сохранением.",
-          );
-        const saved = await archive.write(
-          merged.family,
-          current.revision,
-          actor,
-          undefined,
-          current.family,
-          undefined,
-          undefined,
-          undefined,
-          { withinTransaction: true },
-        );
+        const mutationOptions = { withinTransaction: true };
+        const patched =
+          await archive.patchPeople(changes, revision, actor, mutationOptions)
+          ?? await archive.patchChanges(changes, revision, actor, mutationOptions);
+        minimal =
+          req.headers.prefer === "return=minimal" &&
+          patched.baseRevision === revision;
+        if (minimal) return patched;
+        // A legacy client, or a stale independent edit, needs the complete
+        // authorized response to rebase. This is delivery, never write fallback.
         return {
-          ...saved,
-          appliedChanges: archiveChanges(current.family, saved.family),
-          family: projectFamilyForUser(saved.family, actor),
+          ...patched,
+          family: projectFamilyForUser((await archive.read()).family, actor),
         };
       });
       // Commit before reporting success. A second short transaction protects

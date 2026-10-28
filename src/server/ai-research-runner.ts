@@ -4,7 +4,7 @@ import {
   type createWebSearchService,
 } from "./web-search.ts";
 import type { aiAttachmentStore } from "./ai-attachments.ts";
-import { researchFollowupMessage, researchFollowupReplacesTask } from "./ai-research-followup-intent.ts";
+import { researchFollowupMessage } from "./ai-research-followup-intent.ts";
 import { recentResearchExchange } from "./ai-conversation-context.ts";
 import type { AiProviderCleanup } from "./ai-provider-cleanup.ts";
 import {
@@ -32,11 +32,8 @@ import {
   cleanPdfAnswer,
   hideResearchToolNames,
   normalizeResearchMarkdown,
-  replaceResearchTable,
   researchPdfFilename,
-  verifiedSurnameTable,
 } from "../domain/research-answer.ts";
-import { requesterRelationshipAnswer } from "../domain/research-relationship.ts";
 import { prepareArchiveExport, PREPARE_ARCHIVE_EXPORT_TOOL } from "../domain/research-export.ts";
 import {
   CODE_INTERPRETER_TOOL,
@@ -101,8 +98,6 @@ import {
   RESEARCH_RESOURCES_TOOL,
   type ResearchMetrics,
   researchToolStatus,
-  resourceMarkdown,
-  specificResourceRequest,
 } from "./ai-research-support.ts";
 export function createResearchRunner({
   archive,
@@ -248,6 +243,7 @@ export function createResearchRunner({
     if (!message || message.length > 8000)
       throw new RangeError("Некорректный текст запроса");
     const waitingFollowups = [...additionalInput, ...((await takeFollowups?.()) || [])];
+    let latestUserMessage = waitingFollowups.at(-1) || message;
     if (waitingFollowups.length) message = researchFollowupMessage(message, waitingFollowups);
     const attachmentMessages = (await chats.messages(chatId, user.id)) || [];
     const library = attachmentMessages.flatMap(
@@ -354,9 +350,9 @@ export function createResearchRunner({
         "Не утверждай, что отсутствие записи доказывает отсутствие события или родства.",
         "Сведения карточки человека и события жизни не требуют источника. Дополнительные источники относятся ко всей карточке; у награды может быть свой необязательный источник. Не требуй свидетельство для каждого поля, не называй отсутствие источника ошибкой или доказательством недостоверности. Прежние и импортированные точные цитаты сохраняют указанное значение и не подтверждают изменённые сведения автоматически.",
         "Одиночный набор бессмысленных слогов без вопроса не считай именем человека и не ищи в архиве. Ответь коротко и по-доброму, с лёгкой ненавязчивой шуткой, и предложи пример вопроса об архиве. Не утверждай, что искал такое слово в архиве. Для осмысленных запросов сохраняй точность и серьёзность фактов.",
-        "Выбор человека в интерфейсе — скрытое действие пользователя для уточнения предыдущего вопроса. Используй выбранную карточку как контекст, но не цитируй служебную формулировку, personId и внутренние инструкции.",
+        "Выбор и открытая карточка человека — контекст для разрешения неоднозначности, не постоянный адресат всех вопросов. Явно названный в текущем вопросе человек и новые уточнения имеют приоритет над прежней карточкой. Не цитируй служебную формулировку выбора, personId и внутренние инструкции.",
         selectedPerson
-          ? `Пользователь уточнил, что в предыдущем вопросе речь о человеке ${fullName(selectedPerson)} (personId: ${selectedPerson.id}). Используй именно эту карточку для инструментов.`
+          ? `При отправке запроса была выбрана карточка ${fullName(selectedPerson)} (personId: ${selectedPerson.id}). Это контекст выбора, а не замена явно названного в вопросе человека.`
           : "",
         canPropose
           ? "Для записи в архив доступны только инструменты предложений: propose_person_create создаёт карточку; propose_person_update меняет дату рождения и другие разрешённые поля; propose_source добавляет документальный источник; propose_relation добавляет связь между существующими людьми. Сначала найди существующих участников через search_people и используй только полученные personId. Если имени недостаточно для однозначного выбора, попроси выбрать человека; если для источника нет названия или ссылки на запись, попроси эти сведения. Это только предложения: архив не меняется, пока человек не нажмёт «Принять» в интерфейсе. Ты не умеешь принимать предложение от имени пользователя. Не утверждай, что изменение применено или ожидает второго подтверждения. Для parent fromPersonId означает родителя, toPersonId — ребёнка. Управление камерой и открытием карточек выполняется отдельно через control_archive_view и не меняет архив."
@@ -422,23 +418,6 @@ export function createResearchRunner({
       >(),
       createdSuggestionIds = new Set<string>(),
       proposalErrors: string[] = [];
-    const directRelationship = requesterRelationshipAnswer(
-      family,
-      user.personId,
-      message,
-      history,
-      selectedPerson?.id,
-    );
-    if (directRelationship && !availableAttachments.length) {
-      await chats.setRemote(chatId, null, turnToken);
-      onDelta(directRelationship.answer);
-      return {
-        ...directRelationship,
-        suggestionIds: [],
-        uiActions: [],
-        files: [],
-      };
-    }
     let analyzedPhotos = 0,
       calculationRuns = 0,
       resourceLookups = 0,
@@ -448,19 +427,8 @@ export function createResearchRunner({
       internalOutputRetryUsed = false,
       pdfToolFailed = false,
       emptyResponseRetries = 0;
-    let verifiedMermaid = "";
-    let verifiedSurname = "";
-    let verifiedRelationshipAnswer = "";
-    let verifiedTopPhotoAnswer = "";
-    let verifiedBirthChartAnswer = "";
-    let verifiedSourceGapAnswer = "";
     const uiActions: UiAction[] = [], files: ResearchFile[] = [];
     let supersededFileCount = 0;
-    let sourceGapAnalysisRequested =
-      /(?:пробел|отсутств|нехват|неподтвержд).{0,45}(?:источ|ссылк|подтвержд)|(?:источ|подтвержд).{0,45}(?:пробел|отсутств|нехват)/iu.test(
-        message,
-      ) &&
-      !/(?:фото|сним|родств|древ|дерев|граф|схем|диаграмм)/iu.test(message);
     const researchDefinitions = RESEARCH_TOOL_DEFINITIONS;
     const allowedToolNames = new Set([
       ...(runtime.capabilities.codeInterpreter
@@ -496,30 +464,6 @@ export function createResearchRunner({
           uiActions: [],
           files: [],
         };
-    }
-
-    if (!availableAttachments.length && specificResourceRequest(message)) {
-      const matches = (await researchCatalog.searchAny(message)).resources;
-      if (matches.length) {
-        const multiple =
-          /(?:список|подборк|несколько|все\s+(?:сайт|ресурс)|какие\s+(?:сайт|ресурс))/iu.test(
-            message,
-          );
-        const answer = normalizeResearchMarkdown(
-          `Нашёл в справочнике:\n\n${matches
-            .slice(0, multiple ? 5 : 1)
-            .map(resourceMarkdown)
-            .join("\n")}`,
-        );
-        onDelta(answer);
-        return {
-          answer,
-          references: [],
-          suggestionIds: [],
-          uiActions: [],
-          files: [],
-        };
-      }
     }
 
     onStatus("Обрабатываю запрос…");
@@ -599,17 +543,18 @@ export function createResearchRunner({
       const updates = await takeFollowups?.();
       if (!updates?.length) return false;
       await assertAiAccess();
-      if (updates.some(researchFollowupReplacesTask)) {
-        turnInstructions.length = 0;
-        createdSuggestionIds.clear();
-        proposalErrors.length = 0;
-        supersededFileCount += files.filter(file => file.url.startsWith("/api/ai/files/")).length;
-        files.length = 0;
-        referencedPeople.clear();
-        referencedPhotos.clear();
-        referencedSources.clear();
-        webReferences.clear();
-      }
+      // New user input invalidates provisional outputs of the unfinished answer.
+      // The model resolves its meaning from native history. Stored proposals
+      // remain pending and are never applied or rejected by this transition.
+      turnInstructions.length = 0;
+      createdSuggestionIds.clear();
+      proposalErrors.length = 0;
+      supersededFileCount += files.filter(file => file.url.startsWith("/api/ai/files/")).length;
+      files.length = 0;
+      referencedPeople.clear();
+      referencedPhotos.clear();
+      referencedSources.clear();
+      webReferences.clear();
       pendingInput.push(...cancelledCalls.map(call => ({
         type: "function_call_output" as const, call_id: call.id,
         output: JSON.stringify({ cancelled: true, reason: "Получено уточнение пользователя. Пересмотрите следующий шаг." }),
@@ -620,14 +565,14 @@ export function createResearchRunner({
         followupHistory.push(input);
       }
       message = researchFollowupMessage(message, updates);
-      sourceGapAnalysisRequested = false;
+      latestUserMessage = updates.at(-1)!;
       for (const definition of [...RESEARCH_TOOL_DEFINITIONS, PREPARE_ARCHIVE_EXPORT_TOOL, ...(view ? [CONTROL_VIEW_TOOL] : []),
         ...(runtime.capabilities.photoAnalysis ? [ANALYZE_PHOTO_TOOL] : []),
         ...(runtime.capabilities.pdf ? [CREATE_PDF_TOOL] : []),
         ...(canPropose ? RESEARCH_PROPOSAL_TOOLS : [])]) allowedToolNames.add(definition.name);
-      verifiedMermaid = verifiedSurname = verifiedRelationshipAnswer = verifiedTopPhotoAnswer = verifiedBirthChartAnswer = verifiedSourceGapAnswer = "";
       uiActions.length = 0;
       viewActionFailed = lookupRetryUsed = pdfToolFailed = false;
+      recoveryFinalization = false;
       onStatus("Учитываю уточнение…");
       return true;
     };
@@ -948,7 +893,7 @@ export function createResearchRunner({
           !attachmentContext.content.length &&
           executedTools === 0 &&
           needsArchiveLookupRetry(
-            message,
+            latestUserMessage,
             typeof answer.content === "string" ? answer.content : "",
           )
         ) {
@@ -959,29 +904,6 @@ export function createResearchRunner({
         }
         if (viewActionFailed && !uiActions.length)
           answer.content = "Не удалось изменить отображение. Вид древа не изменён.";
-        const surnameFromMessage =
-          /(?:древе|дереве|по|род[ауе]|ветк[еиу])\s+([а-яё]{4,})/iu.exec(
-            message,
-          )?.[1] || "";
-        const tableGroup =
-          /(?:таблиц|сводк)/iu.test(message) &&
-          (verifiedSurname || surnameFromMessage)
-            ? surnameGroup(family, verifiedSurname || surnameFromMessage)
-            : null;
-        if (
-          !verifiedMermaid &&
-          (tableGroup?.people.length || /(?:схем|граф)/iu.test(message))
-        ) {
-          const group =
-            tableGroup ||
-            (surnameFromMessage
-              ? surnameGroup(family, surnameFromMessage)
-              : null);
-          if (group?.people.length) verifiedMermaid = group.mermaid;
-        }
-        if (tableGroup?.people.length)
-          for (const person of tableGroup.people)
-            referencedPeople.add(person.id);
         const references: AnswerReference[] = [
           ...[...referencedPeople].slice(0, 250).map((id) => ({
             kind: "person" as const,
@@ -1005,42 +927,15 @@ export function createResearchRunner({
                 : "Проверьте предложения и выберите действие для каждого."
               : proposalErrors.length
                 ? `Не удалось подготовить предложение: ${[...new Set(proposalErrors)].join("; ")}. Архив не изменён.`
-                : verifiedRelationshipAnswer &&
-                    /(?:кем\s+мне\s+приход|кто\s+мне\s+приход|(?:родств|родствен|граф|схем).{0,50}между\s+мной)/iu.test(
-                      message,
-                    )
-                  ? verifiedRelationshipAnswer
-                  : verifiedBirthChartAnswer &&
-                      /(?:диаграмм|график).{0,80}(?:рожд|десятилет)|(?:рожд|десятилет).{0,80}(?:диаграмм|график)/iu.test(
-                        message,
-                      )
-                    ? verifiedBirthChartAnswer
-                    : verifiedSourceGapAnswer && sourceGapAnalysisRequested
-                      ? verifiedSourceGapAnswer
-                      : verifiedTopPhotoAnswer &&
-                          /(?:наибольш|больше\s+всего|сам.{0,10}(?:мног|жирн)|максимал)/iu.test(
-                            message,
-                          )
-                        ? verifiedTopPhotoAnswer
-                        : typeof answer.content === "string" &&
-                            answer.content.trim()
-                          ? answer.content
-                          : "Не удалось завершить ответ. Повторите вопрос — данные архива не изменились.";
+                : typeof answer.content === "string" && answer.content.trim()
+                  ? answer.content
+                  : "Не удалось завершить ответ. Повторите вопрос — данные архива не изменились.";
         const preparedAnswer = !files.length && /\/api\/ai\/files\//u.test(rawAnswer)
           ? "Не удалось создать файл. В ответе нет подтверждённого вложения."
           : files.length
           ? cleanPdfAnswer(rawAnswer) || "Выберите файл для скачивания ниже."
           : rawAnswer;
-        let formattedAnswer = normalizeResearchMarkdown(
-          preparedAnswer,
-          verifiedMermaid,
-          /(?:схем|граф)/iu.test(message),
-        );
-        if (tableGroup?.people.length && !files.length)
-          formattedAnswer = replaceResearchTable(
-            formattedAnswer,
-            verifiedSurnameTable(tableGroup.people),
-          );
+        const formattedAnswer = normalizeResearchMarkdown(preparedAnswer);
         const safeAnswer =
           containsInternalToolText(formattedAnswer, allowedToolNames) ||
           (selectedPerson && containsInternalSelectionText(formattedAnswer))
@@ -1579,76 +1474,6 @@ export function createResearchRunner({
         if (["query_events", "query_places", "get_event", "query_people"].includes(call.function.name))
           collectEventEvidenceReferences(result, peopleById, referencedSources);
         if (
-          (call.function.name === "get_relationship" ||
-            call.function.name === "get_genealogy_graph" ||
-            call.function.name === "get_surname_group") &&
-          result &&
-          typeof result === "object"
-        ) {
-          const graph = result as { mermaid?: string; surname?: string };
-          if (graph.mermaid?.startsWith("graph "))
-            verifiedMermaid = graph.mermaid;
-          if (graph.surname) verifiedSurname = graph.surname;
-        }
-        if (
-          call.function.name === "get_relationship" &&
-          result &&
-          typeof result === "object" &&
-          user.personId
-        ) {
-          const relationResult = result as {
-            first?: { id: string; name: string };
-            second?: { id: string; name: string };
-            relation?: {
-              roles?: Array<{ term: string }>;
-              common?: string[];
-              distances?: [number, number];
-            };
-          };
-          const firstIsMe = relationResult.first?.id === user.personId;
-          const secondIsMe = relationResult.second?.id === user.personId;
-          const other = firstIsMe
-            ? relationResult.second
-            : secondIsMe
-              ? relationResult.first
-              : null;
-          const role =
-            relationResult.relation?.roles?.[firstIsMe ? 1 : 0]?.term;
-          if (other && role) {
-            const ancestors = (relationResult.relation?.common || [])
-              .map((id) => peopleById.get(id))
-              .filter(Boolean);
-            const distances = relationResult.relation?.distances;
-            const distanceNote = distances
-              ? `До ${ancestors.length > 1 ? "общих предков" : "общего предка"}: от вас — ${distances[firstIsMe ? 0 : 1]} ${plural(distances[firstIsMe ? 0 : 1], "поколение", "поколения", "поколений")}, от ${other.name} — ${distances[firstIsMe ? 1 : 0]} ${plural(distances[firstIsMe ? 1 : 0], "поколение", "поколения", "поколений")}.`
-              : "";
-            verifiedRelationshipAnswer = [
-              `[[person:${other.id}|${other.name}]] — **${role}** по отношению к вам.`,
-              ancestors.length ? `Общие предки: ${ancestors.join(", ")}.` : "",
-              distanceNote,
-            ]
-              .filter(Boolean)
-              .join(" ");
-          }
-        }
-        if (
-          call.function.name === "search_photos" &&
-          toolArgs &&
-          typeof toolArgs === "object" &&
-          (toolArgs as Record<string, unknown>).sortBy === "people_count" &&
-          !(toolArgs as Record<string, unknown>).query &&
-          !(toolArgs as Record<string, unknown>).personId &&
-          result &&
-          typeof result === "object"
-        ) {
-          const ranked = result as {
-            photos?: Array<{ id: string; peopleCount: number }>;
-          };
-          const top = ranked.photos?.[0];
-          if (top && photosById.has(top.id))
-            verifiedTopPhotoAnswer = `Больше всего отмеченных людей — **${top.peopleCount}** — на [[photo:${top.id}|${photosById.get(top.id)?.startsWith("Фотография") ? "Групповой снимок" : photosById.get(top.id)}]].`;
-        }
-        if (
           call.function.name === "get_family" &&
           result &&
           typeof result === "object"
@@ -1699,9 +1524,9 @@ export function createResearchRunner({
               .join(", ");
             const values = decades.map((item) => item.count).join(", ");
             const max = Math.max(...decades.map((item) => item.count));
-            verifiedBirthChartAnswer =
+            result = { ...statistics, chartMarkdown:
               `Из ${statistics.totalPeople} человек год рождения известен у ${statistics.knownBirthYear}; без года рождения — ${statistics.unknownBirthYear}.\n\n` +
-              `\x60\x60\x60mermaid\nxychart-beta\n  title "Люди по десятилетиям рождения"\n  x-axis [${labels}]\n  y-axis "Число людей" 0 --> ${max + 2}\n  bar [${values}]\n\x60\x60\x60`;
+              `\x60\x60\x60mermaid\nxychart-beta\n  title "Люди по десятилетиям рождения"\n  x-axis [${labels}]\n  y-axis "Число людей" 0 --> ${max + 2}\n  bar [${values}]\n\x60\x60\x60` };
           }
         }
         if (
@@ -1741,7 +1566,7 @@ export function createResearchRunner({
                   .map((gap) => [gap.person!.id, gap.person!] as const),
               ).values(),
             ].slice(0, 3);
-            verifiedSourceGapAnswer = [
+            result = { ...gapsResult, summaryMarkdown: [
               `В доступной части архива **${gapsResult.total} записей без прикреплённых источников**.`,
               ...found.map(([label, count]) => `- **${label}: ${count}**.`),
               ...(found.length < 3
@@ -1754,7 +1579,7 @@ export function createResearchRunner({
                       .join(", ")}.`,
                   ]
                 : []),
-            ].join("\n");
+            ].join("\n") };
           }
         }
         collectPersonReferences(result, photosById, referencedPhotos);
@@ -1769,103 +1594,6 @@ export function createResearchRunner({
             String((toolArgs as Record<string, unknown>).personId),
             referencedSources,
           );
-        let directAnswer = "";
-        if (
-          call.function.name === "get_cousins" &&
-          /(?:кто|перечисл|назов|сколько|есть|а\s+(?:двоюрод|троюрод))/iu.test(
-            message,
-          ) &&
-          !/(?:почему|как\s+рассчит|схем|граф)/iu.test(message) &&
-          result &&
-          typeof result === "object"
-        ) {
-          const cousins = result as {
-            person?: { id: string; name: string };
-            total?: number;
-            relatives?: Array<{
-              person: { id: string; name: string };
-              term?: string;
-            }>;
-            hasMore?: boolean;
-          };
-          if (cousins.person && typeof cousins.total === "number") {
-            const anchor = `[[person:${cousins.person.id}|${cousins.person.name}]]`;
-            directAnswer = cousins.total
-              ? [
-                  `${anchor} — ${cousins.total} ${plural(cousins.total, "родственник", "родственника", "родственников")} этой степени:`,
-                  ...(cousins.relatives || [])
-                    .slice(0, 30)
-                    .map(
-                      (relative) =>
-                        `- [[person:${relative.person.id}|${relative.person.name}]]${relative.term ? ` — ${relative.term}` : ""}`,
-                    ),
-                  ...(cousins.hasMore || cousins.total > 30
-                    ? ["Показана часть списка."]
-                    : []),
-                ].join("\n")
-              : `Для ${anchor} в доступной части архива не указаны родственники этой степени.`;
-          }
-        }
-        if (
-          verifiedRelationshipAnswer &&
-          call.function.name === "get_relationship" &&
-          /(?:кем\s+мне\s+приход|кто\s+мне\s+приход|(?:родств|родствен|граф|схем).{0,50}между\s+мной)/iu.test(
-            message,
-          )
-        )
-          directAnswer = normalizeResearchMarkdown(
-            verifiedRelationshipAnswer,
-            verifiedMermaid,
-            /(?:схем|граф)/iu.test(message),
-          );
-        if (
-          verifiedTopPhotoAnswer &&
-          call.function.name === "search_photos" &&
-          /(?:наибольш|больше\s+всего|сам.{0,10}(?:мног|жирн)|максимал)/iu.test(
-            message,
-          )
-        )
-          directAnswer = verifiedTopPhotoAnswer;
-        if (
-          verifiedBirthChartAnswer &&
-          call.function.name === "get_birth_statistics" &&
-          /(?:диаграмм|график).{0,80}(?:рожд|десятилет)|(?:рожд|десятилет).{0,80}(?:диаграмм|график)/iu.test(
-            message,
-          )
-        )
-          directAnswer = verifiedBirthChartAnswer;
-        if (
-          verifiedSourceGapAnswer &&
-          sourceGapAnalysisRequested &&
-          call.function.name === "find_evidence_gaps"
-        )
-          directAnswer = verifiedSourceGapAnswer;
-        if (directAnswer) {
-          // The remote conversation has an unanswered function call. Rebuild it
-          // from the local chat history on the next turn instead of reusing it.
-          await chats.setRemote(chatId, null, turnToken);
-          const references: AnswerReference[] = [
-            ...webReferences.values(),
-            ...[...referencedPeople].slice(0, 250).map((id) => ({
-              kind: "person" as const,
-              id,
-              label: peopleById.get(id)!,
-            })),
-            ...[...referencedPhotos].slice(0, 8).map((id) => ({
-              kind: "photo" as const,
-              id,
-              label: photosById.get(id)!,
-            })),
-          ];
-          onDelta(directAnswer);
-          return {
-            answer: directAnswer,
-            references,
-            suggestionIds: [],
-            uiActions,
-            files: [],
-          };
-        }
         const serializedResult = JSON.stringify(result);
         recoveryResults.push({
           tool: call.function.name,

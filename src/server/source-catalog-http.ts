@@ -159,8 +159,9 @@ export function sourceCatalogHttp(
         citations.splice(index, 1);
       }
       try {
-        const result = await archive.write(current.family, input.revision as number, actor,
-          req.method === "POST" ? "Привязан источник" : "Удалена связь с источником");
+        const result = await archive.write(current.family, input.revision as number, actor, {
+          operation: req.method === "POST" ? "Привязан источник" : "Удалена связь с источником",
+        });
         return json(res, 200, { revision: result.revision });
       } catch (error) { return json(res, 409, { error: (error as Error).message }); }
     }

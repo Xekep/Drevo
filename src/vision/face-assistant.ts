@@ -19,7 +19,7 @@ export type FaceSuggestion = {
   descriptor: number[];
   match?: { personId: string; distance: number };
 };
-export const FACE_MODEL = "human-faceres-3.3.6";
+const FACE_MODEL = "human-faceres-3.3.6";
 
 export async function faceRecognitionAvailable(signal?: AbortSignal) {
   const response = await archiveFetch("/api/faces/status", { signal });

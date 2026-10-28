@@ -95,7 +95,7 @@ export type ResearchSuggestion =
       payload: RelationSuggestionPayload;
     });
 
-export const PERSON_UPDATE_PROPOSAL_TOOL = {
+const PERSON_UPDATE_PROPOSAL_TOOL = {
   name: "propose_person_update",
   description:
     "Создать предложение изменения карточки человека для ручного подтверждения. Архив не меняется до нажатия человеком «Принять».",
@@ -134,7 +134,7 @@ export const PERSON_UPDATE_PROPOSAL_TOOL = {
   },
 } as const;
 
-export const PERSON_CREATE_PROPOSAL_TOOL = {
+const PERSON_CREATE_PROPOSAL_TOOL = {
   name: "propose_person_create",
   description:
     "Создать предложение новой карточки человека для ручного подтверждения. Карточка появится в архиве только после нажатия человеком «Принять».",
@@ -168,7 +168,7 @@ export const PERSON_CREATE_PROPOSAL_TOOL = {
   },
 } as const;
 
-export const SOURCE_PROPOSAL_TOOL = {
+const SOURCE_PROPOSAL_TOOL = {
   name: "propose_source",
   description:
     "Предложить добавить источник к карточке человека. Источник сохраняется только после ручного подтверждения.",
@@ -200,7 +200,7 @@ export const SOURCE_PROPOSAL_TOOL = {
   },
 } as const;
 
-export const RELATION_PROPOSAL_TOOL = {
+const RELATION_PROPOSAL_TOOL = {
   name: "propose_relation",
   description:
     "Предложить родственную или дополнительную связь между двумя существующими людьми. Связь создаётся только после ручного подтверждения.",
