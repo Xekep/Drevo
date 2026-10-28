@@ -33,6 +33,7 @@ const scenarios: Scenario[] = [
   { label: "negated export with analysis", message: "Не экспортируй древо. Скажи, сколько людей в архиве.", tool: "get_archive_insights", args: {} },
   { label: "typed GEDZIP", message: "Хочу пакет для обмена с оригиналами, именно GEDZIP", tool: "prepare_archive_export", args: { format: "gedzip7" } },
   { label: "disabled proposal forged by provider", message: "Поставь Алексею дату рождения 1987", tool: "propose_person_update", args: update, disabled: true },
+  { label: "disabled pending UI forged by provider", message: "Покажи ожидающие предложения", tool: "show_pending_suggestions", args: {}, disabled: true },
   { label: "disabled vision forged by provider", message: "Прочти надпись на снимке", tool: "analyze_photo", args: { photoId: "photo" }, disabled: true },
   { label: "disabled PDF forged by provider", message: "Оформи результат отдельным вложением", tool: "create_pdf", args: { title: "Проверка", content: "Сведения." }, disabled: true },
 ];
@@ -57,6 +58,7 @@ for (const scenario of scenarios) test(`capability-selected tools: ${scenario.la
     mainCalls++;
     const offered = new Set(body.tools.map((tool: { name: string }) => tool.name));
     assert.equal(offered.has("propose_person_update"), !scenario.disabled);
+    assert.equal(offered.has("show_pending_suggestions"), !scenario.disabled);
     assert.equal(offered.has("analyze_photo"), !scenario.disabled);
     assert.equal(offered.has("create_pdf"), !scenario.disabled);
     for (const name of ["get_family", "search_photos", "get_distribution_statistics", "prepare_archive_export"])

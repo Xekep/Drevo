@@ -6,6 +6,18 @@ import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
 import { adaptLegacyAiFake } from "./legacy-ai-fake.ts";
 import type { Family } from "../src/domain/types.ts";
+import { pendingSuggestionSelection } from "../src/server/research-suggestions.ts";
+import { aiSettingsStore, defaultAiRoleProfile } from "../src/server/ai-settings.ts";
+import type { ArchiveUser } from "../src/domain/access.ts";
+
+test("pending suggestion selection is explicit, bounded and defaults only to the current chat", () => {
+  assert.deepEqual(pendingSuggestionSelection({}, ["chat-a", "chat-b", "chat-a"]), { explicit: false, ids: ["chat-a", "chat-b"] });
+  assert.deepEqual(pendingSuggestionSelection({ suggestionIds: [" other "] }, []), { explicit: true, ids: ["other"] });
+  for (const value of [null, [], { all: true }, { suggestionIds: [] }, { suggestionIds: ["\n"] },
+    { suggestionIds: [42] }, { suggestionIds: Array.from({ length: 9 }, (_, i) => String(i)) }])
+    assert.throws(() => pendingSuggestionSelection(value, []));
+  assert.deepEqual(pendingSuggestionSelection({}, []), { explicit: false, ids: [] });
+});
 
 test("AI person update stays pending until a human accepts it", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-suggestion-"));
@@ -14,8 +26,33 @@ test("AI person update stays pending until a human accepts it", async () => {
   process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
 
   let call = 0;
-  const aiFetch: typeof fetch = async () => {
+  const aiFetch: typeof fetch = async (_url, init) => {
     call++;
+    if (call === 3) {
+      const body = JSON.parse(String(init?.body));
+      assert.ok(body.tools.some((tool: { function: { name: string } }) => tool.function.name === "show_pending_suggestions"));
+      return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{
+        id: "show-pending", type: "function", function: { name: "show_pending_suggestions", arguments: "{}" },
+      }] } }] });
+    }
+    if (call === 4) return Response.json({ choices: [{ message: { role: "assistant", content: "Для применения используйте кнопки ✓ или × ниже. Архив пока не изменён." } }] });
+    if (call === 5) return Response.json({ choices: [{ message: { role: "assistant", content: "Показать количество людей в архиве?" } }] });
+    if (call === 6) {
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.messages.filter((message: { role: string }) => message.role === "user").at(-1).content, "да");
+      return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{
+        id: "count-people", type: "function", function: { name: "get_archive_insights", arguments: "{}" },
+      }] } }] });
+    }
+    if (call === 7) return Response.json({ choices: [{ message: { role: "assistant", content: "В архиве один человек." } }] });
+    if (call === 8) return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{
+      id: "show-current-pending", type: "function", function: { name: "show_pending_suggestions", arguments: "{}" },
+    }] } }] });
+    if (call === 9) {
+      const body = JSON.parse(String(init?.body));
+      assert.deepEqual(JSON.parse(body.messages.filter((message: { role: string }) => message.role === "tool").at(-1).content).suggestionIds, []);
+      return Response.json({ choices: [{ message: { role: "assistant", content: "В этом диалоге нет ожидающих предложений." } }] });
+    }
     if (call === 1)
       return Response.json({
         choices: [
@@ -43,18 +80,24 @@ test("AI person update stays pending until a human accepts it", async () => {
                     }),
                   },
                 },
+                { id: "statistics-1", type: "function", function: { name: "get_birth_statistics", arguments: "{}" } },
               ],
             },
           },
         ],
       });
+    const body = JSON.parse(String(init?.body));
+    const statistics = body.messages.filter((message: { role: string }) => message.role === "tool")
+      .map((message: { content: string }) => JSON.parse(message.content))
+      .find((value: { chartMarkdown?: string }) => value.chartMarkdown);
+    assert.ok(statistics?.chartMarkdown);
     return Response.json({
       choices: [
         {
           message: {
             role: "assistant",
             content:
-              "Создано предложение. Оно не изменит карточку без подтверждения.",
+              `Создано предложение. Оно не изменит карточку без подтверждения.\n\n## Статистика рождений\n\n${statistics.chartMarkdown}`,
           },
         },
       ],
@@ -72,6 +115,10 @@ test("AI person update stays pending until a human accepts it", async () => {
       "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
 
   try {
+    const settings = await aiSettingsStore(app.archive.db), state = await settings.read();
+    await settings.write({ ...state, requestsPerMinute: 30, dailyTokens: 2_000_000,
+      roleProfiles: { admin: { ...defaultAiRoleProfile(state), requestsPerMinute: 30, dailyTokens: 2_000_000 } } },
+    { id: "local", role: "admin", name: "Администратор", approved: true, createdAt: "" } as ArchiveUser);
     const current = await app.archive.read(),
       family: Family = {
         ...current.family,
@@ -99,7 +146,7 @@ test("AI person update stays pending until a human accepts it", async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        message: "Сохрани уточнение места рождения Анны как предложение.",
+        message: "Сохрани уточнение места рождения Анны как предложение и покажи график рождений.",
         context: { view: "tree", personIds: ["anna-suggestion-test"] },
       }),
     });
@@ -107,6 +154,10 @@ test("AI person update stays pending until a human accepts it", async () => {
     const chatResult = await chat.json();
     assert.equal(chatResult.suggestionIds.length, 1);
     assert.match(chatResult.answer, /Проверьте изменение и выберите действие/);
+    assert.match(chatResult.answer, /архив не изменён/);
+    assert.match(chatResult.answer, /## Статистика рождений/);
+    assert.match(chatResult.answer, /```mermaid\nxychart-beta/);
+    assert.match(chatResult.answer, /1910/);
 
     const before = (await app.archive.read()).family.people.find(
       (person) => person.id === "anna-suggestion-test",
@@ -128,11 +179,36 @@ test("AI person update stays pending until a human accepts it", async () => {
     const textConfirmation = await fetch(base + "/api/ai/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "подтверждаю" }),
+      body: JSON.stringify({ message: "подтверждаю", chatId: chatResult.chatId }),
     }).then((response) => response.json());
     assert.match(textConfirmation.answer, /кнопки ✓ или ×/);
     assert.deepEqual(textConfirmation.suggestionIds, [queue.suggestions[0].id]);
-    assert.equal(call, 2);
+    assert.equal(call, 4);
+
+    // An unrelated pending proposal must never intercept assent in a second
+    // conversation. The model continues that conversation's actual task.
+    const otherChat = await fetch(base + "/api/ai/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Привет" }),
+    }).then(response => response.json());
+    assert.notEqual(otherChat.chatId, chatResult.chatId);
+    assert.match(otherChat.answer, /Показать количество/);
+    const unrelatedAssent = await fetch(base + "/api/ai/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "да", chatId: otherChat.chatId }),
+    }).then(response => response.json());
+    assert.equal(call, 7);
+    assert.match(unrelatedAssent.answer, /один человек/);
+    assert.deepEqual(unrelatedAssent.suggestionIds, []);
+    const currentPending = await fetch(base + "/api/ai/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Покажи ожидающие предложения этого диалога", chatId: otherChat.chatId }),
+    }).then(response => response.json());
+    assert.equal(currentPending.error, undefined, JSON.stringify(currentPending));
+    assert.equal(call, 9);
+    assert.deepEqual(currentPending.suggestionIds, []);
+    assert.equal((await fetch(base + "/api/research/suggestions").then(response => response.json())).suggestions[0].status, "pending");
+    assert.equal((await app.archive.read()).family.people[0].birth, "1919");
 
     const accepted = await fetch(
       base +
