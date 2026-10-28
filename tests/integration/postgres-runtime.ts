@@ -50,6 +50,7 @@ import { aiAttachmentStore } from "../../src/server/ai-attachments.ts";
 import { adminAiHttp } from "../../src/server/admin-ai-http.ts";
 import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { aiResearchHttp } from "../../src/server/ai-research-http.ts";
+import { preparationAdmission, PREPARATION_BYTES } from "../../src/server/preparation-admission.ts";
 import { researchPdf } from "../../src/server/research-pdf.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
 import { aiChatAccessScope } from "../../src/server/ai-chat-access-scope.ts";
@@ -2918,10 +2919,12 @@ try {
   process.env.YANDEX_AI_FOLDER_ID = "folder-1";
   process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
   try {
-    let notifyVisionModels!: () => void;
-    let releaseVisionModels!: () => void;
-    const visionModelsStarted = new Promise<void>((resolve) => { notifyVisionModels = resolve; });
-    const visionModelsGate = new Promise<void>((resolve) => { releaseVisionModels = resolve; });
+    let notifyVisionPreparation!: () => void;
+    let releaseVisionPreparation!: () => void;
+    const visionPreparationStarted = new Promise<void>((resolve) => { notifyVisionPreparation = resolve; });
+    const visionPreparationGate = new Promise<void>((resolve) => { releaseVisionPreparation = resolve; });
+    const visionBudget = preparationAdmission();
+    let visionProviderCalls = 0;
     let visionSubmissions = 0;
     const visionAi = aiResearchHttp({
       archive: app.archive,
@@ -2934,12 +2937,20 @@ try {
       previewImage: imagePreviews(join(dirname(source), "previews")),
       researchCatalog: researchCatalogStore(app.archive.db),
       publicOrigin: process.env.PUBLIC_ORIGIN,
+      preparation: {
+        ...visionBudget,
+        acquire: async (weight, signal) => {
+          // HTTP admission has already released its smaller AI lease. Pause the
+          // actual image-preparation stage, before any image reaches a model.
+          if (weight === PREPARATION_BYTES.image) {
+            notifyVisionPreparation();
+            await visionPreparationGate;
+          }
+          return visionBudget.acquire(weight, signal);
+        },
+      },
       fetcher: async (url) => {
-        if (String(url).endsWith("/models")) {
-          notifyVisionModels();
-          await visionModelsGate;
-          return Response.json({ data: [{ id: "gpt://folder-1/qwen3.6-35b-a3b" }] });
-        }
+        visionProviderCalls++;
         if (String(url).endsWith("/chat/completions")) {
           visionSubmissions++;
           return Response.json({ choices: [{ message: { content: "private image analysis" } }] });
@@ -2952,30 +2963,39 @@ try {
         .catch((error) => { res.destroy(error); });
     });
     await new Promise<void>((resolve) => visionServer.listen(0, "127.0.0.1", resolve));
+    let readingImage: Promise<Response> | undefined;
     try {
       const image = await sharp({
         create: { width: 2, height: 2, channels: 3, background: "white" },
       }).png().toBuffer();
       const visionPort = (visionServer.address() as { port: number }).port;
-      const readingImage = fetch(`http://127.0.0.1:${visionPort}/api/ai/chat`, {
+      readingImage = fetch(`http://127.0.0.1:${visionPort}/api/ai/chat`, {
         method: "POST", headers: ownerHeaders,
         body: JSON.stringify({ message: "Опиши приложенное фото", attachments: [
           { name: "photo.png", data: image.toString("base64") },
         ] }),
       });
-      await Promise.race([visionModelsStarted,
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Vision model lookup did not start")), 15_000))]);
+      await Promise.race([visionPreparationStarted, readingImage.then(async (early) => {
+        throw new Error(`Vision stopped before image preparation: ${early.status} ${await early.clone().text()}`);
+      }), new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Vision image preparation did not start")), 15_000))]);
+      assert.equal(visionProviderCalls, 0, "image preparation must precede all provider calls");
       await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
-      releaseVisionModels();
+      releaseVisionPreparation();
       const blockedVision = await readingImage;
       assert.equal(blockedVision.status, 403, await blockedVision.clone().text());
       assert.equal(visionSubmissions, 0,
-        "a downgraded account cannot submit its image after queued vision model discovery");
+        "a downgraded account cannot submit its image after queued image preparation");
+      assert.equal(visionProviderCalls, 0, "revocation must prevent paid calls and outbound image data");
+      assert.equal(visionBudget.diagnostics().active, 0, "revocation must release the preparation lease");
+      assert.equal(visionBudget.diagnostics().queued, 0);
     } finally {
-      releaseVisionModels();
+      releaseVisionPreparation();
+      await readingImage?.catch(() => {});
       await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
       await new Promise<void>((resolve) => visionServer.close(() => resolve()));
       await visionAi.close();
+      visionBudget.close();
+      await visionBudget.drain();
     }
 
     let reachedAttachmentCommit!: () => void;
