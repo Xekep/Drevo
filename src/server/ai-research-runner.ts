@@ -1228,9 +1228,17 @@ export function createResearchRunner({
             };
           } else if (call.function.name === CONTROL_VIEW_TOOL.name) {
             const raw = viewControlArguments(toolArgs, view);
-            if (raw.action === "exclude_branch" || raw.action === "optimize_layout") {
+            if (raw.action === "exclude_branch" || raw.action === "optimize_layout" || raw.action === "enable_manual_layout" || raw.action === "disable_manual_layout") {
               let answer: string;
-              if (raw.action === "optimize_layout") {
+              if (raw.action === "enable_manual_layout" || raw.action === "disable_manual_layout") {
+                if (treeView && treeView.mode !== "generations")
+                  throw new Error("Ручная расстановка доступна в обычном 2D-древе на компьютере");
+                const enabled = raw.action === "enable_manual_layout";
+                uiActions.push({ type: "manual_tree_layout", enabled });
+                answer = enabled
+                  ? "Включаю ручную расстановку на компьютере: перетаскивайте карточки по горизонтали, супруги двигаются вместе. Можно отменить сдвиг или сбросить расстановку. Текущий вид будет использован при экспорте PDF; записи людей не меняются."
+                  : "Выключаю ручную расстановку. Положение карточек останется в текущем виде и его PDF; записи людей не меняются.";
+              } else if (raw.action === "optimize_layout") {
                 if (treeView && treeView.mode !== "generations")
                   throw new Error("Оптимизация расположения доступна в режиме 2D");
                 const compact = raw.goal === "compact";

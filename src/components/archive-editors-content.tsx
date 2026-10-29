@@ -52,6 +52,7 @@ import { applyPersonUnionDrafts } from "../domain/person-union-draft.ts";
 import type { FamilyUnion } from "../domain/types.ts";
 import { SiblingSuggestions } from "./sibling-suggestions";
 import { PortraitCropper } from "./portrait-cropper";
+import type { PortraitRegion } from "../domain/portrait-crop";
 import { photoLabel } from "../domain/photo-metadata";
 import { mediaPreview } from "../domain/media-preview";
 import { applyPersonDraft, rebasePersonDraft } from "../domain/person-draft";
@@ -212,7 +213,7 @@ export function PersonEditor({
     );
   const [twinKind, setTwinKind] = useState<TwinKind>("unknown");
   const [galleryOpen, setGalleryOpen] = useState(false),
-    [cropSource, setCropSource] = useState("");
+    [cropSource, setCropSource] = useState<{ src: string; region?: PortraitRegion } | null>(null);
   const [removedConnections, setRemovedConnections] = useState<Connection[]>(
     [],
   );
@@ -1141,7 +1142,7 @@ export function PersonEditor({
                 key={photo.id}
                 onClick={() => {
                   setGalleryOpen(false);
-                  setCropSource(photo.url);
+                  setCropSource({ src: photo.url, region: photo.tags.find((tag) => tag.personId === draft.id) });
                 }}
               >
                 <img
@@ -1180,13 +1181,14 @@ export function PersonEditor({
       )}
       {cropSource && (
         <PortraitCropper
-          key={cropSource}
-          src={cropSource}
-          onClose={() => setCropSource("")}
+          key={cropSource.src}
+          src={cropSource.src}
+          region={cropSource.region}
+          onClose={() => setCropSource(null)}
           onCrop={(file) => {
             setPortraitFile(file);
             setPortraitPreview(URL.createObjectURL(file));
-            setCropSource("");
+            setCropSource(null);
           }}
         />
       )}

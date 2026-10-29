@@ -1507,6 +1507,10 @@ export default function App() {
             try { setNotice(await treeCanvas.current.optimizeLayout(goal)); }
             catch (error) { setNotice(""); throw error; }
           }}
+          onManualLayout={async (enabled) => {
+            if (!treeCanvas.current) throw new Error("Откройте обычное 2D-древо для ручной расстановки.");
+            setNotice(treeCanvas.current.setManualLayout(enabled));
+          }}
           onZoom={(direction) =>
             setAssistantZoom((previous) => ({
               token: previous.token + 1,

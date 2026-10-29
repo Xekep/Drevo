@@ -17,8 +17,8 @@ export function useTreeOptimization(
   useEffect(() => () => { job.current?.cancel(); }, [original, key]);
   const current = result?.original === original && result?.key === key ? result : null;
   const geometry = current?.geometry || original;
-  const optimize = useCallback(async (goal: TreeOptimizationGoal = "routing") => {
-    if (!ready || !original || !geometry) throw new Error("Дождитесь отрисовки древа.");
+  const optimize = useCallback(async (goal: TreeOptimizationGoal = "routing", displayed = geometry) => {
+    if (!ready || !original || !displayed) throw new Error("Дождитесь отрисовки древа.");
     job.current?.cancel();
     const requestId = ++token.current;
     const worker = new Worker(new URL("./layout.worker.ts", import.meta.url), { type: "module" });
@@ -55,7 +55,7 @@ export function useTreeOptimization(
       };
       worker.onerror = () => finish("Не удалось оптимизировать расположение.", true);
       const request: LayoutWorkerRequest = { requestId, ...projectTree(family, visible),
-        mode: "generations", reverse: geometry.reverse, previousGeometry: geometry, optimizeDisplayed: true, layoutGoal: goal };
+        mode: "generations", reverse: displayed.reverse, previousGeometry: displayed, optimizeDisplayed: true, layoutGoal: goal };
       try { worker.postMessage(request); }
       catch { finish("Не удалось передать раскладку для оптимизации.", true); }
     });

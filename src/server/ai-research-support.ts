@@ -195,7 +195,7 @@ export const RESEARCH_RESOURCES_TOOL = {
 export const CONTROL_VIEW_TOOL = {
   name: "control_archive_view",
   description:
-    "Управлять интерфейсом только по явной просьбе пользователя. filter_by_criteria применяет те же criteria и mode, что query_people, ко всему доступному древу на сервере; не перечисляй ID и не запрашивай страницы list_people. Поддерживает поля и группы allOf/anyOf/noneOf. mode=exclude сохраняет всех, кроме совпавших: живых и людей с неизвестным возрастом смерти тоже. Команда фильтра завершается готовым подтверждением приложения; выполняй её после нужного анализа. focus_people перемещает камеру; filter_surname показывает фамильную группу после get_surname_group; filter_people строит временное древо из отдельных проверенных personIds; hide_review_people скрывает карточки needsReview. open_person и open_photo открывают карточки; zoom_in и zoom_out меняют масштаб.",
+    "Управлять интерфейсом только по явной просьбе пользователя. enable_manual_layout включает ручную горизонтальную расстановку карточек и супружеских групп на компьютере в обычном 2D-древе, disable_manual_layout выключает её, сохраняя текущую композицию для PDF. Это не автоматическая оптимизация и не изменение записей. filter_by_criteria применяет те же criteria и mode, что query_people, ко всему доступному древу на сервере; не перечисляй ID и не запрашивай страницы list_people. Поддерживает поля и группы allOf/anyOf/noneOf. mode=exclude сохраняет всех, кроме совпавших: живых и людей с неизвестным возрастом смерти тоже. Команда фильтра завершается готовым подтверждением приложения; выполняй её после нужного анализа. focus_people перемещает камеру; filter_surname показывает фамильную группу после get_surname_group; filter_people строит временное древо из отдельных проверенных personIds; hide_review_people скрывает карточки needsReview. open_person и open_photo открывают карточки; zoom_in и zoom_out меняют масштаб.",
   inputSchema: {
     type: "object",
     properties: {
@@ -209,6 +209,8 @@ export const CONTROL_VIEW_TOOL = {
           "filter_by_criteria",
           "exclude_branch",
           "optimize_layout",
+          "enable_manual_layout",
+          "disable_manual_layout",
           "hide_review_people",
           "open_person",
           "open_photo",
@@ -247,7 +249,7 @@ export function viewControlArguments(value: unknown, view: string) {
   if (Object.keys(args).some(key => !Object.hasOwn(schema.properties, key)) ||
       typeof args.action !== "string" || !(schema.properties.action.enum as readonly string[]).includes(args.action))
     throw new Error("Неизвестное действие или параметр управления видом");
-  if (["optimize_layout", "exclude_branch", "zoom_in", "zoom_out"].includes(args.action) && view !== "tree")
+  if (["optimize_layout", "enable_manual_layout", "disable_manual_layout", "exclude_branch", "zoom_in", "zoom_out"].includes(args.action) && view !== "tree")
     throw new Error("Откройте раздел «Древо» для этого действия");
   for (const [key, minimum, maximum] of [["personId", 1, 200], ["photoId", 1, 200], ["surname", 2, 100], ["label", 1, 100]] as const) {
     const text = args[key];

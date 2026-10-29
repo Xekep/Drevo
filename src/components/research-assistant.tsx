@@ -293,6 +293,7 @@ export function ResearchAssistant({
   onFilter,
   onExclude,
   onOptimizeLayout,
+  onManualLayout,
   getTreeViewContext,
   onHideReview,
   onZoom,
@@ -313,6 +314,7 @@ export function ResearchAssistant({
   onFilter: (ids: string[], label: string) => void;
   onExclude: (ids: string[], label: string) => void;
   onOptimizeLayout: (goal?: TreeOptimizationGoal) => Promise<void>;
+  onManualLayout: (enabled: boolean) => Promise<void>;
   getTreeViewContext?: () => ResearchTreeViewContext | undefined;
   onHideReview: () => void;
   onZoom: (direction: "in" | "out") => void;
@@ -777,6 +779,8 @@ export function ResearchAssistant({
       else if (action.type === "exclude_people") onExclude(action.personIds, action.label);
       else if (action.type === "optimize_tree_layout")
         void onOptimizeLayout(action.goal).catch(reason => setError(reason instanceof Error ? reason.message : "Не удалось оптимизировать расположение."));
+      else if (action.type === "manual_tree_layout")
+        void onManualLayout(action.enabled).catch(reason => setError(reason instanceof Error ? reason.message : "Не удалось включить ручную расстановку."));
       else if (action.type === "hide_review_people") onHideReview();
       else if (action.type === "open_person") onPerson(action.personId);
       else if (action.type === "open_photo") onPhoto(action.photoId);
