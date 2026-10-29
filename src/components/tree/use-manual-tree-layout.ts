@@ -63,7 +63,6 @@ export function useManualTreeLayout(
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       frame.current = null;
       drag.current = null;
-      suppressClick.current = false;
     },
     [original, key, active],
   );
@@ -186,8 +185,11 @@ export function useManualTreeLayout(
       return false;
     },
     onClick(event: MouseEvent<HTMLDivElement>) {
-      if (suppressClick.current || (active && person(event.target))) {
-        suppressClick.current = false;
+      const isPerson = person(event.target);
+      const suppress = suppressClick.current && (isPerson ||
+        (event.target as Element).closest(".react-flow__pane") || event.target === event.currentTarget);
+      suppressClick.current = false;
+      if (suppress || (active && isPerson)) {
         event.preventDefault();
         event.stopPropagation();
         return true;
@@ -207,7 +209,7 @@ export function useManualTreeLayout(
           stopFrame();
           drag.current = null;
           setPreview(null);
-          suppressClick.current = false;
+          suppressClick.current = true;
           if (event.currentTarget.hasPointerCapture(start.pointer))
             event.currentTarget.releasePointerCapture(start.pointer);
         }

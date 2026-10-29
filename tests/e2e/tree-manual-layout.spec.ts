@@ -147,6 +147,7 @@ test("manual placement moves spouses together, keeps the camera still and never 
   await page.mouse.up();
   await expect(canvas).not.toHaveClass(/is-manual-layout/);
   await expect.poll(() => position(child)).toEqual(beforeChild);
+  await expect(page.locator(".inspector-dock")).toHaveCount(0);
   expect(writes).toBe(0);
   await trigger.click();
   await page.screenshot({ path: info.outputPath("manual-placement.png") });
