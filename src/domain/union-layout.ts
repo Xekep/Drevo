@@ -1201,10 +1201,7 @@ export async function unionGeometry(
       if (!changed) break;
     }
   }
-  if (
-    (!previous && people.length <= 1200) ||
-    (previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE)
-  ) {
+  if (!previous && people.length <= 1200) {
     best = optimizeFamilyRows(
       best,
       people,
@@ -1246,6 +1243,11 @@ export async function unionGeometry(
   }));
   best = bundleFamilyBranches(best);
   if (previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE) {
+    // Retaining slots must judge the canonical shared corridors. Restoring
+    // before bundling can reject a safe old position after cold centering.
+    best = optimizeFamilyRows(best, people, links, size, (geometry) => ({
+      ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
+    }), previous);
     best = repairFamilyRoutes(best, size, (geometry) => ({
       ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
     })).geometry;
