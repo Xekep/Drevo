@@ -35,6 +35,8 @@ import {
   Download,
   Upload,
   TreeDeciduous,
+  MoveHorizontal,
+  Undo2,
 } from "lucide-react";
 import {
   archiveConnections,
@@ -73,6 +75,7 @@ import {
 } from "./relationship-edge";
 import { HorizontalTimeline } from "./horizontal-timeline";
 import { useNarrowScreen } from "../../hooks/useNarrowScreen";
+import { useDesktopEditing } from "../../hooks/useDesktopEditing";
 import { useFamilyView } from "./use-family-view";
 import { useTreeViewState } from "./use-tree-view-state";
 import { treeViewPolicy, treeViewPresentation } from "../../domain/tree-view-policy.ts";
@@ -84,6 +87,7 @@ import { createCrossingPathCache, crossingZoomBucket } from "../../domain/route-
 import type { TreeGenerationLimits } from "../../domain/tree-preferences";
 import { useTreeLayout } from "./use-tree-layout";
 import { useTreeOptimization } from "./use-tree-optimization";
+import { useManualTreeLayout } from "./use-manual-tree-layout";
 import type { TreeOptimizationGoal } from "../../domain/optimize-tree-layout";
 import { useDepthTree } from "./use-depth-tree";
 import { TreeDepthLayers, type DepthSceneHandle } from "./tree-depth-layers";
@@ -143,6 +147,7 @@ export type TreeFocus = {
 export type TreeCanvasHandle = {
   getViewContext: () => ResearchTreeViewContext;
   optimizeLayout: (goal?: TreeOptimizationGoal) => Promise<string>;
+  setManualLayout: (enabled: boolean) => string;
   visiblePersonIds: (signal?: AbortSignal) => Promise<string[]>;
   exportPdf: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number,
     onProgress?: (message: string) => void) => Promise<void>;
@@ -204,6 +209,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   exportRef,
 ) {
   const narrow = useNarrowScreen();
+  const desktopEditing = useDesktopEditing();
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const node = container.current;
@@ -601,9 +607,15 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           ])
         : null,
     );
-  const { geometry, optimize, busy: optimizingLayout, layoutKey } = useTreeOptimization(
+  const { geometry: optimizedGeometry, optimize, busy: optimizingLayout, layoutKey } = useTreeOptimization(
     originalGeometry, originalLayoutKey, renderFamily, renderVisible, ready,
   );
+  const manualAvailable = desktopEditing && flatTree && !activeFanAnchor && ready && !cameraLocked &&
+    !calculatingLayout && !optimizingLayout && !preparingView;
+  const manual = useManualTreeLayout(optimizedGeometry, layoutKey, manualAvailable,
+    renderFamily.links || [], () => flow.getViewport().zoom, () => setManualCameraOverride(true));
+  const geometry = manual.geometry;
+  const setManualLayoutEnabled = manual.setEnabled;
   const layoutBusy = calculatingLayout || optimizingLayout || preparingView;
   const nodeWidth = geometry?.nodeSize?.width ?? treeNodeSize().width;
   const nodeHeight = geometry?.nodeSize?.height ?? treeNodeSize().height;
@@ -1256,7 +1268,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     [displayEdges, layoutTransition, gpuScope],
   );
   const overviewAvailable = mode !== "timeline" && !activeFanAnchor &&
-    nodes.length >= 600 && !growing && !layoutSettling;
+    nodes.length >= 600 && !growing && !layoutSettling && !manual.active;
   const distantScene = overviewAvailable && distantZoom;
   // Use the existing distant canvas scene for large introductions instead of
   // mounting hundreds of SVG edge wrappers during the short growth sequence.
@@ -1273,7 +1285,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   // While a worker prepares the next projection, keep the ready current scene.
   // A pending layout must not create a new GPU scene or mount the old archive
   // as native cards just because its busy indicator appeared.
-  const gpuEligible = nodes.length >= 500 && !growing && !layoutSettling && (gpuSceneMatches || (ready && !layoutBusy)) &&
+  const gpuEligible = !manual.active && nodes.length >= 500 && !growing && !layoutSettling && (gpuSceneMatches || (ready && !layoutBusy)) &&
     flatTree && !connecting && gpuFailedScope !== gpuScope &&
     gpuOverlayEdges.length <= 64 && nodes.every((node) => GpuPortraitCache.supported(node.data.person.photo));
   // A remounted canvas needs its own first frame and portrait handoff, even
@@ -1563,7 +1575,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           if (mode !== "generations" || activeFanAnchor || depthEnabled)
             throw new Error("Откройте обычное 2D-древо для оптимизации расположения.");
           if (cameraLocked || calculatingLayout) throw new Error("Дождитесь отрисовки древа.");
-          return optimize(goal);
+          return optimize(goal, geometry);
+        },
+        setManualLayout(enabled) {
+          if (enabled && (!desktopEditing || !flatTree || activeFanAnchor))
+            throw new Error("Ручная расстановка доступна на компьютере в обычном 2D-древе.");
+          if (enabled && !manualAvailable) throw new Error("Дождитесь отрисовки древа.");
+          setManualLayoutEnabled(enabled);
+          return enabled ? "Ручная расстановка включена: перемещайте карточки по горизонтали. Супруги двигаются вместе." : "Ручная расстановка выключена. Расположение сохранено для текущего вида и PDF.";
         },
         async visiblePersonIds(signal) {
           signal?.throwIfAborted();
@@ -1580,7 +1599,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         },
       };
     },
-    [mode, activeFanAnchor, depthEnabled, cameraLocked, calculatingLayout, optimize, ensureExportOverview],
+    [mode, activeFanAnchor, depthEnabled, cameraLocked, calculatingLayout, optimize, ensureExportOverview, geometry, desktopEditing, flatTree, manualAvailable, setManualLayoutEnabled],
   );
   useEffect(() => {
     if (!growing || !ready || !initialCameraReady || growthStarted)
@@ -1746,7 +1765,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         data-layout-people={renderVisible.size}
         data-fragment-anchor={fragment.active ? fragment.anchorId : undefined}
         data-depth-anchor={depthEnabled ? depth.anchorId : undefined}
-        className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} has-portrait-cards ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        className={`tree-canvas mode-${mode} ${manual.active ? "is-manual-layout" : ""} ${props.colorScheme === "white" ? "theme-white" : ""} has-portrait-cards ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         data-renderer={gpuActive ? "webgl2" : "react-flow"}
         data-gpu-scene-match={gpuReadyScene?.geometry === geometry && gpuReadyScene?.scope === gpuScope ? "true" : "false"}
@@ -1754,6 +1773,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         data-distant-overlay={distantScene && gpuOverlayEdges.length > 0 || undefined}
         role={gpuActive ? "application" : undefined}
         onPointerMoveCapture={(event) => {
+          if (manual.onPointerMove(event)) return;
           gpuLongPress.handlers.onPointerMove(event);
           if (!gpuActive || event.pointerType === "touch") return;
           const target = event.target as Element;
@@ -1763,9 +1783,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           setGpuHovered((current) => current === id ? current : id);
         }}
         onPointerLeave={() => setGpuHovered("")}
-        onPointerUpCapture={gpuLongPress.handlers.onPointerUp}
-        onPointerCancelCapture={gpuLongPress.handlers.onPointerCancel}
-        onLostPointerCapture={gpuLongPress.handlers.onLostPointerCapture}
+        onPointerUpCapture={(event) => { if (!manual.onPointerUp(event)) gpuLongPress.handlers.onPointerUp(event); }}
+        onPointerCancelCapture={(event) => { if (!manual.onPointerCancel(event)) gpuLongPress.handlers.onPointerCancel(); }}
+        onLostPointerCapture={(event) => { if (!manual.onPointerCancel(event)) gpuLongPress.handlers.onLostPointerCapture(); }}
+        onKeyDownCapture={manual.onKeyDown}
         onFocusCapture={(event) => {
           const target = event.target as Element;
           const id = target.closest(".react-flow__node-person")?.getAttribute("data-id");
@@ -1797,6 +1818,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             { zoom: Math.min(1, Math.max(PERSON_FOCUS_ZOOM, camera.zoom)), duration: 0 });
         }}
         onPointerDownCapture={(event) => {
+          if (manual.onPointerDown(event)) return;
           if (gpuActive) {
             gpuPressPerson.current = (event.target as Element).closest(".react-flow__pane")
               ? gpuPersonAt(event.clientX, event.clientY)?.data.person.id || "" : "";
@@ -1806,9 +1828,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           edgePan.onPointerDownCapture(event);
           middleAnchor.onPointerDownCapture(event);
         }}
-        onMouseDownCapture={middleAnchor.onMouseDownCapture}
+        onMouseDownCapture={(event) => { if (!manual.onMouseDown(event)) middleAnchor.onMouseDownCapture(event); }}
         onAuxClickCapture={middleAnchor.onAuxClickCapture}
         onClickCapture={(event) => {
+          if (manual.onClick(event)) return;
           edgePan.onClickCapture(event);
           if (gpuLongPress.suppressClick.current) {
             gpuLongPress.suppressClick.current = false;
@@ -2039,13 +2062,25 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           {narrow && depthEnabled && <div className="tree-spatial-toolbar-slot is-mobile" ref={setDepthToolbarHost} />}
           {narrow && preferencesAction}
         </div>
-        {!narrow && (props.comparisonAction || preferencesAction || depthEnabled) && (
+        {!narrow && (props.comparisonAction || preferencesAction || depthEnabled || flatTree) && (
           <div className="tree-display-actions">
             {props.comparisonAction}
             {depthEnabled && <div className="tree-spatial-toolbar-slot" ref={setDepthToolbarHost} />}
+            {flatTree && desktopEditing && <button type="button" className="tree-preferences-trigger" aria-label="Ручная расстановка карточек"
+              title="Ручная расстановка карточек" aria-pressed={manual.active} disabled={!manualAvailable}
+              onClick={() => manual.setEnabled(!manual.enabled)}><MoveHorizontal size={19} aria-hidden="true" /></button>}
             {preferencesAction}
           </div>
         )}
+        {manual.active && <section className="tree-manual-tools" aria-label="Ручная расстановка">
+          <strong>Расстановка для печати</strong>
+          <p>Перетаскивайте карточки по горизонтали. Супруги двигаются вместе. ← → — сдвиг, Shift — точнее.</p>
+          <div>
+            <button type="button" aria-label="Отменить сдвиг карточки" title="Отменить сдвиг" disabled={!manual.canUndo} onClick={manual.undo}><Undo2 size={16} aria-hidden="true" /></button>
+            <button type="button" disabled={!manual.changed} onClick={manual.reset}>Сбросить</button>
+            <button type="button" onClick={() => manual.setEnabled(false)}>Готово</button>
+          </div>
+        </section>}
         <div className="tree-flow-plane">
         {activeFanAnchor ? (
           <FanChart

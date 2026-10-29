@@ -2640,6 +2640,20 @@
 .tree-display-actions .workspace-actions {
   position: static;
 }
+.tree-display-actions button[aria-pressed="true"] { background: #e5eddf; border-color: #789567; }
+.tree-manual-tools {
+  position: absolute; top: 64px; right: 22px; z-index: 8;
+  width: min(288px, calc(100% - 44px)); padding: 12px;
+  border: 1px solid var(--line, #dfe6d9); border-radius: 10px;
+  background: var(--panel, #fffdf7); color: var(--ink, #263c2a);
+  box-shadow: 0 4px 14px #18281912; font-size: 12px;
+}
+.tree-manual-tools p { margin: 6px 0 10px; color: var(--muted); line-height: 1.45; }
+.tree-manual-tools > div { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.tree-manual-tools button { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; padding: 5px 10px; }
+.is-manual-layout .react-flow__node { transition: none !important; }
+.is-manual-layout .flow-person-content { cursor: ew-resize; }
+.is-manual-layout .flow-person-content:focus-visible { outline: 2px solid #789567; outline-offset: 3px; }
 .tree-preferences-trigger {
   display: grid;
   place-items: center;

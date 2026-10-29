@@ -16,6 +16,9 @@ test("view action contract rejects unknown parameters, malformed IDs and incompa
 });
 
 const cases = [
+  { label: "manual layout enable", message: "Дай мне самому подвигать карточки для PDF", action: { action: "enable_manual_layout" }, expected: [{ type: "manual_tree_layout", enabled: true }] },
+  { label: "manual layout disable", message: "Я закончил расстановку", action: { action: "disable_manual_layout" }, expected: [{ type: "manual_tree_layout", enabled: false }] },
+  { label: "manual layout unavailable in fan", message: "Дай подвигать карточки", treeMode: "fan", action: { action: "enable_manual_layout" }, expected: [] },
   { label: "natural compact", message: "Сдвинь карточки ближе друг к другу", action: { action: "optimize_layout", goal: "compact" }, expected: [{ type: "optimize_tree_layout", goal: "compact" }] },
   { label: "natural compact paraphrase", message: "Сделай древо более тесным", action: { action: "optimize_layout", goal: "compact" }, expected: [{ type: "optimize_tree_layout", goal: "compact" }] },
   { label: "natural routing", message: "Можешь рассортировать карточки для печати?", action: { action: "optimize_layout", goal: "routing" }, expected: [{ type: "optimize_tree_layout" }] },

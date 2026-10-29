@@ -26,6 +26,7 @@ export type UiAction =
   | { type: "filter_people"; personIds: string[]; label: string }
   | { type: "exclude_people"; personIds: string[]; label: string }
   | { type: "optimize_tree_layout"; goal?: TreeOptimizationGoal }
+  | { type: "manual_tree_layout"; enabled: boolean }
   | { type: "hide_review_people" }
   | { type: "open_person"; personId: string }
   | { type: "open_photo"; photoId: string }

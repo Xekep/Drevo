@@ -376,26 +376,38 @@
     transition: none;
   }
 }
+.editor-dialog.portrait-crop-dialog { width: min(480px, calc(100% - 24px)); }
 .portrait-cropper {
-  padding: 24px;
+  --portrait-crop-size: clamp(160px, calc(100dvh - 440px), 320px);
+  padding: 16px;
   display: grid;
-  gap: 18px;
+  gap: 12px;
   justify-items: center;
 }
 .portrait-cropper > p {
   max-width: 460px;
   color: var(--muted);
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.5;
 }
 .portrait-cropper label {
   display: grid;
-  width: min(320px, 100%);
+  width: min(var(--portrait-crop-size), 100%);
   gap: 10px;
 }
+.portrait-crop-controls {
+  display: grid;
+  width: min(var(--portrait-crop-size), 100%);
+  gap: 12px;
+}
+.portrait-crop-controls label { gap: 6px; }
+.portrait-crop-controls label > span { display: flex; justify-content: space-between; }
+.portrait-crop-controls output { color: var(--muted); font-variant-numeric: tabular-nums; }
+.portrait-crop-controls input[type="range"] { width: 100%; margin: 0; }
+.portrait-crop-reset { justify-self: end; display: inline-flex; align-items: center; gap: 6px; }
 .portrait-crop-area {
   position: relative;
-  width: min(320px, 100%);
+  width: min(var(--portrait-crop-size), 100%);
   aspect-ratio: 1;
   overflow: hidden;
   background: #eee;
