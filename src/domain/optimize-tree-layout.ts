@@ -6,6 +6,7 @@ import { refineColdPlacement } from "./family-row-order.ts";
 import { familyRowNoWorse } from "./family-row-moves.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
 import { compactTreeLayout } from "./compact-tree-layout.ts";
+import { alignFamilyLineages } from "./lineage-alignment.ts";
 
 export type TreeOptimizationGoal = "routing" | "compact";
 
@@ -56,6 +57,11 @@ export function optimizeDisplayedTree(
         next.cardHits >= current.cardHits && next.overlaps >= current.overlaps &&
         next.length >= current.length - 1) break;
     best = candidate;
+  }
+  if (goal === "routing") {
+    const candidate = alignFamilyLineages(best, people, links, size, score);
+    const full = createGeometryContactScorer(size.width, size.height);
+    if (full.cardContacts(candidate) <= full.cardContacts(best)) best = candidate;
   }
   const after = score(best);
   return { geometry: best, optimization: {

@@ -291,19 +291,23 @@ test("cold portrait placement does not select a solver solely to reduce the tota
   assert.equal(score()(result).overlaps, 0);
 });
 
-test("medium cold graphs compare at most two independent placements above the history range", async () => {
+test("medium cold graphs keep the original probes and bound independent alternatives", async () => {
   const engine = new ELK({ algorithms: ["layered"] });
   const family = randomFamily(1, 4);
   for (let i = 0; i < 10; i++) family.push({ id: `isolated-${i}`, birth: "", parents: [], spouses: [] });
   assert.ok(family.length > 200 && family.length <= 300);
-  let calls = 0, alternatives = 0;
+  let calls = 0, originals = 0, independent = 0;
   const geometry = await unionGeometry(family, (graph) => {
     calls++;
-    if (graph.layoutOptions?.["elk.layered.nodePlacement.strategy"] === "NETWORK_SIMPLEX") alternatives++;
+    if (graph.layoutOptions?.["elk.layered.nodePlacement.strategy"] === "NETWORK_SIMPLEX") {
+      if (graph.layoutOptions["elk.layered.considerModelOrder.strategy"] === "NONE") independent++;
+      else originals++;
+    }
     return engine.layout(graph);
   }, false, [], size);
-  assert.ok(calls <= 9);
-  assert.equal(alternatives, 2);
+  assert.ok(calls <= 11);
+  assert.equal(originals, 2, "new strategies cannot remove the productive original probes");
+  assert.ok(independent >= 1 && independent <= 2);
   assert.equal(geometry.positions.length, family.length);
   assert.equal(score()(geometry).cardHits, 0);
   assert.equal(score()(geometry).overlaps, 0);

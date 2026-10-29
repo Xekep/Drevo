@@ -1,4 +1,4 @@
-import { MAX_INCREMENTAL_LAYOUT_PEOPLE, treeNodeSize } from "../../domain/tree-layout-constants";
+import { treeNodeSize } from "../../domain/tree-layout-constants";
 import { unionGeometry } from "../../domain/union-layout";
 import { unionTimeline } from "../../domain/union-timeline";
 import { createUnionLayout } from "./elk-layout";
@@ -43,7 +43,7 @@ self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
             reverse,
             links,
             treeNodeSize(),
-            people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE ? previousGeometry : undefined,
+            previousGeometry,
             true,
             parallelCandidates ? 2 : 1,
           )
