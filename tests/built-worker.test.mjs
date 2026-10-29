@@ -182,6 +182,33 @@ test("production worker retains a large edited scene, adds a safe leaf and rebui
     assert.deepEqual(full.geometry, cold.geometry);
   } finally { await worker.terminate(); }
 });
+test("production Worker preserves horizontal history for a small ancestor insertion beyond 200 people", { timeout: 20_000 }, async () => {
+  const worker = productionWorker();
+  const send = body => new Promise((resolve, reject) => {
+    const onMessage = message => { worker.off("error", onError); resolve(message); };
+    const onError = error => { worker.off("message", onMessage); reject(error); };
+    worker.once("message", onMessage); worker.once("error", onError); worker.postMessage(body);
+  });
+  try {
+    for (const reverse of [false, true]) {
+      const people = [{ id: "root", birth: "1900", parents: [], spouses: [] },
+        { id: "child", birth: "1930", parents: ["root"], spouses: [] },
+        ...Array.from({ length: 220 }, (_, i) => ({ id: `separate-${i}`, birth: "", parents: [], spouses: [] }))];
+      const input = { people, links: [], mode: "generations", reverse };
+      const before = await send({ requestId: 81, ...input });
+      assert.equal(before.error, undefined);
+      const edited = { ...input, people: [...people.map(p => p.id === "root" ? { ...p, parents: ["ancestor"] } : p),
+        { id: "ancestor", birth: "1870", parents: [], spouses: [] }] };
+      const after = await send({ requestId: 82, ...edited, previousInput: input, previousGeometry: before.geometry });
+      assert.equal(after.error, undefined);
+      assert.equal(after.updateKind, "full");
+      assert.equal(after.geometry.positions.length, edited.people.length);
+      const positions = new Map(after.geometry.positions);
+      for (const [id, p] of before.geometry.positions) assert.equal(positions.get(id).x, p.x, id);
+    }
+  } finally { await worker.terminate(); }
+});
+
 test("production worker refines an explicit displayed geometry without dropping people or generations", { timeout: 20_000 }, async () => {
   const worker = productionWorker();
   try {

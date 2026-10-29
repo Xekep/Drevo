@@ -19,8 +19,8 @@ import type { FamilyLink } from "./types.ts";
 import { repairFamilyRoutes } from "./family-route-repair.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
-import { spaceFamilyRows } from "./family-row-spacing.ts";
-import { centerFamilyBranches } from "./family-centering.ts";
+import { finishColdFamilyLayout, preferFamilyLayout } from "./family-layout-candidates.ts";
+import { canUseFamilyLayoutHistory } from "./family-layout-history.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
 import { optimizeFamilyRows, refineColdPlacement } from "./family-row-order.ts";
@@ -704,6 +704,7 @@ export async function unionGeometry(
   candidateConcurrency: 1 | 2 = 1,
 ): Promise<TreeGeometry> {
   const { width: W, height: H } = size;
+  if (!canUseFamilyLayoutHistory(people, previous, reverse, size)) previous = undefined;
   const {
     contacts: geometryContacts,
     quality: geometryQuality,
@@ -734,10 +735,7 @@ export async function unionGeometry(
   let profileQuality = initialProfile && geometryQuality(best);
   let profileCardContacts = initialProfile ? routeCardContacts(best) : 0;
   let profileOverlaps = initialProfile ? cardOverlapCount(best) : 0;
-  const seedCandidates =
-    previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE
-      ? [{ geometry: best, contacts }]
-      : [];
+  const seedCandidates = previous ? [{ geometry: best, contacts }] : [];
 
   const extent = (geometry: TreeGeometry) => {
     const xs = geometry.positions.map(([, p]) => p.x),
@@ -856,7 +854,6 @@ export async function unionGeometry(
     previous.reverse === reverse &&
     (!previous.nodeSize ||
       (previous.nodeSize.width === W && previous.nodeSize.height === H)) &&
-    people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE &&
     previous.positions.length
   ) {
     // Одна устранённая точка контакта не должна переставлять почти всё дерево.
@@ -1059,8 +1056,7 @@ export async function unionGeometry(
     const blocksById = new Map(
       familyPairBlocks(best).map((block) => [block.id, block]),
     );
-    const passes =
-      previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE ? 3 : 1;
+    const passes = previous ? 3 : 1;
     for (let pass = 0; pass < passes; pass++) {
       let changed = false;
       for (const id of coupleBlocksWithContactedAncestry(best, W).slice(
@@ -1119,11 +1115,7 @@ export async function unionGeometry(
       if (!changed) break;
     }
   }
-  if (
-    contacts.distinct &&
-    ((!previous && people.length <= 1200) ||
-      (previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE))
-  ) {
+  if (contacts.distinct && (previous || people.length <= 1200)) {
     // Exchange neighboring union slots within a generation without another ELK pass.
     // Prioritize blocks whose routes already touch foreign family routes.
     const pairKey = ([left, right]: [string, string]) => `${left}\0${right}`;
@@ -1238,22 +1230,38 @@ export async function unionGeometry(
       }
     }
   }
-  if (!previous) best = spaceFamilyRows(best, size, (geometry) => ({
+  const finalScore = (geometry: TreeGeometry) => ({
     ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
-  }));
-  best = bundleFamilyBranches(best);
-  if (previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE) {
+  });
+  if (previous) {
+    best = bundleFamilyBranches(best);
     // Retaining slots must judge the canonical shared corridors. Restoring
     // before bundling can reject a safe old position after cold centering.
-    best = optimizeFamilyRows(best, people, links, size, (geometry) => ({
-      ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
-    }), previous);
-    best = repairFamilyRoutes(best, size, (geometry) => ({
-      ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
-    })).geometry;
+    best = optimizeFamilyRows(best, people, links, size, finalScore, previous);
+    best = repairFamilyRoutes(best, size, finalScore).geometry;
+    return bundleFamilyBranches(best);
   }
-  best = bundleFamilyBranches(best);
-  return previous ? best : centerFamilyBranches(best, people, links, size, (geometry) => ({
-    ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
-  }));
+  best = finishColdFamilyLayout(best, people, links, size, finalScore);
+  // Preserve every existing probe. A small cold portfolio gets at most two
+  // independent alternatives; a failed experiment can never remove the baseline.
+  if (people.length > MAX_INCREMENTAL_LAYOUT_PEOPLE && people.length <= 300 && geometryQuality(best).crossings) {
+    const freeLayout = (graph: ElkNode) => layout({ ...graph, layoutOptions: {
+      ...graph.layoutOptions, "elk.layered.considerModelOrder.strategy": "NONE",
+    } });
+    for (const { seed } of placementCandidates.slice(0, 2)) {
+      try {
+        const placed = await geometryForSeed(people, freeLayout, reverse, links, seed, size,
+          false, undefined, undefined, undefined, "balanced", "NETWORK_SIMPLEX");
+        const refined = refineColdPlacement(placed, people, links, size, finalScore);
+        const candidate = finishColdFamilyLayout(refined, people, links, size, finalScore);
+        if (preferFamilyLayout(candidate, best, size, finalScore)) {
+          best = candidate;
+          break;
+        }
+      } catch {
+        // An independent solver proposal cannot invalidate the accepted scene.
+      }
+    }
+  }
+  return best;
 }

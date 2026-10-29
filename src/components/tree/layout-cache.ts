@@ -6,7 +6,7 @@ import {
 import type { LayoutWorkerRequest } from "./layout-worker-protocol.ts";
 
 // Bump when layout, packing or routing changes. Keep model order: ELK uses it.
-const LAYOUT_CACHE_VERSION = 24;
+const LAYOUT_CACHE_VERSION = 25;
 export function layoutCacheKey(input: Pick<LayoutWorkerRequest, "people" | "links" | "mode" | "reverse">) {
   return JSON.stringify({
     version: LAYOUT_CACHE_VERSION,
