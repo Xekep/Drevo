@@ -1,5 +1,6 @@
 import type { TreeGeometry } from "./tree-layout.ts";
 import type { TreeNodeSize } from "./tree-layout-constants.ts";
+import { FAMILY_DISPLAY_GAP } from "./tree-layout-constants.ts";
 import { placedFamilyRows } from "./local-family-order.ts";
 import {
   FAMILY_ROW_GAP,
@@ -7,7 +8,7 @@ import {
   type FamilyRowMove,
 } from "./family-row-moves.ts";
 
-export type FamilyBranchMove = FamilyRowMove & { preserved: Set<string> };
+export type FamilyBranchMove = FamilyRowMove & { preserved: Set<string>; direction?: "ancestors" };
 
 export const FAMILY_BRANCH_LIMITS = {
   roots: 32,
@@ -19,11 +20,11 @@ export const FAMILY_BRANCH_LIMITS = {
   perRoot: 4,
 };
 
-/** Rigid descendant translations from a household, preserving all generations. */
+/** Rigid lineage translations from households, preserving all generations. */
 export function familyBranchMoves(
   geometry: TreeGeometry,
   size: TreeNodeSize,
-  roots: Iterable<string>,
+  roots: Iterable<string | { blocks: readonly string[]; preferredShift: number; direction?: "ancestors" }>,
   limit = FAMILY_BRANCH_LIMITS.candidates,
 ): FamilyBranchMove[] {
   const cap = Math.max(0, Math.min(FAMILY_BRANCH_LIMITS.candidates, limit));
@@ -35,6 +36,7 @@ export function familyBranchMoves(
     band.members.map((id) => [owner.get(id), band.level] as const),
   ));
   const children = new Map<string, Set<string>>();
+  const parents = new Map<string, Set<string>>();
   const invalid = new Set<string>();
   for (const branch of geometry.branches || []) {
     if (!branch.id.startsWith("child:")) continue;
@@ -49,22 +51,28 @@ export function familyBranchMoves(
     const next = children.get(source) || new Set<string>();
     next.add(target);
     children.set(source, next);
+    const prior = parents.get(target) || new Set<string>();
+    prior.add(source);
+    parents.set(target, prior);
   }
-  const pending: { blocks: Set<string>; dx: number; preserved: Set<string> }[][] = [];
+  const pending: { blocks: Set<string>; dx: number; preserved: Set<string>; ancestry: boolean }[][] = [];
   const seen = new Set<string>();
   const triedRoots = new Set<string>();
   for (const root of roots) {
-    if (triedRoots.has(root)) continue;
+    const starts = typeof root === "string" ? [root] : [...new Set(root.blocks)].sort();
+    const ancestry = typeof root !== "string" && root.direction === "ancestors";
+    const rootKey = JSON.stringify([ancestry, starts]);
+    if (triedRoots.has(rootKey)) continue;
     if (triedRoots.size >= FAMILY_BRANCH_LIMITS.roots) break;
-    triedRoots.add(root);
-    if (!blocks.has(root)) continue;
-    const closure = new Set([root]), queue = [root];
+    triedRoots.add(rootKey);
+    if (!starts.length || starts.length > FAMILY_BRANCH_LIMITS.households || starts.some((id) => !blocks.has(id))) continue;
+    const closure = new Set(starts), queue = [...starts];
     let people = 0, valid = true;
     for (let i = 0; i < queue.length && valid; i++) {
       const id = queue[i];
       people += blocks.get(id)?.members.length || 0;
       if (invalid.has(id) || people > FAMILY_BRANCH_LIMITS.people) break;
-      for (const child of children.get(id) || []) {
+      for (const child of (ancestry ? parents : children).get(id) || []) {
         if (closure.has(child)) continue;
         closure.add(child);
         queue.push(child);
@@ -72,7 +80,7 @@ export function familyBranchMoves(
       }
     }
     if (!valid || people > FAMILY_BRANCH_LIMITS.people ||
-        [...closure].some((id) => invalid.has(id)) || closure.size < 2) continue;
+        [...closure].some((id) => invalid.has(id)) || (closure.size < 2 && typeof root === "string")) continue;
     const preserved = new Set<string>(), anchors: number[] = [];
     let boundary = 0, affected = 0;
     for (const branch of geometry.branches || []) {
@@ -96,13 +104,22 @@ export function familyBranchMoves(
     for (const row of rows) {
       const moving = row.filter((block) => closure.has(block.id));
       if (!moving.length) continue;
-      const left = Math.min(...moving.map((b) => b.x)),
-        right = Math.max(...moving.map((b) => b.x + b.width));
-      for (const fixed of row) if (!closure.has(fixed.id))
-        forbidden.push([
-          fixed.x - FAMILY_ROW_GAP - right,
-          fixed.x + fixed.width + FAMILY_ROW_GAP - left,
-        ]);
+      const contours = typeof root === "string" ? [{
+        x: Math.min(...moving.map((b) => b.x)),
+        width: Math.max(...moving.map((b) => b.x + b.width)) - Math.min(...moving.map((b) => b.x)),
+      }] : moving;
+      for (const contour of contours)
+        for (const fixed of row) if (!closure.has(fixed.id)) {
+          // A sibling forest can straddle unrelated families. Preserve each
+          // occupied interval instead of reserving its empty interior as a box.
+          const existing = Math.max(fixed.x - contour.x - contour.width, contour.x - fixed.x - fixed.width);
+          const gap = typeof root === "string" ? FAMILY_ROW_GAP :
+            Math.min(FAMILY_DISPLAY_GAP, Math.max(FAMILY_ROW_GAP, existing));
+          forbidden.push([
+            fixed.x - gap - contour.x - contour.width,
+            fixed.x + fixed.width + gap - contour.x,
+          ]);
+        }
     }
     forbidden.sort((a, b) => a[0] - b[0]);
     const merged: [number, number][] = [];
@@ -122,8 +139,8 @@ export function familyBranchMoves(
       return !low || dx >= merged[low - 1][1];
     };
     anchors.sort((a, b) => a - b);
-    const desired = anchors.length ? anchors[Math.floor(anchors.length / 2)] : 0;
-    const offsets = [...new Set([...anchors, ...merged.flat()])]
+    const desired = typeof root !== "string" ? root.preferredShift : anchors.length ? anchors[Math.floor(anchors.length / 2)] : 0;
+    const offsets = [...new Set([...(typeof root === "string" ? [] : [desired]), ...anchors, ...merged.flat()])]
       .filter((dx) => Number.isFinite(dx) && Math.abs(dx) >= size.width / 20 &&
         Math.abs(dx) <= size.width * 24 &&
         free(dx))
@@ -133,7 +150,7 @@ export function familyBranchMoves(
       const key = JSON.stringify([[...closure].sort(), dx]);
       if (seen.has(key)) continue;
       seen.add(key);
-      proposals.push({ blocks: closure, dx, preserved });
+      proposals.push({ blocks: closure, dx, preserved, ancestry });
       if (proposals.length >= FAMILY_BRANCH_LIMITS.perRoot) break;
     }
     if (proposals.length) pending.push(proposals);
@@ -148,7 +165,7 @@ export function familyBranchMoves(
       const move = translateFamilyBlocks(geometry,
         new Map([...proposal.blocks].map((id) => [id, proposal.dx])),
       );
-      result.push({ ...move, preserved: proposal.preserved });
+      result.push({ ...move, preserved: proposal.preserved, ...(proposal.ancestry ? { direction: "ancestors" as const } : {}) });
       if (result.length >= cap) return result;
     }
   return result;

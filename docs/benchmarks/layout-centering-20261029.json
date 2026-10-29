@@ -1,0 +1,1160 @@
+{
+  "date": "2026-10-29",
+  "baseline": "3218cef5e50e6561073956f1a21deef72dd674b6",
+  "node": "v22.14.0",
+  "note": "Single paired cold runs; timings include ELK and are not browser FPS or latency percentiles. IDs, dates and geometry are omitted.",
+  "cases": [
+    {
+      "name": "small-1",
+      "people": 66,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 1187,
+        "quality": {
+          "length": 53560,
+          "bends": 102,
+          "contacts": 12,
+          "crossings": 12,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 6872.5
+      },
+      "after": {
+        "ms": 908,
+        "quality": {
+          "length": 52592,
+          "bends": 100,
+          "contacts": 11,
+          "crossings": 11,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 5420.5
+      }
+    },
+    {
+      "name": "small-1",
+      "people": 66,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 679,
+        "quality": {
+          "length": 53560,
+          "bends": 102,
+          "contacts": 12,
+          "crossings": 12,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 6872.5
+      },
+      "after": {
+        "ms": 812,
+        "quality": {
+          "length": 53370,
+          "bends": 100,
+          "contacts": 12,
+          "crossings": 12,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 6777.5
+      }
+    },
+    {
+      "name": "small-2",
+      "people": 57,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 557,
+        "quality": {
+          "length": 34744,
+          "bends": 80,
+          "contacts": 6,
+          "crossings": 6,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 2808
+      },
+      "after": {
+        "ms": 511,
+        "quality": {
+          "length": 32638,
+          "bends": 80,
+          "contacts": 6,
+          "crossings": 6,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 1546
+      }
+    },
+    {
+      "name": "small-2",
+      "people": 57,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 470,
+        "quality": {
+          "length": 34744,
+          "bends": 80,
+          "contacts": 6,
+          "crossings": 6,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 2808
+      },
+      "after": {
+        "ms": 492,
+        "quality": {
+          "length": 32638,
+          "bends": 80,
+          "contacts": 6,
+          "crossings": 6,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 1546
+      }
+    },
+    {
+      "name": "small-3",
+      "people": 62,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 558,
+        "quality": {
+          "length": 42288,
+          "bends": 96,
+          "contacts": 12,
+          "crossings": 12,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 3966
+      },
+      "after": {
+        "ms": 671,
+        "quality": {
+          "length": 42360,
+          "bends": 98,
+          "contacts": 12,
+          "crossings": 12,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 3334
+      }
+    },
+    {
+      "name": "small-3",
+      "people": 62,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 602,
+        "quality": {
+          "length": 42288,
+          "bends": 96,
+          "contacts": 11,
+          "crossings": 11,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 3966
+      },
+      "after": {
+        "ms": 740,
+        "quality": {
+          "length": 42288,
+          "bends": 98,
+          "contacts": 11,
+          "crossings": 11,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 3532
+      }
+    },
+    {
+      "name": "small-4",
+      "people": 54,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 713,
+        "quality": {
+          "length": 25388,
+          "bends": 80,
+          "contacts": 3,
+          "crossings": 3,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 3121.5
+      },
+      "after": {
+        "ms": 854,
+        "quality": {
+          "length": 25640.5,
+          "bends": 78,
+          "contacts": 3,
+          "crossings": 3,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 2607
+      }
+    },
+    {
+      "name": "small-4",
+      "people": 54,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 661,
+        "quality": {
+          "length": 25388,
+          "bends": 80,
+          "contacts": 3,
+          "crossings": 3,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 3121.5
+      },
+      "after": {
+        "ms": 721,
+        "quality": {
+          "length": 25612,
+          "bends": 76,
+          "contacts": 3,
+          "crossings": 3,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 2747.5
+      }
+    },
+    {
+      "name": "small-5",
+      "people": 53,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 638,
+        "quality": {
+          "length": 30580,
+          "bends": 80,
+          "contacts": 7,
+          "crossings": 7,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 2489
+      },
+      "after": {
+        "ms": 691,
+        "quality": {
+          "length": 31020,
+          "bends": 80,
+          "contacts": 7,
+          "crossings": 7,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 2230
+      }
+    },
+    {
+      "name": "small-5",
+      "people": 53,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 646,
+        "quality": {
+          "length": 30580,
+          "bends": 80,
+          "contacts": 7,
+          "crossings": 7,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 2489
+      },
+      "after": {
+        "ms": 654,
+        "quality": {
+          "length": 30433,
+          "bends": 80,
+          "contacts": 7,
+          "crossings": 7,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 1977.5
+      }
+    },
+    {
+      "name": "small-6",
+      "people": 57,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 501,
+        "quality": {
+          "length": 30374,
+          "bends": 74,
+          "contacts": 6,
+          "crossings": 4,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 4180
+      },
+      "after": {
+        "ms": 495,
+        "quality": {
+          "length": 30800,
+          "bends": 74,
+          "contacts": 6,
+          "crossings": 4,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 3509
+      }
+    },
+    {
+      "name": "small-6",
+      "people": 57,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 503,
+        "quality": {
+          "length": 30374,
+          "bends": 74,
+          "contacts": 6,
+          "crossings": 4,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 4180
+      },
+      "after": {
+        "ms": 521,
+        "quality": {
+          "length": 30800,
+          "bends": 74,
+          "contacts": 4,
+          "crossings": 4,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 3509
+      }
+    },
+    {
+      "name": "small-7",
+      "people": 60,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 500,
+        "quality": {
+          "length": 41834,
+          "bends": 82,
+          "contacts": 16,
+          "crossings": 16,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 4924
+      },
+      "after": {
+        "ms": 550,
+        "quality": {
+          "length": 41834,
+          "bends": 82,
+          "contacts": 16,
+          "crossings": 16,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 4805
+      }
+    },
+    {
+      "name": "small-7",
+      "people": 60,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 565,
+        "quality": {
+          "length": 41834,
+          "bends": 82,
+          "contacts": 16,
+          "crossings": 16,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 4924
+      },
+      "after": {
+        "ms": 572,
+        "quality": {
+          "length": 41834,
+          "bends": 82,
+          "contacts": 16,
+          "crossings": 16,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 4805
+      }
+    },
+    {
+      "name": "small-8",
+      "people": 53,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 544,
+        "quality": {
+          "length": 26613,
+          "bends": 80,
+          "contacts": 3,
+          "crossings": 3,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 2710.5
+      },
+      "after": {
+        "ms": 570,
+        "quality": {
+          "length": 24593,
+          "bends": 80,
+          "contacts": 3,
+          "crossings": 3,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 1748
+      }
+    },
+    {
+      "name": "small-8",
+      "people": 53,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 501,
+        "quality": {
+          "length": 24671,
+          "bends": 80,
+          "contacts": 3,
+          "crossings": 3,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 2157.5
+      },
+      "after": {
+        "ms": 600,
+        "quality": {
+          "length": 25041.5,
+          "bends": 80,
+          "contacts": 2,
+          "crossings": 2,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 1739.5
+      }
+    },
+    {
+      "name": "medium-2",
+      "people": 100,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 1147,
+        "quality": {
+          "length": 122458,
+          "bends": 156,
+          "contacts": 44,
+          "crossings": 42,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 21336
+      },
+      "after": {
+        "ms": 1227,
+        "quality": {
+          "length": 124722,
+          "bends": 160,
+          "contacts": 44,
+          "crossings": 42,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 19712
+      }
+    },
+    {
+      "name": "medium-2",
+      "people": 100,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 1117,
+        "quality": {
+          "length": 123090,
+          "bends": 156,
+          "contacts": 44,
+          "crossings": 42,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 20184
+      },
+      "after": {
+        "ms": 1199,
+        "quality": {
+          "length": 124162,
+          "bends": 158,
+          "contacts": 44,
+          "crossings": 42,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 19641
+      }
+    },
+    {
+      "name": "medium-5",
+      "people": 89,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 714,
+        "quality": {
+          "length": 86534,
+          "bends": 140,
+          "contacts": 35,
+          "crossings": 35,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 14815.5
+      },
+      "after": {
+        "ms": 832,
+        "quality": {
+          "length": 88089,
+          "bends": 140,
+          "contacts": 32,
+          "crossings": 32,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 12957.5
+      }
+    },
+    {
+      "name": "medium-5",
+      "people": 89,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 681,
+        "quality": {
+          "length": 86534,
+          "bends": 140,
+          "contacts": 35,
+          "crossings": 35,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 14815.5
+      },
+      "after": {
+        "ms": 766,
+        "quality": {
+          "length": 88239,
+          "bends": 140,
+          "contacts": 32,
+          "crossings": 32,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 13166.5
+      }
+    },
+    {
+      "name": "medium-9",
+      "people": 96,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 994,
+        "quality": {
+          "length": 99895,
+          "bends": 158,
+          "contacts": 33,
+          "crossings": 32,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 13329.5
+      },
+      "after": {
+        "ms": 1090,
+        "quality": {
+          "length": 99267,
+          "bends": 160,
+          "contacts": 31,
+          "crossings": 30,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 12964.5
+      }
+    },
+    {
+      "name": "medium-9",
+      "people": 96,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 970,
+        "quality": {
+          "length": 99895,
+          "bends": 158,
+          "contacts": 33,
+          "crossings": 32,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 13329.5
+      },
+      "after": {
+        "ms": 1075,
+        "quality": {
+          "length": 99267,
+          "bends": 160,
+          "contacts": 31,
+          "crossings": 30,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 12964.5
+      }
+    },
+    {
+      "name": "medium-13",
+      "people": 109,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 1224,
+        "quality": {
+          "length": 120527,
+          "bends": 190,
+          "contacts": 33,
+          "crossings": 33,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 16301
+      },
+      "after": {
+        "ms": 1412,
+        "quality": {
+          "length": 121320,
+          "bends": 190,
+          "contacts": 33,
+          "crossings": 33,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 14617
+      }
+    },
+    {
+      "name": "medium-13",
+      "people": 109,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 1232,
+        "quality": {
+          "length": 119513,
+          "bends": 188,
+          "contacts": 36,
+          "crossings": 36,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 17102
+      },
+      "after": {
+        "ms": 1289,
+        "quality": {
+          "length": 118573.5,
+          "bends": 188,
+          "contacts": 36,
+          "crossings": 36,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 13685.5
+      }
+    },
+    {
+      "name": "large-2",
+      "people": 265,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 8797,
+        "quality": {
+          "length": 888569,
+          "bends": 472,
+          "contacts": 358,
+          "crossings": 356,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 135474.5
+      },
+      "after": {
+        "ms": 8994,
+        "quality": {
+          "length": 887209,
+          "bends": 472,
+          "contacts": 357,
+          "crossings": 355,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 129820
+      }
+    },
+    {
+      "name": "large-2",
+      "people": 265,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 8564,
+        "quality": {
+          "length": 888569,
+          "bends": 472,
+          "contacts": 358,
+          "crossings": 356,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 135474.5
+      },
+      "after": {
+        "ms": 8877,
+        "quality": {
+          "length": 887209,
+          "bends": 472,
+          "contacts": 357,
+          "crossings": 355,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 129820
+      }
+    },
+    {
+      "name": "large-9",
+      "people": 347,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 1660,
+        "quality": {
+          "length": 1241260,
+          "bends": 638,
+          "contacts": 647,
+          "crossings": 647,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 179955
+      },
+      "after": {
+        "ms": 1842,
+        "quality": {
+          "length": 1240346,
+          "bends": 638,
+          "contacts": 647,
+          "crossings": 647,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 176170
+      }
+    },
+    {
+      "name": "large-9",
+      "people": 347,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 1732,
+        "quality": {
+          "length": 1241260,
+          "bends": 638,
+          "contacts": 647,
+          "crossings": 647,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 179955
+      },
+      "after": {
+        "ms": 1832,
+        "quality": {
+          "length": 1240346,
+          "bends": 638,
+          "contacts": 647,
+          "crossings": 647,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 176170
+      }
+    },
+    {
+      "name": "large-11",
+      "people": 424,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 2093,
+        "quality": {
+          "length": 1688299,
+          "bends": 784,
+          "contacts": 924,
+          "crossings": 924,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 206373.5
+      },
+      "after": {
+        "ms": 2209,
+        "quality": {
+          "length": 1688309,
+          "bends": 784,
+          "contacts": 922,
+          "crossings": 922,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 198878.5
+      }
+    },
+    {
+      "name": "large-11",
+      "people": 424,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 2040,
+        "quality": {
+          "length": 1688299,
+          "bends": 784,
+          "contacts": 924,
+          "crossings": 924,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 206373.5
+      },
+      "after": {
+        "ms": 2267,
+        "quality": {
+          "length": 1688309,
+          "bends": 784,
+          "contacts": 922,
+          "crossings": 922,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 198878.5
+      }
+    },
+    {
+      "name": "primary",
+      "people": 225,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 3616,
+        "quality": {
+          "length": 133834,
+          "bends": 216,
+          "contacts": 5,
+          "crossings": 5,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 21626
+      },
+      "after": {
+        "ms": 3637,
+        "quality": {
+          "length": 135678,
+          "bends": 216,
+          "contacts": 5,
+          "crossings": 5,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 18361.5
+      }
+    },
+    {
+      "name": "primary",
+      "people": 225,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 3459,
+        "quality": {
+          "length": 133834,
+          "bends": 216,
+          "contacts": 5,
+          "crossings": 5,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 21626
+      },
+      "after": {
+        "ms": 3603,
+        "quality": {
+          "length": 135678,
+          "bends": 216,
+          "contacts": 5,
+          "crossings": 5,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 18361.5
+      }
+    },
+    {
+      "name": "large-977",
+      "people": 977,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 7354,
+        "quality": {
+          "length": 8037536,
+          "bends": 1838,
+          "contacts": 4938,
+          "crossings": 4938,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 1232712
+      },
+      "after": {
+        "ms": 7404,
+        "quality": {
+          "length": 8039831,
+          "bends": 1840,
+          "contacts": 4937,
+          "crossings": 4937,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 1230717
+      }
+    },
+    {
+      "name": "large-977",
+      "people": 977,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 6089,
+        "quality": {
+          "length": 8037536,
+          "bends": 1838,
+          "contacts": 4938,
+          "crossings": 4938,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 1232712
+      },
+      "after": {
+        "ms": 7055,
+        "quality": {
+          "length": 8039831,
+          "bends": 1840,
+          "contacts": 4937,
+          "crossings": 4937,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 1230717
+      }
+    },
+    {
+      "name": "large-1003",
+      "people": 1003,
+      "reverse": false,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 7285,
+        "quality": {
+          "length": 9710544,
+          "bends": 1878,
+          "contacts": 5505,
+          "crossings": 5505,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 1377401
+      },
+      "after": {
+        "ms": 7210,
+        "quality": {
+          "length": 9710544,
+          "bends": 1878,
+          "contacts": 5490,
+          "crossings": 5490,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 1374319
+      }
+    },
+    {
+      "name": "large-1003",
+      "people": 1003,
+      "reverse": true,
+      "safe": true,
+      "sameGenerations": true,
+      "samePositions": true,
+      "before": {
+        "ms": 6541,
+        "quality": {
+          "length": 9687298,
+          "bends": 1878,
+          "contacts": 5506,
+          "crossings": 5506,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 1369643
+      },
+      "after": {
+        "ms": 7312,
+        "quality": {
+          "length": 9687298,
+          "bends": 1878,
+          "contacts": 5491,
+          "crossings": 5491,
+          "cardHits": 0,
+          "overlaps": 0
+        },
+        "error": 1366561
+      }
+    }
+  ]
+}

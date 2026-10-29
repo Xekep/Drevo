@@ -20,6 +20,7 @@ import { repairFamilyRoutes } from "./family-route-repair.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
 import { spaceFamilyRows } from "./family-row-spacing.ts";
+import { centerFamilyBranches } from "./family-centering.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
 import { optimizeFamilyRows, refineColdPlacement } from "./family-row-order.ts";
@@ -1249,5 +1250,8 @@ export async function unionGeometry(
       ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
     })).geometry;
   }
-  return bundleFamilyBranches(best);
+  best = bundleFamilyBranches(best);
+  return previous ? best : centerFamilyBranches(best, people, links, size, (geometry) => ({
+    ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
+  }));
 }
