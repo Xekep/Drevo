@@ -20,6 +20,7 @@ import { repairFamilyRoutes } from "./family-route-repair.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
 import { spaceFamilyRows } from "./family-row-spacing.ts";
+import { centerFamilyBranches } from "./family-centering.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
 import { optimizeFamilyRows, refineColdPlacement } from "./family-row-order.ts";
@@ -1200,10 +1201,7 @@ export async function unionGeometry(
       if (!changed) break;
     }
   }
-  if (
-    (!previous && people.length <= 1200) ||
-    (previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE)
-  ) {
+  if (!previous && people.length <= 1200) {
     best = optimizeFamilyRows(
       best,
       people,
@@ -1245,9 +1243,17 @@ export async function unionGeometry(
   }));
   best = bundleFamilyBranches(best);
   if (previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE) {
+    // Retaining slots must judge the canonical shared corridors. Restoring
+    // before bundling can reject a safe old position after cold centering.
+    best = optimizeFamilyRows(best, people, links, size, (geometry) => ({
+      ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
+    }), previous);
     best = repairFamilyRoutes(best, size, (geometry) => ({
       ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
     })).geometry;
   }
-  return bundleFamilyBranches(best);
+  best = bundleFamilyBranches(best);
+  return previous ? best : centerFamilyBranches(best, people, links, size, (geometry) => ({
+    ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
+  }));
 }
