@@ -888,6 +888,13 @@ test("document deletion enforces ownership, scope and origin, removes files and 
       items: Array<{ sources: typeof scopedDocument.sources }>;
     };
     assert.deepEqual(scopedList.items[0].sources, scopedDocument.sources);
+    const search = async (query: string, actor = "owner") =>
+      await (await request(`/api/documents?q=${encodeURIComponent(query)}`, actor)).json() as { total: number };
+    assert.equal((await search("anna test")).total, 1,
+      "all words of a visible linked name match in either order");
+    assert.equal((await search("hidden test")).total, 0,
+      "a hidden person's name must not make a visible document match");
+    assert.equal((await search("hidden test", "admin")).total, 1);
     const afterCitations = await app.archive.read();
     for (const person of afterCitations.family.people) person.birthDateClaim = undefined;
     afterCitations.family.unions = [];

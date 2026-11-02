@@ -78,6 +78,10 @@ import {
   parseDocumentDetails,
   type DocumentDetails,
 } from "../shared/document-details.ts";
+import {
+  documentSearchQuery,
+  normalizeDocumentQuery,
+} from "./document-search-query.ts";
 
 async function readJsonBody(
   req: IncomingMessage,
@@ -543,21 +547,19 @@ export function documentsHttp({
       ],
     };
   };
-  const matchingPersonIds = async (query: string) => {
+  const documentPeople = async () => {
     const rows = await db
       .prepare(
         "SELECT p.id,p.data FROM (SELECT DISTINCT person_id FROM document_people) dp JOIN people p ON p.id=dp.person_id",
         "SELECT p.id,p.data FROM (SELECT DISTINCT person_id FROM document_people) dp JOIN people p ON p.id=dp.person_id",
       )
       .all();
-    return rows
-      .filter((row) => {
-        const person = (
-          typeof row.data === "string" ? JSON.parse(row.data) : row.data
-        ) as Person;
-        return fullName(person).toLocaleLowerCase("ru").includes(query);
-      })
-      .map((row) => String(row.id));
+    return rows.map(
+      (row) =>
+        (typeof row.data === "string"
+          ? JSON.parse(row.data)
+          : row.data) as Person,
+    );
   };
   const referencedByCatalog = (documentId: string) =>
     sourceCatalogStore(db).usesDocument(documentId);
@@ -950,9 +952,7 @@ export function documentsHttp({
       const offset = Number(url.searchParams.get("offset") || 0),
         limit = Number(url.searchParams.get("limit") || 30),
         personId = url.searchParams.get("personId"),
-        query = (url.searchParams.get("q") || "")
-          .trim()
-          .toLocaleLowerCase("ru");
+        query = normalizeDocumentQuery(url.searchParams.get("q") || "");
       if (
         !Number.isInteger(offset) ||
         offset < 0 ||
@@ -984,20 +984,16 @@ export function documentsHttp({
         );
         args.push(JSON.stringify(access.ids), access.userId || "");
       }
-      if (query) {
-        const peopleIds = access.scoped
-          ? access.people
-              .filter((person) =>
-                fullName(person).toLocaleLowerCase("ru").includes(query),
-              )
-              .map((person) => person.id)
-          : await matchingPersonIds(query);
-        conditions.push(
-          db.kind === "postgres"
-            ? "(strpos(d.title_search, ?) > 0 OR EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))))"
-            : "(instr(d.title_search, ?) > 0 OR EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id IN (SELECT value FROM json_each(?))))",
-        );
-        args.push(query, JSON.stringify(peopleIds));
+      const search = query
+        ? documentSearchQuery(
+            query,
+            access.scoped ? access.people : await documentPeople(),
+            db.kind,
+          )
+        : null;
+      if (search) {
+        conditions.push(search.condition);
+        args.push(...search.args);
       }
       const where = conditions.length
         ? ` WHERE ${conditions.join(" AND ")}`
@@ -1012,12 +1008,13 @@ export function documentsHttp({
             .get(...args)) as { count: number }
         ).count,
       );
+      const order = `${search ? `${search.order},` : ""}d.created_at DESC,d.id DESC`;
       const rows = (await db
         .prepare(
-          `SELECT d.* FROM documents d${where} ORDER BY d.created_at DESC,d.id DESC LIMIT ? OFFSET ?`,
-          `SELECT d.* FROM documents d${where} ORDER BY d.created_at DESC,d.id DESC LIMIT ? OFFSET ?`,
+          `SELECT d.* FROM documents d${where} ORDER BY ${order} LIMIT ? OFFSET ?`,
+          `SELECT d.* FROM documents d${where} ORDER BY ${order} LIMIT ? OFFSET ?`,
         )
-        .all(...args, limit, offset)) as Row[];
+        .all(...args, ...(search?.orderArgs || []), limit, offset)) as Row[];
       const links = await associations(rows.map((row) => row.id));
       const citations = await readerCitations(
         access,

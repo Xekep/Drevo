@@ -10,6 +10,7 @@ import "./postgres-archive-query-delivery.ts";
 import "./postgres-scoped-overview.ts";
 import "./postgres-award-citation-prep.ts";
 import "./postgres-document-citation-index.ts";
+import "./postgres-document-search.ts";
 
 import "./postgres-media-storage-usage.ts";
 import "./postgres-ai-chat-cursors.ts";
