@@ -16,6 +16,49 @@ const occupation = "Мастер архивной реставрации";
 const sourceTitle = "Личное дело из догруженной страницы";
 const awardName = "Почётная грамота семейной мастерской";
 
+test("expanded profiles show loading, an error and a working retry when changing the selected relative", async ({ page, isMobile }) => {
+  test.skip(isMobile);
+  const snapshot = await (await page.request.get("/api/family")).json();
+  const family = structuredClone(snapshot.family) as Family;
+  const token = "expanded-profile-loading";
+  await page.route("**/api/family?projection=overview", route => route.fulfill({ json: {
+    ...snapshot, family: archiveOverview(family), partial: true, pageToken: token,
+    totals: { people: family.people.length, photos: 0 },
+  } }));
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let failures = 0;
+  await page.route("**/api/family?projection=details&**", async route => {
+    const ids = JSON.parse(new URL(route.request().url()).searchParams.get("ids")!) as string[];
+    if (ids.includes("e2e-spouse") && failures++ === 0) {
+      await gate;
+      return route.fulfill({ status: 503, json: { error: "Проверочная ошибка полной карточки" } });
+    }
+    return route.fulfill({ json: { pageToken: token,
+      people: ids.map(id => personDetails(family.people.find(person => person.id === id)!)),
+      photos: [], photoTotal: 0, personPhotoTotals: Object.fromEntries(ids.map(id => [id, 0])),
+    } });
+  });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/people/e2e-child");
+  await expect(page.locator(".inspector-dock").getByRole("tab", { name: /О человеке/ })).toBeVisible();
+  await page.locator(".person-more-actions > summary").click();
+  await page.getByRole("button", { name: "Развернуть карточку на весь экран" }).click();
+  const dialog = page.locator(".person-full-dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.locator('[data-person-id="e2e-spouse"] .flow-person-content').click();
+  const loading = dialog.getByRole("status", { name: "Загрузка сведений человека" });
+  try {
+    await expect(loading).toBeVisible();
+    await expect(dialog.locator(".person-full-info [role=tab]")).toHaveCount(0);
+  } finally { release(); }
+  await expect(dialog.getByRole("alert")).toContainText("Проверочная ошибка полной карточки");
+  await dialog.getByRole("button", { name: "Повторить загрузку" }).click();
+  await expect(dialog.getByRole("tab", { name: /О человеке/ })).toBeVisible();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(loading).toHaveCount(0);
+});
+
 test("profile loading has no retry flash; a failed request exposes a retry until restarted", async ({ page }) => {
   const snapshot = await (await page.request.get("/api/family")).json();
   const family = structuredClone(snapshot.family) as Family;

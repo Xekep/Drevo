@@ -51,6 +51,14 @@ test("both profiles read one marriage and divorce, preserve unknown dates, and n
     assert.equal(render("a", []), "");
     assert.match(render("a", [{ ...union, divorce: {} }]), /Развод: <!-- -->дата неизвестна|Развод: дата неизвестна/);
     assert.match(render("a", [{ ...union, formation: { dateText: "около 1990 года" } }]), /около 1990 года/);
+    const widowedPeople = structuredClone(people);
+    widowedPeople[0].death = "2000-03";
+    const noEnding = { ...union, divorce: undefined };
+    for (const id of ["a", "b"]) {
+      assert.match(render(id, [noEnding], widowedPeople), /Окончание союза/);
+      assert.match(render(id, [noEnding], widowedPeople), /март 2000/);
+      assert.doesNotMatch(render(id, [union], widowedPeople), /Окончание союза/);
+    }
     const remarried = render("a", [union, { ...union, id: "second", formation: { date: "2010" }, divorce: undefined }]);
     assert.equal((remarried.match(/class="life-event"/g) || []).length, 2);
     assert.match(remarried, /2010 год/);

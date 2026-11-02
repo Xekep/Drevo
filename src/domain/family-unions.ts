@@ -1,9 +1,44 @@
 import { dateBound, validDate } from "./dates.ts";
-import type { FamilyUnion, Source, UnionMilestone } from "./types.ts";
+import type { Family, FamilyUnion, Person, Source, UnionMilestone } from "./types.ts";
 import { validSourceRepository } from "./source-repository.ts";
 import { isClaimConfidence } from "./claim-confidence.ts";
 
 export type UnionStatus = "current" | "former" | "unknown";
+
+/** A death ends a marriage, while a recorded divorce/ending keeps its evidence. */
+export function marriageDeathEnding(
+  union: FamilyUnion,
+  people: ReadonlyMap<string, Person>,
+): UnionMilestone | undefined {
+  if (union.type !== "marriage" || union.divorce || union.ending) return undefined;
+  const dates = union.participants
+    .map((id) => people.get(id)?.death)
+    .filter((date): date is string => !!date && validDate(date))
+    .sort((a, b) => dateBound(a, false).localeCompare(dateBound(b, false)));
+  const date = dates[0];
+  if (!date ||
+    (union.formation?.date && dateBound(union.formation.date, false) > dateBound(date, true)) ||
+    (union.ongoing?.date && dateBound(union.ongoing.date, false) > dateBound(date, true)))
+    return undefined;
+  return { date };
+}
+
+export function completeMarriageEndings(
+  family: Family,
+  mayEdit: (union: FamilyUnion) => boolean = () => true,
+  personId?: string,
+): Family {
+  const people = new Map(family.people.map((person) => [person.id, person]));
+  let changed = false;
+  const unions = family.unions?.map((union) => {
+    if ((personId && !union.participants.includes(personId)) || !mayEdit(union)) return union;
+    const ending = marriageDeathEnding(union, people);
+    if (!ending) return union;
+    changed = true;
+    return { ...union, ending };
+  });
+  return changed ? { ...family, unions } : family;
+}
 
 /** An undated or person-only event cannot identify a particular union's status. */
 export function unionStatus(

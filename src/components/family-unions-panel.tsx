@@ -12,6 +12,7 @@ import {
   isArchiveOwner,
 } from "../domain";
 import { UnionSourcesEditor } from "./union-sources-editor.tsx";
+import { completeMarriageEndings, marriageDeathEnding } from "../domain/family-unions.ts";
 
 const names = {
   marriage: "Брак",
@@ -52,6 +53,7 @@ export function FamilyUnionsPanel({
   const [assessmentReset, setAssessmentReset] = useState(false);
   const [unionAssessmentReset, setUnionAssessmentReset] = useState(false);
   const canAssess = canAssessArchiveEvidence(user);
+  const knownPeople = new Map(family.people.map(person => [person.id, person]));
   const unions = (family.unions || []).filter((union) =>
     participants.every((id) => union.participants.includes(id)),
   );
@@ -127,7 +129,8 @@ export function FamilyUnionsPanel({
         (union) => union.id !== draft.id,
       );
       if (!remove) next.push(draft);
-      await save({ ...family, unions: next });
+      await save(completeMarriageEndings({ ...family, unions: next },
+        (union) => union.id === draft.id));
       setDraft(null);
       setSourcesReset(false);
       setAssessmentReset(false);
@@ -147,7 +150,10 @@ export function FamilyUnionsPanel({
         События в карточке человека без указанного партнёра не определяют статус
         этого союза.
       </p>
-      {unions.map((union) => (
+      {unions.map((record) => {
+        const ending = marriageDeathEnding(record, knownPeople);
+        const union = ending ? { ...record, ending } : record;
+        return (
         <div key={union.id} className="event-card">
           <strong>
             {names[union.type]} · {statusNames[unionStatus(union)]}
@@ -176,13 +182,13 @@ export function FamilyUnionsPanel({
             <button
               type="button"
               disabled={busy}
-              onClick={() => { setSourcesReset(false); setAssessmentReset(false); setUnionAssessmentReset(false); setDraft(structuredClone(union)); }}
+              onClick={() => { setSourcesReset(false); setAssessmentReset(false); setUnionAssessmentReset(false); setDraft(structuredClone(record)); }}
             >
               Изменить союз
             </button>
           )}
         </div>
-      ))}
+      ); })}
       {!unions.length && <p>Для этой пары союз ещё не описан.</p>}
       {mayCreate && !draft && (
         <button

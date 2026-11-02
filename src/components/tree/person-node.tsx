@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useMemo, useRef, type CSSProperties } from "react";
+import { createContext, memo, useContext, useMemo, useRef, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import {
   Handle,
   Position,
@@ -97,6 +97,27 @@ export const PersonNode = memo(function PersonNode({
   const data = person === nodeData.person ? nodeData : { ...nodeData, person };
   const longPress = useLongPress(() => selectOnly(data.person.id));
   const privacyPress = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const controlGesture = {
+    onPointerDown(event: PointerEvent<HTMLButtonElement>) {
+      privacyPress.current = { x: event.clientX, y: event.clientY, moved: !event.isPrimary };
+    },
+    onPointerMove(event: PointerEvent<HTMLButtonElement>) {
+      const press = privacyPress.current;
+      if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 8)
+        press.moved = true;
+    },
+    onPointerCancel() {
+      if (privacyPress.current) privacyPress.current.moved = true;
+    },
+  };
+  const activateControl = (event: MouseEvent<HTMLButtonElement>, action: () => void) => {
+    event.stopPropagation();
+    if (event.detail && privacyPress.current?.moved) {
+      event.preventDefault();
+      return;
+    }
+    action();
+  };
   // Expand only the transparent hit area; the pill scales with its portrait.
   const controlTarget = useStore((state) =>
     24 * Math.min(6, Math.max(1, Math.ceil((1 / state.transform[2]) * 4) / 4)),
@@ -246,25 +267,8 @@ export const PersonNode = memo(function PersonNode({
           aria-label={`${privacyLabel}: ${fullName(data.person)}. Изменить приватность`}
           title={`${privacyLabel} · изменить приватность`}
           aria-haspopup="dialog"
-          onPointerDown={(event) => {
-            privacyPress.current = { x: event.clientX, y: event.clientY, moved: !event.isPrimary };
-          }}
-          onPointerMove={(event) => {
-            const press = privacyPress.current;
-            if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 8)
-              press.moved = true;
-          }}
-          onPointerCancel={() => { if (privacyPress.current) privacyPress.current.moved = true; }}
-          onClick={(event) => {
-            event.stopPropagation();
-            // A swipe belongs to the canvas, even when it started on the eye.
-            // Keyboard activation is independent of the last pointer gesture.
-            if (event.detail && privacyPress.current?.moved) {
-              event.preventDefault();
-              return;
-            }
-            publishPerson(data.person.id);
-          }}
+          {...controlGesture}
+          onClick={(event) => activateControl(event, () => publishPerson(data.person.id))}
         >
           {publicationStatus === "published" ? (
             <Eye size={18} aria-hidden="true" />
@@ -279,10 +283,11 @@ export const PersonNode = memo(function PersonNode({
       )}
       {(data.occurrences || 0) > 1 && (
         <button
-          className="flow-reference nodrag nopan"
+          className="flow-reference nodrag"
+          {...controlGesture}
           title="Этот же человек показан в нескольких семьях. Перейти к следующей карточке"
           aria-label={`${fullName(data.person)}: перейти к другому отображению, всего ${data.occurrences}`}
-          onClick={() => reference(data.person.id, id)}
+          onClick={(event) => activateControl(event, () => reference(data.person.id, id))}
         >
           <Copy size={12} />
           <span>{data.occurrences}</span>
@@ -291,10 +296,11 @@ export const PersonNode = memo(function PersonNode({
       {data.familyFocus && (!!data.hiddenRelatives || data.expanded) && (
         <button
           type="button"
-          className={`flow-expand-family nodrag nopan${data.fragmentFocus ? " is-fragment-continuation" : ""}`}
+          className={`flow-expand-family nodrag${data.fragmentFocus ? " is-fragment-continuation" : ""}`}
+          {...controlGesture}
           style={{ "--family-target": `${controlTarget}px` } as CSSProperties}
           aria-label={`${collapseContinuation ? "Свернуть раскрытую ветвь" : data.fragmentFocus ? continuationLabel : `Показать ещё ${data.hiddenRelatives} родственников`}: ${fullName(data.person)}`}
-          onClick={() => expand(data.person.id, id)}
+          onClick={(event) => activateControl(event, () => expand(data.person.id, id))}
           title={
             collapseContinuation
               ? "Свернуть раскрытую ветвь"
@@ -313,13 +319,14 @@ export const PersonNode = memo(function PersonNode({
       )}
       {!data.familyFocus && detail !== "distant" && data.childrenCount > 0 && (
         <button
-          className="flow-collapse nodrag nopan"
+          className="flow-collapse nodrag"
+          {...controlGesture}
           style={{
             "--branch-target": `${controlTarget}px`,
           } as CSSProperties}
           aria-label={`${branchTitle}: ${data.childrenCount} ${plural(data.childrenCount, "потомок", "потомка", "потомков")}`}
           title={branchTitle}
-          onClick={() => collapse(data.person.id, id)}
+          onClick={(event) => activateControl(event, () => collapse(data.person.id, id))}
         >
           {data.collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
           <span>{data.childrenCount}</span>

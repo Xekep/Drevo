@@ -4,6 +4,7 @@ import { CLAIM_CONFIDENCE_LABELS } from "../domain/claim-confidence";
 import type { FamilyUnion, Person, UnionMilestone } from "../domain/types";
 import { EventSourceList } from "./person-events";
 import { researchEvidenceAnchor } from "../domain/research-evidence";
+import { marriageDeathEnding } from "../domain/family-unions.ts";
 
 const names = {
   marriage: "Брак",
@@ -47,7 +48,7 @@ export function PersonUnions({ personId, people, unions, onSelect, canLoadDocume
           </button>
           {milestone(union.type === "marriage" ? "Заключение брака" : "Начало союза", union.formation)}
           {milestone("Развод", union.divorce)}
-          {milestone("Окончание союза", union.ending)}
+          {milestone("Окончание союза", union.ending || marriageDeathEnding(union, known))}
           {milestone("Союз продолжался", union.ongoing)}
           {union.confidence && <p>Оценка союза: {CLAIM_CONFIDENCE_LABELS[union.confidence]}</p>}
           {union.note && <p className="event-story">{union.note}</p>}

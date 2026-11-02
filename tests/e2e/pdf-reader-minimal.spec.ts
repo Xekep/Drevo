@@ -374,6 +374,10 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
   await expect(book.locator(".BRtoolbar")).toBeVisible();
   await expect(book.locator(".BRfooter")).toBeVisible();
   await expect(book.locator(".BRtoolbar .share")).toHaveCount(0);
+  const infoButton = book.getByRole("button", { name: "О документе", exact: true });
+  await expect(infoButton.locator("svg")).toHaveCount(1);
+  await expect(infoButton).toHaveText("");
+  await expect(book.locator(".drevo-toolbar-comments-section .drevo-toolbar-comments")).toHaveCount(1);
   await book.locator(".BRtoolbar .info").click();
   await expect(book.locator(".BRinfo")).toContainText("Название");
   await expect(book.locator(".BRinfo .floatShut")).not.toHaveAttribute(
@@ -395,7 +399,7 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
   await commentsButton.press("Enter");
   await expect(sidebar).toBeVisible();
   await expect(commentsButton).toHaveAttribute("aria-expanded", "true");
-  await expect(commentsButton).toBeHidden();
+  await expect(commentsButton).toBeVisible();
   const closePanel = reader.getByRole("button", {
     name: "Закрыть панель комментариев",
   });

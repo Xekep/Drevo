@@ -3,16 +3,17 @@ import { mayRetryPortrait, portraitRetryDelays, retryPortraitUrl, waitForPortrai
 
 type ImageState = { attempt: number; waiting: boolean; failed: boolean };
 
-function PortraitImageSource({ src, fallback, loading }: {
+function PortraitImageSource({ src, fallback, loading, alt }: {
   src: string;
   fallback: ReactNode;
   loading: "eager" | "lazy";
+  alt: string;
 }) {
   const [state, setState] = useState<ImageState>({ attempt: 0, waiting: false, failed: false });
   const pending = useRef<AbortController | null>(null);
   useEffect(() => () => pending.current?.abort(), []);
   if (state.waiting || state.failed) return <>{fallback}</>;
-  return <img src={retryPortraitUrl(src, state.attempt)} alt="" loading={loading}
+  return <img src={retryPortraitUrl(src, state.attempt)} alt={alt} loading={loading}
     onError={() => {
       pending.current?.abort();
       if (state.attempt >= portraitRetryDelays.length) {
@@ -35,11 +36,12 @@ function PortraitImageSource({ src, fallback, loading }: {
     }} />;
 }
 
-export function PortraitImage({ src, fallback, loading = "lazy" }: {
+export function PortraitImage({ src, fallback, loading = "lazy", alt = "" }: {
   src?: string;
   fallback: ReactNode;
   loading?: "eager" | "lazy";
+  alt?: string;
 }) {
-  return src ? <PortraitImageSource key={src} src={src} fallback={fallback} loading={loading} />
+  return src ? <PortraitImageSource key={src} src={src} fallback={fallback} loading={loading} alt={alt} />
     : <>{fallback}</>;
 }

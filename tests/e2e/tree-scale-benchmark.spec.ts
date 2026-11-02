@@ -30,6 +30,9 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     }));
     data.family.links = [];
     data.family.photos = [];
+    // This probe measures the complete graph. The normal >500-person view
+    // starts with a bounded fragment and will never send all people to ELK.
+    data.treePreferences = { ...data.treePreferences, fragmentThreshold: 0 };
     data.partial = false;
     data.user.personId = process.env.DREVO_LAYOUT_SCALE_KINSHIP ? people[0].id : null;
     await route.fulfill({ response, json: data });
@@ -100,6 +103,12 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     (window as typeof window & { __scaleLayout: { occurrences: number } }).__scaleLayout.occurrences,
   ), { timeout: 210_000 }).toBeGreaterThanOrEqual(people.length);
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/, { timeout: 30_000 });
+  // The first native frame can precede asynchronous GPU initialization. Pick
+  // the assertions only after the production renderer has committed or failed.
+  await expect.poll(() => page.locator(".tree-canvas").evaluate(element => {
+    const canvas = element as HTMLElement;
+    return canvas.dataset.renderer === "webgl2" || !!canvas.dataset.gpuFallback;
+  }), { timeout: 10_000 }).toBe(true);
   const result = await page.evaluate(() => {
     const state = (window as typeof window & { __scaleLayout: {
       requestedAt: number; completedAt: number; people: number;
@@ -166,6 +175,27 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     ).__scaleLayout.requestedAt);
     const zoom = () => page.locator(".react-flow__viewport").evaluate((element) =>
       new DOMMatrix(getComputedStyle(element).transform).a);
+    // A forest's bounding-box center can be empty. Pan an actual person to
+    // the center before checking viewport-culling handoff while zooming.
+    const anchor = await page.evaluate(() => {
+      const state = (window as typeof window & { __scaleLayout: {
+        positions: [string, { x: number; y: number }][];
+        occurrenceIds: { id: string }[]; nodeSize: { width: number; height: number };
+      } }).__scaleLayout;
+      const ids = new Set(state.occurrenceIds.map(person => person.id));
+      const matrix = new DOMMatrix(getComputedStyle(document.querySelector(".react-flow__viewport")!).transform);
+      const box = document.querySelector(".react-flow")!.getBoundingClientRect();
+      const center = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+      const target = state.positions.filter(([id]) => ids.has(id)).map(([, position]) => ({
+        x: box.left + matrix.e + (position.x + state.nodeSize.width / 2) * matrix.a,
+        y: box.top + matrix.f + (position.y + state.nodeSize.height / 2) * matrix.a,
+      })).sort((a, b) => Math.hypot(a.x - center.x, a.y - center.y) - Math.hypot(b.x - center.x, b.y - center.y))[0];
+      return { center, dx: center.x - target.x, dy: center.y - target.y };
+    });
+    await page.mouse.move(anchor.center.x, anchor.center.y);
+    await page.mouse.down();
+    await page.mouse.move(anchor.center.x + anchor.dx, anchor.center.y + anchor.dy, { steps: 8 });
+    await page.mouse.up();
     for (let index = 0; index < 16 && await zoom() < 0.18; index++)
       await page.getByRole("button", { name: "Увеличить", exact: true }).click();
     await expect.poll(() => page.locator(".react-flow__node").count()).toBeGreaterThan(0);
