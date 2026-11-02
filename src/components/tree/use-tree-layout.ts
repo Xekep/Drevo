@@ -6,7 +6,7 @@ import { projectTree } from "../../domain/family-neighborhood";
 import type { TaggedLayoutWorkerResponse } from "./layout-worker-protocol";
 import type { LayoutWorkerRequest } from "./layout-worker-protocol";
 import { createLayoutMemoryCache, layoutCacheKey } from "./layout-cache";
-import { readLayout, writeLayout } from "./layout-storage";
+import { readLayout, readLayoutHistory, writeLayout } from "./layout-storage";
 
 export function useTreeLayout(
   family: Family,
@@ -141,7 +141,7 @@ export function useTreeLayout(
             },
       );
     };
-    const calculate = () => {
+    const calculate = (history?: Awaited<ReturnType<typeof readLayoutHistory>>) => {
       if (cancelled) return;
       try {
         const worker =
@@ -179,7 +179,10 @@ export function useTreeLayout(
         const parallelCandidates = window.innerWidth >= 1024 &&
           window.matchMedia("(pointer: fine)").matches &&
           navigator.hardwareConcurrency >= 8 && memory !== undefined && memory >= 8;
-        worker.postMessage({ requestId, ...input, previousGeometry, previousInput: localHistory?.input, parallelCandidates });
+        worker.postMessage({ requestId, ...input,
+          previousGeometry: previousGeometry || history?.geometry,
+          previousInput: localHistory?.input || (!previousGeometry ? history?.input : undefined),
+          parallelCandidates });
       } catch {
         finish({
           requestId,
@@ -196,6 +199,8 @@ export function useTreeLayout(
         if (geometry) {
           cache.set(key, geometry);
           finish({ requestId, geometry });
+        } else if (!previousGeometry && mode === "generations") {
+          void readLayoutHistory(cacheScope, key).then(history => calculate(history));
         } else calculate();
       });
     } else calculate();

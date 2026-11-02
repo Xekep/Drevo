@@ -41,7 +41,7 @@ export async function verifyPostgresCommentEdits(
     method: "POST",
     headers: headers(authorHeaders),
     body: JSON.stringify({
-      text: "PG **комментарий** $x^2$",
+      text: "PG **комментарий** $x^2$".padEnd(4000, "я"),
       attachments: {
         keep: [],
         files: [
@@ -58,6 +58,14 @@ export async function verifyPostgresCommentEdits(
   assert.equal(original.author, "Тестов Иван");
   assert.equal(original.authorPersonId, "person-a");
   assert.equal(original.attachments.length, 2);
+  const textPreview = (await (await fetch(endpoint, { headers: headers(authorHeaders) })).json()).items
+    .find((item: PersonComment) => item.id === original.id);
+  assert.equal(textPreview.text.length, 2000);
+  assert.equal(textPreview.textTruncated, true);
+  assert.equal(textPreview.textLength, 4000);
+  const detail = await fetch(`${endpoint}/${original.id}`, { headers: headers(authorHeaders) });
+  assert.equal(detail.status, 200);
+  assert.equal((await detail.json()).item.text, original.text);
   const backupDirectory = await mkdtemp(
     join(tmpdir(), "drevo-comment-backup-"),
   );
@@ -66,6 +74,7 @@ export async function verifyPostgresCommentEdits(
     await writePortablePostgresBackup(db, backupFile);
     const saved = new DatabaseSync(backupFile, { readOnly: true });
     try {
+      assert.equal(saved.prepare("SELECT text FROM person_comments WHERE id=?").get(original.id)?.text, original.text);
       assert.deepEqual(
         JSON.parse(
           String(

@@ -33,6 +33,7 @@ import {
 } from "./discussion-attachments.ts";
 import {
   MAX_COMMENT_LENGTH,
+  COMMENT_PREVIEW_LENGTH,
   MAX_COMMENT_FILES_BYTES,
   MAX_COMMENT_FILES,
   validCommentFiles,
@@ -54,6 +55,7 @@ type CommentRow = {
   created_ms: number;
   updated_ms: number | null;
   text: string;
+  text_length?: number;
   attachments: unknown;
 };
 
@@ -103,7 +105,7 @@ async function readText(
   if (typeof text !== "string") throw new Error("Введите сообщение");
   const value = text.trimEnd();
   if (value.length > MAX_TEXT)
-    throw new Error("Сообщение должно содержать до 2000 символов");
+    throw new Error(`Сообщение должно содержать до ${MAX_TEXT} символов`);
   let expectedUpdated: number | null = null;
   if (editing) {
     const version = (body as { editedAt?: unknown }).editedAt;
@@ -223,6 +225,8 @@ export function personDiscussionHttp({
       return {
         id: row.id,
         text: row.text,
+        ...(row.text_length !== undefined && Number(row.text_length) > COMMENT_PREVIEW_LENGTH
+          ? { textTruncated: true, textLength: Number(row.text_length) } : {}),
         author:
           cardName ||
           row.author_name ||
@@ -490,6 +494,12 @@ export function personDiscussionHttp({
         throw error;
       }
     };
+    if (req.method === "GET" && match[2]) {
+      const row = await comment.get(Number(match[2]), personId) as CommentRow | undefined;
+      if (!row) return json(res, 404, { error: "Сообщение не найдено" });
+      await checkCurrentAccess();
+      return previewJson({ item: present(row) });
+    }
     if (req.method === "GET" && !match[2]) {
       if (url.searchParams.get("count") === "1")
         return previewJson({ total: await total() });
@@ -501,8 +511,8 @@ export function personDiscussionHttp({
         return json(res, 400, { error: "Некорректная страница" });
       const rows = (await db
         .prepare(
-          `${sqliteComments} WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?`,
-          `${postgresComments} WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?`,
+          `${sqliteComments.replace("c.text,", `substr(c.text,1,${COMMENT_PREVIEW_LENGTH}) AS text,length(c.text) AS text_length,`)} WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?`,
+          `${postgresComments.replace("c.text,", `substr(c.text,1,${COMMENT_PREVIEW_LENGTH}) AS text,char_length(c.text) AS text_length,`)} WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?`,
         )
         .all(personId, before, PAGE_SIZE + 1)) as CommentRow[];
       const page = rows.slice(0, PAGE_SIZE);

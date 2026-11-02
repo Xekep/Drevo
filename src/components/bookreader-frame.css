@@ -143,6 +143,10 @@ br-leaf-edges:not(.br-mode-2up__leafs--flipping) {
   /* The native page lookup divides by offsetWidth, which rounds subpixel edges to zero. */
   min-width: 1px;
 }
+.br-mode-2up__leafs:not(.br-mode-2up__leafs--flipping) {
+  /* Lift the leaf's stacking context, including its label, above both pages. */
+  z-index: 20;
+}
 .br-mode-2up__leafs[side] .br-leaf-edges__label {
   padding: calc(5px / var(--drevo-edge-scale, 1)) calc(8px / var(--drevo-edge-scale, 1));
   font-size: calc(13px / var(--drevo-edge-scale, 1));

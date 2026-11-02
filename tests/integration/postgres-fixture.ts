@@ -144,6 +144,7 @@ export async function fixture(t: TestContext) {
   );
   await first.query(readFileSync(new URL("../../ops/postgres/053_person_comment_edits.sql", import.meta.url), "utf8"));
   await first.query(readFileSync(new URL("../../ops/postgres/057_person_comment_attachments.sql", import.meta.url), "utf8"));
+  await first.query(readFileSync(new URL("../../ops/postgres/110_person_comment_length.sql", import.meta.url), "utf8"));
   // The focused fixture needs the real original-file RLS and the runtime's
   // temporary-grant table for transactional media quota assertions.
   await first.query(readFileSync(new URL("../../ops/postgres/015_media_originals.sql", import.meta.url), "utf8"));

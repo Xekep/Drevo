@@ -155,6 +155,47 @@ for (const reverse of [false, true]) test(`large live overview grows a family wi
   expect(errors).toEqual([]);
 });
 
+test("reopening after a collaborator adds a partner reuses persistent history with fresh data", async ({ page }) => {
+  const fixture = crowdedFamily(205, 2, false);
+  let changed = false;
+  await page.route("**/api/family?projection=overview", async route => {
+    const response = await route.fetch(), data = await response.json();
+    const sample = data.family.people[0];
+    data.family.people = (changed ? fixture.next : fixture.input).people.map(p => ({ ...sample, ...p,
+      name: p.id, awards: [], sources: [], photos: [], events: [] }));
+    data.family.links = [];
+    data.user.personId = null;
+    data.treePreferences = { ...data.treePreferences, fragmentThreshold: 0, reverseTimeline: false };
+    data.reverseTimeline = false;
+    await route.fulfill({ response, json: data });
+  });
+  await page.addInitScript(seed => {
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      private layout: boolean;
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options); this.layout = String(url).includes("layout.worker");
+      }
+      postMessage(message: unknown) {
+        const body = message as { people: unknown[]; links: unknown[]; previousInput?: unknown };
+        if (this.layout && !sessionStorage.getItem("history-seeded") && !body.previousInput) {
+          sessionStorage.setItem("history-seeded", "yes");
+          super.postMessage({ ...body, previousInput: { people: body.people, links: body.links }, previousGeometry: seed });
+        } else super.postMessage(message);
+      }
+    };
+  }, fixture.geometry);
+  const canvas = page.locator(".tree-canvas");
+  await page.goto("/tree");
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect.poll(() => stored(page)).toBe(1);
+  changed = true;
+  await page.reload();
+  await expect(canvas).toHaveAttribute("data-layout-update", "local");
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect.poll(() => stored(page)).toBe(2);
+});
+
 test("medium tree edits pass the previous geometry to the layout worker", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   const people = randomFamily(5, 4);

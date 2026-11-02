@@ -7,10 +7,12 @@ export function useListLimit(key = "") {
 }
 
 /** Автоподгрузка при прокрутке; кнопка остаётся доступна без IntersectionObserver. */
-export function LoadMore({ onMore, busy = false }: { onMore: () => void; busy?: boolean }) {
+export function LoadMore({ onMore, busy = false, automatic = true, label = "Показать ещё", className = "" }: {
+  onMore: () => void; busy?: boolean; automatic?: boolean; label?: string; className?: string;
+}) {
   const button = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (busy || !window.IntersectionObserver || !button.current) return;
+    if (busy || !automatic || !window.IntersectionObserver || !button.current) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -22,10 +24,10 @@ export function LoadMore({ onMore, busy = false }: { onMore: () => void; busy?: 
     );
     observer.observe(button.current);
     return () => observer.disconnect();
-  }, [onMore, busy]);
+  }, [onMore, busy, automatic]);
   return (
-    <button ref={button} className="load-more" onClick={onMore} disabled={busy}>
-      {busy ? "Загружается…" : "Показать ещё"}
+    <button ref={button} className={`load-more ${className}`} onClick={onMore} disabled={busy}>
+      {busy ? "Загружается…" : label}
     </button>
   );
 }

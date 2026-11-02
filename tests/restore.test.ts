@@ -382,7 +382,7 @@ test("opt-in full restore imports discussions with fresh file and author IDs; or
     await source.db.prepare(`INSERT INTO person_comments
       (person_id,author_id,author_name,created_ms,text,updated_ms,attachments)
       VALUES(?,?,?,?,?,?,?)`).run(p.id, "admin", "Автор из копии", 1000,
-      "Историческое обсуждение", 2000, JSON.stringify([{
+      "Историческое обсуждение".padEnd(4000, "я"), 2000, JSON.stringify([{
         id: originalId, name: "документ.txt", type: "text/plain", size: attachmentBytes.length,
       }]));
     await source.db.prepare(`INSERT INTO person_comments
@@ -432,7 +432,7 @@ test("opt-in full restore imports discussions with fresh file and author IDs; or
     assert.notEqual(imported.author_id, "admin");
     assert.equal(imported.created_ms, 1000);
     assert.equal(imported.updated_ms, 2000);
-    assert.equal(imported.text, "Историческое обсуждение");
+    assert.equal(imported.text, "Историческое обсуждение".padEnd(4000, "я"));
     assert.notEqual(files[0].id, originalId);
     assert.deepEqual(readFileSync(join(dir, "uploads", "discussion-files", files[0].id)), attachmentBytes);
     assert.equal(fileOnly.text, "");
@@ -444,7 +444,7 @@ test("opt-in full restore imports discussions with fresh file and author IDs; or
     const duplicate = await restores.preview(full, admin, { restoreComments: true });
     assert.equal(duplicate.canRestoreComments, false);
     await source.db.prepare("UPDATE person_comments SET text=? WHERE created_ms=1000")
-      .run("😀".repeat(1001));
+      .run("😀".repeat(2001));
     const inspected = new DatabaseSync(join(dir, "source.sqlite"), { readOnly: true });
     try {
       assert.throws(() => sourceComments(inspected, new Set([p.id])),

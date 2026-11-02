@@ -80,6 +80,26 @@ test("person discussion enforces login, visible scope, authorship and origin", a
 
     const anna = "/api/people/anna/discussion";
     const boris = "/api/people/boris/discussion";
+    // List payloads stay bounded; expanding/editing reads the authorized full text.
+    const longAuthor = await login("long-author", "Автор длинного текста", "d");
+    await db.prepare("UPDATE users SET approved=1 WHERE id='long-author'").run();
+    const longText = "Я".repeat(1999) + "🌳" + "Б".repeat(1999);
+    const longCreated = await request(anna, longAuthor.cookie, "POST", { text: longText });
+    assert.equal(longCreated.status, 201);
+    const longItem = (await longCreated.json()).item;
+    const preview = (await (await request(anna, admin.cookie)).json()).items[0];
+    assert.equal(preview.text, "Я".repeat(1999) + "🌳");
+    assert.equal(preview.textLength, 3999);
+    assert.equal(preview.textTruncated, true);
+    const detailPath = `${anna}/${longItem.id}`;
+    const full = (await (await request(detailPath, admin.cookie)).json()).item;
+    assert.equal(full.text, longText);
+    assert.equal(full.textTruncated, undefined);
+    assert.equal((await request(detailPath)).status, 401);
+    assert.equal((await request(detailPath, reader.cookie)).status, 404);
+    assert.equal((await request(`${boris}/${longItem.id}`, admin.cookie)).status, 404);
+    assert.equal((await request(anna, longAuthor.cookie, "POST", { text: longText + "!" })).status, 400);
+    assert.equal((await request(detailPath, longAuthor.cookie, "DELETE")).status, 200);
     assert.equal((await request(anna)).status, 401);
     assert.equal((await request(anna, reader.cookie)).status, 404);
     assert.equal(
@@ -283,7 +303,7 @@ test("person discussion enforces login, visible scope, authorship and origin", a
     assert.equal(
       (
         await request(path, reader.cookie, "PATCH", {
-          text: "x".repeat(2001),
+          text: "x".repeat(4001),
           editedAt: null,
         })
       ).status,
