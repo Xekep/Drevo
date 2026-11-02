@@ -2,6 +2,50 @@ import { expect, test, type Page, type Locator } from "@playwright/test";
 
 const endpoint = "/api/people/e2e-child/discussion";
 
+test("discussion expands a preview on demand, retries failures and edits the full message", async ({ page }) => {
+  const preview = "Начало ".repeat(250).padEnd(2000, "а");
+  const full = preview + " Хвост полного сообщения";
+  const item = { id: 990001, text: preview, textTruncated: true, textLength: full.length,
+    author: "Автор", createdAt: new Date().toISOString(), editedAt: null, canEdit: true,
+    canDelete: true, attachments: [] };
+  let details = 0;
+  await page.route(`**${endpoint}`, route => route.fulfill({ json: { items: [item], nextBefore: null, total: 1 } }));
+  await page.route(`**${endpoint}/${item.id}`, async route => {
+    details++;
+    if (details === 1) return route.fulfill({ status: 503, json: { error: "Повторить" } });
+    return route.fulfill({ json: { item: { ...item, text: full, textTruncated: false } } });
+  });
+  const section = await openDiscussion(page);
+  await expect(section.getByText("Хвост полного сообщения", { exact: false })).toHaveCount(0);
+  expect(details).toBe(0);
+  await section.getByRole("button", { name: "Читать далее" }).click();
+  await expect(section.getByRole("alert")).toBeVisible();
+  await section.getByRole("button", { name: "Читать далее" }).click();
+  await expect(section.getByText(/Хвост полного сообщения/)).toBeVisible();
+  expect(details).toBe(2);
+  await section.getByRole("button", { name: "Редактировать сообщение" }).click();
+  await expect(section.getByRole("textbox", { name: "Редактирование сообщения" })).toContainText("Хвост полного сообщения");
+});
+
+test("discussion loads older messages when scrolling to the end without duplicates", async ({ page }) => {
+  const item = (id: number) => ({ id, text: `Сообщение ${id} ` + "Текст ".repeat(30), author: "Автор",
+    createdAt: new Date().toISOString(), editedAt: null, canEdit: false, canDelete: false, attachments: [] });
+  let pages = 0;
+  await page.route(`**${endpoint}*`, async route => {
+    if (new URL(route.request().url()).searchParams.has("before")) {
+      pages++;
+      return route.fulfill({ json: { items: [item(11), item(10)], nextBefore: null, total: 21 } });
+    }
+    return route.fulfill({ json: { items: Array.from({ length: 20 }, (_, i) => item(30-i)), nextBefore: 11, total: 21 } });
+  });
+  const section = await openDiscussion(page);
+  expect(pages).toBe(0);
+  await section.getByRole("button", { name: "Показать старые сообщения" }).scrollIntoViewIfNeeded();
+  await expect(section.getByText(/^Сообщение 10 /)).toBeVisible();
+  expect(pages).toBe(1);
+  await expect(section.getByText(/^Сообщение 11 /)).toHaveCount(1);
+});
+
 test("comment author names navigate to the linked person while unlinked authors stay plain text", async ({
   page,
 }) => {

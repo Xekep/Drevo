@@ -99,6 +99,23 @@ test("русские native подписи сохраняются при пер�
   ).toBeVisible();
   await checkNativeLabels(book);
 
+  // The label must paint above the adjacent document page on either edge.
+  for (const side of ["left", "right"]) {
+    const edge = book.locator(`.br-mode-2up__leafs--${side}:not(.br-mode-2up__leafs--flipping)`);
+    await edge.hover({ force: true });
+    const label = edge.locator(".br-leaf-edges__label");
+    await expect(label).toBeVisible();
+    await expect.poll(() => label.evaluate(element => {
+      const label = element as HTMLElement;
+      const previous = label.style.pointerEvents;
+      label.style.pointerEvents = "auto";
+      const box = label.getBoundingClientRect();
+      const hit = label.ownerDocument.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      label.style.pointerEvents = previous;
+      return hit === label || label.contains(hit);
+    })).toBe(true);
+  }
+
   await book.locator(".BRicon.thumb:visible").click();
   await expect(
     book.locator(".BRpagecontainer.pagediv1 img.BRpageimage"),

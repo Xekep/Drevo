@@ -48,16 +48,21 @@ export function incrementalCardContacts(width: number, height: number) {
   };
   return (geometry: TreeGeometry) => {
     const cards = new Map(
-      geometry.positions.map(([id, p]) => [
-        id,
-        {
+      geometry.positions.map(([id, p]) => {
+        const old = previous?.cards.get(id);
+        return [
           id,
-          left: p.x,
-          right: p.x + width,
-          top: p.y,
-          bottom: p.y + height,
-        },
-      ]),
+          old?.left === p.x && old.top === p.y
+            ? old
+            : {
+                id,
+                left: p.x,
+                right: p.x + width,
+                top: p.y,
+                bottom: p.y + height,
+              },
+        ];
+      }),
     );
     const routes = [
       ...(geometry.branches || []).map((b) => b.route),

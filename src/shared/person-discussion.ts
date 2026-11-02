@@ -1,4 +1,5 @@
-export const MAX_COMMENT_LENGTH = 2000;
+export const MAX_COMMENT_LENGTH = 4000;
+export const COMMENT_PREVIEW_LENGTH = 2000;
 export const MAX_COMMENT_FILES = 8;
 export const MAX_COMMENT_FILE_BYTES = 10 * 1024 * 1024;
 export const MAX_COMMENT_FILES_BYTES = 20 * 1024 * 1024;
@@ -62,6 +63,8 @@ export function validCommentFiles(
 export type PersonComment = {
   id: number;
   text: string;
+  textTruncated?: boolean;
+  textLength?: number;
   author: string;
   authorPersonId: string | null;
   createdAt: string;

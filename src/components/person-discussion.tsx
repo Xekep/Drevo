@@ -1,5 +1,5 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pencil, Send, Trash2 } from "lucide-react";
 import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
 import { archiveTargetPath } from "../domain/archive-links";
@@ -12,6 +12,8 @@ import {
 } from "../shared/person-discussion";
 import CommentEditor from "./discussion/lazy-comment-editor";
 import { CommentMarkdown } from "./discussion/comment-markdown";
+import { DiscussionCommentText } from "./discussion/comment-text";
+import { LoadMore } from "./load-more";
 import {
   AttachmentComposer,
   encodeCommentFiles,
@@ -50,6 +52,13 @@ export function PersonDiscussion({
     files: File[];
   } | null>(null);
   const endpoint = `/api/people/${encodeURIComponent(personId)}/discussion`;
+  const detailRequests = useRef<AbortController | null>(null);
+  const morePending = useRef(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    detailRequests.current = controller;
+    return () => controller.abort();
+  }, [endpoint]);
   useUnsavedChanges(
     !!draft.trim() ||
       draftFiles.length > 0 ||
@@ -70,6 +79,7 @@ export function PersonDiscussion({
         return (await response.json()) as Page;
       })
       .then((page) => {
+        if (controller.signal.aborted) return;
         setItems(page.items);
         setNextBefore(page.nextBefore);
         onCountChange(page.total ?? page.items.length);
@@ -112,6 +122,32 @@ export function PersonDiscussion({
     }
     if (result.total !== undefined) onCountChange(result.total);
     return result;
+  }
+
+  async function loadFull(item: Comment): Promise<Comment> {
+    if (!item.textTruncated) return item;
+    const signal = detailRequests.current?.signal;
+    const response = await archiveFetch(`${endpoint}/${item.id}`, { signal, cache: "no-store" });
+    if (!response.ok) throw new Error("Не удалось загрузить сообщение. Повторите попытку.");
+    const result = await response.json() as { item: Comment };
+    signal?.throwIfAborted();
+    setItems(current => current.map(value => value.id === result.item.id ? result.item : value));
+    return result.item;
+  }
+
+  async function beginEdit(item: Comment) {
+    if (pending || editing) return;
+    setPending(true);
+    setError("");
+    try {
+      const original = await loadFull(item);
+      if (!original.canEdit) throw new Error("Сообщение больше недоступно для редактирования");
+      setEditing({ original, text: original.text, keep: (original.attachments || []).map(file => file.id), files: [] });
+      setConfirmDelete(null);
+    } catch (reason) {
+      if ((reason as Error)?.name !== "AbortError")
+        setError(reason instanceof Error ? reason.message : "Не удалось открыть сообщение");
+    } finally { setPending(false); }
   }
 
   async function send() {
@@ -205,22 +241,28 @@ export function PersonDiscussion({
   }
 
   async function loadMore() {
-    if (nextBefore === null || pending) return;
+    if (nextBefore === null || pending || morePending.current) return;
+    morePending.current = true;
     setPending(true);
     setError("");
+    const signal = detailRequests.current?.signal;
     try {
       const response = await archiveFetch(`${endpoint}?before=${nextBefore}`, {
         cache: "no-store",
+        signal,
       });
       if (!response.ok)
         throw new Error("Не удалось загрузить старые сообщения");
       const page = (await response.json()) as Page;
-      setItems((current) => [...current, ...page.items]);
+      signal?.throwIfAborted();
+      setItems((current) => [...current, ...page.items.filter(item => !current.some(value => value.id === item.id))]);
       setNextBefore(page.nextBefore);
       if (page.total !== undefined) onCountChange(page.total);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Ошибка загрузки");
+      if (!signal?.aborted)
+        setError(reason instanceof Error ? reason.message : "Ошибка загрузки");
     } finally {
+      morePending.current = false;
       setPending(false);
     }
   }
@@ -434,7 +476,7 @@ export function PersonDiscussion({
                 </form>
               ) : (
                 <>
-                  <CommentMarkdown text={item.text} />
+                  <DiscussionCommentText item={item} loadFull={loadFull} />
                   <MessageAttachments
                     files={item.attachments || []}
                     onOpen={(files, id) => setGallery({ files, id })}
@@ -447,16 +489,7 @@ export function PersonDiscussion({
                   className="person-discussion-edit"
                   aria-label="Редактировать сообщение"
                   disabled={pending || !!editing}
-                  onClick={() => {
-                    setEditing({
-                      original: item,
-                      text: item.text,
-                      keep: (item.attachments || []).map((file) => file.id),
-                      files: [],
-                    });
-                    setConfirmDelete(null);
-                    setError("");
-                  }}
+                  onClick={() => void beginEdit(item)}
                 >
                   <Pencil size={14} aria-hidden="true" />
                 </button>
@@ -493,14 +526,8 @@ export function PersonDiscussion({
             </article>
           ))}
           {nextBefore !== null && (
-            <button
-              type="button"
-              className="person-discussion-more"
-              disabled={pending}
-              onClick={() => void loadMore()}
-            >
-              Показать старые сообщения
-            </button>
+            <LoadMore className="person-discussion-more" busy={pending} automatic={!error}
+              label="Показать старые сообщения" onMore={() => void loadMore()} />
           )}
         </div>
       ) : !error ? (

@@ -174,3 +174,16 @@ for (const reverse of [false, true])
       geometry.positions,
     );
   });
+
+test("partner order can shorten a family axis even when crossings are tied", () => {
+  const { geometry, people } = fixture(false);
+  geometry.branches = geometry.branches!.filter(b => b.id.startsWith("pair:") || b.id === "child:child-a");
+  const scorer = createGeometryContactScorer(size.width, size.height);
+  const score = (g: TreeGeometry) => ({ ...scorer.quality(g), cardHits: scorer.cardContacts(g), overlaps: scorer.cardOverlaps(g) });
+  const after = optimizeMultiPartnerOrder(geometry, people, [], size, score);
+  assert.equal(score(after).crossings, score(geometry).crossings);
+  assert.ok(score(after).length < score(geometry).length);
+  assert.equal(score(after).cardHits, 0);
+  assert.equal(score(after).overlaps, 0);
+  assert.deepEqual(new Map(after.positions).get("shared"), new Map(geometry.positions).get("shared"));
+});

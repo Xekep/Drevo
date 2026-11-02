@@ -72,6 +72,13 @@
   display: grid;
   gap: 0;
 }
+.person-discussion-read-more {
+  margin-top: 6px;
+  padding: 5px 0;
+  color: var(--green);
+  font-size: 12px;
+  text-decoration: underline;
+}
 .person-discussion-item {
   position: relative;
   border-top: 1px solid var(--line);

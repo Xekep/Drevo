@@ -427,8 +427,7 @@ export async function importSqliteSnapshot(
     // Import runs before runtime view migrations; prepare edit metadata here too.
     await client.query("ALTER TABLE person_comments ADD COLUMN IF NOT EXISTS updated_ms bigint CHECK(updated_ms IS NULL OR updated_ms > created_ms)");
     await client.query("ALTER TABLE person_comments ADD COLUMN IF NOT EXISTS attachments jsonb NOT NULL DEFAULT '[]'::jsonb");
-    await client.query("ALTER TABLE person_comments DROP CONSTRAINT IF EXISTS person_comments_text_check");
-    await client.query("ALTER TABLE person_comments ADD CONSTRAINT person_comments_text_check CHECK(char_length(text) BETWEEN 0 AND 2000 AND (length(btrim(text))>0 OR jsonb_array_length(attachments)>0))");
+    await client.query(readFileSync(new URL("./110_person_comment_length.sql", import.meta.url), "utf8"));
     await client.query(
       readFileSync(new URL("./017_document_metadata.sql", import.meta.url), "utf8"),
     );

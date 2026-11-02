@@ -127,8 +127,13 @@ export function optimizeFamilyRows(
       { contacts, crossed } = familyBlockConflicts(best);
     if (!before.crossings || !contacts.size) break;
     const candidates: { move: Move; quality: Quality }[] = [];
+    const compare = (a: typeof candidates[number], b: typeof candidates[number]) =>
+      a.quality.cardHits - b.quality.cardHits || a.quality.crossings - b.quality.crossings ||
+      a.quality.contacts - b.quality.contacts || a.move.distance - b.move.distance;
+    const retained = small ? 12 : 8;
+    let probes = 0;
     const seen = new Set<string>();
-    for (const row of placedFamilyRows(best, size)) {
+    for (const [rowIndex, row] of placedFamilyRows(best, size).entries()) {
       if (row.length < 2 || row.length > 64) continue;
       // Moving this row can only change its incident branches. A crossing
       // between two untouched branches cannot disappear after rerouting.
@@ -141,27 +146,27 @@ export function optimizeFamilyRows(
         for (let step = 1; step < row.length; step++) {
           for (const to of [from - step, from + step]) {
             if (to < 0 || to >= row.length) continue;
-            if (candidates.length >= (small ? 512 : 128)) break;
-            const order = row.map((b) => b.id);
+            if (probes >= (small ? 512 : 128)) break;
+            const order = row.map((_, i) => i);
             order.splice(to, 0, ...order.splice(from, 1));
-            const key = JSON.stringify(order);
+            const key = `${rowIndex}:${order.join(",")}`;
             if (seen.has(key)) continue;
             seen.add(key);
             const move = reordered(best, row, from, to);
-            if (move) candidates.push({ move, quality: score(move.geometry) });
+            if (move) {
+              probes++;
+              candidates.push({ move, quality: score(move.geometry) });
+              candidates.sort(compare);
+              if (candidates.length > retained) candidates.pop();
+            }
           }
         }
     }
-    cheapCandidates += candidates.length;
-    candidates.sort(
-      (a, b) =>
-        a.quality.cardHits - b.quality.cardHits ||
-        a.quality.crossings - b.quality.crossings ||
-        a.quality.contacts - b.quality.contacts ||
-        a.move.distance - b.move.distance,
-    );
+    // Keep the same probes and stable ranking, but release discarded geometry
+    // immediately instead of retaining hundreds of complete candidate scenes.
+    cheapCandidates += probes;
     let selected: TreeGeometry | undefined;
-    for (const { move } of candidates.slice(0, small ? 12 : 8)) {
+    for (const { move } of candidates) {
       if (budget-- <= 0) break;
       const candidate = routeMove(move, size),
         next = score(candidate);

@@ -16,7 +16,7 @@ import { allCitations } from "./source-catalog-store.ts";
 import { parseDocumentEventLinks, parseDocumentPages } from "../shared/document-links.ts";
 import { verifyPortableMediaFile } from "./portable-media-check.ts";
 import { prepareCommentFile } from "./discussion-attachments.ts";
-import { validCommentFiles } from "../shared/person-discussion.ts";
+import { MAX_COMMENT_LENGTH, validCommentFiles } from "../shared/person-discussion.ts";
 import {
   PortablePackageError,
   MAX_PORTABLE_ENTRIES,
@@ -248,7 +248,7 @@ function snapshotFrom(value: unknown): PortableSnapshot {
       typeof comment.text !== "string" ||
       (!comment.text.trim() && !(Array.isArray(comment.attachments) && comment.attachments.length)) ||
       (comment.attachments !== undefined && !validCommentFiles(comment.attachments)) ||
-      comment.text.length > 2000
+      comment.text.length > MAX_COMMENT_LENGTH
     )
       invalid("Некорректное обсуждение в пакете Drevo");
     commentIds.add(comment.id as number);

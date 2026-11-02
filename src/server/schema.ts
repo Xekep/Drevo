@@ -1,6 +1,37 @@
 import type { DatabaseSync } from "node:sqlite";
 import { researchCatalogSeed } from "./research-catalog-seed.ts";
 
+/** SQLite cannot alter a CHECK constraint. Keep IDs and AUTOINCREMENT history. */
+export function extendDiscussionText(db: DatabaseSync) {
+  const migration = "2026-11-discussion-4000";
+  if (db.prepare("SELECT 1 FROM migrations WHERE id=?").get(migration)) return;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const sequence = Number(db.prepare("SELECT seq FROM sqlite_sequence WHERE name='person_comments'").get()?.seq || 0);
+    db.exec(`CREATE TABLE person_comments_extended (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+      author_id TEXT NOT NULL, author_name TEXT NOT NULL DEFAULT '',
+      created_ms INTEGER NOT NULL,
+      text TEXT NOT NULL CHECK(length(text) BETWEEN 0 AND 4000),
+      updated_ms INTEGER CHECK(updated_ms IS NULL OR updated_ms > created_ms),
+      attachments TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(attachments) AND json_type(attachments)='array' AND json_array_length(attachments)<=8),
+      CHECK(length(trim(text))>0 OR json_array_length(attachments)>0)
+    ) STRICT;
+    INSERT INTO person_comments_extended SELECT id,person_id,author_id,author_name,created_ms,text,updated_ms,attachments FROM person_comments;
+    DROP TABLE person_comments;
+    ALTER TABLE person_comments_extended RENAME TO person_comments;
+    CREATE INDEX person_comments_person ON person_comments(person_id,id DESC);
+    CREATE INDEX person_comments_author ON person_comments(author_id);`);
+    db.prepare("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='person_comments'").run(sequence);
+    db.prepare("INSERT INTO sqlite_sequence(name,seq) SELECT 'person_comments',? WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='person_comments')").run(sequence);
+    db.prepare("INSERT INTO migrations(id) VALUES(?)").run(migration);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
 
 export const ARCHIVE_SCHEMA_VERSION = 21;
 
@@ -1193,6 +1224,7 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  extendDiscussionText(db);
   const treePreferencesExtension = "2026-09-user-tree-preferences";
   if (
     !db

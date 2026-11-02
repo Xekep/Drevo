@@ -23,11 +23,20 @@ export const routeKey = (e: Relation) => JSON.stringify([e.type, e.from, e.to]);
 
 /** Пространственный индекс: стоимость короткой связи не зависит от размера архива. */
 export class Spatial<T extends Box> {
-  private cells = new Map<number, Map<number, T[]>>();
+  private cells = new Map<number, Map<number, number[]>>();
   // Long segments occupy many cells; reuse query marks instead of allocating a Set per lookup.
-  private seen = new Map<T, number>();
+  private ids = new Map<T, number>();
+  private items: T[] = [];
+  private seen: number[] = [];
   private queryId = 0;
   add(item: T) {
+    let id = this.ids.get(item);
+    if (id === undefined) {
+      id = this.items.length;
+      this.items.push(item);
+      this.seen.push(0);
+      this.ids.set(item, id);
+    }
     const left = Math.floor(item.left / 300),
       right = Math.floor(item.right / 300),
       top = Math.floor(item.top / 300),
@@ -44,7 +53,7 @@ export class Spatial<T extends Box> {
           list = [];
           column.set(y, list);
         }
-        list.push(item);
+        list.push(id);
       }
     }
   }
@@ -63,9 +72,10 @@ export class Spatial<T extends Box> {
       for (let y = top; y <= bottom; y++) {
         const list = column.get(y);
         if (!list) continue;
-        for (const item of list) {
-          if (this.seen.get(item) === queryId) continue;
-          this.seen.set(item, queryId);
+        for (const id of list) {
+          if (this.seen[id] === queryId) continue;
+          this.seen[id] = queryId;
+          const item = this.items[id];
           if (item.left <= box.right && item.right >= box.left &&
               item.top <= box.bottom && item.bottom >= box.top) found.push(item);
         }

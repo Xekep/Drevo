@@ -25,6 +25,7 @@ import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
 import { optimizeFamilyRows, refineColdPlacement } from "./family-row-order.ts";
 import { optimizeMultiPartnerOrder } from "./multi-partner-order.ts";
+import { optimizeJointFamilyOrder } from "./joint-family-order.ts";
 import { routingContactScore } from "./routing-quality.ts";
 import { incrementalRouteScorer } from "./incremental-route-score.ts";
 import { incrementalCardContacts } from "./incremental-card-contacts.ts";
@@ -661,7 +662,7 @@ export function createGeometryContactScorer(
   const score = (geometry: TreeGeometry) => {
     let result = scores.get(geometry);
     if (!result) {
-      result = routeScore(
+      result = ((geometry.branches?.length || 0) <= 300 ? routingContactScore : routeScore)(
         (geometry.branches || []).map((branch) => ({
           id: branch.id,
           group: branch.union,
@@ -712,6 +713,13 @@ export async function unionGeometry(
     cardContacts: routeCardContacts,
     cardOverlaps: cardOverlapCount,
   } = createGeometryContactScorer(W, H);
+  // Cheap ordering probes only consume part of the score. Defer the full
+  // overlap/card scans until a comparator or the acceptance guard needs them.
+  const finalScore = (geometry: TreeGeometry) => ({
+    ...geometryQuality(geometry),
+    get cardHits() { return routeCardContacts(geometry); },
+    get overlaps() { return cardOverlapCount(geometry); },
+  });
   const initialProfile =
     people.length > 900 && largeDecross ? "greedy" : undefined;
   let best = await geometryForSeed(
@@ -1199,21 +1207,14 @@ export async function unionGeometry(
       people,
       links,
       size,
-      (geometry) => ({
-        ...geometryQuality(geometry),
-        cardHits: routeCardContacts(geometry),
-        overlaps: cardOverlapCount(geometry),
-      }),
+      finalScore,
       previous,
     );
   }
   if (!previous && people.length <= 1200)
-    best = optimizeMultiPartnerOrder(best, people, links, size, (geometry) => ({
-      ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
-    }));
+    best = optimizeMultiPartnerOrder(best, people, links, size, finalScore);
   if (placementCandidates.length && geometryQuality(best).crossings) {
-    const score = (geometry: TreeGeometry) => ({ ...geometryQuality(geometry),
-      cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry) });
+    const score = finalScore;
     placementCandidates.sort((a, b) => compare(a.geometry, b.geometry));
     for (const { seed } of placementCandidates.slice(0, 2)) {
       try {
@@ -1230,9 +1231,6 @@ export async function unionGeometry(
       }
     }
   }
-  const finalScore = (geometry: TreeGeometry) => ({
-    ...geometryQuality(geometry), cardHits: routeCardContacts(geometry), overlaps: cardOverlapCount(geometry),
-  });
   if (previous) {
     best = bundleFamilyBranches(best);
     // Retaining slots must judge the canonical shared corridors. Restoring
@@ -1263,5 +1261,5 @@ export async function unionGeometry(
       }
     }
   }
-  return best;
+  return optimizeJointFamilyOrder(best, people, links, size, finalScore);
 }

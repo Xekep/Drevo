@@ -2,6 +2,7 @@ import type { TreeGeometry, LayoutPerson } from "./tree-layout.ts";
 import type { FamilyLink } from "./types.ts";
 import type { TreeNodeSize } from "./tree-layout-constants.ts";
 import { placedFamilyRows } from "./local-family-order.ts";
+import { preferFamilyLayout } from "./family-layout-candidates.ts";
 import {
   routeRelationships,
   simplifyRoute,
@@ -145,7 +146,7 @@ export function optimizeMultiPartnerOrder(
     if (
       familyRowNoWorse(next, current) &&
       familyRowNoWorse(next, initial) &&
-      next.crossings < current.crossings
+      (next.crossings < current.crossings || preferFamilyLayout(candidate, best, size, score))
     )
       best = candidate;
   }
