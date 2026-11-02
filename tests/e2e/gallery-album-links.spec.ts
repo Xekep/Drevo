@@ -82,6 +82,26 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
+test("album covers and photo tiles recover after a transient media failure", async ({ page }) => {
+  const requests: string[] = [];
+  await page.route("**/media/album-*.png**", route => {
+    requests.push(route.request().url());
+    if (requests.length === 1)
+      return route.fulfill({ status: 503, contentType: "application/json", body: '{"error":"retry"}' });
+    return route.fulfill({ contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" />' });
+  });
+  await page.goto("/photos");
+  await expect.poll(() => requests.some(url => url.includes("portrait-retry=1")), { timeout: 10000 }).toBe(true);
+  const cover = page.locator(".photo-albums img").first();
+  await expect(cover).toHaveJSProperty("naturalWidth", 600);
+  const albumUrl = await page.locator(".photo-albums > a").first().getAttribute("href");
+  requests.length = 0;
+  await page.goto(albumUrl!);
+  await expect(page.locator(".photo-tile img").first()).toHaveJSProperty("naturalWidth", 600);
+  await expect.poll(() => requests.some(url => url.includes("portrait-retry=1")), { timeout: 10000 }).toBe(true);
+});
+
 test("предзагруженные фото перелистываются без вспышки индикатора загрузки", async ({
   page,
 }) => {

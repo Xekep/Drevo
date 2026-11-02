@@ -59,21 +59,21 @@ export function PersonFullView({
   const dirty = useRef(false);
   const active = family.people.find((p) => p.id === activeId) || person;
   const detailsReady = hasPersonDetails?.(active.id) !== false;
-  const [detailsError, setDetailsError] = useState("");
+  const [detailsFailure, setDetailsFailure] = useState<{ id: string; message: string } | null>(null);
+  const detailsError = detailsFailure?.id === activeId ? detailsFailure.message : "";
+  const [detailsAttempt, setDetailsAttempt] = useState(0);
   useEffect(() => {
     let current = true;
     void loadPersonDetails?.(activeId).catch((error) => {
       if (current)
-        setDetailsError(
-          error instanceof Error
+        setDetailsFailure({ id: activeId, message: error instanceof Error
             ? error.message
-            : "Не удалось загрузить сведения",
-        );
+            : "Не удалось загрузить сведения" });
     });
     return () => {
       current = false;
     };
-  }, [activeId, loadPersonDetails]);
+  }, [activeId, loadPersonDetails, detailsAttempt]);
   const editable =
     detailsReady && canEdit && owns(user, active) && !!save && !!uploadPortrait;
   const neighborhood = useMemo(() => {
@@ -150,13 +150,17 @@ export function PersonFullView({
               </div>
               {!detailsReady ? (
                 <div
-                  role="status"
+                  role={detailsError ? "alert" : "status"}
                   className="archive-status"
                   aria-label="Загрузка сведений человека"
                 >
                   {detailsError || (
                     <span className="archive-loader-ring" aria-hidden="true" />
                   )}
+                  {detailsError && <button type="button" onClick={() => {
+                    setDetailsFailure(null);
+                    setDetailsAttempt((attempt) => attempt + 1);
+                  }}>Повторить загрузку</button>}
                 </div>
               ) : <PersonPanel
                 key={active.id}

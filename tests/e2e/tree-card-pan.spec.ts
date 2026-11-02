@@ -1,5 +1,37 @@
 import { expect, test } from "@playwright/test";
 
+test("dragging from a branch button pans; a tap still folds the branch", async ({ page, isMobile }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
+  const node = page.getByTestId("rf__node-e2e-child");
+  const button = node.locator(".flow-collapse");
+  await expect(button).toBeVisible();
+  const viewport = page.locator(".react-flow__viewport");
+  const before = await viewport.getAttribute("style");
+  const box = (await button.boundingBox())!;
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  if (isMobile) {
+    const session = await page.context().newCDPSession(page);
+    await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+    for (const distance of [10, 25, 45, 70])
+      await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x + distance, y: y + distance / 2 }] });
+    await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await session.detach();
+  } else {
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 70, y + 35, { steps: 8 });
+    await page.mouse.up();
+  }
+  await expect(viewport).not.toHaveAttribute("style", before!);
+  await expect(page.getByTestId("rf__node-e2e-grandchild")).toHaveCount(1);
+  await expect(page.locator(".inspector-dock")).toHaveCount(0);
+  if (isMobile) await button.tap();
+  else await button.click();
+  await expect(page.getByTestId("rf__node-e2e-grandchild")).toHaveCount(0);
+});
+
 for (const variant of ["portrait", "classic"])
   test(`drag and wheel over a ${variant} card pan without opening the person`, async ({
     page,

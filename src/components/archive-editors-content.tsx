@@ -49,6 +49,7 @@ import { AwardsEditor } from "./person-awards";
 import { EventsEditor } from "./person-events";
 import { PersonMarriagesEditor } from "./person-marriages-editor.tsx";
 import { applyPersonUnionDrafts } from "../domain/person-union-draft.ts";
+import { completeMarriageEndings } from "../domain/family-unions.ts";
 import type { FamilyUnion } from "../domain/types.ts";
 import { SiblingSuggestions } from "./sibling-suggestions";
 import { PortraitCropper } from "./portrait-cropper";
@@ -471,6 +472,11 @@ export function PersonEditor({
       for (const hint of confirmed)
         next = connectPeople(next, hint.from, hint.to, "parent");
       next = applyPersonUnionDrafts(next, p.id, baselineUnions, unionDrafts);
+      next = completeMarriageEndings(next, (union) =>
+        owns(user, union) && union.participants.every((id) => {
+          const participant = next.people.find((item) => item.id === id);
+          return !!participant && owns(user, participant);
+        }), p.id);
       await save(next);
       onDirtyChange?.(false);
       onSaved(p.id);

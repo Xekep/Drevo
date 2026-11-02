@@ -8,6 +8,7 @@ body,
 html,
 body {
   overflow: hidden;
+  overscroll-behavior-x: none;
 }
 body {
   background: #1d211e;
@@ -119,7 +120,14 @@ body {
   outline-offset: 2px;
 }
 .BRtoolbar .drevo-toolbar-comments[aria-expanded="true"] {
-  visibility: hidden;
+  background: rgb(255 255 255 / 18%);
+}
+.BRtoolbar .drevo-toolbar-comments-section {
+  order: 1;
+  margin-left: auto;
+}
+br-mode-1up {
+  overscroll-behavior-x: contain;
 }
 .br-mode-2up__root,
 .br-mode-1up__root,

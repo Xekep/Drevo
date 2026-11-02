@@ -200,7 +200,8 @@ export function makeDrevoPlugin(
       section.querySelector(".share")?.remove();
       const info = section.querySelector<HTMLElement>(".info");
       if (info) {
-        info.textContent = "О документе";
+        info.classList.add("drevo-toolbar-action");
+        info.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v6m0-10v1" /></svg>';
         info.title = "О документе";
         info.setAttribute("aria-label", "О документе");
       }
@@ -245,6 +246,10 @@ export function makeDrevoPlugin(
           }),
         "drevo-toolbar-comments",
       );
+      const commentsSection = document.createElement("span");
+      commentsSection.className = "BRtoolbarSection drevo-toolbar-comments-section";
+      commentsSection.append(this.commentsButton);
+      $toolbar[0].querySelector(".BRtoolbarRight")?.append(commentsSection);
       button("Закрыть документ", "M18 6 6 18M6 6l12 12", () =>
         emit({ source: "drevo-bookreader", type: "close" }),
       );

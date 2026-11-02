@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ImagePlus } from "lucide-react";
+import { ImagePlus, ImageOff } from "lucide-react";
+import { PortraitImage } from "./portrait-image";
 import type { Family } from "../domain";
 import { photoCaption, photoLabel } from "../domain/photo-metadata";
 import { newestPhotos, photoAlbums } from "../domain/photo-albums";
@@ -422,7 +423,8 @@ export function Gallery({
                 setLimit(30);
               }}
             >
-              <img src={mediaPreview(item.cover)} alt="" loading="lazy" />
+              <PortraitImage src={mediaPreview(item.cover)}
+                fallback={<ImageOff className="photo-preview-placeholder" aria-hidden="true" />} />
               <span>
                 <b>{item.label}</b>
                 <small>{item.count} фото</small>
@@ -435,6 +437,7 @@ export function Gallery({
           {photos.slice(0, loadPage ? undefined : limit).map((photo) => (
             <ArchiveLink
               className="photo-tile"
+              aria-label={photoLabel(photo)}
               key={photo.id}
               href={scopedArchivePath(
                 archiveTargetPath({ kind: "photo", id: photo.id }),
@@ -443,10 +446,10 @@ export function Gallery({
                 onOpen(photo.id, page?.photoIds || photos.map((p) => p.id))
               }
             >
-              <img
+              <PortraitImage
                 src={mediaPreview(photo.url)}
                 alt={photoLabel(photo)}
-                loading="lazy"
+                fallback={<ImageOff className="photo-preview-placeholder" aria-hidden="true" />}
               />
               {(photoCaption(photo) || photo.tags.length > 0) && (
                 <span>

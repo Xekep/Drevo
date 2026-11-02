@@ -95,6 +95,55 @@ export function installBookReaderPageNavigation(reader: BookReaderInstance) {
       spread.autoFit = "none";
   };
   document.addEventListener("click", keepManualZoom, true);
+  // The native 1up view scrolls vertically but has no horizontal page gesture.
+  // Leave vertical scrolling and two-finger zoom with the browser.
+  let swipe: { x: number; y: number; time: number; page: number } | null = null;
+  const touchStart = (event: TouchEvent) => {
+    swipe = null;
+    if (
+      event.touches.length !== 1 ||
+      reader.mode !== reader.constMode1up ||
+      document.body.matches(".drevo-annotating, .drevo-magnifying") ||
+      !(event.target instanceof Element) ||
+      event.target.closest("button, a, input, textarea, select") ||
+      single.scrollWidth > single.clientWidth + 2
+    ) return;
+    const touch = event.touches[0];
+    swipe = { x: touch.clientX, y: touch.clientY, time: performance.now(), page: reader.currentIndex() };
+  };
+  const cancelSwipe = () => { swipe = null; };
+  const touchMove = (event: TouchEvent) => {
+    if (!swipe) return;
+    const touch = event.touches[0];
+    if (event.touches.length !== 1 || Math.abs(touch.clientY - swipe.y) > Math.max(10, Math.abs(touch.clientX - swipe.x)))
+      cancelSwipe();
+    else if (Math.abs(touch.clientX - swipe.x) > 10 && event.cancelable)
+      // In particular, a right swipe on the first page must not navigate the
+      // browser back out of the document.
+      event.preventDefault();
+  };
+  const touchEnd = (event: TouchEvent) => {
+    const start = swipe;
+    swipe = null;
+    if (!start || event.touches.length || !event.changedTouches.length) return;
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    if (
+      reader.mode !== reader.constMode1up ||
+      start.page !== reader.currentIndex() ||
+      document.body.matches(".drevo-annotating, .drevo-magnifying") ||
+      Math.abs(dx) < Math.min(90, single.clientWidth * 0.22) ||
+      Math.abs(dx) <= Math.abs(dy) * 1.5 ||
+      performance.now() - start.time > 1200
+    ) return;
+    const page = Math.max(0, Math.min(single.pages.length - 1, start.page + (dx < 0 ? 1 : -1)));
+    if (page !== start.page) reader.jumpToIndex(page);
+  };
+  single.addEventListener("touchstart", touchStart, { passive: true });
+  single.addEventListener("touchmove", touchMove, { passive: false });
+  single.addEventListener("touchend", touchEnd, { passive: true });
+  single.addEventListener("touchcancel", cancelSwipe);
   schedule();
   return () => {
     disposed = true;
@@ -104,5 +153,9 @@ export function installBookReaderPageNavigation(reader: BookReaderInstance) {
     mutation.disconnect();
     events.forEach((event) => reader.unbind(event, schedule));
     document.removeEventListener("click", keepManualZoom, true);
+    single.removeEventListener("touchstart", touchStart);
+    single.removeEventListener("touchmove", touchMove);
+    single.removeEventListener("touchend", touchEnd);
+    single.removeEventListener("touchcancel", cancelSwipe);
   };
 }

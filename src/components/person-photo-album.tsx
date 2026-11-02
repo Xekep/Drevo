@@ -2,6 +2,7 @@ import { ChevronRight, Images } from "lucide-react";
 import type { ArchivePhoto } from "../domain";
 import { newestPhotos } from "../domain/photo-albums";
 import { mediaPreview } from "../domain/media-preview";
+import { PortraitImage } from "./portrait-image";
 
 const TREE_FULLSCREEN_HISTORY_MARKER = "drevoTreeFullscreen";
 
@@ -47,11 +48,10 @@ export function PersonPhotoAlbum({
           {newestPhotos(photos)
             .slice(0, 3)
             .map((photo) => (
-              <img
+              <PortraitImage
                 key={photo.id}
                 src={mediaPreview(photo.url)}
-                alt=""
-                loading="lazy"
+                fallback={<span className="album-stack-placeholder" />}
               />
             ))}
         </span>
