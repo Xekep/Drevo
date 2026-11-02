@@ -531,6 +531,18 @@ export function DocumentsCatalog({
   };
 
   const groups = useMemo(() => {
+    if (query.trim())
+      return documents.length
+        ? ([
+            [
+              "search",
+              {
+                name: "Результаты поиска",
+                items: documents,
+              },
+            ],
+          ] as Array<[string, { name: string; items: ListedDocument[] }]>)
+        : [];
     const grouped = new Map<
       string,
       { name: string; items: ListedDocument[] }
@@ -565,7 +577,7 @@ export function DocumentsCatalog({
     return [...grouped.entries()].sort((a, b) =>
       a[1].name.localeCompare(b[1].name, "ru"),
     );
-  }, [documents, personFilter]);
+  }, [documents, personFilter, query]);
 
   const remove = async (entry: ListedDocument) => {
     if (deleting) return;
@@ -901,6 +913,13 @@ export function DocumentsCatalog({
                     </span>
                     <span className="document-item-text">
                       <strong>{document.title}</strong>
+                      {query.trim() && document.people.length > 0 && (
+                        <small>
+                          {document.people
+                            .map((person) => person.name)
+                            .join(" · ")}
+                        </small>
+                      )}
                       <small>
                         <span className="document-format">
                           {documentFormat(document.mimeType)}

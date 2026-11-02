@@ -342,6 +342,7 @@
   inset: 0;
   z-index: 20;
 }
+.tree-canvas[data-camera-ready="false"] .react-flow__viewport,
 .tree-canvas.is-growth-preparing .react-flow__viewport {
   /* NodeWrapper sets visibility: visible; opacity must hide the whole layer. */
   opacity: 0;
@@ -363,6 +364,8 @@
   transform-origin: top left;
   will-change: transform;
 }
+.tree-canvas[data-camera-ready="false"] .tree-gpu-scene,
+.tree-canvas[data-camera-ready="false"] .tree-distant-portrait-clip,
 .tree-canvas.is-growth-preparing .tree-distant-portrait-clip {
   /* Child canvas visibility changes cannot override composited opacity. */
   opacity: 0;

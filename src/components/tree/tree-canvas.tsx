@@ -1761,6 +1761,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         ref={container}
         inert={props.covered || undefined}
         data-layout-ready={ready}
+        data-camera-ready={initialCameraReady}
         data-layout-update={updateKind || "cached"}
         data-layout-people={renderVisible.size}
         data-fragment-anchor={fragment.active ? fragment.anchorId : undefined}
