@@ -19,13 +19,14 @@ import type { FamilyLink } from "./types.ts";
 import { repairFamilyRoutes } from "./family-route-repair.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
-import { finishColdFamilyLayout, preferFamilyLayout } from "./family-layout-candidates.ts";
+import { finishColdFamilyLayout, preferFamilyLayout, refineFinalCoupleOrder } from "./family-layout-candidates.ts";
 import { canUseFamilyLayoutHistory } from "./family-layout-history.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
 import { optimizeFamilyRows, refineColdPlacement } from "./family-row-order.ts";
 import { optimizeMultiPartnerOrder } from "./multi-partner-order.ts";
 import { optimizeJointFamilyOrder } from "./joint-family-order.ts";
+import { optimizeFinalFamilyBranches } from "./final-family-branches.ts";
 import { routingContactScore } from "./routing-quality.ts";
 import { incrementalRouteScorer } from "./incremental-route-score.ts";
 import { incrementalCardContacts } from "./incremental-card-contacts.ts";
@@ -1261,5 +1262,8 @@ export async function unionGeometry(
       }
     }
   }
-  return optimizeJointFamilyOrder(best, people, links, size, finalScore);
+  best = optimizeJointFamilyOrder(best, people, links, size, finalScore);
+  best = refineFinalCoupleOrder(best, people, links, size, finalScore);
+  best = optimizeFinalFamilyBranches(best, people, links, size, finalScore);
+  return refineFinalCoupleOrder(best, people, links, size, finalScore);
 }

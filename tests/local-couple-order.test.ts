@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { TreeGeometry } from "../src/domain/tree-layout.ts";
-import { branchContactCounts } from "../src/domain/union-layout.ts";
+import { branchContactCounts, createGeometryContactScorer } from "../src/domain/union-layout.ts";
+import { refineFinalCoupleOrder, preferFamilyLayout } from "../src/domain/family-layout-candidates.ts";
 import type { UnionBranch } from "../src/domain/union-layout.ts";
 import { routeRelationships } from "../src/domain/edge-routing.ts";
 import {
@@ -116,6 +117,14 @@ test("historical pair reversal clears foreign T contacts without changing family
     assert.deepEqual(branch.route.points[0], old.route.points[0]);
   }
   assert.deepEqual(geometry, before);
+  const scorer = createGeometryContactScorer(size.width, size.height);
+  const score = (g: TreeGeometry) => ({ ...scorer.quality(g),
+    cardHits: scorer.cardContacts(g), overlaps: scorer.cardOverlaps(g) });
+  const final = refineFinalCoupleOrder(geometry, [], [], size, score);
+  assert.equal(score(final).crossings, 0, "final pass must reroute the contacted ancestry");
+  assert.ok(preferFamilyLayout(final, geometry, size, score), "strict axes and bend budget stay intact");
+  assert.deepEqual(final.positions, improved.positions);
+  assert.equal(refineFinalCoupleOrder(final, [], [], size, score), final, "a crossing-free layout stays untouched");
 });
 
 test("a local couple swap reroutes ancestry without moving the surrounding blocks", () => {

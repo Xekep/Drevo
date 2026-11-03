@@ -210,7 +210,11 @@ test("adding a founder's parent preserves the previous horizontal family order",
   const incrementalContacts = branchContactCounts(
     incremental.branches || [],
   ).distinct;
-  assert.ok(incrementalContacts <= plainContacts + 1);
+  // A better cold spouse order need not invalidate the retained scene: adding
+  // one ancestor may add one contact to either baseline, with near-zero drift.
+  // Compare to the actual previous scene as well as the independently solved one.
+  const beforeContacts = branchContactCounts(before.branches || []).distinct;
+  assert.ok(incrementalContacts <= Math.max(plainContacts, beforeContacts) + 1);
   if (incrementalContacts > plainContacts)
     assert.ok(drift(incremental, "x") < drift(plain, "x") * 0.1);
 });

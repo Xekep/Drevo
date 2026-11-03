@@ -45,6 +45,7 @@ import { ComparisonPanel } from "./components/comparison-panel";
 import { PersonEditor } from "./components/archive-editors";
 import { ArchiveSection } from "./components/archive-section";
 import { PhotoWorkspaceOverlays } from "./components/photo-workspace-overlays";
+import { parseBiographyMap } from "./domain/biography-map";
 import { LoginButtons } from "./components/login-buttons";
 import { AdminPanel } from "./components/admin-panel";
 import { ArchiveSettings } from "./components/archive-settings";
@@ -69,6 +70,7 @@ import { excludeAssistantPeople, hideReviewAssistantPeople } from "./domain/rese
 import { AccountPage } from "./components/account-page";
 import { LazyChunkBoundary } from "./components/lazy-chunk-boundary";
 import { loadLazyModule } from "./components/lazy-section-recovery";
+const BiographyMapWorkspace = lazy(() => import("./components/biography-map-workspace"));
 const PlatformSettingsPage = lazy(() =>
   loadLazyModule(() => import("./components/platform-settings-page"), "platform-settings"));
 import {
@@ -177,6 +179,7 @@ export default function App() {
     } = selection;
   const treeCanvas = useRef<TreeCanvasHandle>(null);
   const [treeSceneCovered, setTreeSceneCovered] = useState(false);
+  const [biographyMap, setBiographyMap] = useState<{ personId: string; source: string; scope: string } | null>(null);
   const exportWarnings = archive.exportWarnings;
   const checkExportWarnings = useCallback(async (signal: AbortSignal) => {
     if (!family) return { parentEvidence: false, catalogLinks: false };
@@ -636,6 +639,15 @@ export default function App() {
     [selected, map],
   );
   const titledPerson = urlPhotoTarget?.kind === "person" ? map.get(urlPhotoTarget.id) : null;
+  const biographyMapScope = JSON.stringify([archiveContextAt(window.location.pathname)?.id, user?.id, user?.role,
+    user?.treeAccess, user?.personId, user?.approved, participantPreview]);
+  const biographyMapSource = readTree && view === "tree" && biographyMap?.scope === biographyMapScope &&
+    chosen[0]?.id === biographyMap.personId && hasPersonDetails(biographyMap.personId) &&
+    chosen[0]?.biography?.includes(biographyMap.source) ? biographyMap.source : null;
+  const currentBiographyMap = useMemo(() => {
+    try { return biographyMapSource ? parseBiographyMap(biographyMapSource) : null; } catch { return null; }
+  }, [biographyMapSource]);
+  useEffect(() => { if (biographyMap && !biographyMapSource) setBiographyMap(null); }, [biographyMap, biographyMapSource]);
   const titledPhoto = urlPhotoTarget?.kind === "photo"
     ? family?.photos?.find((photo) => photo.id === urlPhotoTarget.id) : null;
   useArchivePageTitle(view, currentPath, family?.title,
@@ -1069,13 +1081,13 @@ export default function App() {
               >
                 {readTree && (
                   <div
-                    className={`tree-view ${view === "tree" ? "" : "is-hidden"}`}
-                    inert={view !== "tree"}
-                    aria-hidden={view !== "tree"}
+                    className={`tree-view ${view === "tree" && !currentBiographyMap ? "" : "is-hidden"}`}
+                    inert={view !== "tree" || !!currentBiographyMap}
+                    aria-hidden={view !== "tree" || !!currentBiographyMap}
                   >
                     <TreeCanvas
                       ref={treeCanvas}
-                      covered={treeSceneCovered}
+                      covered={treeSceneCovered || !!currentBiographyMap}
                       restricted={Boolean(participantPreview)}
                       onPreferences={() => withOverview(() => setTreePreferencesOpen(true))}
                       onExport={participantPreview ? undefined : () => setTreeExportOpen(true)}
@@ -1264,6 +1276,7 @@ export default function App() {
                         ) : (
                           chosen[0] && (
                             <PersonInspector
+                              onOpenMap={source => setBiographyMap({ personId: chosen[0].id, source, scope: biographyMapScope })}
                               key={chosen[0].id}
                               person={chosen[0]}
                               onArchiveChanged={archive.reload}
@@ -1322,6 +1335,9 @@ export default function App() {
                     ) : null}
                   </div>
                 )}
+                {currentBiographyMap && <Suspense fallback={<p role="status">Загрузка карты…</p>}>
+                  <BiographyMapWorkspace data={currentBiographyMap} onClose={() => setBiographyMap(null)} />
+                </Suspense>}
                 <ArchiveSection
                   revision={archive.getRevision()}
                   view={view}

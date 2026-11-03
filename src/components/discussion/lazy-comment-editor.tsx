@@ -82,8 +82,8 @@ export default function LazyCommentEditor(
     if (props.focusOnMount) {
       input.current?.focus();
       void load();
-    }
-  }, [props.focusOnMount, load]);
+    } else if (props.loadOnMount) void load();
+  }, [props.focusOnMount, props.loadOnMount, load]);
   if (loaded) {
     const LoadedEditor = loaded.component;
     return (
@@ -95,35 +95,40 @@ export default function LazyCommentEditor(
     );
   }
   return (
-    <div className="comment-editor comment-editor-placeholder">
-      <button
-        type="button"
-        className="comment-insert-diagram"
-        disabled={props.disabled}
-        aria-label="Добавить схему Mermaid"
-        onClick={() => {
-          const node = input.current,
-            from = node?.selectionStart || 0,
-            to = node?.selectionEnd || 0;
-          const position = from + commentDiagramTemplate.length;
-          insertedSelection.current = { anchor: position, head: position };
-          props.onChange(
-            props.value.slice(0, from) +
-              commentDiagramTemplate +
-              props.value.slice(to),
-          );
-          node?.focus();
-          void load();
-        }}
-      >
-        <GitBranch size={15} aria-hidden="true" />
-      </button>
+    <div
+      className={`comment-editor comment-editor-placeholder ${props.className || ""}`}
+    >
+      {props.tools}
+      {!props.biography && (
+        <button
+          type="button"
+          className="comment-insert-diagram"
+          disabled={props.disabled}
+          aria-label="Добавить схему Mermaid"
+          onClick={() => {
+            const node = input.current,
+              from = node?.selectionStart || 0,
+              to = node?.selectionEnd || 0;
+            const position = from + commentDiagramTemplate.length;
+            insertedSelection.current = { anchor: position, head: position };
+            props.onChange(
+              props.value.slice(0, from) +
+                commentDiagramTemplate +
+                props.value.slice(to),
+            );
+            node?.focus();
+            void load();
+          }}
+        >
+          <GitBranch size={15} aria-hidden="true" />
+        </button>
+      )}
       <textarea
         ref={input}
         aria-label={props.label}
         value={props.value}
         disabled={props.disabled}
-        placeholder="Напишите вопрос или воспоминание…"
+        placeholder={props.placeholder ?? "Напишите вопрос или воспоминание…"}
         onFocus={() => void load()}
         onChange={(event) => {
           insertedSelection.current = null;

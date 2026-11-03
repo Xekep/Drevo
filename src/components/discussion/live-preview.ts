@@ -35,7 +35,7 @@ function selectionTouches(
   );
 }
 
-class PreviewWidget extends WidgetType {
+export class PreviewWidget extends WidgetType {
   constructor(
     readonly source: string,
     readonly from: number,

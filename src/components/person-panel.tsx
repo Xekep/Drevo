@@ -34,7 +34,7 @@ import {
 import { collectPersonSources, repositorySummary } from "../domain/person-sources.ts";
 import { PortraitPlaceholder } from "./portrait-placeholder";
 import { PortraitImage } from "./portrait-image";
-import { MarkdownText } from "./markdown-text";
+import { BiographyText } from "./biography-text";
 import { PersonAwards } from "./person-awards";
 import { PersonEvents } from "./person-events";
 import { PersonUnions } from "./person-unions";
@@ -131,6 +131,7 @@ export function PersonPanel({
   unions,
   onSelect,
   onCompare,
+  onOpenMap,
   suggestions,
   isCurrentUser = false,
   canDiscuss = false,
@@ -144,6 +145,7 @@ export function PersonPanel({
   unions?: Family["unions"];
   onSelect: (id: string) => void;
   onCompare?: () => void;
+  onOpenMap?: (source: string) => void;
   suggestions?: ReactNode;
   isCurrentUser?: boolean;
   canDiscuss?: boolean;
@@ -431,7 +433,7 @@ export function PersonPanel({
                 {!!person.occupationClaim?.sources.length &&
                   <p>Источники занятия: {claimSummary(person.occupationClaim)}</p>}
                 {alternativeFacts(person, "occupation")}
-                {person.biography && <MarkdownText text={person.biography} className="person-biography-text" />}
+                {person.biography && <BiographyText text={person.biography} onOpenMap={onOpenMap} />}
               </div>
             )}
             <PersonEvents events={person.events} canLoadDocuments={canLoadDocuments} />

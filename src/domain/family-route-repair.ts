@@ -1,6 +1,7 @@
 import type { TreeGeometry } from "./tree-layout.ts";
 import type { TreeNodeSize } from "./tree-layout-constants.ts";
 import { familyRowNoWorse, routeFamilyMove, type FamilyRowQuality } from "./family-row-moves.ts";
+import { routingContactScore } from "./routing-quality.ts";
 
 export const FAMILY_ROUTE_REPAIR_LIMITS = { people: 200, candidates: 36, perGeneration: 12 };
 
@@ -8,7 +9,7 @@ export const FAMILY_ROUTE_REPAIR_LIMITS = { people: 200, candidates: 36, perGene
 export function repairFamilyRoutes(
   original: TreeGeometry,
   size: TreeNodeSize,
-  score: (geometry: TreeGeometry) => FamilyRowQuality & { groups: ReadonlyMap<string, number> },
+  score: (geometry: TreeGeometry) => FamilyRowQuality & { groups?: ReadonlyMap<string, number> },
   maxCandidates = FAMILY_ROUTE_REPAIR_LIMITS.candidates,
 ) {
   let best = original, attempts = 0;
@@ -18,13 +19,15 @@ export function repairFamilyRoutes(
     return { geometry: best, attempts, byGeneration };
   const initial = score(original);
   if (!initial.crossings) return { geometry: best, attempts, byGeneration };
+  const groups = initial.groups || routingContactScore((original.branches || []).map(b =>
+    ({ id: b.id, group: b.union, route: b.route }))).quality.groups;
   let current = initial;
   const levels = new Map((original.generationBands || []).flatMap((band) =>
     band.members.map((id) => [id, band.level] as const),
   ));
   const pools = new Map<number, NonNullable<TreeGeometry["branches"]>>();
   for (const branch of original.branches || []) {
-    if (!branch.id.startsWith("child:") || !initial.groups.get(branch.union)) continue;
+    if (!branch.id.startsWith("child:") || !groups.get(branch.union)) continue;
     const level = levels.get(branch.source);
     if (level === undefined) continue;
     const pool = pools.get(level) || [];
@@ -32,7 +35,7 @@ export function repairFamilyRoutes(
     pools.set(level, pool);
   }
   for (const pool of pools.values())
-    pool.sort((a, b) => initial.groups.get(b.union)! - initial.groups.get(a.union)!);
+    pool.sort((a, b) => groups.get(b.union)! - groups.get(a.union)!);
   const generations = [...pools].sort(([a], [b]) => a - b);
   // Share the fixed budget across source generations before taking another
   // arrival from the same generation. Ranking uses the existing route score.
