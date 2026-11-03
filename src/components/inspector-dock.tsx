@@ -117,7 +117,7 @@ export function InspectorDock({
     <ActionsHost.Provider value={actionsHost}>
       <aside
         ref={ref}
-        className={`inspector-dock ${expanded ? "expanded" : ""} ${sceneVisible && !expanded ? "is-map-peek" : ""}`}
+        className={`inspector-dock${expanded ? " expanded" : ""}${sceneVisible && !expanded ? " is-map-peek" : ""}`}
         hidden={mobileSuspended}
         aria-label={label}
         data-editing={editing || undefined}
