@@ -44,26 +44,26 @@
   }
 
   .family-directory .family-catalog {
-    grid-template-columns: repeat(auto-fill, minmax(295px, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(275px, 1fr));
+    gap: 12px;
   }
 
   .family-directory .family-group {
-    padding: 18px 20px;
+    padding: 12px 14px;
     border-radius: 9px;
     background: #fffefa;
   }
 
   .family-directory .family-person {
-    padding: 9px 0;
+    padding: 6px 0;
   }
 
   .family-directory .family-children {
-    margin: 10px 0 14px 20px;
+    margin: 6px 0 10px 14px;
   }
 
   .family-directory .family-children button {
-    padding: 7px 0;
+    padding: 5px 0;
   }
 
   .insights-page {
@@ -124,6 +124,29 @@
   }
 
   .family-directory .family-group {
-    padding: 18px;
+    padding: 12px 14px;
   }
+}
+.family-directory .family-catalog {
+  align-items: start;
+}
+.family-directory .family-person .person-avatar {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+}
+.family-directory .family-person small {
+  margin-top: 2px;
+}
+.family-directory .family-person {
+  padding: 6px 0;
+  gap: 10px;
+}
+.family-directory .family-children {
+  margin: 6px 0 10px 14px;
+  padding-left: 12px;
+}
+.family-directory .family-group > .full-button {
+  min-height: 44px;
+  padding: 8px 10px;
 }

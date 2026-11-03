@@ -53,3 +53,6 @@ yarn-error.log*
 
 /public/models/
 /public/awards/**/*.png
+
+# Generated verification reports
+/tests/.artifacts/

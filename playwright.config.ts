@@ -4,6 +4,7 @@ const port = Number(process.env.DREVO_E2E_PORT || 4173);
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  outputDir: "./tests/.artifacts/playwright",
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",

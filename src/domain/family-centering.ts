@@ -112,7 +112,7 @@ export function centerFamilyBranches(
       beforeError = centeringError(best),
       beforeCrowding = crowding(best, size);
     const families = familyCenters(best)
-      .filter((family) => Math.abs(family.preferredShift) >= size.width / 10)
+      .filter((family) => Math.abs(family.preferredShift) >= 0.5)
       .sort(
         (a, b) =>
           Math.abs(b.preferredShift) - Math.abs(a.preferredShift) ||
@@ -140,7 +140,7 @@ export function centerFamilyBranches(
       }))
       .filter(
         ({ move, error, quality }) =>
-          error < beforeError - size.width / 20 &&
+          error < beforeError - 0.5 &&
           familyRowNoWorse(quality, before) &&
           crowding(move.geometry, size) <= beforeCrowding + 0.01,
       )
@@ -166,7 +166,7 @@ export function centerFamilyBranches(
         !familyRowNoWorse(next, initial) ||
         next.length > Math.min(initial.length, before.length) * 1.02 ||
         next.bends > before.bends + 2 ||
-        error >= selectedError - size.width / 20 ||
+        error >= selectedError - 0.5 ||
         crowding(candidate, size) >
           Math.min(initialCrowding, beforeCrowding) + 0.01
       )

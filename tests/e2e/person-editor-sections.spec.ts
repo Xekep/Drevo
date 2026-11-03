@@ -86,27 +86,38 @@ test("старый стиль сохраняет исходную дату и п
   await expect(form.locator('[data-field="death"]')).toHaveValue("29.02.2000");
 });
 
-test("input positions stay stable while name, calendar, validation and place hints change", async ({ page }, info) => {
+test("compact editor shows hints and errors without clipping or overlapping inputs", async ({ page }, info) => {
   await page.route("**/api/places/locate**", route => route.fulfill({ json: { candidates: [] } }));
   await editor(page);
   const form = page.locator(".person-editor-form");
   await expect(form.locator('[data-field="name"]')).toBeVisible();
-  const coordinates = () => form.locator('input:not([type="checkbox"]), select').evaluateAll(elements =>
-    elements.filter(element => element.getClientRects().length).map(element =>
-      Math.round(element.getBoundingClientRect().top - element.closest("form")!.getBoundingClientRect().top)));
-  const before = await coordinates();
+  const checkFeedback = async () => {
+    const problems = await form.evaluate((element) => {
+      const inputs = [...element.querySelectorAll('input:not([type="checkbox"]), select')]
+        .filter(input => input.getClientRects().length).map(input => input.getBoundingClientRect());
+      return [...element.querySelectorAll('.person-field-feedback, .field-error, .calendar-style-control > small, .place-input-notice')]
+        .filter(hint => hint.getClientRects().length && hint.textContent?.trim())
+        .filter(hint => {
+          const rect = hint.getBoundingClientRect();
+          return hint.scrollHeight > hint.clientHeight + 1 || inputs.some(input =>
+            rect.left < input.right && rect.right > input.left && rect.top < input.bottom && rect.bottom > input.top);
+        }).map(hint => hint.textContent);
+    });
+    expect(problems).toEqual([]);
+  };
+  expect(await form.locator('.calendar-date-field > .field-error').first().evaluate(element => element.getBoundingClientRect().height)).toBe(0);
   await form.locator('[data-field="name"]').fill("Александр Иванов");
   await form.locator('[data-field="birth"]').fill("1880");
   await form.getByRole("checkbox", { name: "Дата рождения по старому стилю" }).check();
-  expect(await coordinates()).toEqual(before);
+  await checkFeedback();
   await form.locator('[data-field="birth"]').fill("не дата");
   await form.locator('[data-field="death"]').focus();
   await expect(form.locator('[data-field="birth"]')).toHaveAttribute("aria-invalid", "true");
-  expect(await coordinates()).toEqual(before);
+  await checkFeedback();
   await form.locator('.person-date-group').first().getByLabel("Место", { exact: true }).fill("Неизвестное место");
   await form.locator('[data-field="death"]').focus();
   await expect(form.locator(".place-input-notice").first()).toContainText("Название сохранится");
-  expect(await coordinates()).toEqual(before);
+  await checkFeedback();
   await page.screenshot({ path: info.outputPath("stable-editor-hints.png") });
 });
 

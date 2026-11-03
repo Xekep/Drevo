@@ -64,7 +64,7 @@ PDF-ридер рисует страницы через PDF.js и показыв
 
 ```text
 /var/www/drevo.kiiko.ru/
-  releases/<идентификатор>/   # dist, src/server, src/domain, public/data, ops
+  releases/<идентификатор>/   # dist, src/server, src/domain, src/assets, public/data, ops
   current -> releases/...    # Активный релиз
   shared/
     drevo.sqlite             # SQLite-режим; после перехода — сохранённый исходник

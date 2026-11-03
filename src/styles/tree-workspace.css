@@ -268,7 +268,10 @@
   min-height: 220px;
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: 16px;
 }
+.archive-status-loading p { margin: 0; }
 /* Reserve the future canvas gesture boundary before React Flow mounts.
    A browser decides whether to pinch the page at touchstart, so stopping
    pointer events later during tree growth cannot prevent viewport zoom. */
@@ -285,6 +288,9 @@
   min-height: 100dvh;
 }
 .archive-loader-ring {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
   width: 38px;
   height: 38px;
   border: 2px solid #dce6d7;
@@ -293,6 +299,39 @@
   border-radius: 50%;
   box-shadow: 0 0 0 7px #6f91650a;
   animation: archive-loader-spin 760ms linear infinite;
+}
+.person-details-status {
+  padding: 28px 18px;
+}
+.person-details-status p {
+  margin: 14px 0 0;
+}
+.tree-preparation-status {
+  position: absolute;
+  z-index: 21;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 14px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 14px;
+  pointer-events: none;
+}
+.tree-preparation-status .archive-loader-ring {
+  width: 22px;
+  height: 22px;
+}
+.tree-canvas .react-flow__panel {
+  /* The overview canvas is a sibling of React Flow, above its scene. */
+  z-index: 6;
 }
 @keyframes archive-loader-spin {
   to {
@@ -373,6 +412,7 @@
 }
 .tree-canvas .react-flow {
   position: absolute;
+  z-index: auto;
   top: 0;
   height: 100%;
 }

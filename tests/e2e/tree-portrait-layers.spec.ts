@@ -64,7 +64,7 @@ async function preparePortraitTree(page: Page, accountPerson: boolean,
     const decode = HTMLImageElement.prototype.decode;
     HTMLImageElement.prototype.decode = function (this: HTMLImageElement) {
       return Reflect.apply(decode, this, []).then(() => {
-        if (this.src.includes("/media/portrait-layer.jpg?variant=tiny")) decodedTiny++;
+        if (this.src.includes("/media/portrait-layer.jpg?variant=avatar")) decodedTiny++;
       });
     };
     const photographedPhases = new Set<string>();
@@ -176,7 +176,7 @@ test("distant portraits load only the current view and cancel decoded work when 
     Object.assign(window, { __viewportPortraits: state });
     const draw = CanvasRenderingContext2D.prototype.drawImage;
     CanvasRenderingContext2D.prototype.drawImage = function (image: CanvasImageSource, ...args: number[]) {
-      if (this.canvas.width === 48 && image instanceof HTMLImageElement && image.src.includes("variant=tiny"))
+      if (this.canvas.width === 96 && image instanceof HTMLImageElement && image.src.includes("variant=avatar"))
         state.previews++;
       return Reflect.apply(draw, this, [image, ...args]);
     };
@@ -188,13 +188,13 @@ test("distant portraits load only the current view and cancel decoded work when 
   const gate = new Promise<void>((resolve) => { release = resolve; });
   await page.route("**/media/portrait-layer-*.jpg?variant=*", async (route) => {
     const url = new URL(route.request().url());
-    const tiny = url.searchParams.get("variant") === "tiny";
+    const tiny = url.searchParams.get("variant") === "avatar";
     if (tiny) {
       tinyRequests.push(url.pathname);
       await gate;
     }
     try {
-      await route.fulfill({ contentType: "image/jpeg", body: images.get(tiny ? "viewport-tiny" : "viewport-thumb")! });
+      await route.fulfill({ contentType: "image/jpeg", body: images.get(tiny ? "viewport-avatar" : "viewport-thumb")! });
     } catch (error) {
       // The test deliberately aborts these requests before releasing replies.
       if (!tiny) throw error;
@@ -275,7 +275,7 @@ for (const count of [180, 1000]) {
       const sources = new Set<HTMLCanvasElement>();
       CanvasRenderingContext2D.prototype.drawImage = function (image: CanvasImageSource, ...args: number[]) {
         if (this.canvas.classList.contains("tree-distant-portraits") &&
-          image instanceof HTMLCanvasElement && image.width === 48)
+          image instanceof HTMLCanvasElement && image.width === 96)
           sources.add(image);
         return Reflect.apply(draw, this, [image, ...args]);
       };

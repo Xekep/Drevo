@@ -123,12 +123,12 @@ test("the distant portrait layer recovers from one transient tiny response", asy
   const images = await renderPortraits(["distant"]);
   let tinyRequests = 0;
   await page.route("**/media/distant-transient.jpg?variant=*", (route) => {
-    const tiny = new URL(route.request().url()).searchParams.get("variant") === "tiny";
+    const tiny = new URL(route.request().url()).searchParams.get("variant") === "avatar";
     if (tiny && ++tinyRequests === 1)
       return route.fulfill({ status: 503, contentType: "application/json",
         headers: { "Cache-Control": "no-store" }, body: '{"error":"retry"}' });
     return route.fulfill({ contentType: "image/jpeg",
-      body: images.get(tiny ? "distant-tiny" : "distant-thumb")! });
+      body: images.get(tiny ? "distant-avatar" : "distant-thumb")! });
   });
   await page.goto("/tree");
   await expect.poll(() => tinyRequests, { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
@@ -164,10 +164,10 @@ test("stalled distant portraits release their slots for later visible faces", as
     data.user.personId = null;
     await route.fulfill({ response, json: data });
   });
-  const image = (await renderPortraits(["distant-stall"])).get("distant-stall-tiny")!;
+  const image = (await renderPortraits(["distant-stall"])).get("distant-stall-avatar")!;
   const held: Array<() => Promise<void>> = [];
   let requests = 0;
-  await page.route("**/media/portrait-stall-*.jpg?variant=tiny*", async (route) => {
+  await page.route("**/media/portrait-stall-*.jpg?variant=avatar*", async (route) => {
     requests++;
     if (requests <= 12) {
       await new Promise<void>((resolve) => {

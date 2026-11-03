@@ -244,7 +244,8 @@ async function main() {
   let timeoutMs = 300_000;
   let reportPath = join(
     root,
-    "outputs",
+    "tests",
+    ".artifacts",
     "unit-tests",
     `${Date.now()}-${process.pid}`,
     "report.json",

@@ -157,8 +157,7 @@ export function jointFamilyMoves(geometry: TreeGeometry, size: TreeNodeSize) {
   return moves;
 }
 
-/** Fewer crossings may trade a small average offset for better worst-case
- * alignment, but never overlaps, extra card hits, interleavings or long detours. */
+/** Fewer crossings must preserve family alignment as well as safe routing. */
 export function preferJointFamilyLayout(
   candidate: TreeGeometry,
   current: TreeGeometry,
@@ -181,8 +180,8 @@ export function preferJointFamilyLayout(
   return (
     next.interleavings <= before.interleavings &&
     next.maxOffset <= before.maxOffset + 0.01 &&
-    next.offset <= before.offset * 1.05 + size.width / 10 &&
-    next.single <= before.single * 1.1 + size.width / 10 &&
+    next.offset <= before.offset + 0.01 &&
+    next.single <= before.single + 0.01 &&
     next.lineageDrift <= before.lineageDrift + 0.01 &&
     next.lineageSpan <= before.lineageSpan + 0.01
   );

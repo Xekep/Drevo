@@ -26,6 +26,7 @@ export async function renderPortraits(ids: readonly string[]) {
       }
     for (const [variant, width, quality] of [
       ["tiny", 48, 45],
+      ["avatar", 128, 76],
       ["thumb", 400, 76],
     ] as const) {
       images.set(
