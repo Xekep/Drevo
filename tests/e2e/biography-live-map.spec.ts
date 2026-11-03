@@ -271,3 +271,69 @@ test("expanded life editor cancels and applies GeoJSON source drafts explicitly"
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   expect(read()).toBe(source + " дополнено");
 });
+
+test("large GeoJSON with unlocated records folds promptly, stays responsive and opens a map", async ({
+  page,
+}, info) => {
+  const imported = {
+    type: "FeatureCollection",
+    name: "Большой исторический маршрут",
+    metadata: { note: "Исходные сведения сохраняются целиком" },
+    features: Array.from({ length: 97 }, (_, i) => ({
+      type: "Feature",
+      id: `record-${i}`,
+      properties: {
+        name: `Пункт ${i}`,
+        date: "1942",
+        description: "Описание события и основания привязки. ".repeat(10),
+        source_urls: ["https://example.org/archive/document?reference=12345"],
+      },
+      geometry:
+        i < 19
+          ? null
+          : { type: "Point", coordinates: [30 + i / 10, 50 + i / 20] },
+    })),
+  };
+  const raw = JSON.stringify(imported, null, 2);
+  expect(raw.length).toBeGreaterThan(60_000);
+  expect(raw.length).toBeLessThan(100_000);
+  const read = await setup(page, "До карты"),
+    editor = await edit(page),
+    content = editor.locator(".cm-content");
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await content.click();
+  await content.press("Control+End");
+  const pasteStart = Date.now();
+  await pasteMap(content, raw);
+  const icon = editor.getByRole("button", {
+    name: "Показать GeoJSON: Большой исторический маршрут",
+  });
+  await expect(icon).toBeVisible({ timeout: 3000 });
+  const pasteMs = Date.now() - pasteStart;
+  await expect(editor.locator(".leaflet-container")).toHaveCount(0);
+  await icon.click();
+  await expect(icon).toHaveCount(0);
+  // Moving within the expanded source must not reparse the entire Markdown
+  // and GeoJSON document for every selection update.
+  const cursorStart = Date.now();
+  for (let i = 0; i < 30; i++) await page.keyboard.press("ArrowDown");
+  const cursorMs = Date.now() - cursorStart;
+  expect(cursorMs).toBeLessThan(3000);
+  await content.press("Control+End");
+  await expect(icon).toBeVisible();
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  expect(read()).toBe("До карты\n\n```geojson\n" + raw + "\n```\n\n");
+  await page.locator(".inspector-dock .biography-map-mini").click();
+  const workspace = page.getByRole("region", { name: "Карта из биографии" });
+  await expect(workspace.locator(".leaflet-interactive")).toHaveCount(78);
+  await workspace.getByText("Точки маршрута", { exact: true }).click();
+  await expect(
+    workspace.getByText("Место не привязано к карте", { exact: true }),
+  ).toHaveCount(19);
+  expect(errors).toEqual([]);
+  await info.attach("geojson-timing", {
+    body: JSON.stringify({ characters: raw.length, pasteMs, cursorMs }),
+    contentType: "application/json",
+  });
+});
