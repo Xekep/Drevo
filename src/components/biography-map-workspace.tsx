@@ -43,38 +43,40 @@ export default function BiographyMapWorkspace({
           {returnLabel}
         </button>
       </header>
-      {data.features.some(
-        (f) => !f.geometry || f.geometry.type === "Point",
-      ) && (
-        <details className="biography-map-points-list">
-          <summary>Точки маршрута</summary>
-          <ol>
-            {data.features
-              .filter((f) => !f.geometry || f.geometry.type === "Point")
-              .map((f, i) => (
-                <li key={i}>
-                  <strong>
-                    {String(
-                      f.properties.name ||
-                        f.properties.title ||
-                        `Точка ${i + 1}`,
+      <div className="biography-map-body">
+        {data.features.some(
+          (f) => !f.geometry || f.geometry.type === "Point",
+        ) && (
+          <details className="biography-map-points-list">
+            <summary>Точки маршрута</summary>
+            <ol>
+              {data.features
+                .filter((f) => !f.geometry || f.geometry.type === "Point")
+                .map((f, i) => (
+                  <li key={i}>
+                    <strong>
+                      {String(
+                        f.properties.name ||
+                          f.properties.title ||
+                          `Точка ${i + 1}`,
+                      )}
+                    </strong>
+                    {!f.geometry && <span>Место не привязано к карте</span>}
+                    {typeof f.properties.date === "string" && (
+                      <span>{f.properties.date}</span>
                     )}
-                  </strong>
-                  {!f.geometry && <span>Место не привязано к карте</span>}
-                  {typeof f.properties.date === "string" && (
-                    <span>{f.properties.date}</span>
-                  )}
-                  {typeof f.properties.description === "string" && (
-                    <p>{f.properties.description}</p>
-                  )}
-                </li>
-              ))}
-          </ol>
-        </details>
-      )}
-      <Suspense fallback={<p role="status">Загрузка карты…</p>}>
-        <Surface data={data} />
-      </Suspense>
+                    {typeof f.properties.description === "string" && (
+                      <p>{f.properties.description}</p>
+                    )}
+                  </li>
+                ))}
+            </ol>
+          </details>
+        )}
+        <Suspense fallback={<p role="status">Загрузка карты…</p>}>
+          <Surface data={data} />
+        </Suspense>
+      </div>
     </section>
   );
 }

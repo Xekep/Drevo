@@ -105,11 +105,31 @@ test("a map replaces the tree, lists dated points and restores the same camera",
   await mini.click();
   const workspace = page.getByRole("region", { name: "Карта из биографии" });
   await expect(workspace).toBeVisible();
-  await expect(page.locator(".tree-view")).toHaveAttribute("inert", "");
+  await expect(page.locator(".tree-scene")).toHaveAttribute("inert", "");
+  await expect(page.locator(".tree-view")).not.toHaveAttribute("inert", "");
+  const inspector = page.locator(".inspector-dock");
+  await expect(inspector).toBeVisible();
+  await expect(inspector.locator(".person-edit-button")).toBeEnabled();
+  const mapBounds = await workspace.boundingBox(),
+    inspectorBounds = await inspector.boundingBox();
+  if (test.info().project.name === "desktop")
+    expect(mapBounds!.x + mapBounds!.width).toBeLessThanOrEqual(
+      inspectorBounds!.x + 1,
+    );
+  else
+    expect(mapBounds!.y + mapBounds!.height).toBeLessThanOrEqual(
+      inspectorBounds!.y + 1,
+    );
   await workspace.getByText("Точки маршрута", { exact: true }).click();
   await expect(workspace).toContainText("Первый пункт");
   await expect(workspace).toContainText("1943");
-  await expect(workspace.locator(".leaflet-interactive")).toHaveCount(3);
+  await expect(workspace.locator(".leaflet-marker-icon")).toHaveCount(2);
+  await expect(workspace.locator("path.leaflet-interactive")).toHaveCount(1);
+  await inspector.getByRole("tab", { name: /Обсуждение/ }).click();
+  await expect(workspace).toBeVisible();
+  await inspector
+    .getByRole("tab", { name: "О человеке", exact: true })
+    .click();
   await page.screenshot({ path: test.info().outputPath("map-workspace.png") });
   await page.keyboard.press("Escape");
   await expect(workspace).toHaveCount(0);
@@ -118,6 +138,112 @@ test("a map replaces the tree, lists dated points and restores the same camera",
     transform!,
   );
   await expect(mini).toBeVisible();
+});
+
+test("a map and the same person inspector remain available inside mobile fullscreen", async ({
+  page,
+}, info) => {
+  test.skip(
+    info.project.name !== "mobile",
+    "The flat-tree fullscreen control is mobile-only",
+  );
+  await setup(page, biographyMapBlock(routeMap));
+  await page
+    .getByRole("button", { name: "Закрыть панель", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Развернуть на весь экран", exact: true })
+    .click();
+  await expect(page.locator(".tree-canvas")).toHaveClass(/is-fullscreen/);
+  await page
+    .getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content")
+    .click();
+  await page.locator(".inspector-dock .biography-map-mini").click();
+  const workspace = page.getByRole("region", { name: "Карта из биографии" });
+  await expect(workspace).toBeVisible();
+  await expect(page.locator(".inspector-dock")).toBeVisible();
+  await expect(workspace.locator(".leaflet-marker-icon")).toHaveCount(2);
+  await workspace.getByRole("button", { name: "Вернуться к древу" }).click();
+  await expect(workspace).toHaveCount(0);
+  await expect(page.locator(".tree-scene")).not.toHaveAttribute("inert", "");
+  await expect(page.locator(".tree-canvas")).toBeVisible();
+});
+
+test("native markers stay anchored during zoom and long captions wrap in Leaflet tooltips", async ({
+  page,
+}, info) => {
+  const map = structuredClone(routeMap);
+  const title =
+    "Длинное название исторического места на границе нескольких областей";
+  const description =
+    "Подробное описание события и документальных свидетельств. ".repeat(60);
+  map.features[0].properties = { name: title, date: "1943-05-10", description };
+  await setup(page, biographyMapBlock(map));
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.locator(".inspector-dock .biography-map-mini").click();
+  const workspace = page.getByRole("region", { name: "Карта из биографии" });
+  const marker = workspace.locator(".leaflet-marker-icon").first();
+  await expect(marker).toBeVisible();
+  expect(
+    await marker.evaluate((image) => (image as HTMLImageElement).naturalWidth),
+  ).toBeGreaterThan(0);
+  await marker.hover();
+  const tooltip = workspace.locator(".leaflet-tooltip");
+  await expect(tooltip).toContainText(title);
+  await expect(tooltip).toContainText("1943-05-10");
+  await expect(tooltip).not.toContainText("Подробное описание");
+  const bounds = await tooltip.boundingBox();
+  expect(bounds!.width).toBeGreaterThan(160);
+  expect(bounds!.width).toBeLessThanOrEqual(281);
+  expect(bounds!.height).toBeLessThan(140);
+  await marker.click();
+  const popup = workspace.locator(".leaflet-popup-content");
+  await expect(popup).toContainText(description.trim());
+  expect((await popup.boundingBox())!.height).toBeLessThanOrEqual(241);
+  await workspace.locator(".leaflet-popup-close-button").click();
+  // Compare the marker tip with the same geographic coordinate projected
+  // through a real tile element, throughout the native zoom transition.
+  const samples = await workspace.evaluate(async (root) => {
+    const frames: { error: number; width: number; x: number }[] = [];
+    const start = performance.now();
+    (root.querySelector(".leaflet-control-zoom-in") as HTMLElement).click();
+    while (performance.now() - start < 450) {
+      await new Promise(requestAnimationFrame);
+      const marker = root
+        .querySelector(".leaflet-marker-icon")!
+        .getBoundingClientRect();
+      const tile = root.querySelector("img.leaflet-tile") as HTMLImageElement;
+      const match = new URL(tile.src).pathname.match(
+        /\/(\d+)\/(\d+)\/(\d+)\.png$/,
+      )!;
+      const [z, tx, ty] = match.slice(1).map(Number),
+        box = tile.getBoundingClientRect();
+      const world = 2 ** z,
+        lat = (50 * Math.PI) / 180;
+      const x = box.left + (((30 + 180) / 360) * world - tx) * box.width;
+      const y =
+        box.top +
+        (((1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2) *
+          world -
+          ty) *
+          box.height;
+      frames.push({
+        error: Math.hypot(marker.left + 12 - x, marker.bottom - y),
+        width: marker.width,
+        x: marker.left,
+      });
+    }
+    return frames;
+  });
+  expect(samples.length).toBeGreaterThan(3);
+  expect(Math.max(...samples.map((s) => s.error))).toBeLessThan(4);
+  expect(samples.every((s) => Math.abs(s.width - 25) < 0.1)).toBe(true);
+  expect(Math.abs(samples.at(-1)!.x - samples[0].x)).toBeGreaterThan(5);
+  await info.attach("marker-zoom", {
+    body: JSON.stringify(samples),
+    contentType: "application/json",
+  });
 });
 
 async function pasteMap(content: ReturnType<Page["locator"]>, source: string) {
@@ -326,7 +452,7 @@ test("large GeoJSON with unlocated records folds promptly, stays responsive and 
   expect(read()).toBe("До карты\n\n```geojson\n" + raw + "\n```\n\n");
   await page.locator(".inspector-dock .biography-map-mini").click();
   const workspace = page.getByRole("region", { name: "Карта из биографии" });
-  await expect(workspace.locator(".leaflet-interactive")).toHaveCount(78);
+  await expect(workspace.locator(".leaflet-marker-icon")).toHaveCount(78);
   await workspace.getByText("Точки маршрута", { exact: true }).click();
   await expect(
     workspace.getByText("Место не привязано к карте", { exact: true }),

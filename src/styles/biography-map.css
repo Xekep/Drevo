@@ -42,9 +42,32 @@
   background: #e5e8de;
 }
 .biography-map-label {
+  white-space: normal;
+  overflow-wrap: break-word;
+  font: 13px/1.45 var(--sans, sans-serif);
+  color: var(--ink);
+}
+.biography-map-label strong,
+.biography-map-label span {
+  display: block;
+}
+.biography-map-label span {
+  color: var(--muted);
+  margin-top: 3px;
+}
+.biography-map-label p {
+  margin: 8px 0 0;
   white-space: pre-line;
-  max-width: 280px;
-  overflow-wrap: anywhere;
+}
+.leaflet-tooltip.biography-map-tooltip {
+  width: max-content;
+  max-width: min(280px, calc(100vw - 48px));
+  white-space: normal;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+.biography-map-popup .leaflet-popup-content {
+  max-width: calc(100vw - 72px);
 }
 .biography-map-workspace {
   position: absolute;
@@ -73,7 +96,7 @@
 }
 .biography-map-points-list {
   position: absolute;
-  top: 65px;
+  top: 12px;
   right: 12px;
   z-index: 1001;
   max-width: min(300px, 85%);
@@ -94,9 +117,37 @@
   display: block;
   color: var(--muted);
 }
-.biography-map-workspace .biography-map-surface {
+.biography-map-body {
+  position: relative;
   flex: 1;
   min-height: 0;
+}
+.biography-map-body .biography-map-surface {
+  min-height: 0;
+}
+.tree-view:has(.tree-canvas.is-fullscreen) > .biography-map-workspace {
+  display: flex;
+  position: fixed;
+  z-index: 1001;
+}
+@media (min-width: 900px) {
+  .tree-view:has(> .inspector-dock) > .biography-map-workspace {
+    right: var(--inspector-width, 332px);
+  }
+}
+@media (max-width: 899px) {
+  .tree-view:has(> .inspector-dock) > .biography-map-workspace {
+    bottom: 44dvh;
+  }
+  .biography-map-workspace header {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+  .biography-map-workspace header h2 {
+    font-size: 14px;
+    max-height: 4.3em;
+    overflow: auto;
+  }
 }
 .biography-editor .cm-scroller {
   min-height: 130px;

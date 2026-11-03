@@ -343,7 +343,8 @@
   position: absolute;
   inset: 0;
 }
-.tree-view.is-hidden {
+.tree-view.is-hidden,
+.tree-scene.is-hidden {
   /* React Flow задаёт своим узлам visibility: visible; прозрачность скрывает весь слой. */
   opacity: 0;
   visibility: hidden;
@@ -2408,7 +2409,8 @@
 /* CSS viewport mode also works when native fullscreen is unavailable. */
 .archive-app:has(.tree-canvas.is-fullscreen) .archive-header,
 .archive-app:has(.tree-canvas.is-fullscreen) .archive-loading-details,
-.tree-view:has(.tree-canvas.is-fullscreen) > :not(.tree-canvas) {
+.tree-view:has(.tree-canvas.is-fullscreen) > :not(.tree-canvas, .tree-scene),
+.tree-scene:has(.tree-canvas.is-fullscreen) > :not(.tree-canvas) {
   display: none;
 }
 .archive-workspace .tree-canvas.is-fullscreen,
