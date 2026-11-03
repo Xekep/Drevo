@@ -524,7 +524,7 @@ export async function aiRuntimeConfig(
   >,
   role?: Role,
 ) {
-  // TODO(remove): R7.2 in docs/roadmap.md. Migrate legacy inherited role
+  // TODO(remove): R7.2 in docs/engineering/roadmap.md. Migrate legacy inherited role
   // profiles to explicit settings before removing their common defaults.
   const common = await settings.read(),
     profile = role ? common.roleProfiles[role] : null,

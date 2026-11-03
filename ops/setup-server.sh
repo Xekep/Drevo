@@ -35,4 +35,4 @@ chmod 755 /usr/local/sbin/drevo-service-restart
 echo 'deploy ALL=(root) NOPASSWD: /usr/local/sbin/drevo-service-restart ""' > /etc/sudoers.d/drevo-deploy
 chmod 440 /etc/sudoers.d/drevo-deploy
 visudo -cf /etc/sudoers.d/drevo-deploy
-echo 'Каталог Древа и Node.js готовы. Установите unit, /etc/drevo.env и конфигурацию Nginx согласно docs/deployment.md.'
+echo 'Каталог Древа и Node.js готовы. Установите unit, /etc/drevo.env и конфигурацию Nginx согласно docs/engineering/deployment.md.'

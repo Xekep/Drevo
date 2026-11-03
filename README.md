@@ -50,9 +50,11 @@ npm run dev
 
 ## Документация
 
-- [Как вести архив](docs/usage.md)
-- [Архитектура и разработка](docs/architecture.md)
-- [API](docs/api.md)
-- [Установка на сервер](docs/deployment.md) и [пример окружения](.env.example)
-- [Бэкапы и восстановление](docs/backup.md)
-- [Переход сервера на Node.js 26](docs/node-26-migration.md)
+[Указатель: для инженера и для агента](docs/README.md).
+
+- [Как вести архив](docs/engineering/usage.md)
+- [Архитектура и разработка](docs/engineering/architecture.md)
+- [API](docs/engineering/api.md)
+- [Установка на сервер](docs/engineering/deployment.md) и [пример окружения](.env.example)
+- [Бэкапы и восстановление](docs/engineering/backup.md)
+- [Переход сервера на Node.js 26](docs/engineering/node-26-migration.md)
