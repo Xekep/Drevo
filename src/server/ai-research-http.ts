@@ -1859,17 +1859,19 @@ export function aiResearchHttp({
             files: result.files,
             generatedFileMeta: generatedFiles.metadata(result.files),
           });
-          const latestFamily = (await archive.read()).family;
-          const accessiblePeople = new Set(
-            (isScopedUser(user)
-              ? projectFamilyForUser(latestFamily, user)
-              : latestFamily
-            ).people.map((person) => person.id),
-          );
-          const currentPeople = result.references
+          const referencedIds = result.references
             .filter((item) => item.kind === "person")
-            .map((item) => item.id)
-            .filter((id) => accessiblePeople.has(id));
+            .map((item) => item.id);
+          const candidates = [...new Set([...referencedIds, ...chat.sessionState.activePersonIds])];
+          // Finalization owns the archive lock, but needs only person existence
+          // and visibility, never the full graph with biographies and albums.
+          const accessiblePeople = isScopedUser(user)
+            ? await visibleIds(user)
+            : new Set((candidates.length ? await archive.db.prepare(
+                "SELECT id FROM people WHERE id IN (SELECT value FROM json_each(?))",
+                "SELECT id FROM people WHERE id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))",
+              ).all(JSON.stringify(candidates)) : []).map(row => String(row.id)));
+          const currentPeople = referencedIds.filter((id) => accessiblePeople.has(id));
           // A new subject replaces the previous subject set. Accumulating every
           // person mentioned in a chat biases later pronouns toward stale people.
           const activeIds = [...new Set(currentPeople.length

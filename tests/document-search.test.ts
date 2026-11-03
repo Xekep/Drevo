@@ -6,11 +6,44 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
 import { documentSearchText } from "../src/shared/document-details.ts";
+import { documentSearchPeople } from "../src/server/document-search-query.ts";
+import { storeDatabase } from "../src/server/store-database.ts";
 import {
   rankedSearchIds,
   searchDocuments,
   searchPeople,
 } from "./fixtures/document-search.ts";
+
+test("document name search transfers only name fields from linked cards", async () => {
+  const source = new DatabaseSync(":memory:");
+  source.exec("CREATE TABLE people(id TEXT PRIMARY KEY,data TEXT); CREATE TABLE document_people(document_id TEXT,person_id TEXT)");
+  source.prepare("INSERT INTO people VALUES (?,?)").run("linked", JSON.stringify({
+    id: "linked", name: "Семён", surname: "Чепчугов", patronymic: "Павлович",
+    biography: "Не участвует в поиске".repeat(10_000), events: [{ title: "Private event" }],
+  }));
+  source.prepare("INSERT INTO people VALUES (?,?)").run("unlinked", JSON.stringify({ id: "unlinked", name: "Другой" }));
+  source.exec("INSERT INTO document_people VALUES ('a','linked'),('b','linked')");
+  const db = storeDatabase(source);
+  const prepare = db.prepare;
+  let checked = false;
+  db.prepare = (...sql) => {
+    const statement = prepare(...sql);
+    return { ...statement, all: async (...args) => {
+      const rows = await statement.all(...args);
+      for (const row of rows)
+        assert.deepEqual(Object.keys(row).sort(), ["id", "name", "patronymic", "surname"],
+          "heavy JSON must not cross the database boundary");
+      checked = true;
+      return rows;
+    } };
+  };
+  try {
+    assert.deepEqual(await documentSearchPeople(db), [{
+      id: "linked", name: "Семён", surname: "Чепчугов", patronymic: "Павлович",
+    }]);
+    assert.equal(checked, true);
+  } finally { await db.close(); }
+});
 
 test("document search ranks all words before pagination without loading the full archive", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-document-search-"));

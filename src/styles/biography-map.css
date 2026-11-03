@@ -11,6 +11,12 @@
   cursor: pointer;
   background: #e5e8de;
 }
+/* Leaflet moves the native SVG with the tiles during a drag. Its old viewport
+   must not clip newly revealed segments; the map container still clips edges. */
+.biography-map-mini .leaflet-overlay-pane > svg,
+.biography-map-surface .leaflet-overlay-pane > svg {
+  overflow: visible;
+}
 .biography-map-mini:focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: -3px;
@@ -112,6 +118,20 @@
 }
 .biography-map-points-list li {
   margin: 8px 0;
+}
+.biography-map-point {
+  width: 100%;
+  padding: 6px;
+  text-align: left;
+  color: var(--accent);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.biography-map-point:disabled {
+  color: inherit;
+  cursor: default;
 }
 .biography-map-points-list li span {
   display: block;

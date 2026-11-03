@@ -72,8 +72,10 @@ export function archiveDetails<T extends ArchivePageHeader>(
     };
   };
   async function read(url: string, expectedVersion: number, init?: RequestInit) {
+    init?.signal?.throwIfAborted();
     const response = await request(url, init);
     const data = await response.json();
+    init?.signal?.throwIfAborted();
     if (expectedVersion !== version || response.status === 409)
       throw new DetailsChanged();
     if (response.status === 401 || response.status === 403)
@@ -87,12 +89,14 @@ export function archiveDetails<T extends ArchivePageHeader>(
     if (data.pageToken !== header.pageToken) throw new DetailsChanged();
     return data;
   }
-  async function refresh() {
+  async function refresh(signal?: AbortSignal) {
+    signal?.throwIfAborted();
     const expectedVersion = version;
     const fragment = header.fragment;
     const response = await request(`/api/family?projection=overview${fragment
-      ? `&fragment=auto&threshold=${fragment.threshold ?? 500}&anchor=${encodeURIComponent(fragment.anchorId)}` : ""}`);
+      ? `&fragment=auto&threshold=${fragment.threshold ?? 500}&anchor=${encodeURIComponent(fragment.anchorId)}` : ""}`, signal ? { signal } : undefined);
     const data = await response.json();
+    signal?.throwIfAborted();
     if (response.status === 401 || response.status === 403)
       throw new ArchiveDetailsAccessError(
         data.error || "Доступ к архиву изменился",
@@ -136,15 +140,17 @@ export function archiveDetails<T extends ArchivePageHeader>(
     projectionGeneration++;
     emit();
   }
-  function enqueue(work: () => Promise<void>, urgent = false) {
+  function enqueue(work: () => Promise<void>, urgent = false, signal?: AbortSignal) {
     const run = async () => {
+      signal?.throwIfAborted();
       try {
         await work();
       } catch (error) {
         if (!(error instanceof DetailsChanged)) throw error;
         // Refresh only the light graph. Never fall back to a full snapshot on
         // an ordinary card read, and never mix pages from different revisions.
-        await refresh();
+        signal?.throwIfAborted();
+        await refresh(signal);
         await work();
       }
     };
@@ -401,14 +407,15 @@ export function archiveDetails<T extends ArchivePageHeader>(
         }
       }, true);
     },
-    loadPeople(ids: string[]) {
+    loadPeople(ids: string[], signal?: AbortSignal) {
       return enqueue(async () => {
         // A profile includes its recorded relationships. Demand the complete
         // authorized skeleton before combining those details with the family.
-        await ensureOverview();
+        signal?.throwIfAborted();
+        await ensureOverview(signal);
         const known = new Set(header.family.people.map((p) => p.id));
         if (ids.some(id => !known.has(id))) {
-          await ensureOverview();
+          await ensureOverview(signal);
           header.family.people.forEach(person => known.add(person.id));
         }
         const needed = [...new Set(ids)].filter(
@@ -424,6 +431,7 @@ export function archiveDetails<T extends ArchivePageHeader>(
             const data = await read(
               `/api/family?projection=details&preview=1&ids=${encodeURIComponent(JSON.stringify(batch))}&offset=0&token=${encodeURIComponent(header.pageToken || "")}`,
               expectedVersion,
+              signal ? { signal } : undefined,
             );
             if (
               !Array.isArray(data.people) ||
@@ -464,7 +472,7 @@ export function archiveDetails<T extends ArchivePageHeader>(
             emit();
           }
         }
-      }, true);
+      }, true, signal);
     },
     loadCollections(collections: Array<"people" | "photos">, signal?: AbortSignal) {
       return enqueue(async () => {

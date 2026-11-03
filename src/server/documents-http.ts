@@ -80,6 +80,7 @@ import {
 } from "../shared/document-details.ts";
 import {
   documentSearchQuery,
+  documentSearchPeople,
   normalizeDocumentQuery,
 } from "./document-search-query.ts";
 
@@ -478,12 +479,20 @@ export function documentsHttp({
     user?.approved
       ? JSON.stringify([user.id, user.role, user.treeAccess, user.personId])
       : null;
-  const visible = async (req: IncomingMessage, includePeople = true) => {
+  const visible = async (req: IncomingMessage, includePeople: boolean | "ids" = true) => {
     const user = await auth.currentUser(req);
     const scope = accessScope(user);
     const scoped = isScopedUser(user);
     const snapshot =
-      scope && (scoped || includePeople) ? await archive.read() : null;
+      scope && includePeople !== "ids" && (scoped || includePeople) ? await archive.read() : null;
+    // File/range/304 delivery needs only access IDs. Read them and their revision
+    // in one SQL snapshot; the final delivery guard still rechecks that revision.
+    const minimal = scope && scoped && includePeople === "ids"
+      ? await db.transaction(async () => ({
+          revision: (await archive.meta()).revision,
+          ids: [...await archive.visibleIds(user)],
+        }), true)
+      : null;
     const family = snapshot
       ? scoped
         ? projectFamilyForUser(snapshot.family, user)
@@ -495,7 +504,7 @@ export function documentsHttp({
       userId: user?.id,
       scope,
       scoped,
-      revision: snapshot?.revision,
+      revision: minimal?.revision ?? snapshot?.revision,
       people,
       unions: family?.unions || [],
       links: family?.links || [],
@@ -509,7 +518,7 @@ export function documentsHttp({
               sources: claim.sources || [],
             })),
         ) || [],
-      ids: people.map((person) => person.id),
+      ids: minimal?.ids ?? people.map((person) => person.id),
     };
   };
   const accessStillCurrent = async (
@@ -546,20 +555,6 @@ export function documentsHttp({
         ).values(),
       ],
     };
-  };
-  const documentPeople = async () => {
-    const rows = await db
-      .prepare(
-        "SELECT p.id,p.data FROM (SELECT DISTINCT person_id FROM document_people) dp JOIN people p ON p.id=dp.person_id",
-        "SELECT p.id,p.data FROM (SELECT DISTINCT person_id FROM document_people) dp JOIN people p ON p.id=dp.person_id",
-      )
-      .all();
-    return rows.map(
-      (row) =>
-        (typeof row.data === "string"
-          ? JSON.parse(row.data)
-          : row.data) as Person,
-    );
   };
   const referencedByCatalog = (documentId: string) =>
     sourceCatalogStore(db).usesDocument(documentId);
@@ -987,7 +982,7 @@ export function documentsHttp({
       const search = query
         ? documentSearchQuery(
             query,
-            access.scoped ? access.people : await documentPeople(),
+            access.scoped ? access.people : await documentSearchPeople(db),
             db.kind,
           )
         : null;
@@ -1822,7 +1817,7 @@ export function documentsHttp({
       const fileType = storedDocumentFileType(row.file_name);
       if (!fileType)
         return json(res, 404, { error: "Файл документа не найден" });
-      const access = await visible(req, false);
+      const access = await visible(req, "ids");
       if (
         !canSee(access, row, (await associations([row.id])).get(row.id) || [])
       )

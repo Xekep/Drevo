@@ -1,5 +1,25 @@
 import { fullName } from "../domain/index.ts";
 import type { Person } from "../domain/types.ts";
+import type { StoreDatabase } from "./store-database.ts";
+
+type SearchPerson = Pick<Person, "id" | "name" | "surname" | "patronymic">;
+
+/** Names are sufficient for catalogue search; never transfer whole biographies. */
+export async function documentSearchPeople(db: Pick<StoreDatabase, "prepare">): Promise<SearchPerson[]> {
+  const rows = await db.prepare(
+    `SELECT p.id,json_extract(p.data,'$.name') AS name,
+      json_extract(p.data,'$.surname') AS surname,
+      json_extract(p.data,'$.patronymic') AS patronymic
+     FROM (SELECT DISTINCT person_id FROM document_people) dp JOIN people p ON p.id=dp.person_id`,
+    `SELECT p.id,p.data->>'name' AS name,p.data->>'surname' AS surname,
+      p.data->>'patronymic' AS patronymic
+     FROM (SELECT DISTINCT person_id FROM document_people) dp JOIN people p ON p.id=dp.person_id`,
+  ).all();
+  return rows.map(row => ({
+    id: String(row.id), name: String(row.name ?? ""),
+    surname: String(row.surname ?? ""), patronymic: String(row.patronymic ?? ""),
+  }));
+}
 
 export function normalizeDocumentQuery(value: string): string {
   return value
@@ -12,7 +32,7 @@ export function normalizeDocumentQuery(value: string): string {
 /** Keep filtering and relevance ahead of SQL pagination on both databases. */
 export function documentSearchQuery(
   query: string,
-  people: Person[],
+  people: SearchPerson[],
   kind: "sqlite" | "postgres",
 ) {
   const terms = [...new Set(query.split(" "))];
