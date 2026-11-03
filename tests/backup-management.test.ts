@@ -101,7 +101,7 @@ test("full managed copy includes database, files and encryption key; count reten
       assert.equal(
         (await f.manager.status(actor.id)).job?.state,
         "succeeded",
-        (await f.manager.status(actor.id)).job?.error,
+        (await f.manager.status(actor.id)).job?.error ?? "Backup did not complete",
       );
       f.advance(1);
     }

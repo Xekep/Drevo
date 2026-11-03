@@ -32,7 +32,7 @@ process.on("message", (message) => {
     } finally {
       store.close();
       await db.close();
-      process.disconnect();
+      process.disconnect?.();
     }
   })();
 });

@@ -70,7 +70,7 @@ test("manual tree copies pin only selected originals, scrub credentials, never s
     await assert.rejects(backups.startCreate(owner, true));
     for (let i = 0; i < 6; i++) { await backups.startCreate(owner); await backups.idle(); }
     const status = await backups.status(owner.id);
-    assert.equal(status.job?.state, "succeeded", status.job?.error);
+    assert.equal(status.job?.state, "succeeded", status.job?.error ?? "Backup did not complete");
     assert.equal(status.total, 5);
     await backups.withFile(status.records[0].id, async (file) => {
       const entries = execFileSync("tar", ["-tzf", file], { encoding: "utf8" });
@@ -123,7 +123,7 @@ test("platform native SQLite copy includes keys and originals, has a distinct ca
   try {
     await backups.startCreate(); await backups.idle();
     const status = await backups.status();
-    assert.equal(status.job?.state, "succeeded", status.job?.error);
+    assert.equal(status.job?.state, "succeeded", status.job?.error ?? "Backup did not complete");
     assert.equal(status.total, 1); assert.match(status.records[0].name, /^platform-/);
     await backups.withFile(status.records[0].id, async (file) => {
       const restored = join(f.root, "isolated-recovery"); await mkdir(restored);

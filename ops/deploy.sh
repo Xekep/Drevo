@@ -7,6 +7,13 @@ release="$base/releases/$release_id"
 test -f "$release/dist/index.html"
 test -f "$release/src/server/index.ts"
 test -f "$release/release.json"
+test -f "$release/.nvmrc"
+required_node=$(tr -d '\r\n' < "$release/.nvmrc")
+actual_node=$(/opt/drevo-node/bin/node -p 'process.versions.node')
+if test "$actual_node" != "$required_node"; then
+  echo "Node.js $required_node is required; /opt/drevo-node provides $actual_node. Update the runtime before deployment." >&2
+  exit 1
+fi
 exec 9>"$base/deploy.lock"
 flock -w 120 9
 previous=$(readlink -f "$base/current" || true)
