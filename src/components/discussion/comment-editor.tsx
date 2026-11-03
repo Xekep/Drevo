@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -11,8 +11,10 @@ import { livePreview, previewFocus } from "./live-preview";
 import "katex/dist/katex.min.css";
 import { GitBranch } from "lucide-react";
 import { commentDiagramTemplate } from "./diagram-template";
-import { biographyLivePreview } from "../biography-live-preview";
-import type { BiographyMapActions } from "../biography-map-preview";
+import {
+  biographyLivePreview,
+  pasteBiographyMap,
+} from "../biography-live-preview";
 
 type Props = {
   value: string;
@@ -24,10 +26,8 @@ type Props = {
   selectionOnMount?: { anchor: number; head: number };
   placeholder?: string;
   className?: string;
-  tools?: ReactNode;
   biography?: boolean;
   loadOnMount?: boolean;
-  mapActions?: BiographyMapActions;
 };
 
 export default function CommentEditor(props: Props) {
@@ -52,14 +52,7 @@ export default function CommentEditor(props: Props) {
           markdown({ base: markdownLanguage, completeHTMLTags: false }),
           history(),
           syntaxHighlighting(defaultHighlightStyle),
-          current.biography
-            ? biographyLivePreview({
-                onOpen: (source) =>
-                  callbacks.current.mapActions?.onOpen(source),
-                onEdit: (source, range) =>
-                  callbacks.current.mapActions?.onEdit?.(source, range),
-              })
-            : livePreview,
+          current.biography ? biographyLivePreview() : livePreview,
           EditorView.lineWrapping,
           readonly.current.of([
             EditorState.readOnly.of(!!current.disabled),
@@ -89,6 +82,10 @@ export default function CommentEditor(props: Props) {
               callbacks.current.onChange(update.state.doc.toString());
           }),
           EditorView.domEventHandlers({
+            paste: (event, editor) =>
+              !!callbacks.current.biography &&
+              !callbacks.current.disabled &&
+              pasteBiographyMap(event, editor),
             focus: (_event, editor) => {
               editor.dispatch({ effects: previewFocus.of(true) });
             },
@@ -123,7 +120,6 @@ export default function CommentEditor(props: Props) {
   }, [props.disabled]);
   return (
     <div className={`comment-editor ${props.className || ""}`}>
-      {props.tools}
       {!props.biography && (
         <button
           type="button"

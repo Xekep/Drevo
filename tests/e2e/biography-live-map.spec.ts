@@ -120,140 +120,123 @@ test("a map replaces the tree, lists dated points and restores the same camera",
   await expect(mini).toBeVisible();
 });
 
-test("the visual map editor adds, reorders and saves a route inside the biography", async ({
+async function pasteMap(content: ReturnType<Page["locator"]>, source: string) {
+  await content.evaluate((node, text) => {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData("text/plain", text);
+    node.dispatchEvent(
+      new ClipboardEvent("paste", {
+        clipboardData,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }, source);
+}
+
+test("raw GeoJSON paste folds to an icon, source editing preserves metadata and saves a mini-map", async ({
   page,
-}) => {
+}, info) => {
   const read = await setup(page, "Воспоминания"),
     editor = await edit(page);
-  await editor.getByRole("button", { name: "Добавить карту" }).click();
-  const dialog = page.getByRole("dialog", { name: "Карта жизни", exact: true });
-  await dialog.getByLabel("Название карты").fill("Путь домой");
-  await dialog.getByLabel("Соединить точки по порядку").check();
-  for (const [lat, lon] of [
-    [50, 30],
-    [52, 32],
-  ]) {
-    await dialog.getByLabel("Широта", { exact: true }).fill(String(lat));
-    await dialog.getByLabel("Долгота", { exact: true }).fill(String(lon));
-    await dialog
-      .getByRole("button", { name: "Добавить точку", exact: true })
-      .click();
-  }
-  await dialog.getByLabel("Название точки 1").fill("Начало");
-  await dialog.getByLabel("Дата точки 1").fill("1943");
-  await dialog.locator(".biography-map-surface").scrollIntoViewIfNeeded();
-  await page.screenshot({ path: test.info().outputPath("map-editor.png") });
-  await dialog
-    .getByRole("button", { name: "Поднять точку 2", exact: true })
-    .click();
-  await dialog.getByRole("button", { name: "Готово", exact: true }).click();
-  await expect(editor.locator(".biography-map-mini")).toBeVisible();
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
-  const saved = JSON.parse(
-    read().split("```geojson\n")[1].split("\n```")[0],
-  ) as BiographyMap;
-  expect(saved.name).toBe("Путь домой");
-  expect(saved.features[1].properties).toMatchObject({
-    name: "Начало",
-    date: "1943",
-  });
-  expect(saved.features.at(-1)!.geometry).toEqual({
-    type: "LineString",
-    coordinates: [
-      [32, 52],
-      [30, 50],
-    ],
-  });
-  expect(read().startsWith("Воспоминания\n\n")).toBe(true);
-});
-
-test("editing a repeated map changes the selected block and malformed imports retain the draft", async ({
-  page,
-}) => {
-  const block = biographyMapBlock(routeMap),
-    read = await setup(page, block + "\n\nМежду картами\n\n" + block);
-  const editor = await edit(page);
-  await editor
-    .getByRole("button", { name: "Изменить карту", exact: true })
-    .nth(1)
-    .click();
-  const dialog = page.getByRole("dialog", { name: "Карта жизни", exact: true });
-  await dialog.getByLabel("Файл GeoJSON").setInputFiles({
-    name: "broken.geojson",
-    mimeType: "application/geo+json",
-    buffer: Buffer.from('{"type":"Point","coordinates":[0,91]}'),
-  });
-  await expect(dialog.getByRole("alert")).toContainText("Координаты");
-  await dialog.getByLabel("Название карты").fill("Вторая карта");
-  await dialog.getByRole("button", { name: "Готово", exact: true }).click();
-  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
-  expect(read().startsWith(block + "\n\nМежду картами")).toBe(true);
-  expect(read().match(/Вторая карта/g)).toHaveLength(1);
-});
-
-test("map clicks create points, cancelling retains biography and imported metadata survives", async ({
-  page,
-}) => {
-  const read = await setup(page, "Исходная история"),
-    editor = await edit(page);
-  await editor.getByRole("button", { name: "Добавить карту" }).click();
-  const dialog = page.getByRole("dialog", { name: "Карта жизни", exact: true });
-  await expect(dialog.locator(".leaflet-container")).toBeVisible();
-  await dialog
-    .locator(".biography-map-surface")
-    .click({ position: { x: 100, y: 120 } });
-  await expect(dialog.getByLabel("Название точки 1")).toHaveValue("Точка 1");
-  page.once("dialog", (d) => d.accept());
-  await dialog.getByRole("button", { name: "Отмена", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect(editor.locator(".biography-map-mini")).toHaveCount(0);
-  expect(read()).toBe("Исходная история");
-  await editor.getByRole("button", { name: "Добавить карту" }).click();
+  await expect(
+    editor.getByRole("button", { name: "Добавить карту" }),
+  ).toHaveCount(0);
   const imported = structuredClone(routeMap);
   imported.features[0].id = "imported-1";
   imported.features[0].properties = {
     name: "<img src=x onerror=alert(1)>",
-    unit: "Полк",
     source: { page: 5 },
+    unit: "Полк",
   };
-  await dialog.getByLabel("Файл GeoJSON").setInputFiles({
-    name: "route.geojson",
-    mimeType: "application/geo+json",
-    buffer: Buffer.from(JSON.stringify(imported)),
+  const raw = JSON.stringify(imported, null, 2),
+    content = editor.locator(".cm-content");
+  await content.click();
+  await content.press("Control+End");
+  await pasteMap(content, raw);
+  const icon = editor.getByRole("button", {
+    name: "Показать GeoJSON: Боевой путь",
   });
-  await expect(dialog.getByLabel("Название точки 1")).toHaveValue(
-    "<img src=x onerror=alert(1)>",
-  );
-  await dialog.getByLabel("Название карты").fill("Импортированный путь");
-  await dialog.getByRole("button", { name: "Готово", exact: true }).click();
+  await expect(icon).toBeVisible();
+  await expect(
+    editor.locator(".biography-map-mini, .leaflet-container"),
+  ).toHaveCount(0);
+  await content.press("Control+z");
+  await expect(icon).toHaveCount(0);
+  await content.press("Control+y");
+  await expect(icon).toBeVisible();
+  await icon.click();
+  await expect(content).toContainText('"FeatureCollection"');
+  await expect(icon).toHaveCount(0);
+  await editor.locator(".cm-line").filter({ hasText: "Воспоминания" }).click();
+  await expect(icon).toBeVisible();
+  await page.screenshot({ path: info.outputPath("geojson-source-icon.png") });
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
-  const saved = JSON.parse(
-    read().split("```geojson\n")[1].split("\n```")[0],
-  ) as BiographyMap;
-  expect(saved.features).toEqual(imported.features);
-  await page.locator(".inspector-dock .biography-map-mini").click();
+  expect(read()).toBe("Воспоминания\n\n```geojson\n" + raw + "\n```\n\n");
+  const mini = page.locator(".inspector-dock .biography-map-mini");
+  await expect(mini).toBeVisible();
+  await mini.click();
   const workspace = page.getByRole("region", { name: "Карта из биографии" });
   await workspace.getByText("Точки маршрута", { exact: true }).click();
   await expect(workspace).toContainText("<img src=x onerror=alert(1)>");
   await expect(workspace.locator("img[onerror]")).toHaveCount(0);
 });
 
-test("malformed map blocks can be reopened as Markdown source", async ({
+test("repeated map icons reveal the selected block and keyboard editing changes only that map", async ({
   page,
 }) => {
-  const source = "```geojson\n{broken}\n```";
-  const read = await setup(page, source),
-    editor = await edit(page);
-  await editor.getByRole("button", { name: "Исправить код карты" }).click();
-  await expect(editor.locator(".cm-content")).toContainText("{broken}");
+  const block = biographyMapBlock(routeMap),
+    read = await setup(page, block + "\n\nМежду картами\n\n" + block);
+  const editor = await edit(page),
+    icons = editor.getByRole("button", {
+      name: "Показать GeoJSON: Боевой путь",
+    });
+  await expect(icons).toHaveCount(2);
+  await icons.nth(1).focus();
+  await icons.nth(1).press("Enter");
+  const name = editor
+    .locator(".cm-line")
+    .filter({ hasText: '"name": "Боевой путь"' });
+  await expect(name).toHaveCount(1);
+  await name.click();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Shift+End");
+  await page.keyboard.insertText('"name": "Вторая карта",');
+  await editor.locator(".cm-line").filter({ hasText: "Между картами" }).click();
   await expect(
-    editor.getByRole("button", { name: "Исправить код карты" }),
-  ).toHaveCount(0);
+    editor.getByRole("button", { name: "Показать GeoJSON: Вторая карта" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
-  expect(read()).toBe(source);
+  expect(read()).toBe(
+    block +
+      "\n\nМежду картами\n\n" +
+      block.replace("Боевой путь", "Вторая карта"),
+  );
 });
 
-test("the expanded life editor cancels its nested map draft and applies Markdown explicitly", async ({
+test("malformed GeoJSON stays editable and fixing it folds it without losing source", async ({
+  page,
+}) => {
+  const source = "До карты\n\n```geojson\n{broken}\n```\n\nПосле карты";
+  const read = await setup(page, source),
+    editor = await edit(page),
+    content = editor.locator(".cm-content");
+  await expect(editor.locator(".biography-map-source")).toHaveCount(0);
+  const broken = editor.locator(".cm-line").filter({ hasText: "{broken}" });
+  await broken.click();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Shift+End");
+  const raw = JSON.stringify({ type: "Point", coordinates: [30, 50] });
+  await pasteMap(content, raw); // Inside the existing fence: do not add a second fence.
+  await editor.locator(".cm-line").filter({ hasText: "После карты" }).click();
+  await expect(
+    editor.getByRole("button", { name: "Показать GeoJSON: Карта жизни" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  expect(read()).toBe(source.replace("{broken}", raw));
+});
+
+test("expanded life editor cancels and applies GeoJSON source drafts explicitly", async ({
   page,
 }) => {
   const source = "Исходная **биография**",
@@ -267,19 +250,18 @@ test("the expanded life editor cancels its nested map draft and applies Markdown
     name: "Жизнь и занятия",
     exact: true,
   });
-  await life.getByRole("button", { name: "Добавить карту" }).click();
-  const map = page.getByRole("dialog", { name: "Карта жизни", exact: true });
-  await map.getByLabel("Название карты").fill("Несохранённая карта");
-  await map.getByRole("button", { name: "Готово", exact: true }).click();
-  await expect(life.locator(".biography-map-mini")).toBeVisible();
+  const text = life.locator(".cm-content");
+  await text.click();
+  await text.press("Control+End");
+  await pasteMap(text, JSON.stringify(routeMap));
+  await expect(life.locator(".biography-map-source")).toBeVisible();
   page.once("dialog", (d) => d.accept());
   await life.getByRole("button", { name: "Отмена", exact: true }).click();
   await expect(life).toHaveCount(0);
   await expect(
-    page.locator(".biography-editor .biography-map-mini"),
+    page.locator(".biography-editor .biography-map-source"),
   ).toHaveCount(0);
   await expand.click();
-  const text = life.locator(".cm-content");
   await text.click();
   await text.press("Control+End");
   await text.press("End");

@@ -19,6 +19,7 @@ import type { FamilyLink } from "./types.ts";
 import { repairFamilyRoutes } from "./family-route-repair.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
+import { shortenFamilyRows } from "./family-row-shortening.ts";
 import { finishColdFamilyLayout, preferFamilyLayout, refineFinalCoupleOrder } from "./family-layout-candidates.ts";
 import { canUseFamilyLayoutHistory } from "./family-layout-history.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
@@ -1265,5 +1266,9 @@ export async function unionGeometry(
   best = optimizeJointFamilyOrder(best, people, links, size, finalScore);
   best = refineFinalCoupleOrder(best, people, links, size, finalScore);
   best = optimizeFinalFamilyBranches(best, people, links, size, finalScore);
-  return refineFinalCoupleOrder(best, people, links, size, finalScore);
+  best = refineFinalCoupleOrder(best, people, links, size, finalScore);
+  best = shortenFamilyRows(best, people, links, size, finalScore);
+  // Final moves can reroute one child away from its siblings. Share corridors
+  // after every placement pass, while preserving the accepted card positions.
+  return bundleFamilyBranches(best);
 }

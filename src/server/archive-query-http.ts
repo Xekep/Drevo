@@ -1,4 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createHash } from "node:crypto";
+import { layoutCacheKey, LAYOUT_CACHE_VERSION, SHARED_LAYOUT_MAX_PEOPLE } from "../domain/layout-cache-key.ts";
+import { projectTree } from "../domain/family-neighborhood.ts";
+import type { SharedTreeLayoutCache } from "./tree-layout-cache.ts";
 import { finished } from "node:stream/promises";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
@@ -41,6 +45,7 @@ import { DEFAULT_FRAGMENT_THRESHOLD, isFragmentThreshold } from "../domain/tree-
 import type { ArchiveTreeFragment } from "../shared/tree-fragment.ts";
 
 export function archiveQueryHttp({
+  treeLayouts,
   archive,
   auth,
   visibility,
@@ -51,6 +56,7 @@ export function archiveQueryHttp({
   preparation = preparationAdmission(),
   publicOrigin,
 }: {
+  treeLayouts?: SharedTreeLayoutCache;
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   visibility: Awaited<ReturnType<typeof settingsStore>>;
@@ -158,6 +164,7 @@ export function archiveQueryHttp({
       path !== "/api/people/search" &&
       path !== "/api/people/filter" &&
       path !== "/api/account/portrait" &&
+      path !== "/api/tree-layout" &&
       path !== "/api/research-resources" &&
       path !== "/api/export.json" &&
       path !== "/api/family" &&
@@ -173,6 +180,7 @@ export function archiveQueryHttp({
     const stableRevision =
       !!memberPreviewTarget(req) ||
       scoped ||
+      path === "/api/tree-layout" ||
       path === "/api/account/portrait" ||
       path === "/api/export" ||
       path === "/api/export.json" ||
@@ -301,6 +309,39 @@ export function archiveQueryHttp({
         });
       return valid || res.headersSent || res.destroyed ? true : changed();
     };
+
+    if (path === "/api/tree-layout") {
+      if (req.method !== "POST") return json(res, 405, { error: "Ожидается POST" });
+      if (!memberCanRead) return json(res, 401, { error: "Войдите для просмотра древа" });
+      if (!isSameOriginRequest(req, publicOrigin)) return json(res, 403, { error: "Недопустимый источник запроса" });
+      if (!treeLayouts) return deliverArchiveJson({ geometry: null });
+      try {
+        const body = await researchRequestBody(req, 128 * 1024);
+        if (body.version !== LAYOUT_CACHE_VERSION || typeof body.reverse !== "boolean" ||
+            typeof body.hash !== "string" || !/^[a-f0-9]{64}$/.test(body.hash) ||
+            !Array.isArray(body.people) || body.people.length < 2 || body.people.length > SHARED_LAYOUT_MAX_PEOPLE ||
+            body.people.some(id => typeof id !== "string" || !id || id.length > 128) ||
+            new Set(body.people).size !== body.people.length)
+          return json(res, 400, { error: "Некорректная конфигурация раскладки" });
+        const ids = body.people as string[], hash = body.hash, reverse = body.reverse;
+        return await withPreparation(req, res, preparation, 64 * 1024 ** 2, async signal => {
+          const data = await scopedSnapshot(visitor!);
+          signal.throwIfAborted();
+          const input = { ...projectTree(data.family, new Set(ids)), mode: "generations" as const, reverse };
+          // A cache key is not an access token. Reconstruct it only from the
+          // currently allowed server projection, never from uploaded geometry.
+          if (input.people.length !== ids.length ||
+              createHash("sha256").update(layoutCacheKey(input)).digest("hex") !== hash) return changed();
+          const geometry = await treeLayouts.readOrWarm(hash, input);
+          return deliverArchiveJson({ hash, geometry }, undefined, data.revision);
+        });
+      } catch (error) {
+        if (isInfrastructureError(error)) throw error;
+        if (error instanceof WorkQueueBusyError) return json(res, 503, { error: error.message });
+        if ((error as { code?: unknown })?.code) throw error;
+        return json(res, 400, { error: "Не удалось получить общую раскладку" });
+      }
+    }
 
     if (path === "/api/people/filter") {
       if (req.method !== "POST") return json(res, 405, { error: "Ожидается POST" });

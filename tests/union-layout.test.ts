@@ -44,6 +44,27 @@ const person = (
   spouses: string[] = [],
 ): LayoutPerson => ({ id, parents, spouses, birth: "" });
 
+test("cold layout reunites sibling corridors after the final family rearrangements", async () => {
+  const people = randomFamily(1, 2), snapshot = structuredClone(people);
+  for (const reverse of [false, true]) {
+    const geometry = await calculateUnions(people,
+      graph => new ELK({ algorithms: ["layered"] }).layout(graph), reverse, [], treeNodeSize());
+    verify(people, geometry);
+    // Both children belong to the same synthetic family. Final centering used
+    // to leave one route ten pixels above its card on a separate corridor.
+    const siblings = ["c-1-1", "c-1-2"].map(id =>
+      geometry.branches!.find(branch => branch.target === id && branch.id.startsWith("child:"))!);
+    assert.equal(siblings[0].union, siblings[1].union);
+    assert.deepEqual(siblings[0].route.points[0], siblings[1].route.points[0]);
+    const corridors = siblings.map(branch => branch.route.points.slice(1)
+      .filter((point, i) => point.y === branch.route.points[i].y && point.x !== branch.route.points[i].x)
+      .map(point => point.y));
+    assert.equal(corridors[0].length, 1);
+    assert.deepEqual(corridors[0], corridors[1], "siblings must leave the shared trunk on one corridor");
+  }
+  assert.deepEqual(people, snapshot);
+});
+
 test("asymmetric partner ancestry keeps siblings and their direct parents on the right floors", async () => {
   const people = [
     person("parent"),

@@ -7,6 +7,7 @@ import type { TaggedLayoutWorkerResponse } from "./layout-worker-protocol";
 import type { LayoutWorkerRequest } from "./layout-worker-protocol";
 import { createLayoutMemoryCache, layoutCacheKey } from "./layout-cache";
 import { readLayout, readLayoutHistory, writeLayout } from "./layout-storage";
+import { readSharedLayout } from "./shared-layout-cache";
 
 export function useTreeLayout(
   family: Family,
@@ -104,6 +105,7 @@ export function useTreeLayout(
           }
         : undefined);
     let cancelled = false;
+    const sharedRequest = new AbortController();
     let detach = () => {};
     const timer = setTimeout(() => {
       if (requestRef.current === requestId) setBusy(true);
@@ -200,7 +202,19 @@ export function useTreeLayout(
           cache.set(key, geometry);
           finish({ requestId, geometry });
         } else if (!previousGeometry && mode === "generations") {
-          void readLayoutHistory(cacheScope, key).then(history => calculate(history));
+          void readLayoutHistory(cacheScope, key).then(async history => {
+            if (cancelled) return;
+            // Preserve the local scene after collaborative edits; only a cold
+            // opening may replace it with another user's canonical result.
+            if (history) return calculate(history);
+            const shared = await readSharedLayout(input, key, sharedRequest.signal);
+            if (cancelled) return;
+            if (shared) {
+              cache.set(key, shared);
+              void writeLayout(cacheScope, key, shared);
+              finish({ requestId, geometry: shared });
+            } else calculate();
+          });
         } else calculate();
       });
     } else calculate();
@@ -208,6 +222,7 @@ export function useTreeLayout(
     return () => {
       clearTimeout(timer);
       cancelled = true;
+      sharedRequest.abort();
       detach();
     };
   }, [key, input, layoutVisible, cache, cacheScope, mode, reverse]);

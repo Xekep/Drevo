@@ -19,8 +19,6 @@ export function PersonLifeEditor({
   children?: ReactNode;
 }) {
   const [opened, setOpened] = useState(false);
-  const [inlineMapDirty, setInlineMapDirty] = useState(false),
-    [expandedMapDirty, setExpandedMapDirty] = useState(false);
   const [editing, setEditing] = useState<{
     baseline: LifeDraft;
     value: LifeDraft;
@@ -30,8 +28,8 @@ export function PersonLifeEditor({
     (editing.value.occupation !== editing.baseline.occupation ||
       editing.value.biography !== editing.baseline.biography);
   useEffect(() => {
-    onEditingChange(dirty || inlineMapDirty || expandedMapDirty);
-  }, [dirty, inlineMapDirty, expandedMapDirty, onEditingChange]);
+    onEditingChange(dirty);
+  }, [dirty, onEditingChange]);
   useEffect(() => () => onEditingChange(false), [onEditingChange]);
   return (
     <>
@@ -64,7 +62,6 @@ export function PersonLifeEditor({
             <span>История человека</span>
             <BiographyEditor
               value={biography}
-              onDirtyChange={setInlineMapDirty}
               onChange={(value) => onChange({ occupation, biography: value })}
             />
           </div>
@@ -73,11 +70,10 @@ export function PersonLifeEditor({
       {editing && (
         <PersonDetailDialog
           title="Жизнь и занятия"
-          dirty={dirty || expandedMapDirty}
+          dirty={dirty}
           className="person-life-dialog"
           onClose={() => {
-            if (confirmDiscardChanges(dirty || expandedMapDirty))
-              setEditing(null);
+            if (confirmDiscardChanges(dirty)) setEditing(null);
           }}
           onApply={() => {
             onChange(editing.value);
@@ -100,7 +96,6 @@ export function PersonLifeEditor({
             <span>История человека</span>
             <BiographyEditor
               value={editing.value.biography}
-              onDirtyChange={setExpandedMapDirty}
               onChange={(biography) =>
                 setEditing({
                   ...editing,

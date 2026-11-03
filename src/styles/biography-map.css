@@ -41,9 +41,6 @@
   min-height: 240px;
   background: #e5e8de;
 }
-.biography-map-surface.is-picking {
-  cursor: crosshair;
-}
 .biography-map-label {
   white-space: pre-line;
   max-width: 280px;
@@ -101,50 +98,27 @@
   flex: 1;
   min-height: 0;
 }
-.biography-map-editor .biography-map-surface {
-  height: 320px;
-}
-.biography-map-editor-tools {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  align-items: center;
-  margin: 10px 0;
-}
-.biography-map-editor-tools label {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-}
-.biography-map-editor-tools input[type="checkbox"] {
-  width: auto;
-  min-height: auto;
-  flex: 0 0 auto;
-}
-.biography-map-point {
-  display: grid;
-  grid-template-columns: 1fr 120px 80px 80px auto;
-  gap: 6px;
-  align-items: end;
-  margin: 8px 0;
-}
-.biography-map-point input {
-  width: 100%;
-  min-width: 0;
-}
-.biography-map-point-actions {
-  display: flex;
-}
 .biography-editor .cm-scroller {
   min-height: 130px;
   max-height: 420px;
 }
-.biography-add-map {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-bottom: 5px;
+.biography-map-fold {
+  padding: 4px 0;
+}
+.biography-map-source {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--accent);
+  background: var(--paper, #fff);
+  cursor: pointer;
+}
+.biography-map-source:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .person-life-history > span {
   display: block;
@@ -188,17 +162,4 @@
   font-family: monospace;
   background: #8882;
   border-radius: 3px;
-}
-@media (max-width: 600px) {
-  .biography-map-point {
-    grid-template-columns: 1fr 1fr;
-    border-bottom: 1px solid var(--line);
-    padding-bottom: 10px;
-  }
-  .biography-map-point-actions {
-    grid-column: 1 / -1;
-  }
-  .biography-map-editor .biography-map-surface {
-    height: 260px;
-  }
 }

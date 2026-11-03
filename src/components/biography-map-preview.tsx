@@ -2,17 +2,11 @@ import { useEffect, useRef } from "react";
 import { parseBiographyMap } from "../domain/biography-map";
 import "../styles/biography-map.css";
 
-export type BiographyMapActions = {
-  onOpen: (source: string) => void;
-  onEdit?: (source: string, range?: { from: number; to: number }) => void;
-  onSource?: () => void;
-};
-
-/** Shared DOM preview for the Markdown renderer and CodeMirror widgets. */
+/** Read-only mini-map for a saved biography. Editing uses a source icon. */
 export function mountBiographyMapPreview(
   host: HTMLElement,
   source: string,
-  actions: BiographyMapActions,
+  actions: { onOpen: (source: string) => void },
 ) {
   let disposed = false,
     destroy: (() => void) | undefined;
@@ -30,17 +24,6 @@ export function mountBiographyMapPreview(
     const code = document.createElement("pre");
     code.textContent = source;
     host.append(code);
-    if (actions.onSource) {
-      const edit = document.createElement("button");
-      edit.type = "button";
-      edit.textContent = "Исправить код карты";
-      edit.onclick = (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        actions.onSource!();
-      };
-      host.append(edit);
-    }
     return () => host.replaceChildren();
   }
   const title = data.name || "Карта жизни";
@@ -68,8 +51,6 @@ export function mountBiographyMapPreview(
     controls.append(node);
   };
   button(title + " · Развернуть", () => actions.onOpen(source));
-  if (actions.onEdit) button("Изменить карту", () => actions.onEdit!(source));
-  if (actions.onSource) button("Код", actions.onSource);
   host.append(canvas, controls);
   const load = () => {
     void import("./biography-map-surface")

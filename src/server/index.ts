@@ -28,6 +28,8 @@ import { assertProductionOrigin } from "./runtime-config.ts";
 import { imagePreviews } from "./image-previews.ts";
 import { requestMetrics } from "./request-metrics.ts";
 import { derivedCacheMaintenance } from "./derived-cache-maintenance.ts";
+import { treeLayoutCalculator } from "./tree-layout-calculator.ts";
+import { sharedTreeLayoutCache } from "./tree-layout-cache.ts";
 import {
   pdfDecodeCoordinator,
   PdfDecodeBusyError,
@@ -95,6 +97,7 @@ type StartedServer = {
   > | null;
 };
 type SharedWork = {
+  layouts: ReturnType<typeof treeLayoutCalculator>;
   ai: WorkQueue;
   previews: WorkQueue;
   snapshots: ReturnType<typeof archiveSnapshotBudget>;
@@ -169,6 +172,7 @@ export async function startServer(
   try {
     const preparation = sharedWork?.preparation ?? preparationAdmission();
     const work = sharedWork ?? {
+      layouts: treeLayoutCalculator(),
       ai: workQueue(4, 32),
       previews: workQueue(2, 32, 15_000),
       snapshots: archiveSnapshotBudget(),
@@ -180,6 +184,7 @@ export async function startServer(
     if (!sharedWork) preparationOwner = work.preparation;
     if (!sharedWork)
       own(async () => {
+        await work.layouts.close();
         work.ai.close();
         work.previews.close();
         await work.tiff.close();
@@ -473,7 +478,10 @@ export async function startServer(
       db: archive.db,
       publicOrigin,
     });
+    const treeLayouts = dbPath === ":memory:" ? undefined : sharedTreeLayoutCache(dirname(dbPath), work.layouts);
+    if (treeLayouts) own(() => treeLayouts.close());
     const handleArchive = await archiveHttp({
+      treeLayouts,
       aiSecrets:
         configuredPath === ":memory:" ? archive.db : { file: configuredPath },
       geocoding,
