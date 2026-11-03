@@ -155,6 +155,46 @@ test("native route lines remain painted in newly exposed areas before mouse rele
   } finally { await page.mouse.up(); }
 });
 
+test("mobile map gives room to the canvas and dismisses the route list on map taps", async ({ page }, info) => {
+  await setup(page, biographyMapBlock(routeMap));
+  await page.locator(".inspector-dock .biography-map-mini").click();
+  const workspace = page.getByRole("region", { name: "Карта из биографии" });
+  const dock = page.locator(".inspector-dock");
+  const points = workspace.locator(".biography-map-points-list");
+  const surface = workspace.locator(".biography-map-surface");
+  const mobile = info.project.name === "mobile";
+  if (mobile) {
+    await expect(dock).toHaveClass(/is-map-peek/);
+    expect((await dock.boundingBox())!.height).toBeLessThan(75);
+    await expect(dock.getByRole("tab", { name: "О человеке", exact: true })).toBeHidden();
+    await expect(workspace.locator("header h2")).toBeHidden();
+    await expect(workspace.locator(".biography-map-close > span")).toBeHidden();
+    await expect(workspace.locator(".biography-map-close > svg")).toBeVisible();
+  } else {
+    await expect(workspace.locator("header h2")).toBeVisible();
+    await expect(dock).not.toHaveClass(/is-map-peek/);
+  }
+  await points.locator("summary").click();
+  const bounds = (await surface.boundingBox())!;
+  await surface.click({ position: { x: 15, y: bounds.height - 65 } });
+  if (mobile) {
+    await expect(points).not.toHaveAttribute("open", "");
+    await points.locator("summary").click();
+    await workspace.locator(".leaflet-marker-icon").first().click();
+    await expect(points).not.toHaveAttribute("open", "");
+    await expect(workspace.locator(".leaflet-popup")).toContainText("Первый пункт");
+    await dock.getByRole("button", { name: "Развернуть панель", exact: true }).click();
+    await expect(dock.getByRole("tab", { name: "О человеке", exact: true })).toBeVisible();
+    await dock.getByRole("button", { name: "Свернуть панель", exact: true }).click();
+    await expect(dock).toHaveClass(/is-map-peek/);
+    await page.screenshot({ path: info.outputPath("mobile-map-compact.png") });
+  } else await expect(points).toHaveAttribute("open", "");
+  await workspace.getByRole("button", { name: "Вернуться к древу", exact: true }).click();
+  await expect(workspace).toHaveCount(0);
+  await expect(dock).not.toHaveClass(/is-map-peek/);
+  if (mobile) await expect(dock).toHaveClass(/expanded/);
+});
+
 test("biography exposes Markdown only on the active line and preserves source on save", async ({
   page,
 }) => {
@@ -206,6 +246,8 @@ test("a map replaces the tree, lists dated points and restores the same camera",
   await expect(workspace).toContainText("1943");
   await expect(workspace.locator(".leaflet-marker-icon")).toHaveCount(2);
   await expect(workspace.locator("path.leaflet-interactive")).toHaveCount(1);
+  if (test.info().project.name === "mobile")
+    await inspector.getByRole("button", { name: "Развернуть панель", exact: true }).click();
   await inspector.getByRole("tab", { name: /Обсуждение/ }).click();
   await expect(workspace).toBeVisible();
   await inspector

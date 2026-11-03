@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { BiographyMap } from "../domain/biography-map";
+import { X } from "lucide-react";
 import "../styles/biography-map.css";
 const Surface = lazy(() => import("./biography-map-surface"));
 
@@ -41,11 +42,15 @@ export default function BiographyMapWorkspace({
     >
       <header>
         <h2>{data.name || "Карта жизни"}</h2>
-        <button ref={close} type="button" onClick={onClose}>
-          {returnLabel}
+        <button ref={close} type="button" className="biography-map-close" aria-label={returnLabel} title={returnLabel} onClick={onClose}>
+          <span>{returnLabel}</span><X size={22} aria-hidden="true" />
         </button>
       </header>
-      <div className="biography-map-body">
+      <div className="biography-map-body" onPointerDownCapture={event => {
+        if (window.matchMedia("(max-width: 899px)").matches &&
+          event.target instanceof Element && event.target.closest(".biography-map-surface") && pointsList.current)
+          pointsList.current.open = false;
+      }}>
         {data.features.some(
           (f) => !f.geometry || f.geometry.type === "Point",
         ) && (
