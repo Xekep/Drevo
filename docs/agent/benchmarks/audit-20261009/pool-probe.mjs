@@ -66,7 +66,7 @@ const previous = pg.Pool;
 pg.Pool = BoundedPool;
 try {
   const { openPostgresDatabase } =
-    await import("../../../src/server/store-database.ts");
+    await import("../../../../src/server/store-database.ts");
   const db = await openPostgresDatabase("audit-fixture", ":memory:");
   let entered = 0,
     release;

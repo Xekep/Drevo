@@ -4,13 +4,13 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import ELK from "elkjs/lib/elk.bundled.js";
-import { randomFamily } from "../../../tests/layout-fixtures.ts";
-import { treeNodeSize } from "../../../src/domain/tree-layout-constants.ts";
-import { routingQuality } from "../../../src/domain/routing-quality.ts";
+import { randomFamily } from "../../../../tests/layout-fixtures.ts";
+import { treeNodeSize } from "../../../../src/domain/tree-layout-constants.ts";
+import { routingQuality } from "../../../../src/domain/routing-quality.ts";
 const baseline = process.env.DREVO_LAYOUT_BASELINE_ROOT;
 const { unionGeometry, createGeometryContactScorer } = await import(baseline
   ? pathToFileURL(join(baseline, "src/domain/union-layout.ts")).href
-  : "../../../src/domain/union-layout.ts");
+  : "../../../../src/domain/union-layout.ts");
 const people = randomFamily(5, 9), size = treeNodeSize();
 let calls = 0, elkMs = 0;
 const start = performance.now();

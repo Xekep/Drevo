@@ -1,8 +1,8 @@
 ﻿import ELK from "elkjs/lib/elk.bundled.js";
-import { randomFamily } from "../../../tests/layout-fixtures.ts";
-import { treeNodeSize } from "../../../src/domain/tree-layout-constants.ts";
-import { unionGeometry } from "../../../src/domain/union-layout.ts";
-import { routingQuality } from "../../../src/domain/routing-quality.ts";
+import { randomFamily } from "../../../../tests/layout-fixtures.ts";
+import { treeNodeSize } from "../../../../src/domain/tree-layout-constants.ts";
+import { unionGeometry } from "../../../../src/domain/union-layout.ts";
+import { routingQuality } from "../../../../src/domain/routing-quality.ts";
 for (const [seed, generations] of [
   [1, 2],
   [1, 4],
