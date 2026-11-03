@@ -11,9 +11,11 @@ import {
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
 import { preferFamilyLayout } from "./family-layout-candidates.ts";
 import { routeRelationships } from "./edge-routing.ts";
+import { packedSiblingRows } from "./family-sibling-packing.ts";
 
 /** Close long single-child connections by inserting the parent household nearer
  * its child in the same row. Neighbours trade slots; descendants stay fixed.
+ * Also regroup interleaved siblings, compacting the changed row segment.
  * Only cold layouts call this bounded pass, including crossing-free scenes. */
 export function shortenFamilyRows(
   original: TreeGeometry,
@@ -53,6 +55,30 @@ export function shortenFamilyRows(
       crossings: number;
       contacts: number;
     }[] = [];
+    const retain = (move: FamilyRowMove) => {
+      const quality = score(move.geometry);
+      if (
+        quality.overlaps > before.overlaps ||
+        quality.crossings > before.crossings ||
+        quality.length >= before.length - size.width / 10
+      )
+        return;
+      candidates.push({
+        move,
+        length: quality.length,
+        crossings: quality.crossings,
+        contacts: quality.contacts,
+      });
+      candidates.sort(
+        (a, b) =>
+          a.crossings - b.crossings ||
+          a.contacts - b.contacts ||
+          a.length - b.length ||
+          a.move.distance - b.move.distance,
+      );
+      if (candidates.length > 8) candidates.pop();
+    };
+    for (const move of packedSiblingRows(best, size)) retain(move);
     for (const root of roots) {
       const row = rows.find((r) => r.some((b) => b.id === root.block));
       if (!row || row.length > 64) continue;
@@ -70,27 +96,7 @@ export function shortenFamilyRows(
           Math.abs(root.dx)
         )
           continue;
-        const quality = score(move.geometry);
-        if (
-          quality.overlaps > before.overlaps ||
-          quality.crossings > before.crossings ||
-          quality.length >= before.length - size.width / 10
-        )
-          continue;
-        candidates.push({
-          move,
-          length: quality.length,
-          crossings: quality.crossings,
-          contacts: quality.contacts,
-        });
-        candidates.sort(
-          (a, b) =>
-            a.crossings - b.crossings ||
-            a.contacts - b.contacts ||
-            a.length - b.length ||
-            a.move.distance - b.move.distance,
-        );
-        if (candidates.length > 4) candidates.pop();
+        retain(move);
       }
     }
     let selected = best;

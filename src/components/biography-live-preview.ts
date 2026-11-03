@@ -88,9 +88,32 @@ class BulletWidget extends WidgetType {
  * Every selected line exposes all its Markdown delimiters. Structural blocks
  * (tables, formulas, maps and fenced code) expose their complete source. */
 export function biographyLivePreview() {
-  function decorations(state: EditorState, focused: boolean): DecorationSet {
+  function parse(state: EditorState) {
     const source = state.doc.toString(),
       tree = parseCommentDocument(source);
+    const mapTitles = new Map<Nodes, string>();
+    function visit(node: Nodes) {
+      if (node.type === "code" && node.lang?.toLowerCase() === "geojson") {
+        try {
+          mapTitles.set(
+            node,
+            parseBiographyMap(node.value).name || "Карта жизни",
+          );
+        } catch {
+          /* Invalid maps stay editable as source. */
+        }
+      }
+      if ("children" in node) node.children.forEach(visit);
+    }
+    visit(tree);
+    return { source, tree, mapTitles };
+  }
+  function decorations(
+    state: EditorState,
+    focused: boolean,
+    document: ReturnType<typeof parse>,
+  ): DecorationSet {
+    const { source, tree, mapTitles } = document;
     const ranges: Range<Decoration>[] = [],
       styledLines = new Set<string>();
     const selected = focused
@@ -120,11 +143,8 @@ export function biographyLivePreview() {
       if (["code", "table", "math", "thematicBreak"].includes(node.type)) {
         let mapTitle: string | undefined;
         if (node.type === "code" && node.lang?.toLowerCase() === "geojson") {
-          try {
-            mapTitle = parseBiographyMap(node.value).name || "Карта жизни";
-          } catch {
-            return;
-          }
+          mapTitle = mapTitles.get(node);
+          if (!mapTitle) return;
         }
         if (!editing(from, to))
           ranges.push(
@@ -218,11 +238,19 @@ export function biographyLivePreview() {
     tree.children.forEach(visit);
     return Decoration.set(ranges, true);
   }
-  return StateField.define<{ focused: boolean; decorations: DecorationSet }>({
-    create: (state) => ({
-      focused: false,
-      decorations: decorations(state, false),
-    }),
+  return StateField.define<{
+    focused: boolean;
+    decorations: DecorationSet;
+    document: ReturnType<typeof parse>;
+  }>({
+    create: (state) => {
+      const document = parse(state);
+      return {
+        focused: false,
+        document,
+        decorations: decorations(state, false, document),
+      };
+    },
     update(value, transaction) {
       let focused = value.focused;
       for (const effect of transaction.effects)
@@ -233,7 +261,16 @@ export function biographyLivePreview() {
         focused === value.focused
       )
         return value;
-      return { focused, decorations: decorations(transaction.state, focused) };
+      // Cursor/focus changes only alter visibility. Parsing and validating a
+      // large embedded map belongs to document changes, not every arrow key.
+      const document = transaction.docChanged
+        ? parse(transaction.state)
+        : value.document;
+      return {
+        focused,
+        document,
+        decorations: decorations(transaction.state, focused, document),
+      };
     },
     provide: (field) =>
       EditorView.decorations.from(field, (value) => value.decorations),

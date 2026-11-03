@@ -150,6 +150,8 @@ test("invalid, unbounded and remote map input cannot become a Leaflet layer", ()
     "null",
     "[]",
     "{}",
+    '{"type":"Feature","properties":{}}',
+    '{"type":"GeometryCollection","geometries":[null]}',
     JSON.stringify(point(181, 20)),
     JSON.stringify(point(20, -91)),
     '{"type":"Point","coordinates":[1e999,2]}',
@@ -166,6 +168,38 @@ test("invalid, unbounded and remote map input cannot become a Leaflet layer", ()
   for (let i = 0; i < 12; i++)
     nested = { type: "GeometryCollection", geometries: [nested] };
   assert.throws(() => parseBiographyMap(JSON.stringify(nested)));
+});
+
+test("unlocated features survive import and route generation without invented coordinates", () => {
+  const unlocated = {
+    type: "Feature",
+    id: "unlocated",
+    geometry: null,
+    properties: {
+      name: "Неустановленное место",
+      evidence: { reference: "Архив", year: 1942 },
+    },
+  };
+  const source = {
+    type: "FeatureCollection",
+    name: "Исторический маршрут",
+    features: [point(30, 50), unlocated, point(32, 52)],
+  };
+  const parsed = parseBiographyMap(JSON.stringify(source));
+  assert.deepEqual(parsed, source);
+  const connected = biographyMapRoute(parsed, true);
+  assert.deepEqual(connected.features[1], unlocated);
+  assert.deepEqual(connected.features.at(-1)!.geometry, {
+    type: "LineString",
+    coordinates: [
+      [30, 50],
+      [32, 52],
+    ],
+  });
+  assert.deepEqual(biographyMapRoute(connected, false), parsed);
+  assert.deepEqual(parseBiographyMap(JSON.stringify(unlocated)).features, [
+    unlocated,
+  ]);
 });
 
 test("a single point never invents a route and deleting a point removes obsolete route geometry", () => {

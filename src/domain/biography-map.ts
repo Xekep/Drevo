@@ -1,7 +1,7 @@
 import type { Feature, FeatureCollection, Geometry, Position } from "geojson";
 
 export type BiographyMap = FeatureCollection<
-  Geometry,
+  Geometry | null,
   Record<string, unknown>
 > & { name?: string };
 export const BIOGRAPHY_MAP_LIMIT = 100_000;
@@ -99,7 +99,9 @@ export function parseBiographyMap(source: string): BiographyMap {
         throw new Error("Неизвестный тип геометрии GeoJSON.");
     }
   }
-  function feature(value: unknown): Feature<Geometry, Record<string, unknown>> {
+  function feature(
+    value: unknown,
+  ): Feature<Geometry | null, Record<string, unknown>> {
     if (!object(value) || value.type !== "Feature")
       throw new Error("Неверный объект GeoJSON.");
     const properties = object(value.properties) ? { ...value.properties } : {};
@@ -112,7 +114,9 @@ export function parseBiographyMap(source: string): BiographyMap {
     bounded(properties);
     return {
       type: "Feature",
-      geometry: geometry(value.geometry),
+      // RFC 7946 permits unlocated features. Preserve them as records rather
+      // than inventing coordinates or rejecting the entire collection.
+      geometry: value.geometry === null ? null : geometry(value.geometry),
       properties,
       ...(typeof value.id === "string" || typeof value.id === "number"
         ? { id: value.id }
@@ -141,7 +145,7 @@ export function biographyMapRoute(
     (f) => f.properties?.drevoRoute !== true,
   );
   const coordinates = features.flatMap((f) =>
-    f.geometry.type === "Point" ? [f.geometry.coordinates] : [],
+    f.geometry?.type === "Point" ? [f.geometry.coordinates] : [],
   );
   if (connect && coordinates.length > 1)
     features.push({
