@@ -154,9 +154,11 @@ export function productionStaticHttp(
         return true;
       }
       try {
-        await pipeline(handle.createReadStream(), res);
+        await pipeline(handle.createReadStream({ autoClose: false }), res);
       } catch {
         if (!res.destroyed) res.destroy();
+      } finally {
+        await handle.close().catch(() => {});
       }
       return true;
     } catch {
