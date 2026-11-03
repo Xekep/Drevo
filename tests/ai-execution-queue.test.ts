@@ -12,6 +12,7 @@ import {
   pendingAiAdmission,
 } from "../src/server/preparation-admission.ts";
 import { tiffDocumentRenderer } from "../src/server/document-images.ts";
+import { treeLayoutCalculator } from "../src/server/tree-layout-calculator.ts";
 
 test("HTTP AI queue rejects overflow and stop removes a queued chat before calling the provider", async () => {
   const directory = await mkdtemp(join(tmpdir(), "drevo-ai-queue-"));
@@ -26,6 +27,7 @@ test("HTTP AI queue rejects overflow and stop removes a queued chat before calli
   const pendingAi = pendingAiAdmission();
   const tiff = tiffDocumentRenderer(preparation);
   const mediaScans = workQueue(1, 128, 30_000);
+  const layouts = treeLayoutCalculator();
   const release = await ai.acquire();
   let calls = 0;
   const provider = adaptLegacyAiFake(async () => {
@@ -51,6 +53,7 @@ test("HTTP AI queue rejects overflow and stop removes a queued chat before calli
       undefined,
       undefined,
       {
+        layouts,
         ai,
         previews,
         snapshots: archiveSnapshotBudget(),
@@ -97,6 +100,7 @@ test("HTTP AI queue rejects overflow and stop removes a queued chat before calli
     ai.close();
     previews.close();
     await app?.close();
+    await layouts.close();
     await tiff.close();
     pendingAi.close();
     mediaScans.close();

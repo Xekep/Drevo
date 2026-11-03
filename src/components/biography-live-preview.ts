@@ -8,18 +8,14 @@ import {
 import type { Nodes } from "mdast";
 import { parseCommentDocument } from "./discussion/markdown-format";
 import { PreviewWidget, previewFocus } from "./discussion/live-preview";
-import {
-  mountBiographyMapPreview,
-  type BiographyMapActions,
-} from "./biography-map-preview";
+import { parseBiographyMap } from "../domain/biography-map";
 
 class MapWidget extends WidgetType {
-  private cleanup?: () => void;
   constructor(
     readonly source: string,
     readonly from: number,
     readonly to: number,
-    readonly actions: BiographyMapActions,
+    readonly title: string,
   ) {
     super();
   }
@@ -28,33 +24,46 @@ class MapWidget extends WidgetType {
       other.source === this.source &&
       other.from === this.from &&
       other.to === this.to &&
-      other.actions === this.actions
+      other.title === this.title
     );
   }
   toDOM(view: EditorView) {
-    const host = document.createElement("div");
-    this.cleanup = mountBiographyMapPreview(host, this.source, {
-      ...this.actions,
-      ...(this.actions.onEdit
-        ? {
-            onEdit: (source: string) =>
-              this.actions.onEdit!(source, { from: this.from, to: this.to }),
-          }
-        : {}),
-      onSource: () => {
-        view.dispatch({
-          selection: { anchor: Math.min(view.state.doc.length, this.from + 4) },
-        });
-        view.focus();
-      },
-    });
+    const host = document.createElement("div"),
+      button = document.createElement("button");
+    host.className = "biography-map-fold";
+    button.type = "button";
+    button.className = "biography-map-source";
+    button.setAttribute("aria-label", `Показать GeoJSON: ${this.title}`);
+    button.title = `${this.title} · Показать GeoJSON`;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "22");
+    svg.setAttribute("height", "22");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "1.8");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS(svg.namespaceURI, "path");
+    path.setAttribute(
+      "d",
+      "m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Zm6-3v15m6-12v15",
+    );
+    svg.append(path);
+    button.append(svg);
+    host.append(button);
+    button.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      view.dispatch({
+        selection: { anchor: Math.min(view.state.doc.length, this.from + 4) },
+        scrollIntoView: true,
+      });
+      view.focus();
+    };
     return host;
   }
   ignoreEvent() {
     return true;
-  }
-  destroy() {
-    this.cleanup?.();
   }
 }
 
@@ -78,7 +87,7 @@ class BulletWidget extends WidgetType {
 /** Inline decorations keep native caret placement, wrapping and selection.
  * Every selected line exposes all its Markdown delimiters. Structural blocks
  * (tables, formulas, maps and fenced code) expose their complete source. */
-export function biographyLivePreview(actions: BiographyMapActions) {
+export function biographyLivePreview() {
   function decorations(state: EditorState, focused: boolean): DecorationSet {
     const source = state.doc.toString(),
       tree = parseCommentDocument(source);
@@ -109,13 +118,21 @@ export function biographyLivePreview(actions: BiographyMapActions) {
         to = node.position?.end.offset;
       if (from == null || to == null || from === to) return;
       if (["code", "table", "math", "thematicBreak"].includes(node.type)) {
+        let mapTitle: string | undefined;
+        if (node.type === "code" && node.lang?.toLowerCase() === "geojson") {
+          try {
+            mapTitle = parseBiographyMap(node.value).name || "Карта жизни";
+          } catch {
+            return;
+          }
+        }
         if (!editing(from, to))
           ranges.push(
             Decoration.replace({
               block: true,
               widget:
-                node.type === "code" && node.lang?.toLowerCase() === "geojson"
-                  ? new MapWidget(node.value, from, to, actions)
+                mapTitle && node.type === "code"
+                  ? new MapWidget(node.value, from, to, mapTitle)
                   : new PreviewWidget(source.slice(from, to), from),
             }).range(from, to),
           );
@@ -221,4 +238,35 @@ export function biographyLivePreview(actions: BiographyMapActions) {
     provide: (field) =>
       EditorView.decorations.from(field, (value) => value.decorations),
   });
+}
+
+/** Wrap a pasted GeoJSON object, preserving every property and its formatting.
+ * Pasting inside existing code remains an ordinary text replacement. */
+export function pasteBiographyMap(event: ClipboardEvent, view: EditorView) {
+  if (view.state.readOnly) return false;
+  const source = event.clipboardData?.getData("text/plain").trim();
+  if (!source?.startsWith("{")) return false;
+  try {
+    parseBiographyMap(source);
+  } catch {
+    return false;
+  }
+  const range = view.state.selection.main;
+  const insideCode = (node: Nodes): boolean =>
+    (node.type === "code" &&
+      node.position?.start.offset != null &&
+      node.position.end.offset != null &&
+      node.position.start.offset <= range.from &&
+      node.position.end.offset >= range.to) ||
+    ("children" in node && node.children.some(insideCode));
+  if (insideCode(parseCommentDocument(view.state.doc.toString()))) return false;
+  const insert = `${range.from ? "\n\n" : ""}\`\`\`geojson\n${source}\n\`\`\`\n\n`;
+  event.preventDefault();
+  view.dispatch({
+    changes: { from: range.from, to: range.to, insert },
+    selection: { anchor: range.from + insert.length },
+    scrollIntoView: true,
+    userEvent: "input.paste",
+  });
+  return true;
 }

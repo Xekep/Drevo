@@ -15,6 +15,7 @@ import { adminAccessHttp } from "./admin-access-http.ts";
 import { adminSharingHttp } from "./admin-sharing-http.ts";
 import { archiveInvitationsHttp } from "./archive-invitations-http.ts";
 import { archiveQueryHttp } from "./archive-query-http.ts";
+import type { SharedTreeLayoutCache } from "./tree-layout-cache.ts";
 import { offlinePackageHttp } from "./offline-package-http.ts";
 import { coreHttp } from "./core-http.ts";
 import { databaseBackupHttp } from "./database-backup-http.ts";
@@ -63,6 +64,7 @@ import {
 } from "./member-preview-access.ts";
 
 export async function archiveHttp({
+  treeLayouts,
   archive,
   auth,
   media,
@@ -85,6 +87,7 @@ export async function archiveHttp({
   tiffRenderer,
   mediaUsage,
 }: {
+  treeLayouts?: SharedTreeLayoutCache;
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   media: ReturnType<typeof mediaStore>;
@@ -191,6 +194,7 @@ export async function archiveHttp({
     publicOrigin,
   });
   const archiveQuery = archiveQueryHttp({
+    treeLayouts,
     publicOrigin,
     preparation,
     archive,
@@ -317,7 +321,7 @@ export async function archiveHttp({
         return true;
       };
       if (!preview || preview.archiveId) return deny(404);
-      if (req.method !== "GET" && !(req.method === "POST" && path === "/api/people/filter")) return deny(405);
+      if (req.method !== "GET" && !(req.method === "POST" && ["/api/people/filter", "/api/tree-layout"].includes(path || ""))) return deny(405);
       const previewView = archiveViewAt(url.pathname);
       if (
         previewView &&
@@ -346,6 +350,7 @@ export async function archiveHttp({
         path === "/api/family" ||
         path === "/api/people/search" ||
         path === "/api/people/filter" ||
+        path === "/api/tree-layout" ||
         path === "/api/research-resources" ||
         path === "/api/places/locate" ||
         /^\/api\/documents(?:\/[a-f0-9-]{36}(?:\/file|\/annotations(?:\/[a-f0-9-]{36})?)?)?$/.test(
@@ -429,6 +434,7 @@ export async function archiveHttp({
         path === "/api/family" ||
         path === "/api/people/search" ||
         path === "/api/people/filter" ||
+        path === "/api/tree-layout" ||
         path === "/api/research-resources"
       )
         return (await archiveQuery(req, res, inner)) || deny(404);

@@ -1,20 +1,5 @@
 import type { TreeGeometry } from "../../domain/tree-layout.ts";
-import {
-  treeNodeSize,
-  TREE_NODE_WIDTH,
-} from "../../domain/tree-layout-constants.ts";
-import type { LayoutWorkerRequest } from "./layout-worker-protocol.ts";
-
-// Bump when layout, packing or routing changes. Keep model order: ELK uses it.
-const LAYOUT_CACHE_VERSION = 29;
-export function layoutCacheKey(input: Pick<LayoutWorkerRequest, "people" | "links" | "mode" | "reverse">) {
-  return JSON.stringify({
-    version: LAYOUT_CACHE_VERSION,
-    width: TREE_NODE_WIDTH,
-    height: treeNodeSize().height,
-    input: { people: input.people, links: input.links, mode: input.mode, reverse: input.reverse },
-  });
-}
+export { layoutCacheKey } from "../../domain/layout-cache-key.ts";
 
 export function createLayoutMemoryCache(
   maxEntries = 12,

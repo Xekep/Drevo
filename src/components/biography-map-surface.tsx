@@ -8,7 +8,6 @@ export function mountBiographyMap(
   data: BiographyMap,
   options: {
     interactive?: boolean;
-    onPoint?: (longitude: number, latitude: number) => void;
   } = {},
 ) {
   const interactive = options.interactive !== false;
@@ -35,12 +34,6 @@ export function mountBiographyMap(
         zoomOutTitle: "Уменьшить масштаб",
       })
       .addTo(map);
-  map.on("click", (event: L.LeafletMouseEvent) =>
-    options.onPoint?.(
-      Number(event.latlng.wrap().lng.toFixed(6)),
-      Number(Math.max(-90, Math.min(90, event.latlng.lat)).toFixed(6)),
-    ),
-  );
   let layer: L.GeoJSON | undefined,
     fitted = false,
     previousGeometry = "";
@@ -99,28 +92,16 @@ export function mountBiographyMap(
   };
 }
 
-export default function BiographyMapSurface({
-  data,
-  onPoint,
-}: {
-  data: BiographyMap;
-  onPoint?: (longitude: number, latitude: number) => void;
-}) {
+export default function BiographyMapSurface({ data }: { data: BiographyMap }) {
   const host = useRef<HTMLDivElement>(null),
     instance = useRef<ReturnType<typeof mountBiographyMap> | null>(null);
-  const point = useRef(onPoint);
   useEffect(() => {
-    point.current = onPoint;
-  }, [onPoint]);
-  useEffect(() => {
-    instance.current = mountBiographyMap(host.current!, data, {
-      onPoint: (lon, lat) => point.current?.(lon, lat),
-    });
+    instance.current = mountBiographyMap(host.current!, data);
     return () => {
       instance.current?.destroy();
       instance.current = null;
     };
-    // The map owns its viewport; editing a point's caption must not recreate it.
+    // The map owns its viewport; updated data must not recreate it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
@@ -129,7 +110,7 @@ export default function BiographyMapSurface({
   return (
     <div
       ref={host}
-      className={`biography-map-surface${onPoint ? " is-picking" : ""}`}
+      className="biography-map-surface"
       aria-label="Карта жизни"
     />
   );

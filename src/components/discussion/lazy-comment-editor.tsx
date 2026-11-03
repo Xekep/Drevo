@@ -98,7 +98,6 @@ export default function LazyCommentEditor(
     <div
       className={`comment-editor comment-editor-placeholder ${props.className || ""}`}
     >
-      {props.tools}
       {!props.biography && (
         <button
           type="button"
