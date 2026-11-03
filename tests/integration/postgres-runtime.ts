@@ -3331,6 +3331,7 @@ try {
           notifyModelBody();
           await modelBodyGate;
           yield* originalIterator();
+          return undefined;
         };
       }
       void guardedAdminAi(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
@@ -5165,7 +5166,7 @@ try {
     if (managedStatus.job?.state !== "running") break;
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
   }
-  assert.equal(managedStatus.job?.state, "succeeded", managedStatus.job?.error);
+  assert.equal(managedStatus.job?.state, "succeeded", managedStatus.job?.error ?? "Backup did not complete");
   const managedName = managedStatus.records?.[0]?.name;
   assert.ok(managedName, "selected archive has a managed backup record");
   const managedFile = join(directory, "archives", "other-archive", "tree-backups", managedName);
