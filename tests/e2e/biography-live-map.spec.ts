@@ -195,6 +195,25 @@ test("mobile map gives room to the canvas and dismisses the route list on map ta
   if (mobile) await expect(dock).toHaveClass(/expanded/);
 });
 
+test("map hides the AI launcher and a mobile person card places it on the right", async ({ page }, info) => {
+  await page.route("**/api/ai/status", route => route.fulfill({ json: { enabled: true, streaming: true } }));
+  await setup(page, biographyMapBlock(routeMap));
+  const launcher = page.getByRole("button", { name: "Открыть ИИ-исследователя", exact: true });
+  await expect(launcher).toBeVisible();
+  if (info.project.name === "mobile") {
+    await expect.poll(async () => {
+      const box = (await launcher.boundingBox())!;
+      return Math.abs(page.viewportSize()!.width - box.x - box.width - 18);
+    }).toBeLessThan(2);
+  }
+  await page.locator(".inspector-dock .biography-map-mini").click();
+  const workspace = page.getByRole("region", { name: "Карта из биографии" });
+  await expect(workspace).toBeVisible();
+  await expect(launcher).toHaveCount(0);
+  await workspace.getByRole("button", { name: "Вернуться к древу", exact: true }).click();
+  await expect(launcher).toBeVisible();
+});
+
 test("biography exposes Markdown only on the active line and preserves source on save", async ({
   page,
 }) => {

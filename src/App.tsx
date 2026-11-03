@@ -1477,6 +1477,7 @@ export default function App() {
       {family && readTree && user && !participantPreview && view !== "admin" && view !== "manage" && view !== "account" && (
         <ResearchAssistant
           view={view}
+          launcherHidden={!!currentBiographyMap}
           getTreeViewContext={() => treeCanvas.current?.getViewContext()}
           onOpenChange={setAssistantOpen}
           personIds={selected.slice(0, 2)}
