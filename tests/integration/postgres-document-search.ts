@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { fixture } from "./postgres-fixture.ts";
 import {
   documentSearchQuery,
+  documentSearchPeople,
   normalizeDocumentQuery,
 } from "../../src/server/document-search-query.ts";
 import { postgresBindings } from "../../src/server/store-database.ts";
@@ -47,6 +48,27 @@ test("PostgreSQL document relevance and all-word filtering precede pagination", 
         [association++, document.id, id],
       );
   }
+  const linkedNames = await documentSearchPeople({
+    prepare(_sqlite, postgres) {
+      assert.ok(postgres);
+      return {
+        async all(...args) {
+          const result = await first.query(postgresBindings(postgres), args);
+          for (const row of result.rows)
+            assert.deepEqual(Object.keys(row).sort(), ["id", "name", "patronymic", "surname"],
+              "PostgreSQL name search must not transfer complete person JSON");
+          return result.rows;
+        },
+        async get() { throw new Error("Unexpected single-row lookup"); },
+        async run() { throw new Error("Name search must not write"); },
+      };
+    },
+  });
+  const linkedIds = new Set(searchDocuments.flatMap(document => document.people));
+  assert.deepEqual(linkedNames.toSorted((a, b) => a.id.localeCompare(b.id)),
+    searchPeople.filter(person => linkedIds.has(person.id))
+      .map(({ id, name, surname, patronymic }) => ({ id, name, surname, patronymic }))
+      .toSorted((a, b) => a.id.localeCompare(b.id)));
   const search = async (
     query: string,
     offset = 0,

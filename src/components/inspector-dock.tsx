@@ -56,11 +56,15 @@ export function InspectorDock({
   const expand = useCallback(() => setExpanded(true), []);
   const sceneVisible = mobile && revealScene;
   const [previousSceneVisible, setPreviousSceneVisible] = useState(false);
+  const [expandedBeforeScene, setExpandedBeforeScene] = useState(initialExpanded);
   // Adjust once on entering the map, before committing the same inspector.
   // Manual expansion afterwards remains available while the map is open.
   if (sceneVisible !== previousSceneVisible) {
     setPreviousSceneVisible(sceneVisible);
-    if (sceneVisible) setExpanded(false);
+    if (sceneVisible) {
+      setExpandedBeforeScene(expanded);
+      setExpanded(false);
+    } else setExpanded(expandedBeforeScene);
   }
   useLayoutEffect(() => {
     onCoveredSceneChange?.(mobile && expanded && !mobileSuspended);
@@ -113,7 +117,7 @@ export function InspectorDock({
     <ActionsHost.Provider value={actionsHost}>
       <aside
         ref={ref}
-        className={`inspector-dock ${expanded ? "expanded" : ""}`}
+        className={`inspector-dock${expanded ? " expanded" : ""}${sceneVisible && !expanded ? " is-map-peek" : ""}`}
         hidden={mobileSuspended}
         aria-label={label}
         data-editing={editing || undefined}
@@ -137,7 +141,7 @@ export function InspectorDock({
             ref={heading}
             className={`inspector-heading ${editing ? "is-editing" : ""}`}
           >
-            <span>В СЕМЕЙНОМ АРХИВЕ</span>
+            <span>{sceneVisible && !expanded ? "Карточка человека" : "В СЕМЕЙНОМ АРХИВЕ"}</span>
             <div className="inspector-actions-slot" ref={setActionsHost} />
             {!expanded && allowExpand && (
               <div className="dock-grip">

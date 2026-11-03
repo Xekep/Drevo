@@ -59,11 +59,16 @@ export function mountBiographyMap(
     fitted = false,
     previousGeometry = "";
   let previousData: BiographyMap | undefined;
+  const points = new Map<number, L.Marker>();
   const update = (next: BiographyMap) => {
     if (previousData === next) return;
     if (layer) map.removeLayer(layer);
+    points.clear();
+    const featureIndices = new Map(next.features.map((feature, index) => [feature, index]));
     layer = L.geoJSON(next, {
-      style: () => ({ color: "#9d563f", weight: 3, fillOpacity: 0.12 }),
+      // Embedded maps are bounded to 2000 coordinates. Keep their native paths
+      // intact while dragging: Leaflet otherwise reclips only on moveend.
+      style: () => ({ color: "#9d563f", weight: 3, fillOpacity: 0.12, noClip: true }),
       pointToLayer: (feature, point) =>
         L.marker(point, {
           icon: standardMarker,
@@ -77,6 +82,8 @@ export function mountBiographyMap(
           bubblingMouseEvents: false,
         }),
       onEachFeature: (feature, item) => {
+        const index = featureIndices.get(feature);
+        if (index !== undefined && item instanceof L.Marker) points.set(index, item);
         if (!interactive) return;
         const properties = feature.properties || {};
         const title =
@@ -141,6 +148,16 @@ export function mountBiographyMap(
   observer.observe(host);
   return {
     update,
+    focusPoint(index: number) {
+      const point = points.get(index);
+      if (!point) return;
+      map.stop();
+      map.setView(point.getLatLng(), Math.max(map.getZoom(), 11), { animate: false });
+      point.openPopup();
+      // The route list collapses after selection; keyboard users continue on
+      // the selected marker instead of losing focus inside hidden content.
+      point.getElement()?.focus({ preventScroll: true });
+    },
     destroy() {
       observer.disconnect();
       map.remove();
@@ -148,7 +165,10 @@ export function mountBiographyMap(
   };
 }
 
-export default function BiographyMapSurface({ data }: { data: BiographyMap }) {
+export default function BiographyMapSurface({ data, focus }: {
+  data: BiographyMap;
+  focus?: { index: number } | null;
+}) {
   const host = useRef<HTMLDivElement>(null),
     instance = useRef<ReturnType<typeof mountBiographyMap> | null>(null);
   useEffect(() => {
@@ -163,6 +183,9 @@ export default function BiographyMapSurface({ data }: { data: BiographyMap }) {
   useEffect(() => {
     instance.current?.update(data);
   }, [data]);
+  useEffect(() => {
+    if (focus) instance.current?.focusPoint(focus.index);
+  }, [focus]);
   return (
     <div
       ref={host}

@@ -12,6 +12,61 @@ import { archiveChanges, applyArchiveChanges } from "../src/domain/changes.ts";
 import type { ArchivePageHeader } from "../src/data/archive-pages.ts";
 import type { Family } from "../src/domain/types.ts";
 
+test("superseded card reads abort in flight and skip queued people without cancelling other consumers", async () => {
+  const setup = fixture(3), calls: string[] = [];
+  let entered!: () => void;
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  const reader = archiveDetails(setup.initial, async (url, init) => {
+    const ids = JSON.parse(new URL(url, "http://local.test").searchParams.get("ids")!) as string[];
+    calls.push(ids.join(","));
+    if (calls.length === 1) {
+      assert.ok(init?.signal);
+      entered();
+      await new Promise<void>((_, reject) => init.signal!.addEventListener("abort", () => reject(init.signal!.reason), { once: true }));
+    }
+    return setup.request(url);
+  }, () => {});
+  const a = new AbortController(), b = new AbortController();
+  const first = reader.loadPeople(["p0"], a.signal);
+  const firstAborted = assert.rejects(first, { name: "AbortError" });
+  await ready;
+  const second = reader.loadPeople(["p1"], b.signal);
+  const secondAborted = assert.rejects(second, { name: "AbortError" });
+  const current = reader.loadPeople(["p2"]);
+  // An independent consumer of A still gets its data after the selection leaves.
+  const otherConsumer = reader.loadPeople(["p0"]);
+  b.abort();
+  a.abort();
+  await Promise.all([firstAborted, secondAborted, current, otherConsumer]);
+  assert.deepEqual(calls, ["p0", "p2", "p0"]);
+  assert.equal(reader.hasPerson("p1"), false);
+  assert.equal(reader.hasPerson("p2"), true);
+  assert.equal(reader.hasPerson("p0"), true);
+});
+
+test("cancelled card responses cannot publish details or trigger a revision refresh", async () => {
+  const setup = fixture(2);
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  let calls = 0, publishes = 0;
+  const reader = archiveDetails(setup.initial, async () => {
+    calls++;
+    entered();
+    await gate; // Deliberately ignores AbortSignal, like an already buffered response.
+    return Response.json({ error: "revision changed" }, { status: 409 });
+  }, () => { publishes++; });
+  const controller = new AbortController();
+  const cancelled = assert.rejects(reader.loadPeople(["p0"], controller.signal), { name: "AbortError" });
+  await ready;
+  controller.abort();
+  release();
+  await cancelled;
+  assert.equal(calls, 1);
+  assert.equal(publishes, 0);
+  assert.equal(reader.hasPerson("p0"), false);
+});
+
 test("an urgent photo read preserves canonical collection order and completes before the next background batch", async () => {
   const setup = fixture(2);
   setup.family.photos = Array.from({ length: 210 }, (_, index) => ({

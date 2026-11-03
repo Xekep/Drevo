@@ -89,6 +89,12 @@ test("switching from archive research to a standalone greeting does not force a 
     fake,
   );
   try {
+    const originalRead = app.archive.read;
+    app.archive.read = async () => {
+      assert.equal(app.archive.db.inTransaction(), false,
+        "saving an AI answer must not materialize the full archive under a write lock");
+      return originalRead();
+    };
     // This scenario exercises several user turns, independently of rate limits.
     await app.archive.db
       .prepare(
@@ -202,6 +208,18 @@ test("switching from archive research to a standalone greeting does not force a 
         "a newly discussed person replaces previous active subjects",
       );
     }
+    const beforeRemoval = await app.archive.read();
+    await app.archive.write({ ...beforeRemoval.family,
+      people: beforeRemoval.family.people.filter(person => person.id !== "subject-b"),
+    }, beforeRemoval.revision);
+    phase = "greeting";
+    await ask("Напиши короткое приветствие без поиска по архиву.", first.chatId);
+    const afterRemoval = await app.archive.db.prepare(
+      "SELECT session_state FROM ai_chats WHERE id=?",
+      "SELECT session_state FROM ai_chats WHERE id=?",
+    ).get(first.chatId);
+    assert.deepEqual(JSON.parse(String(afterRemoval?.session_state)).activePersonIds, [],
+      "a deleted previous subject must not survive an answer without new references");
   } finally {
     await app.close();
     for (const [key, value] of Object.entries(previous)) {

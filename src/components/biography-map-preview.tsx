@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { parseBiographyMap } from "../domain/biography-map";
 import "../styles/biography-map.css";
 
@@ -93,9 +93,11 @@ export function BiographyMapPreview({
   onOpen: (source: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const open = useRef(onOpen);
+  useLayoutEffect(() => { open.current = onOpen; }, [onOpen]);
   useEffect(
-    () => mountBiographyMapPreview(host.current!, source, { onOpen }),
-    [source, onOpen],
+    () => mountBiographyMapPreview(host.current!, source, { onOpen: value => open.current(value) }),
+    [source],
   );
   return <div ref={host} />;
 }

@@ -1,12 +1,13 @@
 import type { Viewport } from "@xyflow/react";
-import { fullName, years, resolvedSex } from "../../domain";
-import { roundedRoute, Spatial, type Box } from "../../domain/edge-routing";
+import { fullName, years, resolvedSex } from "../../domain/index.ts";
+import { roundedRoute, Spatial, type Box } from "../../domain/edge-routing.ts";
 import type { PersonNodeType } from "./person-node";
 import type { RelationshipEdgeType } from "./relationship-edge";
 import type { HouseholdNodeType } from "./household-node";
-import { GpuPortraitCache } from "./gpu-portrait-cache";
-import { gpuRoute } from "./gpu-route";
-import { layoutGpuText } from "./gpu-text-layout";
+import { GpuPortraitCache } from "./gpu-portrait-cache.ts";
+import { gpuRoute } from "./gpu-route.ts";
+import { layoutGpuText } from "./gpu-text-layout.ts";
+import { scheduleGpuLabelPreparation } from "./gpu-label-preparation.ts";
 
 const MAX_BUFFERS = 24 * 1024 * 1024;
 const FONT_SIZE = 1024;
@@ -53,14 +54,20 @@ export function createGpuScene(
     textures: WebGLTexture[] = [],
     programs: WebGLProgram[] = [];
   let labelArrays: Float32Array[] = [];
+  let relationArrays: Float32Array[] = [];
+  let cancelRelations = () => {};
+  let releaseFont = () => {};
   let portraits: GpuPortraitCache | undefined,
     bufferBytes = 0,
     disposed = false;
   const destroy = (preservePortraits = false) => {
     if (disposed) return;
     disposed = true;
+    cancelRelations();
+    releaseFont();
     if (!preservePortraits) portraits?.destroy();
     labelArrays.length = 0;
+    relationArrays.length = 0;
     for (const buffer of buffers) gl.deleteBuffer(buffer);
     for (const texture of textures) gl.deleteTexture(texture);
     for (const program of programs) gl.deleteProgram(program);
@@ -259,6 +266,10 @@ export function createGpuScene(
     ctx.textBaseline = "top";
     ctx.fillStyle = "white";
     const glyphs = new Map<string, Glyph>();
+    releaseFont = () => {
+      glyphs.clear();
+      fontCanvas.width = fontCanvas.height = 1;
+    };
     let gx = 2,
       gy = 2;
     const glyph = (letter: string, bold: boolean) => {
@@ -293,13 +304,14 @@ export function createGpuScene(
       low: number,
       high: number,
       alignRight = false,
+      targetLabels = labels,
     ) => {
       if (!value) return 0;
       // Preserve each layout exactly, retaining only its typed CPU data after
       // construction. Household captions belong to all three zoom ranges.
       const targets = low === 0 && high === 10
-        ? labels
-        : [labels[low === 0 ? 0 : low === 0.18 ? 1 : 2]];
+        ? targetLabels
+        : [targetLabels[low === 0 ? 0 : low === 0.18 ? 1 : 2]];
       // Separate glyphs cannot shape joining scripts or combining sequences.
       // Use the native text renderer for these archives instead of corrupting names.
       if (/[\u0300-\u036f\u0590-\u0fff\u200d]/u.test(value))
@@ -344,40 +356,19 @@ export function createGpuScene(
       return Math.min(rows.length, maxLines);
     };
     const nodeLabels = new Map<string, readonly string[]>();
+    const relationTops = new Map<string, readonly [number, number]>();
     for (const node of nodes) {
       const name = fullName(node.data.person),
-        dates = years(node.data.person),
-        relation = relationLabel(node);
-      nodeLabels.set(node.id, [name, dates, relation]);
+        dates = years(node.data.person);
+      nodeLabels.set(node.id, [name, dates]);
       text(name, node, 146, 22, 24, 2, true, 0, 0.18);
       const overviewLines = text(name, node, 146, 22, 24, 2, true, 0.18, 0.52);
       const overviewDates = 146 + overviewLines * 24 + 4;
       text(dates, node, overviewDates, 20, 24, 1, false, 0.18, 0.52);
-      text(
-        relation,
-        node,
-        overviewDates + (dates ? 28 : 0),
-        14,
-        16,
-        1,
-        false,
-        0.18,
-        0.52,
-      );
       const fullLines = text(name, node, 146, 22, 24, 2, true, 0.52, 10);
       const fullDates = 146 + fullLines * 24 + 4;
       text(dates, node, fullDates, 20, 24, 1, false, 0.52, 10);
-      text(
-        relation,
-        node,
-        fullDates + (dates ? 28 : 0),
-        14,
-        16,
-        2,
-        false,
-        0.52,
-        10,
-      );
+      relationTops.set(node.id, [overviewDates + (dates ? 28 : 0), fullDates + (dates ? 28 : 0)]);
     }
     for (const node of households)
       if (node.data.label)
@@ -399,12 +390,14 @@ export function createGpuScene(
       return array;
     });
     const labelCpuBytes = labelArrays.reduce((sum, array) => sum + array.byteLength, 0);
-    // The first draw chooses the actual camera LOD. Keep one GPU allocation,
-    // including when panning or crossing a zoom threshold later.
+    // The first draw chooses the actual camera LOD. Only that LOD occupies
+    // the base and relation buffers, including when crossing zoom thresholds.
     const labelBatch = makeBuffer(new Float32Array(0), 15, "labels");
+    const relationBatch = makeBuffer(new Float32Array(0), 15, "relations");
     let labelLod = -1,
       labelBytes = 0;
-    glyphs.clear();
+    let relationLod = -1, relationBytes = 0, relationCpuBytes = 0;
+    relationArrays = [new Float32Array(0), new Float32Array(0), new Float32Array(0)];
     const fontTexture = gl.createTexture()!;
     textures.push(fontTexture);
     gl.bindTexture(gl.TEXTURE_2D, fontTexture);
@@ -425,7 +418,7 @@ export function createGpuScene(
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    fontCanvas.width = fontCanvas.height = 1;
+    let uploadedGlyphs = glyphs.size;
     let portraitDirty = true;
     const photoDraw = () => {
       portraitDirty = true;
@@ -444,6 +437,45 @@ export function createGpuScene(
     );
     const index = new Spatial<IndexedNode>();
     let currentNodes = nodes;
+    let currentRelationLabel = relationLabel;
+    const prepareRelations = () => {
+      cancelRelations();
+      // Drop the previous reference immediately, including its GPU allocation.
+      relationArrays = [new Float32Array(0), new Float32Array(0), new Float32Array(0)];
+      relationCpuBytes = 0;
+      relationLod = -1;
+      gl.bindBuffer(gl.ARRAY_BUFFER, relationBatch.buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(0), gl.STATIC_DRAW);
+      bufferBytes -= relationBytes;
+      relationBytes = relationBatch.count = 0;
+      const pending: number[][] = [[], [], []];
+      const snapshot = currentNodes, readLabel = currentRelationLabel;
+      canvas.dataset.gpuRelationsReady = "false";
+      cancelRelations = scheduleGpuLabelPreparation(snapshot.length, (index) => {
+        const node = snapshot[index], value = readLabel(node);
+        const [overview, full] = relationTops.get(node.id)!;
+        text(value, node, overview, 14, 16, 1, false, 0.18, 0.52, false, pending);
+        text(value, node, full, 14, 16, 2, false, 0.52, 10, false, pending);
+      }, () => {
+        relationArrays = pending.map(data => {
+          const array = new Float32Array(data);
+          data.length = 0;
+          return array;
+        });
+        relationCpuBytes = relationArrays.reduce((sum, array) => sum + array.byteLength, 0);
+        // New glyphs share the fixed atlas. No programs, routes or portraits
+        // are rebuilt when the asynchronously prepared labels become ready.
+        if (glyphs.size !== uploadedGlyphs) {
+          gl.bindTexture(gl.TEXTURE_2D, fontTexture);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, fontCanvas);
+          gl.generateMipmap(gl.TEXTURE_2D);
+          uploadedGlyphs = glyphs.size;
+        }
+        relationLod = -1;
+        canvas.dataset.gpuRelationsReady = "true";
+        redraw();
+      }, failure);
+    };
     let currentNodesById = new Map(nodes.map((node) => [node.id, node]));
     for (const node of nodes)
       index.add({
@@ -514,7 +546,6 @@ export function createGpuScene(
             // rendered text. Compare the immutable label values, not identities.
             labels[0] !== fullName(b.data.person) ||
             labels[1] !== years(b.data.person) ||
-            labels[2] !== nextRelationLabel(b) ||
             a.data.dimmed !== b.data.dimmed ||
             a.data.outsideSpotlight !== b.data.outsideSpotlight
           )
@@ -552,6 +583,11 @@ export function createGpuScene(
             return changed("household");
         }
         currentNodes = nextNodes;
+        if (currentRelationLabel !== nextRelationLabel) {
+          currentRelationLabel = nextRelationLabel;
+          // Before the first draw there is no work to cancel or start yet.
+          if (draws) prepareRelations();
+        }
         currentNodesById = new Map(nextNodes.map((node) => [node.id, node]));
         portraits!.update(photoDraw, failure, new Set(nextNodes.flatMap((node) =>
           node.data.person.photo ? [node.data.person.photo] : [],
@@ -733,9 +769,10 @@ export function createGpuScene(
         }
         gl.bindTexture(gl.TEXTURE_2D, fontTexture);
         const nextLabelLod = camera.zoom < 0.18 ? 0 : camera.zoom < 0.52 ? 1 : 2;
-        if (nextLabelLod !== labelLod) {
+        if (nextLabelLod !== labelLod || nextLabelLod !== relationLod) {
           const array = labelArrays[nextLabelLod];
-          const nextBytes = bufferBytes - labelBytes + array.byteLength;
+          const relations = relationArrays[nextLabelLod];
+          const nextBytes = bufferBytes - labelBytes - relationBytes + array.byteLength + relations.byteLength;
           if (nextBytes > MAX_BUFFERS)
             throw new Error(
               `GPU geometry budget exceeded: labels LOD ${nextLabelLod} (${array.byteLength} bytes; total ${nextBytes})`,
@@ -743,14 +780,20 @@ export function createGpuScene(
           gl.bindBuffer(gl.ARRAY_BUFFER, labelBatch.buffer);
           gl.bufferData(gl.ARRAY_BUFFER, array, gl.STATIC_DRAW);
           labelBatch.count = array.length / 15;
+          gl.bindBuffer(gl.ARRAY_BUFFER, relationBatch.buffer);
+          gl.bufferData(gl.ARRAY_BUFFER, relations, gl.STATIC_DRAW);
+          relationBatch.count = relations.length / 15;
           bufferBytes = nextBytes;
           labelBytes = array.byteLength;
+          relationBytes = relations.byteLength;
           labelLod = nextLabelLod;
-          canvas.dataset.gpuLabelBytes = String(labelBytes);
-          canvas.dataset.gpuLabelCpuBytes = String(labelCpuBytes);
+          relationLod = nextLabelLod;
           canvas.dataset.gpuLabelLod = String(labelLod);
         }
         bind(labelBatch, 15, [4, 4, 2, 4, 1]);
+        bind(relationBatch, 15, [4, 4, 2, 4, 1]);
+        canvas.dataset.gpuLabelBytes = String(labelBytes + relationBytes);
+        canvas.dataset.gpuLabelCpuBytes = String(labelCpuBytes + relationCpuBytes);
         if (!draws && gl.getError() !== gl.NO_ERROR) {
           failure();
           return;
@@ -762,6 +805,7 @@ export function createGpuScene(
         canvas.dataset.gpuDraws = String(++draws);
         canvas.dataset.sceneNodes = String(nodes.length);
         canvas.dataset.sceneEdges = String(edges.length);
+        if (draws === 1) prepareRelations();
       },
       destroy,
     };

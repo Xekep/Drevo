@@ -776,7 +776,7 @@ export function useArchive(enabled = true, initialFragments = true) {
     });
     try {
       await withDetailsRead(async (reader) => {
-        if (demand.people?.length) await reader.loadPeople(demand.people);
+        if (demand.people?.length) await reader.loadPeople(demand.people, demand.signal);
         if (demand.photos?.length) await reader.loadPhotos(demand.photos);
         if (demand.view) await reader.loadView(demand.view, demand.signal);
         if (demand.collections?.length) await reader.loadCollections(demand.collections, demand.signal);

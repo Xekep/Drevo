@@ -6608,14 +6608,25 @@ try {
     let resumeRead!: () => void;
     const readReady = new Promise<void>((resolve) => { reachedRead = resolve; });
     const readGate = new Promise<void>((resolve) => { resumeRead = resolve; });
+    let reads = 0;
     const delayedArchive = {
       ...app!.archive,
       read: async () => {
-        const snapshot = await app!.archive.read();
-        reachedRead();
-        await readGate;
-        return snapshot;
+        throw new Error("Document file authorization must not read the full archive");
       },
+      visibleIds: Object.assign(async (user: ArchiveUser) => {
+        const ids = await app!.archive.visibleIds(user);
+        if (reads++ === 0) {
+          // File authorization reads revision and visibility in one read-only
+          // snapshot. Commit the revoke after that snapshot has allowed access,
+          // before its IDs can reach the final delivery checks.
+          assert.equal(app!.archive.db.inTransaction(), true);
+          assert.ok(ids.has("account-export-hidden"), "the prepared snapshot must initially allow the document");
+          reachedRead();
+          await readGate;
+        }
+        return ids;
+      }, { close: app!.archive.visibleIds.close }),
     };
     const download = documentsHttp({
       archive: delayedArchive,
@@ -6648,6 +6659,7 @@ try {
     } finally {
       resumeRead();
       await new Promise<void>((resolve) => downloadServer.close(() => resolve()));
+      await download.close();
     }
   };
   await raceDocumentDownload(async () => {

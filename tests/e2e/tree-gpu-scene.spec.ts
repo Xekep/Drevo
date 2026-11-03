@@ -213,6 +213,11 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
     Number(await canvas.getAttribute("data-gpu-label-cpu-bytes")),
   ).toBeGreaterThan(Number(await canvas.getAttribute("data-gpu-label-bytes")));
   const verifyLabelBudget = async (lod: number) => {
+    // The first frame deliberately precedes cold kinship/text preparation.
+    // Measure the complete layer, including its eventual relation buffer.
+    await expect(canvas).toHaveAttribute("data-gpu-relations-ready", "true", { timeout: 30_000 });
+    await page.evaluate(() => new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await expect(canvas).toHaveAttribute("data-gpu-label-lod", String(lod));
     const labels = Number(await canvas.getAttribute("data-gpu-label-bytes"));
     expect(labels).toBeGreaterThan(0);
@@ -567,6 +572,7 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
         Date.now() - handoffStartedAt,
       );
       await expect(canvas).toHaveAttribute("data-gpu-draws", /\d+/);
+      await expect(canvas).toHaveAttribute("data-gpu-relations-ready", "true", { timeout: 30_000 });
       const resourcesBeforeSelection = await page.evaluate(
         () =>
           (

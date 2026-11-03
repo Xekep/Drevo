@@ -279,6 +279,7 @@ function SuggestionCard({
 
 export function ResearchAssistant({
   view,
+  launcherHidden = false,
   onOpenChange,
   personIds,
   openPersonId,
@@ -300,6 +301,7 @@ export function ResearchAssistant({
   onExportTreePdf,
 }: {
   view: string;
+  launcherHidden?: boolean;
   onOpenChange?: (open: boolean) => void;
   personIds: string[];
   openPersonId?: string;
@@ -592,7 +594,7 @@ export function ResearchAssistant({
   }, [open, chatId, chatLoading]);
 
   useEffect(() => {
-    if (view !== "tree" || !enabled) return;
+    if (view !== "tree" || !enabled || launcherHidden) return;
     let frame = 0;
     let measurementFrame = 0;
     let active = true;
@@ -642,6 +644,10 @@ export function ResearchAssistant({
                 left: Math.max(8, canvasRect.right - 62),
                 top: Math.max(8, canvasRect.bottom - 62),
               };
+        // An open mobile profile covers the tree's camera tools. Keep its
+        // assistant launcher at the right edge instead of their left flank.
+        if (openPersonId && window.matchMedia("(max-width: 899px)").matches)
+          next.left = Math.max(8, window.innerWidth - 60);
         setLauncherPosition((current) =>
           current?.left === next.left && current.top === next.top
             ? current
@@ -676,7 +682,7 @@ export function ResearchAssistant({
       observer.disconnect();
       mutations.disconnect();
     };
-  }, [view, enabled]);
+  }, [view, enabled, openPersonId, launcherHidden]);
 
   useEffect(() => {
     if (open || !nudgeToken || nudgeToken === lastNudge.current) return;
@@ -1344,7 +1350,7 @@ export function ResearchAssistant({
 
   return (
     <>
-      {!open && (
+      {!open && !launcherHidden && (
         <>
           {nudgeVisible && (
             <span
@@ -1352,7 +1358,7 @@ export function ResearchAssistant({
               style={
                 view === "tree" && launcherPosition
                   ? {
-                      left: launcherPosition.left + 21,
+                      left: Math.max(80, Math.min(window.innerWidth - 80, launcherPosition.left + 21)),
                       top: Math.max(8, launcherPosition.top - 45),
                     }
                   : undefined

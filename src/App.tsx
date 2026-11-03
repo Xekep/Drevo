@@ -405,9 +405,9 @@ export default function App() {
   ]);
   useEffect(() => {
     if (!archiveAvailable || !selected.length) return;
-    let active = true;
-    void loadDetails({ people: selected.slice(0, 2) }).catch((reason) => {
-      if (active)
+    const controller = new AbortController();
+    void loadDetails({ people: selected.slice(0, 2), signal: controller.signal }).catch((reason) => {
+      if (!controller.signal.aborted)
         setNotice(
           reason instanceof Error
             ? reason.message
@@ -415,7 +415,7 @@ export default function App() {
         );
     });
     return () => {
-      active = false;
+      controller.abort();
     };
   }, [
     selected,
@@ -641,6 +641,10 @@ export default function App() {
   const titledPerson = urlPhotoTarget?.kind === "person" ? map.get(urlPhotoTarget.id) : null;
   const biographyMapScope = JSON.stringify([archiveContextAt(window.location.pathname)?.id, user?.id, user?.role,
     user?.treeAccess, user?.personId, user?.approved, participantPreview]);
+  const biographyPersonId = chosen[0]?.id;
+  const openBiographyMap = useCallback((source: string) => {
+    if (biographyPersonId) setBiographyMap({ personId: biographyPersonId, source, scope: biographyMapScope });
+  }, [biographyPersonId, biographyMapScope]);
   const biographyMapSource = readTree && view === "tree" && biographyMap?.scope === biographyMapScope &&
     chosen[0]?.id === biographyMap.personId && hasPersonDetails(biographyMap.personId) &&
     chosen[0]?.biography?.includes(biographyMap.source) ? biographyMap.source : null;
@@ -1283,7 +1287,7 @@ export default function App() {
                         ) : (
                           chosen[0] && (
                             <PersonInspector
-                              onOpenMap={source => setBiographyMap({ personId: chosen[0].id, source, scope: biographyMapScope })}
+                              onOpenMap={openBiographyMap}
                               key={chosen[0].id}
                               person={chosen[0]}
                               onArchiveChanged={archive.reload}
@@ -1473,6 +1477,7 @@ export default function App() {
       {family && readTree && user && !participantPreview && view !== "admin" && view !== "manage" && view !== "account" && (
         <ResearchAssistant
           view={view}
+          launcherHidden={!!currentBiographyMap}
           getTreeViewContext={() => treeCanvas.current?.getViewContext()}
           onOpenChange={setAssistantOpen}
           personIds={selected.slice(0, 2)}

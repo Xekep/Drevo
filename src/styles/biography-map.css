@@ -11,6 +11,12 @@
   cursor: pointer;
   background: #e5e8de;
 }
+/* Leaflet moves the native SVG with the tiles during a drag. Its old viewport
+   must not clip newly revealed segments; the map container still clips edges. */
+.biography-map-mini .leaflet-overlay-pane > svg,
+.biography-map-surface .leaflet-overlay-pane > svg {
+  overflow: visible;
+}
 .biography-map-mini:focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: -3px;
@@ -94,6 +100,7 @@
   flex-shrink: 0;
   max-width: 50%;
 }
+.biography-map-close > svg { display: none; }
 .biography-map-points-list {
   position: absolute;
   top: 12px;
@@ -112,6 +119,20 @@
 }
 .biography-map-points-list li {
   margin: 8px 0;
+}
+.biography-map-point {
+  width: 100%;
+  padding: 6px;
+  text-align: left;
+  color: var(--accent);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.biography-map-point:disabled {
+  color: inherit;
+  cursor: default;
 }
 .biography-map-points-list li span {
   display: block;
@@ -136,17 +157,55 @@
   }
 }
 @media (max-width: 899px) {
-  .tree-view:has(> .inspector-dock) > .biography-map-workspace {
-    bottom: 44dvh;
+  .tree-view:has(> .inspector-dock.is-map-peek) > .biography-map-workspace {
+    bottom: calc(56px + env(safe-area-inset-bottom));
   }
-  .biography-map-workspace header {
-    padding: 8px 10px;
-    gap: 8px;
+  .biography-map-workspace > header {
+    height: 0;
+    padding: 0;
   }
-  .biography-map-workspace header h2 {
-    font-size: 14px;
-    max-height: 4.3em;
-    overflow: auto;
+  .biography-map-workspace > header h2,
+  .biography-map-close > span {
+    display: none;
+  }
+  .biography-map-workspace .biography-map-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1002;
+    width: 44px;
+    height: 44px;
+    padding: 10px;
+    display: grid;
+    place-items: center;
+    background: var(--paper, #fff);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 2px 12px #0002;
+  }
+  .biography-map-close > svg { display: block; }
+  .biography-map-points-list {
+    left: 10px;
+    right: auto;
+    max-width: calc(100% - 74px);
+  }
+  .inspector-dock.is-map-peek {
+    height: calc(56px + env(safe-area-inset-bottom));
+    overflow: hidden;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .inspector-dock.is-map-peek > :not(.inspector-heading),
+  .inspector-dock.is-map-peek .inspector-actions-slot {
+    display: none;
+  }
+  .inspector-dock.is-map-peek > .inspector-heading {
+    min-height: 54px;
+    padding: 4px 10px;
+  }
+  .inspector-dock.is-map-peek .inspector-heading > span {
+    display: block;
+    letter-spacing: normal;
+    color: var(--ink);
   }
 }
 .biography-editor .cm-scroller {
