@@ -24,7 +24,7 @@ export const FAMILY_BRANCH_LIMITS = {
 export function familyBranchMoves(
   geometry: TreeGeometry,
   size: TreeNodeSize,
-  roots: Iterable<string | { blocks: readonly string[]; preferredShift: number; direction?: "ancestors" }>,
+  roots: Iterable<string | { blocks: readonly string[]; preferredShift: number; direction?: "ancestors"; stopAtSharedChildren?: boolean }>,
   limit = FAMILY_BRANCH_LIMITS.candidates,
 ): FamilyBranchMove[] {
   const cap = Math.max(0, Math.min(FAMILY_BRANCH_LIMITS.candidates, limit));
@@ -61,7 +61,8 @@ export function familyBranchMoves(
   for (const root of roots) {
     const starts = typeof root === "string" ? [root] : [...new Set(root.blocks)].sort();
     const ancestry = typeof root !== "string" && root.direction === "ancestors";
-    const rootKey = JSON.stringify([ancestry, starts]);
+    const exclusive = !ancestry && typeof root !== "string" && root.stopAtSharedChildren === true;
+    const rootKey = JSON.stringify([ancestry, exclusive, starts]);
     if (triedRoots.has(rootKey)) continue;
     if (triedRoots.size >= FAMILY_BRANCH_LIMITS.roots) break;
     triedRoots.add(rootKey);
@@ -74,6 +75,9 @@ export function familyBranchMoves(
       if (invalid.has(id) || people > FAMILY_BRANCH_LIMITS.people) break;
       for (const child of (ancestry ? parents : children).get(id) || []) {
         if (closure.has(child)) continue;
+        // A child household joined to a different ancestral branch is a fixed
+        // boundary. Moving one side must not pull the other side's descendants.
+        if (exclusive && [...(parents.get(child) || [])].some((parent) => !closure.has(parent))) continue;
         closure.add(child);
         queue.push(child);
         if (closure.size > FAMILY_BRANCH_LIMITS.households) { valid = false; break; }

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -11,6 +11,8 @@ import { livePreview, previewFocus } from "./live-preview";
 import "katex/dist/katex.min.css";
 import { GitBranch } from "lucide-react";
 import { commentDiagramTemplate } from "./diagram-template";
+import { biographyLivePreview } from "../biography-live-preview";
+import type { BiographyMapActions } from "../biography-map-preview";
 
 type Props = {
   value: string;
@@ -20,6 +22,12 @@ type Props = {
   label: string;
   focusOnMount?: boolean;
   selectionOnMount?: { anchor: number; head: number };
+  placeholder?: string;
+  className?: string;
+  tools?: ReactNode;
+  biography?: boolean;
+  loadOnMount?: boolean;
+  mapActions?: BiographyMapActions;
 };
 
 export default function CommentEditor(props: Props) {
@@ -37,12 +45,21 @@ export default function CommentEditor(props: Props) {
       parent: host.current,
       state: EditorState.create({
         doc: current.value,
-        ...(current.selectionOnMount ? { selection: current.selectionOnMount } : {}),
+        ...(current.selectionOnMount
+          ? { selection: current.selectionOnMount }
+          : {}),
         extensions: [
           markdown({ base: markdownLanguage, completeHTMLTags: false }),
           history(),
           syntaxHighlighting(defaultHighlightStyle),
-          livePreview,
+          current.biography
+            ? biographyLivePreview({
+                onOpen: (source) =>
+                  callbacks.current.mapActions?.onOpen(source),
+                onEdit: (source, range) =>
+                  callbacks.current.mapActions?.onEdit?.(source, range),
+              })
+            : livePreview,
           EditorView.lineWrapping,
           readonly.current.of([
             EditorState.readOnly.of(!!current.disabled),
@@ -53,7 +70,9 @@ export default function CommentEditor(props: Props) {
             "aria-multiline": "true",
             spellcheck: "true",
           }),
-          placeholder("Напишите вопрос или воспоминание…"),
+          placeholder(
+            current.placeholder ?? "Напишите вопрос или воспоминание…",
+          ),
           keymap.of([
             {
               key: "Mod-Enter",
@@ -87,7 +106,7 @@ export default function CommentEditor(props: Props) {
       editor.destroy();
     };
   }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const editor = view.current;
     if (editor && editor.state.doc.toString() !== props.value)
       editor.dispatch({
@@ -103,26 +122,29 @@ export default function CommentEditor(props: Props) {
     });
   }, [props.disabled]);
   return (
-    <div className="comment-editor">
-      <button
-        type="button"
-        className="comment-insert-diagram"
-        disabled={props.disabled}
-        aria-label="Добавить схему Mermaid"
-        onClick={() => {
-          const editor = view.current;
-          if (!editor) return;
-          const template = commentDiagramTemplate;
-          const range = editor.state.selection.main;
-          editor.dispatch({
-            changes: { from: range.from, to: range.to, insert: template },
-            selection: { anchor: range.from + template.length },
-          });
-          editor.focus();
-        }}
-      >
-        <GitBranch size={15} aria-hidden="true" />
-      </button>
+    <div className={`comment-editor ${props.className || ""}`}>
+      {props.tools}
+      {!props.biography && (
+        <button
+          type="button"
+          className="comment-insert-diagram"
+          disabled={props.disabled}
+          aria-label="Добавить схему Mermaid"
+          onClick={() => {
+            const editor = view.current;
+            if (!editor) return;
+            const template = commentDiagramTemplate;
+            const range = editor.state.selection.main;
+            editor.dispatch({
+              changes: { from: range.from, to: range.to, insert: template },
+              selection: { anchor: range.from + template.length },
+            });
+            editor.focus();
+          }}
+        >
+          <GitBranch size={15} aria-hidden="true" />
+        </button>
+      )}
       <div ref={host} />
     </div>
   );

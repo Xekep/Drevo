@@ -38,11 +38,16 @@ test("expanded life section drafts occupation and history together and applies t
   const form = page.locator(".person-editor-form");
   const section = form.locator(".person-life-editor");
   await expect(section).not.toHaveAttribute("open");
-  const inline = section.locator(":scope > label > textarea");
-  await expect(inline).toHaveValue("Исходная история");
+  const inline = section.locator(".cm-content");
+  // The live editor is mounted only while the inline section is open.
+  await expect(inline).toHaveCount(0);
   const initialOccupation = read().occupation || "";
   const open = form.getByRole("button", { name: "Открыть жизнь и занятия в отдельном окне" });
   const lifeHeader = section.locator(":scope > summary");
+  await lifeHeader.click();
+  await expect(inline).toHaveText("Исходная история");
+  await lifeHeader.click();
+  await expect(inline).toHaveCount(0);
   const neighboringHeader = form.locator(".education-editor > summary");
   const appearance = (element: Element) => {
     const style = getComputedStyle(element);
@@ -70,7 +75,7 @@ test("expanded life section drafts occupation and history together and applies t
   } else await open.click();
   const dialog = page.getByRole("dialog", { name: "Жизнь и занятия", exact: true });
   const expanded = dialog.getByRole("textbox", { name: "История человека", exact: true });
-  await expect(expanded).toHaveValue("Исходная история");
+  await expect(expanded).toHaveText("Исходная история");
   const box = (await dialog.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
@@ -84,17 +89,20 @@ test("expanded life section drafts occupation and history together and applies t
   page.once("dialog", confirmation => confirmation.accept());
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
-  await expect(inline).toHaveValue("Исходная история");
+  await expect(inline).toHaveCount(0);
   await expect(section).not.toHaveAttribute("open");
   await expect(form.getByLabel("Занятие", { exact: true })).toHaveValue(initialOccupation);
   await expect(open).toBeFocused();
   await open.click();
+  await expect(expanded).toHaveText("Исходная история");
   const value = "## История\n\nПервая строка.\nВторая строка с **важной** деталью.";
   await dialog.getByLabel("Занятие", { exact: true }).fill("Учитель");
   await expanded.fill(value);
   await page.screenshot({ path: info.outputPath("expanded-life-editor.png") });
   await dialog.getByRole("button", { name: "Готово", exact: true }).click();
-  await expect(inline).toHaveValue(value);
+  await lifeHeader.click();
+  await expect(inline).toContainText("Первая строка.");
+  await expect(inline).toContainText("Вторая строка с");
   await expect(form.getByLabel("Занятие", { exact: true })).toHaveValue("Учитель");
   expect(read().biography).toBe("Исходная история");
   expect(read().occupation || "").toBe(initialOccupation);

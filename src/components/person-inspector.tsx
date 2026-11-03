@@ -56,6 +56,7 @@ export function PersonInspector({
   onUrlPerson,
   matchPath,
   onCompare,
+  onOpenMap,
   onEdit,
   onNewRelative,
   onExistingRelative,
@@ -82,6 +83,7 @@ export function PersonInspector({
   onUrlPerson?: (id: string) => void;
   matchPath?: string;
   onCompare: () => void;
+  onOpenMap?: (source: string) => void;
   onEdit: () => void;
   onNewRelative: (type: "child" | ConnectionType) => void;
   onExistingRelative: (type: "child" | ConnectionType) => void;
@@ -308,6 +310,7 @@ export function PersonInspector({
           </button>}
         </div>
       ) : <PersonPanel
+        onOpenMap={onOpenMap}
         idPrefix="person-inspector"
         person={person}
         isCurrentUser={user?.personId === person.id}

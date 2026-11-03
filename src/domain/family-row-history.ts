@@ -5,6 +5,8 @@ import {
   familyPairBlocks,
   locallyReverseCouples,
 } from "./local-couple-order.ts";
+import { repairFamilyRoutes } from "./family-route-repair.ts";
+import { bundleFamilyBranches } from "./family-branch-bundling.ts";
 import {
   translateFamilyBlocks,
   routeFamilyMove,
@@ -178,7 +180,14 @@ export function restoreFamilyRowHistory(
     );
   };
   let best = original;
-  for (const view of [oriented, candidate]) {
+  // Restoring a reflected couple may leave one arrival in the solver's old
+  // corridor. Repair that route before rejecting the exact historical slots.
+  const repairedOrientation = oriented !== primary &&
+      displacement(oriented) < displacement(primary) &&
+      !familyRowNoWorse(score(oriented), initial)
+    ? repairFamilyRoutes(bundleFamilyBranches(oriented), size, score).geometry
+    : oriented;
+  for (const view of [oriented, repairedOrientation, candidate]) {
     const next = score(view),
       current = score(best);
     const movement = displacement(view),

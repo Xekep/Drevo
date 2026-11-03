@@ -1,0 +1,204 @@
+.biography-map-preview {
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  white-space: normal;
+}
+.biography-map-mini {
+  height: 180px;
+  width: 100%;
+  cursor: pointer;
+  background: #e5e8de;
+}
+.biography-map-mini:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+.biography-map-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  flex-wrap: wrap;
+}
+.biography-map-actions button {
+  font: inherit;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  padding: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+.biography-map-actions button:first-child {
+  margin-right: auto;
+  font-weight: 600;
+}
+.biography-map-surface {
+  width: 100%;
+  height: 100%;
+  min-height: 240px;
+  background: #e5e8de;
+}
+.biography-map-surface.is-picking {
+  cursor: crosshair;
+}
+.biography-map-label {
+  white-space: pre-line;
+  max-width: 280px;
+  overflow-wrap: anywhere;
+}
+.biography-map-workspace {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  background: var(--paper, #fff);
+  display: flex;
+  flex-direction: column;
+}
+.biography-map-workspace header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+}
+.biography-map-workspace header h2 {
+  font-size: 18px;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.biography-map-workspace header button {
+  flex-shrink: 0;
+  max-width: 50%;
+}
+.biography-map-points-list {
+  position: absolute;
+  top: 65px;
+  right: 12px;
+  z-index: 1001;
+  max-width: min(300px, 85%);
+  max-height: 65%;
+  overflow: auto;
+  background: var(--paper, #fff);
+  padding: 10px 14px;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px #0002;
+}
+.biography-map-points-list summary {
+  cursor: pointer;
+}
+.biography-map-points-list li {
+  margin: 8px 0;
+}
+.biography-map-points-list li span {
+  display: block;
+  color: var(--muted);
+}
+.biography-map-workspace .biography-map-surface {
+  flex: 1;
+  min-height: 0;
+}
+.biography-map-editor .biography-map-surface {
+  height: 320px;
+}
+.biography-map-editor-tools {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 10px 0;
+}
+.biography-map-editor-tools label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.biography-map-editor-tools input[type="checkbox"] {
+  width: auto;
+  min-height: auto;
+  flex: 0 0 auto;
+}
+.biography-map-point {
+  display: grid;
+  grid-template-columns: 1fr 120px 80px 80px auto;
+  gap: 6px;
+  align-items: end;
+  margin: 8px 0;
+}
+.biography-map-point input {
+  width: 100%;
+  min-width: 0;
+}
+.biography-map-point-actions {
+  display: flex;
+}
+.biography-editor .cm-scroller {
+  min-height: 130px;
+  max-height: 420px;
+}
+.biography-add-map {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+.person-life-history > span {
+  display: block;
+  margin-bottom: 6px;
+}
+.person-life-history {
+  margin-top: 12px;
+  min-width: 0;
+}
+.biography-map-preview-dialog {
+  width: min(1100px, 96vw);
+  height: min(800px, 90dvh);
+}
+.biography-map-preview-dialog .biography-map-workspace {
+  top: 55px;
+}
+.biography-editor .cm-editor {
+  font-size: 14px;
+}
+.biography-editor .cm-content {
+  padding: 8px;
+}
+.biography-editor .cm-line {
+  padding: 0 2px;
+}
+.biography-editor .biography-heading {
+  font-weight: 700;
+  font-size: 1.15em;
+  padding-block: 5px;
+}
+.biography-editor .biography-quote {
+  border-left: 3px solid var(--line);
+  padding-left: 12px;
+  color: var(--muted);
+}
+.biography-editor .biography-link {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.biography-editor .biography-code {
+  font-family: monospace;
+  background: #8882;
+  border-radius: 3px;
+}
+@media (max-width: 600px) {
+  .biography-map-point {
+    grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 10px;
+  }
+  .biography-map-point-actions {
+    grid-column: 1 / -1;
+  }
+  .biography-map-editor .biography-map-surface {
+    height: 260px;
+  }
+}

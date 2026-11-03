@@ -85,9 +85,20 @@ test("saved biography renders Markdown and line breaks without executing HTML", 
     });
     await page.locator(".inspector-person-actions .person-edit-button").click();
     await page.getByText("Жизнь и занятия", { exact: true }).click();
-    await expect(
-      page.getByRole("textbox", { name: "История человека" }),
-    ).toHaveValue(biography);
+    const editor = page.getByRole("textbox", { name: "История человека" });
+    await editor.click();
+    await expect(page.locator(".biography-editor .cm-editor")).toBeVisible();
+    await page.keyboard.press("Control+End");
+    await page.keyboard.insertText("\nДополнение после открытия");
+    await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+    await expect
+      .poll(async () => {
+        const next = await (await request.get("/api/family")).json();
+        return next.family.people.find(
+          (p: { id: string }) => p.id === person.id,
+        ).biography;
+      })
+      .toBe(biography + "\nДополнение после открытия");
   } finally {
     const current = await (await request.get("/api/family")).json();
     const stored = (current.family as Family).people.find(
