@@ -1081,10 +1081,12 @@ export default function App() {
               >
                 {readTree && (
                   <div
-                    className={`tree-view ${view === "tree" && !currentBiographyMap ? "" : "is-hidden"}`}
-                    inert={view !== "tree" || !!currentBiographyMap}
-                    aria-hidden={view !== "tree" || !!currentBiographyMap}
+                    className={`tree-view ${view === "tree" ? "" : "is-hidden"}`}
+                    inert={view !== "tree"}
+                    aria-hidden={view !== "tree"}
                   >
+                    <div className={`tree-scene ${currentBiographyMap ? "is-hidden" : ""}`}
+                      inert={!!currentBiographyMap} aria-hidden={!!currentBiographyMap}>
                     <TreeCanvas
                       ref={treeCanvas}
                       covered={treeSceneCovered || !!currentBiographyMap}
@@ -1214,6 +1216,10 @@ export default function App() {
                         </button>
                       </div>
                     )}
+                    </div>
+                    {currentBiographyMap && <Suspense fallback={<p role="status">Загрузка карты…</p>}>
+                      <BiographyMapWorkspace data={currentBiographyMap} onClose={() => setBiographyMap(null)} />
+                    </Suspense>}
                     {personDraft ? (
                       <InspectorDock
                         key={personDraft.key}
@@ -1259,6 +1265,7 @@ export default function App() {
                             : chosen[0]?.id
                         }
                         initialExpanded={!compare || chosen.length === 2}
+                        revealScene={!!currentBiographyMap}
                         skipInitialFocus={editorFocusReturn?.restorePending}
                         allowExpand={!compare}
                         onClose={clear}
@@ -1335,9 +1342,6 @@ export default function App() {
                     ) : null}
                   </div>
                 )}
-                {currentBiographyMap && <Suspense fallback={<p role="status">Загрузка карты…</p>}>
-                  <BiographyMapWorkspace data={currentBiographyMap} onClose={() => setBiographyMap(null)} />
-                </Suspense>}
                 <ArchiveSection
                   revision={archive.getRevision()}
                   view={view}

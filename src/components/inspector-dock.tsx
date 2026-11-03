@@ -28,6 +28,7 @@ export function InspectorDock({
   onCoveredSceneChange,
   manageFocus = true,
   skipInitialFocus = false,
+  revealScene = false,
 }: {
   children: ReactNode;
   onClose: () => void;
@@ -39,6 +40,7 @@ export function InspectorDock({
   onCoveredSceneChange?: (covered: boolean) => void;
   manageFocus?: boolean;
   skipInitialFocus?: boolean;
+  revealScene?: boolean;
 }) {
   const [expanded, setExpanded] = useState(initialExpanded);
   const [mobile, setMobile] = useState(
@@ -52,6 +54,14 @@ export function InspectorDock({
   const skipFocusOnMount = useRef(skipInitialFocus);
   const heading = useRef<HTMLDivElement>(null);
   const expand = useCallback(() => setExpanded(true), []);
+  const sceneVisible = mobile && revealScene;
+  const [previousSceneVisible, setPreviousSceneVisible] = useState(false);
+  // Adjust once on entering the map, before committing the same inspector.
+  // Manual expansion afterwards remains available while the map is open.
+  if (sceneVisible !== previousSceneVisible) {
+    setPreviousSceneVisible(sceneVisible);
+    if (sceneVisible) setExpanded(false);
+  }
   useLayoutEffect(() => {
     onCoveredSceneChange?.(mobile && expanded && !mobileSuspended);
     return () => onCoveredSceneChange?.(false);
