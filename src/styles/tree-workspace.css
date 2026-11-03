@@ -265,6 +265,7 @@
   padding: 12px 22px;
 }
 .archive-status-loading {
+  user-select: none;
   min-height: 220px;
   display: grid;
   place-items: center;

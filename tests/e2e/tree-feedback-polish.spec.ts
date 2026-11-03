@@ -1,9 +1,26 @@
 import { expect, test } from "@playwright/test";
 
+test("archive loading text does not become a page selection before data arrives", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/family?projection=overview", async (route) => {
+    await gate;
+    await route.continue();
+  });
+  await page.goto("/people", { waitUntil: "domcontentloaded" });
+  try {
+    await expect(page.getByRole("status", { name: "Загрузка архива" })).toBeVisible();
+    await page.keyboard.press("Control+A");
+    expect(await page.evaluate(() => window.getSelection()?.toString() || "")).toBe("");
+  } finally { release(); }
+  await expect(page.getByRole("combobox", { name: "Найти человека" })).toBeVisible();
+});
+
 test("tree explains layout preparation until the worker is ready", async ({ page }) => {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
-  await page.route("**/layout.worker.ts*", async (route) => {
+  await page.route(/\/layout\.worker(?:\.ts|-[^/?]+\.js)(?:\?.*)?$/, async (route) => {
     await gate;
     await route.continue();
   });
