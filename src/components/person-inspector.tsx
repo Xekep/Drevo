@@ -295,11 +295,14 @@ export function PersonInspector({
       )}
       {detailsLoading ? (
         <div
-          className="archive-status"
+          className="archive-status person-details-status"
           role={detailsError ? "alert" : "status"}
           aria-label="Загрузка сведений человека"
         >
-          {detailsError ? <p>{detailsError}</p> : <span className="archive-loader-ring" aria-hidden="true" />}
+          {detailsError ? <p>{detailsError}</p> : <>
+            <span className="archive-loader-ring" aria-hidden="true" />
+            <p>Загружаем сведения о человеке…</p>
+          </>}
           {detailsError && onRetryDetails && <button type="button" onClick={onRetryDetails}>
             Повторить загрузку
           </button>}

@@ -19,8 +19,9 @@
     "incremental": true,
     "paths": {
       "@/*": ["./*"]
-    }
+    },
+    "tsBuildInfoFile": "node_modules/.cache/drevo/tsconfig.tsbuildinfo"
   },
   "include": ["src", "tests", "ops/postgres", "vite.config.ts"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "tests/.artifacts"]
 }

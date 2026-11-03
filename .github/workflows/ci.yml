@@ -131,7 +131,7 @@ jobs:
         if: failure()
         with:
           name: e2e-failures-${{ matrix.shard }}
-          path: test-results
+          path: tests/.artifacts/playwright
           retention-days: 3
   unit:
     needs: prepare
@@ -159,7 +159,7 @@ jobs:
         if: failure()
         with:
           name: unit-failures
-          path: outputs/unit-tests/
+          path: tests/.artifacts/unit-tests/
           if-no-files-found: ignore
           retention-days: 3
   check:

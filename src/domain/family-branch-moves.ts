@@ -141,7 +141,7 @@ export function familyBranchMoves(
     anchors.sort((a, b) => a - b);
     const desired = typeof root !== "string" ? root.preferredShift : anchors.length ? anchors[Math.floor(anchors.length / 2)] : 0;
     const offsets = [...new Set([...(typeof root === "string" ? [] : [desired]), ...anchors, ...merged.flat()])]
-      .filter((dx) => Number.isFinite(dx) && Math.abs(dx) >= size.width / 20 &&
+      .filter((dx) => Number.isFinite(dx) && Math.abs(dx) >= (typeof root === "string" ? size.width / 20 : 0.5) &&
         Math.abs(dx) <= size.width * 24 &&
         free(dx))
       .sort((a, b) => Math.abs(a - desired) - Math.abs(b - desired) || Math.abs(a) - Math.abs(b) || a - b);

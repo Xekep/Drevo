@@ -6,6 +6,7 @@ export function ArchiveLoading({ canvas = false }: { canvas?: boolean }) {
       aria-label="Загрузка архива"
     >
       <span className="archive-loader-ring" aria-hidden="true" />
+      <p>{canvas ? "Загружаем древо…" : "Загружаем архив…"}</p>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { archiveFetch } from "../../data/archive-fetch.ts";
 import { jsPDF } from "jspdf";
 import "svg2pdf.js";
-import fontUrl from "../../../assets/DejaVuSans.ttf?url";
+import fontUrl from "../../assets/DejaVuSans.ttf?url";
 import { drawPdfPortraits, yieldPdfExport, type PdfPortraitPlacement } from "./tree-pdf-images";
 import {
   DEFAULT_TREE_PRINT,

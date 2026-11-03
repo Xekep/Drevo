@@ -1844,7 +1844,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           }
         }}
         tabIndex={gpuActive ? 0 : -1}
-        aria-busy={growthPreparing || growthActive}
+        aria-busy={layoutBusy || !initialCameraReady || growthPreparing || growthActive}
         onContextMenu={(event) => {
           if (growthActive || layoutBusy) {
             event.preventDefault();
@@ -1868,6 +1868,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
       >
         {screen.fullscreen && <MemberPreviewExit />}
+        {!problem && (layoutBusy || !initialCameraReady || growthPreparing || growthActive) && (
+          <div className="tree-preparation-status" role="status">
+            <span className="archive-loader-ring" aria-hidden="true" />
+            <span>{layoutBusy || !ready || growthPreparing
+              ? "Расставляем карточки и связи…"
+              : growthActive ? "Показываем поколения…" : "Подготавливаем вид древа…"}</span>
+          </div>
+        )}
         <div className={`tree-mode-bar${props.assistantFilter ? " has-assistant-filter" : ""}`}>
           {narrow ? (
             <button

@@ -14,9 +14,10 @@ import { gpuRoute } from "./gpu-route.ts";
 
 const PORTRAIT_SIZE = 132;
 const PORTRAIT_TOP = 4;
-const TINY_SIZE = 48;
+const TINY_SIZE = 96;
 const MAX_PARALLEL_LOADS = 12;
-const RETAINED_PREVIEWS = 1024;
+// Keep the previous pixel budget after doubling preview resolution.
+const RETAINED_PREVIEWS = 256;
 const OVERSCAN = 256;
 
 function tinyPortraitUrl(photo?: string) {
@@ -24,7 +25,7 @@ function tinyPortraitUrl(photo?: string) {
     /^\/media\/[a-zA-Z0-9-]+\.(jpg|png|webp)$/.test(photo) ||
     /^\/api\/shared\/[A-Za-z0-9_-]{43}\/portrait\/[^/?#]+$/.test(photo)
   )) return undefined;
-  return mediaPreview(safeUrl(photo), "tiny");
+  return mediaPreview(safeUrl(photo), "avatar");
 }
 
 function circularPreview(image: HTMLImageElement) {
@@ -95,6 +96,7 @@ export function DistantPortraits({
   cameraReady?: boolean;
 }) {
   const store = useStoreApi();
+  const pixelRatio = typeof window === "undefined" ? 1 : Math.min(window.devicePixelRatio || 1, 2);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previews = useRef(new Map<string, HTMLCanvasElement>());
   const placeholders = useRef<Partial<Record<"f" | "m" | "u", HTMLCanvasElement>>>({});
@@ -283,6 +285,7 @@ export function DistantPortraits({
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
     if (!canvas || !context || !width || !height) return;
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     const growthEnd = treeGrowthDuration(Math.max(0, ...growthDelays.values()), growthDelays);
     let frame = 0;
     let settleTimer = 0;
@@ -556,15 +559,15 @@ export function DistantPortraits({
       window.clearTimeout(settleTimer);
       requestDraw.current = () => {};
     };
-  }, [store, nodes, households, edges, fullScene, width, height, growing, growthStarted, growthDelays]);
+  }, [store, nodes, households, edges, fullScene, width, height, growing, growthStarted, growthDelays, pixelRatio]);
 
   return <div className="tree-distant-portrait-clip" aria-hidden="true"
     style={{ opacity: growing && !growthStarted ? 0 : undefined }}>
     <canvas
       ref={canvasRef}
       className="tree-distant-portraits"
-      width={Math.ceil(width) + OVERSCAN * 2}
-      height={Math.ceil(height) + OVERSCAN * 2}
+      width={Math.ceil((width + OVERSCAN * 2) * pixelRatio)}
+      height={Math.ceil((height + OVERSCAN * 2) * pixelRatio)}
     />
   </div>;
 }

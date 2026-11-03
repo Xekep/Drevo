@@ -123,6 +123,29 @@ function scorer() {
 }
 
 for (const reverse of [false, true]) {
+  test(`a single child aligns exactly even when the remaining offset is only eight pixels (reverse=${reverse})`, () => {
+    const before = family(reverse);
+    before.positions = before.positions
+      .filter(([id]) => id === "parent" || id === "younger")
+      .map(([id, point]) => [id, { ...point, x: id === "parent" ? 0 : 8 }]);
+    before.occurrences = before.positions.map(([id]) => ({ id, personId: id, block: id }));
+    before.blocks = [];
+    before.generationBands = before.generationBands!.slice(0, 2).map((band, i) => ({
+      ...band, members: [i ? "younger" : "parent"],
+    }));
+    before.branches = before.branches!.filter((branch) => branch.target === "younger").map((branch) => ({
+      ...branch,
+      route: { ...branch.route, points: branch.route.points.map((point, i) => ({ ...point, x: i < 2 ? 110 : 118 })) },
+    }));
+    const score = scorer();
+    const after = centerFamilyBranches(before, people(before), [], size, score);
+    const points = new Map(after.positions);
+    assert.equal(points.get("parent")!.x, points.get("younger")!.x);
+    assert.equal(score(after).overlaps, 0);
+    assert.equal(score(after).cardHits, 0);
+    assert.ok(score(after).length < score(before).length);
+    assert.deepEqual(after.positions.map(([id, point]) => [id, point.y]), before.positions.map(([id, point]) => [id, point.y]));
+  });
   test(`a sibling forest uses separate free intervals around an unrelated family (reverse=${reverse})`, () => {
     const before = family(reverse);
     const xs = new Map([

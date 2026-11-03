@@ -10,7 +10,7 @@ import {
 export type { ResearchGraph } from "./research-pdf-visuals.ts";
 
 const font = fileURLToPath(
-  new URL("../../assets/DejaVuSans.ttf", import.meta.url),
+  new URL("../assets/DejaVuSans.ttf", import.meta.url),
 );
 
 function plainText(line: string) {

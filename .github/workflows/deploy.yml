@@ -82,7 +82,7 @@ jobs:
         if: failure()
         with:
           name: deploy-unit-failures
-          path: outputs/unit-tests/
+          path: tests/.artifacts/unit-tests/
           if-no-files-found: ignore
           retention-days: 3
       - name: Assemble the verified release
@@ -90,8 +90,8 @@ jobs:
           RELEASE_ID: ${{ github.sha }}-${{ github.run_attempt }}
         run: |
           mkdir -p release/src release/public
-          cp -R dist ops assets release/
-          cp -R src/domain src/server src/shared release/src/
+          cp -R dist ops release/
+          cp -R src/domain src/server src/shared src/assets release/src/
           cp -R public/data release/public/
           cp ops/runtime/package.json ops/runtime/package-lock.json release/
           node --input-type=module -e 'import {writeFileSync} from "node:fs"; writeFileSync("release/release.json", JSON.stringify({releaseId:process.env.RELEASE_ID}))'
@@ -147,7 +147,7 @@ jobs:
         if: failure()
         with:
           name: deploy-e2e-failures-${{ matrix.shard }}
-          path: test-results
+          path: tests/.artifacts/playwright
           if-no-files-found: ignore
           retention-days: 3
 
