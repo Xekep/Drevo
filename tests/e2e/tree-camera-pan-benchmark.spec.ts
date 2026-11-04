@@ -18,8 +18,8 @@ test("profile camera gestures on a supplied small family graph", async ({ page }
   const ids = new Map(graph.people.map((person, index) => [person.id, `pan-person-${index}`]));
   const people: Person[] = graph.people.map((person, index) => ({
     id: ids.get(person.id)!, name: `Человек ${index + 1}`, surname: "Тестов", patronymic: "",
-    sex: "u", birth: person.birth || "", birthPlace: "", sources: [], generation: 1, column: 0,
-    photo: `/media/pan-portrait-${index}.png`,
+    sex: (["m", "f", "u"] as const)[index % 3], birth: person.birth || "", birthPlace: "", sources: [], generation: 1, column: 0,
+    photo: process.env.DREVO_PAN_MIXED_PORTRAITS && index % 4 !== 0 ? undefined : `/media/pan-portrait-${index}.png`,
     parents: graph.relations.filter(r => r.type === "parent" && r.to === person.id)
       .flatMap(r => ids.has(r.from) ? [ids.get(r.from)!] : []),
     spouses: graph.relations.filter(r => r.type === "spouse" && (r.to === person.id || r.from === person.id))

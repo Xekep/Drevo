@@ -8,12 +8,11 @@ import { GpuPortraitCache } from "./gpu-portrait-cache.ts";
 import { gpuRoute } from "./gpu-route.ts";
 import { layoutGpuText } from "./gpu-text-layout.ts";
 import { scheduleGpuLabelPreparation } from "./gpu-label-preparation.ts";
+import { createGpuFont, gpuFontAtlasSize as FONT_SIZE, gpuFontSize } from "./gpu-font.ts";
+import { gpuPlaceholderCanvas, gpuPlaceholderUv, placeholderWidth, placeholderHeight } from "./gpu-placeholders.ts";
 
 const MAX_BUFFERS = 24 * 1024 * 1024;
-const FONT_SIZE = 1024;
-const FONT = '"Segoe UI Variable Text", "Segoe UI", sans-serif';
 type Batch = { buffer: WebGLBuffer; count: number };
-type Glyph = { x: number; y: number; width: number; advance: number };
 type IndexedNode = {
   left: number;
   right: number;
@@ -109,31 +108,47 @@ export function createGpuScene(
       layout(location=2) in vec2 range; layout(location=3) in vec4 color;
       layout(location=4) in float kind;
       ${cameraShader}
-      out vec2 texCoord; out vec2 local; out vec4 tint; flat out int mode; flat out vec2 dimensions;
+      out vec2 texCoord; out vec2 local; out vec4 tint; flat out int mode; flat out vec2 dimensions; flat out vec4 atlasRect;
       void main() { vec2 c=corners[gl_VertexID]; gl_Position=project(rect.xy+c*rect.zw);
         if(camera.z<range.x || camera.z>=range.y) gl_Position=vec4(2,2,0,1);
-        texCoord=uv.xy+c*uv.zw; local=c; tint=color; mode=int(kind); dimensions=rect.zw; }`,
+        texCoord=uv.xy+c*uv.zw; local=c; tint=color; mode=int(kind); dimensions=rect.zw; atlasRect=uv; }`,
       `#version 300 es
       precision highp float; precision highp int;
-      in vec2 texCoord; in vec2 local; in vec4 tint; flat in int mode; flat in vec2 dimensions;
+      in vec2 texCoord; in vec2 local; in vec4 tint; flat in int mode; flat in vec2 dimensions; flat in vec4 atlasRect;
       uniform sampler2D atlas; out vec4 outputColor;
+      float glyphCoverage(vec2 uv, float aa) {
+        // At the smallest zoom a subpixel sample can leave its glyph's tile.
+        if(any(lessThan(uv,atlasRect.xy)) || any(greaterThan(uv,atlasRect.xy+atlasRect.zw))) return 0.;
+        float value=texture(atlas,uv).r;
+        return value==0. ? 0. : clamp((value-.75)/aa+.5,0.,1.);
+      }
       void main() {
         if(mode==128) { float r=length((local-.5)*2.); outputColor=vec4(tint.rgb,(1.-smoothstep(0.,1.,r))*tint.a); return; }
         if(mode==129) { vec2 q=abs((local-.5)*dimensions)-dimensions*.5+14.;
           float d=length(max(q,vec2(0)))+min(max(q.x,q.y),0.)-14.; float aa=max(fwidth(d),.4);
           float border=smoothstep(-1.5-aa,-1.5+aa,d); outputColor=vec4(tint.rgb,
             mix(.035,.55,border)*(1.-smoothstep(-aa,aa,d))); return; }
-        if(mode==0) { outputColor=vec4(tint.rgb,texture(atlas,texCoord).a*tint.a); return; }
+        if(mode==0) {
+          vec2 dx=dFdx(texCoord), dy=dFdy(texCoord);
+          float aa=max(max(length(dx),length(dy))*${FONT_SIZE / 8}.,.001);
+          float coverage=0.;
+          // A five-pixel name has strokes smaller than one screen pixel. Integrate
+          // their coverage instead of dropping a stroke between sample centers.
+          if(aa>.35) {
+            for(int y=0;y<4;y++) for(int x=0;x<4;x++)
+              coverage+=glyphCoverage(texCoord+dx*(float(x)*.25-.375)+dy*(float(y)*.25-.375),aa*.25)/16.;
+          } else coverage=glyphCoverage(texCoord,aa);
+          outputColor=vec4(tint.rgb,coverage*tint.a); return;
+        }
         if(mode==64) { float r=length(local-.5)*2.; outputColor=vec4(tint.rgb,(1.-smoothstep(.85,1.,r))*tint.a); return; }
         // The quad includes eight world pixels of shadow around the 132px circle.
         float d=length((local-.5)*148.); float aa=max(fwidth(d),.35);
         vec4 result=vec4(.16,.24,.20,exp(-pow(max(d-65.,0.)/4.,2.))*.16*tint.a);
         if(d<=66.+aa) {
           vec2 photoUv=texCoord;
-          vec3 base=tint.rgb;
+          vec3 base;
           if((mode&1)!=0) { vec3 rgb=texture(atlas,photoUv).rgb; base=vec3((mode&32)!=0 ? rgb.r : dot(rgb,vec3(.2126,.7152,.0722))); }
-          else { vec2 p=(local-.5)*148.;
-            if(length(p-vec2(0,-15))<17. || (p.y>8. && length((p-vec2(0,47))/vec2(40,42))<1.)) base=vec3(.51,.61,.54); }
+          else { base=texture(atlas,photoUv).rgb; }
           vec3 ring=(mode&2)!=0 ? vec3(.84,.48,.09) : vec3(1.,.996,.98);
           base=mix(base,ring,smoothstep(63.-aa,63.+aa,d));
           result=vec4(base,(1.-smoothstep(66.-aa,66.+aa,d))*tint.a);
@@ -260,36 +275,9 @@ export function createGpuScene(
       );
     const surfaceBatch = makeBuffer(surfaces, 15, "surfaces");
     surfaces.length = 0;
-    const fontCanvas = document.createElement("canvas");
-    fontCanvas.width = fontCanvas.height = FONT_SIZE;
-    const ctx = fontCanvas.getContext("2d")!;
-    ctx.textBaseline = "top";
-    ctx.fillStyle = "white";
-    const glyphs = new Map<string, Glyph>();
-    releaseFont = () => {
-      glyphs.clear();
-      fontCanvas.width = fontCanvas.height = 1;
-    };
-    let gx = 2,
-      gy = 2;
-    const glyph = (letter: string, bold: boolean) => {
-      const key = `${bold}:${letter}`;
-      const cached = glyphs.get(key);
-      if (cached) return cached;
-      ctx.font = `${bold ? 600 : 400} 64px ${FONT}`;
-      const advance = ctx.measureText(letter).width,
-        width = Math.ceil(advance) + 4;
-      if (gx + width > FONT_SIZE) {
-        gx = 2;
-        gy += 84;
-      }
-      if (gy + 84 > FONT_SIZE) throw new Error("GPU glyph budget exceeded");
-      ctx.fillText(letter, gx + 2, gy + 2);
-      const result = { x: gx, y: gy, width, advance };
-      glyphs.set(key, result);
-      gx += width;
-      return result;
-    };
+    let font: ReturnType<typeof createGpuFont> | undefined = createGpuFont();
+    releaseFont = () => { font = undefined; };
+    const glyph = (letter: string, bold: boolean) => font!.glyph(letter, bold);
     const labels: number[][] = [[], [], []];
     const text = (
       value: string,
@@ -317,7 +305,7 @@ export function createGpuScene(
       if (/[\u0300-\u036f\u0590-\u0fff\u200d]/u.test(value))
         throw new Error("Native text shaping required");
       const maxWidth = (node.width || 220) - 16,
-        scale = size / 64;
+        scale = size / gpuFontSize;
       const rows = layoutGpuText(
         value,
         maxWidth,
@@ -334,19 +322,18 @@ export function createGpuScene(
           const g = glyph(letter, bold);
           for (const target of targets)
             target.push(
-              x - scale * 2,
-              node.position.y + top + index * lineHeight,
+              x + g.left * scale,
+              node.position.y + top + index * lineHeight +
+                (lineHeight - (g.ascent + g.descent) * scale) / 2 + (g.ascent - g.top) * scale,
               g.width * scale,
-              84 * scale,
+              g.height * scale,
               g.x / FONT_SIZE,
               g.y / FONT_SIZE,
               g.width / FONT_SIZE,
-              84 / FONT_SIZE,
+              g.height / FONT_SIZE,
               low,
               high,
-              0.145,
-              0.227,
-              0.173,
+              ...(bold ? [40 / 255, 60 / 255, 54 / 255] : [104 / 255, 118 / 255, 111 / 255]),
               node.data.outsideSpotlight ? 0.3 : node.data.dimmed ? 0.6 : 1,
               0,
             );
@@ -401,24 +388,29 @@ export function createGpuScene(
     const fontTexture = gl.createTexture()!;
     textures.push(fontTexture);
     gl.bindTexture(gl.TEXTURE_2D, fontTexture);
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGBA,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      fontCanvas,
-    );
-    gl.generateMipmap(gl.TEXTURE_2D);
+    const uploadFont = () => gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, FONT_SIZE, FONT_SIZE,
+      0, gl.RED, gl.UNSIGNED_BYTE, font!.data);
+    uploadFont();
     gl.texParameteri(
       gl.TEXTURE_2D,
       gl.TEXTURE_MIN_FILTER,
-      gl.LINEAR_MIPMAP_LINEAR,
+      gl.LINEAR,
     );
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    let uploadedGlyphs = glyphs.size;
+    let uploadedGlyphs = font.count;
+    const placeholderTexture = gl.createTexture()!;
+    textures.push(placeholderTexture);
+    gl.bindTexture(gl.TEXTURE_2D, placeholderTexture);
+    const placeholderCanvas = gpuPlaceholderCanvas();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, placeholderCanvas);
+    placeholderCanvas.width = placeholderCanvas.height = 1;
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     let portraitDirty = true;
     const photoDraw = () => {
       portraitDirty = true;
@@ -465,11 +457,10 @@ export function createGpuScene(
         relationCpuBytes = relationArrays.reduce((sum, array) => sum + array.byteLength, 0);
         // New glyphs share the fixed atlas. No programs, routes or portraits
         // are rebuilt when the asynchronously prepared labels become ready.
-        if (glyphs.size !== uploadedGlyphs) {
+        if (font!.count !== uploadedGlyphs) {
           gl.bindTexture(gl.TEXTURE_2D, fontTexture);
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, fontCanvas);
-          gl.generateMipmap(gl.TEXTURE_2D);
-          uploadedGlyphs = glyphs.size;
+          uploadFont();
+          uploadedGlyphs = font!.count;
         }
         relationLod = -1;
         canvas.dataset.gpuRelationsReady = "true";
@@ -511,7 +502,7 @@ export function createGpuScene(
       focused = "",
       draws = 0;
     let cachedBox: Box | undefined,
-      cachedHigh = false;
+      cachedHigh = false, cachedCompact = false;
     const portraitBatches = new Map<WebGLTexture, Batch & { bytes: number }>();
     return {
       portraits,
@@ -652,12 +643,13 @@ export function createGpuScene(
           view.right > cachedBox.right ||
           view.top < cachedBox.top ||
           view.bottom > cachedBox.bottom ||
-          high !== cachedHigh
+          high !== cachedHigh || cachedCompact !== (camera.zoom < 0.18)
         )
           portraitDirty = true;
         if (portraitDirty) {
           portraitDirty = false;
           cachedHigh = high;
+          cachedCompact = camera.zoom < 0.18;
           const box = {
             left: view.left - 256 / camera.zoom,
             top: view.top - 256 / camera.zoom,
@@ -707,20 +699,15 @@ export function createGpuScene(
               visiblePhotos++;
               if (tile) texturedPhotos++;
             }
-            const texture = tile?.texture || fontTexture;
+            const texture = tile?.texture || placeholderTexture;
             let data = batches.get(texture);
             if (!data) batches.set(texture, (data = []));
             const sex = resolvedSex(node.data.person);
-            const rgb =
-              sex === "f"
-                ? [0.976, 0.929, 0.875]
-                : sex === "m"
-                  ? [0.87, 0.937, 0.91]
-                  : [0.929, 0.922, 0.87];
             // UV includes the shadow margin; sampling happens only inside the circle.
-            const uv = tile?.uv || [0, 0, 0, 0];
-            const ratio = 148 / 132,
-              margin = 8 / 132;
+            const uv = tile?.uv || gpuPlaceholderUv(sex, cachedCompact);
+            const diameter = tile ? 132 : 126;
+            const ratio = 148 / diameter,
+              margin = (148 - diameter) / 2 / diameter;
             data.push(
               node.position.x + ((node.width || 220) - 148) / 2,
               node.position.y - 4,
@@ -732,7 +719,7 @@ export function createGpuScene(
               uv[3] * ratio,
               0,
               10,
-              ...rgb,
+              1, 1, 1,
               node.data.outsideSpotlight ? 0.3 : node.data.dimmed ? 0.6 : 1,
               // Glyphs use kind 0. Keep even an ordinary photo-less portrait
               // in its own range; review/selection must not decide its type.
@@ -803,7 +790,7 @@ export function createGpuScene(
           return;
         }
         canvas.dataset.gpuTextureBytes = String(
-          portraits!.bytes + Math.ceil((FONT_SIZE * FONT_SIZE * 4 * 4) / 3),
+          portraits!.bytes + FONT_SIZE ** 2 + Math.ceil(placeholderWidth * placeholderHeight * 4 * 4 / 3),
         );
         canvas.dataset.gpuBufferBytes = String(bufferBytes + dynamicBytes);
         canvas.dataset.gpuDraws = String(++draws);

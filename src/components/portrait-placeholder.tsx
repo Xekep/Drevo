@@ -1,3 +1,5 @@
+import { cameoBody, cameoOrnament } from "./portrait-cameo";
+
 /** Нейтральная камея: декоративный силуэт, не предположение о внешности человека. */
 export function PortraitPlaceholder({ compact = false }: { compact?: boolean }) {
   return (
@@ -17,7 +19,7 @@ export function PortraitPlaceholder({ compact = false }: { compact?: boolean }) 
         opacity=".3"
       />}
       <path
-        d="M18 69c1-14 9-22 22-22s21 8 22 22"
+        d={cameoBody}
         fill="currentColor"
         opacity=".23"
       />
@@ -30,7 +32,7 @@ export function PortraitPlaceholder({ compact = false }: { compact?: boolean }) 
         opacity=".35"
       />
       {!compact && <path
-        d="M10 48c0 10 5 19 13 23M70 48c0 10-5 19-13 23M13 55l-5-4m8 12-7-2m58-6 5-4m-8 12 7-2"
+        d={cameoOrnament}
         fill="none"
         stroke="currentColor"
         strokeWidth="1.1"
