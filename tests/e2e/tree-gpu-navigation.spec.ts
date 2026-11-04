@@ -217,12 +217,10 @@ async function finish(page: Page, label: string) {
     window.__gpuNavigation.record = false;
     return window.__gpuNavigation.frames;
   });
-  await test
-    .info()
-    .attach(label, {
-      body: JSON.stringify(frames),
-      contentType: "application/json",
-    });
+  await test.info().attach(label, {
+    body: JSON.stringify(frames),
+    contentType: "application/json",
+  });
   expect(frames.length).toBeGreaterThan(3);
   expect(frames.every((f) => f.renderer === "webgl2")).toBe(true);
   expect(Math.max(...frames.map((f) => f.nodes))).toBeLessThan(25);
@@ -274,30 +272,53 @@ test("GPU privacy control is painted above the portrait", async ({
     (el as HTMLElement).style.visibility = "hidden";
   });
   const after = await page.screenshot({ clip: box });
-  const a = await sharp(before)
-    .removeAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
   const b = await sharp(after).removeAlpha().raw().toBuffer();
-  let differences = 0;
-  for (let y = 0; y < a.info.height; y++)
-    for (let x = 0; x < a.info.width; x++) {
-      if (Math.hypot(x / a.info.width - 0.5, y / a.info.height - 0.5) > 0.38)
-        continue;
-      const i = (y * a.info.width + x) * a.info.channels;
-      if ([0, 1, 2].some((c) => Math.abs(a.data[i + c] - b[i + c]) > 2))
-        differences++;
-    }
+  const coveredPixels = async (screenshot: Buffer) => {
+    const a = await sharp(screenshot)
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    let differences = 0;
+    for (let y = 0; y < a.info.height; y++)
+      for (let x = 0; x < a.info.width; x++) {
+        if (Math.hypot(x / a.info.width - 0.5, y / a.info.height - 0.5) > 0.38)
+          continue;
+        const i = (y * a.info.width + x) * a.info.channels;
+        if ([0, 1, 2].some((c) => Math.abs(a.data[i + c] - b[i + c]) > 2))
+          differences++;
+      }
+    return differences;
+  };
+  await test.info().attach("privacy-over-portrait", {
+    body: before,
+    contentType: "image/png",
+  });
+  expect(
+    await coveredPixels(before),
+    "opaque control pixels must not be covered by the portrait",
+    // Fractional screenshot clipping/compositing differs by one pixel in Linux.
+  ).toBeLessThanOrEqual(2);
   await test
     .info()
-    .attach("privacy-over-portrait", {
-      body: before,
+    .attach("privacy-without-gpu", { body: after, contentType: "image/png" });
+  // Negative control: the tolerance must still detect the original stacking bug.
+  await page.locator(".tree-gpu-scene").evaluate((el) => {
+    (el as HTMLElement).style.visibility = "visible";
+  });
+  await page.locator(".tree-canvas .react-flow").evaluate((el) => {
+    (el as HTMLElement).style.setProperty("z-index", "0", "important");
+  });
+  const obscured = await page.screenshot({ clip: box });
+  await test
+    .info()
+    .attach("privacy-original-stacking", {
+      body: obscured,
       contentType: "image/png",
     });
   expect(
-    differences,
-    "opaque control pixels must not be covered by the portrait",
-  ).toBe(0);
+    await coveredPixels(obscured),
+    "original stacking must visibly obscure the control",
+  ).toBeGreaterThan(10);
 });
 
 test("opening and closing a person keeps the GPU bitmap and camera steady", async ({
