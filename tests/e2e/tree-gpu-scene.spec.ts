@@ -20,19 +20,25 @@ test.use({
       : {}),
   },
 });
-test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and context-loss fallback", async ({
+for (const medium of [false, true]) {
+test(`${medium ? "250-card" : "3313 desktop / 503 mobile"} GPU tree keeps bounded labels, one camera and context-loss fallback`, async ({
   page,
 }, testInfo) => {
   test.setTimeout(240_000);
   const started = Date.now();
   const stage = (name: string) =>
     console.log("GPU functional stage", name, Date.now() - started);
-  const people =
+  const source = medium ? randomFamily(1, 6).slice(0, 250) :
     process.env.DREVO_GPU_PEOPLE === "977"
       ? randomFamily(5, 9)
       : testInfo.project.name === "desktop"
         ? randomFamily(5, 12)
         : randomFamily(1, 6);
+  const ids = new Set(source.map(person => person.id));
+  const people = source.map(person => ({ ...person,
+    parents: person.parents.filter(id => ids.has(id)),
+    spouses: person.spouses.filter(id => ids.has(id)),
+  }));
   if (process.env.DREVO_GPU_CPU_THROTTLE) {
     const session = await page.context().newCDPSession(page);
     await session.send("Emulation.setCPUThrottlingRate", {
@@ -257,6 +263,30 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
     expect(await zoom()).toBeGreaterThan(0.18);
     expect(await zoom()).toBeLessThan(0.52);
     await verifyLabelBudget(1);
+    if (medium) {
+      // The browser composites this transparent WebGL canvas as premultiplied
+      // RGBA. Antialiased text/portrait edges must not have RGB above alpha.
+      const alpha = await canvas.evaluate(element => new Promise<{ translucent: number; invalid: number }>(resolve => {
+        const canvas = element as HTMLCanvasElement;
+        const observer = new MutationObserver(() => {
+          const gl = canvas.getContext("webgl2")!;
+          const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+          gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+          let translucent = 0, invalid = 0;
+          for (let i = 0; i < pixels.length; i += 4) {
+            const a = pixels[i + 3];
+            if (a > 0 && a < 255) translucent++;
+            if (Math.max(pixels[i], pixels[i + 1], pixels[i + 2]) > a + 2) invalid++;
+          }
+          observer.disconnect();
+          resolve({ translucent, invalid });
+        });
+        observer.observe(canvas, { attributes: true, attributeFilter: ["data-gpu-draws"] });
+        (canvas.closest(".tree-canvas")!.querySelectorAll(".flow-camera-tools button")[1] as HTMLButtonElement).click();
+      }));
+      expect(alpha.translucent).toBeGreaterThan(100);
+      expect(alpha.invalid).toBe(0);
+    }
     stage("labels LOD 1");
     await expect(tree).toBeVisible();
     expect(await page.locator(".react-flow__node-person").count()).toBeLessThan(
@@ -690,6 +720,8 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
   }
   if (testInfo.project.name !== "desktop") await verifyContextLoss();
 });
+
+}
 
 test("shared GPU tree keeps review rings and releases its scene when access is revoked", async ({
   page,

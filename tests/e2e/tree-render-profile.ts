@@ -1,4 +1,5 @@
-import type { Page, TestInfo } from "@playwright/test";
+import { expect, type Page, type TestInfo } from "@playwright/test";
+import { writeFile } from "node:fs/promises";
 
 /** Opt-in measurements of the production renderer after its worker has finished. */
 export async function profileTreeRenderer(page: Page, testInfo: TestInfo) {
@@ -20,9 +21,39 @@ export async function profileTreeRenderer(page: Page, testInfo: TestInfo) {
   const targets = process.env.DREVO_RENDER_PROFILE_TARGETS
     ? process.env.DREVO_RENDER_PROFILE_TARGETS.split(",").map(Number)
     : [0.05, 0.15, 0.19, 0.3, 0.6, 0.9];
+  if (process.env.DREVO_RENDER_PROFILE_CENTER) {
+    await page.waitForTimeout(750);
+    const offset = await page.evaluate(() => {
+      const pane = document.querySelector(".react-flow__pane")!.getBoundingClientRect();
+      const x = pane.left + pane.width / 2, y = pane.top + pane.height / 2;
+      const cards = [...document.querySelectorAll(".react-flow__node-person")].map(node => {
+        const box = node.getBoundingClientRect();
+        return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+      }).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+      return cards.length ? { x, y, dx: x - cards[0].x, dy: y - cards[0].y } : null;
+    });
+    if (offset) {
+      await page.mouse.move(offset.x, offset.y);
+      await page.mouse.down({ button: "middle" });
+      await page.mouse.move(offset.x + offset.dx, offset.y + offset.dy, { steps: 10 });
+      await page.mouse.up({ button: "middle" });
+    }
+  }
   for (const target of targets) {
-    for (let attempt = 0; attempt < 20 && await zoom() < target; attempt++)
-      await page.locator(".flow-camera-tools button").nth(1).click();
+    if (process.env.DREVO_RENDER_PROFILE_EXACT) {
+      const box = (await page.locator(".react-flow__pane").boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.keyboard.down("Control");
+      for (let attempt = 0; attempt < 8 && Math.abs(target - await zoom()) > 0.0003; attempt++) {
+        await page.mouse.wheel(0, -Math.log(target / await zoom()) / 0.002);
+        await page.waitForTimeout(150);
+      }
+      await expect.poll(zoom).toBeCloseTo(target, 3);
+      await page.keyboard.up("Control");
+    } else {
+      for (let attempt = 0; attempt < 20 && await zoom() < target; attempt++)
+        await page.locator(".flow-camera-tools button").nth(1).click();
+    }
     await page.waitForTimeout(700);
     const scene = await page.evaluate(() => ({
       zoom: new DOMMatrix(getComputedStyle(document.querySelector(".react-flow__viewport")!).transform).a,
@@ -33,6 +64,8 @@ export async function profileTreeRenderer(page: Page, testInfo: TestInfo) {
       renderer: document.querySelector<HTMLElement>(".tree-canvas")?.dataset.renderer,
       gpuTextureBytes: Number(document.querySelector<HTMLElement>(".tree-gpu-scene")?.dataset.gpuTextureBytes || 0),
       gpuBufferBytes: Number(document.querySelector<HTMLElement>(".tree-gpu-scene")?.dataset.gpuBufferBytes || 0),
+      drawingWidth: document.querySelector<HTMLCanvasElement>(".tree-gpu-scene")?.width || 0,
+      drawingHeight: document.querySelector<HTMLCanvasElement>(".tree-gpu-scene")?.height || 0,
     }));
     for (const gesture of ["idle", "pan", "zoom"] as const) {
       if (cpuProfile) {
@@ -62,8 +95,11 @@ export async function profileTreeRenderer(page: Page, testInfo: TestInfo) {
         const x = pane.x + pane.width / 2, y = pane.y + pane.height / 2;
         await page.mouse.move(x, y);
         if (gesture === "pan") {
+          const viewport = page.locator(".react-flow__viewport");
+          const initialCamera = await viewport.getAttribute("style");
           await page.mouse.down();
           await page.mouse.move(x + 150, y + 65, { steps: 80 });
+          await expect(viewport).not.toHaveAttribute("style", initialCamera!);
           await page.mouse.move(x, y, { steps: 80 });
           await page.mouse.up();
         } else {
@@ -99,6 +135,7 @@ export async function profileTreeRenderer(page: Page, testInfo: TestInfo) {
       console.log(`render-profile ${JSON.stringify(result)}`);
       if (cpuProfile) {
         const { profile } = await session.send("Profiler.stop");
+        await writeFile(testInfo.outputPath(`cpu-${target}-${gesture}.cpuprofile`), JSON.stringify(profile));
         await testInfo.attach(`cpu-${target}-${gesture}`, {
           body: Buffer.from(JSON.stringify(profile)), contentType: "application/json",
         });
@@ -107,6 +144,7 @@ export async function profileTreeRenderer(page: Page, testInfo: TestInfo) {
     await page.screenshot({ path: testInfo.outputPath(`render-${target}.png`) });
   }
   await session.detach();
+  await writeFile(testInfo.outputPath("render-profile.json"), JSON.stringify(results, null, 2));
   await testInfo.attach("render-profile", {
     body: Buffer.from(JSON.stringify(results, null, 2)), contentType: "application/json",
   });

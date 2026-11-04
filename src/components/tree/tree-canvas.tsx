@@ -204,6 +204,7 @@ type Props = {
 };
 const nodeTypes = { person: PersonNode, household: HouseholdNode },
   edgeTypes = { relationship: RelationshipEdge };
+const GPU_SCENE_MIN_NODES = 250;
 const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   props,
   exportRef,
@@ -1285,7 +1286,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   // While a worker prepares the next projection, keep the ready current scene.
   // A pending layout must not create a new GPU scene or mount the old archive
   // as native cards just because its busy indicator appeared.
-  const gpuEligible = !manual.active && nodes.length >= 500 && !growing && !layoutSettling && (gpuSceneMatches || (ready && !layoutBusy)) &&
+  const gpuEligible = !manual.active && nodes.length >= GPU_SCENE_MIN_NODES && !growing && !layoutSettling && (gpuSceneMatches || (ready && !layoutBusy)) &&
     flatTree && !connecting && gpuFailedScope !== gpuScope &&
     gpuOverlayEdges.length <= 64 && nodes.every((node) => GpuPortraitCache.supported(node.data.person.photo));
   // A remounted canvas needs its own first frame and portrait handoff, even
@@ -1309,7 +1310,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     gpu: gpuActive,
     // React Flow first mounts at zoom 1, before fitView. Fetching portraits
     // there would request every thumb and delay hydration/the GPU handoff.
-    deferPortraits: !initialCameraReady || (renderedNodes.length >= 500 &&
+    deferPortraits: !initialCameraReady || (renderedNodes.length >= GPU_SCENE_MIN_NODES &&
       (layoutSettling || layoutBusy || (gpuEligible && !gpuActive))),
   }), [actions, currentPeople, gpuActive, initialCameraReady, renderedNodes.length, layoutSettling, layoutBusy, gpuEligible]);
   const gpuPinnedOverlayIds = useMemo(() => {
