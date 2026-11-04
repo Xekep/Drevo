@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { createGpuScene } from "../src/components/tree/gpu-scene.ts";
 import type { PersonNodeType } from "../src/components/tree/person-node.tsx";
+import type { RelationshipEdgeType } from "../src/components/tree/relationship-edge.tsx";
 
 function fixture(t: TestContext) {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   let programs = 0, redraws = 0, glyphUploads = 0;
+  const uploads: Float32Array[] = [];
   const constants = new Map<string, number>([["NO_ERROR", 0]]);
   const methods: Record<string, unknown> = {
     getExtension: () => null,
@@ -14,6 +16,7 @@ function fixture(t: TestContext) {
     getProgramParameter: () => true,
     getError: () => 0,
     createProgram: () => ({ program: ++programs }),
+    bufferData: (_target: number, data: Float32Array) => uploads.push(data.slice()),
     texImage2D: (_target: number, _level: number, format: number) => {
       if (format === constants.get("R8")) glyphUploads++;
     },
@@ -46,14 +49,14 @@ function fixture(t: TestContext) {
       else Reflect.deleteProperty(globalThis, key);
     });
   }
-  const canvas = { width: 800, height: 600, dataset: {} as Record<string, string>, getContext: () => gl };
+  const canvas = { width: 800, height: 600, style: {}, dataset: {} as Record<string, string>, getContext: () => gl };
   const nodes = Array.from({ length: 70 }, (_, index) => ({
     id: `n${index}`, type: "person", position: { x: index * 230, y: 0 }, width: 220, height: 264,
     data: { collapsed: false, childrenCount: 0, dimmed: false, person: { id: `p${index}`, name: "Name", surname: "Test", patronymic: "", sex: "m",
       birth: "1900", birthPlace: "", parents: [], spouses: [], sources: [], generation: 1, column: index } },
   })) as PersonNodeType[];
-  const create = (read: (node: PersonNodeType) => string) => {
-    const scene = createGpuScene(canvas as unknown as HTMLCanvasElement, nodes, [], [], read,
+  const create = (read: (node: PersonNodeType) => string, edges: RelationshipEdgeType[] = []) => {
+    const scene = createGpuScene(canvas as unknown as HTMLCanvasElement, nodes, edges, [], read,
       () => { redraws++; }, () => assert.fail("unexpected GPU failure"));
     t.after(() => scene.destroy());
     return scene;
@@ -64,8 +67,26 @@ function fixture(t: TestContext) {
     assert.equal(canvas.dataset.gpuRelationsReady, "true");
   };
   return { create, nodes, canvas, finish, programs: () => programs, redraws: () => redraws,
-    glyphUploads: () => glyphUploads };
+    glyphUploads: () => glyphUploads, uploads };
 }
+
+test("zoom-dependent crossing paths update GPU lines without rebuilding text or programs", t => {
+  const setup = fixture(t), read = () => "";
+  const edge = { id: "edge", source: "n0", target: "n1", data: { path: "M0,0 L20,20" } } as RelationshipEdgeType;
+  const scene = setup.create(read, [edge]);
+  scene.draw({ x: 0, y: 0, zoom: 0.3 }, 800, 600);
+  setup.finish();
+  const programs = setup.programs(), glyphs = setup.glyphUploads();
+  const next = { ...edge, data: { ...edge.data, path: "M0,0 L30,30" } } as RelationshipEdgeType;
+  const before = setup.uploads.length;
+  assert.equal(scene.update(setup.nodes, [next], [], read), true);
+  assert.ok(setup.uploads.slice(before).some(data => data.length === 12 && data[2] === 30 && data[3] === 30));
+  const after = setup.uploads.length;
+  assert.equal(scene.update(setup.nodes, [next], [], read), true);
+  assert.equal(setup.uploads.length, after, "unchanged routes do not upload again");
+  assert.equal(setup.programs(), programs);
+  assert.equal(setup.glyphUploads(), glyphs);
+});
 
 test("first GPU frame skips cold relations and completed labels reuse the scene", t => {
   const setup = fixture(t);

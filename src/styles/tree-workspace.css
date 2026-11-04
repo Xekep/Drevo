@@ -2667,6 +2667,9 @@
   pointer-events: none;
   z-index: 1;
 }
+/* React Flow assigns an inline z-index:0 to its root. Its nested viewport
+   cannot raise privacy/branch controls above the sibling GPU canvas alone. */
+.tree-canvas[data-renderer="webgl2"] .react-flow { z-index: 2 !important; }
 .tree-canvas[data-renderer="webgl2"] .react-flow__viewport { z-index: 2; }
 .tree-canvas[data-distant-overlay="true"] .react-flow__viewport { z-index: 3; }
 .tree-gpu-node-overlay .person-avatar,
