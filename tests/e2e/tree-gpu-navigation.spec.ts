@@ -25,6 +25,7 @@ type Probe = {
   record: boolean;
   frames: Frame[];
   positions: [string, { x: number; y: number }][];
+  layouts: number;
 };
 declare global {
   interface Window {
@@ -63,6 +64,7 @@ async function setup(page: Page, reduced = false) {
       record: false,
       frames: [],
       positions: [],
+      layouts: 0,
     };
     window.__gpuNavigation = state;
     const proto = WebGL2RenderingContext.prototype,
@@ -104,6 +106,20 @@ async function setup(page: Page, reduced = false) {
     };
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
+      postMessage(
+        message: unknown,
+        options?: Transferable[] | StructuredSerializeOptions,
+      ) {
+        if (
+          message &&
+          typeof message === "object" &&
+          "people" in message &&
+          "mode" in message
+        )
+          state.layouts++;
+        if (Array.isArray(options)) super.postMessage(message, options);
+        else super.postMessage(message, options);
+      }
       constructor(...args: ConstructorParameters<typeof Worker>) {
         super(...args);
         this.addEventListener("message", (event) => {
@@ -255,6 +271,50 @@ async function point(page: Page, id = "f-0") {
   }, id);
 }
 
+test("returning from the fan retains the GPU, viewport and cached layout", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(
+    isMobile,
+    "QHD GPU navigation; small/mobile fan cases are covered separately",
+  );
+  test.setTimeout(120_000);
+  await setup(page);
+  const root = page.locator(".tree-canvas"),
+    canvas = page.locator(".tree-gpu-scene");
+  const original = await canvas.elementHandle();
+  const viewport = await page
+    .locator(".react-flow__viewport")
+    .evaluate((el) => getComputedStyle(el).transform);
+  const layouts = await page.evaluate(() => window.__gpuNavigation.layouts);
+  for (const interrupted of [false, true]) {
+    await familyViewAction(page, "Веер");
+    await expect(root).toHaveClass(/is-fan/);
+    await expect(root.locator(".react-flow")).toHaveCSS("opacity", "0");
+    await expect(root.locator(".react-flow")).toHaveAttribute("inert", "");
+    if (!interrupted) await expect(root).not.toHaveClass(/is-fan-revealing/);
+    await expect(canvas).toHaveCSS("visibility", "hidden");
+    const draws = await canvas.getAttribute("data-gpu-draws");
+    await page.waitForTimeout(100);
+    expect(await canvas.getAttribute("data-gpu-draws")).toBe(draws);
+    await record(page);
+    await familyViewAction(page, "Всё древо");
+    await expect(root).not.toHaveClass(/is-fan/);
+    await page.waitForTimeout(700);
+    const frames = await finish(page, `fan-return-${interrupted}`);
+    expect(new Set(frames.map((frame) => frame.viewport))).toEqual(
+      new Set([viewport]),
+    );
+    expect(frames.at(-1)!.programs).toBe(frames[0].programs);
+    expect(await original!.evaluate((el) => el.isConnected)).toBe(true);
+    expect(await page.evaluate(() => window.__gpuNavigation.layouts)).toBe(
+      layouts,
+    );
+    await expect(page.locator(".fan-morph-overlay")).toHaveCount(0);
+  }
+});
+
 test("GPU privacy control is painted above the portrait", async ({
   page,
   isMobile,
@@ -309,12 +369,10 @@ test("GPU privacy control is painted above the portrait", async ({
     (el as HTMLElement).style.setProperty("z-index", "0", "important");
   });
   const obscured = await page.screenshot({ clip: box });
-  await test
-    .info()
-    .attach("privacy-original-stacking", {
-      body: obscured,
-      contentType: "image/png",
-    });
+  await test.info().attach("privacy-original-stacking", {
+    body: obscured,
+    contentType: "image/png",
+  });
   expect(
     await coveredPixels(obscured),
     "original stacking must visibly obscure the control",
@@ -364,7 +422,17 @@ for (const reduced of [false, true])
     await setup(page, reduced);
     const canvas = page.locator(".tree-gpu-scene"),
       original = await canvas.elementHandle();
-    for (const name of ["Кровные", "Всё древо", "Близкие", "Всё древо"]) {
+    for (const [step, name] of [
+      "Кровные",
+      "Всё древо",
+      "Близкие",
+      "Всё древо",
+      "Кровные",
+      "Всё древо",
+      "Близкие",
+      "Всё древо",
+    ].entries()) {
+      const layouts = await page.evaluate(() => window.__gpuNavigation.layouts);
       await record(page);
       await familyViewAction(page, name);
       await expect(page.locator(".tree-canvas")).toHaveAttribute(
@@ -374,7 +442,16 @@ for (const reduced of [false, true])
       await page.waitForTimeout(reduced ? 300 : 1000);
       await expect(canvas).toHaveAttribute("data-gpu-transition-progress", "1");
       const frames = await finish(page, name);
-      expect(frames.some((f) => f.progress > 0 && f.progress < 1)).toBe(
+      if (step >= 4)
+        expect(
+          await page.evaluate(() => window.__gpuNavigation.layouts),
+          "revisited scope uses cached geometry",
+        ).toBe(layouts);
+      // Software WebGL in CI may spend longer than 440 ms drawing one QHD
+      // frame. A zero-progress start followed by completion is still a real
+      // transition, not reduced motion. Intermediate shader positions are
+      // checked deterministically by the pixel test in tree-card-appearance.
+      expect(frames.some((f) => f.progress >= 0 && f.progress < 1)).toBe(
         !reduced,
       );
       expect(await original!.evaluate((el) => el.isConnected)).toBe(true);
@@ -419,10 +496,13 @@ for (const reduced of [false, true])
         );
       }
       await page.waitForTimeout(800);
-      await finish(page, "interrupted-transitions");
-      expect(
-        await page.evaluate(() => window.__gpuNavigation.livePrograms),
+      // A software frame can outlast the animation's wall-clock duration;
+      // wait for its cleanup frame rather than treating 800 ms as a GPU fence.
+      await expect.poll(
+        () => page.evaluate(() => window.__gpuNavigation.livePrograms),
+        { timeout: 10_000 },
       ).toBe(2);
+      await finish(page, "interrupted-transitions");
       expect(
         await page.evaluate(() => window.__gpuNavigation.maximumPrograms),
       ).toBeLessThanOrEqual(4);

@@ -95,9 +95,31 @@ test("GPU cameos and text remain legible across scales", async ({ page }, info) 
       }
       isolated.push(variants);
     }
-    return { failures, metrics, isolated };
+    const movingNode = { ...nodes[0], position: { x: 400, y: 0 } };
+    const moving = createGpuScene(canvas, [movingNode], [], [], () => "", () => {}, () => failures.push("motion failure"));
+    moving.transition(new Map([[movingNode.id, { x: 0, y: 0 }]]));
+    const motionPixels: string[] = [];
+    for (const progress of [0, 0.5, 1]) {
+      moving.draw({ x: 12, y: 12, zoom: 0.5 }, 500, 180, { progress });
+      motionPixels.push(canvas.toDataURL());
+    }
+    moving.destroy();
+    return { failures, metrics, isolated, motionPixels };
   }, process.env.DREVO_CARD_COMPARE === "1");
   expect(result.failures).toEqual([]);
+  const flight = await Promise.all(result.motionPixels.map(async (value, i) =>
+    sharp(Buffer.from(value.split(",")[1], "base64"))
+      .extract({ left: 12 + i * 100, top: 12, width: 110, height: 132 }).raw().toBuffer()));
+  for (const frame of flight.slice(1)) {
+    let error = 0;
+    for (let i = 0; i < frame.length; i++) error += Math.abs(frame[i] - flight[0][i]);
+    expect(error / frame.length, "portrait and glyphs must translate together without fading").toBeLessThan(0.1);
+  }
+  const middle = await sharp(Buffer.from(result.motionPixels[1].split(",")[1], "base64"))
+    .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  expect(middle.data[(47 * middle.info.width + 167) * 4 + 3], "portrait is at its intermediate position").toBe(255);
+  expect(middle.data[(47 * middle.info.width + 67) * 4 + 3], "no duplicate remains at the start").toBe(0);
+  expect(middle.data[(47 * middle.info.width + 267) * 4 + 3], "portrait has not jumped to the destination").toBe(0);
   for (const variants of result.isolated) {
     const pixels = await Promise.all(variants.map(value => sharp(Buffer.from(value.split(",")[1], "base64")).raw().toBuffer()));
     let error = 0;

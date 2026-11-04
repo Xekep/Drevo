@@ -949,7 +949,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       nodeCount: nodes.length,
       mode: layoutMode,
       reverse,
-      ready,
+      ready: ready && !activeFanAnchor,
       focusReady: !growing && introCameraFinished,
       focus: effectiveCameraFocus,
       returnPersonId: returnTarget?.id || null,
@@ -1268,7 +1268,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         : displayEdges,
     [displayEdges, layoutTransition, gpuScope],
   );
-  const overviewAvailable = mode !== "timeline" && !activeFanAnchor &&
+  const overviewAvailable = mode !== "timeline" &&
     nodes.length >= 600 && !growing && !layoutSettling && !manual.active;
   const distantScene = overviewAvailable && distantZoom;
   // Use the existing distant canvas scene for large introductions instead of
@@ -1290,8 +1290,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   // Once the archive has a working GPU context, filtered views keep it too.
   // Crossing the size threshold during navigation must not mount hundreds of
   // native cards just for a transition and rebuild the GPU again on return.
-  const gpuEligible = !manual.active && (nodes.length >= GPU_SCENE_MIN_NODES || gpuReadyScope === gpuScope) && !growing && (gpuSceneMatches || (ready && !layoutBusy)) &&
-    flatTree && !connecting && gpuFailedScope !== gpuScope &&
+  // A rapid next switch can arrive before onReady acknowledges the previous
+  // geometry. The context is still usable within the same access scope.
+  const gpuEligible = !manual.active && (nodes.length >= GPU_SCENE_MIN_NODES || gpuReadyScope === gpuScope) && !growing && (gpuReadyScope === gpuScope || (ready && !layoutBusy)) &&
+    (flatTree || (!!activeFanAnchor && gpuReadyScope === gpuScope)) && !connecting && gpuFailedScope !== gpuScope &&
     gpuOverlayEdges.length <= 64 && nodes.every((node) => GpuPortraitCache.supported(node.data.person.photo));
   // A remounted canvas needs its own first frame and portrait handoff, even
   // when cancelling a connection leaves the layout geometry unchanged.
@@ -1349,7 +1351,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       right: node.position.x + (node.width || 220), bottom: node.position.y + (node.height || 264) });
     return index;
   }, [nodes]);
+  const gpuMoving = () => !!container.current?.querySelector('.tree-gpu-scene[data-gpu-moving="true"]');
   const gpuPersonAt = (clientX: number, clientY: number) => {
+    if (activeFanAnchor || gpuMoving()) return;
     const bounds = container.current?.getBoundingClientRect();
     if (!bounds) return;
     const camera = flow.getViewport(), x = (clientX - bounds.left - camera.x) / camera.zoom,
@@ -1363,12 +1367,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     if (gpuPressPerson.current) actions.selectOnly(gpuPressPerson.current);
   });
   useEffect(() => {
-    if (!gpuActive || !gpuFocused) return;
+    if (!gpuActive || activeFanAnchor || !gpuFocused) return;
     const frame = requestAnimationFrame(() => container.current?.querySelector<HTMLButtonElement>(
       `.react-flow__node[data-id="${CSS.escape(gpuFocused)}"] .flow-person-content`,
     )?.focus({ preventScroll: true }));
     return () => cancelAnimationFrame(frame);
-  }, [gpuFocused, gpuActive]);
+  }, [gpuFocused, gpuActive, activeFanAnchor]);
   const [anchorNotice, setAnchorNotice] = useState("");
   const [savingGenerationPreferences, setSavingGenerationPreferences] = useState(false);
   useEffect(() => {
@@ -1781,11 +1785,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         data-gpu-scene-match={gpuReadyScene?.geometry === geometry && gpuReadyScene?.scope === gpuScope ? "true" : "false"}
         data-gpu-fallback={gpuFailedScope === gpuScope ? gpuFallbackReason || undefined : undefined}
         data-distant-overlay={distantScene && gpuOverlayEdges.length > 0 || undefined}
-        role={gpuActive ? "application" : undefined}
+        role={gpuActive && !activeFanAnchor ? "application" : undefined}
         onPointerMoveCapture={(event) => {
           if (manual.onPointerMove(event)) return;
           gpuLongPress.handlers.onPointerMove(event);
-          if (!gpuActive || event.pointerType === "touch") return;
+          if (!gpuActive || activeFanAnchor || event.pointerType === "touch") return;
           const target = event.target as Element;
           const native = target.closest(".react-flow__node-person")?.getAttribute("data-id");
           const id = native || (target.closest(".react-flow__pane") && !event.buttons
@@ -1803,7 +1807,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           if (gpuActive && id) setGpuFocused(id);
         }}
         onKeyDown={(event) => {
-          if (!gpuActive || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].includes(event.key)) return;
+          if (!gpuActive || activeFanAnchor || gpuMoving() || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].includes(event.key)) return;
           const target = event.target as HTMLElement;
           if (target !== container.current && !target.classList.contains("flow-person-content")) return;
           const camera = flow.getViewport();
@@ -1852,7 +1856,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             }
           }
         }}
-        tabIndex={gpuActive ? 0 : -1}
+        tabIndex={gpuActive && !activeFanAnchor ? 0 : -1}
         aria-busy={layoutBusy || !initialCameraReady || growthPreparing || growthActive}
         onContextMenu={(event) => {
           if (growthActive || layoutBusy) {
@@ -2100,15 +2104,18 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           </div>
         </section>}
         <div className="tree-flow-plane">
-        {activeFanAnchor ? (
+        {activeFanAnchor && (
           <FanChart
             family={fanFamily}
             anchorId={activeFanAnchor}
             selected={selected}
             onChoose={actions.choose}
           />
-        ) : (
+        )}
           <ReactFlow<PersonNodeType | HouseholdNodeType, RelationshipEdgeType>
+          style={activeFanAnchor ? { opacity: 0, visibility: "hidden", pointerEvents: "none" } : undefined}
+          aria-hidden={!!activeFanAnchor}
+          inert={activeFanAnchor ? true : undefined}
           proOptions={{ hideAttribution: true }}
             nodes={mode === "timeline" || depthEnabled ? emptyFlowNodes : flowNodes}
             edges={mode === "timeline" || depthEnabled ? emptyFlowEdges : flowEdges}
@@ -2167,6 +2174,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             if (e.data) e.data.onSelect(e.data.connection);
           }}
           onPaneClick={(event) => {
+            if (gpuActive && gpuMoving()) return;
             if (distantScene || gpuActive) {
               const bounds = container.current?.getBoundingClientRect();
               const hit = bounds && hitDistantScene(nodes, displayEdges,
@@ -2283,10 +2291,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               }} />
           )}
         </ReactFlow>
-        )}
         {gpuEligible && (
           <TreeGpuScene key={gpuScope}
-            visible={gpuActive}
+            visible={gpuActive && !activeFanAnchor} suspended={!!activeFanAnchor}
             nodes={nodes} edges={gpuEdges} households={overviewHouseholds} width={canvasWidth} height={canvasHeight}
             hovered={gpuHovered} focused={gpuFocused} relationLabel={actions.relationLabel}
             onReady={gpuReady} onFailure={gpuFailure} />

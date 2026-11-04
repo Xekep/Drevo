@@ -614,6 +614,7 @@ export function ResearchAssistant({
         // Inspect added/removed containers too, since React Flow owns panels.
         if (
           records.some((record) =>
+            record.type === "attributes" ||
             [...record.addedNodes, ...record.removedNodes].some(containsControls),
           )
         )
@@ -626,7 +627,7 @@ export function ResearchAssistant({
         if (!canvas) return;
         const controls = [
           ...canvas.querySelectorAll<HTMLElement>(controlsSelector),
-        ].find((item) => item.getBoundingClientRect().width > 0 &&
+        ].find((item) => !item.closest("[inert]") && item.getBoundingClientRect().width > 0 &&
           getComputedStyle(item).visibility !== "hidden");
         if (observedControls !== controls) {
           if (observedControls) observer.unobserve(observedControls);
@@ -664,7 +665,11 @@ export function ResearchAssistant({
           mutations.disconnect();
           observedCanvas = canvas;
           observer.observe(canvas);
-          mutations.observe(canvas, { childList: true, subtree: true });
+          // The retained React Flow switches inert in the fan without removing
+          // its panels. Observe that switch, not per-frame camera styles.
+          mutations.observe(canvas, {
+            childList: true, subtree: true, attributes: true, attributeFilter: ["inert"],
+          });
         }
         schedule();
       };
