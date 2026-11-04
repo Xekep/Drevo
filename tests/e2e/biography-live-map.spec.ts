@@ -404,15 +404,19 @@ test("native markers stay anchored during zoom and long captions wrap in Leaflet
       )!;
       const [z, tx, ty] = match.slice(1).map(Number),
         box = tile.getBoundingClientRect();
+      // Image edges overlap to hide raster seams; geographic tile spacing
+      // stays 256 CSS px, scaled by the native Leaflet camera transform.
+      const tileWidth = box.width / tile.offsetWidth * 256;
+      const tileHeight = box.height / tile.offsetHeight * 256;
       const world = 2 ** z,
         lat = (50 * Math.PI) / 180;
-      const x = box.left + (((30 + 180) / 360) * world - tx) * box.width;
+      const x = box.left + (((30 + 180) / 360) * world - tx) * tileWidth;
       const y =
         box.top +
         (((1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2) *
           world -
           ty) *
-          box.height;
+          tileHeight;
       frames.push({
         error: Math.hypot(marker.left + 12 - x, marker.bottom - y),
         width: marker.width,
@@ -451,8 +455,10 @@ test("native route geometry and stroke stay stable throughout animated zoom", as
         const tile = root.querySelector("img.leaflet-tile") as HTMLImageElement;
         const [z, tx, ty] = new URL(tile.src).pathname.match(/\/(\d+)\/(\d+)\/(\d+)\.png$/)!.slice(1).map(Number);
         const box = tile.getBoundingClientRect(), world = 2 ** z, lat = 50 * Math.PI / 180;
-        const x = box.left + ((30 + 180) / 360 * world - tx) * box.width;
-        const y = box.top + ((1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * world - ty) * box.height;
+        const tileWidth = box.width / tile.offsetWidth * 256;
+        const tileHeight = box.height / tile.offsetHeight * 256;
+        const x = box.left + ((30 + 180) / 360 * world - tx) * tileWidth;
+        const y = box.top + ((1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * world - ty) * tileHeight;
         const style = getComputedStyle(path);
         const scale = Math.hypot(matrix.a, matrix.b);
         const mid = path.getPointAtLength(path.getTotalLength() / 2);

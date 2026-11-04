@@ -43,11 +43,22 @@ export function mountBiographyMap(
     keyboard: interactive,
   }).setView([53, 37], 4);
   map.attributionControl.setPrefix(false);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
+    className: "biography-map-tiles",
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  }).addTo(map);
+  });
+  // Chromium can leave subpixel gaps even at rest after page/display scaling.
+  // Cover the seam without changing Leaflet's tile origins, camera or vectors.
+  // Pair with normal blending in biography-map.css: plus-lighter would brighten
+  // these overlaps. The handler runs once per tile, never on camera frames.
+  tiles.on("tileloadstart", ({ tile }: L.TileEvent) => {
+    const size = tiles.getTileSize();
+    tile.style.width = `${size.x + 2}px`;
+    tile.style.height = `${size.y + 2}px`;
+  });
+  tiles.addTo(map);
   if (interactive)
     L.control
       .zoom({

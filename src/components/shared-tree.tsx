@@ -1,5 +1,5 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownUp, Clock3, Search, X } from "lucide-react";
 import type { Family } from "../domain/types";
 import { fullName } from "../domain/dates";
@@ -23,8 +23,11 @@ import { TreePreferencesDialog } from "./tree-preferences-dialog";
 import { TreeExportDialog } from "./tree-export-dialog";
 import { TreeSearch } from "./tree-search";
 import { ArchiveLoading } from "./archive-loading";
+import { parseBiographyMap } from "../domain/biography-map";
+const BiographyMapWorkspace = lazy(() => import("./biography-map-workspace"));
 const noop = () => {};
 type SharedData = {
+  token: string;
   family: Family;
   anchorId?: string;
   expiresAt: string;
@@ -33,8 +36,10 @@ type SharedData = {
 export default function SharedTree({ token }: { token: string }) {
   const treeCanvas = useRef<TreeCanvasHandle>(null);
   const [treeSceneCovered, setTreeSceneCovered] = useState(false);
-  const [data, setData] = useState<SharedData | null>(null),
+  const [loadedData, setData] = useState<SharedData | null>(null),
     [error, setError] = useState("");
+  const data = loadedData?.token === token ? loadedData : null;
+  const [biographyMap, setBiographyMap] = useState<{ token: string; personId: string; source: string } | null>(null);
   const [preferences, setPreferences] = useState<TreePreferences | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -82,7 +87,7 @@ export default function SharedTree({ token }: { token: string }) {
           unavailable("Срок действия ссылки истёк.");
           return;
         }
-        setData(result);
+        setData({ ...result, token });
         setPreferences(
           (current) =>
             current ??
@@ -138,6 +143,17 @@ export default function SharedTree({ token }: { token: string }) {
         : null,
     [chosen, data],
   );
+  const biographyPersonId = chosen[0]?.id;
+  const openBiographyMap = useCallback((source: string) => {
+    if (biographyPersonId) setBiographyMap({ token, personId: biographyPersonId, source });
+  }, [biographyPersonId, token]);
+  const biographyMapSource = !compare && !selectionOnly && chosen.length === 1 &&
+    biographyMap?.token === token && biographyMap.personId === biographyPersonId &&
+    chosen[0].biography?.includes(biographyMap.source) ? biographyMap.source : null;
+  if (biographyMap && !biographyMapSource) setBiographyMap(null);
+  const currentBiographyMap = useMemo(() => {
+    try { return biographyMapSource ? parseBiographyMap(biographyMapSource) : null; } catch { return null; }
+  }, [biographyMapSource]);
   useArchivePageTitle("tree", window.location.pathname, data?.family.title,
     chosen.length === 1 ? fullName(chosen[0]) : undefined);
   return (
@@ -191,9 +207,11 @@ export default function SharedTree({ token }: { token: string }) {
         {data ? (
           <main className="archive-workspace is-tree">
             <div className="tree-view">
+              <div className={`tree-scene ${currentBiographyMap ? "is-hidden" : ""}`}
+                inert={!!currentBiographyMap} aria-hidden={!!currentBiographyMap}>
               <TreeCanvas
                 ref={treeCanvas}
-                covered={treeSceneCovered}
+                covered={treeSceneCovered || !!currentBiographyMap}
                 restricted
                 onPreferences={() => setPreferencesOpen(true)}
                 animateOnLoad={preferences?.animateOnLoad}
@@ -255,9 +273,14 @@ export default function SharedTree({ token }: { token: string }) {
                 query={query}
                 highlighted={relation?.path || []}
               />
+              </div>
+              {currentBiographyMap && <Suspense fallback={<p role="status">Загрузка карты…</p>}>
+                <BiographyMapWorkspace data={currentBiographyMap} onClose={() => setBiographyMap(null)} />
+              </Suspense>}
               {!selectionOnly && (compare || chosen.length > 0) && (
                 <InspectorDock
                   onCoveredSceneChange={setTreeSceneCovered}
+                  revealScene={!!currentBiographyMap}
                   key={compare ? `comparison:${chosen.length}` : chosen[0]?.id}
                   onClose={() => dispatch({ type: "clear" })}
                 >
@@ -273,6 +296,7 @@ export default function SharedTree({ token }: { token: string }) {
                   ) : (
                     chosen[0] && (
                       <PersonInspector
+                        onOpenMap={openBiographyMap}
                         key={chosen[0].id}
                         person={chosen[0]}
                         family={data.family}
