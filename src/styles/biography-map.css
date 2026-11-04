@@ -11,6 +11,11 @@
   cursor: pointer;
   background: #e5e8de;
 }
+/* Leaflet's plus-lighter workaround creates white seams at fractional scale.
+   Native tiles overlap by 2px in biography-map-surface; do not add their colors. */
+.leaflet-container .biography-map-tiles img.leaflet-tile {
+  mix-blend-mode: normal;
+}
 /* Leaflet moves the native SVG with the tiles during a drag. Its old viewport
    must not clip newly revealed segments; the map container still clips edges. */
 .biography-map-mini .leaflet-overlay-pane > svg,
