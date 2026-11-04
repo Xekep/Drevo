@@ -1,5 +1,5 @@
 import { Focus, Maximize2, Minus, Plus } from "lucide-react";
-import { Panel, useReactFlow, useViewport } from "@xyflow/react";
+import { Panel, useReactFlow, useStore } from "@xyflow/react";
 import type { FitTree } from "./tree-camera-fit.ts";
 
 export function TreeCameraTools({
@@ -14,7 +14,7 @@ export function TreeCameraTools({
   onFocusSelected: () => void;
 }) {
   const flow = useReactFlow(),
-    { zoom } = useViewport();
+    zoomPercent = useStore((state) => Math.round(state.transform[2] * 100));
   return (
     <Panel position="bottom-center" className="flow-camera-tools">
       <button
@@ -24,7 +24,7 @@ export function TreeCameraTools({
       >
         <Minus size={18} />
       </button>
-      <span>{Math.round(zoom * 100)}%</span>
+      <span>{zoomPercent}%</span>
       <button
         aria-label="Увеличить"
         disabled={disabled}

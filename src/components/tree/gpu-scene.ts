@@ -486,7 +486,9 @@ export function createGpuScene(
         bottom: node.position.y + (node.height || 264),
       });
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    // The canvas is composited as premultiplied RGBA. RGB needs source alpha,
+    // but multiplying alpha by itself makes glyphs and soft edges wash out.
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     const bind = (batch: Batch, stride: number, attributes: number[]) => {
       gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
       let offset = 0;
@@ -605,7 +607,9 @@ export function createGpuScene(
         const dpr = Math.min(
           window.devicePixelRatio || 1,
           2,
-          Math.sqrt(2_500_000 / (width * height)),
+          // Keep QHD at native resolution; smaller targets soften tiny labels
+          // even at DPR 1. Higher-DPI/4K screens still have a bounded buffer.
+          Math.sqrt(4_000_000 / (width * height)),
           maxDrawingSize / Math.max(width, height),
         );
         const pixelWidth = Math.max(1, Math.round(width * dpr)),

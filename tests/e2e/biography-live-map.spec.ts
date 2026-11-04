@@ -155,6 +155,44 @@ test("native route lines remain painted in newly exposed areas before mouse rele
   } finally { await page.mouse.up(); }
 });
 
+test("route search keeps controls fixed while results scroll and focuses the original feature", async ({ page }, info) => {
+  const features: BiographyMap["features"] = [routeMap.features[2], ...Array.from({ length: 60 }, (_, index) => ({
+    type: "Feature" as const,
+    geometry: { type: "Point" as const, coordinates: [30 + index * 0.01, 50] },
+    properties: { name: index === 35 ? "Орёл" : `Пункт ${index + 1}`, date: index === 35 ? "1943" : "1942",
+      description: `Дневниковая запись ${index + 1}. `.repeat(12) },
+  }))];
+  await setup(page, biographyMapBlock({ type: "FeatureCollection", features }));
+  await page.locator(".inspector-dock .biography-map-mini").click();
+  const workspace = page.getByRole("region", { name: "Карта из биографии" });
+  const toggle = workspace.getByRole("button", { name: "Точки маршрута", exact: true });
+  await toggle.click();
+  const search = workspace.getByRole("searchbox", { name: "Поиск по точкам маршрута" });
+  const results = workspace.getByRole("list", { name: "Точки маршрута" });
+  const toggleBefore = (await toggle.boundingBox())!, searchBefore = (await search.boundingBox())!;
+  expect(await results.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
+  await results.evaluate(node => { node.scrollTop = node.scrollHeight; });
+  expect((await toggle.boundingBox())!.y).toBe(toggleBefore.y);
+  expect((await search.boundingBox())!.y).toBe(searchBefore.y);
+  await expect(toggle).toBeInViewport();
+  await expect(search).toBeInViewport();
+  await search.fill("несуществующее место");
+  await expect(workspace.getByRole("status")).toHaveText("Точки не найдены");
+  await search.fill("ОРЕЛ 1943");
+  await expect(results.locator("li")).toHaveCount(1);
+  await workspace.getByRole("button", { name: "Орёл 1943", exact: true }).click();
+  await expect(workspace.locator(".leaflet-popup")).toContainText("Дневниковая запись 36.");
+  if (info.project.name === "mobile") await expect(workspace.locator(".leaflet-tooltip")).toHaveCount(0);
+  await toggle.click();
+  await search.fill("ДНЕВНИКОВАЯ 60");
+  await expect(results.locator("li")).toHaveCount(1);
+  await search.fill("");
+  await expect(results.locator("li")).toHaveCount(60);
+  await page.screenshot({ path: info.outputPath("route-list-search.png") });
+  await toggle.click();
+  await expect(search).toHaveCount(0);
+});
+
 test("mobile map gives room to the canvas and dismisses the route list on map taps", async ({ page }, info) => {
   await setup(page, biographyMapBlock(routeMap));
   await page.locator(".inspector-dock .biography-map-mini").click();
@@ -174,21 +212,21 @@ test("mobile map gives room to the canvas and dismisses the route list on map ta
     await expect(workspace.locator("header h2")).toBeVisible();
     await expect(dock).not.toHaveClass(/is-map-peek/);
   }
-  await points.locator("summary").click();
+  await points.locator(".biography-map-points-toggle").click();
   const bounds = (await surface.boundingBox())!;
   await surface.click({ position: { x: 15, y: bounds.height - 65 } });
   if (mobile) {
-    await expect(points).not.toHaveAttribute("open", "");
-    await points.locator("summary").click();
+    await expect(points.locator(".biography-map-points-toggle")).toHaveAttribute("aria-expanded", "false");
+    await points.locator(".biography-map-points-toggle").click();
     await workspace.locator(".leaflet-marker-icon").first().click();
-    await expect(points).not.toHaveAttribute("open", "");
+    await expect(points.locator(".biography-map-points-toggle")).toHaveAttribute("aria-expanded", "false");
     await expect(workspace.locator(".leaflet-popup")).toContainText("Первый пункт");
     await dock.getByRole("button", { name: "Развернуть панель", exact: true }).click();
     await expect(dock.getByRole("tab", { name: "О человеке", exact: true })).toBeVisible();
     await dock.getByRole("button", { name: "Свернуть панель", exact: true }).click();
     await expect(dock).toHaveClass(/is-map-peek/);
     await page.screenshot({ path: info.outputPath("mobile-map-compact.png") });
-  } else await expect(points).toHaveAttribute("open", "");
+  } else await expect(points.locator(".biography-map-points-toggle")).toHaveAttribute("aria-expanded", "true");
   await workspace.getByRole("button", { name: "Вернуться к древу", exact: true }).click();
   await expect(workspace).toHaveCount(0);
   await expect(dock).not.toHaveClass(/is-map-peek/);
@@ -332,6 +370,10 @@ test("native markers stay anchored during zoom and long captions wrap in Leaflet
   ).toBeGreaterThan(0);
   await marker.hover();
   const tooltip = workspace.locator(".leaflet-tooltip");
+  if (info.project.name === "mobile") {
+    await marker.tap();
+    await expect(tooltip).toHaveCount(0);
+  } else {
   await expect(tooltip).toContainText(title);
   await expect(tooltip).toContainText("1943-05-10");
   await expect(tooltip).not.toContainText("Подробное описание");
@@ -340,6 +382,7 @@ test("native markers stay anchored during zoom and long captions wrap in Leaflet
   expect(bounds!.width).toBeLessThanOrEqual(281);
   expect(bounds!.height).toBeLessThan(140);
   await marker.click();
+  }
   const popup = workspace.locator(".leaflet-popup-content");
   await expect(popup).toContainText(description.trim());
   expect((await popup.boundingBox())!.height).toBeLessThanOrEqual(241);
@@ -386,6 +429,88 @@ test("native markers stay anchored during zoom and long captions wrap in Leaflet
     body: JSON.stringify(samples),
     contentType: "application/json",
   });
+});
+
+test("native route geometry and stroke stay stable throughout animated zoom", async ({ page }, info) => {
+  await setup(page, biographyMapBlock(routeMap));
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.locator(".inspector-dock .biography-map-mini").click();
+  const workspace = page.getByRole("region", { name: "Карта из биографии" });
+  await expect(workspace.locator("path.leaflet-interactive")).toHaveCount(1);
+  for (const direction of ["in", "out"]) {
+    const frames = await workspace.evaluate(async (root, direction) => {
+      const samples: { error: number; width: number; scale: number; wide: boolean }[] = [];
+      const start = performance.now();
+      (root.querySelector(`.leaflet-control-zoom-${direction}`) as HTMLElement).click();
+      while (performance.now() - start < 450) {
+        await new Promise(requestAnimationFrame);
+        const path = root.querySelector("path.leaflet-interactive") as SVGPathElement;
+        const matrix = path.getScreenCTM()!;
+        const point = path.getPointAtLength(0);
+        const screen = new DOMPoint(point.x, point.y).matrixTransform(matrix);
+        const tile = root.querySelector("img.leaflet-tile") as HTMLImageElement;
+        const [z, tx, ty] = new URL(tile.src).pathname.match(/\/(\d+)\/(\d+)\/(\d+)\.png$/)!.slice(1).map(Number);
+        const box = tile.getBoundingClientRect(), world = 2 ** z, lat = 50 * Math.PI / 180;
+        const x = box.left + ((30 + 180) / 360 * world - tx) * box.width;
+        const y = box.top + ((1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * world - ty) * box.height;
+        const style = getComputedStyle(path);
+        const scale = Math.hypot(matrix.a, matrix.b);
+        const mid = path.getPointAtLength(path.getTotalLength() / 2);
+        const near = path.getPointAtLength(path.getTotalLength() / 2 + 1);
+        const a = new DOMPoint(mid.x, mid.y).matrixTransform(matrix);
+        const b = new DOMPoint(near.x, near.y).matrixTransform(matrix);
+        const length = Math.hypot(b.x - a.x, b.y - a.y);
+        const wide = document.elementFromPoint(a.x - (b.y - a.y) / length * 2.2,
+          a.y + (b.x - a.x) / length * 2.2) === path;
+        samples.push({ error: Math.hypot(screen.x - x, screen.y - y), scale, wide,
+          width: parseFloat(style.strokeWidth) * (style.vectorEffect === "non-scaling-stroke" ? 1 : scale) });
+      }
+      return samples;
+    }, direction);
+    await info.attach(`route-zoom-${direction}`, { body: JSON.stringify(frames), contentType: "application/json" });
+    expect(frames.length).toBeGreaterThan(3);
+    expect(frames.some(frame => Math.abs(frame.scale - 1) > 0.1)).toBe(true);
+    expect(Math.max(...frames.map(frame => frame.error))).toBeLessThan(4);
+    expect(Math.max(...frames.map(frame => Math.abs(frame.width - 3)))).toBeLessThan(0.1);
+    expect(frames.some(frame => frame.wide)).toBe(false);
+  }
+});
+
+test("touch pinch keeps the native route attached to markers with a constant stroke", async ({ page }, info) => {
+  test.skip(info.project.name !== "mobile");
+  await setup(page, biographyMapBlock(routeMap));
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.locator(".inspector-dock .biography-map-mini").click();
+  const workspace = page.getByRole("region", { name: "Карта из биографии" });
+  const box = (await workspace.locator(".biography-map-surface").boundingBox())!;
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  const session = await page.context().newCDPSession(page);
+  const touches = (radius: number) => [{ x: x - radius, y, id: 1 }, { x: x + radius, y, id: 2 }];
+  const frames: { error: number; width: number; scale: number }[] = [];
+  try {
+    await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: touches(45) });
+    for (let step = 1; step <= 20; step++) {
+      await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: touches(45 + step * 2) });
+      frames.push(await workspace.evaluate(async root => {
+        await new Promise(requestAnimationFrame);
+        const path = root.querySelector("path.leaflet-interactive") as SVGPathElement;
+        const matrix = path.getScreenCTM()!;
+        const point = path.getPointAtLength(0);
+        const screen = new DOMPoint(point.x, point.y).matrixTransform(matrix);
+        const marker = root.querySelector(".leaflet-marker-icon")!.getBoundingClientRect();
+        const scale = Math.hypot(matrix.a, matrix.b);
+        return { error: Math.hypot(screen.x - marker.left - 12, screen.y - marker.bottom), scale,
+          width: parseFloat(getComputedStyle(path).strokeWidth) * scale };
+      }));
+    }
+  } finally {
+    await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await session.detach();
+  }
+  await info.attach("route-pinch", { body: JSON.stringify(frames), contentType: "application/json" });
+  expect(frames.some(frame => frame.scale > 1.4)).toBe(true);
+  expect(Math.max(...frames.map(frame => frame.error))).toBeLessThan(4);
+  expect(Math.max(...frames.map(frame => Math.abs(frame.width - 3)))).toBeLessThan(0.1);
 });
 
 async function pasteMap(content: ReturnType<Page["locator"]>, source: string) {

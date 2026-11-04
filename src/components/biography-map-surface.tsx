@@ -29,6 +29,7 @@ export function mountBiographyMap(
   const reducedMotion = window.matchMedia(
     "(prefers-reduced-motion: reduce)",
   ).matches;
+  const hover = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
   const map = L.map(host, {
     zoomAnimation: !reducedMotion,
     markerZoomAnimation: !reducedMotion,
@@ -113,7 +114,9 @@ export function mountBiographyMap(
           }
           return content;
         };
-        item.bindTooltip(label(false), {
+        // Touch browsers synthesize hover/focus around a tap. A popup is enough
+        // there, including when the route list focuses a marker programmatically.
+        if (hover) item.bindTooltip(label(false), {
           className: "biography-map-tooltip",
           direction: "auto",
           opacity: 1,
@@ -144,6 +147,33 @@ export function mountBiographyMap(
     previousData = next;
   };
   update(data);
+  // Leaflet animates the outer SVG with a CSS scale, which also scales strokes
+  // even with vector-effect. Compensate only the stroke; native paths, camera
+  // transforms and hit testing remain Leaflet's. No work runs while idle/panning.
+  let strokeFrame = 0;
+  const updateStroke = () => {
+    const svg = host.querySelector<SVGSVGElement>(".leaflet-overlay-pane > svg");
+    if (!svg) return;
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(svg).transform);
+    const scale = Math.hypot(matrix.a, matrix.b) || 1;
+    svg.style.setProperty("--biography-route-stroke", `${3 / scale}px`);
+  };
+  const animateStroke = () => {
+    updateStroke();
+    strokeFrame = requestAnimationFrame(animateStroke);
+  };
+  const startStroke = () => {
+    if (!strokeFrame && host.querySelector(".leaflet-overlay-pane > svg"))
+      strokeFrame = requestAnimationFrame(animateStroke);
+  };
+  const stopStroke = () => {
+    cancelAnimationFrame(strokeFrame);
+    strokeFrame = 0;
+    host.querySelector<SVGSVGElement>(".leaflet-overlay-pane > svg")?.style.removeProperty("--biography-route-stroke");
+  };
+  map.on("zoomstart", startStroke);
+  map.on("zoom", updateStroke);
+  map.on("zoomend", stopStroke);
   const observer = new ResizeObserver(() => map.invalidateSize({ pan: false }));
   observer.observe(host);
   return {
@@ -159,6 +189,7 @@ export function mountBiographyMap(
       point.getElement()?.focus({ preventScroll: true });
     },
     destroy() {
+      stopStroke();
       observer.disconnect();
       map.remove();
     },
