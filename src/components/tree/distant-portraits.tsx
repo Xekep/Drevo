@@ -11,6 +11,7 @@ import type { PersonNodeType } from "./person-node";
 import type { RelationshipEdgeType } from "./relationship-edge.tsx";
 import { treeGrowthDuration, type TreeGrowthSchedule } from "./tree-growth.ts";
 import { gpuRoute } from "./gpu-route.ts";
+import { drawPortraitCameo } from "../portrait-cameo.ts";
 
 const PORTRAIT_SIZE = 132;
 const PORTRAIT_TOP = 4;
@@ -54,21 +55,7 @@ function placeholderPreview(sex: "f" | "m" | "u") {
   context.beginPath();
   context.arc(40, 40, 40, 0, Math.PI * 2);
   context.clip();
-  const colors = sex === "f" ? ["#fff9ee", "#ede4d7", "#a58c78"]
-    : sex === "m" ? ["#fafbf3", "#e4ead9", "#71856b"]
-      : ["#fafbf3", "#e4ead9", "#8a927f"];
-  const background = context.createRadialGradient(32, 20, 0, 32, 20, 80);
-  background.addColorStop(0, colors[0]);
-  background.addColorStop(1, colors[1]);
-  context.fillStyle = background;
-  context.fillRect(0, 0, 80, 80);
-  context.fillStyle = colors[2];
-  context.globalAlpha = 0.23;
-  context.fill(new Path2D("M18 69c1-14 9-22 22-22s21 8 22 22"));
-  context.globalAlpha = 0.35;
-  context.beginPath();
-  context.ellipse(40, 30, 12, 15, 0, 0, Math.PI * 2);
-  context.fill();
+  drawPortraitCameo(context, sex, true);
   return canvas;
 }
 

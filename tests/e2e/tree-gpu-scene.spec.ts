@@ -84,12 +84,8 @@ test(`${medium ? "250-card" : "3313 desktop / 503 mobile"} GPU tree keeps bounde
       WebGL2RenderingContext.prototype.texImage2D,
       {
         apply(target, thisArg, args) {
-          const source = args[5];
-          if (
-            source instanceof HTMLCanvasElement &&
-            source.width === 1024 &&
-            source.height === 1024
-          )
+          if (args[2] === (thisArg as WebGL2RenderingContext).R8 &&
+            args[3] === 2048 && args[4] === 2048)
             gpuResources.glyphUploads++;
           return Reflect.apply(target, thisArg, args);
         },

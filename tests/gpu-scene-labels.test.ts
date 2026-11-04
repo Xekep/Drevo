@@ -14,7 +14,9 @@ function fixture(t: TestContext) {
     getProgramParameter: () => true,
     getError: () => 0,
     createProgram: () => ({ program: ++programs }),
-    texImage2D: () => { glyphUploads++; },
+    texImage2D: (_target: number, _level: number, format: number) => {
+      if (format === constants.get("R8")) glyphUploads++;
+    },
   };
   const gl = new Proxy(methods, {
     get(target, key: string) {
@@ -26,11 +28,16 @@ function fixture(t: TestContext) {
       return key.startsWith("create") ? () => ({}) : () => {};
     },
   });
-  const fontCanvas = () => ({ width: 0, height: 0, getContext: () => ({
-    measureText: () => ({ width: 32 }), fillText: () => {},
-  }) });
+  const context = new Proxy({
+    measureText: () => ({ width: 32, actualBoundingBoxAscent: 48, actualBoundingBoxDescent: 8,
+      actualBoundingBoxLeft: 0, actualBoundingBoxRight: 32, fontBoundingBoxAscent: 60, fontBoundingBoxDescent: 16 }),
+    getImageData: (_x: number, _y: number, width: number, height: number) => ({ data: new Uint8ClampedArray(width * height * 4) }),
+    createRadialGradient: () => ({ addColorStop: () => {} }),
+  } as Record<string, unknown>, { get: (target, key: string) => target[key] ?? (() => {}) });
+  const fontCanvas = () => ({ width: 0, height: 0, getContext: () => context });
   for (const [key, value] of Object.entries({
     document: { createElement: fontCanvas }, window: { devicePixelRatio: 1 },
+    Path2D: class {},
   })) {
     const previous = Object.getOwnPropertyDescriptor(globalThis, key);
     Object.defineProperty(globalThis, key, { configurable: true, value });

@@ -283,6 +283,8 @@ for (const count of [180, 1000]) {
     });
     await page.goto("/tree");
     const root = page.locator(".tree-canvas");
+    await expect(root).toHaveAttribute("data-layout-ready", "true", { timeout: 30_000 });
+    await expect(root).toHaveAttribute("data-camera-ready", "true");
     await expect(root).not.toHaveClass(/is-grow|is-layout-settling/, { timeout: 30_000 });
     const zoom = () => page.locator(".react-flow__viewport").evaluate((element) =>
       new DOMMatrix(getComputedStyle(element).transform).a);

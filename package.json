@@ -31,6 +31,7 @@
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.13",
     "@internetarchive/bookreader": "5.0.0-117",
+    "@mapbox/tiny-sdf": "2.3.0",
     "@tensorflow/tfjs-backend-cpu": "4.22.0",
     "@tensorflow/tfjs-backend-wasm": "4.22.0",
     "@tensorflow/tfjs-backend-webgl": "4.22.0",
