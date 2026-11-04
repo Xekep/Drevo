@@ -19,6 +19,7 @@ export function TreeGpuScene({
   onReady,
   onFailure,
   visible,
+  suspended = false,
 }: {
   nodes: readonly PersonNodeType[];
   edges: readonly RelationshipEdgeType[];
@@ -31,6 +32,7 @@ export function TreeGpuScene({
   onReady: () => void;
   onFailure: (reason: string) => void;
   visible: boolean;
+  suspended?: boolean;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const store = useStoreApi();
@@ -41,6 +43,7 @@ export function TreeGpuScene({
     [relationLabel],
   );
   const state = useRef({
+    suspended,
     width,
     height,
     hovered,
@@ -55,6 +58,7 @@ export function TreeGpuScene({
   const schedule = useRef(() => {});
   useLayoutEffect(() => {
     state.current = {
+      suspended,
       width,
       height,
       hovered,
@@ -67,6 +71,7 @@ export function TreeGpuScene({
       onFailure,
     };
   }, [
+    suspended,
     width,
     height,
     hovered,
@@ -98,7 +103,7 @@ export function TreeGpuScene({
     };
     const draw = () => {
       frame = 0;
-      if (!active || !scene.current) return;
+      if (!active || !scene.current || state.current.suspended) return;
       try {
         const current = state.current;
         if (
@@ -119,6 +124,7 @@ export function TreeGpuScene({
           ) {
             element.dataset.gpuBuildReason =
               "update:" + element.dataset.gpuUpdateReason;
+            const previousPositions = scene.current.positions();
             outgoing?.scene.destroy(true);
             if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
               scene.current.destroy(true);
@@ -143,6 +149,11 @@ export function TreeGpuScene({
                 : undefined,
             );
             portraits.current = scene.current.portraits;
+            if (outgoing) {
+              outgoing.scene.transition(scene.current.positions(), true);
+              scene.current.transition(previousPositions);
+              outgoing.started = performance.now();
+            }
             started = performance.now();
             clearTimeout(handoffTimer);
             handoffTimer = window.setTimeout(requestDraw, 2000);
@@ -154,6 +165,9 @@ export function TreeGpuScene({
         const progress = outgoing
           ? Math.min(1, (performance.now() - outgoing.started) / 440)
           : 1;
+        const movement = 1 - (1 - progress) ** 3;
+        const moving = String(progress < 1);
+        if (element.dataset.gpuMoving !== moving) element.dataset.gpuMoving = moving;
         if (outgoing && progress === 1) {
           outgoing.scene.destroy(true);
           outgoing = undefined;
@@ -162,10 +176,12 @@ export function TreeGpuScene({
         if (outgoing)
           outgoing.scene.draw({ x, y, zoom }, current.width, current.height, {
             opacity: 1 - progress,
+            progress: movement,
           });
         scene.current.draw({ x, y, zoom }, current.width, current.height, {
           opacity: progress,
           clear: !outgoing,
+          progress: movement,
         });
         element.dataset.gpuTransitionProgress = String(progress);
         if (outgoing) requestDraw();
@@ -240,6 +256,7 @@ export function TreeGpuScene({
   useEffect(() => {
     schedule.current();
   }, [
+    suspended,
     width,
     height,
     hovered,

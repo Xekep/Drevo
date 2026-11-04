@@ -2671,6 +2671,13 @@
    cannot raise privacy/branch controls above the sibling GPU canvas alone. */
 .tree-canvas[data-renderer="webgl2"] .react-flow { z-index: 2 !important; }
 .tree-canvas[data-renderer="webgl2"] .react-flow__viewport { z-index: 2; }
+.tree-canvas:has(.tree-gpu-scene[data-gpu-moving="true"]) .tree-gpu-node-overlay {
+  opacity: 0;
+  pointer-events: none;
+}
+.tree-canvas:has(.tree-gpu-scene[data-gpu-moving="true"]) .tree-gpu-node-overlay * {
+  pointer-events: none !important;
+}
 .tree-canvas[data-distant-overlay="true"] .react-flow__viewport { z-index: 3; }
 .tree-gpu-node-overlay .person-avatar,
 .tree-gpu-node-overlay .portrait-card-info { visibility: hidden; }

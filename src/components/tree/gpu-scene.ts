@@ -11,6 +11,8 @@ import { scheduleGpuLabelPreparation } from "./gpu-label-preparation.ts";
 import { createGpuFont, gpuFontAtlasSize as FONT_SIZE, gpuFontSize } from "./gpu-font.ts";
 import { gpuPlaceholderCanvas, gpuPlaceholderUv, placeholderWidth, placeholderHeight } from "./gpu-placeholders.ts";
 
+import { createGpuMotion, type GpuMotionPoint } from "./gpu-motion.ts";
+
 const MAX_BUFFERS = 24 * 1024 * 1024;
 type Batch = { buffer: WebGLBuffer; count: number };
 type IndexedNode = {
@@ -107,13 +109,16 @@ export function createGpuScene(
       precision highp float; precision highp int;
       layout(location=0) in vec4 rect; layout(location=1) in vec4 uv;
       layout(location=2) in vec2 range; layout(location=3) in vec4 color;
-      layout(location=4) in float kind;
+      layout(location=4) in float kind; layout(location=5) in float motionIndex;
       ${cameraShader}
-      uniform float sceneOpacity;
+      uniform float sceneOpacity, motionProgress; uniform bool motionDeparture; uniform sampler2D motionAtlas;
       out vec2 texCoord; out vec2 local; out vec4 tint; flat out int mode; flat out vec2 dimensions; flat out vec4 atlasRect;
-      void main() { vec2 c=corners[gl_VertexID]; gl_Position=project(rect.xy+c*rect.zw);
+      void main() { vec2 c=corners[gl_VertexID]; int index=int(motionIndex);
+        vec4 movement=texelFetch(motionAtlas,ivec2(index%256,index/256),0);
+        vec2 offset=movement.xy*(motionDeparture ? 1. : 1.-motionProgress);
+        gl_Position=project(rect.xy+offset+c*rect.zw);
         if(camera.z<range.x || camera.z>=range.y) gl_Position=vec4(2,2,0,1);
-        texCoord=uv.xy+c*uv.zw; local=c; tint=color; tint.a*=sceneOpacity; mode=int(kind); dimensions=rect.zw; atlasRect=uv; }`,
+        texCoord=uv.xy+c*uv.zw; local=c; tint=color; tint.a*=index==0 ? sceneOpacity : mix(movement.z,movement.w,motionProgress); mode=int(kind); dimensions=rect.zw; atlasRect=uv; }`,
       `#version 300 es
       precision highp float; precision highp int;
       in vec2 texCoord; in vec2 local; in vec4 tint; flat in int mode; flat in vec2 dimensions; flat in vec4 atlasRect;
@@ -129,7 +134,7 @@ export function createGpuScene(
         if(mode==129) { vec2 q=abs((local-.5)*dimensions)-dimensions*.5+14.;
           float d=length(max(q,vec2(0)))+min(max(q.x,q.y),0.)-14.; float aa=max(fwidth(d),.4);
           float border=smoothstep(-1.5-aa,-1.5+aa,d); outputColor=vec4(tint.rgb,
-            mix(.035,.55,border)*(1.-smoothstep(-aa,aa,d))); return; }
+            mix(.035,.55,border)*(1.-smoothstep(-aa,aa,d))*tint.a); return; }
         if(mode==0) {
           vec2 dx=dFdx(texCoord), dy=dFdy(texCoord);
           float aa=max(max(length(dx),length(dy))*${FONT_SIZE / 8}.,.001);
@@ -140,6 +145,10 @@ export function createGpuScene(
             for(int y=0;y<4;y++) for(int x=0;x<4;x++)
               coverage+=glyphCoverage(texCoord+dx*(float(x)*.25-.375)+dy*(float(y)*.25-.375),aa*.25)/16.;
           } else coverage=glyphCoverage(texCoord,aa);
+          // Below eight screen pixels, coverage alone makes thin stems pale.
+          // Apply a small, continuous optical-weight correction only at that
+          // scale; full-size text retains its original outlines and coverage.
+          coverage=pow(coverage,1.-.2*smoothstep(1.,1.7,aa));
           outputColor=vec4(tint.rgb,coverage*tint.a); return;
         }
         if(mode==64) { float r=length(local-.5)*2.; outputColor=vec4(tint.rgb,(1.-smoothstep(.85,1.,r))*tint.a); return; }
@@ -181,6 +190,20 @@ export function createGpuScene(
       void main() { if(pattern.y>0. && mod(along,pattern.x+pattern.y)>pattern.x) discard;
         outputColor=tint; }`,
     );
+    const motion = createGpuMotion([...nodes, ...households]);
+    const motionTexture = gl.createTexture()!;
+    textures.push(motionTexture);
+    const uploadMotion = () => {
+      gl.bindTexture(gl.TEXTURE_2D, motionTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, motion.width, motion.height, 0, gl.RGBA, gl.FLOAT, motion.data);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    };
+    uploadMotion();
+    const motionUniform = gl.getUniformLocation(spriteProgram, "motionProgress");
+    const departureUniform = gl.getUniformLocation(spriteProgram, "motionDeparture");
+    gl.useProgram(spriteProgram);
+    gl.uniform1i(gl.getUniformLocation(spriteProgram, "motionAtlas"), 1);
     const cameraUniforms = [spriteProgram, lineProgram].map((p) => ({
       camera: gl.getUniformLocation(p, "camera"),
       viewport: gl.getUniformLocation(p, "viewport"),
@@ -255,6 +278,7 @@ export function createGpuScene(
             ...rgb,
             1,
             64,
+            0,
           );
       }
       return { lines, junctions };
@@ -262,7 +286,7 @@ export function createGpuScene(
     let currentEdges = edges;
     const initialEdges = edgeData(edges);
     const lineBatch = makeBuffer(initialEdges.lines, 12, "lines"),
-      junctionBatch = makeBuffer(initialEdges.junctions, 15, "junctions");
+      junctionBatch = makeBuffer(initialEdges.junctions, 16, "junctions");
     initialEdges.lines.length = initialEdges.junctions.length = 0;
     const replaceBuffer = (batch: Batch, data: number[], stride: number) => {
       const array = new Float32Array(data);
@@ -287,10 +311,11 @@ export function createGpuScene(
         0,
         10,
         ...(node.data.label ? [0.875, 0.902, 0.843] : [0.514, 0.592, 0.467]),
-        0.08,
+        node.data.label ? 1 : 0.08,
         node.data.label ? 129 : 128,
+        motion.index(node.id),
       );
-    const surfaceBatch = makeBuffer(surfaces, 15, "surfaces");
+    const surfaceBatch = makeBuffer(surfaces, 16, "surfaces");
     surfaces.length = 0;
     let font: ReturnType<typeof createGpuFont> | undefined = createGpuFont();
     releaseFont = () => { font = undefined; };
@@ -298,7 +323,7 @@ export function createGpuScene(
     const labels: number[][] = [[], [], []];
     const text = (
       value: string,
-      node: Pick<PersonNodeType, "position" | "width"> & {
+      node: Pick<PersonNodeType, "id" | "position" | "width"> & {
         data: Pick<PersonNodeType["data"], "outsideSpotlight" | "dimmed">;
       },
       top: number,
@@ -353,6 +378,7 @@ export function createGpuScene(
               ...(bold ? [40 / 255, 60 / 255, 54 / 255] : [104 / 255, 118 / 255, 111 / 255]),
               node.data.outsideSpotlight ? 0.3 : node.data.dimmed ? 0.6 : 1,
               0,
+              motion.index(node.id),
             );
           x += g.advance * scale;
         }
@@ -396,8 +422,8 @@ export function createGpuScene(
     const labelCpuBytes = labelArrays.reduce((sum, array) => sum + array.byteLength, 0);
     // The first draw chooses the actual camera LOD. Only that LOD occupies
     // the base and relation buffers, including when crossing zoom thresholds.
-    const labelBatch = makeBuffer(new Float32Array(0), 15, "labels");
-    const relationBatch = makeBuffer(new Float32Array(0), 15, "relations");
+    const labelBatch = makeBuffer(new Float32Array(0), 16, "labels");
+    const relationBatch = makeBuffer(new Float32Array(0), 16, "relations");
     let labelLod = -1,
       labelBytes = 0;
     let relationLod = -1, relationBytes = 0, relationCpuBytes = 0;
@@ -518,11 +544,18 @@ export function createGpuScene(
     let hovered = "",
       focused = "",
       draws = 0;
+    let lastMotionProgress = 1;
     let cachedBox: Box | undefined,
       cachedHigh = false, cachedCompact = false;
     const portraitBatches = new Map<WebGLTexture, Batch & { bytes: number }>();
     return {
       portraits,
+      positions: () => motion.positions(),
+      transition(other: ReadonlyMap<string, GpuMotionPoint>, departing = false) {
+        motion.transition(other, departing);
+        uploadMotion();
+        portraitDirty = true;
+      },
       releaseTransitionPhotos() {
         retainedPhotos = undefined;
         portraits!.update(photoDraw, failure, scenePhotos(currentNodes));
@@ -622,7 +655,7 @@ export function createGpuScene(
         focused = focus;
       },
       draw(camera: Viewport, width: number, height: number,
-        options: { opacity?: number; clear?: boolean } = {}) {
+        options: { opacity?: number; clear?: boolean; progress?: number } = {}) {
         if (disposed || width <= 0 || height <= 0) return;
         const dpr = Math.min(
           window.devicePixelRatio || 1,
@@ -658,13 +691,22 @@ export function createGpuScene(
           gl.uniform2f(cameraUniforms[i].viewport, width, height);
         });
         gl.useProgram(spriteProgram);
+        const progress = options.progress ?? 1;
+        motion.progress(progress);
+        if (lastMotionProgress < 1 && progress === 1) portraitDirty = true;
+        lastMotionProgress = progress;
+        gl.uniform1f(motionUniform, progress);
+        gl.uniform1i(departureUniform, motion.departing ? 1 : 0);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, motionTexture);
+        gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, fontTexture);
-        bind(surfaceBatch, 15, [4, 4, 2, 4, 1]);
+        bind(surfaceBatch, 16, [4, 4, 2, 4, 1, 1]);
         gl.useProgram(lineProgram);
         bind(lineBatch, 12, [4, 2, 2, 4]);
         gl.useProgram(spriteProgram);
         gl.bindTexture(gl.TEXTURE_2D, fontTexture);
-        bind(junctionBatch, 15, [4, 4, 2, 4, 1]);
+        bind(junctionBatch, 16, [4, 4, 2, 4, 1, 1]);
         const view = {
           left: -camera.x / camera.zoom,
           top: -camera.y / camera.zoom,
@@ -693,7 +735,17 @@ export function createGpuScene(
           };
           cachedBox = box;
           const visible =
-            camera.zoom < 0.18
+            options.progress !== undefined && progress < 1
+              ? currentNodes.filter(node => {
+                  const offset = motion.index(node.id) * 4;
+                  const x = node.position.x + motion.data[offset];
+                  const y = node.position.y + motion.data[offset + 1];
+                  return Math.min(x, node.position.x) <= box.right &&
+                    Math.max(x, node.position.x) + (node.width || 220) >= box.left &&
+                    Math.min(y, node.position.y) <= box.bottom &&
+                    Math.max(y, node.position.y) + (node.height || 264) >= box.top;
+                }).map(node => ({ node, left: node.position.x, top: node.position.y }))
+              : camera.zoom < 0.18
               ? currentNodes
                   .filter(
                     (node) =>
@@ -763,6 +815,7 @@ export function createGpuScene(
                 (node.data.person.needsReview ? 2 : 0) |
                 (node.selected || node.data.spotlit ? 4 : 0) |
                 (node.id === hovered || node.id === focused ? 8 : 0),
+              motion.index(node.id),
             );
           }
           canvas.dataset.gpuVisiblePhotos = String(visiblePhotos);
@@ -780,7 +833,7 @@ export function createGpuScene(
             }
             const array = new Float32Array(data);
             batch.bytes = array.byteLength;
-            batch.count = array.length / 15;
+            batch.count = array.length / 16;
             gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
             gl.bufferData(gl.ARRAY_BUFFER, array, gl.DYNAMIC_DRAW);
           }
@@ -791,7 +844,7 @@ export function createGpuScene(
           dynamicBytes += batch.bytes;
           if (!batch.count) continue;
           gl.bindTexture(gl.TEXTURE_2D, texture);
-          bind(batch, 15, [4, 4, 2, 4, 1]);
+          bind(batch, 16, [4, 4, 2, 4, 1, 1]);
         }
         gl.bindTexture(gl.TEXTURE_2D, fontTexture);
         const nextLabelLod = camera.zoom < 0.18 ? 0 : camera.zoom < 0.52 ? 1 : 2;
@@ -805,10 +858,10 @@ export function createGpuScene(
             );
           gl.bindBuffer(gl.ARRAY_BUFFER, labelBatch.buffer);
           gl.bufferData(gl.ARRAY_BUFFER, array, gl.STATIC_DRAW);
-          labelBatch.count = array.length / 15;
+          labelBatch.count = array.length / 16;
           gl.bindBuffer(gl.ARRAY_BUFFER, relationBatch.buffer);
           gl.bufferData(gl.ARRAY_BUFFER, relations, gl.STATIC_DRAW);
-          relationBatch.count = relations.length / 15;
+          relationBatch.count = relations.length / 16;
           bufferBytes = nextBytes;
           labelBytes = array.byteLength;
           relationBytes = relations.byteLength;
@@ -816,8 +869,8 @@ export function createGpuScene(
           relationLod = nextLabelLod;
           canvas.dataset.gpuLabelLod = String(labelLod);
         }
-        bind(labelBatch, 15, [4, 4, 2, 4, 1]);
-        bind(relationBatch, 15, [4, 4, 2, 4, 1]);
+        bind(labelBatch, 16, [4, 4, 2, 4, 1, 1]);
+        bind(relationBatch, 16, [4, 4, 2, 4, 1, 1]);
         canvas.dataset.gpuLabelBytes = String(labelBytes + relationBytes);
         canvas.dataset.gpuLabelCpuBytes = String(labelCpuBytes + relationCpuBytes);
         if (!draws && gl.getError() !== gl.NO_ERROR) {
@@ -825,7 +878,7 @@ export function createGpuScene(
           return;
         }
         canvas.dataset.gpuTextureBytes = String(
-          portraits!.bytes + FONT_SIZE ** 2 + Math.ceil(placeholderWidth * placeholderHeight * 4 * 4 / 3),
+          portraits!.bytes + motion.data.byteLength + FONT_SIZE ** 2 + Math.ceil(placeholderWidth * placeholderHeight * 4 * 4 / 3),
         );
         canvas.dataset.gpuBufferBytes = String(bufferBytes + dynamicBytes);
         canvas.dataset.gpuDraws = String(++draws);
