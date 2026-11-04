@@ -20,7 +20,7 @@ test.use({
   },
 });
 
-test("ready GPU survives pending native scope without manufacturing exiting cards or edges", async ({
+test("ready GPU survives a pending small scope without manufacturing exiting cards or edges", async ({
   page,
   isMobile,
 }) => {
@@ -251,9 +251,11 @@ test("ready GPU survives pending native scope without manufacturing exiting card
   });
   await expect(root).toHaveAttribute("data-layout-ready", "true");
   await expect(root).toHaveAttribute("data-layout-people", "64");
-  await expect(root).toHaveAttribute("data-renderer", "react-flow");
+  await expect(root).toHaveAttribute("data-renderer", "webgl2");
   await expect(root).not.toHaveClass(/is-layout-settling/);
-  await expect(canvas).toHaveCount(0);
+  await expect(canvas).toHaveCount(1);
+  await expect(canvas).toHaveAttribute("data-scene-nodes", "64");
+  await expect(canvas).toHaveAttribute("data-gpu-transition-progress", "1");
   await expect(page.locator(".tree-exit-node, .tree-exit-edge")).toHaveCount(0);
   const transition = await page.evaluate(() => {
     const state = (
@@ -263,7 +265,7 @@ test("ready GPU survives pending native scope without manufacturing exiting card
     ).__gpuHandoff;
     return { exits: state.exits, enters: state.enters };
   });
-  expect(transition).toEqual({ exits: 0, enters: true });
+  expect(transition).toEqual({ exits: 0, enters: false });
   await page.getByRole("button", { name: "Настройки древа" }).click();
   await dialog
     .getByRole("switch", { name: "Ограничить видимое древо" })

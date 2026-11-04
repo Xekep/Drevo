@@ -1275,6 +1275,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   // mounting hundreds of SVG edge wrappers during the short growth sequence.
   const progressiveCanvasIntro = progressiveIntroRequested && nodes.length >= 500;
   const [gpuReadyScene, setGpuReadyScene] = useState<{ geometry: typeof geometry; scope: string } | null>(null);
+  const [gpuReadyScope, setGpuReadyScope] = useState<string | null>(null);
   const [gpuFailedScope, setGpuFailedScope] = useState<string | null>(null);
   const [gpuFallbackReason, setGpuFallbackReason] = useState("");
   const [gpuHovered, setGpuHovered] = useState("");
@@ -1286,17 +1287,24 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   // While a worker prepares the next projection, keep the ready current scene.
   // A pending layout must not create a new GPU scene or mount the old archive
   // as native cards just because its busy indicator appeared.
-  const gpuEligible = !manual.active && nodes.length >= GPU_SCENE_MIN_NODES && !growing && !layoutSettling && (gpuSceneMatches || (ready && !layoutBusy)) &&
+  // Once the archive has a working GPU context, filtered views keep it too.
+  // Crossing the size threshold during navigation must not mount hundreds of
+  // native cards just for a transition and rebuild the GPU again on return.
+  const gpuEligible = !manual.active && (nodes.length >= GPU_SCENE_MIN_NODES || gpuReadyScope === gpuScope) && !growing && (gpuSceneMatches || (ready && !layoutBusy)) &&
     flatTree && !connecting && gpuFailedScope !== gpuScope &&
     gpuOverlayEdges.length <= 64 && nodes.every((node) => GpuPortraitCache.supported(node.data.person.photo));
   // A remounted canvas needs its own first frame and portrait handoff, even
   // when cancelling a connection leaves the layout geometry unchanged.
   if (!gpuEligible && gpuReadyScene) setGpuReadyScene(null);
-  const gpuActive = gpuEligible && gpuSceneMatches;
+  if (!gpuEligible && gpuReadyScope) setGpuReadyScope(null);
+  const gpuActive = gpuEligible && (gpuSceneMatches || gpuReadyScope === gpuScope);
   useLayoutEffect(() => {
     committedScene.current = { geometry, scope: gpuScope, gpu: gpuActive };
   }, [geometry, gpuScope, gpuActive]);
-  const gpuReady = useCallback(() => setGpuReadyScene({ geometry, scope: gpuScope }), [geometry, gpuScope]);
+  const gpuReady = useCallback(() => {
+    setGpuReadyScope(gpuScope);
+    setGpuReadyScene({ geometry, scope: gpuScope });
+  }, [geometry, gpuScope]);
   const gpuFailure = useCallback((reason: string) => {
     setGpuFailedScope(gpuScope); setGpuReadyScene(null); setGpuFallbackReason(reason);
   }, [gpuScope]);

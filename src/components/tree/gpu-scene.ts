@@ -31,6 +31,7 @@ export function createGpuScene(
   redraw: () => void,
   failure: () => void,
   previousPortraits?: GpuPortraitCache,
+  retainedPhotos?: ReadonlySet<string>,
 ) {
   const gl = canvas.getContext("webgl2", {
     alpha: true,
@@ -108,10 +109,11 @@ export function createGpuScene(
       layout(location=2) in vec2 range; layout(location=3) in vec4 color;
       layout(location=4) in float kind;
       ${cameraShader}
+      uniform float sceneOpacity;
       out vec2 texCoord; out vec2 local; out vec4 tint; flat out int mode; flat out vec2 dimensions; flat out vec4 atlasRect;
       void main() { vec2 c=corners[gl_VertexID]; gl_Position=project(rect.xy+c*rect.zw);
         if(camera.z<range.x || camera.z>=range.y) gl_Position=vec4(2,2,0,1);
-        texCoord=uv.xy+c*uv.zw; local=c; tint=color; mode=int(kind); dimensions=rect.zw; atlasRect=uv; }`,
+        texCoord=uv.xy+c*uv.zw; local=c; tint=color; tint.a*=sceneOpacity; mode=int(kind); dimensions=rect.zw; atlasRect=uv; }`,
       `#version 300 es
       precision highp float; precision highp int;
       in vec2 texCoord; in vec2 local; in vec4 tint; flat in int mode; flat in vec2 dimensions; flat in vec4 atlasRect;
@@ -167,11 +169,12 @@ export function createGpuScene(
       layout(location=0) in vec4 ends; layout(location=1) in vec2 stroke;
       layout(location=2) in vec2 dash; layout(location=3) in vec4 color;
       ${cameraShader}
+      uniform float sceneOpacity;
       out float along; out vec4 tint; flat out vec2 pattern;
       void main() { vec2 c=corners[gl_VertexID], delta=ends.zw-ends.xy;
         float len=length(delta); vec2 normal=vec2(-delta.y,delta.x)/max(len,.001);
         vec2 point=mix(ends.xy,ends.zw,c.x)+normal*(c.y-.5)*max(stroke.x,.4/camera.z);
-        gl_Position=project(point); along=stroke.y+c.x*len; tint=color; pattern=dash; }`,
+        gl_Position=project(point); along=stroke.y+c.x*len; tint=color; tint.a*=sceneOpacity; pattern=dash; }`,
       `#version 300 es
       precision highp float;
       in float along; in vec4 tint; flat in vec2 pattern; out vec4 outputColor;
@@ -181,6 +184,7 @@ export function createGpuScene(
     const cameraUniforms = [spriteProgram, lineProgram].map((p) => ({
       camera: gl.getUniformLocation(p, "camera"),
       viewport: gl.getUniformLocation(p, "viewport"),
+      opacity: gl.getUniformLocation(p, "sceneOpacity"),
     }));
     const makeBuffer = (
       data: number[] | Float32Array,
@@ -209,53 +213,66 @@ export function createGpuScene(
         .match(/../g)!
         .map((part) => parseInt(part, 16) / 255);
     };
-    const lines: number[] = [],
-      junctions: number[] = [];
-    for (const edge of edges) {
-      const path =
-        edge.data?.path ||
-        (edge.data?.route && roundedRoute(edge.data.route.points).path);
-      if (!path) throw new Error("GPU edge has no routed geometry");
-      const rgb = color(edge.style?.stroke);
-      const dash = String(edge.style?.strokeDasharray || "")
-        .split(/[ ,]+/)
-        .map(Number)
-        .filter(Boolean);
-      if (dash.length > 2) throw new Error("Unsupported GPU dash pattern");
-      for (const segment of gpuRoute(path))
-        lines.push(
-          segment.ax,
-          segment.ay,
-          segment.bx,
-          segment.by,
-          Number(edge.style?.strokeWidth) || 1.6,
-          segment.distance,
-          dash[0] || 0,
-          dash[1] || dash[0] || 0,
-          ...rgb,
-          Number(edge.style?.opacity ?? 1),
-        );
-      if (edge.data?.junction)
-        junctions.push(
-          edge.data.junction.x - 2.4,
-          edge.data.junction.y - 2.4,
-          4.8,
-          4.8,
-          0,
-          0,
-          0,
-          0,
-          0,
-          10,
-          ...rgb,
-          1,
-          64,
-        );
-    }
-    const lineBatch = makeBuffer(lines, 12, "lines"),
-      junctionBatch = makeBuffer(junctions, 15, "junctions");
-    lines.length = 0;
-    junctions.length = 0;
+    const edgeData = (items: readonly RelationshipEdgeType[]) => {
+      const lines: number[] = [],
+        junctions: number[] = [];
+      for (const edge of items) {
+        const path =
+          edge.data?.path ||
+          (edge.data?.route && roundedRoute(edge.data.route.points).path);
+        if (!path) throw new Error("GPU edge has no routed geometry");
+        const rgb = color(edge.style?.stroke);
+        const dash = String(edge.style?.strokeDasharray || "")
+          .split(/[ ,]+/)
+          .map(Number)
+          .filter(Boolean);
+        if (dash.length > 2) throw new Error("Unsupported GPU dash pattern");
+        for (const segment of gpuRoute(path))
+          lines.push(
+            segment.ax,
+            segment.ay,
+            segment.bx,
+            segment.by,
+            Number(edge.style?.strokeWidth) || 1.6,
+            segment.distance,
+            dash[0] || 0,
+            dash[1] || dash[0] || 0,
+            ...rgb,
+            Number(edge.style?.opacity ?? 1),
+          );
+        if (edge.data?.junction)
+          junctions.push(
+            edge.data.junction.x - 2.4,
+            edge.data.junction.y - 2.4,
+            4.8,
+            4.8,
+            0,
+            0,
+            0,
+            0,
+            0,
+            10,
+            ...rgb,
+            1,
+            64,
+          );
+      }
+      return { lines, junctions };
+    };
+    let currentEdges = edges;
+    const initialEdges = edgeData(edges);
+    const lineBatch = makeBuffer(initialEdges.lines, 12, "lines"),
+      junctionBatch = makeBuffer(initialEdges.junctions, 15, "junctions");
+    initialEdges.lines.length = initialEdges.junctions.length = 0;
+    const replaceBuffer = (batch: Batch, data: number[], stride: number) => {
+      const array = new Float32Array(data);
+      const nextBytes = bufferBytes - batch.count * stride * 4 + array.byteLength;
+      if (nextBytes > MAX_BUFFERS) throw new Error("GPU geometry budget exceeded");
+      gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, array, gl.STATIC_DRAW);
+      batch.count = array.length / stride;
+      bufferBytes = nextBytes;
+    };
     const surfaces: number[] = [];
     for (const node of households)
       surfaces.push(
@@ -418,14 +435,14 @@ export function createGpuScene(
     };
     portraits =
       previousPortraits || new GpuPortraitCache(gl, photoDraw, failure);
+    const scenePhotos = (items: readonly PersonNodeType[]) => new Set([
+      ...(retainedPhotos || []),
+      ...items.flatMap(node => node.data.person.photo ? [node.data.person.photo] : []),
+    ]);
     portraits.update(
       photoDraw,
       failure,
-      new Set(
-        nodes.flatMap((node) =>
-          node.data.person.photo ? [node.data.person.photo] : [],
-        ),
-      ),
+      scenePhotos(nodes),
     );
     const index = new Spatial<IndexedNode>();
     let currentNodes = nodes;
@@ -506,6 +523,10 @@ export function createGpuScene(
     const portraitBatches = new Map<WebGLTexture, Batch & { bytes: number }>();
     return {
       portraits,
+      releaseTransitionPhotos() {
+        retainedPhotos = undefined;
+        portraits!.update(photoDraw, failure, scenePhotos(currentNodes));
+      },
       ready: () => portraits!.ready(),
       // A selection changes the portrait ring only. Keep the programs, font
       // atlas and routed geometry if all their inputs remain unchanged.
@@ -522,7 +543,7 @@ export function createGpuScene(
         if (
           disposed ||
           currentNodes.length !== nextNodes.length ||
-          edges.length !== nextEdges.length ||
+          currentEdges.length !== nextEdges.length ||
           households.length !== nextHouseholds.length
         )
           return changed("membership");
@@ -544,8 +565,9 @@ export function createGpuScene(
           )
             return changed("node");
         }
-        for (let i = 0; i < edges.length; i++) {
-          const a = edges[i], b = nextEdges[i];
+        let edgesChanged = false;
+        for (let i = 0; i < currentEdges.length; i++) {
+          const a = currentEdges[i], b = nextEdges[i];
           if (
             a.id !== b.id ||
             a.source !== b.source ||
@@ -560,7 +582,7 @@ export function createGpuScene(
             a.style?.strokeDasharray !== b.style?.strokeDasharray ||
             a.style?.opacity !== b.style?.opacity
           )
-            return changed("edge");
+            edgesChanged = true;
         }
         for (let i = 0; i < households.length; i++) {
           const a = households[i], b = nextHouseholds[i];
@@ -576,15 +598,21 @@ export function createGpuScene(
             return changed("household");
         }
         currentNodes = nextNodes;
+        if (edgesChanged) {
+          // Crossing gaps change with screen scale. Updating their line data
+          // must not rebuild fonts/programs or restart a scene transition.
+          const next = edgeData(nextEdges);
+          replaceBuffer(lineBatch, next.lines, 12);
+          replaceBuffer(junctionBatch, next.junctions, 15);
+          currentEdges = nextEdges;
+        }
         if (currentRelationLabel !== nextRelationLabel) {
           currentRelationLabel = nextRelationLabel;
           // Before the first draw there is no work to cancel or start yet.
           if (draws) prepareRelations();
         }
         currentNodesById = new Map(nextNodes.map((node) => [node.id, node]));
-        portraits!.update(photoDraw, failure, new Set(nextNodes.flatMap((node) =>
-          node.data.person.photo ? [node.data.person.photo] : [],
-        )));
+        portraits!.update(photoDraw, failure, scenePhotos(nextNodes));
         portraitDirty = true;
         return true;
       },
@@ -593,7 +621,8 @@ export function createGpuScene(
         hovered = hover;
         focused = focus;
       },
-      draw(camera: Viewport, width: number, height: number) {
+      draw(camera: Viewport, width: number, height: number,
+        options: { opacity?: number; clear?: boolean } = {}) {
         if (disposed || width <= 0 || height <= 0) return;
         const dpr = Math.min(
           window.devicePixelRatio || 1,
@@ -609,11 +638,17 @@ export function createGpuScene(
           canvas.width = pixelWidth;
           canvas.height = pixelHeight;
         }
+        // Resize the displayed bitmap together with its projection. A 100%
+        // canvas stretches the previous frame while React Flow's observer
+        // catches up with an inspector opening/closing, even at a fixed camera.
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
         gl.viewport(0, 0, pixelWidth, pixelHeight);
         gl.clearColor(0, 0, 0, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
+        if (options.clear !== false) gl.clear(gl.COLOR_BUFFER_BIT);
         [spriteProgram, lineProgram].forEach((p, i) => {
           gl.useProgram(p);
+          gl.uniform1f(cameraUniforms[i].opacity, options.opacity ?? 1);
           gl.uniform3f(
             cameraUniforms[i].camera,
             camera.x,
@@ -795,7 +830,7 @@ export function createGpuScene(
         canvas.dataset.gpuBufferBytes = String(bufferBytes + dynamicBytes);
         canvas.dataset.gpuDraws = String(++draws);
         canvas.dataset.sceneNodes = String(nodes.length);
-        canvas.dataset.sceneEdges = String(edges.length);
+        canvas.dataset.sceneEdges = String(currentEdges.length);
         if (draws === 1) prepareRelations();
       },
       destroy,
