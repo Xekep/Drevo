@@ -1290,7 +1290,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   // Once the archive has a working GPU context, filtered views keep it too.
   // Crossing the size threshold during navigation must not mount hundreds of
   // native cards just for a transition and rebuild the GPU again on return.
-  const gpuEligible = !manual.active && (nodes.length >= GPU_SCENE_MIN_NODES || gpuReadyScope === gpuScope) && !growing && (gpuSceneMatches || (ready && !layoutBusy)) &&
+  // A rapid next switch can arrive before onReady acknowledges the previous
+  // geometry. The context is still usable within the same access scope.
+  const gpuEligible = !manual.active && (nodes.length >= GPU_SCENE_MIN_NODES || gpuReadyScope === gpuScope) && !growing && (gpuReadyScope === gpuScope || (ready && !layoutBusy)) &&
     (flatTree || (!!activeFanAnchor && gpuReadyScope === gpuScope)) && !connecting && gpuFailedScope !== gpuScope &&
     gpuOverlayEdges.length <= 64 && nodes.every((node) => GpuPortraitCache.supported(node.data.person.photo));
   // A remounted canvas needs its own first frame and portrait handoff, even

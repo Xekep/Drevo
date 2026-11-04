@@ -496,10 +496,13 @@ for (const reduced of [false, true])
         );
       }
       await page.waitForTimeout(800);
-      await finish(page, "interrupted-transitions");
-      expect(
-        await page.evaluate(() => window.__gpuNavigation.livePrograms),
+      // A software frame can outlast the animation's wall-clock duration;
+      // wait for its cleanup frame rather than treating 800 ms as a GPU fence.
+      await expect.poll(
+        () => page.evaluate(() => window.__gpuNavigation.livePrograms),
+        { timeout: 10_000 },
       ).toBe(2);
+      await finish(page, "interrupted-transitions");
       expect(
         await page.evaluate(() => window.__gpuNavigation.maximumPrograms),
       ).toBeLessThanOrEqual(4);
