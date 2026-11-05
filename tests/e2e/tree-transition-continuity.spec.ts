@@ -2,12 +2,12 @@ import { familyViewAction, showTree } from "./tree-toolbar-actions";
 import { expect, test } from "@playwright/test";
 import type { TreeGeometry } from "../../src/domain/tree-layout.ts";
 
-test("family layout keeps the focused card mounted throughout its move", async ({
+test("family layout retains its anchor while another card rearranges without remounting", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
-  // Exercise interpolation with a guaranteed rigid scene translation. The
-  // layout solver may legitimately retain this person's exact coordinates.
+  // Simulate a cached projection with a distant origin and one real card move.
+  // The origin alone must not move the scene; the relative move must animate.
   await page.addInitScript(() => {
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
@@ -24,6 +24,7 @@ test("family layout keeps the focused card mounted throughout its move", async (
             ...(g.blocks || []), ...(g.siblingGroups || []),
           ]);
           points.forEach((p) => { p.x += 240; });
+          g.positions.find(([id]) => id === "e2e-grandchild")![1].x += 120;
         });
       }
     };
@@ -46,7 +47,9 @@ test("family layout keeps the focused card mounted throughout its move", async (
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
   await page.waitForTimeout(900);
-  const card = page.getByTestId("rf__node-e2e-child");
+  const anchor = page.getByTestId("rf__node-e2e-child");
+  const anchorPosition = await anchor.evaluate(node => getComputedStyle(node).transform);
+  const card = page.getByTestId("rf__node-e2e-grandchild");
   const original = await card.evaluateHandle((node) => node);
   const samples = await canvas.evaluateHandle((root) => {
     const state = {
@@ -55,7 +58,7 @@ test("family layout keeps the focused card mounted throughout its move", async (
       stop: () => {},
     };
     const node = root.querySelector<HTMLElement>(
-      '[data-testid="rf__node-e2e-child"]',
+      '[data-testid="rf__node-e2e-grandchild"]',
     )!;
     let frame = 0;
     const tick = () => {
@@ -74,6 +77,7 @@ test("family layout keeps the focused card mounted throughout its move", async (
   expect(await original.evaluate((node) => node.isConnected)).toBe(true);
   expect(await samples.evaluate((s) => s.removed)).toBe(false);
   expect(await samples.evaluate((s) => s.transforms.size)).toBeGreaterThan(3);
+  expect(await anchor.evaluate(node => getComputedStyle(node).transform)).toBe(anchorPosition);
 });
 
 test("cards fly before the fan reveals on every opening", async ({
@@ -96,12 +100,14 @@ test("cards fly before the fan reveals on every opening", async ({
         intermediate: false,
         hidden: false,
         flights: new Set<string>(),
+        maximumCards: 0,
         flewBeforeReveal: false,
         stop: () => {},
       };
       let frame = 0;
       const tick = () => {
         const sector = root.querySelector('[data-fan-generation="4"]');
+        state.maximumCards = Math.max(state.maximumCards, root.querySelectorAll(".fan-morph-card").length);
         if (sector) {
           const opacity = Number(getComputedStyle(sector).opacity);
           state.hidden ||= opacity === 0;
@@ -126,6 +132,7 @@ test("cards fly before the fan reveals on every opening", async ({
     await samples.evaluate((s) => s.stop());
     expect(await samples.evaluate((s) => s.flewBeforeReveal)).toBe(true);
     expect(await samples.evaluate((s) => s.flights.size)).toBeGreaterThan(3);
+    expect(await samples.evaluate((s) => s.maximumCards)).toBe(await page.locator(".fan-sector.is-known").count());
     await expect(page.locator(".fan-morph-overlay")).toHaveCount(0);
     await showTree(page);
     await expect(page.getByTestId("rf__node-e2e-child")).toBeVisible();

@@ -1,4 +1,8 @@
-import { ancestorFanSlots, type Family } from "../../domain";
+import { ancestorFanSlots, fullName, years, resolvedSex, safeUrl, type Family, type Person } from "../../domain";
+import { mediaPreview } from "../../domain/media-preview.ts";
+import { drawPortraitCameo } from "../portrait-cameo.ts";
+import type { PersonNodeType } from "./person-node.tsx";
+import type { Viewport } from "@xyflow/react";
 import { runFanReveal } from "./fan-reveal";
 
 type Rect = {
@@ -16,10 +20,50 @@ export type FanMorphSource = {
   node: HTMLElement;
 };
 
+function snapshotCard(person: Person, width: number, height: number, zoom: number) {
+  const card = document.createElement("div");
+  card.className = `flow-person is-portrait-card${zoom < 0.75 ? " is-compact" : ""}${zoom < 0.52 ? " is-overview" : ""}`;
+  card.style.width = `${width}px`;
+  card.style.height = `${height}px`;
+  card.style.transformOrigin = "top left";
+  card.style.transform = `scale(${zoom})`;
+  const content = document.createElement("div");
+  content.className = "flow-person-content";
+  const avatar = document.createElement("span"), sex = resolvedSex(person);
+  avatar.className = `person-avatar ${sex === "f" ? "female" : sex === "m" ? "male" : "unknown"}`;
+  const cameo = document.createElement("canvas");
+  cameo.width = cameo.height = 80;
+  drawPortraitCameo(cameo.getContext("2d")!, sex);
+  avatar.append(cameo);
+  const photo = mediaPreview(safeUrl(person.photo), "thumb");
+  if (photo) {
+    const image = document.createElement("img");
+    image.src = photo;
+    image.alt = "";
+    image.addEventListener("error", () => image.remove(), { once: true });
+    avatar.append(image);
+  }
+  const info = document.createElement("span"), name = document.createElement("strong");
+  info.className = "portrait-card-info";
+  name.textContent = fullName(person);
+  info.append(name);
+  const lifespan = years(person);
+  if (lifespan) {
+    const dates = document.createElement("span");
+    dates.className = "portrait-card-years";
+    dates.textContent = lifespan;
+    info.append(dates);
+  }
+  content.append(avatar, info);
+  card.append(content);
+  return card;
+}
+
 export function captureFanMorphSources(
   container: HTMLElement,
   family: Family,
   anchorId: string,
+  scene?: { nodes: readonly PersonNodeType[]; viewport: Viewport },
 ): FanMorphSource[] {
   const canvas = container.getBoundingClientRect();
   const slots = ancestorFanSlots(family.people, anchorId, 5);
@@ -61,9 +105,37 @@ export function captureFanMorphSources(
     });
   }
 
+  // GPU and distant overviews intentionally have no HTML cards. Take their
+  // positions from the same rendered model, never from an unfiltered archive.
+  const model = new Map<string, PersonNodeType>();
+  for (const node of scene?.nodes || []) {
+    if (!model.has(node.data.person.id) || node.id === node.data.person.id)
+      model.set(node.data.person.id, node);
+  }
   return slots.flatMap((slot) => {
     if (!slot.personId) return [];
-    const source = cards.get(slot.personId);
+    let source = cards.get(slot.personId);
+    const node = model.get(slot.personId);
+    if (node && scene && (!source || container.dataset.renderer === "webgl2" || source.node.classList.contains("is-distant"))) {
+      const { x, y, zoom } = scene.viewport;
+      const width = node.width!, height = node.height!;
+      const dx = x + (node.position.x + width / 2) * zoom - canvas.width / 2;
+      const dy = y + (node.position.y + height / 2) * zoom - canvas.height / 2;
+      // Project along the original direction instead of stacking every
+      // off-screen ancestor in the same clamped corner.
+      const reach = Math.min(1, dx ? canvas.width / 2 / Math.abs(dx) : 1,
+        dy ? canvas.height / 2 / Math.abs(dy) : 1);
+      // An ancestor outside the camera enters from its nearest edge. At most
+      // 31 known slots fly, even when the archive has thousands of people.
+      source = {
+        rect: {
+          left: canvas.width / 2 + dx * reach - width * zoom / 2,
+          top: canvas.height / 2 + dy * reach - height * zoom / 2,
+          width: width * zoom, height: height * zoom,
+        },
+        node: snapshotCard(node.data.person, width, height, zoom),
+      };
+    } else if (source) source = { ...source, node: source.node.cloneNode(true) as HTMLElement };
     if (!source) return [];
     return [
       {
@@ -71,7 +143,7 @@ export function captureFanMorphSources(
         generation: slot.generation,
         index: slot.index,
         rect: source.rect,
-        node: source.node.cloneNode(true) as HTMLElement,
+        node: source.node,
       },
     ];
   });

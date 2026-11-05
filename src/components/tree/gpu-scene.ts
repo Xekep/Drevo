@@ -13,6 +13,7 @@ import { gpuPlaceholderCanvas, gpuPlaceholderUv, placeholderWidth, placeholderHe
 
 import { acquireGpuProgram } from "./gpu-program.ts";
 import { createGpuMotion, type GpuMotionPoint } from "./gpu-motion.ts";
+import { treeMotionOrigins } from "./tree-motion-origins.ts";
 
 const MAX_BUFFERS = 24 * 1024 * 1024;
 type Batch = { buffer: WebGLBuffer; count: number };
@@ -536,7 +537,7 @@ export function createGpuScene(
       portraits,
       positions: () => motion.positions(),
       transition(other: ReadonlyMap<string, GpuMotionPoint>, departing = false) {
-        motion.transition(other, departing);
+        motion.transition(departing ? other : new Map([...other, ...treeMotionOrigins(currentNodes, other)]), departing);
         uploadMotion();
         portraitDirty = true;
       },
