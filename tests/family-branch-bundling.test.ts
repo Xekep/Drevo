@@ -182,3 +182,62 @@ test("successive family groups preserve full contact counts with repeated unions
   assert.ok(changed > 10, "the portfolio must exercise accepted corridor changes");
   assert.ok(touched > 10, "the portfolio must contain foreign contacts");
 });
+
+
+for (const splitForeign of [false, true]) for (const reverse of [false, true]) test(`siblings share one bus without trading foreign-branch crossings (reverse=${reverse}, splitForeign=${splitForeign})`, () => {
+  const input = fixture();
+  input.nodeSize!.height = 264;
+  input.positions[1][1].y = input.positions[2][1].y = 600;
+  input.generationBands![0] = { ...input.generationBands![0], targetY: 600, minY: 570, maxY: 630 };
+  input.positions[0][1].x = -252;
+  input.positions.push(["partner", { x: 0, y: 0 }]);
+  input.positions[1][1].x = 300;
+  input.positions[2][1].x = 600;
+  input.branches!.forEach((branch, i) => {
+    const x = 410 + i * 300, y = 280 + i * 100;
+    branch.relations.push({ from: "partner", to: branch.target, type: "parent" });
+    branch.route.points = [{ x: -16, y: 132 }, { x: -16, y }, { x, y }, { x, y: 600 }];
+  });
+  // The low bus is blocked for the second child, while both higher buses
+  // cross a foreign branch once. Sharing that crossing is still one visible
+  // family intersection; counting each child's route rejects it incorrectly.
+  input.positions.push(["obstacle", { x: 500, y: 40 }]);
+  input.branches!.push({ id: "pair:parents", union: "parents", source: "parent", target: "partner",
+    relations: [{ from: "parent", to: "partner", type: "spouse" }],
+    route: { sourceHandle: "right", targetHandle: "left", points: [{ x: -32, y: 132 }, { x: 0, y: 132 }] } });
+  input.branches!.push({ id: "pair:foreign", union: "foreign", source: "x", target: "y", relations: [],
+    route: { sourceHandle: "bottom", targetHandle: "top", points: [{ x: 300, y: 320 }, { x: 300, y: 500 }] } });
+  if (splitForeign) {
+    input.branches!.at(-1)!.route.points[0].y = 370;
+    input.branches!.at(-1)!.route.points[1].y = 430;
+    input.branches!.push({ id: "pair:foreign-other", union: "foreign", source: "z", target: "w", relations: [],
+      route: { sourceHandle: "bottom", targetHandle: "top", points: [{ x: 300, y: 330 }, { x: 300, y: 369 }] } });
+  }
+  if (reverse) {
+    input.reverse = true;
+    input.positions.forEach(([, p]) => { p.y = 900 - p.y - 264; });
+    input.branches!.forEach(b => {
+      b.route.sourceHandle = b.route.sourceHandle === "bottom" ? "top" : b.route.sourceHandle === "top" ? "bottom" : b.route.sourceHandle;
+      b.route.targetHandle = b.route.targetHandle === "bottom" ? "top" : b.route.targetHandle === "top" ? "bottom" : b.route.targetHandle;
+      b.route.points.forEach(p => { p.y = 900 - p.y; });
+    });
+  }
+  const snapshot = structuredClone(input);
+  const score = (g: TreeGeometry) => routingContactScore(g.branches!.map(b => ({ group: b.union, route: b.route }))).quality;
+  const before = score(input), result = bundleFamilyBranches(input), after = score(result);
+  const corridor = splitForeign ? 380 : 366, y = reverse ? 900 - corridor : corridor;
+  assert.deepEqual(result.branches!.slice(0, 2).map(horizontal), [[y], [y]]);
+  if (splitForeign) {
+    const other = result.branches!.find(b => b.id === "pair:foreign-other")!;
+    const contacts = routingContactScore([...result.branches!.slice(0, 2), other].map(b => ({ group: b.union, route: b.route })));
+    assert.equal(contacts.quality.contacts, 0, "one foreign branch cannot gain a crossing by removing another's");
+  }
+  assert.equal(before.contacts, 1);
+  assert.equal(after.contacts, before.contacts);
+  assert.equal(after.crossings, before.crossings);
+  assert.ok(after.length <= before.length);
+  assert.deepEqual(result.positions, input.positions);
+  assert.deepEqual(result.branches!.map(b => [b.id, b.source, b.target, b.relations]),
+    input.branches!.map(b => [b.id, b.source, b.target, b.relations]));
+  assert.deepEqual(input, snapshot);
+});
