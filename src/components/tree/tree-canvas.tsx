@@ -404,6 +404,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   // initial camera placement, especially with reduced motion / a slow layout.
   const cameraLocked =
     (!initialCameraReady && family.people.length > 0) || growthLocked || introMoving;
+  const canvasInputLocked = flatTree && cameraLocked;
   const onGrowthChange = props.onGrowthChange;
   useLayoutEffect(() => {
     if (growthLocked) {
@@ -417,7 +418,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   }, [growthLocked, onGrowthChange]);
   // Timeline has its own scroll controls and does not wait for the hidden
   // React Flow camera to finish its initial positioning.
-  useTreeGrowthInputLock(container, flatTree && cameraLocked, !growthLocked);
+  useTreeGrowthInputLock(container, canvasInputLocked, !growthLocked);
   useEffect(() => {
     if (!growthActive || growthRevealed) return;
     // Let the browser apply the first animation frame while the viewport is
@@ -2294,12 +2295,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         >
           {props.canEdit && !narrow && !depthEnabled && (
             <Panel position="bottom-left" className="flow-add-tools">
-              <button type="button" onClick={props.onAdd} disabled={props.busy}>
+              <button type="button" onClick={props.onAdd} disabled={props.busy || canvasInputLocked}>
                 <Plus size={18} aria-hidden="true" />
                 Человек
               </button>
               <button
                 onClick={props.onLink}
+                disabled={canvasInputLocked}
                 title="Связать последовательным выбором двух карточек"
               >
                 <Link2 size={18} />
