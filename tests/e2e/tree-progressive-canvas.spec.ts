@@ -36,9 +36,17 @@ async function awaitLargeOverview(page: Page) {
   return (await root.getAttribute("data-renderer")) === "webgl2" ? "webgl2" : "fallback";
 }
 
-test("3000 person canvas intro survives GPU handoff or canvas fallback", async ({ page }) => {
+for (const forceFallback of [false, true]) test(`3000 person canvas intro survives ${forceFallback ? "early GPU fallback" : "GPU handoff or canvas fallback"}`, async ({ page }) => {
   test.setTimeout(60_000);
   await routeLargeFamily(page);
+  if (forceFallback) await page.addInitScript(() => {
+    // Resolve the fallback during preparation on hardware GPUs as well.
+    const getParameter = WebGL2RenderingContext.prototype.getParameter;
+    WebGL2RenderingContext.prototype.getParameter = function(parameter: number) {
+      return parameter === 37446 ? "Software WebGL renderer for intro test"
+        : getParameter.call(this, parameter);
+    };
+  });
   await page.addInitScript(() => {
     const samples: unknown[] = [];
     Object.assign(window, { __canvasIntroSamples: samples });
@@ -94,14 +102,18 @@ test("3000 person canvas intro survives GPU handoff or canvas fallback", async (
         if (contentShown) handoff.push({ at: Math.round(performance.now()),
           canvas: canvasVisible, gpu: gpuVisible });
       }
-      if (!root || (root.getAttribute("data-renderer") !== "webgl2" &&
-        !root.getAttribute("data-gpu-fallback")))
+      // GPU preparation can choose the fallback before growth begins. Keep
+      // observing the actual card/line reveal until the introduction ends.
+      if (!root || root.classList.contains("is-growing") ||
+        root.classList.contains("is-growth-preparing") ||
+        (root.getAttribute("data-renderer") !== "webgl2" && !root.getAttribute("data-gpu-fallback")))
         requestAnimationFrame(sample);
     };
     requestAnimationFrame(sample);
   });
   await page.goto("/tree");
   const renderer = await awaitLargeOverview(page);
+  if (forceFallback) expect(renderer).toBe("fallback");
   const samples = await page.evaluate(() =>
     (window as typeof window & { __canvasIntroSamples: Array<{
       at: number; partial: number; edges: number; nodes: number;
