@@ -50,6 +50,7 @@
   margin: 8px 0 0;
 }
 .award-stack {
+  --award-overlap: -16px;
   list-style: none;
   padding: 10px 8px;
   margin: 0;
@@ -67,7 +68,8 @@
 .award-stack-item {
   position: relative;
   flex: 0 0 auto;
-  margin-left: -16px;
+  /* Fit up to eight medals; reserve room for the active medal to grow. */
+  margin-left: min(var(--award-overlap), calc((100% - 54px - 8px) / var(--award-gaps, 7) - 54px));
   transform-origin: center bottom;
   transition:
     transform 0.17s ease,
@@ -519,11 +521,9 @@
     pointer-events: none !important;
   }
   .award-stack {
+    --award-overlap: -17px;
     overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
-  }
-  .award-stack-item {
-    margin-left: -17px;
   }
 }
 @media (max-width: 899px) {

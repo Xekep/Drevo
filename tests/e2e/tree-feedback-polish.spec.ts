@@ -18,6 +18,11 @@ test("archive loading text does not become a page selection before data arrives"
 });
 
 test("tree explains layout preparation until the worker is ready", async ({ page }) => {
+  await page.route("**/api/family?projection=overview", async route => {
+    const response = await route.fetch(), data = await response.json();
+    data.treePreferences = { ...data.treePreferences, animateOnLoad: true };
+    await route.fulfill({ response, json: data });
+  });
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   await page.route(/\/layout\.worker(?:\.ts|-[^/?]+\.js)(?:\?.*)?$/, async (route) => {
@@ -31,7 +36,10 @@ test("tree explains layout preparation until the worker is ready", async ({ page
     await expect(status).toBeVisible();
     await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "true");
   } finally { release(); }
-  await expect(page.locator(".tree-preparation-status")).toHaveCount(0, { timeout: 20_000 });
+  await expect(page.locator(".tree-canvas")).toHaveClass(/is-growing/);
+  await expect(page.locator(".tree-preparation-status")).toHaveCount(0);
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "true");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/, { timeout: 20_000 });
 });
 
 test("profile shows a visible spinner and text while details are loading", async ({ page }) => {

@@ -1915,13 +1915,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
       >
         {screen.fullscreen && <MemberPreviewExit />}
-        {!problem && (layoutBusy || !initialCameraReady || growthPreparing || growthActive) && (
+        {!problem && (layoutBusy || !initialCameraReady || growthPreparing) && (
           <div className="tree-preparation-status" role="status">
             <span className="archive-loader-ring" aria-hidden="true" />
             <span>{layoutBusy || !ready || growthPreparing
               ? optimizingLayout || loadingPhase === "calculating"
                 ? "Расставляем карточки и связи…" : "Загружаем расположение древа…"
-              : growthActive ? "Показываем поколения…" : "Подготавливаем вид древа…"}</span>
+              : "Подготавливаем вид древа…"}</span>
           </div>
         )}
         <div className={`tree-mode-bar${props.assistantFilter ? " has-assistant-filter" : ""}`}>
