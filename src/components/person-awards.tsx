@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { ArrowUpRight, Check, Medal, Plus, Trash2, X } from "lucide-react";
 import type { PersonAward } from "../domain/types";
 import { safeUrl } from "../domain";
@@ -612,7 +612,7 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
 
   if (!awards?.length) return null;
 
-  const items = awards.map((award) => {
+  const items = [...awards].sort((a, b) => (a.year || "9999").localeCompare(b.year || "9999")).map((award) => {
     const resolved = resolveStoredAward(award);
     const definition = resolved?.award;
     const degreeId = award.degreeId || resolved?.degreeId;
@@ -640,7 +640,8 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
           setHoveredAwardId(null);
       }}
     >
-      <ul className="award-stack" aria-label="Награды">
+      <ul className="award-stack" aria-label="Награды"
+        style={{ "--award-gaps": Math.max(1, Math.min(items.length, 8) - 1) } as CSSProperties}>
         {items.map((item, index) => {
           const isActive = item.award.id === activeAwardId;
           const isPinned = item.award.id === pinnedAwardId;
