@@ -19,7 +19,7 @@ export async function readSharedLayout(
   )
     return null;
   const timeout = new AbortController(),
-    timer = setTimeout(() => timeout.abort(), 1000);
+    timer = setTimeout(() => timeout.abort(), 5000);
   try {
     const bytes = await crypto.subtle.digest(
       "SHA-256",

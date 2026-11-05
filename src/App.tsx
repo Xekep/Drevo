@@ -227,8 +227,11 @@ export default function App() {
       }
     },
   }), [archive.treeFragment, archive.graphComplete, loadTreeFragment, ensureOverview]);
+  const pendingOverviewAction = useRef<Promise<void> | null>(null);
   const withOverview = useCallback((action: () => void) => {
-    void ensureOverview().then(action).catch(reason => setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить связи архива"));
+    const pending = ensureOverview().then(action);
+    pendingOverviewAction.current = pending;
+    void pending.catch(reason => setNotice(reason instanceof Error ? reason.message : "Не удалось загрузить связи архива"));
   }, [ensureOverview]);
   const { accountSession, accountLoading, accountError,
     restoredSessionState, restoredSessionDialog, validateRestoredSession,
@@ -1530,6 +1533,15 @@ export default function App() {
             if (!treeCanvas.current) throw new Error("Откройте древо для оптимизации расположения.");
             setNotice(goal === "compact" ? "Уплотняем расположение…" : "Оптимизируем расположение…");
             try { setNotice(await treeCanvas.current.optimizeLayout(goal)); }
+            catch (error) { setNotice(""); throw error; }
+          }}
+          onRecalculateLayout={async () => {
+            // A reply may apply a filter and request recalculation together.
+            await pendingOverviewAction.current;
+            await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+            if (!treeCanvas.current) throw new Error("Откройте древо для пересчёта расположения.");
+            setNotice("Пересчитываем расположение с учётом фильтров…");
+            try { setNotice(await treeCanvas.current.recalculateLayout()); }
             catch (error) { setNotice(""); throw error; }
           }}
           onManualLayout={async (enabled) => {

@@ -90,8 +90,13 @@ test("a fresh browser reuses server layout and falls back to its Worker when cac
       contexts.push(context);
       const fresh = await context.newPage();
       await countCalculations(fresh);
-      if (offline)
-        await fresh.route("**/api/tree-layout", (route) => route.abort());
+      await fresh.route("**/api/tree-layout", async route => {
+        if (offline) return route.abort();
+        // Slow mobile login must not abandon an existing server cache after 1s.
+        const cached = await route.fetch();
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        await route.fulfill({ response: cached });
+      });
       const response = offline
         ? undefined
         : fresh.waitForResponse(

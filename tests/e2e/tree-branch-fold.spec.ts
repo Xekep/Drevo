@@ -181,3 +181,33 @@ test("nested folds disappear with their parent and stay folded when the parent r
     .click();
   await expect(card("e2e-grandchild").first()).toBeVisible();
 });
+
+
+test("expand all branches brings the tree back from an empty camera position", async ({ page, isMobile }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.route("**/api/family?projection=overview", async route => {
+    const response = await route.fetch(), data = await response.json();
+    data.user.personId = null;
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).not.toHaveClass(/is-grow/);
+  await page.locator('.flow-person[data-person-id="e2e-child"]').first()
+    .getByRole("button", { name: /Свернуть (потомков|ветвь)/ }).click();
+  await expect(page.locator('.flow-person[data-person-id="e2e-grandchild"]')).toHaveCount(0);
+  const bounds = (await canvas.boundingBox())!;
+  // A real middle-button pan far away also records that empty viewport.
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down({ button: "middle" });
+  await page.mouse.move(bounds.x + bounds.width / 2 + 6000, bounds.y + bounds.height / 2 + 6000, { steps: 3 });
+  await page.mouse.up({ button: "middle" });
+  if (isMobile) await page.locator(".tree-family-menu summary").click();
+  await page.getByRole("button", { name: "Развернуть ветви", exact: true }).click();
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect(page.locator('.flow-person[data-person-id="e2e-grandchild"]').first()).toBeVisible();
+  await expect.poll(() => page.locator(".flow-person-content").evaluateAll(nodes => nodes.some(node => {
+    const r = node.getBoundingClientRect();
+    return r.right > 0 && r.left < innerWidth && r.bottom > 70 && r.top < innerHeight;
+  }))).toBe(true);
+});

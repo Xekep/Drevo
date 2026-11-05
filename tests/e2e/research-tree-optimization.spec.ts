@@ -98,3 +98,54 @@ for (const goal of ["routing", "compact"] as const) test(`AI ${goal} uses a real
   await expect(page.locator(".archive-toast")).toHaveCount(0, { timeout: 7000 });
   expect(errors).toEqual([]);
 });
+
+
+for (const combined of [false, true]) test(`AI recalculates only the filtered projection without reusing previous coordinates${combined ? " in the same reply" : ""}`, async ({ page, request, archiveUrl }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const before = await (await request.get(`${archiveUrl}/api/family`)).json();
+  const ids = ["e2e-child", "e2e-spouse", "e2e-grandchild"];
+  await page.route("**/api/ai/status", route => route.fulfill({ json: { enabled: true, streaming: true } }));
+  await page.route("**/api/ai/chats", route => route.fulfill({ json: { chats: [] } }));
+  let turn = 0;
+  await page.route("**/api/ai/chat/stream", route => route.fulfill({
+    contentType: "text/event-stream; charset=utf-8",
+    body: `event: done\ndata: ${JSON.stringify({ answer: "Готово", references: [], suggestionIds: [], files: [],
+      uiActions: ++turn === 1 ? [{ type: "filter_people", personIds: ids, label: "Тестовый фильтр" }, ...(combined ? [{ type: "recalculate_tree_layout" }] : [])] : [{ type: "recalculate_tree_layout" }] })}\n\n`,
+  }));
+  await page.addInitScript(() => {
+    const requests: { people: { id: string }[]; previousGeometry?: unknown; previousInput?: unknown; optimizeDisplayed?: boolean }[] = [];
+    Object.assign(window, { __freshLayoutRequests: requests });
+    Worker.prototype.postMessage = new Proxy(Worker.prototype.postMessage, { apply(target, receiver, args) {
+      if (args[0]?.people) requests.push(args[0]);
+      return Reflect.apply(target, receiver, args);
+    } });
+  });
+  await page.goto(`${archiveUrl}/tree`);
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect(canvas).not.toHaveClass(/is-grow/);
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  const assistant = page.locator(".research-assistant");
+  await assistant.getByRole("textbox").fill("Покажи выбранную семью");
+  await assistant.getByRole("button", { name: "Отправить запрос" }).click();
+  await expect(canvas).toHaveAttribute("data-layout-people", String(ids.length));
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect(canvas).not.toHaveClass(/is-layout-settling/);
+  const count = () => page.evaluate(() => (window as typeof window & { __freshLayoutRequests: unknown[] }).__freshLayoutRequests.length);
+  const previous = await count();
+  if (!combined) {
+    await assistant.getByRole("textbox").fill("Пересчитай расположение с учётом текущего фильтра");
+    await assistant.getByRole("button", { name: "Отправить запрос" }).click();
+  }
+  await expect(page.locator(".archive-toast")).toContainText("Расположение пересчитано");
+  if (!combined) expect(await count()).toBe(previous + 1);
+  const input = await page.evaluate(() => (window as typeof window & { __freshLayoutRequests: {
+    people: { id: string }[]; previousGeometry?: unknown; previousInput?: unknown; optimizeDisplayed?: boolean;
+  }[] }).__freshLayoutRequests.at(-1)!);
+  expect(input.people.map(person => person.id).sort()).toEqual([...ids].sort());
+  expect(input.previousGeometry).toBeUndefined();
+  expect(input.previousInput).toBeUndefined();
+  expect(input.optimizeDisplayed).toBeUndefined();
+  await expect(canvas).toHaveAttribute("data-layout-people", String(ids.length));
+  expect(await (await request.get(`${archiveUrl}/api/family`)).json()).toEqual(before);
+});

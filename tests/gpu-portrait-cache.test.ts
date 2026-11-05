@@ -527,3 +527,13 @@ test("a stalled image releases its load slot and cannot upload after its deadlin
   assert.equal(f.uploads.length, uploads);
   assert.equal(f.pending().length, 6);
 });
+
+
+test("portrait LOD accounts for HiDPI pixels and smaller atlas tiles at 30% zoom", t => {
+  const { cache } = fixture(t);
+  assert.equal(cache.quality(0.3, 1), false);
+  assert.equal(cache.quality(0.3, 2), true);
+  cache.update(() => {}, () => {}, new Set(photos(3313)));
+  assert.equal(cache.quality(0.3, 1), true, "28px tiles cannot represent a 40px portrait");
+  assert.equal(cache.quality(0.05, 2), false);
+});

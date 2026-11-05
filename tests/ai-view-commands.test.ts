@@ -22,6 +22,8 @@ const cases = [
   { label: "natural compact", message: "Сдвинь карточки ближе друг к другу", action: { action: "optimize_layout", goal: "compact" }, expected: [{ type: "optimize_tree_layout", goal: "compact" }] },
   { label: "natural compact paraphrase", message: "Сделай древо более тесным", action: { action: "optimize_layout", goal: "compact" }, expected: [{ type: "optimize_tree_layout", goal: "compact" }] },
   { label: "natural routing", message: "Можешь рассортировать карточки для печати?", action: { action: "optimize_layout", goal: "routing" }, expected: [{ type: "optimize_tree_layout" }] },
+  { label: "fresh filtered layout", message: "Пересчитай расположение с учётом фильтров", action: { action: "recalculate_layout" }, expected: [{ type: "recalculate_tree_layout" }] },
+  { label: "fresh layout unavailable in fan", message: "Пересчитай расположение", treeMode: "fan", action: { action: "recalculate_layout" }, expected: [] },
   { label: "model default goal", message: "Упорядочь расположение", action: { action: "optimize_layout" }, expected: [{ type: "optimize_tree_layout" }] },
   { label: "negated compact", message: "Не делай древо компактнее", action: null, expected: [] },
   { label: "negated zoom", message: "Не уменьшай масштаб древа", action: null, expected: [] },

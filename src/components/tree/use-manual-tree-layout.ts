@@ -33,7 +33,8 @@ export function useManualTreeLayout(
   available: boolean,
   links: FamilyLink[],
   getZoom: () => number,
-  onStart: () => void,
+  onStart: (id: string) => void,
+  pickPerson?: (x: number, y: number) => string | undefined,
 ) {
   const [enabled, setEnabled] = useState(false),
     [saved, setSaved] = useState<Saved | null>(null),
@@ -92,6 +93,9 @@ export function useManualTreeLayout(
       .closest(".flow-person-content")
       ?.closest(".react-flow__node-person")
       ?.getAttribute("data-id");
+  const pointerPerson = (event: PointerEvent<HTMLDivElement> | MouseEvent<HTMLDivElement>) =>
+    person(event.target) || ((event.target as Element).closest(".react-flow__pane")
+      ? pickPerson?.(event.clientX, event.clientY) : undefined);
   const stopFrame = () => {
     if (frame.current !== null) cancelAnimationFrame(frame.current);
     frame.current = null;
@@ -121,6 +125,7 @@ export function useManualTreeLayout(
   };
   return {
     geometry,
+    dragging: !!preview,
     active,
     enabled,
     setEnabled,
@@ -133,11 +138,11 @@ export function useManualTreeLayout(
         active &&
         event.pointerType === "mouse" &&
         event.button === 0 &&
-        person(event.target);
+        pointerPerson(event);
       if (!id || !geometry || drag.current) return false;
       event.preventDefault();
       event.stopPropagation();
-      onStart();
+      onStart(id);
       (event.target as HTMLElement)
         .closest<HTMLElement>(".flow-person-content")
         ?.focus();
@@ -177,7 +182,7 @@ export function useManualTreeLayout(
     onPointerCancel: (event: PointerEvent<HTMLDivElement>) =>
       finish(event, true),
     onMouseDown(event: MouseEvent<HTMLDivElement>) {
-      if (active && event.button === 0 && person(event.target)) {
+      if (active && event.button === 0 && pointerPerson(event)) {
         event.preventDefault();
         event.stopPropagation();
         return true;
@@ -185,7 +190,7 @@ export function useManualTreeLayout(
       return false;
     },
     onClick(event: MouseEvent<HTMLDivElement>) {
-      const isPerson = person(event.target);
+      const isPerson = active ? pointerPerson(event) : person(event.target);
       const suppress = suppressClick.current && (isPerson ||
         (event.target as Element).closest(".react-flow__pane") || event.target === event.currentTarget);
       suppressClick.current = false;
@@ -230,7 +235,7 @@ export function useManualTreeLayout(
       ) {
         event.preventDefault();
         event.stopPropagation();
-        onStart();
+        onStart(id);
         commit(
           moveDisplayedFamily(
             geometry,

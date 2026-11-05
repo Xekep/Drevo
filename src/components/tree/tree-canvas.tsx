@@ -147,6 +147,7 @@ export type TreeFocus = {
 export type TreeCanvasHandle = {
   getViewContext: () => ResearchTreeViewContext;
   optimizeLayout: (goal?: TreeOptimizationGoal) => Promise<string>;
+  recalculateLayout: () => Promise<string>;
   setManualLayout: (enabled: boolean) => string;
   visiblePersonIds: (signal?: AbortSignal) => Promise<string[]>;
   exportPdf: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number,
@@ -592,7 +593,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     : `${mode}:${depthEnabled ? "depth" : "flat"}:${familyView.mode}:${root || "all"}:portrait`;
   useTouchZoom(container, flow, flatTree && !cameraLocked && !screen.fullscreen);
   useCtrlWheelZoom(container, flow, flatTree && !cameraLocked);
-  const { geometry: originalGeometry, renderVisible, ready, problem, layoutBusy: calculatingLayout, layoutKey: originalLayoutKey, updateKind } =
+  const { geometry: originalGeometry, renderVisible, ready, problem, layoutBusy: calculatingLayout, layoutKey: originalLayoutKey, updateKind, loadingPhase } =
     useTreeLayout(
       renderFamily,
       visible,
@@ -608,16 +609,29 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           ])
         : null,
     );
-  const { geometry: optimizedGeometry, optimize, busy: optimizingLayout, layoutKey } = useTreeOptimization(
+  const { geometry: optimizedGeometry, optimize, recalculate, busy: optimizingLayout, layoutKey } = useTreeOptimization(
     originalGeometry, originalLayoutKey, renderFamily, renderVisible, ready,
   );
   const manualAvailable = desktopEditing && flatTree && !activeFanAnchor && ready && !cameraLocked &&
-    !calculatingLayout && !optimizingLayout && !preparingView;
+    !calculatingLayout && !optimizingLayout && !preparingView && !layoutSettling;
   const manual = useManualTreeLayout(optimizedGeometry, layoutKey, manualAvailable,
-    renderFamily.links || [], () => flow.getViewport().zoom, () => setManualCameraOverride(true));
+    renderFamily.links || [], () => flow.getViewport().zoom, (id: string) => {
+      setManualCameraOverride(true);
+      void flow.setViewport(flow.getViewport(), { duration: 0 });
+      if (gpuActive) setGpuFocused(id);
+    }, (x: number, y: number): string | undefined => gpuActive ? gpuPersonAt(x, y)?.id : undefined);
   const geometry = manual.geometry;
   const setManualLayoutEnabled = manual.setEnabled;
   const layoutBusy = calculatingLayout || optimizingLayout || preparingView;
+  const currentRecalculation = useRef(recalculate);
+  useLayoutEffect(() => {
+    currentRecalculation.current = () => {
+      if (mode !== "generations" || activeFanAnchor || depthEnabled)
+        return Promise.reject(new Error("Откройте обычное 2D-древо для пересчёта расположения."));
+      if (cameraLocked || layoutBusy) return Promise.reject(new Error("Дождитесь отрисовки древа."));
+      return recalculate();
+    };
+  }, [recalculate, mode, activeFanAnchor, depthEnabled, cameraLocked, layoutBusy]);
   const nodeWidth = geometry?.nodeSize?.width ?? treeNodeSize().width;
   const nodeHeight = geometry?.nodeSize?.height ?? treeNodeSize().height;
   useEffect(() => {
@@ -860,87 +874,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     });
     return () => { active = false; };
   }, [growing, ready, introX, introY, canvasWidth, canvasHeight, displayNodes]);
-  const keepRequestedFocus =
-    props.skipInitialGrowth || !!focus || selected.length > 0;
-  useEffect(() => {
-    if (
-      growing ||
-      !initialCameraReady ||
-      !ready ||
-      !nodes.length ||
-      !canvasWidth ||
-      !canvasHeight ||
-      introHandled.current
-    )
-      return;
-    let active = true;
-    const done = () => {
-      if (active) {
-        // Starting a transition does not mean it has reached its destination.
-        // A resize or a layout update can restart this effect mid-flight.
-        introHandled.current = true;
-        setIntroCameraFinished(true);
-        introComplete.current?.();
-      }
-    };
-    if (
-      introX === undefined ||
-      introY === undefined ||
-      keepRequestedFocus ||
-      manualCameraOverride ||
-      familyView.mode !== "all"
-    ) {
-      done();
-      return () => {
-        active = false;
-      };
-    }
-    const camera = flow.getViewport();
-    if (
-      Math.abs(camera.zoom - PERSON_FOCUS_ZOOM) < 0.001 &&
-      Math.abs(
-        camera.x + (introX + nodeWidth / 2) * camera.zoom - canvasWidth / 2,
-      ) < 2 &&
-      Math.abs(
-        camera.y + (introY + nodeHeight / 2) * camera.zoom - canvasHeight / 2,
-      ) < 2
-    ) {
-      done();
-      return () => {
-        active = false;
-      };
-    }
-    // Use worker geometry: fitView depends on React Flow's measured nodes,
-    // which can still be updating as growth and virtualization finish.
-    void flow
-      .setCenter(introX + nodeWidth / 2, introY + nodeHeight / 2, {
-        zoom: PERSON_FOCUS_ZOOM,
-        duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-          ? 0
-          : 620,
-        ease: (progress) => 1 - (1 - progress) ** 3,
-      })
-      .then(done, done);
-    return () => {
-      active = false;
-    };
-  }, [
-    growing,
-    initialCameraReady,
-    ready,
-    nodes.length,
-    introX,
-    introY,
-    nodeWidth,
-    nodeHeight,
-    keepRequestedFocus,
-    manualCameraOverride,
-    canvasWidth,
-    canvasHeight,
-    familyView.mode,
-    flow,
-    narrow,
-  ]);
   const { rememberContext, resetContext, rememberViewport } =
     useTreeCameraState({
       flow,
@@ -1121,7 +1054,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           onEdge,
           onChoices: setEdgeChoices,
           growthDelays,
-          crossingPaths: cachedCrossingPaths,
+          crossingPaths: !print && manual.dragging ? () => new Map() : cachedCrossingPaths,
           crossingZoom: print ? 1 : crossingZoom,
         });
         prepared.set(print, next);
@@ -1144,6 +1077,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       growthDelays,
       cachedCrossingPaths,
       crossingZoom,
+      manual.dragging,
     ],
   );
   const readDisplayEdges = useMemo(
@@ -1292,14 +1226,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   // native cards just for a transition and rebuild the GPU again on return.
   // A rapid next switch can arrive before onReady acknowledges the previous
   // geometry. The context is still usable within the same access scope.
-  const gpuEligible = !manual.active && (nodes.length >= GPU_SCENE_MIN_NODES || gpuReadyScope === gpuScope) && !growing && (gpuReadyScope === gpuScope || (ready && !layoutBusy)) &&
+  const gpuEligible = (nodes.length >= GPU_SCENE_MIN_NODES || gpuReadyScope === gpuScope) && initialCameraReady && (gpuReadyScope === gpuScope || (ready && !layoutBusy)) &&
     (flatTree || (!!activeFanAnchor && gpuReadyScope === gpuScope)) && !connecting && gpuFailedScope !== gpuScope &&
     gpuOverlayEdges.length <= 64 && nodes.every((node) => GpuPortraitCache.supported(node.data.person.photo));
   // A remounted canvas needs its own first frame and portrait handoff, even
   // when cancelling a connection leaves the layout geometry unchanged.
   if (!gpuEligible && gpuReadyScene) setGpuReadyScene(null);
   if (!gpuEligible && gpuReadyScope) setGpuReadyScope(null);
-  const gpuActive = gpuEligible && (gpuSceneMatches || gpuReadyScope === gpuScope);
+  const gpuActive = !growing && gpuEligible && (gpuSceneMatches || gpuReadyScope === gpuScope);
   useLayoutEffect(() => {
     committedScene.current = { geometry, scope: gpuScope, gpu: gpuActive };
   }, [geometry, gpuScope, gpuActive]);
@@ -1310,6 +1244,93 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const gpuFailure = useCallback((reason: string) => {
     setGpuFailedScope(gpuScope); setGpuReadyScene(null); setGpuFallbackReason(reason);
   }, [gpuScope]);
+  const keepRequestedFocus =
+    props.skipInitialGrowth || !!focus || selected.length > 0;
+  useEffect(() => {
+    if (
+      growing ||
+      (gpuEligible && !gpuActive) ||
+      !initialCameraReady ||
+      !ready ||
+      !nodes.length ||
+      !canvasWidth ||
+      !canvasHeight ||
+      introHandled.current
+    )
+      return;
+    let active = true;
+    const done = () => {
+      if (active) {
+        // Starting a transition does not mean it has reached its destination.
+        // A resize or a layout update can restart this effect mid-flight.
+        introHandled.current = true;
+        setIntroCameraFinished(true);
+        introComplete.current?.();
+      }
+    };
+    if (
+      introX === undefined ||
+      introY === undefined ||
+      keepRequestedFocus ||
+      manualCameraOverride ||
+      familyView.mode !== "all"
+    ) {
+      done();
+      return () => {
+        active = false;
+      };
+    }
+    const camera = flow.getViewport();
+    if (
+      Math.abs(camera.zoom - PERSON_FOCUS_ZOOM) < 0.001 &&
+      Math.abs(
+        camera.x + (introX + nodeWidth / 2) * camera.zoom - canvasWidth / 2,
+      ) < 2 &&
+      Math.abs(
+        camera.y + (introY + nodeHeight / 2) * camera.zoom - canvasHeight / 2,
+      ) < 2
+    ) {
+      done();
+      return () => {
+        active = false;
+      };
+    }
+    // Use worker geometry: fitView depends on React Flow's measured nodes,
+    // which can still be updating as growth and virtualization finish.
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        void flow
+          .setCenter(introX + nodeWidth / 2, introY + nodeHeight / 2, {
+            zoom: PERSON_FOCUS_ZOOM,
+            duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 620,
+            ease: (progress) => 1 - (1 - progress) ** 3,
+          })
+          .then(done, done);
+      });
+    });
+    return () => {
+      active = false;
+      cancelAnimationFrame(frame);
+    };
+  }, [
+    growing,
+    gpuEligible,
+    gpuActive,
+    initialCameraReady,
+    ready,
+    nodes.length,
+    introX,
+    introY,
+    nodeWidth,
+    nodeHeight,
+    keepRequestedFocus,
+    manualCameraOverride,
+    canvasWidth,
+    canvasHeight,
+    familyView.mode,
+    flow,
+    narrow,
+  ]);
   const gpuEdges = useMemo(() => {
     const overlays = new Set(gpuOverlayEdges.map((edge) => edge.id));
     return renderedEdges.filter((edge) => !overlays.has(edge.id));
@@ -1321,8 +1342,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     // React Flow first mounts at zoom 1, before fitView. Fetching portraits
     // there would request every thumb and delay hydration/the GPU handoff.
     deferPortraits: !initialCameraReady || (renderedNodes.length >= GPU_SCENE_MIN_NODES &&
-      (layoutSettling || layoutBusy || (gpuEligible && !gpuActive))),
-  }), [actions, currentPeople, gpuActive, initialCameraReady, renderedNodes.length, layoutSettling, layoutBusy, gpuEligible]);
+      (layoutSettling || layoutBusy || (gpuEligible && !gpuActive && !growing))),
+  }), [actions, currentPeople, gpuActive, initialCameraReady, renderedNodes.length, layoutSettling, layoutBusy, gpuEligible, growing]);
   const gpuPinnedOverlayIds = useMemo(() => {
     const ids = new Set([gpuFocused]);
     for (const node of nodes.filter((node) => node.selected).slice(0, 24)) ids.add(node.id);
@@ -1590,6 +1611,15 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           if (cameraLocked || calculatingLayout) throw new Error("Дождитесь отрисовки древа.");
           return optimize(goal, geometry);
         },
+        async recalculateLayout() {
+          if (mode !== "generations" || activeFanAnchor || depthEnabled)
+            throw new Error("Откройте обычное 2D-древо для пересчёта расположения.");
+          // Wait for a filter's ordinary layout before reading its projection.
+          await preparedTree();
+          const message = await currentRecalculation.current();
+          resetContext();
+          return message;
+        },
         setManualLayout(enabled) {
           if (enabled && (!desktopEditing || !flatTree || activeFanAnchor))
             throw new Error("Ручная расстановка доступна на компьютере в обычном 2D-древе.");
@@ -1612,7 +1642,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         },
       };
     },
-    [mode, activeFanAnchor, depthEnabled, cameraLocked, calculatingLayout, optimize, ensureExportOverview, geometry, desktopEditing, flatTree, manualAvailable, setManualLayoutEnabled],
+    [mode, activeFanAnchor, depthEnabled, cameraLocked, calculatingLayout, optimize, resetContext, ensureExportOverview, geometry, desktopEditing, flatTree, manualAvailable, setManualLayoutEnabled],
   );
   useEffect(() => {
     if (!growing || !ready || !initialCameraReady || growthStarted)
@@ -1640,7 +1670,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           : mountAttempts >= 2 &&
             mountedNodes > 0 &&
             (!displayEdges.length || mountedEdges > 0);
-      if (mounted && ((portraitsReady && introPortraitsReady.current) ||
+      if (mounted && ((portraitsReady && introPortraitsReady.current &&
+          (!gpuEligible || gpuReadyScope === gpuScope)) ||
           performance.now() >= portraitDeadline)) {
         setGrowthStarted(true);
       } else if (!mounted && ++mountAttempts >= 30) {
@@ -1659,6 +1690,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     displayNodes.length,
     displayEdges.length,
     progressiveCanvasIntro,
+    gpuEligible,
+    gpuReadyScope,
+    gpuScope,
   ]);
   const connect = useCallback(
     (c: FlowConnection) => {
@@ -1885,7 +1919,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           <div className="tree-preparation-status" role="status">
             <span className="archive-loader-ring" aria-hidden="true" />
             <span>{layoutBusy || !ready || growthPreparing
-              ? "Расставляем карточки и связи…"
+              ? optimizingLayout || loadingPhase === "calculating"
+                ? "Расставляем карточки и связи…" : "Загружаем расположение древа…"
               : growthActive ? "Показываем поколения…" : "Подготавливаем вид древа…"}</span>
           </div>
         )}
@@ -2293,7 +2328,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         </ReactFlow>
         {gpuEligible && (
           <TreeGpuScene key={gpuScope}
-            visible={gpuActive && !activeFanAnchor} suspended={!!activeFanAnchor}
+            visible={gpuActive && !activeFanAnchor} suspended={!!activeFanAnchor} immediate={manual.active}
             nodes={nodes} edges={gpuEdges} households={overviewHouseholds} width={canvasWidth} height={canvasHeight}
             hovered={gpuHovered} focused={gpuFocused} relationLabel={actions.relationLabel}
             onReady={gpuReady} onFailure={gpuFailure} />

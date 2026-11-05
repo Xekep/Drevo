@@ -20,6 +20,7 @@ export function TreeGpuScene({
   onFailure,
   visible,
   suspended = false,
+  immediate = false,
 }: {
   nodes: readonly PersonNodeType[];
   edges: readonly RelationshipEdgeType[];
@@ -33,6 +34,7 @@ export function TreeGpuScene({
   onFailure: (reason: string) => void;
   visible: boolean;
   suspended?: boolean;
+  immediate?: boolean;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const store = useStoreApi();
@@ -44,6 +46,7 @@ export function TreeGpuScene({
   );
   const state = useRef({
     suspended,
+    immediate,
     width,
     height,
     hovered,
@@ -59,6 +62,7 @@ export function TreeGpuScene({
   useLayoutEffect(() => {
     state.current = {
       suspended,
+      immediate,
       width,
       height,
       hovered,
@@ -72,6 +76,7 @@ export function TreeGpuScene({
     };
   }, [
     suspended,
+    immediate,
     width,
     height,
     hovered,
@@ -120,6 +125,7 @@ export function TreeGpuScene({
               current.edges,
               current.households,
               current.nodeRelationLabel,
+              current.immediate,
             )
           ) {
             element.dataset.gpuBuildReason =
@@ -257,6 +263,7 @@ export function TreeGpuScene({
     schedule.current();
   }, [
     suspended,
+    immediate,
     width,
     height,
     hovered,

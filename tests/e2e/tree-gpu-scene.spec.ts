@@ -235,8 +235,14 @@ test(`${medium ? "250-card" : "3313 desktop / 503 mobile"} GPU tree keeps bounde
       (window as typeof window & { __gpuLayout: { requests: number } })
         .__gpuLayout.requests,
   );
-  if (process.env.DREVO_RENDER_PROFILE && testInfo.project.name === "desktop")
+  if (process.env.DREVO_RENDER_PROFILE && testInfo.project.name === "desktop") {
+    if (process.env.DREVO_RENDER_PROFILE_MANUAL)
+      await page.getByRole("button", { name: "Ручная расстановка карточек", exact: true }).click();
     await profileTreeRenderer(page, testInfo);
+    if (process.env.DREVO_RENDER_PROFILE_MANUAL)
+      await page.getByRole("region", { name: "Ручная расстановка", exact: true })
+        .getByRole("button", { name: "Готово", exact: true }).click();
+  }
   const zoom = () =>
     page
       .locator(".react-flow__viewport")
@@ -259,6 +265,28 @@ test(`${medium ? "250-card" : "3313 desktop / 503 mobile"} GPU tree keeps bounde
     expect(await zoom()).toBeGreaterThan(0.18);
     expect(await zoom()).toBeLessThan(0.52);
     await verifyLabelBudget(1);
+    if (medium) {
+      const originalViewport = page.viewportSize()!;
+      await page.setViewportSize({ width: 3840, height: 2160 });
+      await expect.poll(() => canvas.evaluate(element => {
+        const canvas = element as HTMLCanvasElement;
+        const bounds = canvas.getBoundingClientRect();
+        return bounds.width > 3800 && canvas.width >= bounds.width && canvas.height >= bounds.height;
+      })).toBe(true);
+      await page.setViewportSize(originalViewport);
+      await expect.poll(() => canvas.evaluate(element => element.getBoundingClientRect().width))
+        .toBe(originalViewport.width);
+      const bounds = (await page.locator(".react-flow__pane").boundingBox())!;
+      await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+      await page.keyboard.down("Control");
+      for (let attempt = 0; attempt < 4 && Math.abs(0.3 - await zoom()) > 0.0003; attempt++) {
+        await page.mouse.wheel(0, -Math.log(0.3 / await zoom()) / 0.002);
+        await page.waitForTimeout(150);
+      }
+      await page.keyboard.up("Control");
+      await expect.poll(zoom).toBeCloseTo(0.3, 3);
+      await page.screenshot({ path: testInfo.outputPath("gpu-zoom-30.png") });
+    }
     if (medium) {
       // The browser composites this transparent WebGL canvas as premultiplied
       // RGBA. Antialiased text/portrait edges must not have RGB above alpha.
@@ -466,6 +494,46 @@ test(`${medium ? "250-card" : "3313 desktop / 503 mobile"} GPU tree keeps bounde
     await expect.poll(async () => Number(await canvas.getAttribute("data-gpu-draws")))
       .toBeGreaterThan(draws);
     stage("portrait uploaded and drawn");
+  }
+  if (medium && testInfo.project.name === "desktop") {
+    const focused = page.locator(".tree-gpu-node-overlay .flow-person-content:focus");
+    const id = await focused.locator("..").getAttribute("data-person-id");
+    const overlay = page.locator(`.flow-person[data-person-id="${id}"]`);
+    const content = overlay.locator(".flow-person-content");
+    const viewport = page.locator(".react-flow__viewport");
+    const camera = await viewport.getAttribute("style");
+    const before = await overlay.locator("..").getAttribute("style");
+    const resources = await page.evaluate(() => {
+      const state = window as typeof window & { __gpuResources: { programs: number; glyphUploads: number }; __retainedPrintCanvas: Element | null };
+      state.__retainedPrintCanvas = document.querySelector(".tree-gpu-scene");
+      return { ...state.__gpuResources };
+    });
+    await page.getByRole("button", { name: "Ручная расстановка карточек", exact: true }).click();
+    await expect(page.locator(".tree-canvas")).toHaveAttribute("data-renderer", "webgl2");
+    const box = (await content.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + 40);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 60, box.y + 40, { steps: 20 });
+    await page.mouse.up();
+    await expect(overlay.locator("..")).not.toHaveAttribute("style", before!);
+    await expect(viewport).toHaveAttribute("style", camera!);
+    await expect(canvas).toHaveAttribute("data-gpu-moving", "false");
+    const tools = page.getByRole("region", { name: "Ручная расстановка", exact: true });
+    const undo = tools.getByRole("button", { name: "Отменить сдвиг карточки" });
+    const moved = (await content.boundingBox())!;
+    // A toolbar button above a GPU card must not be mistaken for that card.
+    await undo.evaluate((button, position) => Object.assign((button as HTMLElement).style, {
+      position: "fixed", left: `${position.x + position.width / 2 - 10}px`, top: `${position.y + 40}px`,
+    }), moved);
+    await undo.click();
+    await undo.evaluate(button => (button as HTMLElement).removeAttribute("style"));
+    await tools.getByRole("button", { name: "Готово", exact: true }).click();
+    await expect(overlay.locator("..")).toHaveAttribute("style", before!);
+    expect(await page.evaluate(() => {
+      const state = window as typeof window & { __gpuResources: { programs: number; glyphUploads: number }; __retainedPrintCanvas: Element | null };
+      return { sameCanvas: state.__retainedPrintCanvas === document.querySelector(".tree-gpu-scene"), resources: state.__gpuResources };
+    })).toEqual({ sameCanvas: true, resources });
+    await content.focus();
   }
   const button = page.locator(
     ".tree-gpu-node-overlay .flow-person-content:focus",
