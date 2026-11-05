@@ -62,6 +62,7 @@ export async function profileTreeRenderer(page: Page, testInfo: TestInfo) {
       dom: document.querySelectorAll("*").length,
       pendingImages: [...document.images].filter((image) => !image.complete).length,
       renderer: document.querySelector<HTMLElement>(".tree-canvas")?.dataset.renderer,
+      manual: document.querySelector(".tree-canvas")?.classList.contains("is-manual-layout"),
       gpuTextureBytes: Number(document.querySelector<HTMLElement>(".tree-gpu-scene")?.dataset.gpuTextureBytes || 0),
       gpuBufferBytes: Number(document.querySelector<HTMLElement>(".tree-gpu-scene")?.dataset.gpuBufferBytes || 0),
       drawingWidth: document.querySelector<HTMLCanvasElement>(".tree-gpu-scene")?.width || 0,
@@ -97,11 +98,12 @@ export async function profileTreeRenderer(page: Page, testInfo: TestInfo) {
         if (gesture === "pan") {
           const viewport = page.locator(".react-flow__viewport");
           const initialCamera = await viewport.getAttribute("style");
-          await page.mouse.down();
+          const button = process.env.DREVO_RENDER_PROFILE_MANUAL ? "middle" : "left";
+          await page.mouse.down({ button });
           await page.mouse.move(x + 150, y + 65, { steps: 80 });
           await expect(viewport).not.toHaveAttribute("style", initialCamera!);
           await page.mouse.move(x, y, { steps: 80 });
-          await page.mouse.up();
+          await page.mouse.up({ button });
         } else {
           await page.keyboard.down("Control");
           for (let index = 0; index < 24; index++) {

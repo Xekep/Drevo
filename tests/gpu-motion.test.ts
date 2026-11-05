@@ -91,3 +91,17 @@ test("interrupting a fade preserves the current opacity instead of flashing an o
   old.progress(0.5);
   assert.equal(old.positions().get("added")!.opacity, 0.125);
 });
+
+
+test("manual GPU translations stay aligned and a subsequent fold starts at the displayed position", () => {
+  const motion = createGpuMotion([{ id: "card", position: { x: 100, y: 200 } }]);
+  motion.relocate(new Map([["card", { x: 140, y: 200 }]]));
+  motion.progress(1);
+  assert.deepEqual(motion.positions().get("card"), { x: 140, y: 200, opacity: 1 });
+  motion.relocate(new Map([["card", { x: 80, y: 200 }]]));
+  const next = createGpuMotion([{ id: "card", position: { x: 300, y: 200 } }]);
+  next.transition(motion.positions(), false);
+  assert.deepEqual(next.positions().get("card"), { x: 80, y: 200, opacity: 1 });
+  motion.relocate(new Map([["card", { x: 100, y: 200 }]]));
+  assert.deepEqual(motion.positions().get("card"), { x: 100, y: 200, opacity: 1 });
+});

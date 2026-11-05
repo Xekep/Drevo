@@ -40,6 +40,17 @@ export function createGpuMotion(items: readonly GpuMotionItem[]) {
         ]),
       );
     },
+    relocate(target: ReadonlyMap<string, GpuMotionPoint>) {
+      for (const [i, item] of items.entries()) {
+        const point = target.get(item.id) || item.position, offset = (i + 1) * 4;
+        data[offset] = point.x - item.position.x;
+        data[offset + 1] = point.y - item.position.y;
+        data[offset + 2] = data[offset + 3] = 1;
+      }
+      // A settled translation uses the same texel for portraits and labels.
+      leaving = true;
+      lastProgress = 1;
+    },
     transition(other: ReadonlyMap<string, GpuMotionPoint>, departing: boolean) {
       for (const [i, item] of items.entries()) {
         const previous = other.get(item.id),

@@ -812,7 +812,7 @@
     cubic-bezier(0.2, 0.75, 0.25, 1) var(--tree-growth-delay) both;
 }
 .tree-canvas:not(.is-growing) .react-flow__node {
-  transition: transform 440ms cubic-bezier(0.22, 0.75, 0.2, 1);
+  transition: transform 440ms cubic-bezier(0.333333, 1, 0.666667, 1);
 }
 .tree-canvas.is-layout-settling .react-flow__edge {
   animation: tree-edge-settle 440ms ease-out both;

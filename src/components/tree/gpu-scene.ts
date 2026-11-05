@@ -11,6 +11,7 @@ import { scheduleGpuLabelPreparation } from "./gpu-label-preparation.ts";
 import { createGpuFont, gpuFontAtlasSize as FONT_SIZE, gpuFontSize } from "./gpu-font.ts";
 import { gpuPlaceholderCanvas, gpuPlaceholderUv, placeholderWidth, placeholderHeight } from "./gpu-placeholders.ts";
 
+import { acquireGpuProgram } from "./gpu-program.ts";
 import { createGpuMotion, type GpuMotionPoint } from "./gpu-motion.ts";
 
 const MAX_BUFFERS = 24 * 1024 * 1024;
@@ -54,7 +55,7 @@ export function createGpuScene(
   const maxDrawingSize = Number(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
   const buffers: WebGLBuffer[] = [],
     textures: WebGLTexture[] = [],
-    programs: WebGLProgram[] = [];
+    releasePrograms: (() => void)[] = [];
   let labelArrays: Float32Array[] = [];
   let relationArrays: Float32Array[] = [];
   let cancelRelations = () => {};
@@ -72,33 +73,13 @@ export function createGpuScene(
     relationArrays.length = 0;
     for (const buffer of buffers) gl.deleteBuffer(buffer);
     for (const texture of textures) gl.deleteTexture(texture);
-    for (const program of programs) gl.deleteProgram(program);
+    for (const release of releasePrograms) release();
   };
   try {
     const program = (vertex: string, fragment: string) => {
-      const result = gl.createProgram()!;
-      programs.push(result);
-      for (const [type, source] of [
-        [gl.VERTEX_SHADER, vertex],
-        [gl.FRAGMENT_SHADER, fragment],
-      ] as const) {
-        const shader = gl.createShader(type)!;
-        gl.shaderSource(shader, source);
-        gl.compileShader(shader);
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-          const error = gl.getShaderInfoLog(shader);
-          gl.deleteShader(shader);
-          throw new Error(error || "GPU shader compilation failed");
-        }
-        gl.attachShader(result, shader);
-        gl.deleteShader(shader);
-      }
-      gl.linkProgram(result);
-      if (!gl.getProgramParameter(result, gl.LINK_STATUS))
-        throw new Error(
-          gl.getProgramInfoLog(result) || "GPU shader link failed",
-        );
-      return result;
+      const shared = acquireGpuProgram(gl, vertex, fragment);
+      releasePrograms.push(shared.release);
+      return shared.program;
     };
     const cameraShader = `uniform vec3 camera; uniform vec2 viewport;
       vec4 project(vec2 world) { vec2 p=world*camera.z+camera.xy;
@@ -190,6 +171,7 @@ export function createGpuScene(
       void main() { if(pattern.y>0. && mod(along,pattern.x+pattern.y)>pattern.x) discard;
         outputColor=tint; }`,
     );
+    const basePositions = new Map([...nodes, ...households].map(node => [node.id, node.position]));
     const motion = createGpuMotion([...nodes, ...households]);
     const motionTexture = gl.createTexture()!;
     textures.push(motionTexture);
@@ -317,7 +299,7 @@ export function createGpuScene(
       );
     const surfaceBatch = makeBuffer(surfaces, 16, "surfaces");
     surfaces.length = 0;
-    let font: ReturnType<typeof createGpuFont> | undefined = createGpuFont();
+    let font: ReturnType<typeof createGpuFont> | undefined = createGpuFont(canvas);
     releaseFont = () => { font = undefined; };
     const glyph = (letter: string, bold: boolean) => font!.glyph(letter, bold);
     const labels: number[][] = [[], [], []];
@@ -346,6 +328,7 @@ export function createGpuScene(
       // Use the native text renderer for these archives instead of corrupting names.
       if (/[\u0300-\u036f\u0590-\u0fff\u200d]/u.test(value))
         throw new Error("Native text shaping required");
+      const position = basePositions.get(node.id) || node.position;
       const maxWidth = (node.width || 220) - 16,
         scale = size / gpuFontSize;
       const rows = layoutGpuText(
@@ -356,7 +339,7 @@ export function createGpuScene(
       );
       for (const [index, line] of rows.entries()) {
         let x =
-          node.position.x +
+          position.x +
           (alignRight
             ? (node.width || 220) - 14 - line.width
             : ((node.width || 220) - line.width) / 2);
@@ -365,7 +348,7 @@ export function createGpuScene(
           for (const target of targets)
             target.push(
               x + g.left * scale,
-              node.position.y + top + index * lineHeight +
+              position.y + top + index * lineHeight +
                 (lineHeight - (g.ascent + g.descent) * scale) / 2 + (g.ascent - g.top) * scale,
               g.width * scale,
               g.height * scale,
@@ -470,8 +453,9 @@ export function createGpuScene(
       failure,
       scenePhotos(nodes),
     );
-    const index = new Spatial<IndexedNode>();
+    let index = new Spatial<IndexedNode>();
     let currentNodes = nodes;
+    let currentHouseholds = households;
     let currentRelationLabel = relationLabel;
     const prepareRelations = () => {
       cancelRelations();
@@ -568,6 +552,7 @@ export function createGpuScene(
         nextEdges: readonly RelationshipEdgeType[],
         nextHouseholds: readonly HouseholdNodeType[],
         nextRelationLabel: (node: PersonNodeType) => string,
+        immediate = false,
       ) {
         const changed = (reason: string) => {
           canvas.dataset.gpuUpdateReason = reason;
@@ -577,7 +562,7 @@ export function createGpuScene(
           disposed ||
           currentNodes.length !== nextNodes.length ||
           currentEdges.length !== nextEdges.length ||
-          households.length !== nextHouseholds.length
+          currentHouseholds.length !== nextHouseholds.length
         )
           return changed("membership");
         for (let i = 0; i < currentNodes.length; i++) {
@@ -585,8 +570,7 @@ export function createGpuScene(
           const labels = nodeLabels.get(a.id)!;
           if (
             a.id !== b.id ||
-            a.position.x !== b.position.x ||
-            a.position.y !== b.position.y ||
+            (!immediate && (a.position.x !== b.position.x || a.position.y !== b.position.y)) ||
             a.width !== b.width ||
             a.height !== b.height ||
             // Detail hydration replaces Person objects without changing the
@@ -617,12 +601,11 @@ export function createGpuScene(
           )
             edgesChanged = true;
         }
-        for (let i = 0; i < households.length; i++) {
-          const a = households[i], b = nextHouseholds[i];
+        for (let i = 0; i < currentHouseholds.length; i++) {
+          const a = currentHouseholds[i], b = nextHouseholds[i];
           if (
             a.id !== b.id ||
-            a.position.x !== b.position.x ||
-            a.position.y !== b.position.y ||
+            (!immediate && (a.position.x !== b.position.x || a.position.y !== b.position.y)) ||
             a.width !== b.width ||
             a.height !== b.height ||
             a.data.label !== b.data.label ||
@@ -630,13 +613,22 @@ export function createGpuScene(
           )
             return changed("household");
         }
+        if (immediate && nextNodes.some((node, i) => node.position !== currentNodes[i].position)) {
+          motion.relocate(new Map([...nextNodes, ...nextHouseholds].map(node => [node.id, node.position])));
+          uploadMotion();
+          index = new Spatial<IndexedNode>();
+          for (const node of nextNodes) index.add({ node, left: node.position.x, top: node.position.y,
+            right: node.position.x + (node.width || 220), bottom: node.position.y + (node.height || 264) });
+          cachedBox = undefined;
+        }
         currentNodes = nextNodes;
+        currentHouseholds = nextHouseholds;
         if (edgesChanged) {
           // Crossing gaps change with screen scale. Updating their line data
           // must not rebuild fonts/programs or restart a scene transition.
           const next = edgeData(nextEdges);
           replaceBuffer(lineBatch, next.lines, 12);
-          replaceBuffer(junctionBatch, next.junctions, 15);
+          replaceBuffer(junctionBatch, next.junctions, 16);
           currentEdges = nextEdges;
         }
         if (currentRelationLabel !== nextRelationLabel) {
@@ -660,9 +652,9 @@ export function createGpuScene(
         const dpr = Math.min(
           window.devicePixelRatio || 1,
           2,
-          // Keep QHD at native resolution; smaller targets soften tiny labels
-          // even at DPR 1. Higher-DPI/4K screens still have a bounded buffer.
-          Math.sqrt(4_000_000 / (width * height)),
+          // Keep 4K at native resolution; smaller targets soften tiny labels
+          // even at DPR 1. Higher-DPI screens still have a bounded buffer.
+          Math.sqrt(8_388_608 / (width * height)),
           maxDrawingSize / Math.max(width, height),
         );
         const pixelWidth = Math.max(1, Math.round(width * dpr)),
@@ -738,8 +730,9 @@ export function createGpuScene(
             options.progress !== undefined && progress < 1
               ? currentNodes.filter(node => {
                   const offset = motion.index(node.id) * 4;
-                  const x = node.position.x + motion.data[offset];
-                  const y = node.position.y + motion.data[offset + 1];
+                  const base = basePositions.get(node.id)!;
+                  const x = base.x + motion.data[offset];
+                  const y = base.y + motion.data[offset + 1];
                   return Math.min(x, node.position.x) <= box.right &&
                     Math.max(x, node.position.x) + (node.width || 220) >= box.left &&
                     Math.min(y, node.position.y) <= box.bottom &&
@@ -796,8 +789,8 @@ export function createGpuScene(
             const ratio = 148 / diameter,
               margin = (148 - diameter) / 2 / diameter;
             data.push(
-              node.position.x + ((node.width || 220) - 148) / 2,
-              node.position.y - 4,
+              basePositions.get(node.id)!.x + ((node.width || 220) - 148) / 2,
+              basePositions.get(node.id)!.y - 4,
               148,
               148,
               uv[0] - uv[2] * margin,

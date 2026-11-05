@@ -5,8 +5,16 @@ export const gpuFontBuffer = 8;
 export const gpuFontAtlasSize = 2048;
 const family = '"Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, Arial, sans-serif';
 
+const fontsByCanvas = new WeakMap<HTMLCanvasElement, ReturnType<typeof buildGpuFont>>();
+
+export function createGpuFont(canvas: HTMLCanvasElement) {
+  let font = fontsByCanvas.get(canvas);
+  if (!font) { font = buildGpuFont(); fontsByCanvas.set(canvas, font); }
+  return font;
+}
+
 /** Store distance to the outline instead of repeatedly shrinking antialiased pixels. */
-export function createGpuFont() {
+function buildGpuFont() {
   const data = new Uint8Array(gpuFontAtlasSize ** 2);
   const fonts = [400, 600].map(fontWeight => {
     const sdf = new TinySDF({ fontSize: gpuFontSize, buffer: gpuFontBuffer, radius: 8,

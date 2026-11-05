@@ -195,3 +195,40 @@ test("main tree retains the shared search component and dialog keyboard behavior
   await page.keyboard.press("Escape");
   await expect(search).toHaveValue("");
 });
+
+
+test("shared mobile kinship starts as a bottom sheet and expands after choosing two people", async ({ page, baseURL, isMobile }) => {
+  test.skip(!isMobile, "Bottom sheet is a mobile interaction");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const archive = await (await page.request.get("/api/family")).json();
+  const response = await page.request.post("/api/shares", {
+    headers: { Origin: baseURL!, "If-Match": String(archive.revision) },
+    data: { title: "Проверка панели родства", anchorId: "e2e-memorial-person",
+      personIds: ["e2e-memorial-person", "e2e-child"], durationHours: 1 },
+  });
+  expect(response.status()).toBe(201);
+  const share = await response.json();
+  try {
+    await page.goto(share.path);
+    await page.getByRole("button", { name: "Родство", exact: true }).click();
+    const panel = page.locator(".inspector-dock");
+    await expect(panel).toBeVisible();
+    await expect(panel).not.toHaveClass(/expanded/);
+    const bounds = (await panel.boundingBox())!;
+    expect(bounds.y).toBeGreaterThan(page.viewportSize()!.height / 2);
+    expect(bounds.y + bounds.height).toBeCloseTo(page.viewportSize()!.height, 0);
+    await page.getByRole("button", { name: /^Тестов Иван Петрович,/ }).click();
+    await expect(panel).not.toHaveClass(/expanded/);
+    const second = page.getByRole("button", { name: /^Тестов Пётр Иванович,/ });
+    const card = (await second.boundingBox())!;
+    const sheet = (await panel.boundingBox())!;
+    if (card.y + card.height > sheet.y) {
+      await page.mouse.move(page.viewportSize()!.width / 2, sheet.y - 70);
+      await page.mouse.wheel(0, card.y + card.height - sheet.y + 30);
+    }
+    await second.click({ timeout: 5000 });
+    await expect(panel).toHaveClass(/expanded/);
+  } finally {
+    await page.request.delete(`/api/shares/${share.share.id}`, { headers: { Origin: baseURL! } });
+  }
+});

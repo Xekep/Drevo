@@ -282,6 +282,7 @@ export default function SharedTree({ token }: { token: string }) {
                   onCoveredSceneChange={setTreeSceneCovered}
                   revealScene={!!currentBiographyMap}
                   key={compare ? `comparison:${chosen.length}` : chosen[0]?.id}
+                  initialExpanded={!compare || chosen.length === 2}
                   onClose={() => dispatch({ type: "clear" })}
                 >
                   {compare ? (

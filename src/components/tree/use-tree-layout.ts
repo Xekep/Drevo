@@ -51,6 +51,7 @@ export function useTreeLayout(
     updateKind?: "retained" | "local" | "full";
   }>({ key: "", geometry: null, visible, error: "", scope: cacheScope });
   const [busy, setBusy] = useState(false);
+  const [loadingPhase, setLoadingPhase] = useState<"loading" | "calculating">("loading");
   const workerRef = useRef<Worker | null>(null);
   const requestRef = useRef(0);
   const pendingRef = useRef(false);
@@ -105,10 +106,14 @@ export function useTreeLayout(
           }
         : undefined);
     let cancelled = false;
+    let calculating = false;
     const sharedRequest = new AbortController();
     let detach = () => {};
     const timer = setTimeout(() => {
-      if (requestRef.current === requestId) setBusy(true);
+      if (requestRef.current === requestId) {
+        setLoadingPhase(calculating ? "calculating" : "loading");
+        setBusy(true);
+      }
     }, 80);
     const finish = (data: TaggedLayoutWorkerResponse) => {
       if (
@@ -145,6 +150,8 @@ export function useTreeLayout(
     };
     const calculate = (history?: Awaited<ReturnType<typeof readLayoutHistory>>) => {
       if (cancelled) return;
+      calculating = true;
+      setLoadingPhase("calculating");
       try {
         const worker =
           workerRef.current ||
@@ -234,6 +241,7 @@ export function useTreeLayout(
     ready: sameScope && result.key === key && !result.error,
     problem: sameScope && result.key === key ? result.error : "",
     layoutBusy: busy,
+    loadingPhase: busy ? loadingPhase : "loading",
     layoutKey: key,
     updateKind: sameScope && result.key === key ? result.updateKind : undefined,
   };

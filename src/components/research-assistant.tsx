@@ -294,6 +294,7 @@ export function ResearchAssistant({
   onFilter,
   onExclude,
   onOptimizeLayout,
+  onRecalculateLayout,
   onManualLayout,
   getTreeViewContext,
   onHideReview,
@@ -316,6 +317,7 @@ export function ResearchAssistant({
   onFilter: (ids: string[], label: string) => void;
   onExclude: (ids: string[], label: string) => void;
   onOptimizeLayout: (goal?: TreeOptimizationGoal) => Promise<void>;
+  onRecalculateLayout: () => Promise<void>;
   onManualLayout: (enabled: boolean) => Promise<void>;
   getTreeViewContext?: () => ResearchTreeViewContext | undefined;
   onHideReview: () => void;
@@ -788,6 +790,8 @@ export function ResearchAssistant({
       else if (action.type === "filter_people")
         onFilter(action.personIds, action.label);
       else if (action.type === "exclude_people") onExclude(action.personIds, action.label);
+      else if (action.type === "recalculate_tree_layout")
+        void onRecalculateLayout().catch(reason => setError(reason instanceof Error ? reason.message : "Не удалось пересчитать расположение."));
       else if (action.type === "optimize_tree_layout")
         void onOptimizeLayout(action.goal).catch(reason => setError(reason instanceof Error ? reason.message : "Не удалось оптимизировать расположение."));
       else if (action.type === "manual_tree_layout")

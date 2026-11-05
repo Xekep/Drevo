@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore, type Viewport } from "@xyflow/react";
 import { MIN_TREE_ZOOM, type FitTree } from "./tree-camera-fit.ts";
 import type { Person } from "../../domain/types.ts";
@@ -131,8 +131,11 @@ export function useTreeCameraState({
     cameras.current[context] = flow.getViewport();
   }, [context, flow]);
 
+  const [resetToken, setResetToken] = useState(0);
+  const pendingReset = useRef(false);
   const resetContext = useCallback(() => {
-    previousContext.current = "";
+    pendingReset.current = true;
+    setResetToken(value => value + 1);
   }, []);
 
   const rememberViewport = useCallback(
@@ -188,7 +191,14 @@ export function useTreeCameraState({
               .get(returnPersonId)
               ?.find((id) => positions.has(id))
           : undefined;
-        if (restoreViewport && restoreViewport.token !== lastRestore.current) {
+        if (pendingReset.current) {
+          pendingReset.current = false;
+          viewportUpdate = fitTree({
+            ids: [...positions.keys()], minZoom: MIN_TREE_ZOOM,
+            maxZoom: narrow ? 0.9 : 1, padding: 0.2,
+            duration: contextDuration, ease: contextEase,
+          });
+        } else if (restoreViewport && restoreViewport.token !== lastRestore.current) {
           lastRestore.current = restoreViewport.token;
           viewportUpdate = flow.setViewport(restoreViewport.viewport, {
             duration: 0,
@@ -377,7 +387,7 @@ export function useTreeCameraState({
           );
         }
       },
-      narrow ? 0 : 50,
+      branchAnchor && branchAnchor.token !== lastBranch.current ? 0 : narrow ? 0 : 50,
     );
     return () => clearTimeout(timer);
   }, [
@@ -411,6 +421,7 @@ export function useTreeCameraState({
     collapsed,
     layoutKey,
     branchAnchor,
+    resetToken,
   ]);
 
   return {

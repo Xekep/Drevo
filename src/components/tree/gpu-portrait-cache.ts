@@ -180,8 +180,9 @@ export class GpuPortraitCache {
     this.pump();
   }
 
-  quality(zoom: number) {
-    return zoom > 0.34 || (this.highQuality && zoom >= 0.26);
+  quality(zoom: number, pixelRatio = typeof window === "undefined" ? 1 : Math.min(window.devicePixelRatio || 1, 2)) {
+    const pixels = 132 * zoom * pixelRatio;
+    return pixels > this.pages[0].size || (this.highQuality && pixels >= this.pages[0].size * 0.8);
   }
 
   ready() {
