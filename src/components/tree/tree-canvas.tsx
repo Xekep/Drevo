@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type CSSProperties,
   type Ref,
 } from "react";
 import {
@@ -86,6 +87,8 @@ import { generationScope } from "../../domain/tree-generation-scope";
 import { createCrossingPathCache, crossingZoomBucket } from "../../domain/route-crossings";
 import type { TreeGenerationLimits } from "../../domain/tree-preferences";
 import { useTreeLayout } from "./use-tree-layout";
+import { useTreeLayoutOrigin } from "./use-tree-layout-origin";
+import { treeMotionOrigins } from "./tree-motion-origins";
 import { useTreeOptimization } from "./use-tree-optimization";
 import { useManualTreeLayout } from "./use-manual-tree-layout";
 import type { TreeOptimizationGoal } from "../../domain/optimize-tree-layout";
@@ -437,6 +440,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const [layoutTransition, setLayoutTransition] = useState<{
     scope: string;
     enteringNodes: ReadonlySet<string>;
+    origins: ReadonlyMap<string, { x: number; y: number }>;
     exitingNodes: Array<PersonNodeType | HouseholdNodeType>;
     exitingEdges: RelationshipEdgeType[];
   } | null>(null);
@@ -593,22 +597,34 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     : `${mode}:${depthEnabled ? "depth" : "flat"}:${familyView.mode}:${root || "all"}:portrait`;
   useTouchZoom(container, flow, flatTree && !cameraLocked && !screen.fullscreen);
   useCtrlWheelZoom(container, flow, flatTree && !cameraLocked);
-  const { geometry: originalGeometry, renderVisible, ready, problem, layoutBusy: calculatingLayout, layoutKey: originalLayoutKey, updateKind, loadingPhase } =
+  const gpuArchiveContext = typeof window === "undefined" ? null :
+    archiveContextAt(window.location.pathname);
+  const gpuSharedToken = typeof window === "undefined" ? null :
+    /^\/s\/([A-Za-z0-9_-]{43})$/.exec(
+      gpuArchiveContext?.innerPath || window.location.pathname,
+    )?.[1] || null;
+  // Person routes share the archive snapshot; account, share grant and read policy isolate caches.
+  const gpuScope = JSON.stringify([
+    gpuArchiveContext?.id || "default", gpuSharedToken,
+    user?.id || null, user?.role || null, user?.treeAccess || null,
+    user?.personId || null, user?.fullAccess ?? null,
+    user?.platformAdmin ?? null, user?.approved ?? null,
+    props.restricted ?? false,
+  ]);
+  const layoutAccessScope = user ? JSON.stringify([
+    archiveContextAt(window.location.pathname)?.id || "default", user.id, user.role, user.treeAccess, user.personId,
+  ]) : null;
+  const { geometry: rawGeometry, renderVisible, ready, problem, layoutBusy: calculatingLayout, layoutKey: originalLayoutKey, updateKind, loadingPhase } =
     useTreeLayout(
       renderFamily,
       visible,
       layoutMode,
       reverse,
-      user
-        ? JSON.stringify([
-            archiveContextAt(window.location.pathname)?.id || "default",
-            user.id,
-            user.role,
-            user.treeAccess,
-            user.personId,
-          ])
-        : null,
+      layoutAccessScope,
     );
+  const originalGeometry = useTreeLayoutOrigin(rawGeometry, ready,
+    `${context}:${generationLimitsKey}`, gpuScope,
+    props.generationLimits?.anchorId || root || activeScopeFocus?.id || selected[0] || user?.personId);
   const { geometry: optimizedGeometry, optimize, recalculate, busy: optimizingLayout, layoutKey } = useTreeOptimization(
     originalGeometry, originalLayoutKey, renderFamily, renderVisible, ready,
   );
@@ -941,20 +957,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     },
     [flow, layoutKey, personOccurrences, positions, toggleView, fragment.active, expandFragment],
   );
-  const gpuArchiveContext = typeof window === "undefined" ? null :
-    archiveContextAt(window.location.pathname);
-  const gpuSharedToken = typeof window === "undefined" ? null :
-    /^\/s\/([A-Za-z0-9_-]{43})$/.exec(
-      gpuArchiveContext?.innerPath || window.location.pathname,
-    )?.[1] || null;
-  // Person routes share the archive snapshot; account, share grant and read policy isolate caches.
-  const gpuScope = JSON.stringify([
-    gpuArchiveContext?.id || "default", gpuSharedToken,
-    user?.id || null, user?.role || null, user?.treeAccess || null,
-    user?.personId || null, user?.fullAccess ?? null,
-    user?.platformAdmin ?? null, user?.approved ?? null,
-    props.restricted ?? false,
-  ]);
   const cachedCrossingPaths = useMemo(() => {
     // Account, archive and read policy own this canvas's retained route paths.
     void gpuScope;
@@ -1141,6 +1143,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     const previousIds = new Set(oldNodes.map((node) => node.id));
     setLayoutTransition({
       scope: gpuScope,
+      origins: treeMotionOrigins(nodes, new Map(oldNodes.map(node => [node.id, node.position]))),
       enteringNodes: new Set(
         displayNodes
           .filter((node) => oldWasGpu || !previousIds.has(node.id))
@@ -1156,7 +1159,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       setLayoutSettling(false);
       layoutTimer.current = null;
     }, TREE_LAYOUT_TRANSITION_MS);
-  }, [geometry, layoutKey, ready, displayNodes, displayEdges, gpuScope]);
+  }, [geometry, layoutKey, ready, displayNodes, displayEdges, gpuScope, nodes]);
   useEffect(
     () => () => {
       if (layoutTimer.current !== null)
@@ -1173,6 +1176,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 ? {
                     ...node,
                     className: `${node.className || ""} tree-enter-node`,
+                    style: { ...node.style,
+                      "--tree-enter-x": `${(layoutTransition.origins.get(node.id)?.x ?? node.position.x) - node.position.x}px`,
+                      "--tree-enter-y": `${(layoutTransition.origins.get(node.id)?.y ?? node.position.y) - node.position.y}px`,
+                    } as CSSProperties,
                   }
                 : node,
             ),
@@ -1733,7 +1740,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       if (intent.kind === "fan") {
         const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         fanMorphSources.current = !reduced && container.current
-          ? captureFanMorphSources(container.current, family, next) : [];
+          ? captureFanMorphSources(container.current, fanFamily, next, { nodes, viewport: flow.getViewport() }) : [];
         rememberContext();
         clearReturnTarget();
         fanEntry.current = { anchorId: next, mode, familyMode: familyView.mode, viewport: flow.getViewport() };
@@ -1785,7 +1792,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     setEdgeChoices([]);
   }, [preparedView, props, flow, introCameraFinished, rememberContext, activeFanAnchor,
     setMode, currentPeople, family, clearReturnTarget, mode, familyView, setFanAnchor,
-    selected, returnToPerson]);
+    selected, returnToPerson, nodes, fanFamily]);
   const preferencesAction = props.onPreferences && (
     <button
       type="button"

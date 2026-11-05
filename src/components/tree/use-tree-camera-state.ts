@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore, type Viewport } from "@xyflow/react";
 import { MIN_TREE_ZOOM, type FitTree } from "./tree-camera-fit.ts";
 import type { Person } from "../../domain/types.ts";
+import { TREE_LAYOUT_TRANSITION_MS } from "./tree-growth.ts";
 import {
   TREE_NODE_HEIGHT,
   TREE_NODE_WIDTH,
@@ -178,7 +179,7 @@ export function useTreeCameraState({
           "(prefers-reduced-motion: reduce)",
         ).matches;
         const contextDuration =
-          initialViewSent.current && motionEnabled ? 520 : 0;
+          initialViewSent.current && motionEnabled ? TREE_LAYOUT_TRANSITION_MS : 0;
         const contextEase = (progress: number) => 1 - (1 - progress) ** 3;
         const switchedMode =
           !!previousContext.current &&
@@ -268,13 +269,14 @@ export function useTreeCameraState({
             focus.ids.length === 1 && focus.purpose !== "family"
               ? positions.get(focus.ids[0])
               : undefined;
+          const focusDuration = !motionEnabled ? 0 : focus.token < -1 ? TREE_LAYOUT_TRANSITION_MS : 650;
           viewportUpdate = target
             ? flow.setCenter(
                 target.x + (geometry.nodeSize?.width ?? TREE_NODE_WIDTH) / 2,
                 target.y + (geometry.nodeSize?.height ?? TREE_NODE_HEIGHT) / 2,
                 {
                   zoom: PERSON_FOCUS_ZOOM,
-                  duration: motionEnabled ? 650 : 0,
+                  duration: focusDuration,
                   ease: (progress) => 1 - (1 - progress) ** 3,
                 },
               )
@@ -284,7 +286,7 @@ export function useTreeCameraState({
                 minZoom:
                   focus.purpose === "family" ? MIN_TREE_ZOOM : narrow ? 0.55 : 0.15,
                 padding: focus.purpose === "family" ? 0.34 : 0.5,
-                duration: motionEnabled ? 650 : 0,
+                duration: focusDuration,
                 ease: (progress) => 1 - (1 - progress) ** 3,
               });
         } else if (changedContext || reverseChanged) {
@@ -387,7 +389,10 @@ export function useTreeCameraState({
           );
         }
       },
-      branchAnchor && branchAnchor.token !== lastBranch.current ? 0 : narrow ? 0 : 50,
+      (branchAnchor && branchAnchor.token !== lastBranch.current) ||
+        (previousContext.current && previousContext.current !== context) ||
+        (focus && focus.token < -1 && focus.token !== lastFocus.current)
+        ? 0 : narrow ? 0 : 50,
     );
     return () => clearTimeout(timer);
   }, [

@@ -271,6 +271,48 @@ async function point(page: Page, id = "f-0") {
   }, id);
 }
 
+test("GPU ancestors fly together into the fan, including cards without HTML wrappers", async ({ page, isMobile }, info) => {
+  test.setTimeout(120_000);
+  await setup(page);
+  if (isMobile) await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("combobox", { name: "Найти человека или документ" }).fill("Тест 250");
+  await page.getByRole("option").first().click();
+  const collapse = page.locator(".inspector-dock").getByRole("button", { name: "Свернуть панель" });
+  if (isMobile) await collapse.click();
+  await page.waitForTimeout(800);
+  const root = page.locator(".tree-canvas"), canvas = page.locator(".tree-gpu-scene");
+  const original = await canvas.elementHandle();
+  const probe = await root.evaluateHandle(element => {
+    const state = { count: 0, names: [] as string[], frames: new Set<string>(), stop: () => {} };
+    let frame = 0;
+    const tick = () => {
+      const ghosts = [...element.querySelectorAll<HTMLElement>(".fan-morph-card")];
+      if (ghosts.length > state.count) {
+        state.count = ghosts.length;
+        state.names = ghosts.map(ghost => ghost.querySelector("strong")?.textContent || "");
+      }
+      if (ghosts.length > 1) state.frames.add(getComputedStyle(ghosts[1]).transform);
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    state.stop = () => cancelAnimationFrame(frame);
+    return state;
+  });
+  await familyViewAction(page, "Веер");
+  await expect.poll(() => probe.evaluate(state => state.count)).toBeGreaterThan(3);
+  await page.screenshot({ path: info.outputPath("gpu-ancestor-flight.png") });
+  await expect(root).not.toHaveClass(/is-fan-revealing/);
+  await probe.evaluate(state => state.stop());
+  const names = await probe.evaluate(state => state.names);
+  expect(names.every(Boolean)).toBe(true);
+  expect(new Set(names).size).toBeGreaterThan(3);
+  expect(await probe.evaluate(state => state.frames.size)).toBeGreaterThan(3);
+  await expect(root.locator(".fan-morph-overlay")).toHaveCount(0);
+  await familyViewAction(page, "Всё древо");
+  await expect(root).toHaveAttribute("data-renderer", "webgl2");
+  expect(await original!.evaluate(element => element.isConnected)).toBe(true);
+});
+
 test("returning from the fan retains the GPU, viewport and cached layout", async ({
   page,
   isMobile,

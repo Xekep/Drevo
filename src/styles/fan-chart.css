@@ -141,6 +141,16 @@
   animation: none;
   box-shadow: 0 8px 26px #304b2c24;
 }
+.fan-morph-card .person-avatar { position: relative; }
+.fan-morph-card .person-avatar > canvas,
+.fan-morph-card .person-avatar > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
 .tree-canvas.is-fan-revealing .fan-chart-svg {
   animation: none;
 }
