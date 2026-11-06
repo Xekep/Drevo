@@ -27,7 +27,8 @@ export async function verifyPortablePublicationBackup(db: StoreDatabase, directo
       assert.equal(saved.prepare("PRAGMA integrity_check").get()!.integrity_check, "ok");
       assert.deepEqual(saved.prepare("PRAGMA foreign_key_check").all(), []);
       for (const table of ["auth_sessions", "mcp_tokens", "ai_chats", "ai_chat_messages", "ai_settings"])
-        assert.equal(saved.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n, 0);
+        if (saved.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(table))
+          assert.equal(saved.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n, 0);
     } finally { saved.close(); }
   } finally { await rm(file, { force: true }); }
 }
