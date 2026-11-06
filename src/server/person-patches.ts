@@ -9,6 +9,7 @@ import {
   type Change,
 } from "../domain/changes.ts";
 import { validateFamily } from "../domain/validation.ts";
+import { normalizeArchivePersonText, normalizePersonTextChanges } from "../domain/person-text.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { ForbiddenError, assertCurrentArchiveActor } from "./users.ts";
 import { auditStore } from "./audit.ts";
@@ -145,13 +146,13 @@ export async function patchPeople(
       people,
       links,
     };
-    const merged = applyArchiveChanges(before, changes);
+    const merged = applyArchiveChanges(before, normalizePersonTextChanges(changes));
     if (merged.conflicts.length)
       throw new ConflictError(
         "Изменяемые сведения уже обновлены другим участником",
       );
     // All incident date constraints are checked, including children outside the edited set.
-    const after = validateFamily(merged.family);
+    const after = validateFamily(normalizeArchivePersonText(merged.family, before));
     const appliedChanges = archiveChanges(before, after);
     if (appliedChanges.length) {
       const photoChanged = appliedChanges.some(

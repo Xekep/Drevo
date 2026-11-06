@@ -37,11 +37,17 @@ test("PostgreSQL matches SQLite patches, audit and inverse changes without rewri
   const otherArchive = await fingerprint(first, "tree-b");
   const changes = [
     ...change("birth", "1950", "1951"),
-    ...change("maidenName", undefined, "Иванов"),
+    ...change("maidenName", undefined, "  Иванов  "),
+    ...change("name", "father", "\u00a0Иван\u00a0"),
+    ...change("birthPlace", "", "  Нижний  Новгород  "),
   ];
   const pgResult = await patch(first, tokens.admin, "tree-a", changes, 0);
   const sqliteResult = await sqlite.patchPeople(changes, 0, actor);
   assert.deepEqual(pgResult, sqliteResult);
+  const canonical = (await readPostgresArchive(first, "tree-a")).family.people.find(person => person.id === "father")!;
+  assert.equal(canonical.name, "Иван");
+  assert.equal(canonical.maidenName, "Иванов");
+  assert.equal(canonical.birthPlace, "Нижний  Новгород");
   assert.deepEqual(
     await readPostgresArchive(first, "tree-a"),
     await sqlite.read(),

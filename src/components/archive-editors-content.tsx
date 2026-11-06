@@ -57,6 +57,7 @@ import type { PortraitRegion } from "../domain/portrait-crop";
 import { photoLabel } from "../domain/photo-metadata";
 import { mediaPreview } from "../domain/media-preview";
 import { applyPersonDraft, rebasePersonDraft } from "../domain/person-draft";
+import { normalizePersonText } from "../domain/person-text.ts";
 import { preserveBirthSurnameClaim, preserveOccupationClaim } from "../domain/person-fact-alternatives";
 import {
   confirmDiscardChanges,
@@ -415,7 +416,7 @@ export function PersonEditor({
         setPortraitFile(null);
         setPortraitPreview("");
       }
-      let p: Person = {
+      let p: Person = normalizePersonText({
         ...draft,
         birth,
         death,
@@ -441,9 +442,6 @@ export function PersonEditor({
         })),
         sex: autoSex ? suggestedSex : draft.sex,
         photo: portrait,
-        name: draft.name.trim(),
-        surname: draft.surname.trim(),
-        patronymic: draft.patronymic.trim(),
         column:
           person && person.birth === birth
             ? draft.column
@@ -451,7 +449,7 @@ export function PersonEditor({
                 current.people.filter((x) => x.id !== draft.id),
                 birth,
               ),
-      };
+      });
       p = rebasePersonDraft(
         person,
         current.people.find((item) => item.id === draft.id),

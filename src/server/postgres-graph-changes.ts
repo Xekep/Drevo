@@ -11,6 +11,7 @@ import type { Family } from "../domain/types.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { persistPostgresGraphChanges } from "./postgres-graph-rows.ts";
 import { authorizeArchive } from "./permissions.ts";
+import { normalizePersonTextChanges } from "../domain/person-text.ts";
 import { readPostgresGraphForWrite } from "./postgres-graph-read.ts";
 import { scopedPostgresMediaReferencesSql } from "./media-reference-sql.ts";
 import {
@@ -293,7 +294,7 @@ export async function changePostgresGraphForSession(
         await readPostgresGraphForWrite(client, archiveId, completeIds)
       ).family;
       prepareChanges(changes, before, actor);
-      const merged = applyArchiveChanges(before, changes);
+      const merged = applyArchiveChanges(before, normalizePersonTextChanges(changes));
       if (merged.conflicts.length)
         throw new ConflictError(
           "Изменяемые сведения уже обновлены другим участником",

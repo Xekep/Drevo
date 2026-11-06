@@ -10,6 +10,7 @@ import { ForbiddenError } from "./users.ts";
 import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
 import { isArchiveOwner, canAssessArchiveEvidence } from "../domain/access.ts";
 import { eventHasEvidence } from "../domain/person-events.ts";
+import { normalizeArchivePersonText } from "../domain/person-text.ts";
 
 function catalogCitationSlots(family: Family) {
   const slots = new Map<string, Source[]>();
@@ -50,7 +51,7 @@ export function authorizeArchive(
   current: Family,
   user: ArchiveUser,
 ): Family {
-  const next = structuredClone(validateFamily(nextValue));
+  const next = structuredClone(validateFamily(normalizeArchivePersonText(nextValue, current)));
   if (user.role === "reader")
     throw new ForbiddenError("Доступен только просмотр архива");
   prepareAwardCitationWrite(next, current);
@@ -202,7 +203,7 @@ export function authorizeArchive(
         const claim = person[key];
         const earlier = previous.get(person.id)?.[key];
         if (claim?.confidence !== earlier?.confidence ||
-          (earlier?.confidence && claim?.value !== earlier.value))
+          (earlier?.confidence && claim?.value.trim() !== earlier.value.trim()))
           throw new ForbiddenError("Статус достоверности может менять только исследователь или администратор");
       }
     for (const person of next.people) {

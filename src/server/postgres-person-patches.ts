@@ -9,6 +9,7 @@ import { isArchiveOwner } from "../domain/access.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { hydrateArchive } from "./archive-hydration.ts";
 import { authorizeArchive } from "./permissions.ts";
+import { normalizePersonTextChanges } from "../domain/person-text.ts";
 import { readPostgresGraphForWrite } from "./postgres-graph-read.ts";
 import { ForbiddenError } from "./users.ts";
 import {
@@ -137,7 +138,7 @@ export async function patchPostgresPeopleForSession(
         if (!person)
           throw new ConflictError("Карточка удалена другим участником");
       }
-      const merged = applyArchiveChanges(before, changes);
+      const merged = applyArchiveChanges(before, normalizePersonTextChanges(changes));
       if (merged.conflicts.length)
         throw new ConflictError(
           "Изменяемые сведения уже обновлены другим участником",
