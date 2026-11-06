@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { archiveChanges } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
+import { familyViewAction } from "./tree-toolbar-actions.ts";
 
 async function countCalculations(page: Page) {
   await page.addInitScript(() => {
@@ -27,6 +28,87 @@ const calculations = (page: Page) =>
       (window as typeof window & { __layoutCalculations: { requests: number } })
         .__layoutCalculations.requests,
   );
+
+test("small close and blood projections use server hashes across fresh browsers and local cache on return", async ({ page, browser, request }) => {
+  test.setTimeout(90_000);
+  const original = await (await request.get("/api/family")).json();
+  const family = original.family as Family, prefix = `scopes-${randomUUID()}`;
+  const additions = ["parent", "unrelated"].map((suffix) => ({ ...family.people[0],
+    id: `${prefix}-${suffix}`, name: suffix, parents: [], spouses: [], birth: "1938", death: undefined,
+    awards: [], events: [], sources: [],
+  }));
+  const created = await request.post("/api/family/changes", {
+    headers: { "If-Match": String(original.revision) }, data: { changes: archiveChanges(family, {
+      ...family, people: [...family.people.map(p => p.id === "e2e-spouse"
+        ? { ...p, parents: [additions[0].id] } : p), ...additions],
+    }) },
+  });
+  expect(created.status()).toBe(200);
+  const contexts = [];
+  const warmed = new Map<string, { hash: string; people: string[]; version: number; reverse: boolean }>();
+  const prepare = async (target: Page) => {
+    await countCalculations(target);
+    await target.emulateMedia({ reducedMotion: "reduce" });
+    await target.route("**/api/family?projection=overview", async route => {
+      const response = await route.fetch(), data = await response.json();
+      data.treePreferences = { ...data.treePreferences, animateOnLoad: false, fragmentThreshold: 0, generationLimits: undefined };
+      await route.fulfill({ response, json: data });
+    });
+  };
+  const ready = (target: Page) => expect(target.locator(".tree-canvas")).toHaveAttribute("data-layout-ready", "true");
+  try {
+    await prepare(page);
+    for (const view of ["all", "Близкие", "Кровные"]) {
+      const sent = page.waitForRequest(r => new URL(r.url()).pathname === "/api/tree-layout");
+      if (view === "all") await page.goto("/people/e2e-child");
+      else await familyViewAction(page, view);
+      const body = (await sent).postDataJSON();
+      expect(body.people.length).toBeLessThan(40);
+      warmed.set(view, body);
+      await ready(page);
+      if (view === "all") {
+        const collapse = page.getByRole("button", { name: "Свернуть панель", exact: true });
+        if (await collapse.isVisible()) await collapse.click();
+      }
+      await expect.poll(async () => Boolean((await (await request.post("/api/tree-layout", { data: body })).json()).geometry),
+        { timeout: 30_000 }).toBe(true);
+    }
+    expect(new Set([...warmed.values()].map(body => body.hash)).size).toBe(3);
+    const context = await browser.newContext({ baseURL: new URL(page.url()).origin, viewport: page.viewportSize()! });
+    contexts.push(context);
+    const fresh = await context.newPage();
+    await prepare(fresh);
+    for (const view of ["all", "Близкие", "Кровные"]) {
+      const response = fresh.waitForResponse(r => new URL(r.url()).pathname === "/api/tree-layout");
+      if (view === "all") await fresh.goto("/people/e2e-child");
+      else await familyViewAction(fresh, view);
+      expect((await (await response).json()).hash).toBe(warmed.get(view)!.hash);
+      await ready(fresh);
+      if (view === "all") {
+        const collapse = fresh.getByRole("button", { name: "Свернуть панель", exact: true });
+        if (await collapse.isVisible()) await collapse.click();
+      }
+      expect(await calculations(fresh)).toBe(0);
+    }
+    let requests = 0;
+    fresh.on("request", r => { if (new URL(r.url()).pathname === "/api/tree-layout") requests++; });
+    await familyViewAction(fresh, "Близкие");
+    await ready(fresh);
+    expect(requests).toBe(0);
+    expect(await calculations(fresh)).toBe(0);
+  } finally {
+    for (const context of contexts) await context.close();
+    await page.close();
+    const current = await (await request.get("/api/family")).json(), stored = current.family as Family;
+    const restored = await request.post("/api/family/changes", {
+      headers: { "If-Match": String(current.revision) }, data: { changes: archiveChanges(stored, {
+        ...stored, people: stored.people.filter(p => !p.id.startsWith(prefix))
+          .map(p => ({ ...p, parents: p.parents.filter(id => !id.startsWith(prefix)) })),
+      }) },
+    });
+    expect(restored.status()).toBe(200);
+  }
+});
 
 test("a fresh browser reuses server layout and falls back to its Worker when cache is unavailable", async ({
   page,

@@ -84,12 +84,31 @@ export function bundleFamilyBranches(geometry: TreeGeometry): TreeGeometry {
     const start = siblings[0].route.points[0];
     const sign = siblings[0].route.sourceHandle === "bottom" ? 1 : -1;
     const nearest = Math.min(...siblings.map((b) => sign * (b.route.points.at(-1)!.y - start.y)));
-    if (nearest < 48) continue;
+    // Portrait rows can leave a safe 16–24px channel. Requiring a 24px
+    // child leg rejects every common bus there, although clear() accepts it.
+    const stem = 8;
+    if (nearest < stem * 2) continue;
     const middle = start.y + sign * nearest / 2;
+    const xs = [start.x, ...siblings.map(branch => branch.route.points.at(-1)!.x)];
+    const left = Math.min(...xs), right = Math.max(...xs);
+    const blocked = cards.query({ left, right, top: Math.min(start.y, start.y + sign * nearest),
+      bottom: Math.max(start.y, start.y + sign * nearest) })
+      .filter(box => box.left < right && box.right > left)
+      .map(box => [sign * (box.top - start.y), sign * (box.bottom - start.y)].sort((a, b) => a - b))
+      .sort((a, b) => a[0] - b[0]);
+    const channels: number[] = [];
+    let cursor = stem;
+    for (const [lo, hi] of blocked) {
+      const end = Math.min(lo, nearest - stem);
+      if (end > cursor + 1) channels.push(start.y + sign * (cursor + end) / 2);
+      cursor = Math.max(cursor, hi);
+      if (cursor >= nearest - stem) break;
+    }
+    if (nearest - stem > cursor + 1) channels.push(start.y + sign * (cursor + nearest - stem) / 2);
     const existing = siblings.flatMap((b) => b.route.points.slice(1).flatMap((p, i) =>
       p.y === b.route.points[i].y && p.x !== b.route.points[i].x ? [p.y] : []));
-    const candidates = [...new Set([middle, ...existing])]
-      .filter((y) => sign * (y - start.y) >= 24 && sign * (y - start.y) <= nearest - 24)
+    const candidates = [...new Set([middle, ...existing, ...channels])]
+      .filter((y) => sign * (y - start.y) >= stem && sign * (y - start.y) <= nearest - stem)
       .sort((a, b) => Math.abs(a - middle) - Math.abs(b - middle) || sign * (a - b))
       .slice(0, 12);
     const footprint = (replacement?: Map<string, Point[]>) => {

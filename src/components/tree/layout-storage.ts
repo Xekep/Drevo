@@ -6,7 +6,7 @@ const STORE = "layouts";
 const MAX_BYTES = 16 * 1024 * 1024;
 const MAX_ENTRIES = 24;
 const MAX_AGE = 7 * 24 * 60 * 60 * 1000;
-type Entry = { id: string; value: string; checksum: string; updated: number; scope?: string; key?: string };
+type Entry = { id: string; value: string; checksum: string; updated: number; scope?: string; key?: string; projection?: string };
 let generation = 0;
 
 async function digest(value: string) {
@@ -112,6 +112,7 @@ export async function writeLayout(
   scope: string,
   key: string,
   geometry: TreeGeometry,
+  projection?: string,
 ) {
   const current = generation;
   try {
@@ -131,7 +132,7 @@ export async function writeLayout(
         const entries: Entry[] = request.result.filter(
           (entry: Entry) => entry.id !== id,
         );
-        entries.push({ id, value, checksum, updated: Date.now(), scope: scopeId, key });
+        entries.push({ id, value, checksum, updated: Date.now(), scope: scopeId, key, projection });
         entries.sort((a, b) => b.updated - a.updated);
         let bytes = 0;
         let count = 0;
@@ -156,7 +157,7 @@ export async function writeLayout(
 }
 
 /** Reuse nearby revisions after reopening, including edits made by another collaborator. */
-export async function readLayoutHistory(scope: string, key: string) {
+export async function readLayoutHistory(scope: string, key: string, projection?: string) {
   const current = generation;
   try {
     const scopeId = await digest(scope);
@@ -166,7 +167,8 @@ export async function readLayoutHistory(scope: string, key: string) {
     });
     if (!entries || current !== generation) return;
     for (const entry of entries.sort((a, b) => b.updated - a.updated)) {
-      if (entry.scope !== scopeId || typeof entry.key !== "string" || entry.key === key ||
+      if (entry.scope !== scopeId || (projection !== undefined && entry.projection !== projection) ||
+          typeof entry.key !== "string" || entry.key === key ||
           typeof entry.value !== "string" || (entry.value.length + entry.key.length) * 2 > MAX_BYTES / 2 ||
           !Number.isFinite(entry.updated) || Date.now() - entry.updated > MAX_AGE) continue;
       const input = compatibleLayoutHistory(key, entry.key);

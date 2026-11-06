@@ -18,6 +18,8 @@ test("archive loading text does not become a page selection before data arrives"
 });
 
 test("tree explains layout preparation until the worker is ready", async ({ page }) => {
+  // This scenario deliberately stalls the local Worker, regardless of server cache warmth.
+  await page.route("**/api/tree-layout", route => route.fulfill({ json: { geometry: null } }));
   await page.route("**/api/family?projection=overview", async route => {
     const response = await route.fetch(), data = await response.json();
     data.treePreferences = { ...data.treePreferences, animateOnLoad: true };

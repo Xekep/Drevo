@@ -83,6 +83,8 @@ test("trackpad page zoom is cancelled outside the content viewers", async ({ pag
 
 test("mobile pinch belongs to the tree from loading through growth, then moves its camera", async ({ page }, info) => {
   test.skip(info.project.name !== "mobile");
+  // This scenario deliberately stalls the local Worker, regardless of server cache warmth.
+  await page.route("**/api/tree-layout", route => route.fulfill({ json: { geometry: null } }));
   let releaseOverview!: () => void, releaseLayout!: () => void;
   const overview = new Promise<void>((resolve) => { releaseOverview = resolve; });
   const layout = new Promise<void>((resolve) => { releaseLayout = resolve; });

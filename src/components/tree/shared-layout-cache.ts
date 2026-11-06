@@ -14,7 +14,7 @@ export async function readSharedLayout(
 ): Promise<TreeGeometry | null> {
   if (
     input.mode !== "generations" ||
-    input.people.length < 40 ||
+    input.people.length < 2 ||
     input.people.length > SHARED_LAYOUT_MAX_PEOPLE
   )
     return null;

@@ -5,6 +5,7 @@ import {
 } from "../../src/domain/tree-preferences";
 
 async function preferencesFixture(page: Page) {
+  await page.route("**/api/tree-layout", route => route.fulfill({ json: { geometry: null } }));
   let preferences: TreePreferences = {
     ...DEFAULT_TREE_PREFERENCES,
     generationLimits: {

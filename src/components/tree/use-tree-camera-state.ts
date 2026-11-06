@@ -26,7 +26,7 @@ type CameraFlow = {
   ) => unknown;
   setViewport: (
     viewport: Viewport,
-    options?: { duration?: number; ease?: (progress: number) => number },
+    options?: { duration?: number; ease?: (progress: number) => number; interpolate?: "linear" | "smooth" },
   ) => unknown;
 };
 
@@ -70,6 +70,7 @@ type TreeCameraStateInput = {
     position: { x: number; y: number };
     viewport: Viewport;
     layoutKey: string;
+    context: string;
     token: number;
   } | null;
 };
@@ -124,6 +125,7 @@ export function useTreeCameraState({
   const lastReturn = useRef(-1);
   const lastRestore = useRef(-1);
   const lastBranch = useRef(-1);
+  const anchoredFocus = useRef<number | null>(null);
   const previousContext = useRef("");
   const previousReverse = useRef(reverse);
   const initialViewSent = useRef(false);
@@ -229,7 +231,7 @@ export function useTreeCameraState({
         } else if (
           branchAnchor &&
           branchAnchor.token !== lastBranch.current &&
-          branchAnchor.layoutKey !== layoutKey
+          (branchAnchor.layoutKey !== layoutKey || branchAnchor.context !== context)
         ) {
           const occurrence =
             branchAnchor.occurrenceId &&
@@ -241,6 +243,11 @@ export function useTreeCameraState({
           const target = occurrence ? positions.get(occurrence) : undefined;
           if (!target) return;
           lastBranch.current = branchAnchor.token;
+          // Explicit branch/view navigation owns the camera. A panel resize
+          // must not revive the earlier search/anchor zoom after this move.
+          anchoredFocus.current = focus?.token ?? null;
+          if (focus) lastFocus.current = focus.token;
+          lastFocusCanvas.current = { width: canvasWidth, height: canvasHeight };
           const { viewport, position } = branchAnchor;
           viewportUpdate = flow.setViewport(
             {
@@ -248,13 +255,13 @@ export function useTreeCameraState({
               y: viewport.y + (position.y - target.y) * viewport.zoom,
               zoom: viewport.zoom,
             },
-            { duration: motionEnabled ? 440 : 0, ease: contextEase },
+            { duration: motionEnabled ? 440 : 0, ease: contextEase, interpolate: "linear" },
           );
         } else if (
           focusReady &&
           focus &&
           (focus.token !== lastFocus.current ||
-            (focus.recenterOnResize !== false &&
+            (focus.token !== anchoredFocus.current && focus.recenterOnResize !== false &&
               (!lastFocusCanvas.current ||
                 Math.abs(lastFocusCanvas.current.width - canvasWidth) > 2 ||
                 Math.abs(lastFocusCanvas.current.height - canvasHeight) > 2))) &&

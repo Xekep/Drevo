@@ -24,6 +24,53 @@ function fixture(): TreeGeometry {
 const horizontal = (branch: UnionBranch) => branch.route.points.slice(1)
   .filter((p, i) => p.y === branch.route.points[i].y && p.x !== branch.route.points[i].x).map((p) => p.y);
 
+for (const reverse of [false, true]) test(`portrait siblings share the narrow gap between parent and child rows (reverse=${reverse})`, () => {
+  const input = fixture();
+  input.nodeSize!.height = 264;
+  input.positions = [["parent", { x: 0, y: 0 }], ["partner", { x: 252, y: 0 }],
+    ["child0", { x: -400, y: 300 }], ["child1", { x: 0, y: 300 }]];
+  input.generationBands![0] = { ...input.generationBands![0], targetY: 300, minY: 270, maxY: 330 };
+  input.branches!.forEach((branch, i) => {
+    branch.relations.push({ from: "partner", to: branch.target, type: "parent" });
+    const x = i ? 110 : -290, y = 280 + i * 4;
+    branch.route.points = [{ x: 236, y: 132 }, { x: 236, y }, { x, y }, { x, y: 300 }];
+  });
+  if (reverse) {
+    input.reverse = true;
+    input.positions.forEach(([, p]) => { p.y = 700 - p.y - 264; });
+    input.branches!.forEach(branch => {
+      branch.route.sourceHandle = "top"; branch.route.targetHandle = "bottom";
+      branch.route.points.forEach(p => { p.y = 700 - p.y; });
+    });
+  }
+  const snapshot = structuredClone(input), result = bundleFamilyBranches(input);
+  assert.deepEqual(result.branches!.map(horizontal), [[reverse ? 420 : 280], [reverse ? 420 : 280]]);
+  assert.deepEqual(result.positions, input.positions);
+  assert.deepEqual(input, snapshot);
+});
+
+for (const reverse of [false, true]) test(`a common bus is found between portrait rows when every old bus hugs its child (reverse=${reverse})`, () => {
+  const input = fixture();
+  input.nodeSize!.height = 264;
+  input.positions = [["parent", { x: 0, y: 0 }], ["partner", { x: 252, y: 0 }],
+    ["child0", { x: -400, y: 350 }], ["child1", { x: 0, y: 364 }]];
+  input.generationBands![0] = { ...input.generationBands![0], targetY: 357, minY: 327, maxY: 387 };
+  input.branches!.forEach((branch, i) => {
+    const x = i ? 110 : -290, end = 350 + i * 14, y = end - 6;
+    branch.route.points = [{ x: 236, y: 132 }, { x: 236, y }, { x, y }, { x, y: end }];
+  });
+  if (reverse) {
+    input.reverse = true;
+    input.positions.forEach(([, p]) => { p.y = 900 - p.y - 264; });
+    input.branches!.forEach(branch => {
+      branch.route.sourceHandle = "top"; branch.route.targetHandle = "bottom";
+      branch.route.points.forEach(p => { p.y = 900 - p.y; });
+    });
+  }
+  const result = bundleFamilyBranches(input);
+  assert.deepEqual(result.branches!.map(horizontal), [[reverse ? 593 : 307], [reverse ? 593 : 307]]);
+});
+
 test("siblings share a single corridor without moving cards or changing relationships", () => {
   const original = fixture(), snapshot = structuredClone(original);
   const result = bundleFamilyBranches(original);

@@ -15,6 +15,7 @@ export function useTreeLayout(
   mode: TreeMode,
   reverse: boolean,
   cacheScope: string | null = null,
+  projection = "default",
 ) {
   const { people, links } = family;
   // Выделение человека, фотография и текстовая правка не перезапускают геометрию,
@@ -60,6 +61,7 @@ export function useTreeLayout(
     scope: string | null;
     geometry: TreeGeometry;
     input: Pick<LayoutWorkerRequest, "people" | "links" | "mode" | "reverse">;
+    projection: string;
   } | null>(null);
 
   useEffect(
@@ -82,6 +84,7 @@ export function useTreeLayout(
     }
     const requestId = ++requestRef.current;
     const last = lastGeometryRef.current;
+    const changingProjection = last !== null && last.scope === cacheScope && last.projection !== projection;
     const localHistory = mode === "generations" && last !== null && last.scope === cacheScope && last.key !== key &&
       last.geometry.mode === mode && last.geometry.reverse === reverse &&
       input.people.length > MAX_INCREMENTAL_LAYOUT_PEOPLE && input.people.length <= MAX_LOCAL_LAYOUT_PEOPLE &&
@@ -126,7 +129,7 @@ export function useTreeLayout(
       pendingRef.current = false;
       setBusy(false);
       if (!("error" in data))
-        lastGeometryRef.current = { key, scope: cacheScope, geometry: data.geometry, input };
+        lastGeometryRef.current = { key, scope: cacheScope, geometry: data.geometry, input, projection };
       setResult((previous) =>
         "error" in data
           ? {
@@ -165,7 +168,7 @@ export function useTreeLayout(
           if (cancelled || data.requestId !== requestId) return;
           if (!("error" in data)) {
             cache.set(key, data.geometry);
-            if (cacheScope) void writeLayout(cacheScope, key, data.geometry);
+            if (cacheScope) void writeLayout(cacheScope, key, data.geometry, projection);
           }
           finish(data);
         };
@@ -208,17 +211,17 @@ export function useTreeLayout(
         if (geometry) {
           cache.set(key, geometry);
           finish({ requestId, geometry });
-        } else if (!previousGeometry && mode === "generations") {
-          void readLayoutHistory(cacheScope, key).then(async history => {
+        } else if (mode === "generations" && (changingProjection || !previousGeometry)) {
+          void (changingProjection ? Promise.resolve(undefined) : readLayoutHistory(cacheScope, key, projection)).then(async history => {
             if (cancelled) return;
-            // Preserve the local scene after collaborative edits; only a cold
-            // opening may replace it with another user's canonical result.
+            // A small edit of this projection keeps its local history. A new
+            // view must still consult/warm the server, even with an old scene.
             if (history) return calculate(history);
             const shared = await readSharedLayout(input, key, sharedRequest.signal);
             if (cancelled) return;
             if (shared) {
               cache.set(key, shared);
-              void writeLayout(cacheScope, key, shared);
+              void writeLayout(cacheScope, key, shared, projection);
               finish({ requestId, geometry: shared });
             } else calculate();
           });
@@ -232,7 +235,7 @@ export function useTreeLayout(
       sharedRequest.abort();
       detach();
     };
-  }, [key, input, layoutVisible, cache, cacheScope, mode, reverse]);
+  }, [key, input, layoutVisible, cache, cacheScope, mode, reverse, projection]);
 
   const sameScope = result.scope === cacheScope;
   return {

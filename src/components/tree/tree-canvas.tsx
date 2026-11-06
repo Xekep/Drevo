@@ -316,6 +316,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     position: { x: number; y: number };
     viewport: Viewport;
     layoutKey: string;
+    context: string;
     token: number;
   } | null>(null);
   const [returnTarget, setReturnTarget] = useState<{
@@ -622,10 +623,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       layoutMode,
       reverse,
       layoutAccessScope,
+      `${context}:${generationLimitsKey}`,
     );
   const originalGeometry = useTreeLayoutOrigin(rawGeometry, ready,
     `${context}:${generationLimitsKey}`, gpuScope,
-    props.generationLimits?.anchorId || root || activeScopeFocus?.id || selected[0] || user?.personId);
+    props.generationLimits?.anchorId || root || activeScopeFocus?.id || selected[0] || user?.personId, branchAnchor);
   const { geometry: optimizedGeometry, optimize, recalculate, busy: optimizingLayout, layoutKey } = useTreeOptimization(
     originalGeometry, originalLayoutKey, renderFamily, renderVisible, ready,
   );
@@ -929,7 +931,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       layoutKey,
       branchAnchor,
     });
-  const toggleBranch = useCallback(
+  const captureLayoutAnchor = useCallback(
     (id: string, occurrenceId?: string) => {
       // An explicit branch action after growth owns the camera from this point.
       introHandled.current = true;
@@ -949,14 +951,20 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           position,
           viewport: flow.getViewport(),
           layoutKey,
+          context,
           token: branchToken.current,
         });
       }
       setGrowing(false);
+    }, [flow, layoutKey, context, personOccurrences, positions],
+  );
+  const toggleBranch = useCallback(
+    (id: string, occurrenceId?: string) => {
+      captureLayoutAnchor(id, occurrenceId);
       if (fragment.active) expandFragment(id);
       else toggleView(id);
     },
-    [flow, layoutKey, personOccurrences, positions, toggleView, fragment.active, expandFragment],
+    [captureLayoutAnchor, toggleView, fragment.active, expandFragment],
   );
   const cachedCrossingPaths = useMemo(() => {
     // Account, archive and read policy own this canvas's retained route paths.
@@ -1753,6 +1761,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       } else {
         setFanRevealing(false);
         props.onClearAssistantFilter?.();
+        captureLayoutAnchor(next);
         rememberContext();
         clearReturnTarget();
         fanEntry.current = null;
@@ -1763,6 +1772,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       return;
     }
     const next = intent.mode;
+    setBranchAnchor(null);
     props.onModeChange?.(next);
     setScopeFocus(null);
     setManualCameraOverride(true);
@@ -1793,7 +1803,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     setEdgeChoices([]);
   }, [preparedView, props, flow, introCameraFinished, rememberContext, activeFanAnchor,
     setMode, currentPeople, family, clearReturnTarget, mode, familyView, setFanAnchor,
-    selected, returnToPerson, nodes, fanFamily]);
+    selected, returnToPerson, nodes, fanFamily, captureLayoutAnchor]);
   const preferencesAction = props.onPreferences && (
     <button
       type="button"
