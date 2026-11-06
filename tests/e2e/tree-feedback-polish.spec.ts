@@ -41,6 +41,11 @@ test("tree explains layout preparation until the worker is ready", async ({ page
   await expect(page.locator(".tree-canvas")).toHaveClass(/is-growing/);
   await expect(page.locator(".tree-preparation-status")).toHaveCount(0);
   await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "true");
+  // Preferences remain available across the pending-layout/intro boundary.
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  const preferences = page.getByRole("dialog", { name: "Вид древа" });
+  await expect(preferences).toBeVisible();
+  await preferences.getByRole("button", { name: "Закрыть", exact: true }).click();
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/, { timeout: 20_000 });
 });
 

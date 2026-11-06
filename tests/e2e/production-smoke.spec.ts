@@ -1781,16 +1781,20 @@ test("переход к выбранному человеку остаётся �
   await expect(page.getByRole("button", { name: "К выбранному человеку" })).toHaveCount(0);
 });
 
-test("collapsing descendants animates the remaining cards smoothly", async ({
+test("collapsing descendants keeps its anchor and animates remaining card moves", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
+  await expect(canvas).toHaveAttribute("aria-busy", "false");
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
 
   const child = page.getByTestId("rf__node-e2e-child");
   const sibling = page.getByTestId("rf__node-e2e-sibling");
+  const anchor = (await child.boundingBox())!;
+  const before = await page.locator(".react-flow__node").evaluateAll(nodes =>
+    Object.fromEntries(nodes.map(node => [node.getAttribute("data-id")!, (node as HTMLElement).style.transform])));
   await canvas.evaluate((element) => {
     const observed = window as typeof window & {
       treeLayoutSettled?: boolean;
@@ -1807,9 +1811,7 @@ test("collapsing descendants animates the remaining cards smoothly", async ({
         event instanceof TransitionEvent &&
         event.propertyName === "transform" &&
         event.target instanceof Element &&
-        event.target.matches(
-          "[data-testid='rf__node-e2e-child'], [data-testid='rf__node-e2e-sibling']",
-        )
+        event.target.matches(".react-flow__node")
       ) observed.treeCardMoved = true;
     });
   });
@@ -1820,15 +1822,19 @@ test("collapsing descendants animates the remaining cards smoothly", async ({
     window as typeof window & { treeLayoutSettled?: boolean }
   ).treeLayoutSettled)).toBe(true);
   await expect(child).toHaveCSS("transition-duration", "0.44s");
-  await expect.poll(() => page.evaluate(() => (
+  const moved = await page.locator(".react-flow__node").evaluateAll((nodes, previous) =>
+    nodes.some(node => previous[node.getAttribute("data-id")!] !== (node as HTMLElement).style.transform), before);
+  if (moved) await expect.poll(() => page.evaluate(() => (
     window as typeof window & { treeCardMoved?: boolean }
   ).treeCardMoved)).toBe(true);
 
   await expect(canvas).not.toHaveClass(/is-layout-settling/, {
     timeout: 1_000,
   });
-  // The camera keeps the clicked card in place, so screen coordinates may
-  // return to their starting values after the nodes have animated.
+  // A fold may change only routes. Do not require a fabricated whole-scene move.
+  const after = (await child.boundingBox())!;
+  expect(Math.abs(after.x - anchor.x)).toBeLessThan(3);
+  expect(Math.abs(after.y - anchor.y)).toBeLessThan(3);
   await expect(child).toBeVisible();
   await expect(sibling).toBeVisible();
 });

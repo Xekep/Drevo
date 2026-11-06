@@ -10,6 +10,7 @@ for (const format of ["gedcom551", "gedcom7", "gedzip7"] as const) {
       await route.fulfill({ response, headers: { ...response.headers(), "referrer-policy": "no-referrer" } });
     });
     await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
     await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
     await page.locator(".react-flow__pane").click({ button: "right", position: { x: 40, y: 350 } });
     await page.getByRole("menuitem", { name: "Экспорт древа" }).click();
@@ -39,6 +40,7 @@ test("a rejected genealogy download reports the error without claiming success",
     status: 403, json: { error: "Доступ к экспорту отозван" },
   }));
   await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
   await page.locator(".react-flow__pane").click({ button: "right", position: { x: 40, y: 350 } });
   await page.getByRole("menuitem", { name: "Экспорт древа" }).click();

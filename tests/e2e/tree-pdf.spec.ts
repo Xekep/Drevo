@@ -30,6 +30,7 @@ async function downloadPdf(page: Page, info: TestInfo) {
 test("selection does not change the visible tree PDF export", async ({ page, isMobile }, info) => {
   test.skip(isMobile, "Экспорт с полотна доступен на десктопе");
   await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-grow|is-layout-settling/,
   );
@@ -77,6 +78,7 @@ test("PDF omits viewer-relative kinship while the interactive cards retain it", 
     await route.fulfill({ response, json: data });
   });
   await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
   const self = page.getByTestId("rf__node-e2e-memorial-person");
   await expect(self.locator(".portrait-card-info small")).toHaveText("Это вы");
   const pdf = await downloadPdf(page, info);
@@ -99,6 +101,7 @@ test("settings have no export; canvas dialog offers one visible tree format sele
 }) => {
   test.skip(isMobile, "Экспорт с полотна доступен на десктопе");
   await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-grow|is-layout-settling/,
   );
@@ -121,6 +124,7 @@ test("settings have no export; canvas dialog offers one visible tree format sele
 test("GEDCOM from the tree dialog contains only visible people", async ({ page, isMobile }, info) => {
   test.skip(isMobile, "Экспорт с полотна доступен на десктопе");
   await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
   await page.getByTestId("rf__node-e2e-child")
     .getByRole("button", { name: /Свернуть (потомков|ветвь)/ }).click();
@@ -174,6 +178,7 @@ test("direct GEDCOM warns about visible catalog links without claiming citation 
     route.fulfill({ response, json: { ...snapshot, family, partial: false,
       pageToken: `${snapshot.revision}:fixture` } }));
   await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
   const dialog = await openExport(page);
   const format = dialog.getByRole("combobox", { name: "Формат экспорта" });
@@ -202,6 +207,7 @@ test("person cards have no context menu; tree sharing stays in the toolbar", asy
 }) => {
   test.skip(isMobile);
   await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-grow|is-layout-settling/,
   );
@@ -234,6 +240,7 @@ test("AI file action preserves tree routes when exporting from chronology", asyn
     }),
   );
   await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-grow|is-layout-settling/,
   );
@@ -287,6 +294,7 @@ test("download respects collapsed branches; cancel releases preparation without 
 }, info) => {
   test.skip(isMobile, "Экспорт с полотна доступен на десктопе");
   await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-grow|is-layout-settling/,
   );
@@ -358,6 +366,7 @@ for (const shape of ["wide", "tall"] as const)
       await route.fulfill({ response, json: data });
     });
     await page.goto("/tree");
+    await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
     await expect(page.locator(".tree-canvas")).not.toHaveClass(
       /is-grow|is-layout-settling/,
     );

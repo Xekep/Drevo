@@ -1811,7 +1811,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       aria-label="Настройки древа"
       title="Настройки древа"
       aria-haspopup="dialog"
-      disabled={growthActive}
       onClick={props.onPreferences}
     >
       <Settings size={19} aria-hidden="true" />
