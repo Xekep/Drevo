@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Family, Person, Source } from "../src/domain/types.ts";
-import { visibleGenealogyHasCatalogLinks } from "../src/domain/visible-genealogy-catalog-warning.ts";
+import { visibleGenealogyHasCatalogLinks } from "./helpers/visible-genealogy-catalog-warning.ts";
 import { openArchive } from "../src/server/database.ts";
 import { sourceCatalogStore } from "../src/server/source-catalog-store.ts";
 
