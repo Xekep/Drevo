@@ -135,3 +135,19 @@ test("legacy birth-surname evidence remains available without editing current na
   expect(read().maidenNameClaim).toEqual(original.maidenNameClaim);
   expect(fullName(read())).toBe(fullName(original));
 });
+
+test("person save trims full name and short facts without trimming during typing or losing birth-surname evidence", async ({ page }) => {
+  const read = await openEditor(page, true);
+  const form = page.locator(".person-editor-form");
+  const input = form.locator('[data-field="name"]');
+  const name = "  Петров   Пётр  Петрович  ";
+  await input.fill(name);
+  await expect(input).toHaveValue(name);
+  await form.getByLabel("Фамилия при рождении", { exact: true }).fill("  Иванов  ");
+  await form.getByLabel("Занятие", { exact: true }).fill("  мастер  кузнечного дела  ");
+  await savePersonDetails(page);
+  expect(read()).toMatchObject({ surname: "Петров", name: "Пётр", patronymic: "Петрович",
+    maidenName: "Иванов", occupation: "мастер  кузнечного дела" });
+  expect(read().maidenNameClaim!.value).toBe("Иванов");
+  expect(read().maidenNameClaim!.sources[0].title).toBe("Метрическая книга");
+});

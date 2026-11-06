@@ -23,6 +23,7 @@ import { enforceUserStorageLimit, userStorageBytes } from "./storage-limits.ts";
 import { auditStore } from "./audit.ts";
 import { ForbiddenError, assertCurrentArchiveActor } from "./users.ts";
 import type { StoreDatabase } from "./store-database.ts";
+import { normalizePersonTextChanges } from "../domain/person-text.ts";
 
 /** Live StoreDatabase mutation owner. Full JSON is read only for delta targets;
  * a compact graph retains global cycle/date/scope validation. Both engines use
@@ -45,7 +46,7 @@ export async function patchArchiveChanges(
     } = await readArchiveForChanges(db, changes);
     if (expected > revision)
       throw new ConflictError("Некорректная версия архива");
-    const merged = applyArchiveChanges(before, changes);
+    const merged = applyArchiveChanges(before, normalizePersonTextChanges(changes));
     if (merged.conflicts.length)
       throw new ConflictError(
         "Изменяемые сведения уже обновлены другим участником",

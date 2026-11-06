@@ -1,5 +1,6 @@
 import { enforceUserStorageLimit, userStorageBytes } from "./storage-limits.ts";
 import { authorizeArchive } from "./permissions.ts";
+import { normalizeArchivePersonText } from "../domain/person-text.ts";
 import { assertCurrentArchiveActor } from "./users.ts";
 import { checkStorePostgresPeopleGrowth } from "./postgres-people-quota.ts";
 import { authorizeMediaReferences } from "./media-access.ts";
@@ -455,7 +456,7 @@ export async function openArchive(
         actor && previous
           ? authorizeArchive(value, previous, actor)
           : prepareAwardCitationWrite(
-              structuredClone(validateFamily(value)),
+              structuredClone(validateFamily(normalizeArchivePersonText(value, previous || undefined))),
               previous,
             );
       await checkStorePostgresPeopleGrowth(
