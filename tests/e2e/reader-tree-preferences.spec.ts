@@ -73,6 +73,9 @@ async function mockReader(
   await page.route("**/api/**", async (route) => {
     const request = route.request(),
       path = new URL(request.url()).pathname;
+    // Layout lookup is a read-only POST, including for two-person projections.
+    if (path === `${prefix}/api/tree-layout`)
+      return route.fulfill({ json: { geometry: null } });
     if (!["GET", "HEAD"].includes(request.method())) mutations.push(path);
     if (path === `${prefix}/api/tree-preferences`) {
       if (request.method() === "PUT") {

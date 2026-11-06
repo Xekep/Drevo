@@ -131,6 +131,7 @@ for (const width of [320, 360, 390, 768, 1024, 1440, 1920]) {
     await page.goto("/tree");
     const canvas = page.locator(".tree-canvas");
     await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+    await expect(canvas).toHaveAttribute("aria-busy", "false");
     await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
     await page.locator('.flow-person[data-person-id="e2e-child"] .flow-person-content').first().click({ button: "middle" });
     const notice = canvas.locator(".tree-anchor-notice, .tree-anchor-notice-mobile, .tree-anchor-notice-mobile-inline");
@@ -193,6 +194,7 @@ for (const firstOperation of ["reset", "anchor"] as const) {
     const parent = page.locator('.flow-person[data-person-id="e2e-memorial-person"] .flow-person-content').first();
     await expect(canvas).toHaveAttribute("data-layout-people", "4");
     await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+    await expect(canvas).toHaveAttribute("aria-busy", "false");
     await expect(canvas).not.toHaveClass(/is-growth-preparing|is-growing|is-layout-settling/);
     // Geometry can be ready before the first camera placement enables gestures.
     // A middle click during that placement is intentionally ignored.

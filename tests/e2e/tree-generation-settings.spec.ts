@@ -311,6 +311,8 @@ test("a 1023-person archive sends only the bounded projection to the layout Work
 test("generation settings remain usable while the initial layout is still computing", async ({
   page,
 }) => {
+  // This scenario deliberately stalls the local Worker, regardless of server cache warmth.
+  await page.route("**/api/tree-layout", route => route.fulfill({ json: { geometry: null } }));
   await page.addInitScript(() => {
     Worker.prototype.postMessage = new Proxy(Worker.prototype.postMessage, {
       apply(target, thisArg, args) {

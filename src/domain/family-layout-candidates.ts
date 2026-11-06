@@ -6,14 +6,15 @@ import { bundleFamilyBranches } from "./family-branch-bundling.ts";
 import { centerFamilyBranches } from "./family-centering.ts";
 import { alignFamilyLineages } from "./lineage-alignment.ts";
 import { familyAxisQuality } from "./family-axis.ts";
-import { familyRowNoWorse, type FamilyRowScore } from "./family-row-moves.ts";
+import { familyRowNoWorse, routeFamilyMove, type FamilyRowScore } from "./family-row-moves.ts";
+import { freePartnerPlacements } from "./family-partner-placement.ts";
 import {
   coupleBlocksWithContactedAncestry,
   locallyReverseCouples,
 } from "./local-couple-order.ts";
 
-/** Final centering changes incoming corridors; recheck affected pairs without
- * moving family blocks or spending another ELK solve. Only cold layouts use this. */
+/** Recheck pair sides and incoming corridors without another ELK solve.
+ * A free partner can move around the fixed ancestral card. Cold layouts only. */
 export function refineFinalCoupleOrder(
   original: TreeGeometry,
   people: LayoutPerson[],
@@ -21,11 +22,28 @@ export function refineFinalCoupleOrder(
   size: TreeNodeSize,
   score: FamilyRowScore,
 ) {
-  if (people.length > 1200 || !score(original).crossings) return original;
+  if (people.length > 1200) return original;
   let best = original,
     budget = people.length <= 300 ? 24 : 8;
   for (let pass = 0; pass < 2 && budget > 0; pass++) {
     const before = best;
+    const previousBranches = new Map((best.branches || []).map(branch => [branch.id, branch]));
+    for (const move of freePartnerPlacements(best, links, size)) {
+      if (budget-- <= 0) break;
+      const changed = new Set(move.geometry.branches!.filter(branch => branch.id.startsWith("child:") &&
+        branch.route.points[0] !== previousBranches.get(branch.id)!.route.points[0]).map(branch => branch.id));
+      const preserved = new Set(move.geometry.branches!.filter(branch => !changed.has(branch.id)).map(branch => branch.id));
+      const candidate = bundleFamilyBranches(routeFamilyMove(move, size, preserved));
+      if (preferFamilyLayout(candidate, best, size, score) && preferFamilyLayout(candidate, original, size, score)) {
+        best = candidate;
+        break;
+      }
+    }
+    const quality = score(best);
+    if (!quality.contacts && !quality.crossings) {
+      if (best === before) break;
+      continue;
+    }
     for (const id of coupleBlocksWithContactedAncestry(best, size.width)) {
       if (budget-- <= 0) break;
       const candidate = locallyReverseCouples(
@@ -46,7 +64,7 @@ export function refineFinalCoupleOrder(
       )
         best = candidate;
     }
-    if (best === before || !score(best).crossings) break;
+    if (best === before) break;
   }
   return best;
 }

@@ -18,6 +18,8 @@ test("archive loading text does not become a page selection before data arrives"
 });
 
 test("tree explains layout preparation until the worker is ready", async ({ page }) => {
+  // This scenario deliberately stalls the local Worker, regardless of server cache warmth.
+  await page.route("**/api/tree-layout", route => route.fulfill({ json: { geometry: null } }));
   await page.route("**/api/family?projection=overview", async route => {
     const response = await route.fetch(), data = await response.json();
     data.treePreferences = { ...data.treePreferences, animateOnLoad: true };
@@ -39,6 +41,11 @@ test("tree explains layout preparation until the worker is ready", async ({ page
   await expect(page.locator(".tree-canvas")).toHaveClass(/is-growing/);
   await expect(page.locator(".tree-preparation-status")).toHaveCount(0);
   await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "true");
+  // Preferences remain available across the pending-layout/intro boundary.
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  const preferences = page.getByRole("dialog", { name: "Вид древа" });
+  await expect(preferences).toBeVisible();
+  await preferences.getByRole("button", { name: "Закрыть", exact: true }).click();
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/, { timeout: 20_000 });
 });
 

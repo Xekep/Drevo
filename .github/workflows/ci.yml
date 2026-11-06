@@ -103,7 +103,7 @@ jobs:
   e2e:
     needs: prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -121,7 +121,16 @@ jobs:
         with:
           name: e2e-build
           path: .
-      - run: npx playwright install --with-deps chromium
+      - name: Install Chromium and system dependencies
+        timeout-minutes: 12
+        run: |
+          # Azure's HTTP mirror can spend most of the job downloading fonts.
+          for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources /etc/apt/apt-mirrors.txt; do
+            if [ -f "$source" ]; then
+              sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' "$source"
+            fi
+          done
+          npx playwright install --with-deps chromium
       - run: npm run prepare:models
       - name: Repeat native tab gestures in full Chromium
         if: matrix.shard == 1

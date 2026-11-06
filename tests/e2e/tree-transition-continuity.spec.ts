@@ -6,6 +6,7 @@ test("family layout retains its anchor while another card rearranges without rem
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
+  await page.route("**/api/tree-layout", route => route.fulfill({ json: { geometry: null } }));
   // Simulate a cached projection with a distant origin and one real card move.
   // The origin alone must not move the scene; the relative move must animate.
   await page.addInitScript(() => {

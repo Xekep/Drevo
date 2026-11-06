@@ -1,4 +1,5 @@
 import { archiveFetch } from "../../data/archive-fetch.ts";
+import { memberPreviewAt } from "../../domain/archive-context.ts";
 import {
   LAYOUT_CACHE_VERSION,
   SHARED_LAYOUT_MAX_PEOPLE,
@@ -13,8 +14,10 @@ export async function readSharedLayout(
   signal: AbortSignal,
 ): Promise<TreeGeometry | null> {
   if (
+    // Participant preview permits GET only; its geometry stays local.
+    (typeof window !== "undefined" && memberPreviewAt(window.location.pathname)) ||
     input.mode !== "generations" ||
-    input.people.length < 40 ||
+    input.people.length < 2 ||
     input.people.length > SHARED_LAYOUT_MAX_PEOPLE
   )
     return null;

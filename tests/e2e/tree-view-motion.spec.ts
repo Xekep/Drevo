@@ -1,7 +1,7 @@
 import { familyViewAction, showTree } from "./tree-toolbar-actions";
 import { expect, test } from "@playwright/test";
 
-test("close, blood and branch views animate their cards and camera", async ({
+test("close, blood and branch views animate cards while keeping the anchored camera", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
@@ -57,12 +57,13 @@ test("close, blood and branch views animate their cards and camera", async ({
   await expect
     .poll(() =>
       familyMotion.evaluate(
-        (s) => s.exited && s.settling && s.transforms.size >= 3,
+        (s) => s.exited && s.settling,
       ),
     )
     .toBe(true);
   await expect(canvas).not.toHaveClass(/is-layout-settling/);
   await familyMotion.evaluate((s) => s.stop());
+  expect(await familyMotion.evaluate(s => s.transforms.size)).toBe(1);
 
   const commonMotion = await observe();
   await familyViewAction(page, "Кровные");

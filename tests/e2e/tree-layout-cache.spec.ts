@@ -253,6 +253,9 @@ test("medium tree edits pass the previous geometry to the layout worker", async 
 });
 
 async function observeLayouts(page: Page) {
+  // These scenarios exercise browser storage and its local Worker fallback.
+  // The independent shared-cache suite exercises successful server hits.
+  await page.route("**/api/tree-layout", route => route.fulfill({ json: { geometry: null } }));
   await page.addInitScript(() => {
     const state = { requests: 0 };
     Object.assign(window, { __layoutCacheTest: state });
