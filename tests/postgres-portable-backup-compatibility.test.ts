@@ -43,6 +43,11 @@ test("PostgreSQL portable projection reconstructs SQLite usage and copies AI cur
       "INSERT INTO media_originals(url,size_bytes,uploaded_by,created_at) VALUES('/media/original.png',17,'owner','2026-01-01')",
     )
     .run();
+  original.prepare("INSERT INTO people(id,data) VALUES('published',?)")
+    .run(JSON.stringify({ id: "published", deceased: true }));
+  original.prepare(`INSERT INTO published_people(person_id,published_at,published_by,
+    birth_year_visible,death_year_visible,birth_place_visible,death_place_visible,birth_surname_visible)
+    VALUES('published','2026-01-01','owner',1,0,1,0,1)`).run();
   let pending: Array<Record<string, unknown>> = [];
   const declarations: string[] = [];
   const aliases: Record<string, string> = {
@@ -89,6 +94,11 @@ test("PostgreSQL portable projection reconstructs SQLite usage and copies AI cur
           if (projection.includes('NULL AS "yandex_conversation_id"')) row.yandex_conversation_id = null;
           if (projection.includes('NULL AS "provider_cleanup_ref"')) row.provider_cleanup_ref = null;
         }
+      // pg returns actual booleans; a SQLite-backed mock otherwise hides this mismatch.
+      if (table === "published_people")
+        for (const row of pending)
+          for (const column of ["birth_year_visible", "death_year_visible", "birth_place_visible", "death_place_visible", "birth_surname_visible"])
+            row[column] = row[column] === 1;
     },
     prepare(_sqlite: string, postgres: string) {
       assert.equal(postgres, "FETCH FORWARD 500 FROM portable_backup_rows");
@@ -106,6 +116,9 @@ test("PostgreSQL portable projection reconstructs SQLite usage and copies AI cur
     await writePortablePostgresBackup(source, path);
     const saved = new DatabaseSync(path);
     try {
+      assert.deepEqual({ ...saved.prepare(`SELECT birth_year_visible,death_year_visible,
+        birth_place_visible,death_place_visible,birth_surname_visible FROM published_people`).get()! },
+      { birth_year_visible: 1, death_year_visible: 0, birth_place_visible: 1, death_place_visible: 0, birth_surname_visible: 1 });
       const usage = saved
         .prepare("SELECT files,bytes FROM media_storage_usage WHERE id=1")
         .get()!;

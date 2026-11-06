@@ -29,6 +29,28 @@ const family = (): Family => ({
   ],
 });
 
+test("person editor removes a recorded marriage atomically and retains other unions and spouse links", () => {
+  const before = family();
+  for (const person of before.people) person.generation = 1;
+  const other: FamilyUnion = { id: "other", participants: ["b", "c"], type: "partnership" };
+  before.unions!.push(other);
+  const after = applyPersonUnionDrafts(before, "a", before.unions!, [], ["u"]);
+  assert.deepEqual(after.unions, [other]);
+  assert.deepEqual(after.people, before.people);
+  const disconnected = applyPersonDraft(after, after.people[0], [{ from: "a", to: "b", type: "spouse" }]);
+  assert.deepEqual(disconnected.people[0].spouses, []);
+  assert.deepEqual(disconnected.people[1].spouses, []);
+  const restored = applyArchiveChanges(after, archiveChanges(after, before)).family;
+  assert.deepEqual(restored.people, before.people);
+  assert.deepEqual(restored.unions!.sort((a, b) => a.id.localeCompare(b.id)),
+    [...before.unions!].sort((a, b) => a.id.localeCompare(b.id)));
+  const fresh = structuredClone(before);
+  fresh.unions![0].note = "New evidence";
+  assert.throws(() => applyPersonUnionDrafts(fresh, "a", before.unions!, [], ["u"]), /другим участником/);
+  assert.throws(() => applyPersonUnionDrafts(before, "c", before.unions!, [], ["u"]), /этого человека/);
+  assert.throws(() => applyPersonUnionDrafts(before, "b", before.unions!, [], ["other"]), /этого человека/);
+});
+
 test("person and marriage dates form one reversible archive change, preserving education and evidence", () => {
   const before = family();
   const edited = applyPersonDraft(

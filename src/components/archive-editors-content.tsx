@@ -222,6 +222,7 @@ export function PersonEditor({
   const [detailDirty, setDetailDirty] = useState(false);
   const [baselineUnions] = useState(() => structuredClone(family.unions || []));
   const [unionDrafts, setUnionDrafts] = useState<FamilyUnion[]>([]);
+  const [removedUnionIds, setRemovedUnionIds] = useState<string[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
   const fieldId = useId();
   const snapshot = JSON.stringify([
@@ -237,6 +238,7 @@ export function PersonEditor({
     removedConnections,
     !!portraitFile,
     unionDrafts,
+    removedUnionIds,
   ]);
   const [initialSnapshot] = useState(snapshot);
   const dirty = initialSnapshot !== snapshot || detailDirty;
@@ -455,7 +457,11 @@ export function PersonEditor({
         current.people.find((item) => item.id === draft.id),
         p,
       );
-      let next = applyPersonDraft(current, p, removedConnections);
+      // Remove explicit union records before removing a spouse connection that
+      // they protect. Both changes still use the same archive save/undo entry.
+      let next = applyPersonDraft(
+        applyPersonUnionDrafts(current, p.id, baselineUnions, unionDrafts, removedUnionIds),
+        p, removedConnections);
       if (!person && relativeTo) {
         next =
           relationship === "child"
@@ -471,7 +477,6 @@ export function PersonEditor({
       }
       for (const hint of confirmed)
         next = connectPeople(next, hint.from, hint.to, "parent");
-      next = applyPersonUnionDrafts(next, p.id, baselineUnions, unionDrafts);
       next = completeMarriageEndings(next, (union) =>
         owns(user, union) && union.participants.every((id) => {
           const participant = next.people.find((item) => item.id === id);
@@ -973,6 +978,19 @@ export function PersonEditor({
           baseline={baselineUnions}
           drafts={unionDrafts}
           onChange={setUnionDrafts}
+          removedIds={removedUnionIds}
+          removedPartnerIds={removedConnections.filter(edge => edge.type === "spouse")
+            .map(edge => edge.from === draft.id ? edge.to : edge.from)}
+          onRemovePartner={(id) => {
+            setRemovedConnections(current => [...current, ...connections.filter(edge => edge.type === "spouse" &&
+              (edge.from === id || edge.to === id) && !current.some(item => item.from === edge.from && item.to === edge.to && item.type === edge.type))]);
+            setUnionDrafts(current => current.filter(union => !union.participants.includes(id)));
+          }}
+          onRemove={(id) => {
+            setUnionDrafts(current => current.filter(union => union.id !== id));
+            if (baselineUnions.some(union => union.id === id))
+              setRemovedUnionIds(current => [...new Set([...current, id])]);
+          }}
           user={user}
           busy={busy}
         />

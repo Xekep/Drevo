@@ -124,6 +124,9 @@ export async function writePortablePostgresBackup(
                 insert.run(
                   ...columns.map((column) => {
                     const value = row[column];
+                    // PostgreSQL publication visibility flags are booleans;
+                    // their portable SQLite columns use checked INTEGER 0/1.
+                    if (typeof value === "boolean") return Number(value);
                     if (
                       value === null ||
                       typeof value === "string" ||

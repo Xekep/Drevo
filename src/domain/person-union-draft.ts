@@ -2,17 +2,31 @@ import { normalizeDateInput } from "./dates.ts";
 import { validateUnions } from "./family-unions.ts";
 import type { Family, FamilyUnion } from "./types.ts";
 
-/** Only the two edited dates are applied; concurrent notes and sources survive. */
+/** Apply date edits and explicit removals; preserve concurrent evidence or reject its deletion. */
 export function applyPersonUnionDrafts(
   family: Family,
   personId: string,
   baseline: FamilyUnion[],
   drafts: FamilyUnion[],
+  removedIds: string[] = [],
 ): Family {
-  if (!drafts.length) return family;
+  if (!drafts.length && !removedIds.length) return family;
   const unions = [...(family.unions || [])];
   let changed = false;
+  const removed = new Set(removedIds);
+  for (const id of removed) {
+    const base = baseline.find(item => item.id === id);
+    if (!base || base.type !== "marriage" || !base.participants.includes(personId))
+      throw new Error("Укажите существующий брак этого человека.");
+    const index = unions.findIndex(item => item.id === id);
+    if (index < 0) continue;
+    if (JSON.stringify(unions[index]) !== JSON.stringify(base))
+      throw new Error("Брак изменён другим участником. Обновите карточку перед удалением.");
+    unions.splice(index, 1);
+    changed = true;
+  }
   for (const draft of drafts) {
+    if (removed.has(draft.id)) continue;
     const base = baseline.find((item) => item.id === draft.id);
     const dates = {
       formation: normalizeDateInput(draft.formation?.date || "") || undefined,

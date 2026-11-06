@@ -1,4 +1,5 @@
 import { verifyPlatformBackupsHttp } from "./postgres-platform-backups-http.ts";
+import { verifyPortablePublicationBackup } from "./postgres-portable-publications.ts";
 import { readStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
@@ -7717,6 +7718,8 @@ try {
     await otherApp.archive.write(candidateOther, candidateOtherBefore.revision);
     await publishedPeopleStore(app.archive.db).publish(candidateSourceId, "owner");
     await publishedPeopleStore(otherApp.archive.db).publish(candidateTargetId, "owner");
+    await verifyPortablePublicationBackup(app.archive.db, directory, candidateSourceId, candidateTargetId);
+    console.log("runtime_portable_publication_boolean_backup_ok");
     const revokeCandidatePath = `/api/discovery/matches/candidates?sourcePersonId=${candidateSourceId}`;
     const candidateBeforeRevoke = await fetch(securedBase + revokeCandidatePath,
       { headers: { ...ownerHeaders, "X-Real-IP": "203.0.113.16" } });
