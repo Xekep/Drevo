@@ -3,6 +3,7 @@ import { statfs } from "node:fs/promises";
 import { dirname } from "node:path";
 import { initializeArchiveSchema } from "./schema.ts";
 import type { StoreDatabase } from "./store-database.ts";
+import { portableIdentifier as identifier, portableSnapshotSchema, portableSnapshotValue } from "./portable-snapshot-schema.ts";
 
 /** Portable archive backup, not a second live database. Native PostgreSQL/WAL
  * backups remain the disaster-recovery source. This format keeps existing
@@ -15,48 +16,7 @@ export async function writePortablePostgresBackup(
   const target = new DatabaseSync(file);
   try {
     initializeArchiveSchema(target);
-    const tables = target
-      .prepare(
-        "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-      )
-      .all()
-      .map((row) => String(row.name));
-    const identifier = (value: string) => {
-      if (!/^[a-z_]+$/.test(value))
-        throw new Error("Неизвестный столбец резервной копии");
-      return `"${value}"`;
-    };
-    const projections: Record<string, string> = {
-      archive:
-        "SELECT 1 AS id,title,description,demo::integer AS demo,revision FROM archives",
-      users: "SELECT * FROM runtime_users",
-      auth_sessions:
-        "SELECT s.* FROM account_sessions s WHERE EXISTS (SELECT 1 FROM runtime_users u WHERE u.id=s.user_id)",
-      access_settings: "SELECT * FROM runtime_access_settings",
-      tree_settings: "SELECT * FROM runtime_tree_settings",
-      audit_entries: "SELECT * FROM archive_audit_entries",
-      audit_people: "SELECT * FROM archive_audit_people",
-      notification_cursors: "SELECT * FROM archive_notification_cursors",
-      notification_reads: "SELECT * FROM archive_notification_reads",
-      person_comments:
-        "SELECT archive_id,id,person_id,author_id,author_name,created_ms,text,updated_ms,attachments::text AS attachments FROM person_comments",
-      source_catalog:
-        "SELECT archive_id,id,data::text AS data,version FROM source_catalog",
-      // This SQLite-only derived table is rebuilt from the same consistent
-      // original rows instead of querying a nonexistent PostgreSQL table.
-      media_storage_usage:
-        "SELECT 1 AS id,count(*) AS files,coalesce(sum(size_bytes),0) AS bytes FROM media_originals",
-    };
-    const ordered = new Set([
-      "people",
-      "relations",
-      "photos",
-      "photo_tags",
-      "documents",
-      "document_people",
-      "share_links",
-      "face_descriptors",
-    ]);
+    const schema = portableSnapshotSchema(target);
     target.exec("PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE");
     let committed = false;
     try {
@@ -72,42 +32,18 @@ export async function writePortablePostgresBackup(
         .all();
       for (const trigger of cursorTriggers)
         target.exec(`DROP TRIGGER ${identifier(String(trigger.name))}`);
-      for (const table of tables)
-        target.exec(`DELETE FROM ${identifier(table)}`);
+      for (const table of schema)
+        target.exec(`DELETE FROM ${identifier(table.name)}`);
       await source.transaction(async () => {
-        for (const table of tables) {
-          // Platform cleanup credentials and obligations belong to the physical
-          // system backup, never to one archive's downloadable TAR.
-          if (
-            table === "platform_ai_cleanup_keys" ||
-            table === "platform_ai_conversations" ||
-            table === "platform_ai_input_files"
-          )
-            continue;
-          const columns = target
-            .prepare(`PRAGMA table_info(${identifier(table)})`)
-            .all()
-            .map((row) => String(row.name));
-          const names = columns.map(identifier).join(",");
-          const projection =
-            table === "ai_chats"
-              ? `SELECT ${columns
-                  .map((column) =>
-                    column === "yandex_conversation_id" ||
-                    column === "provider_cleanup_ref"
-                      ? `NULL AS ${identifier(column)}`
-                      : identifier(column),
-                  )
-                  .join(",")}
-              FROM ai_chats`
-              : projections[table] || `SELECT * FROM ${identifier(table)}`;
-          const select = `SELECT ${names} FROM (${projection}${ordered.has(table) ? " ORDER BY ordinal" : ""}) AS saved`;
+        for (const table of schema) {
+          if (!table.select) continue;
+          const names = table.columns.map(column => identifier(column.name)).join(",");
           const insert = target.prepare(
-            `INSERT INTO ${identifier(table)}(${names}) VALUES(${columns.map(() => "?").join(",")})`,
+            `INSERT INTO ${identifier(table.name)}(${names}) VALUES(${table.columns.map(() => "?").join(",")})`,
           );
           await source.exec(
             "",
-            `DECLARE portable_backup_rows NO SCROLL CURSOR FOR ${select}`,
+            `DECLARE portable_backup_rows NO SCROLL CURSOR FOR ${table.select}`,
           );
           try {
             for (;;) {
@@ -122,22 +58,7 @@ export async function writePortablePostgresBackup(
               if (!rows.length) break;
               for (const row of rows)
                 insert.run(
-                  ...columns.map((column) => {
-                    const value = row[column];
-                    // PostgreSQL publication visibility flags are booleans;
-                    // their portable SQLite columns use checked INTEGER 0/1.
-                    if (typeof value === "boolean") return Number(value);
-                    if (
-                      value === null ||
-                      typeof value === "string" ||
-                      typeof value === "number" ||
-                      typeof value === "bigint"
-                    )
-                      return value;
-                    throw new Error(
-                      `Некорректное поле копии: ${table}.${column}`,
-                    );
-                  }),
+                  ...table.columns.map(column => portableSnapshotValue(table.name, column, row[column.name])),
                 );
             }
           } finally {

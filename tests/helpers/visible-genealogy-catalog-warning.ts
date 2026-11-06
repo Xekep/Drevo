@@ -1,6 +1,6 @@
-import type { Family, Person, Source } from "./types.ts";
+import type { Family, Person, Source } from "../../src/domain/types.ts";
 
-/** Match the people and relationship edges included by export-visible. */
+/** Independent test oracle for the SQL export-warning projection. */
 export function visibleGenealogyHasCatalogLinks(family: Family, visible: Set<string>): boolean {
   const linked = (sources?: Source[]) => sources?.some((source) => Boolean(source.catalogId)) ?? false;
   const personLinked = (person: Person) =>

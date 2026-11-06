@@ -4,7 +4,7 @@ import type { Family, Person, Source } from "../src/domain/types.ts";
 import { validateFamily } from "../src/domain/validation.ts";
 import { allCitations } from "../src/server/source-catalog-store.ts";
 import { collectPersonSources } from "../src/domain/person-sources.ts";
-import { visibleGenealogyHasCatalogLinks } from "../src/domain/visible-genealogy-catalog-warning.ts";
+import { visibleGenealogyHasCatalogLinks } from "./helpers/visible-genealogy-catalog-warning.ts";
 import { exportGedcom, importGedcom } from "../src/domain/gedcom.ts";
 import { projectFamilyForUser } from "../src/domain/tree-access.ts";
 import { sharedFamily } from "../src/domain/shared-family.ts";

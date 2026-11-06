@@ -49,9 +49,9 @@ type TreeCameraStateInput = {
   returnPersonId: string | null;
   returnToken: number;
   restoreViewport: { viewport: Viewport; token: number } | null;
-  onRestoreComplete?: () => void;
+  onRestoreComplete?: (token: number) => void;
   personOccurrences: Map<string, string[]>;
-  onReturnComplete?: () => void;
+  onReturnComplete?: (token: number) => void;
   positions: Map<string, { x: number; y: number }>;
   selected: string[];
   narrow: boolean;
@@ -207,8 +207,8 @@ export function useTreeCameraState({
             duration: 0,
           });
           void Promise.resolve(viewportUpdate).then(
-            () => onRestoreComplete?.(),
-            () => onRestoreComplete?.(),
+            () => onRestoreComplete?.(restoreViewport.token),
+            () => onRestoreComplete?.(restoreViewport.token),
           );
         } else if (returnPersonId && returnToken !== lastReturn.current) {
           if (!returnOccurrence) return;
@@ -225,8 +225,8 @@ export function useTreeCameraState({
             },
           );
           void Promise.resolve(viewportUpdate).then(
-            () => onReturnComplete?.(),
-            () => onReturnComplete?.(),
+            () => onReturnComplete?.(returnToken),
+            () => onReturnComplete?.(returnToken),
           );
         } else if (
           branchAnchor &&

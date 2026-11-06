@@ -128,6 +128,8 @@ export function backupFiles(
           treeOnly ? "tree" : "legacy",
         ],
         signal,
+        undefined,
+        { workerDiagnostics: true },
       );
       const files = ["drevo.sqlite"];
       if (!treeOnly) try {

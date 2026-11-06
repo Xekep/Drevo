@@ -6,9 +6,11 @@ import { DatabaseSync } from "node:sqlite";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
 import { sanitizeTreeBackup } from "../../src/server/tree-backup-files.ts";
 import type { StoreDatabase } from "../../src/server/store-database.ts";
+import { verifyPortableSchema } from "./postgres-portable-schema.ts";
 
 export async function verifyPortablePublicationBackup(db: StoreDatabase, directory: string,
   personId: string, foreignPersonId: string) {
+  await verifyPortableSchema(db);
   const fields = ["birth_year_visible", "death_year_visible", "birth_place_visible",
     "death_place_visible", "birth_surname_visible"];
   const before = await db.prepare("", `SELECT ${fields.join(",")} FROM published_people WHERE person_id=?`).get(personId);

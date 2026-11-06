@@ -20,7 +20,6 @@ import {
   useReactFlow,
   useStore,
   type Connection as FlowConnection,
-  type Viewport,
 } from "@xyflow/react";
 import {
   ArrowLeftRight,
@@ -79,6 +78,7 @@ import { useNarrowScreen } from "../../hooks/useNarrowScreen";
 import { useDesktopEditing } from "../../hooks/useDesktopEditing";
 import { useFamilyView } from "./use-family-view";
 import { useTreeViewState } from "./use-tree-view-state";
+import { useTreeCameraNavigation } from "./use-tree-camera-navigation.ts";
 import { treeViewPolicy, treeViewPresentation } from "../../domain/tree-view-policy.ts";
 import type { RemoteTreeFragment } from "../../shared/tree-fragment.ts";
 import { useTreeFragment } from "./use-tree-fragment";
@@ -298,39 +298,23 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     intent: ViewIntent; isCurrent: () => boolean;
   } | null>(null);
   const layoutMode: TreeMode = mode === "timeline" ? "generations" : mode;
-  const fanEntry = useRef<{
-    anchorId: string;
-    mode: TreeMode;
-    familyMode: "all" | "family" | "common";
-    viewport: Viewport;
-  } | null>(null);
-  const [restoreViewport, setRestoreViewport] = useState<{
-    viewport: Viewport;
-    token: number;
-  } | null>(null);
-  const restoreToken = useRef(0);
-  const branchToken = useRef(0);
-  const [branchAnchor, setBranchAnchor] = useState<{
-    personId: string;
-    occurrenceId: string | null;
-    position: { x: number; y: number };
-    viewport: Viewport;
-    layoutKey: string;
-    context: string;
-    token: number;
-  } | null>(null);
-  const [returnTarget, setReturnTarget] = useState<{
-    id: string;
-    token: number;
-  } | null>(null);
-  const returnToken = useRef(0);
-  const returnToPerson = useCallback((id?: string | null) => {
-    if (!id) return;
-    returnToken.current += 1;
-    setReturnTarget({ id, token: returnToken.current });
-  }, []);
-  const clearReturnTarget = useCallback(() => setReturnTarget(null), []);
-  const clearRestoreViewport = useCallback(() => setRestoreViewport(null), []);
+  const gpuArchiveContext = typeof window === "undefined" ? null :
+    archiveContextAt(window.location.pathname);
+  const gpuSharedToken = typeof window === "undefined" ? null :
+    /^\/s\/([A-Za-z0-9_-]{43})$/.exec(
+      gpuArchiveContext?.innerPath || window.location.pathname,
+    )?.[1] || null;
+  // Person routes share the archive snapshot; account, share grant and read policy isolate caches.
+  const gpuScope = JSON.stringify([
+    gpuArchiveContext?.id || "default", gpuSharedToken,
+    user?.id || null, user?.role || null, user?.treeAccess || null,
+    user?.personId || null, user?.fullAccess ?? null,
+    user?.platformAdmin ?? null, user?.approved ?? null,
+    props.restricted ?? false,
+  ]);
+  const { restoreViewport, branchAnchor, returnTarget, returnToPerson, captureBranch,
+    clearReturnTarget, clearRestoreViewport, clearBranchAnchor, clearNavigation,
+    rememberFanReturn, clearFanReturn, leaveFan, canRestoreFan } = useTreeCameraNavigation(gpuScope);
   const [fanRevealing, setFanRevealing] = useState(false);
   const fanMorphSources = useRef<FanMorphSource[]>([]);
   const activeFanAnchor =
@@ -599,20 +583,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     : `${mode}:${depthEnabled ? "depth" : "flat"}:${familyView.mode}:${root || "all"}:portrait`;
   useTouchZoom(container, flow, flatTree && !cameraLocked && !screen.fullscreen);
   useCtrlWheelZoom(container, flow, flatTree && !cameraLocked);
-  const gpuArchiveContext = typeof window === "undefined" ? null :
-    archiveContextAt(window.location.pathname);
-  const gpuSharedToken = typeof window === "undefined" ? null :
-    /^\/s\/([A-Za-z0-9_-]{43})$/.exec(
-      gpuArchiveContext?.innerPath || window.location.pathname,
-    )?.[1] || null;
-  // Person routes share the archive snapshot; account, share grant and read policy isolate caches.
-  const gpuScope = JSON.stringify([
-    gpuArchiveContext?.id || "default", gpuSharedToken,
-    user?.id || null, user?.role || null, user?.treeAccess || null,
-    user?.personId || null, user?.fullAccess ?? null,
-    user?.platformAdmin ?? null, user?.approved ?? null,
-    props.restricted ?? false,
-  ]);
   const layoutAccessScope = user ? JSON.stringify([
     archiveContextAt(window.location.pathname)?.id || "default", user.id, user.role, user.treeAccess, user.personId,
   ]) : null;
@@ -800,9 +770,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     setGrowing(false);
     setIntroCameraFinished(true);
     setManualCameraOverride(true);
-    setBranchAnchor(null);
-    setRestoreViewport(null);
-    clearReturnTarget();
+    clearNavigation();
     void flow.setViewport(flow.getViewport(), { duration: 0 });
     scopeFocusToken.current += 1;
     setScopeFocus({
@@ -811,7 +779,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       token: -scopeFocusToken.current - 1,
       previousFocusToken: focus?.token ?? null,
     });
-  }, [generationLimitsKey, props.generationLimits?.anchorId, visible, focus?.token, flow, clearReturnTarget]);
+  }, [generationLimitsKey, props.generationLimits?.anchorId, visible, focus?.token, flow, clearNavigation]);
   useEffect(() => {
     setScopeFocus((current) => current && current.previousFocusToken !== (focus?.token ?? null)
       ? null : current);
@@ -944,19 +912,17 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           : personOccurrences.get(id)?.find((candidate) => positions.has(candidate));
       const position = occurrence ? positions.get(occurrence) : undefined;
       if (position) {
-        branchToken.current += 1;
-        setBranchAnchor({
+        captureBranch({
           personId: id,
           occurrenceId: occurrence || null,
           position,
           viewport: flow.getViewport(),
           layoutKey,
           context,
-          token: branchToken.current,
         });
       }
       setGrowing(false);
-    }, [flow, layoutKey, context, personOccurrences, positions],
+    }, [flow, layoutKey, context, personOccurrences, positions, captureBranch],
   );
   const toggleBranch = useCallback(
     (id: string, occurrenceId?: string) => {
@@ -1464,7 +1430,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     if (props.generationLimits && !(await saveGenerationAnchor(id))) return;
     setIntroCameraFinished(true);
     setManualCameraOverride(true);
-    setBranchAnchor(null);
+    clearBranchAnchor();
     clearRestoreViewport();
     fragment.choose(id);
     returnToPerson(id);
@@ -1752,7 +1718,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           ? captureFanMorphSources(container.current, fanFamily, next, { nodes, viewport: flow.getViewport() }) : [];
         rememberContext();
         clearReturnTarget();
-        fanEntry.current = { anchorId: next, mode, familyMode: familyView.mode, viewport: flow.getViewport() };
+        rememberFanReturn({ anchorId: next, mode, familyMode: familyView.mode, viewport: flow.getViewport() });
         setGrowing(false);
         setEdgeChoices([]);
         setCreateAt(null);
@@ -1764,7 +1730,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         captureLayoutAnchor(next);
         rememberContext();
         clearReturnTarget();
-        fanEntry.current = null;
+        clearFanReturn();
         setFanAnchor(null);
         if (intent.kind === "family") familyView.enter(next);
         else familyView.enterCommon(next);
@@ -1772,7 +1738,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       return;
     }
     const next = intent.mode;
-    setBranchAnchor(null);
+    clearBranchAnchor();
     props.onModeChange?.(next);
     setScopeFocus(null);
     setManualCameraOverride(true);
@@ -1783,27 +1749,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     setGrowing(false);
     if (activeFanAnchor) {
       const target = selected[0] || activeFanAnchor;
-      const entry = fanEntry.current;
-      if (
-        entry &&
-        target === entry.anchorId &&
-        next === entry.mode &&
-        familyView.mode === entry.familyMode
-      ) {
-        clearReturnTarget();
-        restoreToken.current += 1;
-        setRestoreViewport({
-          viewport: entry.viewport,
-          token: restoreToken.current,
-        });
-      } else returnToPerson(target);
-      fanEntry.current = null;
+      leaveFan(target, next, familyView.mode);
     }
     setMode(next);
     setEdgeChoices([]);
   }, [preparedView, props, flow, introCameraFinished, rememberContext, activeFanAnchor,
     setMode, currentPeople, family, clearReturnTarget, mode, familyView, setFanAnchor,
-    selected, returnToPerson, nodes, fanFamily, captureLayoutAnchor]);
+    selected, returnToPerson, nodes, fanFamily, captureLayoutAnchor, clearBranchAnchor, rememberFanReturn, clearFanReturn, leaveFan]);
   const preferencesAction = props.onPreferences && (
     <button
       type="button"
@@ -2107,25 +2059,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 if (!activeFanAnchor && fragment.active) fragment.showAll();
                 props.onClearAssistantFilter?.();
                 const target = selected[0] || activeFanAnchor || root;
-                const entry = fanEntry.current;
-                const sameFanPerson =
-                  !!activeFanAnchor &&
-                  !!entry &&
-                  target === entry.anchorId &&
-                  mode === entry.mode &&
-                  entry.familyMode === "all";
+                const sameFanPerson = !!activeFanAnchor && canRestoreFan(target, mode, "all");
                 if (!sameFanPerson) rememberContext();
                 setFanAnchor(null);
                 familyView.showAll();
-                if (sameFanPerson) {
-                  clearReturnTarget();
-                  restoreToken.current += 1;
-                  setRestoreViewport({
-                    viewport: entry.viewport,
-                    token: restoreToken.current,
-                  });
-                } else returnToPerson(target);
-                fanEntry.current = null;
+                if (!activeFanAnchor) clearFanReturn();
+                leaveFan(target, mode, "all");
+
               }}
               onReset={() => {
                 resetContext();
