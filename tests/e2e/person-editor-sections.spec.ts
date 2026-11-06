@@ -55,6 +55,7 @@ async function editor(
   });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
   await page
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
@@ -447,4 +448,45 @@ test("несколько браков одной пары редактируют
     formation: { date: "2002", confidence: undefined },
     divorce: { date: "2010", confidence: undefined },
   });
+});
+
+
+test("saved marriages are listed before choosing a spouse and can be removed with the person save", async ({ page }, info) => {
+  if (info.project.name === "mobile") await page.setViewportSize({ width: 320, height: 720 });
+  const read = await editor(page, [{ id: "listed-marriage", type: "marriage",
+    participants: ["e2e-child", "e2e-spouse"], formation: { date: "1990" } }]);
+  const form = page.locator(".person-editor-form");
+  const marriage = form.locator(".person-marriages-editor");
+  await marriage.locator(":scope > summary").click();
+  const records = marriage.getByRole("list", { name: "Записи о браках" });
+  await expect(records.getByRole("button", { name: /1990/ })).toBeVisible();
+  expect(await marriage.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await marriage.screenshot({ path: info.outputPath("listed-marriages.png") });
+  await records.getByRole("button", { name: /1990/ }).click();
+  await expect(marriage.getByLabel("Дата брака", { exact: true })).toHaveValue("1990");
+  await records.getByRole("button", { name: /^Удалить запись о браке/ }).click();
+  await expect(records).toHaveCount(0);
+  expect(read().unions!.some(union => union.id === "listed-marriage")).toBe(true);
+  await savePersonDetails(page);
+  expect(read().unions!.some(union => union.id === "listed-marriage")).toBe(false);
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  await marriage.locator(":scope > summary").click();
+  await expect(marriage.getByRole("list", { name: "Записи о браках" })).toHaveCount(0);
+});
+
+
+for (const recorded of [false, true]) test(`spouse links are listed and removable with ${recorded ? "a recorded marriage" : "no marriage dates"}`, async ({ page }) => {
+  const read = await editor(page, recorded ? [{ id: "remove-together", type: "marriage",
+    participants: ["e2e-child", "e2e-spouse"], formation: { date: "1990" } }] : []);
+  const partner = read().people.find(person => person.id === "e2e-spouse")!;
+  const marriage = page.locator(".person-marriages-editor");
+  await marriage.locator(":scope > summary").click();
+  if (recorded) await marriage.getByRole("button", { name: `Удалить запись о браке с ${fullName(partner)}`, exact: true }).click();
+  const records = marriage.getByRole("list", { name: "Связи супругов без записи о браке" });
+  await expect(records.getByRole("button", { name: `${fullName(partner)} · Даты не указаны`, exact: true })).toBeVisible();
+  await records.getByRole("button", { name: `Удалить связь супругов с ${fullName(partner)}`, exact: true }).click();
+  await savePersonDetails(page);
+  expect(read().people.find(person => person.id === "e2e-child")!.spouses).not.toContain(partner.id);
+  expect(read().people.find(person => person.id === partner.id)!.spouses).not.toContain("e2e-child");
+  expect(read().unions!.some(union => union.id === "remove-together")).toBe(false);
 });

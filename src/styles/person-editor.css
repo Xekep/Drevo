@@ -405,6 +405,24 @@
   display: grid;
   gap: 10px;
 }
+.person-editor-form .person-marriages-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.person-editor-form .person-marriages-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.person-editor-form .person-marriages-list li > button:first-child {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
 .person-editor-form details.source-editor {
   display: block;
   padding: 0;

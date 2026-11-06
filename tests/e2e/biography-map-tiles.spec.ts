@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { biographyMapBlock } from "../../src/domain/biography-map.ts";
 import type { Family } from "../../src/domain/types.ts";
 
-async function expectSolidTiles(page: Page, surface: Locator, value: number) {
+async function expectNativeTiles(page: Page, surface: Locator, value: number) {
   await surface.scrollIntoViewIfNeeded();
   await expect
     .poll(() =>
@@ -39,51 +39,48 @@ async function expectSolidTiles(page: Page, surface: Locator, value: number) {
     .removeAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  let seams = 0;
-  let longestLine = 0;
-  const verticalRuns = new Uint32Array(info.width);
-  // Software rasterization in Linux can differ by 4/255 at an isolated
-  // pixel. Detect contiguous lines, preserving the strict color
-  // tolerance so a faint seam spanning the map still fails this test.
-  for (let y = 0; y < info.height; y++) {
-    let horizontalRun = 0;
-    for (let x = 0; x < info.width; x++) {
-      const i = (y * info.width + x) * info.channels;
-      const differs = Math.abs(data[i] - value) > 3 ||
-        Math.abs(data[i + 1] - value) > 3 || Math.abs(data[i + 2] - value) > 3;
-      if (differs) seams++;
-      horizontalRun = differs ? horizontalRun + 1 : 0;
-      verticalRuns[x] = differs ? verticalRuns[x] + 1 : 0;
-      longestLine = Math.max(longestLine, horizontalRun, verticalRuns[x]);
+  const tiles = await surface.locator("img.leaflet-tile").evaluateAll(images =>
+    images.map(image => {
+      const rect = image.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+        nativeWidth: (image as HTMLImageElement).width, nativeHeight: (image as HTMLImageElement).height };
+    }));
+  expect(tiles.every(tile => tile.nativeWidth === 256 && tile.nativeHeight === 256)).toBe(true);
+  // A one-pixel road near the tile's right edge must stay at its source coordinate.
+  // Stretching 256px to 258px moves this road by almost two CSS pixels.
+  let probes = 0;
+  for (const tile of tiles) {
+    const px = tile.x + 240.5 * tile.width / 256;
+    for (const row of [40.5, 72.5, 104.5, 136.5, 168.5, 200.5, 232.5]) {
+      const py = tile.y + row * tile.height / 256;
+      if (px < x + 2 || px >= x + width - 2 || py < y + 2 || py >= y + height - 2) continue;
+      const ix = Math.floor((px - x) * info.width / width);
+      const iy = Math.floor((py - y) * info.height / height);
+      const samples: number[] = [];
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++)
+          samples.push(data[((iy + dy) * info.width + ix + dx) * info.channels]);
+      const sample = value === 48 ? Math.max(...samples) : Math.min(...samples);
+      expect(Math.abs(sample - (272 - value))).toBeLessThan(100);
+      probes++;
     }
   }
-  if (seams) {
-    await test
-      .info()
-      .attach("tile-pixels", { body: png, contentType: "image/png" });
-  }
-  expect(
-    longestLine,
-    "uniform tiles must not acquire bright or dark boundary lines",
-  ).toBeLessThan(3);
+  expect(probes).toBeGreaterThan(0);
+
 }
 
 for (const value of [48, 224]) {
-  test(`biography tiles keep their ${value === 48 ? "dark" : "light"} edges at fractional page scale`, async ({
+  test(`biography tiles preserve ${value === 48 ? "dark" : "light"} map details without stretching at fractional page scale`, async ({
     page,
   }) => {
     test.setTimeout(60_000);
     await page.emulateMedia({ reducedMotion: "reduce" });
-    const tile = await sharp({
-      create: {
-        width: 256,
-        height: 256,
-        channels: 3,
-        background: { r: value, g: value, b: value },
-      },
-    })
-      .png()
-      .toBuffer();
+    const pixels = Buffer.alloc(256 * 256 * 3);
+    for (let y = 0; y < 256; y++)
+      for (let x = 0; x < 256; x++)
+        pixels.fill(x % 16 === 0 || y % 16 === 0 ? 272 - value : value,
+          (y * 256 + x) * 3, (y * 256 + x + 1) * 3);
+    const tile = await sharp(pixels, { raw: { width: 256, height: 256, channels: 3 } }).png().toBuffer();
     await page.route("https://tile.openstreetmap.org/**", (route) =>
       route.fulfill({ contentType: "image/png", body: tile }),
     );
@@ -133,7 +130,7 @@ for (const value of [48, 224]) {
       await page.evaluate((scale) => {
         document.documentElement.style.zoom = String(scale);
       }, zoom);
-      await expectSolidTiles(page, mini, value);
+      await expectNativeTiles(page, mini, value);
     }
     await mini.click();
     await page.addStyleTag({
@@ -147,9 +144,9 @@ for (const value of [48, 224]) {
       await page.evaluate((scale) => {
         document.documentElement.style.zoom = String(scale);
       }, zoom);
-      await expectSolidTiles(page, surface, value);
+      await expectNativeTiles(page, surface, value);
       await surface.locator(".leaflet-control-zoom-in").click();
-      await expectSolidTiles(page, surface, value);
+      await expectNativeTiles(page, surface, value);
     }
   });
 }

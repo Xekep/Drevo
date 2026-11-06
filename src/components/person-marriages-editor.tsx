@@ -19,6 +19,10 @@ export function PersonMarriagesEditor({
   baseline,
   drafts,
   onChange,
+  removedIds,
+  onRemove,
+  removedPartnerIds,
+  onRemovePartner,
   user,
   busy,
 }: {
@@ -27,14 +31,22 @@ export function PersonMarriagesEditor({
   baseline: FamilyUnion[];
   drafts: FamilyUnion[];
   onChange: (drafts: FamilyUnion[]) => void;
+  removedIds: string[];
+  onRemove: (id: string) => void;
+  removedPartnerIds: string[];
+  onRemovePartner: (id: string) => void;
   user: ArchiveUser | null;
   busy: boolean;
 }) {
   const [partnerId, setPartnerId] = useState("");
   const [selectedUnionId, setSelectedUnionId] = useState("");
+  const records = [...new Map([...baseline, ...drafts].map(union => [union.id, union])).values()]
+    .filter(union => union.type === "marriage" && union.participants.includes(person.id) &&
+      !removedIds.includes(union.id) && !union.participants.some(id => removedPartnerIds.includes(id)));
   const partners = family.people.filter(
     (other) =>
       other.id !== person.id &&
+      !removedPartnerIds.includes(other.id) &&
       (person.spouses.includes(other.id) ||
         other.spouses.includes(person.id) ||
         baseline.some(
@@ -44,16 +56,20 @@ export function PersonMarriagesEditor({
         )),
   );
   const partner = partners.find((other) => other.id === partnerId);
-  const marriages = baseline.filter(
+  const undatedPartners = partners.filter(other =>
+    (person.spouses.includes(other.id) || other.spouses.includes(person.id)) &&
+    !records.some(union => union.participants.includes(other.id)));
+  const marriages = records.filter(
     (union) =>
       union.type === "marriage" &&
       union.participants.includes(person.id) &&
       union.participants.includes(partnerId),
   );
-  const original =
+  const selectedMarriage =
     marriages.find((union) => union.id === selectedUnionId) || marriages[0];
+  const original = baseline.find(union => union.id === selectedMarriage?.id);
   const draft =
-    drafts.find((union) => union.id === (original?.id || selectedUnionId)) ||
+    drafts.find((union) => union.id === (selectedMarriage?.id || selectedUnionId)) ||
     (!original
       ? drafts.find(
           (union) =>
@@ -89,6 +105,36 @@ export function PersonMarriagesEditor({
         Брак
       </summary>
       <div className="person-marriage-fields">
+        {undatedPartners.length > 0 && <ul className="person-marriages-list" aria-label="Связи супругов без записи о браке">
+          {undatedPartners.map(other => <li key={other.id}>
+            <button type="button" disabled={busy} onClick={() => {
+              setPartnerId(other.id); setSelectedUnionId("");
+            }}>{fullName(other)} · Даты не указаны</button>
+            <button type="button" disabled={busy || !owns(user, person) || !owns(user, other)}
+              onClick={() => { onRemovePartner(other.id); setPartnerId(""); setSelectedUnionId(""); }}
+              aria-label={`Удалить связь супругов с ${fullName(other)}`}>Удалить связь</button>
+          </li>)}
+        </ul>}
+        {records.length > 0 && <ul className="person-marriages-list" aria-label="Записи о браках">
+          {records.map(union => {
+            const other = family.people.find(item => item.id !== person.id && union.participants.includes(item.id));
+            const canRemove = (!baseline.some(item => item.id === union.id) || owns(user, union)) && union.participants.every(id => {
+              const participant = family.people.find(item => item.id === id);
+              return !!participant && owns(user, participant);
+            });
+            return <li key={union.id}>
+              <button type="button" disabled={busy || !other} onClick={() => {
+                setPartnerId(other!.id); setSelectedUnionId(union.id);
+              }}>
+                {other ? fullName(other) : "Супруг не загружен"}
+                {union.formation?.date && ` · ${dateInputLabel(union.formation.date)}`}
+              </button>
+              <button type="button" disabled={busy || !canRemove}
+                onClick={() => { onRemove(union.id); setSelectedUnionId(""); }}
+                aria-label={`Удалить запись о браке с ${other ? fullName(other) : "супругом"}`}>Удалить</button>
+            </li>;
+          })}
+        </ul>}
         {partners.length ? (
           <>
             <PersonSearch
@@ -109,7 +155,7 @@ export function PersonMarriagesEditor({
               <label>
                 Брак с этим человеком
                 <select
-                  value={original?.id || ""}
+                  value={selectedMarriage?.id || ""}
                   onChange={(event) => setSelectedUnionId(event.target.value)}
                 >
                   {marriages.map((union, index) => (
