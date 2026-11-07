@@ -319,6 +319,18 @@ test("wheel moves through years, Shift+wheel moves people, and life bars track f
   expect(await timeline.evaluate((element) => element.scrollTop)).toBe(
     before.top,
   );
+  // Horizontal wheel movement now eases toward its destination. Wait until
+  // it settles before asserting that Shift+wheel changes only the people list.
+  // Otherwise we mistake the previous wheel animation for a vertical-wheel
+  // side effect.
+  await expect
+    .poll(async () => {
+      const first = await timeline.evaluate((element) => element.scrollLeft);
+      await page.waitForTimeout(120);
+      const second = await timeline.evaluate((element) => element.scrollLeft);
+      return Math.abs(second - first);
+    })
+    .toBeLessThan(0.5);
   const beforePeople = await timeline.evaluate((element) => ({
     left: element.scrollLeft,
     top: element.scrollTop,
