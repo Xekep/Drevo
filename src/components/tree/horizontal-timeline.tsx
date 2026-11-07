@@ -23,6 +23,10 @@ import { timelineRowWindow } from "../../domain/timeline-window";
 import "../../styles/timeline.css";
 
 const VIRTUAL_ROW_THRESHOLD = 32;
+const WHEEL_MULTIPLIER = 1.25;
+const WHEEL_EASING = 0.13;
+const DRAG_THROW_MS = 240;
+const MAX_DRAG_SPEED = 3;
 
 const emblems: Record<string, string> = {
   "Российская империя": "/eras/russian-empire.svg",
@@ -235,6 +239,18 @@ export function HorizontalTimeline({
     left: number;
     top: number;
     active: boolean;
+    lastX: number;
+    lastTime: number;
+    speed: number;
+    fromEra: boolean;
+  } | null>(null);
+  const suppressEraClick = useRef(false);
+  const horizontalMotion = useRef<{
+    frame: number;
+    position: number;
+    target: number;
+    written: number;
+    lastTime: number;
   } | null>(null);
   const initialScrollDone = useRef(false);
   const lastHorizontalFocusToken = useRef<number | null>(null);
@@ -368,6 +384,68 @@ export function HorizontalTimeline({
     lastFocusedToken.current = lastHorizontalFocusToken.current;
   }, []);
 
+  const stopHorizontalMotion = useCallback(() => {
+    if (horizontalMotion.current?.frame)
+      cancelAnimationFrame(horizontalMotion.current.frame);
+    horizontalMotion.current = null;
+  }, []);
+
+  // Inertial scrolling writes the native scroll offset, not a translated
+  // duplicate track. The existing sticky portraits, era names and virtualized
+  // rows therefore remain in exactly the same coordinate system.
+  const animateHorizontalTo = useCallback((requestedLeft: number) => {
+    const scroll = viewport.current;
+    if (!scroll) return;
+    const target = Math.max(
+      0,
+      Math.min(scroll.scrollWidth - scroll.clientWidth, requestedLeft),
+    );
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      stopHorizontalMotion();
+      scroll.scrollLeft = target;
+      return;
+    }
+    let motion = horizontalMotion.current;
+    if (!motion) {
+      motion = {
+        frame: 0,
+        position: scroll.scrollLeft,
+        target,
+        written: scroll.scrollLeft,
+        lastTime: 0,
+      };
+      horizontalMotion.current = motion;
+    }
+    motion.target = target;
+    if (motion.frame) return;
+
+    const tick = (now: number) => {
+      const active = horizontalMotion.current;
+      if (!active || viewport.current !== scroll) return;
+      active.frame = 0;
+      // An external navigation, resize or direct scroll wins over inertia.
+      if (Math.abs(scroll.scrollLeft - active.written) > 1.5) {
+        stopHorizontalMotion();
+        return;
+      }
+      const dt = active.lastTime ? Math.min(50, now - active.lastTime) : 16.67;
+      active.lastTime = now;
+      const alpha = 1 - Math.pow(1 - WHEEL_EASING, dt / 16.67);
+      const next = active.position + (active.target - active.position) * alpha;
+      scroll.scrollLeft = Math.abs(next - active.target) < 0.5
+        ? active.target
+        : next;
+      active.position = scroll.scrollLeft;
+      active.written = active.position;
+      if (Math.abs(active.target - active.position) < 0.5)
+        stopHorizontalMotion();
+      else active.frame = requestAnimationFrame(tick);
+    };
+    motion.frame = requestAnimationFrame(tick);
+  }, [stopHorizontalMotion]);
+
+  useEffect(() => () => stopHorizontalMotion(), [stopHorizontalMotion]);
+
   useLayoutEffect(() => {
     const scroll = viewport.current;
     if (!scroll) return;
@@ -406,6 +484,7 @@ export function HorizontalTimeline({
       // scrollLeft against the old board width. Restore the last committed
       // chronology position after the pads match the new viewport.
       if (previousWidth > 0 && previousWidth !== width) {
+        stopHorizontalMotion();
         scroll.scrollLeft = yearToPreserveOnResize.current === null
           ? preservedLeft
           : model.yearX(yearToPreserveOnResize.current);
@@ -419,7 +498,7 @@ export function HorizontalTimeline({
     const observer = new ResizeObserver(measure);
     observer.observe(scroll);
     return () => observer.disconnect();
-  }, [model, syncViewport]);
+  }, [model, syncViewport, stopHorizontalMotion]);
 
   useEffect(() => {
     const ids = new Set(visibleRowIds ? visibleRowIds.split("\u0000") : []);
@@ -532,6 +611,7 @@ export function HorizontalTimeline({
     const previous = previousModel.current;
     previousModel.current = model;
     if (!scroll || previous === model || !initialScrollDone.current) return;
+    stopHorizontalMotion();
     // Detailed person data can extend the chronology and move its start year.
     // Preserve the year under the centre marker rather than reusing a pixel
     // offset that now belongs to a different date.
@@ -541,7 +621,7 @@ export function HorizontalTimeline({
     const next = model.yearAtX(scroll.scrollLeft);
     if (yearLabel.current) yearLabel.current.textContent = String(next);
     setYear((current) => (current === next ? current : next));
-  }, [model]);
+  }, [model, stopHorizontalMotion]);
 
   useLayoutEffect(() => {
     const previous = previousSelectedKey.current;
@@ -605,12 +685,19 @@ export function HorizontalTimeline({
               ? scroll.clientHeight
               : scroll.clientWidth
             : 1);
-      if (vertical) scroll.scrollTop += pixels;
-      else scroll.scrollLeft += pixels;
+      if (vertical) {
+        stopHorizontalMotion();
+        scroll.scrollTop += pixels;
+      } else {
+        animateHorizontalTo(
+          (horizontalMotion.current?.target ?? scroll.scrollLeft) +
+            pixels * WHEEL_MULTIPLIER,
+        );
+      }
     };
     scroll.addEventListener("wheel", onWheel, { passive: false });
     return () => scroll.removeEventListener("wheel", onWheel);
-  }, [cancelFocus]);
+  }, [cancelFocus, animateHorizontalTo, stopHorizontalMotion]);
 
   useEffect(() => {
     const scroll = viewport.current;
@@ -670,6 +757,7 @@ export function HorizontalTimeline({
     const person = people.find((item) => item.id === id);
     if (!scroll || !person?.birth) return;
     lastHorizontalFocusToken.current = focusToken;
+    stopHorizontalMotion();
     const left = model.yearX(Number(person.birth.slice(0, 4)));
     pendingHorizontalFocus.current = { token: focusToken, left };
     scroll.scrollTo({
@@ -682,7 +770,7 @@ export function HorizontalTimeline({
       pendingHorizontalFocus.current = null;
       setHorizontalFocusReady(focusToken);
     }
-  }, [focusToken, focusId, model, people]);
+  }, [focusToken, focusId, model, people, stopHorizontalMotion]);
 
   useEffect(() => {
     if (
@@ -809,6 +897,7 @@ export function HorizontalTimeline({
   );
   const stepYear = (delta: number) => {
     cancelFocus();
+    stopHorizontalMotion();
     viewport.current?.scrollTo({
       left: model.yearX(
         Math.min(model.end, Math.max(model.start, year + delta)),
@@ -926,6 +1015,7 @@ export function HorizontalTimeline({
           }
           if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
             cancelFocus();
+            stopHorizontalMotion();
             event.preventDefault();
             event.currentTarget.scrollBy({
               left:
@@ -935,6 +1025,7 @@ export function HorizontalTimeline({
             });
           } else if (event.key === "Home" || event.key === "End") {
             cancelFocus();
+            stopHorizontalMotion();
             event.preventDefault();
             event.currentTarget.scrollTo({
               left: event.key === "Home" ? 0 : model.width,
@@ -943,18 +1034,27 @@ export function HorizontalTimeline({
           }
         }}
         onPointerDown={(event) => {
+          const fromEra = Boolean(
+            (event.target as Element).closest(".timeline-era-segment"),
+          );
           if (
             event.pointerType !== "mouse" ||
             event.button !== 0 ||
-            (event.target as Element).closest("button, summary, a, input")
+            ((event.target as Element).closest("button, summary, a, input") &&
+              !fromEra)
           )
             return;
+          if (fromEra) suppressEraClick.current = false;
           drag.current = {
             x: event.clientX,
             y: event.clientY,
             left: event.currentTarget.scrollLeft,
             top: event.currentTarget.scrollTop,
             active: false,
+            lastX: event.clientX,
+            lastTime: performance.now(),
+            speed: 0,
+            fromEra,
           };
         }}
         onPointerMove={(event) => {
@@ -965,18 +1065,41 @@ export function HorizontalTimeline({
           if (!current.active && Math.hypot(dx, dy) < 5) return;
           if (!current.active) {
             cancelFocus();
+            stopHorizontalMotion();
             current.active = true;
+            if (current.fromEra) suppressEraClick.current = true;
             event.currentTarget.setPointerCapture(event.pointerId);
             event.currentTarget.classList.add("is-dragging");
           }
+          const now = performance.now();
+          const velocity = -(event.clientX - current.lastX) /
+            Math.max(8, now - current.lastTime);
+          current.speed = 0.64 * current.speed + 0.36 * velocity;
+          current.lastX = event.clientX;
+          current.lastTime = now;
           event.currentTarget.scrollLeft = current.left - dx;
           event.currentTarget.scrollTop = current.top - dy;
         }}
         onPointerUp={(event) => {
+          const finished = drag.current;
           drag.current = null;
           event.currentTarget.classList.remove("is-dragging");
           if (event.currentTarget.hasPointerCapture(event.pointerId))
             event.currentTarget.releasePointerCapture(event.pointerId);
+          if (
+            finished?.active &&
+            performance.now() - finished.lastTime < 80 &&
+            !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ) {
+            const speed = Math.max(
+              -MAX_DRAG_SPEED,
+              Math.min(MAX_DRAG_SPEED, finished.speed),
+            );
+            if (Math.abs(speed) > 0.05)
+              animateHorizontalTo(
+                event.currentTarget.scrollLeft + speed * DRAG_THROW_MS,
+              );
+          }
         }}
         onPointerCancel={(event) => {
           drag.current = null;
@@ -1111,7 +1234,7 @@ export function HorizontalTimeline({
               />
             )}
           </div>
-          <div className="timeline-era-bar" aria-label="Исторические эпохи">
+          <div className="timeline-era-bar" aria-label="Исторические эпохи. Перетаскивайте для прокрутки по годам">
             <span className="timeline-era-heading">Эпохи</span>
             <div
               className="timeline-era-track"
@@ -1128,8 +1251,13 @@ export function HorizontalTimeline({
                     left: `calc(var(--timeline-pad) + ${era.x}px)`,
                     width: era.width,
                   }}
-                  onClick={() => {
+                  onClick={(event) => {
+                    if (event.detail && suppressEraClick.current) {
+                      suppressEraClick.current = false;
+                      return;
+                    }
                     cancelFocus();
+                    stopHorizontalMotion();
                     viewport.current?.scrollTo({
                       left: era.x + era.width / 2,
                       behavior: scrollBehavior(),
