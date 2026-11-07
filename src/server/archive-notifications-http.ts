@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { finished } from "node:stream/promises";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
+import { readMemorialDates, memorialToday } from "./memorial-dates.ts";
 import { archiveNotificationsStore } from "./archive-notifications.ts";
 import { scopedArchiveReader } from "./scoped-archive-reader.ts";
 import { isScopedUser } from "../domain/tree-access.ts";
@@ -36,6 +37,12 @@ export function archiveNotificationsHttp({
   };
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (url.pathname !== "/api/notifications") return false;
+    const memorial = req.method === "GET" && url.searchParams.get("memorial") === "1";
+    let today = "";
+    if (memorial) {
+      try { today = memorialToday(url.searchParams.get("timeZone") || "UTC"); }
+      catch { return json(res, 400, { error: "Неизвестный часовой пояс" }); }
+    }
     const initial = await auth.currentUser(req);
     if (!initial?.approved || memberPreviewTarget(req))
       return json(res, 401, {
@@ -119,7 +126,7 @@ export function archiveNotificationsHttp({
             return json(res, 404, { error: "Уведомление не найдено" });
           if (receipt?.through !== undefined)
             await store.readThrough(user.id, visible, receipt.through);
-          const body = req.method === "GET" && url.searchParams.get("head") === "1"
+          const body = memorial ? { items: await readMemorialDates(archive.db, visible, today) } : req.method === "GET" && url.searchParams.get("head") === "1"
             ? await store.summary(user.id, visible)
             : req.method === "GET" && before > 0 && url.searchParams.get("summary") === "0"
               ? await store.tail(user.id, visible, before)

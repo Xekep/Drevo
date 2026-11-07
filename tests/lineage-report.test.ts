@@ -42,7 +42,7 @@ test("lineage text follows recorded generations and sources without unrelated pe
   assert.match(ancestors, /Ф\.1, Оп\.2 · https:\/\/example\.test\/record/);
   assert.doesNotMatch(ancestors, /Посторонний|Сын/);
   const descendants = lineageReport(family, root.id, "descendants", 2);
-  assert.match(descendants, /Поколение 2\n1\. Сын/);
+  assert.match(descendants, /Поколение II\r\n[\s\S]*1\.1\. Сын/);
   assert.doesNotMatch(descendants, /Бабушка|Посторонний/);
   assert.equal(descendants, lineageReport(family, root.id, "descendants", 2));
   assert.throws(() => lineageReport(family, "missing", "ancestors", 2));

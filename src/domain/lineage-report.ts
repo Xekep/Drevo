@@ -1,3 +1,4 @@
+import { generationReport } from "./generation-report.ts";
 import { fullName } from "./dates.ts";
 import { familyNeighbors } from "./family-neighborhood.ts";
 import { CLAIM_CONFIDENCE_LABELS } from "./claim-confidence.ts";
@@ -13,11 +14,15 @@ export type LineageDirection = "ancestors" | "descendants";
 
 /** A reproducible report based solely on recorded facts in the visible family. */
 export function lineageReport(
-  family: Pick<Family, "people">,
+  family: Pick<Family, "people"> & Partial<Family>,
   rootId: string,
   direction: LineageDirection,
   generations: number,
 ) {
+  if (direction === "descendants") return generationReport(
+    { title: family.title || "Семейный архив", description: "", demo: false, ...family },
+    new Set(family.people.map((person) => person.id)), rootId,
+  );
   const index = familyNeighbors(family);
   const root = index.people.get(rootId);
   if (!root) throw new Error("Выберите человека для росписи.");

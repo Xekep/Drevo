@@ -81,6 +81,18 @@ test("notifications follow current scope, confirmed events and individual receip
         "UPDATE users SET tree_access='common_ancestors',person_id='visible' WHERE id='reader'",
       )
       .run();
+    // Calendar reminders are scoped independently of audit rows and do not
+    // increase the activity unread count. Use today's civil date in UTC.
+    const today = new Date().toISOString().slice(0, 10);
+    const death = `2000${today.slice(4)}`;
+    const dated = await app.archive.read();
+    dated.family.people.forEach(person => { person.death = death; });
+    await app.archive.write(dated.family, dated.revision, owner);
+    const memorials = await read("reader", "?memorial=1&timeZone=UTC");
+    assert.deepEqual(memorials.items.map(item => item.personId), ["visible"]);
+    const allMemorials = await read("owner", "?memorial=1&timeZone=UTC");
+    assert.deepEqual(new Set(allMemorials.items.map(item => item.personId)), new Set(["visible", "hidden"]));
+    assert.equal((await request("reader", "GET", undefined, undefined, "?memorial=1&timeZone=Bad/Zone")).status, 400);
     assert.equal((await request("")).status, 401);
     assert.equal((await read("owner")).unread, 0, "own actions are excluded");
     const scoped = await read("reader");

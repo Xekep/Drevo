@@ -142,3 +142,9 @@
   background: transparent;
   color: #526b46;
 }
+
+.notifications-section-title {
+  margin: 0;
+  padding: 12px 16px 6px;
+  font-size: 0.85rem;
+}

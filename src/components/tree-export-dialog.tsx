@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Download } from "lucide-react";
 import type { GenealogyExportFormat } from "../domain/genealogy-transfer";
 import { EditorDialog } from "./editor-dialog";
+import { fullName } from "../domain/dates.ts";
+import type { Person } from "../domain/types.ts";
 import "../styles/tree-preferences.css";
 
 type ExportFormat = "pdf" | "generation-text" | GenealogyExportFormat;
@@ -12,16 +14,22 @@ export function TreeExportDialog({
   onClose,
   onExportPdf,
   onExportText,
+  people,
+  anchorId,
   onExportGenealogy,
   onCheckExportWarnings = noExportWarnings,
 }: {
   onClose: () => void;
   onExportPdf: (signal: AbortSignal, onProgress: (message: string) => void) => Promise<void>;
-  onExportText: (signal: AbortSignal) => Promise<void>;
+  onExportText: (signal: AbortSignal, rootId: string) => Promise<void>;
+  people: Person[];
+  anchorId?: string;
   onExportGenealogy?: (format: GenealogyExportFormat, signal: AbortSignal, onError: (message: string) => void) => Promise<void>;
   onCheckExportWarnings?: (signal: AbortSignal) => Promise<ExportWarnings>;
 }) {
   const [format, setFormat] = useState<ExportFormat>("pdf");
+  const [rootId, setRootId] = useState(anchorId || "");
+  const rootAvailable = people.some((person) => person.id === rootId);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -55,7 +63,7 @@ export function TreeExportDialog({
       if (format === "pdf") await onExportPdf(next.signal, message => {
         if (!next.signal.aborted) setStatus(message);
       });
-      else if (format === "generation-text") await onExportText(next.signal);
+      else if (format === "generation-text") await onExportText(next.signal, rootId);
       else await onExportGenealogy?.(format, next.signal, (message) => {
         if (next.signal.aborted) return;
         setError(message);
@@ -77,7 +85,17 @@ export function TreeExportDialog({
     <EditorDialog title="Экспорт древа" onClose={onClose} className="tree-preferences-dialog">
       <div className="tree-preferences">
         <div className="tree-pdf-export">
-          <p>Экспортируется видимое древо с текущими настройками и раскрытыми ветвями.</p>
+          <p>{format === "generation-text"
+            ? "Роспись д’Абовилля включает выбранного человека и всех доступных потомков по мужским и женским линиям, включая свёрнутые ветви."
+            : "Экспортируется видимое древо с текущими настройками и раскрытыми ветвями."}</p>
+          {format === "generation-text" && <label className="tree-lineage-root">
+            Родоначальник
+            <select aria-label="Родоначальник" value={rootAvailable ? rootId : ""} disabled={busy} onChange={(event) => setRootId(event.target.value)}>
+              <option value="">Выберите человека</option>
+              {[...people].sort((a, b) => fullName(a).localeCompare(fullName(b), "ru") || a.id.localeCompare(b.id)).map((person) =>
+                <option key={person.id} value={person.id}>{fullName(person) || "Имя неизвестно"}{person.birth ? ` (${person.birth})` : ""}</option>)}
+            </select>
+          </label>}
           <div className="tree-genealogy-export">
             <select
               aria-label="Формат экспорта"
@@ -96,7 +114,7 @@ export function TreeExportDialog({
                 <option value="gedcom551">GEDCOM 5.5.1</option>
               </>}
             </select>
-            <button type="button" disabled={busy || (format.startsWith("ged") && warnings === null)} onClick={() => void exportTree()}>
+            <button type="button" disabled={busy || (format === "generation-text" && !rootAvailable) || (format.startsWith("ged") && warnings === null)} onClick={() => void exportTree()}>
               <Download size={16} aria-hidden="true" /> Скачать
             </button>
           </div>

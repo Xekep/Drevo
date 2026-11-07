@@ -28,6 +28,8 @@ async function mockInbox(page: Page) {
     ],
   };
   await page.route("**/api/notifications*", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("memorial") === "1")
+      return route.fulfill({ json: { items: [] } });
     if (route.request().method() === "POST") {
       const body = route.request().postDataJSON();
       inbox = {
@@ -236,6 +238,8 @@ test("live polling refreshes loaded pages, preserves reading and sounds once per
   let notifications = Array.from({ length: 40 }, (_, i) => item(200 - i));
   let headLoads = 0;
   await page.route("**/api/notifications*", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("memorial") === "1")
+      return route.fulfill({ json: { items: [] } });
     const before = Number(
       new URL(route.request().url()).searchParams.get("before"),
     );
@@ -367,6 +371,8 @@ test("revoked access stays cleared when an older poll settles after a read recei
     release = resolve;
   });
   await page.route("**/api/notifications*", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("memorial") === "1")
+      return route.fulfill({ json: { items: [] } });
     if (route.request().method() === "POST")
       return route.fulfill({ status: 403, json: { error: "Forbidden" } });
     gets++;

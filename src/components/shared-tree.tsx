@@ -341,11 +341,12 @@ export default function SharedTree({ token }: { token: string }) {
       )}
       {data && exportOpen && (
         <TreeExportDialog
+          people={data.family.people}
+          anchorId={selected[0] || data.anchorId}
           onExportPdf={(signal, onProgress) => treeCanvas.current!.exportPdf(signal, "current", undefined, undefined, onProgress)}
-          onExportText={async (signal) => {
-            const ids = await treeCanvas.current!.visiblePersonIds(signal);
+          onExportText={async (signal, rootId) => {
             const { downloadGenerationReport } = await import("./tree/download-generation-report");
-            await downloadGenerationReport(ids, signal, `/api/shared/${encodeURIComponent(token)}`);
+            await downloadGenerationReport(rootId, signal, `/api/shared/${encodeURIComponent(token)}`);
           }}
           onClose={() => setExportOpen(false)}
         />

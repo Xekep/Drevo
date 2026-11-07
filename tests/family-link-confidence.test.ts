@@ -108,5 +108,5 @@ test("additional relation assessment survives SQLite and GEDCOM; scoped sharing 
     createdBy: "owner", createdName: "Owner", revokedAt: null, lastVisitedAt: null };
   assert.equal(sharedFamily(data, share, "token").links?.[0].confidence, "conflicting");
   assert.deepEqual(sharedFamily(data, { ...share, personIds: ["adult"] }, "token").links, []);
-  assert.match(generationReport(data, new Set(["adult", "child"])), /Оценка связи: Противоречиво/);
+  assert.match(generationReport(data, new Set(["adult", "child"]), "child"), /Оценка связи: Противоречиво/);
 });

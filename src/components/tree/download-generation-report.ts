@@ -4,12 +4,12 @@ import type { Family } from "../../domain/types.ts";
 
 /** Fetch full permitted cards once; shared links use their own access boundary. */
 export async function downloadGenerationReport(
-  personIds: string[],
+  rootId: string,
   signal: AbortSignal,
   sourceUrl = "/api/family",
 ) {
-  if (!personIds.length)
-    throw new Error("В видимом древе нет людей для экспорта.");
+  if (!rootId)
+    throw new Error("Выберите родоначальника для росписи.");
   const response = await archiveFetch(sourceUrl, { signal, cache: "no-store" });
   if (!response.ok)
     throw new Error(
@@ -23,11 +23,11 @@ export async function downloadGenerationReport(
   if (data.readTree === false || !data.family?.people)
     throw new Error("Нет доступа к данным древа.");
   const known = new Set(data.family.people.map((person) => person.id));
-  if (personIds.some((id) => !known.has(id)))
+  if (!known.has(rootId))
     throw new Error(
       "Состав или доступ к древу изменился. Обновите древо и повторите экспорт.",
     );
-  const content = generationReport(data.family, new Set(personIds));
+  const content = generationReport(data.family, known, rootId);
   signal.throwIfAborted();
   const url = URL.createObjectURL(
     new Blob(["\uFEFF", content], { type: "text/plain;charset=utf-8" }),

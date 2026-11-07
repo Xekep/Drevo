@@ -1602,12 +1602,13 @@ export default function App() {
       )}
       {treeExportOpen && !participantPreview && family && readTree && (
         <TreeExportDialog
+          people={family.people}
+          anchorId={selected[0]}
           onCheckExportWarnings={checkExportWarnings}
           onExportPdf={(signal, onProgress) => treeCanvas.current!.exportPdf(signal, "current", undefined, undefined, onProgress)}
-          onExportText={async (signal) => {
-            const ids = await treeCanvas.current!.visiblePersonIds(signal);
+          onExportText={async (signal, rootId) => {
             const { downloadGenerationReport } = await import("./components/tree/download-generation-report");
-            await downloadGenerationReport(ids, signal);
+            await downloadGenerationReport(rootId, signal);
           }}
           onExportGenealogy={isArchiveOwner(user) ? async (format, signal, onError) => {
             const ids = await treeCanvas.current!.visiblePersonIds(signal);
