@@ -126,6 +126,7 @@ const PERSON_UPDATE_PROPOSAL_TOOL = {
     type: "object",
     properties: {
       personId: { type: "string", minLength: 1, maxLength: 200 },
+      personName: { type: "string", minLength: 1, maxLength: 500 },
       changes: {
         type: "object",
         properties: {
@@ -152,7 +153,7 @@ const PERSON_UPDATE_PROPOSAL_TOOL = {
         maxItems: 10,
       },
     },
-    required: ["personId", "changes", "reason"],
+    required: ["personId", "personName", "changes", "reason"],
     additionalProperties: false,
   },
 } as const;
@@ -301,6 +302,10 @@ export const RESEARCH_PROPOSAL_TOOLS = [
   SOURCE_PROPOSAL_TOOL,
   RELATION_PROPOSAL_TOOL,
 ] as const;
+
+function normalizedPersonName(name: string) {
+  return name.normalize("NFC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("ru");
+}
 
 function personChanges(value: unknown): PersonChanges {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -647,11 +652,14 @@ export function researchSuggestionStore(db: StoreDatabase) {
         throw new Error("Некорректное предложение");
       const input = raw as Record<string, unknown>,
         personId = text(input.personId, "personId", 200),
+        personName = text(input.personName, "personName", 500),
         changes = personChanges(input.changes),
         reason = text(input.reason, "reason", 2000),
         grounds = evidence(input.evidence),
         person = family.people.find((item) => item.id === personId);
       if (!person) throw new Error("Человек не найден или недоступен");
+      if (normalizedPersonName(fullName(person)) !== normalizedPersonName(personName))
+        throw new Error("ФИО не соответствует идентификатору карточки. Повторите поиск человека");
 
       const before: PersonChanges = {};
       for (const key of Object.keys(changes) as PersonUpdateField[])
@@ -706,15 +714,14 @@ export function researchSuggestionStore(db: StoreDatabase) {
         const personName = text(rawEntry.personName, "personName", 500);
         const person = family.people.find(item => item.id === personId);
         if (!person) throw new Error("Человек не найден или недоступен");
-        const normalize = (name: string) => name.normalize("NFC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("ru");
-        if (normalize(fullName(person)) !== normalize(personName))
+        if (normalizedPersonName(fullName(person)) !== normalizedPersonName(personName))
           throw new Error("ФИО не соответствует идентификатору карточки. Повторите поиск человека");
         if (seen.has(personId)) throw new Error("Карточка дважды указана в одном пакете");
         seen.add(personId);
         personChanges(rawEntry.changes);
         text(rawEntry.reason, "reason", 2000);
         evidence(rawEntry.evidence);
-        return { personId, changes: rawEntry.changes, reason: rawEntry.reason, evidence: rawEntry.evidence };
+        return { personId, personName, changes: rawEntry.changes, reason: rawEntry.reason, evidence: rawEntry.evidence };
       });
       const createAll = async () => {
         const results: ResearchSuggestion[] = [];
