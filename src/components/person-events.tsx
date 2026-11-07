@@ -7,6 +7,8 @@ import { repositorySummary } from "../domain/person-sources.ts";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
 import { claimableEventDate, eventHasEvidence, retypeEvent, EVENT_NAMES } from "../domain/person-events";
 import { dateInputLabel, dateLabel, normalizeDateInput, safeUrl } from "../domain/dates";
+import { canUseOldStyleDate, julianInputLabel, normalizeLifeDate } from "../domain/calendar-dates.ts";
+import { CalendarStyleControl } from "./calendar-style-control.tsx";
 import { PersonDetailDialog } from "./person-detail-dialog";
 import { validateEvents } from "../domain/person-events";
 import { validateEventEvidence } from "../domain/validation";
@@ -97,9 +99,15 @@ export function EventsEditor({
   };
   const apply = () => {
     if (!editing) return;
+    const enteredDate = editing.dateJulian || editing.date || "";
+    const enteredEndDate = editing.endDateJulian || editing.endDate || "";
+    const date = normalizeLifeDate(enteredDate, !!editing.dateJulian && canUseOldStyleDate(enteredDate));
+    const endDate = normalizeLifeDate(enteredEndDate, !!editing.endDateJulian && canUseOldStyleDate(enteredEndDate));
     const normalized = { ...editing,
-      date: editing.date ? normalizeDateInput(editing.date) : undefined,
-      endDate: editing.endDate ? normalizeDateInput(editing.endDate) : undefined,
+      date: date.date || undefined,
+      dateJulian: date.julian,
+      endDate: endDate.date || undefined,
+      endDateJulian: endDate.julian,
       alternatives: editing.alternatives?.map((item) => ({ ...item,
         value: item.field === "date" ? normalizeDateInput(item.value) : item.value.trim() })),
     };
@@ -114,6 +122,25 @@ export function EventsEditor({
     onChange(
       events.map((event) => (event.id === id ? { ...event, ...patch } : event)),
     );
+  const dateText = (event: PersonEvent, field: "date" | "endDate") => {
+    const key = field === "date" ? "dateJulian" : "endDateJulian";
+    return event[key] || event[field] || "";
+  };
+  const editDate = (event: PersonEvent, field: "date" | "endDate", text: string) => {
+    const key = field === "date" ? "dateJulian" : "endDateJulian";
+    update(event.id, {
+      [field]: text || undefined,
+      [key]: event[key] && canUseOldStyleDate(text) ? text : undefined,
+    });
+  };
+  const switchDateStyle = (event: PersonEvent, field: "date" | "endDate", oldStyle: boolean) => {
+    const key = field === "date" ? "dateJulian" : "endDateJulian";
+    const original = dateText(event, field);
+    update(event.id, {
+      [field]: original || undefined,
+      [key]: oldStyle ? original || undefined : undefined,
+    });
+  };
   const citedSavedTypes = new Map(savedEvents?.filter(eventHasEvidence)
     .map((event) => [event.id, event.type]));
   const saveTypeFirst = (event: PersonEvent) =>
@@ -213,22 +240,30 @@ export function EventsEditor({
                 />
               </label>
             )}
-            <label className="event-date-field">
-              Дата
-              <input
-                value={event.date ? dateInputLabel(event.date) : ""}
-                placeholder="Год или д.м.г"
-                onChange={(e) =>
-                  update(event.id, { date: e.target.value || undefined })
-                }
-              />
-            </label>
-            {section === "education" && <label className="event-end-date-field">
-              Окончание учёбы
-              <input value={event.endDate ? dateInputLabel(event.endDate) : ""}
-                placeholder="Год или д.м.г"
-                onChange={(change) => update(event.id, { endDate: change.target.value || undefined })} />
-            </label>}
+            <div className="event-date-field">
+              <label>Дата
+                <input
+                  value={event.dateJulian ? julianInputLabel(event.dateJulian) : event.date ? dateInputLabel(event.date) : ""}
+                  placeholder="Год или д.м.г"
+                  onChange={(change) => editDate(event, "date", change.target.value)}
+                />
+              </label>
+              <CalendarStyleControl text={dateText(event, "date")}
+                label="Дата события по старому стилю"
+                checked={!!event.dateJulian}
+                onChange={(checked) => switchDateStyle(event, "date", checked)} />
+            </div>
+            {section === "education" && <div className="event-end-date-field">
+              <label>Окончание учёбы
+                <input value={event.endDateJulian ? julianInputLabel(event.endDateJulian) : event.endDate ? dateInputLabel(event.endDate) : ""}
+                  placeholder="Год или д.м.г"
+                  onChange={(change) => editDate(event, "endDate", change.target.value)} />
+              </label>
+              <CalendarStyleControl text={dateText(event, "endDate")}
+                label="Дата окончания учёбы по старому стилю"
+                checked={!!event.endDateJulian}
+                onChange={(checked) => switchDateStyle(event, "endDate", checked)} />
+            </div>}
             {!saveTypeFirst(event) && event.dateClaim && <details className="event-date-claim">
               <summary>Источники даты события{event.dateClaim?.sources.length
                 ? ` · ${event.dateClaim.sources.length}` : ""}</summary>
