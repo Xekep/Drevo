@@ -92,6 +92,23 @@ test("notifications follow current scope, confirmed events and individual receip
     assert.deepEqual(memorials.items.map(item => item.personId), ["visible"]);
     const allMemorials = await read("owner", "?memorial=1&timeZone=UTC");
     assert.deepEqual(new Set(allMemorials.items.map(item => item.personId)), new Set(["visible", "hidden"]));
+    const living = await app.archive.read();
+    living.family.people.forEach(person => {
+      person.birth = `1991${today.slice(4)}`;
+      delete person.death;
+      person.deceased = false;
+    });
+    // 2000 is also a valid birth year for February 29 on leap-day runs.
+    if (today.slice(5) === "02-29") living.family.people.forEach(person => { person.birth = `2000${today.slice(4)}`; });
+    await app.archive.write(living.family, living.revision, owner);
+    assert.deepEqual((await read("reader", "?memorial=1&timeZone=UTC")).items, [], "older clients must not interpret a birthday as a death anniversary");
+    const birthdays = await read("reader", "?memorial=1&birthdays=1&timeZone=UTC");
+    assert.deepEqual(birthdays.items.map(item => [item.personId, item.kind]), [["visible", "birthday"]]);
+    assert.equal((await read("owner", "?memorial=1&birthdays=1&timeZone=UTC")).items.length, 2);
+    const marked = await app.archive.read();
+    marked.family.people.find(person => person.id === "visible")!.deceased = true;
+    await app.archive.write(marked.family, marked.revision, owner);
+    assert.deepEqual((await read("reader", "?memorial=1&birthdays=1&timeZone=UTC")).items, []);
     assert.equal((await request("reader", "GET", undefined, undefined, "?memorial=1&timeZone=Bad/Zone")).status, 400);
     assert.equal((await request("")).status, 401);
     assert.equal((await read("owner")).unread, 0, "own actions are excluded");

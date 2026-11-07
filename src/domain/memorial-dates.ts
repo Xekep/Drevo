@@ -1,19 +1,28 @@
-import { dateInputLabel, fullName, plural, validDate } from "./dates.ts";
+import {
+  dateInputLabel,
+  fullName,
+  hasRecordedDeath,
+  plural,
+  validDate,
+} from "./dates.ts";
 import type { Person } from "./types.ts";
 
 export type MemorialPerson = Pick<
   Person,
   "id" | "surname" | "name" | "patronymic" | "death" | "deathJulian"
->;
+> &
+  Partial<Pick<Person, "birth" | "birthJulian" | "deceased" | "deathPlace">>;
 export type MemorialDate = {
   id: string;
   personId: string;
   personName: string;
   date: string;
-  death: string;
   years: number;
   days: number;
-};
+} & (
+  | { kind: "birthday"; birth: string }
+  | { kind: "death_anniversary"; death: string }
+);
 
 /** Civil dates only; incomplete Julian periods must not become Gregorian days. */
 export function upcomingMemorialDates(
@@ -23,31 +32,41 @@ export function upcomingMemorialDates(
   if (!validDate(today) || today.length !== 10)
     throw new Error("Некорректная текущая дата");
   const start = Date.parse(`${today}T00:00:00Z`);
+  const upcomingDays = Array.from({ length: 8 }, (_, days) => {
+    const date = new Date(start + days * 86400000).toISOString().slice(0, 10);
+    return { days, date, year: Number(date.slice(0, 4)) };
+  });
   const result: MemorialDate[] = [];
   for (const person of people) {
+    const birthday = !hasRecordedDeath(person);
+    const eventDate = birthday ? person.birth : person.death;
+    const julian = birthday ? person.birthJulian : person.deathJulian;
     if (
-      !validDate(person.death) ||
-      person.death.length !== 10 ||
-      (person.deathJulian && person.deathJulian.length !== 10)
+      !validDate(eventDate) ||
+      eventDate.length !== 10 ||
+      (julian && julian.length !== 10)
     )
       continue;
-    for (let days = 0; days <= 7; days++) {
-      const date = new Date(start + days * 86400000).toISOString().slice(0, 10);
-      const year = Number(date.slice(0, 4));
-      const monthDay = person.death.slice(5);
+    for (const { days, date, year } of upcomingDays) {
+      const monthDay = eventDate.slice(5);
       // February 29 is commemorated on February 28 in a common year.
       const observed =
         monthDay === "02-29" && !validDate(`${year}-02-29`)
           ? "02-28"
           : monthDay;
-      const years = year - Number(person.death.slice(0, 4));
-      if (years < 1 || date.slice(5) !== observed) continue;
+      const years = year - Number(eventDate.slice(0, 4));
+      // Suppress historical cards with missing death details. This is a
+      // reminder filter, never an inferred death or a change to the person.
+      if (years < 1 || (birthday && years > 120) || date.slice(5) !== observed)
+        continue;
       result.push({
-        id: `${person.id}:${person.death}:${date}`,
+        id: `${person.id}:${birthday ? "birthday:" : ""}${eventDate}:${date}`,
         personId: person.id,
         personName: fullName(person) || "Имя неизвестно",
         date,
-        death: person.death,
+        ...(birthday
+          ? { kind: "birthday" as const, birth: eventDate }
+          : { kind: "death_anniversary" as const, death: eventDate }),
         years,
         days,
       });
@@ -62,5 +81,7 @@ export function upcomingMemorialDates(
 }
 
 export function memorialDateLabel(item: MemorialDate) {
+  if (item.kind === "birthday")
+    return `${item.days === 0 ? "Сегодня" : dateInputLabel(item.date)} — день рождения, ${item.days === 0 ? "исполнилось" : "исполнится"} ${item.years} ${plural(item.years, "год", "года", "лет")}`;
   return `${item.days === 0 ? "Сегодня" : dateInputLabel(item.date)} — ${item.years} ${plural(item.years, "год", "года", "лет")} со дня смерти`;
 }
