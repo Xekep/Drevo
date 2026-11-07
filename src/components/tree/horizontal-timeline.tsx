@@ -405,43 +405,49 @@ export function HorizontalTimeline({
       scroll.scrollLeft = target;
       return;
     }
-    let motion = horizontalMotion.current;
-    if (!motion) {
-      motion = {
-        frame: 0,
-        position: scroll.scrollLeft,
-        target,
-        written: scroll.scrollLeft,
-        lastTime: 0,
-      };
-      horizontalMotion.current = motion;
-    }
-    motion.target = target;
-    if (motion.frame) return;
+    const previous = horizontalMotion.current;
+    horizontalMotion.current = previous
+      ? { ...previous, target }
+      : {
+          frame: 0,
+          position: scroll.scrollLeft,
+          target,
+          written: scroll.scrollLeft,
+          lastTime: 0,
+        };
+    if (horizontalMotion.current.frame) return;
 
     const tick = (now: number) => {
       const active = horizontalMotion.current;
       if (!active || viewport.current !== scroll) return;
-      active.frame = 0;
       // An external navigation, resize or direct scroll wins over inertia.
       if (Math.abs(scroll.scrollLeft - active.written) > 1.5) {
         stopHorizontalMotion();
         return;
       }
       const dt = active.lastTime ? Math.min(50, now - active.lastTime) : 16.67;
-      active.lastTime = now;
       const alpha = 1 - Math.pow(1 - WHEEL_EASING, dt / 16.67);
       const next = active.position + (active.target - active.position) * alpha;
       scroll.scrollLeft = Math.abs(next - active.target) < 0.5
         ? active.target
         : next;
-      active.position = scroll.scrollLeft;
-      active.written = active.position;
-      if (Math.abs(active.target - active.position) < 0.5)
+      const position = scroll.scrollLeft;
+      if (Math.abs(active.target - position) < 0.5) {
         stopHorizontalMotion();
-      else active.frame = requestAnimationFrame(tick);
+      } else {
+        horizontalMotion.current = {
+          ...active,
+          position,
+          written: position,
+          lastTime: now,
+          frame: requestAnimationFrame(tick),
+        };
+      }
     };
-    motion.frame = requestAnimationFrame(tick);
+    horizontalMotion.current = {
+      ...horizontalMotion.current,
+      frame: requestAnimationFrame(tick),
+    };
   }, [stopHorizontalMotion]);
 
   useEffect(() => () => stopHorizontalMotion(), [stopHorizontalMotion]);
