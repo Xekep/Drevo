@@ -121,13 +121,15 @@ test("calendar navigation removes a generation window for an excluded person", a
 
 test("calendar navigation to an already visible person keeps the family mode", async ({
   page,
-}) => {
+}, info) => {
   await calendar(page, "e2e-child");
   await page.goto("/people/e2e-child");
   await expect(page.locator(".tree-canvas")).toHaveAttribute(
     "data-camera-ready",
     "true",
   );
+  if (info.project.name === "mobile")
+    await page.getByRole("button", { name: "Свернуть панель", exact: true }).click();
   await familyViewAction(page, "Близкие");
   await expect(
     page.getByRole("button", { name: "Всё древо", exact: true, includeHidden: true }),
