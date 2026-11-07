@@ -776,6 +776,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       anchorId: props.generationLimits?.anchorId,
     };
     if (!anchorId || !visible.has(anchorId)) return;
+    // A notification can remove generation limits while asking to reveal a
+    // different person. Never let the old generation anchor steal its flight.
+    if (focus?.wholeTree) {
+      setScopeFocus(null);
+      return;
+    }
     // Stop the previous flight; the new request waits for current Worker geometry.
     introHandled.current = true;
     setGrowing(false);
@@ -798,11 +804,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const scopeOccurrence = activeScopeFocus
     ? personOccurrences.get(activeScopeFocus.id)?.find((id) => positions.has(id))
     : undefined;
-  const effectiveCameraFocus = useMemo(() => activeScopeFocus
+  const effectiveCameraFocus = useMemo(() => activeScopeFocus && !focus?.wholeTree
     ? scopeOccurrence ? {
       ids: [scopeOccurrence], token: activeScopeFocus.token, recenterOnResize: false,
     } : null
-    : cameraFocus, [scopeOccurrence, activeScopeFocus, cameraFocus]);
+    : cameraFocus, [scopeOccurrence, activeScopeFocus, cameraFocus, focus?.wholeTree]);
   useEffect(() => {
     if (problem) {
       const timer = window.setTimeout(() => setGrowing(false), 0);
@@ -881,7 +887,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       mode: layoutMode,
       reverse,
       ready: ready && !activeFanAnchor,
-      focusReady: !growing && introCameraFinished,
+      // A whole-tree reveal changes the visible graph and launches a layout
+      // worker. Wait for its final coordinates before animating the camera.
+      // Otherwise the old generation-window geometry consumes the one-shot
+      // focus token and the person appears without the requested flight.
+      focusReady: !growing && introCameraFinished &&
+        (!focus?.wholeTree || (!calculatingLayout && !optimizingLayout &&
+          !layoutSettling && focus.ids.every(id => renderVisible.has(id) && positions.has(id)))),
       focus: effectiveCameraFocus,
       returnPersonId: returnTarget?.id || null,
       returnToken: returnTarget?.token || 0,
