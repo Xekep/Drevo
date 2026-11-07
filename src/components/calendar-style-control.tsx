@@ -1,5 +1,5 @@
 import { dateInputLabel } from "../domain/dates";
-import { normalizeLifeDate } from "../domain/calendar-dates";
+import { canUseOldStyleDate, normalizeLifeDate } from "../domain/calendar-dates";
 
 export function CalendarStyleControl({
   text,
@@ -12,6 +12,7 @@ export function CalendarStyleControl({
   checked: boolean;
   onChange: (checked: boolean) => void;
 }) {
+  if (!canUseOldStyleDate(text)) return null;
   let hint = "";
   if (checked && text.trim()) {
     try {
