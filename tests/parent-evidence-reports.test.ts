@@ -33,7 +33,7 @@ const evidence = (): Family => {
 test("generation register attributes each visible parent assessment and citation to its edge", () => {
   const data = evidence();
   const text = generationReport(data, new Set(data.people.map((item) => item.id)));
-  assert.match(text, /Отец: №\d+ Отец[\s\S]*Оценка родительства.*Вероятно/);
+  assert.match(text, /Отец: Отец[\s\S]*Оценка родительства.*Вероятно/);
   assert.match(text, /Мать: №\d+ Мать[\s\S]*Оценка родительства.*Противоречиво/);
   assert.match(text, /Метрическая запись; архив; л\. 2; https:\/\/example\.test\/record\?page=2/);
   assert.match(text, /Перепись; архив; л\. 7; https:\/\/example\.test\/record\?page=7/);
@@ -48,7 +48,7 @@ test("legacy and shared projections cannot disclose evidence of an omitted paren
   const legacy = structuredClone(data);
   delete legacy.people[2].parentClaims;
   assert.match(generationReport(legacy, new Set(legacy.people.map((item) => item.id))),
-    /Отец: №\d+ Отец/);
+    /Отец: Отец/);
   assert.doesNotMatch(generationReport(legacy, new Set(legacy.people.map(item => item.id))),
     /Источник родительства|Оценка родительства/);
   const shared = sharedFamily(data, {

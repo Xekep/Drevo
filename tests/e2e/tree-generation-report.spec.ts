@@ -13,6 +13,7 @@ async function openRegisterExport(page: Page) {
   await dialog
     .getByRole("combobox", { name: "Формат экспорта" })
     .selectOption("generation-text");
+  await dialog.getByRole("combobox", { name: "Родоначальник" }).selectOption("e2e-memorial-person");
   return dialog;
 }
 
@@ -24,7 +25,7 @@ test.beforeEach(async ({ page, isMobile }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
 });
 
-test("TXT downloads full permitted cards with traditional numbering and only expanded people", async ({
+test("TXT downloads d’Aboville descendants including collapsed branches", async ({
   page,
 }, info) => {
   let fullReads = 0;
@@ -71,9 +72,13 @@ test("TXT downloads full permitted cards with traditional numbering and only exp
   expect(text).toContain("Биография из полной карточки\r\n      Вторая строка");
   expect(text).toContain("Данные требуют проверки");
   expect(text).toContain("Ф. 12. Оп. 3. Д. 4. Л. 5.");
-  expect(text).toMatch(/^\d+ \(\d+(?:, \d+)?\)\. .*Пётр/m);
-  expect(text).not.toContain("Анна");
+  expect(text).toMatch(/^1\.1\. .*Пётр/m);
+  expect(text).toMatch(/^1\.1\.1\. .*Анна/m);
+  expect(text).toContain("* 01.01.1940");
+  expect(text).toContain("+ 01.01.2020");
+  expect(text).toContain("Анна");
   expect(fullReads).toBe(1);
+  await page.screenshot({ path: info.outputPath("daboville-export.png") });
   await expect(dialog.getByRole("alert")).toHaveCount(0);
 });
 
@@ -151,4 +156,25 @@ test("shared TXT export reads only the shared endpoint and rejects a revoked lin
   await expect(dialog.getByRole("alert")).toHaveText(
     /Проверьте доступ к древу/,
   );
+});
+
+
+test("TXT requires a root and changing it excludes ancestors and unrelated branches", async ({ page }, info) => {
+  await page.goto("/tree");
+  const dialog = await openRegisterExport(page);
+  const root = dialog.getByRole("combobox", { name: "Родоначальник" });
+  await root.selectOption("");
+  await expect(dialog.getByRole("button", { name: "Скачать", exact: true })).toBeDisabled();
+  await root.selectOption("e2e-child");
+  const pending = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Скачать", exact: true }).click();
+  const download = await pending;
+  const path = info.outputPath("child-register.txt");
+  await download.saveAs(path);
+  const text = await readFile(path, "utf8");
+  expect(text).toMatch(/^1\. Тестов Пётр Иванович/m);
+  expect(text).toMatch(/^1\.1\. Тестова Анна Петровна/m);
+  expect(text).not.toMatch(/^1(?:\.\d+)*\. .*Иван Петрович/m);
+  expect(text).not.toContain("Мария");
+  expect(text).toContain("Елена");
 });

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { scopedArchivePath } from "../domain/archive-context.ts";
 import { useArchiveNotifications } from "../hooks/useArchiveNotifications.ts";
+import { MemorialNotifications } from "./memorial-notifications.tsx";
 import "../styles/archive-notifications.css";
 
 export function ArchiveNotifications({
@@ -209,6 +210,7 @@ export function ArchiveNotifications({
               </button>
             </header>
             <div className="notifications-list" aria-busy={busy}>
+              <MemorialNotifications beforeLeave={beforeLeave} onFollow={() => setOpen(false)} />
               {error && (
                 <p role="alert">
                   {error}{" "}

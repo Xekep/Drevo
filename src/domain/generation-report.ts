@@ -1,5 +1,4 @@
 import { dateInputLabel, fullName, validDate } from "./dates.ts";
-import { householdLevels } from "./household-levels.ts";
 import { EVENT_NAMES } from "./person-events.ts";
 import { CONNECTION_NAMES } from "./mutations.ts";
 import { CLAIM_CONFIDENCE_LABELS } from "./claim-confidence.ts";
@@ -56,11 +55,17 @@ const milestone = (value?: UnionMilestone) =>
         .join(", ")
     : "";
 
-/** Traditional descending register: generation headings, continuous numbers and parent references.
- * All boundaries are applied before ordering, numbering or writing any relationship. */
+const lifeDate = (date: string, julian?: string) =>
+  julian
+    ? `${julian.split("-").reverse().join(".")} (ст. ст.)${date && date !== julian ? ` / ${dateInputLabel(date)} (н. ст.)` : ""}`
+    : dateInputLabel(date);
+
+/** Descending d’Aboville register. Authorization is applied before traversal.
+ * Breadth-first numbering chooses the shortest path, then sibling order. */
 export function generationReport(
   family: Family,
   visibleIds: ReadonlySet<string>,
+  rootId?: string,
 ) {
   const people = family.people.filter((person) => visibleIds.has(person.id));
   if (!people.length)
@@ -92,44 +97,35 @@ export function generationReport(
       [...new Set(person.parents.filter((id) => byId.has(id)))],
     ]),
   );
-  const rankParents = new Map(
-    [...parents].map(([id, values]) => [id, new Set(values)]),
-  );
-  for (const link of links)
-    if (link.type === "adoptive_parent" || link.type === "foster_parent")
-      rankParents.get(link.to)!.add(link.from);
-  const levels = householdLevels(
-    people.map((person) => ({
-      id: person.id,
-      birth: person.birth,
-      parents: [...rankParents.get(person.id)!],
-      spouses: [...spouses.get(person.id)!],
-    })),
-  );
-  const groups = new Map<number, Person[]>();
-  for (const person of people) {
-    const level = levels.get(person.id)!;
-    const group = groups.get(level) || [];
-    group.push(person);
-    groups.set(level, group);
-  }
-  const numbers = new Map<string, number>();
-  const ordered = [...groups].sort(([a], [b]) => a - b);
-  for (const [, group] of ordered) {
-    const parentNumber = (person: Person) =>
-      Math.min(
-        ...parents.get(person.id)!.map((id) => numbers.get(id) || Infinity),
-      );
-    group.sort(
-      (a, b) => parentNumber(a) - parentNumber(b) || comparePeople(a, b),
-    );
-    for (const person of group) numbers.set(person.id, numbers.size + 1);
-  }
-  const reference = (id: string) =>
-    `№${numbers.get(id)} ${inline(fullName(byId.get(id)!))}`;
+  const root = rootId
+    ? byId.get(rootId)
+    : [...people]
+        .filter((person) => !parents.get(person.id)!.length)
+        .sort(comparePeople)[0] || [...people].sort(comparePeople)[0];
+  if (!root) throw new Error("Выберите доступного родоначальника для росписи.");
   const children = new Map(people.map((person) => [person.id, [] as Person[]]));
   for (const person of people)
     for (const id of parents.get(person.id)!) children.get(id)!.push(person);
+  for (const values of children.values()) values.sort(comparePeople);
+  const numbers = new Map<string, string>([[root.id, "1"]]);
+  const groups = new Map<number, Person[]>();
+  const queue = [{ person: root, depth: 0 }];
+  for (let position = 0; position < queue.length; position++) {
+    const { person, depth } = queue[position];
+    const group = groups.get(depth) || [];
+    group.push(person);
+    groups.set(depth, group);
+    for (const [ordinal, child] of children.get(person.id)!.entries()) {
+      if (numbers.has(child.id)) continue;
+      numbers.set(child.id, `${numbers.get(person.id)}.${ordinal + 1}`);
+      queue.push({ person: child, depth: depth + 1 });
+    }
+  }
+  const ordered = [...groups];
+  const personName = (person: Person) =>
+    inline(fullName(person)) || "Имя неизвестно";
+  const reference = (id: string) =>
+    `${numbers.has(id) ? `№${numbers.get(id)} ` : ""}${personName(byId.get(id)!)}`;
   const personUnions = new Map(
     people.map((person) => [person.id, [] as typeof unions]),
   );
@@ -143,15 +139,19 @@ export function generationReport(
     "ПОКОЛЕННАЯ РОСПИСЬ",
     inline(family.title) || "Семейный архив",
     "",
-    `Видимое древо. Людей: ${people.length}. Поколений: ${ordered.length}.`,
-    "Поколения обозначены римскими цифрами, люди — сквозными арабскими номерами.",
-    "В скобках после номера человека указаны номера его записанных биологических родителей.",
-    "Самостоятельные ветви отсчитываются от своих старших поколений; супруги располагаются в одном поколении, когда родство это допускает.",
-    "Номера и ссылки относятся только к людям этой росписи. Отсутствие сведений не означает отсутствие события.",
+    `Родоначальник: ${personName(root)}.`,
+    `Потомки по мужским и женским линиям. Людей: ${numbers.size}. Поколений: ${ordered.length}.`,
+    "Нумерация д’Абовилля: 1; 1.1; 1.1.1. Супруги вне потомства отдельных номеров не получают.",
+    "* — рождение; + — смерть; × — брак; ~ — крещение; □ — погребение.",
+    "Повторное появление человека ведёт к его основной записи по кратчайшей ветви; при равной длине — по порядку детей.",
+    "Номера относятся только к этой росписи. Отсутствие сведений не означает отсутствие события.",
   ];
   const write = (label: string, value?: string) => {
     const text = clean(value);
-    if (text) lines.push(`   ${label}: ${text.replace(/\n/g, "\r\n      ")}`);
+    if (text)
+      lines.push(
+        `   ${label}${["*", "+", "×", "~", "□"].includes(label.trim()) ? "" : ":"} ${text.replace(/\n/g, "\r\n      ")}`,
+      );
   };
   const sources = (label: string, values?: Source[]) => {
     const seen = new Set<string>();
@@ -173,34 +173,175 @@ export function generationReport(
       }
     }
   };
+  const writeDetails = (person: Person, prefix = "") => {
+    const detailWrite = (label: string, value?: string) =>
+      write(prefix + label, value);
+    const detailSources = (label: string, values?: Source[]) =>
+      sources(prefix + label, values);
+    for (const event of [...(person.events || [])].sort(
+      (a, b) =>
+        compareText(a.date || "99999", b.date || "99999") ||
+        compareText(a.id, b.id),
+    )) {
+      detailWrite(
+        event.type === "baptism"
+          ? "~"
+          : event.type === "burial"
+            ? "□"
+            : event.type === "marriage"
+              ? "×"
+              : inline(event.title || EVENT_NAMES[event.type]),
+        [
+          event.dateText || dateInputLabel(event.date || ""),
+          event.endDate ? `до ${dateInputLabel(event.endDate)}` : "",
+          event.place,
+          event.description,
+        ]
+          .filter(Boolean)
+          .join("; ") || "дата неизвестна",
+      );
+      detailSources("Источник события", event.sources);
+      if (event.dateClaim?.confidence)
+        detailWrite(
+          "Оценка даты события",
+          CLAIM_CONFIDENCE_LABELS[event.dateClaim.confidence],
+        );
+      detailSources("Источник даты события", event.dateClaim?.sources);
+      if (event.placeClaim?.confidence)
+        detailWrite(
+          "Оценка места события",
+          CLAIM_CONFIDENCE_LABELS[event.placeClaim.confidence],
+        );
+      detailSources("Источник места события", event.placeClaim?.sources);
+      for (const alternative of event.alternatives || []) {
+        detailWrite(
+          alternative.field === "date"
+            ? "Другая дата события"
+            : "Другое место события",
+          alternative.field === "date"
+            ? dateInputLabel(alternative.value)
+            : alternative.value,
+        );
+        if (alternative.confidence)
+          detailWrite(
+            "Оценка варианта",
+            CLAIM_CONFIDENCE_LABELS[alternative.confidence],
+          );
+        detailSources("Источник варианта события", alternative.sources);
+      }
+    }
+    for (const award of person.awards || []) {
+      detailWrite(
+        "Награда",
+        [award.name, award.year].filter(Boolean).join("; "),
+      );
+      if (award.source)
+        detailWrite(
+          "Источник награды",
+          [award.source.title, award.source.url].filter(Boolean).join("; "),
+        );
+      detailSources("Источник награды", award.sources);
+    }
+    detailSources("Источник", person.sources);
+    for (const [label, claim] of [
+      ["рождения", person.birthDateClaim],
+      ["смерти", person.deathDateClaim],
+      ["места рождения", person.birthPlaceClaim],
+      ["места смерти", person.deathPlaceClaim],
+      ["девичьей фамилии", person.maidenNameClaim],
+      ["занятия", person.occupationClaim],
+    ] as const) {
+      if (claim?.confidence)
+        detailWrite(
+          `Оценка ${label}`,
+          CLAIM_CONFIDENCE_LABELS[claim.confidence],
+        );
+      detailSources(`Источник ${label}`, claim?.sources);
+    }
+    for (const alternative of person.factAlternatives || []) {
+      const labels = {
+        birth: "рождения",
+        death: "смерти",
+        birthPlace: "места рождения",
+        deathPlace: "места смерти",
+        maidenName: "девичьей фамилии",
+        occupation: "занятия",
+      };
+      detailWrite(
+        `Другой вариант ${labels[alternative.field]}`,
+        alternative.value,
+      );
+      if (alternative.confidence)
+        detailWrite(
+          "Оценка варианта",
+          CLAIM_CONFIDENCE_LABELS[alternative.confidence],
+        );
+      detailSources("Источник варианта", alternative.sources);
+    }
+  };
+  const partnerRecords = new Map<string, string>();
+  const writePartner = (id: string, married: boolean, ownerId: string) => {
+    const partner = byId.get(id)!;
+    write(
+      married
+        ? partner.sex === "f"
+          ? "Жена"
+          : partner.sex === "m"
+            ? "Муж"
+            : "Супруг(а)"
+        : "Партнёр / супруг(а)",
+      reference(id),
+    );
+    if (numbers.has(id)) return;
+    const previous = partnerRecords.get(id);
+    if (previous) {
+      write("  Сведения о человеке", `см. запись №${previous}`);
+      return;
+    }
+    partnerRecords.set(id, numbers.get(ownerId)!);
+    write(
+      "  *",
+      [lifeDate(partner.birth, partner.birthJulian), partner.birthPlace]
+        .filter(Boolean)
+        .join(", "),
+    );
+    write(
+      "  +",
+      [lifeDate(partner.death || "", partner.deathJulian), partner.deathPlace]
+        .filter(Boolean)
+        .join(", ") || (partner.deceased ? "дата неизвестна" : ""),
+    );
+    write("  Девичья фамилия", partner.maidenName);
+    write("  Занятие", partner.occupation);
+    write("  Биография", partner.biography);
+    if (partner.needsReview) write("  Проверка", "Данные требуют проверки");
+    writeDetails(partner, "  ");
+  };
   for (const [level, group] of ordered) {
     lines.push("", `Поколение ${roman(level + 1)}`, "");
     for (const person of group) {
       const parentIds = parents.get(person.id)!;
-      const parentNumbers = parentIds
-        .map((id) => numbers.get(id)!)
-        .sort((a, b) => a - b);
-      lines.push(
-        `${numbers.get(person.id)}${parentNumbers.length ? ` (${parentNumbers.join(", ")})` : ""}. ${inline(fullName(person))}`,
-      );
+      lines.push(`${numbers.get(person.id)}. ${personName(person)}`);
       if (person.needsReview) lines.push("   Данные требуют проверки.");
       write("Девичья фамилия", person.maidenName);
       write(
-        "Род.",
-        [dateInputLabel(person.birth), person.birthPlace]
+        "*",
+        [lifeDate(person.birth, person.birthJulian), person.birthPlace]
           .filter(Boolean)
           .map(inline)
           .join(", "),
       );
       write(
-        "Ум.",
-        [dateInputLabel(person.death || ""), person.deathPlace]
+        "+",
+        [lifeDate(person.death || "", person.deathJulian), person.deathPlace]
           .filter(Boolean)
           .map(inline)
           .join(", ") || (person.deceased ? "дата неизвестна" : ""),
       );
       for (const id of [...parentIds].sort(
-        (a, b) => numbers.get(a)! - numbers.get(b)!,
+        (a, b) =>
+          compareText(numbers.get(a) || "", numbers.get(b) || "") ||
+          compareText(a, b),
       )) {
         const sex = byId.get(id)!.sex;
         write(
@@ -209,8 +350,10 @@ export function generationReport(
         );
         const claim = person.parentClaims?.find((item) => item.parentId === id);
         if (claim?.confidence)
-          write(`Оценка родительства с ${reference(id)}`,
-            CLAIM_CONFIDENCE_LABELS[claim.confidence]);
+          write(
+            `Оценка родительства с ${reference(id)}`,
+            CLAIM_CONFIDENCE_LABELS[claim.confidence],
+          );
         sources(`Источник родительства с ${reference(id)}`, claim?.sources);
       }
       for (const link of [...personLinks.get(person.id)!].sort((a, b) =>
@@ -220,7 +363,10 @@ export function generationReport(
           CONNECTION_NAMES[link.type],
           `${reference(link.from)}${link.note ? `; ${inline(link.note)}` : ""}`,
         );
-        write("Оценка связи", link.confidence && CLAIM_CONFIDENCE_LABELS[link.confidence]);
+        write(
+          "Оценка связи",
+          link.confidence && CLAIM_CONFIDENCE_LABELS[link.confidence],
+        );
         sources("Источник связи", link.sources);
       }
       write("Занятие", person.occupation);
@@ -234,24 +380,46 @@ export function generationReport(
           ) || compareText(a.id, b.id),
       )) {
         const partner = union.participants.find((id) => id !== person.id)!;
+        if (!recordedPartners.has(partner))
+          writePartner(partner, union.type === "marriage", person.id);
         recordedPartners.add(partner);
         write(
           union.type === "marriage"
-            ? "Брак"
+            ? "×"
             : union.type === "civil_union"
               ? "Гражданский союз"
               : "Партнёрство",
-          reference(partner),
+          [milestone(union.formation), reference(partner)]
+            .filter(Boolean)
+            .join("; "),
         );
-        write("Оценка союза", union.confidence && CLAIM_CONFIDENCE_LABELS[union.confidence]);
-        write("Заключение союза", milestone(union.formation));
-        write("Оценка заключения союза", union.formation?.confidence && CLAIM_CONFIDENCE_LABELS[union.formation.confidence]);
+        write(
+          "Оценка союза",
+          union.confidence && CLAIM_CONFIDENCE_LABELS[union.confidence],
+        );
+        write(
+          "Оценка заключения союза",
+          union.formation?.confidence &&
+            CLAIM_CONFIDENCE_LABELS[union.formation.confidence],
+        );
         write("Развод", milestone(union.divorce));
-        write("Оценка развода", union.divorce?.confidence && CLAIM_CONFIDENCE_LABELS[union.divorce.confidence]);
+        write(
+          "Оценка развода",
+          union.divorce?.confidence &&
+            CLAIM_CONFIDENCE_LABELS[union.divorce.confidence],
+        );
         write("Завершение союза", milestone(union.ending));
-        write("Оценка завершения союза", union.ending?.confidence && CLAIM_CONFIDENCE_LABELS[union.ending.confidence]);
+        write(
+          "Оценка завершения союза",
+          union.ending?.confidence &&
+            CLAIM_CONFIDENCE_LABELS[union.ending.confidence],
+        );
         write("Союз продолжался", milestone(union.ongoing));
-        write("Оценка продолжения союза", union.ongoing?.confidence && CLAIM_CONFIDENCE_LABELS[union.ongoing.confidence]);
+        write(
+          "Оценка продолжения союза",
+          union.ongoing?.confidence &&
+            CLAIM_CONFIDENCE_LABELS[union.ongoing.confidence],
+        );
         write("Примечание к союзу", union.note);
         sources("Источник союза", [
           ...(union.sources || []),
@@ -263,65 +431,22 @@ export function generationReport(
       }
       for (const id of [...spouses.get(person.id)!]
         .filter((id) => !recordedPartners.has(id))
-        .sort((a, b) => numbers.get(a)! - numbers.get(b)!))
-        write("Супруг(а)", `${reference(id)}; подробности союза не записаны`);
+        .sort((a, b) => comparePeople(byId.get(a)!, byId.get(b)!))) {
+        writePartner(id, false, person.id);
+        write("Сведения о союзе", "дата и тип союза не записаны");
+      }
       const descendants = children.get(person.id)!.sort(comparePeople);
       if (descendants.length)
         write(
           "Дети",
-          descendants.map((child) => reference(child.id)).join("; "),
+          descendants
+            .map((child, ordinal) => {
+              const branch = `${numbers.get(person.id)}.${ordinal + 1}`;
+              return `${reference(child.id)}${numbers.get(child.id) !== branch ? ` (ветвь ${branch}; см. основную запись)` : ""}`;
+            })
+            .join("; "),
         );
-      for (const event of [...(person.events || [])].sort(
-        (a, b) =>
-          compareText(a.date || "99999", b.date || "99999") ||
-          compareText(a.id, b.id),
-      )) {
-        write(
-          inline(event.title || EVENT_NAMES[event.type]),
-          [
-            event.dateText || dateInputLabel(event.date || ""),
-            event.endDate ? `до ${dateInputLabel(event.endDate)}` : "",
-            event.place,
-            event.description,
-          ]
-            .filter(Boolean)
-            .join("; ") || "дата неизвестна",
-        );
-        sources("Источник события", event.sources);
-        if (event.dateClaim?.confidence)
-          write("Оценка даты события", CLAIM_CONFIDENCE_LABELS[event.dateClaim.confidence]);
-        sources("Источник даты события", event.dateClaim?.sources);
-        if (event.placeClaim?.confidence)
-          write("Оценка места события", CLAIM_CONFIDENCE_LABELS[event.placeClaim.confidence]);
-        sources("Источник места события", event.placeClaim?.sources);
-        for (const alternative of event.alternatives || []) {
-          write(alternative.field === "date" ? "Другая дата события" : "Другое место события",
-            alternative.field === "date" ? dateInputLabel(alternative.value) : alternative.value);
-          if (alternative.confidence)
-            write("Оценка варианта", CLAIM_CONFIDENCE_LABELS[alternative.confidence]);
-          sources("Источник варианта события", alternative.sources);
-        }
-      }
-      for (const award of person.awards || []) {
-        write("Награда", [award.name, award.year].filter(Boolean).join("; "));
-        if (award.source)
-          write(
-            "Источник награды",
-            [award.source.title, award.source.url].filter(Boolean).join("; "),
-          );
-        sources("Источник награды", award.sources);
-      }
-      sources("Источник", person.sources);
-      for (const [label, claim] of [
-        ["рождения", person.birthDateClaim],
-        ["смерти", person.deathDateClaim],
-        ["места рождения", person.birthPlaceClaim],
-        ["места смерти", person.deathPlaceClaim],
-      ] as const) {
-        if (claim?.confidence)
-          write(`Оценка ${label}`, CLAIM_CONFIDENCE_LABELS[claim.confidence]);
-        sources(`Источник ${label}`, claim?.sources);
-      }
+      writeDetails(person);
       lines.push("");
     }
   }

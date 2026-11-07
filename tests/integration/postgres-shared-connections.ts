@@ -15,6 +15,7 @@ import { openArchive } from "../../src/server/database.ts";
 import { userStore } from "../../src/server/users.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { auditStore } from "../../src/server/audit.ts";
+import { readMemorialDates } from "../../src/server/memorial-dates.ts";
 import { archiveNotificationsStore } from "../../src/server/archive-notifications.ts";
 import { archiveVisibilityReader } from "../../src/server/archive-visibility-cache.ts";
 import {
@@ -301,6 +302,16 @@ try {
     graphBudget.close();
     await writer.close();
   }
+  const memorialDay = new Date().toISOString().slice(0, 10);
+  const memorialDeath = `2000${memorialDay.slice(4)}`;
+  for (const db of [a, b]) await db.transaction(async () => {
+    await db.prepare("", "UPDATE people SET data=jsonb_set(data,'{death}',to_jsonb(?::text)) WHERE id='same-id'").run(memorialDeath);
+  });
+  assert.match((await readMemorialDates(a, null, memorialDay))[0].personName, /shared-probe-0/);
+  assert.match((await readMemorialDates(b, null, memorialDay))[0].personName, /shared-probe-1/);
+  assert.deepEqual(await readMemorialDates(a, new Set(), memorialDay), []);
+  assert.deepEqual(await readMemorialDates(a, new Set(["not-visible"]), memorialDay), []);
+  assert.equal((await readMemorialDates(a, new Set(["same-id"]), memorialDay)).length, 1);
   // Ordinary-role SQL exercises the notification dialect and RLS isolation.
   for (const db of [a, b])
     await db.transaction(async () => {
@@ -344,7 +355,7 @@ try {
     for (const [index, id] of scopePeople.entries()) {
       await a
         .prepare("", "INSERT INTO people(id,ordinal,data) VALUES(?,?,?)")
-        .run(id, index + 10, JSON.stringify({ ...person, id, name: id }));
+        .run(id, index + 10, JSON.stringify({ ...person, id, name: id, death: memorialDeath }));
       await auditStore(a).record(
         {
           action: "Добавлено",
@@ -359,6 +370,7 @@ try {
     }
   });
   const onlyVisible = new Set(["scope-visible"]);
+  assert.deepEqual((await readMemorialDates(a, onlyVisible, memorialDay)).map(item => item.personId), ["scope-visible"]);
   const scopedInbox = await inboxA.list("shared-probe-reader", onlyVisible);
   assert.equal(scopedInbox.items.length, 1);
   await a.transaction(() =>
@@ -484,6 +496,10 @@ try {
       { headers },
     );
     assert.equal(response.status, 200);
+    const memorialResponse = await fetch(`${base}/a/shared-probe-${index}/api/notifications?memorial=1&timeZone=UTC`, { headers });
+    assert.equal(memorialResponse.status, 200);
+    const dates = (await memorialResponse.json()).items;
+    assert.match(dates.find((item: { personId: string }) => item.personId === "same-id").personName, new RegExp(`shared-probe-${index}`));
     const inbox = await response.json();
     assert.equal(inbox.items.length, 1);
     assert.equal(inbox.unread, 0);

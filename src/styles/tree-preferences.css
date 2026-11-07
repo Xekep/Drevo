@@ -274,7 +274,8 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 7px;
 }
-.tree-genealogy-export select {
+.tree-genealogy-export select,
+.tree-lineage-root select {
   min-width: 0;
   min-height: 36px;
   border: 1px solid #dce3d6;
@@ -388,3 +389,12 @@
     min-height: 42px;
   }
 }
+
+.tree-lineage-root {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 10px;
+  color: #596a58;
+  font-size: 12px;
+}
+.tree-lineage-root select { width: 100%; }
