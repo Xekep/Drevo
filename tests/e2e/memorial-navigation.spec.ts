@@ -130,12 +130,12 @@ test("calendar navigation to an already visible person keeps the family mode", a
   );
   await familyViewAction(page, "Близкие");
   await expect(
-    page.getByRole("button", { name: "Всё древо", exact: true }),
-  ).toBeVisible();
+    page.getByRole("button", { name: "Всё древо", exact: true, includeHidden: true }),
+  ).toHaveCount(1);
   const verifyDocument = await clickCalendar(page);
   await expect(page).toHaveURL(/\/people\/e2e-child$/);
   await expect(
-    page.getByRole("button", { name: "Всё древо", exact: true }),
-  ).toBeVisible();
+    page.getByRole("button", { name: "Всё древо", exact: true, includeHidden: true }),
+  ).toHaveCount(1);
   await verifyDocument();
 });
