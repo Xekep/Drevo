@@ -527,7 +527,10 @@
   border-right: 1px solid #aec1a455;
   color: #465a40;
   white-space: nowrap;
-  cursor: pointer;
+  cursor: grab;
+}
+.horizontal-timeline.is-dragging .timeline-era-segment {
+  cursor: grabbing;
 }
 .timeline-era-segment.empire {
   background: #e4e9d7;
