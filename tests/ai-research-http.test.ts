@@ -447,7 +447,7 @@ test("stream only exposes the checked answer after textual tool calls and the fi
     const content =
       calls === 1
         ? 'Вызову данные о семье:\n```json\n{"name":"get_family","parameters":{"personId":"person-42"}}\n```\nЗатем хронологию:\n```json\n{"name":"get_timeline","parameters":{"personId":"person-42"}}\n```\nСкоро вернусь!'
-        : "[[person:person-42|Иван Петрович]] найден. person-42 (personId: person-42).";
+        : "[[person:person-42|Иванов Иван Петрович]] найден. person-42 (personId: person-42).";
     return new Response(
       `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`,
       { headers: { "Content-Type": "text/event-stream" } },
@@ -469,9 +469,9 @@ test("stream only exposes the checked answer after textual tool calls and the fi
         people: [
           {
             id: "person-42",
-            surname: "Петрович",
+            surname: "Иванов",
             name: "Иван",
-            patronymic: "",
+            patronymic: "Петрович",
             sex: "m",
             birth: "1900",
             birthPlace: "",
@@ -501,7 +501,7 @@ test("stream only exposes the checked answer after textual tool calls and the fi
     assert.equal(events.filter((event) => event.name === "delta").length, 0);
     assert.match(
       events.find((event) => event.name === "done")!.data.answer,
-      /\[\[person:person-42\|Иван Петрович\]\]/,
+      /\[\[person:person-42\|Иванов Иван Петрович\]\]/,
     );
     assert.doesNotMatch(
       events.find((event) => event.name === "done")!.data.answer,
