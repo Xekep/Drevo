@@ -118,9 +118,7 @@ test("a touch drag starting on a card pans without selecting it", async ({
   test.skip(!isMobile);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tree");
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(
-    /is-grow|is-layout-settling/,
-  );
+  await waitForReadyCanvas(page);
   const card = page
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content");
