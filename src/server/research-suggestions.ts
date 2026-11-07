@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { fullName } from "../domain/dates.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { isDeepStrictEqual } from "node:util";
 import {
@@ -125,6 +126,7 @@ const PERSON_UPDATE_PROPOSAL_TOOL = {
     type: "object",
     properties: {
       personId: { type: "string", minLength: 1, maxLength: 200 },
+      personName: { type: "string", minLength: 1, maxLength: 500 },
       changes: {
         type: "object",
         properties: {
@@ -152,6 +154,40 @@ const PERSON_UPDATE_PROPOSAL_TOOL = {
       },
     },
     required: ["personId", "changes", "reason"],
+    additionalProperties: false,
+  },
+} as const;
+
+const PERSON_UPDATES_BATCH_PROPOSAL_TOOL = {
+  name: "propose_person_updates_batch",
+  description:
+    "Подготовить одной операцией от 1 до 10 отдельных изменений карточек для ручного подтверждения. Используй только реальные personId из результатов поиска. Для каждого personId укажи полное имя в точности как в архиве (personName), чтобы сервер обнаружил перепутанные карточки. Не меняет архив; после успеха интерфейс покажет отдельное подтверждение для каждой правки. Для следующей десятки вызови инструмент ещё раз, не повторяй уже обработанные строки.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      updates: {
+        type: "array",
+        minItems: 1,
+        maxItems: 10,
+        items: {
+          type: "object",
+          properties: {
+            personId: { type: "string", minLength: 1, maxLength: 200 },
+            personName: { type: "string", minLength: 1, maxLength: 500 },
+            changes: PERSON_UPDATE_PROPOSAL_TOOL.inputSchema.properties.changes,
+            reason: { type: "string", minLength: 1, maxLength: 2000 },
+            evidence: {
+              type: "array",
+              items: { type: "string", minLength: 1, maxLength: 1000 },
+              maxItems: 10,
+            },
+          },
+          required: ["personId", "personName", "changes", "reason"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["updates"],
     additionalProperties: false,
   },
 } as const;
@@ -262,9 +298,14 @@ const RELATION_PROPOSAL_TOOL = {
 export const RESEARCH_PROPOSAL_TOOLS = [
   PERSON_CREATE_PROPOSAL_TOOL,
   PERSON_UPDATE_PROPOSAL_TOOL,
+  PERSON_UPDATES_BATCH_PROPOSAL_TOOL,
   SOURCE_PROPOSAL_TOOL,
   RELATION_PROPOSAL_TOOL,
 ] as const;
+
+function normalizedPersonName(name: string) {
+  return name.normalize("NFC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("ru");
+}
 
 function personChanges(value: unknown): PersonChanges {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -611,11 +652,14 @@ export function researchSuggestionStore(db: StoreDatabase) {
         throw new Error("Некорректное предложение");
       const input = raw as Record<string, unknown>,
         personId = text(input.personId, "personId", 200),
+        personName = optionalText(input.personName, "personName", 500),
         changes = personChanges(input.changes),
         reason = text(input.reason, "reason", 2000),
         grounds = evidence(input.evidence),
         person = family.people.find((item) => item.id === personId);
       if (!person) throw new Error("Человек не найден или недоступен");
+      if (personName && normalizedPersonName(fullName(person)) !== normalizedPersonName(personName))
+        throw new Error("ФИО не соответствует идентификатору карточки. Повторите поиск человека");
 
       const before: PersonChanges = {};
       for (const key of Object.keys(changes) as PersonUpdateField[])
@@ -644,6 +688,49 @@ export function researchSuggestionStore(db: StoreDatabase) {
         grounds,
         revision,
       );
+    },
+
+    async createPersonUpdatesBatch(
+      actor: ArchiveUser,
+      family: Family,
+      revision: number,
+      raw: unknown,
+    ) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
+          Object.keys(raw).some(key => key !== "updates"))
+        throw new Error("Некорректный пакет предложений");
+      const entries = (raw as Record<string, unknown>).updates;
+      if (!Array.isArray(entries) || entries.length < 1 || entries.length > 10)
+        throw new Error("Пакет должен содержать от 1 до 10 изменений");
+      const seen = new Set<string>();
+      // Validate the entire batch before writing. The caller's archive transaction
+      // additionally rolls back all inserts if any per-card authorization fails.
+      const checked = entries.map((entry: unknown) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry) ||
+            Object.keys(entry).some(key => !["personId", "personName", "changes", "reason", "evidence"].includes(key)))
+          throw new Error("Некорректная строка пакета");
+        const rawEntry = entry as Record<string, unknown>;
+        const personId = text(rawEntry.personId, "personId", 200);
+        const personName = text(rawEntry.personName, "personName", 500);
+        const person = family.people.find(item => item.id === personId);
+        if (!person) throw new Error("Человек не найден или недоступен");
+        if (normalizedPersonName(fullName(person)) !== normalizedPersonName(personName))
+          throw new Error("ФИО не соответствует идентификатору карточки. Повторите поиск человека");
+        if (seen.has(personId)) throw new Error("Карточка дважды указана в одном пакете");
+        seen.add(personId);
+        personChanges(rawEntry.changes);
+        text(rawEntry.reason, "reason", 2000);
+        evidence(rawEntry.evidence);
+        return { personId, personName, changes: rawEntry.changes, reason: rawEntry.reason, evidence: rawEntry.evidence };
+      });
+      const createAll = async () => {
+        const results: ResearchSuggestion[] = [];
+        for (const row of checked)
+          results.push(await this.createPersonUpdate(actor, family, revision, row));
+        return results;
+      };
+      // Direct callers get the same atomicity as the HTTP archive transaction.
+      return db.inTransaction() ? await createAll() : await db.transaction(createAll);
     },
 
     async createSource(
@@ -737,6 +824,8 @@ export function researchSuggestionStore(db: StoreDatabase) {
         return await this.createPerson(actor, family, revision, raw);
       if (name === PERSON_UPDATE_PROPOSAL_TOOL.name)
         return await this.createPersonUpdate(actor, family, revision, raw);
+      if (name === PERSON_UPDATES_BATCH_PROPOSAL_TOOL.name)
+        return await this.createPersonUpdatesBatch(actor, family, revision, raw);
       if (name === SOURCE_PROPOSAL_TOOL.name)
         return await this.createSource(actor, family, revision, raw);
       if (name === RELATION_PROPOSAL_TOOL.name)

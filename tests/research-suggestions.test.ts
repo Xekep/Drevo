@@ -68,6 +68,7 @@ test("AI person update stays pending until a human accepts it", async () => {
                     name: "propose_person_update",
                     arguments: JSON.stringify({
                       personId: "anna-suggestion-test",
+                      personName: "Лебедь Анна Семёновна",
                       changes: {
                         birth: "1920",
                         birthPlace: "Нижнее, Луганская область",

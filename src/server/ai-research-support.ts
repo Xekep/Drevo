@@ -321,6 +321,7 @@ export function containsInternalToolText(
     /["']name["']\s*:\s*["'][a-z][a-z0-9_]*["']\s*,\s*["']parameters["']\s*:/i.test(
       content,
     ) ||
+    /<\s*\/?\s*tool_call\b|<\s*function\s*=|<\s*parameter\s*=/i.test(content) ||
     /\b(?:get|find|search|list|propose|control)_[a-z0-9_]+\s*\(\s*\{/i.test(
       content,
     )
@@ -525,17 +526,10 @@ export function collectPersonReferences(
     collectPersonReferences(item, people, ids);
 }
 
-function commonPrefixLength(left: string, right: string) {
-  let index = 0;
-  while (
-    index < left.length &&
-    index < right.length &&
-    left[index] === right[index]
-  )
-    index++;
-  return index;
-}
-
+/** Display labels are not evidence of identity. Never trust a model-supplied
+ * marker with a real but mismatched person ID: a clickable wrong person would
+ * make the whole answer look authoritative. Match the archived full label,
+ * or repair only an unambiguous label among already accessed records. */
 export function repairArchiveMarkers(
   value: string,
   people: Map<string, string>,
@@ -543,33 +537,26 @@ export function repairArchiveMarkers(
   referencedPeople: Set<string>,
   referencedPhotos: Set<string>,
 ) {
+  const normalized = (label: string) =>
+    label.normalize("NFC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("ru");
   return value.replace(
     /\[\[(person|choose-person|photo):([^|\]\s]+)\|([^\]]+)\]\]/g,
-    (marker, kind: string, id: string, label: string) => {
-      const records = kind === "photo" ? photos : people,
-        referenced = kind === "photo" ? referencedPhotos : referencedPeople;
-      if (records.has(id)) return marker;
-      const normalizedLabel = label.trim().toLocaleLowerCase("ru"),
-        candidates = [...referenced],
-        exact = candidates.filter(
-          (candidate) =>
-            records.get(candidate)?.trim().toLocaleLowerCase("ru") ===
-            normalizedLabel,
-        ),
-        pool = exact.length ? exact : candidates,
-        closest = pool
-          .map((candidate) => ({
-            id: candidate,
-            score: commonPrefixLength(id, candidate),
-          }))
-          .sort((left, right) => right.score - left.score)[0];
-      const repaired =
-        exact.length === 1
-          ? exact[0]
-          : closest && closest.score >= 8
-            ? closest.id
-            : "";
-      return repaired ? `[[${kind}:${repaired}|${label}]]` : label;
+    (_marker, kind: string, id: string, label: string) => {
+      const records = kind === "photo" ? photos : people;
+      const referenced = kind === "photo" ? referencedPhotos : referencedPeople;
+      const canonical = records.get(id);
+      if (canonical && normalized(canonical) === normalized(label))
+        return `[[${kind}:${id}|${canonical}]]`;
+      const exact = [...referenced].filter(
+        candidate => normalized(records.get(candidate) || "") === normalized(label),
+      );
+      if (exact.length === 1) {
+        const match = exact[0];
+        return `[[${kind}:${match}|${records.get(match)}]]`;
+      }
+      // No heuristic based on similar UUID prefixes or guessed names.
+      // Keep readable text, but do not link it to another person's card.
+      return label;
     },
   );
 }

@@ -8,12 +8,54 @@ import { startServer } from "../src/server/index.ts";
 import { adaptLegacyAiFake } from "./legacy-ai-fake.ts";
 import type { Family } from "../src/domain/types.ts";
 import { linkResearchReferences } from "../src/domain/research-answer.ts";
+import { containsInternalToolText, repairArchiveMarkers } from "../src/server/ai-research-support.ts";
 import {
   humanizeResearchAnswer,
   recoverTextToolCalls,
   requesterAccessContext,
   requesterPromptContext,
 } from "../src/server/ai-research-http.ts";
+
+test("archive links never bind a person's name to the wrong card", () => {
+  const people = new Map([
+    ["id-anna", "Лебедь Анна Семёновна"],
+    ["id-pavel", "Лебедь Павел Иванович"],
+    ["id-alex", "Лебедь Александр Иванович"],
+  ]);
+  const referenced = new Set(["id-anna", "id-pavel"]);
+  const render = (value: string, ids: Set<string> = referenced) =>
+    repairArchiveMarkers(value, people, new Map(), ids, new Set());
+  assert.equal(
+    render("[[person:id-anna|Лебедь Анна Семёновна]]"),
+    "[[person:id-anna|Лебедь Анна Семёновна]]",
+  );
+  assert.equal(
+    render("[[person:id-pavel|Лебедь Анна Семёновна]]"),
+    "[[person:id-anna|Лебедь Анна Семёновна]]",
+  );
+  // Without a referenced match, the human-readable name survives but the
+  // model cannot turn an unrelated, valid ID into a clickable wrong person.
+  assert.equal(
+    render("[[person:id-pavel|Лебедь Анна Семёновна]]", new Set()),
+    "Лебедь Анна Семёновна",
+  );
+  assert.equal(
+    render("[[person:made-up|Лебедь Александр Иванович]]"),
+    "Лебедь Александр Иванович",
+  );
+});
+
+test("pseudo tool calls are not shown as successful archive operations", () => {
+  const tools = new Set(["propose_person_update", "propose_person_updates_batch"]);
+  assert.equal(
+    containsInternalToolText(
+      "<tool_call><function=архива><parameter=personId>Иван Иванов</parameter></function></tool_call>",
+      tools,
+    ),
+    true,
+  );
+  assert.equal(containsInternalToolText("Изменение ожидает подтверждения.", tools), false);
+});
 
 test("research answer keeps clickable markers but replaces raw archive ids", () => {
   const people = new Map([["person-42", "Иван Петрович"]]);
@@ -405,7 +447,7 @@ test("stream only exposes the checked answer after textual tool calls and the fi
     const content =
       calls === 1
         ? 'Вызову данные о семье:\n```json\n{"name":"get_family","parameters":{"personId":"person-42"}}\n```\nЗатем хронологию:\n```json\n{"name":"get_timeline","parameters":{"personId":"person-42"}}\n```\nСкоро вернусь!'
-        : "[[person:person-42|Иван Петрович]] найден. person-42 (personId: person-42).";
+        : "[[person:person-42|Иванов Иван Петрович]] найден. person-42 (personId: person-42).";
     return new Response(
       `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`,
       { headers: { "Content-Type": "text/event-stream" } },
@@ -427,9 +469,9 @@ test("stream only exposes the checked answer after textual tool calls and the fi
         people: [
           {
             id: "person-42",
-            surname: "Петрович",
+            surname: "Иванов",
             name: "Иван",
-            patronymic: "",
+            patronymic: "Петрович",
             sex: "m",
             birth: "1900",
             birthPlace: "",
@@ -459,7 +501,7 @@ test("stream only exposes the checked answer after textual tool calls and the fi
     assert.equal(events.filter((event) => event.name === "delta").length, 0);
     assert.match(
       events.find((event) => event.name === "done")!.data.answer,
-      /\[\[person:person-42\|Иван Петрович\]\]/,
+      /\[\[person:person-42\|Иванов Иван Петрович\]\]/,
     );
     assert.doesNotMatch(
       events.find((event) => event.name === "done")!.data.answer,
