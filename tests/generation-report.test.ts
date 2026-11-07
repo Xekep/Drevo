@@ -424,3 +424,38 @@ test("multiple marriages preserve partners’ facts and do not assign a single-p
   assert.doesNotMatch(child, /first|second|Мать:/);
   assert.equal(numbers(text).size, 3);
 });
+
+test("traditional numbering uses person.parent headings, continuous references and female-line parents", () => {
+  const data = family([
+    person("root"), person("daughter", { sex: "f", birth: "1900", parents: ["root"] }),
+    person("son", { sex: "m", birth: "1901", parents: ["root"] }),
+    person("external-father", { sex: "m", spouses: ["daughter"] }),
+    person("grandchild", { birth: "1920", parents: ["daughter", "external-father"] }),
+    person("shared", { birth: "1921", parents: ["daughter", "son"] }),
+  ]);
+  const ids = new Set(data.people.map(p => p.id));
+  const before = structuredClone(data);
+  const text = generationReport(data, ids, "root", "person-parent");
+  assert.match(text, /^1\. root\r?$/m);
+  assert.match(text, /^2\.1\. daughter\r?$/m);
+  assert.match(text, /^3\.1\. son\r?$/m);
+  assert.match(text, /^4\.2\. grandchild\r?$/m);
+  assert.match(text, /^5\.3\. shared\r?$/m);
+  assert.match(text, /Дети: №4 grandchild; №5 shared/);
+  assert.match(text, /№5 shared \(повторная ссылка; см. основную запись\)/);
+  assert.equal(text.match(/^5\.3\. shared\r?$/gm)?.length, 1);
+  assert.doesNotMatch(text, /ветвь 1\.|Нумерация д’Абовилля|^\d+\.\d+\. external-father/m);
+  assert.equal(text, generationReport(family([...data.people].reverse()), ids, "root", "person-parent"));
+  assert.deepEqual(data, before);
+  assert.throws(() => generationReport(data, ids, "root", "invalid" as never), /Неизвестная система/);
+});
+
+test("traditional numbering keeps only permitted references and terminates cyclic data", () => {
+  const data = family([person("a", { parents: ["c", "hidden"] }), person("b", { parents: ["a"] }), person("c", { parents: ["b"] }), person("hidden")]);
+  const text = generationReport(data, new Set(["a", "b", "c"]), "a", "person-parent");
+  assert.match(text, /^2\.1\. b\r?$/m);
+  assert.match(text, /^3\.2\. c\r?$/m);
+  assert.match(text, /№1 a \(повторная ссылка; см. основную запись\)/);
+  assert.doesNotMatch(text, /hidden|№undefined/);
+  assert.equal([...text.matchAll(/^\d+(?:\.\d+)?\. [abc]\r?$/gm)].length, 3);
+});

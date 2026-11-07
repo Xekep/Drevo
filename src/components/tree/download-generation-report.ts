@@ -1,5 +1,5 @@
 import { archiveFetch } from "../../data/archive-fetch.ts";
-import { generationReport } from "../../domain/generation-report.ts";
+import { generationReport, type GenerationNumbering } from "../../domain/generation-report.ts";
 import type { Family } from "../../domain/types.ts";
 
 /** Fetch full permitted cards once; shared links use their own access boundary. */
@@ -7,6 +7,7 @@ export async function downloadGenerationReport(
   rootId: string,
   signal: AbortSignal,
   sourceUrl = "/api/family",
+  numbering: GenerationNumbering = "daboville",
 ) {
   if (!rootId)
     throw new Error("Выберите родоначальника для росписи.");
@@ -27,7 +28,7 @@ export async function downloadGenerationReport(
     throw new Error(
       "Состав или доступ к древу изменился. Обновите древо и повторите экспорт.",
     );
-  const content = generationReport(data.family, known, rootId);
+  const content = generationReport(data.family, known, rootId, numbering);
   signal.throwIfAborted();
   const url = URL.createObjectURL(
     new Blob(["\uFEFF", content], { type: "text/plain;charset=utf-8" }),

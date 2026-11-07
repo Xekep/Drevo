@@ -49,6 +49,7 @@ export function ArchiveNavigation({
   onPlatformLeave,
   participantPreview = false,
   onTreePreferences,
+  onMemorialPerson,
 }: {
   view: ArchiveView;
   onView: (view: ArchiveView) => void;
@@ -66,6 +67,7 @@ export function ArchiveNavigation({
   onPlatformLeave?: () => boolean;
   participantPreview?: boolean;
   onTreePreferences?: () => void;
+  onMemorialPerson?: (id: string) => void;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
   const [switchingArchive, setSwitchingArchive] = useState(false);
@@ -190,7 +192,7 @@ export function ArchiveNavigation({
         О проекте
       </button>
       {user?.approved && !participantPreview && view !== "admin" &&
-        <ArchiveNotifications userId={user.id} beforeLeave={onPlatformLeave} />}
+        <ArchiveNotifications onMemorialPerson={onMemorialPerson} userId={user.id} beforeLeave={onPlatformLeave} />}
       {user?.approved && !participantPreview && view !== "admin" && <BookmarksMenu beforeLeave={onPlatformLeave} />}
       {identity && (
         <details ref={menu} className="archive-more">

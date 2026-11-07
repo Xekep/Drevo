@@ -344,9 +344,9 @@ export default function SharedTree({ token }: { token: string }) {
           people={data.family.people}
           anchorId={selected[0] || data.anchorId}
           onExportPdf={(signal, onProgress) => treeCanvas.current!.exportPdf(signal, "current", undefined, undefined, onProgress)}
-          onExportText={async (signal, rootId) => {
+          onExportText={async (signal, rootId, numbering) => {
             const { downloadGenerationReport } = await import("./tree/download-generation-report");
-            await downloadGenerationReport(rootId, signal, `/api/shared/${encodeURIComponent(token)}`);
+            await downloadGenerationReport(rootId, signal, `/api/shared/${encodeURIComponent(token)}`, numbering);
           }}
           onClose={() => setExportOpen(false)}
         />

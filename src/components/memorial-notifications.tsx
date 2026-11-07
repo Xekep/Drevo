@@ -15,9 +15,11 @@ import {
 export function MemorialNotifications({
   beforeLeave,
   onFollow,
+  onPerson,
 }: {
   beforeLeave?: () => boolean;
   onFollow: () => void;
+  onPerson?: (id: string) => void;
 }) {
   const resource = archiveResourceUrl("/api/notifications");
   const [snapshot, setSnapshot] = useState<{
@@ -73,8 +75,9 @@ export function MemorialNotifications({
     };
   }, [resource]);
   const current = snapshot?.resource === resource ? snapshot : null;
-  const follow = (event: MouseEvent<HTMLAnchorElement>) => {
+  const follow = (event: MouseEvent<HTMLAnchorElement>, personId: string) => {
     if (
+      event.defaultPrevented ||
       event.button !== 0 ||
       event.ctrlKey ||
       event.metaKey ||
@@ -86,6 +89,7 @@ export function MemorialNotifications({
       event.preventDefault();
       return;
     }
+    if (onPerson) { event.preventDefault(); onPerson(personId); }
     onFollow();
   };
   if (!current) return <p role="status">Загрузка памятных дат…</p>;
@@ -106,7 +110,7 @@ export function MemorialNotifications({
           href={scopedArchivePath(
             `/people/${encodeURIComponent(item.personId)}`,
           )}
-          onClick={follow}
+          onClick={event => follow(event, item.personId)}
         >
           {item.kind === "birthday" ? (
             <Cake size={18} aria-hidden="true" />

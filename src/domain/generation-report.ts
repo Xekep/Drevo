@@ -60,13 +60,18 @@ const lifeDate = (date: string, julian?: string) =>
     ? `${julian.split("-").reverse().join(".")} (ст. ст.)${date && date !== julian ? ` / ${dateInputLabel(date)} (н. ст.)` : ""}`
     : dateInputLabel(date);
 
-/** Descending d’Aboville register. Authorization is applied before traversal.
+export type GenerationNumbering = "daboville" | "person-parent";
+
+/** Descending register with selectable numbering. Authorization is applied before traversal.
  * Breadth-first numbering chooses the shortest path, then sibling order. */
 export function generationReport(
   family: Family,
   visibleIds: ReadonlySet<string>,
   rootId?: string,
+  numbering: GenerationNumbering = "daboville",
 ) {
+  if (numbering !== "daboville" && numbering !== "person-parent")
+    throw new Error("Неизвестная система нумерации.");
   const people = family.people.filter((person) => visibleIds.has(person.id));
   if (!people.length)
     throw new Error("В видимом древе нет людей для экспорта.");
@@ -108,6 +113,7 @@ export function generationReport(
     for (const id of parents.get(person.id)!) children.get(id)!.push(person);
   for (const values of children.values()) values.sort(comparePeople);
   const numbers = new Map<string, string>([[root.id, "1"]]);
+  const primaryParents = new Map<string, string>();
   const groups = new Map<number, Person[]>();
   const queue = [{ person: root, depth: 0 }];
   for (let position = 0; position < queue.length; position++) {
@@ -117,10 +123,25 @@ export function generationReport(
     groups.set(depth, group);
     for (const [ordinal, child] of children.get(person.id)!.entries()) {
       if (numbers.has(child.id)) continue;
+      primaryParents.set(child.id, person.id);
       numbers.set(child.id, `${numbers.get(person.id)}.${ordinal + 1}`);
       queue.push({ person: child, depth: depth + 1 });
     }
   }
+  const paths = new Map(numbers);
+  if (numbering === "person-parent")
+    queue.forEach(({ person }, index) =>
+      numbers.set(person.id, String(index + 1)),
+    );
+  const headingNumber = (person: Person) => {
+    const own = numbers.get(person.id)!;
+    if (numbering === "daboville" || person.id === root.id) return own;
+    const father = parents
+      .get(person.id)!
+      .find((id) => byId.get(id)!.sex === "m" && numbers.has(id));
+    const parent = father || primaryParents.get(person.id);
+    return parent ? `${own}.${numbers.get(parent)}` : own;
+  };
   const ordered = [...groups];
   const personName = (person: Person) =>
     inline(fullName(person)) || "Имя неизвестно";
@@ -141,7 +162,9 @@ export function generationReport(
     "",
     `Родоначальник: ${personName(root)}.`,
     `Потомки по мужским и женским линиям. Людей: ${numbers.size}. Поколений: ${ordered.length}.`,
-    "Нумерация д’Абовилля: 1; 1.1; 1.1.1. Супруги вне потомства отдельных номеров не получают.",
+    numbering === "daboville"
+      ? "Нумерация д’Абовилля: 1; 1.1; 1.1.1. Супруги вне потомства отдельных номеров не получают."
+      : "Российская традиционная нумерация: номер человека.номер родителя. Указывается отец из росписи; по женской линии — родитель основной ветви. Супруги вне потомства отдельных номеров не получают.",
     "* — рождение; + — смерть; × — брак; ~ — крещение; □ — погребение.",
     "Повторное появление человека ведёт к его основной записи по кратчайшей ветви; при равной длине — по порядку детей.",
     "Номера относятся только к этой росписи. Отсутствие сведений не означает отсутствие события.",
@@ -321,7 +344,7 @@ export function generationReport(
     lines.push("", `Поколение ${roman(level + 1)}`, "");
     for (const person of group) {
       const parentIds = parents.get(person.id)!;
-      lines.push(`${numbers.get(person.id)}. ${personName(person)}`);
+      lines.push(`${headingNumber(person)}. ${personName(person)}`);
       if (person.needsReview) lines.push("   Данные требуют проверки.");
       write("Девичья фамилия", person.maidenName);
       write(
@@ -441,8 +464,8 @@ export function generationReport(
           "Дети",
           descendants
             .map((child, ordinal) => {
-              const branch = `${numbers.get(person.id)}.${ordinal + 1}`;
-              return `${reference(child.id)}${numbers.get(child.id) !== branch ? ` (ветвь ${branch}; см. основную запись)` : ""}`;
+              const branch = `${paths.get(person.id)}.${ordinal + 1}`;
+              return `${reference(child.id)}${paths.get(child.id) !== branch ? (numbering === "daboville" ? ` (ветвь ${branch}; см. основную запись)` : " (повторная ссылка; см. основную запись)") : ""}`;
             })
             .join("; "),
         );

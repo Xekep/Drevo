@@ -24,9 +24,11 @@ import "../styles/archive-notifications.css";
 export function ArchiveNotifications({
   userId,
   beforeLeave,
+  onMemorialPerson,
 }: {
   userId: string;
   beforeLeave?: () => boolean;
+  onMemorialPerson?: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const {
@@ -210,7 +212,7 @@ export function ArchiveNotifications({
               </button>
             </header>
             <div className="notifications-list" aria-busy={busy}>
-              <MemorialNotifications beforeLeave={beforeLeave} onFollow={() => setOpen(false)} />
+              <MemorialNotifications onPerson={onMemorialPerson} beforeLeave={beforeLeave} onFollow={() => setOpen(false)} />
               {error && (
                 <p role="alert">
                   {error}{" "}

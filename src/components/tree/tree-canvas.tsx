@@ -146,6 +146,8 @@ export type TreeFocus = {
   groupId?: string;
   /** Explicit navigation from another section may move the generation window. */
   reanchor?: boolean;
+  /** Navigation to a hidden calendar person opens the full permitted tree. */
+  wholeTree?: boolean;
 };
 export type TreeCanvasHandle = {
   getViewContext: () => ResearchTreeViewContext;
@@ -323,7 +325,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       : null;
   const lastFanNavigationFocus = useRef(focus?.token || -1);
   useEffect(() => {
-    if (!focus || focus.purpose === "family" || focus.ids.length !== 1) return;
+    if (!focus || focus.wholeTree || focus.purpose === "family" || focus.ids.length !== 1) return;
     if (!activeFanAnchor) {
       lastFanNavigationFocus.current = focus.token;
       return;
@@ -342,6 +344,15 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       active = false;
     };
   }, [activeFanAnchor, family.people, focus, reanchorFan]);
+  const lastFullNavigation = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focus?.wholeTree || lastFullNavigation.current === focus.token) return;
+    lastFullNavigation.current = focus.token;
+    setFanRevealing(false);
+    setFanAnchor(null);
+    clearFanReturn();
+    clearNavigation();
+  }, [focus, setFanAnchor, clearFanReturn, clearNavigation]);
   const [growing, setGrowing] = useState(() => !props.skipInitialGrowth && props.animateOnLoad !== false && props.presentation !== "depth");
   useEffect(() => {
     if (!activeFanAnchor || !fanRevealing) return;
