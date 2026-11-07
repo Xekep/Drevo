@@ -358,7 +358,7 @@ export function createResearchRunner({
           ? `При отправке запроса была выбрана карточка ${fullName(selectedPerson)} (personId: ${selectedPerson.id}). Это контекст выбора, а не замена явно названного в вопросе человека.`
           : "",
         canPropose
-          ? "Для записи в архив доступны только инструменты предложений: propose_person_create создаёт карточку; propose_person_update меняет дату рождения и другие разрешённые поля; propose_source добавляет документальный источник; propose_relation добавляет связь между существующими людьми. Сначала найди существующих участников через search_people и используй только полученные personId. Если имени недостаточно для однозначного выбора, попроси выбрать человека; если для источника нет названия или ссылки на запись, попроси эти сведения. Это только предложения: архив не меняется, пока человек не нажмёт «Принять» в интерфейсе. Ты не умеешь принимать предложение от имени пользователя. Не утверждай, что изменение применено или ожидает второго подтверждения. Для parent fromPersonId означает родителя, toPersonId — ребёнка. Управление камерой и открытием карточек выполняется отдельно через control_archive_view и не меняет архив."
+          ? "Для записи в архив доступны только инструменты предложений: propose_person_create создаёт карточку; propose_person_update меняет дату рождения и другие разрешённые поля; propose_person_updates_batch готовит до десяти проверяемых изменений одной операцией; propose_source добавляет документальный источник; propose_relation добавляет связь между существующими людьми. Для массовых правок из CSV сначала прочитай вложение, затем найди все карточки через инструменты архива и сопоставь полный personName с реальным personId. Не угадывай ID и никогда не подменяй им имя. Передавай в batch только разные personId с точным ФИО архива; если данные не сопоставлены, перечисли неподтверждённые строки, не создавай предложения для них. Для следующих десяти строк продолжай последовательно и не повторяй уже созданные предложения. Если имени недостаточно для однозначного выбора, попроси выбрать человека; если для источника нет названия или ссылки на запись, попроси эти сведения. Это только предложения: архив не меняется, пока человек не нажмёт «Принять» в интерфейсе. Ты не умеешь принимать предложение от имени пользователя. Не обещай кнопки или успешные правки без действительного результата инструмента. Не утверждай, что изменение применено или ожидает второго подтверждения. Для parent fromPersonId означает родителя, toPersonId — ребёнка. Управление камерой и открытием карточек выполняется отдельно через control_archive_view и не меняет архив."
           : "",
         requesterPromptContext(user, family),
         canPropose ? "Для повторного показа кнопок существующего предложения используй show_pending_suggestions. Без идентификаторов он выбирает только текущий диалог. Устное согласие относится к обсуждаемому действию, а не ко всем ожидающим предложениям архива; изменение применяет только человек кнопкой интерфейса." : "",
@@ -907,10 +907,14 @@ export function createResearchRunner({
           })),
         ];
         const proposalNotice = createdSuggestionIds.size
-          ? `${createdSuggestionIds.size === 1 ? "Проверьте изменение и выберите действие ниже." : "Проверьте предложения и выберите действие для каждого."} Предложения ожидают подтверждения кнопкой; архив не изменён.`
+          ? `${createdSuggestionIds.size === 1 ? "Проверьте изменение и выберите действие ниже." : `Создано предложений: ${createdSuggestionIds.size}. Проверьте каждое предложение ниже.`} Предложения ожидают подтверждения кнопкой; архив не изменён.`
           : proposalErrors.length
             ? `Не удалось подготовить предложение: ${[...new Set(proposalErrors)].join("; ")}. Архив не изменён.` : "";
-        const modelAnswer = typeof answer.content === "string" ? answer.content.trim() : "";
+        // Never let a failed server-side proposal be contradicted by a fluent
+        // model claim that the buttons already exist.
+        const modelAnswer = proposalErrors.length && !createdSuggestionIds.size
+          ? ""
+          : typeof answer.content === "string" ? answer.content.trim() : "";
         const rawAnswer =
           pdfToolFailed && !files.length
             ? "Не удалось создать PDF. Попробуйте повторить запрос."
@@ -1434,16 +1438,21 @@ export function createResearchRunner({
               (tool) => tool.name === call.function.name,
             )
           ) {
-            const suggestion = await commitSuggestion(
+            const created = await commitSuggestion(
               call.function.name,
               user,
               family,
               snapshot.revision,
               toolArgs,
             );
-            createdSuggestionIds.add(suggestion.id);
-            resultSuggestionIds.add(suggestion.id);
-            result = { suggestion };
+            const batch = Array.isArray(created) ? created : [created];
+            for (const suggestion of batch) {
+              createdSuggestionIds.add(suggestion.id);
+              resultSuggestionIds.add(suggestion.id);
+            }
+            result = Array.isArray(created)
+              ? { suggestions: batch, suggestionIds: batch.map(item => item.id), count: batch.length }
+              : { suggestion: created };
           } else throw new Error("Модель запросила неизвестный инструмент");
         } catch (error) {
           if (error instanceof GeneratedFileAccessError) {
