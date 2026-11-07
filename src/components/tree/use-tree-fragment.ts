@@ -43,7 +43,7 @@ export function useTreeFragment({
     key,
     anchorId: "",
     expanded: new Set<string>(),
-    full: false,
+    full: !!focus?.wholeTree,
     focusToken: -1,
     moveToken: 0,
     priority: [] as string[],
@@ -57,15 +57,17 @@ export function useTreeFragment({
             key,
             anchorId: "",
             expanded: new Set<string>(),
-            full: false,
+            full: !!focus?.wholeTree,
             focusToken: focus?.token ?? -1,
             moveToken: 0,
             priority: [],
             visited: new Set<string>(),
           },
-    [navigation, key, focus?.token],
+    [navigation, key, focus?.token, focus?.wholeTree],
   );
   if (navigation.key !== key) setNavigation(current);
+  const fullNavigation = !!focus?.wholeTree && focus.token !== current.focusToken;
+  if (fullNavigation) setNavigation({ ...current, full: true, focusToken: focus!.token });
   const remoteState = remoteFragment?.state;
   const anchorId = remoteState && allowed.has(remoteState.anchorId) ? remoteState.anchorId : allowed.has(current.anchorId)
     ? current.anchorId
@@ -76,7 +78,7 @@ export function useTreeFragment({
     enabled &&
     activation > 0 &&
     (remoteFragment?.state ? remoteFragment.state.total : family.people.length) >= activation &&
-    !current.full &&
+    !current.full && !fullNavigation &&
     !!anchorId;
   const index = useMemo(() => familyNeighbors(family), [family]);
   const projection = useMemo(

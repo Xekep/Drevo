@@ -1763,3 +1763,39 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
     grid-template-columns: 1fr;
   }
 }
+
+.research-message-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  margin: -4px 0 8px;
+  opacity: 0;
+  pointer-events: none;
+}
+.research-message.is-user > .research-message-actions { justify-content: flex-end; }
+.research-message:hover > .research-message-actions,
+.research-message:focus-within > .research-message-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.research-message-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 5px;
+  border: 0;
+  border-radius: 6px;
+  color: #596a58;
+  background: transparent;
+  cursor: pointer;
+}
+.research-message-copy:hover { background: #e8eee3; }
+.research-message-copy:focus-visible { outline: 2px solid #62856a; outline-offset: 2px; }
+.research-message-copy-error { color: #963f32; font-size: 12px; }
+@media (hover: none), (pointer: coarse) {
+  .research-message-actions { opacity: 1; pointer-events: auto; }
+  .research-message-copy { min-width: 44px; min-height: 44px; }
+}

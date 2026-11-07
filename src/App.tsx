@@ -135,6 +135,8 @@ export default function App() {
       hasPersonDetails,
     } = archive;
   const ensureOverview = archive.ensureOverview;
+  const saveTreePreferences = archive.saveTreePreferences;
+  const treePreferences = archive.treePreferences;
   const hasOverview = archive.hasOverview;
   const loadTreeFragment = archive.loadTreeFragment;
   const { loadGallery, projectionGeneration } = archive;
@@ -815,6 +817,30 @@ export default function App() {
     },
     [reveal, closeConnection, setView, currentFamily, remoteFragment, ensureOverview],
   );
+  const memorialNavigationRequest = useRef(0);
+  const showMemorialPerson = useCallback((id: string) => {
+    if (!closeConnection()) return;
+    const request = ++memorialNavigationRequest.current;
+    const origin = window.location.pathname + window.location.search;
+    const hidden = !treeCanvas.current?.getViewContext().personIds.includes(id);
+    void (async () => {
+      if (hidden || !currentFamily()?.people.some(person => person.id === id)) await ensureOverview();
+      if (request !== memorialNavigationRequest.current || window.location.pathname + window.location.search !== origin) return;
+      if (!currentFamily()?.people.some(person => person.id === id)) throw new Error("Человек не найден или недоступен");
+      if (hidden) {
+        if (treePreferences.generationLimits)
+          await saveTreePreferences({ ...treePreferences, generationLimits: null });
+        if (request !== memorialNavigationRequest.current || window.location.pathname + window.location.search !== origin) return;
+        setAssistantFilter(null);
+      }
+      if (request !== memorialNavigationRequest.current || window.location.pathname + window.location.search !== origin) return;
+      const target: ArchiveTarget = { kind: "person", id };
+      lastUrlTarget.current = targetKey(target);
+      setQuery("");
+      setView("tree", target);
+      reveal([id], false, hidden);
+    })().catch(reason => setNotice(reason instanceof Error ? reason.message : "Не удалось открыть человека"));
+  }, [closeConnection, currentFamily, ensureOverview, treePreferences, saveTreePreferences, setView, reveal]);
   useEffect(() => {
     if (!pendingResearchPersonId || archive.loadingDetails) return;
     if (!map.has(pendingResearchPersonId)) return;
@@ -971,6 +997,7 @@ export default function App() {
               participantPreview={Boolean(participantPreview)}
               onTreePreferences={readTree ? () => withOverview(() => setTreePreferencesOpen(true)) : undefined}
               onPlatformLeave={canLeave}
+              onMemorialPerson={showMemorialPerson}
             />
           }
           people={people}
@@ -1606,9 +1633,9 @@ export default function App() {
           anchorId={selected[0]}
           onCheckExportWarnings={checkExportWarnings}
           onExportPdf={(signal, onProgress) => treeCanvas.current!.exportPdf(signal, "current", undefined, undefined, onProgress)}
-          onExportText={async (signal, rootId) => {
+          onExportText={async (signal, rootId, numbering) => {
             const { downloadGenerationReport } = await import("./components/tree/download-generation-report");
-            await downloadGenerationReport(rootId, signal);
+            await downloadGenerationReport(rootId, signal, undefined, numbering);
           }}
           onExportGenealogy={isArchiveOwner(user) ? async (format, signal, onError) => {
             const ids = await treeCanvas.current!.visiblePersonIds(signal);

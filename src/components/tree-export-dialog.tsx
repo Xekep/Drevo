@@ -3,6 +3,7 @@ import { Download } from "lucide-react";
 import type { GenealogyExportFormat } from "../domain/genealogy-transfer";
 import { EditorDialog } from "./editor-dialog";
 import { fullName } from "../domain/dates.ts";
+import type { GenerationNumbering } from "../domain/generation-report.ts";
 import type { Person } from "../domain/types.ts";
 import "../styles/tree-preferences.css";
 
@@ -21,13 +22,14 @@ export function TreeExportDialog({
 }: {
   onClose: () => void;
   onExportPdf: (signal: AbortSignal, onProgress: (message: string) => void) => Promise<void>;
-  onExportText: (signal: AbortSignal, rootId: string) => Promise<void>;
+  onExportText: (signal: AbortSignal, rootId: string, numbering: GenerationNumbering) => Promise<void>;
   people: Person[];
   anchorId?: string;
   onExportGenealogy?: (format: GenealogyExportFormat, signal: AbortSignal, onError: (message: string) => void) => Promise<void>;
   onCheckExportWarnings?: (signal: AbortSignal) => Promise<ExportWarnings>;
 }) {
   const [format, setFormat] = useState<ExportFormat>("pdf");
+  const [numbering, setNumbering] = useState<GenerationNumbering>("daboville");
   const [rootId, setRootId] = useState(anchorId || "");
   const rootAvailable = people.some((person) => person.id === rootId);
   const [busy, setBusy] = useState(false);
@@ -63,7 +65,7 @@ export function TreeExportDialog({
       if (format === "pdf") await onExportPdf(next.signal, message => {
         if (!next.signal.aborted) setStatus(message);
       });
-      else if (format === "generation-text") await onExportText(next.signal, rootId);
+      else if (format === "generation-text") await onExportText(next.signal, rootId, numbering);
       else await onExportGenealogy?.(format, next.signal, (message) => {
         if (next.signal.aborted) return;
         setError(message);
@@ -86,7 +88,7 @@ export function TreeExportDialog({
       <div className="tree-preferences">
         <div className="tree-pdf-export">
           <p>{format === "generation-text"
-            ? "Роспись д’Абовилля включает выбранного человека и всех доступных потомков по мужским и женским линиям, включая свёрнутые ветви."
+            ? "Роспись включает выбранного человека и всех доступных потомков по мужским и женским линиям, включая свёрнутые ветви."
             : "Экспортируется видимое древо с текущими настройками и раскрытыми ветвями."}</p>
           {format === "generation-text" && <label className="tree-lineage-root">
             Родоначальник
@@ -94,6 +96,13 @@ export function TreeExportDialog({
               <option value="">Выберите человека</option>
               {[...people].sort((a, b) => fullName(a).localeCompare(fullName(b), "ru") || a.id.localeCompare(b.id)).map((person) =>
                 <option key={person.id} value={person.id}>{fullName(person) || "Имя неизвестно"}{person.birth ? ` (${person.birth})` : ""}</option>)}
+            </select>
+          </label>}
+          {format === "generation-text" && <label className="tree-lineage-root">
+            Нумерация
+            <select aria-label="Нумерация" value={numbering} disabled={busy} onChange={event => setNumbering(event.target.value as GenerationNumbering)}>
+              <option value="daboville">Д’Абовилля</option>
+              <option value="person-parent">Российская традиционная</option>
             </select>
           </label>}
           <div className="tree-genealogy-export">

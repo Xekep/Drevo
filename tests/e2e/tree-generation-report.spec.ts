@@ -2,9 +2,13 @@ import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
 async function openRegisterExport(page: Page) {
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(
-    /is-grow|is-layout-settling/,
-  );
+  // The context menu ignores right clicks while layout or camera setup is busy.
+  // Checking only CSS motion classes can race the first layout on slower CI runners.
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect(canvas).toHaveAttribute("data-camera-ready", "true");
+  await expect(canvas).toHaveAttribute("aria-busy", "false");
+  await expect(canvas).not.toHaveClass(/is-grow|is-layout-settling/);
   await page
     .locator(".react-flow__pane")
     .click({ button: "right", position: { x: 40, y: 350 } });
@@ -177,4 +181,23 @@ test("TXT requires a root and changing it excludes ancestors and unrelated branc
   expect(text).not.toMatch(/^1(?:\.\d+)*\. .*Иван Петрович/m);
   expect(text).not.toContain("Мария");
   expect(text).toContain("Елена");
+});
+
+test("numbering selector downloads the traditional register without explanations in the form", async ({ page }, info) => {
+  await page.goto("/tree");
+  const dialog = await openRegisterExport(page);
+  const selector = dialog.getByRole("combobox", { name: "Нумерация", exact: true });
+  await expect(selector).toHaveValue("daboville");
+  await selector.selectOption("person-parent");
+  await expect(dialog).not.toContainText("номер человека.номер родителя");
+  const pending = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Скачать", exact: true }).click();
+  const download = await pending;
+  const path = info.outputPath("traditional-register.txt");
+  await download.saveAs(path);
+  const text = await readFile(path, "utf8");
+  expect(text).toContain("Российская традиционная нумерация");
+  expect(text).toMatch(/^2\.1\. Тестов Пётр Иванович/m);
+  expect(text).toMatch(/^4\.2\. Тестова Анна Петровна/m);
+  expect(text).not.toMatch(/^1\.1\.1\./m);
 });

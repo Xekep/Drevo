@@ -2,6 +2,7 @@ import { archiveFetch } from "../data/archive-fetch.ts";
 import { chatPollDelay, mergeChatDelta } from "../domain/ai-chat-polling.ts";
 import type { AiChatResponse } from "../shared/ai-chat-history.ts";
 import { AttachmentLibrary } from "./research/attachment-library";
+import { CopyMessageButton } from "./research/copy-message-button.tsx";
 import { ResearchPanelSurface } from "./research/research-panel-surface";
 import {
   AI_ATTACHMENT_ACCEPT,
@@ -1652,7 +1653,7 @@ export function ResearchAssistant({
                   </button>
                 )}
                 {messages.map((message, index) => (
-                  <div key={message.id === undefined ? `pending-${index}` : `message-${message.id}`}>
+                  <div className={`research-message is-${message.role}`} key={message.id === undefined ? `pending-${index}` : `message-${message.id}`}>
                     {message.role === "assistant" &&
                       !!message.activities?.length && (
                         <details className="research-activity">
@@ -1762,6 +1763,7 @@ export function ResearchAssistant({
                           ) : null;
                         })}
                     </article>
+                    {!!message.content.trim() && <CopyMessageButton text={message.content} />}
                   </div>
                 ))}
                 {busy && (

@@ -1,9 +1,17 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function waitForReadyCanvas(page: Page) {
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect(canvas).toHaveAttribute("data-camera-ready", "true");
+  await expect(canvas).toHaveAttribute("aria-busy", "false");
+  await expect(canvas).not.toHaveClass(/is-grow|is-layout-settling/);
+}
 
 test("dragging from a branch button pans; a tap still folds the branch", async ({ page, isMobile }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tree");
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
+  await waitForReadyCanvas(page);
   const node = page.getByTestId("rf__node-e2e-child");
   const button = node.locator(".flow-collapse");
   await expect(button).toBeVisible();
@@ -53,9 +61,7 @@ for (const variant of ["portrait", "classic"])
       await route.fulfill({ response, json: data });
     });
     await page.goto("/tree");
-    await expect(page.locator(".tree-canvas")).not.toHaveClass(
-      /is-grow|is-layout-settling/,
-    );
+    await waitForReadyCanvas(page);
     const node = page.getByTestId("rf__node-e2e-child");
     const card = node.locator(".flow-person-content");
     const viewport = page.locator(".react-flow__viewport");
@@ -64,6 +70,18 @@ for (const variant of ["portrait", "classic"])
         const matrix = new DOMMatrix(getComputedStyle(element).transform);
         return { x: matrix.e, y: matrix.f, zoom: matrix.a };
       });
+    // Auto-framing may still update the viewport just after the canvas becomes ready.
+    // Sample a quiet camera before asserting the 70px user drag.
+    await expect.poll(async () => {
+      const first = await camera();
+      await page.waitForTimeout(150);
+      const second = await camera();
+      return Math.max(
+        Math.abs(first.x - second.x),
+        Math.abs(first.y - second.y),
+        Math.abs(first.zoom - second.zoom),
+      );
+    }).toBeLessThan(0.5);
     const before = await camera();
     const position = await node.getAttribute("style");
     const box = (await card.locator(".person-avatar").boundingBox())!;
@@ -100,9 +118,7 @@ test("a touch drag starting on a card pans without selecting it", async ({
   test.skip(!isMobile);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tree");
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(
-    /is-grow|is-layout-settling/,
-  );
+  await waitForReadyCanvas(page);
   const card = page
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content");
