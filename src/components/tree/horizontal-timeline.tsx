@@ -1088,6 +1088,8 @@ export function HorizontalTimeline({
             event.currentTarget.releasePointerCapture(event.pointerId);
           if (
             finished?.active &&
+            Math.abs(event.clientX - finished.x) >
+              Math.abs(event.clientY - finished.y) &&
             performance.now() - finished.lastTime < 80 &&
             !window.matchMedia("(prefers-reduced-motion: reduce)").matches
           ) {
