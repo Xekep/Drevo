@@ -2,9 +2,13 @@ import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
 async function openRegisterExport(page: Page) {
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(
-    /is-grow|is-layout-settling/,
-  );
+  // The context menu ignores right clicks while layout or camera setup is busy.
+  // Checking only CSS motion classes can race the first layout on slower CI runners.
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect(canvas).toHaveAttribute("data-camera-ready", "true");
+  await expect(canvas).toHaveAttribute("aria-busy", "false");
+  await expect(canvas).not.toHaveClass(/is-grow|is-layout-settling/);
   await page
     .locator(".react-flow__pane")
     .click({ button: "right", position: { x: 40, y: 350 } });
