@@ -48,7 +48,10 @@ export type PersonEvent = {
     | "other";
   title?: string;
   date?: string;
+  /** Исходная дата события по юлианскому календарю. date хранит новый стиль. */
+  dateJulian?: string;
   endDate?: string;
+  endDateJulian?: string;
   /** Исходная приблизительная дата; не превращается в точный год. */
   dateText?: string;
   /** Citations for one normalized event date, not a range or approximate phrase. */
