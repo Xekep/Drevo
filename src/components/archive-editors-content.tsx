@@ -42,7 +42,7 @@ import {
   owns,
 } from "../domain";
 import { EditorDialog } from "./editor-dialog";
-import { normalizeLifeDate, julianInputLabel } from "../domain/calendar-dates";
+import { canUseOldStyleDate, normalizeLifeDate, julianInputLabel } from "../domain/calendar-dates";
 import { CalendarStyleControl } from "./calendar-style-control";
 import { PlaceField } from "./place-field";
 import { AwardsEditor } from "./person-awards";
@@ -203,7 +203,7 @@ export function PersonEditor({
   const [oldStyles, setOldStyles] = useState({ birth: !!person?.birthJulian, death: !!person?.deathJulian });
   const hintDate = (value: string, kind: "birth" | "death") => {
     try {
-      return normalizeLifeDate(value, oldStyles[kind]).date;
+      return normalizeLifeDate(value, oldStyles[kind] && canUseOldStyleDate(value)).date;
     } catch {
       return "";
     }
@@ -259,7 +259,7 @@ export function PersonEditor({
         const parts = splitFullName(value);
         if (!parts.name.trim() || !parts.surname.trim())
           problem = "Укажите фамилию и имя. Отчество необязательно.";
-      } else normalizeLifeDate(value, oldStyles[key]);
+      } else normalizeLifeDate(value, oldStyles[key] && canUseOldStyleDate(value));
     } catch (error) {
       problem = (error as Error).message;
     }
@@ -405,8 +405,8 @@ export function PersonEditor({
       if (draft.events?.some((event) => event.alternatives?.some((alternative) =>
         !alternative.value.trim() || !alternative.sources.length)))
         throw new Error("У каждого альтернативного варианта события должны быть значение и источник.");
-      const birthDate = normalizeLifeDate(birthText, oldStyles.birth),
-        deathDate = normalizeLifeDate(deathText, oldStyles.death),
+      const birthDate = normalizeLifeDate(birthText, oldStyles.birth && canUseOldStyleDate(birthText)),
+        deathDate = normalizeLifeDate(deathText, oldStyles.death && canUseOldStyleDate(deathText)),
         birth = birthDate.date, death = deathDate.date || undefined;
       const current = family;
       let portrait = draft.photo;
@@ -715,11 +715,13 @@ export function PersonEditor({
                     aria-describedby={`${fieldId}-${kind}-error`}
                     value={kind === "birth" ? birthText : deathText}
                     placeholder="1.5.1980, 05.1980 или 1980"
-                    onChange={(e) =>
-                      (kind === "birth" ? setBirthText : setDeathText)(
-                        e.target.value,
-                      )
-                    }
+                    onChange={(e) => {
+                      const text = e.target.value;
+                      (kind === "birth" ? setBirthText : setDeathText)(text);
+                      if (!canUseOldStyleDate(text))
+                        setOldStyles((old) => old[kind]
+                          ? { ...old, [kind]: false } : old);
+                    }}
                     onBlur={() => {
                       validateField(
                         kind,
@@ -727,10 +729,10 @@ export function PersonEditor({
                       );
                       try {
                         (kind === "birth" ? setBirthText : setDeathText)(
-                          (oldStyles[kind] ? julianInputLabel : dateInputLabel)(
+                          (oldStyles[kind] && canUseOldStyleDate(kind === "birth" ? birthText : deathText) ? julianInputLabel : dateInputLabel)(
                             normalizeDateInput(
                               kind === "birth" ? birthText : deathText,
-                              oldStyles[kind] ? "julian" : "gregorian",
+                              oldStyles[kind] && canUseOldStyleDate(kind === "birth" ? birthText : deathText) ? "julian" : "gregorian",
                             ),
                           ),
                         );
