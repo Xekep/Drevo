@@ -4,12 +4,48 @@ import {
   normalizeLifeDate,
   julianToGregorian,
   validCalendarPair,
+  canUseOldStyleDate,
 } from "../src/domain/calendar-dates.ts";
 import { validDate } from "../src/domain/dates.ts";
 import { exportGedcom, importGedcom } from "../src/domain/gedcom.ts";
 import { validateFamily } from "../src/domain/validation.ts";
 import { rebasePersonDraft } from "../src/domain/person-draft.ts";
 import type { Family } from "../src/domain/types.ts";
+
+test("old-style control is offered only for dates before the Russian February 1918 transition", () => {
+  for (const date of ["1900", "02.1900", "29.2.1900", "1917-10-25", "1918", "02.1918", "13.02.1918"])
+    assert.equal(canUseOldStyleDate(date), true, date);
+  for (const date of ["", "14.02.1918", "03.1918", "1919", "2000", "29.2.2000", "12.11.2026", "nonsense"])
+    assert.equal(canUseOldStyleDate(date), false, date);
+});
+
+test("event old-style dates round-trip through GEDCOM and are validated as pairs", () => {
+  const event = {
+    id: "old-record",
+    type: "baptism" as const,
+    date: "1900-03-13",
+    dateJulian: "1900-02-29",
+  };
+  const archive: Family = {
+    title: "Календарь событий",
+    description: "",
+    demo: false,
+    people: [{
+      id: "child", surname: "Тестов", name: "Павел", patronymic: "",
+      sex: "m" as const, birth: "1899", birthPlace: "", parents: [], spouses: [],
+      generation: 1, column: 0, sources: [], events: [event],
+    }],
+  };
+  assert.doesNotThrow(() => validateFamily(archive));
+  const text = exportGedcom(archive, { version: "7.0" });
+  assert.match(text, /DATE JULIAN 29 FEB 1900/);
+  const restored = importGedcom(text, "calendar-event").family.people[0].events;
+  assert.ok(restored?.some(record => record.date === event.date && record.dateJulian === event.dateJulian));
+  const corrupted: Family = { ...archive, people: archive.people.map(person => ({
+    ...person, events: [{ ...event, date: "1900-03-14" }],
+  })) };
+  assert.throws(() => validateFamily(corrupted), /старому стилю/);
+});
 
 test("Julian conversion follows century leap boundaries rather than a constant offset", () => {
   for (const [old, modern] of [
