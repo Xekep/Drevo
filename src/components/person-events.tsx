@@ -366,11 +366,9 @@ export function EventsEditor({
                 {section !== "education" && <label>
                   Конец периода
                   <input
-                    value={event.endDate ? dateInputLabel(event.endDate) : ""}
+                    value={event.endDateJulian ? julianInputLabel(event.endDateJulian) : event.endDate ? dateInputLabel(event.endDate) : ""}
                     placeholder="Если событие длилось несколько лет"
-                    onChange={(e) =>
-                      update(event.id, { endDate: e.target.value || undefined })
-                    }
+                    onChange={(change) => editDate(event, "endDate", change.target.value)}
                   />
                 </label>}
                 <label>
