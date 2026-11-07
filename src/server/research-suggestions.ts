@@ -153,7 +153,7 @@ const PERSON_UPDATE_PROPOSAL_TOOL = {
         maxItems: 10,
       },
     },
-    required: ["personId", "personName", "changes", "reason"],
+    required: ["personId", "changes", "reason"],
     additionalProperties: false,
   },
 } as const;
@@ -652,13 +652,13 @@ export function researchSuggestionStore(db: StoreDatabase) {
         throw new Error("Некорректное предложение");
       const input = raw as Record<string, unknown>,
         personId = text(input.personId, "personId", 200),
-        personName = text(input.personName, "personName", 500),
+        personName = optionalText(input.personName, "personName", 500),
         changes = personChanges(input.changes),
         reason = text(input.reason, "reason", 2000),
         grounds = evidence(input.evidence),
         person = family.people.find((item) => item.id === personId);
       if (!person) throw new Error("Человек не найден или недоступен");
-      if (normalizedPersonName(fullName(person)) !== normalizedPersonName(personName))
+      if (personName && normalizedPersonName(fullName(person)) !== normalizedPersonName(personName))
         throw new Error("ФИО не соответствует идентификатору карточки. Повторите поиск человека");
 
       const before: PersonChanges = {};
