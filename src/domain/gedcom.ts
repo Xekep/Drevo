@@ -708,11 +708,14 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     if (n.tag === "ADOP" && child(n, "FAMC"))
       warnings.add("Привязка события ADOP.FAMC к конкретной приёмной семье не перенесена; событие и родительские связи сохранены отдельно.");
     const raw = value(n, "DATE"),
-      date = ((n.tag === "BIRT" || n.tag === "DEAT") && julianGedcomDate(raw)?.date) || gedcomDate(raw);
+      julian = julianGedcomDate(raw),
+      date = julian?.date || gedcomDate(raw);
     const phrase = child(n, "DATE") ? value(child(n, "DATE")!, "PHRASE") : "";
     const period = /^FROM (.+) TO (.+)$/.exec(raw),
-      start = period && gedcomDate(period[1]),
-      end = period && gedcomDate(period[2]);
+      startJulian = period && julianGedcomDate(period[1]),
+      endJulian = period && julianGedcomDate(period[2]),
+      start = period && (startJulian?.date || gedcomDate(period[1])),
+      end = period && (endJulian?.date || gedcomDate(period[2]));
     if (raw && !date && !(start && end))
       warnings.add(
         "Приблизительные даты, старый стиль и нестандартные календари сохранены в исходной формулировке, без подстановки точных дат.",
@@ -783,7 +786,9 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         (n.value && n.value !== "Y" ? n.value : fallback) ||
         undefined,
       date: date || start || undefined,
+      ...(julian || startJulian ? { dateJulian: (julian || startJulian)!.original } : {}),
       endDate: start && end ? end : undefined,
+      ...(start && end && endJulian ? { endDateJulian: endJulian.original } : {}),
       dateText,
       ...(dateSources.length ? { dateClaim: valueClaim(eventDate!, dateSources, n,
         "_DREVO_EVENT_DATE_CONFIDENCE") } : {}),
@@ -2227,14 +2232,17 @@ export function exportGedcom(
       emit(2, "TYPE", e.title || EVENT_NAMES[e.type]);
       if (kind && p[`${kind}Julian`])
         emit(2, "DATE", `${modern ? "JULIAN" : "@#DJULIAN@"} ${exportDate(p[`${kind}Julian`]!)}`);
-      else if (e.date)
+      else if (e.date) {
+        const exportCalendarDate = (date: string, old?: string) =>
+          old ? `${modern ? "JULIAN" : "@#DJULIAN@"} ${exportDate(old)}` : exportDate(date);
         emit(
           2,
           "DATE",
           e.endDate
-            ? `FROM ${exportDate(e.date)} TO ${exportDate(e.endDate)}`
-            : exportDate(e.date),
+            ? `FROM ${exportCalendarDate(e.date, e.dateJulian)} TO ${exportCalendarDate(e.endDate, e.endDateJulian)}`
+            : exportCalendarDate(e.date, e.dateJulian),
         );
+      }
       else if (e.dateText) {
         const date = portableDate(e.dateText, modern);
         emit(2, "DATE", date.date);
