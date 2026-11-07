@@ -363,14 +363,19 @@ export function EventsEditor({
                     />
                   </label>
                 )}
-                {section !== "education" && <label>
-                  Конец периода
-                  <input
-                    value={event.endDateJulian ? julianInputLabel(event.endDateJulian) : event.endDate ? dateInputLabel(event.endDate) : ""}
-                    placeholder="Если событие длилось несколько лет"
-                    onChange={(change) => editDate(event, "endDate", change.target.value)}
-                  />
-                </label>}
+                {section !== "education" && <div className="event-end-date-field">
+                  <label>Конец периода
+                    <input
+                      value={event.endDateJulian ? julianInputLabel(event.endDateJulian) : event.endDate ? dateInputLabel(event.endDate) : ""}
+                      placeholder="Если событие длилось несколько лет"
+                      onChange={(change) => editDate(event, "endDate", change.target.value)}
+                    />
+                  </label>
+                  <CalendarStyleControl text={dateText(event, "endDate")}
+                    label="Дата конца периода по старому стилю"
+                    checked={!!event.endDateJulian}
+                    onChange={(checked) => switchDateStyle(event, "endDate", checked)} />
+                </div>}
                 <label>
                   Приблизительная дата
                   <input
