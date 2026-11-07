@@ -312,6 +312,20 @@ try {
   assert.deepEqual(await readMemorialDates(a, new Set(), memorialDay), []);
   assert.deepEqual(await readMemorialDates(a, new Set(["not-visible"]), memorialDay), []);
   assert.equal((await readMemorialDates(a, new Set(["same-id"]), memorialDay)).length, 1);
+  for (const db of [a, b]) await db.transaction(async () => {
+    await db.prepare("", "UPDATE people SET data=jsonb_set(data-'death','{birth}',to_jsonb(?::text)) WHERE id='same-id'").run(memorialDeath);
+  });
+  const birthdayA = await readMemorialDates(a, new Set(["same-id"]), memorialDay, true);
+  const birthdayB = await readMemorialDates(b, null, memorialDay, true);
+  assert.deepEqual(await readMemorialDates(a, null, memorialDay), [], "old API clients receive no birthdays without opt-in");
+  assert.equal(birthdayA[0].kind, "birthday");
+  assert.match(birthdayA[0].personName, /shared-probe-0/);
+  assert.equal(birthdayB[0].kind, "birthday");
+  assert.match(birthdayB[0].personName, /shared-probe-1/);
+  assert.deepEqual(await readMemorialDates(a, new Set(), memorialDay), []);
+  for (const db of [a, b]) await db.transaction(async () => {
+    await db.prepare("", "UPDATE people SET data=jsonb_set(jsonb_set(data,'{birth}',to_jsonb('1900'::text)),'{death}',to_jsonb(?::text)) WHERE id='same-id'").run(memorialDeath);
+  });
   // Ordinary-role SQL exercises the notification dialect and RLS isolation.
   for (const db of [a, b])
     await db.transaction(async () => {

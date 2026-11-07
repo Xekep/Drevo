@@ -126,7 +126,7 @@ export function archiveNotificationsHttp({
             return json(res, 404, { error: "Уведомление не найдено" });
           if (receipt?.through !== undefined)
             await store.readThrough(user.id, visible, receipt.through);
-          const body = memorial ? { items: await readMemorialDates(archive.db, visible, today) } : req.method === "GET" && url.searchParams.get("head") === "1"
+          const body = memorial ? { items: await readMemorialDates(archive.db, visible, today, url.searchParams.get("birthdays") === "1") } : req.method === "GET" && url.searchParams.get("head") === "1"
             ? await store.summary(user.id, visible)
             : req.method === "GET" && before > 0 && url.searchParams.get("summary") === "0"
               ? await store.tail(user.id, visible, before)

@@ -9,17 +9,21 @@ export async function readMemorialDates(
   db: StoreDatabase,
   visible: ReadonlySet<string> | null,
   today: string,
+  includeBirthdays = false,
 ) {
   const values = visible ? [JSON.stringify([...visible])] : [];
   const rows = await db
     .prepare(
       `SELECT id,json_extract(data,'$.surname') AS surname,json_extract(data,'$.name') AS name,
       json_extract(data,'$.patronymic') AS patronymic,json_extract(data,'$.death') AS death,
-      json_extract(data,'$.deathJulian') AS julian FROM people
-      WHERE length(json_extract(data,'$.death'))=10${visible ? " AND id IN (SELECT value FROM json_each(?))" : ""}`,
+      json_extract(data,'$.deathJulian') AS julian,json_extract(data,'$.birth') AS birth,
+      json_extract(data,'$.birthJulian') AS birth_julian,json_extract(data,'$.deceased') AS deceased,
+      json_extract(data,'$.deathPlace') AS death_place FROM people
+      WHERE (length(json_extract(data,'$.death'))=10${includeBirthdays ? " OR length(json_extract(data,'$.birth'))=10" : ""})${visible ? " AND id IN (SELECT value FROM json_each(?))" : ""}`,
       `SELECT id,data->>'surname' AS surname,data->>'name' AS name,
-      data->>'patronymic' AS patronymic,data->>'death' AS death,data->>'deathJulian' AS julian FROM people
-      WHERE length(data->>'death')=10${visible ? " AND id IN (SELECT jsonb_array_elements_text(?::jsonb))" : ""}`,
+      data->>'patronymic' AS patronymic,data->>'death' AS death,data->>'deathJulian' AS julian,data->>'birth' AS birth,
+      data->>'birthJulian' AS birth_julian,data->>'deceased' AS deceased,data->>'deathPlace' AS death_place FROM people
+      WHERE (length(data->>'death')=10${includeBirthdays ? " OR length(data->>'birth')=10" : ""})${visible ? " AND id IN (SELECT jsonb_array_elements_text(?::jsonb))" : ""}`,
     )
     .all(...values);
   return upcomingMemorialDates(
@@ -30,6 +34,11 @@ export async function readMemorialDates(
       patronymic: String(row.patronymic || ""),
       death: String(row.death || ""),
       deathJulian: row.julian ? String(row.julian) : undefined,
+      birth: String(row.birth || ""),
+      birthJulian: row.birth_julian ? String(row.birth_julian) : undefined,
+      deceased:
+        row.deceased === true || row.deceased === 1 || row.deceased === "true",
+      deathPlace: String(row.death_place || ""),
     })),
     today,
   );

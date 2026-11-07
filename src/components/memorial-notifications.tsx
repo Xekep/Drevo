@@ -1,5 +1,5 @@
 import { useEffect, useState, type MouseEvent } from "react";
-import { CalendarDays } from "lucide-react";
+import { Cake, CalendarDays } from "lucide-react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { browserTimeZone } from "../data/browser-time-zone.ts";
 import {
@@ -34,7 +34,7 @@ export function MemorialNotifications({
       pending = true;
       try {
         const response = await archiveFetch(
-          `${resource}?memorial=1&timeZone=${encodeURIComponent(browserTimeZone() || "UTC")}`,
+          `${resource}?memorial=1&birthdays=1&timeZone=${encodeURIComponent(browserTimeZone() || "UTC")}`,
           {
             cache: "no-store",
             signal: AbortSignal.any([
@@ -108,13 +108,19 @@ export function MemorialNotifications({
           )}
           onClick={follow}
         >
-          <CalendarDays size={18} aria-hidden="true" />
+          {item.kind === "birthday" ? (
+            <Cake size={18} aria-hidden="true" />
+          ) : (
+            <CalendarDays size={18} aria-hidden="true" />
+          )}
           <span className="notification-content">
             <strong>{item.personName}</strong>
             <span>{memorialDateLabel(item)}</span>
             <time dateTime={item.date}>
               {item.days === 0
-                ? "Сегодня день памяти"
+                ? item.kind === "birthday"
+                  ? "Сегодня день рождения"
+                  : "Сегодня день памяти"
                 : `Через ${item.days} дн.`}
             </time>
           </span>
