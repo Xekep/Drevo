@@ -111,10 +111,10 @@ export function EventsEditor({
     const normalized = { ...editing,
       date: date.date || undefined,
       dateJulian: date.julian,
-      dateByzantine: "byzantine" in date ? date.byzantine : undefined,
+      dateByzantine: "byzantine" in date && typeof date.byzantine === "string" ? date.byzantine : undefined,
       endDate: endDate.date || undefined,
       endDateJulian: endDate.julian,
-      endDateByzantine: "byzantine" in endDate ? endDate.byzantine : undefined,
+      endDateByzantine: "byzantine" in endDate && typeof endDate.byzantine === "string" ? endDate.byzantine : undefined,
       alternatives: editing.alternatives?.map((item) => ({ ...item,
         value: item.field === "date" ? normalizeDateInput(item.value) : item.value.trim() })),
     };
