@@ -103,7 +103,9 @@ export function validateFamily(value: unknown): Family {
   const ids = new Set<string>();
   const today = new Date().toISOString().slice(0, 10);
   for (const p of data.people) {
-    if (p && (!validCalendarPair(p.birth, p.birthJulian) || !validCalendarPair(p.death, p.deathJulian)))
+    if (p && (!validCalendarPair(p.birth, p.birthJulian) || !validCalendarPair(p.death, p.deathJulian) ||
+      !validByzantinePair(p.birth, p.birthJulian, p.birthByzantine) ||
+      !validByzantinePair(p.death, p.deathJulian, p.deathByzantine)))
       throw new Error("Дата по старому стилю не соответствует дате по новому стилю.");
     validateEvents(p?.events);
     if (p?.deceased !== undefined && typeof p.deceased !== "boolean")
