@@ -1,6 +1,6 @@
 import type { PersonEvent } from "./types.ts";
 import { validDate, dateBound, safeUrl, normalizeDateInput } from "./dates.ts";
-import { validCalendarPair } from "./calendar-dates.ts";
+import { validCalendarPair, validByzantinePair } from "./calendar-dates.ts";
 import { validSourceRepository } from "./source-repository.ts";
 export const EVENT_NAMES: Record<PersonEvent["type"], string> = {
   residence: "Проживание",
