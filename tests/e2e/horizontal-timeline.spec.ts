@@ -1,5 +1,18 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { randomFamily } from "../layout-fixtures";
+
+async function waitForHorizontalScrollToSettle(timeline: Locator) {
+  // During inertia, the rendered year can lag behind the native scroll offset.
+  // Finish the gesture before positioning a fixture year or checking another axis.
+  await expect
+    .poll(async () => {
+      const first = await timeline.evaluate((element) => element.scrollLeft);
+      await timeline.page().waitForTimeout(150);
+      const second = await timeline.evaluate((element) => element.scrollLeft);
+      return Math.abs(second - first);
+    })
+    .toBe(0);
+}
 
 test("chronology hides the tiny distant-tree portraits behind its background", async ({
   page,
@@ -148,6 +161,7 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
   await expect
     .poll(async () => Number(await marker.textContent()))
     .toBeGreaterThan(yearBefore);
+  await waitForHorizontalScrollToSettle(timeline);
   await timeline.evaluate((element) => {
     const currentYear = Number(
       document.querySelector(".timeline-center-marker output")?.textContent,
@@ -333,14 +347,7 @@ test("wheel moves through years, Shift+wheel moves people, and life bars track f
   // it settles before asserting that Shift+wheel changes only the people list.
   // Otherwise we mistake the previous wheel animation for a vertical-wheel
   // side effect.
-  await expect
-    .poll(async () => {
-      const first = await timeline.evaluate((element) => element.scrollLeft);
-      await page.waitForTimeout(120);
-      const second = await timeline.evaluate((element) => element.scrollLeft);
-      return Math.abs(second - first);
-    })
-    .toBeLessThan(0.5);
+  await waitForHorizontalScrollToSettle(timeline);
   const beforePeople = await timeline.evaluate((element) => ({
     left: element.scrollLeft,
     top: element.scrollTop,
@@ -416,15 +423,14 @@ test("chronology keeps portraits and epochs usable on a phone", async ({
   await expect
     .poll(async () => Number(await marker.textContent()))
     .toBeGreaterThan(yearBefore);
+  await waitForHorizontalScrollToSettle(timeline);
   await timeline.evaluate((element) => {
     const currentYear = Number(
       document.querySelector(".timeline-center-marker output")?.textContent,
     );
     element.scrollLeft += (1992 - currentYear) * 12;
   });
-  await expect
-    .poll(async () => Number(await marker.textContent()))
-    .toBeGreaterThanOrEqual(1992);
+  await expect(marker).toHaveText("1992");
   await expect(
     timeline.locator(".timeline-person-row:not(.is-exiting)"),
   ).toHaveCount(6);
