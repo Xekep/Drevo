@@ -36,7 +36,7 @@ export function CalendarStyleControl({
         />
         Юлианский календарь (старый стиль)
       </label>
-      <small role="status">{hint || (Number(text.match(/\\d{4}/)?.[0]) < 1700
+      <small role="status">{hint || (Number(text.match(/\d{4}/)?.[0]) < 1700
         ? "Календарь выбирается вручную. Даты «от Сотворения мира» используют другую нумерацию лет." : "")}</small>
     </div>
   );
