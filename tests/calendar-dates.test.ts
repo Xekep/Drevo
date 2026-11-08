@@ -16,9 +16,9 @@ import { rebasePersonDraft } from "../src/domain/person-draft.ts";
 import type { Family } from "../src/domain/types.ts";
 
 test("old-style control is offered only for dates before the Russian February 1918 transition", () => {
-  for (const date of ["1900", "02.1900", "29.2.1900", "1917-10-25", "1918", "02.1918", "13.02.1918"])
+  for (const date of ["1900", "02.1900", "29.2.1900", "1917-10-25", "1918", "01.1918", "31.01.1918"])
     assert.equal(canUseOldStyleDate(date), true, date);
-  for (const date of ["", "14.02.1918", "03.1918", "1919", "2000", "29.2.2000", "12.11.2026", "nonsense"])
+  for (const date of ["", "01.02.1918", "02.1918", "14.02.1918", "03.1918", "1919", "2000", "29.2.2000", "12.11.2026", "nonsense"])
     assert.equal(canUseOldStyleDate(date), false, date);
 });
 
