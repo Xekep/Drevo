@@ -102,6 +102,7 @@ export type Person = {
   birthDateClaim?: PersonValueClaim;
   death?: string;
   deathJulian?: string;
+  deathByzantine?: string;
   /** Citations for this exact death-date value, separate from general person sources. */
   deathDateClaim?: PersonValueClaim;
   deceased?: boolean;
