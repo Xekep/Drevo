@@ -208,7 +208,11 @@ export function PersonEditor({
   const normalizeEditorDate = (text: string, kind: "birth" | "death") =>
     byzantineStyles[kind]
       ? normalizeByzantineDate(text)
-      : normalizeLifeDate(text, oldStyles[kind] && canUseOldStyleDate(text));
+      : normalizeLifeDate(text, oldStyles[kind] &&
+          (canUseOldStyleDate(text) ||
+            // Imported Julian dates after 1918 must survive unrelated edits.
+            // The modern input handler drops the flag if its date changes.
+            (person?.[`${kind}Julian`] === normalizeDateInput(text, "julian"))));
   const hintDate = (value: string, kind: "birth" | "death") => {
     try {
       return normalizeEditorDate(value, kind).date;
