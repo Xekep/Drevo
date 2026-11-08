@@ -114,7 +114,7 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
   await expect(
     timeline.locator(".timeline-person-row:not(.is-exiting)"),
   ).toHaveCount(1);
-  await expect(timeline.locator(".timeline-era-bar")).toBeVisible();
+  await expect(page.locator(".timeline-era-bar")).toBeVisible();
   await expect(
     timeline.locator(".timeline-undated-label, .timeline-undated-events"),
   ).toHaveCount(0);

@@ -8,6 +8,7 @@
 .mode-timeline {
   --timeline-rail: 0px;
   --timeline-person-width: 196px;
+  --timeline-era-height: 32px;
 }
 .mode-timeline .tree-mode-bar {
   z-index: 7;
@@ -17,7 +18,7 @@
   --timeline-row-height: 64px;
   --timeline-viewport-height: 100vh;
   position: absolute;
-  inset: 68px 0 0;
+  inset: 68px 0 var(--timeline-era-height);
   z-index: 1;
   overflow: auto;
   overscroll-behavior: contain;
@@ -29,7 +30,7 @@
 .timeline-center-marker {
   position: absolute;
   top: 68px;
-  bottom: 0;
+  bottom: var(--timeline-era-height);
   left: calc(50% + var(--timeline-person-width) / 2);
   z-index: 6;
   width: 0;
@@ -129,7 +130,9 @@
   flex-direction: column;
   min-height: 100%;
   padding-top: 86px;
-  padding-bottom: 0;
+  /* Contain the last row's 7px entry motion so it cannot extend scrollHeight
+     beyond the era backdrop and pull the sticky emblem upward. */
+  padding-bottom: 8px;
   box-sizing: border-box;
   isolation: isolate;
 }
@@ -173,8 +176,7 @@
   opacity: 0.055;
   filter: grayscale(1);
 }
-.timeline-axis,
-.timeline-era-bar {
+.timeline-axis {
   display: flex;
   position: sticky;
   z-index: 5;
@@ -189,8 +191,7 @@
   margin-top: -86px;
   border-bottom: 1px solid #d8dfd2;
 }
-.timeline-axis-title,
-.timeline-era-heading {
+.timeline-axis-title {
   position: sticky;
   left: 0;
   z-index: 6;
@@ -224,7 +225,6 @@
   color: #52634e;
 }
 .timeline-axis-track,
-.timeline-era-track,
 .timeline-row-track {
   position: relative;
   flex: none;
@@ -504,57 +504,70 @@
   color: #667860;
 }
 .timeline-era-bar {
+  position: absolute;
+  inset-inline: 0;
   bottom: 0;
-  height: 44px;
-  flex-shrink: 0;
-  margin-top: auto;
-  border-top: 1px solid #c8d5c0;
-}
-.timeline-era-track {
-  height: 100%;
+  z-index: 7;
+  display: flex;
+  height: var(--timeline-era-height);
+  padding-inline: 12px;
+  border-top: 1px solid #d8dfd2;
+  background: #faf9f5;
 }
 .timeline-era-segment {
-  position: absolute;
-  top: 0;
-  bottom: 0;
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  gap: 8px;
-  overflow: hidden;
-  padding: 4px;
+  padding: 0 2px 3px;
   box-sizing: border-box;
-  border-right: 1px solid #aec1a455;
-  color: #465a40;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #657064;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 14px;
   white-space: nowrap;
-  cursor: grab;
+  cursor: pointer;
 }
-.horizontal-timeline.is-dragging .timeline-era-segment {
-  cursor: grabbing;
+.timeline-era-segment::before {
+  content: "";
+  position: absolute;
+  inset: 2px 0 auto;
+  height: 5px;
+  background: repeating-linear-gradient(to right, #aab3a5 0 1px, transparent 1px 20%);
 }
-.timeline-era-segment.empire {
-  background: #e4e9d7;
+.timeline-era-segment::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 1px;
+  height: 10px;
+  background: currentColor;
 }
-.timeline-era-segment.transition {
-  background: #e8e1d5;
-}
-.timeline-era-segment.soviet {
-  background: #eadfd2;
-}
-.timeline-era-segment.russia {
-  background: #dcebdd;
-}
-.timeline-era-segment:hover {
-  filter: brightness(0.96);
-}
-.timeline-era-segment strong {
+.timeline-era-segment span {
   overflow: hidden;
-  font-size: 12px;
   text-overflow: ellipsis;
 }
-.timeline-era-segment small {
-  color: #52634e;
-  font-size: 12px;
+.timeline-era-segment:hover,
+.timeline-era-segment[aria-current] {
+  color: #284b3b;
+  background: #284b3b06;
+}
+.timeline-era-segment[aria-current] {
+  font-weight: 700;
+}
+.timeline-era-segment[aria-current]::after {
+  width: 3px;
+  margin-left: -1px;
+}
+.timeline-era-segment:focus-visible {
+  outline: 2px solid #547960;
+  outline-offset: -2px;
 }
 @keyframes timeline-person-enter {
   from {
@@ -582,6 +595,7 @@
   }
   .mode-timeline {
     --timeline-person-width: 132px;
+    --timeline-era-height: 44px;
   }
   .timeline-board {
     padding-top: 86px;
@@ -589,8 +603,7 @@
   .timeline-axis {
     margin-top: -86px;
   }
-  .timeline-axis-title,
-  .timeline-era-heading {
+  .timeline-axis-title {
     padding-inline: 9px;
   }
   .timeline-person {
@@ -634,8 +647,16 @@
   .timeline-person small {
     font-size: 12px;
   }
-  .timeline-era-segment small {
-    display: none;
+  .timeline-era-bar {
+    padding-inline: 4px;
+  }
+  .timeline-era-segment {
+    padding-bottom: 8px;
+  }
+  .tree-canvas.mode-timeline .timeline-fullscreen-tools {
+    position: absolute;
+    z-index: 7;
+    bottom: calc(var(--timeline-era-height) + max(18px, env(safe-area-inset-bottom)));
   }
   .timeline-event-list {
     min-width: 0;
