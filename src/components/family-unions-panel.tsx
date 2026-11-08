@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { HistoricalDateInput } from "./historical-date-input";
+import { normalizeCalendarDate } from "../domain/calendar-dates";
 import {
   fullName,
   unionStatus,
@@ -79,7 +81,7 @@ export function FamilyUnionsPanel({
   const saveStageFirst = (key: "formation" | "ending" | "divorce" | "ongoing") => {
     const before = original?.[key], after = draft?.[key];
     return !!before?.confidence &&
-      (before.date !== after?.date || before.dateText !== after?.dateText ||
+      (before.date !== after?.date || before.dateJulian !== after?.dateJulian || before.dateText !== after?.dateText ||
         before.place !== after?.place);
   };
   const stageLocked = (key: "formation" | "ending" | "divorce" | "ongoing") =>
@@ -92,9 +94,10 @@ export function FamilyUnionsPanel({
     key: "formation" | "ending" | "divorce" | "ongoing",
     field: keyof UnionMilestone,
     value: string,
+    dateJulian?: string,
   ) => {
     const changedAssessedValue = field !== "confidence" && !!draft?.[key]?.confidence &&
-      draft[key]?.[field] !== (value || undefined);
+      (draft[key]?.[field] !== (value || undefined) || (field === "date" && draft[key]?.dateJulian !== dateJulian));
     const replacedAssessedEnding = !!value &&
       ((key === "ending" && !!draft?.divorce?.confidence) ||
         (key === "divorce" && !!draft?.ending?.confidence));
@@ -108,7 +111,9 @@ export function FamilyUnionsPanel({
           ...(value && key === "ending" ? { divorce: undefined } : {}),
           ...(value && key === "divorce" ? { ending: undefined } : {}),
           [key]: { ...old[key], [field]: value || undefined,
-            ...(field !== "confidence" && old[key]?.[field] !== (value || undefined)
+            ...(field === "date" ? { dateJulian } : {}),
+            ...(field !== "confidence" && (old[key]?.[field] !== (value || undefined) ||
+              (field === "date" && old[key]?.dateJulian !== dateJulian))
               ? { confidence: undefined } : {}) },
         };
       },
@@ -128,7 +133,13 @@ export function FamilyUnionsPanel({
       const next = (family.unions || []).filter(
         (union) => union.id !== draft.id,
       );
-      if (!remove) next.push(draft);
+      if (!remove) {
+        const normalized = { ...draft };
+        for (const key of ["formation", "ending", "divorce", "ongoing"] as const)
+          if (normalized[key]) normalized[key] = { ...normalized[key],
+            ...normalizeCalendarDate(normalized[key]!.date, normalized[key]!.dateJulian) };
+        next.push(normalized);
+      }
       await save(completeMarriageEndings({ ...family, unions: next },
         (union) => union.id === draft.id));
       setDraft(null);
@@ -282,17 +293,13 @@ export function FamilyUnionsPanel({
                     }[key]
                   }
                 </legend>
-                <label>
-                  Дата (год, месяц или день)
-                  <input
-                    value={draft[key]?.date || ""}
+                  <HistoricalDateInput label="Дата (год, месяц или день)"
+                    date={draft[key]?.date} dateJulian={draft[key]?.dateJulian}
                     disabled={stageLocked(key)}
-                    onChange={(event) =>
-                      milestone(key, "date", event.target.value)
+                    onChange={(value) =>
+                      milestone(key, "date", value.date || "", value.dateJulian)
                     }
-                    placeholder="1900-05-12"
                   />
-                </label>
                 {key === "ongoing" && (
                   <button
                     type="button"

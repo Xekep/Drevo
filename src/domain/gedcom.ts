@@ -13,7 +13,7 @@ import type {
 import { EXTRA_LINK_TYPES } from "./types.ts";
 import { isClaimConfidence } from "./claim-confidence.ts";
 import { validDate, fullName, safeUrl } from "./dates.ts";
-import { julianToGregorian } from "./calendar-dates.ts";
+import { julianToGregorian, validCalendarPair } from "./calendar-dates.ts";
 import { validateFamily, validEventAlternatives } from "./validation.ts";
 import { claimableEventDate, EVENT_NAMES } from "./person-events.ts";
 import { parseDocumentDetails } from "../shared/document-details.ts";
@@ -707,8 +707,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
   function event(n: Node, fallback?: string): PersonEvent {
     if (n.tag === "ADOP" && child(n, "FAMC"))
       warnings.add("Привязка события ADOP.FAMC к конкретной приёмной семье не перенесена; событие и родительские связи сохранены отдельно.");
-    const raw = value(n, "DATE"),
-      date = ((n.tag === "BIRT" || n.tag === "DEAT") && julianGedcomDate(raw)?.date) || gedcomDate(raw);
+    const raw = value(n, "DATE"), originalJulian = julianGedcomDate(raw),
+      date = originalJulian?.date || gedcomDate(raw);
     const phrase = child(n, "DATE") ? value(child(n, "DATE")!, "PHRASE") : "";
     const period = /^FROM (.+) TO (.+)$/.exec(raw),
       start = period && gedcomDate(period[1]),
@@ -776,6 +776,11 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       warnings.add("Возраст AGE сохранён текстом в описании события; отдельная структура возраста не перенесена.");
     return {
       id: `${namespace}-e${++eventId}`,
+      ...(originalJulian ? { dateJulian: originalJulian.original }
+        : value(n, "_DREVO_DATE_JULIAN") && validCalendarPair(date || start || undefined, value(n, "_DREVO_DATE_JULIAN"))
+          ? { dateJulian: value(n, "_DREVO_DATE_JULIAN") } : {}),
+      ...(value(n, "_DREVO_END_DATE_JULIAN") && validCalendarPair(start && end ? end : undefined, value(n, "_DREVO_END_DATE_JULIAN"))
+        ? { endDateJulian: value(n, "_DREVO_END_DATE_JULIAN") } : {}),
       gedcomTag: n.tag,
       type: eventTags[n.tag] || "other",
       title:
@@ -1373,6 +1378,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           const item = event(node);
           return {
             date: item.date,
+            ...(item.dateJulian ? { dateJulian: item.dateJulian } : {}),
             dateText: item.dateText,
             place: item.place,
             sources: item.sources,
@@ -2227,6 +2233,8 @@ export function exportGedcom(
       emit(2, "TYPE", e.title || EVENT_NAMES[e.type]);
       if (kind && p[`${kind}Julian`])
         emit(2, "DATE", `${modern ? "JULIAN" : "@#DJULIAN@"} ${exportDate(p[`${kind}Julian`]!)}`);
+      else if (e.dateJulian && !e.endDate)
+        emit(2, "DATE", `${modern ? "JULIAN" : "@#DJULIAN@"} ${exportDate(e.dateJulian)}`);
       else if (e.date)
         emit(
           2,
@@ -2241,6 +2249,8 @@ export function exportGedcom(
         if (date.phrase) emit(3, "PHRASE", date.phrase);
       } else if (e.endDate) emit(2, "DATE", `TO ${exportDate(e.endDate)}`);
       emitPlace(2, e.place, e.location);
+      if (e.dateJulian) emit(2, "_DREVO_DATE_JULIAN", e.dateJulian);
+      if (e.endDateJulian) emit(2, "_DREVO_END_DATE_JULIAN", e.endDateJulian);
       if (e.description) emit(2, "NOTE", e.description);
       for (const index of eventObjects.get(JSON.stringify([p.id, e.id])) || [])
         emit(2, "OBJE", `@M${index}@`, true);
@@ -2391,7 +2401,8 @@ export function exportGedcom(
         if (!milestone) return;
         emit(1, tag, "Y");
         if (stage) emit(2, "_DREVO_UNION_STAGE", stage);
-        if (milestone.date) emit(2, "DATE", exportDate(milestone.date));
+        if (milestone.date) emit(2, "DATE", milestone.dateJulian
+          ? `${modern ? "JULIAN" : "@#DJULIAN@"} ${exportDate(milestone.dateJulian)}` : exportDate(milestone.date));
         else if (milestone.dateText) {
           const date = portableDate(milestone.dateText, modern);
           emit(2, "DATE", date.date);

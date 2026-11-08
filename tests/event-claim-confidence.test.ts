@@ -76,6 +76,14 @@ test("event assessments require cited exact values and researcher rights", () =>
   assert.throws(() => validateFamily(uncited), /Источник даты события/);
 });
 
+test("an assessed partial event date cannot change its calendar without researcher rights", () => {
+  const before = assessed();
+  const next = structuredClone(before);
+  next.people[0].events![0].dateJulian = "1901";
+  assert.doesNotThrow(() => validateFamily(next));
+  assert.throws(() => authorizeArchive(next, before, user("relative")), /Оценённое утверждение/);
+});
+
 test("event assessments survive .drevo and GEDCOM without becoming general evidence", async () => {
   const value = assessed();
   const directory = await mkdtemp(join(tmpdir(), "drevo-event-assessment-"));

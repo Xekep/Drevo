@@ -14,6 +14,8 @@ import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context
 import { archiveDocumentPath } from "../domain/archive-routes.ts";
 import { DocumentSourcePicker } from "./document-source-picker.tsx";
 import { CitationSourcesEditor } from "./union-sources-editor.tsx";
+import { HistoricalDateInput } from "./historical-date-input";
+import { normalizeEventCalendarDates, julianInputLabel } from "../domain/calendar-dates";
 const hasAssessment = (event: PersonEvent) => !!(event.dateClaim?.confidence ||
   event.placeClaim?.confidence || event.alternatives?.some((item) => item.confidence));
 function EventAlternatives({ event, onChange, isAdmin, canAssess, savedIds }: {
@@ -98,8 +100,7 @@ export function EventsEditor({
   const apply = () => {
     if (!editing) return;
     const normalized = { ...editing,
-      date: editing.date ? normalizeDateInput(editing.date) : undefined,
-      endDate: editing.endDate ? normalizeDateInput(editing.endDate) : undefined,
+      ...normalizeEventCalendarDates(editing),
       alternatives: editing.alternatives?.map((item) => ({ ...item,
         value: item.field === "date" ? normalizeDateInput(item.value) : item.value.trim() })),
     };
@@ -213,22 +214,13 @@ export function EventsEditor({
                 />
               </label>
             )}
-            <label className="event-date-field">
-              Дата
-              <input
-                value={event.date ? dateInputLabel(event.date) : ""}
-                placeholder="Год или д.м.г"
-                onChange={(e) =>
-                  update(event.id, { date: e.target.value || undefined })
-                }
-              />
-            </label>
-            {section === "education" && <label className="event-end-date-field">
-              Окончание учёбы
-              <input value={event.endDate ? dateInputLabel(event.endDate) : ""}
-                placeholder="Год или д.м.г"
-                onChange={(change) => update(event.id, { endDate: change.target.value || undefined })} />
-            </label>}
+            <div className="event-date-field"><HistoricalDateInput label="Дата"
+              date={event.date} dateJulian={event.dateJulian}
+              onChange={(value) => update(event.id, value)} /></div>
+            {section === "education" && <div className="event-end-date-field">
+              <HistoricalDateInput label="Окончание учёбы" date={event.endDate} dateJulian={event.endDateJulian}
+                onChange={(value) => update(event.id, { endDate: value.date, endDateJulian: value.dateJulian })} />
+            </div>}
             {!saveTypeFirst(event) && event.dateClaim && <details className="event-date-claim">
               <summary>Источники даты события{event.dateClaim?.sources.length
                 ? ` · ${event.dateClaim.sources.length}` : ""}</summary>
@@ -328,16 +320,9 @@ export function EventsEditor({
                     />
                   </label>
                 )}
-                {section !== "education" && <label>
-                  Конец периода
-                  <input
-                    value={event.endDate ? dateInputLabel(event.endDate) : ""}
-                    placeholder="Если событие длилось несколько лет"
-                    onChange={(e) =>
-                      update(event.id, { endDate: e.target.value || undefined })
-                    }
-                  />
-                </label>}
+                {section !== "education" && <HistoricalDateInput label="Конец периода"
+                  date={event.endDate} dateJulian={event.endDateJulian}
+                  onChange={(value) => update(event.id, { endDate: value.date, endDateJulian: value.dateJulian })} />}
                 <label>
                   Приблизительная дата
                   <input
@@ -541,6 +526,8 @@ export function PersonEvents({
                     `${event.date ? " — " : "До "}${dateLabel(event.endDate)}`}
                 </b>
               )}
+              {event.dateJulian && <small>{julianInputLabel(event.dateJulian)} по старому стилю</small>}
+              {event.endDateJulian && <small>Окончание: {julianInputLabel(event.endDateJulian)} по старому стилю</small>}
               {event.dateText && <p>{event.dateText}</p>}
               {event.place && <p>{event.place}</p>}
               {event.description && (

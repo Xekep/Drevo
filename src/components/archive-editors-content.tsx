@@ -42,7 +42,7 @@ import {
   owns,
 } from "../domain";
 import { EditorDialog } from "./editor-dialog";
-import { normalizeLifeDate, julianInputLabel } from "../domain/calendar-dates";
+import { normalizeLifeDate, julianInputLabel, normalizeEventCalendarDates } from "../domain/calendar-dates";
 import { CalendarStyleControl } from "./calendar-style-control";
 import { PlaceField } from "./place-field";
 import { AwardsEditor } from "./person-awards";
@@ -435,10 +435,7 @@ export function PersonEditor({
             value: alternative.field === "date"
               ? normalizeDateInput(alternative.value) : alternative.value.trim(),
           })),
-          date: event.date ? normalizeDateInput(event.date) : undefined,
-          endDate: event.endDate
-            ? normalizeDateInput(event.endDate)
-            : undefined,
+          ...normalizeEventCalendarDates(event),
         })),
         sex: autoSex ? suggestedSex : draft.sex,
         photo: portrait,

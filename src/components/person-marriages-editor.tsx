@@ -11,6 +11,7 @@ import {
   type Person,
 } from "../domain";
 import { PersonSearch } from "./person-search.tsx";
+import { HistoricalDateInput } from "./historical-date-input";
 
 /** Dates belong to a union, never to a person-only marriage event. */
 export function PersonMarriagesEditor({
@@ -85,7 +86,7 @@ export function PersonMarriagesEditor({
     owns(user, partner) &&
     (!original || owns(user, original));
   const canAssess = canAssessArchiveEvidence(user);
-  const changeDate = (key: "formation" | "divorce", date: string) => {
+  const changeDate = (key: "formation" | "divorce", value: { date?: string; dateJulian?: string }) => {
     if (!partner || !editable) return;
     const union: FamilyUnion = shown || {
       id: selectedUnionId || crypto.randomUUID(),
@@ -95,7 +96,7 @@ export function PersonMarriagesEditor({
     setSelectedUnionId(union.id);
     onChange([
       ...drafts.filter((item) => item.id !== union.id),
-      { ...union, [key]: { ...union[key], date: date || undefined } },
+      { ...union, [key]: { ...union[key], ...value } },
     ]);
   };
   return (
@@ -172,24 +173,16 @@ export function PersonMarriagesEditor({
               <>
                 <div className="form-grid">
                   {(["formation", "divorce"] as const).map((key) => (
-                    <label key={key}>
-                      {key === "formation" ? "Дата брака" : "Дата развода"}
-                      <input
-                        value={
-                          shown?.[key]?.date
-                            ? dateInputLabel(shown[key]!.date!)
-                            : ""
-                        }
+                    <div key={key}>
+                      <HistoricalDateInput label={key === "formation" ? "Дата брака" : "Дата развода"}
+                        date={shown?.[key]?.date} dateJulian={shown?.[key]?.dateJulian}
                         disabled={
                           busy ||
                           !editable ||
                           (!canAssess && !!shown?.[key]?.confidence) ||
                           (key === "divorce" && !!shown?.ending)
                         }
-                        placeholder="День, месяц, год или только год"
-                        onChange={(event) =>
-                          changeDate(key, event.target.value)
-                        }
+                        onChange={(value) => changeDate(key, value)}
                       />
                       {shown?.[key]?.dateText && (
                         <small>По источнику: {shown[key]!.dateText}</small>
@@ -201,7 +194,7 @@ export function PersonMarriagesEditor({
                             : "Оценённую дату может изменить исследователь или администратор."}
                         </small>
                       )}
-                    </label>
+                    </div>
                   ))}
                 </div>
                 {!editable && (

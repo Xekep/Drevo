@@ -19,6 +19,7 @@ const publicClaim = (claim?: PersonValueClaim): PersonValueClaim | undefined =>
     ...(claim.confidence !== undefined ? { confidence: claim.confidence } : {}) };
 const publicMilestone = (milestone?: UnionMilestone): UnionMilestone | undefined =>
   milestone && { date: milestone.date, dateText: milestone.dateText,
+    ...(milestone.dateJulian !== undefined ? { dateJulian: milestone.dateJulian } : {}),
     place: milestone.place, sources: milestone.sources?.map(publicSource),
     ...(milestone.confidence !== undefined ? { confidence: milestone.confidence } : {}) };
 export type ShareLink = {
@@ -91,6 +92,8 @@ export function sharedFamily(
           title: event.title,
           date: event.date,
           endDate: event.endDate,
+          ...(event.dateJulian !== undefined ? { dateJulian: event.dateJulian } : {}),
+          ...(event.endDateJulian !== undefined ? { endDateJulian: event.endDateJulian } : {}),
           dateText: event.dateText,
           place: event.place,
           location: event.location && { place: event.location.place,

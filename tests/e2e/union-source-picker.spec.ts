@@ -86,6 +86,36 @@ test("источник каталога подтверждает союз и е�
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 });
 
+test("исторический календарь условно доступен для каждого этапа союза", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  const readFamily = await isolatedFamily(page);
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/);
+  const edge = page.getByRole("group", { name: "Тестов Пётр Иванович — Тестова Елена Сергеевна" });
+  await edge.focus();
+  await edge.press("Enter");
+  const panel = page.getByRole("region", { name: "Семейные союзы" });
+  await panel.getByRole("button", { name: "Добавить союз" }).click();
+  for (const name of ["Заключение", "Окончание", "Развод", "Подтверждение действующего союза"]) {
+    const stage = panel.getByRole("group", { name, exact: true });
+    const input = stage.getByLabel("Дата (год, месяц или день)", { exact: true });
+    const checkbox = stage.getByRole("checkbox", { name: "Дата (год, месяц или день) по старому стилю" });
+    await expect(checkbox).toHaveCount(0);
+    await input.fill("2000");
+    await expect(checkbox).toHaveCount(0);
+    await input.fill("1900");
+    await expect(checkbox).toBeVisible();
+    await input.fill("");
+    await expect(checkbox).toHaveCount(0);
+  }
+  const formation = panel.getByRole("group", { name: "Заключение", exact: true });
+  await formation.getByLabel("Дата (год, месяц или день)", { exact: true }).fill("1.1.1900");
+  await formation.getByRole("checkbox", { name: "Дата (год, месяц или день) по старому стилю" }).check();
+  await panel.getByRole("button", { name: "Сохранить союз" }).click();
+  expect(readFamily().unions!.some((union) => union.formation?.date === "1900-01-13"
+    && union.formation.dateJulian === "1900-01-01")).toBe(true);
+});
+
 test("уточнение даты этапа снимает его оценку перед сохранением", async ({ page }, info) => {
   test.skip(info.project.name !== "desktop");
   const id = crypto.randomUUID();

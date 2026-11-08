@@ -1,5 +1,28 @@
 import { normalizeDateInput, validDate } from "./dates.ts";
 
+/** Suggest the historical Russian civil calendar; never select it automatically. */
+export function canUseOldStyleDate(text: string): boolean {
+  if (!text.trim()) return false;
+  try {
+    const date = normalizeDateInput(text, "julian");
+    return date.length === 4 ? date <= "1918"
+      : date.length === 7 ? date <= "1918-01" : date <= "1918-01-31";
+  } catch { return false; }
+}
+
+export function normalizeCalendarDate(date?: string, dateJulian?: string) {
+  const result = normalizeLifeDate(dateJulian ?? date ?? "", dateJulian !== undefined);
+  return { date: result.date || undefined, dateJulian: result.julian };
+}
+
+export function normalizeEventCalendarDates(event: {
+  date?: string; dateJulian?: string; endDate?: string; endDateJulian?: string;
+}) {
+  const start = normalizeCalendarDate(event.date, event.dateJulian);
+  const end = normalizeCalendarDate(event.endDate, event.endDateJulian);
+  return { ...start, endDate: end.date, endDateJulian: end.dateJulian };
+}
+
 /** Civil Julian calendar, not an astronomical Julian date. No timezone involved. */
 export function julianToGregorian(value: string): string {
   if (!validDate(value, "julian"))

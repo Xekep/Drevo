@@ -1,6 +1,7 @@
 import type { PersonEvent } from "./types.ts";
 import { validDate, dateBound, safeUrl, normalizeDateInput } from "./dates.ts";
 import { validSourceRepository } from "./source-repository.ts";
+import { validCalendarPair } from "./calendar-dates.ts";
 export const EVENT_NAMES: Record<PersonEvent["type"], string> = {
   residence: "Проживание",
   move: "Переезд",
@@ -63,6 +64,8 @@ export function validateEvents(events: unknown): void {
           e[key].length > (key === "description" ? 10000 : 1000))
       )
         throw new Error("Проверьте описание события");
+    if (!validCalendarPair(e.date, e.dateJulian) || !validCalendarPair(e.endDate, e.endDateJulian))
+      throw new Error("Проверьте календарь даты события");
     for (const value of [e.date, e.endDate])
       if (
         value !== undefined &&

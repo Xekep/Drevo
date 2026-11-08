@@ -5,6 +5,7 @@ import type { FamilyUnion, Person, UnionMilestone } from "../domain/types";
 import { EventSourceList } from "./person-events";
 import { researchEvidenceAnchor } from "../domain/research-evidence";
 import { marriageDeathEnding } from "../domain/family-unions.ts";
+import { julianInputLabel } from "../domain/calendar-dates";
 
 const names = {
   marriage: "Брак",
@@ -27,6 +28,7 @@ export function PersonUnions({ personId, people, unions, onSelect, canLoadDocume
   const milestone = (label: string, value: UnionMilestone | undefined) => value && (
     <div className="person-union-milestone">
       <b>{label}: {value.date ? dateLabel(value.date) : value.dateText || "дата неизвестна"}</b>
+      {value.dateJulian && <small>{julianInputLabel(value.dateJulian)} по старому стилю</small>}
       {value.date && value.dateText && <p>По источнику: {value.dateText}</p>}
       {value.place && <p>{value.place}</p>}
       {value.confidence && <p>Оценка: {CLAIM_CONFIDENCE_LABELS[value.confidence]}</p>}
