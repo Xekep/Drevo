@@ -4,12 +4,36 @@ import {
   normalizeLifeDate,
   julianToGregorian,
   validCalendarPair,
+  canUseOldStyleDate,
+  normalizeEventCalendarDates,
 } from "../src/domain/calendar-dates.ts";
 import { validDate } from "../src/domain/dates.ts";
 import { exportGedcom, importGedcom } from "../src/domain/gedcom.ts";
 import { validateFamily } from "../src/domain/validation.ts";
 import { rebasePersonDraft } from "../src/domain/person-draft.ts";
 import type { Family } from "../src/domain/types.ts";
+import { validateEvents } from "../src/domain/person-events.ts";
+import { validateUnions } from "../src/domain/family-unions.ts";
+
+test("old-style suggestion requires a valid historical date, including Julian leap days", () => {
+  for (const value of ["1900", "2.1900", "29.2.1900", "1918", "01.1918", "31.1.1918"])
+    assert.equal(canUseOldStyleDate(value), true, value);
+  for (const value of ["", "1", "01.01.", "текст", "31.2.1900", "1.2.1918", "02.1918", "1965"])
+    assert.equal(canUseOldStyleDate(value), false, value);
+});
+
+test("event and marriage dates validate the original calendar as well as the converted day", () => {
+  const dates = normalizeEventCalendarDates({ date: "29.2.1900", dateJulian: "29.2.1900",
+    endDate: "1.3.1900", endDateJulian: "1.3.1900" });
+  assert.deepEqual(dates, { date: "1900-03-13", dateJulian: "1900-02-29",
+    endDate: "1900-03-14", endDateJulian: "1900-03-01" });
+  assert.doesNotThrow(() => validateEvents([{ id: "e", type: "military", ...dates }]));
+  assert.throws(() => validateEvents([{ id: "e", type: "military", ...dates, date: "1900-02-28" }]));
+  const union = { id: "u", type: "marriage" as const, participants: ["a", "b"] as [string, string],
+    formation: { date: dates.date, dateJulian: dates.dateJulian } };
+  assert.doesNotThrow(() => validateUnions([union], new Set(["a", "b"])));
+  assert.throws(() => validateUnions([{ ...union, formation: { ...union.formation, date: "1900-02-28" } }], new Set(["a", "b"])));
+});
 
 test("Julian conversion follows century leap boundaries rather than a constant offset", () => {
   for (const [old, modern] of [
@@ -75,6 +99,24 @@ const family: Family = {
     },
   ],
 };
+for (const version of ["5.5.1", "7.0"] as const)
+  test(`GEDCOM ${version} preserves event periods and marriage calendar originals`, () => {
+    const input = structuredClone(family);
+    input.people[0].events = [{ id: "period", type: "military", date: "1920-01-14", dateJulian: "1920-01-01",
+      endDate: "1921-01-14", endDateJulian: "1921-01-01" },
+    { id: "single", type: "baptism", date: "1900-03-14", dateJulian: "1900-03-01" }];
+    input.people.push({ ...input.people[0], id: "q", name: "Анна", sex: "f", events: [] });
+    input.unions = [{ id: "u", type: "marriage", participants: ["p", "q"],
+      formation: { date: "1920-01-14", dateJulian: "1920-01-01" } }];
+    const restored = importGedcom(exportGedcom(input, { version }), `dates-${version}`).family;
+    const events = restored.people.find((p) => p.name === "Иван")!.events!;
+    assert.equal(events.find((e) => e.type === "military")!.dateJulian, "1920-01-01");
+    assert.equal(events.find((e) => e.type === "military")!.endDateJulian, "1921-01-01");
+    assert.equal(events.find((e) => e.type === "baptism")!.dateJulian, "1900-03-01");
+    assert.equal(restored.unions![0].formation!.dateJulian, "1920-01-01");
+    validateFamily(restored);
+  });
+
 for (const version of ["5.5.1", "7.0"] as const)
   test(`GEDCOM ${version} retains a Julian birth without relying on Drevo extensions`, () => {
     const text = exportGedcom(family, { version })

@@ -1,17 +1,20 @@
 import { dateInputLabel } from "../domain/dates";
-import { normalizeLifeDate } from "../domain/calendar-dates";
+import { canUseOldStyleDate, normalizeLifeDate } from "../domain/calendar-dates";
 
 export function CalendarStyleControl({
   text,
   label,
   checked,
+  disabled = false,
   onChange,
 }: {
   text: string;
   label: string;
   checked: boolean;
+  disabled?: boolean;
   onChange: (checked: boolean) => void;
 }) {
+  if (!checked && !canUseOldStyleDate(text)) return null;
   let hint = "";
   if (checked && text.trim()) {
     try {
@@ -30,6 +33,7 @@ export function CalendarStyleControl({
         <input
           type="checkbox"
           checked={checked}
+          disabled={disabled}
           aria-label={label}
           onChange={(event) => onChange(event.target.checked)}
         />

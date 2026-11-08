@@ -73,8 +73,9 @@ test("старый стиль сохраняет исходную дату и п
   await expect(form.getByText("Новый стиль: 13.03.1900", { exact: true })).toBeVisible();
   await form.locator('[data-field="birth"]').fill("25.12.1965");
   await expect(form.getByText("Новый стиль: 07.01.1966", { exact: true })).toBeVisible();
-  await form.locator('[data-field="death"]').fill("29.2.2000");
+  await form.locator('[data-field="death"]').fill("29.2.1900");
   await form.getByRole("checkbox", { name: "Дата смерти по старому стилю" }).check();
+  await form.locator('[data-field="death"]').fill("29.2.2000");
   await expect(form.getByText("Новый стиль: 13.03.2000", { exact: true })).toBeVisible();
   await savePersonDetails(page);
   await expect(form).toHaveCount(0);
@@ -85,6 +86,63 @@ test("старый стиль сохраняет исходную дату и п
   await expect(form.locator('[data-field="birth"]')).toHaveValue("25.12.1965");
   await expect(form.getByRole("checkbox", { name: "Дата рождения по старому стилю" })).toBeChecked();
   await expect(form.locator('[data-field="death"]')).toHaveValue("29.02.2000");
+});
+
+test("календарь появляется только для исторических дат во всех подформах", async ({ page }) => {
+  const read = await editor(page);
+  const form = page.locator(".person-editor-form");
+  const birth = form.locator('[data-field="birth"]');
+  const old = form.getByRole("checkbox", { name: "Дата рождения по старому стилю" });
+  await expect(old).toHaveCount(0);
+  await birth.fill("");
+  await expect(old).toHaveCount(0);
+  await birth.fill("01.01.");
+  await expect(old).toHaveCount(0);
+  await birth.fill("1900");
+  await expect(old).toBeVisible();
+  await expect(old).not.toBeChecked();
+  await birth.fill("1965");
+  await expect(old).toHaveCount(0);
+  const marriage = form.locator(".person-marriages-editor");
+  await marriage.locator(":scope > summary").click();
+  await marriage.getByRole("combobox", { name: "Супруг / супруга" }).fill("Елена");
+  await marriage.getByRole("option").click();
+  const date = marriage.getByLabel("Дата брака", { exact: true });
+  const style = marriage.getByRole("checkbox", { name: "Дата брака по старому стилю" });
+  await date.fill("1988");
+  await expect(style).toHaveCount(0);
+  await date.fill("31.1.1918");
+  await expect(style).toBeVisible();
+  await date.fill("1.2.1918");
+  await expect(style).toHaveCount(0);
+  await date.fill("1.1.1900");
+  await style.check();
+  await date.fill("1.1.1988");
+  await expect(marriage.getByText("Новый стиль: 14.01.1988", { exact: true })).toBeVisible();
+  await form.locator(".education-editor > summary").click();
+  await form.locator(".education-editor .life-event-editor > summary").first().click();
+  const dialog = page.getByRole("dialog", { name: "Образование", exact: true });
+  const eventDate = dialog.getByLabel("Дата", { exact: true });
+  await expect(dialog.getByRole("checkbox", { name: "Дата по старому стилю", exact: true })).toHaveCount(0);
+  await eventDate.fill("1900");
+  await dialog.getByRole("checkbox", { name: "Дата по старому стилю", exact: true }).check();
+  await eventDate.fill("1.1.1980");
+  await dialog.getByLabel("Окончание учёбы", { exact: true }).fill("1985");
+  await expect(dialog.getByRole("checkbox", { name: "Окончание учёбы по старому стилю" })).toHaveCount(0);
+  await finishPersonDetail(page);
+  await savePersonDetails(page);
+  await expect(form).toHaveCount(0);
+  expect(read().unions![0].formation).toMatchObject({ date: "1988-01-14", dateJulian: "1988-01-01" });
+  expect(read().people.find((person) => person.id === "e2e-child")!.events!.find((event) => event.id === "school"))
+    .toMatchObject({ date: "1980-01-14", dateJulian: "1980-01-01" });
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  await marriage.locator(":scope > summary").click();
+  await marriage.getByRole("combobox", { name: "Супруг / супруга" }).fill("Елена");
+  await marriage.getByRole("option").click();
+  await expect(date).toHaveValue("01.01.1988");
+  await expect(style).toBeChecked();
+  await style.click();
+  await expect(style).toHaveCount(0);
 });
 
 test("compact editor shows hints and errors without clipping or overlapping inputs", async ({ page }, info) => {
@@ -305,7 +363,7 @@ test("отдельные образование и брак, поиск толь
   await search.press("ArrowDown");
   await search.press("Enter");
   await expect(marriage.getByLabel("Дата брака", { exact: true })).toHaveValue(
-    "1.5.1990",
+    "01.05.1990",
   );
   await marriage.getByLabel("Дата развода", { exact: true }).fill("1980");
   await savePersonDetails(page);

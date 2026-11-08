@@ -115,11 +115,11 @@ test("GEDCOM 7 DATE_VALUE kinds retain TIME without false invalidity warnings", 
     assert.equal(imported.warnings.some((warning) => /Недопустимый.*DATE\.TIME/.test(warning)),
       false, name);
     if (name === "calendar") {
-      assert.equal(residence?.date, undefined, "JULIAN date is not converted to Gregorian");
-      assert.equal(residence?.dateText, date, "the source calendar and day remain together");
+      assert.equal(residence?.date, "1920-03-16");
+      assert.equal(residence?.dateJulian, "1920-03-03");
       const again = importGedcom(exportGedcom(imported.family, { version: "7.0" }),
         "julian-time-again");
-      assert.equal(timedEvent(again.family.people[0], "RESI")?.dateText, date);
+      assert.equal(timedEvent(again.family.people[0], "RESI")?.dateJulian, "1920-03-03");
       assert.equal(timedEvent(again.family.people[0], "RESI")?.description,
         residence?.description);
     }

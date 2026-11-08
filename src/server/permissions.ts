@@ -152,7 +152,7 @@ export function authorizeArchive(
       for (const stage of ["formation", "ending", "divorce", "ongoing"] as const) {
         const before = old[stage], after = union[stage];
         if (before?.confidence && after?.confidence &&
-          (identityChanged || before.date !== after.date ||
+          (identityChanged || before.date !== after.date || before.dateJulian !== after.dateJulian ||
             before.dateText !== after.dateText || before.place !== after.place))
           throw new ForbiddenError("При изменении этапа союза снимите прежнюю оценку достоверности");
       }
@@ -217,6 +217,7 @@ export function authorizeArchive(
           const currentEvent = currentEvents.get(oldEvent.id);
           const claim = currentEvent?.[key];
           if (oldClaim?.confidence && (claim?.value !== oldClaim.value ||
+            (key === "dateClaim" && currentEvent?.dateJulian !== oldEvent.dateJulian) ||
             currentEvent?.type !== oldEvent.type ||
             currentEvent?.title !== oldEvent.title ||
             currentEvent?.gedcomTag !== oldEvent.gedcomTag))

@@ -49,6 +49,9 @@ export type PersonEvent = {
   title?: string;
   date?: string;
   endDate?: string;
+  /** Original Julian dates; date/endDate hold Gregorian equivalents. */
+  dateJulian?: string;
+  endDateJulian?: string;
   /** Исходная приблизительная дата; не превращается в точный год. */
   dateText?: string;
   /** Citations for one normalized event date, not a range or approximate phrase. */
@@ -149,6 +152,7 @@ export type Family = {
 export type UnionMilestone = {
   /** Calendar date, which may be only a year or a year and month. */
   date?: string;
+  dateJulian?: string;
   /** Original approximate/qualified wording, retained without inventing a precise date. */
   dateText?: string;
   place?: string;

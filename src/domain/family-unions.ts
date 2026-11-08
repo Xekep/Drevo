@@ -1,5 +1,6 @@
 import { dateBound, validDate } from "./dates.ts";
 import type { Family, FamilyUnion, Person, Source, UnionMilestone } from "./types.ts";
+import { validCalendarPair } from "./calendar-dates.ts";
 import { validSourceRepository } from "./source-repository.ts";
 import { isClaimConfidence } from "./claim-confidence.ts";
 
@@ -97,6 +98,7 @@ function validMilestone(value: UnionMilestone | undefined) {
     value === undefined ||
     (value &&
       typeof value === "object" &&
+      validCalendarPair(value.date, value.dateJulian) &&
       (value.date === undefined ||
         (typeof value.date === "string" && validDate(value.date))) &&
       (value.dateText === undefined ||

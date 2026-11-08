@@ -29,6 +29,21 @@ const family = (): Family => ({
   ],
 });
 
+test("marriage edits preserve the Julian original and detect concurrent calendar changes", () => {
+  const initial = family();
+  const base = initial.unions![0];
+  const draft = { ...base, formation: { ...base.formation, date: "1.1.1900", dateJulian: "1.1.1900" } };
+  const saved = applyPersonUnionDrafts(initial, "a", [base], [draft]);
+  assert.equal(saved.unions![0].formation!.date, "1900-01-13");
+  assert.equal(saved.unions![0].formation!.dateJulian, "1900-01-01");
+  assert.equal(saved.unions![0].formation!.place, "Москва");
+  const old = saved.unions![0];
+  const fresh = structuredClone(saved);
+  delete fresh.unions![0].formation!.dateJulian;
+  assert.throws(() => applyPersonUnionDrafts(fresh, "a", [old], [{ ...old,
+    formation: { ...old.formation, date: "2.1.1900", dateJulian: "2.1.1900" } }]), /изменена другим/);
+});
+
 test("person editor removes a recorded marriage atomically and retains other unions and spouse links", () => {
   const before = family();
   for (const person of before.people) person.generation = 1;
