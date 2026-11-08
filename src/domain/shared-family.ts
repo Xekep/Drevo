@@ -55,6 +55,7 @@ export function sharedFamily(
         sex: p.sex,
         birth: p.birth,
         birthJulian: p.birthJulian,
+        birthByzantine: p.birthByzantine,
         birthDateClaim: publicClaim(p.birthDateClaim),
         death: p.death,
         deathJulian: p.deathJulian,
