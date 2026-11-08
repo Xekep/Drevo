@@ -1,8 +1,9 @@
 import { normalizeDateInput, validDate } from "./dates.ts";
 
 /**
- * Russian civil calendar switched to Gregorian on 14 February 1918.
- * Partial 1918 dates keep the option when they may precede the transition.
+ * Russia's last Julian civil date was 31 January 1918; the next day
+ * was labelled 14 February in the new Gregorian calendar.
+ * Partial 1918 dates keep the option only when January is possible.
  * Parse with Julian rules so dates like 29.02.1900 remain eligible.
  * This is a form affordance, not a global prohibition on foreign archival
  * records that explicitly use Julian dates after the Russian transition.
@@ -14,8 +15,8 @@ export function canUseOldStyleDate(text: string): boolean {
     return date.length === 4
       ? date <= "1918"
       : date.length === 7
-        ? date <= "1918-02"
-        : date < "1918-02-14";
+        ? date <= "1918-01"
+        : date <= "1918-01-31";
   } catch {
     return false;
   }
