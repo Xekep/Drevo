@@ -1,7 +1,7 @@
 import { EXTRA_LINK_TYPES, type Family, type PersonEvent, type Source } from "./types.ts";
 import { isClaimConfidence } from "./claim-confidence.ts";
 import { validDate, dateBound, safeUrl } from "./dates.ts";
-import { validCalendarPair } from "./calendar-dates.ts";
+import { validCalendarPair, validByzantinePair } from "./calendar-dates.ts";
 import { claimableEventDate, validateEvents } from "./person-events.ts";
 import { validateUnions } from "./family-unions.ts";
 import { validSourceRepository } from "./source-repository.ts";
