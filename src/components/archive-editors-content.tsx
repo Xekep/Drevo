@@ -437,9 +437,9 @@ export function PersonEditor({
         birth,
         death,
         birthJulian: birthDate.julian,
-        birthByzantine: "byzantine" in birthDate ? birthDate.byzantine : undefined,
+        birthByzantine: "byzantine" in birthDate && typeof birthDate.byzantine === "string" ? birthDate.byzantine : undefined,
         deathJulian: deathDate.julian,
-        deathByzantine: "byzantine" in deathDate ? deathDate.byzantine : undefined,
+        deathByzantine: "byzantine" in deathDate && typeof deathDate.byzantine === "string" ? deathDate.byzantine : undefined,
         factAlternatives: draft.factAlternatives?.map((alternative) => ({
           ...alternative,
           value: alternative.field === "birth" || alternative.field === "death"
