@@ -48,8 +48,10 @@ export function rebasePersonDraft(
   const edited = draft as Person & Record<string, unknown>;
   for (const kind of ["birth", "death"] as const) {
     const calendar = `${kind}Julian` as const;
-    const pair = (p: Person) => [p[kind], p[calendar]];
-    if ((base[calendar] || fresh[calendar] || draft[calendar]) &&
+    const era = `${kind}Byzantine` as const;
+    const pair = (p: Person) => [p[kind], p[calendar], p[era]];
+    if ((base[calendar] || fresh[calendar] || draft[calendar] ||
+      base[era] || fresh[era] || draft[era]) &&
       !sameValue(pair(base), pair(draft)) && !sameValue(pair(base), pair(fresh)) &&
       !sameValue(pair(draft), pair(fresh)))
       throw new Error("Дата или календарь изменились в архиве. Обновите карточку и повторите правку.");
