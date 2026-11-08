@@ -97,6 +97,7 @@ export type Person = {
   birth: string;
   /** Original Julian date; birth holds the Gregorian equivalent for complete dates. */
   birthJulian?: string;
+  birthByzantine?: string;
   /** Citations for this exact birth-date value, separate from general person sources. */
   birthDateClaim?: PersonValueClaim;
   death?: string;
