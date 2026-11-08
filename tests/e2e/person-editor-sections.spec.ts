@@ -82,6 +82,7 @@ test("old style is explicit, disappears for modern dates and retains historical 
   await form.getByRole("checkbox", { name: "Дата смерти по старому стилю" }).check();
   await expect(form.getByText("Новый стиль: 13.03.1912", { exact: true })).toBeVisible();
   await savePersonDetails(page);
+  await expect(form).toHaveCount(0);
   const saved = read().people.find(person => person.id === "e2e-child")!;
   expect(saved).toMatchObject({
     birth: "1900-03-13", birthJulian: "1900-02-29",
@@ -103,6 +104,7 @@ test("Byzantine source date is a separate, explicit era, not an assumed Julian c
   await form.getByRole("checkbox", { name: "Дата рождения от Сотворения мира" }).check();
   await expect(form.getByText(/Новый стиль: 22.12.1650/)).toBeVisible();
   await savePersonDetails(page);
+  await expect(form).toHaveCount(0);
   expect(read().people.find(person => person.id === "e2e-child")).toMatchObject({
     birth: "1650-12-22", birthJulian: "1650-12-12", birthByzantine: "7159-12-12",
   });
