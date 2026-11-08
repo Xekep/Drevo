@@ -50,7 +50,10 @@ export type PersonEvent = {
   date?: string;
   /** Исходная дата события по юлианскому календарю. date хранит новый стиль. */
   dateJulian?: string;
+  /** Original Anno Mundi date, Russian September-year convention. */
+  dateByzantine?: string;
   endDate?: string;
+  endDateByzantine?: string;
   endDateJulian?: string;
   /** Исходная приблизительная дата; не превращается в точный год. */
   dateText?: string;
