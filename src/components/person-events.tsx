@@ -265,26 +265,34 @@ export function EventsEditor({
             <div className="event-date-field">
               <label>Дата
                 <input
-                  value={event.dateJulian ? julianInputLabel(event.dateJulian) : event.date ? dateInputLabel(event.date) : ""}
+                  value={event.dateByzantine ? julianInputLabel(event.dateByzantine) : event.dateJulian ? julianInputLabel(event.dateJulian) : event.date ? dateInputLabel(event.date) : ""}
                   placeholder="Год или д.м.г"
                   onChange={(change) => editDate(event, "date", change.target.value)}
                 />
               </label>
               <CalendarStyleControl text={dateText(event, "date")}
                 label="Дата события по старому стилю"
-                checked={!!event.dateJulian}
+                checked={!!event.dateJulian && !event.dateByzantine}
                 onChange={(checked) => switchDateStyle(event, "date", checked)} />
+              <ByzantineDateControl text={dateText(event, "date")}
+                label="Дата события от Сотворения мира"
+                checked={!!event.dateByzantine}
+                onChange={(checked) => switchByzantineStyle(event, "date", checked)} />
             </div>
             {section === "education" && <div className="event-end-date-field">
               <label>Окончание учёбы
-                <input value={event.endDateJulian ? julianInputLabel(event.endDateJulian) : event.endDate ? dateInputLabel(event.endDate) : ""}
+                <input value={event.endDateByzantine ? julianInputLabel(event.endDateByzantine) : event.endDateJulian ? julianInputLabel(event.endDateJulian) : event.endDate ? dateInputLabel(event.endDate) : ""}
                   placeholder="Год или д.м.г"
                   onChange={(change) => editDate(event, "endDate", change.target.value)} />
               </label>
               <CalendarStyleControl text={dateText(event, "endDate")}
                 label="Дата окончания учёбы по старому стилю"
-                checked={!!event.endDateJulian}
+                checked={!!event.endDateJulian && !event.endDateByzantine}
                 onChange={(checked) => switchDateStyle(event, "endDate", checked)} />
+              <ByzantineDateControl text={dateText(event, "endDate")}
+                label="Дата окончания учёбы от Сотворения мира"
+                checked={!!event.endDateByzantine}
+                onChange={(checked) => switchByzantineStyle(event, "endDate", checked)} />
             </div>}
             {!saveTypeFirst(event) && event.dateClaim && <details className="event-date-claim">
               <summary>Источники даты события{event.dateClaim?.sources.length
@@ -388,15 +396,19 @@ export function EventsEditor({
                 {section !== "education" && <div className="event-end-date-field">
                   <label>Конец периода
                     <input
-                      value={event.endDateJulian ? julianInputLabel(event.endDateJulian) : event.endDate ? dateInputLabel(event.endDate) : ""}
+                      value={event.endDateByzantine ? julianInputLabel(event.endDateByzantine) : event.endDateJulian ? julianInputLabel(event.endDateJulian) : event.endDate ? dateInputLabel(event.endDate) : ""}
                       placeholder="Если событие длилось несколько лет"
                       onChange={(change) => editDate(event, "endDate", change.target.value)}
                     />
                   </label>
                   <CalendarStyleControl text={dateText(event, "endDate")}
                     label="Дата конца периода по старому стилю"
-                    checked={!!event.endDateJulian}
+                    checked={!!event.endDateJulian && !event.endDateByzantine}
                     onChange={(checked) => switchDateStyle(event, "endDate", checked)} />
+                  <ByzantineDateControl text={dateText(event, "endDate")}
+                    label="Дата конца периода от Сотворения мира"
+                    checked={!!event.endDateByzantine}
+                    onChange={(checked) => switchByzantineStyle(event, "endDate", checked)} />
                 </div>}
                 <label>
                   Приблизительная дата
