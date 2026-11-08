@@ -64,27 +64,51 @@ async function editor(
   return () => family;
 }
 
-test("старый стиль сохраняет исходную дату и показывает пересчёт после повторного открытия", async ({ page }) => {
+test("old style is explicit, disappears for modern dates and retains historical originals", async ({ page }) => {
   const read = await editor(page);
   const form = page.locator(".person-editor-form");
-  await form.locator('[data-field="birth"]').fill("29.2.1900");
+  const birth = form.locator('[data-field="birth"]');
+  const death = form.locator('[data-field="death"]');
+  await expect(form.getByRole("checkbox", { name: "Дата рождения по старому стилю" })).toHaveCount(0);
+  await birth.fill("29.2.1900");
+  await expect(form.getByRole("checkbox", { name: "Дата рождения по старому стилю" })).toBeVisible();
   await form.getByRole("checkbox", { name: "Дата рождения по старому стилю" }).check();
-  await expect(form.locator('[data-field="birth"]')).not.toHaveAttribute("aria-invalid", "true");
   await expect(form.getByText("Новый стиль: 13.03.1900", { exact: true })).toBeVisible();
-  await form.locator('[data-field="birth"]').fill("25.12.1965");
-  await expect(form.getByText("Новый стиль: 07.01.1966", { exact: true })).toBeVisible();
-  await form.locator('[data-field="death"]').fill("29.2.2000");
+  await birth.fill("25.12.2005");
+  await expect(form.getByRole("checkbox", { name: "Дата рождения по старому стилю" })).toHaveCount(0);
+  await birth.fill("29.2.1900");
+  await form.getByRole("checkbox", { name: "Дата рождения по старому стилю" }).check();
+  await death.fill("29.2.1912");
   await form.getByRole("checkbox", { name: "Дата смерти по старому стилю" }).check();
-  await expect(form.getByText("Новый стиль: 13.03.2000", { exact: true })).toBeVisible();
+  await expect(form.getByText("Новый стиль: 13.03.1912", { exact: true })).toBeVisible();
   await savePersonDetails(page);
-  await expect(form).toHaveCount(0);
-  const saved = read().people.find((person) => person.id === "e2e-child")!;
-  expect(saved).toMatchObject({ birth: "1966-01-07", birthJulian: "1965-12-25", death: "2000-03-13", deathJulian: "2000-02-29" });
-  await expect(page.getByText("25.12.1965 по старому стилю", { exact: false })).toBeVisible();
+  const saved = read().people.find(person => person.id === "e2e-child")!;
+  expect(saved).toMatchObject({
+    birth: "1900-03-13", birthJulian: "1900-02-29",
+    death: "1912-03-13", deathJulian: "1912-02-29",
+  });
   await page.locator(".inspector-person-actions .person-edit-button").click();
-  await expect(form.locator('[data-field="birth"]')).toHaveValue("25.12.1965");
+  await expect(form.locator('[data-field="birth"]')).toHaveValue("29.02.1900");
   await expect(form.getByRole("checkbox", { name: "Дата рождения по старому стилю" })).toBeChecked();
-  await expect(form.locator('[data-field="death"]')).toHaveValue("29.02.2000");
+});
+
+test("Byzantine source date is a separate, explicit era, not an assumed Julian checkbox", async ({ page }) => {
+  const read = await editor(page);
+  const form = page.locator(".person-editor-form");
+  const input = form.locator('[data-field="birth"]');
+  await input.fill("1650");
+  await expect(form.getByRole("checkbox", { name: "Дата рождения от Сотворения мира" })).toHaveCount(0);
+  await input.fill("12.12.7159");
+  await expect(form.getByRole("checkbox", { name: "Дата рождения по старому стилю" })).toHaveCount(0);
+  await form.getByRole("checkbox", { name: "Дата рождения от Сотворения мира" }).check();
+  await expect(form.getByText(/Новый стиль: 22.12.1650/)).toBeVisible();
+  await savePersonDetails(page);
+  expect(read().people.find(person => person.id === "e2e-child")).toMatchObject({
+    birth: "1650-12-22", birthJulian: "1650-12-12", birthByzantine: "7159-12-12",
+  });
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  await expect(form.locator('[data-field="birth"]')).toHaveValue("12.12.7159");
+  await expect(form.getByRole("checkbox", { name: "Дата рождения от Сотворения мира" })).toBeChecked();
 });
 
 test("compact editor shows hints and errors without clipping or overlapping inputs", async ({ page }, info) => {
