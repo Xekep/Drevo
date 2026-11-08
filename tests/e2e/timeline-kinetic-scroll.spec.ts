@@ -11,7 +11,7 @@ test("horizontal wheel glides and the existing era labels remain readable", asyn
   });
   await expect(timeline).toBeVisible();
   const epochs = page.locator(".timeline-era-segment");
-  const names = await epochs.allTextContents();
+  const names = await epochs.locator(":scope > span").allTextContents();
   expect(names.length).toBeGreaterThan(1);
   await expect(page.locator(".timeline-era-bar")).toBeVisible();
 
@@ -29,7 +29,7 @@ test("horizontal wheel glides and the existing era labels remain readable", asyn
   await expect
     .poll(() => timeline.evaluate((element) => element.scrollLeft))
     .toBeGreaterThan(before + 190);
-  expect(await epochs.allTextContents()).toEqual(names);
+  expect(await epochs.locator(":scope > span").allTextContents()).toEqual(names);
 });
 
 test("dragging the timeline pans the dates and releases with momentum", async ({

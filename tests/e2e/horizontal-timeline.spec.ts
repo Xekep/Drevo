@@ -169,6 +169,8 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
     element.scrollLeft += (1992 - currentYear) * 12;
   });
   await expect(marker).toHaveText("1992");
+  await expect(page.getByLabel("Живут в 1992 году: 6", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Событий в 1992 году: 1", { exact: true })).toBeVisible();
   await expect(
     timeline.locator(".timeline-person-row:not(.is-exiting)"),
   ).toHaveCount(6);

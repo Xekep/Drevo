@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { ChevronLeft, ChevronRight, Sprout, Minus } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Sprout, Minus, UsersRound } from "lucide-react";
 import { dateLabel, fullName, hasRecordedDeath, type Person } from "../../domain";
 import { counted } from "../../domain/archive-summary";
 import {
@@ -20,6 +20,7 @@ import {
 } from "../../domain/horizontal-timeline";
 import { Avatar } from "../person-panel";
 import { timelineRowWindow } from "../../domain/timeline-window";
+import { TimelineEraNavigation } from "./timeline-era-navigation";
 import "../../styles/timeline.css";
 
 const VIRTUAL_ROW_THRESHOLD = 32;
@@ -261,7 +262,6 @@ export function HorizontalTimeline({
   >(null);
   const model = useMemo(() => horizontalTimeline(people), [people]);
   const previousModel = useRef(model);
-  const eraBar = useRef<HTMLElement>(null);
   const firstYear = model.currentYear;
   const [year, setYear] = useState(firstYear);
   const selectedKey = selected.join("\u0000");
@@ -898,23 +898,6 @@ export function HorizontalTimeline({
       ),
     [visibleRows, year],
   );
-  const activeEra = model.eras.find((era, index) => year >= era.start &&
-    (year < era.end || (index === model.eras.length - 1 && year === era.end)))?.name;
-  useLayoutEffect(() => {
-    const bar = eraBar.current;
-    const button = bar?.querySelector<HTMLElement>("[aria-current]");
-    if (!bar || !button) return;
-    const reveal = () => {
-      if (button.offsetLeft < bar.scrollLeft ||
-        button.offsetLeft + button.offsetWidth > bar.scrollLeft + bar.clientWidth)
-        bar.scrollLeft = button.offsetLeft - (bar.clientWidth - button.offsetWidth) / 2;
-    };
-    reveal();
-    const observer = new ResizeObserver(reveal);
-    observer.observe(bar);
-    return () => observer.disconnect();
-  }, [activeEra]);
-
   const stepYear = (delta: number) => {
     cancelFocus();
     stopHorizontalMotion();
@@ -943,39 +926,31 @@ export function HorizontalTimeline({
               cancelFocus();
               stopHorizontalMotion();
               animateHorizontalTo(model.yearX(model.currentYear));
-            }} title={`Текущий год · ${model.currentYear}`}>Сейчас</button>
+            }} aria-label="К текущему году" title={`Вернуться к текущему году · ${model.currentYear}`}>
+              {year < model.currentYear ? "Прошлое" : year > model.currentYear ? "Будущее" : "Сейчас"}
+            </button>
           </div>
           <button type="button" onClick={() => stepYear(10)} disabled={year >= model.end}
             aria-label="На 10 лет вперёд" title="На 10 лет вперёд">
             <ChevronRight size={17} aria-hidden="true" />
           </button>
+          <div className="timeline-year-counts">
+            <span aria-label={`Живут в ${year} году: ${visibleRows.length}`}
+              title={`Живут в ${year} году: ${visibleRows.length}`}>
+              <UsersRound size={12} aria-hidden="true" />{visibleRows.length}
+            </span>
+            <span aria-label={`Событий в ${year} году: ${currentEventCount}`}
+              title={`Событий в ${year} году: ${currentEventCount}`}>
+              <CalendarDays size={12} aria-hidden="true" />{currentEventCount}
+            </span>
+          </div>
         </div>
-        <nav ref={eraBar} className="timeline-era-bar" aria-label="Переход к исторической эпохе">
-          {model.eras.map((era, index) => {
-            const start = Math.max(model.start, era.start);
-            const end = Math.min(model.end, era.end);
-            const current = year >= start && (year < end ||
-              (index === model.eras.length - 1 && year === end));
-            return (
-              <button
-                type="button"
-                key={era.name}
-                className={`timeline-era-segment ${era.className}`}
-                aria-current={current ? "date" : undefined}
-                aria-label={`${era.name}, ${start}–${end}`}
-                onClick={() => {
-                  cancelFocus();
-                  stopHorizontalMotion();
-                  animateHorizontalTo(model.yearX(Math.round((start + end) / 2)));
-                }}
-                title={`${era.name} · ${start}–${end}`}
-              >
-                <span>{era.name === "Ранние эпохи" ? "До 1547"
-                  : era.name === "Русское царство" ? "Царство" : era.short}</span>
-              </button>
-            );
-          })}
-        </nav>
+        <TimelineEraNavigation model={model} year={year} viewport={viewport}
+          onNavigate={(target) => {
+            cancelFocus();
+            stopHorizontalMotion();
+            animateHorizontalTo(model.yearX(target));
+          }} />
       </div>
       <div className={`timeline-year-guide${year > model.currentYear ? " is-future" : ""}`} aria-hidden="true" />
       <div
