@@ -613,6 +613,16 @@ export function PersonEvents({
                     `${event.date ? " — " : "До "}${dateLabel(event.endDate)}`}
                 </b>
               )}
+              {event.dateByzantine && (
+                <small className="calendar-original-date">
+                  {julianInputLabel(event.dateByzantine)} от Сотворения мира (сентябрьский год)
+                </small>
+              )}
+              {event.endDateByzantine && (
+                <small className="calendar-original-date">
+                  До {julianInputLabel(event.endDateByzantine)} от Сотворения мира
+                </small>
+              )}
               {event.dateText && <p>{event.dateText}</p>}
               {event.place && <p>{event.place}</p>}
               {event.description && (
