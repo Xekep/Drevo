@@ -104,10 +104,10 @@ export function EventsEditor({
     const enteredEndDate = editing.endDateByzantine || editing.endDateJulian || editing.endDate || "";
     const date = editing.dateByzantine
       ? normalizeByzantineDate(enteredDate)
-      : normalizeLifeDate(enteredDate, !!editing.dateJulian && canUseOldStyleDate(enteredDate));
+      : normalizeLifeDate(enteredDate, !!editing.dateJulian);
     const endDate = editing.endDateByzantine
       ? normalizeByzantineDate(enteredEndDate)
-      : normalizeLifeDate(enteredEndDate, !!editing.endDateJulian && canUseOldStyleDate(enteredEndDate));
+      : normalizeLifeDate(enteredEndDate, !!editing.endDateJulian);
     const normalized = { ...editing,
       date: date.date || undefined,
       dateJulian: date.julian,
