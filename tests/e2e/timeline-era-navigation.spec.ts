@@ -32,11 +32,14 @@ test("all eras stay reachable in the compact navigator while the timeline scroll
   await expect(page.locator(".timeline-axis")).toHaveCount(0);
   await expect(page.getByLabel("Год в центре хронологии")).toHaveText(String(new Date().getFullYear()));
   const yearStatus = page.getByRole("button", { name: "К текущему году", exact: true });
-  await expect(yearStatus).toHaveText("Сейчас");
-  const position = navigator.locator(".timeline-era-position");
-  await expect(position).toHaveText(String(new Date().getFullYear()));
+  await expect(yearStatus).toHaveText(String(new Date().getFullYear()));
+  const position = navigator.locator(".timeline-range-window");
+  await expect(position).toHaveAttribute("aria-label", /^Видимый диапазон: \d+–\d+$/);
   await expect(position).toBeInViewport();
   await expect(page.locator(".timeline-year-counts")).toBeVisible();
+  await expect(page.locator(".timeline-toolbar")).not.toContainText(/Прошлое|Сейчас|Будущее/);
+  await expect(page.locator(".timeline-year-counts > span")).toHaveCount(1);
+  const initialRange = await position.textContent();
   await page.locator(".timeline-toolbar").screenshot({ path: info.outputPath("timeline-current-year.png") });
   for (const button of await buttons.all()) {
     await button.scrollIntoViewIfNeeded();
@@ -55,18 +58,22 @@ test("all eras stay reachable in the compact navigator while the timeline scroll
   const soviet = navigator.getByRole("button", { name: "Советский Союз, 1922–1991", exact: true });
   if (info.project.name === "desktop") {
     await soviet.hover();
-    const preview = page.getByRole("tooltip");
+    const preview = navigator.locator(".timeline-range-window.is-preview");
     await expect(preview).toBeVisible();
-    await expect(preview).toContainText("центр 1957");
     await page.screenshot({ path: info.outputPath("timeline-range-preview.png") });
     // The hint must describe the actual visible dates, excluding the sticky portraits.
     const halfYears = await page.locator(".horizontal-timeline").evaluate((element) =>
       (element.clientWidth - parseFloat(getComputedStyle(element).getPropertyValue("--timeline-person-width"))) / 24);
-    await expect(preview.locator("strong")).toHaveText(
+    await expect(preview).toHaveText(
       `${Math.max(1490, Math.round(1957 - halfYears))}–${Math.min(new Date().getFullYear() + 20, Math.round(1957 + halfYears))}`,
     );
+    const rangeBounds = (await preview.boundingBox())!;
+    expect(rangeBounds.y).toBeGreaterThanOrEqual(bounds.y);
+    expect(rangeBounds.y + rangeBounds.height).toBeLessThanOrEqual(bounds.y + bounds.height);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(preview).toHaveCount(0);
+    await expect(position).toHaveText(initialRange!);
     await soviet.focus();
     await expect(preview).toBeVisible();
   }
@@ -74,8 +81,8 @@ test("all eras stay reachable in the compact navigator while the timeline scroll
   else await soviet.click();
   await expect(page.getByLabel("Год в центре хронологии")).toHaveText("1957");
   await expect(soviet).toHaveAttribute("aria-current", "date");
-  await expect(yearStatus).toHaveText("Прошлое");
-  await expect(position).toHaveText("1957");
+  await expect(yearStatus).toHaveText("1957");
+  await expect(position).not.toHaveText(initialRange!);
   await expect(page.getByRole("tooltip")).toHaveCount(0);
   expect(await navigator.boundingBox()).toEqual(bounds);
 
@@ -95,12 +102,12 @@ test("all eras stay reachable in the compact navigator while the timeline scroll
   }
   await yearStatus.click();
   await expect(page.getByLabel("Год в центре хронологии")).toHaveText(String(new Date().getFullYear()));
-  await expect(yearStatus).toHaveText("Сейчас");
+  await expect(position).toHaveText(initialRange!);
   await expect(position).toBeInViewport();
   await page.getByRole("button", { name: "На 10 лет вперёд", exact: true }).click();
-  await expect(yearStatus).toHaveText("Будущее");
+  await expect(yearStatus).toHaveText(String(new Date().getFullYear() + 10));
   await yearStatus.click();
-  await expect(yearStatus).toHaveText("Сейчас");
+  await expect(yearStatus).toHaveText(String(new Date().getFullYear()));
 
   if (info.project.name === "mobile") {
     await page.getByRole("button", { name: "Развернуть на весь экран", exact: true }).click();

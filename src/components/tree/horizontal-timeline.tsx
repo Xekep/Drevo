@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Sprout, Minus, UsersRound } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Sprout, Minus } from "lucide-react";
 import { dateLabel, fullName, hasRecordedDeath, type Person } from "../../domain";
 import { counted } from "../../domain/archive-summary";
 import {
@@ -921,13 +921,12 @@ export function HorizontalTimeline({
             <ChevronLeft size={17} aria-hidden="true" />
           </button>
           <div className="timeline-year-readout">
-            <output ref={yearLabel} aria-label="Год в центре хронологии" aria-live="off">{year}</output>
             <button type="button" onClick={() => {
               cancelFocus();
               stopHorizontalMotion();
               animateHorizontalTo(model.yearX(model.currentYear));
             }} aria-label="К текущему году" title={`Вернуться к текущему году · ${model.currentYear}`}>
-              {year < model.currentYear ? "Прошлое" : year > model.currentYear ? "Будущее" : "Сейчас"}
+              <output ref={yearLabel} aria-label="Год в центре хронологии" aria-live="off">{year}</output>
             </button>
           </div>
           <button type="button" onClick={() => stepYear(10)} disabled={year >= model.end}
@@ -935,13 +934,9 @@ export function HorizontalTimeline({
             <ChevronRight size={17} aria-hidden="true" />
           </button>
           <div className="timeline-year-counts">
-            <span aria-label={`Живут в ${year} году: ${visibleRows.length}`}
-              title={`Живут в ${year} году: ${visibleRows.length}`}>
-              <UsersRound size={12} aria-hidden="true" />{visibleRows.length}
-            </span>
             <span aria-label={`Событий в ${year} году: ${currentEventCount}`}
               title={`Событий в ${year} году: ${currentEventCount}`}>
-              <CalendarDays size={12} aria-hidden="true" />{currentEventCount}
+              <CalendarDays size={12} aria-hidden="true" />{counted(currentEventCount, ["событие", "события", "событий"])}
             </span>
           </div>
         </div>
