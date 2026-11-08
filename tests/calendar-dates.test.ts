@@ -5,6 +5,9 @@ import {
   julianToGregorian,
   validCalendarPair,
   canUseOldStyleDate,
+  canUseByzantineDate,
+  normalizeByzantineDate,
+  validByzantinePair,
 } from "../src/domain/calendar-dates.ts";
 import { validDate } from "../src/domain/dates.ts";
 import { exportGedcom, importGedcom } from "../src/domain/gedcom.ts";
@@ -45,6 +48,48 @@ test("event old-style dates round-trip through GEDCOM and are validated as pairs
     ...person, events: [{ ...event, date: "1900-03-14" }],
   })) };
   assert.throws(() => validateFamily(corrupted), /старому стилю/);
+});
+
+test("Byzantine September year is an explicit era, not Julian style", () => {
+  assert.equal(canUseByzantineDate("12.12.7159"), true);
+  assert.equal(canUseByzantineDate("1650"), false);
+  assert.deepEqual(normalizeByzantineDate("12.12.7159"), {
+    date: "1650-12-22",
+    julian: "1650-12-12",
+    byzantine: "7159-12-12",
+  });
+  assert.deepEqual(normalizeByzantineDate("01.01.7159"), {
+    date: "1651-01-11",
+    julian: "1651-01-01",
+    byzantine: "7159-01-01",
+  });
+  assert.throws(() => normalizeByzantineDate("7159"), /Укажите месяц/);
+  assert.equal(validByzantinePair("1650-12-22", "1650-12-12", "7159-12-12"), true);
+  assert.equal(validByzantinePair("1651-12-22", "1650-12-12", "7159-12-12"), false);
+});
+
+test("Byzantine birth and event preserve their era through GEDCOM", () => {
+  const birth = normalizeByzantineDate("12.12.7159");
+  const family: Family = {
+    title: "Византийская эра", description: "", demo: false,
+    people: [{
+      id: "b", surname: "Тестов", name: "Павел", patronymic: "", sex: "m",
+      birth: birth.date, birthJulian: birth.julian, birthByzantine: birth.byzantine,
+      birthPlace: "", sources: [], parents: [], spouses: [], generation: 1, column: 0,
+      events: [{
+        id: "bapt", type: "baptism", date: birth.date, dateJulian: birth.julian,
+        dateByzantine: birth.byzantine,
+      }],
+    }],
+  };
+  assert.doesNotThrow(() => validateFamily(family));
+  const gedcom = exportGedcom(family, { version: "7.0" });
+  assert.match(gedcom, /_DREVO_BYZANTINE_DATE 7159-12-12/);
+  assert.match(gedcom, /DATE JULIAN 12 DEC 1650/);
+  const imported = importGedcom(gedcom, "byzantine-test").family.people[0];
+  assert.equal(imported.birthByzantine, birth.byzantine);
+  assert.equal(imported.events?.find(x => x.type === "baptism")?.dateByzantine, birth.byzantine);
+  assert.doesNotThrow(() => validateFamily({ ...family, people: [imported] }));
 });
 
 test("Julian conversion follows century leap boundaries rather than a constant offset", () => {
