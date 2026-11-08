@@ -131,7 +131,7 @@ test("production timeline entry, year scroll, people scroll and deep search", as
       const activeRows = rows.filter((row) => !row.classList.contains("is-exiting"));
       const onScreen = activeRows.filter((row) => {
         const rectangle = row.getBoundingClientRect();
-        return rectangle.bottom > bounds.top + 86 && rectangle.top < bounds.bottom && rectangle.height > 0;
+        return rectangle.bottom > bounds.top && rectangle.top < bounds.bottom && rectangle.height > 0;
       });
       const portraits = onScreen.flatMap((row) => [...row.querySelectorAll<HTMLImageElement>(".person-avatar img")]);
       const year = Number(document.querySelector(".timeline-center-marker output")?.textContent);
@@ -141,7 +141,7 @@ test("production timeline entry, year scroll, people scroll and deep search", as
         screenRows: onScreen.length, screenPersonIds: onScreen.map((row) => row.dataset.personId),
         mountedEvents: viewport.querySelectorAll(".timeline-event").length,
         visiblePortraits: portraits.length, loadedVisiblePortraits: portraits.filter((image) => image.complete && image.naturalWidth > 0).length,
-        summary: document.querySelector(".timeline-center-marker > span")?.textContent,
+        summary: document.querySelector(".timeline-center-marker")?.getAttribute("title"),
         scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop,
         scrollHeight: viewport.scrollHeight, scrollWidth: viewport.scrollWidth,
         viewport: { width: viewport.clientWidth, height: viewport.clientHeight },
@@ -198,7 +198,7 @@ test("production timeline entry, year scroll, people scroll and deep search", as
   await measure("jump-year-2020", async () => {
     await timeline.evaluate((element, left) => element.scrollTo({ left, top: 0, behavior: "instant" }), model.yearX(2020));
     await expect(marker).toHaveText("2020");
-    await expect(page.locator(".timeline-center-marker > span")).toContainText(String(count));
+    await expect(page.locator(".timeline-center-marker")).toHaveAttribute("title", new RegExp(String(count)));
   });
   await mediaIdle();
   await snapshot("full-year-2020-settled");
@@ -244,7 +244,7 @@ test("production timeline entry, year scroll, people scroll and deep search", as
       const stage = await timeline.boundingBox(), card = await person.boundingBox();
       if (!stage || !card) return false;
       const centerY = card.y + card.height / 2;
-      return centerY > stage.y + 86 && centerY < stage.y + stage.height &&
+      return centerY > stage.y && centerY < stage.y + stage.height &&
         card.x + card.width > stage.x && card.x < stage.x + stage.width;
     }, { timeout: 30_000 }).toBe(true);
     await expect.poll(() => timeline.evaluate((element) => element.scrollTop)).toBeGreaterThan(bounds.height * 10);

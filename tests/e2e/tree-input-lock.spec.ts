@@ -36,5 +36,5 @@ test("chronology accepts a click immediately after its startup control becomes e
   await expect(
     page.getByRole("region", { name: /Горизонтальная хронология/ }),
   ).toBeVisible({ timeout: 15000 });
-  await expect(page.getByLabel("Год в центре хронологии")).toHaveText("1940");
+  await expect(page.getByLabel("Год в центре хронологии")).toHaveText(String(new Date().getFullYear()));
 });

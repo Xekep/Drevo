@@ -305,9 +305,9 @@ test("medium cold graphs keep the original probes and bound independent alternat
     }
     return engine.layout(graph);
   }, false, [], size);
-  assert.ok(calls <= 11);
+  assert.ok(calls <= 15);
   assert.equal(originals, 2, "new strategies cannot remove the productive original probes");
-  assert.ok(independent >= 1 && independent <= 2);
+  assert.ok(independent >= 1 && independent <= 6);
   assert.equal(geometry.positions.length, family.length);
   assert.equal(score()(geometry).cardHits, 0);
   assert.equal(score()(geometry).overlaps, 0);

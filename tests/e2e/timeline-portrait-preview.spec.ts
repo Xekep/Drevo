@@ -40,6 +40,7 @@ for (const kind of ["archive", "shared"] as const) {
           surname: "Тестов",
           photo,
           birth: "1940-01-01",
+          death: "2020-01-01",
           parents: [],
           spouses: [],
           generation: 1,
@@ -61,6 +62,13 @@ for (const kind of ["archive", "shared"] as const) {
       .getByRole("button", { name: "Хронология", exact: true })
       .or(page.getByRole("switch", { name: "Древо / Хронология" }))
       .click();
+    // Chronology starts today. Show this deceased person's lifetime before
+    // checking the avatar; the portrait assertion must not depend on startup year.
+    await page.locator(".horizontal-timeline").evaluate((element) => {
+      const year = Number(document.querySelector(".timeline-center-marker output")?.textContent);
+      element.scrollLeft += (1940 - year) * 12;
+    });
+    await expect(page.getByLabel("Год в центре хронологии")).toHaveText("1940");
     const portrait = page.locator(
       '.horizontal-timeline [data-person-id="timeline-person"] .person-avatar img',
     );
