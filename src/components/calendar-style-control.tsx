@@ -34,9 +34,10 @@ export function CalendarStyleControl({
           aria-label={label}
           onChange={(event) => onChange(event.target.checked)}
         />
-        По старому стилю
+        Юлианский календарь (старый стиль)
       </label>
-      <small role="status">{hint}</small>
+      <small role="status">{hint || (Number(text.match(/\\d{4}/)?.[0]) < 1700
+        ? "Календарь выбирается вручную. Даты «от Сотворения мира» используют другую нумерацию лет." : "")}</small>
     </div>
   );
 }
