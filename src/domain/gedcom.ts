@@ -13,7 +13,7 @@ import type {
 import { EXTRA_LINK_TYPES } from "./types.ts";
 import { isClaimConfidence } from "./claim-confidence.ts";
 import { validDate, fullName, safeUrl } from "./dates.ts";
-import { julianToGregorian } from "./calendar-dates.ts";
+import { julianToGregorian, normalizeByzantineDate } from "./calendar-dates.ts";
 import { validateFamily, validEventAlternatives } from "./validation.ts";
 import { claimableEventDate, EVENT_NAMES } from "./person-events.ts";
 import { parseDocumentDetails } from "../shared/document-details.ts";
@@ -196,6 +196,11 @@ function gedcomDate(text: string): string | undefined {
   if ((match[2] && !month) || (match[1] && !month)) return undefined;
   const date = `${match[3]}${month ? `-${String(month).padStart(2, "0")}` : ""}${match[1] ? `-${match[1].padStart(2, "0")}` : ""}`;
   return validDate(date) ? date : undefined;
+}
+function byzantineOriginal(raw: string, date: string | undefined) {
+  if (!raw || !date) return undefined;
+  try { return normalizeByzantineDate(raw).date === date ? raw : undefined; }
+  catch { return undefined; }
 }
 function exportDate(date: string) {
   const [y, m, d] = date.split("-");
@@ -787,8 +792,12 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         undefined,
       date: date || start || undefined,
       ...(julian || startJulian ? { dateJulian: (julian || startJulian)!.original } : {}),
+      ...(byzantineOriginal(value(n, "_DREVO_BYZANTINE_DATE"), date || start || undefined)
+        ? { dateByzantine: value(n, "_DREVO_BYZANTINE_DATE") } : {}),
       endDate: start && end ? end : undefined,
       ...(start && end && endJulian ? { endDateJulian: endJulian.original } : {}),
+      ...(byzantineOriginal(value(n, "_DREVO_BYZANTINE_END"), start && end ? end : undefined)
+        ? { endDateByzantine: value(n, "_DREVO_BYZANTINE_END") } : {}),
       dateText,
       ...(dateSources.length ? { dateClaim: valueClaim(eventDate!, dateSources, n,
         "_DREVO_EVENT_DATE_CONFIDENCE") } : {}),
@@ -847,6 +856,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     const deathJulian = death && julianGedcomDate(value(death, "DATE"));
     const parsedBirthDate = birthJulian?.date || (birth ? gedcomDate(value(birth, "DATE")) || "" : "");
     const parsedDeathDate = deathJulian?.date || (death ? gedcomDate(value(death, "DATE")) || "" : "");
+    const birthByzantine = birth && byzantineOriginal(value(birth, "_DREVO_BYZANTINE_DATE"), parsedBirthDate);
+    const deathByzantine = death && byzantineOriginal(value(death, "_DREVO_BYZANTINE_DATE"), parsedDeathDate);
     const parsedBirthPlace = birth ? value(birth, "PLAC") : "";
     const parsedDeathPlace = death ? value(death, "PLAC") : "";
     const birthSources = eventClaimSources(birth, parsedBirthDate, parsedBirthPlace, "BIRTH");
@@ -897,11 +908,13 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       sex: value(n, "SEX") === "M" ? "m" : value(n, "SEX") === "F" ? "f" : "u",
       birth: parsedBirthDate,
       ...(birthJulian ? { birthJulian: birthJulian.original } : {}),
+      ...(birthByzantine ? { birthByzantine } : {}),
       ...(birthSources.date.length
         ? { birthDateClaim: valueClaim(parsedBirthDate, birthSources.date, birth, "_DREVO_DATE_CONFIDENCE") }
         : {}),
       death: parsedDeathDate || undefined,
       ...(deathJulian ? { deathJulian: deathJulian.original } : {}),
+      ...(deathByzantine ? { deathByzantine } : {}),
       ...(deathSources.date.length
         ? { deathDateClaim: valueClaim(parsedDeathDate, deathSources.date, death, "_DREVO_DATE_CONFIDENCE") }
         : {}),
@@ -2128,6 +2141,7 @@ export function exportGedcom(
         if (p[kind]) emit(2, "DATE", p[`${kind}Julian`]
           ? `${modern ? "JULIAN" : "@#DJULIAN@"} ${exportDate(p[`${kind}Julian`]!)}`
           : exportDate(p[kind]));
+        if (p[`${kind}Byzantine`]) emit(2, "_DREVO_BYZANTINE_DATE", p[`${kind}Byzantine`]!);
         emitPlace(2, p[`${kind}Place`], p[`${kind}Location`]);
         emitEventClaims(kind);
       }
@@ -2248,6 +2262,9 @@ export function exportGedcom(
         emit(2, "DATE", date.date);
         if (date.phrase) emit(3, "PHRASE", date.phrase);
       } else if (e.endDate) emit(2, "DATE", `TO ${exportDate(e.endDate)}`);
+      const originalByzantine = kind ? p[`${kind}Byzantine`] : e.dateByzantine;
+      if (originalByzantine) emit(2, "_DREVO_BYZANTINE_DATE", originalByzantine);
+      if (e.endDateByzantine) emit(2, "_DREVO_BYZANTINE_END", e.endDateByzantine);
       emitPlace(2, e.place, e.location);
       if (e.description) emit(2, "NOTE", e.description);
       for (const index of eventObjects.get(JSON.stringify([p.id, e.id])) || [])
