@@ -206,7 +206,7 @@ export function PersonEditor({
   const [oldStyles, setOldStyles] = useState({ birth: !!person?.birthJulian && !person?.birthByzantine, death: !!person?.deathJulian && !person?.deathByzantine });
   const [byzantineStyles, setByzantineStyles] = useState({ birth: !!person?.birthByzantine, death: !!person?.deathByzantine });
   const normalizeEditorDate = (text: string, kind: "birth" | "death") =>
-    byzantineStyles[kind] && canUseByzantineDate(text)
+    byzantineStyles[kind]
       ? normalizeByzantineDate(text)
       : normalizeLifeDate(text, oldStyles[kind] && canUseOldStyleDate(text));
   const hintDate = (value: string, kind: "birth" | "death") => {
