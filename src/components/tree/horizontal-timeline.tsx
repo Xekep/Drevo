@@ -242,9 +242,7 @@ export function HorizontalTimeline({
     lastX: number;
     lastTime: number;
     speed: number;
-    fromEra: boolean;
   } | null>(null);
-  const suppressEraClick = useRef(false);
   const horizontalMotion = useRef<{
     frame: number;
     position: number;
@@ -676,7 +674,7 @@ export function HorizontalTimeline({
       const overPeople =
         event.target instanceof Element &&
         event.target.closest(
-          ".timeline-person, .timeline-axis-title, .timeline-era-heading",
+          ".timeline-person, .timeline-axis-title",
         );
       // Keep an explicit horizontal trackpad gesture horizontal on the rail.
       const vertical =
@@ -1040,17 +1038,16 @@ export function HorizontalTimeline({
           }
         }}
         onPointerDown={(event) => {
-          const fromEra = Boolean(
-            (event.target as Element).closest(".timeline-era-segment"),
-          );
           if (
             event.pointerType !== "mouse" ||
             event.button !== 0 ||
-            ((event.target as Element).closest("button, summary, a, input") &&
-              !fromEra)
+            (event.target as Element).closest("button, summary, a, input")
           )
             return;
-          if (fromEra) suppressEraClick.current = false;
+          // Grabbing the moving timeline stops it before we capture the origin.
+          // Otherwise the first drag rewinds to a stale scroll offset.
+          cancelFocus();
+          stopHorizontalMotion();
           drag.current = {
             x: event.clientX,
             y: event.clientY,
@@ -1060,7 +1057,6 @@ export function HorizontalTimeline({
             lastX: event.clientX,
             lastTime: performance.now(),
             speed: 0,
-            fromEra,
           };
         }}
         onPointerMove={(event) => {
@@ -1073,7 +1069,6 @@ export function HorizontalTimeline({
             cancelFocus();
             stopHorizontalMotion();
             current.active = true;
-            if (current.fromEra) suppressEraClick.current = true;
             event.currentTarget.setPointerCapture(event.pointerId);
             event.currentTarget.classList.add("is-dragging");
           }
@@ -1242,50 +1237,34 @@ export function HorizontalTimeline({
               />
             )}
           </div>
-          <div className="timeline-era-bar" aria-label="Исторические эпохи. Перетаскивайте для прокрутки по годам">
-            <span className="timeline-era-heading">Эпохи</span>
-            <div
-              className="timeline-era-track"
-              style={{
-                width: `calc(${contentWidth}px + var(--timeline-pad) + var(--timeline-pad))`,
-              }}
-            >
-              {model.eras.map((era) => (
-                <button
-                  type="button"
-                  key={era.name}
-                  className={`timeline-era-segment ${era.className}`}
-                  style={{
-                    left: `calc(var(--timeline-pad) + ${era.x}px)`,
-                    width: era.width,
-                  }}
-                  onClick={(event) => {
-                    if (event.detail && suppressEraClick.current) {
-                      suppressEraClick.current = false;
-                      return;
-                    }
-                    cancelFocus();
-                    stopHorizontalMotion();
-                    viewport.current?.scrollTo({
-                      left: era.x + era.width / 2,
-                      behavior: scrollBehavior(),
-                    });
-                  }}
-                  title={`${era.name} · ${Math.max(model.start, era.start)}–${Math.min(model.end, era.end)}`}
-                >
-                  <strong>{era.short}</strong>
-                  {era.width > 150 && (
-                    <small>
-                      {Math.max(model.start, era.start)}–
-                      {Math.min(model.end, era.end)}
-                    </small>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
+      <nav className="timeline-era-bar" aria-label="Переход к исторической эпохе">
+        {model.eras.map((era, index) => {
+          const start = Math.max(model.start, era.start);
+          const end = Math.min(model.end, era.end);
+          const current = year >= start && (year < end ||
+            (index === model.eras.length - 1 && year === end));
+          return (
+            <button
+              type="button"
+              key={era.name}
+              className={`timeline-era-segment ${era.className}`}
+              aria-current={current ? "date" : undefined}
+              aria-label={`${era.name}, ${start}–${end}`}
+              onClick={() => {
+                cancelFocus();
+                stopHorizontalMotion();
+                animateHorizontalTo(model.yearX(Math.round((start + end) / 2)));
+              }}
+              title={`${era.name} · ${start}–${end}`}
+            >
+              <span>{era.name === "Ранние эпохи" ? "До 1547"
+                : era.name === "Русское царство" ? "Царство" : era.short}</span>
+            </button>
+          );
+        })}
+      </nav>
     </>
   );
   /* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */

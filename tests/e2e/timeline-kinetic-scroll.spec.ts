@@ -10,10 +10,10 @@ test("horizontal wheel glides and the existing era labels remain readable", asyn
     name: /Горизонтальная хронология/,
   });
   await expect(timeline).toBeVisible();
-  const epochs = timeline.locator(".timeline-era-segment");
+  const epochs = page.locator(".timeline-era-segment");
   const names = await epochs.allTextContents();
   expect(names.length).toBeGreaterThan(1);
-  await expect(timeline.locator(".timeline-era-bar")).toBeVisible();
+  await expect(page.locator(".timeline-era-bar")).toBeVisible();
 
   const bounds = await timeline.boundingBox();
   if (!bounds) throw new Error("Timeline has no bounds");
@@ -27,7 +27,7 @@ test("horizontal wheel glides and the existing era labels remain readable", asyn
   expect(await epochs.allTextContents()).toEqual(names);
 });
 
-test("dragging the named era strip pans the timeline and releases with momentum", async ({
+test("dragging the timeline pans the dates and releases with momentum", async ({
   page,
 }, info) => {
   test.skip(info.project.name !== "desktop");
@@ -36,17 +36,10 @@ test("dragging the named era strip pans the timeline and releases with momentum"
   const timeline = page.getByRole("region", {
     name: /Горизонтальная хронология/,
   });
-  const era = timeline.locator(".timeline-era-segment.soviet");
-  await expect(era).toBeVisible();
-  const box = await era.boundingBox();
-  if (!box) throw new Error("Soviet era is not laid out");
   const bounds = await timeline.boundingBox();
   if (!bounds) throw new Error("Timeline has no bounds");
-  const x = Math.min(
-    bounds.x + bounds.width - 30,
-    Math.max(bounds.x + 230, box.x + box.width / 2),
-  );
-  const y = box.y + box.height / 2;
+  const x = bounds.x + bounds.width * 0.8;
+  const y = bounds.y + 120;
   const before = await timeline.evaluate((element) => element.scrollLeft);
   // Record the native scroll offset before React handles pointer release.
   await page.evaluate(() => {
@@ -70,7 +63,27 @@ test("dragging the named era strip pans the timeline and releases with momentum"
   await expect
     .poll(() => timeline.evaluate((element) => element.scrollLeft))
     .toBeGreaterThan(released + 15);
-  await expect(era).toContainText("СССР");
+  await expect(page.locator(".timeline-era-segment.soviet")).toContainText("СССР");
+});
+
+test("grabbing wheel inertia stops at the current position without rewinding", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  await page.goto("/tree");
+  await page.getByRole("button", { name: "Хронология", exact: true }).click();
+  const timeline = page.getByRole("region", { name: /Горизонтальная хронология/ });
+  const bounds = await timeline.boundingBox();
+  if (!bounds) throw new Error("Timeline has no bounds");
+  const x = bounds.x + bounds.width * 0.8, y = bounds.y + 120;
+  await page.mouse.move(x, y);
+  await page.mouse.wheel(0, 400);
+  await page.waitForTimeout(50);
+  await page.mouse.down();
+  const pressed = await timeline.evaluate((element) => element.scrollLeft);
+  await page.waitForTimeout(220);
+  expect(await timeline.evaluate((element) => element.scrollLeft)).toBeCloseTo(pressed, 0);
+  await page.mouse.move(x - 8, y);
+  expect(await timeline.evaluate((element) => element.scrollLeft)).toBeCloseTo(pressed + 8, 0);
+  await page.mouse.up();
 });
 
 test("reduced motion keeps mouse dragging immediate and disables the throw", async ({
