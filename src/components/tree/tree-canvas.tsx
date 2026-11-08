@@ -778,7 +778,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     if (!anchorId || !visible.has(anchorId)) return;
     // A notification can remove generation limits while asking to reveal a
     // different person. Never let the old generation anchor steal its flight.
-    if (focus?.wholeTree) {
+    if (focus?.wholeTree && !props.generationLimits) {
       setScopeFocus(null);
       return;
     }
@@ -804,11 +804,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const scopeOccurrence = activeScopeFocus
     ? personOccurrences.get(activeScopeFocus.id)?.find((id) => positions.has(id))
     : undefined;
-  const effectiveCameraFocus = useMemo(() => activeScopeFocus && !focus?.wholeTree
+  const effectiveCameraFocus = useMemo(() => activeScopeFocus && !(focus?.wholeTree && !props.generationLimits)
     ? scopeOccurrence ? {
       ids: [scopeOccurrence], token: activeScopeFocus.token, recenterOnResize: false,
     } : null
-    : cameraFocus, [scopeOccurrence, activeScopeFocus, cameraFocus, focus?.wholeTree]);
+    : cameraFocus, [scopeOccurrence, activeScopeFocus, cameraFocus, focus?.wholeTree, props.generationLimits]);
   useEffect(() => {
     if (problem) {
       const timer = window.setTimeout(() => setGrowing(false), 0);
