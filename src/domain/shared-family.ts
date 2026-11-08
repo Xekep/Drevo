@@ -94,6 +94,7 @@ export function sharedFamily(
           dateByzantine: event.dateByzantine,
           endDate: event.endDate,
           endDateJulian: event.endDateJulian,
+          endDateByzantine: event.endDateByzantine,
           dateText: event.dateText,
           place: event.place,
           location: event.location && { place: event.location.place,
