@@ -91,6 +91,7 @@ export function sharedFamily(
           title: event.title,
           date: event.date,
           dateJulian: event.dateJulian,
+          dateByzantine: event.dateByzantine,
           endDate: event.endDate,
           endDateJulian: event.endDateJulian,
           dateText: event.dateText,
