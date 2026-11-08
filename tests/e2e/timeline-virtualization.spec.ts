@@ -132,7 +132,7 @@ async function expectInViewport(
       if (!viewport || !person) return false;
       const center = person.y + person.height / 2;
       return (
-        center > viewport.y + 86 &&
+        center > viewport.y &&
         center < viewport.y + viewport.height - 36 &&
         (!centered || Math.abs(center - viewport.y - viewport.height / 2) < 40)
       );
@@ -154,7 +154,7 @@ async function expectBounded(timeline: Locator, count: number) {
         ).some((item) => {
           const bounds = item.getBoundingClientRect();
           return (
-            bounds.bottom > viewport.top + 86 &&
+            bounds.bottom > viewport.top &&
             bounds.top < viewport.bottom - 36
           );
         });
@@ -256,9 +256,7 @@ test("large chronology bounds mounted rows, preserves the tree camera and finds 
   let timeline = await enterTimeline(page);
   await year(page, timeline, 2020);
   await expectBounded(timeline, 400);
-  await expect(page.locator(".timeline-center-marker > span")).toContainText(
-    "400 человек",
-  );
+  await expect(page.locator(".timeline-center-marker")).toHaveAttribute("title", /400 человек/);
   await expect(
     page.locator(".react-flow__node, .react-flow__edge"),
   ).toHaveCount(0);
@@ -323,7 +321,7 @@ test("virtual rows retain event details and keyboard focus across unmounts and r
   test.skip(isMobile, "Desktop keyboard and the 899px row-height breakpoint");
   await fixture(page);
   const timeline = await enterTimeline(page);
-  await expect(page.getByLabel("Год в центре хронологии")).toHaveText("1950");
+  await year(page, timeline, 1950);
   await expect
     .poll(() =>
       row(timeline, "window-000")
@@ -497,7 +495,7 @@ test("continuous chronology dragging never leaves departed rows blocking living 
             ].filter((row) => {
               const box = row.getBoundingClientRect();
               return (
-                box.bottom > viewport.top + 86 && box.top < viewport.bottom - 36
+                box.bottom > viewport.top && box.top < viewport.bottom - 36
               );
             }).length,
             exits: element.querySelectorAll(".is-exiting").length,

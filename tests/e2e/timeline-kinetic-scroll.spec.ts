@@ -15,6 +15,11 @@ test("horizontal wheel glides and the existing era labels remain readable", asyn
   expect(names.length).toBeGreaterThan(1);
   await expect(page.locator(".timeline-era-bar")).toBeVisible();
 
+  await timeline.evaluate((element) => {
+    const year = Number(document.querySelector(".timeline-center-marker output")?.textContent);
+    element.scrollLeft += (1940 - year) * 12;
+  });
+  await expect(page.getByLabel("Год в центре хронологии")).toHaveText("1940");
   const bounds = await timeline.boundingBox();
   if (!bounds) throw new Error("Timeline has no bounds");
   await page.mouse.move(bounds.x + bounds.width * 0.8, bounds.y + 110);
@@ -36,6 +41,11 @@ test("dragging the timeline pans the dates and releases with momentum", async ({
   const timeline = page.getByRole("region", {
     name: /Горизонтальная хронология/,
   });
+  await timeline.evaluate((element) => {
+    const year = Number(document.querySelector(".timeline-center-marker output")?.textContent);
+    element.scrollLeft += (1940 - year) * 12;
+  });
+  await expect(page.getByLabel("Год в центре хронологии")).toHaveText("1940");
   const bounds = await timeline.boundingBox();
   if (!bounds) throw new Error("Timeline has no bounds");
   const x = bounds.x + bounds.width * 0.8;
@@ -71,6 +81,11 @@ test("grabbing wheel inertia stops at the current position without rewinding", a
   await page.goto("/tree");
   await page.getByRole("button", { name: "Хронология", exact: true }).click();
   const timeline = page.getByRole("region", { name: /Горизонтальная хронология/ });
+  await timeline.evaluate((element) => {
+    const year = Number(document.querySelector(".timeline-center-marker output")?.textContent);
+    element.scrollLeft += (1940 - year) * 12;
+  });
+  await expect(page.getByLabel("Год в центре хронологии")).toHaveText("1940");
   const bounds = await timeline.boundingBox();
   if (!bounds) throw new Error("Timeline has no bounds");
   const x = bounds.x + bounds.width * 0.8, y = bounds.y + 120;
@@ -96,6 +111,11 @@ test("reduced motion keeps mouse dragging immediate and disables the throw", asy
   const timeline = page.getByRole("region", {
     name: /Горизонтальная хронология/,
   });
+  await timeline.evaluate((element) => {
+    const year = Number(document.querySelector(".timeline-center-marker output")?.textContent);
+    element.scrollLeft += (1940 - year) * 12;
+  });
+  await expect(page.getByLabel("Год в центре хронологии")).toHaveText("1940");
   const bounds = await timeline.boundingBox();
   if (!bounds) throw new Error("Timeline has no bounds");
   const x = bounds.x + bounds.width * 0.75;

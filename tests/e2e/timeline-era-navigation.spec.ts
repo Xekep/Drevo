@@ -27,9 +27,22 @@ test("all eras stay reachable in the compact navigator while the timeline scroll
   const buttons = navigator.getByRole("button");
   await expect(buttons).toHaveCount(6);
   const bounds = (await navigator.boundingBox())!;
-  expect(bounds.height).toBeLessThanOrEqual(info.project.name === "desktop" ? 34 : 46);
+  expect(bounds.height).toBeLessThanOrEqual(56);
+  await expect(page.locator(".timeline-toolbar")).toHaveCount(1);
+  await expect(page.locator(".timeline-axis")).toHaveCount(0);
+  await expect(page.getByLabel("Год в центре хронологии")).toHaveText(String(new Date().getFullYear()));
   for (const button of await buttons.all()) {
+    await button.scrollIntoViewIfNeeded();
     await expect(button).toBeInViewport({ ratio: 1 });
+  }
+
+  if (info.project.name === "desktop") {
+    const first = buttons.first();
+    const before = await first.boundingBox();
+    await first.hover();
+    await expect.poll(() => first.evaluate((element) => getComputedStyle(element, "::after").transform))
+      .toBe("matrix(1, 0, 0, 1.6, 0, 0)");
+    expect(await first.boundingBox()).toEqual(before);
   }
 
   const soviet = navigator.getByRole("button", { name: "Советский Союз, 1922–1991", exact: true });
@@ -47,9 +60,14 @@ test("all eras stay reachable in the compact navigator while the timeline scroll
   await page.keyboard.press("Enter");
   await expect(page.getByLabel("Год в центре хронологии")).toHaveText("1519");
   await expect(buttons.first()).toHaveAttribute("aria-current", "date");
+  await expect.poll(() => buttons.first().evaluate((element) => getComputedStyle(element, "::after").transform))
+    .toBe("none");
   for (const button of await buttons.all()) {
+    await button.scrollIntoViewIfNeeded();
     await expect(button).toBeInViewport({ ratio: 1 });
   }
+  await page.getByRole("button", { name: "Сейчас", exact: true }).click();
+  await expect(page.getByLabel("Год в центре хронологии")).toHaveText(String(new Date().getFullYear()));
 
   if (info.project.name === "mobile") {
     await page.getByRole("button", { name: "Развернуть на весь экран", exact: true }).click();
