@@ -7,7 +7,8 @@ import { repositorySummary } from "../domain/person-sources.ts";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
 import { claimableEventDate, eventHasEvidence, retypeEvent, EVENT_NAMES } from "../domain/person-events";
 import { dateInputLabel, dateLabel, normalizeDateInput, safeUrl } from "../domain/dates";
-import { canUseOldStyleDate, julianInputLabel, normalizeLifeDate } from "../domain/calendar-dates.ts";
+import { canUseOldStyleDate, canUseByzantineDate, normalizeByzantineDate, julianInputLabel, normalizeLifeDate } from "../domain/calendar-dates.ts";
+import { ByzantineDateControl } from "./byzantine-date-control.tsx";
 import { CalendarStyleControl } from "./calendar-style-control.tsx";
 import { PersonDetailDialog } from "./person-detail-dialog";
 import { validateEvents } from "../domain/person-events";
@@ -99,15 +100,21 @@ export function EventsEditor({
   };
   const apply = () => {
     if (!editing) return;
-    const enteredDate = editing.dateJulian || editing.date || "";
-    const enteredEndDate = editing.endDateJulian || editing.endDate || "";
-    const date = normalizeLifeDate(enteredDate, !!editing.dateJulian && canUseOldStyleDate(enteredDate));
-    const endDate = normalizeLifeDate(enteredEndDate, !!editing.endDateJulian && canUseOldStyleDate(enteredEndDate));
+    const enteredDate = editing.dateByzantine || editing.dateJulian || editing.date || "";
+    const enteredEndDate = editing.endDateByzantine || editing.endDateJulian || editing.endDate || "";
+    const date = editing.dateByzantine
+      ? normalizeByzantineDate(enteredDate)
+      : normalizeLifeDate(enteredDate, !!editing.dateJulian && canUseOldStyleDate(enteredDate));
+    const endDate = editing.endDateByzantine
+      ? normalizeByzantineDate(enteredEndDate)
+      : normalizeLifeDate(enteredEndDate, !!editing.endDateJulian && canUseOldStyleDate(enteredEndDate));
     const normalized = { ...editing,
       date: date.date || undefined,
       dateJulian: date.julian,
+      dateByzantine: "byzantine" in date ? date.byzantine : undefined,
       endDate: endDate.date || undefined,
       endDateJulian: endDate.julian,
+      endDateByzantine: "byzantine" in endDate ? endDate.byzantine : undefined,
       alternatives: editing.alternatives?.map((item) => ({ ...item,
         value: item.field === "date" ? normalizeDateInput(item.value) : item.value.trim() })),
     };
@@ -123,22 +130,37 @@ export function EventsEditor({
       events.map((event) => (event.id === id ? { ...event, ...patch } : event)),
     );
   const dateText = (event: PersonEvent, field: "date" | "endDate") => {
-    const key = field === "date" ? "dateJulian" : "endDateJulian";
-    return event[key] || event[field] || "";
+    const julianKey = field === "date" ? "dateJulian" : "endDateJulian";
+    const byzantineKey = field === "date" ? "dateByzantine" : "endDateByzantine";
+    return event[byzantineKey] || event[julianKey] || event[field] || "";
   };
   const editDate = (event: PersonEvent, field: "date" | "endDate", text: string) => {
-    const key = field === "date" ? "dateJulian" : "endDateJulian";
+    const julianKey = field === "date" ? "dateJulian" : "endDateJulian";
+    const byzantineKey = field === "date" ? "dateByzantine" : "endDateByzantine";
     update(event.id, {
       [field]: text || undefined,
-      [key]: event[key] && canUseOldStyleDate(text) ? text : undefined,
+      [julianKey]: event[julianKey] && !event[byzantineKey] && canUseOldStyleDate(text) ? text : undefined,
+      [byzantineKey]: event[byzantineKey] && canUseByzantineDate(text) ? text : undefined,
     });
   };
   const switchDateStyle = (event: PersonEvent, field: "date" | "endDate", oldStyle: boolean) => {
-    const key = field === "date" ? "dateJulian" : "endDateJulian";
+    const julianKey = field === "date" ? "dateJulian" : "endDateJulian";
+    const byzantineKey = field === "date" ? "dateByzantine" : "endDateByzantine";
     const original = dateText(event, field);
     update(event.id, {
       [field]: original || undefined,
-      [key]: oldStyle ? original || undefined : undefined,
+      [julianKey]: oldStyle ? original || undefined : undefined,
+      [byzantineKey]: undefined,
+    });
+  };
+  const switchByzantineStyle = (event: PersonEvent, field: "date" | "endDate", enabled: boolean) => {
+    const julianKey = field === "date" ? "dateJulian" : "endDateJulian";
+    const byzantineKey = field === "date" ? "dateByzantine" : "endDateByzantine";
+    const original = dateText(event, field);
+    update(event.id, {
+      [field]: original || undefined,
+      [julianKey]: undefined,
+      [byzantineKey]: enabled ? original || undefined : undefined,
     });
   };
   const citedSavedTypes = new Map(savedEvents?.filter(eventHasEvidence)
