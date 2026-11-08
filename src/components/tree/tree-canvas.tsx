@@ -796,7 +796,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       token: -scopeFocusToken.current - 1,
       previousFocusToken: focus?.token ?? null,
     });
-  }, [generationLimitsKey, props.generationLimits?.anchorId, visible, focus?.token, flow, clearNavigation]);
+  }, [generationLimitsKey, props.generationLimits, visible, focus?.token, focus?.wholeTree, flow, clearNavigation]);
   useEffect(() => {
     setScopeFocus((current) => current && current.previousFocusToken !== (focus?.token ?? null)
       ? null : current);
