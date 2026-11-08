@@ -71,7 +71,9 @@ export function validateEvents(events: unknown): void {
       )
         throw new Error("Проверьте дату события");
     if (!validCalendarPair(e.date, e.dateJulian) ||
-        !validCalendarPair(e.endDate, e.endDateJulian))
+        !validCalendarPair(e.endDate, e.endDateJulian) ||
+        !validByzantinePair(e.date, e.dateJulian, e.dateByzantine) ||
+        !validByzantinePair(e.endDate, e.endDateJulian, e.endDateByzantine))
       throw new Error("Дата события по старому стилю не соответствует новому.");
     if (
       e.date &&
