@@ -5,6 +5,7 @@ import { adminMatchTargetPath } from "../domain/archive-routes.ts";
 
 type PublicPerson = {
   archiveId?: string;
+  archiveRouteId?: string;
   id: string;
   name: string;
   birthSurname?: string;
@@ -126,6 +127,11 @@ export default function PublicPeople({ checking, revision, requireLogin }: Disco
         if (!data) return;
         if (personId) {
           setDetail(data.person || null);
+          if (data.person?.archiveRouteId) {
+            const canonical = `/discover/person/${encodeURIComponent(data.person.archiveRouteId)}/${encodeURIComponent(data.person.id)}`;
+            if (window.location.pathname !== canonical)
+              window.history.replaceState(window.history.state, "", canonical);
+          }
           setLinkedCards(data.linkedCards || []);
           setLinkedCardsTruncated(Boolean(data.linkedCardsTruncated));
         } else {
@@ -210,7 +216,7 @@ export default function PublicPeople({ checking, revision, requireLogin }: Disco
         <p>Владельцы обоих древ подтвердили соответствие карточек. Доступны только опубликованные сведения.</p>
         <div className="public-people-results">
           {linkedCards.map((person) => <a key={`${person.archiveId}:${person.id}`}
-            href={`/discover/person/${encodeURIComponent(person.archiveId || "")}/${encodeURIComponent(person.id)}`}
+            href={`/discover/person/${encodeURIComponent(person.archiveRouteId || person.archiveId || "")}/${encodeURIComponent(person.id)}`}
             aria-label={person.name}>
             <PersonCard person={person} />
           </a>)}
@@ -222,7 +228,7 @@ export default function PublicPeople({ checking, revision, requireLogin }: Disco
           {results.map((person) => (
             <a
               key={`${person.archiveId || "local"}:${person.id}`}
-              href={`/discover/person/${person.archiveId ? `${encodeURIComponent(person.archiveId)}/` : ""}${encodeURIComponent(person.id)}`}
+              href={`/discover/person/${person.archiveId ? `${encodeURIComponent(person.archiveRouteId || person.archiveId)}/` : ""}${encodeURIComponent(person.id)}`}
               aria-label={person.name}
             >
               <PersonCard person={person} />

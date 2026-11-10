@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createHash } from "node:crypto";
+import { discoveryArchiveId } from "./discovery-archive-id.ts";
 import { finished } from "node:stream/promises";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
@@ -436,6 +437,7 @@ export function publishedPeopleHttp({
             const currentFields = await store.getFields(personId);
             return {
               archiveId: archive.db.archiveId,
+              archiveRouteId: archive.db.archiveId ? discoveryArchiveId(archive.db.archiveId) : undefined,
               published: Boolean(currentFields),
               publishable: publishablePerson(freshPerson),
               fields: currentFields || defaultPublicationFields,
@@ -448,6 +450,8 @@ export function publishedPeopleHttp({
       const fields = await store.getFields(personId);
       return json(res, 200, {
         archiveId: archive.db.kind === "postgres" ? archive.db.archiveId : null,
+        ...(archive.db.kind === "postgres" && archive.db.archiveId
+          ? { archiveRouteId: discoveryArchiveId(archive.db.archiveId) } : {}),
         published: Boolean(fields),
         publishable: publishablePerson(currentPerson),
         fields: fields || defaultPublicationFields,

@@ -11,6 +11,7 @@ import "../styles/discovery-matches-admin.css";
 
 type Candidate = {
   archiveId: string;
+  archiveRouteId?: string;
   id: string;
   name?: string;
   birthSurname?: string;
@@ -55,10 +56,10 @@ const statusLabel: Record<Match["status"], string> = {
 
 function CandidateCard({ candidate, ownArchiveId }: { candidate: Candidate; ownArchiveId: string }) {
   const origin = candidate.archiveId === ownArchiveId
-    ? "Ваш архив" : `Исходный архив: ${candidate.archiveId}`;
+    ? "Ваш архив" : `Исходный архив: ${candidate.archiveRouteId || candidate.archiveId}`;
   return <div className="match-candidate-card">
     <small className="match-candidate-origin" title={origin}>{origin}</small>
-    {candidate.name ? <a href={`/discover/person/${encodeURIComponent(candidate.archiveId)}/${encodeURIComponent(candidate.id)}`}>
+    {candidate.name ? <a href={`/discover/person/${encodeURIComponent(candidate.archiveRouteId || candidate.archiveId)}/${encodeURIComponent(candidate.id)}`}>
       <strong>{candidate.name}</strong>
     </a> : <strong>Карточка больше не опубликована</strong>}
     {candidate.birthSurname && <small>При рождении: {candidate.birthSurname}</small>}

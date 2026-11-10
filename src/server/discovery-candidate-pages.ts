@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { discoveryArchiveId } from "./discovery-archive-id.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { candidateEvidence, candidateFuzzyTerms, candidateNameRoleQuery,
   candidatePlaceQueries } from "./discovery-candidate-ranking.ts";
@@ -301,6 +302,7 @@ export async function discoveryCandidatePage(db: StoreDatabase, input: {
       candidateEvidence(source,person,relativesOf(sourceRow),relativesOf(row));
     if (!found) throw new Error("Indexed discovery tier returned a candidate without evidence");
     return { archiveId: String(row.archive_id),id: String(row.person_id),...person,
+      archiveRouteId: discoveryArchiveId(String(row.archive_id)),
       reasons: found.reasons,conflicts: found.conflicts };
   });
   return { kind: "page",rows: selected,relatives,candidates,nextCursor,

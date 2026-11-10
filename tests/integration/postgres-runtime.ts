@@ -1,5 +1,6 @@
 import { verifyPlatformBackupsHttp } from "./postgres-platform-backups-http.ts";
 import { verifyPortablePublicationBackup } from "./postgres-portable-publications.ts";
+import { discoveryArchiveId } from "../../src/server/discovery-archive-id.ts";
 import { readStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
@@ -7526,7 +7527,12 @@ try {
     );
     const chosenProjection = await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers });
     assert.deepEqual(Object.keys((await chosenProjection.json()).person).sort(),
-      ["archiveId", "birthSurname", "id", "name", "publicationVersion"].sort());
+      ["archiveId", "archiveRouteId", "birthSurname", "id", "name", "publicationVersion"].sort());
+    const canonicalProjection = await fetch(securedBase + `/api/discovery/people/${discoveryArchiveId("other-archive")}/person-a`, { headers });
+    assert.equal(canonicalProjection.status, 200);
+    const canonicalPerson = (await canonicalProjection.json()).person;
+    assert.equal(canonicalPerson.archiveId, "other-archive");
+    assert.equal(canonicalPerson.archiveRouteId, discoveryArchiveId("other-archive"));
     assert.equal((await (await fetch(securedBase + "/api/discovery/people?q=ПоискРождения", { headers })).json()).results.length, 1);
     assert.equal(
       (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
@@ -9019,7 +9025,7 @@ try {
       FROM discovery_match_confirmation_fields WHERE match_id=? ORDER BY side,field_name`)
       .all(matchBody.match.id);
     const expectedConfirmedFields = (["left","right"] as const).flatMap((side) =>
-      Object.keys(freshReview[side]).filter((field) => field !== "archiveId" && field !== "id")
+      Object.keys(freshReview[side]).filter((field) => !["archiveId", "archiveRouteId", "id"].includes(field))
         .sort().map((field) => [side,field]));
     assert.deepEqual(confirmedFields.map((field) => [field.side,field.field_name]),
       expectedConfirmedFields,
@@ -9056,9 +9062,9 @@ try {
         : Date.parse(String(confirmationAcceptedAudit.responded_at)),
     "confirmation metadata identifies the actual accepted decision");
     assert.deepEqual(Object.keys(confirmedMatch.confirmation.left).sort(),
-      Object.keys(freshReview.left).filter((field) => field !== "archiveId" && field !== "id").sort());
+      Object.keys(freshReview.left).filter((field) => !["archiveId", "archiveRouteId", "id"].includes(field)).sort());
     assert.deepEqual(Object.keys(confirmedMatch.confirmation.right).sort(),
-      Object.keys(freshReview.right).filter((field) => field !== "archiveId" && field !== "id").sort());
+      Object.keys(freshReview.right).filter((field) => !["archiveId", "archiveRouteId", "id"].includes(field)).sort());
     const beforeConfirmedEdit = await confirmationOtherArchive.read();
     const editedConfirmedFamily = structuredClone(beforeConfirmedEdit.family);
     editedConfirmedFamily.people[0].name = "Исправление после подтверждения";

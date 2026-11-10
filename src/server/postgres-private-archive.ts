@@ -12,6 +12,7 @@ export async function provisionPrivateArchiveInTransaction(
   archiveId: string,
   title: string,
   sqliteSchemaVersion: number,
+  options: { additional?: boolean } = {},
 ): Promise<PrivateArchive> {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{2,63}$/.test(archiveId))
     throw new Error("Некорректный archive_id");
@@ -21,8 +22,8 @@ export async function provisionPrivateArchiveInTransaction(
   if (!Number.isSafeInteger(sqliteSchemaVersion) || sqliteSchemaVersion < 1)
     throw new Error("Некорректная версия схемы архива");
 
-  // Serialize duplicate registration callbacks for this owner. The unique
-  // owner constraint is the final guard against creating a second tree.
+  // Registration remains idempotent; only explicit account creation asks for
+  // another tree. The owner trigger rechecks the current platform grant.
   await client.query("SELECT pg_advisory_xact_lock(2405, hashtext($1))", [
     ownerId,
   ]);
@@ -32,10 +33,10 @@ export async function provisionPrivateArchiveInTransaction(
   );
   if (!account.rowCount) throw new Error("Аккаунт владельца не найден");
   const existing = await client.query<{ archive_id: string }>(
-    "SELECT archive_id FROM archive_owners WHERE user_id=$1",
+    "SELECT archive_id FROM archive_owners WHERE user_id=$1 ORDER BY archive_id LIMIT 1",
     [ownerId],
   );
-  if (existing.rows[0])
+  if (existing.rows[0] && !options.additional)
     return { archiveId: existing.rows[0].archive_id, created: false };
 
   await client.query(

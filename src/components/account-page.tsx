@@ -476,7 +476,8 @@ export function AccountPage({
                       </p>
                     )}
                     {archives &&
-                      !archives.some((item) => item.owned) &&
+                      (!archives.some((item) => item.owned) ||
+                        session?.account?.globalRole === "researcher" || session?.account?.globalRole === "admin") &&
                       !local && <CreatePersonalArchive />}
                   </div>
                   {user && (

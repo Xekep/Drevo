@@ -1,5 +1,35 @@
 import { expect, test } from "@playwright/test";
 
+for (const globalRole of [null, "researcher", "admin"] as const) {
+  test(`additional-tree action follows the global role (${globalRole || "basic"})`, async ({ page }) => {
+    await page.route("**/api/session", route => route.fulfill({ json: {
+      user: null, account: { id: "multi-owner", name: "Исследователь", createdAt: "2026-10-01",
+        globalRole, fullAccess: false, provider: "email" }, local: false, yandex: false, email: true,
+    } }));
+    await page.route("**/api/account/sessions", route => route.fulfill({ json: { items: [], otherCount: 0, currentExpiresAt: null } }));
+    let creations = 0;
+    const archiveId = "194d6856-36ba-464d-8dc6-2031a89d8d14";
+    await page.route("**/api/account/archives", route => {
+      if (route.request().method() === "POST") {
+        creations++;
+        expect(route.request().headers()["x-drevo-new-archive"]).toBe("1");
+        return route.fulfill({ status: 201, json: { archiveId } });
+      }
+      return route.fulfill({ json: { archives: [{ id: "already-owned", title: "Первое древо", owned: true,
+        approved: true, role: "relative", current: false, href: "/a/already-owned/tree" }] } });
+    });
+    await page.goto("/account");
+    await expect(page.getByText("Первое древо", { exact: true })).toBeVisible();
+    const create = page.getByRole("button", { name: "Создать новое древо", exact: true });
+    if (!globalRole) await expect(create).toHaveCount(0);
+    else {
+      await create.click();
+      await expect(page).toHaveURL(new RegExp(`/a/${archiveId}/tree$`));
+      expect(creations).toBe(1);
+    }
+  });
+}
+
 test("account without membership in the current archive can open another tree", async ({
   page,
 }) => {
