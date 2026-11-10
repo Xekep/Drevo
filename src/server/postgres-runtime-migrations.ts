@@ -472,12 +472,12 @@ export const postgresRuntimeMigrations: ReadonlyArray<
   ],
   [
     "SELECT to_regclass('discovery_people_person_lookup') AS present",
-    "110_discovery_person_lookup.sql",
+    "112_discovery_person_lookup.sql",
     { transaction: "schema" },
   ],
   [
     "SELECT 1 AS present FROM pg_trigger WHERE tgrelid=to_regclass('archive_owners') AND tgname='enforce_account_archive_limit' AND NOT tgisinternal",
-    "109_multiple_owned_archives.sql",
+    "111_multiple_owned_archives.sql",
     { transaction: "schema" },
   ],
 ];

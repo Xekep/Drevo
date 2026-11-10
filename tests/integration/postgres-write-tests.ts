@@ -17,3 +17,4 @@ import "./postgres-ai-chat-cursors.ts";
 import "./postgres-media-url-lookup.ts";
 import "./postgres-personal-research.ts";
 import "./postgres-email-auth.ts";
+import "./postgres-multiple-archives.ts";

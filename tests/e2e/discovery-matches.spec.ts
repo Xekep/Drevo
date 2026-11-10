@@ -3,7 +3,7 @@ import { openAdminSection } from "./admin-navigation";
 
 test("a selected tree card opens matching with its exact published source", async ({ page }) => {
   const own = { archiveId: "tree-a", id: "e2e-memorial-person", name: "Иван Петров" };
-  const target = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
+  const target = { archiveId: "tree-b", archiveRouteId: "56d3392a-6f2f-8f53-834f-191ec82ba6ab", id: "person-b", name: "Иван Петров" };
   let posted = false;
   await page.route("**/a/tree-a/api/**", (route) => route.continue({
     url: route.request().url().replace("/a/tree-a/api/", "/api/"),
@@ -44,6 +44,7 @@ test("a selected tree card opens matching with its exact published source", asyn
   await expect(page.getByRole("heading", { name: "Карточка из вашего древа" })).toBeVisible();
   await page.getByRole("button", { name: /Иван Петров.*Совпадают имена/ }).click();
   await expect(page.getByRole("heading", { name: "Проверьте обе карточки" })).toBeVisible();
+  await expect(page.locator(`a[href="/discover/person/${target.archiveRouteId}/person-b"]`)).toBeVisible();
   await page.getByRole("button", { name: "Предложить сопоставление" }).click();
   await expect(page.getByText("Запрос отправлен. Другая сторона должна подтвердить сопоставление.")).toBeVisible();
   expect(posted).toBe(true);

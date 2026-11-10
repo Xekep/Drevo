@@ -1,6 +1,23 @@
 import { expect, test } from "@playwright/test";
 import { openAdminSection } from "./admin-navigation";
 
+test("publication dialog shares the archive UUID instead of the legacy key", async ({ page }) => {
+  const archiveRouteId = "b4625b46-aa17-8058-89c5-e6ee7accdd6c";
+  await page.route("**/api/admin/published-people/e2e-memorial-person", route => route.fulfill({ json: {
+    archiveId: "legacy-primary", archiveRouteId, published: true, publishable: true,
+    fields: { birthSurname: false, birthYear: false, deathYear: false, birthPlace: false, deathPlace: false },
+    person: { name: "Тестов Иван" },
+  } }));
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
+  const card = page.getByTestId("rf__node-e2e-memorial-person");
+  await card.hover();
+  await card.locator(".flow-privacy").click();
+  const dialog = page.getByRole("dialog", { name: "Публикация человека в поиске" });
+  await expect(dialog.getByRole("link", { name: /\/discover\/person\// })).toHaveAttribute("href",
+    new RegExp(`/discover/person/${archiveRouteId}/e2e-memorial-person$`));
+});
+
 test("discovery search links and old direct URLs use the canonical archive UUID", async ({ page }) => {
   const archiveRouteId = "ed3e541a-1b6d-8a11-8328-13cf3c4f9062";
   const person = { archiveId: "legacy-primary", archiveRouteId, id: "same", name: "Тестовый Пётр" };
