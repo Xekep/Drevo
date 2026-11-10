@@ -231,3 +231,21 @@
     font-size: 14px;
   }
 }
+
+/* On a 320px viewport the additional chronicle entry no longer pushes
+   workspace buttons over the generation-anchor notice. Keep it accessible
+   on the next line, with room reserved for the status label and reset. */
+@media (max-width: 359px) {
+  .tree-mode-bar > .tree-family-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 7;
+  }
+  .tree-mode-bar > .tree-generation-status {
+    width: calc(100% - 52px);
+  }
+  .tree-mode-bar > .tree-family-menu .tree-family-menu-content {
+    width: min(260px, calc(100vw - 16px));
+  }
+}
