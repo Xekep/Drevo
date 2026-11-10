@@ -12,6 +12,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
+import fsPromises from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import sharp from "sharp";
 import { startServer } from "../src/server/index.ts";
 import type { Family } from "../src/domain/types.ts";
@@ -109,8 +111,17 @@ test("media store does not expose whole-file synchronous I/O", () => {
   assert.doesNotMatch(source, /\b(?:readFileSync|writeFileSync)\b/);
 });
 
-test("photo upload reserves space shared with pending document uploads", async () => {
+test("photo upload checks pending documents, exact content length and free disk independently", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-shared-media-quota-"));
+  // Isolate the archive quota from the CI runner's real free space. Otherwise
+  // the synthetic 10 GiB document reservation also exhausts a smaller disk.
+  const disk = await fsPromises.statfs(directory);
+  let freeBytes = 100 * 1024 ** 3;
+  const diskMock = t.mock.method(fsPromises, "statfs", async () => ({
+    ...disk, bsize: 1, bavail: freeBytes,
+  }));
+  syncBuiltinESMExports();
+  t.after(() => { diskMock.mock.restore(); syncBuiltinESMExports(); });
   const app = await startServer(0, join(directory, "archive.sqlite"), true);
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
@@ -159,6 +170,22 @@ test("photo upload reserves space shared with pending document uploads", async (
       201,
       "known-size uploads reserve their actual bytes",
     );
+    await app.archive.db.prepare(
+      "DELETE FROM document_upload_requests WHERE id='pending-document'",
+    ).run();
+    const beforeLowDisk = readdirSync(join(directory, "uploads"));
+    freeBytes = 256 * 1024 ** 2 + image.length - 1;
+    const lowDisk = await fetch(`${base}/api/photos`, {
+      method: "POST",
+      headers: {
+        "X-Drevo-Upload": "1",
+        "If-Match": String((await app.archive.meta()).revision),
+      },
+      body: new Uint8Array(image).buffer,
+    });
+    assert.equal(lowDisk.status, 507, "the upload must retain the physical disk reserve even below the archive quota");
+    assert.deepEqual(readdirSync(join(directory, "uploads")), beforeLowDisk,
+      "a low-disk rejection creates no original or temporary file");
   } finally {
     await app.close();
     rmSync(directory, { recursive: true, force: true });
