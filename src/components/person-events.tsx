@@ -1,3 +1,4 @@
+import { externalLinkAttributes } from "../shared/external-links.ts";
 import { useState } from "react";
 import { researchEvidenceAnchor } from "../domain/research-evidence";
 import { CalendarDays, GraduationCap, Plus, Trash2 } from "lucide-react";
@@ -489,7 +490,7 @@ export function EventSourceList({ label, sources, canLoadDocuments }: {
       {source.repository && ` · ${repositorySummary(source)}`}
       {source.note && ` · ${source.note}`}
       {safeUrl(source.url) && <a href={archiveResourceUrl(safeUrl(source.url) || "")}
-        target="_blank" rel="noopener noreferrer"> Открыть источник</a>}
+        target="_blank" rel="noopener noreferrer" {...externalLinkAttributes(source.url || "")}> Открыть источник</a>}
       {canLoadDocuments && source.documentId && <a
         href={scopedArchivePath(archiveDocumentPath(null, source.documentId, source.documentPage))}>
         {" "}Открыть документ

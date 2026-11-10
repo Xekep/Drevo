@@ -46,8 +46,7 @@ dialog.editor-dialog.family-chronicle {
   white-space: nowrap;
   border: 0;
 }
-.family-chronicle button,
-.family-chronicle select {
+.family-chronicle button {
   font-family: var(--chronicle-mono);
   font-size: 11px;
   font-weight: 600;
@@ -60,8 +59,7 @@ dialog.editor-dialog.family-chronicle {
   box-shadow: none;
   cursor: pointer;
 }
-.family-chronicle button:focus-visible,
-.family-chronicle select:focus-visible {
+.family-chronicle button:focus-visible {
   outline: 1px solid #fff;
   outline-offset: 4px;
 }
@@ -90,6 +88,11 @@ dialog.editor-dialog.family-chronicle {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.chronicle-header-controls {
+  display: flex;
+  align-items: center;
+  pointer-events: auto;
 }
 .chronicle-player {
   position: relative;
@@ -149,21 +152,6 @@ dialog.editor-dialog.family-chronicle {
 .chronicle-slide-total {
   right: var(--chronicle-spacing);
 }
-.chronicle-help {
-  position: absolute;
-  top: calc(var(--chronicle-spacing) + 56px);
-  left: var(--chronicle-spacing);
-  z-index: 3;
-  font-family: var(--chronicle-mono);
-  font-size: 11px;
-  text-transform: uppercase;
-  color: #fffc;
-  pointer-events: none;
-  text-shadow: 0 1px 8px #000;
-}
-.chronicle-help > span:last-child {
-  display: none;
-}
 .chronicle-controls {
   position: absolute;
   top: calc(var(--chronicle-spacing) + 44px);
@@ -178,25 +166,58 @@ dialog.editor-dialog.family-chronicle {
   min-height: 44px;
   padding: 8px 0;
 }
-.chronicle-controls select {
-  padding: 8px 4px;
-  max-width: 150px;
-  border-bottom: 1px solid #fff6;
-}
-.chronicle-controls option {
-  background: #000;
-}
 .chronicle-caption {
   position: absolute;
   z-index: 3;
   bottom: calc(var(--chronicle-spacing) + 72px);
   left: var(--chronicle-spacing);
   right: var(--chronicle-spacing);
-  max-height: 28dvh;
-  overflow: auto;
-  padding-top: 24px;
-  background: linear-gradient(transparent, #0008);
+  max-height: 65dvh;
+  background: #000b;
   text-shadow: 0 1px 10px #000;
+}
+.chronicle-caption-drawer {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 0.3s ease, opacity 0.3s ease;
+}
+.chronicle-caption.is-expanded .chronicle-caption-drawer {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.chronicle-caption-content {
+  min-height: 0;
+  max-height: 45dvh;
+  overflow: auto;
+  padding: 0 16px;
+}
+.chronicle-caption-content > :first-child {
+  margin-top: 16px;
+}
+.family-chronicle .chronicle-caption-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  min-height: 48px;
+  padding: 14px 16px;
+  text-align: left;
+  text-transform: none;
+}
+.chronicle-caption-summary svg {
+  flex: none;
+  transition: transform 0.3s ease;
+}
+.chronicle-caption-summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.is-expanded .chronicle-caption-summary svg {
+  transform: rotate(180deg);
 }
 .family-chronicle .chronicle-person {
   display: flex;
@@ -229,10 +250,7 @@ dialog.editor-dialog.family-chronicle {
   font-size: 13px;
   line-height: 1.5;
   color: #fff9;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: pre-wrap;
 }
 .chronicle-fallback {
   display: block;
@@ -301,6 +319,9 @@ dialog.editor-dialog.family-chronicle {
   background: #000;
   pointer-events: none;
 }
+.chronicle-stage[data-has-photo="true"] .chronicle-loading {
+  background: #0003;
+}
 .chronicle-loading canvas {
   position: absolute;
   top: 50%;
@@ -358,29 +379,15 @@ dialog.editor-dialog.family-chronicle {
     right: auto;
     gap: 14px;
   }
-  .chronicle-controls select {
-    max-width: 140px;
-  }
-  .chronicle-help {
-    top: calc(var(--chronicle-spacing) + 92px);
-    font-size: 10px;
-  }
-  .chronicle-help > span:first-child {
-    display: none;
-  }
-  .chronicle-help > span:last-child {
-    display: inline;
-  }
   .family-chronicle .chronicle-slide-nav-item {
     padding: 0.75rem;
     flex-basis: 64px;
   }
-  .chronicle-caption {
-    max-height: 26dvh;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .chronicle-slide-progress-fill {
+  .chronicle-slide-progress-fill,
+  .chronicle-caption-drawer,
+  .chronicle-caption-summary svg {
     transition: none;
   }
 }

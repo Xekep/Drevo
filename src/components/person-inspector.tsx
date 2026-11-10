@@ -61,7 +61,6 @@ export function PersonInspector({
   onNewRelative,
   onExistingRelative,
   onAlbum,
-  onChronicle,
   save,
   uploadPortrait,
   busy = false,
@@ -89,7 +88,6 @@ export function PersonInspector({
   onNewRelative: (type: "child" | ConnectionType) => void;
   onExistingRelative: (type: "child" | ConnectionType) => void;
   onAlbum: (id: string) => void;
-  onChronicle?: (id: string) => void;
   save?: (family: Family) => Promise<Family>;
   uploadPortrait?: (file: File) => Promise<string>;
   busy?: boolean;
@@ -343,9 +341,6 @@ export function PersonInspector({
       {readPhotos && !detailsLoading && (
         <section className="person-photos">
           <PersonPhotoAlbum photos={photos} total={personPhotoTotal?.(person.id)} onOpen={() => onAlbum(person.id)} />
-          {onChronicle && <button type="button" className="person-chronicle-button" onClick={() => onChronicle(person.id)}>
-            Хроника
-          </button>}
         </section>
       )}
     </>

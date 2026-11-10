@@ -1,3 +1,4 @@
+import { externalLinkAttributes } from "../shared/external-links.ts";
 import { createContext, memo, useContext } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -17,7 +18,7 @@ const components: Components = {
     return <pre>{children}</pre>;
   },
   a: ({ children, href }) => href
-    ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+    ? <a href={href} target="_blank" rel="noopener noreferrer" {...externalLinkAttributes(href)}>{children}</a>
     : <>{children}</>,
 };
 const remarkPlugins = [remarkGfm];

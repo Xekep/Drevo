@@ -71,7 +71,7 @@ test("краткие описания раскрываются клавиату�
   );
   await expect(short.getByRole("link")).toHaveAttribute(
     "rel",
-    "noopener noreferrer",
+    "nofollow noopener noreferrer",
   );
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });

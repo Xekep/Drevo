@@ -74,7 +74,7 @@ test("resource directory replaces quality navigation and reads the admin catalog
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute("href", url);
     await expect(link).toHaveAttribute("target", "_blank");
-    await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    await expect(link).toHaveAttribute("rel", "nofollow noopener noreferrer");
     await expect(directory.getByRole("link")).toHaveCount(1);
     await expect(directory).not.toContainText("Разрешить веб-поиск ИИ");
     await expect(

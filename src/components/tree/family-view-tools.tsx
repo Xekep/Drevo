@@ -13,6 +13,7 @@ export function FamilyViewTools({
   onFamily,
   onCommon,
   onFan,
+  onChronicle,
   fanActive,
   onAll,
   onReset,
@@ -28,6 +29,7 @@ export function FamilyViewTools({
   onFamily: () => void;
   onCommon: () => void;
   onFan: () => void;
+  onChronicle?: () => void;
   fanActive: boolean;
   onAll: () => void;
   onReset: () => void;
@@ -110,6 +112,10 @@ export function FamilyViewTools({
           Веер
         </button>
       )}
+      {onChronicle && <button type="button" onClick={(event) => {
+        event.currentTarget.focus();
+        runAction(onChronicle);
+      }}>Хроника</button>}
       {anchor && <button onClick={() => runAction(onAll)}>Всё древо</button>}
       {onShare && (
         <button

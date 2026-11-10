@@ -1,3 +1,4 @@
+import { externalLinkAttributes } from "../shared/external-links.ts";
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { ArrowUpRight, Check, Medal, Plus, Trash2, X } from "lucide-react";
 import type { PersonAward } from "../domain/types";
@@ -706,7 +707,7 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
             <div className="award-focus-source">
               {active.award.source?.title && <p>{active.award.source.title}</p>}
               {active.url && (
-                <a href={archiveResourceUrl(active.url)} target="_blank" rel="noopener noreferrer">
+                <a href={archiveResourceUrl(active.url)} target="_blank" rel="noopener noreferrer" {...externalLinkAttributes(active.url)}>
                   Открыть источник <ArrowUpRight size={13} />
                 </a>
               )}
@@ -716,7 +717,7 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
             const url = safeUrl(source.url);
             return <div className="award-focus-source" key={index}>
               <p>{[source.title, source.reference].filter(Boolean).join(" · ")}</p>
-              {url && <a href={archiveResourceUrl(url)} target="_blank" rel="noopener noreferrer">
+              {url && <a href={archiveResourceUrl(url)} target="_blank" rel="noopener noreferrer" {...externalLinkAttributes(url)}>
                 Открыть источник <ArrowUpRight size={13} />
               </a>}
               {source.documentId && <a
@@ -731,6 +732,7 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
               href={active.visualImage.sourcePage}
               target="_blank"
               rel="noopener noreferrer"
+              {...externalLinkAttributes(active.visualImage.sourcePage)}
             >
               Изображение: {active.visualImage.author || "Wikimedia Commons"} · {active.visualImage.license}
               <ArrowUpRight size={12} aria-hidden="true" />

@@ -1,3 +1,4 @@
+import { externalLinkAttributes } from "../../shared/external-links.ts";
 import { Component, memo, useMemo, type ReactNode } from "react";
 import type { ResearchAttachment } from "../../shared/research-attachments.ts";
 import ReactMarkdown, {
@@ -70,7 +71,7 @@ const MarkdownAnswerBody = memo(function MarkdownAnswerBody({
         if (!link && href.startsWith("#drevo-")) return <span>{children}</span>;
         if (!link)
           return (
-            <a href={/^\/people\/[^/]+#drevo-(?:event|source|union|birth|death)-[a-f0-9]+$/.test(href) ? scopedArchivePath(href) : href} target="_blank" rel="noreferrer">
+            <a href={/^\/people\/[^/]+#drevo-(?:event|source|union|birth|death)-[a-f0-9]+$/.test(href) ? scopedArchivePath(href) : href} target="_blank" rel="noopener noreferrer" {...externalLinkAttributes(href)}>
               {children}
             </a>
           );
@@ -137,6 +138,7 @@ const MarkdownAnswerBody = memo(function MarkdownAnswerBody({
                     href={reference.url}
                     target="_blank"
                     rel="noopener noreferrer"
+                    {...externalLinkAttributes(reference.url)}
                   >
                     {reference.label}
                   </a>

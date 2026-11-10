@@ -30,7 +30,7 @@ test("каталожный источник добавляется ко всей
   const title = `Запись о переезде ${info.project.name}`;
   const source = { id: `general-source-${info.project.name}`, title, version: 1,
     type: "архив", author: "", institution: "", archive: "ГАСО", fond: "6",
-    opis: "", delo: "", sheet: "", reference: "", url: "", accessedAt: "",
+    opis: "", delo: "", sheet: "", reference: "", url: "https://example.com/archive", accessedAt: "",
     description: "", documentIds: [] };
   await page.route("**/api/sources?*", (route) => route.fulfill({ json: { sources: [source], total: 1 } }));
   const readFamily = await isolatedFamily(page);
@@ -46,6 +46,10 @@ test("каталожный источник добавляется ко всей
   await savePersonDetails(page);
   await expect.poll(() => readFamily().people.find((person) => person.id === "e2e-child")?.sources.at(-1)?.catalogId).toBe(source.id);
   expect(readFamily().people.find((person) => person.id === "e2e-child")?.events?.[0].sources?.[0].title).toBe("Семейная запись");
+  await page.getByRole("tab", { name: /^Источники/ }).click();
+  const externalSource = page.locator('.source-card a[href="https://example.com/archive"]');
+  await expect(externalSource).toHaveAttribute("target", "_blank");
+  await expect(externalSource).toHaveAttribute("rel", "nofollow noopener noreferrer");
 
   await page.locator(".inspector-person-actions .person-edit-button").click();
   await form.locator(".event-editor > summary").click();

@@ -187,7 +187,15 @@ export default function App() {
   const [treeSceneCovered, setTreeSceneCovered] = useState(false);
   const [biographyMap, setBiographyMap] = useState<{ personId: string; source: string; scope: string } | null>(null);
   const [chronicle, setChronicle] = useState<{ personId: string; title: string; scope: string } | null>(null);
-  const closeChronicle = useCallback(() => setChronicle(null), []);
+  const [chronicleControls, setChronicleControls] = useState<HTMLSpanElement | null>(null);
+  const chronicleOpener = useRef<HTMLElement | null>(null);
+  const closeChronicle = useCallback(() => {
+    setChronicle(null);
+    const opener = chronicleOpener.current;
+    requestAnimationFrame(() => {
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    });
+  }, []);
   const exportWarnings = archive.exportWarnings;
   const checkExportWarnings = useCallback(async (signal: AbortSignal) => {
     if (!family) return { parentEvidence: false, catalogLinks: false };
@@ -653,8 +661,22 @@ export default function App() {
   const biographyMapScope = JSON.stringify([archiveContextAt(window.location.pathname)?.id, user?.id, user?.role,
     user?.treeAccess, user?.personId, user?.approved, participantPreview]);
   const chronicleScope = JSON.stringify([biographyMapScope, archive.getRevision(), detailsGeneration, readPhotos, restoredSessionState, currentPath]);
-  const currentChronicle = readPhotos && view === "tree" && chronicle?.scope === chronicleScope &&
-    selected.length === 1 && selected[0] === chronicle.personId && map.has(chronicle.personId) ? chronicle : null;
+  const galleryPersonId = view === "gallery" ? new URL(currentPath, window.location.origin).searchParams.get("personId") : null;
+  const chroniclePersonId = view === "tree" && selected.length === 1 ? selected[0] : galleryPersonId;
+  const currentChronicle = readPhotos && chronicle?.scope === chronicleScope &&
+    chroniclePersonId === chronicle.personId && map.has(chronicle.personId) ? chronicle : null;
+  const openChronicle = (id: string) => {
+    const person = map.get(id);
+    if (readPhotos && person && id === chroniclePersonId) {
+      const active = document.activeElement;
+      chronicleOpener.current = active instanceof HTMLElement
+        ? active.closest(".tree-family-menu")?.querySelector<HTMLElement>("summary") || active
+        : null;
+      setChronicle({ personId: id, title: fullName(person), scope: chronicleScope });
+    }
+  };
+  const treeChroniclePerson = view === "tree" && readPhotos && selected.length === 1 && chosen[0] &&
+    (archive.personPhotoTotal(chosen[0].id) ?? family?.photos?.filter(photo => photo.tags.some(tag => tag.personId === chosen[0].id)).length ?? 0) > 1 ? chosen[0] : null;
   useEffect(() => { if (chronicle && !currentChronicle) setChronicle(null); }, [chronicle, currentChronicle]);
   const biographyPersonId = chosen[0]?.id;
   const openBiographyMap = useCallback((source: string) => {
@@ -1134,6 +1156,7 @@ export default function App() {
                     <TreeCanvas
                       ref={treeCanvas}
                       covered={treeSceneCovered || !!currentBiographyMap || !!currentChronicle}
+                      onChronicle={treeChroniclePerson ? () => openChronicle(treeChroniclePerson.id) : undefined}
                       restricted={Boolean(participantPreview)}
                       onPreferences={() => withOverview(() => setTreePreferencesOpen(true))}
                       onExport={participantPreview ? undefined : () => setTreeExportOpen(true)}
@@ -1379,7 +1402,6 @@ export default function App() {
                               onAlbum={(id) => {
                                 selectGalleryAlbum(id, null);
                               }}
-                              onChronicle={selected.length === 1 ? (id) => setChronicle({ personId: id, title: fullName(chosen[0]), scope: chronicleScope }) : undefined}
                             />
                           )
                         )}
@@ -1439,6 +1461,7 @@ export default function App() {
                       : null
                   }
                   onSelectPhotoAlbum={selectGalleryAlbum}
+                  onChronicle={readPhotos ? openChronicle : undefined}
                 />
               </main>
             )}
@@ -1623,10 +1646,11 @@ export default function App() {
       )}
       {currentChronicle && family && restoredSessionState === "ready" && (
         <EditorDialog title="Семейная хроника" className="family-chronicle" onClose={closeChronicle}
-          headerActions={<span className="chronicle-scope">{currentChronicle.title}</span>}>
+          headerActions={<><span className="chronicle-scope">{currentChronicle.title}</span>
+            <span ref={setChronicleControls} className="chronicle-header-controls" /></>}>
           <LazyChunkBoundary message="Хроника не загрузилась. Закройте окно и повторите открытие.">
             <Suspense fallback={<ChronicleLoading label="Открываем хронику…" />}>
-              <FamilyChronicle person={map.get(currentChronicle.personId)!} loadGallery={loadGallery}
+              <FamilyChronicle person={map.get(currentChronicle.personId)!} loadGallery={loadGallery} controlsHost={chronicleControls}
                 onPerson={(id) => { closeChronicle(); showPerson(id); }} />
             </Suspense>
           </LazyChunkBoundary>

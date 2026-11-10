@@ -168,6 +168,7 @@ type Props = {
   restricted?: boolean;
   covered?: boolean;
   onShare?: (anchorId: string, personIds: string[]) => void;
+  onChronicle?: () => void;
   onPublishPerson?: (personId: string) => void;
   publicationUpdate?: { personId: string; published: boolean; archiveId: string | null } | null;
   family: Family;
@@ -2077,6 +2078,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               onCommon={() => prepareView({ kind: "common", anchorId: selected[0] || familyView.anchor || familyView.defaultAnchor })}
               onFan={() => prepareView({ kind: "fan", anchorId: selected[0] || root || familyView.defaultAnchor })}
               fanActive={!!activeFanAnchor}
+              onChronicle={props.onChronicle}
               onAll={() => {
                 setFanRevealing(false);
                 if (!activeFanAnchor && fragment.active) fragment.showAll();
