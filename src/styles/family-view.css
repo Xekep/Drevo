@@ -231,3 +231,20 @@
     font-size: 14px;
   }
 }
+
+/* Preserve the single-row mobile toolbar even when Chronicle is enabled.
+   Shrink only the anchor label: its action buttons must never overlap it. */
+@media (max-width: 359px) {
+  .tree-mode-bar > .tree-generation-status {
+    width: 100%;
+  }
+  .tree-generation-status .tree-family-name {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .tree-generation-status .tree-family-name > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

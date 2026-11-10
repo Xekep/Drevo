@@ -1,0 +1,228 @@
+dialog.editor-dialog.family-chronicle {
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #090909;
+  color: #f7f5ef;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.family-chronicle > header {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  gap: 12px;
+  margin: 0;
+  padding: max(12px, env(safe-area-inset-top))
+    max(18px, env(safe-area-inset-right)) 12px
+    max(18px, env(safe-area-inset-left));
+  background: #090909;
+  border-bottom: 1px solid #ffffff21;
+}
+.family-chronicle > header h2 {
+  font-size: 16px;
+  color: inherit;
+  white-space: nowrap;
+}
+.family-chronicle button,
+.family-chronicle select {
+  background: #ffffff12;
+  color: inherit;
+  border: 1px solid #ffffff30;
+  border-radius: 8px;
+}
+.family-chronicle button:hover {
+  background: #ffffff24;
+}
+.family-chronicle button:focus-visible,
+.family-chronicle select:focus-visible {
+  outline: 2px solid #eac58b;
+  outline-offset: 3px;
+}
+.family-chronicle button:disabled {
+  opacity: 0.4;
+}
+.chronicle-scope {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  opacity: 0.7;
+}
+.chronicle-player {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  outline: none;
+  display: flex;
+  flex-direction: column;
+}
+.chronicle-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: pan-y pinch-zoom;
+}
+.chronicle-stage img,
+.chronicle-stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.chronicle-stage .chronicle-incoming,
+.chronicle-stage canvas {
+  opacity: 0;
+  pointer-events: none;
+}
+.chronicle-stage img:not([src]) {
+  visibility: hidden;
+}
+.chronicle-media-status {
+  position: absolute;
+  inset: auto 16px 16px;
+  margin: auto;
+  width: fit-content;
+  max-width: calc(100% - 32px);
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #090909df;
+  color: #fff;
+  text-align: center;
+}
+.chronicle-caption {
+  flex-shrink: 0;
+  padding: 12px 24px 0;
+  max-height: 26dvh;
+  overflow: auto;
+}
+.chronicle-date {
+  margin: 0;
+  font-size: clamp(16px, 2vw, 22px);
+  font-weight: 500;
+}
+.chronicle-description {
+  margin: 8px 0 0;
+  opacity: 0.8;
+  font-size: 14px;
+  white-space: pre-line;
+}
+.chronicle-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.chronicle-people button {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  padding: 7px 12px;
+  text-align: left;
+}
+.chronicle-people strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.chronicle-people span {
+  font-size: 12px;
+  opacity: 0.7;
+}
+.chronicle-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px max(24px, env(safe-area-inset-right))
+    max(14px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+}
+.chronicle-transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chronicle-transport button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+}
+.chronicle-transport > span {
+  margin-left: 8px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.chronicle-controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.chronicle-controls select {
+  max-width: 170px;
+  padding: 8px;
+}
+.chronicle-controls option {
+  background: #191919;
+}
+.chronicle-controls small {
+  font-size: 12px;
+  opacity: 0.7;
+}
+.chronicle-status {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px;
+  text-align: center;
+}
+.chronicle-status p {
+  margin: 0;
+}
+.chronicle-status button,
+.chronicle-media-status button {
+  padding: 8px 16px;
+}
+@media (max-width: 599px) {
+  .family-chronicle > header {
+    gap: 8px;
+  }
+  .family-chronicle > header h2 {
+    font-size: 14px;
+  }
+  .chronicle-scope {
+    font-size: 12px;
+  }
+  .chronicle-caption {
+    padding: 10px 16px 0;
+  }
+  .chronicle-controls {
+    padding-left: 16px;
+    padding-right: 16px;
+    gap: 8px;
+  }
+  .chronicle-controls label {
+    font-size: 0;
+  }
+  .chronicle-controls select {
+    font-size: 12px;
+    max-width: 140px;
+  }
+}

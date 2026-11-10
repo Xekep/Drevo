@@ -232,6 +232,7 @@
   background: #f0f5e9;
   border-color: #bdcdb1;
 }
+.person-chronicle-button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 12px; padding: 10px 12px; }
 .album-stack-pictures {
   display: block;
   position: relative;
