@@ -1,6 +1,41 @@
 import { expect, test } from "@playwright/test";
 import { openAdminSection } from "./admin-navigation";
 
+test("publication dialog shares the archive UUID instead of the legacy key", async ({ page }) => {
+  const archiveRouteId = "b4625b46-aa17-8058-89c5-e6ee7accdd6c";
+  await page.route("**/api/admin/published-people/e2e-memorial-person", route => route.fulfill({ json: {
+    archiveId: "legacy-primary", archiveRouteId, published: true, publishable: true,
+    fields: { birthSurname: false, birthYear: false, deathYear: false, birthPlace: false, deathPlace: false },
+    person: { name: "Тестов Иван" },
+  } }));
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
+  const card = page.getByTestId("rf__node-e2e-memorial-person");
+  await card.hover();
+  await card.locator(".flow-privacy").click();
+  const dialog = page.getByRole("dialog", { name: "Публикация человека в поиске" });
+  await expect(dialog.getByRole("link", { name: /\/discover\/person\// })).toHaveAttribute("href",
+    new RegExp(`/discover/person/${archiveRouteId}/e2e-memorial-person$`));
+});
+
+test("discovery search links and old direct URLs use the canonical archive UUID", async ({ page }) => {
+  const archiveRouteId = "ed3e541a-1b6d-8a11-8328-13cf3c4f9062";
+  const person = { archiveId: "legacy-primary", archiveRouteId, id: "same", name: "Тестовый Пётр" };
+  await page.route((url) => url.pathname === "/api/discovery/people", route => route.fulfill({ json: { results: [person], nextCursor: null } }));
+  await page.route((url) => url.pathname === "/api/discovery/people/legacy-primary/same" || url.pathname === `/api/discovery/people/${archiveRouteId}/same`,
+    route => route.fulfill({ json: { person, linkedCards: [] } }));
+  await page.goto("/discover");
+  await page.getByRole("textbox", { name: "ФИО, год или место" }).fill("Тестовый");
+  await page.getByRole("button", { name: "Найти" }).click();
+  const link = page.getByRole("link", { name: "Тестовый Пётр" });
+  await expect(link).toHaveAttribute("href", `/discover/person/${archiveRouteId}/same`);
+  await link.click();
+  await expect(page.locator(".public-person-card")).toContainText(person.name);
+  await page.goto("/discover/person/legacy-primary/same");
+  await expect(page).toHaveURL(new RegExp(`/discover/person/${archiveRouteId}/same$`));
+  await expect(page.locator(".public-person-card")).toContainText(person.name);
+});
+
 test("a published card with punctuation and Unicode in its ID opens from search", async ({ page }) => {
   const personId = "family:человек.1";
   const segment = encodeURIComponent(personId);

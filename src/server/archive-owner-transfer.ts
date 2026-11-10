@@ -45,9 +45,12 @@ async function pending(db: StoreDatabase, lock = false) {
 
 /** The account-directory RLS policy allows an account to see its own owner row
  * across archives. Use a transaction-local identity only for this lookup, then
- * restore the request context before doing any other work. The unique owner
- * index remains the final concurrent-transfer guard. */
-async function ownsAnyArchive(db: StoreDatabase, accountId: string) {
+ * restore the request context before doing any other work. The owner trigger
+ * serializes final ownership writes and rechecks current platform grants. */
+async function reachesOwnershipLimit(db: StoreDatabase, accountId: string) {
+  const staff = await db.prepare("", `SELECT 1 FROM platform_admins WHERE account_id=?
+    UNION ALL SELECT 1 FROM platform_researchers WHERE account_id=? LIMIT 1`).get(accountId, accountId);
+  if (staff) return false;
   const previous = await db
     .prepare("", "SELECT current_setting('drevo.account_id', true) AS id")
     .get();
@@ -98,7 +101,7 @@ async function assertCanOwn(
     .get(targetId);
   if (!target)
     throw new ConflictError("Получатель больше не участвует в этом древе");
-  if (await ownsAnyArchive(db, targetId))
+  if (await reachesOwnershipLimit(db, targetId))
     throw new ConflictError("Получатель уже владеет другим древом");
   if (!target.full_access) {
     const error = await basicCapacityError(db, currentOwnerId);
@@ -169,7 +172,7 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
         const candidates = [];
         let capacityError: string | null | undefined;
         for (const row of rows) {
-          const owns = await ownsAnyArchive(db, String(row.id));
+          const owns = await reachesOwnershipLimit(db, String(row.id));
           if (!owns && row.tier_present && !row.full_access && capacityError === undefined)
             capacityError = await basicCapacityError(db, actor.id);
           const eligible = !owns && row.tier_present === true &&

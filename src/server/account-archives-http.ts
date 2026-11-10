@@ -75,6 +75,11 @@ export function accountArchivesHttp(
           }
           if (!Number.isFinite(sessionExpiresAt) || sessionExpiresAt <= Date.now())
             throw new AccountSessionExpired("Сессия завершена. Войдите снова");
+          // Hold the actual global grant through creation, including a revoke
+          // racing the request. Local tree roles and a paid tier do not grant it.
+          const admin = await client.query("SELECT account_id FROM platform_admins WHERE account_id=$1 FOR SHARE NOWAIT", [accountId]);
+          const researcher = await client.query("SELECT account_id FROM platform_researchers WHERE account_id=$1 FOR SHARE NOWAIT", [accountId]);
+          const additional = !!(admin.rowCount || researcher.rowCount);
           await client.query("SELECT set_config('drevo.account_id',$1,true)", [
             accountId,
           ]);
@@ -82,7 +87,7 @@ export function accountArchivesHttp(
             "SELECT 1 FROM archive_owners WHERE user_id=$1",
             [accountId],
           );
-          if (owned.rowCount) return null;
+          if (owned.rowCount && !additional) return null;
           const id = randomUUID();
           await client.query("SELECT set_config('drevo.archive_id',$1,true)", [
             id,
@@ -93,6 +98,7 @@ export function accountArchivesHttp(
             id,
             "Моё древо",
             ARCHIVE_SCHEMA_VERSION,
+            { additional },
           );
           return id;
         });
@@ -104,6 +110,8 @@ export function accountArchivesHttp(
           return send(401, { error: error.message });
         if (error instanceof AccountSessionBusy)
           return send(409, { error: error.message });
+        if ((error as { code?: string }).code === "55P03")
+          return send(409, { error: "Права заняты другим действием. Повторите создание древа" });
         console.error("account_archive_create_failed", error);
         return send(500, { error: "Не удалось создать древо" });
       }

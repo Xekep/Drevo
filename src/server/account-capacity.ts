@@ -57,7 +57,7 @@ export async function accountCapacity(db: StoreDatabase, accountId: string) {
   };
 }
 
-/** Count-only platform view of one account's owned archive. The caller must
+/** Count-only platform view of all of an account's owned archives. The caller must
  * hold the platform grant and target account lock on this same PG client. */
 export async function platformOwnedArchiveCapacity(client: pg.PoolClient, accountId: string,
   beforeOwnerLock?: () => Promise<void>) {
@@ -83,33 +83,34 @@ export async function platformOwnedArchiveCapacity(client: pg.PoolClient, accoun
       `SELECT archive_id FROM archive_owners WHERE user_id=$1
        ORDER BY archive_id COLLATE "C"`, [accountId]);
     if (!owned.rowCount) return { owned: false as const, people: null, mediaBytes: null };
-    // The unique owner index guarantees at most one archive. The only scope
-    // switch comes from the locked owner row, never a client archive id.
-    if (owned.rowCount !== 1) throw new Error("Owner archive uniqueness is missing");
-    const archiveId = owned.rows[0].archive_id;
-    await beforeOwnerLock?.();
-    await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
-    const lockedOwner = await client.query(
-      `SELECT 1 FROM archive_owners WHERE archive_id=$1 AND user_id=$2
-       FOR SHARE NOWAIT`, [archiveId, accountId]);
-    if (!lockedOwner.rowCount) throw new PlatformAccessBusy(
-      "Владелец древа изменился. Повторите проверку расхода");
-    await client.query("SET LOCAL statement_timeout='3s'");
-    const usage = await client.query<{ people: string; media_bytes: string; unindexed: boolean }>(
-      `WITH referenced AS (${postgresMediaReferencesSql}) SELECT
-         (SELECT count(*)::text FROM people) AS people,
-         (COALESCE((SELECT sum(file_size) FROM documents),0)
-         + COALESCE((SELECT sum(m.size_bytes) FROM media_originals m
-           WHERE EXISTS (SELECT 1 FROM referenced r WHERE r.url=m.url)
-              OR EXISTS (SELECT 1 FROM media_upload_grants g
-                WHERE g.archive_id=m.archive_id AND g.url=m.url AND g.expires_ms>$1)),0)
-         + COALESCE((SELECT sum((f->>'size')::bigint)
-           FROM person_comments c,jsonb_array_elements(c.attachments) f),0))::text AS media_bytes,
-         EXISTS (SELECT 1 FROM referenced r WHERE r.url LIKE '/media/%'
-           AND NOT EXISTS (SELECT 1 FROM media_originals m WHERE m.url=r.url)) AS unindexed`,
-      [Date.now()]);
-    return { owned: true as const, people: Number(usage.rows[0].people),
-      mediaBytes: usage.rows[0].unindexed ? null : Number(usage.rows[0].media_bytes) };
+    let people = 0, mediaBytes = 0, unindexed = false;
+    for (const { archive_id: archiveId } of owned.rows) {
+      await beforeOwnerLock?.();
+      await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
+      const lockedOwner = await client.query(
+        `SELECT 1 FROM archive_owners WHERE archive_id=$1 AND user_id=$2
+         FOR SHARE NOWAIT`, [archiveId, accountId]);
+      if (!lockedOwner.rowCount) throw new PlatformAccessBusy(
+        "Владелец древа изменился. Повторите проверку расхода");
+      await client.query("SET LOCAL statement_timeout='3s'");
+      const usage = await client.query<{ people: string; media_bytes: string; unindexed: boolean }>(
+        `WITH referenced AS (${postgresMediaReferencesSql}) SELECT
+           (SELECT count(*)::text FROM people) AS people,
+           (COALESCE((SELECT sum(file_size) FROM documents),0)
+           + COALESCE((SELECT sum(m.size_bytes) FROM media_originals m
+             WHERE EXISTS (SELECT 1 FROM referenced r WHERE r.url=m.url)
+                OR EXISTS (SELECT 1 FROM media_upload_grants g
+                  WHERE g.archive_id=m.archive_id AND g.url=m.url AND g.expires_ms>$1)),0)
+           + COALESCE((SELECT sum((f->>'size')::bigint)
+             FROM person_comments c,jsonb_array_elements(c.attachments) f),0))::text AS media_bytes,
+           EXISTS (SELECT 1 FROM referenced r WHERE r.url LIKE '/media/%'
+             AND NOT EXISTS (SELECT 1 FROM media_originals m WHERE m.url=r.url)) AS unindexed`,
+        [Date.now()]);
+      people += Number(usage.rows[0].people);
+      mediaBytes += Number(usage.rows[0].media_bytes);
+      unindexed ||= usage.rows[0].unindexed;
+    }
+    return { owned: true as const, people, mediaBytes: unindexed ? null : mediaBytes };
   } finally {
     // A failed SQL statement aborts the transaction; its rollback restores
     // both LOCAL scopes. A live transaction must restore them explicitly.

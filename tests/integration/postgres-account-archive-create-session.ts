@@ -7,6 +7,7 @@ import { createAuth } from "../../src/server/auth.ts";
 import { newSessionToken, sessionTokenHash } from "../../src/server/session-token.ts";
 import type { StoreDatabase } from "../../src/server/store-database.ts";
 import { userStore } from "../../src/server/users.ts";
+import { platformOwnedArchiveCapacity } from "../../src/server/account-capacity.ts";
 
 export async function verifyAccountArchiveCreateSessionRevocation(db: StoreDatabase, client: Client) {
   const previousContext = (await client.query<{
@@ -156,6 +157,33 @@ export async function verifyAccountArchiveCreateSessionRevocation(db: StoreDatab
       .rows[0]?.archive_id, archiveId);
     assert.equal((await create(secondActiveToken)).status, 409,
       "the active session cannot create a second owned archive");
+    await client.query("INSERT INTO platform_researchers(account_id) VALUES($1)", [accountId]);
+    // activeToken was deliberately logged out above; concurrent tabs share the
+    // remaining valid session. Preserve the earlier 401 assertion for the revoke.
+    const additional = await Promise.all([create(secondActiveToken), create(secondActiveToken)]);
+    assert.deepEqual(additional.map(response => response.status), [201, 201],
+      "a current global researcher can explicitly create several trees concurrently");
+    const extraIds = await Promise.all(additional.map(async response => (await response.json()).archiveId));
+    assert.equal(new Set(extraIds).size, 2);
+    for (const archiveId of extraIds) {
+      await client.query("SELECT set_config('drevo.archive_id',$1,false)", [archiveId]);
+      await client.query("INSERT INTO people(id,data) VALUES('multi-tree-person',$1::jsonb)", [JSON.stringify({
+        id: "multi-tree-person", surname: "Тестов", name: "Тест", patronymic: "", sex: "u",
+        birth: "", birthPlace: "", parents: [], spouses: [], generation: 1, column: 0, sources: [],
+      })]);
+    }
+    await client.query("SELECT set_config('drevo.archive_id',$1,false)", [previousContext.archive_id || ""]);
+    const aggregate = await db.postgresTransaction!(async tx => {
+      await tx.query("SELECT id FROM accounts WHERE id=$1 FOR SHARE NOWAIT", [accountId]);
+      return await platformOwnedArchiveCapacity(tx, accountId);
+    });
+    assert.deepEqual(aggregate, { owned: true, people: 2, mediaBytes: 0 },
+      "platform usage sums every owned archive without mixing their scopes");
+    await client.query("SELECT set_config('drevo.account_id',$1,false)", [accountId]);
+    assert.equal((await client.query("SELECT archive_id FROM archive_owners WHERE user_id=$1", [accountId])).rowCount, 3);
+    await client.query("DELETE FROM platform_researchers WHERE account_id=$1", [accountId]);
+    assert.equal((await create(secondActiveToken)).status, 409,
+      "revoking the global role blocks further creation without deleting existing trees");
     const deleting = create(deletingToken);
     await Promise.race([
       deletionAuthReached,

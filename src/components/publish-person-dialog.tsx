@@ -6,6 +6,7 @@ import { EditorDialog } from "./editor-dialog";
 
 type Status = {
   archiveId?: string | null;
+  archiveRouteId?: string | null;
   published: boolean;
   publishable: boolean;
   fields: PublicationFields;
@@ -119,7 +120,7 @@ export function PublishPersonDialog({
     }
   }
   const link = new URL(
-    `/discover/person/${status?.archiveId ? `${encodeURIComponent(status.archiveId)}/` : ""}${encodeURIComponent(person.id)}`,
+    `/discover/person/${status?.archiveId ? `${encodeURIComponent(status.archiveRouteId || status.archiveId)}/` : ""}${encodeURIComponent(person.id)}`,
     location.origin,
   ).href;
   const possibleFields = [

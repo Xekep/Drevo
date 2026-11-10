@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { discoveryArchiveId } from "./discovery-archive-id.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { finished } from "node:stream/promises";
 import type { openArchive } from "./database.ts";
@@ -36,6 +37,7 @@ const projection = `SELECT m.id,m.left_archive_id,m.left_person_id,m.right_archi
 function person(row: Row, side: "left" | "right") {
   return {
     archiveId: String(row[`${side}_archive_id`]),
+    archiveRouteId: discoveryArchiveId(String(row[`${side}_archive_id`])),
     id: String(row[`${side}_person_id`]),
     ...(row[`${side}_name`] ? { name: String(row[`${side}_name`]) } : {}),
     ...(row[`${side}_birth_surname`] ? { birthSurname: String(row[`${side}_birth_surname`]) } : {}),
@@ -704,6 +706,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         FROM discovery_people WHERE archive_id=?`;
       const ownPerson = (row: Row) => ({
         archiveId: String(row.archive_id), id: String(row.person_id), name: String(row.name),
+        archiveRouteId: discoveryArchiveId(String(row.archive_id)),
         ...(row.birth_surname ? { birthSurname: String(row.birth_surname) } : {}),
         ...(row.birth_year ? { birthYear: String(row.birth_year) } : {}),
         ...(row.death_year ? { deathYear: String(row.death_year) } : {}),
