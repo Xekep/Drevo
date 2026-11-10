@@ -9025,7 +9025,7 @@ try {
       FROM discovery_match_confirmation_fields WHERE match_id=? ORDER BY side,field_name`)
       .all(matchBody.match.id);
     const expectedConfirmedFields = (["left","right"] as const).flatMap((side) =>
-      Object.keys(freshReview[side]).filter((field) => field !== "archiveId" && field !== "id")
+      Object.keys(freshReview[side]).filter((field) => !["archiveId", "archiveRouteId", "id"].includes(field))
         .sort().map((field) => [side,field]));
     assert.deepEqual(confirmedFields.map((field) => [field.side,field.field_name]),
       expectedConfirmedFields,
