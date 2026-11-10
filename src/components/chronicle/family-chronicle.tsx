@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
+import { createPortal } from "react-dom";
+import { ChevronUp, Pause, Play } from "lucide-react";
 import { fullName, years, type ArchivePhoto, type Person } from "../../domain";
 import { chroniclePhotos } from "../../domain/family-chronicle";
 import { photoCaption } from "../../domain/photo-metadata";
@@ -14,10 +16,12 @@ import { useChroniclePlayback } from "./use-chronicle-playback";
 function ChroniclePlayer({
   photos,
   person,
+  controlsHost,
   onPerson,
 }: {
   photos: ArchivePhoto[];
   person: Person;
+  controlsHost: HTMLElement | null;
   onPerson: (id: string) => void;
 }) {
   const [index, setIndex] = useState(0),
@@ -27,7 +31,8 @@ function ChroniclePlayer({
     () => matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
   const [playing, setPlaying] = useState(!reduced);
-  const [effect, setEffect] = useState<"glass" | "fade">("glass");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsId = useId();
   const [fallback, setFallback] = useState(false),
     [visible, setVisible] = useState(!document.hidden);
   const navigate = useCallback(
@@ -35,6 +40,7 @@ function ChroniclePlayer({
       if (busy || target === index || target < 0 || target >= photos.length)
         return;
       setBusy(true);
+      setDetailsOpen(false);
       setIndex(target);
     },
     [busy, index, photos.length],
@@ -95,7 +101,6 @@ function ChroniclePlayer({
     <div className="chronicle-player">
       <ChronicleStage
         photo={photos[index]}
-        effect={fallback || !visible ? "fade" : effect}
         reduced={reduced || !visible}
         onBusy={setBusy}
         onShown={setShownId}
@@ -124,36 +129,26 @@ function ChroniclePlayer({
         </button>
         <button
           type="button"
-          aria-label={playing ? "Приостановить хронику" : "Продолжить хронику"}
-          disabled={photos.length < 2}
-          onClick={() => setPlaying((value) => !value)}
-        >
-          {playing ? "Пауза" : "Продолжить"}
-        </button>
-        <button
-          type="button"
           aria-label="Следующий снимок"
           disabled={busy || photos.length < 2}
           onClick={next}
         >
           →
         </button>
-        <label>
-          <span className="chronicle-sr-only">Переход</span>
-          <select
-            aria-label="Переход хроники"
-            value={reduced || fallback ? "fade" : effect}
-            disabled={busy || reduced || fallback}
-            onChange={(event) =>
-              setEffect(event.target.value as "glass" | "fade")
-            }
-          >
-            <option value="glass">Жидкое стекло</option>
-            <option value="fade">Растворение</option>
-          </select>
-        </label>
       </div>
-      <div className="chronicle-caption" aria-live={playing ? "off" : "polite"}>
+      {controlsHost && createPortal(
+        <button type="button" className="chronicle-playback-toggle"
+          aria-label={playing ? "Приостановить хронику" : "Продолжить хронику"}
+          disabled={photos.length < 2} onClick={() => {
+            setDetailsOpen(false);
+            setPlaying(value => !value);
+          }}>
+          {playing ? <Pause size={20} aria-hidden="true" /> : <Play size={20} aria-hidden="true" />}
+        </button>, controlsHost,
+      )}
+      <div className={`chronicle-caption${detailsOpen ? " is-expanded" : ""}`}>
+        <div id={detailsId} className="chronicle-caption-drawer" aria-hidden={!detailsOpen} inert={!detailsOpen}>
+          <section className="chronicle-caption-content" aria-label="Сведения о фотографии">
         <button
           type="button"
           className="chronicle-person"
@@ -174,6 +169,16 @@ function ChroniclePlayer({
             Включён облегчённый переход
           </small>
         )}
+          </section>
+        </div>
+        <button type="button" className="chronicle-caption-summary" aria-expanded={detailsOpen}
+          aria-controls={detailsId} disabled={busy} onClick={() => {
+            setPlaying(false);
+            setDetailsOpen(value => !value);
+          }}>
+          <span>{[shown.year || shown.takenAt?.match(/\d{4}/)?.[0] || "Дата не указана", shown.place?.trim()].filter(Boolean).join(" · ")}</span>
+          <ChevronUp size={18} aria-hidden="true" />
+        </button>
       </div>
       <ChroniclePhotoNavigation
         photos={photos}
@@ -182,10 +187,6 @@ function ChroniclePlayer({
         busy={busy}
         onSelect={navigate}
       />
-      <span className="chronicle-help">
-        <span>→ — дальше · ← — назад</span>
-        <span>Листайте фотографии свайпом</span>
-      </span>
     </div>
   );
 }
@@ -193,9 +194,11 @@ function ChroniclePlayer({
 export default function FamilyChronicle({
   person,
   loadGallery,
+  controlsHost,
   onPerson,
 }: {
   person: Person;
+  controlsHost: HTMLElement | null;
   loadGallery: (query: GalleryQuery) => Promise<GalleryPage>;
   onPerson: (id: string) => void;
 }) {
@@ -274,6 +277,6 @@ export default function FamilyChronicle({
       </div>
     );
   return (
-    <ChroniclePlayer photos={photos} person={person} onPerson={onPerson} />
+    <ChroniclePlayer photos={photos} person={person} controlsHost={controlsHost} onPerson={onPerson} />
   );
 }

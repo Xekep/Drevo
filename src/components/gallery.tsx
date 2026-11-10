@@ -29,6 +29,7 @@ export function Gallery({
   personFilter,
   yearFilter,
   onSelectAlbum,
+  onChronicle,
   loadPage,
   dataGeneration,
 }: {
@@ -42,6 +43,7 @@ export function Gallery({
   yearFilter?: string | null;
   loadPage?: (query: GalleryQuery) => Promise<GalleryPage>;
   dataGeneration?: number;
+  onChronicle?: (personId: string) => void;
   onSelectAlbum: (
     personId: string | null,
     year: string | null,
@@ -323,6 +325,10 @@ export function Gallery({
           </p>
         </div>
         <div className="gallery-heading-actions">
+          {filterPerson && !yearFilter && activeMode === "all" && onChronicle &&
+            (loadPage ? page?.total || 0 : available.length) > 1 && (
+            <button type="button" onClick={() => onChronicle(filterPerson.id)}>Хроника</button>
+          )}
           <div
             className="gallery-modes segmented"
             aria-label="Группировка фотографий"

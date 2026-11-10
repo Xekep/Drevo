@@ -67,6 +67,7 @@ type Props = {
   onReveal: (ids: string[], groupId: string) => void;
   onPhoto: (id: string, photoIds?: string[]) => void;
   onAddPhoto: () => void;
+  onChronicle?: (personId: string) => void;
   onDropPhoto: (file: File) => void;
   documentPersonFilter: string | null;
   documentId: string | null;
@@ -179,6 +180,7 @@ export function ArchiveSection(props: Props) {
         personFilter={props.personFilter}
         yearFilter={props.yearFilter}
         onSelectAlbum={props.onSelectPhotoAlbum}
+        onChronicle={props.onChronicle}
       />
     );
   else if (props.view === "documents")
