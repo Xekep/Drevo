@@ -9062,9 +9062,9 @@ try {
         : Date.parse(String(confirmationAcceptedAudit.responded_at)),
     "confirmation metadata identifies the actual accepted decision");
     assert.deepEqual(Object.keys(confirmedMatch.confirmation.left).sort(),
-      Object.keys(freshReview.left).filter((field) => field !== "archiveId" && field !== "id").sort());
+      Object.keys(freshReview.left).filter((field) => !["archiveId", "archiveRouteId", "id"].includes(field)).sort());
     assert.deepEqual(Object.keys(confirmedMatch.confirmation.right).sort(),
-      Object.keys(freshReview.right).filter((field) => field !== "archiveId" && field !== "id").sort());
+      Object.keys(freshReview.right).filter((field) => !["archiveId", "archiveRouteId", "id"].includes(field)).sort());
     const beforeConfirmedEdit = await confirmationOtherArchive.read();
     const editedConfirmedFamily = structuredClone(beforeConfirmedEdit.family);
     editedConfirmedFamily.people[0].name = "Исправление после подтверждения";
