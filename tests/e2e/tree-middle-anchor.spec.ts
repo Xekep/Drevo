@@ -151,10 +151,15 @@ for (const width of [320, 360, 390, 768, 1024, 1440, 1920]) {
     expect(rect.x).toBeGreaterThanOrEqual(0);
     expect(rect.x + rect.width).toBeLessThanOrEqual(width);
     const controls = await canvas.locator(".tree-mode-bar button, .workspace-actions button").evaluateAll((elements) =>
-      elements.filter((el) => el.getClientRects().length).map((el) => {
-        const r = el.getBoundingClientRect();
-        return { x: r.x, y: r.y, width: r.width, height: r.height };
-      }),
+      elements
+        // Closed <details> descendants can retain client rects even though
+        // native disclosure hides them. Only interactive visible controls
+        // should be checked for collisions with the anchor notice.
+        .filter((el) => el.getClientRects().length && !el.closest("details:not([open])"))
+        .map((el) => {
+          const r = el.getBoundingClientRect();
+          return { x: r.x, y: r.y, width: r.width, height: r.height };
+        }),
     );
     for (const control of controls)
       expect(rect.x + rect.width <= control.x || control.x + control.width <= rect.x ||
