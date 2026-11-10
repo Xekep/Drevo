@@ -48,13 +48,12 @@ export type PersonEvent = {
     | "other";
   title?: string;
   date?: string;
-  /** Исходная дата события по юлианскому календарю. date хранит новый стиль. */
-  dateJulian?: string;
-  /** Original Anno Mundi date, Russian September-year convention. */
-  dateByzantine?: string;
   endDate?: string;
-  endDateByzantine?: string;
+  /** Original Julian dates; date/endDate hold Gregorian equivalents. */
+  dateJulian?: string;
+  dateByzantine?: string;
   endDateJulian?: string;
+  endDateByzantine?: string;
   /** Исходная приблизительная дата; не превращается в точный год. */
   dateText?: string;
   /** Citations for one normalized event date, not a range or approximate phrase. */
@@ -157,6 +156,7 @@ export type Family = {
 export type UnionMilestone = {
   /** Calendar date, which may be only a year or a year and month. */
   date?: string;
+  dateJulian?: string;
   /** Original approximate/qualified wording, retained without inventing a precise date. */
   dateText?: string;
   place?: string;

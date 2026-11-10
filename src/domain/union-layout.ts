@@ -20,7 +20,7 @@ import { repairFamilyRoutes } from "./family-route-repair.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
 import { shortenFamilyRows } from "./family-row-shortening.ts";
-import { finishColdFamilyLayout, preferFamilyLayout, refineFinalCoupleOrder } from "./family-layout-candidates.ts";
+import { finishColdFamilyLayout, preferColdFamilyLayout, refineFinalCoupleOrder } from "./family-layout-candidates.ts";
 import { canUseFamilyLayoutHistory } from "./family-layout-history.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
@@ -1241,34 +1241,52 @@ export async function unionGeometry(
     best = repairFamilyRoutes(best, size, finalScore).geometry;
     return bundleFamilyBranches(best);
   }
-  best = finishColdFamilyLayout(best, people, links, size, finalScore);
-  // Preserve every existing probe. A small cold portfolio gets at most two
-  // independent alternatives; a failed experiment can never remove the baseline.
+  const finish = (geometry: TreeGeometry) => {
+    let result = finishColdFamilyLayout(geometry, people, links, size, finalScore);
+    result = optimizeJointFamilyOrder(result, people, links, size, finalScore);
+    result = refineFinalCoupleOrder(result, people, links, size, finalScore);
+    result = optimizeFinalFamilyBranches(result, people, links, size, finalScore);
+    result = refineFinalCoupleOrder(result, people, links, size, finalScore);
+    result = shortenFamilyRows(result, people, links, size, finalScore);
+    return bundleFamilyBranches(result);
+  };
+  best = finish(best);
+  const baseline = best;
+  // Model-ordered scores do not predict independent placements. First solve
+  // the bounded free-order portfolio; only two promising results receive the
+  // expensive family passes. Final acceptance always compares complete scenes.
   if (people.length > MAX_INCREMENTAL_LAYOUT_PEOPLE && people.length <= 300 && geometryQuality(best).crossings) {
     const freeLayout = (graph: ElkNode) => layout({ ...graph, layoutOptions: {
       ...graph.layoutOptions, "elk.layered.considerModelOrder.strategy": "NONE",
     } });
-    for (const { seed } of placementCandidates.slice(0, 2)) {
+    const independent: { geometry: TreeGeometry; cost: number }[] = [];
+    for (const { seed } of placementCandidates) {
       try {
         const placed = await geometryForSeed(people, freeLayout, reverse, links, seed, size,
           false, undefined, undefined, undefined, "balanced", "NETWORK_SIMPLEX");
-        const refined = refineColdPlacement(placed, people, links, size, finalScore);
-        const candidate = finishColdFamilyLayout(refined, people, links, size, finalScore);
-        if (preferFamilyLayout(candidate, best, size, finalScore)) {
+        const quality = finalScore(placed);
+        independent.push({ geometry: placed, cost: quality.length +
+          size.width * (quality.crossings + quality.contacts) });
+      } catch {
+        // An independent solver proposal cannot invalidate the accepted scene.
+      }
+    }
+    independent.sort((a, b) => a.cost - b.cost);
+    for (const { geometry } of independent.slice(0, 2)) {
+      try {
+        const refined = refineColdPlacement(geometry, people, links, size, finalScore);
+        const candidate = finish(refined);
+        if (preferColdFamilyLayout(candidate, best, size, finalScore) &&
+          preferColdFamilyLayout(candidate, baseline, size, finalScore)) {
           best = candidate;
-          break;
+          if (!geometryQuality(best).crossings) break;
         }
       } catch {
         // An independent solver proposal cannot invalidate the accepted scene.
       }
     }
   }
-  best = optimizeJointFamilyOrder(best, people, links, size, finalScore);
-  best = refineFinalCoupleOrder(best, people, links, size, finalScore);
-  best = optimizeFinalFamilyBranches(best, people, links, size, finalScore);
-  best = refineFinalCoupleOrder(best, people, links, size, finalScore);
-  best = shortenFamilyRows(best, people, links, size, finalScore);
   // Final moves can reroute one child away from its siblings. Share corridors
   // after every placement pass, while preserving the accepted card positions.
-  return bundleFamilyBranches(best);
+  return best;
 }

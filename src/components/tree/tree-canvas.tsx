@@ -2367,12 +2367,26 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         />
         )}
         {!activeFanAnchor && mode === "timeline" && (
-          <HorizontalTimeline
-            people={timelinePeople}
-            selected={selected}
-            focus={effectivePersonFocus}
-            onChoose={actions.choose}
-          />
+          <>
+            <HorizontalTimeline
+              people={timelinePeople}
+              selected={selected}
+              focus={effectivePersonFocus}
+              onChoose={actions.choose}
+            />
+            {narrow && !screen.fullscreen && (
+              <div className="timeline-fullscreen-tools flow-fullscreen-tools">
+                <button
+                  type="button"
+                  onClick={screen.enter}
+                  aria-label="Развернуть на весь экран"
+                  title="На весь экран · выход двойным тапом по фону или кнопкой Назад"
+                >
+                  <Maximize2 size={20} />
+                </button>
+              </div>
+            )}
+          </>
         )}
         {narrow && (!generationAnchor || activeFanAnchor) && (savingGenerationPreferences || anchorNotice) && !problem && (
           <div className="tree-notice tree-anchor-notice-mobile" role="status">

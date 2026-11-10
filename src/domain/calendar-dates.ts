@@ -1,41 +1,22 @@
 import { normalizeDateInput, validDate } from "./dates.ts";
 
-/**
- * Russia's last Julian civil date was 31 January 1918; the next day
- * was labelled 14 February in the new Gregorian calendar.
- * Partial 1918 dates keep the option only when January is possible.
- * Parse with Julian rules so dates like 29.02.1900 remain eligible.
- * This is a form affordance, not a global prohibition on foreign archival
- * records that explicitly use Julian dates after the Russian transition.
- */
+/** Suggest the historical Russian civil calendar; never select it automatically. */
 export function canUseOldStyleDate(text: string): boolean {
   if (!text.trim()) return false;
   try {
     const date = normalizeDateInput(text, "julian");
-    return date.length === 4
-      ? date <= "1918"
-      : date.length === 7
-        ? date <= "1918-01"
-        : date <= "1918-01-31";
-  } catch {
-    return false;
-  }
+    return date.length === 4 ? date <= "1918"
+      : date.length === 7 ? date <= "1918-01" : date <= "1918-01-31";
+  } catch { return false; }
 }
 
-/**
- * Byzantine Anno Mundi, Russian September-year convention (from 1492).
- * This is a different YEAR ERA, not a synonym for Julian calendar.
- * A year without a month cannot be resolved to a single Common Era year.
- */
+/** Explicit Russian September-year era; a year without a month is ambiguous. */
 export function canUseByzantineDate(text: string): boolean {
-  if (!text.trim()) return false;
   try {
     const source = normalizeDateInput(text, "julian");
     const year = Number(source.slice(0, 4));
     return year >= 7000 && year <= 7208;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 export function normalizeByzantineDate(text: string) {
@@ -44,28 +25,39 @@ export function normalizeByzantineDate(text: string) {
     throw new Error("Укажите дату византийской эры (7000–7208 год от Сотворения мира).");
   if (source.length === 4)
     throw new Error("Укажите месяц: сентябрьский год от Сотворения мира соответствует двум годам нашей эры.");
-  const year = Number(source.slice(0, 4));
   const month = Number(source.slice(5, 7));
-  const ce = year - (month >= 9 ? 5509 : 5508);
-  const julian = `${String(ce).padStart(4, "0")}${source.slice(4)}`;
-  if (!validDate(julian, "julian"))
-    throw new Error("Проверьте исходную дату по византийскому летосчислению.");
+  const year = Number(source.slice(0, 4)) - (month >= 9 ? 5509 : 5508);
+  const julian = `${String(year).padStart(4, "0")}${source.slice(4)}`;
+  if (!validDate(julian, "julian")) throw new Error("Проверьте исходную дату по византийскому летосчислению.");
   return { date: julianToGregorian(julian), julian, byzantine: source };
 }
 
-export function validByzantinePair(
-  date: string | undefined,
-  julian: string | undefined,
-  byzantine: unknown,
-): boolean {
+export function validByzantinePair(date: string | undefined, julian: string | undefined, byzantine: unknown): boolean {
   if (byzantine === undefined) return true;
   if (typeof byzantine !== "string" || !julian) return false;
   try {
     const value = normalizeByzantineDate(byzantine);
     return value.date === date && value.julian === julian;
-  } catch {
-    return false;
+  } catch { return false; }
+}
+
+export function normalizeCalendarDate(date?: string, dateJulian?: string, dateByzantine?: string) {
+  if (dateByzantine !== undefined) {
+    const result = normalizeByzantineDate(dateByzantine);
+    return { date: result.date, dateJulian: result.julian, dateByzantine: result.byzantine };
   }
+  const result = normalizeLifeDate(dateJulian ?? date ?? "", dateJulian !== undefined);
+  return { date: result.date || undefined, dateJulian: result.julian };
+}
+
+export function normalizeEventCalendarDates(event: {
+  date?: string; dateJulian?: string; dateByzantine?: string;
+  endDate?: string; endDateJulian?: string; endDateByzantine?: string;
+}) {
+  const start = normalizeCalendarDate(event.date, event.dateJulian, event.dateByzantine);
+  const end = normalizeCalendarDate(event.endDate, event.endDateJulian, event.endDateByzantine);
+  return { ...start, endDate: end.date, endDateJulian: end.dateJulian,
+    ...(end.dateByzantine !== undefined ? { endDateByzantine: end.dateByzantine } : {}) };
 }
 
 /** Civil Julian calendar, not an astronomical Julian date. No timezone involved. */

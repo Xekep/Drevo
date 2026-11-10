@@ -7,9 +7,6 @@ import { repositorySummary } from "../domain/person-sources.ts";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
 import { claimableEventDate, eventHasEvidence, retypeEvent, EVENT_NAMES } from "../domain/person-events";
 import { dateInputLabel, dateLabel, normalizeDateInput, safeUrl } from "../domain/dates";
-import { canUseOldStyleDate, canUseByzantineDate, normalizeByzantineDate, julianInputLabel, normalizeLifeDate } from "../domain/calendar-dates.ts";
-import { ByzantineDateControl } from "./byzantine-date-control.tsx";
-import { CalendarStyleControl } from "./calendar-style-control.tsx";
 import { PersonDetailDialog } from "./person-detail-dialog";
 import { validateEvents } from "../domain/person-events";
 import { validateEventEvidence } from "../domain/validation";
@@ -17,6 +14,8 @@ import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context
 import { archiveDocumentPath } from "../domain/archive-routes.ts";
 import { DocumentSourcePicker } from "./document-source-picker.tsx";
 import { CitationSourcesEditor } from "./union-sources-editor.tsx";
+import { HistoricalDateInput } from "./historical-date-input";
+import { normalizeEventCalendarDates, julianInputLabel } from "../domain/calendar-dates";
 const hasAssessment = (event: PersonEvent) => !!(event.dateClaim?.confidence ||
   event.placeClaim?.confidence || event.alternatives?.some((item) => item.confidence));
 function EventAlternatives({ event, onChange, isAdmin, canAssess, savedIds }: {
@@ -100,21 +99,8 @@ export function EventsEditor({
   };
   const apply = () => {
     if (!editing) return;
-    const enteredDate = editing.dateByzantine || editing.dateJulian || editing.date || "";
-    const enteredEndDate = editing.endDateByzantine || editing.endDateJulian || editing.endDate || "";
-    const date = editing.dateByzantine
-      ? normalizeByzantineDate(enteredDate)
-      : normalizeLifeDate(enteredDate, !!editing.dateJulian);
-    const endDate = editing.endDateByzantine
-      ? normalizeByzantineDate(enteredEndDate)
-      : normalizeLifeDate(enteredEndDate, !!editing.endDateJulian);
     const normalized = { ...editing,
-      date: date.date || undefined,
-      dateJulian: date.julian,
-      dateByzantine: "byzantine" in date && typeof date.byzantine === "string" ? date.byzantine : undefined,
-      endDate: endDate.date || undefined,
-      endDateJulian: endDate.julian,
-      endDateByzantine: "byzantine" in endDate && typeof endDate.byzantine === "string" ? endDate.byzantine : undefined,
+      ...normalizeEventCalendarDates(editing),
       alternatives: editing.alternatives?.map((item) => ({ ...item,
         value: item.field === "date" ? normalizeDateInput(item.value) : item.value.trim() })),
     };
@@ -129,40 +115,6 @@ export function EventsEditor({
     onChange(
       events.map((event) => (event.id === id ? { ...event, ...patch } : event)),
     );
-  const dateText = (event: PersonEvent, field: "date" | "endDate") => {
-    const julianKey = field === "date" ? "dateJulian" : "endDateJulian";
-    const byzantineKey = field === "date" ? "dateByzantine" : "endDateByzantine";
-    return event[byzantineKey] || event[julianKey] || event[field] || "";
-  };
-  const editDate = (event: PersonEvent, field: "date" | "endDate", text: string) => {
-    const julianKey = field === "date" ? "dateJulian" : "endDateJulian";
-    const byzantineKey = field === "date" ? "dateByzantine" : "endDateByzantine";
-    update(event.id, {
-      [field]: text || undefined,
-      [julianKey]: event[julianKey] && !event[byzantineKey] && canUseOldStyleDate(text) ? text : undefined,
-      [byzantineKey]: event[byzantineKey] && canUseByzantineDate(text) ? text : undefined,
-    });
-  };
-  const switchDateStyle = (event: PersonEvent, field: "date" | "endDate", oldStyle: boolean) => {
-    const julianKey = field === "date" ? "dateJulian" : "endDateJulian";
-    const byzantineKey = field === "date" ? "dateByzantine" : "endDateByzantine";
-    const original = dateText(event, field);
-    update(event.id, {
-      [field]: original || undefined,
-      [julianKey]: oldStyle ? original || undefined : undefined,
-      [byzantineKey]: undefined,
-    });
-  };
-  const switchByzantineStyle = (event: PersonEvent, field: "date" | "endDate", enabled: boolean) => {
-    const julianKey = field === "date" ? "dateJulian" : "endDateJulian";
-    const byzantineKey = field === "date" ? "dateByzantine" : "endDateByzantine";
-    const original = dateText(event, field);
-    update(event.id, {
-      [field]: original || undefined,
-      [julianKey]: undefined,
-      [byzantineKey]: enabled ? original || undefined : undefined,
-    });
-  };
   const citedSavedTypes = new Map(savedEvents?.filter(eventHasEvidence)
     .map((event) => [event.id, event.type]));
   const saveTypeFirst = (event: PersonEvent) =>
@@ -262,37 +214,12 @@ export function EventsEditor({
                 />
               </label>
             )}
-            <div className="event-date-field">
-              <label>Дата
-                <input
-                  value={event.dateByzantine ? julianInputLabel(event.dateByzantine) : event.dateJulian ? julianInputLabel(event.dateJulian) : event.date ? dateInputLabel(event.date) : ""}
-                  placeholder="Год или д.м.г"
-                  onChange={(change) => editDate(event, "date", change.target.value)}
-                />
-              </label>
-              <CalendarStyleControl text={dateText(event, "date")}
-                label="Дата события по старому стилю"
-                checked={!!event.dateJulian && !event.dateByzantine}
-                onChange={(checked) => switchDateStyle(event, "date", checked)} />
-              <ByzantineDateControl text={dateText(event, "date")}
-                label="Дата события от Сотворения мира"
-                checked={!!event.dateByzantine}
-                onChange={(checked) => switchByzantineStyle(event, "date", checked)} />
-            </div>
+            <div className="event-date-field"><HistoricalDateInput label="Дата"
+              date={event.date} dateJulian={event.dateJulian} dateByzantine={event.dateByzantine}
+              onChange={(value) => update(event.id, value)} /></div>
             {section === "education" && <div className="event-end-date-field">
-              <label>Окончание учёбы
-                <input value={event.endDateByzantine ? julianInputLabel(event.endDateByzantine) : event.endDateJulian ? julianInputLabel(event.endDateJulian) : event.endDate ? dateInputLabel(event.endDate) : ""}
-                  placeholder="Год или д.м.г"
-                  onChange={(change) => editDate(event, "endDate", change.target.value)} />
-              </label>
-              <CalendarStyleControl text={dateText(event, "endDate")}
-                label="Дата окончания учёбы по старому стилю"
-                checked={!!event.endDateJulian && !event.endDateByzantine}
-                onChange={(checked) => switchDateStyle(event, "endDate", checked)} />
-              <ByzantineDateControl text={dateText(event, "endDate")}
-                label="Дата окончания учёбы от Сотворения мира"
-                checked={!!event.endDateByzantine}
-                onChange={(checked) => switchByzantineStyle(event, "endDate", checked)} />
+              <HistoricalDateInput label="Окончание учёбы" date={event.endDate} dateJulian={event.endDateJulian} dateByzantine={event.endDateByzantine}
+                onChange={(value) => update(event.id, { endDate: value.date, endDateJulian: value.dateJulian, endDateByzantine: value.dateByzantine })} />
             </div>}
             {!saveTypeFirst(event) && event.dateClaim && <details className="event-date-claim">
               <summary>Источники даты события{event.dateClaim?.sources.length
@@ -393,23 +320,9 @@ export function EventsEditor({
                     />
                   </label>
                 )}
-                {section !== "education" && <div className="event-end-date-field">
-                  <label>Конец периода
-                    <input
-                      value={event.endDateByzantine ? julianInputLabel(event.endDateByzantine) : event.endDateJulian ? julianInputLabel(event.endDateJulian) : event.endDate ? dateInputLabel(event.endDate) : ""}
-                      placeholder="Если событие длилось несколько лет"
-                      onChange={(change) => editDate(event, "endDate", change.target.value)}
-                    />
-                  </label>
-                  <CalendarStyleControl text={dateText(event, "endDate")}
-                    label="Дата конца периода по старому стилю"
-                    checked={!!event.endDateJulian && !event.endDateByzantine}
-                    onChange={(checked) => switchDateStyle(event, "endDate", checked)} />
-                  <ByzantineDateControl text={dateText(event, "endDate")}
-                    label="Дата конца периода от Сотворения мира"
-                    checked={!!event.endDateByzantine}
-                    onChange={(checked) => switchByzantineStyle(event, "endDate", checked)} />
-                </div>}
+                {section !== "education" && <HistoricalDateInput label="Конец периода"
+                  date={event.endDate} dateJulian={event.endDateJulian} dateByzantine={event.endDateByzantine}
+                  onChange={(value) => update(event.id, { endDate: value.date, endDateJulian: value.dateJulian, endDateByzantine: value.dateByzantine })} />}
                 <label>
                   Приблизительная дата
                   <input
@@ -613,16 +526,10 @@ export function PersonEvents({
                     `${event.date ? " — " : "До "}${dateLabel(event.endDate)}`}
                 </b>
               )}
-              {event.dateByzantine && (
-                <small className="calendar-original-date">
-                  {julianInputLabel(event.dateByzantine)} от Сотворения мира (сентябрьский год)
-                </small>
-              )}
-              {event.endDateByzantine && (
-                <small className="calendar-original-date">
-                  До {julianInputLabel(event.endDateByzantine)} от Сотворения мира
-                </small>
-              )}
+              {event.dateByzantine && <small>{julianInputLabel(event.dateByzantine)} по византийской эре</small>}
+              {event.dateJulian && <small>{julianInputLabel(event.dateJulian)} по старому стилю</small>}
+              {event.endDateByzantine && <small>{julianInputLabel(event.endDateByzantine)} по византийской эре</small>}
+              {event.endDateJulian && <small>Окончание: {julianInputLabel(event.endDateJulian)} по старому стилю</small>}
               {event.dateText && <p>{event.dateText}</p>}
               {event.place && <p>{event.place}</p>}
               {event.description && (

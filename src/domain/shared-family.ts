@@ -19,6 +19,7 @@ const publicClaim = (claim?: PersonValueClaim): PersonValueClaim | undefined =>
     ...(claim.confidence !== undefined ? { confidence: claim.confidence } : {}) };
 const publicMilestone = (milestone?: UnionMilestone): UnionMilestone | undefined =>
   milestone && { date: milestone.date, dateText: milestone.dateText,
+    ...(milestone.dateJulian !== undefined ? { dateJulian: milestone.dateJulian } : {}),
     place: milestone.place, sources: milestone.sources?.map(publicSource),
     ...(milestone.confidence !== undefined ? { confidence: milestone.confidence } : {}) };
 export type ShareLink = {
@@ -55,11 +56,11 @@ export function sharedFamily(
         sex: p.sex,
         birth: p.birth,
         birthJulian: p.birthJulian,
-        birthByzantine: p.birthByzantine,
+      birthByzantine: p.birthByzantine,
         birthDateClaim: publicClaim(p.birthDateClaim),
         death: p.death,
         deathJulian: p.deathJulian,
-        deathByzantine: p.deathByzantine,
+      deathByzantine: p.deathByzantine,
         deathDateClaim: publicClaim(p.deathDateClaim),
         deceased: p.deceased,
         needsReview: p.needsReview,
@@ -92,11 +93,11 @@ export function sharedFamily(
           type: event.type,
           title: event.title,
           date: event.date,
-          dateJulian: event.dateJulian,
-          dateByzantine: event.dateByzantine,
           endDate: event.endDate,
-          endDateJulian: event.endDateJulian,
-          endDateByzantine: event.endDateByzantine,
+          ...(event.dateJulian !== undefined ? { dateJulian: event.dateJulian } : {}),
+          ...(event.endDateJulian !== undefined ? { endDateJulian: event.endDateJulian } : {}),
+          ...(event.dateByzantine !== undefined ? { dateByzantine: event.dateByzantine } : {}),
+          ...(event.endDateByzantine !== undefined ? { endDateByzantine: event.endDateByzantine } : {}),
           dateText: event.dateText,
           place: event.place,
           location: event.location && { place: event.location.place,

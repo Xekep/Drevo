@@ -1,5 +1,18 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { randomFamily } from "../layout-fixtures";
+
+async function waitForHorizontalScrollToSettle(timeline: Locator) {
+  // During inertia, the rendered year can lag behind the native scroll offset.
+  // Finish the gesture before positioning a fixture year or checking another axis.
+  await expect
+    .poll(async () => {
+      const first = await timeline.evaluate((element) => element.scrollLeft);
+      await timeline.page().waitForTimeout(150);
+      const second = await timeline.evaluate((element) => element.scrollLeft);
+      return Math.abs(second - first);
+    })
+    .toBe(0);
+}
 
 test("chronology hides the tiny distant-tree portraits behind its background", async ({
   page,
@@ -61,11 +74,11 @@ test("хронология переключает десятилетия без 
     .or(page.getByRole("switch", { name: "Древо / Хронология" }))
     .click();
   const year = page.getByLabel("Год в центре хронологии");
-  await expect(year).toHaveText("1940");
+  await expect(year).toHaveText(String(new Date().getFullYear()));
   await page.getByRole("button", { name: "На 10 лет вперёд" }).click();
-  await expect(year).toHaveText("1950");
+  await expect(year).toHaveText(String(new Date().getFullYear() + 10));
   await page.getByRole("button", { name: "На 10 лет назад" }).click();
-  await expect(year).toHaveText("1940");
+  await expect(year).toHaveText(String(new Date().getFullYear()));
 });
 
 test("хронология сохраняет будущий год после открытия и закрытия карточки", async ({
@@ -111,10 +124,15 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
     name: /Горизонтальная хронология/,
   });
   await expect(timeline).toBeVisible();
+  await timeline.evaluate((element) => {
+    const year = Number(document.querySelector(".timeline-center-marker output")?.textContent);
+    element.scrollLeft += (1940 - year) * 12;
+  });
+  await expect(page.getByLabel("Год в центре хронологии")).toHaveText("1940");
   await expect(
     timeline.locator(".timeline-person-row:not(.is-exiting)"),
   ).toHaveCount(1);
-  await expect(timeline.locator(".timeline-era-bar")).toBeVisible();
+  await expect(page.locator(".timeline-era-bar")).toBeVisible();
   await expect(
     timeline.locator(".timeline-undated-label, .timeline-undated-events"),
   ).toHaveCount(0);
@@ -143,6 +161,7 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
   await expect
     .poll(async () => Number(await marker.textContent()))
     .toBeGreaterThan(yearBefore);
+  await waitForHorizontalScrollToSettle(timeline);
   await timeline.evaluate((element) => {
     const currentYear = Number(
       document.querySelector(".timeline-center-marker output")?.textContent,
@@ -150,6 +169,7 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
     element.scrollLeft += (1992 - currentYear) * 12;
   });
   await expect(marker).toHaveText("1992");
+  await expect(page.getByLabel("Событий в 1992 году: 1", { exact: true })).toBeVisible();
   await expect(
     timeline.locator(".timeline-person-row:not(.is-exiting)"),
   ).toHaveCount(6);
@@ -199,7 +219,7 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
     element.scrollLeft = element.scrollWidth;
   });
   await expect(marker).toHaveText(String(new Date().getFullYear() + 20));
-  await expect(timeline.locator(".timeline-future-range")).toContainText("Будущее");
+  await expect(page.locator(".timeline-center-marker")).toHaveAttribute("title", /Будущее/);
   await expect(page.locator(".timeline-center-marker")).toHaveClass(/is-future/);
 
   await timeline.screenshot({
@@ -224,7 +244,12 @@ test("chronology reveals people and events before a held mouse drag ends", async
     name: /Горизонтальная хронология/,
   });
   const marker = page.getByLabel("Год в центре хронологии");
-  await expect(marker).toHaveText("1940");
+  await timeline.evaluate((element) => {
+    const year = Number(document.querySelector(".timeline-center-marker output")?.textContent);
+    element.scrollLeft += (1940 - year) * 12;
+  });
+  await expect(page.getByLabel("Год в центре хронологии")).toHaveText("1940");
+
   const bounds = await timeline.boundingBox();
   if (!bounds) throw new Error("Timeline has no bounds");
   const x = bounds.x + bounds.width - 40;
@@ -323,14 +348,7 @@ test("wheel moves through years, Shift+wheel moves people, and life bars track f
   // it settles before asserting that Shift+wheel changes only the people list.
   // Otherwise we mistake the previous wheel animation for a vertical-wheel
   // side effect.
-  await expect
-    .poll(async () => {
-      const first = await timeline.evaluate((element) => element.scrollLeft);
-      await page.waitForTimeout(120);
-      const second = await timeline.evaluate((element) => element.scrollLeft);
-      return Math.abs(second - first);
-    })
-    .toBeLessThan(0.5);
+  await waitForHorizontalScrollToSettle(timeline);
   const beforePeople = await timeline.evaluate((element) => ({
     left: element.scrollLeft,
     top: element.scrollTop,
@@ -362,6 +380,11 @@ test("chronology keeps portraits and epochs usable on a phone", async ({
     name: /Горизонтальная хронология/,
   });
   await expect(timeline).toBeVisible();
+  await timeline.evaluate((element) => {
+    const year = Number(document.querySelector(".timeline-center-marker output")?.textContent);
+    element.scrollLeft += (1940 - year) * 12;
+  });
+  await expect(page.getByLabel("Год в центре хронологии")).toHaveText("1940");
   await expect(
     timeline.locator(".timeline-person-row:not(.is-exiting)"),
   ).toHaveCount(1);
@@ -401,15 +424,14 @@ test("chronology keeps portraits and epochs usable on a phone", async ({
   await expect
     .poll(async () => Number(await marker.textContent()))
     .toBeGreaterThan(yearBefore);
+  await waitForHorizontalScrollToSettle(timeline);
   await timeline.evaluate((element) => {
     const currentYear = Number(
       document.querySelector(".timeline-center-marker output")?.textContent,
     );
     element.scrollLeft += (1992 - currentYear) * 12;
   });
-  await expect
-    .poll(async () => Number(await marker.textContent()))
-    .toBeGreaterThanOrEqual(1992);
+  await expect(marker).toHaveText("1992");
   await expect(
     timeline.locator(".timeline-person-row:not(.is-exiting)"),
   ).toHaveCount(6);
@@ -418,7 +440,7 @@ test("chronology keeps portraits and epochs usable on a phone", async ({
   });
   await page.setViewportSize({ width: 320, height: 640 });
   const counter = await page
-    .locator(".timeline-center-marker > span")
+    .locator(".timeline-center-marker")
     .boundingBox();
   if (!counter) throw new Error("Year counter has no bounds");
   expect(counter.x).toBeGreaterThanOrEqual(0);

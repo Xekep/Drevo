@@ -116,3 +116,24 @@ export function preferFamilyLayout(
       next.bends <= before.bends)
   );
 }
+
+/** Independent cold layouts may trade a bounded single-child offset for fewer
+ * crossings AND less interleaving. Local edits still use the strict axis gate. */
+export function preferColdFamilyLayout(
+  candidate: TreeGeometry,
+  current: TreeGeometry,
+  size: TreeNodeSize,
+  score: FamilyRowScore,
+) {
+  if (preferFamilyLayout(candidate, current, size, score)) return true;
+  const next = score(candidate), before = score(current);
+  if (!familyRowNoWorse(next, before) || next.crossings >= before.crossings ||
+    next.length > before.length) return false;
+  const a = familyAxisQuality(candidate, size), b = familyAxisQuality(current, size);
+  return a.interleavings < b.interleavings &&
+    a.offset <= b.offset + 0.01 &&
+    a.single <= b.single * 1.15 + 0.01 &&
+    a.maxOffset <= b.maxOffset + 0.01 &&
+    a.lineageDrift <= b.lineageDrift + 0.01 &&
+    a.lineageSpan <= b.lineageSpan + 0.01;
+}

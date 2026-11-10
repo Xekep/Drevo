@@ -393,7 +393,7 @@ export function PersonPanel({
                   <span className="event-label">Рождение</span>
                   {person.birth && <b>{dateLabel(person.birth)}{person.birthJulian?.length === 10 ? " (новый стиль)" : ""}</b>}
                   {person.birthByzantine && <small className="calendar-original-date">{julianInputLabel(person.birthByzantine)} от Сотворения мира (сентябрьский год)</small>}
-                  {person.birthJulian && <small className="calendar-original-date">{julianInputLabel(person.birthJulian)} по юлианскому календарю</small>}
+                  {person.birthJulian && <small className="calendar-original-date">{julianInputLabel(person.birthJulian)} по старому стилю</small>}
                   {!!person.birthDateClaim?.sources.length &&
                     <p>Источники даты: {claimSummary(person.birthDateClaim)}</p>}
                   {person.birthPlace && <p>{person.birthPlace}</p>}
@@ -412,7 +412,7 @@ export function PersonPanel({
                     ? "Уход из жизни" : "Возможные сведения о смерти"}</span>
                   {person.death && <b>{dateLabel(person.death)}{person.deathJulian?.length === 10 ? " (новый стиль)" : ""}</b>}
                   {person.deathByzantine && <small className="calendar-original-date">{julianInputLabel(person.deathByzantine)} от Сотворения мира (сентябрьский год)</small>}
-                  {person.deathJulian && <small className="calendar-original-date">{julianInputLabel(person.deathJulian)} по юлианскому календарю</small>}
+                  {person.deathJulian && <small className="calendar-original-date">{julianInputLabel(person.deathJulian)} по старому стилю</small>}
                   {!!person.deathDateClaim?.sources.length &&
                     <p>Источники даты: {claimSummary(person.deathDateClaim)}</p>}
                   {person.deathPlace && <p>{person.deathPlace}</p>}

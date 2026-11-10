@@ -55,7 +55,7 @@ test("chronology labels death estimates, removes them after that year and distin
     }, year);
     await expect(marker).toHaveText(String(year));
   };
-  await expect(marker).toHaveText("1850");
+  await expect(marker).toHaveText(String(new Date().getFullYear()));
   await goToYear(1920);
   const male = timeline.locator('[data-person-id="e2e-child"]');
   await expect(male.locator(".timeline-life")).toHaveClass(/is-estimated/);
@@ -65,7 +65,7 @@ test("chronology labels death estimates, removes them after that year and distin
   await male.getByLabel("1920: Предположительная смерть", { exact: true }).click();
   await expect(death.locator(".timeline-event-list")).toContainText("60 лет");
   await expect(death.locator(".timeline-event-list")).toContainText("расчётная отметка");
-  await expect(page.locator(".timeline-center-marker")).toHaveCSS("border-left-color", "rgba(0, 0, 0, 0)");
+  await expect(page.locator(".timeline-year-guide")).toBeHidden();
   const popup = death.locator(".timeline-event-list");
   const popupBox = await popup.boundingBox();
   expect(popupBox?.x).toBeGreaterThanOrEqual(0);
@@ -85,8 +85,8 @@ test("chronology labels death estimates, removes them after that year and distin
   await timeline.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
   await expect(marker).toHaveText(String(currentYear + 20));
   await expect(page.locator(".timeline-center-marker")).toHaveClass(/is-future/);
-  await expect(page.locator(".timeline-center-marker > span")).toContainText("Будущее");
-  await expect(timeline.locator(".timeline-future-range")).toContainText(`${currentYear + 1}–${currentYear + 20}`);
+  await expect(page.locator(".timeline-center-marker")).toHaveAttribute("title", /Будущее/);
+  await expect(page.locator(".timeline-center-marker")).toHaveClass(/is-future/);
   await expect(page.getByRole("button", { name: "На 10 лет вперёд" })).toBeDisabled();
   await timeline.screenshot({ path: testInfo.outputPath("timeline-future.png") });
   expect(archiveWrites).toEqual([]);

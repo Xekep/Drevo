@@ -10,13 +10,15 @@ export function ByzantineDateControl({
   checked,
   label,
   onChange,
+  disabled,
 }: {
   text: string;
   checked: boolean;
   label: string;
   onChange: (checked: boolean) => void;
+  disabled?: boolean;
 }) {
-  if (!canUseByzantineDate(text)) return null;
+  if (!checked && !canUseByzantineDate(text)) return null;
   let hint = "Год от Сотворения мира: только сентябрьское начало года (русские акты XV–XVII веков).";
   if (checked) {
     try {
@@ -29,7 +31,7 @@ export function ByzantineDateControl({
   return (
     <div className="calendar-style-control">
       <label className="check-field">
-        <input type="checkbox" checked={checked} aria-label={label}
+        <input type="checkbox" checked={checked} disabled={disabled} aria-label={label}
           onChange={(event) => onChange(event.target.checked)} />
         От Сотворения мира (византийская эра)
       </label>

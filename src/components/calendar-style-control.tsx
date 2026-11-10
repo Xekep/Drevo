@@ -5,14 +5,16 @@ export function CalendarStyleControl({
   text,
   label,
   checked,
+  disabled = false,
   onChange,
 }: {
   text: string;
   label: string;
   checked: boolean;
+  disabled?: boolean;
   onChange: (checked: boolean) => void;
 }) {
-  if (!canUseOldStyleDate(text)) return null;
+  if (!checked && !canUseOldStyleDate(text)) return null;
   let hint = "";
   if (checked && text.trim()) {
     try {
@@ -31,13 +33,13 @@ export function CalendarStyleControl({
         <input
           type="checkbox"
           checked={checked}
+          disabled={disabled}
           aria-label={label}
           onChange={(event) => onChange(event.target.checked)}
         />
-        Юлианский календарь (старый стиль)
+        По старому стилю
       </label>
-      <small role="status">{hint || (Number(text.match(/\d{4}/)?.[0]) < 1700
-        ? "Календарь выбирается вручную. Даты «от Сотворения мира» используют другую нумерацию лет." : "")}</small>
+      <small role="status">{hint}</small>
     </div>
   );
 }

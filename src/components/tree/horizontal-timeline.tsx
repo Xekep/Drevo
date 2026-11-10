@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { ChevronLeft, ChevronRight, Sprout, Minus } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Sprout, Minus } from "lucide-react";
 import { dateLabel, fullName, hasRecordedDeath, type Person } from "../../domain";
 import { counted } from "../../domain/archive-summary";
 import {
@@ -20,6 +20,7 @@ import {
 } from "../../domain/horizontal-timeline";
 import { Avatar } from "../person-panel";
 import { timelineRowWindow } from "../../domain/timeline-window";
+import { TimelineEraNavigation } from "./timeline-era-navigation";
 import "../../styles/timeline.css";
 
 const VIRTUAL_ROW_THRESHOLD = 32;
@@ -242,9 +243,7 @@ export function HorizontalTimeline({
     lastX: number;
     lastTime: number;
     speed: number;
-    fromEra: boolean;
   } | null>(null);
-  const suppressEraClick = useRef(false);
   const horizontalMotion = useRef<{
     frame: number;
     position: number;
@@ -263,7 +262,7 @@ export function HorizontalTimeline({
   >(null);
   const model = useMemo(() => horizontalTimeline(people), [people]);
   const previousModel = useRef(model);
-  const firstYear = model.rows[0]?.birthYear ?? model.start;
+  const firstYear = model.currentYear;
   const [year, setYear] = useState(firstYear);
   const selectedKey = selected.join("\u0000");
   const previousSelectedKey = useRef(selectedKey);
@@ -303,6 +302,8 @@ export function HorizontalTimeline({
     view.top,
     view.height,
     view.rowHeight,
+    4,
+    0,
   );
   const renderedRowPositions = useMemo(
     () => new Map(renderedRows.map(({ row }, index) => [row.person.id, index])),
@@ -364,7 +365,7 @@ export function HorizontalTimeline({
     if (row)
       scrollAnchor.current = {
         id: row.row.person.id,
-        offset: scroll.scrollTop - 86 - index * height,
+        offset: scroll.scrollTop - index * height,
       };
   }, []);
   const changeOpenEvent = useCallback((key: string, open: boolean) => {
@@ -593,7 +594,7 @@ export function HorizontalTimeline({
         ({ row }) => row.person.id === anchor.id,
       );
       if (index >= 0) {
-        const top = 86 + index * metrics.current.rowHeight + anchor.offset;
+        const top = index * metrics.current.rowHeight + anchor.offset;
         // A no-op scrollTop setter would cancel an ongoing smooth focus.
         if (Math.abs(scroll.scrollTop - top) > 0.5) scroll.scrollTop = top;
       }
@@ -675,9 +676,7 @@ export function HorizontalTimeline({
       event.preventDefault();
       const overPeople =
         event.target instanceof Element &&
-        event.target.closest(
-          ".timeline-person, .timeline-axis-title, .timeline-era-heading",
-        );
+        event.target.closest(".timeline-person");
       // Keep an explicit horizontal trackpad gesture horizontal on the rail.
       const vertical =
         event.shiftKey ||
@@ -811,10 +810,9 @@ export function HorizontalTimeline({
         scroll.scrollTo({
           top: Math.max(
             0,
-            86 +
-              index * view.rowHeight -
-              scroll.clientHeight / 2 +
-              view.rowHeight / 2,
+            index * view.rowHeight -
+            scroll.clientHeight / 2 +
+            view.rowHeight / 2,
           ),
           behavior: scrollBehavior(),
         });
@@ -828,7 +826,7 @@ export function HorizontalTimeline({
     if (virtualized) {
       const bounds = row.getBoundingClientRect(),
         stage = scroll.getBoundingClientRect();
-      if (bounds.bottom <= stage.top + 86 || bounds.top >= stage.bottom) return;
+      if (bounds.bottom <= stage.top || bounds.top >= stage.bottom) return;
       lastFocusedToken.current = focusToken;
       return;
     }
@@ -881,10 +879,9 @@ export function HorizontalTimeline({
     scroll.scrollTo({
       top: Math.max(
         0,
-        86 +
-          index * view.rowHeight -
-          scroll.clientHeight / 2 +
-          view.rowHeight / 2,
+        index * view.rowHeight -
+        scroll.clientHeight / 2 +
+        view.rowHeight / 2,
       ),
       behavior: "instant",
     });
@@ -916,40 +913,41 @@ export function HorizontalTimeline({
   /* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */
   return (
     <>
-      <div className={`timeline-center-marker${year > model.currentYear ? " is-future" : ""}`}>
-        <div className="timeline-year-controls">
-          <button
-            type="button"
-            onClick={() => stepYear(-10)}
-            disabled={year <= model.start}
-            aria-label="На 10 лет назад"
-            title="На 10 лет назад"
-          >
+      <div className="timeline-toolbar">
+        <div className={`timeline-center-marker${year > model.currentYear ? " is-future" : ""}`}
+          title={`${year > model.currentYear ? "Будущее · " : ""}${counted(visibleRows.length, ["человек", "человека", "человек"])} · ${counted(currentEventCount, ["событие", "события", "событий"])}`}>
+          <button type="button" onClick={() => stepYear(-10)} disabled={year <= model.start}
+            aria-label="На 10 лет назад" title="На 10 лет назад">
             <ChevronLeft size={17} aria-hidden="true" />
           </button>
-          <button
-            type="button"
-            onClick={() => stepYear(10)}
-            disabled={year >= model.end}
-            aria-label="На 10 лет вперёд"
-            title="На 10 лет вперёд"
-          >
+          <div className="timeline-year-readout">
+            <button type="button" onClick={() => {
+              cancelFocus();
+              stopHorizontalMotion();
+              animateHorizontalTo(model.yearX(model.currentYear));
+            }} aria-label="К текущему году" title={`Вернуться к текущему году · ${model.currentYear}`}>
+              <output ref={yearLabel} aria-label="Год в центре хронологии" aria-live="off">{year}</output>
+            </button>
+          </div>
+          <button type="button" onClick={() => stepYear(10)} disabled={year >= model.end}
+            aria-label="На 10 лет вперёд" title="На 10 лет вперёд">
             <ChevronRight size={17} aria-hidden="true" />
           </button>
+          <div className="timeline-year-counts">
+            <span aria-label={`Событий в ${year} году: ${currentEventCount}`}
+              title={`Событий в ${year} году: ${currentEventCount}`}>
+              <CalendarDays size={12} aria-hidden="true" />{counted(currentEventCount, ["событие", "события", "событий"])}
+            </span>
+          </div>
         </div>
-        <output
-          ref={yearLabel}
-          aria-label="Год в центре хронологии"
-          aria-live="off"
-        >
-          {year}
-        </output>
-        <span>
-          {year > model.currentYear && <strong>Будущее · </strong>}
-          {counted(visibleRows.length, ["человек", "человека", "человек"])} ·{" "}
-          {counted(currentEventCount, ["событие", "события", "событий"])}
-        </span>
+        <TimelineEraNavigation model={model} year={year} viewport={viewport}
+          onNavigate={(target) => {
+            cancelFocus();
+            stopHorizontalMotion();
+            animateHorizontalTo(model.yearX(target));
+          }} />
       </div>
+      <div className={`timeline-year-guide${year > model.currentYear ? " is-future" : ""}`} aria-hidden="true" />
       <div
         ref={viewport}
         className="horizontal-timeline"
@@ -1040,17 +1038,16 @@ export function HorizontalTimeline({
           }
         }}
         onPointerDown={(event) => {
-          const fromEra = Boolean(
-            (event.target as Element).closest(".timeline-era-segment"),
-          );
           if (
             event.pointerType !== "mouse" ||
             event.button !== 0 ||
-            ((event.target as Element).closest("button, summary, a, input") &&
-              !fromEra)
+            (event.target as Element).closest("button, summary, a, input")
           )
             return;
-          if (fromEra) suppressEraClick.current = false;
+          // Grabbing the moving timeline stops it before we capture the origin.
+          // Otherwise the first drag rewinds to a stale scroll offset.
+          cancelFocus();
+          stopHorizontalMotion();
           drag.current = {
             x: event.clientX,
             y: event.clientY,
@@ -1060,7 +1057,6 @@ export function HorizontalTimeline({
             lastX: event.clientX,
             lastTime: performance.now(),
             speed: 0,
-            fromEra,
           };
         }}
         onPointerMove={(event) => {
@@ -1073,7 +1069,6 @@ export function HorizontalTimeline({
             cancelFocus();
             stopHorizontalMotion();
             current.active = true;
-            if (current.fromEra) suppressEraClick.current = true;
             event.currentTarget.setPointerCapture(event.pointerId);
             event.currentTarget.classList.add("is-dragging");
           }
@@ -1144,43 +1139,6 @@ export function HorizontalTimeline({
               </div>
             ))}
           </div>
-          <div className="timeline-axis">
-            <span className="timeline-axis-title">
-              <strong>Люди и события</strong>
-              <small>в выбранном году</small>
-            </span>
-            <div
-              className="timeline-axis-track"
-              style={{
-                width: `calc(${contentWidth}px + var(--timeline-pad) + var(--timeline-pad))`,
-              }}
-            >
-              <div
-                className="timeline-future-range"
-                style={{
-                  left: `calc(var(--timeline-pad) + ${model.yearX(model.currentYear)}px)`,
-                  width: model.yearX(model.end) - model.yearX(model.currentYear),
-                }}
-              >
-                <strong>Будущее</strong>
-                <small>{model.currentYear + 1}–{model.end}</small>
-              </div>
-              <span
-                className="timeline-present"
-                style={{ left: `calc(var(--timeline-pad) + ${model.yearX(model.currentYear)}px)` }}
-              >
-                Сейчас · {model.currentYear}
-              </span>
-              {model.ticks.map((tick) => (
-                <span
-                  key={tick.year}
-                  style={{ left: `calc(var(--timeline-pad) + ${tick.x}px)` }}
-                >
-                  {tick.year}
-                </span>
-              ))}
-            </div>
-          </div>
           {!model.rows.length && (
             <p className="timeline-empty">
               В хронологии пока нет людей с датой рождения.
@@ -1241,48 +1199,6 @@ export function HorizontalTimeline({
                 }}
               />
             )}
-          </div>
-          <div className="timeline-era-bar" aria-label="Исторические эпохи. Перетаскивайте для прокрутки по годам">
-            <span className="timeline-era-heading">Эпохи</span>
-            <div
-              className="timeline-era-track"
-              style={{
-                width: `calc(${contentWidth}px + var(--timeline-pad) + var(--timeline-pad))`,
-              }}
-            >
-              {model.eras.map((era) => (
-                <button
-                  type="button"
-                  key={era.name}
-                  className={`timeline-era-segment ${era.className}`}
-                  style={{
-                    left: `calc(var(--timeline-pad) + ${era.x}px)`,
-                    width: era.width,
-                  }}
-                  onClick={(event) => {
-                    if (event.detail && suppressEraClick.current) {
-                      suppressEraClick.current = false;
-                      return;
-                    }
-                    cancelFocus();
-                    stopHorizontalMotion();
-                    viewport.current?.scrollTo({
-                      left: era.x + era.width / 2,
-                      behavior: scrollBehavior(),
-                    });
-                  }}
-                  title={`${era.name} · ${Math.max(model.start, era.start)}–${Math.min(model.end, era.end)}`}
-                >
-                  <strong>{era.short}</strong>
-                  {era.width > 150 && (
-                    <small>
-                      {Math.max(model.start, era.start)}–
-                      {Math.min(model.end, era.end)}
-                    </small>
-                  )}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       </div>

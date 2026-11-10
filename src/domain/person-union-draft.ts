@@ -1,6 +1,8 @@
-import { normalizeDateInput } from "./dates.ts";
+import { normalizeCalendarDate } from "./calendar-dates.ts";
 import { validateUnions } from "./family-unions.ts";
 import type { Family, FamilyUnion } from "./types.ts";
+const sameDate = (a?: { date?: string; dateJulian?: string }, b?: { date?: string; dateJulian?: string }) =>
+  a?.date === b?.date && a?.dateJulian === b?.dateJulian;
 
 /** Apply date edits and explicit removals; preserve concurrent evidence or reject its deletion. */
 export function applyPersonUnionDrafts(
@@ -29,11 +31,11 @@ export function applyPersonUnionDrafts(
     if (removed.has(draft.id)) continue;
     const base = baseline.find((item) => item.id === draft.id);
     const dates = {
-      formation: normalizeDateInput(draft.formation?.date || "") || undefined,
-      divorce: normalizeDateInput(draft.divorce?.date || "") || undefined,
+      formation: normalizeCalendarDate(draft.formation?.date, draft.formation?.dateJulian),
+      divorce: normalizeCalendarDate(draft.divorce?.date, draft.divorce?.dateJulian),
     };
     const keys = (["formation", "divorce"] as const).filter(
-      (key) => dates[key] !== base?.[key]?.date,
+      (key) => !sameDate(dates[key], base?.[key]),
     );
     if (!keys.length) continue;
     const index = unions.findIndex((item) => item.id === draft.id);
@@ -84,17 +86,18 @@ export function applyPersonUnionDrafts(
     for (const key of keys) {
       if (
         base &&
-        fresh?.[key]?.date !== base[key]?.date &&
-        fresh?.[key]?.date !== dates[key]
+        !sameDate(fresh?.[key], base[key]) &&
+        !sameDate(fresh?.[key], dates[key])
       )
         throw new Error(
           "Дата брака или развода изменена другим участником. Обновите карточку.",
         );
-      if (key === "divorce" && dates[key] && next.ending)
+      if (key === "divorce" && dates[key].date && next.ending)
         throw new Error(
           "У союза уже указано другое окончание. Измените его в семейных союзах.",
         );
-      next[key] = { ...next[key], date: dates[key], confidence: undefined };
+      next[key] = { ...next[key], ...dates[key], confidence: undefined };
+      if (next[key]!.dateJulian === undefined) delete next[key]!.dateJulian;
       // Clearing a date must not erase an undated divorce or its evidence.
       if (Object.values(next[key]!).every((value) => value === undefined))
         delete next[key];
