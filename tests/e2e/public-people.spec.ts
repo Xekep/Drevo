@@ -1,6 +1,24 @@
 import { expect, test } from "@playwright/test";
 import { openAdminSection } from "./admin-navigation";
 
+test("discovery search links and old direct URLs use the canonical archive UUID", async ({ page }) => {
+  const archiveRouteId = "ed3e541a-1b6d-8a11-8328-13cf3c4f9062";
+  const person = { archiveId: "legacy-primary", archiveRouteId, id: "same", name: "Тестовый Пётр" };
+  await page.route((url) => url.pathname === "/api/discovery/people", route => route.fulfill({ json: { results: [person], nextCursor: null } }));
+  await page.route((url) => url.pathname === "/api/discovery/people/legacy-primary/same" || url.pathname === `/api/discovery/people/${archiveRouteId}/same`,
+    route => route.fulfill({ json: { person, linkedCards: [] } }));
+  await page.goto("/discover");
+  await page.getByRole("textbox", { name: "ФИО, год или место" }).fill("Тестовый");
+  await page.getByRole("button", { name: "Найти" }).click();
+  const link = page.getByRole("link", { name: "Тестовый Пётр" });
+  await expect(link).toHaveAttribute("href", `/discover/person/${archiveRouteId}/same`);
+  await link.click();
+  await expect(page.locator(".public-person-card")).toContainText(person.name);
+  await page.goto("/discover/person/legacy-primary/same");
+  await expect(page).toHaveURL(new RegExp(`/discover/person/${archiveRouteId}/same$`));
+  await expect(page.locator(".public-person-card")).toContainText(person.name);
+});
+
 test("a published card with punctuation and Unicode in its ID opens from search", async ({ page }) => {
   const personId = "family:человек.1";
   const segment = encodeURIComponent(personId);

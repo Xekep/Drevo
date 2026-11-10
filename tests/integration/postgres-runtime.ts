@@ -1,5 +1,6 @@
 import { verifyPlatformBackupsHttp } from "./postgres-platform-backups-http.ts";
 import { verifyPortablePublicationBackup } from "./postgres-portable-publications.ts";
+import { discoveryArchiveId } from "../../src/server/discovery-archive-id.ts";
 import { readStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
@@ -7526,7 +7527,12 @@ try {
     );
     const chosenProjection = await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers });
     assert.deepEqual(Object.keys((await chosenProjection.json()).person).sort(),
-      ["archiveId", "birthSurname", "id", "name", "publicationVersion"].sort());
+      ["archiveId", "archiveRouteId", "birthSurname", "id", "name", "publicationVersion"].sort());
+    const canonicalProjection = await fetch(securedBase + `/api/discovery/people/${discoveryArchiveId("other-archive")}/person-a`, { headers });
+    assert.equal(canonicalProjection.status, 200);
+    const canonicalPerson = (await canonicalProjection.json()).person;
+    assert.equal(canonicalPerson.archiveId, "other-archive");
+    assert.equal(canonicalPerson.archiveRouteId, discoveryArchiveId("other-archive"));
     assert.equal((await (await fetch(securedBase + "/api/discovery/people?q=ПоискРождения", { headers })).json()).results.length, 1);
     assert.equal(
       (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,

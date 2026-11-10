@@ -5,6 +5,7 @@ import type { StoreDatabase } from "./store-database.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 import { decodePublicPersonId } from "./public-person-id.ts";
+import { discoveryArchiveId } from "./discovery-archive-id.ts";
 
 type Cursor = [name: string, archiveId: string, personId: string];
 type DiscoveryRow = Record<string, unknown>;
@@ -12,6 +13,7 @@ type DiscoveryRow = Record<string, unknown>;
 function listedPerson(row: DiscoveryRow) {
   return {
     archiveId: String(row.archive_id),
+    archiveRouteId: discoveryArchiveId(String(row.archive_id)),
     id: String(row.person_id),
     name: String(row.name),
     ...(row.birth_surname ? { birthSurname: String(row.birth_surname) } : {}),
@@ -120,15 +122,22 @@ export function discoveryPeopleHttp(
     if (detail) {
       const personId = decodePublicPersonId(detail[2]);
       if (!personId) return json(res, 404, { error: "Человек не найден" });
-      const row = await db.prepare("", `SELECT ${detailColumns},xmin::text AS row_version FROM discovery_people
+      let row = await db.prepare("", `SELECT ${detailColumns},xmin::text AS row_version FROM discovery_people
              WHERE archive_id=? AND person_id=?`).get(detail[1], personId);
+      if (!row && /^[a-f0-9-]{36}$/i.test(detail[1])) {
+        // Resolve canonical UUID aliases from published cards only. No private
+        // archive table or source people JSON is read to resolve a URL.
+        const candidates = await db.prepare("", `SELECT ${detailColumns},xmin::text AS row_version FROM discovery_people WHERE person_id=?`).all(personId);
+        row = candidates.find(candidate => discoveryArchiveId(String(candidate.archive_id)) === detail[1].toLowerCase());
+      }
       if (!row) return json(res, 404, { error: "Человек не найден" });
+      const archiveId = String(row.archive_id);
       await beforeDetailLookup?.();
       const result = await db.transaction(async () => {
-        const linked = await linkedPeople(detail[1],personId,
+        const linked = await linkedPeople(archiveId,personId,
           String(row.publication_version),String(row.row_version));
         if (!linked) return 404;
-        const chosen = { archive_id: detail[1], person_id: personId };
+        const chosen = { archive_id: archiveId, person_id: personId };
         const expected = [chosen,...linked.selectedCards.map((card) => ({
           archive_id: card.archiveId, person_id: card.id,
         }))];
@@ -150,9 +159,9 @@ export function discoveryPeopleHttp(
               AND p.left_archive_id=e.archive_id AND p.left_person_id=e.person_id)
           ORDER BY p.left_archive_id COLLATE "C",p.left_person_id COLLATE "C",
             p.right_archive_id COLLATE "C",p.right_person_id COLLATE "C" FOR SHARE OF p`)
-          .all(JSON.stringify(expected.slice(1)),detail[1],personId,detail[1],personId) : [];
+          .all(JSON.stringify(expected.slice(1)),archiveId,personId,archiveId,personId) : [];
         if (pairs.length !== linked.selectedCards.length) return 409;
-        const current = await linkedPeople(detail[1],personId,
+        const current = await linkedPeople(archiveId,personId,
           String(row.publication_version),String(row.row_version));
         if (!current) return 404;
         if (current.selectedCards.length !== linked.selectedCards.length ||

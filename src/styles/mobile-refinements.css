@@ -42,6 +42,15 @@
 }
 
 @media (max-width: 899px) {
+  .tree-view:has(.tree-canvas.is-fullscreen) > .inspector-dock.expanded {
+    top: 0;
+    bottom: 0;
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+}
+
+@media (max-width: 899px) {
   .gallery-view {
     padding: 16px 12px 24px;
   }

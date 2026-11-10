@@ -110,7 +110,7 @@ export function archiveOwnerTransferHttp(
           : error instanceof ForbiddenError
             ? 403
             : error instanceof ConflictError ||
-                (error as { code?: string }).code === "23505"
+                ["23505", "55P03"].includes((error as { code?: string }).code || "")
               ? 409
               : 500;
       if (status === 500) console.error("owner_transfer_failed", error);
