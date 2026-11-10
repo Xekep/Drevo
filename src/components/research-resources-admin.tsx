@@ -1,3 +1,4 @@
+import { externalLinkAttributes } from "../shared/external-links.ts";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import type { ResearchSearchSettings } from "../shared/web-search.ts";
 import type {
@@ -537,6 +538,7 @@ export function ResearchResourcesAdmin({
                           href={resource.url}
                           target="_blank"
                           rel="noopener noreferrer"
+                          {...externalLinkAttributes(resource.url)}
                         >
                           {resourceHost(resource)}{" "}
                           <ExternalLink size={13} aria-hidden="true" />

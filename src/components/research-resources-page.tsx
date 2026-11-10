@@ -1,3 +1,4 @@
+import { externalLinkAttributes } from "../shared/external-links.ts";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ExternalLink, Search, X } from "lucide-react";
 import type { ResearchDirectoryCategory } from "../shared/research-catalog";
@@ -196,6 +197,7 @@ export default function ResearchResourcesPage() {
                               href={href}
                               target="_blank"
                               rel="noopener noreferrer"
+                              {...externalLinkAttributes(href)}
                             >
                               {resource.name}
                               <ExternalLink size={16} aria-hidden="true" />

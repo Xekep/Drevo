@@ -31,6 +31,23 @@ test("invalid LaTeX remains readable without breaking the comment", () => {
   assert.match(renderCommentHtml("$\\notACommand{x}$"), /notACommand/);
   assert.match(renderCommentHtml("    код\n    ещё код"), /<pre><code>/);
 });
+
+test("outbound discussion links open separately while archive links stay local", () => {
+  const html = renderCommentHtml(
+    "[Архив](https://example.com/archive) http://example.org [Без схемы](//example.net) [Карточка](/people/person) [Раздел](#source) [Почта](mailto:archive@example.com)",
+  );
+  for (const href of ["https://example.com/archive", "http://example.org", "//example.net"]) {
+    const anchor = html.match(/<a\b[^>]*>/g)!.find(tag => tag.includes(`href="${href}"`))!;
+    assert.ok(anchor, href);
+    assert.match(anchor, /target="_blank"/);
+    assert.match(anchor, /rel="nofollow noopener noreferrer"/);
+  }
+  for (const href of ["/people/person", "#source", "mailto:archive@example.com"]) {
+    const anchor = html.match(/<a\b[^>]*>/g)!.find(tag => tag.includes(`href="${href}"`))!;
+    assert.ok(anchor, href);
+    assert.doesNotMatch(anchor, /target=|rel=/);
+  }
+});
 test("only Mermaid fenced code receives a diagram marker and raw SVG stays inactive", () => {
   const html = renderCommentHtml("```mermaid\ngraph TD\nA --> B\n```\n\n```javascript\nalert(1)\n```\n\n<svg onload=alert(1)></svg>");
   assert.match(html, /class="language-mermaid"/);

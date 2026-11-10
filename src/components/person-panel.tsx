@@ -1,3 +1,4 @@
+import { externalLinkAttributes } from "../shared/external-links.ts";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
 import { archiveDocumentPath } from "../domain/archive-routes.ts";
@@ -543,6 +544,7 @@ export function PersonPanel({
                       href={archiveResourceUrl(safeUrl(s.url) || "")}
                       target="_blank"
                       rel="noopener noreferrer"
+                      {...externalLinkAttributes(s.url || "")}
                     >
                       Открыть источник
                       <ArrowUpRight size={12} />

@@ -57,7 +57,7 @@ test("comment author names navigate to the linked person while unlinked authors 
         items: [
           {
             id: 910001,
-            text: "Воспоминание автора",
+            text: "Воспоминание автора: [Архив](https://example.com/archive), [Карточка](/people/e2e-child)",
             author: "Тестов Иван Петрович",
             authorPersonId: "e2e-memorial-person",
             createdAt: new Date().toISOString(),
@@ -86,6 +86,12 @@ test("comment author names navigate to the linked person while unlinked authors 
     exact: true,
   });
   await expect(author).toHaveAttribute("href", "/people/e2e-memorial-person");
+  const external = section.getByRole("link", { name: "Архив", exact: true });
+  await expect(external).toHaveAttribute("target", "_blank");
+  await expect(external).toHaveAttribute("rel", "nofollow noopener noreferrer");
+  const local = section.getByRole("link", { name: "Карточка", exact: true });
+  await expect(local).not.toHaveAttribute("target");
+  await expect(local).not.toHaveAttribute("rel");
   await expect(
     section.getByRole("link", { name: "Другой участник" }),
   ).toHaveCount(0);

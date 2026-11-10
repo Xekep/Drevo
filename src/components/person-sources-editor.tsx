@@ -1,3 +1,4 @@
+import { externalLinkAttributes } from "../shared/external-links.ts";
 import { useState } from "react";
 import { BookOpen, Files, Trash2 } from "lucide-react";
 import type { Source } from "../domain/types";
@@ -106,6 +107,7 @@ export function PersonSourcesEditor({
                             href={archiveResourceUrl(safeUrl(s.url) || "")}
                             target="_blank"
                             rel="noopener noreferrer"
+                            {...externalLinkAttributes(s.url || "")}
                           >
                             Открыть источник
                           </a>

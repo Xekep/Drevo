@@ -52,7 +52,10 @@ test("saved biography renders Markdown and line breaks without executing HTML", 
     ).toHaveAttribute("href", "https://example.com/archive");
     await expect(
       content.getByRole("link", { name: "Источник", exact: true }),
-    ).toHaveAttribute("rel", "noopener noreferrer");
+    ).toHaveAttribute("rel", "nofollow noopener noreferrer");
+    await expect(
+      content.getByRole("link", { name: "Источник", exact: true }),
+    ).toHaveAttribute("target", "_blank");
     expect(await page.evaluate(() => "biographyUnsafe" in window)).toBe(false);
     expect(
       await content.evaluate(
