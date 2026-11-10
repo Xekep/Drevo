@@ -5,7 +5,7 @@ import type { StoreDatabase } from "./store-database.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 import { decodePublicPersonId } from "./public-person-id.ts";
-import { discoveryArchiveId } from "./discovery-archive-id.ts";
+import { discoveryArchiveId, discoveryArchiveAliasPredicate } from "./discovery-archive-id.ts";
 
 type Cursor = [name: string, archiveId: string, personId: string];
 type DiscoveryRow = Record<string, unknown>;
@@ -127,7 +127,8 @@ export function discoveryPeopleHttp(
       if (!row && /^[a-f0-9-]{36}$/i.test(detail[1])) {
         // Resolve canonical UUID aliases from published cards only. No private
         // archive table or source people JSON is read to resolve a URL.
-        const candidates = await db.prepare("", `SELECT ${detailColumns},xmin::text AS row_version FROM discovery_people WHERE person_id=?`).all(personId);
+        const candidates = await db.prepare("", `SELECT ${detailColumns},xmin::text AS row_version FROM discovery_people
+          WHERE person_id=? AND ${discoveryArchiveAliasPredicate}`).all(personId);
         row = candidates.find(candidate => discoveryArchiveId(String(candidate.archive_id)) === detail[1].toLowerCase());
       }
       if (!row) return json(res, 404, { error: "Человек не найден" });

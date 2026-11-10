@@ -18,3 +18,4 @@ import "./postgres-media-url-lookup.ts";
 import "./postgres-personal-research.ts";
 import "./postgres-email-auth.ts";
 import "./postgres-multiple-archives.ts";
+import "./postgres-discovery-route-index.ts";

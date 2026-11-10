@@ -15,7 +15,10 @@
 Внутренние ID, связи и файлы не переименовывать. API оставляет archiveId для
 операций, archiveRouteId — для адреса; старый URL заменяется через replaceState
 после получения разрешённой карточки. Разрешение alias читает только
-discovery_people с person_id lookup (112), дальше работают прежние блокировки
+discovery_people с частичным person_id lookup (112) только для ключей-алиасов;
+предикат совпадает с discoveryArchiveAliasPredicate. Общий person_id-индекс
+ухудшает план keyset backfill имён; проверка discovery_people_pkey сохраняется.
+Дальше работают прежние блокировки
 и проверки публикации. См. discovery-search.md.
 
 Исследователям и администраторам разрешено явное создание нескольких древ

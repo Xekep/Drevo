@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 
 const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
+/** Must match migration 112's partial index; canonical lowercase UUIDs use the primary key. */
+export const discoveryArchiveAliasPredicate = "archive_id !~ '^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$'";
 
 /** Existing UUIDs remain unchanged. Legacy keys get a stable UUIDv8 route
  * identifier, independent of titles, owners and publications. Not an access token.
