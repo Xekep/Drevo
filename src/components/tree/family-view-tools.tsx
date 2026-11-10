@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { GitBranch, RotateCcw, Share2, Play } from "lucide-react";
+import { GitBranch, RotateCcw, Share2 } from "lucide-react";
 import { fullName, type Person } from "../../domain";
 
 export function FamilyViewTools({
@@ -17,7 +17,6 @@ export function FamilyViewTools({
   onAll,
   onReset,
   onShare,
-  onChronicle,
 }: {
   compact?: boolean;
   anchor?: Person;
@@ -33,7 +32,6 @@ export function FamilyViewTools({
   onAll: () => void;
   onReset: () => void;
   onShare?: () => void;
-  onChronicle?: () => void;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
@@ -62,7 +60,7 @@ export function FamilyViewTools({
       menu.current.querySelector("summary")?.focus();
     }
   }
-  if (!anchor && !selected && !changed && !onShare && !onChronicle) return null;
+  if (!anchor && !selected && !changed && !onShare) return null;
   const controls = (
     <div
       className="tree-family-tools"
@@ -113,9 +111,6 @@ export function FamilyViewTools({
         </button>
       )}
       {anchor && <button onClick={() => runAction(onAll)}>Всё древо</button>}
-      {onChronicle && <button type="button" onClick={() => runAction(onChronicle)} aria-label="Хроника видимой ветви">
-        <Play size={15} aria-hidden="true" /><span>Хроника</span>
-      </button>}
       {onShare && (
         <button
           className="tree-family-share"

@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { fullName, years, type ArchivePhoto, type Person } from "../../domain";
 import { chroniclePhotos } from "../../domain/family-chronicle";
 import { photoCaption } from "../../domain/photo-metadata";
@@ -8,14 +7,17 @@ import type {
   GalleryQuery,
 } from "../../domain/archive-view-projection";
 import { ChronicleStage } from "./chronicle-stage";
+import { ChronicleLoading } from "./chronicle-loading";
+import { ChroniclePhotoNavigation } from "./chronicle-photo-navigation";
+import { useChroniclePlayback } from "./use-chronicle-playback";
 
 function ChroniclePlayer({
   photos,
-  people,
+  person,
   onPerson,
 }: {
   photos: ArchivePhoto[];
-  people: Person[];
+  person: Person;
   onPerson: (id: string) => void;
 }) {
   const [index, setIndex] = useState(0),
@@ -26,8 +28,31 @@ function ChroniclePlayer({
   );
   const [playing, setPlaying] = useState(!reduced);
   const [effect, setEffect] = useState<"glass" | "fade">("glass");
-  const [fallback, setFallback] = useState(false);
-  const [visible, setVisible] = useState(!document.hidden);
+  const [fallback, setFallback] = useState(false),
+    [visible, setVisible] = useState(!document.hidden);
+  const navigate = useCallback(
+    (target: number) => {
+      if (busy || target === index || target < 0 || target >= photos.length)
+        return;
+      setBusy(true);
+      setIndex(target);
+    },
+    [busy, index, photos.length],
+  );
+  const next = useCallback(
+    () => navigate((index + 1) % photos.length),
+    [navigate, index, photos.length],
+  );
+  const previous = useCallback(
+    () => navigate((index - 1 + photos.length) % photos.length),
+    [navigate, index, photos.length],
+  );
+  const progress = useChroniclePlayback(
+    photos[index].id,
+    playing && photos.length > 1,
+    busy || !visible,
+    next,
+  );
   useEffect(() => {
     const preference = matchMedia("(prefers-reduced-motion: reduce)");
     const change = () => {
@@ -42,23 +67,15 @@ function ChroniclePlayer({
       document.removeEventListener("visibilitychange", visibility);
     };
   }, []);
-  const next = useCallback(() => {
-    if (!busy && photos.length > 1) {
-      setBusy(true);
-      setIndex((value) => (value + 1) % photos.length);
-    }
-  }, [busy, photos.length]);
-  const previous = useCallback(() => {
-    if (!busy && photos.length > 1) {
-      setBusy(true);
-      setIndex((value) => (value - 1 + photos.length) % photos.length);
-    }
-  }, [busy, photos.length]);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if ((event.target as HTMLElement).closest("select, input, textarea"))
         return;
-      if (event.key === "ArrowRight") {
+      if (
+        event.key === "ArrowRight" ||
+        (event.code === "Space" &&
+          !(event.target as HTMLElement).closest("button"))
+      ) {
         event.preventDefault();
         next();
       }
@@ -70,21 +87,10 @@ function ChroniclePlayer({
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
   }, [next, previous]);
-  useEffect(() => {
-    if (!playing || busy || !visible || photos.length < 2) return;
-    const timer = setTimeout(next, 5000);
-    return () => clearTimeout(timer);
-  }, [playing, busy, visible, next, photos.length]);
   const failed = useCallback(() => setPlaying(false), []);
   const degrade = useCallback(() => setFallback(true), []);
   const shown = photos.find((photo) => photo.id === shownId)!;
-  const names = useMemo(
-    () => new Map(people.map((person) => [person.id, person])),
-    [people],
-  );
-  const tagged = [...new Set(shown.tags.map((tag) => tag.personId))].flatMap(
-    (id) => (names.has(id) ? [names.get(id)!] : []),
-  );
+  const active = photos.findIndex((photo) => photo.id === shownId);
   return (
     <div className="chronicle-player">
       <ChronicleStage
@@ -98,62 +104,42 @@ function ChroniclePlayer({
         onNext={next}
         onPrevious={previous}
       />
-      <div className="chronicle-caption" aria-live={playing ? "off" : "polite"}>
-        <p className="chronicle-date">
-          {!shown.takenAt && !shown.year && "Дата не указана · "}
-          {photoCaption(shown) || "Семейная фотография"}
-        </p>
-        {shown.description && (
-          <p className="chronicle-description">{shown.description}</p>
-        )}
-        <div className="chronicle-people">
-          {tagged.map((person) => (
-            <button
-              type="button"
-              key={person.id}
-              onClick={() => onPerson(person.id)}
-            >
-              <strong>{fullName(person)}</strong>
-              <span>{years(person)}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-      <footer className="chronicle-controls">
-        <div className="chronicle-transport">
-          <button
-            type="button"
-            aria-label="Предыдущий снимок"
-            disabled={busy || photos.length < 2}
-            onClick={previous}
-          >
-            <ChevronLeft size={23} />
-          </button>
-          <button
-            type="button"
-            aria-label={
-              playing ? "Приостановить хронику" : "Продолжить хронику"
-            }
-            disabled={photos.length < 2}
-            onClick={() => setPlaying((value) => !value)}
-          >
-            {playing ? <Pause size={23} /> : <Play size={23} />}
-          </button>
-          <button
-            type="button"
-            aria-label="Следующий снимок"
-            disabled={busy || photos.length < 2}
-            onClick={next}
-          >
-            <ChevronRight size={23} />
-          </button>
-          <span aria-label="Номер снимка">
-            {photos.findIndex((photo) => photo.id === shownId) + 1} /{" "}
-            {photos.length}
-          </span>
-        </div>
+      <span className="chronicle-slide-number" aria-hidden="true">
+        {String(active + 1).padStart(2, "0")}
+      </span>
+      <span className="chronicle-slide-total" aria-hidden="true">
+        {String(photos.length).padStart(2, "0")}
+      </span>
+      <span className="chronicle-sr-only" aria-label="Номер снимка">
+        {active + 1} / {photos.length}
+      </span>
+      <div className="chronicle-controls">
+        <button
+          type="button"
+          aria-label="Предыдущий снимок"
+          disabled={busy || photos.length < 2}
+          onClick={previous}
+        >
+          ←
+        </button>
+        <button
+          type="button"
+          aria-label={playing ? "Приостановить хронику" : "Продолжить хронику"}
+          disabled={photos.length < 2}
+          onClick={() => setPlaying((value) => !value)}
+        >
+          {playing ? "Пауза" : "Продолжить"}
+        </button>
+        <button
+          type="button"
+          aria-label="Следующий снимок"
+          disabled={busy || photos.length < 2}
+          onClick={next}
+        >
+          →
+        </button>
         <label>
-          Переход{" "}
+          <span className="chronicle-sr-only">Переход</span>
           <select
             aria-label="Переход хроники"
             value={reduced || fallback ? "fade" : effect}
@@ -166,20 +152,50 @@ function ChroniclePlayer({
             <option value="fade">Растворение</option>
           </select>
         </label>
-        {fallback && <small role="status">Включён облегчённый переход</small>}
-      </footer>
+      </div>
+      <div className="chronicle-caption" aria-live={playing ? "off" : "polite"}>
+        <button
+          type="button"
+          className="chronicle-person"
+          onClick={() => onPerson(person.id)}
+        >
+          <strong>{fullName(person)}</strong>
+          <span>{years(person)}</span>
+        </button>
+        <p className="chronicle-date">
+          {!shown.takenAt && !shown.year && "Дата не указана · "}
+          {photoCaption(shown) || "Семейная фотография"}
+        </p>
+        {shown.description && (
+          <p className="chronicle-description">{shown.description}</p>
+        )}
+        {fallback && (
+          <small className="chronicle-fallback" role="status">
+            Включён облегчённый переход
+          </small>
+        )}
+      </div>
+      <ChroniclePhotoNavigation
+        photos={photos}
+        active={active}
+        progress={photos.length === 1 ? 100 : progress}
+        busy={busy}
+        onSelect={navigate}
+      />
+      <span className="chronicle-help">
+        <span>→ — дальше · ← — назад</span>
+        <span>Листайте фотографии свайпом</span>
+      </span>
     </div>
   );
 }
 
 export default function FamilyChronicle({
-  personIds,
-  people,
+  person,
   loadGallery,
   onPerson,
 }: {
-  personIds: string[];
-  people: Person[];
+  person: Person;
   loadGallery: (query: GalleryQuery) => Promise<GalleryPage>;
   onPerson: (id: string) => void;
 }) {
@@ -194,11 +210,9 @@ export default function FamilyChronicle({
         seen = new Set<string>();
       let offset = 0;
       do {
-        // Branches filter already authorized pages locally. personIds is an
-        // internal preview field, deliberately not added as a new URL/API filter.
         const page = await loadGallery({
           mode: "all",
-          ...(personIds.length === 1 ? { personId: personIds[0] } : {}),
+          personId: person.id,
           offset,
         });
         if (cancelled) return;
@@ -216,7 +230,7 @@ export default function FamilyChronicle({
         setLoaded(offset);
         if (offset >= page.total) break;
       } while (!cancelled);
-      if (!cancelled) setPhotos(chroniclePhotos(all, personIds));
+      if (!cancelled) setPhotos(chroniclePhotos(all, [person.id]));
     })().catch((reason) => {
       if (!cancelled)
         setError(
@@ -228,39 +242,38 @@ export default function FamilyChronicle({
     return () => {
       cancelled = true;
     };
-  }, [personIds, loadGallery, attempt]);
+  }, [person.id, loadGallery, attempt]);
+  if (error)
+    return (
+      <div className="chronicle-status" role="alert">
+        <p>{error}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setPhotos(null);
+            setError("");
+            setLoaded(0);
+            setAttempt((value) => value + 1);
+          }}
+        >
+          Повторить загрузку
+        </button>
+      </div>
+    );
+  if (photos === null)
+    return (
+      <ChronicleLoading
+        label={`Собираем хронику…${loaded ? ` ${loaded} фото` : ""}`}
+      />
+    );
+  if (!photos.length)
+    return (
+      <div className="chronicle-status">
+        <p>Для этой хроники пока нет фотографий.</p>
+        <p>Добавьте снимки в фотоальбом и отметьте на них этого человека.</p>
+      </div>
+    );
   return (
-    <>
-      {error ? (
-        <div className="chronicle-status" role="alert">
-          <p>{error}</p>
-          <button
-            type="button"
-            onClick={() => {
-              setPhotos(null);
-              setError("");
-              setLoaded(0);
-              setAttempt((value) => value + 1);
-            }}
-          >
-            Повторить загрузку
-          </button>
-        </div>
-      ) : photos === null ? (
-        <div className="chronicle-status" role="status">
-          Собираем хронику…{loaded > 0 && ` ${loaded} фото`}
-        </div>
-      ) : !photos.length ? (
-        <div className="chronicle-status">
-          <p>Для этой хроники пока нет фотографий.</p>
-          <p>
-            Добавьте снимки в фотоальбом и отметьте на них людей из выбранной
-            ветви.
-          </p>
-        </div>
-      ) : (
-        <ChroniclePlayer photos={photos} people={people} onPerson={onPerson} />
-      )}
-    </>
+    <ChroniclePlayer photos={photos} person={person} onPerson={onPerson} />
   );
 }

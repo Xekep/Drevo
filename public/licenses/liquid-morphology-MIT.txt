@@ -1,4 +1,4 @@
-Liquid Morphology Slideshow — Glass / Default shader
+Liquid Morphology Slideshow — Glass / Default shader, dot-ring loader and UI layout
 Copyright (c) filipz — https://codepen.io/filipz/pen/JoGNQzm
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -22,8 +22,10 @@ SOFTWARE.
 Public Pens are MIT licensed under CodePen's licensing policy:
 https://blog.codepen.io/documentation/licensing/ (checked 2026-11-10).
 
-Drevo adapts only the Glass / Default algorithm: contain instead of cover,
+Drevo adapts the Glass / Default algorithm: contain instead of cover,
 defined smoothstep edges, exact endpoints, bounded WebGL resources, on-demand
 rendering. The default strengths, wave frequencies, flow, chromatic separation,
 rim, 2.5-second duration and power2.inOut timing are retained.
+The dot-ring preloader and monochrome counters/navigation layout are also
+adapted; loading follows real requests instead of a fixed presentation delay.
 No reference photographs, fonts, analytics or editor dependencies are included.

@@ -3,6 +3,7 @@ import { mediaPreview } from "../../domain/media-preview";
 import { photoLabel } from "../../domain/photo-metadata";
 import type { ArchivePhoto } from "../../domain/types";
 import { createLiquidGlassRenderer } from "./liquid-glass-renderer";
+import { ChronicleLoading } from "./chronicle-loading";
 
 export function ChronicleStage({
   photo,
@@ -203,11 +204,10 @@ export function ChronicleStage({
         alt=""
         aria-hidden="true"
       />
-      <canvas ref={canvas} aria-hidden="true" />
+      <canvas ref={canvas} className="chronicle-transition" aria-hidden="true" />
+      <button type="button" className="chronicle-photo-advance" aria-label="Листать хронику дальше" onClick={onNext} />
       {status === "loading" && (
-        <p className="chronicle-media-status" role="status">
-          Загружаем фотографию…
-        </p>
+        <ChronicleLoading label="Загружаем фотографию…" />
       )}
       {status === "error" && (
         <div className="chronicle-media-status" role="alert">
