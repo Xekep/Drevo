@@ -33,6 +33,8 @@ export function useTreeFullscreen(container: RefObject<HTMLDivElement | null>) {
   useEffect(() => {
     const back = () => leave();
     const escape = (event: KeyboardEvent) => {
+      // A top-layer dialog handles its own Escape before the underlying tree.
+      if (event.target instanceof Element && event.target.closest("dialog[open]")) return;
       if (event.key === "Escape" && active.current) {
         event.preventDefault();
         event.stopPropagation();

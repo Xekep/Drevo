@@ -326,3 +326,31 @@ test("restored-session validation closes already loaded private photographs", as
   ).toHaveCount(0);
   await expect(dialog).toHaveCount(0);
 });
+test("Escape closes the chronicle before leaving CSS tree fullscreen", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, "Полноэкранная кнопка древа доступна на телефоне");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => {
+    HTMLElement.prototype.requestFullscreen = () =>
+      Promise.reject(new Error("Fullscreen API unavailable"));
+  });
+  await setup(page);
+  await page.goto("/tree");
+  await page
+    .getByRole("button", { name: "Развернуть на весь экран", exact: true })
+    .click();
+  await page
+    .locator('.flow-person[data-person-id="e2e-child"] .flow-person-content')
+    .click();
+  await page.getByRole("button", { name: "Смотреть хронику" }).click();
+  const dialog = page.getByRole("dialog", {
+    name: "Семейная хроника",
+    exact: true,
+  });
+  await expect(dialog.getByLabel("Номер снимка")).toHaveText("1 / 3");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(".tree-canvas.is-fullscreen")).toBeVisible();
+});
