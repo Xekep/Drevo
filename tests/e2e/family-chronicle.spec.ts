@@ -179,7 +179,7 @@ test("WebGL context loss during a Glass transition falls back without hiding the
     let triggered = false;
     WebGLRenderingContext.prototype.drawArrays = function (...args) {
       original.apply(this, args);
-      if (triggered || !this.canvas.closest(".chronicle-stage")) return;
+      if (triggered || !(this.canvas instanceof HTMLCanvasElement) || !this.canvas.closest(".chronicle-stage")) return;
       const program = this.getParameter(this.CURRENT_PROGRAM) as WebGLProgram;
       const uniform = this.getUniformLocation(program, "uProgress");
       const progress = uniform ? (this.getUniform(program, uniform) as number) : 0;
