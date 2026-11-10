@@ -168,7 +168,6 @@ type Props = {
   restricted?: boolean;
   covered?: boolean;
   onShare?: (anchorId: string, personIds: string[]) => void;
-  onChronicle?: (personIds: string[]) => void;
   onPublishPerson?: (personId: string) => void;
   publicationUpdate?: { personId: string; published: boolean; archiveId: string | null } | null;
   family: Family;
@@ -2053,7 +2052,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             !props.assistantFilter && (
             <FamilyViewTools
               compact={narrow}
-              onChronicle={props.onChronicle ? () => props.onChronicle!([...visible]) : undefined}
               onShare={
                 (!generationAnchor || activeFanAnchor) && root && shareAnchorId && props.onShare
                   ? () => props.onShare!(shareAnchorId, [...visible])

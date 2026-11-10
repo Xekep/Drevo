@@ -35,7 +35,7 @@ async function setup(page: Page, source = photos) {
 }
 async function openPerson(page: Page) {
   await page.goto("/people/e2e-child");
-  await page.getByRole("button", { name: "Смотреть хронику" }).click();
+  await page.getByRole("button", { name: "Хроника" }).click();
   const dialog = page.getByRole("dialog", {
     name: "Семейная хроника",
     exact: true,
@@ -143,15 +143,21 @@ test("real Glass shader reveals a new photo and returns to an undistorted image;
   // before progress reaches 1. In that case the normal <img> is the endpoint.
   const fallbackNotice = dialog.getByText("Включён облегчённый переход");
   if (!completedInGlass) await expect(fallbackNotice).toBeVisible();
-  await expect(dialog.locator("canvas")).toHaveCSS("opacity", "0");
+  await expect(dialog.locator(".chronicle-transition")).toHaveCSS(
+    "opacity",
+    "0",
+  );
   await expect(dialog.locator(".chronicle-photo")).toHaveAttribute(
     "src",
     /chronicle-later/,
   );
   await dialog.getByRole("button", { name: "Следующий снимок" }).click();
   if (completedInGlass) {
-    await expect(dialog.locator("canvas")).toHaveCSS("opacity", "1");
-    await dialog.locator("canvas").evaluate((canvas) => {
+    await expect(dialog.locator(".chronicle-transition")).toHaveCSS(
+      "opacity",
+      "1",
+    );
+    await dialog.locator(".chronicle-transition").evaluate((canvas) => {
       (canvas as HTMLCanvasElement)
         .getContext("webgl")!
         .getExtension("WEBGL_lose_context")!
@@ -159,16 +165,17 @@ test("real Glass shader reveals a new photo and returns to an undistorted image;
     });
     await expect(fallbackNotice).toBeVisible();
   } else {
-    await expect(dialog.locator("canvas")).toHaveCSS("opacity", "0");
+    await expect(dialog.locator(".chronicle-transition")).toHaveCSS(
+      "opacity",
+      "0",
+    );
   }
   await expect(
     dialog.getByRole("button", { name: "Следующий снимок" }),
   ).toBeEnabled();
   await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Смотреть хронику" }),
-  ).toBeFocused();
+  await expect(page.getByRole("button", { name: "Хроника" })).toBeFocused();
 });
 test("WebGL context loss during a Glass transition falls back without hiding the new photo", async ({
   page,
@@ -179,10 +186,17 @@ test("WebGL context loss during a Glass transition falls back without hiding the
     let triggered = false;
     WebGLRenderingContext.prototype.drawArrays = function (...args) {
       original.apply(this, args);
-      if (triggered || !(this.canvas instanceof HTMLCanvasElement) || !this.canvas.closest(".chronicle-stage")) return;
+      if (
+        triggered ||
+        !(this.canvas instanceof HTMLCanvasElement) ||
+        !this.canvas.closest(".chronicle-stage")
+      )
+        return;
       const program = this.getParameter(this.CURRENT_PROGRAM) as WebGLProgram;
       const uniform = this.getUniformLocation(program, "uProgress");
-      const progress = uniform ? (this.getUniform(program, uniform) as number) : 0;
+      const progress = uniform
+        ? (this.getUniform(program, uniform) as number)
+        : 0;
       if (progress > 0) {
         triggered = true;
         this.getExtension("WEBGL_lose_context")?.loseContext();
@@ -197,8 +211,13 @@ test("WebGL context loss during a Glass transition falls back without hiding the
     "src",
     /chronicle-later/,
   );
-  await expect(dialog.locator("canvas")).toHaveCSS("opacity", "0");
-  await expect(dialog.getByRole("button", { name: "Следующий снимок" })).toBeEnabled();
+  await expect(dialog.locator(".chronicle-transition")).toHaveCSS(
+    "opacity",
+    "0",
+  );
+  await expect(
+    dialog.getByRole("button", { name: "Следующий снимок" }),
+  ).toBeEnabled();
 });
 
 test("failed photo load is explicit, retry works and playback pauses", async ({
@@ -227,40 +246,110 @@ test("failed photo load is explicit, retry works and playback pauses", async ({
     600,
   );
 });
-test("visible branch chronicle reads every page and never includes untagged photos", async ({
+test("person chronicle reads every page and never includes other people's or untagged photos", async ({
   page,
-  isMobile,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const source = Array.from({ length: 34 }, (_, i) =>
     photo(`page-${i}`, String(1900 + i)),
   );
-  source.push({ ...photo("untagged", "1800"), tags: [] });
+  source.push(
+    { ...photo("untagged", "1800"), tags: [] },
+    photo("someone-else", "1801", "e2e-spouse"),
+  );
   await setup(page, source);
-  await page.goto("/people/e2e-child");
-  if (isMobile) {
-    await page
-      .getByRole("button", { name: "Свернуть панель", exact: true })
-      .click();
-    await page.getByLabel("Область просмотра", { exact: true }).click();
-  }
-  await page.getByRole("button", { name: "Хроника видимой ветви" }).click();
-  const dialog = page.getByRole("dialog", {
-    name: "Семейная хроника",
-    exact: true,
+  const queries: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("projection=gallery"))
+      queries.push(request.url());
   });
+  const dialog = await openPerson(page);
   await expect(dialog.getByLabel("Номер снимка")).toHaveText("1 / 34");
   await expect(dialog.locator(".chronicle-date")).toContainText("1900");
+  expect(queries.length).toBeGreaterThan(1);
+  expect(
+    queries.every(
+      (url) => new URL(url).searchParams.get("personId") === "e2e-child",
+    ),
+  ).toBe(true);
+  await dialog.getByRole("button", { name: /^Снимок 34:/ }).click();
+  await expect(dialog.getByLabel("Номер снимка")).toHaveText("34 / 34");
+  await expect(dialog.locator(".chronicle-date")).toContainText("1933");
   await page.screenshot({
-    path: test.info().outputPath("chronicle-branch.png"),
+    path: test.info().outputPath("chronicle-person.png"),
   });
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
 });
+
+test("chronicle is a text-only action for a single selected person", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await setup(page);
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(
+    page.getByRole("button", { name: "Хроника", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Хроника видимой ветви" }),
+  ).toHaveCount(0);
+  await page
+    .locator('.flow-person[data-person-id="e2e-child"] .flow-person-content')
+    .click();
+  const launch = page.getByRole("button", { name: "Хроника", exact: true });
+  await expect(launch).toHaveCount(1);
+  await expect(launch.locator("svg")).toHaveCount(0);
+  await launch.click();
+  await expect(page.getByLabel("Номер снимка")).toHaveText("1 / 3");
+});
+
+test("CodePen dot loader stays centered while person photos are being read", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await setup(page);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/family?projection=gallery&**", async (route) => {
+    await gate;
+    await route.fallback();
+  });
+  await page.goto("/people/e2e-child");
+  await page.getByRole("button", { name: "Хроника", exact: true }).click();
+  const loader = page.locator(".chronicle-loading");
+  await expect(loader).toContainText("Собираем хронику");
+  const box = (await loader.locator("canvas").boundingBox())!;
+  const viewport = page.viewportSize()!;
+  expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThan(2);
+  expect(Math.abs(box.y + box.height / 2 - viewport.height / 2)).toBeLessThan(
+    2,
+  );
+  const alpha = await loader.locator("canvas").evaluate((node) => {
+    const canvas = node as HTMLCanvasElement;
+    return canvas
+      .getContext("2d")!
+      .getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data[3];
+  });
+  expect(alpha).toBeGreaterThan(0);
+  await page.screenshot({
+    path: test.info().outputPath("chronicle-loading.png"),
+  });
+  release();
+  await expect(loader).toHaveCount(0);
+  await expect(page.getByLabel("Номер снимка")).toHaveText("1 / 3");
+});
+
 test("empty album explains how to add photographs", async ({ page }) => {
   await setup(page, []);
   await page.goto("/people/e2e-child");
-  await page.getByRole("button", { name: "Смотреть хронику" }).click();
+  await page.getByRole("button", { name: "Хроника" }).click();
   await expect(
     page.getByText("Для этой хроники пока нет фотографий."),
   ).toBeVisible();
@@ -282,7 +371,7 @@ test("chronicle opens over tree fullscreen and fills the mobile viewport", async
   await page
     .locator('.flow-person[data-person-id="e2e-child"] .flow-person-content')
     .click();
-  await page.getByRole("button", { name: "Смотреть хронику" }).click();
+  await page.getByRole("button", { name: "Хроника" }).click();
   const dialog = page.getByRole("dialog", {
     name: "Семейная хроника",
     exact: true,
@@ -309,9 +398,7 @@ test("photo permission hides both chronicle entry points", async ({
   await expect(
     page.getByRole("complementary", { name: "Выбранный объект" }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Смотреть хронику" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Хроника" })).toHaveCount(0);
   if (isMobile) {
     await page
       .getByRole("button", { name: "Свернуть панель", exact: true })
@@ -381,7 +468,7 @@ test("Escape closes the chronicle before leaving CSS tree fullscreen", async ({
   await page
     .locator('.flow-person[data-person-id="e2e-child"] .flow-person-content')
     .click();
-  await page.getByRole("button", { name: "Смотреть хронику" }).click();
+  await page.getByRole("button", { name: "Хроника" }).click();
   const dialog = page.getByRole("dialog", {
     name: "Семейная хроника",
     exact: true,
@@ -390,4 +477,27 @@ test("Escape closes the chronicle before leaving CSS tree fullscreen", async ({
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".tree-canvas.is-fullscreen")).toBeVisible();
+});
+
+test("photo progress freezes on pause and resumes from the same elapsed time", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await setup(page);
+  const dialog = await openPerson(page);
+  await page.clock.install({ time: new Date("2026-11-10T12:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-11-10T12:00:01Z"));
+  await dialog.getByRole("button", { name: "Продолжить хронику" }).click();
+  await page.clock.runFor(1750);
+  const progress = dialog.getByRole("progressbar", {
+    name: "Время показа снимка",
+  });
+  await expect(progress).toHaveAttribute("aria-valuenow", "35");
+  await dialog.getByRole("button", { name: "Приостановить хронику" }).click();
+  await page.clock.runFor(10000);
+  await expect(progress).toHaveAttribute("aria-valuenow", "35");
+  await expect(dialog.getByLabel("Номер снимка")).toHaveText("1 / 3");
+  await dialog.getByRole("button", { name: "Продолжить хронику" }).click();
+  await page.clock.runFor(3300);
+  await expect(dialog.getByLabel("Номер снимка")).toHaveText("2 / 3");
 });

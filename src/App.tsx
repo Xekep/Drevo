@@ -42,6 +42,7 @@ import { InspectorDock } from "./components/inspector-dock";
 import { PersonInspector } from "./components/person-inspector";
 import { EditorDialog } from "./components/editor-dialog";
 import "./styles/family-chronicle.css";
+import { ChronicleLoading } from "./components/chronicle/chronicle-loading";
 import { ConnectionInspector } from "./components/connection-inspector";
 import { ComparisonPanel } from "./components/comparison-panel";
 import { PersonEditor } from "./components/archive-editors";
@@ -185,7 +186,7 @@ export default function App() {
   const treeCanvas = useRef<TreeCanvasHandle>(null);
   const [treeSceneCovered, setTreeSceneCovered] = useState(false);
   const [biographyMap, setBiographyMap] = useState<{ personId: string; source: string; scope: string } | null>(null);
-  const [chronicle, setChronicle] = useState<{ personIds: string[]; title: string; scope: string } | null>(null);
+  const [chronicle, setChronicle] = useState<{ personId: string; title: string; scope: string } | null>(null);
   const closeChronicle = useCallback(() => setChronicle(null), []);
   const exportWarnings = archive.exportWarnings;
   const checkExportWarnings = useCallback(async (signal: AbortSignal) => {
@@ -652,7 +653,8 @@ export default function App() {
   const biographyMapScope = JSON.stringify([archiveContextAt(window.location.pathname)?.id, user?.id, user?.role,
     user?.treeAccess, user?.personId, user?.approved, participantPreview]);
   const chronicleScope = JSON.stringify([biographyMapScope, archive.getRevision(), detailsGeneration, readPhotos, restoredSessionState, currentPath]);
-  const currentChronicle = readPhotos && view === "tree" && chronicle?.scope === chronicleScope ? chronicle : null;
+  const currentChronicle = readPhotos && view === "tree" && chronicle?.scope === chronicleScope &&
+    selected.length === 1 && selected[0] === chronicle.personId && map.has(chronicle.personId) ? chronicle : null;
   useEffect(() => { if (chronicle && !currentChronicle) setChronicle(null); }, [chronicle, currentChronicle]);
   const biographyPersonId = chosen[0]?.id;
   const openBiographyMap = useCallback((source: string) => {
@@ -1132,7 +1134,6 @@ export default function App() {
                     <TreeCanvas
                       ref={treeCanvas}
                       covered={treeSceneCovered || !!currentBiographyMap || !!currentChronicle}
-                      onChronicle={readPhotos ? (ids) => setChronicle({ personIds: ids, title: "Видимая ветвь", scope: chronicleScope }) : undefined}
                       restricted={Boolean(participantPreview)}
                       onPreferences={() => withOverview(() => setTreePreferencesOpen(true))}
                       onExport={participantPreview ? undefined : () => setTreeExportOpen(true)}
@@ -1378,7 +1379,7 @@ export default function App() {
                               onAlbum={(id) => {
                                 selectGalleryAlbum(id, null);
                               }}
-                              onChronicle={(id) => setChronicle({ personIds: [id], title: fullName(chosen[0]), scope: chronicleScope })}
+                              onChronicle={selected.length === 1 ? (id) => setChronicle({ personId: id, title: fullName(chosen[0]), scope: chronicleScope }) : undefined}
                             />
                           )
                         )}
@@ -1624,8 +1625,8 @@ export default function App() {
         <EditorDialog title="Семейная хроника" className="family-chronicle" onClose={closeChronicle}
           headerActions={<span className="chronicle-scope">{currentChronicle.title}</span>}>
           <LazyChunkBoundary message="Хроника не загрузилась. Закройте окно и повторите открытие.">
-            <Suspense fallback={<div className="chronicle-status" role="status">Открываем хронику…</div>}>
-              <FamilyChronicle personIds={currentChronicle.personIds} people={family.people} loadGallery={loadGallery}
+            <Suspense fallback={<ChronicleLoading label="Открываем хронику…" />}>
+              <FamilyChronicle person={map.get(currentChronicle.personId)!} loadGallery={loadGallery}
                 onPerson={(id) => { closeChronicle(); showPerson(id); }} />
             </Suspense>
           </LazyChunkBoundary>

@@ -22,7 +22,7 @@ vec2 getContainUV(vec2 uv, vec2 textureSize) {
   return (uv * uResolution - offset) / scaledSize;
 }
 vec4 photo(sampler2D image, vec2 uv) {
-  vec4 background = vec4(vec3(0.0352941176), 1.0);
+  vec4 background = vec4(vec3(0.0), 1.0);
   if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return background;
   vec4 sampleColor = texture2D(image, uv);
   return vec4(mix(background.rgb, sampleColor.rgb, sampleColor.a), 1.0);
