@@ -12,6 +12,7 @@ async function editor(
   page: Page,
   unions: FamilyUnion[] = [],
   awards?: PersonAward[],
+  historical = false,
 ) {
   const response = await page.request.get("/api/family?projection=overview");
   const initial = await response.json();
@@ -19,6 +20,7 @@ async function editor(
     .family as Family;
   family.unions = unions;
   const child = family.people.find((person) => person.id === "e2e-child")!;
+  if (historical) child.parents = [];
   if (awards) child.awards = awards;
   child.events = [
     {
@@ -86,6 +88,48 @@ test("старый стиль сохраняет исходную дату и п
   await expect(form.locator('[data-field="birth"]')).toHaveValue("25.12.1965");
   await expect(form.getByRole("checkbox", { name: "Дата рождения по старому стилю" })).toBeChecked();
   await expect(form.locator('[data-field="death"]')).toHaveValue("29.02.2000");
+});
+
+test("византийская эра сохраняется при неполном вводе и повторном открытии", async ({ page }) => {
+  const read = await editor(page, [], undefined, true);
+  const form = page.locator(".person-editor-form");
+  const input = form.locator('[data-field="birth"]');
+  await input.fill("12.12.7159");
+  const era = form.getByRole("checkbox", { name: "Дата рождения по византийской эре" });
+  await expect(era).not.toBeChecked();
+  await era.check();
+  await input.fill("12.");
+  await expect(era).toBeChecked();
+  await input.fill("12.12.7159");
+  await savePersonDetails(page);
+  await expect(form).toHaveCount(0);
+  expect(read().people.find(person => person.id === "e2e-child")).toMatchObject({
+    birth: "1650-12-22", birthJulian: "1650-12-12", birthByzantine: "7159-12-12",
+  });
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  await expect(input).toHaveValue("12.12.7159");
+  await expect(era).toBeChecked();
+});
+
+test("византийская эра начала и конца образования сохраняет календарные оригиналы", async ({ page }) => {
+  const read = await editor(page, [], undefined, true);
+  const form = page.locator(".person-editor-form");
+  await form.locator(".education-editor > summary").click();
+  await form.getByRole("button", { name: "Добавить образование", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Образование", exact: true });
+  const start = dialog.getByRole("textbox", { name: "Дата", exact: true });
+  const end = dialog.getByRole("textbox", { name: "Окончание учёбы", exact: true });
+  await start.fill("12.12.7159");
+  await dialog.getByRole("checkbox", { name: "Дата по византийской эре", exact: true }).check();
+  await end.fill("01.01.7160");
+  await dialog.getByRole("checkbox", { name: "Окончание учёбы по византийской эре", exact: true }).check();
+  await finishPersonDetail(page);
+  await savePersonDetails(page);
+  await expect(form).toHaveCount(0);
+  expect(read().people.find(person => person.id === "e2e-child")!.events!.at(-1)).toMatchObject({
+    date: "1650-12-22", dateJulian: "1650-12-12", dateByzantine: "7159-12-12",
+    endDate: "1652-01-11", endDateJulian: "1652-01-01", endDateByzantine: "7160-01-01",
+  });
 });
 
 test("календарь появляется только для исторических дат во всех подформах", async ({ page }) => {

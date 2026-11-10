@@ -13,7 +13,7 @@ import type {
 import { EXTRA_LINK_TYPES } from "./types.ts";
 import { isClaimConfidence } from "./claim-confidence.ts";
 import { validDate, fullName, safeUrl } from "./dates.ts";
-import { julianToGregorian, validCalendarPair } from "./calendar-dates.ts";
+import { julianToGregorian, validCalendarPair, validByzantinePair } from "./calendar-dates.ts";
 import { validateFamily, validEventAlternatives } from "./validation.ts";
 import { claimableEventDate, EVENT_NAMES } from "./person-events.ts";
 import { parseDocumentDetails } from "../shared/document-details.ts";
@@ -196,6 +196,9 @@ function gedcomDate(text: string): string | undefined {
   if ((match[2] && !month) || (match[1] && !month)) return undefined;
   const date = `${match[3]}${month ? `-${String(month).padStart(2, "0")}` : ""}${match[1] ? `-${match[1].padStart(2, "0")}` : ""}`;
   return validDate(date) ? date : undefined;
+}
+function byzantineOriginal(raw: string, date: string | undefined, julian: string | undefined) {
+  return raw && validByzantinePair(date, julian, raw) ? raw : undefined;
 }
 function exportDate(date: string) {
   const [y, m, d] = date.split("-");
@@ -720,7 +723,10 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     const place = value(n, "PLAC") || undefined;
     const dateText = raw && !date && !(start && end) ? raw : phrase || undefined;
     const eventDate = claimableEventDate({ date: date || start || undefined,
-      endDate: start && end ? end : undefined, dateText });
+      endDate: start && end ? end : undefined,
+      ...(byzantineOriginal(value(n, "_DREVO_BYZANTINE_END"), start && end ? end : undefined,
+        value(n, "_DREVO_END_DATE_JULIAN"))
+        ? { endDateByzantine: value(n, "_DREVO_BYZANTINE_END") } : {}), dateText });
     const parsedSources = sources(n);
     // BIRT/DEAT PLAC.SOUR is handled by eventClaimSources as an exact
     // person-place citation. Do not invent that binding for other events.
@@ -751,7 +757,10 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           value: data.value, sources: citations,
           ...(data.confidence ? { confidence: data.confidence as ClaimConfidence } : {}) };
         if (!validEventAlternatives({ date: date || start || undefined,
-          endDate: start && end ? end : undefined, dateText, place,
+          endDate: start && end ? end : undefined,
+      ...(byzantineOriginal(value(n, "_DREVO_BYZANTINE_END"), start && end ? end : undefined,
+        value(n, "_DREVO_END_DATE_JULIAN"))
+        ? { endDateByzantine: value(n, "_DREVO_BYZANTINE_END") } : {}), dateText, place,
           alternatives: [...alternatives, alternative] }))
           throw new Error("invalid event alternative");
         alternatives.push(alternative);
@@ -788,7 +797,13 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         (n.value && n.value !== "Y" ? n.value : fallback) ||
         undefined,
       date: date || start || undefined,
+      ...(byzantineOriginal(value(n, "_DREVO_BYZANTINE_DATE"), date || start || undefined,
+        originalJulian?.original || value(n, "_DREVO_DATE_JULIAN"))
+        ? { dateByzantine: value(n, "_DREVO_BYZANTINE_DATE") } : {}),
       endDate: start && end ? end : undefined,
+      ...(byzantineOriginal(value(n, "_DREVO_BYZANTINE_END"), start && end ? end : undefined,
+        value(n, "_DREVO_END_DATE_JULIAN"))
+        ? { endDateByzantine: value(n, "_DREVO_BYZANTINE_END") } : {}),
       dateText,
       ...(dateSources.length ? { dateClaim: valueClaim(eventDate!, dateSources, n,
         "_DREVO_EVENT_DATE_CONFIDENCE") } : {}),
@@ -897,11 +912,15 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       sex: value(n, "SEX") === "M" ? "m" : value(n, "SEX") === "F" ? "f" : "u",
       birth: parsedBirthDate,
       ...(birthJulian ? { birthJulian: birthJulian.original } : {}),
+      ...(birth && byzantineOriginal(value(birth, "_DREVO_BYZANTINE_DATE"), parsedBirthDate, birthJulian?.original)
+        ? { birthByzantine: value(birth, "_DREVO_BYZANTINE_DATE") } : {}),
       ...(birthSources.date.length
         ? { birthDateClaim: valueClaim(parsedBirthDate, birthSources.date, birth, "_DREVO_DATE_CONFIDENCE") }
         : {}),
       death: parsedDeathDate || undefined,
       ...(deathJulian ? { deathJulian: deathJulian.original } : {}),
+      ...(death && byzantineOriginal(value(death, "_DREVO_BYZANTINE_DATE"), parsedDeathDate, deathJulian?.original)
+        ? { deathByzantine: value(death, "_DREVO_BYZANTINE_DATE") } : {}),
       ...(deathSources.date.length
         ? { deathDateClaim: valueClaim(parsedDeathDate, deathSources.date, death, "_DREVO_DATE_CONFIDENCE") }
         : {}),
@@ -2129,6 +2148,7 @@ export function exportGedcom(
         if (p[kind]) emit(2, "DATE", p[`${kind}Julian`]
           ? `${modern ? "JULIAN" : "@#DJULIAN@"} ${exportDate(p[`${kind}Julian`]!)}`
           : exportDate(p[kind]));
+        if (p[`${kind}Byzantine`]) emit(2, "_DREVO_BYZANTINE_DATE", p[`${kind}Byzantine`]!);
         emitPlace(2, p[`${kind}Place`], p[`${kind}Location`]);
         emitEventClaims(kind);
       }
@@ -2249,6 +2269,9 @@ export function exportGedcom(
         if (date.phrase) emit(3, "PHRASE", date.phrase);
       } else if (e.endDate) emit(2, "DATE", `TO ${exportDate(e.endDate)}`);
       emitPlace(2, e.place, e.location);
+      const originalByzantine = kind ? p[`${kind}Byzantine`] : e.dateByzantine;
+      if (originalByzantine) emit(2, "_DREVO_BYZANTINE_DATE", originalByzantine);
+      if (e.endDateByzantine) emit(2, "_DREVO_BYZANTINE_END", e.endDateByzantine);
       if (e.dateJulian) emit(2, "_DREVO_DATE_JULIAN", e.dateJulian);
       if (e.endDateJulian) emit(2, "_DREVO_END_DATE_JULIAN", e.endDateJulian);
       if (e.description) emit(2, "NOTE", e.description);

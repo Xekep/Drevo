@@ -72,6 +72,45 @@ test("calendar navigation unfolds a hidden branch without a document reload", as
   await verifyDocument();
 });
 
+test("hidden calendar person receives an animated camera flight after the branch opens", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  await calendar(page, "e2e-grandchild");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).toHaveAttribute("data-camera-ready", "true");
+  await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
+  await page.getByTestId("rf__node-e2e-child")
+    .getByRole("button", { name: /Свернуть (потомков|ветвь)/ }).click();
+  await expect(page.getByTestId("rf__node-e2e-grandchild")).toHaveCount(0);
+  await page.evaluate(() => {
+    const viewport = document.querySelector(".react-flow__viewport");
+    if (!viewport) throw new Error("Camera viewport not found");
+    const values: string[] = [];
+    (window as typeof window & { memorialCameraFrames?: string[] }).memorialCameraFrames = values;
+    const observer = new MutationObserver(() => {
+      const value = viewport.getAttribute("style") || "";
+      if (!values.includes(value)) values.push(value);
+    });
+    observer.observe(viewport, { attributes: true, attributeFilter: ["style"] });
+    window.addEventListener("pagehide", () => observer.disconnect(), { once: true });
+  });
+  const verifyDocument = await clickCalendar(page);
+  await expect(page.getByTestId("rf__node-e2e-grandchild")).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => {
+    const node = document.querySelector('[data-testid="rf__node-e2e-grandchild"]');
+    const canvas = document.querySelector(".tree-canvas");
+    if (!node || !canvas) return Infinity;
+    const target = node.getBoundingClientRect(), area = canvas.getBoundingClientRect();
+    return Math.hypot(target.x + target.width / 2 - (area.x + area.width / 2),
+      target.y + target.height / 2 - (area.y + area.height / 2));
+  })).toBeLessThan(80);
+  expect(await page.evaluate(() =>
+    (window as typeof window & { memorialCameraFrames?: string[] }).memorialCameraFrames?.length || 0,
+  )).toBeGreaterThan(2);
+  await verifyDocument();
+});
+
 test("calendar navigation removes a generation window for an excluded person", async ({
   page,
 }) => {

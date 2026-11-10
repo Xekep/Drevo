@@ -42,7 +42,8 @@ import {
   owns,
 } from "../domain";
 import { EditorDialog } from "./editor-dialog";
-import { normalizeLifeDate, julianInputLabel, normalizeEventCalendarDates } from "../domain/calendar-dates";
+import { normalizeByzantineDate, normalizeLifeDate, julianInputLabel, normalizeEventCalendarDates } from "../domain/calendar-dates";
+import { ByzantineDateControl } from "./byzantine-date-control.tsx";
 import { CalendarStyleControl } from "./calendar-style-control";
 import { PlaceField } from "./place-field";
 import { AwardsEditor } from "./person-awards";
@@ -195,15 +196,18 @@ export function PersonEditor({
   const [autoSex, setAutoSex] = useState(!person || person.sex === "u");
   const [accepted, setAccepted] = useState<string[]>([]);
   const [birthText, setBirthText] = useState(
-    person?.birthJulian ? julianInputLabel(person.birthJulian) : dateInputLabel(person?.birth || ""),
+    person?.birthByzantine ? julianInputLabel(person.birthByzantine) : person?.birthJulian ? julianInputLabel(person.birthJulian) : dateInputLabel(person?.birth || ""),
   );
   const [deathText, setDeathText] = useState(
-    person?.deathJulian ? julianInputLabel(person.deathJulian) : dateInputLabel(person?.death || ""),
+    person?.deathByzantine ? julianInputLabel(person.deathByzantine) : person?.deathJulian ? julianInputLabel(person.deathJulian) : dateInputLabel(person?.death || ""),
   );
-  const [oldStyles, setOldStyles] = useState({ birth: !!person?.birthJulian, death: !!person?.deathJulian });
+  const [oldStyles, setOldStyles] = useState({ birth: !!person?.birthJulian && !person?.birthByzantine, death: !!person?.deathJulian && !person?.deathByzantine });
+  const [byzantineStyles, setByzantineStyles] = useState({ birth: !!person?.birthByzantine, death: !!person?.deathByzantine });
+  const normalizeEditorDate = (text: string, kind: "birth" | "death") => byzantineStyles[kind]
+    ? normalizeByzantineDate(text) : normalizeLifeDate(text, oldStyles[kind]);
   const hintDate = (value: string, kind: "birth" | "death") => {
     try {
-      return normalizeLifeDate(value, oldStyles[kind]).date;
+      return normalizeEditorDate(value, kind).date;
     } catch {
       return "";
     }
@@ -232,6 +236,7 @@ export function PersonEditor({
     birthText,
     deathText,
     oldStyles,
+    byzantineStyles,
     autoSex,
     relationship,
     twinKind,
@@ -259,7 +264,7 @@ export function PersonEditor({
         const parts = splitFullName(value);
         if (!parts.name.trim() || !parts.surname.trim())
           problem = "Укажите фамилию и имя. Отчество необязательно.";
-      } else normalizeLifeDate(value, oldStyles[key]);
+      } else normalizeEditorDate(value, key);
     } catch (error) {
       problem = (error as Error).message;
     }
@@ -268,10 +273,16 @@ export function PersonEditor({
   }
   function changeDateStyle(kind: "birth" | "death", checked: boolean) {
     setOldStyles((old) => ({ ...old, [kind]: checked }));
+    if (checked) setByzantineStyles(old => ({ ...old, [kind]: false }));
     let problem = "";
     try { normalizeLifeDate(kind === "birth" ? birthText : deathText, checked); }
     catch (error) { problem = (error as Error).message; }
     setFieldErrors((old) => ({ ...old, [kind]: problem }));
+  }
+  function changeByzantineStyle(kind: "birth" | "death", checked: boolean) {
+    setByzantineStyles(old => ({ ...old, [kind]: checked }));
+    if (checked) setOldStyles(old => ({ ...old, [kind]: false }));
+    setFieldErrors(old => ({ ...old, [kind]: "" }));
   }
   const portraitPhotos = (family.photos || []).filter((photo) =>
     photo.tags.some((tag) => tag.personId === draft.id),
@@ -405,8 +416,8 @@ export function PersonEditor({
       if (draft.events?.some((event) => event.alternatives?.some((alternative) =>
         !alternative.value.trim() || !alternative.sources.length)))
         throw new Error("У каждого альтернативного варианта события должны быть значение и источник.");
-      const birthDate = normalizeLifeDate(birthText, oldStyles.birth),
-        deathDate = normalizeLifeDate(deathText, oldStyles.death),
+      const birthDate = normalizeEditorDate(birthText, "birth"),
+        deathDate = normalizeEditorDate(deathText, "death"),
         birth = birthDate.date, death = deathDate.date || undefined;
       const current = family;
       let portrait = draft.photo;
@@ -421,7 +432,9 @@ export function PersonEditor({
         birth,
         death,
         birthJulian: birthDate.julian,
+        birthByzantine: "byzantine" in birthDate && typeof birthDate.byzantine === "string" ? birthDate.byzantine : undefined,
         deathJulian: deathDate.julian,
+        deathByzantine: "byzantine" in deathDate && typeof deathDate.byzantine === "string" ? deathDate.byzantine : undefined,
         factAlternatives: draft.factAlternatives?.map((alternative) => ({
           ...alternative,
           value: alternative.field === "birth" || alternative.field === "death"
@@ -724,10 +737,10 @@ export function PersonEditor({
                       );
                       try {
                         (kind === "birth" ? setBirthText : setDeathText)(
-                          (oldStyles[kind] ? julianInputLabel : dateInputLabel)(
+                          ((oldStyles[kind] || byzantineStyles[kind]) ? julianInputLabel : dateInputLabel)(
                             normalizeDateInput(
                               kind === "birth" ? birthText : deathText,
-                              oldStyles[kind] ? "julian" : "gregorian",
+                              (oldStyles[kind] || byzantineStyles[kind]) ? "julian" : "gregorian",
                             ),
                           ),
                         );
@@ -740,6 +753,9 @@ export function PersonEditor({
                 <CalendarStyleControl text={kind === "birth" ? birthText : deathText}
                   label={kind === "birth" ? "Дата рождения по старому стилю" : "Дата смерти по старому стилю"}
                   checked={oldStyles[kind]} onChange={(checked) => changeDateStyle(kind, checked)} />
+                <ByzantineDateControl text={kind === "birth" ? birthText : deathText}
+                  label={kind === "birth" ? "Дата рождения по византийской эре" : "Дата смерти по византийской эре"}
+                  checked={byzantineStyles[kind]} onChange={(checked) => changeByzantineStyle(kind, checked)} />
                 <small id={`${fieldId}-${kind}-error`} className="field-error" role="alert">
                   {fieldErrors[kind]}
                 </small>

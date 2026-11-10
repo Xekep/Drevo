@@ -1,7 +1,7 @@
 import type { PersonEvent } from "./types.ts";
 import { validDate, dateBound, safeUrl, normalizeDateInput } from "./dates.ts";
+import { validCalendarPair, validByzantinePair } from "./calendar-dates.ts";
 import { validSourceRepository } from "./source-repository.ts";
-import { validCalendarPair } from "./calendar-dates.ts";
 export const EVENT_NAMES: Record<PersonEvent["type"], string> = {
   residence: "Проживание",
   move: "Переезд",
@@ -64,14 +64,17 @@ export function validateEvents(events: unknown): void {
           e[key].length > (key === "description" ? 10000 : 1000))
       )
         throw new Error("Проверьте описание события");
-    if (!validCalendarPair(e.date, e.dateJulian) || !validCalendarPair(e.endDate, e.endDateJulian))
-      throw new Error("Проверьте календарь даты события");
     for (const value of [e.date, e.endDate])
       if (
         value !== undefined &&
         (!validDate(value) || value > new Date().toISOString().slice(0, 10))
       )
         throw new Error("Проверьте дату события");
+    if (!validCalendarPair(e.date, e.dateJulian) ||
+        !validCalendarPair(e.endDate, e.endDateJulian) ||
+        !validByzantinePair(e.date, e.dateJulian, e.dateByzantine) ||
+        !validByzantinePair(e.endDate, e.endDateJulian, e.endDateByzantine))
+      throw new Error("Дата события по старому стилю не соответствует новому.");
     if (
       e.date &&
       e.endDate &&

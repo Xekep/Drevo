@@ -51,7 +51,9 @@ export type PersonEvent = {
   endDate?: string;
   /** Original Julian dates; date/endDate hold Gregorian equivalents. */
   dateJulian?: string;
+  dateByzantine?: string;
   endDateJulian?: string;
+  endDateByzantine?: string;
   /** Исходная приблизительная дата; не превращается в точный год. */
   dateText?: string;
   /** Citations for one normalized event date, not a range or approximate phrase. */
@@ -94,10 +96,12 @@ export type Person = {
   birth: string;
   /** Original Julian date; birth holds the Gregorian equivalent for complete dates. */
   birthJulian?: string;
+  birthByzantine?: string;
   /** Citations for this exact birth-date value, separate from general person sources. */
   birthDateClaim?: PersonValueClaim;
   death?: string;
   deathJulian?: string;
+  deathByzantine?: string;
   /** Citations for this exact death-date value, separate from general person sources. */
   deathDateClaim?: PersonValueClaim;
   deceased?: boolean;

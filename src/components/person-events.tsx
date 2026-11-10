@@ -215,11 +215,11 @@ export function EventsEditor({
               </label>
             )}
             <div className="event-date-field"><HistoricalDateInput label="Дата"
-              date={event.date} dateJulian={event.dateJulian}
+              date={event.date} dateJulian={event.dateJulian} dateByzantine={event.dateByzantine}
               onChange={(value) => update(event.id, value)} /></div>
             {section === "education" && <div className="event-end-date-field">
-              <HistoricalDateInput label="Окончание учёбы" date={event.endDate} dateJulian={event.endDateJulian}
-                onChange={(value) => update(event.id, { endDate: value.date, endDateJulian: value.dateJulian })} />
+              <HistoricalDateInput label="Окончание учёбы" date={event.endDate} dateJulian={event.endDateJulian} dateByzantine={event.endDateByzantine}
+                onChange={(value) => update(event.id, { endDate: value.date, endDateJulian: value.dateJulian, endDateByzantine: value.dateByzantine })} />
             </div>}
             {!saveTypeFirst(event) && event.dateClaim && <details className="event-date-claim">
               <summary>Источники даты события{event.dateClaim?.sources.length
@@ -321,8 +321,8 @@ export function EventsEditor({
                   </label>
                 )}
                 {section !== "education" && <HistoricalDateInput label="Конец периода"
-                  date={event.endDate} dateJulian={event.endDateJulian}
-                  onChange={(value) => update(event.id, { endDate: value.date, endDateJulian: value.dateJulian })} />}
+                  date={event.endDate} dateJulian={event.endDateJulian} dateByzantine={event.endDateByzantine}
+                  onChange={(value) => update(event.id, { endDate: value.date, endDateJulian: value.dateJulian, endDateByzantine: value.dateByzantine })} />}
                 <label>
                   Приблизительная дата
                   <input
@@ -526,7 +526,9 @@ export function PersonEvents({
                     `${event.date ? " — " : "До "}${dateLabel(event.endDate)}`}
                 </b>
               )}
+              {event.dateByzantine && <small>{julianInputLabel(event.dateByzantine)} по византийской эре</small>}
               {event.dateJulian && <small>{julianInputLabel(event.dateJulian)} по старому стилю</small>}
+              {event.endDateByzantine && <small>{julianInputLabel(event.endDateByzantine)} по византийской эре</small>}
               {event.endDateJulian && <small>Окончание: {julianInputLabel(event.endDateJulian)} по старому стилю</small>}
               {event.dateText && <p>{event.dateText}</p>}
               {event.place && <p>{event.place}</p>}
